@@ -331,6 +331,11 @@ export const LessonDraftDtoSchema = z.object({
   exercises: z.array(LessonExerciseDraftDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
   rejectedCount: z.number().int().nonnegative(),
+  /**
+   * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z
+   * `refineGeneratedPool`) z licznikami; tekst powodu jest dla rodzica, bez danych dziecka.
+   */
+  rejectedReasons: z.record(z.string(), z.number().int().positive()).optional(),
   /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (zestawy szkolne). */
   droppedObjectiveCount: z.number().int().nonnegative().optional(),
   coverage: z.array(CoverageGapDtoSchema),

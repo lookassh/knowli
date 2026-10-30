@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CalculationSpec } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
-import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays } from "./lesson-drafts";
+import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -163,6 +163,14 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     expect(collectBatchExerciseMetadata([validChoiceRaw("plays"), null], true).answers).toEqual(["plays"]);
   });
 
+  it("rekordy bodźców partii uwzględniają polecenie tylko przy instructionIsStimulus", () => {
+    const raw = { ...validChoiceRaw("plays"), instructionPl: "Dziś pada śnieg." };
+    const plain = collectBatchExerciseMetadata([raw], true).exerciseRecords[0]!;
+    const withInstruction = collectBatchExerciseMetadata([raw], true, { instructionIsStimulus: true }).exerciseRecords[0]!;
+    expect(withInstruction.stimulus).toBe(JSON.stringify(["dziś pada śnieg.", plain.stimulus]));
+    expect(collectBatchExerciseMetadata([raw], true, {}).exerciseRecords[0]).toEqual(plain);
+  });
+
   it("summarizes rejection rules and counts without logging answer text", () => {
     const summary = summarizeLessonPoolValidation({
       rawCount: 2,
@@ -317,6 +325,83 @@ describe("buildDynamicTopicData (wadliwe zagadnienie nie przerywa generacji)", (
     const objectives = built.data!.objectives;
     expect(objectives.map((o) => o.kind)).toEqual(["words", "frame", undefined, undefined, undefined]);
     for (const objective of objectives.slice(2)) expect(objective).not.toHaveProperty("kind");
+  });
+});
+
+describe("withSubjectObjectiveKinds (rodzaj zagadnienia zapisuje tylko przedmiot, który z niego korzysta)", () => {
+  const data: DynamicTopicData = {
+    titlePl: "Temat",
+    objectives: [
+      { id: "x.d1.a", titlePl: "A", descriptionEn: "A.", cards: [{ title: "t", body: "b" }, { title: "t2", body: "b2" }], kind: "words" },
+      { id: "x.d1.b", titlePl: "B", descriptionEn: "B.", cards: [{ title: "t", body: "b" }, { title: "t2", body: "b2" }] },
+    ],
+  };
+
+  it("przedmiot bez prompts.objectivesRules (szkoła) nigdy nie zapisuje kind", () => {
+    expect(schoolSubject.prompts.objectivesRules).toBeUndefined();
+    const stored = withSubjectObjectiveKinds(schoolSubject, data);
+    for (const objective of stored.objectives) expect(objective).not.toHaveProperty("kind");
+    expect(stored.objectives.map((o) => o.id)).toEqual(["x.d1.a", "x.d1.b"]);
+    expect(stored.titlePl).toBe("Temat");
+  });
+
+  it("przedmiot z prompts.objectivesRules zachowuje kind", () => {
+    const optedIn: SubjectModule = { ...schoolSubject, prompts: { ...schoolSubject.prompts, objectivesRules: "3–5 zagadnień." } };
+    const stored = withSubjectObjectiveKinds(optedIn, data);
+    expect(stored).toBe(data);
+    expect(stored.objectives.map((o) => o.kind)).toEqual(["words", undefined]);
+  });
+
+  it("nie zmienia danych wejściowych", () => {
+    withSubjectObjectiveKinds(schoolSubject, data);
+    expect(data.objectives[0]!.kind).toBe("words");
+  });
+});
+
+describe("refineGeneratedDrafts (czyszczenie świeżo wygenerowanej puli)", () => {
+  const gap = (answer: string): LessonExerciseDraft => ({
+    exerciseType: "lesson_gap", objectiveId: "o1", stem: `It's ___ today.`, answer, acceptedAnswers: [], focus: [answer],
+  });
+  const withRefine = (refine: NonNullable<SubjectModule["refineGeneratedPool"]>): SubjectModule =>
+    ({ ...englishGrammarSubject, refineGeneratedPool: refine });
+
+  it("przedmiot bez haka zwraca pulę bez zmian i bez odrzuceń", () => {
+    const drafts = [gap("a"), gap("b")];
+    expect(refineGeneratedDrafts(englishGrammarSubject, drafts, "material")).toEqual({
+      kept: drafts, rejectedCount: 0, rejectedReasons: {},
+    });
+    expect(refineGeneratedDrafts(schoolSubject, drafts, "material").kept).toEqual(drafts);
+  });
+
+  it("odrzucenia z haka zwiększają rejectedCount i są zliczone po powodzie", () => {
+    const drafts = [gap("raining"), gap("coat"), gap("snowing"), gap("hat")];
+    const subject = withRefine((all) => ({
+      kept: all.filter((d) => d.answer === "coat"),
+      rejected: [
+        { exercise: all[0]!, reason: "słowo spoza materiału: raining" },
+        { exercise: all[2]!, reason: "słowo spoza materiału: raining" },
+        { exercise: all[3]!, reason: "słowo spoza materiału: hat" },
+      ],
+    }));
+    const result = refineGeneratedDrafts(subject, drafts, "material");
+    expect(result.kept.map((d) => d.answer)).toEqual(["coat"]);
+    expect(result.rejectedCount).toBe(3);
+    expect(result.rejectedReasons).toEqual({ "słowo spoza materiału: raining": 2, "słowo spoza materiału: hat": 1 });
+  });
+
+  it("przekazuje hakowi materiał i szkice", () => {
+    const seen: { drafts: readonly LessonExerciseDraft[]; material: string }[] = [];
+    const drafts = [gap("a")];
+    refineGeneratedDrafts(withRefine((all, ctx) => { seen.push({ drafts: all, material: ctx.material }); return { kept: [...all], rejected: [] }; }),
+      drafts, "Clothes: coat, hat");
+    expect(seen).toEqual([{ drafts, material: "Clothes: coat, hat" }]);
+  });
+
+  it("hak bez odrzuceń zwraca puste zliczenie", () => {
+    const drafts = [gap("a")];
+    expect(refineGeneratedDrafts(withRefine((all) => ({ kept: [...all], rejected: [] })), drafts, "m")).toEqual({
+      kept: drafts, rejectedCount: 0, rejectedReasons: {},
+    });
   });
 });
 

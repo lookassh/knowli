@@ -226,6 +226,31 @@ export interface SubjectModule {
    * `titlePl` przedmiotu. Brak = przedmiot nie tworzy zestawów z materiału.
    */
   readonly materialSubjectTitle?: "parent" | "fixed";
+  /**
+   * Czy polecenie (`instructionPl`) niesie bodziec znaczenia: tożsamość ćwiczeń
+   * `lesson_choice`, `lesson_gap` i `lesson_order` uwzględnia wtedy znormalizowane
+   * polecenie, więc to samo zdanie z innym poleceniem to dwa ćwiczenia. Brak = `false`.
+   */
+  readonly instructionIsStimulus?: boolean;
+  /**
+   * Tekst, z którego liczony jest `target_key` ćwiczenia (ekspozycja). Brak =
+   * `answer`. Wołany przy zapisie rewizji szkicu (generacja i edycja rodzica).
+   */
+  exposureText?(draft: LessonExerciseDraft): string;
+  /**
+   * Walidacja i czyszczenie WYŁĄCZNIE świeżo wygenerowanych ćwiczeń (wyjście
+   * modelu, także dogenerowanie): odrzuca ćwiczenie z powodem albo zwraca je
+   * w `kept` już bez pojedynczych wadliwych elementów (np. wariantów odpowiedzi).
+   * Nie działa przy edycji rodzica ani publikacji — w odróżnieniu od
+   * `validatePoolExtra`, która obowiązuje zawsze. Powody są zliczane dla rodzica.
+   */
+  refineGeneratedPool?(
+    drafts: readonly LessonExerciseDraft[],
+    ctx: { material: string },
+  ): {
+    kept: LessonExerciseDraft[];
+    rejected: { exercise: LessonExerciseDraft; reason: string }[];
+  };
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej

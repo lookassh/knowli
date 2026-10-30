@@ -1,4 +1,4 @@
-import type { LessonExerciseDraft } from "./types";
+import type { LessonExerciseDraft, LessonExerciseType, SubjectModule } from "./types";
 
 export interface LessonExerciseStimulus {
   readonly objectiveId: string;
@@ -10,8 +10,33 @@ function normalizeStimulus(value: string): string {
   return value.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-GB");
 }
 
+/** Opcje tożsamości ćwiczenia pochodzące z przedmiotu (`SubjectModule.instructionIsStimulus`). */
+export interface LessonExerciseIdentityOptions {
+  /** Polecenie niesie bodziec znaczenia: wchodzi do bodźca wyboru, luki i układanki. */
+  readonly instructionIsStimulus?: boolean;
+}
+
+/** Typy, których bodziec zawiera polecenie przy `instructionIsStimulus`. */
+const INSTRUCTION_STIMULUS_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>([
+  "lesson_choice",
+  "lesson_gap",
+  "lesson_order",
+]);
+
+/** Opcje tożsamości dla przedmiotu — jedno miejsce, z którego korzystają wszystkie wywołania. */
+export function lessonIdentityOptionsOf(subject: Pick<SubjectModule, "instructionIsStimulus">): LessonExerciseIdentityOptions {
+  return subject.instructionIsStimulus === true ? { instructionIsStimulus: true } : {};
+}
+
 /** Wyciąga funkcjonalny bodziec, pomijając kosmetyczne pola prezentacji. */
-export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
+export function lessonExerciseStimulus(exercise: LessonExerciseDraft, options: LessonExerciseIdentityOptions = {}): string {
+  const base = baseStimulus(exercise);
+  return options.instructionIsStimulus === true && INSTRUCTION_STIMULUS_TYPES.has(exercise.exerciseType)
+    ? JSON.stringify([normalizeStimulus(exercise.instructionPl ?? ""), base])
+    : base;
+}
+
+function baseStimulus(exercise: LessonExerciseDraft): string {
   switch (exercise.exerciseType) {
     case "lesson_calculation": {
       const calculation = exercise.calculation;
@@ -61,18 +86,18 @@ export function lessonExerciseStimulus(exercise: LessonExerciseDraft): string {
 }
 
 /** Stabilna tożsamość ćwiczenia, niezależna od odpowiedzi i wariantów UI. */
-export function lessonExerciseIdentity(exercise: LessonExerciseDraft): string {
+export function lessonExerciseIdentity(exercise: LessonExerciseDraft, options: LessonExerciseIdentityOptions = {}): string {
   return JSON.stringify([
     exercise.objectiveId,
     exercise.exerciseType,
-    lessonExerciseStimulus(exercise),
+    lessonExerciseStimulus(exercise, options),
   ]);
 }
 
-export function lessonExerciseStimulusRecord(exercise: LessonExerciseDraft): LessonExerciseStimulus {
+export function lessonExerciseStimulusRecord(exercise: LessonExerciseDraft, options: LessonExerciseIdentityOptions = {}): LessonExerciseStimulus {
   return {
     objectiveId: exercise.objectiveId,
     exerciseType: exercise.exerciseType,
-    stimulus: lessonExerciseStimulus(exercise),
+    stimulus: lessonExerciseStimulus(exercise, options),
   };
 }

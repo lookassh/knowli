@@ -238,6 +238,31 @@ describe("LessonDraftDtoSchema", () => {
   });
 });
 
+describe("LessonDraftDtoSchema — powody odrzuceń", () => {
+  const draft = {
+    id: UUID, deckId: UUID2, editNumber: 1, status: "review", title: "Rozdział 3",
+    subjectId: "english_chapter", topicId: "chapter", topicVersion: 1,
+    objectiveIds: ["o1"], examples: {}, exercises: [], assets: [], rejectedCount: 3, coverage: [],
+  };
+
+  it("rejectedReasons jest opcjonalne", () => {
+    const parsed = LessonDraftDtoSchema.parse(draft);
+    expect(parsed.rejectedReasons).toBeUndefined();
+    expect(LessonDraftDtoSchema.parse({ ...draft, rejectedReasons: {} }).rejectedReasons).toEqual({});
+  });
+
+  it("przyjmuje zliczenia po powodzie", () => {
+    const parsed = LessonDraftDtoSchema.parse({ ...draft, rejectedReasons: { "słowo spoza materiału: raining": 2, "inny powód": 1 } });
+    expect(parsed.rejectedReasons).toEqual({ "słowo spoza materiału: raining": 2, "inny powód": 1 });
+  });
+
+  it("liczby muszą być dodatnie i całkowite", () => {
+    for (const bad of [0, -1, 1.5, "2"]) {
+      expect(LessonDraftDtoSchema.safeParse({ ...draft, rejectedReasons: { powód: bad } }).success).toBe(false);
+    }
+  });
+});
+
 describe("DynamicObjectiveDtoSchema — rodzaj zagadnienia", () => {
   const objective = {
     id: "english_chapter.ddeck.clothes", titlePl: "Ubrania",

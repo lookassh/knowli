@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import {
   createDatabase,
   completePresentation,
+  computeTargetKey,
   createChild,
   createLesson,
   createSchoolLesson,
@@ -247,7 +248,7 @@ describe("generowanie puli lekcji (integracja)", () => {
       .map((row) => row.payload)
       .filter((exercise) => exercise.objectiveId === "english_grammar.present_simple.affirmative_base");
     expect(firstObjectiveExercises).toHaveLength(10);
-    expect(second!.existingExercises).toEqual(firstObjectiveExercises.map(lessonExerciseStimulusRecord));
+    expect(second!.existingExercises).toEqual(firstObjectiveExercises.map((exercise) => lessonExerciseStimulusRecord(exercise)));
     expect(new Set(revisions.map(({ payload }) => lessonExerciseIdentity(payload))).size).toBe(20);
   });
 
@@ -334,6 +335,88 @@ describe("generowanie puli lekcji (integracja)", () => {
       [versionId],
     );
     expect(items[0]!.count).toBeGreaterThan(0);
+  });
+
+  it("czyszczenie świeżej puli: odrzucenia z powodami sumują się w kontekście, a hak nie działa przy edycji rodzica", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const refineCalls: number[] = [];
+    const refiningSubject = {
+      ...englishGrammarSubject,
+      refineGeneratedPool: (drafts: readonly LessonExerciseDraft[], ctx: { material: string }) => {
+        refineCalls.push(drafts.length);
+        expect(ctx.material).toContain("plays football");
+        const kept = drafts.filter((draft) => draft.answer !== "banned");
+        return {
+          kept,
+          rejected: drafts.filter((draft) => draft.answer === "banned")
+            .map((exercise) => ({ exercise, reason: "słowo spoza materiału: banned" })),
+        };
+      },
+      exposureText: (draft: LessonExerciseDraft) => `Zdanie: ${draft.answer}.`,
+    } as typeof englishGrammarSubject;
+    const services = createServices({
+      db: testDatabase().db,
+      clock: new ManualClock(),
+      media: fakes.settings,
+      generation: fakes.deps,
+      subjects: createSubjectRegistry([englishGrammarSubject, refiningSubject, historyLikeSubject].map((subject, index) =>
+        index === 1 ? { ...subject, id: "english_grammar_refined" } : subject)),
+    });
+    const objectiveId = "english_grammar.present_simple.third_person_s";
+    const choice = (answer: string, wrong: string, stem: string) => ({
+      exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz.", stem, answer, acceptedAnswers: [], focus: [],
+      options: [{ id: "a", text: answer }, { id: "b", text: wrong }], correctOption: "a",
+    });
+    fakes.llm.queueLesson({ exercises: [
+      choice("plays", "play", "She ___ football."),
+      choice("banned", "ban", "He ___ it."),
+      choice("banned", "ban", "They ___ it?"),
+    ] });
+
+    const { runId, deckId } = await createLesson(services, command({ subjectId: "english_grammar_refined" }));
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    expect(refineCalls).toEqual([3]);
+    const first = await readLessonDeck(services, deckId);
+    expect(first.draft!.rejectedCount).toBe(2);
+    expect(first.draft!.rejectedReasons).toEqual({ "słowo spoza materiału: banned": 2 });
+    expect(first.draft!.exercises.map((exercise) => exercise.answer)).toEqual(["plays"]);
+    const [stored] = await query<{ target_key: string }>(
+      "select target_key from learning_app.item_revisions where deck_version_id = $1", [first.draft!.id],
+    );
+    expect(stored!.target_key).toBe(computeTargetKey("Zdanie: plays.", "en-GB"));
+
+    // Dogenerowanie też czyści świeże wyjście i sumuje powody z poprzednim kontekstem.
+    fakes.llm.queueLesson({ exercises: [
+      choice("banned", "ban", "We ___ it."),
+      choice("works", "work", "She ___ hard."),
+    ] });
+    const topUp = await regenerateObjective(services, {
+      deckId, objectiveId, count: 2, expectedEditNumber: first.draft!.editNumber, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, topUp.runId);
+    expect((await readGeneration(services, topUp.runId)).state).toBe("succeeded");
+    expect(refineCalls).toEqual([3, 2]);
+    const second = await readLessonDeck(services, deckId);
+    expect(second.draft!.rejectedCount).toBe(3);
+    expect(second.draft!.rejectedReasons).toEqual({ "słowo spoza materiału: banned": 3 });
+    expect(second.draft!.exercises.map((exercise) => exercise.answer).sort()).toEqual(["plays", "works"]);
+
+    // Edycja rodzica nie przechodzi przez hak: słowo spoza „materiału” zostaje, a klucz ekspozycji liczy exposureText.
+    const kept = second.draft!.exercises.map(({ revisionId: _revisionId, ...exercise }) => exercise);
+    const edited = await editLessonDraft(services, second.draft!.id, {
+      expectedEditNumber: second.draft!.editNumber,
+      exercises: [...kept, choice("banned", "ban", "I ___ it.")],
+    });
+    expect(refineCalls).toEqual([3, 2]);
+    expect(edited.exercises.map((exercise) => exercise.answer)).toContain("banned");
+    const keys = await query<{ target_key: string }>(
+      "select target_key from learning_app.item_revisions where deck_version_id = $1", [edited.id],
+    );
+    expect(keys.map((row) => row.target_key)).toContain(computeTargetKey("Zdanie: banned.", "en-GB"));
+    expect(keys.map((row) => row.target_key)).not.toContain(computeTargetKey("banned", "en-GB"));
+    expect(edited.rejectedReasons).toEqual({ "słowo spoza materiału: banned": 3 });
   });
 
   it.each(["options", "acceptedAnswers", "focus"])("zły KSZTAŁT %s nie wywraca runu: poprawne zapisane, błędny odrzucony, run terminalny (P2-7)", async (malformedField) => {

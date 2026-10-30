@@ -39,7 +39,7 @@ import type {
   LessonTopic,
   SubjectModule,
 } from "./types";
-import { lessonExerciseIdentity } from "./exercise-identity";
+import { lessonExerciseIdentity, lessonIdentityOptionsOf } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
 
 /** Znacznik luki w `stem` ćwiczenia `lesson_gap`. */
@@ -854,8 +854,9 @@ export function validatePool(
   if (subject.poolDeduplication === "exercise") {
     const seen = new Set<string>();
     const valid: LessonExerciseDraft[] = [];
+    const identityOptions = lessonIdentityOptionsOf(subject);
     for (const { exercise } of singleValid) {
-      const identity = lessonExerciseIdentity(exercise);
+      const identity = lessonExerciseIdentity(exercise, identityOptions);
       if (seen.has(identity)) {
         rejected.push({ exercise, errors: ["stimulus: zduplikowany bodziec ćwiczenia w tej samej regule"] });
       } else {

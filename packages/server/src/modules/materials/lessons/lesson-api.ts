@@ -28,7 +28,7 @@ import {
   skillVersions,
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import { computeTargetKey } from "../../../domain/target-key";
+import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -63,6 +63,7 @@ interface LessonContextView {
   objectiveIds: string[];
   examples: Record<string, string[]>;
   rejectedCount: number;
+  rejectedReasons?: Record<string, number>;
   droppedObjectiveCount?: number;
   material: string;
   subjectTitlePl?: string;
@@ -78,6 +79,7 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     objectiveIds: ctx.objectiveIds ?? [],
     examples: ctx.examples ?? {},
     rejectedCount: ctx.rejectedCount ?? 0,
+    ...(ctx.rejectedReasons && Object.keys(ctx.rejectedReasons).length > 0 ? { rejectedReasons: ctx.rejectedReasons } : {}),
     ...(ctx.droppedObjectiveCount ? { droppedObjectiveCount: ctx.droppedObjectiveCount } : {}),
     material: ctx.material ?? "",
     ...(ctx.subjectTitlePl ? { subjectTitlePl: ctx.subjectTitlePl } : {}),
@@ -298,6 +300,7 @@ async function readLessonDraftDto(
       assetId: a.assetId,
     }]),
     rejectedCount: context.rejectedCount,
+    ...(context.rejectedReasons ? { rejectedReasons: context.rejectedReasons } : {}),
     ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
     coverage,
   };
@@ -494,7 +497,7 @@ async function loadCurrentLessonRevisions(tx: Tx, versionId: string): Promise<Cu
  * odpowiedzi/wariantów/`focus`/celu tworzy nową `skill_version` (predecessor +
  * revision_number+1); zmiana wyłącznie polecenia zachowuje klucz. Nowe ćwiczenia
  * (bez `id`) dostają nowy learning_item i skill_version. Usunięte znikają wraz
- * z powiązaniami. `target_key` z `computeTargetKey(answer, answerLocale)`.
+ * z powiązaniami. `target_key` z `lessonExerciseTargetKey` (domyślnie `computeTargetKey(answer, answerLocale)`).
  */
 async function applyLessonExercisesEdit(
   tx: Tx,
@@ -526,7 +529,7 @@ async function applyLessonExercisesEdit(
     const tempPosition = TEMP_POSITION_OFFSET + position;
     const draft = toExerciseDraft(ex as unknown);
     const payload = buildLessonPayload(draft, subject);
-    const targetKey = computeTargetKey(draft.answer, subject.answerLocale);
+    const targetKey = lessonExerciseTargetKey(subject, draft);
 
     if (ex.id) {
       const existing = byItemId.get(ex.id)!;
