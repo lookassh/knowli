@@ -86,8 +86,14 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.objectivesRules).toContain("'words'");
     expect(prompts.objectivesRules).toContain("'frame'");
     // Prompt mówi, co odrzuca walidacja słownikowa (review Task 5).
-    expect(prompts.generationRole).toContain("Never use people's names, numbers or any other word that is not in the material");
+    expect(prompts.generationRole).toContain("Never use people's names, or numbers and other words that are not in the material");
     expect(prompts.generationRole).toContain("closed types have exactly one correct option");
+    // focus tłumaczenia to jeden ciągły fragment odpowiedzi (inaczej walidacja ogólna odrzuca ćwiczenie).
+    expect(prompts.fieldRules).toContain("focus is ONE contiguous run of the answer's words");
+    expect(prompts.fieldRules).toContain("never ['wearing', 'green']");
+    // Pola v3 są zawsze null; walidacja ogólna odrzuca ćwiczenie z niezamówionym cytatem.
+    expect(prompts.fieldRules).toContain("sourceRefs are ALWAYS null");
+    expect(prompts.typeRules?.lesson_cloze).toContain("appears nowhere else in the text");
     expect(prompts.fieldRules).toContain("never only function words (articles, pronouns, be/do/can, prepositions such as in/on/at, this/that, question words)");
     expect(prompts.gradingRole).toContain("at most 'almost'");
     expect(prompts.almostDefinition).toContain("errorCategory null");

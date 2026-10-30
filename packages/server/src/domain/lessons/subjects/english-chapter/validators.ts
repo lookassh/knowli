@@ -111,6 +111,31 @@ function checkedElements(ex: LessonExerciseDraft): readonly string[] {
 /** Typy, w których wariant odpowiedzi spoza materiału jest usuwany, a ćwiczenie zostaje. */
 const VARIANT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>(["lesson_gap", "lesson_open_answer"]);
 
+/**
+ * Pola v3 (przedmioty szkolne), których przedmiot nie żąda: prompt każe zwracać
+ * dla nich null, ale prawdziwy model potrafi wypełnić je dla całej partii
+ * (próba na prawdziwym modelu: cytaty `sourceRefs` w jednej z czterech partii),
+ * a walidacja ogólna odrzuca takie ćwiczenie w całości jako „pole v3
+ * niedozwolone”. To niepożądany dodatek modelu, nie dane rodzica, więc na
+ * świeżym wyjściu usuwamy go zamiast tracić dobre ćwiczenie.
+ */
+const UNSOLICITED_V3_FIELDS = [
+  "questionType",
+  "requiredElements",
+  "supplementaryElements",
+  "commonErrors",
+  "expectedForm",
+  "familyId",
+  "sourceRefs",
+] as const;
+
+function withoutUnsolicitedV3Fields(draft: LessonExerciseDraft): LessonExerciseDraft {
+  if (UNSOLICITED_V3_FIELDS.every((field) => draft[field] === undefined)) return draft;
+  const copy: Partial<Record<keyof LessonExerciseDraft, unknown>> = { ...draft };
+  for (const field of UNSOLICITED_V3_FIELDS) delete copy[field];
+  return copy as unknown as LessonExerciseDraft;
+}
+
 /** Powód odrzucenia dla rodzica, przycięty do `MAX_REJECTION_REASON_LENGTH` znaków. */
 function rejectionReason(failure: Extract<ElementCheck, { ok: false }>): string {
   const prefix = failure.noContentWord === true ? "brak słowa treści: " : "słowo spoza materiału: ";
@@ -146,12 +171,13 @@ export function refineChapterPool(
       rejected.push({ exercise: draft, reason: rejectionReason(failure) });
       continue;
     }
-    if (!VARIANT_TYPES.has(draft.exerciseType)) {
-      kept.push(draft);
+    const clean = withoutUnsolicitedV3Fields(draft);
+    if (!VARIANT_TYPES.has(clean.exerciseType)) {
+      kept.push(clean);
       continue;
     }
-    const variants = draft.acceptedAnswers.filter((variant) => checkElement(variant, lexicon).ok);
-    kept.push(variants.length === draft.acceptedAnswers.length ? draft : { ...draft, acceptedAnswers: variants });
+    const variants = clean.acceptedAnswers.filter((variant) => checkElement(variant, lexicon).ok);
+    kept.push(variants.length === clean.acceptedAnswers.length ? clean : { ...clean, acceptedAnswers: variants });
   }
   return { kept, rejected };
 }

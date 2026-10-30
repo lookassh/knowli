@@ -15,7 +15,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "What's the weather like? It's ...). Build every exercise ONLY from the English words, phrases and frames of that " +
     "material, plus basic function words (I, you, he, she, my, a, the, is, are, do, can, and, in, on, this, what, today, very). " +
     "Never introduce English vocabulary that is not in the material: exercises with other words are discarded. " +
-    "Never use people's names, numbers or any other word that is not in the material (e.g. there, have got, let's, look, " +
+    "Never use people's names, or numbers and other words that are not in the material (e.g. there, have got, let's, look, " +
     "unless the material has them); use I, you, he, she, we or they instead of a name. " +
     "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one objective; closed types have " +
     "exactly one correct option.",
@@ -48,10 +48,14 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "(3 to 10 items, no two items with the same text), and the sentence has exactly one correct word order — no parts " +
     "that could move, such as today at the start or at the end. " +
     "lesson_open_answer: prompt is a short Polish sentence to translate; answer is its English translation using only " +
-    "chapter words; acceptedAnswers are other correct translations built from chapter words; focus is the checked word " +
-    "or phrase copied from the answer. Never repeat the answer or an accepted answer in the prompt. " +
+    "chapter words; acceptedAnswers are other correct translations built from chapter words. focus is ONE contiguous " +
+    "run of the answer's words, copied in order, never skipping a word in between: for the answer 'I'm wearing a green hat.' " +
+    "use ['green', 'hat'] or ['wearing', 'a', 'green', 'hat'], never ['wearing', 'green'] — pick the run that holds the " +
+    "checked word or the frame part. Never repeat the answer or an accepted answer in the prompt. " +
     "Expanded contractions are NOT new acceptedAnswers variants: I'm equals I am after normalization. " +
-    "Answers and accepted answers have at most 120 characters.",
+    "Answers and accepted answers have at most 120 characters. " +
+    "In this subject the fields questionType, requiredElements, supplementaryElements, commonErrors, expectedForm, " +
+    "familyId and sourceRefs are ALWAYS null for every exercise — never quote the material in sourceRefs.",
   // Semantyka typów z własną gałęzią schematu (pola i limity opisuje adapter).
   typeRules: {
     lesson_match:
@@ -63,7 +67,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     lesson_cloze:
       "Use 2 to 4 short sentences built on the chapter's frames. Gap words are content words of this objective, never " +
       "only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). extraWords are " +
-      "other chapter words of the same kind.",
+      "other chapter words of the same kind. A word of the bank (a gap word or an extra word) appears nowhere else in " +
+      "the text: if the gap word is 'wearing', no other sentence of the text may contain 'wearing'.",
   },
   objectivesRules:
     "Split the chapter into 3 to 5 objectives, so that every objective comes up within two or three short sessions. " +

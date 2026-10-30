@@ -208,6 +208,29 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     expect(rejected.rejected.map((r) => r.reason)).toEqual(["słowo spoza materiału: foggy"]);
   });
 
+  it("usuwa niezamówione pola v3 z modelu (cytaty) i zostawia ćwiczenie, także z wariantami", () => {
+    const withRefs = (ex: LessonExerciseDraft): LessonExerciseDraft => ({
+      ...ex,
+      sourceRefs: [{ quote: "It's raining." }],
+      questionType: "fact",
+      familyId: "weather",
+      commonErrors: ["x"],
+    });
+    const pool = [withRefs(choice()), withRefs(openAnswer({ acceptedAnswers: ["I'm wearing my coat.", "I'm wearing a jacket."] }))];
+    const result = refineChapterPool(pool, { material: MATERIAL });
+    expect(result.rejected).toEqual([]);
+    expect(result.kept).toEqual([choice(), openAnswer({ acceptedAnswers: ["I'm wearing my coat."] })]);
+    for (const ex of result.kept) {
+      for (const field of ["sourceRefs", "questionType", "familyId", "commonErrors", "requiredElements", "expectedForm"]) {
+        expect(ex, field).not.toHaveProperty(field);
+      }
+    }
+    // Wyczyszczone ćwiczenie przechodzi walidację ogólną (bez „pole v3 niedozwolone”).
+    expect(validateLessonExercise(result.kept[0]!, englishChapterSubject, TOPIC)).toEqual([]);
+    // Z pola v3 przed czyszczeniem walidacja ogólna odrzuciłaby całość.
+    expect(validateLessonExercise(pool[0]!, englishChapterSubject, TOPIC).some((error) => error.startsWith("sourceRefs:"))).toBe(true);
+  });
+
   it("zostawia ćwiczenia zgodne z materiałem bez zmian", () => {
     const pool = [choice(), gap(), order(), openAnswer()];
     const result = refineChapterPool(pool, { material: MATERIAL });
