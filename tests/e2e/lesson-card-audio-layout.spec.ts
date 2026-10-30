@@ -48,7 +48,7 @@ function cardTask(withAudio: boolean): TaskDto {
   };
 }
 
-function fixture(tasks: TaskDto[]): KidUiFixture {
+function fixture(tasks: TaskDto[], audioReady = true): KidUiFixture {
   return {
     profiles: [{ childId, displayName: "Ola", avatarKey: "owl", recordingMode: "hold" }],
     decks: [{ deckId, title: "Pająki", itemCount: 6, independentlyRecalledCount: 0, testDate: null,
@@ -57,7 +57,9 @@ function fixture(tasks: TaskDto[]): KidUiFixture {
       policyId: "lesson-default", microphoneEnabled: false, state: "active", taskBudget: 3, tasksIssued: 1,
       assessedTasksIssued: 0, startedAt: "2026-10-30T10:00:00.000Z", resumed: false },
     tasks,
-    uiAudio: { ready: true, assets: {} },
+    // Gotowy katalog = fixture odpowiada na /media prawidłowym WAV-em; inaczej
+    // obrazkiem SVG, którego odtwarzacz nie zdekoduje (błąd odtwarzania).
+    uiAudio: { ready: audioReady, assets: {} },
   };
 }
 
@@ -143,4 +145,18 @@ test("longest card keeps listen and next reachable at 320x480", async ({ page },
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath("card-audio-320x480.png") });
+});
+
+test("card playback error names the card and keeps next reachable", async ({ page }) => {
+  await open(page, fixture([cardTask(true)], false));
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.getByTestId("kid-question-audio").click();
+  const notice = page.getByTestId("kid-question-audio-error");
+  await expect(notice).toContainText("Nie udało się odtworzyć karty");
+  await expect(page.getByTestId("kid-question-audio-retry")).toHaveText("Odtwórz kartę");
+  const next = page.getByTestId("kid-lesson-next");
+  await next.scrollIntoViewIfNeeded();
+  const bounds = (await next.boundingBox())!;
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(481);
+  expect(bounds.height).toBeGreaterThanOrEqual(54);
 });
