@@ -2510,6 +2510,22 @@ describe("LearningSessionController — automatyczna próba mowy z VAD (quick 26
     harness.controller.teardown();
   });
 
+  it("autostart czekający na uprawnienie nie rusza po otwarciu i zamknięciu panelu „Koniec”", async () => {
+    const harness = await startAtTask(baseState(), speechTask());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    harness.media.getMicrophonePermission = async () => { await gate; return "granted"; };
+    const autoCapture = harness.controller.autoCaptureSpeech();
+    harness.controller.holdForEndConfirm();
+    harness.controller.releaseEndConfirm();
+    release();
+    await autoCapture;
+    expect(harness.recorder.started).toBe(0);
+    expect(harness.media.beeps).toEqual([]);
+    expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle" });
+    harness.controller.teardown();
+  });
+
   it("potwierdzenie „Koniec” blokuje autostart do zamknięcia panelu", async () => {
     const harness = await startAtTask(baseState(), speechTask());
     harness.controller.holdForEndConfirm();
