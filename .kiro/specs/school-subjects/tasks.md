@@ -271,17 +271,17 @@ Zależy od etapów 1–2 (pula, edytor, silnik lekcji); niezależny od 3–6.
 Zależy od etapów 1–2 i 7 (typy ćwiczeń); niezależny od 3–6.
 
 - [x] Kontrakt i decyzje (design §11, akceptacja właściciela 2026-10-30).
-- [ ] TTS przez OpenRouter: `UMIEM_TTS_BASE_URL`, `UMIEM_TTS_API_KEY`, model
+- [x] TTS przez OpenRouter: `UMIEM_TTS_BASE_URL`, `UMIEM_TTS_API_KEY`, model
       z `UMIEM_TTS_MODEL` w adapterze; `.env.example`.
-- [ ] Domena: `questionReadText` per typ (tabela 11.1, luka jako „luka”,
+- [x] Domena: `questionReadText` per typ (tabela 11.1, luka jako „luka”,
       bez tekstów tasowanych i wskazówki); flaga `ttsForPrompts`.
-- [ ] Media: rola `prompt_audio` (migracja `0027`), uzgadnianie przy edycji
+- [x] Media: rola `prompt_audio` (migracja `0027`), uzgadnianie przy edycji
       szkicu, publikacja bez czekania na nagrania pytań.
-- [ ] Silnik: `questionAudioAssetId` przy wydaniu zadania (gotowe nagranie,
+- [x] Silnik: `questionAudioAssetId` przy wydaniu zadania (gotowe nagranie,
       także w kartkówce); kontrakty `TaskPromptSchema`.
-- [ ] Kid UI: przycisk „Posłuchaj pytania”, zatrzymanie przy odpowiedzi,
+- [x] Kid UI: przycisk „Posłuchaj pytania”, zatrzymanie przy odpowiedzi,
       zmianie zadania i nagrywaniu; testy komponentu i geometrii.
-- [ ] Testy integracyjne: edycja → nagranie → publikacja → zadanie z/bez
+- [x] Testy integracyjne: edycja → nagranie → publikacja → zadanie z/bez
       gotowego nagrania, kartkówka, brak zdarzenia ujawnienia.
 - [ ] Dokumentacja (SPEC, architektura), przegląd API → MCP → skill; pełny
       przebieg bramek i niezależny review przed PR.

@@ -1396,3 +1396,29 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
 8. **Nagrania przez OpenRouter** (decyzja właściciela 2026-10-30) — jedna
    konfiguracja TTS z `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`/`UMIEM_TTS_MODEL`
    (11.2). Obrazy nadal wymagają `OPENAI_API_KEY`.
+
+### 11.7. Korekty przy implementacji (2026-10-30)
+
+- **Karty nauki (`lesson_card`) bez nagrania w tym etapie.** Karty należą do
+  zagadnienia w `lesson_context` wersji, a nie do rewizji ćwiczenia, więc nie
+  mają `revision_assets`; nagranie kart wymaga osobnego powiązania zasobu
+  z wersją — do decyzji po pilotażu.
+- **Polecenie w nagraniu tylko z payloadu** (albo stałe polecenie typu dla
+  par, grup i słów kluczowych). Zastępczy tytuł celu, który ekran pokazuje
+  przy braku polecenia, nie trafia do nagrania — „Ułóż” bez własnego polecenia
+  nie ma nagrania. Słowa kluczowe czytają samo polecenie (pytanie pochodzi
+  z zaplanowanej odpowiedzi otwartej, nie z payloadu).
+- **Przycisk w gnieździe odsłuchu polecenia** (`guidance`, za tekstem
+  instrukcji, obrysowany głośnik), nie z przodu wiersza — przednie gniazdo
+  zostaje dla odsłuchu odpowiedzi wzorcowej, a widoki ćwiczeń nie wymagają
+  zmian. Zniknie na czas feedbacku (jak odsłuch polecenia).
+- **Nagranie gotowe po publikacji** liczy się przy kolejnym wydaniu zadania:
+  `loadExercises` bierze zasób `prompt_audio` powiązany z rewizją, gdy
+  `media_assets.state='ready'`, niezależnie od stanu decyzji w
+  `revision_assets` (publikacja nie czeka na nagranie). Zadanie już wydane ma
+  niezmienny prompt.
+- **Worker nie unieważnia nagrań pytań** przedmiotu bez `ttsForAnswers`:
+  wyłączenie zbędnego TTS lekcji sprawdza flagę właściwą dla roli
+  (`prompt_audio` → `ttsForPrompts`).
+- DTO rodzica (szkic lekcji i zestawu słówek) pomija `prompt_audio` — nie jest
+  decyzją rodzica ani warunkiem publikacji.

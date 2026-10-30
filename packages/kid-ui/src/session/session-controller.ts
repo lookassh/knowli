@@ -181,6 +181,12 @@ function audioAssetOf(task: TaskDto): string | null {
   return null;
 }
 
+/** Gotowe nagranie „Posłuchaj pytania” zadania lekcji, jeśli serwer je dołączył. */
+export function questionAudioOf(task: TaskDto): string | null {
+  const prompt = task.prompt;
+  return "questionAudioAssetId" in prompt && typeof prompt.questionAudioAssetId === "string" ? prompt.questionAudioAssetId : null;
+}
+
 const AUDIO_DISCLOSURE_EXERCISES = new Set(["recall", "spelling", "letter_completion", "speech", "picture_speech", "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 
 /**
@@ -1406,6 +1412,34 @@ export class LearningSessionController {
       if (isNetworkError(error)) {
         this.#handleFailure(error);
       }
+    }
+  }
+
+  /**
+   * „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania,
+   * które dziecko już widzi — bez zgody serwera, zdarzenia i ekspozycji.
+   * Rzuca przy błędzie odtwarzania (przycisk pokazuje komunikat); awaria sieci
+   * idzie zwykłą ścieżką offline.
+   */
+  async playQuestionAudio(): Promise<void> {
+    if (this.#autoCaptureActive) this.cancelRecording();
+    const screen = this.#learning();
+    if (!screen?.task || screen.offline || screen.busy || screen.recordingPhase !== "idle" || screen.processing) return;
+    const assetId = questionAudioOf(screen.task);
+    if (assetId === null) return;
+    const epoch = this.#epoch;
+    const taskId = screen.task.taskId;
+    const playbackGeneration = this.#beginPlayback();
+    try {
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
+    } catch (error) {
+      const current = this.#learning();
+      if (playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch || current?.task?.taskId !== taskId) return;
+      if (isNetworkError(error)) {
+        this.#handleFailure(error);
+        return;
+      }
+      throw error;
     }
   }
 

@@ -2253,6 +2253,19 @@ describe("LearningSessionController", () => {
     expect(choiceHarness.media.playUrls).toEqual([]);
   });
 
+  it("„Posłuchaj pytania” odtwarza nagranie bez zgody serwera i nie gra samo (design szkoły §11.3)", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), choice);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.media.playUrls).toEqual([]);
+    await harness.controller.playQuestionAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question"]);
+    expect(harness.state.disclosures).toHaveLength(0);
+    // „Posłuchaj” odpowiedzi nie dotyczy nagrania pytania
+    await harness.controller.playTaskAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question"]);
+  });
+
   it("feedback wyboru pamięta wybraną opcję także przez awarię sieci i retry", async () => {
     const chosen = "88888888-8888-8888-8888-888888888888";
     const listening = taskDto("t1", {
