@@ -1296,11 +1296,11 @@ zdradzałoby rozwiązanie albo rozjeżdżało się z ekranem.
 
 | Typ | Treść nagrania |
 | --- | --- |
-| `lesson_card` | tytuł karty, treść (≤1200 znaków), przykłady |
+| `lesson_card` | **brak** w tym etapie — karty nie są rewizjami ćwiczeń (11.7) |
 | `lesson_choice` | polecenie + pytanie (`stem`); **bez opcji** |
 | `lesson_gap` | polecenie + zdanie z luką; luka czytana jako „luka” |
 | `lesson_open_answer` | polecenie + pytanie |
-| `lesson_keywords` | polecenie + pytanie; **bez pojęć do wyboru** |
+| `lesson_keywords` | samo polecenie (z payloadu albo stałe polecenie typu); **bez pytania i pojęć do wyboru** — pytanie pochodzi z zaplanowanej odpowiedzi otwartej (11.7) |
 | `lesson_order` | samo polecenie |
 | `lesson_match` | samo polecenie |
 | `lesson_group` | polecenie + nazwy grup (kolejność materiału, nietasowana) |
@@ -1327,7 +1327,8 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   Audio Speech). Istniejący adapter `createOpenAiTtsProvider` dostaje adres
   i klucz z nowych zmiennych `UMIEM_TTS_BASE_URL` (poza test/development
   wymaga `https://`, jak `UMIEM_LLM_BASE_URL`) i `UMIEM_TTS_API_KEY` (fallback
-  `OPENAI_API_KEY`), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
+  `OPENAI_API_KEY` wyłącznie bez własnego BASE_URL — własny endpoint wymaga
+  własnego klucza), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
   i zawsze wysyłał model domyślny). Przykład: `UMIEM_TTS_PROVIDER=openrouter`,
   `UMIEM_TTS_MODEL=microsoft/mai-voice-2.1-flash`,
   `UMIEM_TTS_VOICE=pl-PL-Harper:MAI-Voice-2.1-Flash` (głos z `supported_voices`

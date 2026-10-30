@@ -23,6 +23,20 @@ function secureBaseUrl(env: Record<string, string | undefined>, name: "UMIEM_LLM
   return baseUrl;
 }
 
+/**
+ * Endpoint i klucz TTS. Własny `UMIEM_TTS_BASE_URL` wymaga własnego
+ * `UMIEM_TTS_API_KEY` — klucz OpenAI nigdy nie trafia do innego hosta.
+ * Bez BASE_URL: api.openai.com z `UMIEM_TTS_API_KEY` albo `OPENAI_API_KEY`.
+ */
+function ttsEndpointFromEnv(env: Record<string, string | undefined>, openAiKey: string): { apiKey: string; baseUrl?: string } {
+  const baseUrl = secureBaseUrl(env, "UMIEM_TTS_BASE_URL");
+  const ownKey = nonEmpty(env.UMIEM_TTS_API_KEY);
+  if (baseUrl !== undefined && ownKey === undefined) {
+    throw new Error("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+  }
+  return { apiKey: ownKey ?? openAiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
+}
+
 /** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */
 export function imageProviderFromEnv(env: Record<string, string | undefined>) {
   if (env.UMIEM_FAKE_PROVIDERS === "1") return fakeGenerationDeps(createLocalMediaStore(env.MEDIA_ROOT ?? "./data/media")).image;
@@ -76,11 +90,7 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
     }),
     // TTS (np. OpenRouter /audio/speech): model z UMIEM_TTS_MODEL, tym samym,
     // który wchodzi do fingerprintu nagrań (mediaSettingsFromEnv).
-    tts: createOpenAiTtsProvider({
-      apiKey: nonEmpty(env.UMIEM_TTS_API_KEY) ?? apiKey,
-      model: nonEmpty(env.UMIEM_TTS_MODEL),
-      baseUrl: secureBaseUrl(env, "UMIEM_TTS_BASE_URL"),
-    }),
+    tts: createOpenAiTtsProvider({ ...ttsEndpointFromEnv(env, apiKey), model: nonEmpty(env.UMIEM_TTS_MODEL) }),
     image: createOpenAiImageProvider({ apiKey }),
     mediaStore,
     lessonExecution,

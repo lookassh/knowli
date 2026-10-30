@@ -140,10 +140,11 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; failPlayback: boolean; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
+    failPlayback: failPlaybackBeforeStart,
     beeps: [] as string[],
     preloadedImages: [] as string[],
     async preloadImage(url: string) {
@@ -177,7 +178,7 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
     player: {
       async play(url: string, onStarted?: (durationMs: number | null) => void) {
         media.playUrls.push(url);
-        if (failPlaybackBeforeStart) throw new Error("autoplay blocked");
+        if (media.failPlayback) throw new Error("autoplay blocked");
         onStarted?.(playbackDurationMs);
         await playGate;
       },
@@ -2271,6 +2272,10 @@ describe("LearningSessionController", () => {
     const harness = await startAtTask(baseState(), choice, { failPlaybackBeforeStart: true });
     await harness.controller.playQuestionAudio();
     expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: true, offline: false });
+    harness.media.failPlayback = false;
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: false });
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question", "https://media.test/asset-question"]);
   });
 
   it("„Nie pamiętam” zatrzymuje trwający odsłuch pytania", async () => {
