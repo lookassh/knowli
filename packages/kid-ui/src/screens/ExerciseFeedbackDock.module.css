@@ -55,9 +55,12 @@
   gap: 10px;
 }
 
+/* Short compact content: badge, text and speaker share one centre line, so
+   the speaker lines up with the result and the action beside it. */
 .compact .scroll {
   flex: 1;
   min-width: 0;
+  align-items: center;
 }
 
 .compact .content :global(.kid-answer-feedback) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
-import { KidIcon } from "../../components/KidIcon";
+import { ListenButton } from "../../components/ListenButton";
 import { ActionButton } from "../../components/ActionButton";
 import { AnswerField } from "../../components/AnswerField";
 import { ExerciseFrame } from "../ExerciseFrame";
@@ -72,20 +72,12 @@ export function LessonGapView({ task, busy, dock, handlers }: ExerciseProps) {
             </p>
           )}
           {hasAudio && (
-            <ActionButton
-              type="button"
-              className="kid-play"
-              priority="secondary"
-              size="sm"
-              fullWidth={false}
-              style={{ minHeight: 48 }}
+            <ListenButton
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}
               aria-label={messages.kid.listen}
-            >
-              <KidIcon name="volume" />
-            </ActionButton>
+            />
           )}
         </form>
       )}

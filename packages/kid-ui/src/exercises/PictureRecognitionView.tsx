@@ -1,7 +1,6 @@
 import { messages } from "@learning/contracts";
-import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { AnswerGrid } from "../components/AnswerGrid";
-import { ActionButton } from "../components/ActionButton";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
 import { useChoiceKeyboard } from "./useChoiceKeyboard";
@@ -51,17 +50,12 @@ export function PictureRecognitionView({ task, busy, mediaUrl, optionOutcomes, d
                 ? feedbackAudio
                 : null;
               return audio === null ? null : (
-                    <ActionButton
-                      fullWidth={false}
-                      size="sm"
-                      type="button"
-                      className="kid-audio-round kid-option-audio"
+                    <ListenButton
+                      className="kid-option-audio"
                       data-testid="kid-option-audio"
                       aria-label={messages.kid.listenCorrectWord}
                       onClick={audio.onPlay}
-                    >
-                      <KidIcon name="volume" />
-                    </ActionButton>
+                    />
                   );
             }}
           />

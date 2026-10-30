@@ -112,7 +112,8 @@ describe("vocabulary views preserve exercise behavior", () => {
     expect(picture.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId("kid-exercise-actions").contains(play)).toBe(false);
     expect(play.getAttribute("data-variant")).toBe("tonal");
-    expect(play.className).toContain("kid-audio-round");
+    expect(play.className).toContain("kid-listen");
+    expect(play.getAttribute("data-listen-size")).toBe("lg");
     expect(play.hasAttribute("disabled")).toBe(false);
     fireEvent.click(play);
     expect(idle.handlers.onPlay).toHaveBeenCalledOnce();

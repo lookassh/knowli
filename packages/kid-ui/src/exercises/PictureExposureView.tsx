@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
 import type { ExerciseProps } from "./types";
 import { shouldIgnoreKeyboardShortcut } from "./useChoiceKeyboard";
@@ -41,17 +42,13 @@ export function PictureExposureView({ task, busy, mediaUrl, dock, handlers }: Ex
       content={(
         <div className="kid-exposure-content">
           <MeaningVisualView visual={task.prompt.visual} mediaUrl={mediaUrl} />
-          <ActionButton
-            fullWidth={false}
-            type="button"
-            className="kid-play-big"
+          <ListenButton
+            size="lg"
             data-testid="kid-play"
             disabled={busy || !task.prompt.audioAssetId}
             onClick={handlers.onPlay}
             aria-label={messages.kid.listen}
-          >
-            <KidIcon name="volume" />
-          </ActionButton>
+          />
         </div>
       )}
       actions={(

@@ -40,8 +40,8 @@ test("round audio buttons keep a readable icon on their resting background", asy
     await expect(control).toBeVisible();
     await expectReadable(control);
   }
-  /* The round audio button keeps its 64px circle and soft resting surface,
-     not the filled primary pill. */
+  /* The word's ListenButton (lg) keeps its 64px square and tonal resting
+     surface, not the filled primary pill. */
   const play = page.getByTestId("kid-play");
   const box = await play.boundingBox();
   expect(box).not.toBeNull();
@@ -53,8 +53,8 @@ test("round audio buttons keep a readable icon on their resting background", asy
 });
 
 test("round audio button under the picture stays tonal", async ({ page }, testInfo) => {
-  /* PictureRecallView renders the round play as an IconActionButton under the
-     picture; .kid-audio-round must keep the tonal surface regardless of stylesheet order. */
+  /* PictureRecallView renders the lg ListenButton under the picture; it must
+     keep the tonal surface regardless of stylesheet order. */
   const fixture = pictureVocabularyFixture();
   const listening = fixture.tasks[1]!;
   fixture.tasks = [{ ...listening, exerciseType: "recall", prompt: { kind: "picture_recall", visual: { kind: "color", color: "#ff0000" } } }];
@@ -64,7 +64,7 @@ test("round audio button under the picture stays tonal", async ({ page }, testIn
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
-  const play = page.locator(".kid-audio-round");
+  const play = page.locator(".kid-listen");
   await expect(play).toBeVisible();
   await expect(play).toHaveAttribute("data-variant", "tonal");
   const [tonal, onTonal] = await Promise.all([
