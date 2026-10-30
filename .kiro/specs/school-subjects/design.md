@@ -1661,6 +1661,8 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   powstają już ze szkicu po generacji, przed przeglądem rodzica (zasada
   „TTS przy przygotowaniu materiału”); tekst nie zawiera danych dziecka.
   Wstrzymanie TTS do zatwierdzenia byłoby zmianą dla obu rodzajów nagrań.
+  **Decyzja właściciela (2026-10-30): zostaje jak jest** — nagrania kart
+  i pytań powstają ze szkicu, przed zatwierdzeniem.
 - Review przed PR: wykrywanie wzorów rozszerzone poza listę z 12.1 o ułamki
   i kreskę ułamkową Unicode (`½`, `3⁄4`), `^` przy literze (`x^2`) oraz `*`,
   `<`, `>` i `x` między liczbami (`2 x 3`); `+` i `-` nie blokują (lektor
