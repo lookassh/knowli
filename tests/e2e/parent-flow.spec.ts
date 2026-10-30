@@ -367,9 +367,10 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await expect(page.getByTestId("item-target-3")).toHaveValue("thursday");
   await expect(page.getByTestId("item-audio-state-3")).toContainText("generowanie");
 
-  // Publikacja zablokowana, dopóki obowiązkowe TTS nie jest gotowe.
+  // Publikacja zablokowana, dopóki obowiązkowe TTS nie jest gotowe; rodzic
+  // wie, że media się przygotowują i wystarczy opublikować ponownie (#106).
   await page.getByTestId("publish-deck").click();
-  await expect(page.getByTestId("api-error")).toContainText(messages.errors.validation);
+  await expect(page.getByTestId("api-error")).toContainText(messages.decks.publishMediaPending);
 
   // Nowe audio gotowe → odtworzenie nowego zasobu.
   await expect(page.getByTestId("item-audio-state-3")).toContainText("gotowe", { timeout: 60_000 });
