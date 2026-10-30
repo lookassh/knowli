@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -100,7 +101,12 @@ async function assertBuildPresent(): Promise<void> {
   }
 }
 
-async function waitForHttp(url: string, timeoutMs: number, server: ReturnType<typeof spawn>): Promise<void> {
+async function waitForHttp(
+  url: string,
+  timeoutMs: number,
+  server: ReturnType<typeof spawn>,
+  isReady: (response: Response) => boolean,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // Martwy serwer (np. EADDRINUSE) nie może „wstać” odpowiedzią cudzego procesu.
@@ -109,7 +115,7 @@ async function waitForHttp(url: string, timeoutMs: number, server: ReturnType<ty
     }
     try {
       const response = await fetch(url);
-      if (response.status < 500) return;
+      if (isReady(response)) return;
     } catch {
       // serwer jeszcze się podnosi
     }
@@ -202,6 +208,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     return fail(error instanceof ContainerNameTakenError ? containerInUseError(error.owner) : error);
   }
   const databaseUrl = database.url;
+  const readyToken = randomUUID();
 
   try {
     await buildPromise;
@@ -220,6 +227,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       ...process.env,
       DATABASE_URL: databaseUrl,
       MEDIA_ROOT: mediaRoot,
+      UMIEM_E2E_READY_TOKEN: readyToken,
       UMIEM_FAKE_PROVIDERS: "1",
       UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",
       UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "3000",
@@ -250,7 +258,12 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     );
     cleanup.push(() => killTree(worker));
 
-    await waitForHttp(`${BASE_URL}/api/v1/parent/login`, 120_000, web);
+    // Gotowość tylko z tokenem tego przebiegu: port mógł zająć serwer
+    // równoległego przebiegu między kontrolą portów a startem `next`.
+    await waitForHttp(`${BASE_URL}/api/v1/health`, 120_000, web, (response) =>
+      response.status === 200 && response.headers.get("x-umiem-e2e-ready") === readyToken);
+    // Rozgrzewa trasę logowania (w trybie dev kompilowaną na żądanie).
+    await waitForHttp(`${BASE_URL}/api/v1/parent/login`, 120_000, web, (response) => response.status < 500);
     return async () => {
       for (const fn of cleanup.reverse()) await fn();
     };

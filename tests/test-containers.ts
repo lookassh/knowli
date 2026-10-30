@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readlinkSync } from "node:fs";
 import { hostname } from "node:os";
 import { promisify } from "node:util";
 import { INTEGRATION_CONTAINER_PREFIX } from "./test-run-config";
@@ -11,6 +12,9 @@ const exec = promisify(execFile);
 // usuwa wyłącznie kontenery, których właściciel już nie żyje.
 export const OWNER_PID_LABEL = "knowli.test-owner-pid";
 export const OWNER_HOST_LABEL = "knowli.test-owner-host";
+// Przestrzeń pid właściciela: WSL może mieć tę samą nazwę hosta co Windows,
+// a jego pid nic nie znaczy dla `process.kill` po stronie Windows (i odwrotnie).
+export const OWNER_PID_NAMESPACE_LABEL = "knowli.test-owner-pidns";
 
 // Kontener, którego właściciela nie da się sprawdzić (inny host, brak pid),
 // uznajemy za osierocony dopiero po dobie.
@@ -27,6 +31,7 @@ export interface TestContainer {
 
 export interface OwnerContext {
   host: string;
+  pidNamespace: string;
   now: number;
   isProcessAlive: (pid: number) => boolean;
 }
@@ -51,9 +56,13 @@ export function classifyContainer(container: TestContainer, context: OwnerContex
   if (!isTestContainer) return "unknown";
   const pid = ownerPid(container);
   const host = container.labels[OWNER_HOST_LABEL];
-  // Pid z innego hosta (np. WSL obok Windows na wspólnym Docker Desktop) nic
-  // nie mówi o procesach tutaj — taki kontener rozstrzyga tylko wiek.
-  if (pid !== null && (host === undefined || host === context.host)) {
+  const pidNamespace = container.labels[OWNER_PID_NAMESPACE_LABEL];
+  // Pid z innego hosta albo innej przestrzeni pid (np. WSL obok Windows na
+  // wspólnym Docker Desktop, także pod tą samą nazwą hosta) nic nie mówi
+  // o procesach tutaj — taki kontener rozstrzyga tylko wiek.
+  const sameHost = host === undefined || host === context.host;
+  const samePidNamespace = pidNamespace === undefined || pidNamespace === context.pidNamespace;
+  if (pid !== null && sameHost && samePidNamespace) {
     // Żywy właściciel wygrywa z wiekiem: sesja `playwright --ui` może trwać
     // dłużej niż doba. Pid ponownie przydzielony innemu procesowi zostawia
     // co najwyżej osierocony kontener do śmierci tamtego procesu.
@@ -70,7 +79,8 @@ export function classifyContainer(container: TestContainer, context: OwnerContex
  */
 export function isReservedByAnotherRun(container: TestContainer, context: OwnerContext): boolean {
   const ownership = classifyContainer(container, context);
-  return ownership === "live" || (ownership === "unknown" && OWNER_HOST_LABEL in container.labels);
+  const labelledOwner = OWNER_HOST_LABEL in container.labels || OWNER_PID_NAMESPACE_LABEL in container.labels;
+  return ownership === "live" || (ownership === "unknown" && labelledOwner);
 }
 
 /** `docker run --name` trafił na istniejący kontener o tej nazwie. */
@@ -93,17 +103,38 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Identyfikator przestrzeni pid bieżącego procesu: na Linuksie (w tym WSL
+ * i kontenery) i-węzeł `/proc/self/ns/pid`, na innych systemach platforma.
+ */
+export function currentPidNamespace(): string {
+  if (process.platform !== "linux") return process.platform;
+  try {
+    return `linux:${readlinkSync("/proc/self/ns/pid")}`;
+  } catch {
+    return "linux";
+  }
+}
+
 export function currentOwnerContext(): OwnerContext {
-  return { host: hostname(), now: Date.now(), isProcessAlive };
+  return { host: hostname(), pidNamespace: currentPidNamespace(), now: Date.now(), isProcessAlive };
 }
 
 export function isOwnedByThisProcess(container: TestContainer): boolean {
   return container.labels[OWNER_PID_LABEL] === String(process.pid)
-    && container.labels[OWNER_HOST_LABEL] === hostname();
+    && container.labels[OWNER_HOST_LABEL] === hostname()
+    && container.labels[OWNER_PID_NAMESPACE_LABEL] === currentPidNamespace();
 }
 
 export function ownerLabelArgs(): string[] {
-  return ["--label", `${OWNER_PID_LABEL}=${process.pid}`, "--label", `${OWNER_HOST_LABEL}=${hostname()}`];
+  return [
+    "--label",
+    `${OWNER_PID_LABEL}=${process.pid}`,
+    "--label",
+    `${OWNER_HOST_LABEL}=${hostname()}`,
+    "--label",
+    `${OWNER_PID_NAMESPACE_LABEL}=${currentPidNamespace()}`,
+  ];
 }
 
 // Docker podaje Created z nanosekundami; Date.parse gwarantuje tylko milisekundy.

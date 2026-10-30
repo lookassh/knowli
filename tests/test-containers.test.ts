@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   classifyContainer,
+  currentPidNamespace,
   ContainerNameTakenError,
   type ContainerRuntime,
   isNameConflictError,
@@ -10,6 +11,7 @@ import {
   MAX_CONTAINER_AGE_MS,
   OWNER_HOST_LABEL,
   OWNER_PID_LABEL,
+  OWNER_PID_NAMESPACE_LABEL,
   type OwnerContext,
   parseDockerTimestamp,
   parseHostPort,
@@ -21,7 +23,7 @@ import {
 
 const NOW = Date.parse("2026-10-30T12:00:00.000Z");
 const LIVE_PIDS = new Set([1111, 2222]);
-const context: OwnerContext = { host: "box", now: NOW, isProcessAlive: (pid) => LIVE_PIDS.has(pid) };
+const context: OwnerContext = { host: "box", pidNamespace: "win32", now: NOW, isProcessAlive: (pid) => LIVE_PIDS.has(pid) };
 
 function container(name: string, labels: Record<string, string> = {}, ageMs = 60_000): TestContainer {
   return { id: `id-${name}`, name, createdAt: NOW - ageMs, labels };
@@ -91,6 +93,40 @@ describe("selectStaleContainers", () => {
   });
 });
 
+describe("pid namespaces", () => {
+  // WSL i Windows na jednym Docker Desktop mogą mieć tę samą nazwę hosta.
+  const wslLabels = (pid: number) => ({
+    [OWNER_PID_LABEL]: String(pid),
+    [OWNER_HOST_LABEL]: "box",
+    [OWNER_PID_NAMESPACE_LABEL]: "linux:pid:[4026531836]",
+  });
+
+  it("does not judge a pid from another namespace under the same hostname", () => {
+    const wslRun = container("knowli-e2e", wslLabels(3333));
+    expect(classifyContainer(wslRun, context)).toBe("unknown");
+    expect(isReservedByAnotherRun(wslRun, context)).toBe(true);
+    expect(selectStaleContainers([container("knowli-it-wsl-3333", wslLabels(3333))], context)).toEqual([]);
+  });
+
+  it("frees a container from another namespace only past the age limit", () => {
+    const oldWslRun = container("knowli-it-wsl-3333", wslLabels(3333), MAX_CONTAINER_AGE_MS + 1);
+    expect(classifyContainer(oldWslRun, context)).toBe("stale");
+    expect(isReservedByAnotherRun(oldWslRun, context)).toBe(false);
+  });
+
+  it("checks pids from the same namespace as before", () => {
+    const sameNamespace = (pid: number) => container("knowli-e2e", { ...wslLabels(pid), [OWNER_PID_NAMESPACE_LABEL]: "win32" });
+    expect(classifyContainer(sameNamespace(1111), context)).toBe("live");
+    expect(classifyContainer(sameNamespace(3333), context)).toBe("stale");
+  });
+
+  it("identifies the current namespace by platform, and by the pid namespace inode on Linux", () => {
+    const namespace = currentPidNamespace();
+    if (process.platform === "linux") expect(namespace).toMatch(/^linux(:pid:\[\d+\])?$/);
+    else expect(namespace).toBe(process.platform);
+  });
+});
+
 describe("isReservedByAnotherRun", () => {
   it("blocks reuse of a container owned by a live run", () => {
     expect(isReservedByAnotherRun(owned("knowli-e2e", 1111), context)).toBe(true);
@@ -125,9 +161,11 @@ describe("isNameConflictError", () => {
 describe("isOwnedByThisProcess", () => {
   it("matches only this process's pid and host labels", () => {
     const host = hostname();
-    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid), [OWNER_HOST_LABEL]: host }))).toBe(true);
-    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid), [OWNER_HOST_LABEL]: `${host}-x` }))).toBe(false);
-    expect(isOwnedByThisProcess(container("knowli-e2e", { [OWNER_PID_LABEL]: String(process.pid + 1), [OWNER_HOST_LABEL]: host }))).toBe(false);
+    const own = { [OWNER_PID_LABEL]: String(process.pid), [OWNER_HOST_LABEL]: host, [OWNER_PID_NAMESPACE_LABEL]: currentPidNamespace() };
+    expect(isOwnedByThisProcess(container("knowli-e2e", own))).toBe(true);
+    expect(isOwnedByThisProcess(container("knowli-e2e", { ...own, [OWNER_HOST_LABEL]: `${host}-x` }))).toBe(false);
+    expect(isOwnedByThisProcess(container("knowli-e2e", { ...own, [OWNER_PID_LABEL]: String(process.pid + 1) }))).toBe(false);
+    expect(isOwnedByThisProcess(container("knowli-e2e", { ...own, [OWNER_PID_NAMESPACE_LABEL]: "linux:pid:[1]" }))).toBe(false);
     expect(isOwnedByThisProcess(container("knowli-e2e"))).toBe(false);
   });
 });
@@ -172,8 +210,8 @@ class FakeRuntime implements ContainerRuntime {
     const labels: Record<string, string> = {};
     args.forEach((arg, index) => {
       if (arg === "--label") {
-        const [key, value] = args[index + 1]!.split("=");
-        labels[key!] = value!;
+        const [key, ...value] = args[index + 1]!.split("=");
+        labels[key!] = value.join("=");
       }
     });
     if ([...this.containers.values()].some((c) => c.name === name)) {
