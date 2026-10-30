@@ -27,6 +27,11 @@ każdym deploju.
      (worker: klucz OpenRouter dla nagrań lektora — `.env.example` ma już
      wybraną konfigurację TTS), `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION`
      (web: próby ustne dziecka),
+   - LLM materiału przez OpenRouter: `UMIEM_LLM_BASE_URL` **razem z**
+     `UMIEM_LLM_API_KEY` — `OPENAI_API_KEY` trafia wyłącznie do
+     `https://api.openai.com`, więc sam BASE_URL innego hosta (albo klucz
+     OpenRouter bez BASE_URL) kończy start workera błędem z nazwą brakującej
+     zmiennej; ta sama reguła dotyczy `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`,
    - opcjonalnie `WEB_PORT`.
 2. Zbuduj i uruchom stack:
 

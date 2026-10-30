@@ -23,22 +23,45 @@ function secureBaseUrl(env: Record<string, string | undefined>, name: "UMIEM_LLM
   return baseUrl;
 }
 
+const OPENAI_HOST = "api.openai.com";
+
+/** Prefiks kluczy OpenRouter — taki klucz nigdy nie powinien trafić do api.openai.com. */
+const OPENROUTER_KEY_PREFIX = "sk-or-";
+
+function isOpenAiEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    return url.protocol === "https:" && url.hostname.toLowerCase() === OPENAI_HOST;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Endpoint i klucz TTS. Własny `UMIEM_TTS_BASE_URL` wymaga własnego
- * `UMIEM_TTS_API_KEY` — klucz OpenAI nigdy nie trafia do innego hosta, a klucz
- * dostawcy innego niż OpenAI nie trafia bez BASE_URL do api.openai.com.
- * Bez BASE_URL: api.openai.com z `UMIEM_TTS_API_KEY` albo `OPENAI_API_KEY`.
+ * Endpoint i klucz usługi zgodnej z OpenAI (LLM materiału, TTS). Wspólna reguła:
+ * - `<P>_BASE_URL` innego hosta niż api.openai.com wymaga własnego `<P>_API_KEY`
+ *   — `OPENAI_API_KEY` nigdy nie trafia do innego hosta;
+ * - klucz dostawcy innego niż OpenAI (`UMIEM_TTS_PROVIDER` albo klucz OpenRouter
+ *   `sk-or-…`) wymaga BASE_URL tego dostawcy — nie trafia do api.openai.com.
+ * Bez BASE_URL: api.openai.com z `<P>_API_KEY` albo `OPENAI_API_KEY`.
+ * Komunikaty błędów podają wyłącznie nazwy zmiennych, nigdy wartości.
  */
-function ttsEndpointFromEnv(env: Record<string, string | undefined>, openAiKey: string): { apiKey: string; baseUrl?: string } {
-  const baseUrl = secureBaseUrl(env, "UMIEM_TTS_BASE_URL");
-  const ownKey = nonEmpty(env.UMIEM_TTS_API_KEY);
-  if (baseUrl !== undefined && ownKey === undefined) {
-    throw new Error("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+function openAiCompatibleEndpointFromEnv(
+  env: Record<string, string | undefined>,
+  prefix: "UMIEM_LLM" | "UMIEM_TTS",
+  openAiKey: string,
+): { apiKey: string; baseUrl?: string } {
+  const baseUrl = secureBaseUrl(env, `${prefix}_BASE_URL`);
+  const ownKey = nonEmpty(env[`${prefix}_API_KEY`]);
+  const towardOpenAi = baseUrl === undefined || isOpenAiEndpoint(baseUrl);
+  if (!towardOpenAi && ownKey === undefined) {
+    throw new Error(`${prefix}_BASE_URL requires ${prefix}_API_KEY (OPENAI_API_KEY is never sent to another endpoint)`);
   }
   // Klucz innego dostawcy (np. OpenRouter) bez jego BASE_URL poszedłby do api.openai.com.
-  const provider = nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai";
-  if (baseUrl === undefined && ownKey !== undefined && provider !== "openai") {
-    throw new Error(`UMIEM_TTS_API_KEY for provider "${provider}" requires UMIEM_TTS_BASE_URL (the key is never sent to api.openai.com)`);
+  const declaredProvider = prefix === "UMIEM_TTS" ? (nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai") : "openai";
+  const provider = declaredProvider === "openai" && ownKey?.startsWith(OPENROUTER_KEY_PREFIX) ? "openrouter" : declaredProvider;
+  if (towardOpenAi && ownKey !== undefined && provider !== "openai") {
+    throw new Error(`${prefix}_API_KEY for provider "${provider}" requires ${prefix}_BASE_URL (the key is never sent to api.openai.com)`);
   }
   return { apiKey: ownKey ?? openAiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 }
@@ -58,7 +81,8 @@ export function imageProviderFromEnv(env: Record<string, string | undefined>) {
  *
  * LLM (materiał: zestawy słówek i pule ćwiczeń lekcji) konfigurują opcjonalne,
  * niezależne `UMIEM_LLM_MODEL`/`UMIEM_LLM_BASE_URL`/`UMIEM_LLM_API_KEY` z
- * fallbackami do wartości domyślnych adaptera i `OPENAI_API_KEY` — wzorzec jak
+ * fallbackami do wartości domyślnych adaptera i `OPENAI_API_KEY` (ten ostatni
+ * tylko dla api.openai.com, patrz {@link openAiCompatibleEndpointFromEnv}) — wzorzec jak
  * przy `UMIEM_TTS_*`/`UMIEM_IMAGE_*`, bo LLM jest obowiązkową zależnością
  * workera (nie opcjonalnym feature'em jak grader). TTS analogicznie:
  * `UMIEM_TTS_MODEL`/`UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY` (np. OpenRouter,
@@ -88,15 +112,14 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
   }
   return {
     llm: createOpenAiLlmProvider({
-      apiKey: nonEmpty(env.UMIEM_LLM_API_KEY) ?? apiKey,
+      ...openAiCompatibleEndpointFromEnv(env, "UMIEM_LLM", apiKey),
       model: nonEmpty(env.UMIEM_LLM_MODEL),
-      baseUrl: secureBaseUrl(env, "UMIEM_LLM_BASE_URL"),
       lessonRequestTimeoutMs: lessonExecution.requestTimeoutMs,
       requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_LLM"),
     }),
     // TTS (np. OpenRouter /audio/speech): model z UMIEM_TTS_MODEL, tym samym,
     // który wchodzi do fingerprintu nagrań (mediaSettingsFromEnv).
-    tts: createOpenAiTtsProvider({ ...ttsEndpointFromEnv(env, apiKey), model: nonEmpty(env.UMIEM_TTS_MODEL) }),
+    tts: createOpenAiTtsProvider({ ...openAiCompatibleEndpointFromEnv(env, "UMIEM_TTS", apiKey), model: nonEmpty(env.UMIEM_TTS_MODEL) }),
     image: createOpenAiImageProvider({ apiKey }),
     mediaStore,
     lessonExecution,
