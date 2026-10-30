@@ -29,4 +29,19 @@ describe("QuestionAudioButton (design szkoły §11.4)", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Odtwórz pytanie" })); });
     expect(onPlay).toHaveBeenCalledTimes(2);
   });
+
+  it("ponowne dotknięcie: koniec poprzedniego odtwarzania nie gasi wskaźnika ani nie pokazuje błędu", async () => {
+    const pending: { resolve: () => void; reject: (error: Error) => void }[] = [];
+    const onPlay = vi.fn(() => new Promise<void>((resolve, reject) => { pending.push({ resolve, reject }); }));
+    renderKid(<QuestionAudioButton onPlay={onPlay} disabled={false} />);
+    const button = screen.getByTestId("kid-question-audio");
+    await act(async () => { fireEvent.click(button); });
+    await act(async () => { fireEvent.click(button); });
+    // Zatrzymanie pierwszego odtwarzania przez drugie dotknięcie domyka jego obietnicę (także błędem).
+    await act(async () => { pending[0]!.reject(new Error("stopped")); });
+    expect(button.getAttribute("data-sound-active")).toBe("true");
+    expect(screen.queryByTestId("kid-question-audio-error")).toBeNull();
+    await act(async () => { pending[1]!.resolve(); });
+    expect(button.getAttribute("data-sound-active")).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { ActionButton } from "./ActionButton";
 import { IconActionButton } from "./IconActionButton";
@@ -14,15 +14,19 @@ export function QuestionAudioButton({ onPlay, disabled }: {
 }) {
   const [failed, setFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
+  // Ponowne dotknięcie zatrzymuje poprzednie odtwarzanie i domyka jego obietnicę;
+  // stan ustawia tylko ostatnie wywołanie, żeby nie zgasić wskaźnika nowego odsłuchu.
+  const latest = useRef(0);
   const play = async () => {
+    const run = ++latest.current;
     setFailed(false);
     setPlaying(true);
     try {
       await onPlay();
     } catch {
-      setFailed(true);
+      if (run === latest.current) setFailed(true);
     } finally {
-      setPlaying(false);
+      if (run === latest.current) setPlaying(false);
     }
   };
   return <>
