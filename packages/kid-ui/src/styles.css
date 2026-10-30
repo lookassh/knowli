@@ -12,7 +12,9 @@
    (tones 80/20/30/90). Regenerate the whole scheme with the script instead
    of hand-tuning single roles; contrast is guarded by tests/kid-tokens.test.ts.
    Literal colors outside this block are rejected by
-   tests/kid-design-tokens.test.ts. */
+   tests/kid-design-tokens.test.ts. The root gets the tokens too while a kid
+   page is mounted, so the document's own scrollbar can use them. */
+:root:has(.kid-ui),
 .kid-theme,
 .kid-ui {
   --md-sys-color-primary: #8acefd;
@@ -130,6 +132,16 @@
   --kid-warm-text: var(--kid-color-warm);
   --kid-warm-line: var(--kid-color-warm);
   --kid-visual-choice-min-size: 112px;
+}
+
+/* Scrollbars in theme colours instead of the system ones: a thin outline
+   thumb on a transparent track. Flow screens (e.g. deck choice) scroll the
+   document, so the root follows while a kid page is mounted. */
+:root:has(.kid-ui),
+.kid-ui,
+.kid-ui * {
+  scrollbar-color: var(--md-sys-color-outline) transparent;
+  scrollbar-width: thin;
 }
 
 .kid-ui {
@@ -256,17 +268,36 @@
   flex: none;
 }
 
+/* Text sits in the middle column and the speaker in the right one; an empty
+   left column of the speaker's width keeps the text on the card's axis, in
+   line with the picture and the translation. */
 .kid-ui .kid-exposure-content .kid-word-row,
 .kid-ui .kid-exposure-content .kid-example-block {
+  --listen-column: 48px;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: var(--listen-column) minmax(0, 1fr) var(--listen-column);
+  align-items: center;
   gap: 8px;
+}
+
+.kid-ui .kid-exposure-content .kid-word-row {
+  --listen-column: 64px;
+}
+
+.kid-ui .kid-exposure-content .kid-word-row::before,
+.kid-ui .kid-exposure-content .kid-example-block::before {
+  content: "";
 }
 
 .kid-ui .kid-exposure-content .kid-word-row:not(:has(button)),
 .kid-ui .kid-exposure-content .kid-example-block:not(:has(button)) {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.kid-ui .kid-exposure-content .kid-word-row:not(:has(button))::before,
+.kid-ui .kid-exposure-content .kid-example-block:not(:has(button))::before {
+  content: none;
 }
 
 /* The target word keeps the shared stimulus scale of .kid-word (at least
@@ -786,30 +817,11 @@
   gap: 12px;
 }
 
-/* Okrągły odsłuch zamiast pastylki w rzędzie akcji (SPEC §12.1): widoczny
-   przycisk dla zablokowanego autoodtwarzania, ale nie konkuruje z „Rozumiem”.
-   .kid-action podnosi specyficzność ponad warianty ActionButton (.action:where),
-   więc tonal wygrywa niezależnie od kolejności arkuszy (np. domyślny filled
-   ActionButton odsłuchu w ExposureView). */
-.kid-ui .kid-action.kid-audio-round {
-  width: 64px;
-  height: 64px;
-  min-height: 64px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: var(--kid-type-display-sm-size);
-  /* M3 tonal icon button. */
-  --action-bg: var(--md-sys-color-secondary-container);
-  --action-fg: var(--md-sys-color-on-secondary-container);
-  --action-border: transparent;
-  flex: none;
-}
-
-.kid-ui .kid-audio-round.kid-audio-round-sm {
-  width: 48px;
-  height: 48px;
-  min-height: 48px;
-  font-size: var(--kid-type-title-size);
+/* Odsłuch (ListenButton): w wariancie lg (bodziec) ikona rośnie razem
+   z przyciskiem, żeby głośnik nie ginął w 64 px. */
+.kid-ui .kid-listen[data-listen-size="lg"] .kid-icon {
+  width: 32px;
+  height: 32px;
 }
 
 .kid-fragment {
@@ -891,19 +903,6 @@
 .kid-exercise-actions .kid-primary {
   width: 100%;
   min-height: 52px;
-}
-
-.kid-play-big {
-  width: 96px !important;
-  min-height: 96px !important;
-  height: 96px !important;
-  display: grid;
-  place-items: center;
-  border-radius: 50% !important;
-  font-size: var(--kid-type-body-size) !important;
-  border: 2px solid var(--md-sys-color-outline) !important;
-  color: var(--kid-text) !important;
-  background: var(--kid-soft) !important;
 }
 
 .kid-picture-options .kid-picture-option.kid-option--correct {
@@ -1026,23 +1025,8 @@
   flex: 1;
 }
 
-.kid-ui .kid-option-audio.kid-audio-round {
-  width: 56px;
-  height: 56px;
-  min-height: 56px;
-  font-size: var(--kid-type-title-size);
+.kid-ui .kid-option-audio {
   margin-inline-end: 44px;
-}
-
-.kid-play-big svg {
-  width: 48px;
-  height: 48px;
-  color: var(--kid-accent);
-}
-
-.kid-ui .kid-play-big .kid-icon {
-  width: 48px;
-  height: 48px;
 }
 
 .kid-written {

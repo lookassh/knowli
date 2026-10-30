@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_TEXT_ATTEMPT_LENGTH, messages } from "@learning/contracts";
-import { KidIcon } from "../../components/KidIcon";
+import { ListenButton } from "../../components/ListenButton";
 import { ActionButton } from "../../components/ActionButton";
 import { AnswerField, AnswerTextArea } from "../../components/AnswerField";
 import { ExerciseFrame } from "../ExerciseFrame";
@@ -130,20 +130,12 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
             />
           )}
           {hasAudio && (
-            <ActionButton
-              type="button"
-              className="kid-play"
-              priority="secondary"
-              size="sm"
-              fullWidth={false}
-              style={{ minHeight: 48 }}
+            <ListenButton
               data-testid="kid-lesson-listen"
               disabled={disabled}
               onClick={handlers.onPlay}
               aria-label={messages.kid.listen}
-            >
-              <KidIcon name="volume" />
-            </ActionButton>
+            />
           )}
         </>
       )}
