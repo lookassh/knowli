@@ -17,7 +17,7 @@ export interface ExerciseHandlers {
   onAnswerSequence(itemIds: string[]): void;
   /** Zaznaczone pojęcia (`lesson_keywords`) — odpowiedź `selection`, kolejność bez znaczenia. */
   onAnswerSelection(itemIds: string[]): void;
-  /** Przypisania (`lesson_match`, `lesson_group`) — odpowiedź `assignment`. */
+  /** Przypisania (`lesson_match`, `lesson_group`, `lesson_cloze`) — odpowiedź `assignment`. */
   onAnswerAssignment(assignments: Assignment[]): void;
   onNotRemember(): void;
   onSkip(): void;

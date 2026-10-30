@@ -48,6 +48,8 @@ export function getExercisePresentation(task: TaskDto): ExercisePresentation {
     case "lesson_match":
     case "lesson_group":
       return { instruction: task.prompt.instructionPl, icon: "book" };
+    case "lesson_cloze":
+      return { instruction: task.prompt.instructionPl, icon: "pencil" };
     case "lesson_short_answer":
       return { instruction: task.prompt.question, icon: "book" };
     case "lesson_gap":
