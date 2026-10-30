@@ -1,3 +1,6 @@
+// Wspólny początek nazw kontenerów integracji wszystkich przebiegów (z run ID i bez).
+export const INTEGRATION_CONTAINER_PREFIX = "knowli-it-";
+
 export interface TestRunConfig {
   integrationContainerPrefix: string;
   e2eContainer: string;
@@ -74,7 +77,7 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
   const integrationBucket = parseBucket(env.UMIEM_INTEGRATION_BUCKET, "UMIEM_INTEGRATION_BUCKET");
 
   return {
-    integrationContainerPrefix: runId ? `knowli-it-${runId}-` : "knowli-it-",
+    integrationContainerPrefix: runId ? `${INTEGRATION_CONTAINER_PREFIX}${runId}-` : INTEGRATION_CONTAINER_PREFIX,
     e2eContainer: runId ? `knowli-e2e-${runId}` : "knowli-e2e",
     e2ePort,
     workerHealthPort,

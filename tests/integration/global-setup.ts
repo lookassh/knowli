@@ -1,52 +1,25 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
 import {
   currentOwnerContext,
   listContainersByPrefix,
-  ownerLabelArgs,
   removeContainer,
   selectStaleContainers,
+  startPostgresContainer,
 } from "../test-containers";
-import { readTestRunConfig } from "../test-run-config";
-
-const exec = promisify(execFile);
+import { INTEGRATION_CONTAINER_PREFIX, readTestRunConfig } from "../test-run-config";
 
 const CONTAINER_PREFIX = readTestRunConfig(process.env).integrationContainerPrefix;
-const POSTGRES_IMAGE = "postgres:17-alpine";
-// Wspólny początek nazw wszystkich przebiegów (z UMIEM_TEST_RUN_ID i bez).
-const ALL_RUNS_PREFIX = "knowli-it-";
 
 function containerName(): string {
   return `${CONTAINER_PREFIX}${process.pid}`;
-}
-
-async function docker(...args: string[]): Promise<string> {
-  const { stdout } = await exec("docker", args);
-  return stdout;
 }
 
 // Sprząta osierocone kontenery przerwanych przebiegów (dowolnego run ID),
 // ale nigdy bazy przebiegu, którego proces wciąż żyje — równoległe
 // `pnpm test:integration` z innych sesji i worktree dzielą ten demon Dockera.
 async function removeStaleContainers(): Promise<void> {
-  const stale = selectStaleContainers(await listContainersByPrefix(ALL_RUNS_PREFIX), currentOwnerContext());
+  const stale = selectStaleContainers(await listContainersByPrefix(INTEGRATION_CONTAINER_PREFIX), currentOwnerContext());
   for (const container of stale) await removeContainer(container.id);
-}
-
-function hostPort(portOutput: string): string {
-  // "docker port <c> 5432/tcp" zwraca linie "0.0.0.0:55001" (ew. "[::]:55001");
-  // forma z "5432/tcp -> ..." również jest obsługiwana.
-  const line = portOutput
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .find((l) => l.includes("0.0.0.0:"));
-  const mapped = line?.split("->").pop()?.trim();
-  const port = mapped?.split(":").pop();
-  if (!port || !/^\d+$/.test(port)) {
-    throw new Error(`Nie udało się odczytać portu kontenera: ${portOutput}`);
-  }
-  return port;
 }
 
 interface GlobalSetupContext {
@@ -58,48 +31,21 @@ export default async function globalSetup({
 }: GlobalSetupContext): Promise<(() => Promise<void>) | void> {
   await removeStaleContainers();
   const name = containerName();
-  // Nawet po poprawnym handshake'u kontener potrafi być martwy (zedrsany stan
-  // demona dockera); zamiast kończyć run startujemy kontener od nowa.
-  const attempts = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    if (attempt > 1) {
-      await docker("rm", "-f", name).catch(() => undefined);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-    try {
-      await docker(
-        "run",
-        "-d",
-        "--rm",
-        "-P",
-        ...ownerLabelArgs(),
-        "-e",
-        "POSTGRES_USER=postgres",
-        "-e",
-        "POSTGRES_PASSWORD=test",
-        "--name",
-        name,
-        POSTGRES_IMAGE,
-      );
-      const port = hostPort(await docker("port", name, "5432/tcp"));
-      const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+  const container = await startPostgresContainer({
+    name,
+    label: "testów integracyjnych",
+    prepare: async (url) => {
       // pg_isready wewnątrz kontenera pyta po unix sockecie i zgłasza gotowość już
       // podczas tymczasowego serwera entrypointa (listen_addresses=''), zanim port
       // TCP hosta zacznie słuchać — wtedy migracja dostaje ECONNRESET. Czekamy na
       // realny handshake po dokładnie tym URL-u, którego używa migracja.
       await waitUntilDatabaseReady(url);
       await migrateDatabase(url, "packages/server/drizzle");
-      provide("DATABASE_URL", url);
-      provide("TEST_CONTAINER", name);
-      return async () => {
-        await docker("rm", "-f", name).catch(() => undefined);
-      };
-    } catch (error) {
-      lastError = error;
-      console.warn(`Kontener Postgres testów integracyjnych nie wystartował (próba ${attempt}/${attempts}): ${String(error)}`);
-    }
-  }
-  await docker("rm", "-f", name).catch(() => undefined);
-  throw lastError;
+    },
+  });
+  provide("DATABASE_URL", container.url);
+  provide("TEST_CONTAINER", name);
+  return async () => {
+    await removeContainer(container.id);
+  };
 }

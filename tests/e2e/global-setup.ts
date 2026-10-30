@@ -4,16 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
+import { isPortInUse } from "../local-ports";
 import {
+  ContainerNameTakenError,
   currentOwnerContext,
   findContainer,
-  isNameConflictError,
-  isOwnedByThisProcess,
   isReservedByAnotherRun,
   OWNER_HOST_LABEL,
   OWNER_PID_LABEL,
-  ownerLabelArgs,
   removeContainer,
+  type StartedContainer,
+  startPostgresContainer,
+  type TestContainer,
 } from "../test-containers";
 import { readTestRunConfig } from "../test-run-config";
 
@@ -26,11 +28,8 @@ const CONTAINER = TEST_RUN_CONFIG.e2eContainer;
 const PORT = TEST_RUN_CONFIG.e2ePort;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const NEXT_BIN = join(repoRoot, "apps/web/node_modules/next/dist/bin/next");
-
-async function docker(...args: string[]): Promise<string> {
-  const { stdout } = await exec("docker", args);
-  return stdout;
-}
+const PARALLEL_RUN_HINT = "Równolegle uruchamiaj `pnpm test:e2e:shards` z własnym --base-port albo ustaw "
+  + "UMIEM_TEST_RUN_ID i UMIEM_E2E_PORT.";
 
 function killTree(child: ReturnType<typeof spawn>): Promise<void> {
   if (child.pid === undefined || child.exitCode !== null) {
@@ -101,9 +100,13 @@ async function assertBuildPresent(): Promise<void> {
   }
 }
 
-async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
+async function waitForHttp(url: string, timeoutMs: number, server: ReturnType<typeof spawn>): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    // Martwy serwer (np. EADDRINUSE) nie może „wstać” odpowiedzią cudzego procesu.
+    if (server.exitCode !== null || server.signalCode !== null) {
+      throw new Error(`Serwer web zakończył się przed gotowością (kod ${String(server.exitCode ?? server.signalCode)}). ${PARALLEL_RUN_HINT}`);
+    }
     try {
       const response = await fetch(url);
       if (response.status < 500) return;
@@ -115,25 +118,21 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`Serwer ${url} nie odpowiedział w ${Math.round(timeoutMs / 1000)} s`);
 }
 
-function hostPort(portOutput: string): string {
-  const line = portOutput
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .find((l) => l.includes("0.0.0.0:"));
-  const mapped = line?.split("->").pop()?.trim();
-  const port = mapped?.split(":").pop();
-  if (!port || !/^\d+$/.test(port)) {
-    throw new Error(`Nie udało się odczytać portu kontenera: ${portOutput}`);
-  }
-  return port;
+function containerInUseError(owner: TestContainer | null): Error {
+  const who = owner
+    ? `pid ${owner.labels[OWNER_PID_LABEL] ?? "?"}, host ${owner.labels[OWNER_HOST_LABEL] ?? "?"}`
+    : "start równoległy";
+  return new Error(`Kontener ${CONTAINER} należy do trwającego przebiegu E2E (${who}). ${PARALLEL_RUN_HINT}`);
 }
 
-function containerInUseError(owner: string): Error {
-  return new Error(
-    `Kontener ${CONTAINER} należy do trwającego przebiegu E2E (${owner}). `
-    + "Równolegle uruchamiaj `pnpm test:e2e:shards` z własnym --base-port albo ustaw "
-    + "UMIEM_TEST_RUN_ID i UMIEM_E2E_PORT.",
-  );
+// Zajęty port web albo health workera to niemal zawsze równoległy przebieg
+// z tymi samymi portami; sprawdzamy przed buildem i bazą.
+async function assertPortsFree(): Promise<void> {
+  for (const port of [PORT, TEST_RUN_CONFIG.workerHealthPort]) {
+    if (await isPortInUse(port)) {
+      throw new Error(`Port ${port} jest zajęty, prawdopodobnie przez równoległy przebieg E2E. ${PARALLEL_RUN_HINT}`);
+    }
+  }
 }
 
 /**
@@ -146,11 +145,7 @@ function containerInUseError(owner: string): Error {
 async function removeOrphanedContainer(): Promise<void> {
   const existing = await findContainer(CONTAINER);
   if (!existing) return;
-  if (isReservedByAnotherRun(existing, currentOwnerContext())) {
-    throw containerInUseError(
-      `pid ${existing.labels[OWNER_PID_LABEL] ?? "?"}, host ${existing.labels[OWNER_HOST_LABEL] ?? "?"}`,
-    );
-  }
+  if (isReservedByAnotherRun(existing, currentOwnerContext())) throw containerInUseError(existing);
   await removeContainer(existing.id);
 }
 
@@ -162,16 +157,14 @@ async function removeOrphanedContainer(): Promise<void> {
  * przy szybkiej iteracji na pojedynczym specu.
  */
 export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
+  await assertPortsFree();
   await removeOrphanedContainer();
   // Wszystkie dalsze `rm` dotyczą wyłącznie kontenera postawionego przez ten
   // przebieg (ID z `docker run`), także przy błędzie i w teardownie.
-  let containerId: string | null = null;
-  const removeOwnContainer = async (): Promise<void> => {
-    if (containerId === null) return;
-    await removeContainer(containerId);
-    containerId = null;
-  };
-  const cleanup: Array<() => Promise<void>> = [removeOwnContainer];
+  let database: StartedContainer | null = null;
+  const cleanup: Array<() => Promise<void>> = [
+    () => (database ? removeContainer(database.id) : Promise.resolve()),
+  ];
   const fail = async (error: unknown): Promise<never> => {
     for (const fn of cleanup.reverse()) await fn();
     throw error;
@@ -191,57 +184,24 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
   // Gdy baza nie wstanie, fail() ubija także wciąż biegnący build.
   cleanup.push(() => (buildChild ? killTree(buildChild) : Promise.resolve()));
 
-  // Nawet po poprawnym handshake'u kontener potrafi być martwy (zedrsany stan
-  // demona dockera); zamiast kończyć run startujemy kontener od nowa.
-  const attempts = 3;
-  let databaseUrl: string | null = null;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts && databaseUrl === null; attempt += 1) {
-    await removeOwnContainer();
-    if (attempt > 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-    try {
-      containerId = (await docker(
-        "run",
-        "-d",
-        "--rm",
-        "-P",
-        ...ownerLabelArgs(),
-        "-e",
-        "POSTGRES_USER=postgres",
-        "-e",
-        "POSTGRES_PASSWORD=test",
-        "--name",
-        CONTAINER,
-        "postgres:17-alpine",
-      )).trim();
-      const port = hostPort(await docker("port", containerId, "5432/tcp"));
-      const url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
-      // pg_isready wewnątrz kontenera pyta po unix sockecie i zgłasza gotowość już
-      // podczas tymczasowego serwera entrypointa (listen_addresses=''), zanim port
-      // TCP hosta zacznie słuchać — wtedy migracja dostaje ECONNRESET. Czekamy na
-      // realny handshake po dokładnie tym URL-u, którego używa migracja.
-      await waitUntilDatabaseReady(url);
-      await migrateDatabase(url, join(repoRoot, "packages/server/drizzle"));
-      databaseUrl = url;
-    } catch (error) {
-      // Równoległy przebieg zajął nazwę po naszej kontroli: nie ponawiamy
-      // i nie usuwamy jego kontenera.
-      if (isNameConflictError(error)) return fail(containerInUseError("start równoległy"));
-      // `docker run` mógł utworzyć kontener i paść przed zwróceniem ID;
-      // przejmujemy go do usunięcia tylko po etykiecie tego procesu.
-      if (containerId === null) {
-        const leftover = await findContainer(CONTAINER).catch(() => null);
-        if (leftover && isOwnedByThisProcess(leftover)) containerId = leftover.id;
-      }
-      lastError = error;
-      console.warn(`Kontener Postgres e2e nie wystartował (próba ${attempt}/${attempts}): ${String(error)}`);
-    }
+  try {
+    database = await startPostgresContainer({
+      name: CONTAINER,
+      label: "e2e",
+      prepare: async (url) => {
+        // pg_isready wewnątrz kontenera pyta po unix sockecie i zgłasza gotowość już
+        // podczas tymczasowego serwera entrypointa (listen_addresses=''), zanim port
+        // TCP hosta zacznie słuchać — wtedy migracja dostaje ECONNRESET. Czekamy na
+        // realny handshake po dokładnie tym URL-u, którego używa migracja.
+        await waitUntilDatabaseReady(url);
+        await migrateDatabase(url, join(repoRoot, "packages/server/drizzle"));
+      },
+    });
+  } catch (error) {
+    // Równoległy przebieg zajął nazwę po naszej kontroli: jego kontenera nie ruszamy.
+    return fail(error instanceof ContainerNameTakenError ? containerInUseError(error.owner) : error);
   }
-  if (databaseUrl === null) {
-    return fail(lastError);
-  }
+  const databaseUrl = database.url;
 
   try {
     await buildPromise;
@@ -290,7 +250,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     );
     cleanup.push(() => killTree(worker));
 
-    await waitForHttp(`${BASE_URL}/api/v1/parent/login`, 120_000);
+    await waitForHttp(`${BASE_URL}/api/v1/parent/login`, 120_000, web);
     return async () => {
       for (const fn of cleanup.reverse()) await fn();
     };
