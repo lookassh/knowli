@@ -1,12 +1,4 @@
 @font-face {
-  font-family: KnowliKidFredoka;
-  src: url("/fonts/kid/Fredoka.ttf") format("truetype");
-  font-weight: 300 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
   font-family: KnowliKidNunito;
   src: url("/fonts/kid/Nunito.ttf") format("truetype");
   font-weight: 200 1000;
