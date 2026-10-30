@@ -29,6 +29,7 @@ describe("cardReadText — tekst nagrania „Posłuchaj karty” (design szkoły
   it("daty, liczby, procenty i zwykła interpunkcja nie blokują nagrania", () => {
     for (const text of ["W 1410 roku odbyła się bitwa.", "25% klasy to 6 osób.", "Uwaga: to ważne.", "Godzina dziewiąta, 3 lekcje.", "Słowo „równa się” po polsku.", "Bitwa odbyła się 15/07/1410.", "Termin: 12/03/2026 i 1/9/2026."]) {
       expect(hasMathNotation(text), text).toBe(false);
+      expect(cardReadText({ title: "Karta", body: text, examples: [] }), text).toContain(text.replace(/[.!?:…]$/, ""));
     }
   });
 
