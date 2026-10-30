@@ -17,6 +17,8 @@ describe("questionReadText — tekst nagrania „Posłuchaj pytania” (design s
       instructionPl: "Uzupełnij zdanie:",
       stem: "Rośliny wytwarzają ___ w procesie fotosyntezy",
     })).toBe("Uzupełnij zdanie: Rośliny wytwarzają luka w procesie fotosyntezy.");
+    // Dłuższa luka jak w Kid UI (`splitGap`: 2+ podkreśleń) — bez resztek podkreśleń.
+    expect(questionReadText({ exerciseType: "lesson_gap", stem: "Stolicą Polski jest ____." })).toBe("Stolicą Polski jest luka.");
   });
 
   it("odpowiedź otwarta: polecenie i pytanie; bez polecenia w payloadzie samo pytanie", () => {

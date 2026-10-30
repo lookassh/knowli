@@ -8,6 +8,12 @@ describe("mediaSettingsFromEnv", () => {
     expect(defaultMediaSettings.image.model).toBe("gpt-image-2.5-sunburst");
   });
 
+  it("puste UMIEM_TTS_* jak nieustawione — fingerprint opisuje model faktycznie użyty przez adapter", () => {
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_PROVIDER: "", UMIEM_TTS_MODEL: "", UMIEM_TTS_VOICE: "" }).tts).toEqual(defaultMediaSettings.tts);
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_PROVIDER: "openrouter", UMIEM_TTS_MODEL: "openai/gpt-4o-mini-tts-2025-12-15" }).tts)
+      .toMatchObject({ provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15", voice: "alloy" });
+  });
+
   it("zmienne UMIEM_IMAGE_* nadpisują model, rozmiar, jakość i format", () => {
     const settings = mediaSettingsFromEnv({
       UMIEM_IMAGE_MODEL: "gpt-image-1-mini",

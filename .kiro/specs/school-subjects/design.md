@@ -1413,10 +1413,16 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   zostaje dla odsłuchu odpowiedzi wzorcowej, a widoki ćwiczeń nie wymagają
   zmian. Zniknie na czas feedbacku (jak odsłuch polecenia).
 - **Nagranie gotowe po publikacji** liczy się przy kolejnym wydaniu zadania:
-  `loadExercises` bierze zasób `prompt_audio` powiązany z rewizją, gdy
-  `media_assets.state='ready'`, niezależnie od stanu decyzji w
-  `revision_assets` (publikacja nie czeka na nagranie). Zadanie już wydane ma
-  niezmienny prompt.
+  `loadExercises` bierze najnowszy gotowy zasób TTS o oczekiwanym
+  fingerprincie wiersza `prompt_audio` (`expected_fingerprint`), niezależnie
+  od stanu decyzji i zasobu powiązanego przy edycji — wiersz opublikowanej
+  rewizji jest niezmienny, więc porażka tamtego zasobu nie może na stałe
+  odebrać przycisku. Zadanie już wydane ma niezmienny prompt. Lista zestawów
+  dziecka nie czyta nagrań pytań.
+- Review przed PR: luka w nagraniu jak w Kid UI (każdy ciąg 2+ podkreśleń),
+  puste `UMIEM_TTS_PROVIDER`/`MODEL`/`VOICE` traktowane jak nieustawione także
+  w fingerprincie (wcześniej `""` trafiało do fingerprintu, a adapter wysyłał
+  model domyślny).
 - **Worker nie unieważnia nagrań pytań** przedmiotu bez `ttsForAnswers`:
   wyłączenie zbędnego TTS lekcji sprawdza flagę właściwą dla roli
   (`prompt_audio` → `ttsForPrompts`).

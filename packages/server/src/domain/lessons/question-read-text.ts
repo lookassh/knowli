@@ -1,5 +1,4 @@
 import { messages } from "@learning/contracts";
-import { GAP_MARKER } from "./pool-validation";
 
 /** Pola payloadu ćwiczenia potrzebne do nagrania pytania (design szkoły §11.1). */
 export interface QuestionReadSource {
@@ -29,7 +28,8 @@ export function questionReadText(source: QuestionReadSource): string | null {
       parts = [instruction, clean(source.stem)];
       break;
     case "lesson_gap":
-      parts = [instruction, clean(source.stem?.split(GAP_MARKER).join(SPOKEN_GAP))];
+      // Luka jak w Kid UI (`splitGap`): ciąg 2+ podkreśleń, nie tylko `GAP_MARKER`.
+      parts = [instruction, clean(source.stem?.replace(/_{2,}/g, SPOKEN_GAP))];
       break;
     case "lesson_open_answer":
       parts = [instruction, clean(source.prompt)];

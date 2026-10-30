@@ -45,10 +45,12 @@ export const defaultMediaSettings: MediaSettings = {
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
 export function mediaSettingsFromEnv(env: Record<string, string | undefined>): MediaSettings {
   return {
+    // Puste UMIEM_TTS_* jak nieustawione — tak samo jak adapter TTS w workerze
+    // (generation-env), żeby fingerprint opisywał faktycznie użyty model.
     tts: {
-      provider: env.UMIEM_TTS_PROVIDER ?? defaultMediaSettings.tts.provider,
-      model: env.UMIEM_TTS_MODEL ?? defaultMediaSettings.tts.model,
-      voice: env.UMIEM_TTS_VOICE ?? defaultMediaSettings.tts.voice,
+      provider: env.UMIEM_TTS_PROVIDER || defaultMediaSettings.tts.provider,
+      model: env.UMIEM_TTS_MODEL || defaultMediaSettings.tts.model,
+      voice: env.UMIEM_TTS_VOICE || defaultMediaSettings.tts.voice,
       format: "mp3",
     },
     image: {

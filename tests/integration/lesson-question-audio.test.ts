@@ -167,3 +167,21 @@ describe("„Posłuchaj pytania” — zadanie dziecka", () => {
     expect(events.rows).toEqual([]);
   });
 });
+
+describe("„Posłuchaj pytania” — nagranie po publikacji", () => {
+  it("porażka zasobu powiązanego przy edycji nie odbiera przycisku: liczy się gotowy zasób o tym samym fingerprincie", async () => {
+    const { active, child, deckId, versionId } = await publishedWorld();
+    const [row] = await promptAudio(versionId);
+    await pool.query("update learning_app.media_assets set state = 'failed', lease_token = null where id = $1", [row!.assetId]);
+    const replacement = randomUUID();
+    await pool.query(
+      `insert into learning_app.media_assets (id, kind, fingerprint, generation_number, state, provider, model, metadata)
+       select $2, kind, fingerprint, generation_number + 1, 'pending', provider, model, metadata from learning_app.media_assets where id = $1`,
+      [row!.assetId, replacement],
+    );
+    await markReady(replacement);
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
+    const task = await reach(active, session.sessionId, STEM);
+    expect(task.prompt).toMatchObject({ questionAudioAssetId: replacement });
+  });
+});
