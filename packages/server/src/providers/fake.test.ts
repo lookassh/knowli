@@ -5,7 +5,7 @@ import { englishGrammarSubject } from "../domain/lessons/subjects/english-gramma
 import { presentSimpleV1 } from "../domain/lessons/subjects/english-grammar/topics/present-simple";
 import type { LessonPoolInput } from "../ports/ai";
 import { toExerciseDraft } from "../modules/materials/lessons/lesson-drafts";
-import { FakeLlmProvider } from "./fake";
+import { FakeLlmProvider, FakeTtsProvider } from "./fake";
 
 describe("FakeLlmProvider lesson pool", () => {
   it("produces a publishable 3/4/2 grammar pool after functional-stimulus deduplication", async () => {
@@ -38,5 +38,25 @@ describe("FakeLlmProvider lesson pool", () => {
     expect(result.valid.filter((item) => stageOf(item.exerciseType) === "guided")).toHaveLength(6);
     expect(result.valid.filter((item) => stageOf(item.exerciseType) === "productive")).toHaveLength(10);
     expect(result.valid.filter((item) => stageOf(item.exerciseType) === "independent")).toHaveLength(4);
+  });
+});
+
+describe("FakeTtsProvider", () => {
+  const base = { text: "Świetnie!", locale: "pl-PL", voice: "fake-voice", format: "mp3" as const };
+
+  it("różne instrukcje dają różne bajty", async () => {
+    const tts = new FakeTtsProvider();
+    const plain = await tts.synthesize(base);
+    const styled = await tts.synthesize({ ...base, instructions: "Powiedz radośnie." });
+    const other = await tts.synthesize({ ...base, instructions: "Powiedz ciepło." });
+    expect(styled.bytes).not.toEqual(plain.bytes);
+    expect(other.bytes).not.toEqual(styled.bytes);
+  });
+
+  it("bez instrukcji bajty pozostają takie jak dotąd", async () => {
+    const tts = new FakeTtsProvider();
+    const first = await tts.synthesize(base);
+    const second = await tts.synthesize({ ...base });
+    expect(second.bytes).toEqual(first.bytes);
   });
 });
