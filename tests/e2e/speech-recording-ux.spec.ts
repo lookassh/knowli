@@ -769,7 +769,57 @@ test("speech feedback stays inline, explains fragments and exposes only the avai
   await expect(page.getByTestId("kid-target")).toHaveCount(0);
   await expect(card).toContainText("Usłyszałem:");
   await expect(page.getByTestId("kid-reference-text")).toContainText("Thursday");
-  await expect(page.getByRole("list", { name: "Legenda wymowy" })).toContainText("poćwicz go");
+  const legend = page.getByRole("list", { name: "Legenda wymowy" });
+  await expect(legend).toContainText("poćwicz go");
+  // The focused heading's outline stays inside the scrolling box that holds it.
+  const outlineClipped = await page.locator("#kid-speech-feedback-title").evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    let scroller = heading.parentElement;
+    while (scroller && !/(auto|scroll|hidden|clip)/.test(getComputedStyle(scroller).overflowY + getComputedStyle(scroller).overflowX)) {
+      scroller = scroller.parentElement;
+    }
+    scroller!.scrollTop = 0;
+    const box = heading.getBoundingClientRect();
+    const frame = scroller!.getBoundingClientRect();
+    const left = frame.left + scroller!.clientLeft;
+    const top = frame.top + scroller!.clientTop;
+    return {
+      top: box.top - reach < top - 0.5,
+      left: box.left - reach < left - 0.5,
+      right: box.right + reach > left + scroller!.clientWidth + 0.5,
+    };
+  });
+  expect(outlineClipped).toEqual({ top: false, left: false, right: false });
+  // The long heard text overflows the card body, which is the scrolling box for
+  // the legend (not the outer card); a wheel gesture over it scrolls the body,
+  // and the legend then ends inside it, above the dock's action row.
+  const scroller = card.locator(".kid-speech-feedback__body");
+  expect(await scroller.evaluate((body) => ({
+    scrolls: /(auto|scroll)/.test(getComputedStyle(body).overflowY),
+    overflows: body.scrollHeight > body.clientHeight + 1,
+  })), "card body is the overflowing scroll box").toEqual({ scrolls: true, overflows: true });
+  await expect(scroller.locator(".kid-speech-feedback__legend")).toHaveCount(1);
+  const startTop = await scroller.evaluate((body) => body.scrollTop);
+  const scrollerBox = (await scroller.boundingBox())!;
+  await page.mouse.move(scrollerBox.x + scrollerBox.width / 2, scrollerBox.y + scrollerBox.height / 2);
+  await page.mouse.wheel(0, 4000);
+  await expect.poll(() => scroller.evaluate((body) => body.scrollTop)).toBeGreaterThan(startTop);
+  const [legendBox, actionBox] = await Promise.all([legend.boundingBox(), page.getByTestId("kid-feedback-retry").boundingBox()]);
+  expect(legendBox!.y, "legend top inside its scroll box").toBeGreaterThanOrEqual(scrollerBox.y - 1);
+  expect(legendBox!.y + legendBox!.height, "legend bottom inside its scroll box").toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height + 1);
+  expect(legendBox!.y + legendBox!.height, "legend hidden under the action row").toBeLessThanOrEqual(actionBox!.y + 1);
+  // Each legend entry carries a sample styled exactly like its fragment in the word.
+  const fragmentLook = (locator: Locator) => locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, decoration: style.textDecorationLine, color: style.color };
+  });
+  for (const verdict of ["almost", "unknown"] as const) {
+    const fragment = page.getByTestId("kid-reference-text").locator(`.kid-fragment--${verdict}`);
+    const sample = legend.locator(`.kid-speech-feedback__legend--${verdict} .kid-fragment--${verdict}`);
+    await expect(sample).toHaveCount(1);
+    expect(await fragmentLook(sample), `legend sample for ${verdict}`).toEqual(await fragmentLook(fragment));
+  }
   await expect(page.locator("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("kid-speech-feedback-title");
   const retryBounds = await page.getByTestId("kid-feedback-retry").boundingBox();
