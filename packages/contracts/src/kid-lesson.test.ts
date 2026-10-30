@@ -311,12 +311,42 @@ describe("pary i grupy (design szkoły §10)", () => {
     expect(TaskPromptSchema.safeParse({ ...group, items: group.items.map((entry) => ({ ...entry, groupId: "g1" })) }).success).toBe(false);
   });
 
-  it("odpowiedź `assignment`: 3–8 przypisań, każdy element raz", () => {
+  it("odpowiedź `assignment`: 2–8 przypisań (luki od 2), każdy element raz", () => {
     const base = { taskId: UUID, clientAttemptId: UUID2, modality: "assignment" };
     const assignments = [0, 1, 2].map((i) => ({ itemId: ids[i]!, targetId: ids[i + 3]! }));
     expect(AttemptModalitySchema.safeParse("assignment").success).toBe(true);
     expect(AttemptInputSchema.safeParse({ ...base, assignments }).success).toBe(true);
-    expect(AttemptInputSchema.safeParse({ ...base, assignments: assignments.slice(0, 2) }).success).toBe(false);
+    expect(AttemptInputSchema.safeParse({ ...base, assignments: assignments.slice(0, 2) }).success).toBe(true);
+    expect(AttemptInputSchema.safeParse({ ...base, assignments: assignments.slice(0, 1) }).success).toBe(false);
     expect(AttemptInputSchema.safeParse({ ...base, assignments: [...assignments, { itemId: ids[0]!, targetId: ids[6]! }] }).success).toBe(false);
+  });
+});
+
+describe("uzupełnij tekst (design szkoły §13.2)", () => {
+  const ids = Array.from({ length: 8 }, (_, i) => `${String(i + 1).repeat(8)}-2222-4222-8222-222222222222`);
+  const word = (i: number, text: string) => ({ id: ids[i]!, text });
+  const cloze = {
+    kind: "lesson_cloze",
+    instructionPl: "Uzupełnij tekst.",
+    segments: [{ text: "Rośliny pobierają " }, { gapId: ids[0]! }, { text: " z powietrza i " }, { gapId: ids[1]! }, { text: " z gleby." }],
+    words: [word(2, "wodę"), word(3, "dwutlenek węgla"), word(4, "tlen")],
+  };
+
+  it("przyjmuje tekst z lukami i bank bez klucza", () => {
+    expect(TaskPromptSchema.safeParse(cloze).success).toBe(true);
+    expect(EXERCISE_TYPES as readonly string[]).toContain("lesson_cloze");
+  });
+
+  it.each([
+    ["gapAnswers", ["wodę"]], ["assignments", []], ["answer", "wodę"], ["filledText", "Rośliny…"],
+  ] as const)("odrzuca prywatne pole %s", (field, value) => {
+    expect(TaskPromptSchema.safeParse({ ...cloze, [field]: value }).success).toBe(false);
+  });
+
+  it("odrzuca segment z kluczem, powtórzoną lukę i bank bez dystraktora", () => {
+    expect(TaskPromptSchema.safeParse({ ...cloze, segments: [...cloze.segments.slice(0, 4), { gapId: ids[1]!, word: "wodę" }] }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...cloze, segments: [{ gapId: ids[0]! }, { text: " i " }, { gapId: ids[0]! }] }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...cloze, segments: [{ gapId: ids[0]! }, { text: " i " }] }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...cloze, words: cloze.words.slice(0, 2) }).success).toBe(false);
   });
 });

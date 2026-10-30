@@ -1,4 +1,5 @@
 import { messages } from "@learning/contracts";
+import { clozeAnswer } from "../domain/lessons/cloze";
 import { groupAnswer, matchAnswer } from "../domain/lessons/pool-validation";
 
 function isObjectWith(value: unknown, fields: readonly string[]): boolean {
@@ -7,7 +8,8 @@ function isObjectWith(value: unknown, fields: readonly string[]): boolean {
 }
 
 /**
- * Pary i grupy z modelu (design szkoły §10.6) niosą tylko teksty i przypisania.
+ * Pary, grupy (design szkoły §10.6) i luki z bankiem (§13.6) z modelu niosą
+ * tylko teksty i przypisania.
  * Kod dopisuje polecenie (gdy model go nie podał) i kanoniczną odpowiedź,
  * zanim rekord trafi do wspólnej walidacji kształtu i puli.
  */
@@ -51,6 +53,25 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         groups: typedGroups.map((group) => ({ id: group.id, label: group.label })),
         groupItems: (groupItems as { text: string; groupId: string }[]).map((item) => ({ text: item.text, groupId: item.groupId })),
         answer: groupAnswer({ groups: typedGroups }),
+        acceptedAnswers: [],
+        focus: [],
+        sourceRefs: record.sourceRefs,
+      };
+    }
+    if (record.exerciseType === "lesson_cloze") {
+      const gapAnswers = Array.isArray(record.gapAnswers) ? record.gapAnswers : [];
+      const extraWords = Array.isArray(record.extraWords) ? record.extraWords : [];
+      if (typeof record.clozeText !== "string" || ![...gapAnswers, ...extraWords].every((text) => typeof text === "string")) {
+        return { ...record, answer: undefined };
+      }
+      return {
+        exerciseType: "lesson_cloze",
+        objectiveId: record.objectiveId,
+        instructionPl: instruction(messages.kid.lessonClozeInstruction),
+        clozeText: record.clozeText,
+        gapAnswers,
+        extraWords,
+        answer: clozeAnswer({ gapAnswers: gapAnswers as string[] }),
         acceptedAnswers: [],
         focus: [],
         sourceRefs: record.sourceRefs,

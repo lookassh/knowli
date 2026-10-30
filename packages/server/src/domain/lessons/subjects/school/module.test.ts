@@ -454,3 +454,76 @@ describe("pogrupuj (lesson_group)", () => {
     expect(validatePool([matchDraft(), shuffledPairs], schoolSubject, topic).valid).toHaveLength(1);
   });
 });
+
+function clozeDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_cloze",
+    objectiveId: "school.ddeck.fotosynteza",
+    instructionPl: "Uzupełnij tekst.",
+    clozeText: "Roślina pobiera ___ z powietrza, a korzeniami pobiera ___. W liściach powstają ___.",
+    gapAnswers: ["dwutlenek węgla", "wodę", "cukry"],
+    extraWords: ["tlen"],
+    answer: "dwutlenek węgla, wodę, cukry",
+    acceptedAnswers: [],
+    focus: [],
+    sourceRefs: [{ quote: "wytwarza cukry" }],
+    ...overrides,
+  };
+}
+
+describe("uzupełnij tekst (lesson_cloze)", () => {
+  const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+
+  it("przechodzi walidację, jest typem szkoły i liczy się do etapu prowadzonego", () => {
+    expect(schoolSubject.exerciseTypes).toContain("lesson_cloze");
+    expect(validateLessonExercise(clozeDraft(), schoolSubject, topic)).toEqual([]);
+    expect(poolCoverage([clozeDraft()], ["school.ddeck.fotosynteza"], { guided: 1, productive: 0, independent: 0 })).toEqual([]);
+  });
+
+  it.each([
+    ["jedna luka", { clozeText: "Roślina pobiera ___ z powietrza.", gapAnswers: ["dwutlenek węgla"], answer: "dwutlenek węgla" }, "gapAnswers"],
+    ["dwie luki, trzy słowa", { clozeText: "Roślina pobiera ___ i ___.", answer: "dwutlenek węgla, wodę, cukry" }, "liczba słów"],
+    ["pięć luk", {
+      clozeText: "a ___ b ___ c ___ d ___ e ___ f", gapAnswers: ["w1", "w2", "w3", "w4", "w5"], answer: "w1, w2, w3, w4, w5",
+    }, "gapAnswers"],
+    ["słów mniej niż luk", { gapAnswers: ["dwutlenek węgla", "wodę"], answer: "dwutlenek węgla, wodę" }, "różni się"],
+    ["bez dystraktora", { extraWords: undefined }, "extraWords"],
+    ["trzy dystraktory", { extraWords: ["tlen", "azot", "sól"] }, "extraWords"],
+    ["luki obok siebie", { clozeText: "Roślina pobiera ___, ___ i wytwarza ___." }, "co najmniej jedno słowo"],
+    ["słowo z banku w tekście", { clozeText: "Roślina pobiera ___ z powietrza i wodę, a korzeniami ___. Powstają ___." }, "poza luką"],
+    ["dystraktor w tekście", { clozeText: "Roślina pobiera ___, a nie tlen. Korzeniami pobiera ___. Powstają ___." }, "poza luką"],
+    ["powtórzone słowo", { extraWords: ["Wodę"] }, "powiela"],
+    ["podkreślenie poza luką", { clozeText: "Roślina pobiera ___ z powietrza, korzeniami ___. Powstają ___ _" }, "podkreślenie"],
+    ["odpowiedź niezgodna ze słowami", { answer: "wodę, cukry, dwutlenek węgla" }, "answer"],
+    ["warianty odpowiedzi", { acceptedAnswers: ["wodę"] }, "acceptedAnswers"],
+    ["za długi tekst", { clozeText: `${"x ".repeat(150)}___ y ___ z ___` }, "clozeText"],
+  ] as const)("odrzuca: %s", (_label, overrides, field) => {
+    const errors = validateLessonExercise(clozeDraft(overrides as Partial<LessonExerciseDraft>), schoolSubject, topic);
+    expect(errors.some((error) => error.includes(field))).toBe(true);
+  });
+
+  it("fragment słowa nie podpowiada: „tlen” w banku obok „dwutlenek” w tekście przechodzi", () => {
+    const draft = clozeDraft({
+      clozeText: "Dwutlenek węgla roślina bierze z powietrza. Oddaje ___, a korzeniami pobiera ___.",
+      gapAnswers: ["tlen", "wodę"],
+      extraWords: ["cukry"],
+      answer: "tlen, wodę",
+    });
+    expect(validateLessonExercise(draft, schoolSubject, topic)).toEqual([]);
+  });
+
+  it("odrzuca tekst z lukami w innym typie", () => {
+    const errors = validateLessonExercise(matchDraft({ clozeText: "a ___ b ___" }), schoolSubject, topic);
+    expect(errors.some((error) => error.includes("clozeText"))).toBe(true);
+  });
+
+  it("dystraktory nie zmieniają tożsamości, a inne luki ją zmieniają", () => {
+    expect(validatePool([clozeDraft(), clozeDraft({ extraWords: ["azot"] })], schoolSubject, topic).valid).toHaveLength(1);
+    const other = clozeDraft({ gapAnswers: ["dwutlenek węgla", "wodę", "skrobia"], extraWords: ["tlen"], answer: "dwutlenek węgla, wodę, skrobia" });
+    expect(validatePool([clozeDraft(), other], schoolSubject, topic).valid).toHaveLength(2);
+  });
+
+  it("prompt generatora opisuje luki z bankiem słów", () => {
+    expect(schoolSubject.prompts.fieldRules).toContain("lesson_cloze");
+  });
+});

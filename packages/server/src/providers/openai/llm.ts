@@ -141,7 +141,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     types.filter((type) => input.exerciseTypes.includes(type)).join(", ") || "none available";
   parts.push(
     `Return at most ${input.countPerObjective} exercises per objective in this batch, aiming for this stage split: ` +
-      `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer", "lesson_match", "lesson_group"])}), ` +
+      `${input.stageCounts.guided} guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer", "lesson_match", "lesson_group", "lesson_cloze"])}), ` +
       `${input.stageCounts.productive} productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
       `${input.stageCounts.independent} independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
       independentReservation(input) +
@@ -194,6 +194,17 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "(4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group). Use it when the material classifies things (e.g. mammals/birds, " +
       "lowlands/uplands). Texts on one side must be distinct and none may contain another as whole words; an item must not repeat a group label. " +
       "Skip these types when the material has no such pairs or classification.",
+    );
+  }
+  if (input.exerciseTypes.includes("lesson_cloze")) {
+    parts.push(
+      "lesson_cloze is a guided type with its own strict branch: return ONLY exerciseType, objectiveId, instructionPl (a short child-facing " +
+      "instruction in the prompt language), clozeText, gapAnswers, extraWords and sourceRefs; code computes the answer. clozeText: 2 to 4 short " +
+      "sentences close to the parent material (at most 300 characters, vocabulary for a child of about 8) with 2 to 4 gaps written as ___ and " +
+      "at least one word between two gaps. gapAnswers: the word for each gap in text order (1 to 3 words, at most 30 characters): concepts, names " +
+      "or numbers from the material, never conjunctions, prepositions or words guessable from grammar alone. extraWords: 1 or 2 distractors from " +
+      "the same material and category that fit no gap. Exactly one bank word fits each gap (never two gaps whose words could be swapped), and no " +
+      "bank word appears in clozeText outside the gaps.",
     );
   }
   if (input.deduplication !== "exercise") {

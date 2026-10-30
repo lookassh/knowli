@@ -11,12 +11,16 @@
 
 import {
   LessonExerciseInputSchema,
+  MAX_CLOZE_EXTRA,
+  MAX_CLOZE_GAPS,
   MAX_GROUP_ITEMS,
   MAX_GROUPS,
   MAX_KEY_OPTIONS,
   MAX_KEYWORD_OPTIONS,
   MAX_MATCH_EXTRA,
   MAX_MATCH_PAIRS,
+  MIN_CLOZE_EXTRA,
+  MIN_CLOZE_GAPS,
   MIN_GROUP_ITEMS,
   MIN_GROUPS,
   MIN_ITEMS_PER_GROUP,
@@ -24,6 +28,7 @@ import {
   MIN_KEYWORD_OPTIONS,
   MIN_MATCH_PAIRS,
 } from "@learning/contracts";
+import { clozeAnswer, clozeGapCount, clozeParts } from "./cloze";
 import { ASSESSED_STAGES, stageOf } from "./stages";
 import type {
   AnswerNormalizer,
@@ -239,6 +244,9 @@ export function validateLessonExercise(
   if ((ex.groups !== undefined || ex.groupItems !== undefined) && ex.exerciseType !== "lesson_group") {
     errors.push("groups: grupy są dozwolone tylko dla „lesson_group”");
   }
+  if ((ex.clozeText !== undefined || ex.gapAnswers !== undefined || ex.extraWords !== undefined) && ex.exerciseType !== "lesson_cloze") {
+    errors.push("clozeText: tekst z lukami jest dozwolony tylko dla „lesson_cloze”");
+  }
   validateTextFieldLengths(ex, errors);
   validateFocus(ex, normalizer, errors);
   validateByType(ex, topic, objective, normalizer, errors);
@@ -323,6 +331,10 @@ function validateByType(
       validateGroup(ex, errors);
       validateNoTextAnswers(ex, errors);
       break;
+    case "lesson_cloze":
+      validateCloze(ex, errors);
+      validateNoTextAnswers(ex, errors);
+      break;
     default:
       break;
   }
@@ -405,7 +417,7 @@ function confusableTexts(texts: readonly string[]): [string, string][] {
   return found;
 }
 
-/** Pary i grupy oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
+/** Pary, grupy i luki z bankiem oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
 function validateNoTextAnswers(ex: LessonExerciseDraft, errors: string[]): void {
   if (ex.acceptedAnswers.length > 0) {
     errors.push(`acceptedAnswers: „${ex.exerciseType}” wymaga pustej listy wariantów`);
@@ -492,6 +504,53 @@ function validateGroup(ex: LessonExerciseDraft, errors: string[]): void {
   }
   if (groups.length > 0 && ex.answer !== groupAnswer(ex)) {
     errors.push("answer: musi być listą etykiet grup złączonych „ / ”");
+  }
+}
+
+/**
+ * `lesson_cloze` (design szkoły §13.1): 2–4 luki zgodne z liczbą słów, między
+ * lukami co najmniej jedno słowo, 1–2 dystraktory; słowa banku unikalne i nie
+ * zawarte jedno w drugim, żadne nie występuje w tekście poza lukami (tekst nie
+ * może podpowiadać ani wykluczać słowa z banku).
+ */
+function validateCloze(ex: LessonExerciseDraft, errors: string[]): void {
+  const text = ex.clozeText;
+  const answers = ex.gapAnswers ?? [];
+  const extra = ex.extraWords ?? [];
+  if (text === undefined || text.trim() === "") {
+    errors.push("clozeText: wymagany tekst z lukami dla „lesson_cloze”");
+    return;
+  }
+  const gaps = clozeGapCount(text);
+  if (gaps < MIN_CLOZE_GAPS || gaps > MAX_CLOZE_GAPS) {
+    errors.push(`clozeText: liczba luk (${gaps}) poza zakresem ${MIN_CLOZE_GAPS}–${MAX_CLOZE_GAPS}; lukę oznacz „${GAP_MARKER}”`);
+  }
+  if (answers.length !== gaps) {
+    errors.push(`gapAnswers: liczba słów (${answers.length}) różni się od liczby luk (${gaps})`);
+  }
+  if (extra.length < MIN_CLOZE_EXTRA || extra.length > MAX_CLOZE_EXTRA) {
+    errors.push(`extraWords: liczba słów-pułapek (${extra.length}) poza zakresem ${MIN_CLOZE_EXTRA}–${MAX_CLOZE_EXTRA}`);
+  }
+  const parts = clozeParts(text);
+  if (parts.slice(1, -1).some((part) => wordsOfText(part).length === 0)) {
+    errors.push("clozeText: między dwiema lukami musi stać co najmniej jedno słowo");
+  }
+  if (parts.some((part) => part.includes("_"))) {
+    errors.push("clozeText: podkreślenie poza znacznikiem luki");
+  }
+  const bank = [...answers, ...extra];
+  for (const [a, b] of confusableTexts(bank)) {
+    errors.push(`gapAnswers: „${b}” powiela „${a}” albo się w nim zawiera`);
+  }
+  const visible = parts.map(wordsOfText);
+  for (const word of bank) {
+    const needle = wordsOfText(word);
+    if (visible.some((part) => isContiguousSubsequence(part, needle))) {
+      errors.push(`clozeText: słowo „${word}” z banku występuje w tekście poza luką`);
+    }
+  }
+  if (answers.length > 0 && ex.answer !== clozeAnswer(ex)) {
+    errors.push("answer: musi być listą słów luk złączonych „, ”");
   }
 }
 

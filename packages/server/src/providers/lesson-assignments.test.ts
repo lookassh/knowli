@@ -21,6 +21,18 @@ describe("materializeGeneratedAssignments", () => {
     expect(g).toMatchObject({ answer: "ssaki / ptaki", instructionPl: messages.kid.lessonGroupInstruction, acceptedAnswers: [], focus: [] });
   });
 
+  it("luki z bankiem: odpowiedź ze słów luk i polecenie domyślne", () => {
+    const cloze = {
+      exerciseType: "lesson_cloze", objectiveId: "o", instructionPl: " ",
+      clozeText: "Równik dzieli Ziemię na ___, a bieguny łączy ___.", gapAnswers: ["półkule", "południk"], extraWords: ["równoleżnik"],
+      sourceRefs: [{ quote: "Równik dzieli Ziemię na półkule." }], answer: "zmyślona",
+    };
+    const [c] = materializeGeneratedAssignments([cloze]) as Record<string, unknown>[];
+    expect(c).toMatchObject({ answer: "półkule, południk", instructionPl: messages.kid.lessonClozeInstruction, acceptedAnswers: [], focus: [], extraWords: ["równoleżnik"] });
+    const [broken] = materializeGeneratedAssignments([{ ...cloze, gapAnswers: [1] }]) as Record<string, unknown>[];
+    expect(broken!.answer).toBeUndefined();
+  });
+
   it("pozostawia inne ćwiczenia i odbiera odpowiedź rekordom o złym kształcie", () => {
     const gap = { exerciseType: "lesson_gap", answer: "x" };
     const [same, broken] = materializeGeneratedAssignments([gap, { ...match, pairs: [null] }]) as Record<string, unknown>[];
