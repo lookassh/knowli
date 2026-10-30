@@ -528,7 +528,7 @@ export async function publishDraft(
     // bloby do approved, zanim walidator oceni gotowość. Bez tego zestaw
     // opublikowany zaraz po generacji zostawiałby target_audio w stanie
     // pending i sesje dziecka nie znajdowałyby gotowego audio.
-    await reconcileDraftAssetsTx(tx, services, version);
+    await reconcileDraftAssetsTx(tx, services, version, { keepFailed: true });
 
     const revisions = await tx
       .select({

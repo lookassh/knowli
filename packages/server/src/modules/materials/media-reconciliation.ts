@@ -241,6 +241,13 @@ export async function reconcileDraftAssetsTx(
   tx: Tx,
   services: Services,
   version: { id: string; state: string },
+  options: {
+    /**
+     * Publikacja nie ponawia nieudanych zasobów: kosztowna regeneracja wymaga
+     * jawnej decyzji rodzica (Regeneruj albo pomiń), a walidator zgłasza błąd.
+     */
+    keepFailed?: boolean;
+  } = {},
 ): Promise<void> {
   const settings = services.media;
   if (!settings) {
@@ -316,6 +323,9 @@ export async function reconcileDraftAssetsTx(
               .from(mediaAssets)
               .where(eq(mediaAssets.id, existing.assetId))
           )[0];
+          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed) {
+            continue;
+          }
           if (asset && asset.fingerprint === req.fingerprint && asset.state !== "failed") {
             const nextState = asset.state === "ready" ? "approved" : "pending";
             if (existing.state !== nextState) {
@@ -394,7 +404,7 @@ export async function reconcileBeforePublish(
     if (!version || version.state === "published" || version.editNumber !== expectedEditNumber) {
       return;
     }
-    await reconcileDraftAssetsTx(tx, services, version);
+    await reconcileDraftAssetsTx(tx, services, version, { keepFailed: true });
   });
 }
 

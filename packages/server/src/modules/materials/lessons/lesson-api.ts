@@ -755,7 +755,7 @@ export async function publishLessonDraft(
     }
 
     // Uzgodnij media (TTS odpowiedzi) i zweryfikuj gotowość wymaganego audio.
-    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
+    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state }, { keepFailed: true });
 
     if (subject.ttsForAnswers && services.media) {
       const revisionIds = revisions.map((r) => r.id);

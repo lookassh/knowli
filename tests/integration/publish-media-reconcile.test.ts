@@ -135,6 +135,29 @@ describe("publikacja zleca brakujące media trwale (issue #106)", () => {
     await expect(publishDraft(after, draft.id, draft.editNumber)).resolves.toEqual({ deckVersionId: draft.id });
   });
 
+  it("publikacja nie ponawia nieudanej ilustracji: rodzic decyduje o regeneracji albo pominięciu", async () => {
+    const generation = await fakes();
+    const app = services(generation);
+    const draft = await createDraft(app, { title: "Dni", items: [item({ visualType: "image" })] });
+    await reconcileDraftAssets(app, draft.id);
+    generation.image.failuresLeft = 3;
+    // trzy przebiegi workera wyczerpują próby ilustracji (jak w media.test.ts)
+    for (let pass = 0; pass < 3; pass += 1) await runDueGenerationWork(app);
+    expect(await count("media_assets", "kind = 'illustration' and state = 'failed'")).toBe(1);
+    const imageRuns = await count("generation_runs", "kind = 'illustration'");
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const rejection = await publishDraft(app, draft.id, draft.editNumber).catch((error: unknown) => error);
+      expect(rejection).toMatchObject({ code: "validation" });
+      expect(rejection).not.toMatchObject({ details: { media: "pending" } });
+    }
+    // żadna kosztowna generacja bez jawnego „Regeneruj”
+    expect(await count("generation_runs", "kind = 'illustration'")).toBe(imageRuns);
+    expect(await count("media_assets", "kind = 'illustration' and state = 'pending'")).toBe(0);
+    expect(generation.image.requests).toHaveLength(3);
+    expect((await readDraft(app, draft.id)).assets.find((asset) => asset.role === "illustration")?.state).toBe("failed");
+  });
+
   it("nieaktualny numer edycji to konflikt bez uzgadniania mediów", async () => {
     const generation = await fakes();
     const app = services(generation);
