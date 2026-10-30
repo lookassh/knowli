@@ -2299,9 +2299,20 @@ describe("LearningSessionController", () => {
     const playing = harness.controller.playQuestionAudio();
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-card"]);
     expect(harness.state.disclosures).toHaveLength(0);
+    // Zatrzymanie musi nastąpić przed `complete-presentation` — wstrzymane API
+    // wyklucza późniejsze zatrzymanie przy ładowaniu następnego zadania.
+    let releaseCompletion!: () => void;
+    const completionGate = new Promise<void>((resolve) => { releaseCompletion = resolve; });
+    const completion = vi.spyOn(harness.api, "completePresentation").mockImplementation(async (taskId) => {
+      await completionGate;
+      return makeApi(harness.state).completePresentation(taskId);
+    });
     const stopsBefore = harness.media.stops;
-    await harness.controller.completePresentation();
+    const advancing = harness.controller.completePresentation();
+    expect(completion).toHaveBeenCalledOnce();
     expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    releaseCompletion();
+    await advancing;
     release();
     await playing;
   });
