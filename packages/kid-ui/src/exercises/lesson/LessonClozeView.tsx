@@ -1,11 +1,10 @@
 import { Fragment, useRef, useState } from "react";
 import { messages, type LessonItem } from "@learning/contracts";
 import { format } from "../../format";
-import { ActionButton } from "../../components/ActionButton";
-import { LessonBlockButton } from "../../components/LessonBlockButton";
 import { ExerciseFrame } from "../ExerciseFrame";
 import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
+import { AssignmentCheckButton, AssignmentPool, AssignmentSlot } from "./AssignmentPool";
 import { matchAssignments, matchComplete, matchPool, matchState, placeRight, rightOf, selectSlot } from "./assignment-state";
 
 /**
@@ -68,20 +67,19 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
                 const active = state.active === gap.id;
                 return (
                   <li key={gap.id} className="kid-lesson-cloze__slot-row">
-                    <LessonBlockButton
-                      type="button"
-                      className={`kid-lesson-block kid-lesson-match__slot${word ? " kid-lesson-block--placed" : ""}${active ? " kid-lesson-match__slot--active" : ""}`}
-                      data-testid="kid-lesson-cloze-slot"
-                      aria-pressed={active}
+                    <AssignmentSlot
+                      filled={word !== null}
+                      active={active}
                       disabled={disabled}
-                      aria-label={word
+                      testId="kid-lesson-cloze-slot"
+                      label={word
                         ? format(messages.kid.lessonClozeRemove, { n, word: word.text })
                         : format(messages.kid.lessonClozeChooseSlot, { n })}
-                      onClick={() => { setState((current) => selectSlot(current, gap.id)); handlers.onEdit(); }}
+                      onSelect={() => { setState((current) => selectSlot(current, gap.id)); handlers.onEdit(); }}
                     >
                       <span className="kid-lesson-cloze__gap-number" aria-hidden="true">{n}</span>
                       {word ? word.text : messages.kid.lessonClozeEmptySlot}
-                    </LessonBlockButton>
+                    </AssignmentSlot>
                   </li>
                 );
               })}
@@ -93,35 +91,21 @@ export function LessonClozeView({ task, busy, dock, handlers }: ExerciseProps) {
                 {format(messages.kid.lessonClozeActiveHint, { n: activeNumber })}
               </p>
             )}
-            <div className="kid-lesson-match__pool" data-testid="kid-lesson-cloze-pool" role="list" aria-label={messages.kid.lessonClozePool}>
-              {pool.map((item) => (
-                <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
-                  <LessonBlockButton
-                    type="button"
-                    className="kid-lesson-block"
-                    data-testid="kid-lesson-cloze-option"
-                    disabled={disabled || state.active === null}
-                    aria-label={activeNumber !== null ? format(messages.kid.lessonClozePlace, { n: activeNumber, word: item.text }) : item.text}
-                    onClick={() => { setState((current) => placeRight(current, item.id)); handlers.onEdit(); }}
-                  >
-                    {item.text}
-                  </LessonBlockButton>
-                </div>
-              ))}
-            </div>
+            <AssignmentPool
+              items={pool}
+              className="kid-lesson-match__pool"
+              testId="kid-lesson-cloze-pool"
+              optionTestId="kid-lesson-cloze-option"
+              label={messages.kid.lessonClozePool}
+              disabled={disabled || state.active === null}
+              labelOf={(item) => (activeNumber !== null ? format(messages.kid.lessonClozePlace, { n: activeNumber, word: item.text }) : item.text)}
+              onPick={(itemId) => { setState((current) => placeRight(current, itemId)); handlers.onEdit(); }}
+            />
           </div>
         </div>
       )}
       actions={(
-        <ActionButton
-          type="button"
-          className="kid-primary"
-          data-testid="kid-lesson-check"
-          disabled={disabled || !complete}
-          onClick={() => { if (complete && !disabled) handlers.onAnswerAssignment(matchAssignments(state)); }}
-        >
-          {messages.kid.lessonCheck}
-        </ActionButton>
+        <AssignmentCheckButton disabled={disabled} complete={complete} onCheck={() => handlers.onAnswerAssignment(matchAssignments(state))} />
       )}
     />
   );

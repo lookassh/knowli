@@ -1,11 +1,10 @@
 import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
 import { format } from "../../format";
-import { ActionButton } from "../../components/ActionButton";
-import { LessonBlockButton } from "../../components/LessonBlockButton";
 import { ExerciseFrame } from "../ExerciseFrame";
 import { useRetryReset } from "../useRetryReset";
 import type { ExerciseProps } from "../types";
+import { AssignmentCheckButton, AssignmentPool, AssignmentSlot } from "./AssignmentPool";
 import { matchAssignments, matchComplete, matchPool, matchState, placeRight, rightOf, selectSlot } from "./assignment-state";
 
 /**
@@ -41,19 +40,18 @@ export function LessonMatchView({ task, busy, dock, handlers }: ExerciseProps) {
               return (
                 <li key={item.id} className="kid-lesson-match__row" data-testid="kid-lesson-match-row">
                   <span className="kid-lesson-match__left" data-testid="kid-lesson-match-left">{item.text}</span>
-                  <LessonBlockButton
-                    type="button"
-                    className={`kid-lesson-block kid-lesson-match__slot${right ? " kid-lesson-block--placed" : ""}${active ? " kid-lesson-match__slot--active" : ""}`}
-                    data-testid="kid-lesson-match-slot"
-                    aria-pressed={active}
+                  <AssignmentSlot
+                    filled={right !== null}
+                    active={active}
                     disabled={disabled}
-                    aria-label={right
+                    testId="kid-lesson-match-slot"
+                    label={right
                       ? format(messages.kid.lessonMatchRemove, { item: item.text, answer: right.text })
                       : format(messages.kid.lessonMatchChooseSlot, { item: item.text })}
-                    onClick={() => { setState((current) => selectSlot(current, item.id)); handlers.onEdit(); }}
+                    onSelect={() => { setState((current) => selectSlot(current, item.id)); handlers.onEdit(); }}
                   >
                     {right ? right.text : messages.kid.lessonMatchEmptySlot}
-                  </LessonBlockButton>
+                  </AssignmentSlot>
                 </li>
               );
             })}
@@ -63,36 +61,20 @@ export function LessonMatchView({ task, busy, dock, handlers }: ExerciseProps) {
               {format(messages.kid.lessonMatchActiveHint, { item: activeLeft.text })}
             </p>
           )}
-          <div className="kid-lesson-match__pool" data-testid="kid-lesson-match-pool" role="list" aria-label={messages.kid.lessonMatchPool}>
-            {pool.map((item) => (
-              <div key={item.id} role="listitem" className="kid-lesson-assign__entry">
-                <LessonBlockButton
-                  type="button"
-                  className="kid-lesson-block"
-                  data-testid="kid-lesson-match-option"
-                  disabled={disabled || state.active === null}
-                  aria-label={activeLeft
-                    ? format(messages.kid.lessonMatchPlace, { item: activeLeft.text, answer: item.text })
-                    : item.text}
-                  onClick={() => { setState((current) => placeRight(current, item.id)); handlers.onEdit(); }}
-                >
-                  {item.text}
-                </LessonBlockButton>
-              </div>
-            ))}
-          </div>
+          <AssignmentPool
+            items={pool}
+            className="kid-lesson-match__pool"
+            testId="kid-lesson-match-pool"
+            optionTestId="kid-lesson-match-option"
+            label={messages.kid.lessonMatchPool}
+            disabled={disabled || state.active === null}
+            labelOf={(item) => (activeLeft ? format(messages.kid.lessonMatchPlace, { item: activeLeft.text, answer: item.text }) : item.text)}
+            onPick={(itemId) => { setState((current) => placeRight(current, itemId)); handlers.onEdit(); }}
+          />
         </div>
       )}
       actions={(
-        <ActionButton
-          type="button"
-          className="kid-primary"
-          data-testid="kid-lesson-check"
-          disabled={disabled || !complete}
-          onClick={() => { if (complete && !disabled) handlers.onAnswerAssignment(matchAssignments(state)); }}
-        >
-          {messages.kid.lessonCheck}
-        </ActionButton>
+        <AssignmentCheckButton disabled={disabled} complete={complete} onCheck={() => handlers.onAnswerAssignment(matchAssignments(state))} />
       )}
     />
   );

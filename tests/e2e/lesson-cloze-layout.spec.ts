@@ -1,6 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
-import type { AttemptDto, TaskDto } from "@learning/contracts";
-import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expect, test } from "@playwright/test";
+import type { TaskDto } from "@learning/contracts";
+import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { assignmentAttempt, lessonTaskFixture, openLessonTask, recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
+import { expectButtonsNotClipped, expectTargetsReachable } from "./helpers/lesson-reach";
 
 /**
  * Geometria „Uzupełnij tekst” (`lesson_cloze`) w interfejsie dziecka (API
@@ -19,6 +21,9 @@ const sessionId = "10000000-0000-4000-8000-000000000803";
 const versionId = "10000000-0000-4000-8000-000000000804";
 const clozeTaskId = "10000000-0000-4000-8000-000000000811";
 const uid = (n: number) => `10000000-0000-4000-8000-0000000008${String(n).padStart(2, "0")}`;
+
+const ids = { childId, deckId, sessionId, versionId };
+const deck = { title: "Fotosynteza", subjectTitle: "Przyroda" };
 
 const VIEWPORTS = [
   { width: 320, height: 640 },
@@ -55,60 +60,9 @@ const clozeTask: TaskDto = {
   },
 };
 
-function fixture(attempts: AttemptDto[] = []): KidUiFixture {
-  return {
-    profiles: [{ childId, displayName: "Ola", avatarKey: "owl", recordingMode: "hold" }],
-    decks: [{ deckId, title: "Fotosynteza", itemCount: 6, independentlyRecalledCount: 0, testDate: null,
-      recommended: true, mockTestAvailable: false, activeSession: null, kind: "lesson", subjectTitle: "Przyroda" }],
-    session: { mode: "training", sessionId, childId, deckId, deckVersionId: versionId,
-      policyId: "lesson-default", microphoneEnabled: false, state: "active", taskBudget: 3, tasksIssued: 1,
-      assessedTasksIssued: 1, startedAt: "2026-10-30T10:00:00.000Z", resumed: false },
-    tasks: [clozeTask],
-    attempts,
-  };
-}
-
-async function open(page: Page, kidFixture: KidUiFixture): Promise<void> {
-  await installKidUiFixture(page, kidFixture);
-  await page.setViewportSize(VIEWPORTS[1]!);
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").click();
-  await expect(page.getByTestId("kid-lesson-cloze")).toBeVisible();
-}
-
-interface Target { testId: string; nth?: number; minHeight?: number; tall?: boolean }
-
-/** Każdy element po przewinięciu do widoku mieści się w viewporcie i w kontenerze materiału. */
-async function expectReachable(page: Page, viewport: { width: number; height: number }, targets: readonly Target[]): Promise<void> {
-  const label = `${viewport.width}x${viewport.height}`;
-  await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
-  const material = (await page.getByTestId("kid-material").boundingBox())!;
-  for (const target of targets) {
-    const element = target.nth === undefined ? page.getByTestId(target.testId) : page.getByTestId(target.testId).nth(target.nth);
-    await element.scrollIntoViewIfNeeded();
-    const bounds = (await element.boundingBox())!;
-    const name = `${target.testId}${target.nth === undefined ? "" : `[${target.nth}]`} at ${label}`;
-    expect(bounds.x, name).toBeGreaterThanOrEqual(0);
-    expect(bounds.x + bounds.width, name).toBeLessThanOrEqual(viewport.width + 1);
-    expect(bounds.x, `${name} inside material`).toBeGreaterThanOrEqual(material.x - 1);
-    expect(bounds.x + bounds.width, `${name} inside material`).toBeLessThanOrEqual(material.x + material.width + 1);
-    // Akapit tekstu może być wyższy niż niski landscape — wtedy przewija się w ramie.
-    if (!target.tall) {
-      expect(bounds.y, name).toBeGreaterThanOrEqual(-1);
-      expect(bounds.y + bounds.height, name).toBeLessThanOrEqual(viewport.height + 1);
-    }
-    if (target.minHeight !== undefined) {
-      expect(bounds.height, name).toBeGreaterThanOrEqual(target.minHeight);
-      expect(bounds.width, name).toBeGreaterThanOrEqual(48);
-    }
-  }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `page overflow at ${label}`).toBe(false);
-  expect(await page.getByTestId("kid-material").evaluate((element) => element.scrollWidth > element.clientWidth + 1), `material overflow at ${label}`).toBe(false);
-}
-
 test("cloze: text with four gaps, slots, word bank and check fit every form factor", async ({ page }, testInfo) => {
-  await open(page, fixture());
+  await installKidUiFixture(page, lessonTaskFixture(ids, deck, [clozeTask]));
+  await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
   await expect(page.getByTestId("kid-instruction")).toContainText("Uzupełnij tekst.");
   await expect(page.getByTestId("kid-lesson-cloze-gap")).toHaveCount(4);
   await expect(page.getByTestId("kid-lesson-cloze-text").locator("button")).toHaveCount(0);
@@ -122,16 +76,14 @@ test("cloze: text with four gaps, slots, word bank and check fit every form fact
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
-    await expectReachable(page, viewport, [
+    await expectTargetsReachable(page, viewport, [
       { testId: "kid-lesson-cloze-text", tall: true },
       ...Array.from({ length: 4 }, (_, nth) => ({ testId: "kid-lesson-cloze-slot", nth, minHeight: 48 })),
       ...Array.from({ length: 4 }, (_, nth) => ({ testId: "kid-lesson-cloze-option", nth, minHeight: 48 })),
       { testId: "kid-lesson-check", minHeight: 54 },
     ]);
-    for (const testId of ["kid-lesson-cloze-slot", "kid-lesson-cloze-option"]) {
-      expect(await page.getByTestId(testId).evaluateAll((buttons) => buttons.every((button) =>
-        button.scrollWidth <= button.clientWidth + 1 && button.scrollHeight <= button.clientHeight + 1)), `${testId} clipped at ${label}`).toBe(true);
-    }
+    await expectButtonsNotClipped(page, "kid-lesson-cloze-slot", label);
+    await expectButtonsNotClipped(page, "kid-lesson-cloze-option", label);
     // Luka w tekście nie wystaje poza akapit (zawija się razem z tekstem).
     const text = (await page.getByTestId("kid-lesson-cloze-text").boundingBox())!;
     for (const gap of await page.getByTestId("kid-lesson-cloze-gap").all()) {
@@ -151,29 +103,13 @@ test("cloze: text with four gaps, slots, word bank and check fit every form fact
 });
 
 test("cloze: check sends gap → word assignments and shows the completed text after a mistake", async ({ page }) => {
-  const posted: unknown[] = [];
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && /\/tasks\/[^/]+\/attempts$/.test(path)) posted.push(request.postDataJSON());
-  });
+  const posted = recordAttemptPosts(page);
   const correctText = "Roślina pobiera z powietrza dwutlenek węgla, a korzeniami czerpie z gleby wodę.";
-  await open(page, fixture([{
-    attemptId: uid(90), taskId: clozeTaskId, state: "completed", modality: "assignment", feedback: { kind: "incorrect", correctText },
-    taskState: "answered", stepId: "s1", receivedAt: "2026-10-30T10:00:01.000Z", completedAt: "2026-10-30T10:00:01.000Z",
-  }]));
-  const check = page.getByTestId("kid-lesson-check");
-  for (let i = 0; i < 3; i += 1) {
-    await page.getByTestId("kid-lesson-cloze-option").first().click();
-    await expect(check).toBeDisabled();
-  }
-  await page.getByTestId("kid-lesson-cloze-option").first().click();
-  await expect(check).toBeEnabled();
-  await check.click();
-  await expect.poll(() => posted.length).toBe(1);
-  const body = posted[0] as { modality: string; assignments: { itemId: string; targetId: string }[] };
-  expect(body.modality).toBe("assignment");
-  expect(body.assignments.map((entry) => entry.itemId)).toEqual([uid(20), uid(21), uid(22), uid(23)]);
-  expect(new Set(body.assignments.map((entry) => entry.targetId)).size).toBe(4);
+  const kidFixture = lessonTaskFixture(ids, deck, [clozeTask], [assignmentAttempt(uid(90), clozeTaskId, { kind: "incorrect", correctText })]);
+  await installKidUiFixture(page, kidFixture);
+  await openLessonTask(page, VIEWPORTS[1]!, "kid-lesson-cloze");
+  const assignments = await tapPoolAndCheck(page, "kid-lesson-cloze-option", 4, posted);
+  expect(assignments.map((entry) => entry.itemId)).toEqual([uid(20), uid(21), uid(22), uid(23)]);
   await expect(page.getByText(correctText)).toBeVisible();
   await expect(page.getByTestId("kid-lesson-cloze-option").first()).toBeDisabled();
 });
