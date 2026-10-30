@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { endSessionFromHeader } from "./helpers/kid-session";
 import { seedMockTest } from "./mock-test-helpers";
 
 test("written mock test keeps its three slots after errors, reload and transport retry", async ({ page }) => {
@@ -98,7 +99,7 @@ test("two browsers resume the same test and stale answers refresh without extra 
   await other.getByTestId("kid-not-remember").click();
   await expect(other.getByTestId("kid-error")).toBeVisible(); await other.getByTestId("kid-retry").click();
   await expect(other.locator("[data-task-id]")).toHaveAttribute("data-task-id", (await page.locator("[data-task-id]").getAttribute("data-task-id"))!);
-  await other.getByTestId("kid-end").click(); await expect(other.getByTestId("kid-mock-summary")).toBeVisible();
+  await endSessionFromHeader(other); await expect(other.getByTestId("kid-mock-summary")).toBeVisible();
   await other.close();
 });
 

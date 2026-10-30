@@ -1018,6 +1018,20 @@ export class LearningSessionController {
     await this.#finishSession(this.#epoch);
   }
 
+  /**
+   * Otwarcie potwierdzenia „Koniec”: trwające nagranie przepada bez wysłania,
+   * odtwarzanie milknie. Wysyłane już nagranie („stopping”) kończy się zwykłym
+   * trybem, a mikrofon nie startuje ponownie sam po powrocie do zadania.
+   */
+  holdForEndConfirm(): void {
+    const screen = this.#learning();
+    if (!screen) return;
+    if (screen.recordingPhase === "preparing" || screen.recordingPhase === "starting" || screen.recordingPhase === "recording") {
+      this.cancelRecording();
+    }
+    this.#stopPlayback();
+  }
+
   async completePresentation(): Promise<void> {
     const screen = this.#learning();
     if (!screen?.task || screen.busy || (screen.task.exerciseType !== "exposure" && screen.task.exerciseType !== "lesson_card")) return;

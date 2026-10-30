@@ -816,6 +816,40 @@ describe("LearningSessionController", () => {
     expect(harness.state.speechSubmissions).toHaveLength(0);
   });
 
+  it("potwierdzenie „Koniec” przerywa nagranie bez wysyłania i wycisza odtwarzanie, nie kończąc sesji", async () => {
+    const state = baseState();
+    const task = taskDto("speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+    const harness = await startAtTask(state, task);
+    await harness.controller.prepareMicrophone();
+    await harness.controller.startRecording();
+    const stopsBefore = harness.media.stops;
+
+    harness.controller.holdForEndConfirm();
+
+    expect(harness.recorder.cancelled).toBe(1);
+    expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", recordingPhase: "idle", busy: false, task: { taskId: task.taskId } });
+    harness.recorder.hitLimit();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.speechSubmissions).toHaveLength(0);
+    expect(state.endedSessions).toHaveLength(0);
+    expect(harness.recorder.started).toBe(1);
+  });
+
+  it("potwierdzenie „Koniec” bez nagrania tylko wycisza odtwarzanie", async () => {
+    const state = baseState();
+    const task = taskDto("speech", { kind: "speech", text: "apple", visualType: "none", imageAssetId: null, audioAssetId: null });
+    const harness = await startAtTask(state, task);
+    const stopsBefore = harness.media.stops;
+
+    harness.controller.holdForEndConfirm();
+
+    expect(harness.recorder.cancelled).toBe(0);
+    expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", recordingPhase: "idle", busy: false });
+    expect(state.endedSessions).toHaveLength(0);
+  });
+
   it("starts mock test only after confirming server budget and advances without correctness feedback", async () => {
     const state = baseState();
     const first = taskDto("mock-1", { kind: "recall", prompt: "poniedziałek" }), second = { ...taskDto("mock-2", { kind: "recall", prompt: "wtorek" }), ordinal: 1 };
