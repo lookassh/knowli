@@ -2543,7 +2543,8 @@
 }
 
 /* „Uzupełnij tekst” (design szkoły §13.5): luka w tekście to znacznik z numerem
-   (nie przycisk), miejsca luk i bank pod tekstem; od 840 px bank obok tekstu. */
+   (nie przycisk), miejsca luk i bank pod tekstem w jednej kolumnie — kontener
+   materiału ma ok. 530 px także na desktopie, a bank ma stać tuż pod miejscami. */
 .kid-lesson-cloze {
   width: 100%;
   display: grid;
@@ -2606,13 +2607,6 @@
 .kid-lesson-cloze__slot-row {
   display: flex;
   min-width: 0;
-}
-
-@media (min-width: 840px) {
-  .kid-lesson-cloze {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    align-items: start;
-  }
 }
 
 /* Luka: zdanie z polem edycji dokładnie w miejscu luki. */

@@ -1472,7 +1472,8 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
 
 ## 13. „Uzupełnij tekst” — luki z bankiem słów (Etap 10) — kontrakt
 
-Status: **do akceptacji właściciela** (decyzje 13.9). Typ wybrany przez
+Status: **zaakceptowany przez właściciela 2026-10-30** (decyzje 13.9 bez
+zmian; korekty przy implementacji w 13.10). Typ wybrany przez
 właściciela 2026-10-30 spośród: „Uzupełnij tekst”, „Oś czasu”, „Podpisz
 obrazek” (ten ostatni wymagałby obrazów wyłączonych w requirements, „Zakres
 i świadome wyłączenia”). Numer sekcji: §12 zajmują równoległe kontrakty
@@ -1668,3 +1669,31 @@ reguł stanu, ewentualnie tylko alias nazwy.
 7. **Nagranie pytania**: polecenie + tekst z „luka”; bez banku.
 8. **Poza etapem**: wariant bez banku (wpisywanie, etap `productive`), ocena
    per luka, odsłuch słów banku, powiązanie z pomylonymi pojęciami z Etapu 6.
+
+### 13.10. Korekty przy implementacji (2026-10-30)
+
+- **Jedna kolumna na każdym ekranie** zamiast banku obok tekstu od 840 px:
+  kontener materiału ma ok. 530 px także na desktopie, więc dwie kolumny
+  ściskały tekst, a w niskim landscape bank lądował u góry, daleko od miejsc
+  luk. Kolejność: tekst, miejsca luk, tuż pod nimi bank i podpowiedź „Które
+  słowo pasuje do luki n?”. Spec geometrii sprawdza to na 320×640, 390×844,
+  844×390, 768×1024 i 1280×800.
+- **Omówienie kartkówki**: odpowiedź dziecka to tekst z jego słowami w lukach
+  (pusta luka jako „___”), obok poprawnego tekstu — klucz zadania trzyma też
+  `clozeText` (tylko serwer). Raport aktywności sesji i karta pracy rodzica
+  opisują odpowiedź jako `1 → słowo; 2 → słowo`, a ocena aktywności sesji
+  dostaje jako wariant poprawny ten sam zapis (nie uzupełniony tekst), żeby
+  porównywała odpowiedzi w jednym formacie; bodźcem jest tekst z „[1]”, „[2]”.
+- **Tasowanie**: `shuffleUnsolved` przesuwa układ cyklicznie aż do
+  nierozwiązanego (najwyżej n − 1 kroków) — dla par, grup i „Ułóż” wynik bez
+  zmian (wystarczał jeden krok), dla banku z dystraktorami na początku jeden
+  krok nie zawsze zmienia kolejność słów luk.
+- Luka w tekście ma dla czytnika ekranu ukryty opis („luka 1, pusta” /
+  „luka 1: tlen”), a widoczny znacznik (numer i słowo albo „…”) jest
+  `aria-hidden`; miejsca luk mają etykiety „Luka n: wybierz słowo” / „Luka n:
+  słowo. Dotknij, aby wyjąć słowo”.
+- Ocena aktywności, feedback i zapis próby nie wymagały nowych pól oprócz
+  `filledText` i `clozeText` w kluczu zadania; `evaluateAssignment` bez zmian
+  (luka = element, słowo = cel użyty co najwyżej raz).
+- Fake generator nie tworzy luk z bankiem (jak par i grup); testy budują pule
+  przez edycję rodzica.
