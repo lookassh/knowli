@@ -347,6 +347,9 @@ describe("uzupełnij tekst (design szkoły §13.2)", () => {
     expect(TaskPromptSchema.safeParse({ ...cloze, segments: [...cloze.segments.slice(0, 4), { gapId: ids[1]!, word: "wodę" }] }).success).toBe(false);
     expect(TaskPromptSchema.safeParse({ ...cloze, segments: [{ gapId: ids[0]! }, { text: " i " }, { gapId: ids[0]! }] }).success).toBe(false);
     expect(TaskPromptSchema.safeParse({ ...cloze, segments: [{ gapId: ids[0]! }, { text: " i " }] }).success).toBe(false);
-    expect(TaskPromptSchema.safeParse({ ...cloze, words: cloze.words.slice(0, 2) }).success).toBe(false);
+    // Trzy luki i trzy słowa: kształt przechodzi `min(3)`, odpada dopiero na braku dystraktora.
+    const threeGaps = [{ text: "A " }, { gapId: ids[0]! }, { text: " b " }, { gapId: ids[1]! }, { text: " c " }, { gapId: ids[5]! }];
+    expect(TaskPromptSchema.safeParse({ ...cloze, segments: threeGaps, words: cloze.words }).success).toBe(false);
+    expect(TaskPromptSchema.safeParse({ ...cloze, segments: threeGaps, words: [...cloze.words, word(6, "azot")] }).success).toBe(true);
   });
 });
