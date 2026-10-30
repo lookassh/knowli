@@ -35,6 +35,12 @@ describe("createOpenAiTtsProvider", () => {
     expect(result.mimeType).toBe("audio/mpeg");
   });
 
+  it("mp3: inny typ audio od providera (np. PCM przy złym UMIEM_TTS_FORMAT) to błąd, a nie gotowe nagranie", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1, 2]), { status: 200, headers: { "content-type": "audio/pcm;rate=24000;channels=1" } })));
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    await expect(provider.synthesize({ text: "cat", locale: "en-GB", voice: "Kore", format: "mp3" })).rejects.toThrow("provider_unexpected_audio");
+  });
+
   it("wav: prosi o pcm, przekazuje instrukcję i opakowuje odpowiedź nagłówkiem WAV", async () => {
     const pcm = new Uint8Array([0, 1, 2, 3]);
     const fetchMock = vi.fn(async () => new Response(pcm, { status: 200, headers: { "content-type": "audio/pcm;rate=24000;channels=1" } }));

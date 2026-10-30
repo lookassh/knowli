@@ -57,12 +57,17 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
         throw new Error(`provider_http_${response.status}`);
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
-      if (input.format === "mp3") return { bytes, mimeType: "audio/mpeg" };
       const contentType = response.headers.get("content-type") ?? "";
+      if (input.format === "mp3") {
+        // Jawnie inny typ audio (np. PCM Gemini przy pominiętym UMIEM_TTS_FORMAT=wav)
+        // zostałby zapisany jako niedekodowalne „mp3” bez ponowienia.
+        if (/^audio\//i.test(contentType) && !/^audio\/(mpeg|mp3)\b/i.test(contentType)) throw new Error("provider_unexpected_audio");
+        return { bytes, mimeType: "audio/mpeg" };
+      }
       const pcm = pcmFormatOf(contentType);
       const wav = /^audio\/(wav|x-wav|wave)\b/i.test(contentType) ? normalizeWav(bytes) : pcm && pcmToWav(bytes, pcm);
-      // Do logów trafia tylko kod. Zgadnięty format albo ucięty/pusty plik
-      // zostałby zapisany jako gotowe nagranie bez ponowienia.
+      // Zgadnięty format albo ucięty/pusty plik zostałby zapisany jako gotowe
+      // nagranie bez ponowienia. Komunikat to sam kod, bez treści odpowiedzi.
       if (wav === null || wavDurationMs(wav) === null) throw new Error("provider_unexpected_audio");
       return { bytes: wav, mimeType: "audio/wav" };
     },

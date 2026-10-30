@@ -245,10 +245,12 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
     });
   } catch (error) {
     // porażka providera wraca do kolejki; wyczerpany budżet zamyka zasób.
-    // Do logów trafia wyłącznie kod klasyfikacji; komunikat providera może
-    // zawierać treść odpowiedzi HTTP.
+    // Do logów trafia wyłącznie kod klasyfikacji i nasz własny kod adaptera
+    // (`provider_http_400`, `provider_unexpected_audio`) — dowolny komunikat
+    // providera może zawierać treść odpowiedzi HTTP.
+    const detail = error instanceof Error && /^provider_[a-z0-9_]+$/.test(error.message) ? `, ${error.message}` : "";
     console.warn(
-      `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}, kod=${errorCodeOf(error)})`,
+      `[generation] ${asset.kind} nie udało się (próba ${attempts ?? "?"}/${MAX_AUTOMATIC_ATTEMPTS}, asset ${assetId}, kod=${errorCodeOf(error)}${detail})`,
     );
     if (signal?.aborted) {
       await requeueAbortedMediaAsset(services, assetId, leaseToken);
