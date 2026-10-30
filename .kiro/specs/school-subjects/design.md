@@ -1634,3 +1634,19 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
    pojedynczych przykładów. Odnotowane przy okazji: przykłady na karcie mają
    w Kid UI `lang="en-GB"` także w przedmiotach szkolnych (polskie przykłady),
    co myli czytniki ekranu — do osobnej poprawki.
+
+### 12.7. Korekty przy implementacji (2026-10-30)
+
+- **Przykłady na każdej karcie.** `renderCard` pokazuje przykłady lekcji
+  zagadnienia na każdej jego karcie, więc nagranie każdej karty też je czyta
+  (zgodnie z zasadą „tylko to, co widać”).
+- Po usunięciu `{{examples}}` treść karty może mieć spację przed kropką;
+  `cardReadText` ją usuwa (bez wpływu na ekran, czystszy tekst i fingerprint).
+- Przycisk dostaje kontekst odsłuchu z `LearnScreen` jak pytania;
+  `LessonCardView` przejmuje go do nagłówka i zeruje kontekst dla ramy, więc
+  wiersz instrukcji karty („Poznaj regułę”) nie ma drugiego głośnika.
+  Nagłówek to siatka `48px | tytuł | 48px`, tytuł zostaje wyśrodkowany.
+- „Dalej” zatrzymuje każde trwające odtwarzanie (także w ekspozycji słówek)
+  przed `complete-presentation` i czyści komunikat błędu odsłuchu.
+- Równoległy etap odsłuchu opcji też planuje §12 i migrację `0028`; kto scali
+  drugi, przenumerowuje (sekcja → §13, migracja → `0029`).
