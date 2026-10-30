@@ -1345,9 +1345,12 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
 ### 11.3. Zadanie i Kid DTO
 
 - Przy wydaniu zadania materializacja dołącza `questionAudioAssetId`, jeśli
-  `prompt_audio` rewizji jest zatwierdzone i `media_assets.state='ready'`
-  (jak `target_audio` dziś). Pole opcjonalne w gałęziach `TaskPromptSchema`
-  typów z 11.1; prompt wydanego zadania pozostaje niezmienny.
+  istnieje gotowy zasób TTS (`media_assets.state='ready'`) o fingerprincie
+  zgodnym z `expected_fingerprint` wiersza `prompt_audio` rewizji — najnowsza
+  generacja, niezależnie od stanu powiązania w `revision_assets` (nagranie nie
+  jest decyzją rodzica i może dojść po publikacji, 11.7). Pole opcjonalne
+  w gałęziach `TaskPromptSchema` typów z 11.1; prompt wydanego zadania
+  pozostaje niezmienny.
 - Dołączane także w **kartkówce** — nagranie powtarza widoczną treść i nie
   zdradza odpowiedzi (w przeciwieństwie do `audioAssetId` odpowiedzi
   wzorcowej, który w kartkówce jest wyłączony).
