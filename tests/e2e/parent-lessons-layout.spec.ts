@@ -33,9 +33,9 @@ const catalog = {
 
 interface Api { creates: Array<{ path: string; body: Record<string, unknown> }> }
 
-async function openNewLesson(page: Page, createStatus: () => number = () => 202): Promise<Api> {
+async function openNewLesson(page: Page, createStatus: () => number = () => 202, hold: Promise<void> = Promise.resolve()): Promise<Api> {
   const api: Api = { creates: [] };
-  await page.route("**/api/v1/parent/**", (route) => {
+  await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
@@ -43,6 +43,7 @@ async function openNewLesson(page: Page, createStatus: () => number = () => 202)
     if (request.method() === "POST" && /\/lessons(\/school)?$/.test(path)) {
       const body = request.postDataJSON() as Record<string, unknown>;
       api.creates.push({ path, body });
+      await hold;
       const status = createStatus();
       if (status !== 202) return route.fulfill({ status, json: { code: "internal", message: "Błąd", retryable: true, requestId: "r" } });
       return route.fulfill({ status: 202, json: { runId: "00000000-0000-4000-8000-0000000000aa", deckId: body.deckId } });
@@ -108,6 +109,22 @@ test("wpisany materiał chroni wyjście; utworzenie lekcji przechodzi do edytora
   await expect(page.getByTestId("lesson-material")).toHaveValue("He plays football every day.");
 
   await page.getByTestId("lesson-create-submit").click();
+  await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+  await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+});
+
+test("w trakcie tworzenia lekcji wyjście jest zablokowane, po odpowiedzi otwiera się edytor", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let release!: () => void;
+  const api = await openNewLesson(page, () => 202, new Promise<void>((resolve) => { release = resolve; }));
+  await page.getByTestId("lesson-material").fill("He plays football every day.");
+  await page.getByTestId("lesson-create-submit").click();
+  await expect.poll(() => api.creates.length).toBe(1);
+  // polecenie w drodze: zmiana sekcji nie wychodzi i nie pyta (jak zapis w edytorach)
+  await page.getByTestId("tab-children").click();
+  await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/parent\/lessons\/new$/);
+  release();
   await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
   await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
 });

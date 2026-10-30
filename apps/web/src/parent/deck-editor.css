@@ -288,6 +288,15 @@
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45);
 }
 
+/* Klawiatura ekranowa otwarta (ParentShell, telefon): pasek nie zasłania edytowanego pola;
+   wraca po zamknięciu klawiatury. Błąd polecenia zostaje widoczny — sam wiersz błędu,
+   bez przycisków i powodu blokady publikacji. */
+[data-keyboard-open] .pp-editor-bar:not(:has(.pp-editor-bar-error)),
+[data-keyboard-open] .pp-editor-bar .pp-editor-bar-actions,
+[data-keyboard-open] .pp-editor-bar .pp-editor-bar-note {
+  display: none;
+}
+
 .pp-editor-bar-in {
   display: flex;
   align-items: center;

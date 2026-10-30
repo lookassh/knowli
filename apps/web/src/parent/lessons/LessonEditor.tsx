@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Accordion, ActionIcon, Alert, Button, Group, Loader, Menu, Modal, NumberInput, Paper, Stack, Tabs, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
@@ -110,6 +110,19 @@ export default function LessonEditor({
   const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false });
   const [tab, setTab] = useState("exercises");
   const [openCards, setOpenCards] = useState<ReadonlySet<string>>(new Set());
+  // Funkcje kart ćwiczeń są stabilne (karta jest `memo`) i wołają wersje z ostatniego renderu.
+  const cardActionsRef = useRef<{
+    toggle: (cardKey: string) => void;
+    mutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => void;
+    remove: (clientKey: string) => void;
+    play: (assetId: string) => void;
+  } | null>(null);
+  const cardActions = useMemo(() => ({
+    onToggle: (cardKey: string) => cardActionsRef.current?.toggle(cardKey),
+    onMutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => cardActionsRef.current?.mutate(clientKey, patch),
+    onRemove: (clientKey: string) => cardActionsRef.current?.remove(clientKey),
+    onPlay: (assetId: string) => cardActionsRef.current?.play(assetId),
+  }), []);
   const [openObjectives, setOpenObjectives] = useState<string[] | null>(null);
   const [openStages, setOpenStages] = useState<string[] | null>(null);
   const [regenTarget, setRegenTarget] = useState<string | null>(null);
@@ -666,6 +679,8 @@ export default function LessonEditor({
     };
   };
 
+  cardActionsRef.current = { toggle: toggleCard, mutate: mutateExercise, remove: removeExercise, play: playAsset };
+
   const exerciseCard = (ex: EditableLessonExercise) => {
     const index = indexByClientKey.get(ex.clientKey)!;
     const errors = exerciseErrors[index];
@@ -690,10 +705,7 @@ export default function LessonEditor({
         errors={errors}
         audio={asset ? { state: asset.state, assetId: asset.assetId ?? null } : null}
         calculation={calculationControls(ex)}
-        onToggle={() => toggleCard(ex.id ?? ex.clientKey)}
-        onMutate={(patch) => mutateExercise(ex.clientKey, patch)}
-        onRemove={() => removeExercise(ex.clientKey)}
-        onPlay={playAsset}
+        {...cardActions}
       />
     );
   };
