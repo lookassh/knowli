@@ -19,6 +19,10 @@ describe("responseOutcome", () => {
     expect(responseOutcome("audio", [row("pronunciation", "incorrect", { pronunciation: { provider: "azure", score: 70, band: "partial" } })])).toBe("partial");
     expect(responseOutcome("audio", [row("recall", "correct"), row("pronunciation", "incorrect", { pronunciation: { band: "partial" } })])).toBe("partial");
     expect(responseOutcome("text", [row("objective", "incorrect", { verdict: "model_almost", knowledge: "partial" })])).toBe("partial");
+    // gramatyka „prawie” (błąd poza sprawdzaną regułą) i literówka: cel zaliczony, ale dziecko usłyszało „prawie”
+    expect(responseOutcome("text", [row("objective", "correct", { verdict: "model_almost" })])).toBe("partial");
+    expect(responseOutcome("text", [row("objective", "correct", { verdict: "minor_typo", typoToken: "runs" })])).toBe("partial");
+    expect(responseOutcome("text", [row("objective", "correct", { verdict: "exact" })])).toBe("correct");
     // decyzja „błędnie” mimo częściowej wiedzy modelu zostaje błędem
     expect(responseOutcome("text", [row("objective", "incorrect", { verdict: "model_incorrect", knowledge: "partial" })])).toBe("incorrect");
   });

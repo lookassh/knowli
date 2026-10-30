@@ -16,18 +16,22 @@ export interface StoredAssessment {
   details: Record<string, unknown>;
 }
 
+/** Werdykty lekcji, po których dziecko usłyszało „prawie” — niezależnie od zapisanego wyniku celu. */
+const ALMOST_VERDICTS = new Set(["model_almost", "minor_typo"]);
+
 /**
- * Wynik jednej oceny dla rodzica. `incorrect` w bazie obejmuje też oceny częściowe,
- * którym dziecko usłyszało „prawie”: wymowę w paśmie „ćwicz” i odpowiedź otwartą
- * ocenioną przez model jako „prawie” (`model_almost`) — to nie jest „Błędnie”.
+ * Wynik jednej oceny dla rodzica: „Częściowo” tam, gdzie dziecko usłyszało „prawie”.
+ * Zapisany wynik bywa wtedy różny: `incorrect` dla wymowy w paśmie „ćwicz”
+ * i odpowiedzi szkolnej „prawie”, `correct` dla gramatyki „prawie” (błąd poza
+ * sprawdzaną regułą) i literówki — w obu kierunkach to nie jest ani „Błędnie”,
+ * ani „Poprawnie”. Ocena celu i postęp się nie zmieniają.
  */
 function assessmentOutcome(row: StoredAssessment): ResponseOutcome {
-  if (row.outcome === "correct") return "correct";
-  if (row.outcome !== "incorrect") return null;
+  if (row.outcome !== "correct" && row.outcome !== "incorrect") return null;
   const pronunciation = row.details.pronunciation as { band?: unknown } | undefined;
   if (row.skill === "pronunciation" && pronunciation?.band === "partial") return "partial";
-  if (row.details.verdict === "model_almost") return "partial";
-  return "incorrect";
+  if (typeof row.details.verdict === "string" && ALMOST_VERDICTS.has(row.details.verdict)) return "partial";
+  return row.outcome;
 }
 
 /**
