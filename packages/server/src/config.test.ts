@@ -134,6 +134,12 @@ describe("sessionActivityFromEnv", () => {
     expect(() => sessionActivityFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_API_KEY: "k" })).toThrow();
   });
 
+  it("http:// odrzucone w produkcji niezależnie od graderFromEnv; dozwolone w development", () => {
+    expect(() => sessionActivityFromEnv({ ...base, UMIEM_GRADER_BASE_URL: "http://grader.example/v1", NODE_ENV: "production" }))
+      .toThrow("UMIEM_GRADER_BASE_URL must use https:// outside test/development");
+    expect(sessionActivityFromEnv({ ...base, UMIEM_GRADER_BASE_URL: "http://grader.example/v1", NODE_ENV: "development" })).toBeDefined();
+  });
+
   it("pusty UMIEM_SESSION_ACTIVITY_TIMEOUT_MS → default 60000; własna wartość → użyta", () => {
     expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "" })!.timeoutMs).toBe(60_000);
     expect(sessionActivityFromEnv({ ...base, UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "45000" })!.timeoutMs).toBe(45_000);
