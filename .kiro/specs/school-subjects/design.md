@@ -1329,7 +1329,10 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   wymaga `https://`, jak `UMIEM_LLM_BASE_URL`) i `UMIEM_TTS_API_KEY` (fallback
   `OPENAI_API_KEY`), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
   i zawsze wysyłał model domyślny). Przykład: `UMIEM_TTS_PROVIDER=openrouter`,
-  `UMIEM_TTS_MODEL=openai/gpt-4o-mini-tts-2025-12-15`, `UMIEM_TTS_VOICE=alloy`.
+  `UMIEM_TTS_MODEL=microsoft/mai-voice-2.1-flash`,
+  `UMIEM_TTS_VOICE=pl-PL-Harper:MAI-Voice-2.1-Flash` (głos z `supported_voices`
+  modelu; `alloy` działa tylko z modelami OpenAI). Wybór modelu po odsłuchu
+  próbek należy do właściciela.
   To jedna konfiguracja TTS dla wszystkich nagrań (także słówek i komunikatów
   interfejsu): zmiana providera/modelu zmienia fingerprinty, więc gotowe
   nagrania zostają, a nowe powstają przy kolejnej edycji materiału; katalog
