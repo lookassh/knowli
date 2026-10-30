@@ -126,13 +126,18 @@ export interface LlmProvider {
   ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }>;
 }
 
+/** `wav` = PCM od providera opakowane w WAV (Gemini TTS); `mp3` = gotowy plik providera. */
+export type TtsFormat = "mp3" | "wav";
+
 export interface TtsSynthesizeInput {
   text: string;
   locale: string;
   voice: string;
-  format: "mp3";
+  format: TtsFormat;
   /** Model zapisany w zasobie (fingerprint); brak = model adaptera. */
   model?: string;
+  /** Instrukcja wymowy zapisana w zasobie (np. język); nie jest czytana na głos. */
+  instructions?: string;
 }
 
 export interface TtsProvider {

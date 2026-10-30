@@ -48,6 +48,9 @@ describe("LocalMediaStore", () => {
     expect(Buffer.from(blob!.bytes).equals(Buffer.from(bytesB))).toBe(true);
     expect(blob!.mimeType).toBe("image/png");
     expect(await store.get("aa/missing.png")).toBeNull();
+    const wav = await store.putImmutable(bytesA, "audio/wav");
+    expect(wav.storageKey).toMatch(/\.wav$/);
+    expect((await store.get(wav.storageKey))?.mimeType).toBe("audio/wav");
   });
 
   it("getStream zwraca te same bajty w porcjach, z rozmiarem i typem", async () => {

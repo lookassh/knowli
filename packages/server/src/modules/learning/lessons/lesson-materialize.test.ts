@@ -576,3 +576,31 @@ describe("materializeCard — ekspozycje przykładów w normalizacji przedmiotu"
     expect(card.exposures).toEqual(examples.map((example) => computeTargetKey(example, "en-GB")));
   });
 });
+
+describe("materializeCard — nagranie „Posłuchaj karty” (design szkoły §12.3)", () => {
+  const topic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Pająki",
+    objectives: [{
+      id: "school.ddeck.pajaki",
+      titlePl: "Pająki",
+      descriptionEn: "Spiders.",
+      cards: [{ title: "Pająki", body: "Pająk ma osiem nóg." }, { title: "Owady", body: "Owad ma sześć nóg." }],
+    }],
+  });
+  const objective = topic.objectives[0]!;
+  const plan = { kind: "card", objectiveId: objective.id, cardPurpose: "intro" } as Parameters<typeof materializeCard>[0];
+  const audioId = "22222222-2222-4222-8222-222222222222";
+
+  it("dołącza gotowe nagranie karty; nie zmienia ekspozycji karty", () => {
+    const withAudio = materializeCard(plan, 1, objective, schoolSubject, ["Mucha ma sześć nóg."], "rev-1", audioId);
+    const without = materializeCard(plan, 1, objective, schoolSubject, ["Mucha ma sześć nóg."], "rev-1");
+    expect(withAudio.prompt).toMatchObject({ kind: "lesson_card", card: { title: "Owady" }, questionAudioAssetId: audioId });
+    expect(without.prompt).not.toHaveProperty("questionAudioAssetId");
+    expect(withAudio.exposures).toEqual(without.exposures);
+  });
+
+  it("przedmiot bez `ttsForPrompts` nie dołącza nagrania", () => {
+    const task = materializeCard(plan, 0, objective, { ...schoolSubject, ttsForPrompts: false }, [], "rev-1", audioId);
+    expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
+  });
+});

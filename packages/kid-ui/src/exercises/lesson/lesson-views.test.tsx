@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, renderKid, screen } from "../../test/render-kid";
 import type { TaskDto, TaskPrompt } from "@learning/contracts";
 import { makeExerciseProps } from "../../test/exercise-fixtures";
+import { ExerciseGuidanceProvider } from "../exercise-guidance";
 import { LessonCardView } from "./LessonCardView";
 import { LessonChoiceView } from "./LessonChoiceView";
 import { LessonClozeView } from "./LessonClozeView";
@@ -30,6 +31,23 @@ describe("lesson exercise views", () => {
     expect(next.tagName).toBe("BUTTON");
     fireEvent.click(next);
     expect(props.handlers.onComplete).toHaveBeenCalledOnce();
+  });
+
+  it("lesson card puts „Posłuchaj karty” in the card header, not in the instruction row (design szkoły §12.4)", () => {
+    const props = makeExerciseProps(task({ kind: "lesson_card", card: { title: "Reguła", body: "Dodaj -s", examples: [] } }));
+    renderKid(
+      <ExerciseGuidanceProvider value={<button type="button" data-testid="listen-card">listen</button>}>
+        <LessonCardView {...props} />
+      </ExerciseGuidanceProvider>,
+    );
+    const listen = screen.getByTestId("listen-card");
+    expect(screen.getByTestId("kid-lesson-card-header").contains(listen)).toBe(true);
+    expect(screen.getAllByTestId("listen-card")).toHaveLength(1);
+  });
+
+  it("lesson card without recording has no header row", () => {
+    renderKid(<LessonCardView {...makeExerciseProps(task({ kind: "lesson_card", card: { title: "Reguła", body: "Dodaj -s", examples: [] } }))} />);
+    expect(screen.queryByTestId("kid-lesson-card-header")).toBeNull();
   });
 
   it("choice answers immediately by option id", () => {

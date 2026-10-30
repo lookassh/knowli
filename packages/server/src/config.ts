@@ -6,6 +6,7 @@ import type {
   PronunciationProvider,
   SessionActivityReviewer,
   SttProvider,
+  TtsFormat,
   TtsProvider,
 } from "./ports/ai";
 import type { MediaStore } from "./ports/media";
@@ -26,6 +27,9 @@ export interface Clock {
 
 export const systemClock: Clock = { now: () => new Date() };
 
+/** Tryb stylu wypowiedzi TTS: `instructions` dokleja ton do instrukcji dostawcy. */
+export type TtsStyleMode = "instructions" | "none";
+
 /**
  * Tożsamość ustawień medialnych używana w fingerprintach. Samo nazewnictwo
  * providerów/modeli nie jest sekretem; klucze API żyją w adapterach.
@@ -38,7 +42,19 @@ export interface MediaSettings {
     voice: string;
     /** Głos per locale (np. `en-GB` → głos brytyjski), z `UMIEM_TTS_VOICE_<LANG>_<REGION>`. */
     voices?: Readonly<Record<string, string>>;
-    format: "mp3";
+    /**
+     * Instrukcja wymowy per locale, z `UMIEM_TTS_INSTRUCTIONS_<LANG>_<REGION>`.
+     * Modele wielojęzyczne (Gemini TTS) zgadują język pojedynczego słowa —
+     * „pies” czy „1410” bez niej bywają czytane po angielsku.
+     */
+    instructions?: Readonly<Record<string, string>>;
+    /**
+     * Wyłącznik operatora stylu wypowiedzi (`UMIEM_TTS_STYLE`, spec §2.2).
+     * Brak pola = bez stylu; `none` z env też zapisujemy jako brak pola, więc
+     * `defaultMediaSettings` i fingerprinty istniejących zasobów się nie zmieniają.
+     */
+    style?: TtsStyleMode;
+    format: TtsFormat;
   };
   image: { provider: string; model: string; size: string; quality: string; format: string };
 }
@@ -59,18 +75,40 @@ export function ttsVoiceFor(tts: MediaSettings["tts"], locale: string): string {
   return tts.voices?.[locale] ?? tts.voice;
 }
 
-/** `UMIEM_TTS_VOICE_EN_GB=…` → `{ "en-GB": … }`; puste wartości pomijane. */
-function ttsVoicesFromEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const voices: Record<string, string> = {};
+/** Instrukcja wymowy dla locale tekstu; wchodzi do fingerprintu i metadanych zasobu. */
+export function ttsInstructionsFor(tts: MediaSettings["tts"], locale: string): string | undefined {
+  return tts.instructions?.[locale];
+}
+
+/** `<prefix>_EN_GB=…` → `{ "en-GB": … }`; puste wartości pomijane. */
+function perLocaleFromEnv(env: Record<string, string | undefined>, prefix: string): Record<string, string> {
+  const values: Record<string, string> = {};
+  const pattern = new RegExp(`^${prefix}_([A-Z]{2})_([A-Z]{2})$`);
   for (const [key, value] of Object.entries(env)) {
-    const match = /^UMIEM_TTS_VOICE_([A-Z]{2})_([A-Z]{2})$/.exec(key);
-    if (match && value) voices[`${match[1]!.toLowerCase()}-${match[2]}`] = value;
+    const match = pattern.exec(key);
+    if (match && value) values[`${match[1]!.toLowerCase()}-${match[2]}`] = value;
   }
-  return voices;
+  return values;
+}
+
+function ttsFormatFromEnv(raw: string | undefined): TtsFormat {
+  if (raw === undefined || raw === "") return defaultMediaSettings.tts.format;
+  if (raw === "mp3" || raw === "wav") return raw;
+  throw new Error("UMIEM_TTS_FORMAT must be mp3 or wav");
+}
+
+/** `none` i brak wartości dają `undefined` (brak pola w ustawieniach). */
+function ttsStyleFromEnv(raw: string | undefined): TtsStyleMode | undefined {
+  if (raw === undefined || raw === "" || raw === "none") return undefined;
+  if (raw === "instructions") return raw;
+  throw new Error("UMIEM_TTS_STYLE must be instructions or none");
 }
 
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
 export function mediaSettingsFromEnv(env: Record<string, string | undefined>): MediaSettings {
+  const voices = perLocaleFromEnv(env, "UMIEM_TTS_VOICE");
+  const instructions = perLocaleFromEnv(env, "UMIEM_TTS_INSTRUCTIONS");
+  const style = ttsStyleFromEnv(env.UMIEM_TTS_STYLE);
   return {
     // Puste UMIEM_TTS_* jak nieustawione — tak samo jak adapter TTS w workerze
     // (generation-env), żeby fingerprint opisywał faktycznie użyty model.
@@ -78,8 +116,10 @@ export function mediaSettingsFromEnv(env: Record<string, string | undefined>): M
       provider: env.UMIEM_TTS_PROVIDER || defaultMediaSettings.tts.provider,
       model: env.UMIEM_TTS_MODEL || defaultMediaSettings.tts.model,
       voice: env.UMIEM_TTS_VOICE || defaultMediaSettings.tts.voice,
-      ...(Object.keys(ttsVoicesFromEnv(env)).length > 0 ? { voices: ttsVoicesFromEnv(env) } : {}),
-      format: "mp3",
+      ...(Object.keys(voices).length > 0 ? { voices } : {}),
+      ...(Object.keys(instructions).length > 0 ? { instructions } : {}),
+      ...(style ? { style } : {}),
+      format: ttsFormatFromEnv(env.UMIEM_TTS_FORMAT),
     },
     image: {
       provider: env.UMIEM_IMAGE_PROVIDER ?? defaultMediaSettings.image.provider,

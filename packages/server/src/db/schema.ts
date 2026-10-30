@@ -372,6 +372,29 @@ export const revisionAssets = app.table(
   ],
 );
 
+/**
+ * Nagranie „Posłuchaj karty” (design szkoły §12.2): karta nauki należy do
+ * `lesson_context.dynamicTopic` wersji, nie do rewizji ćwiczenia. Bez stanu
+ * decyzji; wiersze opublikowanej wersji niezmienne (trigger w migracji 0028).
+ */
+export const lessonCardAssets = app.table(
+  "lesson_card_assets",
+  {
+    deckVersionId: uuid("deck_version_id")
+      .notNull()
+      .references((): AnyPgColumn => deckVersions.id),
+    objectiveId: text("objective_id").notNull(),
+    cardIndex: integer("card_index").notNull(),
+    assetId: uuid("asset_id").references((): AnyPgColumn => mediaAssets.id),
+    expectedFingerprint: text("expected_fingerprint").notNull(),
+  },
+  (t) => [
+    check("lesson_card_assets_card_index_nonnegative", sql`${t.cardIndex} >= 0`),
+    primaryKey({ name: "lesson_card_assets_pk", columns: [t.deckVersionId, t.objectiveId, t.cardIndex] }),
+    index("lesson_card_assets_asset_idx").on(t.assetId),
+  ],
+);
+
 export const generationRuns = app.table(
   "generation_runs",
   {

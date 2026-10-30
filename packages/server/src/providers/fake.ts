@@ -517,8 +517,10 @@ export class FakeTtsProvider implements TtsProvider {
       this.failuresLeft -= 1;
       throw new Error("tts unavailable");
     }
+    // Instrukcja wchodzi do ziarna tylko, gdy jest podana — bajty bez instrukcji pozostają jak przed wprowadzeniem stylu.
+    const instructionsSeed = input.instructions === undefined ? "" : `|${input.instructions}`;
     return {
-      bytes: deterministicBytes(`tts|${input.text}|${input.locale}|${input.voice}|${input.format}`),
+      bytes: deterministicBytes(`tts|${input.text}|${input.locale}|${input.voice}|${input.format}${instructionsSeed}`),
       mimeType: "audio/mpeg",
     };
   }

@@ -101,6 +101,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/task-completion.ts | Decyzja o stanie zadania po próbie; `attempts.ts` koordynuje zapis wyniku |
 | packages/server/src/domain/task-materialization.ts | Składa prompt i prywatny klucz z gotowych opcji; `sessions.ts` tasuje opcje, tworzy ID i zapisuje zadanie |
 | packages/server/src/domain/session-limits.ts | Czyste limity czasu sesji współdzielone przez sesje, próby i raportowanie |
+| packages/server/src/domain/tts-style.ts | Role stylu wypowiedzi TTS (komunikaty, pytania i karty lekcji) |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
 | packages/server/src/domain/learning-work.ts | Oddzielne terminy i gotowość Recall, pisowni i wymowy |
 | packages/server/src/domain/support-cycle.ts | Odtwarzanie pojedynczego cyklu wsparcia z historii sesji |
@@ -152,6 +153,7 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/src/ports/ai.ts | LlmProvider, TtsProvider, SttProvider, PronunciationProvider, ImageProvider |
 | packages/server/src/ports/media.ts | MediaStore |
 | packages/server/src/providers/openai/ | Adaptery LLM i TTS; modeli nie zapisujemy w domenie |
+| packages/server/src/providers/tts-style-profile.ts | Instrukcja TTS z doklejonym zdaniem stylu roli (`UMIEM_TTS_STYLE`); czysta funkcja |
 | packages/server/src/providers/azure/ | Ocena wymowy i ewentualna niezależna transkrypcja |
 | packages/server/src/providers/images/ | Pierwszy wybrany adapter ilustracji |
 | packages/server/src/providers/media/local.ts | Prywatny wolumen; putImmutable/get, zapis bez nadpisywania blobów |
@@ -161,6 +163,8 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/drizzle.config.ts | Ustawienia generatora migracji |
 | apps/worker/src/main.ts | Rejestracja zadań i graceful shutdown |
 | apps/worker/src/rebuild-progress.ts | Jednorazowe CLI odbudowy projekcji; nie uruchamia pętli workera |
+| apps/worker/src/regenerate-ui-audio.ts | Jednorazowe CLI ponownego nagrania wskazanych komunikatów Kid UI (`media:regenerate-ui-audio`) |
+| scripts/sample-tts-styles.mts | Próbki do odsłuchu stylów TTS (`eval:tts-styles`); poza bazą i mediami aplikacji |
 | apps/worker/src/tasks.ts | Powiązanie nazw Graphile z przypadkami użycia |
 | apps/worker/src/composition.ts | Składanie zależności workera |
 

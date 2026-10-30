@@ -98,7 +98,7 @@ export {
   readReadyMediaStream,
   type ReadyMediaStream,
 } from "./modules/materials";
-export { prepareUiAudio, readUiAudio } from "./modules/materials";
+export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./modules/materials";
 export {
   buildPayload,
   payloadToItem,

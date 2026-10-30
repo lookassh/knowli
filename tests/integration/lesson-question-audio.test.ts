@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork, publishLessonDraft, readLessonDeck,
-  startSession, submitAttempt,
+  completePresentation, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork, publishLessonDraft, readLessonDeck,
+  startSession, submitAttempt, createSubjectRegistry, schoolSubject, ttsFingerprint,
 } from "@learning/server";
-import type { LessonExerciseInput, TaskDto } from "@learning/contracts";
+import type { TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
+import {
+  audioServices, EN_LANGUAGE_INSTRUCTION, FAKE_MEDIA, markTtsReady, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson, seedSchoolDraft,
+  SPIDER_OBJECTIVE, spiderExercises, styledMedia, truncateLessonAudioTables,
+} from "./school-lesson-audio-helpers";
+import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";
 
 /**
  * Etap 8 przedmiotów szkolnych (design §11): „Posłuchaj pytania” na
@@ -18,59 +23,20 @@ import { fakeGeneration } from "./fakes";
  */
 
 const { db, pool } = testDatabase();
-const OBJECTIVE = "school.ddeck000.pajaki";
-const MATERIAL = "Pająk ma osiem nóg i nie jest owadem. Owady mają sześć nóg. Pająki tkają sieci z nici.";
-const MEDIA = {
-  tts: { provider: "fake", model: "fake-tts", voice: "test", format: "mp3" as const },
-  image: { provider: "fake", model: "fake-image", size: "1024x1024", quality: "low", format: "webp" },
-};
-
-function services() {
-  return createServices({ db, clock: new ManualClock(), media: MEDIA });
-}
-
-const common = { objectiveId: OBJECTIVE, acceptedAnswers: [], sourceRefs: [{ quote: "Pająk ma osiem nóg i nie jest owadem." }] };
+const OBJECTIVE = SPIDER_OBJECTIVE;
+const MEDIA = FAKE_MEDIA;
+const services = () => audioServices();
 const STEM = "Ile nóg ma pająk?";
-
-function exercises(stem = STEM): LessonExerciseInput[] {
-  return [
-    ...["osiem", "sześć", "sieci"].map((answer, i) => ({
-      ...common, exerciseType: "lesson_choice" as const, instructionPl: "Wybierz odpowiedź.", stem: i === 0 ? stem : `Wybierz słowo: ${answer}.`,
-      answer, focus: [answer], options: [{ id: "a", text: answer }, { id: "b", text: "cztery" }], correctOption: "a",
-    })),
-    ...["osiem", "sześć"].map((answer) => ({
-      ...common, exerciseType: "lesson_gap" as const, instructionPl: "Uzupełnij.", stem: `Pająk ma ___ nóg (${answer}).`, answer, focus: [answer],
-    })),
-    ...["Pająk ma osiem nóg.", "Owady mają sześć nóg."].map((answer, i) => ({
-      ...common, exerciseType: "lesson_open_answer" as const, instructionPl: "Wyjaśnij.", prompt: `Wyjaśnij zasadę ${i + 1}.`, answer, focus: [answer],
-      questionType: "definition" as const, expectedForm: "explanation" as const, requiredElements: [{ id: "e1", text: answer }],
-    })),
-  ];
-}
+const exercises = (stem = STEM) => spiderExercises(stem);
 
 beforeEach(async () => {
   await truncateCoreTables();
-  await pool.query(`truncate learning_app.child_objective_progress, learning_app.lesson_verdicts,
-    learning_app.revision_assets, learning_app.generation_runs, learning_app.media_assets, learning_app.item_revision_skills,
-    learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
-    learning_app.deck_versions, learning_app.decks cascade`);
+  await truncateLessonAudioTables();
 });
 afterAll(() => pool.end());
 
-async function seedDraft() {
-  const deckId = randomUUID();
-  const versionId = randomUUID();
-  await pool.query("insert into learning_app.decks (id,title,kind) values ($1,'Pająki','lesson')", [deckId]);
-  const context = {
-    subjectId: "school", topicId: "dynamic", topicVersion: 1, objectiveIds: [OBJECTIVE], poolSize: 20,
-    examples: {}, material: MATERIAL, subjectTitlePl: "Przyroda",
-    dynamicTopic: { titlePl: "Pająki", objectives: [{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.",
-      cards: [{ title: "Pająki", body: "Pająk ma osiem nóg." }, { title: "Owady", body: "Owady mają sześć nóg." }] }] },
-  };
-  await pool.query(`insert into learning_app.deck_versions (id,deck_id,version_number,edit_number,state,title,lesson_context)
-    values ($1,$2,1,1,'draft','Pająki',$3::jsonb)`, [versionId, deckId, JSON.stringify(context)]);
-  return { deckId, versionId };
-}
+const seedDraft = () => seedSchoolDraft([{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.",
+  cards: [{ title: "Pająki", body: "Pająk ma osiem nóg." }, { title: "Owady", body: "Owady mają sześć nóg." }] }]);
 
 interface PromptAudioRow { assetId: string; text: string; locale: string; state: string }
 
@@ -86,15 +52,7 @@ async function promptAudio(versionId: string): Promise<PromptAudioRow[]> {
   )).rows;
 }
 
-/** Zastępuje workera: gotowy, niezmienny zasób (bajty nieistotne dla wydania zadania). */
-async function markReady(assetId: string): Promise<void> {
-  await pool.query(
-    `update learning_app.media_assets
-        set state = 'ready', storage_key = $2, mime_type = 'audio/mpeg', byte_count = 3, content_sha256 = $3, lease_token = null
-      where id = $1`,
-    [assetId, `tts/${assetId}.mp3`, "0".repeat(64)],
-  );
-}
+const markReady = markTtsReady;
 
 async function reach(active: ReturnType<typeof services>, sessionId: string, stem: string): Promise<TaskDto> {
   for (let i = 0; i < 30; i++) {
@@ -108,13 +66,7 @@ async function reach(active: ReturnType<typeof services>, sessionId: string, ste
 }
 
 async function publishedWorld() {
-  const active = services();
-  const child = await createChild(active, { displayName: "Pytania", avatarKey: "owl" });
-  const { deckId, versionId } = await seedDraft();
-  const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
-  await publishLessonDraft(active, versionId, draft.editNumber);
-  await pool.query("insert into learning_app.assignments (id,child_id,deck_id,test_date,test_goals) values ($1,$2,$3,CURRENT_DATE + 7,ARRAY['lesson'])", [randomUUID(), child.id, deckId]);
-  return { active, child, deckId, versionId };
+  return publishAssignedSpiderLesson(await seedDraft(), "Pytania", STEM);
 }
 
 describe("„Posłuchaj pytania” — przygotowanie nagrań", () => {
@@ -153,6 +105,62 @@ describe("„Posłuchaj pytania” — przygotowanie nagrań", () => {
     expect((await promptAudio(versionId)).every((row) => row.state === "pending")).toBe(true);
     const deck = await readLessonDeck(active, deckId);
     expect(JSON.stringify(deck)).not.toContain("prompt_audio");
+  });
+});
+
+interface AudioMetadataRow { role: string; fingerprint: string; metadata: Record<string, unknown> }
+
+async function audioMetadata(versionId: string, role: string): Promise<AudioMetadataRow[]> {
+  return (await pool.query<AudioMetadataRow>(
+    `select ra.role, ma.fingerprint, ma.metadata
+       from learning_app.revision_assets ra
+       join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+       join learning_app.media_assets ma on ma.id = ra.asset_id
+      where ir.deck_version_id = $1 and ra.role = $2
+      order by ir.position`,
+    [versionId, role],
+  )).rows;
+}
+
+describe("„Posłuchaj pytania” — styl roli (UMIEM_TTS_STYLE)", () => {
+  it("nagranie pytania dostaje instrukcję języka i zdanie stylu lesson_question; klucz stylu nie trafia do metadanych", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(styledMedia()), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const rows = await audioMetadata(versionId, "prompt_audio");
+    expect(rows).toHaveLength(exercises().length);
+    for (const row of rows) {
+      expect(row.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_question}`);
+      expect(row.metadata).not.toHaveProperty("style");
+    }
+  });
+
+  it("target_audio odpowiedzi (en-GB) pozostaje bez stylu — sama instrukcja języka", async () => {
+    const english = createSubjectRegistry([{ ...schoolSubject, ttsForAnswers: true, answerLocale: "en-GB" }]);
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(styledMedia(), english), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const answers = await audioMetadata(versionId, "target_audio");
+    expect(answers.length).toBeGreaterThan(0);
+    for (const row of answers) {
+      expect(row.metadata.locale).toBe("en-GB");
+      expect(row.metadata.instructions).toBe(EN_LANGUAGE_INSTRUCTION);
+    }
+    const prompts = await audioMetadata(versionId, "prompt_audio");
+    for (const row of prompts) expect(row.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_question}`);
+  });
+
+  it("bez stylu w ustawieniach fingerprint nagrania pytania jest liczony z samej instrukcji języka (jak przed stylem)", async () => {
+    const plain = { ...MEDIA, tts: { ...MEDIA.tts, instructions: { "pl-PL": PL_LANGUAGE_INSTRUCTION } } };
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(plain), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const rows = await audioMetadata(versionId, "prompt_audio");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.metadata.instructions).toBe(PL_LANGUAGE_INSTRUCTION);
+      expect(row.fingerprint).toBe(ttsFingerprint({
+        text: row.metadata.text as string, locale: "pl-PL", provider: plain.tts.provider, model: plain.tts.model,
+        voice: plain.tts.voice, format: plain.tts.format, instructions: PL_LANGUAGE_INSTRUCTION,
+      }));
+    }
   });
 });
 

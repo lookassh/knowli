@@ -18,4 +18,4 @@ export { applyLessonExercises, createLesson, createLessonFromMaterial, createSch
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
 export { executeMediaAsset } from "./media-generation";
 export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";
-export { prepareUiAudio, readUiAudio } from "./ui-audio";
+export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./ui-audio";

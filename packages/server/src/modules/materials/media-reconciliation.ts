@@ -9,13 +9,20 @@ import {
   deckVersions,
   generationRuns,
   itemRevisions,
+  lessonCardAssets,
   mediaAssets,
   revisionAssets,
 } from "../../db/schema";
 import { AppError } from "../../errors";
 import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../domain/media-fingerprint";
+import type { TtsStyle } from "../../domain/tts-style";
+import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 import { payloadToItem } from "./item-payload";
 import { questionReadText } from "../../domain/lessons/question-read-text";
+import { renderCard } from "../../domain/lessons/card";
+import { cardReadText } from "../../domain/lessons/card-read-text";
+import { resolveLessonTopic } from "../../domain/lessons/topic-resolution";
+import type { DynamicTopicData, LessonTopic } from "../../domain/lessons/types";
 
 export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio";
 
@@ -85,8 +92,14 @@ export interface LessonTtsFlags {
 /** Locale nagrania pytania: polecenia i pytania przedmiotów szkolnych są po polsku (design szkoły §11.2). */
 const PROMPT_AUDIO_LOCALE = "pl-PL";
 
-function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
+/**
+ * Styl wypowiedzi (spec tonu TTS) przekazują tylko nagrania pytań i kart; słówka
+ * i `target_audio` bez stylu, więc ich fingerprinty się nie zmieniają. Sam styl
+ * nie trafia do metadanych — wchodzi do `instructions`.
+ */
+function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings, style?: TtsStyle): RequiredAsset {
   const voice = ttsVoiceFor(settings.tts, locale);
+  const instructions = ttsRequestInstructions(settings.tts, locale, style);
   return {
     role,
     kind: "tts",
@@ -97,6 +110,7 @@ function ttsAsset(role: AssetRole, text: string, locale: string, settings: Media
       model: settings.tts.model,
       voice,
       format: settings.tts.format,
+      instructions,
     }),
     metadata: {
       kind: "tts",
@@ -104,6 +118,7 @@ function ttsAsset(role: AssetRole, text: string, locale: string, settings: Media
       locale,
       voice,
       format: settings.tts.format,
+      ...(instructions === undefined ? {} : { instructions }),
     },
   };
 }
@@ -128,7 +143,7 @@ export function requiredAssetsForLessonExercise(
   }
   const question = flags.ttsForPrompts ? questionReadText(questionSourceOf(payload)) : null;
   if (question !== null) {
-    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings));
+    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, "lesson_question"));
   }
   return required;
 }
@@ -152,6 +167,45 @@ function questionSourceOf(payload: Record<string, unknown>) {
     groups,
     clozeText: optionalText(payload.clozeText),
   };
+}
+
+/** Kontekst lekcji potrzebny do nagrań kart (podzbiór `lesson_context`). */
+export interface LessonCardContext {
+  readonly objectiveIds: readonly string[];
+  readonly examples: Readonly<Record<string, readonly string[]>>;
+}
+
+/** Wymagane nagranie karty nauki: miejsce karty w temacie i żądanie TTS. */
+export interface RequiredCardAsset {
+  objectiveId: string;
+  cardIndex: number;
+  asset: RequiredAsset;
+}
+
+/**
+ * Nagrania „Posłuchaj karty” (design szkoły §12.2): dla każdej karty zagadnień
+ * wersji tekst `cardReadText` z tej samej wyrenderowanej karty, którą dostaje
+ * dziecko (`renderCard` z przykładami lekcji). Karta ze wzorem albo za długa
+ * nie ma nagrania. Puste, gdy przedmiot nie ma `ttsForPrompts`.
+ */
+export function requiredAssetsForLessonCards(
+  topic: LessonTopic,
+  context: LessonCardContext,
+  settings: MediaSettings,
+  flags: Pick<LessonTtsFlags, "ttsForPrompts">,
+): RequiredCardAsset[] {
+  if (!flags.ttsForPrompts) return [];
+  const required: RequiredCardAsset[] = [];
+  for (const objective of topic.objectives) {
+    if (!context.objectiveIds.includes(objective.id)) continue;
+    objective.cards.forEach((card, cardIndex) => {
+      const text = cardReadText(renderCard(card, [...(context.examples[objective.id] ?? [])]));
+      if (text !== null) {
+        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings, "lesson_card") });
+      }
+    });
+  }
+  return required;
 }
 
 /**
@@ -255,6 +309,7 @@ export async function reconcileDraftAssetsTx(
   if (version.state === "published") {
     throw new AppError("immutable");
   }
+  await reconcileLessonCardAssetsTx(tx, services, settings, version.id);
   const revisions = await tx
     .select({ id: itemRevisions.id, payload: itemRevisions.payload })
     .from(itemRevisions)
@@ -367,6 +422,87 @@ export async function reconcileDraftAssetsTx(
           state: nextState,
         });
       }
+    }
+  }
+}
+
+/**
+ * Uzgadnia nagrania kart nauki szkicu (design szkoły §12.2) w transakcji
+ * edycji: zgodne zostają, zmienione dostają nowy zasób (gotowy po fingerprincie
+ * albo nowe zlecenie), zbędne znikają. Nieudane nagranie zlecamy ponownie —
+ * nie jest decyzją rodzica i nie blokuje publikacji.
+ */
+async function reconcileLessonCardAssetsTx(
+  tx: Tx,
+  services: Services,
+  settings: MediaSettings,
+  versionId: string,
+): Promise<void> {
+  const row = (
+    await tx.select({ lessonContext: deckVersions.lessonContext }).from(deckVersions).where(eq(deckVersions.id, versionId))
+  )[0];
+  const context = row?.lessonContext as {
+    subjectId?: unknown;
+    topicId?: unknown;
+    topicVersion?: unknown;
+    objectiveIds?: unknown;
+    examples?: Record<string, string[]>;
+    dynamicTopic?: DynamicTopicData;
+  } | null | undefined;
+  // Zestaw słówek nie ma kontekstu lekcji ani kart nauki.
+  if (!context || typeof context.subjectId !== "string" || typeof context.topicId !== "string") return;
+  const resolved = resolveLessonTopic(services.subjects, {
+    subjectId: context.subjectId,
+    topicId: context.topicId,
+    topicVersion: typeof context.topicVersion === "number" ? context.topicVersion : 1,
+    ...(context.dynamicTopic ? { dynamicTopic: context.dynamicTopic } : {}),
+  });
+  const required = resolved
+    ? requiredAssetsForLessonCards(
+        resolved.topic,
+        { objectiveIds: Array.isArray(context.objectiveIds) ? context.objectiveIds : [], examples: context.examples ?? {} },
+        settings,
+        resolved.subject,
+      )
+    : [];
+
+  const cardKey = (objectiveId: string, cardIndex: number) => `${cardIndex}:${objectiveId}`;
+  const existing = await tx.select().from(lessonCardAssets).where(eq(lessonCardAssets.deckVersionId, versionId));
+  const existingByKey = new Map(existing.map((card) => [cardKey(card.objectiveId, card.cardIndex), card] as const));
+  const requiredKeys = new Set(required.map((card) => cardKey(card.objectiveId, card.cardIndex)));
+  for (const card of existing) {
+    if (requiredKeys.has(cardKey(card.objectiveId, card.cardIndex))) continue;
+    await tx.delete(lessonCardAssets).where(and(
+      eq(lessonCardAssets.deckVersionId, versionId),
+      eq(lessonCardAssets.objectiveId, card.objectiveId),
+      eq(lessonCardAssets.cardIndex, card.cardIndex),
+    ));
+  }
+  for (const card of required) {
+    const current = existingByKey.get(cardKey(card.objectiveId, card.cardIndex));
+    if (current && current.expectedFingerprint === card.asset.fingerprint && current.assetId !== null) {
+      const asset = (
+        await tx.select({ state: mediaAssets.state, fingerprint: mediaAssets.fingerprint }).from(mediaAssets).where(eq(mediaAssets.id, current.assetId))
+      )[0];
+      if (asset && asset.fingerprint === card.asset.fingerprint && asset.state !== "failed") continue;
+    }
+    const asset = await findOrCreateAsset(tx, settings, card.asset);
+    if (current) {
+      await tx.update(lessonCardAssets)
+        .set({ expectedFingerprint: card.asset.fingerprint, assetId: asset.id })
+        .where(and(
+          eq(lessonCardAssets.deckVersionId, versionId),
+          eq(lessonCardAssets.objectiveId, card.objectiveId),
+          eq(lessonCardAssets.cardIndex, card.cardIndex),
+        ));
+    } else {
+      await tx.insert(lessonCardAssets).values({
+        deckVersionId: versionId,
+        objectiveId: card.objectiveId,
+        cardIndex: card.cardIndex,
+        assetId: asset.id,
+        expectedFingerprint: card.asset.fingerprint,
+      });
     }
   }
 }
