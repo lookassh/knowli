@@ -42,6 +42,8 @@ describe("normalizeWav", () => {
 
   it("odrzuca ucięty plik, puste dane i format inny niż PCM 16-bit", () => {
     expect(normalizeWav(riff({ pcm, dataSize: pcm.length + 100 }))).toBeNull();
+    // strumień urwany w połowie próbki: rozmiar 0xFFFFFFFF i nieparzysta liczba bajtów
+    expect(normalizeWav(riff({ pcm: new Uint8Array(481), dataSize: 0xffffffff, riffSize: 0xffffffff }))).toBeNull();
     expect(normalizeWav(riff({ pcm: new Uint8Array(0) }))).toBeNull();
     expect(normalizeWav(riff({ pcm, audioFormat: 3 }))).toBeNull();
     expect(normalizeWav(riff({ pcm, bits: 8 }))).toBeNull();

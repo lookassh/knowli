@@ -43,7 +43,8 @@ const STREAMED_SIZE = 0xffffffff;
  * Gotowy WAV od providera → kanoniczny WAV z {@link pcmToWav}. Czyta fragmenty
  * `fmt ` i `data` (pomija np. `LIST`); rozmiar `data` równy 0xFFFFFFFF (WAV
  * strumieniowy, np. OpenAI) oznacza „do końca pliku”. Null dla pliku uciętego
- * (zadeklarowane dane dłuższe niż odebrane), pustego albo innego niż PCM 16-bit.
+ * (zadeklarowane dane dłuższe niż odebrane albo niepełna ostatnia próbka),
+ * pustego albo innego niż PCM 16-bit.
  */
 export function normalizeWav(bytes: Uint8Array): Uint8Array | null {
   if (bytes.length < 12) return null;
@@ -66,8 +67,9 @@ export function normalizeWav(bytes: Uint8Array): Uint8Array | null {
       if (size !== STREAMED_SIZE && size > available) return null;
       const blockAlign = format.channels * (BITS_PER_SAMPLE / 8);
       const length = Math.min(size, available);
-      const pcm = bytes.subarray(start, start + length - (length % blockAlign));
-      return pcm.length === 0 ? null : pcmToWav(pcm, format);
+      // Niepełna ostatnia próbka = strumień urwany w trakcie, nie nagranie do zapisania.
+      if (length === 0 || length % blockAlign !== 0) return null;
+      return pcmToWav(bytes.subarray(start, start + length), format);
     }
     if (size === STREAMED_SIZE) return null;
     offset = start + size + (size % 2);
