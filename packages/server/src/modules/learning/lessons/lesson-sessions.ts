@@ -12,6 +12,7 @@ import {
   itemRevisions,
   learningEvents,
   learningSessions,
+  lessonCardAssets,
   mediaAssets,
   revisionAssets,
   sessionTasks,
@@ -319,6 +320,31 @@ export async function loadExercises(
   }));
 }
 
+/** Klucz nagrania karty w mapie `loadLessonCardAudio`. */
+export function lessonCardAudioKey(objectiveId: string, cardIndex: number): string {
+  return `${cardIndex}:${objectiveId}`;
+}
+
+/**
+ * Nagrania „Posłuchaj karty” wersji (design szkoły §12.3): jak nagrania pytań —
+ * najnowszy gotowy zasób TTS o oczekiwanym fingerprincie wiersza karty,
+ * niezależnie od zasobu powiązanego przy edycji (publikacja na nie nie czeka).
+ */
+export async function loadLessonCardAudio(tx: Executor, deckVersionId: string): Promise<Map<string, string>> {
+  const rows = await tx
+    .select({ objectiveId: lessonCardAssets.objectiveId, cardIndex: lessonCardAssets.cardIndex, assetId: mediaAssets.id })
+    .from(lessonCardAssets)
+    .innerJoin(mediaAssets, eq(mediaAssets.fingerprint, lessonCardAssets.expectedFingerprint))
+    .where(and(eq(lessonCardAssets.deckVersionId, deckVersionId), eq(mediaAssets.kind, "tts"), eq(mediaAssets.state, "ready")))
+    .orderBy(desc(mediaAssets.generationNumber));
+  const audio = new Map<string, string>();
+  for (const row of rows) {
+    const key = lessonCardAudioKey(row.objectiveId, row.cardIndex);
+    if (!audio.has(key)) audio.set(key, row.assetId);
+  }
+  return audio;
+}
+
 /** Liczba wydanych i ocenianych zadań (karty nie liczą się do budżetu). */
 /**
  * Liczniki zadań sesji lekcji: `total` wyznacza kolejny ordinal, a `assessed`
@@ -622,6 +648,7 @@ export async function createLessonTrainingSessionPlan(
   now: Date,
 ): Promise<LessonTrainingSessionPlanSnapshot> {
   const planningSnapshot = await loadLessonPlanningSnapshot(services, tx, session, now);
+  const cardAudio = await loadLessonCardAudio(tx, session.deckVersionId);
   const slots: LessonTrainingSessionSlot[] = [];
   let assessed = 0;
   const pushSlot = (taskId: string, materialized: MaterializedLessonTask, taskKind: LessonTrainingSessionSlot["taskKind"], reason: string): void => {
@@ -649,7 +676,9 @@ export async function createLessonTrainingSessionPlan(
       const objective = topic.objectives.find((o) => o.id === plan.objectiveId)!;
       const cardIndex = plan.cardPurpose === "support" ? 0 : cardIndexByObjective.get(plan.objectiveId) ?? 0;
       const anchor = exercises.find((e) => e.payload.objectiveId === plan.objectiveId) ?? exercises[0]!;
-      materialized = materializeCard(plan, Math.min(cardIndex, objective.cards.length - 1), objective, subject, context.examples[plan.objectiveId] ?? [], anchor.revisionId);
+      const shownIndex = Math.min(cardIndex, objective.cards.length - 1);
+      materialized = materializeCard(plan, shownIndex, objective, subject, context.examples[plan.objectiveId] ?? [], anchor.revisionId,
+        cardAudio.get(lessonCardAudioKey(objective.id, shownIndex)));
       taskKind = plan.cardPurpose === "support" ? "support_card" : "card";
       reason = plan.cardPurpose === "support" ? "support" : "introduce";
     } else if (plan.pairedWith) {
@@ -715,7 +744,10 @@ export async function issueNextLessonTask(
     const objective = topic.objectives.find((o) => o.id === plan.objectiveId)!;
     const cardIndex = plan.cardPurpose === "support" ? 0 : cardIndexByObjective.get(plan.objectiveId) ?? 0;
     const anchorRevision = exercises.find((e) => e.payload.objectiveId === plan.objectiveId) ?? exercises[0]!;
-    materialized = materializeCard(plan, Math.min(cardIndex, objective.cards.length - 1), objective, subject, context.examples[plan.objectiveId] ?? [], anchorRevision.revisionId);
+    const shownIndex = Math.min(cardIndex, objective.cards.length - 1);
+    const cardAudio = subject.ttsForPrompts ? await loadLessonCardAudio(tx, session.deckVersionId) : new Map<string, string>();
+    materialized = materializeCard(plan, shownIndex, objective, subject, context.examples[plan.objectiveId] ?? [], anchorRevision.revisionId,
+      cardAudio.get(lessonCardAudioKey(objective.id, shownIndex)));
   } else {
     const exercise = exercises.find((e) => e.revisionId === plan.itemRevisionId)!;
     materialized = materializeExercise(plan, taskId, exercise, topic, subject, speechInputFor(services, session, subject, exercise.payload.exerciseType));

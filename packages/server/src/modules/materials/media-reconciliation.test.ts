@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultMediaSettings } from "../../config";
-import { requiredAssetsFor, requiredAssetsForLessonExercise } from "./media-reconciliation";
+import { requiredAssetsFor, requiredAssetsForLessonCards, requiredAssetsForLessonExercise } from "./media-reconciliation";
+import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import { payloadToItem } from "./item-payload";
 
 describe("requiredAssetsForLessonExercise — nagranie pytania (design szkoły §11.2)", () => {
@@ -45,5 +46,34 @@ describe("requiredAssetsForLessonExercise — nagranie pytania (design szkoły �
     expect(vocab.map((asset) => asset.metadata.voice)).toEqual(["en-GB-Emily", "en-GB-Emily"]);
     const defaultVoice = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), defaultMediaSettings);
     expect(vocab[0]!.fingerprint).not.toBe(defaultVoice[0]!.fingerprint);
+  });
+});
+
+describe("requiredAssetsForLessonCards — nagrania kart nauki (design szkoły §12.2)", () => {
+  const topic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Rośliny",
+    objectives: [
+      {
+        id: "school.ddeck.fotosynteza",
+        titlePl: "Fotosynteza",
+        descriptionEn: "Photosynthesis.",
+        cards: [{ title: "Fotosynteza", body: "Rośliny wytwarzają pokarm {{examples}}." }, { title: "Wzór", body: "Połowa to 1/2." }],
+      },
+      { id: "school.ddeck.korzenie", titlePl: "Korzenie", descriptionEn: "Roots.", cards: [{ title: "Korzenie", body: "Korzeń pobiera wodę." }] },
+    ],
+  });
+  const context = { objectiveIds: ["school.ddeck.fotosynteza"], examples: { "school.ddeck.fotosynteza": ["Liść jest zielony"] } };
+
+  it("karta wybranego zagadnienia z przykładami; karta ze wzorem i zagadnienie spoza wersji bez nagrania", () => {
+    const required = requiredAssetsForLessonCards(topic, context, defaultMediaSettings, { ttsForPrompts: true });
+    expect(required.map((card) => [card.objectiveId, card.cardIndex])).toEqual([["school.ddeck.fotosynteza", 0]]);
+    expect(required[0]!.asset.metadata).toMatchObject({ kind: "tts", text: "Fotosynteza. Rośliny wytwarzają pokarm. Liść jest zielony.", locale: "pl-PL" });
+  });
+
+  it("zmiana treści karty zmienia fingerprint; bez `ttsForPrompts` brak nagrań", () => {
+    const before = requiredAssetsForLessonCards(topic, context, defaultMediaSettings, { ttsForPrompts: true })[0]!.asset.fingerprint;
+    const after = requiredAssetsForLessonCards(topic, { ...context, examples: {} }, defaultMediaSettings, { ttsForPrompts: true })[0]!.asset.fingerprint;
+    expect(after).not.toBe(before);
+    expect(requiredAssetsForLessonCards(topic, context, defaultMediaSettings, { ttsForPrompts: false })).toEqual([]);
   });
 });

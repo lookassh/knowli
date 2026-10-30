@@ -46,7 +46,8 @@ export function hasMathNotation(text: string): boolean {
 }
 
 function clean(text: string): string | undefined {
-  const trimmed = text.trim().replace(/\s+/g, " ");
+  // Spacja przed znakiem interpunkcji zostaje po usunięciu `{{examples}}` z treści.
+  const trimmed = text.trim().replace(/\s+/g, " ").replace(/ ([.,;:!?…])/g, "$1");
   return trimmed ? trimmed : undefined;
 }
 

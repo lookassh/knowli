@@ -5,10 +5,10 @@ import { CARD_READ_MAX_LENGTH, cardReadText, hasMathNotation } from "./card-read
 describe("cardReadText — tekst nagrania „Posłuchaj karty” (design szkoły §12.1)", () => {
   it("tytuł, treść i przykłady w kolejności z ekranu, bez dopowiadanych słów", () => {
     const card = renderCard(
-      { title: "Fotosynteza", body: "Rośliny  wytwarzają pokarm {{examples}} dzięki światłu." },
+      { title: "Fotosynteza", body: "Rośliny  wytwarzają pokarm {{examples}} dzięki światłu. Liście chłonią {{examples}}." },
       [" Liść jest zielony ", "", "Korzeń pobiera wodę!"],
     );
-    expect(cardReadText(card)).toBe("Fotosynteza. Rośliny wytwarzają pokarm dzięki światłu. Liść jest zielony. Korzeń pobiera wodę!");
+    expect(cardReadText(card)).toBe("Fotosynteza. Rośliny wytwarzają pokarm dzięki światłu. Liście chłonią. Liść jest zielony. Korzeń pobiera wodę!");
   });
 
   it("wypunktowanie to granica zdania; numeracja i myślniki bez zmian", () => {
