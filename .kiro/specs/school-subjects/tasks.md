@@ -283,7 +283,7 @@ Zależy od etapów 1–2 i 7 (typy ćwiczeń); niezależny od 3–6.
       zmianie zadania i nagrywaniu; testy komponentu i geometrii.
 - [x] Testy integracyjne: edycja → nagranie → publikacja → zadanie z/bez
       gotowego nagrania, kartkówka, brak zdarzenia ujawnienia.
-- [ ] Dokumentacja (SPEC, architektura), przegląd API → MCP → skill; pełny
+- [x] Dokumentacja (SPEC, architektura), przegląd API → MCP → skill; pełny
       przebieg bramek i niezależny review przed PR.
 - [ ] Odbiór na fizycznym urządzeniu: głośność, zatrzymanie przed
       nagrywaniem odpowiedzi.
