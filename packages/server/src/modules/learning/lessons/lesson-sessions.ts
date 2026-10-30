@@ -280,6 +280,24 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
         )
     : [];
   const audioByRevision = new Map(audioRows.map((a) => [a.itemRevisionId, a.assetId] as const));
+  // Nagranie pytania (design szkoły §11.2): publikacja na nie nie czeka, więc
+  // liczy się zasób powiązany z rewizją, który zdążył dojść do `ready` — także
+  // po publikacji (powiązanie wskazuje niezmienny zasób z fingerprintem tekstu).
+  const promptAudioRows = revisionIds.length
+    ? await tx
+        .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: revisionAssets.assetId })
+        .from(revisionAssets)
+        .innerJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+        .where(
+          and(
+            inArray(revisionAssets.itemRevisionId, revisionIds),
+            eq(revisionAssets.role, "prompt_audio"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          ),
+        )
+    : [];
+  const promptAudioByRevision = new Map(promptAudioRows.map((a) => [a.itemRevisionId, a.assetId] as const));
 
   return revisions.map((r) => ({
     revisionId: r.id,
@@ -288,6 +306,7 @@ export async function loadExercises(tx: Executor, deckVersionId: string): Promis
     payload: r.payload as unknown as LessonExercisePayload,
     targetKey: r.targetKey,
     audioAssetId: audioByRevision.get(r.id) ?? null,
+    questionAudioAssetId: promptAudioByRevision.get(r.id) ?? null,
   }));
 }
 

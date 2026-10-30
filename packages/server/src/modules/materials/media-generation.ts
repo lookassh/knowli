@@ -72,7 +72,7 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
     const current = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
     if (current?.state !== "pending") return false;
-    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext })
+    const references = await tx.select({ kind: decks.kind, lessonContext: deckVersions.lessonContext, role: revisionAssets.role })
       .from(revisionAssets)
       .innerJoin(itemRevisions, eq(itemRevisions.id, revisionAssets.itemRevisionId))
       .innerJoin(deckVersions, eq(deckVersions.id, itemRevisions.deckVersionId))
@@ -80,8 +80,10 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
       .where(eq(revisionAssets.assetId, asset.id));
     if (references.length > 0 && !references.every(reference => {
       const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
-      return reference.kind === "lesson" && typeof subjectId === "string"
-        && services.subjects.getSubject(subjectId)?.ttsForAnswers === false;
+      const subject = typeof subjectId === "string" ? services.subjects.getSubject(subjectId) : undefined;
+      if (reference.kind !== "lesson" || !subject) return false;
+      // Nagranie pytania zależy od `ttsForPrompts`, nagranie odpowiedzi od `ttsForAnswers`.
+      return reference.role === "prompt_audio" ? !subject.ttsForPrompts : !subject.ttsForAnswers;
     })) return false;
     await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
       .where(eq(mediaAssets.id, asset.id));

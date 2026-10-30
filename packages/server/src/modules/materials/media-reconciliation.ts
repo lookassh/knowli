@@ -15,8 +15,9 @@ import {
 import { AppError } from "../../errors";
 import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../domain/media-fingerprint";
 import { payloadToItem } from "./item-payload";
+import { questionReadText } from "../../domain/lessons/question-read-text";
 
-export type AssetRole = "target_audio" | "example_audio" | "illustration";
+export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio";
 
 interface RequiredAsset {
   role: AssetRole;
@@ -113,61 +114,95 @@ function isLessonExercisePayload(payload: Record<string, unknown>): boolean {
   return typeof payload.exerciseType === "string";
 }
 
+/** Flagi mediów przedmiotu lekcji (z rejestru przedmiotów). */
+export interface LessonTtsFlags {
+  ttsForAnswers: boolean;
+  ttsForPrompts: boolean;
+}
+
+/** Locale nagrania pytania: polecenia i pytania przedmiotów szkolnych są po polsku (design szkoły §11.2). */
+const PROMPT_AUDIO_LOCALE = "pl-PL";
+
+function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
+  return {
+    role,
+    kind: "tts",
+    fingerprint: ttsFingerprint({
+      text,
+      locale,
+      provider: settings.tts.provider,
+      model: settings.tts.model,
+      voice: settings.tts.voice,
+      format: settings.tts.format,
+    }),
+    metadata: {
+      kind: "tts",
+      text,
+      locale,
+      voice: settings.tts.voice,
+      format: settings.tts.format,
+    },
+  };
+}
+
 /**
- * Wymagane zasoby ćwiczenia lekcji (design „Generowanie puli”): tylko
- * `target_audio` odpowiedzi kanonicznej w `answerLocale`, i tylko gdy przedmiot
- * ma `ttsForAnswers`. Bez ilustracji i bez audio przykładu. Zwraca pustą listę,
- * gdy przedmiot nie generuje audio odpowiedzi.
+ * Wymagane zasoby ćwiczenia lekcji (design „Generowanie puli”): `target_audio`
+ * odpowiedzi kanonicznej w `answerLocale`, gdy przedmiot ma `ttsForAnswers`,
+ * oraz `prompt_audio` polecenia i pytania (design szkoły §11), gdy ma
+ * `ttsForPrompts` i typ ćwiczenia ma co czytać. Bez ilustracji i bez audio
+ * przykładu.
  */
 export function requiredAssetsForLessonExercise(
   payload: Record<string, unknown>,
   settings: MediaSettings,
-  ttsForAnswers: boolean,
+  flags: LessonTtsFlags,
 ): RequiredAsset[] {
-  if (!ttsForAnswers) {
-    return [];
-  }
+  const required: RequiredAsset[] = [];
   const answer = typeof payload.answer === "string" ? payload.answer : "";
   const answerLocale = typeof payload.answerLocale === "string" ? payload.answerLocale : "";
-  if (answer === "" || answerLocale === "") {
-    return [];
+  if (flags.ttsForAnswers && answer !== "" && answerLocale !== "") {
+    required.push(ttsAsset("target_audio", answer, answerLocale, settings));
   }
-  return [
-    {
-      role: "target_audio",
-      kind: "tts",
-      fingerprint: ttsFingerprint({
-        text: answer,
-        locale: answerLocale,
-        provider: settings.tts.provider,
-        model: settings.tts.model,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      }),
-      metadata: {
-        kind: "tts",
-        text: answer,
-        locale: answerLocale,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      },
-    },
-  ];
+  const question = flags.ttsForPrompts ? questionReadText(questionSourceOf(payload)) : null;
+  if (question !== null) {
+    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings));
+  }
+  return required;
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function questionSourceOf(payload: Record<string, unknown>) {
+  const groups = Array.isArray(payload.groups)
+    ? payload.groups.flatMap((group: unknown) => {
+        const label = (group as { label?: unknown } | null)?.label;
+        return typeof label === "string" ? [{ label }] : [];
+      })
+    : undefined;
+  return {
+    exerciseType: optionalText(payload.exerciseType) ?? "",
+    instructionPl: optionalText(payload.instructionPl),
+    stem: optionalText(payload.stem),
+    prompt: optionalText(payload.prompt),
+    groups,
+  };
 }
 
 /**
  * Zwraca wymagane zasoby rewizji wg rodzaju elementu: ćwiczenie lekcji ma własną
- * strategię (audio odpowiedzi wg `ttsForAnswers`), słówko — dotychczasową.
- * `ttsForAnswers` ustala wywołujący z rejestru przedmiotów (dla słówek bez
+ * strategię (audio odpowiedzi i pytania wg flag przedmiotu), słówko —
+ * dotychczasową. Flagi ustala wywołujący z rejestru przedmiotów (dla słówek bez
  * znaczenia). Jedno miejsce rozgałęzienia strategii mediów.
  */
 function requiredAssetsForRevision(
   payload: Record<string, unknown>,
   settings: MediaSettings,
-  ttsForAnswers: boolean,
+  flags: LessonTtsFlags,
 ): RequiredAsset[] {
   if (isLessonExercisePayload(payload)) {
-    return requiredAssetsForLessonExercise(payload, settings, ttsForAnswers);
+    return requiredAssetsForLessonExercise(payload, settings, flags);
   }
   return requiredAssetsFor(payloadToItem(payload), settings);
 }
@@ -265,9 +300,9 @@ export async function reconcileDraftAssetsTx(
     return;
   }
 
-  // Dla ćwiczeń lekcji strategia zasobów zależy od `ttsForAnswers` przedmiotu;
-  // czytamy go raz z lesson_context tej wersji (słówka go nie potrzebują).
-  let ttsForAnswers = false;
+  // Dla ćwiczeń lekcji strategia zasobów zależy od flag TTS przedmiotu;
+  // czytamy je raz z lesson_context tej wersji (słówka ich nie potrzebują).
+  const flags: LessonTtsFlags = { ttsForAnswers: false, ttsForPrompts: false };
   if (revisions.some((r) => isLessonExercisePayload(r.payload))) {
     const row = (
       await tx
@@ -276,8 +311,10 @@ export async function reconcileDraftAssetsTx(
         .where(eq(deckVersions.id, version.id))
     )[0];
     const subjectId = (row?.lessonContext as { subjectId?: string } | null)?.subjectId;
-    if (subjectId) {
-      ttsForAnswers = services.subjects.getSubject(subjectId)?.ttsForAnswers ?? false;
+    const subject = subjectId ? services.subjects.getSubject(subjectId) : undefined;
+    if (subject) {
+      flags.ttsForAnswers = subject.ttsForAnswers;
+      flags.ttsForPrompts = subject.ttsForPrompts;
     }
   }
 
@@ -293,7 +330,7 @@ export async function reconcileDraftAssetsTx(
   }
 
   for (const revision of revisions) {
-    const required = requiredAssetsForRevision(revision.payload, settings, ttsForAnswers);
+    const required = requiredAssetsForRevision(revision.payload, settings, flags);
     const mine = rowsByRevision.get(revision.id) ?? new Map();
 
     // role, których karta już nie wymaga, znikają ze szkicu

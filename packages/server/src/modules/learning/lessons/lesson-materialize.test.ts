@@ -380,3 +380,47 @@ describe("materializeExercise — pary i grupy (design szkoły §10)", () => {
     }
   });
 });
+
+describe("materializeExercise — nagranie „Posłuchaj pytania” (design szkoły §11.3)", () => {
+  const schoolTopic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Pająki",
+    objectives: [{
+      id: "school.ddeck.pajaki",
+      titlePl: "Pająki",
+      descriptionEn: "Spiders.",
+      cards: [{ title: "Pająki", body: "Pająk ma osiem nóg." }, { title: "Owady", body: "Owad ma sześć nóg." }],
+    }],
+  });
+  const choicePayload = {
+    exerciseType: "lesson_choice",
+    objectiveId: "school.ddeck.pajaki",
+    instructionPl: "Wybierz odpowiedź.",
+    stem: "Ile nóg ma pająk?",
+    options: [{ id: "a", text: "osiem" }, { id: "b", text: "sześć" }],
+    correctOption: "a",
+    answer: "osiem",
+    acceptedAnswers: [],
+    focus: [],
+    answerLocale: "pl-PL",
+    promptLocale: "pl-PL",
+  } as LoadedExercise["payload"];
+  const audioId = "11111111-1111-4111-8111-111111111111";
+  const withAudio = (payload: LoadedExercise["payload"]): LoadedExercise => ({ ...loaded(payload), questionAudioAssetId: audioId });
+
+  it("dołącza gotowe nagranie w treningu i w kartkówce", () => {
+    const training = materializeExercise({ independentCheck: false, reason: "practice" }, "q1", withAudio(choicePayload), schoolTopic, schoolSubject);
+    const mock = materializeExercise({ independentCheck: true, reason: "due_check" }, "q2", withAudio(choicePayload), schoolTopic, schoolSubject, { mockTest: true });
+    expect(training.prompt).toMatchObject({ kind: "lesson_choice", questionAudioAssetId: audioId });
+    expect(mock.prompt).toMatchObject({ kind: "lesson_choice", questionAudioAssetId: audioId });
+  });
+
+  it("bez gotowego nagrania pole nie istnieje", () => {
+    const task = materializeExercise({ independentCheck: false, reason: "practice" }, "q3", loaded(choicePayload), schoolTopic, schoolSubject);
+    expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
+  });
+
+  it("przedmiot bez `ttsForPrompts` nie dołącza nagrania", () => {
+    const task = materializeExercise({ independentCheck: false, reason: "practice" }, "q4", withAudio(choicePayload), schoolTopic, { ...schoolSubject, ttsForPrompts: false });
+    expect(task.prompt).not.toHaveProperty("questionAudioAssetId");
+  });
+});
