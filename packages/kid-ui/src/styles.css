@@ -2216,6 +2216,26 @@
   text-align: center;
 }
 
+/* Nagłówek z „Posłuchaj karty”: tytuł wyśrodkowany między pustą kolumną
+   a przyciskiem (szerokość celu dotykowego), długi tytuł zawija się obok. */
+.kid-lesson-card__header {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 8px;
+}
+
+.kid-lesson-card__header .kid-lesson-card__title {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.kid-lesson-card__listen {
+  grid-column: 3;
+  display: flex;
+  justify-content: center;
+}
+
 .kid-lesson-card__body {
   margin: 0;
   font-size: var(--kid-type-title-md-size);

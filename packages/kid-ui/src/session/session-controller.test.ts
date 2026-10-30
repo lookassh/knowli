@@ -2289,6 +2289,23 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: false });
   });
 
+  it("„Posłuchaj karty” odtwarza nagranie karty bez zgody serwera, a „Dalej” je zatrzymuje (design szkoły §12.4)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const card = taskDto("tcard", { kind: "lesson_card", card: { title: "Pająki", body: "Pająk ma osiem nóg.", examples: [] }, questionAudioAssetId: "asset-card" });
+    const harness = await startAtTask(baseState(), card, { playGate: gate });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.media.playUrls).toEqual([]);
+    const playing = harness.controller.playQuestionAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-card"]);
+    expect(harness.state.disclosures).toHaveLength(0);
+    const stopsBefore = harness.media.stops;
+    await harness.controller.completePresentation();
+    expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    release();
+    await playing;
+  });
+
   it("„Nie pamiętam” zatrzymuje trwający odsłuch pytania", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });

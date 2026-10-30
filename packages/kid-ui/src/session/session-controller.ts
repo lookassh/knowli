@@ -1063,7 +1063,9 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const sessionId = screen.session.sessionId;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true, transitioning: true });
+    // „Dalej” kończy odsłuch karty przed przejściem (design szkoły §12.4).
+    this.#stopPlayback();
+    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");
     this.#setResume(async () => {

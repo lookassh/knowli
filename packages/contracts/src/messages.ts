@@ -504,6 +504,7 @@ export const messages = {
     listenExample: "Posłuchaj zdania",
     listenInstruction: "Posłuchaj polecenia",
     listenLessonQuestion: "Posłuchaj pytania",
+    listenLessonCard: "Posłuchaj karty",
     questionAudioUnavailable: "Nie udało się odtworzyć pytania. Przeczytaj je albo spróbuj jeszcze raz.",
     questionAudioRetry: "Odtwórz pytanie",
     understand: "Rozumiem",

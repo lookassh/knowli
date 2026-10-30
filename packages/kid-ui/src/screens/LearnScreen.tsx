@@ -122,9 +122,11 @@ export function LearnScreen({
     : null;
   // Komunikaty błędu z akcjami (audio zadania / instrukcji) rozpychają pasek
   // statusu i włączają przewijanie ramy ćwiczenia — styluje to styles.css.
-  // „Posłuchaj pytania” (design szkoły §11.4) w tym samym miejscu co odsłuch polecenia.
+  // „Posłuchaj pytania” (design szkoły §11.4) w tym samym miejscu co odsłuch polecenia;
+  // karta nauki stawia go w nagłówku za tytułem jako „Posłuchaj karty” (§12.4).
   const questionAudioButton = task !== null && questionAudioOf(task) !== null
     ? <QuestionAudioButton key={task.taskId} onPlay={() => controller.playQuestionAudio()}
+        label={task.prompt.kind === "lesson_card" ? messages.kid.listenLessonCard : messages.kid.listenLessonQuestion}
         disabled={offline || busy || screen.processing || screen.recordingPhase !== "idle"} />
     : null;
   const questionAudioError = questionAudioButton !== null && screen.questionAudioError === true;
