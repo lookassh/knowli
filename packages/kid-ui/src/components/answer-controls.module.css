@@ -133,11 +133,12 @@
 }
 
 /* Forced colors drop the shadow and repaint the border, so focus would vanish:
-   draw a system-colour outline inside the field instead (not clipped either). */
+   draw a separate system-colour ring inside the field, 2px clear of the border
+   (an inner ring is not clipped by the scrolling material either). */
 @media (forced-colors: active) {
   :global(.kid-ui) .input:focus-visible {
-    outline: 3px solid CanvasText;
-    outline-offset: -3px;
+    outline: 2px solid Highlight;
+    outline-offset: -6px;
   }
 }
 

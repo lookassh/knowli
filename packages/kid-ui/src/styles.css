@@ -285,15 +285,16 @@
   flex: none;
 }
 
-/* Text sits in the middle column and the speaker in the right one; an empty
-   left column of the speaker's width keeps the text on the card's axis, in
-   line with the picture and the translation. */
+/* Text sits in the middle column and the speaker in the right one. The empty
+   left column matches the right one while there is room, which keeps the text
+   on the card's axis in line with the picture and the translation; on narrow
+   phones it gives way first, so a long word stays whole instead. */
 .kid-ui .kid-exposure-content .kid-word-row,
 .kid-ui .kid-exposure-content .kid-example-block {
   --listen-column: 48px;
   width: 100%;
   display: grid;
-  grid-template-columns: var(--listen-column) minmax(0, 1fr) var(--listen-column);
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(var(--listen-column), 1fr);
   align-items: center;
   gap: 8px;
 }
