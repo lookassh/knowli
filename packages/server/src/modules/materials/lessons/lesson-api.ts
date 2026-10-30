@@ -242,7 +242,8 @@ async function readLessonDraftDto(
         })
         .from(revisionAssets)
         .leftJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
-        .where(inArray(revisionAssets.itemRevisionId, revisionIds))
+        // Nagranie pytania (`prompt_audio`) nie jest decyzją rodzica ani warunkiem publikacji.
+        .where(and(inArray(revisionAssets.itemRevisionId, revisionIds), eq(revisionAssets.role, "target_audio")))
     : [];
 
   const exercises = revisions.map((r) => exerciseDtoFromPayload(r.itemId, r.id, r.payload));
@@ -278,7 +279,8 @@ async function readLessonDraftDto(
         }),
     examples: context.examples,
     exercises,
-    assets: assetRows.map((a) => ({
+    // Nagranie pytania nie jest zasobem do decyzji rodzica (design szkoły §11.2).
+    assets: assetRows.flatMap((a) => a.role === "prompt_audio" ? [] : [{
       itemRevisionId: a.itemRevisionId,
       role: a.role,
       state:
@@ -290,7 +292,7 @@ async function readLessonDraftDto(
               ? "failed"
               : "pending",
       assetId: a.assetId,
-    })),
+    }]),
     rejectedCount: context.rejectedCount,
     ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
     coverage,

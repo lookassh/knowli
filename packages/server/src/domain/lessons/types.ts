@@ -192,6 +192,8 @@ export interface SubjectModule {
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej
+  /** „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania (`pl-PL`) przy przygotowaniu materiału. */
+  readonly ttsForPrompts: boolean;
   /**
    * Odpowiedź mówiona (dyktowanie do pola, design szkoły §5): język nagrania
    * i typy ćwiczeń, które ją przyjmują. Brak = przedmiot bez mikrofonu.

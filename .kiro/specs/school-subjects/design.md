@@ -1269,3 +1269,203 @@ widoków, jak `block-order.ts`.
   elementy do pierwszej pozostałej grupy. Odpowiedzi z tymi samymi lewymi
   stronami albo etykietami grup dzielą `targetKey` — dotyczy tylko flagi
   wcześniejszej ekspozycji typu zawsze wspomaganego (świadomie bez zmian).
+
+## 11. „Posłuchaj pytania” — odsłuch treści zadania na żądanie (Etap 8) — kontrakt
+
+Status: **zaakceptowany przez właściciela 2026-10-30** (decyzje 11.6 z dodaną
+decyzją 8 — nagrania przez OpenRouter). Moduły: tekst do odczytu w domenie
+(`domain/lessons/`, czysta funkcja nad payloadem ćwiczenia), zlecanie
+i uzgadnianie nagrań w `materials/` (`media-reconciliation.ts`, ten sam
+mechanizm co `target_audio`), dołączenie gotowego nagrania do zadania
+w `learning/lessons/` (materializacja), przycisk w `packages/kid-ui`.
+Gramatyka i słówka bez zmian.
+
+Cel: dziecko, które jeszcze wolno czyta, może odsłuchać polecenie i pytanie
+głosem lektora. Odsłuch jest **wyłącznie na żądanie** (przycisk), bez
+automatycznego czytania. Nagranie zawiera tylko tekst, który dziecko już
+widzi na ekranie — nie ujawnia nic nowego.
+
+### 11.1. Co jest czytane
+
+Tekst do odczytu buduje czysta funkcja `questionReadText(exercise)` z payloadu
+zatwierdzonej rewizji. Zasada: tylko polecenie i bodziec w kolejności, która
+**nie zależy od tasowania** przy wydaniu zadania. Nagranie powstaje przy
+przygotowaniu materiału, a opcje, lewa kolumna par i klocki „Ułóż” są
+tasowane przy każdym wydaniu — przeczytanie ich w kolejności z payloadu
+zdradzałoby rozwiązanie albo rozjeżdżało się z ekranem.
+
+| Typ | Treść nagrania |
+| --- | --- |
+| `lesson_card` | **brak** w tym etapie — karty nie są rewizjami ćwiczeń (11.7) |
+| `lesson_choice` | polecenie + pytanie (`stem`); **bez opcji** |
+| `lesson_gap` | polecenie + zdanie z luką; luka czytana jako „luka” |
+| `lesson_open_answer` | polecenie + pytanie |
+| `lesson_keywords` | samo polecenie (z payloadu albo stałe polecenie typu); **bez pytania i pojęć do wyboru** — pytanie pochodzi z zaplanowanej odpowiedzi otwartej (11.7) |
+| `lesson_order` | samo polecenie |
+| `lesson_match` | samo polecenie |
+| `lesson_group` | polecenie + nazwy grup (kolejność materiału, nietasowana) |
+| `lesson_calculation` | **brak** w tym etapie — zapis matematyczny (`3/4`, `x²`, `·`) bywa czytany błędnie |
+
+Zadania tworzone w trakcie sesji (`lesson_shorten`, pytanie porównawcze
+z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
+(`hint`) nigdy nie trafia do nagrania.
+
+### 11.2. Przygotowanie nagrania
+
+- Nowa flaga przedmiotu `ttsForPrompts: boolean` w `SubjectModule` (szkoła:
+  `true`, gramatyka: `false`). Bez skonfigurowanego TTS (`services.media`)
+  funkcja jest wyłączona.
+- Nowa rola zasobu rewizji `prompt_audio` obok `target_audio`
+  (**migracja `0027`** rozszerza `revision_assets_role_allowed`).
+  `requiredAssetsForLessonExercise` dokłada ją, gdy `ttsForPrompts` i funkcja
+  z 11.1 zwraca tekst. Locale `pl-PL`, głos i format jak w ustawieniach TTS;
+  fingerprint pokrywa tekst, więc edycja treści rodzica uzgadnia nowe
+  nagranie w tej samej transakcji co dziś `target_audio`.
+- Nagranie powstaje w workerze (kolejka `media_assets`), nie przy kliknięciu
+  dziecka — zgodnie z zasadą „TTS przy przygotowaniu materiału”.
+- **Dostawca TTS: OpenRouter** (`/api/v1/audio/speech`, zgodny z OpenAI
+  Audio Speech). Istniejący adapter `createOpenAiTtsProvider` dostaje adres
+  i klucz z nowych zmiennych `UMIEM_TTS_BASE_URL` (poza test/development
+  wymaga `https://`, jak `UMIEM_LLM_BASE_URL`) i `UMIEM_TTS_API_KEY` (fallback
+  `OPENAI_API_KEY` wyłącznie bez własnego BASE_URL — własny endpoint wymaga
+  własnego klucza), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
+  i zawsze wysyłał model domyślny). Wybrana konfiguracja (decyzja 9):
+  `UMIEM_TTS_PROVIDER=openrouter`, `UMIEM_TTS_MODEL=microsoft/mai-voice-2.1-flash`,
+  `UMIEM_TTS_VOICE=pl-PL-Harper:MAI-Voice-2.1-Flash` (głos z `supported_voices`
+  modelu; `alloy` działa tylko z modelami OpenAI).
+  To jedna konfiguracja TTS dla wszystkich nagrań (także słówek i komunikatów
+  interfejsu): zmiana providera/modelu zmienia fingerprinty, więc gotowe
+  nagrania zostają, a nowe powstają przy kolejnej edycji materiału; katalog
+  komunikatów interfejsu przygotowuje się na nowo przy starcie workera.
+- **Publikacja nie czeka** na nagrania pytań: brak gotowego nagrania oznacza
+  tylko brak przycisku. Awaria TTS nie blokuje rodzica.
+- Tylko nowe wersje lekcji: istniejące opublikowane lekcje dostaną nagrania
+  przy następnej edycji i publikacji (bez migracji danych wstecz).
+
+### 11.3. Zadanie i Kid DTO
+
+- Przy wydaniu zadania materializacja dołącza `questionAudioAssetId`, jeśli
+  istnieje gotowy zasób TTS (`media_assets.state='ready'`) o fingerprincie
+  zgodnym z `expected_fingerprint` wiersza `prompt_audio` rewizji — najnowsza
+  generacja, niezależnie od stanu powiązania w `revision_assets` (nagranie nie
+  jest decyzją rodzica i może dojść po publikacji, 11.7). Pole opcjonalne
+  w gałęziach `TaskPromptSchema` typów z 11.1; prompt wydanego zadania
+  pozostaje niezmienny.
+- Dołączane także w **kartkówce** — nagranie powtarza widoczną treść i nie
+  zdradza odpowiedzi (w przeciwieństwie do `audioAssetId` odpowiedzi
+  wzorcowej, który w kartkówce jest wyłączony).
+- Odsłuch **nie jest ujawnieniem**: bez `authorizeDisclosure`, bez zdarzenia
+  i ekspozycji, bez wpływu na samodzielność próby i na serię opanowania.
+  Odczyt bajtów idzie istniejącym `/api/v1/media/:id` (tylko `ready`, cache
+  niezmienne).
+
+### 11.4. Kid UI
+
+- Przycisk z głośnikiem w wierszu instrukcji (`ExerciseInstruction`, gniazdo
+  `audio`) z nazwą „Posłuchaj pytania”; podczas odtwarzania `SoundRing`,
+  ponowne dotknięcie zaczyna od początku. Cel dotykowy ≥48 px.
+- Bez autoodtwarzania. Odtwarzanie zatrzymuje się przy wysłaniu odpowiedzi,
+  zmianie zadania, „Pomiń”/„Nie pamiętam” i zakończeniu sesji.
+- **Mikrofon**: rozpoczęcie nagrywania odpowiedzi (`lesson_open_answer` z mową)
+  zatrzymuje odsłuch, a w trakcie nagrywania przycisk jest nieaktywny — STT
+  nie może usłyszeć lektora.
+- Błąd odtwarzania: istniejący komunikat `picture_guidance_unavailable`
+  z „Spróbuj jeszcze raz”; nie blokuje zadania.
+- Gdy przedmiot ma też `audioAssetId` odpowiedzi (dziś tylko gramatyka, która
+  nie dostaje nagrań pytań), oba przyciski nie spotkają się w tym etapie.
+
+### 11.5. Prywatność, koszty, integracje
+
+- Do usługi TTS trafia wyłącznie tekst materiału zatwierdzony przez rodzica —
+  bez danych dziecka; ta sama usługa co nagrania słówek. Nagranie dziecka nie
+  powstaje.
+- Koszt: jedno nagranie na ćwiczenie i wersję (typowo kilkadziesiąt krótkich
+  tekstów na lekcję), współdzielone przez fingerprint; zero wywołań w trakcie
+  sesji.
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu.
+- Panel rodzica: bez nowych ustawień w tym etapie (stan nagrań widoczny jak
+  dotychczas tylko przy problemach z mediami).
+
+### 11.6. Decyzje do akceptacji właściciela
+
+1. **Tylko na żądanie**, bez autoodtwarzania i bez ustawienia per dziecko.
+2. **Zakres treści** wg tabeli 11.1: bez opcji wyboru, pojęć, klocków i par
+   (kolejność tasowana); `lesson_calculation` bez nagrania.
+3. **Publikacja nie czeka** na nagrania pytań; brak nagrania = brak przycisku.
+4. **Dostępne w kartkówce.**
+5. **Migracja `0027`** (rola `prompt_audio`) i flaga `ttsForPrompts`
+   (szkoła tak, gramatyka nie).
+6. **Bez wstecznego generowania** dla już opublikowanych lekcji.
+7. **Poza etapem** (możliwe później): odsłuch pojedynczych opcji
+   i elementów (osobne krótkie nagrania odtwarzane w kolejności z ekranu),
+   odczyt zapisu matematycznego, nagrania pytań w gramatyce.
+8. **Nagrania przez OpenRouter** (decyzja właściciela 2026-10-30) — jedna
+   konfiguracja TTS z `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`/`UMIEM_TTS_MODEL`
+   (11.2). Obrazy nadal wymagają `OPENAI_API_KEY`.
+9. **Model TTS: `microsoft/mai-voice-2.1-flash`, głos `pl-PL-Harper`**
+   (decyzja właściciela 2026-10-30 po odsłuchu próbek: 4 polskie zdania z lekcji
+   w 10 modelach OpenRouter). Ocenę 5/5 dostały też Gemini 3.8 Flash TTS,
+   ElevenLabs v4 i v4 Turbo oraz MAI-Voice-2.1; MAI-Voice-2.1 Flash wybrano jako
+   najtańszy z nich ($15 / 1 mln znaków) z natywnym polskim głosem i mp3
+   zgodnym z adapterem. Gemini TTS zwraca na OpenRouter wyłącznie PCM
+   (wymagałby zmiany adaptera). Pozostałe modele (Gemini Flash Lite, Fish
+   Audio Drama 3 i S2.1 Pro, Grok Voice, Voxtral TTS 3) oceniono 1/5.
+   Treść angielska (słówka) ma osobny głos tego samego modelu. Właściciel
+   wybrał zestaw kobiecy dla całej aplikacji (2026-10-30, po odsłuchu zestawu
+   kobiecego i męskiego): polska treść `pl-PL-Harper`, angielska
+   `UMIEM_TTS_VOICE_EN_GB=en-GB-Emily:MAI-Voice-2.1-Flash`.
+
+### 11.7. Korekty przy implementacji (2026-10-30)
+
+- **Karty nauki (`lesson_card`) bez nagrania w tym etapie.** Karty należą do
+  zagadnienia w `lesson_context` wersji, a nie do rewizji ćwiczenia, więc nie
+  mają `revision_assets`; nagranie kart wymaga osobnego powiązania zasobu
+  z wersją — do decyzji po pilotażu.
+- **Polecenie w nagraniu tylko z payloadu** (albo stałe polecenie typu dla
+  par, grup i słów kluczowych). Zastępczy tytuł celu, który ekran pokazuje
+  przy braku polecenia, nie trafia do nagrania — „Ułóż” bez własnego polecenia
+  nie ma nagrania. Słowa kluczowe czytają samo polecenie (pytanie pochodzi
+  z zaplanowanej odpowiedzi otwartej, nie z payloadu).
+- **Przycisk w gnieździe odsłuchu polecenia** (`guidance`, za tekstem
+  instrukcji, obrysowany głośnik), nie z przodu wiersza — przednie gniazdo
+  zostaje dla odsłuchu odpowiedzi wzorcowej, a widoki ćwiczeń nie wymagają
+  zmian. Zniknie na czas feedbacku (jak odsłuch polecenia).
+- **Nagranie gotowe po publikacji** liczy się przy kolejnym wydaniu zadania:
+  `loadExercises` bierze najnowszy gotowy zasób TTS o oczekiwanym
+  fingerprincie wiersza `prompt_audio` (`expected_fingerprint`), niezależnie
+  od stanu decyzji i zasobu powiązanego przy edycji — wiersz opublikowanej
+  rewizji jest niezmienny, więc porażka tamtego zasobu nie może na stałe
+  odebrać przycisku. Zadanie już wydane ma niezmienny prompt. Lista zestawów
+  dziecka nie czyta nagrań pytań.
+- Review przed PR: luka w nagraniu jak w Kid UI (każdy ciąg 2+ podkreśleń),
+  puste `UMIEM_TTS_PROVIDER`/`MODEL`/`VOICE` traktowane jak nieustawione także
+  w fingerprincie (wcześniej `""` trafiało do fingerprintu, a adapter wysyłał
+  model domyślny).
+- **Worker nie unieważnia nagrań pytań** przedmiotu bez `ttsForAnswers`:
+  wyłączenie zbędnego TTS lekcji sprawdza flagę właściwą dla roli
+  (`prompt_audio` → `ttsForPrompts`).
+- DTO rodzica (szkic lekcji i zestawu słówek) pomija `prompt_audio` — nie jest
+  decyzją rodzica ani warunkiem publikacji.
+- Review PR (CodeRabbit, gitar): komunikat błędu odsłuchu pytania jest stanem
+  kontrolera (`questionAudioError`) i stoi w pasku statusu z przewijaniem ramy
+  (`data-action-notice`), nie w wierszu instrukcji — przy 320×480 i długim
+  poleceniu „Sprawdź” pozostaje osiągalne; „Nie pamiętam” w treningu zatrzymuje
+  odsłuch; ponowne dotknięcie nie gasi wskaźnika nowego odsłuchu; worker
+  syntetyzuje model zapisany w rekordzie zasobu (fingerprint), nie bieżący
+  `UMIEM_TTS_MODEL`.
+- Przełączenie dostawcy TTS: worker bierze wyłącznie zadania TTS zgodne z jego
+  providerem i modelem; pozostałe czekają w kolejce bez zmiany stanu (nowy
+  endpoint nie zna starego modelu, a stary worker w trakcie wdrożenia nie może
+  trwale unieważnić nagrań zleconych już z nową konfiguracją). Nagranie
+  z bieżącym fingerprintem zleca kolejna edycja szkicu, publikacja albo start
+  workera (katalog komunikatów); stare zlecenia zostają jako nieużywane `pending`.
+  Opublikowane lekcje bez gotowego nagrania pytań dostaną je po edycji
+  i ponownej publikacji.
+- Review przed wypchnięciem (2026-10-30): jeden głos dla wszystkich nagrań
+  czytałby angielskie słówka polskim lektorem — głos zależy od locale treści
+  (`UMIEM_TTS_VOICE_<JĘZYK>_<REGION>`, np. `en-GB` → `en-GB-Emily`, w fingerprincie;
+  bez tych zmiennych fingerprinty bez zmian). Nieudane nagranie pytania
+  publikacja zleca ponownie (`keepFailed` z #176 nie dotyczy `prompt_audio`,
+  bo rodzic go nie regeneruje). Worker zgłasza przy starcie liczbę zadań TTS
+  innej konfiguracji. Klucz innego dostawcy bez jego BASE_URL to błąd
+  konfiguracji. Komunikat błędu odsłuchu znika po odpowiedzi i „Nie pamiętam”.

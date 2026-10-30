@@ -127,6 +127,8 @@ export interface TtsSynthesizeInput {
   locale: string;
   voice: string;
   format: "mp3";
+  /** Model zapisany w zasobie (fingerprint); brak = model adaptera. */
+  model?: string;
 }
 
 export interface TtsProvider {

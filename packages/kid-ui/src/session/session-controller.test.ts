@@ -140,10 +140,11 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; failPlayback: boolean; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
   const media = {
     playUrls: [] as string[],
     stops: 0,
+    failPlayback: failPlaybackBeforeStart,
     beeps: [] as string[],
     preloadedImages: [] as string[],
     async preloadImage(url: string) {
@@ -177,7 +178,7 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
     player: {
       async play(url: string, onStarted?: (durationMs: number | null) => void) {
         media.playUrls.push(url);
-        if (failPlaybackBeforeStart) throw new Error("autoplay blocked");
+        if (media.failPlayback) throw new Error("autoplay blocked");
         onStarted?.(playbackDurationMs);
         await playGate;
       },
@@ -2251,6 +2252,54 @@ describe("LearningSessionController", () => {
     await choiceHarness.controller.playTaskAudio();
     expect(choiceHarness.state.disclosures).toHaveLength(0);
     expect(choiceHarness.media.playUrls).toEqual([]);
+  });
+
+  it("„Posłuchaj pytania” odtwarza nagranie bez zgody serwera i nie gra samo (design szkoły §11.3)", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), choice);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.media.playUrls).toEqual([]);
+    await harness.controller.playQuestionAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question"]);
+    expect(harness.state.disclosures).toHaveLength(0);
+    // „Posłuchaj” odpowiedzi nie dotyczy nagrania pytania
+    await harness.controller.playTaskAudio();
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question"]);
+  });
+
+  it("błąd odtwarzania pytania trafia do stanu ekranu, a nowa próba go czyści", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), choice, { failPlaybackBeforeStart: true });
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: true, offline: false });
+    harness.media.failPlayback = false;
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: false });
+    expect(harness.media.playUrls).toEqual(["https://media.test/asset-question", "https://media.test/asset-question"]);
+  });
+
+  it("komunikat błędu odsłuchu pytania znika po wysłaniu odpowiedzi", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const state = baseState();
+    const harness = await startAtTask(state, choice, { failPlaybackBeforeStart: true });
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: true });
+    state.attempts = [attemptDto({ taskId: "tq", modality: "choice", taskState: "issued", feedback: { kind: "incorrect", correctText: "osiem" } })];
+    await harness.controller.answerChoice("o1");
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: false });
+  });
+
+  it("„Nie pamiętam” zatrzymuje trwający odsłuch pytania", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gap = taskDto("tq", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "Pająk ma ___ nóg.", questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), gap, { playGate: gate });
+    const playing = harness.controller.playQuestionAudio();
+    const stopsBefore = harness.media.stops;
+    await harness.controller.notRemember();
+    expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    release();
+    await playing;
   });
 
   it("feedback wyboru pamięta wybraną opcję także przez awarię sieci i retry", async () => {
