@@ -33,3 +33,11 @@ export const ApiErrorSchema = z.object({
   details: z.unknown().optional(),
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+
+/**
+ * `details` błędu `validation` publikacji, gdy wymagane media wciąż się
+ * generują. Zlecenia generacji są już zapisane, więc wystarczy poczekać
+ * i opublikować ponownie (issue #106).
+ */
+export const MediaPendingDetailsSchema = z.object({ media: z.literal("pending") }).strict();
+export type MediaPendingDetails = z.infer<typeof MediaPendingDetailsSchema>;

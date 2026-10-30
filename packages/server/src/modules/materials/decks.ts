@@ -44,7 +44,7 @@ import { VOCABULARY_SKILLS, type VocabularySkill } from "../../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
-import { assertAssetPublishable, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
+import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor, type AssetRole } from "./media-reconciliation";
 import {
   assertEditable,
   bumpEditNumber,
@@ -512,6 +512,9 @@ export async function publishDraft(
   draftId: string,
   expectedEditNumber: number,
 ): Promise<{ deckVersionId: string }> {
+  // Brakujące media zlecamy w osobnej, zatwierdzanej transakcji: nieudana
+  // walidacja niżej nie może ich wycofać (issue #106).
+  await reconcileBeforePublish(services, draftId, expectedEditNumber);
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, draftId);
     assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
@@ -522,10 +525,10 @@ export async function publishDraft(
       throw new AppError("conflict");
     }
     // Publikacja uzgadnia powiązania zasobów jak każda edycja: promuje gotowe
-    // bloby do approved i zleca brakujące, zanim walidator oceni gotowość.
-    // Bez tego zestaw opublikowany zaraz po generacji zostawiałby target_audio
-    // w stanie pending i sesje dziecka nie znajdowałyby gotowego audio.
-    await reconcileDraftAssetsTx(tx, services, version);
+    // bloby do approved, zanim walidator oceni gotowość. Bez tego zestaw
+    // opublikowany zaraz po generacji zostawiałby target_audio w stanie
+    // pending i sesje dziecka nie znajdowałyby gotowego audio.
+    await reconcileDraftAssetsTx(tx, services, version, { keepFailed: true });
 
     const revisions = await tx
       .select({
@@ -551,6 +554,7 @@ export async function publishDraft(
     // Walidator publikacji: obowiązkowe audio gotowe i zgodne z fingerprintem,
     // obraz świadomie pominięty albo gotowy. Wymagany TTS nie może być pominięty.
     const settings = services.media;
+    let firstPending: { role: AssetRole; itemRevisionId: string } | null = null;
     for (const revision of revisions) {
       const mine = assets.filter((a) => a.itemRevisionId === revision.id);
       const requiredHere = settings
@@ -568,12 +572,14 @@ export async function publishDraft(
             message: `missing ready ${role} for revision ${revision.id}`,
           });
         }
-        await assertAssetPublishable(tx, {
+        const status = await assertAssetPublishable(tx, {
           itemRevisionId: revision.id,
           role,
           assetId: row.assetId,
           expectedFingerprint: row.expectedFingerprint,
+          linkState: row.state,
         });
+        if (status === "pending") firstPending ??= { role, itemRevisionId: revision.id };
         const required = requiredHere?.get(role);
         if (requiredHere && (!required || required.fingerprint !== row.expectedFingerprint)) {
           throw new AppError("validation", {
@@ -609,6 +615,9 @@ export async function publishDraft(
         await checkLinked("example_audio");
       }
     }
+
+    // generacja zgłaszana po wszystkich kartach: inny błąd ma pierwszeństwo
+    if (firstPending) throw mediaPendingError(firstPending);
 
     const now = services.clock.now();
     await tx

@@ -36,7 +36,7 @@ import {
   type EditableDeckForm,
   type EditorSnapshot,
 } from "./deck-editor-state";
-import { callParent, errorMessage, parentClient } from "./api";
+import { callParent, errorMessage, isMediaPendingError, parentClient } from "./api";
 import { orpc } from "./query-client";
 import type { AssignmentTestSettings } from "./AssignmentTestGoalFields";
 import DeckSessionTaskBudgetSettings from "./DeckSessionTaskBudgetSettings";
@@ -553,7 +553,13 @@ export default function DeckEditor({
       setIsDirty(false);
       await load();
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (isMediaPendingError(cause)) {
+        // publikacja zleciła brakujące media: odczyt pokaże je jako generowane
+        setError(messages.decks.publishMediaPending);
+        await load();
+      } else {
+        setError(errorMessage(cause));
+      }
     } finally {
       setBusyState(false);
     }

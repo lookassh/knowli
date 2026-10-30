@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { MediaPendingDetails } from "@learning/contracts";
 import type { MediaSettings, Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
@@ -240,6 +241,13 @@ export async function reconcileDraftAssetsTx(
   tx: Tx,
   services: Services,
   version: { id: string; state: string },
+  options: {
+    /**
+     * Publikacja nie ponawia nieudanych zasobów: kosztowna regeneracja wymaga
+     * jawnej decyzji rodzica (Regeneruj albo pomiń), a walidator zgłasza błąd.
+     */
+    keepFailed?: boolean;
+  } = {},
 ): Promise<void> {
   const settings = services.media;
   if (!settings) {
@@ -315,6 +323,9 @@ export async function reconcileDraftAssetsTx(
               .from(mediaAssets)
               .where(eq(mediaAssets.id, existing.assetId))
           )[0];
+          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed) {
+            continue;
+          }
           if (asset && asset.fingerprint === req.fingerprint && asset.state !== "failed") {
             const nextState = asset.state === "ready" ? "approved" : "pending";
             if (existing.state !== nextState) {
@@ -370,6 +381,30 @@ export async function reconcileDraftAssets(services: Services, draftId: string):
       throw new AppError("immutable");
     }
     await reconcileDraftAssetsTx(tx, services, version);
+  });
+}
+
+/**
+ * Pierwszy krok publikacji (issue #106): uzgodnienie mediów w osobnej,
+ * zatwierdzanej transakcji, jak przy każdej edycji szkicu. Walidacja gotowości
+ * w transakcji publikacji może potem paść na zasobie `pending`, nie zabierając
+ * ze sobą świeżo zleconych zasobów i zadań generacji. Gdy wersja jest już
+ * opublikowana albo numer edycji się rozjechał, nic nie uzgadnia: właściwy
+ * błąd zgłasza transakcja publikacji.
+ */
+export async function reconcileBeforePublish(
+  services: Services,
+  versionId: string,
+  expectedEditNumber: number,
+): Promise<void> {
+  await services.db.transaction(async (tx) => {
+    const version = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)).for("update")
+    )[0];
+    if (!version || version.state === "published" || version.editNumber !== expectedEditNumber) {
+      return;
+    }
+    await reconcileDraftAssetsTx(tx, services, version, { keepFailed: true });
   });
 }
 
@@ -679,7 +714,15 @@ export async function readReadyMediaStream(
   return { body: singleChunk(new Uint8Array(blob.bytes)), mimeType: asset.mimeType ?? blob.mimeType, byteCount: blob.bytes.byteLength, immutableCache: true };
 }
 
-/** Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu. */
+/**
+ * Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu.
+ * Zasób w generacji zwraca `"pending"` zamiast błędu: wywołujący kończy
+ * pozostałe sprawdzenia i dopiero wtedy zgłasza `mediaPendingError`, żeby
+ * nieudany zasób na dalszej karcie nie ukrył się za „przygotowują się”.
+ * Gotowy zasób z powiązaniem innym niż `approved` też jest `"pending"`:
+ * worker mógł go skończyć już po uzgodnieniu w tej transakcji, a sesje
+ * wybierają wyłącznie powiązania `approved`. Ponowna publikacja je promuje.
+ */
 export async function assertAssetPublishable(
   db: Executor,
   input: {
@@ -687,8 +730,9 @@ export async function assertAssetPublishable(
     role: AssetRole;
     assetId: string | null;
     expectedFingerprint: string;
+    linkState: "pending" | "approved" | "omitted";
   },
-): Promise<void> {
+): Promise<"ready" | "pending"> {
   if (input.assetId === null) {
     throw new AppError("validation", {
       message: `${input.role} not linked for revision ${input.itemRevisionId}`,
@@ -700,9 +744,21 @@ export async function assertAssetPublishable(
       .from(mediaAssets)
       .where(eq(mediaAssets.id, input.assetId))
   )[0];
+  if (asset && asset.state === "pending" && asset.fingerprint === input.expectedFingerprint) {
+    return "pending";
+  }
   if (!asset || asset.state !== "ready" || asset.fingerprint !== input.expectedFingerprint) {
     throw new AppError("validation", {
       message: `${input.role} not ready for revision ${input.itemRevisionId}`,
     });
   }
+  return input.linkState === "approved" ? "ready" : "pending";
+}
+
+/** Jedyny błąd publikacji, po którym rodzic czeka: generacja trwa i nic innego nie blokuje. */
+export function mediaPendingError(pending: { role: AssetRole; itemRevisionId: string }): AppError {
+  return new AppError("validation", {
+    message: `${pending.role} pending for revision ${pending.itemRevisionId}`,
+    details: { media: "pending" } satisfies MediaPendingDetails,
+  });
 }

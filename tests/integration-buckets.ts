@@ -72,6 +72,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     parent-work-card-regressions.test.ts
     profile-navigation-benchmark.test.ts
     projection-facts.test.ts
+    publish-media-reconcile.test.ts
     session-activity.test.ts
     sessions.test.ts
     speech.test.ts

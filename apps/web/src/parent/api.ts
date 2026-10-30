@@ -1,4 +1,4 @@
-import { messages } from "@learning/contracts";
+import { MediaPendingDetailsSchema, messages } from "@learning/contracts";
 import { createORPCClient, MalformedResponseError, ORPCError, type AnyORPCError } from "@orpc/client";
 import type { RouterContractClient } from "@orpc/contract";
 import { OpenAPILink } from "@orpc/openapi/fetch";
@@ -102,4 +102,13 @@ export function errorMessage(error: unknown): string {
     return error.message || messages.errors.internal;
   }
   return messages.errors.internal;
+}
+
+/**
+ * Publikacja odrzucona, bo wymagane media wciąż się generują: zlecenia są już
+ * zapisane, więc rodzic czeka i publikuje ponownie (issue #106).
+ */
+export function isMediaPendingError(error: unknown): boolean {
+  return error instanceof ApiCallError && error.code === "validation"
+    && MediaPendingDetailsSchema.safeParse(error.details).success;
 }

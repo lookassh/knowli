@@ -33,7 +33,7 @@ import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { assertAssetPublishable, reconcileDraftAssetsTx } from "../media-reconciliation";
+import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
 import {
@@ -715,6 +715,8 @@ export async function publishLessonDraft(
   versionId: string,
   expectedEditNumber: number,
 ): Promise<{ deckVersionId: string }> {
+  // Jak przy słówkach: zlecone media przetrwają nieudaną walidację (issue #106).
+  await reconcileBeforePublish(services, versionId, expectedEditNumber);
   return services.db.transaction(async (tx) => {
     const version = await lockVersion(tx, versionId);
     if (version.state === "published") {
@@ -753,7 +755,7 @@ export async function publishLessonDraft(
     }
 
     // Uzgodnij media (TTS odpowiedzi) i zweryfikuj gotowość wymaganego audio.
-    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
+    await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state }, { keepFailed: true });
 
     if (subject.ttsForAnswers && services.media) {
       const revisionIds = revisions.map((r) => r.id);
@@ -761,6 +763,7 @@ export async function publishLessonDraft(
         .select()
         .from(revisionAssets)
         .where(inArray(revisionAssets.itemRevisionId, revisionIds));
+      let firstPendingRevision: string | null = null;
       for (const revision of revisions) {
         const audio = assets.find((a) => a.itemRevisionId === revision.id && a.role === "target_audio");
         if (!audio || audio.assetId === null) {
@@ -768,13 +771,17 @@ export async function publishLessonDraft(
             message: `missing ready target_audio for revision ${revision.id}`,
           });
         }
-        await assertAssetPublishable(tx, {
+        const status = await assertAssetPublishable(tx, {
           itemRevisionId: revision.id,
           role: "target_audio",
           assetId: audio.assetId,
           expectedFingerprint: audio.expectedFingerprint,
+          linkState: audio.state,
         });
+        if (status === "pending") firstPendingRevision ??= revision.id;
       }
+      // generacja zgłaszana po wszystkich ćwiczeniach: inny błąd ma pierwszeństwo
+      if (firstPendingRevision) throw mediaPendingError({ role: "target_audio", itemRevisionId: firstPendingRevision });
     }
 
     const now = services.clock.now();
