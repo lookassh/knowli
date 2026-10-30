@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateLessonExercise, validatePool } from "../../pool-validation";
+import { V3_EXERCISE_FIELDS, validateLessonExercise, validatePool } from "../../pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
 import { englishChapterSubject } from "./module";
-import { GENERIC_CHAPTER_INSTRUCTIONS, refineChapterPool, validateChapterExercise } from "./validators";
+import { GENERIC_CHAPTER_INSTRUCTIONS, refineChapterPool, UNSOLICITED_V3_FIELDS, validateChapterExercise } from "./validators";
 
 const WEATHER = "english_chapter.ddeck.weather";
 const WEARING = "english_chapter.ddeck.wearing";
@@ -208,27 +208,41 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     expect(rejected.rejected.map((r) => r.reason)).toEqual(["słowo spoza materiału: foggy"]);
   });
 
-  it("usuwa niezamówione pola v3 z modelu (cytaty) i zostawia ćwiczenie, także z wariantami", () => {
-    const withRefs = (ex: LessonExerciseDraft): LessonExerciseDraft => ({
-      ...ex,
-      sourceRefs: [{ quote: "It's raining." }],
+  it("usuwa WSZYSTKIE niezamówione pola v3 z modelu i zostawia ćwiczenie, także z wariantami", () => {
+    // Każde pole z listy czyszczenia jest ustawione, więc test nie przechodzi „na pusto”.
+    const unsolicited: Partial<LessonExerciseDraft> = {
       questionType: "fact",
-      familyId: "weather",
+      requiredElements: [{ id: "e1", text: "raining" }],
+      supplementaryElements: ["sunny"],
       commonErrors: ["x"],
-    });
-    const pool = [withRefs(choice()), withRefs(openAnswer({ acceptedAnswers: ["I'm wearing my coat.", "I'm wearing a jacket."] }))];
+      expectedForm: "short",
+      familyId: "weather",
+      sourceRefs: [{ quote: "It's raining." }],
+    };
+    expect(Object.keys(unsolicited).sort()).toEqual([...UNSOLICITED_V3_FIELDS].sort());
+    const withV3 = (ex: LessonExerciseDraft): LessonExerciseDraft => ({ ...ex, ...unsolicited });
+    const pool = [withV3(choice()), withV3(openAnswer({ acceptedAnswers: ["I'm wearing my coat.", "I'm wearing a jacket."] }))];
     const result = refineChapterPool(pool, { material: MATERIAL });
     expect(result.rejected).toEqual([]);
     expect(result.kept).toEqual([choice(), openAnswer({ acceptedAnswers: ["I'm wearing my coat."] })]);
     for (const ex of result.kept) {
-      for (const field of ["sourceRefs", "questionType", "familyId", "commonErrors", "requiredElements", "expectedForm"]) {
-        expect(ex, field).not.toHaveProperty(field);
-      }
+      for (const field of UNSOLICITED_V3_FIELDS) expect(ex, field).not.toHaveProperty(field);
     }
     // Wyczyszczone ćwiczenie przechodzi walidację ogólną (bez „pole v3 niedozwolone”).
     expect(validateLessonExercise(result.kept[0]!, englishChapterSubject, TOPIC)).toEqual([]);
-    // Z pola v3 przed czyszczeniem walidacja ogólna odrzuciłaby całość.
-    expect(validateLessonExercise(pool[0]!, englishChapterSubject, TOPIC).some((error) => error.startsWith("sourceRefs:"))).toBe(true);
+    // Z polami v3 przed czyszczeniem walidacja ogólna odrzuciłaby całość — każde pole z osobna.
+    const before = validateLessonExercise(pool[0]!, englishChapterSubject, TOPIC);
+    for (const field of UNSOLICITED_V3_FIELDS) {
+      expect(before.some((error) => error.startsWith(`${field}:`)), field).toBe(true);
+    }
+  });
+
+  it("lista czyszczenia pól v3 to lista walidacji ogólnej bez calculation, a calculation zostaje do odrzucenia", () => {
+    expect([...UNSOLICITED_V3_FIELDS]).toEqual(V3_EXERCISE_FIELDS.filter((field) => field !== "calculation"));
+    const withCalculation = choice({ calculation: { kind: "scale_to_distance" } as unknown as LessonExerciseDraft["calculation"] });
+    const result = refineChapterPool([withCalculation], { material: MATERIAL });
+    expect(result.kept).toEqual([withCalculation]);
+    expect(validateLessonExercise(result.kept[0]!, englishChapterSubject, TOPIC).some((error) => error.startsWith("calculation"))).toBe(true);
   });
 
   it("zostawia ćwiczenia zgodne z materiałem bez zmian", () => {

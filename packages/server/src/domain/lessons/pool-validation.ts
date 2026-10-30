@@ -176,18 +176,28 @@ function validateVisualSubject(ex: LessonExerciseDraft, errors: string[]): void 
   }
 }
 
+/**
+ * Pola v3 szkicu ćwiczenia (przedmioty z `usesV3Payload`); przedmiot bez v3
+ * odrzuca ćwiczenie, które któreś niesie. Jedyne źródło listy — czyszczenie
+ * świeżego wyjścia modelu w przedmiotach bez v3 (np. `english_chapter`) czyta
+ * ją stąd, żeby nowe pole v3 nie rozjechało walidacji z czyszczeniem.
+ */
+export const V3_EXERCISE_FIELDS = [
+  "questionType",
+  "requiredElements",
+  "supplementaryElements",
+  "commonErrors",
+  "expectedForm",
+  "familyId",
+  "sourceRefs",
+  "calculation",
+] as const satisfies readonly (keyof LessonExerciseDraft)[];
+
+export type V3ExerciseField = (typeof V3_EXERCISE_FIELDS)[number];
+
 /** Pola v3 obecne w szkicu (nazwy do komunikatu walidacji). */
-function v3FieldsPresent(ex: LessonExerciseDraft): string[] {
-  const fields: string[] = [];
-  if (ex.questionType !== undefined) fields.push("questionType");
-  if (ex.requiredElements !== undefined) fields.push("requiredElements");
-  if (ex.supplementaryElements !== undefined) fields.push("supplementaryElements");
-  if (ex.commonErrors !== undefined) fields.push("commonErrors");
-  if (ex.expectedForm !== undefined) fields.push("expectedForm");
-  if (ex.familyId !== undefined) fields.push("familyId");
-  if (ex.sourceRefs !== undefined) fields.push("sourceRefs");
-  if (ex.calculation !== undefined) fields.push("calculation");
-  return fields;
+function v3FieldsPresent(ex: LessonExerciseDraft): V3ExerciseField[] {
+  return V3_EXERCISE_FIELDS.filter((field) => ex[field] !== undefined);
 }
 export function validateLessonExercise(
   ex: LessonExerciseDraft,

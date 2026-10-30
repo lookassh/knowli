@@ -1,4 +1,4 @@
-import { answersEquivalent } from "../../pool-validation";
+import { answersEquivalent, V3_EXERCISE_FIELDS, type V3ExerciseField } from "../../pool-validation";
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { checkElement, materialLexicon, type ElementCheck } from "./lexicon";
@@ -117,17 +117,13 @@ const VARIANT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseTyp
  * (próba na prawdziwym modelu: cytaty `sourceRefs` w jednej z czterech partii),
  * a walidacja ogólna odrzuca takie ćwiczenie w całości jako „pole v3
  * niedozwolone”. To niepożądany dodatek modelu, nie dane rodzica, więc na
- * świeżym wyjściu usuwamy go zamiast tracić dobre ćwiczenie.
+ * świeżym wyjściu usuwamy go zamiast tracić dobre ćwiczenie. Lista pochodzi z
+ * walidacji ogólnej (`V3_EXERCISE_FIELDS`) bez `calculation`: specyfikacja
+ * rachunku to nie przypadkowo wypełnione pole, tylko inny typ ćwiczenia, który
+ * ma zostać odrzucony przez walidację, a nie po cichu naprawiony.
  */
-const UNSOLICITED_V3_FIELDS = [
-  "questionType",
-  "requiredElements",
-  "supplementaryElements",
-  "commonErrors",
-  "expectedForm",
-  "familyId",
-  "sourceRefs",
-] as const;
+export const UNSOLICITED_V3_FIELDS: readonly Exclude<V3ExerciseField, "calculation">[] =
+  V3_EXERCISE_FIELDS.filter((field): field is Exclude<V3ExerciseField, "calculation"> => field !== "calculation");
 
 function withoutUnsolicitedV3Fields(draft: LessonExerciseDraft): LessonExerciseDraft {
   if (UNSOLICITED_V3_FIELDS.every((field) => draft[field] === undefined)) return draft;

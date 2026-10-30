@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, it } from "vitest";
 import {
   createGenerationDepsFromEnv,
@@ -16,6 +18,7 @@ import {
 } from "@learning/server";
 import type { LessonDraftDto } from "@learning/contracts";
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
+import { UNSOLICITED_V3_FIELDS } from "../../packages/server/src/domain/lessons/subjects/english-chapter/validators";
 import { testDatabase } from "../integration/helpers";
 
 /**
@@ -32,8 +35,10 @@ import { testDatabase } from "../integration/helpers";
  * - `UMIEM_PROBE_SUBJECT` — `chapter` (domyślnie) albo `school` (porównanie);
  * - `UMIEM_PROBE_POOL_SIZE` — wielkość puli (domyślnie 60, jak w panelu);
  * - `UMIEM_PROBE_TOPIC` — tytuł tematu (domyślnie „Unit 1” / „Mapa”);
- * - `UMIEM_PROBE_DUMP` — plik JSON (poza repozytorium) z pełnym szkicem i
- *   surowym wyjściem modelu do ręcznej oceny jakości.
+ * - `UMIEM_PROBE_DUMP` — plik JSON z pełnym szkicem i surowym wyjściem modelu
+ *   do ręcznej oceny jakości. Surowe wyjście pochodzi z materiału z podręcznika,
+ *   więc ścieżka wewnątrz repozytorium (checkoutu) kończy próbę błędem, zanim
+ *   zostanie wywołany model.
  */
 
 const materialPath = process.env.UMIEM_PROBE_MATERIAL;
@@ -52,6 +57,47 @@ function loadDotEnv(): void {
       process.env[match[1]!] = match[2]!.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
     }
   }
+}
+
+/** Katalogi główne repozytorium: ten checkout oraz główny checkout, gdy to worktree. */
+function repositoryRoots(): string[] {
+  const here = resolve(fileURLToPath(new URL("../../", import.meta.url)));
+  const roots = [here];
+  try {
+    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: here, encoding: "utf8" }).trim();
+    if (common.length > 0) roots.push(resolve(common, ".."));
+  } catch {
+    // brak gita: wystarcza katalog tego checkoutu
+  }
+  return [...new Set(roots)];
+}
+
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+function isInside(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/** Ścieżka zrzutu (rozwiązana) albo błąd, gdy leży w repozytorium; brak zmiennej = brak zrzutu. */
+function resolveDumpPath(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const resolved = resolve(raw);
+  // Katalog nadrzędny po rozwiązaniu dowiązań/junction, żeby link do repozytorium nie ominął sprawdzenia.
+  const directory = existsSync(dirname(resolved)) ? realpathOrSelf(dirname(resolved)) : dirname(resolved);
+  const candidates = [resolved, join(directory, basename(resolved))];
+  for (const root of repositoryRoots().flatMap((item) => [item, realpathOrSelf(item)])) {
+    if (candidates.some((candidate) => isInside(root, candidate))) {
+      throw new Error(`UMIEM_PROBE_DUMP wskazuje wewnątrz repozytorium (${root}) — zrzut surowego wyjścia modelu z materiału podręcznika nie może trafić do checkoutu. Podaj ścieżkę poza repozytorium.`);
+    }
+  }
+  return resolved;
 }
 
 interface RecordedCall {
@@ -102,6 +148,19 @@ function line(text = ""): void {
   console.log(text);
 }
 
+/** Pole modelu niepuste: nie null/undefined ani pusta tablica (jak `withoutEmptyOptionalArrays`). */
+function isFilled(value: unknown): boolean {
+  return value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0);
+}
+
+/** Ile surowych ćwiczeń niesie którekolwiek pole v3, którego przedmiot nie żąda (czyszczone przez `refineChapterPool`). */
+function countUnsolicitedV3(rawExercises: readonly unknown[]): number {
+  return rawExercises.filter((exercise) =>
+    exercise !== null && typeof exercise === "object" &&
+    UNSOLICITED_V3_FIELDS.some((field) => isFilled((exercise as Record<string, unknown>)[field])),
+  ).length;
+}
+
 function reportDraft(draft: LessonDraftDto): void {
   const objectives = draft.dynamicTopic?.objectives ?? [];
   line(`Zagadnienia (${objectives.length}):`);
@@ -120,6 +179,20 @@ function reportDraft(draft: LessonDraftDto): void {
     }
     line(`  - ${objective.titlePl}: ${own.length} = ${stages.guided}/${stages.productive}/${stages.independent}  ${JSON.stringify(types)}`);
   }
+  line("Odpowiedzi luk (lesson_gap) per zagadnienie (odpowiedź×liczba):");
+  for (const objective of objectives) {
+    const counts = new Map<string, number>();
+    for (const exercise of draft.exercises) {
+      if (exercise.objectiveId !== objective.id || exercise.exerciseType !== "lesson_gap") continue;
+      const key = exercise.answer.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const listed = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([answer, count]) => `${answer}×${count}`).join(", ");
+    line(`  - [${objective.kind ?? "?"}] ${objective.titlePl}: ${listed || "brak luk"}`);
+  }
+  const orders = draft.exercises.filter((exercise) => exercise.exerciseType === "lesson_order");
+  line(`Układanki (lesson_order): ${orders.length}; klocki: ${orders.map((exercise) => (exercise.items ?? []).length).join(", ") || "-"}; ` +
+    `z kropką/pytajnikiem na końcu klocka: ${orders.filter((exercise) => (exercise.items ?? []).some((item) => /[.?!]$/u.test(item.text))).length}`);
   const kept = draft.exercises.length;
   const rejectedRate = kept + draft.rejectedCount === 0 ? 0 : draft.rejectedCount / (kept + draft.rejectedCount);
   line(`Ćwiczeń w szkicu: ${kept}; rejectedCount: ${draft.rejectedCount} (${(rejectedRate * 100).toFixed(1)}% wszystkich ocenionych)`);
@@ -141,7 +214,10 @@ describe.skipIf(!materialPath)("próba generowania lekcji na prawdziwym modelu",
       line("UWAGA: UMIEM_FAKE_PROVIDERS było ustawione — wyłączam je, próba ma użyć prawdziwego modelu.");
       delete process.env.UMIEM_FAKE_PROVIDERS;
     }
-    process.env.MEDIA_ROOT ??= mkdtempSync(join(tmpdir(), "knowli-probe-media-"));
+    // Bezwarunkowo, po wczytaniu .env: próba nigdy nie wskaże prawdziwego wolumenu mediów.
+    process.env.MEDIA_ROOT = mkdtempSync(join(tmpdir(), "knowli-probe-media-"));
+    // Przed wywołaniem modelu: zła ścieżka zrzutu nie może kosztować przebiegu.
+    const dumpPath = resolveDumpPath(process.env.UMIEM_PROBE_DUMP);
 
     const subjectKind = process.env.UMIEM_PROBE_SUBJECT === "school" ? "school" : "chapter";
     const material = readFileSync(materialPath!, "utf8");
@@ -200,6 +276,11 @@ describe.skipIf(!materialPath)("próba generowania lekcji na prawdziwym modelu",
       line(entry.replace(/run=[0-9a-f-]+ /u, ""));
     }
     reportDraft(draft);
+    const rawAll = recorded.raw.flatMap((pool) => pool.exercises);
+    const unsolicitedV3 = countUnsolicitedV3(rawAll);
+    if (subjectKind === "chapter") {
+      line(`unsolicited v3 fields: ${unsolicitedV3} of ${rawAll.length} (stripped)`);
+    }
 
     let publishable: string;
     try {
@@ -212,7 +293,6 @@ describe.skipIf(!materialPath)("próba generowania lekcji na prawdziwym modelu",
     line(`Publikowalny: ${publishable}`);
     line("");
 
-    const dumpPath = process.env.UMIEM_PROBE_DUMP;
     if (dumpPath) {
       writeFileSync(
         dumpPath,
@@ -223,6 +303,7 @@ describe.skipIf(!materialPath)("próba generowania lekcji na prawdziwym modelu",
             rawPools: recorded.raw,
             calls: recorded.calls,
             publishable,
+            unsolicitedV3,
             lessonLog,
             durationMs,
           },
