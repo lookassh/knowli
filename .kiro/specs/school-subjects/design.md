@@ -1269,3 +1269,130 @@ widoków, jak `block-order.ts`.
   elementy do pierwszej pozostałej grupy. Odpowiedzi z tymi samymi lewymi
   stronami albo etykietami grup dzielą `targetKey` — dotyczy tylko flagi
   wcześniejszej ekspozycji typu zawsze wspomaganego (świadomie bez zmian).
+
+## 11. „Posłuchaj pytania” — odsłuch treści zadania na żądanie (Etap 8) — kontrakt
+
+Status: **zaakceptowany przez właściciela 2026-10-30** (decyzje 11.6 z dodaną
+decyzją 8 — nagrania przez OpenRouter). Moduły: tekst do odczytu w domenie
+(`domain/lessons/`, czysta funkcja nad payloadem ćwiczenia), zlecanie
+i uzgadnianie nagrań w `materials/` (`media-reconciliation.ts`, ten sam
+mechanizm co `target_audio`), dołączenie gotowego nagrania do zadania
+w `learning/lessons/` (materializacja), przycisk w `packages/kid-ui`.
+Gramatyka i słówka bez zmian.
+
+Cel: dziecko, które jeszcze wolno czyta, może odsłuchać polecenie i pytanie
+głosem lektora. Odsłuch jest **wyłącznie na żądanie** (przycisk), bez
+automatycznego czytania. Nagranie zawiera tylko tekst, który dziecko już
+widzi na ekranie — nie ujawnia nic nowego.
+
+### 11.1. Co jest czytane
+
+Tekst do odczytu buduje czysta funkcja `questionReadText(exercise)` z payloadu
+zatwierdzonej rewizji. Zasada: tylko polecenie i bodziec w kolejności, która
+**nie zależy od tasowania** przy wydaniu zadania. Nagranie powstaje przy
+przygotowaniu materiału, a opcje, lewa kolumna par i klocki „Ułóż” są
+tasowane przy każdym wydaniu — przeczytanie ich w kolejności z payloadu
+zdradzałoby rozwiązanie albo rozjeżdżało się z ekranem.
+
+| Typ | Treść nagrania |
+| --- | --- |
+| `lesson_card` | tytuł karty, treść (≤1200 znaków), przykłady |
+| `lesson_choice` | polecenie + pytanie (`stem`); **bez opcji** |
+| `lesson_gap` | polecenie + zdanie z luką; luka czytana jako „luka” |
+| `lesson_open_answer` | polecenie + pytanie |
+| `lesson_keywords` | polecenie + pytanie; **bez pojęć do wyboru** |
+| `lesson_order` | samo polecenie |
+| `lesson_match` | samo polecenie |
+| `lesson_group` | polecenie + nazwy grup (kolejność materiału, nietasowana) |
+| `lesson_calculation` | **brak** w tym etapie — zapis matematyczny (`3/4`, `x²`, `·`) bywa czytany błędnie |
+
+Zadania tworzone w trakcie sesji (`lesson_shorten`, pytanie porównawcze
+z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
+(`hint`) nigdy nie trafia do nagrania.
+
+### 11.2. Przygotowanie nagrania
+
+- Nowa flaga przedmiotu `ttsForPrompts: boolean` w `SubjectModule` (szkoła:
+  `true`, gramatyka: `false`). Bez skonfigurowanego TTS (`services.media`)
+  funkcja jest wyłączona.
+- Nowa rola zasobu rewizji `prompt_audio` obok `target_audio`
+  (**migracja `0027`** rozszerza `revision_assets_role_allowed`).
+  `requiredAssetsForLessonExercise` dokłada ją, gdy `ttsForPrompts` i funkcja
+  z 11.1 zwraca tekst. Locale `pl-PL`, głos i format jak w ustawieniach TTS;
+  fingerprint pokrywa tekst, więc edycja treści rodzica uzgadnia nowe
+  nagranie w tej samej transakcji co dziś `target_audio`.
+- Nagranie powstaje w workerze (kolejka `media_assets`), nie przy kliknięciu
+  dziecka — zgodnie z zasadą „TTS przy przygotowaniu materiału”.
+- **Dostawca TTS: OpenRouter** (`/api/v1/audio/speech`, zgodny z OpenAI
+  Audio Speech). Istniejący adapter `createOpenAiTtsProvider` dostaje adres
+  i klucz z nowych zmiennych `UMIEM_TTS_BASE_URL` (poza test/development
+  wymaga `https://`, jak `UMIEM_LLM_BASE_URL`) i `UMIEM_TTS_API_KEY` (fallback
+  `OPENAI_API_KEY`), a model z `UMIEM_TTS_MODEL` (dotąd adapter go pomijał
+  i zawsze wysyłał model domyślny). Przykład: `UMIEM_TTS_PROVIDER=openrouter`,
+  `UMIEM_TTS_MODEL=openai/gpt-4o-mini-tts-2025-12-15`, `UMIEM_TTS_VOICE=alloy`.
+  To jedna konfiguracja TTS dla wszystkich nagrań (także słówek i komunikatów
+  interfejsu): zmiana providera/modelu zmienia fingerprinty, więc gotowe
+  nagrania zostają, a nowe powstają przy kolejnej edycji materiału; katalog
+  komunikatów interfejsu przygotowuje się na nowo przy starcie workera.
+- **Publikacja nie czeka** na nagrania pytań: brak gotowego nagrania oznacza
+  tylko brak przycisku. Awaria TTS nie blokuje rodzica.
+- Tylko nowe wersje lekcji: istniejące opublikowane lekcje dostaną nagrania
+  przy następnej edycji i publikacji (bez migracji danych wstecz).
+
+### 11.3. Zadanie i Kid DTO
+
+- Przy wydaniu zadania materializacja dołącza `questionAudioAssetId`, jeśli
+  `prompt_audio` rewizji jest zatwierdzone i `media_assets.state='ready'`
+  (jak `target_audio` dziś). Pole opcjonalne w gałęziach `TaskPromptSchema`
+  typów z 11.1; prompt wydanego zadania pozostaje niezmienny.
+- Dołączane także w **kartkówce** — nagranie powtarza widoczną treść i nie
+  zdradza odpowiedzi (w przeciwieństwie do `audioAssetId` odpowiedzi
+  wzorcowej, który w kartkówce jest wyłączony).
+- Odsłuch **nie jest ujawnieniem**: bez `authorizeDisclosure`, bez zdarzenia
+  i ekspozycji, bez wpływu na samodzielność próby i na serię opanowania.
+  Odczyt bajtów idzie istniejącym `/api/v1/media/:id` (tylko `ready`, cache
+  niezmienne).
+
+### 11.4. Kid UI
+
+- Przycisk z głośnikiem w wierszu instrukcji (`ExerciseInstruction`, gniazdo
+  `audio`) z nazwą „Posłuchaj pytania”; podczas odtwarzania `SoundRing`,
+  ponowne dotknięcie zaczyna od początku. Cel dotykowy ≥48 px.
+- Bez autoodtwarzania. Odtwarzanie zatrzymuje się przy wysłaniu odpowiedzi,
+  zmianie zadania, „Pomiń”/„Nie pamiętam” i zakończeniu sesji.
+- **Mikrofon**: rozpoczęcie nagrywania odpowiedzi (`lesson_open_answer` z mową)
+  zatrzymuje odsłuch, a w trakcie nagrywania przycisk jest nieaktywny — STT
+  nie może usłyszeć lektora.
+- Błąd odtwarzania: istniejący komunikat `picture_guidance_unavailable`
+  z „Spróbuj jeszcze raz”; nie blokuje zadania.
+- Gdy przedmiot ma też `audioAssetId` odpowiedzi (dziś tylko gramatyka, która
+  nie dostaje nagrań pytań), oba przyciski nie spotkają się w tym etapie.
+
+### 11.5. Prywatność, koszty, integracje
+
+- Do usługi TTS trafia wyłącznie tekst materiału zatwierdzony przez rodzica —
+  bez danych dziecka; ta sama usługa co nagrania słówek. Nagranie dziecka nie
+  powstaje.
+- Koszt: jedno nagranie na ćwiczenie i wersję (typowo kilkadziesiąt krótkich
+  tekstów na lekcję), współdzielone przez fingerprint; zero wywołań w trakcie
+  sesji.
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu.
+- Panel rodzica: bez nowych ustawień w tym etapie (stan nagrań widoczny jak
+  dotychczas tylko przy problemach z mediami).
+
+### 11.6. Decyzje do akceptacji właściciela
+
+1. **Tylko na żądanie**, bez autoodtwarzania i bez ustawienia per dziecko.
+2. **Zakres treści** wg tabeli 11.1: bez opcji wyboru, pojęć, klocków i par
+   (kolejność tasowana); `lesson_calculation` bez nagrania.
+3. **Publikacja nie czeka** na nagrania pytań; brak nagrania = brak przycisku.
+4. **Dostępne w kartkówce.**
+5. **Migracja `0027`** (rola `prompt_audio`) i flaga `ttsForPrompts`
+   (szkoła tak, gramatyka nie).
+6. **Bez wstecznego generowania** dla już opublikowanych lekcji.
+7. **Poza etapem** (możliwe później): odsłuch pojedynczych opcji
+   i elementów (osobne krótkie nagrania odtwarzane w kolejności z ekranu),
+   odczyt zapisu matematycznego, nagrania pytań w gramatyce.
+8. **Nagrania przez OpenRouter** (decyzja właściciela 2026-10-30) — jedna
+   konfiguracja TTS z `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`/`UMIEM_TTS_MODEL`
+   (11.2). Obrazy nadal wymagają `OPENAI_API_KEY`.

@@ -260,8 +260,30 @@ Zależy od etapów 1–2 (pula, edytor, silnik lekcji); niezależny od 3–6.
 - [x] Dokumentacja: SPEC, architektura §19/§22, `AGENTS.md` jeśli zmienia się
       lista typów; przegląd API → MCP → skill (brak wpływu, lekcje poza
       `learning-overview`).
-- [ ] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
+- [x] Pełny przebieg: `pnpm typecheck`, `pnpm test:unit`,
       `pnpm test:integration`, `pnpm build`, `pnpm test:e2e:shards`;
       niezależny review przed PR.
 - [ ] Pilotaż z dzieckiem: czytelność na fizycznym telefonie/tablecie
       i jakość par/grup generowanych z prawdziwego materiału.
+
+## Etap 8 — „Posłuchaj pytania” (design §11)
+
+Zależy od etapów 1–2 i 7 (typy ćwiczeń); niezależny od 3–6.
+
+- [x] Kontrakt i decyzje (design §11, akceptacja właściciela 2026-10-30).
+- [ ] TTS przez OpenRouter: `UMIEM_TTS_BASE_URL`, `UMIEM_TTS_API_KEY`, model
+      z `UMIEM_TTS_MODEL` w adapterze; `.env.example`.
+- [ ] Domena: `questionReadText` per typ (tabela 11.1, luka jako „luka”,
+      bez tekstów tasowanych i wskazówki); flaga `ttsForPrompts`.
+- [ ] Media: rola `prompt_audio` (migracja `0027`), uzgadnianie przy edycji
+      szkicu, publikacja bez czekania na nagrania pytań.
+- [ ] Silnik: `questionAudioAssetId` przy wydaniu zadania (gotowe nagranie,
+      także w kartkówce); kontrakty `TaskPromptSchema`.
+- [ ] Kid UI: przycisk „Posłuchaj pytania”, zatrzymanie przy odpowiedzi,
+      zmianie zadania i nagrywaniu; testy komponentu i geometrii.
+- [ ] Testy integracyjne: edycja → nagranie → publikacja → zadanie z/bez
+      gotowego nagrania, kartkówka, brak zdarzenia ujawnienia.
+- [ ] Dokumentacja (SPEC, architektura), przegląd API → MCP → skill; pełny
+      przebieg bramek i niezależny review przed PR.
+- [ ] Odbiór na fizycznym urządzeniu: głośność, zatrzymanie przed
+      nagrywaniem odpowiedzi.
