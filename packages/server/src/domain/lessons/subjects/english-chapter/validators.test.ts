@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateLessonExercise } from "../../pool-validation";
+import { validateLessonExercise, validatePool } from "../../pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
 import { englishChapterSubject } from "./module";
 import { GENERIC_CHAPTER_INSTRUCTIONS, refineChapterPool, validateChapterExercise } from "./validators";
@@ -103,12 +103,19 @@ describe("validateChapterExercise", () => {
     }
   });
 
-  it("wymaga dokładnie jednej luki w zdaniu wyboru i luki", () => {
-    expect(validateChapterExercise(gap({ stem: "It's sunny today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
-    expect(validateChapterExercise(gap({ stem: "It's ___ and ___ today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
-    expect(validateChapterExercise(gap({ stem: undefined }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
-    expect(validateChapterExercise(choice({ stem: "It's ____ and __ today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
-    expect(validateChapterExercise(choice({ stem: "It's sunny today." }), TOPIC).some((e) => e.startsWith("stem:"))).toBe(true);
+  it("wymaga dokładnie jednej luki w zdaniu wyboru", () => {
+    const stemErrors = (ex: LessonExerciseDraft) => validateChapterExercise(ex, TOPIC).filter((e) => e.startsWith("stem:"));
+    expect(stemErrors(choice({ stem: "It's ____ and __ today." }))).toHaveLength(1);
+    expect(stemErrors(choice({ stem: "It's sunny today." }))).toHaveLength(1);
+    expect(stemErrors(choice({ stem: undefined }))).toHaveLength(1);
+  });
+
+  it("luka bez znacznika albo z dwoma odpada w walidacji ogólnej — jednym komunikatem", () => {
+    const stemErrors = (ex: LessonExerciseDraft) => validateLessonExercise(ex, englishChapterSubject, TOPIC).filter((e) => e.startsWith("stem:"));
+    expect(stemErrors(gap({ stem: "It's sunny today." }))).toHaveLength(1);
+    expect(stemErrors(gap({ stem: "It's ___ and ___ today." }))).toHaveLength(1);
+    // Przedmiot nie powiela reguły silnika dla luki.
+    expect(validateChapterExercise(gap({ stem: "It's sunny today." }), TOPIC)).toEqual([]);
   });
 
   it("eksportuje stałe polecenia typów bez polskiego zdania-bodźca", () => {
@@ -165,12 +172,15 @@ describe("validateChapterExercise", () => {
     expect(validateChapterExercise(twoA, TOPIC).some((e) => e.startsWith("items:"))).toBe(true);
   });
 
-  it("odrzuca odpowiedź i wariant dłuższe niż 120 znaków", () => {
-    const long = `I'm wearing ${"a".repeat(121 - "I'm wearing ".length)}`;
+  it("odpowiedź i wariant dłuższe niż 120 znaków odpadają w pełnej walidacji — jednym komunikatem", () => {
+    const long = `I'm wearing a coat ${"a".repeat(121 - "I'm wearing a coat ".length)}`;
     expect([...long]).toHaveLength(121);
-    expect(validateChapterExercise(openAnswer({ answer: long }), TOPIC).some((e) => e.startsWith("answer:"))).toBe(true);
-    expect(validateChapterExercise(openAnswer({ acceptedAnswers: [long] }), TOPIC).some((e) => e.startsWith("acceptedAnswers:"))).toBe(true);
-    expect(validateChapterExercise(openAnswer({ answer: long.slice(0, 120) }), TOPIC)).toEqual([]);
+    const fieldErrors = (ex: LessonExerciseDraft, field: string) =>
+      validateLessonExercise(ex, englishChapterSubject, TOPIC).filter((e) => e.startsWith(`${field}:`) && e.includes("120"));
+    expect(fieldErrors(openAnswer({ answer: long }), "answer")).toHaveLength(1);
+    expect(fieldErrors(openAnswer({ acceptedAnswers: [long] }), "acceptedAnswers")).toHaveLength(1);
+    expect(validatePool([openAnswer({ answer: long })], englishChapterSubject, TOPIC).valid).toEqual([]);
+    expect(validateLessonExercise(openAnswer({ answer: long.slice(0, 120) }), englishChapterSubject, TOPIC)).toEqual([]);
   });
 });
 
@@ -249,8 +259,13 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
   it("element bez słowa treści ma osobny powód", () => {
     const articles = choice({ stem: "I'm wearing ___ coat.", options: [{ id: "a", text: "a" }, { id: "b", text: "the" }] });
     expect(refineChapterPool([articles], { material: MATERIAL }).rejected.map((r) => r.reason)).toEqual([
-      "brak słowa z materiału: a",
+      "brak słowa treści: a",
     ]);
+    // Także przyimki, operatory i zaimki wskazujące (review Task 5).
+    for (const texts of [["in", "on", "at"], ["do", "does"], ["this", "that"], ["It's", "He's"]]) {
+      const ex = choice({ stem: "___ coat.", options: texts.map((text, index) => ({ id: `o${index}`, text })) });
+      expect(refineChapterPool([ex], { material: MATERIAL }).rejected[0]?.reason, texts.join("/")).toBe(`brak słowa treści: ${texts[0]!.toLowerCase()}`);
+    }
   });
 
   it("ogranicza długość powodu do 80 znaków (słowo modelu nie tworzy dowolnie długich kluczy)", () => {

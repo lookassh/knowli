@@ -85,6 +85,10 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.objectivesRules).toContain("3 to 5 objectives");
     expect(prompts.objectivesRules).toContain("'words'");
     expect(prompts.objectivesRules).toContain("'frame'");
+    // Prompt mówi, co odrzuca walidacja słownikowa (review Task 5).
+    expect(prompts.generationRole).toContain("Never use people's names, numbers or any other word that is not in the material");
+    expect(prompts.generationRole).toContain("closed types have exactly one correct option");
+    expect(prompts.fieldRules).toContain("never only function words (articles, pronouns, be/do/can, prepositions such as in/on/at, this/that, question words)");
     expect(prompts.gradingRole).toContain("at most 'almost'");
     expect(prompts.almostDefinition).toContain("errorCategory null");
   });

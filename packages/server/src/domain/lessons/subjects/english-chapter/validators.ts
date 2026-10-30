@@ -1,4 +1,4 @@
-import { answersEquivalent, MAX_TEXT_LENGTH } from "../../pool-validation";
+import { answersEquivalent } from "../../pool-validation";
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { checkElement, materialLexicon, type ElementCheck } from "./lexicon";
@@ -8,6 +8,8 @@ import { checkElement, materialLexicon, type ElementCheck } from "./lexicon";
  * `validateChapterExercise` obowiązuje zawsze (generacja, edycja rodzica,
  * publikacja), a `refineChapterPool` czyści wyłącznie świeże wyjście modelu
  * walidacją słownikową, więc rodzic może dopisać słowo spoza rozdziału.
+ * Limit 120 znaków odpowiedzi i jedną lukę w `lesson_gap` pilnuje już walidacja
+ * ogólna silnika — przedmiot ich nie powiela (jeden komunikat dla rodzica).
  * Komunikaty po polsku, z nazwą pola — jak reszta walidatorów lekcji.
  */
 
@@ -38,9 +40,7 @@ const STIMULUS_IN_INSTRUCTION: ReadonlySet<LessonExerciseType> = new Set<LessonE
   "lesson_order",
 ]);
 
-/** Typy ze zdaniem z luką w `stem`. */
-const GAP_STEM_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>(["lesson_choice", "lesson_gap"]);
-
+/** Luka w zdaniu wyboru (luka `lesson_gap` ma już regułę silnika). */
 const GAP = /_{2,}/gu;
 
 /** Polecenie do porównania ze stałymi: bez wielkości liter, spacji i końcowej kropki. */
@@ -58,7 +58,7 @@ function carriesStimulus(instruction: string | undefined): boolean {
 export function validateChapterExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {
   const errors: string[] = [];
 
-  if (GAP_STEM_TYPES.has(ex.exerciseType)) {
+  if (ex.exerciseType === "lesson_choice") {
     const gaps = ex.stem?.match(GAP)?.length ?? 0;
     if (gaps !== 1) {
       errors.push(`stem: zdanie musi mieć dokładnie jedną lukę „___” (znaleziono ${gaps})`);
@@ -83,14 +83,6 @@ export function validateChapterExercise(ex: LessonExerciseDraft, _topic: LessonT
         errors.push(`items: klocek „${item.text}” powtarza klocek „${earlier.text}” — każdy klocek musi mieć inny tekst`);
       }
     });
-  }
-
-  // Limit przedmiotów bez payloadu v3 (te same komunikaty co walidacja ogólna).
-  if ([...ex.answer].length > MAX_TEXT_LENGTH) {
-    errors.push(`answer: przekracza ${MAX_TEXT_LENGTH} znaków`);
-  }
-  if (ex.acceptedAnswers.some((variant) => [...variant].length > MAX_TEXT_LENGTH)) {
-    errors.push(`acceptedAnswers: przekracza ${MAX_TEXT_LENGTH} znaków`);
   }
 
   return errors;
@@ -121,7 +113,7 @@ const VARIANT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseTyp
 
 /** Powód odrzucenia dla rodzica, przycięty do `MAX_REJECTION_REASON_LENGTH` znaków. */
 function rejectionReason(failure: Extract<ElementCheck, { ok: false }>): string {
-  const prefix = failure.noContentWord === true ? "brak słowa z materiału: " : "słowo spoza materiału: ";
+  const prefix = failure.noContentWord === true ? "brak słowa treści: " : "słowo spoza materiału: ";
   const chars = [...`${prefix}${failure.unknown}`];
   return chars.length <= MAX_REJECTION_REASON_LENGTH ? chars.join("") : `${chars.slice(0, MAX_REJECTION_REASON_LENGTH - 1).join("")}…`;
 }

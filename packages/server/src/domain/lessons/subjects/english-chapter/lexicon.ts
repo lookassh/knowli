@@ -11,8 +11,10 @@ import { englishNormalizer } from "../english/normalizer";
 /**
  * Słowa funkcyjne dozwolone w każdym elemencie, także spoza materiału: zaimki,
  * rodzajniki, formy „be”/„do”/„can”, typowe skróty, spójniki, przyimki, zaimki
- * pytające. Same nie wystarczają — element musi mieć słowo treści z materiału.
- * Zapis znormalizowany: małe litery, zwykły apostrof.
+ * pytające oraz posiłkowe z rozwinięć skrótów normalizatora (`can't` → `cannot`,
+ * `it's` → `it has`, `I'll` → `I will`, `I'd` → `I would`/`I had`). Same nie
+ * wystarczają — element musi mieć słowo treści z materiału. Zapis
+ * znormalizowany: małe litery, zwykły apostrof.
  */
 export const FUNCTION_WORDS: ReadonlySet<string> = new Set([
   // zaimki osobowe i dzierżawcze
@@ -24,6 +26,8 @@ export const FUNCTION_WORDS: ReadonlySet<string> = new Set([
   "am", "is", "are", "was", "were", "be",
   "do", "does", "don't", "doesn't",
   "can", "can't", "cannot",
+  // posiłkowe z rozwinięć skrótów
+  "has", "have", "had", "will", "would", "did",
   // skróty
   "i'm", "it's", "he's", "she's", "you're", "we're", "they're", "isn't", "aren't", "what's",
   // spójniki i partykuły
@@ -48,8 +52,11 @@ const HYPHEN_VARIANTS = /[\u2010\u2011]/gu;
 /** Słowo materiału: litery i cyfry, z apostrofem lub łącznikiem wewnątrz. */
 const MATERIAL_WORD = /[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/gu;
 
-/** Najkrótsza forma po odcięciu końcówki (krótsze to szum: „is” → „i”). */
-const MIN_STEM_LENGTH = 2;
+/**
+ * Najkrótsza forma po odcięciu końcówki. Krótsze rdzenie to szum, który
+ * przepuszczał nowe słowa przez kolizję („wing” → „we”, „ones” → „on”).
+ */
+const MIN_STEM_LENGTH = 3;
 
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);
 
@@ -124,8 +131,12 @@ export type ElementCheck =
       readonly noContentWord?: true;
     };
 
+/**
+ * Token jest w słowniku wprost albo przez rdzeń. Rdzeń będący słowem funkcyjnym
+ * się nie liczy: „thing” nie jest odmianą „the”, a „cans” — „can”.
+ */
 function inLexicon(token: string, lexicon: ReadonlySet<string>): boolean {
-  return lexicon.has(token) || stemsOf(token).some((stem) => lexicon.has(stem));
+  return lexicon.has(token) || stemsOf(token).some((stem) => !FUNCTION_WORDS.has(stem) && lexicon.has(stem));
 }
 
 /** Pomija wiodące rodzajniki i „to”. */

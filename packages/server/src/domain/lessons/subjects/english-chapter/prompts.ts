@@ -15,7 +15,10 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "What's the weather like? It's ...). Build every exercise ONLY from the English words, phrases and frames of that " +
     "material, plus basic function words (I, you, he, she, my, a, the, is, are, do, can, and, in, on, this, what, today, very). " +
     "Never introduce English vocabulary that is not in the material: exercises with other words are discarded. " +
-    "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one objective and has exactly one correct answer.",
+    "Never use people's names, numbers or any other word that is not in the material (e.g. there, have got, let's, look, " +
+    "unless the material has them); use I, you, he, she, we or they instead of a name. " +
+    "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one objective; closed types have " +
+    "exactly one correct option.",
   gradingRole:
     "You grade whether the child's English answer expresses the meaning of the Polish sentence given in the instruction " +
     "or prompt, using the checked word or sentence frame of the objective. You do NOT judge capitalisation, punctuation, " +
@@ -39,7 +42,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "the chapter of the same kind, exactly one correct for the Polish sentence. " +
     "lesson_gap: stem is a short English sentence with exactly one gap ___; answer is the missing chapter word or phrase " +
     "(at most 3 words) and focus is that checked word. " +
-    "A gap or an option is always a content word of the chapter, never only an article, a pronoun or a form of be. " +
+    "A gap or an option is always a content word of the chapter, never only function words (articles, pronouns, " +
+    "be/do/can, prepositions such as in/on/at, this/that, question words). " +
     "lesson_order: items are the words of one English sentence built on a chapter frame, in the correct order " +
     "(3 to 10 items, no two items with the same text), and the sentence has exactly one correct word order — no parts " +
     "that could move, such as today at the start or at the end. " +
@@ -57,8 +61,9 @@ export const englishChapterPrompts: SubjectPromptProfile = {
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
       "weather); group labels are in Polish and items are English words from the chapter. Skip it otherwise.",
     lesson_cloze:
-      "Use 2 to 4 short sentences built on the chapter's frames. Gap words are chapter words of this objective, never " +
-      "articles, pronouns or forms of be. extraWords are other chapter words of the same kind.",
+      "Use 2 to 4 short sentences built on the chapter's frames. Gap words are content words of this objective, never " +
+      "only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). extraWords are " +
+      "other chapter words of the same kind.",
   },
   objectivesRules:
     "Split the chapter into 3 to 5 objectives, so that every objective comes up within two or three short sessions. " +
