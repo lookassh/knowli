@@ -31,6 +31,7 @@ import "./lesson-panels.css";
 import {
   createLessonSnapshot,
   applyCalculationPreview,
+  formatRejectedReason,
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   keywordsAnswerOf,
@@ -1078,7 +1079,7 @@ export default function LessonEditor({
         {rejectedReasons.length > 0 && (
           <ul className="pp-lesson-rejected-reasons pp-editor-muted" aria-label={messages.lessons.rejectedReasonsLabel} data-testid="rejected-reasons">
             {rejectedReasons.map(({ reason, count }) => (
-              <li key={reason}>{messages.lessons.rejectedReason.replace("{reason}", reason).replace("{n}", String(count))}</li>
+              <li key={reason}>{formatRejectedReason(messages.lessons.rejectedReason, reason, count)}</li>
             ))}
           </ul>
         )}

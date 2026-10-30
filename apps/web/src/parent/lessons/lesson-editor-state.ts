@@ -476,6 +476,16 @@ export function topRejectedReasons(
     .slice(0, limit);
 }
 
+/**
+ * Wiersz raportu odrzuceń z szablonu komunikatu (`{reason}`, `{n}`). Jedno
+ * przejście z funkcją podstawiającą: powód pochodzi z wyjścia modelu, więc
+ * `$&`, `$$` ani `{n}` w jego treści nie mogą zmienić wyniku (podstawiany tekst
+ * nie jest ponownie skanowany).
+ */
+export function formatRejectedReason(template: string, reason: string, count: number): string {
+  return template.replace(/\{(reason|n)\}/gu, (_placeholder, name: string) => (name === "reason" ? reason : String(count)));
+}
+
 /** Applies an API preview only while it still describes this variant. No arithmetic in the client. */
 export function applyCalculationPreview(exercise: EditableLessonExercise, requested: CalculationSpec, preview: { prompt: string; answer: string }): EditableLessonExercise {
   return JSON.stringify(exercise.calculation) === JSON.stringify(requested)

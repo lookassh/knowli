@@ -5,6 +5,7 @@ import {
   clozeWordsOf,
   createLessonSnapshot,
   filledClozeOf,
+  formatRejectedReason,
   syncGapAnswers,
   applyCalculationPreview,
   groupCalculationFamilies,
@@ -488,5 +489,20 @@ describe("topRejectedReasons (powody odrzuceń przy generowaniu)", () => {
   it("brak powodów (undefined albo pusty obiekt) daje pustą listę", () => {
     expect(topRejectedReasons(undefined)).toEqual([]);
     expect(topRejectedReasons({})).toEqual([]);
+  });
+});
+
+describe("formatRejectedReason (wiersz raportu odrzuceń)", () => {
+  const TEMPLATE = "{reason} ×{n}";
+
+  it("podstawia powód i liczbę do szablonu komunikatu", () => {
+    expect(formatRejectedReason(TEMPLATE, "słowo spoza materiału: raining", 3)).toBe("słowo spoza materiału: raining ×3");
+  });
+
+  it("powód z $&, $$, $` i {n} trafia do tekstu dosłownie (nie jest wzorcem podstawienia ani szablonem)", () => {
+    expect(formatRejectedReason(TEMPLATE, "słowo spoza materiału: a$&b", 2)).toBe("słowo spoza materiału: a$&b ×2");
+    expect(formatRejectedReason(TEMPLATE, "cena $$ i $` i $'", 1)).toBe("cena $$ i $` i $' ×1");
+    expect(formatRejectedReason(TEMPLATE, "brak słowa treści: {n}", 5)).toBe("brak słowa treści: {n} ×5");
+    expect(formatRejectedReason(TEMPLATE, "{reason}", 4)).toBe("{reason} ×4");
   });
 });
