@@ -84,10 +84,14 @@
   --kid-type-display-size: 2rem;
   --kid-type-display-sm-size: 1.75rem;
   --kid-type-display-weight: 800;
+  /* Display-sm words (stimulus, letter fragments): one step lighter than
+     display, so long words keep their letters apart. */
+  --kid-type-display-sm-weight: 700;
   --kid-type-display-line-height: 1.2;
   --kid-type-headline-size: 1.6rem;
   --kid-type-headline-sm-size: 1.5rem;
   --kid-type-headline-weight: 800;
+  --kid-type-headline-sm-weight: 700;
   --kid-type-headline-line-height: 1.25;
   --kid-type-title-lg-size: 1.4rem;
   --kid-type-title-size: 1.3rem;
@@ -108,6 +112,17 @@
   --kid-type-label-size: 1rem;
   --kid-type-label-weight: 700;
   --kid-type-label-line-height: 1.35;
+  /* Secondary actions and small labels: quieter than the main action. */
+  --kid-type-label-secondary-weight: 600;
+  /* Captions and supporting text (example sentences, hints, "the answer
+     was"). Nunito ships no italic, so supporting text is set apart by this
+     lighter weight and the muted color, never by synthetic slanting. */
+  --kid-type-caption-weight: 500;
+  /* Answer content inside controls (options, typed answer, lesson blocks). */
+  --kid-type-answer-weight: 600;
+  /* Titles on navigation screens (decks, profiles, summaries): calmer than
+     the headlines of exercises. */
+  --kid-type-nav-title-weight: 600;
   /* Pictograms (emoji visuals) rather than text. */
   --kid-type-emoji-size: 4rem;
   --kid-type-emoji-sm-size: 2.25rem;
@@ -351,7 +366,7 @@
   gap: 6px;
   min-height: 48px;
   font-size: var(--kid-type-label-sm-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-label-secondary-weight);
   color: var(--kid-text);
   text-decoration: none;
   padding: 6px 14px;
@@ -396,7 +411,7 @@
 .kid-greeting {
   text-align: center;
   font-size: var(--kid-type-title-md-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-title-weight);
   margin: 0;
 }
 
@@ -493,7 +508,7 @@
 .kid-deck-screen h1 {
   margin: 0;
   font-family: var(--kid-font-display);
-  font-weight: 600;
+  font-weight: var(--kid-type-nav-title-weight);
 }
 
 .kid-deck-screen .kid-deck-content {
@@ -592,7 +607,7 @@
 .kid-deck-card__title {
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-nav-title-weight);
   line-height: 1.2;
 }
 
@@ -710,7 +725,7 @@
   min-height: 48px;
   margin: 0;
   padding: 4px 10px;
-  font-weight: 700;
+  font-weight: var(--kid-type-label-weight);
 }
 
 .kid-microphone-hint {
@@ -743,7 +758,7 @@
 .kid-ui .kid-word {
   font-family: var(--kid-font-display);
   font-size: clamp(var(--kid-type-display-sm-size), 10vw, var(--kid-type-display-lg-size));
-  font-weight: 700;
+  font-weight: var(--kid-type-display-sm-weight);
   color: var(--md-sys-color-on-surface);
   margin: 0;
   word-break: break-word;
@@ -753,7 +768,7 @@
 .kid-source {
   font-family: var(--kid-font-display);
   font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-size));
-  font-weight: 700;
+  font-weight: var(--kid-type-display-sm-weight);
   color: var(--md-sys-color-on-surface);
   margin: 0;
   text-align: center;
@@ -764,7 +779,7 @@
   color: var(--kid-muted);
   margin: 0;
   text-align: center;
-  font-style: italic;
+  font-weight: var(--kid-type-caption-weight);
 }
 
 /* Zdanie przykładowe z przyciskiem odsłuchu (SPEC §22) — jeden blok. */
@@ -885,7 +900,7 @@
   --action-bg: var(--kid-accent);
   --action-border: var(--kid-accent);
   --action-fg: var(--kid-on-accent);
-  font-weight: 700;
+  font-weight: var(--kid-type-label-weight);
 }
 
 .kid-exercise-actions .kid-primary {
@@ -981,7 +996,7 @@
   place-items: center;
   border: 2px solid currentColor;
   font-size: var(--kid-type-headline-size);
-  font-weight: 800;
+  font-weight: var(--kid-type-headline-weight);
   line-height: 1;
   box-shadow: var(--kid-shadow-level1);
 }
@@ -1494,7 +1509,7 @@
   margin: 0;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   line-height: var(--kid-type-headline-line-height);
   overflow-wrap: anywhere;
 }
@@ -1532,7 +1547,7 @@
   margin: 8px 0 0;
   font-family: var(--kid-font-display);
   font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-lg-size));
-  font-weight: 800;
+  font-weight: var(--kid-type-display-weight);
   overflow-wrap: anywhere;
 }
 
@@ -1606,13 +1621,13 @@
 .kid-speech-feedback__error {
   margin: 8px 0 0;
   color: var(--kid-warm-text);
-  font-weight: 700;
+  font-weight: var(--kid-type-label-weight);
 }
 
 .kid-feedback-text {
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   line-height: var(--kid-type-headline-line-height);
   margin: 0;
   text-align: center;
@@ -1627,7 +1642,7 @@
 .kid-feedback-answer-label {
   display: block;
   font-size: var(--kid-type-body-size);
-  font-weight: 500;
+  font-weight: var(--kid-type-caption-weight);
   line-height: 1.3;
 }
 
@@ -1636,7 +1651,7 @@
   margin-top: 4px;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   line-height: 1.2;
 }
 
@@ -1646,7 +1661,7 @@
   justify-content: center;
   margin-top: 0.75rem;
   font-size: var(--kid-type-display-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-display-sm-weight);
 }
 
 .kid-fragment {
@@ -1679,7 +1694,7 @@
   justify-content: center;
   gap: 0.25rem 0.5rem;
   font-size: var(--kid-type-display-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-display-sm-weight);
   letter-spacing: 0.04em;
 }
 
@@ -1687,7 +1702,7 @@
   width: 100%;
   text-align: center;
   font-size: var(--kid-type-label-xs-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-label-secondary-weight);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   opacity: 0.7;
@@ -1718,7 +1733,7 @@
 .kid-screen--mock-summary h1 {
   margin: 0;
   font-family: var(--kid-font-display);
-  font-weight: 600;
+  font-weight: var(--kid-type-nav-title-weight);
 }
 
 .kid-summary-reward {
@@ -1942,7 +1957,7 @@
 
 .kid-ui .kid-mock-row .kid-mock-badge--correct,
 .kid-ui .kid-mock-row .kid-mock-badge--incorrect {
-  font-weight: 700;
+  font-weight: var(--kid-type-label-sm-weight);
 }
 
 /* Wynik próby: próg koloru 80%/50%; zielony, bursztyn, a niski wynik zostaje neutralny (bez czerwieni). */
@@ -1968,7 +1983,7 @@
 .kid-mock-score__value {
   margin: 0;
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 800;
+  font-weight: var(--kid-type-headline-weight);
 }
 
 .kid-mock-score__stars {
@@ -2011,7 +2026,7 @@
    korzystają z tych samych tokenów co ćwiczenia, również w ciemnym motywie. */
 .kid-screen--profile h1 {
   font-family: var(--kid-font-display);
-  font-weight: 600;
+  font-weight: var(--kid-type-nav-title-weight);
 }
 
 .kid-profile-grid {
@@ -2076,7 +2091,7 @@
   max-width: 100%;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-nav-title-weight);
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -2181,7 +2196,7 @@
   --action-bg: var(--kid-surface);
   --action-fg: var(--kid-text);
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--kid-type-label-secondary-weight);
   cursor: pointer;
 }
 
@@ -2213,7 +2228,7 @@
   margin: 0;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-title-weight);
   color: var(--md-sys-color-on-surface);
   text-align: center;
 }
@@ -2232,7 +2247,7 @@
   gap: 6px;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
 }
 
 /* Wskazanie: zdania ze słowami jako dużymi, dotykowymi przyciskami. */
@@ -2261,7 +2276,7 @@
   font: inherit;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
   border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
   background: var(--md-sys-color-surface-container-high);
@@ -2352,7 +2367,7 @@
   margin: 0;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
@@ -2396,7 +2411,7 @@
   font: inherit;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-title-md-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
   border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--kid-shape-l);
   background: var(--md-sys-color-surface-container-high);
@@ -2447,7 +2462,7 @@
 
 .kid-lesson-match__left {
   font-size: var(--kid-type-title-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-answer-weight);
   overflow-wrap: anywhere;
 }
 
@@ -2516,7 +2531,7 @@
   width: 100%;
   border-color: transparent;
   background: transparent;
-  font-weight: 700;
+  font-weight: var(--kid-type-label-weight);
 }
 
 .kid-ui .kid-lesson-group__bin--active .kid-lesson-group__target {
@@ -2562,7 +2577,7 @@
   gap: 6px;
   font-family: var(--kid-font-display);
   font-size: var(--kid-type-headline-sm-size);
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   line-height: 1.5;
   color: var(--md-sys-color-on-surface);
   text-align: center;
@@ -2583,14 +2598,14 @@
   margin: 0;
   font-size: var(--kid-type-title-sm-size);
   color: var(--kid-muted);
-  font-style: italic;
+  font-weight: var(--kid-type-caption-weight);
 }
 
 .kid-lesson-source {
   margin: 0;
   font-family: var(--kid-font-display);
   font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
-  font-weight: 700;
+  font-weight: var(--kid-type-headline-sm-weight);
   color: var(--md-sys-color-on-surface);
   text-align: center;
   overflow-wrap: anywhere;
@@ -2618,7 +2633,7 @@
   margin: 0;
   text-align: center;
   font-size: var(--kid-type-title-sm-size);
-  font-weight: 600;
+  font-weight: var(--kid-type-body-weight);
   color: var(--kid-muted);
 }
 
