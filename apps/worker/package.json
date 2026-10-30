@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/main.ts",
     "progress:rebuild": "tsx src/rebuild-progress.ts",
+    "ui-audio:regenerate": "tsx src/regenerate-ui-audio.ts",
     "integration-tokens": "tsx src/integration-tokens.ts"
   },
   "dependencies": {

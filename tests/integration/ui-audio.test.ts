@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createServices, executeMediaAsset, prepareUiAudio, readReadyMedia, readUiAudio, type Services } from "@learning/server";
+import { createServices, executeMediaAsset, prepareUiAudio, readReadyMedia, readUiAudio, regenerateUiAudio, type Services } from "@learning/server";
 import { messages } from "@learning/contracts";
 import { testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
@@ -200,6 +200,39 @@ describe("wskazówki głosowe Kid UI (integracja)", () => {
     expect(withStyle.assets.correct).not.toBe(stageOne.assets.correct);
 
     expect(await readUiAudio(services)).toEqual(stageOne);
+  });
+
+  it("regenerateUiAudio zleca nową generację, a do jej wykonania odczyt zwraca stare nagranie", async () => {
+    await prepareUiAudio(services);
+    await executePending(services);
+    const before = await readUiAudio(services);
+
+    const result = await regenerateUiAudio(services, ["correct"]);
+    expect(result).toEqual({ queued: ["correct"], skipped: [] });
+    const generations = await rows<{ generation_number: number; state: string; fingerprint: string }>(
+      `select generation_number, state, fingerprint from learning_app.media_assets
+       where metadata->>'uiAudioKey' = 'correct' order by generation_number`,
+    );
+    expect(generations.map((row) => [row.generation_number, row.state])).toEqual([[1, "ready"], [2, "pending"]]);
+    expect(generations[1]!.fingerprint).toBe(generations[0]!.fingerprint);
+    expect(await rows("select id from learning_app.generation_runs where state = 'queued'")).toHaveLength(1);
+
+    expect((await readUiAudio(services)).assets.correct).toBe(before.assets.correct);
+    await executePending(services);
+    const after = await readUiAudio(services);
+    expect(after.assets.correct).not.toBe(before.assets.correct);
+    expect(after.assets.summary).toBe(before.assets.summary);
+  });
+
+  it("regenerateUiAudio pomija klucz z oczekującą generacją tego fingerprintu", async () => {
+    await prepareUiAudio(services);
+    const before = await rows("select id from learning_app.media_assets");
+    expect(await regenerateUiAudio(services, ["correct"])).toEqual({ queued: [], skipped: ["correct"] });
+    expect(await rows("select id from learning_app.media_assets")).toHaveLength(before.length);
+  });
+
+  it("regenerateUiAudio odrzuca pustą listę kluczy", async () => {
+    await expect(regenerateUiAudio(services, [])).rejects.toThrow(Error);
   });
 
   it("nadal wygasza osierocony TTS bez poprawnego znacznika Kid UI", async () => {

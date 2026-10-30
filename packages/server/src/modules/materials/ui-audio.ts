@@ -46,51 +46,94 @@ function requestOf(services: Services, key: UiAudioKey) {
   };
 }
 
+type UiAudioRequest = ReturnType<typeof requestOf>;
+type UiAudioTx = Parameters<Parameters<Services["db"]["transaction"]>[0]>[0];
+
+/**
+ * Wspólne zlecanie nagrania komunikatu: pod blokadą fingerprintu wstawia nowy wiersz pending i uruchomienie
+ * w kolejce. Oczekująca generacja zawsze wstrzymuje zlecenie (jedna pending na fingerprint); gotowa wstrzymuje je
+ * tylko bez `force` (ponowne nagranie celowo tworzy kolejną generację). Zwraca, czy zlecono.
+ */
+async function enqueueUiAudioTx(
+  tx: UiAudioTx,
+  services: Services,
+  request: UiAudioRequest,
+  options: { force: boolean },
+): Promise<boolean> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${request.fingerprint}))`);
+  const assets = await tx.select().from(mediaAssets)
+    .where(eq(mediaAssets.fingerprint, request.fingerprint))
+    .orderBy(desc(mediaAssets.generationNumber));
+  if (!options.force && assets.some((asset) => asset.state === "ready"
+    && isUiAudioAssetMetadata(asset.metadata)
+    && asset.metadata.text === request.text)) return false;
+  if (assets.some((asset) => asset.state === "pending"
+    && isUiAudioAssetMetadata(asset.metadata)
+    && asset.metadata.text === request.text)) return false;
+
+  const id = randomUUID();
+  const generationNumber = (assets[0]?.generationNumber ?? 0) + 1;
+  const settings = settingsOf(services);
+  await tx.insert(mediaAssets).values({
+    id,
+    kind: "tts",
+    fingerprint: request.fingerprint,
+    generationNumber,
+    state: "pending",
+    provider: settings.provider,
+    model: settings.model,
+    metadata: request.metadata,
+  });
+  await tx.insert(generationRuns).values({
+    id: randomUUID(),
+    assetId: id,
+    kind: "tts",
+    dedupeKey: `asset:${id}`,
+    state: "queued",
+    input: request.metadata,
+  });
+  return true;
+}
+
 /** Zleca brakujące stałe pliki audio przez kolejkę media_assets. Idempotentne i bez wywołania TTS. */
 export async function prepareUiAudio(services: Services): Promise<void> {
   const keys = UiAudioKeySchema.options;
-  const byFingerprint = new Map<string, ReturnType<typeof requestOf>>();
+  const byFingerprint = new Map<string, UiAudioRequest>();
   for (const key of keys) {
     const request = requestOf(services, key);
     if (!byFingerprint.has(request.fingerprint)) byFingerprint.set(request.fingerprint, request);
   }
 
   for (const request of byFingerprint.values()) {
-    await services.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${request.fingerprint}))`);
-      const assets = await tx.select().from(mediaAssets)
-        .where(eq(mediaAssets.fingerprint, request.fingerprint))
-        .orderBy(desc(mediaAssets.generationNumber));
-      if (assets.some((asset) => asset.state === "ready"
-        && isUiAudioAssetMetadata(asset.metadata)
-        && asset.metadata.text === request.text)) return;
-      if (assets.some((asset) => asset.state === "pending"
-        && isUiAudioAssetMetadata(asset.metadata)
-        && asset.metadata.text === request.text)) return;
-
-      const id = randomUUID();
-      const generationNumber = (assets[0]?.generationNumber ?? 0) + 1;
-      const settings = settingsOf(services);
-      await tx.insert(mediaAssets).values({
-        id,
-        kind: "tts",
-        fingerprint: request.fingerprint,
-        generationNumber,
-        state: "pending",
-        provider: settings.provider,
-        model: settings.model,
-        metadata: request.metadata,
-      });
-      await tx.insert(generationRuns).values({
-        id: randomUUID(),
-        assetId: id,
-        kind: "tts",
-        dedupeKey: `asset:${id}`,
-        state: "queued",
-        input: request.metadata,
-      });
-    });
+    await services.db.transaction((tx) => enqueueUiAudioTx(tx, services, request, { force: false }));
   }
+}
+
+/**
+ * Polecenie serwisowe (spec tonu TTS §2.4, §3.5): zleca NOWĄ generację nagrania komunikatu (ten sam bieżący
+ * fingerprint, kolejny `generationNumber`). Odczyt do czasu jej wykonania zwraca poprzednie gotowe nagranie.
+ * Klucze współdzielące fingerprint są zlecane raz; klucz z już oczekującą generacją trafia do `skipped`.
+ */
+export async function regenerateUiAudio(
+  services: Services,
+  keys: readonly UiAudioKey[],
+): Promise<{ queued: UiAudioKey[]; skipped: UiAudioKey[] }> {
+  if (keys.length === 0) throw new Error("At least one UI audio key is required");
+  const requests = new Map<string, { request: UiAudioRequest; keys: UiAudioKey[] }>();
+  for (const key of new Set(keys)) {
+    const request = requestOf(services, key);
+    const entry = requests.get(request.fingerprint);
+    if (entry) entry.keys.push(key);
+    else requests.set(request.fingerprint, { request, keys: [key] });
+  }
+
+  const queued: UiAudioKey[] = [];
+  const skipped: UiAudioKey[] = [];
+  for (const { request, keys: sharing } of requests.values()) {
+    const enqueued = await services.db.transaction((tx) => enqueueUiAudioTx(tx, services, request, { force: true }));
+    (enqueued ? queued : skipped).push(...sharing);
+  }
+  return { queued, skipped };
 }
 
 /** Odczytuje gotowe immutable asset_id; nigdy nie zleca generacji. */

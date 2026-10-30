@@ -15,6 +15,7 @@
     "test:e2e:shards": "node scripts/run-e2e-shards.cjs",
     "build": "node apps/web/node_modules/next/dist/bin/next build apps/web",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/contracts/tsconfig.json && tsc --noEmit -p packages/server/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/worker/tsconfig.json && tsc --noEmit -p packages/kid-ui/tsconfig.json",
+    "media:regenerate-ui-audio": "pnpm --filter @learning/worker ui-audio:regenerate",
     "wt:setup": "node scripts/setup-worktree.cjs",
     "wt:clean": "node scripts/clean-worktrees.cjs",
     "hooks:install": "node scripts/install-git-hooks.cjs"
