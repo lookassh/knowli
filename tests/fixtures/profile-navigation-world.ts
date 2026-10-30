@@ -81,7 +81,10 @@ export async function seedProfileNavigationWorld(
       const fingerprint = ttsFingerprint({
         text: revision.target,
         locale: "en-GB",
-        ...defaultMediaSettings.tts,
+        provider: defaultMediaSettings.tts.provider,
+        model: defaultMediaSettings.tts.model,
+        voice: defaultMediaSettings.tts.voice,
+        format: defaultMediaSettings.tts.format,
       });
       return {
         id: assetId,

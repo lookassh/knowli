@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { MediaPendingDetails } from "@learning/contracts";
-import { ttsVoiceFor, type MediaSettings, type Services } from "../../config";
+import { ttsInstructionsFor, ttsVoiceFor, type MediaSettings, type Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
   deckVersions,
@@ -87,6 +87,7 @@ const PROMPT_AUDIO_LOCALE = "pl-PL";
 
 function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
   const voice = ttsVoiceFor(settings.tts, locale);
+  const instructions = ttsInstructionsFor(settings.tts, locale);
   return {
     role,
     kind: "tts",
@@ -97,6 +98,7 @@ function ttsAsset(role: AssetRole, text: string, locale: string, settings: Media
       model: settings.tts.model,
       voice,
       format: settings.tts.format,
+      instructions,
     }),
     metadata: {
       kind: "tts",
@@ -104,6 +106,7 @@ function ttsAsset(role: AssetRole, text: string, locale: string, settings: Media
       locale,
       voice,
       format: settings.tts.format,
+      ...(instructions === undefined ? {} : { instructions }),
     },
   };
 }

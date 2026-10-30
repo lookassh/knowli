@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv, ttsVoiceFor } from "./config";
+import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv, ttsInstructionsFor, ttsVoiceFor } from "./config";
 
 describe("mediaSettingsFromEnv", () => {
   it("bez env zwraca domyślne ustawienia (low + webp)", () => {
@@ -25,6 +25,28 @@ describe("mediaSettingsFromEnv", () => {
     expect(ttsVoiceFor(settings.tts, "pl-PL")).toBe("pl-PL-Harper:MAI-Voice-2.1-Flash");
     // bez zmiennych per locale ustawienia (i fingerprinty) jak dotąd
     expect(mediaSettingsFromEnv({}).tts).not.toHaveProperty("voices");
+  });
+
+  it("UMIEM_TTS_FORMAT wybiera mp3 albo wav; inna wartość to błąd startu", () => {
+    expect(mediaSettingsFromEnv({}).tts.format).toBe("mp3");
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_FORMAT: "" }).tts.format).toBe("mp3");
+    expect(mediaSettingsFromEnv({ UMIEM_TTS_FORMAT: "wav" }).tts.format).toBe("wav");
+    expect(() => mediaSettingsFromEnv({ UMIEM_TTS_FORMAT: "pcm" })).toThrow(/UMIEM_TTS_FORMAT/);
+  });
+
+  it("UMIEM_TTS_INSTRUCTIONS_<LANG>_<REGION> przypisuje instrukcję wymowy do locale", () => {
+    const settings = mediaSettingsFromEnv({
+      UMIEM_TTS_INSTRUCTIONS_PL_PL: "Mów po polsku, z polską wymową.",
+      UMIEM_TTS_INSTRUCTIONS_EN_GB: "Speak British English.",
+      UMIEM_TTS_INSTRUCTIONS_DE_DE: "",
+    });
+    expect(settings.tts.instructions).toEqual({
+      "pl-PL": "Mów po polsku, z polską wymową.",
+      "en-GB": "Speak British English.",
+    });
+    expect(ttsInstructionsFor(settings.tts, "en-GB")).toBe("Speak British English.");
+    expect(ttsInstructionsFor(settings.tts, "fr-FR")).toBeUndefined();
+    expect(mediaSettingsFromEnv({}).tts).not.toHaveProperty("instructions");
   });
 
   it("zmienne UMIEM_IMAGE_* nadpisują model, rozmiar, jakość i format", () => {

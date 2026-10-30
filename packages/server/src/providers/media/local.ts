@@ -6,6 +6,7 @@ import type { MediaStore, StoredBlob } from "../../ports/media";
 
 const EXT_BY_MIME: Record<string, string> = {
   "audio/mpeg": "mp3",
+  "audio/wav": "wav",
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
@@ -13,13 +14,14 @@ const EXT_BY_MIME: Record<string, string> = {
 
 const MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
+  wav: "audio/wav",
   png: "image/png",
   jpg: "image/jpeg",
   webp: "image/webp",
 };
 
 // storageKey ma zawsze postać "xx/hash.ext" — odrzucamy wszystko inne.
-const KEY_PATTERN = /^[0-9a-f]{2}\/[0-9a-f]{64}\.(mp3|png|jpg|webp)$/;
+const KEY_PATTERN = /^[0-9a-f]{2}\/[0-9a-f]{64}\.(mp3|wav|png|jpg|webp)$/;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");

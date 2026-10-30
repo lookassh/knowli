@@ -3,6 +3,11 @@ import { createOpenAiTtsProvider } from "./tts";
 
 afterEach(() => vi.unstubAllGlobals());
 
+function bodyOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  return JSON.parse(String(init.body)) as Record<string, unknown>;
+}
+
 describe("createOpenAiTtsProvider", () => {
   it("does not expose provider response bodies in HTTP errors", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("private provider detail", { status: 400 })));
@@ -17,7 +22,52 @@ describe("createOpenAiTtsProvider", () => {
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAiTtsProvider({ apiKey: "test", model: "openai/gpt-4o-mini-tts-2025-12-15" });
     await provider.synthesize({ text: "Ile nóg ma pająk?", locale: "pl-PL", voice: "alloy", format: "mp3", model: "gpt-4o-mini-tts" });
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).model).toBe("gpt-4o-mini-tts");
+    expect(bodyOf(fetchMock).model).toBe("gpt-4o-mini-tts");
+  });
+
+  it("mp3 bez instrukcji: żądanie mp3 bez pola instructions, wynik audio/mpeg", async () => {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1, 2]), { status: 200, headers: { "content-type": "audio/mpeg" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    const result = await provider.synthesize({ text: "cat", locale: "en-GB", voice: "alloy", format: "mp3" });
+    expect(bodyOf(fetchMock)).toEqual({ model: "gpt-4o-mini-tts", voice: "alloy", input: "cat", response_format: "mp3" });
+    expect(result.mimeType).toBe("audio/mpeg");
+  });
+
+  it("wav: prosi o pcm, przekazuje instrukcję i opakowuje odpowiedź nagłówkiem WAV", async () => {
+    const pcm = new Uint8Array([0, 1, 2, 3]);
+    const fetchMock = vi.fn(async () => new Response(pcm, { status: 200, headers: { "content-type": "audio/pcm;rate=24000;channels=1" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiTtsProvider({ apiKey: "test", model: "google/gemini-3.8-flash-tts" });
+    const result = await provider.synthesize({
+      text: "pies", locale: "pl-PL", voice: "Kore", format: "wav", instructions: "Mów po polsku, z polską wymową.",
+    });
+    expect(bodyOf(fetchMock)).toEqual({
+      model: "google/gemini-3.8-flash-tts",
+      voice: "Kore",
+      input: "pies",
+      response_format: "pcm",
+      instructions: "Mów po polsku, z polską wymową.",
+    });
+    expect(result.mimeType).toBe("audio/wav");
+    expect(String.fromCharCode(...result.bytes.subarray(0, 4))).toBe("RIFF");
+    expect(new DataView(result.bytes.buffer, result.bytes.byteOffset).getUint32(24, true)).toBe(24000);
+    expect([...result.bytes.subarray(44)]).toEqual([...pcm]);
+  });
+
+  it("wav: odpowiedź już w WAV przechodzi bez zmian", async () => {
+    const wav = new Uint8Array([0x52, 0x49, 0x46, 0x46, 9, 9]);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(wav, { status: 200, headers: { "content-type": "audio/wav" } })));
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    const result = await provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" });
+    expect(result).toEqual({ bytes: wav, mimeType: "audio/wav" });
+  });
+
+  it("wav: inny typ odpowiedzi albo PCM bez częstotliwości to błąd, a nie zgadywanie formatu", async () => {
+    const provider = createOpenAiTtsProvider({ apiKey: "test" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1, 2]), { status: 200, headers: { "content-type": "audio/mpeg" } })));
+    await expect(provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" })).rejects.toThrow("provider_unexpected_audio");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1, 2]), { status: 200, headers: { "content-type": "audio/pcm" } })));
+    await expect(provider.synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "wav" })).rejects.toThrow("provider_unexpected_audio");
   });
 });

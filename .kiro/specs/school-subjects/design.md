@@ -1414,6 +1414,17 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
    wybrał zestaw kobiecy dla całej aplikacji (2026-10-30, po odsłuchu zestawu
    kobiecego i męskiego): polska treść `pl-PL-Harper`, angielska
    `UMIEM_TTS_VOICE_EN_GB=en-GB-Emily:MAI-Voice-2.1-Flash`.
+   **Zmiana decyzji (2026-10-30, ten sam dzień):** MAI-Voice-2.1 Flash
+   odrzucony. Na pojedynczych słowach (oba języki) powtarzał słowo w ok. 12%
+   nagrań (pełny MAI-Voice-2.1 ok. 25%), czasem urywał je lub doklejał szum —
+   wada w jednej syntezie po stronie Microsoftu (jedyny upstream OpenRoutera to
+   Azure), nie w adapterze. Nowa konfiguracja: `google/gemini-3.8-flash-tts`,
+   głos `Kore` dla polskiego i angielskiego, `UMIEM_TTS_FORMAT=wav` (PCM →
+   WAV w adapterze) i instrukcja wymowy per język
+   (`UMIEM_TTS_INSTRUCTIONS_PL_PL`, `UMIEM_TTS_INSTRUCTIONS_EN_GB`) — bez niej
+   pojedyncze polskie słowa bywały czytane po angielsku. Próby: 0 wad w 64
+   polskich i 48 angielskich nagraniach. ElevenLabs v4 Turbo odpadł: na
+   OpenRouterze tylko angielskie głosy z akcentem po polsku.
 
 ### 11.7. Korekty przy implementacji (2026-10-30)
 
