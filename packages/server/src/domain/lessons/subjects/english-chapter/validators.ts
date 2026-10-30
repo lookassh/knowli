@@ -2,6 +2,7 @@ import { answersEquivalent, V3_EXERCISE_FIELDS, type V3ExerciseField } from "../
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { checkElement, materialLexicon, type ElementCheck } from "./lexicon";
+import { trimTrailing } from "./text";
 
 /**
  * Reguły przedmiotu `english_chapter` (design „Angielski — rozdział” §4.1, §4.4):
@@ -56,9 +57,13 @@ const STIMULUS_IN_INSTRUCTION: ReadonlySet<LessonExerciseType> = new Set<LessonE
 /** Luka w zdaniu wyboru (luka `lesson_gap` ma już regułę silnika). */
 const GAP = /_{2,}/gu;
 
+/** Końcowe znaki pomijane przy porównaniu polecenia; białe znaki są już zredukowane do spacji. */
+const INSTRUCTION_TRAILING: ReadonlySet<string> = new Set([".", "!", ":", "…", " "]);
+
 /** Polecenie do porównania ze stałymi: bez wielkości liter, spacji i końcowej kropki. */
 function comparableInstruction(text: string): string {
-  return text.normalize("NFC").replace(/\s+/gu, " ").trim().replace(/[.!:…\s]+$/u, "").toLocaleLowerCase("pl-PL");
+  const collapsed = text.normalize("NFC").replace(/\s+/gu, " ").trim();
+  return trimTrailing(collapsed, INSTRUCTION_TRAILING).toLocaleLowerCase("pl-PL");
 }
 
 const GENERIC_INSTRUCTION_KEYS: ReadonlySet<string> = new Set(GENERIC_CHAPTER_INSTRUCTIONS.map(comparableInstruction));

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   createGenerationDepsFromEnv,
   createLessonFromMaterial,
@@ -259,6 +259,8 @@ describe.skipIf(!materialPath)("próba generowania lekcji na prawdziwym modelu",
     const durationMs = Date.now() - started;
 
     const run = await readGeneration(services, runId);
+    // Próba raportuje jakość bez asercji; wymaga tylko, by generacja się zakończyła.
+    expect(["succeeded", "failed"]).toContain(run.state);
     line("");
     line(`Przebieg: stan=${run.state}${run.errorCode ? ` kod=${run.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(1)} s`);
     const poolCalls = recorded.calls.filter((call) => call.method === "pool");

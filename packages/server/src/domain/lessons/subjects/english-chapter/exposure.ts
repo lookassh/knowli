@@ -1,5 +1,6 @@
 import { fillCloze } from "../../cloze";
 import type { LessonExerciseDraft } from "../../types";
+import { trimTrailing } from "./text";
 
 /**
  * Tekst ekspozycji ćwiczenia rozdziału (design „Angielski — rozdział” §4.5).
@@ -14,7 +15,8 @@ import type { LessonExerciseDraft } from "../../types";
 
 /** Luka w zdaniu: ciąg 2+ podkreśleń (ta sama reguła co `cloze.ts` i Kid UI). */
 const GAP = /_{2,}/u;
-const TRAILING_PUNCTUATION = /[.!?…\s]+$/u;
+/** Końcowa interpunkcja ekspozycji; białe znaki są już zredukowane do spacji. */
+const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([".", "!", "?", "…", " "]);
 /** Typograficzne apostrofy i pojedyncze cudzysłowy → `'`. */
 const SINGLE_QUOTES = /[‘’‚‛]/gu;
 /** Typograficzne cudzysłowy (także polski „) → `"`. */
@@ -30,13 +32,13 @@ const DOUBLE_QUOTES = /[“”„‟]/gu;
  * utrwalony w `target_key` — zmiana wymaga decyzji o migracji kluczy.
  */
 export function normalizeChapterExposureText(text: string): string {
-  return text
+  const collapsed = text
     .normalize("NFC")
     .replace(SINGLE_QUOTES, "'")
     .replace(DOUBLE_QUOTES, '"')
     .replace(/\s+/gu, " ")
-    .trim()
-    .replace(TRAILING_PUNCTUATION, "");
+    .trim();
+  return trimTrailing(collapsed, TRAILING_PUNCTUATION);
 }
 
 /** Zdanie ze wstawionym słowem w miejscu luki; zdanie bez luki daje samo słowo. */
