@@ -8,7 +8,7 @@ import type {
   SubjectModule,
 } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
-import { chapterExposureText } from "./exposure";
+import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterPrompts } from "./prompts";
 import { refineChapterPool, validateChapterExercise } from "./validators";
 
@@ -80,6 +80,8 @@ export const englishChapterSubject: SubjectModule = {
   materialSubjectTitle: "fixed",
   instructionIsStimulus: true,
   exposureText: chapterExposureText,
+  // Ta sama normalizacja dla ćwiczeń i przykładów kart (jeden klucz zdania).
+  normalizeExposureText: normalizeChapterExposureText,
   refineGeneratedPool: refineChapterPool,
   validateExercise: validateChapterExercise,
   // Audio odpowiedzi ujawniałoby rozwiązanie; polecenia są krótkie i po polsku.

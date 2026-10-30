@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { messages, TaskPromptSchema } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { evaluateChoice, type LessonAnswerKey } from "../../../domain/lessons/evaluate";
-import { materializeExercise, seededShuffle, shuffleUnsolved, type LoadedExercise } from "./lesson-materialize";
+import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
+import { computeTargetKey } from "../../../domain/target-key";
+import { materializeCard, materializeExercise, seededShuffle, shuffleUnsolved, type LoadedExercise } from "./lesson-materialize";
 
 /**
  * P1-1: `correctOption` kontraktu (pool-validation) niesie ID OPCJI dla
@@ -553,5 +556,23 @@ describe("materializeExercise — język treści i odpowiedzi (angielski — roz
 
   it("lesson_open_answer: język odpowiedzi spoza pl-PL/en-GB nie daje answerLocale", () => {
     expect(openAnswer({ ...subject, answerLocale: "de-DE" }).prompt).not.toHaveProperty("answerLocale");
+  });
+});
+
+describe("materializeCard — ekspozycje przykładów w normalizacji przedmiotu", () => {
+  const plan = { kind: "card", objectiveId: "o1", cardPurpose: "intro" } as const;
+  const objective = topic.objectives[0]!;
+  const examples = ["I’m wearing a pink coat.", "It's sunny today."];
+
+  it("rozdział: przykład karty ma klucz rozwiązanego zdania luki (bez końcowej kropki, prosty apostrof)", () => {
+    const card = materializeCard(plan, 0, objective, englishChapterSubject, examples, "rev-1");
+    const gap = { exerciseType: "lesson_gap" as const, objectiveId: "o1", stem: "I'm wearing a pink ___.", answer: "coat", acceptedAnswers: [], focus: ["coat"] };
+    expect(card.exposures[0]).toBe(lessonExerciseTargetKey(englishChapterSubject, gap));
+    expect(card.exposures[1]).toBe(computeTargetKey("It's sunny today", "en-GB"));
+  });
+
+  it("przedmiot bez normalizeExposureText zachowuje dotychczasowe klucze przykładów", () => {
+    const card = materializeCard(plan, 0, objective, englishGrammarSubject, examples, "rev-1");
+    expect(card.exposures).toEqual(examples.map((example) => computeTargetKey(example, "en-GB")));
   });
 });

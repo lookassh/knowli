@@ -3,7 +3,7 @@ import { LessonContentLocaleSchema, messages, type CalculationSpec, type LessonC
 import type { Services } from "../../../config";
 import { DEFAULT_DICTATION_POLICY } from "../../../domain/lessons/dictation";
 import { AppError } from "../../../errors";
-import { computeTargetKey } from "../../../domain/target-key";
+import { lessonTextTargetKey } from "../../../domain/lessons/exposure-key";
 import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
 import { renderCard } from "../../../domain/lessons/card";
 import { clozeParts, fillCloze } from "../../../domain/lessons/cloze";
@@ -143,8 +143,9 @@ export function materializeCard(
     exerciseType: "lesson_card",
     prompt: { kind: "lesson_card", card: rendered },
     answerKey: { exerciseType: "lesson_card", objectiveId: objective.id, subjectId: subject.id, cardPurpose: plan.cardPurpose },
-    // Karta ujawnia przykłady → ekspozycje kluczy przykładów (znormalizowane w answerLocale).
-    exposures: examples.map((example) => computeTargetKey(example, subject.answerLocale)),
+    // Karta ujawnia przykłady → ekspozycje kluczy przykładów w normalizacji przedmiotu
+    // (ta sama co klucze ćwiczeń: przykład i rozwiązane zdanie luki to jedna ekspozycja).
+    exposures: examples.map((example) => lessonTextTargetKey(subject, example)),
     context: { objectiveId: objective.id, cardPurpose: plan.cardPurpose, cardIndex },
     itemRevisionId: firstExerciseRevisionId,
   };

@@ -384,11 +384,12 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       ];
     }
 
-    async function publishedChapter() {
+    /** Opublikowany rozdział z pulą sterowaną; `examples` trafiają na karty jedynego zagadnienia. */
+    async function publishedChapter(examples: string[] = []) {
       const { fakes, services, clock } = await chapterWorld();
       fakes.deps.llm.generateLessonPool = async (input) => ({
         exercises: controlledPool(input.objectives[0]!.id),
-        examples: {},
+        examples: examples.length > 0 ? { [input.objectives[0]!.id]: examples } : {},
       });
       const { deckId, draft } = await generateChapter(services, WEAR_MATERIAL, "Ubrania");
       expect(draft.objectiveIds).toHaveLength(1);
@@ -518,6 +519,29 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       expect(first("I wear ___.").played).toMatchObject({ answerPreviouslyExposed: true, independent: false });
       expect(first("We wear a ___ in winter.")).toMatchObject({ word: "coat", exposedBefore: false });
       expect(first("We wear a ___ in winter.").played).toMatchObject({ answerPreviouslyExposed: false, independent: true });
+    });
+
+    it("przykład karty z tym samym zdaniem co luka (z końcową kropką) czyni lukę niesamodzielną", async () => {
+      // Ta sama pula co wyżej, ale karta zagadnienia pokazuje zdanie, które rozwiązuje luka „We wear a ___ in winter.”
+      // (bez karty ta luka jest samodzielna — test samodzielności wyżej).
+      const { services, clock, deckId } = await publishedChapter(["We wear a coat in winter."]);
+      const child = await createChild(services, { displayName: "Karta", avatarKey: "owl" });
+      await assign(child.id, deckId);
+      const played = await playSessions(services, clock, child.id, deckId, 3);
+
+      // Karta zapisała ekspozycję przykładu pod kluczem rozwiązanego zdania (bez końcowej kropki).
+      const [cardExposures] = await query<{ count: number }>(
+        `select count(*)::int as count from learning_app.event_exposures x
+           join learning_app.learning_events e on e.id = x.event_id
+           join learning_app.session_tasks t on t.id = e.task_id
+          where x.child_id = $1 and x.target_key = $2 and t.exercise_type = 'lesson_card'`,
+        [child.id, computeTargetKey("We wear a coat in winter", "en-GB")],
+      );
+      expect(cardExposures!.count).toBeGreaterThan(0);
+
+      const gap = played.find((entry) => (entry.task.prompt as { stemWithGap?: string }).stemWithGap === "We wear a ___ in winter.");
+      expect(gap?.key.answer).toBe("coat");
+      expect(gap).toMatchObject({ answerPreviouslyExposed: true, independent: false });
     });
 
     /** Słówka tego samego dziecka: zestaw „ze słówek” z tymi samymi słowami co rozdział. */

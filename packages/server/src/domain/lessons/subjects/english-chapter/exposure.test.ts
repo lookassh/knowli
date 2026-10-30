@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { computeTargetKey } from "../../../target-key";
-import { lessonExerciseTargetKey } from "../../exposure-key";
+import { lessonExerciseTargetKey, lessonTextTargetKey } from "../../exposure-key";
 import type { LessonExerciseDraft } from "../../types";
-import { chapterExposureText } from "./exposure";
+import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterSubject } from "./module";
 
 const OBJ = "english_chapter.ddeck.weather";
@@ -71,5 +71,32 @@ describe("chapterExposureText — ekspozycją jest rozwiązane zdanie", () => {
   it("pary i grupy: złączona odpowiedź", () => {
     expect(chapterExposureText(draft({ exerciseType: "lesson_match", answer: "raining, sunny, windy" }))).toBe("raining, sunny, windy");
     expect(chapterExposureText(draft({ exerciseType: "lesson_group", answer: "Ciepło / Zimno" }))).toBe("Ciepło / Zimno");
+  });
+
+  it("wynik jest już znormalizowany funkcją przedmiotu (normalizacja nic nie zmienia)", () => {
+    const gap = draft({ exerciseType: "lesson_gap", stem: " I’m  wearing a pink ___ . ", answer: "coat" });
+    expect(chapterExposureText(gap)).toBe("I'm wearing a pink coat");
+    expect(normalizeChapterExposureText(chapterExposureText(gap))).toBe(chapterExposureText(gap));
+  });
+});
+
+describe("normalizeChapterExposureText — wspólna normalizacja ekspozycji rozdziału", () => {
+  it("zwija spacje, ucina końcową interpunkcję .!?… i ujednolica apostrofy oraz cudzysłowy", () => {
+    expect(normalizeChapterExposureText("  I’m   wearing\ta pink coat.  ")).toBe("I'm wearing a pink coat");
+    expect(normalizeChapterExposureText("It‘s ‚sunny‛ today!?…")).toBe("It's 'sunny' today");
+    expect(normalizeChapterExposureText("He said “hi” and „bye” ‟ok”.")).toBe("He said \"hi\" and \"bye\" \"ok\"");
+  });
+
+  it("jest idempotentna", () => {
+    for (const text of ["I’m wearing a coat.", "  What’s the weather like? ", "„Hi”!"]) {
+      const once = normalizeChapterExposureText(text);
+      expect(normalizeChapterExposureText(once)).toBe(once);
+    }
+  });
+
+  it("przedmiot ją udostępnia: przykład karty i zdanie luki mają ten sam klucz mimo kropki i apostrofu", () => {
+    expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
+    const gap = draft({ exerciseType: "lesson_gap", stem: "I'm wearing a pink ___.", answer: "coat", focus: ["coat"] });
+    expect(lessonTextTargetKey(englishChapterSubject, "I’m wearing a pink coat.")).toBe(lessonExerciseTargetKey(englishChapterSubject, gap));
   });
 });

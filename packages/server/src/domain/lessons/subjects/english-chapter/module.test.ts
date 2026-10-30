@@ -6,7 +6,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../topic-resolu
 import type { DynamicTopicData, LessonExerciseDraft, LessonExerciseType } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
-import { chapterExposureText } from "./exposure";
+import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterSubject } from "./module";
 import { refineChapterPool, validateChapterExercise } from "./validators";
 
@@ -72,6 +72,7 @@ describe("przedmiot english_chapter", () => {
     expect(englishChapterSubject.validateExercise).toBe(validateChapterExercise);
     expect(englishChapterSubject.refineGeneratedPool).toBe(refineChapterPool);
     expect(englishChapterSubject.exposureText).toBe(chapterExposureText);
+    expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
   });
 
   it("profil promptów opisuje bodziec w poleceniu, typy z gałęzią schematu i rodzaje zagadnień", () => {

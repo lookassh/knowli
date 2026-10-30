@@ -245,6 +245,15 @@ export interface SubjectModule {
    */
   exposureText?(draft: LessonExerciseDraft): string;
   /**
+   * Normalizacja tekstu przed liczeniem `target_key` (np. bez końcowej
+   * interpunkcji, z prostym apostrofem). Obowiązuje każdy tekst ekspozycji
+   * lekcji przedmiotu — ćwiczenia (`exposureText`/`answer`) i przykłady kart —
+   * więc ten sam tekst ma jeden klucz. Brak = tekst bez zmian (dotychczasowe
+   * klucze). Zmiana istniejącej normalizacji zmienia zapisane klucze: wymaga
+   * decyzji o migracji (kopie szkiców zachowują klucze zapisane wcześniej).
+   */
+  normalizeExposureText?(text: string): string;
+  /**
    * Walidacja i czyszczenie WYŁĄCZNIE świeżo wygenerowanych ćwiczeń (wyjście
    * modelu, także dogenerowanie): odrzuca ćwiczenie z powodem albo zwraca je
    * w `kept` już bez pojedynczych wadliwych elementów (np. wariantów odpowiedzi).

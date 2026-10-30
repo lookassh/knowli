@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeTargetKey } from "../target-key";
-import { lessonExerciseTargetKey } from "./exposure-key";
+import { lessonExerciseTargetKey, lessonTextTargetKey } from "./exposure-key";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { historyLikeSubject } from "./testing/history-like-subject";
 import type { LessonExerciseDraft } from "./types";
@@ -36,5 +36,25 @@ describe("lessonExerciseTargetKey", () => {
     const exercise = draft();
     lessonExerciseTargetKey(subject, exercise);
     expect(seen).toEqual([exercise]);
+  });
+});
+
+describe("lessonTextTargetKey (tekst ujawniany wprost, np. przykład karty)", () => {
+  /** Przedmiot z hakiem normalizacji: bez końcowej kropki. */
+  const trimmingSubject = { ...englishGrammarSubject, normalizeExposureText: (text: string) => text.replace(/\.$/u, "") };
+
+  it("przedmiot bez normalizeExposureText ma klucz computeTargetKey(text, answerLocale) — bez zmian", () => {
+    expect(lessonTextTargetKey(englishGrammarSubject, "I'm wearing a coat.")).toBe(computeTargetKey("I'm wearing a coat.", "en-GB"));
+    expect(lessonTextTargetKey(historyLikeSubject, "Mieszko I.")).toBe(computeTargetKey("Mieszko I.", "pl-PL"));
+  });
+
+  it("normalizeExposureText przedmiotu działa przed computeTargetKey", () => {
+    expect(lessonTextTargetKey(trimmingSubject, "It's snowing.")).toBe(computeTargetKey("It's snowing", "en-GB"));
+  });
+
+  it("klucz ćwiczenia przechodzi przez tę samą normalizację (także domyślna odpowiedź)", () => {
+    expect(lessonExerciseTargetKey(trimmingSubject, draft({ answer: "snowing." }))).toBe(computeTargetKey("snowing", "en-GB"));
+    const withText = { ...trimmingSubject, exposureText: (d: LessonExerciseDraft) => `It's ${d.answer} today.` };
+    expect(lessonExerciseTargetKey(withText, draft())).toBe(lessonTextTargetKey(withText, "It's snowing today."));
   });
 });
