@@ -7,6 +7,44 @@ import { AppError } from "../../errors";
 import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../../db/schema";
 import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_ACTIVITY_REVIEW_DEADLINE_MS, type StoredReport } from "../learning";
 
+type ResponseOutcome = ParentWorkCardDto["sessions"][number]["steps"][number]["responses"][number]["outcome"];
+
+/** Zapisana ocena jednej umiejętności odpowiedzi (wiersz `assessments`). */
+export interface StoredAssessment {
+  skill: string;
+  outcome: string;
+  details: Record<string, unknown>;
+}
+
+/** Werdykty lekcji, po których dziecko usłyszało „prawie” — niezależnie od zapisanego wyniku celu. */
+const ALMOST_VERDICTS = new Set(["model_almost", "minor_typo"]);
+
+/**
+ * Wynik jednej oceny dla rodzica: „Częściowo” tam, gdzie dziecko usłyszało „prawie”.
+ * Zapisany wynik bywa wtedy różny: `incorrect` dla wymowy w paśmie „ćwicz”
+ * i odpowiedzi szkolnej „prawie”, `correct` dla gramatyki „prawie” (błąd poza
+ * sprawdzaną regułą) i literówki — w obu kierunkach to nie jest ani „Błędnie”,
+ * ani „Poprawnie”. Ocena celu i postęp się nie zmieniają.
+ */
+function assessmentOutcome(row: StoredAssessment): ResponseOutcome {
+  if (row.outcome !== "correct" && row.outcome !== "incorrect") return null;
+  const pronunciation = row.details.pronunciation as { band?: unknown } | undefined;
+  if (row.skill === "pronunciation" && pronunciation?.band === "partial") return "partial";
+  if (typeof row.details.verdict === "string" && ALMOST_VERDICTS.has(row.details.verdict)) return "partial";
+  return row.outcome;
+}
+
+/**
+ * Wynik odpowiedzi z jej ocen (po jednej na umiejętność). Oceny `unassessed` nie
+ * rozstrzygają poprawności; pominięcie i „Nie pamiętam” nie są odpowiedzią z treścią.
+ */
+export function responseOutcome(modality: string, rows: readonly StoredAssessment[] | undefined): ResponseOutcome {
+  if (modality === "skip" || modality === "dont_remember" || !rows) return null;
+  const outcomes = new Set(rows.map(assessmentOutcome).filter((outcome) => outcome !== null));
+  if (outcomes.size === 0) return null;
+  return outcomes.size === 1 ? [...outcomes][0]! : "partial";
+}
+
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
 export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
   const parsed = ParentWorkCardQuerySchema.parse(input);
@@ -74,11 +112,15 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     eq(sessionTasks.childId, query.childId), inArray(sessionTasks.sessionId, sessionIds),
   )).orderBy(asc(sessionTasks.ordinal)) : [];
   const taskIds = tasks.map(task => task.id);
-  const assessmentRows = taskIds.length ? await services.db.select({ attemptId: assessments.attemptId, outcome: assessments.outcome })
+  const assessmentRows = taskIds.length ? await services.db.select({
+    attemptId: assessments.attemptId, skill: assessments.skill, outcome: assessments.outcome, details: assessments.details,
+  })
     .from(assessments).innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .where(and(eq(assessments.childId, query.childId), inArray(attempts.taskId, taskIds))) : [];
+  const storedByAttempt = new Map<string, StoredAssessment[]>();
   const assessmentByAttempt = new Map<string, Set<string>>();
   for (const row of assessmentRows) {
+    storedByAttempt.set(row.attemptId, [...(storedByAttempt.get(row.attemptId) ?? []), row]);
     const values = assessmentByAttempt.get(row.attemptId) ?? new Set<string>();
     values.add(row.outcome);
     assessmentByAttempt.set(row.attemptId, values);
@@ -182,6 +224,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
           modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection" | "assignment",
           answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer ?? assignmentAnswer,
           feedbackKind, assessment,
+          outcome: responseOutcome(attempt.modality, storedByAttempt.get(attempt.id)),
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };
       });

@@ -27,6 +27,14 @@ const progress = {
   items: [{ itemId: "00000000-0000-4000-8000-000000000005", position: 0, source: "poniedziałek", target: "Monday", meaningChanged: false, skills }],
 };
 
+function response(overrides: Record<string, unknown> = {}) {
+  return { modality: "text", answerExample: "monday", feedbackKind: "great", assessment: "assessed", outcome: "correct", responseSeconds: 4, ...overrides };
+}
+
+function step(n: number, exerciseType: string, state: string, responses: unknown[]) {
+  return { taskId: `00000000-0000-4000-8000-0000000000${30 + n}`, ordinal: n - 2, exerciseType, state, issuedAt: "2026-10-16T10:00:05.000Z", responses };
+}
+
 const workCard = {
   childId: children[0]!.id, date: "2026-10-16", creditedSeconds: 180, unevaluatedSessions: 0, reviewService: "review.example · model-a",
   sessions: [{
@@ -36,8 +44,18 @@ const workCard = {
       status: "evaluated", durationSeconds: 360, activeSeconds: 300, approvedSeconds: 180, pointsAwarded: 3, reason: "Rzeczywiste próby.", errorCode: null,
       excludedTasks: [{ taskOrdinal: 1, reason: "Wysłano wyłącznie aaa." }], details: null,
     },
-    steps: [{ taskId: "00000000-0000-4000-8000-000000000032", ordinal: 0, exerciseType: "recall", state: "answered", issuedAt: "2026-10-16T10:00:05.000Z",
-      responses: [{ modality: "text", answerExample: "monday", feedbackKind: "great", assessment: "assessed", responseSeconds: 4 }] }],
+    steps: [
+      step(2, "exposure", "completed", []),
+      step(3, "recall", "answered", [response({ answerExample: "monday", feedbackKind: "great", outcome: "correct" })]),
+      step(4, "spelling", "answered", [response({ answerExample: "tuesdey", feedbackKind: "incorrect", outcome: "incorrect", responseSeconds: 9 })]),
+      step(5, "recall", "answered", [response({ answerExample: "wednesday", feedbackKind: "capitalization_hint", outcome: "partial" })]),
+      step(6, "recall", "answered", [response({ modality: "dont_remember", answerExample: "Nie pamiętam", feedbackKind: null, assessment: "none", outcome: null })]),
+      step(7, "listening", "skipped", [response({ modality: "skip", answerExample: null, feedbackKind: null, assessment: "none", outcome: null })]),
+      step(8, "spelling", "completed", [
+        response({ answerExample: "fridey", feedbackKind: "incorrect", outcome: "incorrect" }),
+        response({ answerExample: "friday", feedbackKind: "great", outcome: "correct" }),
+      ]),
+    ],
   }],
 };
 
@@ -116,3 +134,47 @@ test("Karta pracy na telefonie: bez przewijania w poziomie, szczegóły oceny ro
   await expect(page.getByText("Zadanie 2: Wysłano wyłącznie aaa.")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
+
+test("Karta pracy: wynik każdej odpowiedzi oznaczony kolorem, ikoną i tekstem", async ({ page }) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/parent/work-card");
+  const steps = page.getByTestId("work-card-step");
+  await expect(steps).toHaveCount(7);
+  // kółko kroku: prezentacja neutralna, potem poprawna, błędna, częściowa, „Nie pamiętam” (trudność), pominięcie
+  expect(await steps.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-outcome"))))
+    .toEqual(["neutral", "success", "danger", "warning", "warning", "neutral", "warning"]);
+  // poprawna dopiero po błędzie: osobny stan kroku, nie „Poprawnie”
+  await expect(steps.nth(6)).toContainText(messages.workCard.stepCorrected);
+
+  const responses = page.getByTestId("work-card-response");
+  await expect(responses.nth(0)).toContainText(messages.workCard.outcome.correct);
+  await expect(responses.nth(0)).toContainText("„monday”");
+  await expect(responses.nth(1)).toContainText(messages.workCard.outcome.incorrect);
+  await expect(responses.nth(1)).toContainText("„tuesdey”");
+  await expect(responses.nth(2)).toContainText(messages.workCard.outcome.partial);
+  await expect(responses.nth(3)).toContainText(messages.workCard.dontRemember);
+  await expect(responses.nth(4)).toContainText(messages.workCard.skipped);
+
+  // kolor nie jest jedynym nośnikiem: każda odznaka ma ikonę i tekst, a tony różnią się tłem
+  const badgeBackground = (index: number) => responses.nth(index).locator(".pp-work-mark").evaluate((element) => getComputedStyle(element).backgroundColor);
+  const [correct, incorrect, partial] = [await badgeBackground(0), await badgeBackground(1), await badgeBackground(2)];
+  expect(new Set([correct, incorrect, partial]).size).toBe(3);
+  for (let index = 0; index < 5; index++) await expect(responses.nth(index).locator(".pp-work-mark svg")).toHaveCount(1);
+
+  const summary = page.getByTestId("work-card-outcomes");
+  await expect(summary.getByTestId("work-card-outcomes-correct")).toHaveText(messages.workCard.outcomeCount.correct.replace("{n}", "1"));
+  await expect(summary.getByTestId("work-card-outcomes-incorrect")).toHaveText(messages.workCard.outcomeCount.incorrect.replace("{n}", "1"));
+  await expect(summary.getByTestId("work-card-outcomes-corrected")).toHaveText(messages.workCard.outcomeCount.corrected.replace("{n}", "1"));
+  await expect(summary.getByTestId("work-card-outcomes-partial")).toHaveText(messages.workCard.outcomeCount.partial.replace("{n}", "1"));
+
+  // telefon: kółko kroku obok treści, treść mieści się w karcie, bez przewijania w poziomie
+  for (const row of await steps.all()) {
+    const circle = (await row.locator(".pp-prog-outcome").boundingBox())!;
+    const body = (await row.locator(".pp-work-step-body").boundingBox())!;
+    expect(circle.x + circle.width).toBeLessThanOrEqual(body.x);
+    expect(body.x + body.width).toBeLessThanOrEqual(360);
+  }
+  await expectNoHorizontalOverflow(page);
+});
+

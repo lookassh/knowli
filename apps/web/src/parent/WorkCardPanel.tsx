@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Accordion, Alert, Group, Loader, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contracts";
 import { errorMessage } from "./api";
 import { ChildPicker } from "./ChildPicker";
+import { ParentIcon } from "./ParentIcon";
 import { orpc } from "./query-client";
+import { outcomeCounts, responseMark, stepMark, stepOutcome, type OutcomeTone } from "./work-card-outcome";
 import "./progress-panel.css";
+
+/** Kółko wyniku kroku (`.pp-prog-outcome`, wspólne z historią w Postępach). */
+const OUTCOME_OF_TONE: Record<OutcomeTone, string> = { success: "correct", danger: "incorrect", warning: "partial", neutral: "neutral" };
 
 function duration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -104,6 +109,48 @@ function SessionActivityCard({ activity }: { activity: Session["activity"] }) {
   );
 }
 
+type Response = Session["steps"][number]["responses"][number];
+
+/** Jedna odpowiedź: odznaka wyniku (kolor + ikona + tekst), treść odpowiedzi, szczegóły drobnym drukiem. */
+function ResponseRow({ response }: { response: Response }) {
+  const mark = responseMark(response);
+  const details = [
+    feedbackLabel(response.feedbackKind),
+    response.assessment === "mixed" ? messages.workCard.mixedAssessment : null,
+    messages.workCard.answeredAfter.replace("{seconds}", String(response.responseSeconds)),
+  ].filter(Boolean).join(" · ");
+  // „Nie pamiętam” ma już etykietę odznaki — bez powtórzenia jako odpowiedzi
+  const answer = response.modality === "dont_remember" ? null : response.answerExample;
+  return (
+    <div className="pp-work-response" data-testid="work-card-response" data-outcome={response.outcome ?? "none"}>
+      <span className="pp-status-badge pp-work-mark" data-tone={mark.tone}>
+        <ParentIcon name={mark.icon} />
+        {mark.label}
+      </span>
+      {answer && <span className="pp-work-answer"><span className="pp-prog-sr">{messages.workCard.response}: </span>„{answer}”</span>}
+      <span className="pp-prog-muted pp-work-details">{details}</span>
+    </div>
+  );
+}
+
+/** Podsumowanie wyników sesji: liczba kroków poprawnych, błędnych i częściowo poprawnych. */
+function OutcomeSummary({ steps }: { steps: Session["steps"] }) {
+  const counts = outcomeCounts(steps);
+  const entries = ([["correct", "success", "check"], ["corrected", "warning", "refresh"], ["partial", "warning", "minus"], ["incorrect", "danger", "x"]] as const)
+    .filter(([outcome]) => counts[outcome] > 0);
+  if (entries.length === 0) return null;
+  return (
+    <div className="pp-work-summary" role="group" aria-label={messages.workCard.outcomeSummary} data-testid="work-card-outcomes">
+      {entries.map(([outcome, tone, icon]) => (
+        <span key={outcome} className="pp-status-badge pp-work-mark" data-tone={tone} data-testid={`work-card-outcomes-${outcome}`}>
+          <ParentIcon name={icon} />
+          {messages.workCard.outcomeCount[outcome].replace("{n}", String(counts[outcome]))}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function SessionCard({ session }: { session: Session }) {
   return (
     <Paper component="article" withBorder radius="lg" p="md">
@@ -112,21 +159,29 @@ function SessionCard({ session }: { session: Session }) {
         {sessionLabel(session.mode)} · v{session.deckVersionNumber} · {stateLabel(session.state)}
       </Text>
       <SessionActivityCard activity={session.activity} />
-      <Text size="sm" mt="sm">{messages.workCard.steps}: {session.steps.length} · {messages.workCard.remaining}: {session.remainingSteps}</Text>
-      {session.steps.length > 0 && <ol className="pp-work-steps">{session.steps.map(step => <li key={step.taskId}>
-        <span className="pp-work-step-title">{stepTypeLabel(step.exerciseType)} · {messages.workCard.stepState[step.state]}</span>
-        {step.responses.map((response, index) => <React.Fragment key={`${response.modality}-${index}`}>
-          {response.answerExample && <span>{messages.workCard.response}: „{response.answerExample}”</span>}
-          {feedbackLabel(response.feedbackKind) && <span>{feedbackLabel(response.feedbackKind)}</span>}
-          {response.modality === "skip" && <span>{messages.workCard.skipped}</span>}
-          {response.modality === "dont_remember" && <span>{messages.workCard.dontRemember}</span>}
-          {response.assessment === "assessed" && <span>{messages.workCard.assessed}</span>}
-          {response.assessment === "unassessed" && <span>{messages.workCard.unassessed}</span>}
-          {response.assessment === "mixed" && <span>{messages.workCard.mixedAssessment}</span>}
-          {response.assessment === "none" && <span>{messages.workCard.noAssessment}</span>}
-          <span>{messages.workCard.answeredAfter.replace("{seconds}", String(response.responseSeconds))}</span>
-        </React.Fragment>)}
-      </li>)}</ol>}
+      <Group gap="xs" mt="sm" justify="space-between" align="center" wrap="wrap">
+        <Text size="sm">{messages.workCard.steps}: {session.steps.length} · {messages.workCard.remaining}: {session.remainingSteps}</Text>
+        <OutcomeSummary steps={session.steps} />
+      </Group>
+      {session.steps.length > 0 && <ol className="pp-work-steps">{session.steps.map(step => {
+        const mark = stepMark(step);
+        return (
+          <li key={step.taskId} data-testid="work-card-step" data-outcome={mark.tone}>
+            <span className="pp-prog-outcome" data-outcome={OUTCOME_OF_TONE[mark.tone]} aria-hidden="true">
+              <ParentIcon name={mark.icon} />
+            </span>
+            <div className="pp-work-step-body">
+              <span className="pp-work-step-title">
+                {stepTypeLabel(step.exerciseType)}
+                <span className="pp-prog-muted"> · {messages.workCard.stepState[step.state]}</span>
+                {/* kółko kroku jest dekoracyjne; ten stan nie wynika z odznaki żadnej pojedynczej odpowiedzi */}
+                {stepOutcome(step) === "corrected" && <span className="pp-prog-muted"> · {messages.workCard.stepCorrected}</span>}
+              </span>
+              {step.responses.map((response, index) => <ResponseRow key={`${response.modality}-${index}`} response={response} />)}
+            </div>
+          </li>
+        );
+      })}</ol>}
     </Paper>
   );
 }
