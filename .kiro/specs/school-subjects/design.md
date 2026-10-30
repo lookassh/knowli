@@ -1469,3 +1469,168 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   bo rodzic go nie regeneruje). Worker zgłasza przy starcie liczbę zadań TTS
   innej konfiguracji. Klucz innego dostawcy bez jego BASE_URL to błąd
   konfiguracji. Komunikat błędu odsłuchu znika po odpowiedzi i „Nie pamiętam”.
+
+## 12. „Posłuchaj” na kartach nauki (kontynuacja Etapu 8) — kontrakt
+
+Status: **projekt do akceptacji właściciela** (2026-10-30). Domyka lukę z 11.7:
+karty nauki (`lesson_card`) przedmiotów szkolnych dostają ten sam odsłuch
+na żądanie co pytania. Moduły jak w §11: tekst do odczytu w domenie
+(`domain/lessons/`, czysta funkcja nad treścią karty), zlecanie i uzgadnianie
+nagrań w `materials/` (`media-reconciliation.ts`), dołączenie nagrania przy
+wydaniu karty w `learning/lessons/` (`materializeCard`), przycisk
+w `packages/kid-ui` (`LessonCardView`). Gramatyka, słówka i kartkówka bez
+zmian (karta nie jest slotem kartkówki).
+
+Cel: karta to najdłuższy tekst w lekcji (do 1200 znaków treści), a dziecko,
+które jeszcze wolno czyta, potrzebuje jej najbardziej. Odsłuch tylko na
+żądanie, bez autoodtwarzania; nagranie zawiera wyłącznie to, co widać na
+karcie.
+
+### 12.1. Co jest czytane
+
+Tekst buduje czysta funkcja `cardReadText(card)` z **tej samej wyrenderowanej
+karty**, którą widzi dziecko (`renderCard`: tytuł, treść bez `{{examples}}`,
+przykłady lekcji dla zagadnienia):
+
+1. tytuł karty, zakończony kropką (pauza lektora, jak `withStop` w §11);
+2. treść karty;
+3. przykłady w kolejności z ekranu, każdy jako osobne zdanie — bez
+   dopowiadanego nagłówka „Przykłady”, którego na karcie nie ma.
+
+Kolejność nie zależy od tasowania (karta nie ma tasowanych elementów).
+Karta wsparcia (`cardPurpose = 'support'`) to pierwsza karta zagadnienia —
+to samo nagranie.
+
+**Listy.** `renderCard` zwija treść do jednego wiersza, więc lista w treści
+to znaki wypunktowania w tekście. Wypunktowanie (`•`, `▪`, `◦`, `‣`)
+zamieniamy na granicę zdania (kropka i spacja), żeby lektor robił pauzę
+między punktami zamiast czytać ciąg jednym tchem; numeracja `1.`/`1)` zostaje
+bez zmian (lektor czyta ją poprawnie). Myślniki zostają — w polskim tekście
+to zwykle pauza w zdaniu, a nie wypunktowanie.
+
+**Wzory (zalecenie: karta z zapisem matematycznym bez nagrania).** Zgodnie
+z decyzją dla `lesson_calculation` (§11.1) zapis matematyczny bywa czytany
+błędnie, a zły odczyt na karcie *wyjaśniającej* uczy błędu. Funkcja zwraca
+`null` (brak przycisku), gdy tytuł, treść albo przykład zawiera zapis
+matematyczny wykrywany konserwatywnie:
+
+- cyfra, `/`, `:` albo `^` i cyfra (`3/4`, `1:100`, `2^3`; także godzina
+  `12:30` — świadomie, lepiej bez nagrania niż „dwanaście dwukropek trzydzieści”);
+- indeksy górne/dolne Unicode (`x²`, `H₂O`);
+- symbole `·`, `×`, `÷`, `√`, `π`, `≤`, `≥`, `≠`, `≈`, `±`, `∞`, `°`;
+- znak `=` między dwoma operandami (`2 + 3 = 5`, `v = s/t`).
+
+Daty, liczby i procenty („w 1410 roku”, „25%”) nie blokują nagrania.
+Słowny odczyt wzorów pozostaje poza etapem.
+
+**Limit.** Schemat karty ogranicza tytuł do 120, treść do 1200, a przykłady
+do 3 × 120 znaków, więc tekst ma najwyżej ok. 1700 znaków (poniżej limitu
+pojedynczego żądania TTS). Ochronnie `cardReadText` zwraca `null` powyżej
+**2000 znaków** — przy dzisiejszym schemacie to się nie zdarza; po ewentualnym
+podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
+
+### 12.2. Przygotowanie nagrania i powiązanie z wersją
+
+- **Flaga przedmiotu: istniejąca `ttsForPrompts`** (szkoła: tak, gramatyka:
+  nie). Karta to treść czytana dziecku tak jak polecenie; osobna flaga nie
+  ma dziś zastosowania. Bez `services.media` funkcja jest wyłączona.
+- **Karta nie jest rewizją ćwiczenia** i nią nie zostaje: nie należy do puli,
+  nie jest oceniana, nie zużywa budżetu (bez zmian). Karty żyją
+  w `lesson_context.dynamicTopic` wersji, więc nie mogą użyć
+  `revision_assets` (klucz: rewizja + rola).
+- **Nowa tabela `lesson_card_assets`** (**migracja `0028`**, numer
+  do potwierdzenia przy rebase — równoległe etapy też dodają migracje):
+  `deck_version_id` (FK `deck_versions`), `objective_id`, `card_index`
+  (≥ 0), `expected_fingerprint`, `asset_id` (FK `media_assets`, może być
+  `null`), klucz główny (`deck_version_id`, `objective_id`, `card_index`).
+  Trigger jak `revision_assets_immutable`: wiersze opublikowanej wersji są
+  niezmienne (insert/update/delete odrzucane). Bez stanu decyzji
+  (`pending`/`approved`/`omitted`) — nagranie nie jest decyzją rodzica.
+- `reconcileDraftAssetsTx` po uzgodnieniu rewizji uzgadnia też karty: dla
+  każdej karty każdego zagadnienia `dynamicTopic` liczy `cardReadText`,
+  a z niego `ttsAsset` w `pl-PL` (głos z `ttsVoiceFor`, fingerprint pokrywa
+  tekst, providera, model, głos i format). Zgodny wiersz zostaje, zmieniony
+  dostaje nowy fingerprint i zasób (`findOrCreateAsset`: gotowy albo nowe
+  zlecenie w kolejce `media_assets`), zbędny (usunięta karta, karta ze wzorem)
+  znika — w tej samej transakcji co edycja. Edycja jednej karty zleca jedno
+  nagranie; pozostałe karty i ćwiczenia bez zmian.
+- Nowy szkic z opublikowanej wersji nie kopiuje wierszy kart: tworzy je
+  pierwsze uzgodnienie (edycja albo publikacja), a gotowe nagrania wracają
+  po fingerprincie bez nowego wywołania TTS.
+- **Publikacja nie czeka** na nagrania kart; brak gotowego nagrania = brak
+  przycisku. Nieudane nagranie karty publikacja zleca ponownie (jak
+  `prompt_audio`, bez `keepFailed`). Awaria TTS nie blokuje rodzica.
+- Worker traktuje odwołania z `lesson_card_assets` jak `prompt_audio`
+  (zbędne, gdy przedmiot nie ma `ttsForPrompts`).
+- Tylko nowe wersje: opublikowane lekcje dostaną nagrania kart przy
+  następnej edycji i publikacji (bez migracji danych wstecz, jak decyzja 6
+  z §11.6).
+
+### 12.3. Zadanie i Kid DTO
+
+- `materializeCard` dołącza do promptu `lesson_card` opcjonalne
+  `questionAudioAssetId`: najnowszy gotowy zasób TTS o fingerprincie równym
+  `expected_fingerprint` wiersza karty (`objective_id`, `card_index`) wersji
+  sesji — ta sama reguła co `loadExercises` w §11.7 (nagranie gotowe po
+  publikacji liczy się przy kolejnym wydaniu karty). Tylko gdy przedmiot ma
+  `ttsForPrompts`. Prompt wydanej karty pozostaje niezmienny.
+- Nazwa pola wspólna z pytaniami (`questionAudioAssetId`, schemat
+  `QuestionAudioSchema`): znaczy „nagranie widocznej treści zadania na
+  żądanie”, więc kontroler Kid UI (`questionAudioOf`, `playQuestionAudio`,
+  `questionAudioError`) działa dla karty bez nowej ścieżki.
+- **Odsłuch nie jest ujawnieniem**: karta zapisuje ekspozycje przykładów przy
+  wydaniu (bez zmian); odsłuch nie woła serwera poza
+  `/api/v1/media/:id`, bez zdarzenia, ekspozycji i wpływu na samodzielność.
+- DTO rodzica (szkic lekcji) nie pokazuje nagrań kart — jak `prompt_audio`.
+
+### 12.4. Kid UI
+
+- Przycisk z głośnikiem (`QuestionAudioButton`, obrysowany, cel ≥ 48 px)
+  **w nagłówku karty, za tytułem** — tytuł zawija się obok przycisku
+  i nigdy pod niego nie wchodzi. Nazwa dostępna „Posłuchaj karty” (nowy
+  komunikat `listenLessonCard`). Podczas odtwarzania `SoundRing`, ponowne
+  dotknięcie zaczyna od początku.
+- Odtwarzanie zatrzymuje „Dalej” (zanim pójdzie `complete-presentation`),
+  „Koniec” sesji i każda zmiana zadania. Przycisk nieaktywny, gdy ekran jest
+  zajęty (`busy`).
+- Błąd odtwarzania: pasek statusu jak w §11.7 (`questionAudioError`,
+  `picture_guidance_unavailable`), „Dalej” pozostaje osiągalne.
+- Geometria: testy Playwright na 4 viewportach jak w
+  `lesson-question-audio-layout.spec.ts` (portrait 390×844, landscape
+  telefonu 844×390, tablet 768×1024, desktop 1280×800) oraz 320×480
+  z najdłuższą treścią — przycisk w prostokącie karty, ≥ 48 px, bez
+  przepełnienia poziomego, „Dalej” osiągalne (przewijanie ramy).
+
+### 12.5. Prywatność, koszty, integracje
+
+- Do TTS trafia wyłącznie treść karty zatwierdzona przez rodzica — bez
+  danych dziecka; ta sama usługa i konfiguracja co §11.2.
+- Koszt (MAI-Voice-2.1 Flash, 15 USD za 1 mln znaków): typowa karta
+  400–700 znaków ≈ 0,6–1 centa; typowa lekcja (3–4 zagadnienia × 2–3 karty,
+  ok. 6000 znaków) ≈ **0,09 USD** za wersję; najgorszy przypadek schematu
+  (8 zagadnień × 4 karty × 1700 znaków) ≈ 0,82 USD. Nagranie współdzielone
+  przez fingerprint, ponowna publikacja bez zmian treści nic nie kosztuje,
+  zero wywołań w trakcie sesji.
+- API → MCP → skill: lekcje poza `learning-overview` — brak wpływu; filtr
+  i nota w `SKILL.md` bez zmian.
+
+### 12.6. Decyzje do akceptacji właściciela
+
+1. **Zakres odczytu**: tytuł + treść + przykłady, bez dopowiadanych słów;
+   wypunktowanie jako pauza.
+2. **Karta z zapisem matematycznym bez nagrania** (wykrywanie jak w 12.1).
+   Alternatywa: czytać wszystko i zaakceptować ryzyko złego odczytu.
+3. **Powiązanie przez nową tabelę `lesson_card_assets` (migracja `0028`)**
+   z zamrożonym fingerprintem, jak `revision_assets`. Alternatywa bez
+   migracji: liczyć fingerprint przy wydaniu karty z bieżącej konfiguracji
+   TTS — prościej, ale zmiana głosu/modelu odbiera przyciski kart wszystkim
+   opublikowanym lekcjom aż do ponownej publikacji (pytania by je zachowały).
+4. **Flaga `ttsForPrompts`** obejmuje karty (bez nowej flagi).
+5. **Publikacja nie czeka**, brak nagrania = brak przycisku; odsłuch nie jest
+   ujawnieniem.
+6. **Przycisk w nagłówku karty za tytułem**, „Posłuchaj karty”.
+7. **Bez wstecznego generowania** dla opublikowanych lekcji.
+8. **Poza etapem**: słowny odczyt wzorów, nagrania kart gramatyki, odsłuch
+   pojedynczych przykładów. Odnotowane przy okazji: przykłady na karcie mają
+   w Kid UI `lang="en-GB"` także w przedmiotach szkolnych (polskie przykłady),
+   co myli czytniki ekranu — do osobnej poprawki.
