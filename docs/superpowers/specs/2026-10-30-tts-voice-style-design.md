@@ -289,25 +289,42 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 
 ### 4.5. Panel rodzica
 
-- **„Ton lektora”** (Mantine `Select`: Domyślny / Radośnie / Z ciekawością /
+- **„Ton lektora”** (Mantine `NativeSelect`: Domyślny / Radośnie / Z ciekawością /
   Łagodnie / Tajemniczo) w edytorze ćwiczenia (`LessonExerciseCard`) i karty
   zagadnienia. „Domyślny” usuwa pole. Widoczny dla przedmiotów z
   `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla
   wszystkich kart; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
-  (panel nie liczy `questionReadText`/`cardReadText` — to funkcje serwera).
-- **Odsłuch i „Nagraj ponownie”:** DTO szkicu lekcji dostaje dla ćwiczenia
-  i karty opcjonalne `promptAudio: { state: "pending" | "ready" | "failed", assetId?: uuid }`
-  — stan najnowszej generacji o oczekiwanym fingerprincie
-  (`revision_assets.prompt_audio` / `lesson_card_assets`), `assetId` tylko
-  dla gotowej. Brak pola = brak nagrania dla tego tekstu. Przycisk
-  „Posłuchaj” odtwarza istniejącym `/api/v1/media/:id`. „Nagraj ponownie”
-  (dostępne dla `ready` i `failed`, tylko w szkicu) woła nowe procedury oRPC
-  rodzica `lessons.regeneratePromptAudio({ draftId, itemRevisionId })`
-  i `lessons.regenerateCardAudio({ draftId, objectiveId, cardIndex })` —
-  przypadki użycia w `materials/lessons/` wg §2.4, w transakcji z blokadą
-  wersji jak `regenerateRevisionAsset`; opublikowana wersja → `immutable`.
-- Stan „nagrywanie…” odświeżany zapytaniem TanStack Query po akcji
-  (bez pollingu w tle poza istniejącym wzorcem panelu).
+  (karta: „Ton działa, gdy karta ma nagranie.”). Panel nie liczy
+  `questionReadText`/`cardReadText` — to funkcje serwera.
+- **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
+  `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid }`,
+  a szkic opcjonalną listę `cardAudio: [{ objectiveId, cardIndex, audio }]`
+  (`audio` ma ten sam kształt). To stan najnowszej generacji o oczekiwanym
+  fingerprincie (`revision_assets.prompt_audio` / `lesson_card_assets`),
+  `assetId` tylko dla gotowej; brak wpisu = brak nagrania dla tego tekstu.
+  Pola są tylko do odczytu i nie wracają w patchu edycji.
+- **Odsłuch i „Nagraj ponownie”:** „Posłuchaj” odtwarza istniejącym
+  `/api/v1/media/:id`. „Nagraj ponownie” (dla `ready` i `failed`, tylko w szkicu
+  i bez niezapisanych zmian) woła procedury oRPC rodzica
+  `lessonDrafts.regeneratePromptAudio({ lessonDraftId, itemRevisionId })`
+  (POST `/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate`) i
+  `lessonDrafts.regenerateCardAudio({ lessonDraftId, objectiveId, cardIndex })`
+  (POST `/lesson-drafts/{lessonDraftId}/card-audio/regenerate`); obie
+  odpowiadają 202 z `{ assetId }`. Przypadki użycia w `materials/lessons/` wg §2.4,
+  w transakcji z blokadą wersji; opublikowana wersja → `immutable`.
+- **Zmiana konfiguracji TTS:** nowa generacja kopiuje provider i model
+  najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne z bieżącą
+  konfiguracją. Dlatego gdy provider/model najnowszego zasobu różnią się od
+  bieżących ustawień, procedury zwracają `conflict` (`tts_config_changed`) przed
+  zapisem czegokolwiek, a panel pokazuje: „Ustawienia lektora się zmieniły.
+  Zapisz szkic, aby nagrać w nowej konfiguracji.” (zapis szkicu uzgadnia media
+  z nową konfiguracją). Brak ustawień mediów → `internal`.
+- **Odświeżanie:** dopóki jakieś nagranie pytania lub karty jest `pending`,
+  edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…” znika samo,
+  gdy nagranie będzie gotowe albo nieudane.
+- **Świeża kopia opublikowanej lekcji** nie ma jeszcze wierszy nagrań kart:
+  sterowanie kartami pojawia się dopiero po pierwszej zapisanej edycji
+  szkicu (uzgodnienie mediów).
 - Etykiety w katalogu komunikatów rodzica (`messages`), pl-PL.
 
 ## 5. Błędy i odporność

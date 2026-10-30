@@ -273,11 +273,21 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    // Ton lektora (spec TTS) jest danymi autora dla serwera: payload rewizji go niesie, zadanie dziecka — nigdy.
+    await pool.query("alter table learning_app.item_revisions disable trigger item_revisions_immutable");
+    try {
+      await pool.query("update learning_app.item_revisions set payload = payload || '{\"voiceTone\":\"cheerful\"}'::jsonb");
+    } finally {
+      await pool.query("alter table learning_app.item_revisions enable trigger item_revisions_immutable");
+    }
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
 
+    const first = await nextTask(services, session.sessionId);
+    expect(JSON.stringify(first)).not.toContain("voiceTone");
+    if (first?.exerciseType === "lesson_card") await completePresentation(services, { taskId: first.taskId });
     const exercise = await nextIssuedExercise(services, session.sessionId);
     const raw = JSON.stringify(exercise.prompt);
-    for (const forbidden of ["answer", "acceptedAnswers", "focus", "objectiveId", "correctOption", "errorCategor"]) {
+    for (const forbidden of ["answer", "acceptedAnswers", "focus", "objectiveId", "correctOption", "errorCategor", "voiceTone"]) {
       expect(raw).not.toContain(forbidden);
     }
   });

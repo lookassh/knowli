@@ -361,6 +361,24 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     });
   });
 
+  it("zmiana konfiguracji TTS od ostatniej edycji → konflikt tts_config_changed bez nowego wiersza; brak ustawień mediów → internal", async () => {
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await promptAudio(versionId);
+    await markReady(row!.assetId);
+    const itemRevisionId = (await readLessonDeck(services(), deckId)).draft!.exercises[0]!.revisionId;
+    const original = await mediaAsset(row!.assetId);
+
+    const switched = audioServices({ ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } });
+    await expect(regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId }))
+      .rejects.toMatchObject({ code: "conflict", message: "tts_config_changed" });
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+
+    await expect(regenerateLessonPromptAudio(createServices({ db, clock: new ManualClock() }), { lessonDraftId: versionId, itemRevisionId }))
+      .rejects.toMatchObject({ code: "internal" });
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+  });
+
   it("nieznana rewizja albo szkic → not_found; rewizja bez nagrania pytania → not_found", async () => {
     const active = services();
     const { deckId, versionId } = await seedDraft();

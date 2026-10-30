@@ -312,6 +312,22 @@ describe("„Posłuchaj karty” — ponowne nagranie (spec tonu TTS §2.4)", ()
     });
   });
 
+  it("zmiana konfiguracji TTS od ostatniej edycji → konflikt tts_config_changed bez nowego wiersza; brak ustawień mediów → internal", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await cardAudio(versionId);
+    await markReady(row!.assetId);
+    const original = await mediaAsset(row!.assetId);
+    const target = { lessonDraftId: versionId, objectiveId: OBJECTIVE, cardIndex: 0 };
+
+    const switched = audioServices({ ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } });
+    await expect(regenerateLessonCardAudio(switched, target)).rejects.toMatchObject({ code: "conflict", message: "tts_config_changed" });
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+
+    await expect(regenerateLessonCardAudio(createServices({ db, clock: new ManualClock() }), target)).rejects.toMatchObject({ code: "internal" });
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+  });
+
   it("nieznana karta albo szkic → not_found", async () => {
     const active = services();
     const { versionId } = await seedDraft();
