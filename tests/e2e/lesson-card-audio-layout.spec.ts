@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectReachableOnSmallPhone, LESSON_AUDIO_VIEWPORTS, lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
 
 /**
  * „Posłuchaj karty” (design szkoły §12.4, API zaślepione w przeglądarce):
@@ -19,12 +20,7 @@ const sessionId = "10000000-0000-4000-8000-000000000903";
 const taskId = "10000000-0000-4000-8000-000000000911";
 const questionAudioAssetId = "10000000-0000-4000-8000-000000000921";
 
-const VIEWPORTS = [
-  { width: 390, height: 844 },
-  { width: 844, height: 390 },
-  { width: 768, height: 1024 },
-  { width: 1280, height: 800 },
-];
+const VIEWPORTS = LESSON_AUDIO_VIEWPORTS;
 
 /** Treść na granicy schematu karty (1200 znaków), z wypunktowaniem. */
 const LONG_BODY = (
@@ -49,27 +45,13 @@ function cardTask(withAudio: boolean): TaskDto {
 }
 
 function fixture(tasks: TaskDto[], audioReady = true): KidUiFixture {
-  return {
-    profiles: [{ childId, displayName: "Ola", avatarKey: "owl", recordingMode: "hold" }],
-    decks: [{ deckId, title: "Pająki", itemCount: 6, independentlyRecalledCount: 0, testDate: null,
-      recommended: true, mockTestAvailable: false, activeSession: null, kind: "lesson", subjectTitle: "Przyroda" }],
-    session: { mode: "training", sessionId, childId, deckId, deckVersionId: "10000000-0000-4000-8000-000000000904",
-      policyId: "lesson-default", microphoneEnabled: false, state: "active", taskBudget: 3, tasksIssued: 1,
-      assessedTasksIssued: 0, startedAt: "2026-10-30T10:00:00.000Z", resumed: false },
-    tasks,
-    // Gotowy katalog = fixture odpowiada na /media prawidłowym WAV-em; inaczej
-    // obrazkiem SVG, którego odtwarzacz nie zdekoduje (błąd odtwarzania).
-    uiAudio: { ready: audioReady, assets: {} },
-  };
+  return lessonAudioFixture({ childId, deckId, sessionId, deckVersionId: "10000000-0000-4000-8000-000000000904" }, tasks,
+    { audioReady, assessedTasksIssued: 0 });
 }
 
 async function open(page: Page, kidFixture: KidUiFixture): Promise<void> {
   await installKidUiFixture(page, kidFixture);
-  await page.setViewportSize(VIEWPORTS[0]!);
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").click();
-  await expect(page.getByTestId("kid-lesson-card")).toBeVisible();
+  await openLessonTask(page, "kid-lesson-card");
 }
 
 test("card audio sits in the card header beside the title and fits every form factor", async ({ page }, testInfo) => {
@@ -134,16 +116,7 @@ test("tapping card audio fetches the prepared recording without a disclosure", a
 test("longest card keeps listen and next reachable at 320x480", async ({ page }, testInfo) => {
   await open(page, fixture([cardTask(true)]));
   await page.setViewportSize({ width: 320, height: 480 });
-  for (const testId of ["kid-question-audio", "kid-lesson-next"]) {
-    const element = page.getByTestId(testId);
-    await element.scrollIntoViewIfNeeded();
-    const bounds = (await element.boundingBox())!;
-    expect(bounds.y, `${testId} top`).toBeGreaterThanOrEqual(-1);
-    expect(bounds.y + bounds.height, `${testId} bottom`).toBeLessThanOrEqual(481);
-    expect(bounds.x + bounds.width, `${testId} right`).toBeLessThanOrEqual(321);
-    expect(bounds.height, `${testId} height`).toBeGreaterThanOrEqual(testId === "kid-lesson-next" ? 54 : 48);
-  }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  await expectReachableOnSmallPhone(page, { "kid-question-audio": 48, "kid-lesson-next": 54 });
   await page.screenshot({ path: testInfo.outputPath("card-audio-320x480.png") });
 });
 
@@ -154,9 +127,5 @@ test("card playback error names the card and keeps next reachable", async ({ pag
   const notice = page.getByTestId("kid-question-audio-error");
   await expect(notice).toContainText("Nie udało się odtworzyć karty");
   await expect(page.getByTestId("kid-question-audio-retry")).toHaveText("Odtwórz kartę");
-  const next = page.getByTestId("kid-lesson-next");
-  await next.scrollIntoViewIfNeeded();
-  const bounds = (await next.boundingBox())!;
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(481);
-  expect(bounds.height).toBeGreaterThanOrEqual(54);
+  await expectReachableOnSmallPhone(page, { "kid-question-audio-retry": 48, "kid-lesson-next": 54 });
 });

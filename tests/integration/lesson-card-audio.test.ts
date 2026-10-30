@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createServices, editLessonDraft, endSession, nextTask, publishLessonDraft, readLessonDeck,
+  completePresentation, createServices, editLessonDraft, endSession, nextTask, publishLessonDraft, readLessonDeck,
   runDueGenerationWork, startSession, submitAttempt,
 } from "@learning/server";
-import type { LessonExerciseInput, TaskDto } from "@learning/contracts";
+import type { TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
+import {
+  audioServices, FAKE_MEDIA, markTtsReady, publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises, truncateLessonAudioTables,
+} from "./school-lesson-audio-helpers";
 
 /**
  * „Posłuchaj karty” (design szkoły §12) na PostgreSQL: edycja szkicu szkoły
@@ -18,67 +21,29 @@ import { fakeGeneration } from "./fakes";
  */
 
 const { db, pool } = testDatabase();
-const OBJECTIVE = "school.ddeck000.pajaki";
-const MATERIAL = "Pająk ma osiem nóg i nie jest owadem. Owady mają sześć nóg. Pająki tkają sieci z nici.";
-const MEDIA = {
-  tts: { provider: "fake", model: "fake-tts", voice: "test", format: "mp3" as const },
-  image: { provider: "fake", model: "fake-image", size: "1024x1024", quality: "low", format: "webp" },
-};
+const OBJECTIVE = SPIDER_OBJECTIVE;
+const MEDIA = FAKE_MEDIA;
+const services = () => audioServices();
+const exercises = () => spiderExercises();
 const CARDS = [
   { title: "Pająki", body: "Pająk ma osiem nóg {{examples}}." },
   { title: "Owady", body: "Owady mają sześć nóg." },
   { title: "Liczymy nogi", body: "Osiem to 2 · 4." },
 ];
-
-function services() {
-  return createServices({ db, clock: new ManualClock(), media: MEDIA });
-}
-
-const common = { objectiveId: OBJECTIVE, acceptedAnswers: [], sourceRefs: [{ quote: "Pająk ma osiem nóg i nie jest owadem." }] };
-
-function exercises(): LessonExerciseInput[] {
-  return [
-    ...["osiem", "sześć", "sieci"].map((answer) => ({
-      ...common, exerciseType: "lesson_choice" as const, instructionPl: "Wybierz odpowiedź.", stem: `Wybierz słowo: ${answer}.`,
-      answer, focus: [answer], options: [{ id: "a", text: answer }, { id: "b", text: "cztery" }], correctOption: "a",
-    })),
-    ...["osiem", "sześć"].map((answer) => ({
-      ...common, exerciseType: "lesson_gap" as const, instructionPl: "Uzupełnij.", stem: `Pająk ma ___ nóg (${answer}).`, answer, focus: [answer],
-    })),
-    ...["Pająk ma osiem nóg.", "Owady mają sześć nóg."].map((answer, i) => ({
-      ...common, exerciseType: "lesson_open_answer" as const, instructionPl: "Wyjaśnij.", prompt: `Wyjaśnij zasadę ${i + 1}.`, answer, focus: [answer],
-      questionType: "definition" as const, expectedForm: "explanation" as const, requiredElements: [{ id: "e1", text: answer }],
-    })),
-  ];
-}
+const ROOTS = "school.ddeck000.korzenie";
 
 beforeEach(async () => {
   await truncateCoreTables();
-  await pool.query(`truncate learning_app.child_objective_progress, learning_app.lesson_verdicts, learning_app.lesson_card_assets,
-    learning_app.revision_assets, learning_app.generation_runs, learning_app.media_assets, learning_app.item_revision_skills,
-    learning_app.item_revisions, learning_app.skill_versions, learning_app.learning_items,
-    learning_app.deck_versions, learning_app.decks cascade`);
+  await truncateLessonAudioTables();
 });
 afterAll(() => pool.end());
 
-const ROOTS = "school.ddeck000.korzenie";
-
-async function seedDraft(options: { extraObjective?: boolean } = {}) {
-  const deckId = randomUUID();
-  const versionId = randomUUID();
-  await pool.query("insert into learning_app.decks (id,title,kind) values ($1,'Pająki','lesson')", [deckId]);
+function seedDraft(options: { extraObjective?: boolean } = {}) {
   const objectives = [{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.", cards: CARDS }];
   if (options.extraObjective) {
     objectives.push({ id: ROOTS, titlePl: "Korzenie", descriptionEn: "Roots.", cards: [{ title: "Korzenie", body: "Korzeń pobiera wodę." }, { title: "Łodyga", body: "Łodyga niesie wodę." }] });
   }
-  const context = {
-    subjectId: "school", topicId: "dynamic", topicVersion: 1, objectiveIds: objectives.map((objective) => objective.id), poolSize: 20,
-    examples: { [OBJECTIVE]: ["Pająk krzyżak tka sieć"] }, material: MATERIAL, subjectTitlePl: "Przyroda",
-    dynamicTopic: { titlePl: "Pająki", objectives },
-  };
-  await pool.query(`insert into learning_app.deck_versions (id,deck_id,version_number,edit_number,state,title,lesson_context)
-    values ($1,$2,1,1,'draft','Pająki',$3::jsonb)`, [versionId, deckId, JSON.stringify(context)]);
-  return { deckId, versionId };
+  return seedSchoolDraft(objectives, { [OBJECTIVE]: ["Pająk krzyżak tka sieć"] });
 }
 
 interface CardAudioRow { objectiveId: string; cardIndex: number; assetId: string; text: string; locale: string; state: string }
@@ -94,15 +59,7 @@ async function cardAudio(versionId: string): Promise<CardAudioRow[]> {
   )).rows;
 }
 
-/** Zastępuje workera: gotowy, niezmienny zasób (bajty nieistotne dla wydania karty). */
-async function markReady(assetId: string): Promise<void> {
-  await pool.query(
-    `update learning_app.media_assets
-        set state = 'ready', storage_key = $2, mime_type = 'audio/mpeg', byte_count = 3, content_sha256 = $3, lease_token = null
-      where id = $1`,
-    [assetId, `tts/${assetId}.mp3`, "0".repeat(64)],
-  );
-}
+const markReady = markTtsReady;
 
 async function firstCard(active: ReturnType<typeof services>, sessionId: string): Promise<TaskDto> {
   for (let i = 0; i < 30; i++) {
@@ -115,13 +72,7 @@ async function firstCard(active: ReturnType<typeof services>, sessionId: string)
 }
 
 async function publishedWorld() {
-  const active = services();
-  const child = await createChild(active, { displayName: "Karty", avatarKey: "owl" });
-  const { deckId, versionId } = await seedDraft();
-  const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
-  await publishLessonDraft(active, versionId, draft.editNumber);
-  await pool.query("insert into learning_app.assignments (id,child_id,deck_id,test_date,test_goals) values ($1,$2,$3,CURRENT_DATE + 7,ARRAY['lesson'])", [randomUUID(), child.id, deckId]);
-  return { active, child, deckId, versionId };
+  return publishAssignedSpiderLesson(await seedDraft(), "Karty");
 }
 
 describe("„Posłuchaj karty” — przygotowanie nagrań", () => {
