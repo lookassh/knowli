@@ -1609,7 +1609,9 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   (§11), nagrania kart zleca już uzgodnienie szkicu po generacji, przed
   zatwierdzeniem przez rodzica, żeby były gotowe przy publikacji; dziecko
   dostaje je dopiero z opublikowaną wersją. Karta odrzucona lub zmieniona
-  przez rodzica kosztuje jedno zbędne nagranie (ok. 1 centa).
+  przez rodzica może kosztować jedno zbędne nagranie (typowo ok. 1 centa),
+  ale tylko gdy worker zdążył je zsyntetyzować; oczekujące nagranie, do
+  którego nic już się nie odwołuje, worker porzuca bez wywołania TTS.
 - Koszt (MAI-Voice-2.1 Flash, 15 USD za 1 mln znaków): typowa karta
   400–700 znaków ≈ 0,6–1 centa; typowa lekcja (3–4 zagadnienia × 2–3 karty,
   ok. 6000 znaków) ≈ **0,09 USD** za wersję; najgorszy przypadek schematu
