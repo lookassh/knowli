@@ -12,9 +12,9 @@
  * musi leżeć poza repozytorium (próbki nie są częścią kodu). Do usługi TTS trafiają wyłącznie stałe teksty
  * interfejsu i przykładowe teksty z tego pliku — bez danych dziecka. Klucze nie są wypisywane.
  */
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mediaSettingsFromEnv, ttsVoiceFor } from "../packages/server/src/config";
 import { UI_AUDIO_STYLES, UI_AUDIO_TEXTS } from "../packages/server/src/domain/ui-audio-catalog";
 import type { TtsStyle } from "../packages/server/src/domain/tts-style";
@@ -62,12 +62,9 @@ if (!outArg) {
   process.exit(2);
 }
 const outDir = resolve(outArg);
-const gitRoot = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
-if (gitRoot.status !== 0) {
-  console.error("Nie udało się ustalić katalogu głównego repozytorium (git rev-parse --show-toplevel).");
-  process.exit(2);
-}
-const repoRoot = resolve(gitRoot.stdout.trim());
+// Katalog główny z położenia skryptu (`scripts/` leży w korzeniu) — bez uruchamiania `git` z PATH
+// i niezależnie od bieżącego katalogu.
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const fromRepo = relative(repoRoot, outDir);
 if (fromRepo === "" || (!fromRepo.startsWith("..") && !isAbsolute(fromRepo))) {
   console.error(`Odmowa: katalog wyjściowy leży w repozytorium (${repoRoot}). Wskaż katalog poza repozytorium.`);
