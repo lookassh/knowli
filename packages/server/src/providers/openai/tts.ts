@@ -1,4 +1,5 @@
 import type { TtsProvider, TtsSynthesizeInput } from "../../ports/ai";
+import { normalizeWav, pcmToWav, wavDurationMs } from "../audio/wav";
 
 export interface OpenAiTtsOptions {
   apiKey: string;
@@ -10,8 +11,25 @@ const DEFAULT_MODEL = "gpt-4o-mini-tts";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 /**
+ * `audio/pcm;rate=24000;channels=1` → format próbek; brak częstotliwości = nieznany
+ * format. `audio/L16` celowo odrzucony: jest big-endian, a nagłówek WAV deklaruje
+ * little-endian.
+ */
+function pcmFormatOf(contentType: string): { sampleRate: number; channels: number } | null {
+  const [type, ...params] = contentType.split(";").map((part) => part.trim().toLowerCase());
+  if (type !== "audio/pcm") return null;
+  const values = Object.fromEntries(params.map((param) => param.split("=") as [string, string]));
+  const sampleRate = Number(values.rate);
+  const channels = values.channels === undefined ? 1 : Number(values.channels);
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0 || !Number.isInteger(channels) || channels <= 0) return null;
+  return { sampleRate, channels };
+}
+
+/**
  * Adapter TTS (/v1/audio/speech). Głos bierze z żądania (fingerprint uwzględnia
- * provider/model/głos); dobór modelu i kodeka czeka na próbę z zadania 0.
+ * provider/model/głos). Format `wav` prosi o surowe PCM (jedyny format Gemini
+ * TTS na OpenRouter) i opakowuje je nagłówkiem WAV; `instructions` (np. język
+ * wymowy) idzie osobnym polem, nie w czytanym tekście.
  */
 export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider {
   const model = options.model ?? DEFAULT_MODEL;
@@ -30,7 +48,8 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
           model: input.model || model,
           voice: input.voice,
           input: input.text,
-          response_format: input.format,
+          response_format: input.format === "wav" ? "pcm" : input.format,
+          ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
         }),
         signal,
       });
@@ -38,7 +57,19 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
         throw new Error(`provider_http_${response.status}`);
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
-      return { bytes, mimeType: "audio/mpeg" };
+      const contentType = response.headers.get("content-type") ?? "";
+      if (input.format === "mp3") {
+        // Jawnie inny typ audio (np. PCM Gemini przy pominiętym UMIEM_TTS_FORMAT=wav)
+        // zostałby zapisany jako niedekodowalne „mp3” bez ponowienia.
+        if (/^audio\//i.test(contentType) && !/^audio\/(mpeg|mp3)\b/i.test(contentType)) throw new Error("provider_unexpected_audio");
+        return { bytes, mimeType: "audio/mpeg" };
+      }
+      const pcm = pcmFormatOf(contentType);
+      const wav = /^audio\/(wav|x-wav|wave)\b/i.test(contentType) ? normalizeWav(bytes) : pcm && pcmToWav(bytes, pcm);
+      // Zgadnięty format albo ucięty/pusty plik zostałby zapisany jako gotowe
+      // nagranie bez ponowienia. Komunikat to sam kod, bez treści odpowiedzi.
+      if (wav === null || wavDurationMs(wav) === null) throw new Error("provider_unexpected_audio");
+      return { bytes: wav, mimeType: "audio/wav" };
     },
   };
 }

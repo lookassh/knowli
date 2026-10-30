@@ -5,6 +5,8 @@ import { messages } from "@learning/contracts";
 import { testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { ttsFingerprint } from "../../packages/server/src/domain/media-fingerprint";
+import { pcmToWav } from "../../packages/server/src/providers/audio/wav";
+import type { TtsProvider, TtsSynthesizeInput } from "../../packages/server/src/ports/ai";
 
 const { pool } = testDatabase();
 const disposers: Array<() => Promise<void>> = [];
@@ -65,6 +67,40 @@ describe("wskazówki głosowe Kid UI (integracja)", () => {
     const oldAfter = await readReadyMedia(services, oldId);
     expect(oldAfter?.bytes).toEqual(oldContent);
     expect((await readUiAudio(changedServices)).ready).toBe(false);
+  });
+
+  it("format wav i instrukcja wymowy z zasobu trafiają do providera; gotowy plik to audio/wav z długością", async () => {
+    const wavSettings = structuredClone(fakes.settings);
+    wavSettings.tts.format = "wav";
+    wavSettings.tts.instructions = { "pl-PL": "Mów po polsku, z polską wymową." };
+    const requests: TtsSynthesizeInput[] = [];
+    const wavTts: TtsProvider = {
+      name: "fake-wav",
+      model: wavSettings.tts.model,
+      async synthesize(input) {
+        requests.push(input);
+        // 0,25 s ciszy: 24 kHz, mono, 16 bit
+        return { bytes: pcmToWav(new Uint8Array(12000), { sampleRate: 24000, channels: 1 }), mimeType: "audio/wav" };
+      },
+    };
+    const wavServices = createServices({
+      db: services.db, media: wavSettings, generation: { ...fakes.deps, tts: wavTts }, mediaStore: fakes.store,
+    });
+    await prepareUiAudio(wavServices);
+    const [pending] = await rows<{ id: string; metadata: Record<string, unknown> }>(
+      "select id, metadata from learning_app.media_assets where state = 'pending' order by id limit 1",
+    );
+    expect(pending!.metadata).toMatchObject({ format: "wav", instructions: "Mów po polsku, z polską wymową." });
+    await executeMediaAsset(wavServices, pending!.id);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ format: "wav", instructions: "Mów po polsku, z polską wymową.", locale: "pl-PL" });
+    const [ready] = await rows<{ mime_type: string; metadata: { durationMs?: number } }>(
+      "select mime_type, metadata from learning_app.media_assets where id = $1 and state = 'ready'", [pending!.id],
+    );
+    expect(ready).toMatchObject({ mime_type: "audio/wav", metadata: { durationMs: 250 } });
+    expect((await readReadyMedia(wavServices, pending!.id))?.mimeType).toBe("audio/wav");
+    // inna instrukcja = inne nagranie; dotychczasowe mp3 bez instrukcji nie są unieważniane
+    expect(await readUiAudio(services)).toMatchObject({ ready: false });
   });
 
   it("po awarii TTS read pozostaje niegotowy, a kolejne prepare tworzy nową generację", async () => {

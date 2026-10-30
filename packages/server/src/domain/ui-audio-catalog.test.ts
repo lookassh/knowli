@@ -18,6 +18,18 @@ describe("katalog stałych wskazówek audio", () => {
       purpose: "kid_ui_guidance", uiAudioKey: "summary", text: UI_AUDIO_TEXTS.summary,
       locale: "pl-PL", voice: "alloy", format: "mp3",
     })).toBe(true);
+    expect(isUiAudioAssetMetadata({
+      purpose: "kid_ui_guidance", uiAudioKey: "summary", text: UI_AUDIO_TEXTS.summary,
+      locale: "pl-PL", voice: "Kore", format: "wav", instructions: "Mów po polsku.",
+    })).toBe(true);
+    expect(isUiAudioAssetMetadata({
+      purpose: "kid_ui_guidance", uiAudioKey: "summary", text: UI_AUDIO_TEXTS.summary,
+      locale: "pl-PL", voice: "Kore", format: "ogg",
+    })).toBe(false);
+    expect(isUiAudioAssetMetadata({
+      purpose: "kid_ui_guidance", uiAudioKey: "summary", text: UI_AUDIO_TEXTS.summary,
+      locale: "pl-PL", voice: "Kore", format: "wav", instructions: 7,
+    })).toBe(false);
     expect(isUiAudioAssetMetadata({ purpose: "kid_ui_guidance", uiAudioKey: "unknown" })).toBe(false);
     expect(isUiAudioAssetMetadata({ purpose: "lesson", uiAudioKey: "summary" })).toBe(false);
   });

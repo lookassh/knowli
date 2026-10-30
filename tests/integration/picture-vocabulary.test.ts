@@ -2,13 +2,15 @@ import { startLegacyTrainingSession } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  completePresentation, computeTargetKey, createChild, createDraft, createDraftFromPublished, createServices, editDraft, endSession,
-  executeMediaAsset, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt, reconcileDraftAssets, runDueGenerationWork, startSession, submitAttempt, updateDeckSettings, upsertAssignment,
+  authorizeDisclosure, completePresentation, computeTargetKey, createChild, createDraft, createDraftFromPublished, createServices, editDraft, endSession,
+  executeMediaAsset, fakeSessionActivityDeps, FakeSessionActivityReviewer, listKidDecks, nextTask, prepareUiAudio, publishDraft, readAttempt,
+  readSkillHistories, reconcileDraftAssets, reviewSessionActivity, runDueGenerationWork, skillHistoryKey, startSession, submitAttempt,
+  updateDeckSettings, upsertAssignment,
   type Services,
 } from "@learning/server";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { ManualClock, testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
-import { DisclosureDtoSchema, SessionDtoSchema } from "@learning/contracts";
+import { DisclosureDtoSchema, SessionDtoSchema, type SessionActivityReport } from "@learning/contracts";
 import { withApi } from "../../apps/web/src/http/errors";
 const { pool } = testDatabase();
 const selectionEntropy = vi.hoisted(() => ({ seed: 0, calls: 0 }));
@@ -530,6 +532,106 @@ describe("bezpieczna sesja obrazkowa bez czytania", () => {
     expect(kinds).not.toContain("picture_recognition");
     expect(kinds).toContain("picture_listening");
     await endSession(services, oldSession.sessionId);
+  });
+
+  /** Serwisy z fake reviewerem aktywności i sesja doprowadzona do pierwszego, jeszcze nieodpowiedzianego picture_recognition. */
+  async function firstPictureRecognition() {
+    const provider = new FakeSessionActivityReviewer();
+    const reviewed = createServices({ db: testDatabase().db, clock, media: fakes.settings, generation: fakes.deps,
+      mediaStore: fakes.store, sessionActivity: fakeSessionActivityDeps({ provider }) });
+    const draft = await createDraft(reviewed, {
+      title: "Kolory pierwsza próba", vocabularyFormat: "picture",
+      items: [
+        { source: "czerwony", target: "red", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#ff0000" } },
+        { source: "niebieski", target: "blue", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#0000ff" } },
+        { source: "zielony", target: "green", acceptedAnswers: [], locales: { source: "pl-PL", target: "en-GB" }, visualType: "color", visualData: { color: "#008000" } },
+      ],
+    });
+    await reconcileDraftAssets(reviewed, draft.id);
+    for (let pass = 0; pass < 6; pass += 1) if ((await runDueGenerationWork(reviewed)).processed === 0) break;
+    await publishDraft(reviewed, draft.id, 1);
+    const child = await createChild(reviewed, { displayName: "Ola", avatarKey: "fox", canRead: false });
+    await upsertAssignment(reviewed, child.id, draft.deckId, null);
+    const session = await startLegacyTrainingSession(reviewed, { childId: child.id, deckId: draft.deckId,
+      microphoneEnabled: false, supportsPictureVocabulary: true, supportsPictureRecognition: true });
+
+    for (let step = 0; step < 60; step++) {
+      selectionEntropy.seed = step * 7 + 2;
+      const task = await nextTask(reviewed, session.sessionId);
+      if (!task) break;
+      if (task.prompt.kind === "picture_exposure") {
+        await completePresentation(reviewed, { taskId: task.taskId });
+        continue;
+      }
+      const stored = (await pool.query<{ answer_key: { correctOptionId?: string; target: string } }>(
+        "select answer_key from learning_app.session_tasks where id=$1", [task.taskId],
+      )).rows[0]!;
+      if (task.prompt.kind === "picture_recognition") {
+        return { reviewed, provider, sessionId: session.sessionId, taskId: task.taskId, correctOptionId: stored.answer_key.correctOptionId! };
+      }
+      await submitAttempt(reviewed, stored.answer_key.correctOptionId
+        ? { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: stored.answer_key.correctOptionId }
+        : { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: stored.answer_key.target });
+    }
+    throw new Error("session did not issue picture_recognition");
+  }
+
+  /** Ocena reading próby przy przyjęciu, jej wpis w historii i odpowiedzi przekazane reviewerowi po końcu sesji. */
+  async function recognitionEvidence(recognition: Awaited<ReturnType<typeof firstPictureRecognition>>, attemptId: string) {
+    const assessment = (await pool.query<{ outcome: string; independent: boolean; child_id: string; skill_version_id: string; received_at: Date }>(
+      `select a.outcome, a.independent, a.child_id, a.skill_version_id, t.received_at
+         from learning_app.assessments a join learning_app.attempts t on t.id = a.attempt_id
+        where a.attempt_id = $1 and a.skill = 'reading'`, [attemptId],
+    )).rows[0]!;
+    const scope = { childId: assessment.child_id, skillVersionId: assessment.skill_version_id, skill: "reading" as const };
+    const history = (await readSkillHistories(recognition.reviewed.db, [scope])).get(skillHistoryKey(scope)) ?? [];
+    clock.advanceMs(10_000);
+    await endSession(recognition.reviewed, recognition.sessionId);
+    const report: SessionActivityReport = {
+      version: 1, elapsedMs: 10_000, activeMs: 10_000, compacted: false,
+      tasks: [{ taskId: recognition.taskId, exerciseType: "picture_recognition", shownFromMs: 0, shownToMs: 10_000,
+        activeIntervals: [[0, 10_000]], editCount: 0, editWindows: [], submittedAttempts: [attemptId], playbacks: [], pauses: [] }],
+    };
+    await reviewSessionActivity(recognition.reviewed, recognition.sessionId, report);
+    expect(recognition.provider.requests).toHaveLength(1);
+    return {
+      assessment,
+      historyEntry: history.find((candidate) => candidate.receivedAt === assessment.received_at.toISOString()),
+      submittedAnswers: recognition.provider.requests[0]!.tasks[0]!.submittedAnswers,
+    };
+  }
+
+  it("odsłuch poprawnego słowa z feedbacku picture_recognition następuje po odpowiedzi, nie przed nią (issue #187)", async () => {
+    const recognition = await firstPictureRecognition();
+    const result = await submitAttempt(recognition.reviewed, { taskId: recognition.taskId, clientAttemptId: randomUUID(),
+      modality: "choice", optionId: recognition.correctOptionId });
+    expect(result.feedback?.correctAudioAssetId).toMatch(/^[0-9a-f-]{36}$/i);
+
+    // Odsłuch z feedbacku jest ujawniony ściśle po przyjęciu odpowiedzi
+    const audio = (await pool.query<{ occurred_at: Date }>(
+      "select occurred_at from learning_app.learning_events where task_id=$1 and kind='audio_issued' and sealed", [recognition.taskId],
+    )).rows;
+    const evidence = await recognitionEvidence(recognition, result.attemptId);
+    expect(audio).toHaveLength(1);
+    expect(audio[0]!.occurred_at.getTime()).toBeGreaterThan(evidence.assessment.received_at.getTime());
+    // Pierwsza poprawna odpowiedź bez wsparcia jest samodzielna przy ocenie, czytnik
+    // historii jej nie degraduje, a reviewer nie dostaje „wsparcia przed odpowiedzią”
+    expect(evidence.assessment).toMatchObject({ outcome: "correct", independent: true });
+    expect(evidence.historyEntry).toMatchObject({ outcome: "correct", independent: true });
+    expect(evidence.submittedAnswers).toEqual([expect.objectContaining({ modality: "choice", supportDisclosedBefore: false })]);
+  });
+
+  it("jawny odsłuch przed odpowiedzią picture_recognition jest wsparciem także w tej samej chwili co odpowiedź", async () => {
+    const recognition = await firstPictureRecognition();
+    // ManualClock stoi: zdarzenie ma occurredAt równe receivedAt odpowiedzi (granica <=)
+    await authorizeDisclosure(recognition.reviewed, { taskId: recognition.taskId, kind: "audio" });
+    const result = await submitAttempt(recognition.reviewed, { taskId: recognition.taskId, clientAttemptId: randomUUID(),
+      modality: "choice", optionId: recognition.correctOptionId });
+
+    const evidence = await recognitionEvidence(recognition, result.attemptId);
+    expect(evidence.assessment).toMatchObject({ outcome: "correct", independent: false });
+    expect(evidence.historyEntry).toMatchObject({ outcome: "correct", independent: false });
+    expect(evidence.submittedAnswers).toEqual([expect.objectContaining({ modality: "choice", supportDisclosedBefore: true })]);
   });
 
   it("dla dziecka nieczytającego liczy gwiazdki z opanowanego słuchania lub recall, a dla czytającego wyłącznie z recall", async () => {

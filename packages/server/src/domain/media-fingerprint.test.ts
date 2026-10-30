@@ -23,6 +23,17 @@ describe("ttsFingerprint", () => {
     expect(ttsFingerprint({ ...ttsBase, voice: "verse" })).not.toBe(base);
     expect(ttsFingerprint({ ...ttsBase, model: "tts-1-hd" })).not.toBe(base);
     expect(ttsFingerprint({ ...ttsBase, provider: "azure" })).not.toBe(base);
+    expect(ttsFingerprint({ ...ttsBase, format: "wav" })).not.toBe(base);
+  });
+
+  it("instrukcja wymowy zmienia fingerprint, a jej brak zachowuje dotychczasowe nagrania", () => {
+    const base = ttsFingerprint(ttsBase);
+    // Wartość sprzed dodania instrukcji: gotowe nagrania nie mogą stracić fingerprintu.
+    expect(base).toBe("13f6db13e185fe19f1a66e94aeee9e2ef65ae4ba9f0d3cd7f61b06a9cc740468");
+    expect(ttsFingerprint({ ...ttsBase, instructions: undefined })).toBe(base);
+    expect(ttsFingerprint({ ...ttsBase, instructions: "Speak British English." })).not.toBe(base);
+    expect(ttsFingerprint({ ...ttsBase, instructions: "Speak British English." }))
+      .not.toBe(ttsFingerprint({ ...ttsBase, instructions: "Speak American English." }));
   });
 });
 

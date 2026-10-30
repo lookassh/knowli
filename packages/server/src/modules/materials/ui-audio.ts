@@ -6,7 +6,7 @@ import {
   type UiAudioCatalogDto,
   type UiAudioKey,
 } from "@learning/contracts";
-import { ttsVoiceFor, type Services } from "../../config";
+import { ttsInstructionsFor, ttsVoiceFor, type Services } from "../../config";
 import { generationRuns, mediaAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { ttsFingerprint } from "../../domain/media-fingerprint";
@@ -21,6 +21,7 @@ function requestOf(services: Services, key: UiAudioKey) {
   const settings = settingsOf(services);
   const text = UI_AUDIO_TEXTS[key];
   const voice = ttsVoiceFor(settings, "pl-PL");
+  const instructions = ttsInstructionsFor(settings, "pl-PL");
   return {
     text,
     fingerprint: ttsFingerprint({
@@ -30,6 +31,7 @@ function requestOf(services: Services, key: UiAudioKey) {
       model: settings.model,
       voice,
       format: settings.format,
+      instructions,
     }),
     metadata: {
       purpose: "kid_ui_guidance",
@@ -38,6 +40,7 @@ function requestOf(services: Services, key: UiAudioKey) {
       locale: "pl-PL",
       voice,
       format: settings.format,
+      ...(instructions === undefined ? {} : { instructions }),
     },
   };
 }

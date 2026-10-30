@@ -8,7 +8,8 @@ export function isUiAudioAssetMetadata(value: unknown): value is {
   text: string;
   locale: "pl-PL";
   voice: string;
-  format: "mp3";
+  format: "mp3" | "wav";
+  instructions?: string;
 } {
   if (typeof value !== "object" || value === null) return false;
   const metadata = value as Record<string, unknown>;
@@ -19,5 +20,6 @@ export function isUiAudioAssetMetadata(value: unknown): value is {
     && typeof metadata.text === "string"
     && metadata.locale === "pl-PL"
     && typeof metadata.voice === "string"
-    && metadata.format === "mp3";
+    && (metadata.format === "mp3" || metadata.format === "wav")
+    && (metadata.instructions === undefined || typeof metadata.instructions === "string");
 }

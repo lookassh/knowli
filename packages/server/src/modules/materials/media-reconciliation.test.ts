@@ -47,6 +47,23 @@ describe("requiredAssetsForLessonExercise — nagranie pytania (design szkoły �
     const defaultVoice = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), defaultMediaSettings);
     expect(vocab[0]!.fingerprint).not.toBe(defaultVoice[0]!.fingerprint);
   });
+
+  it("format i instrukcja wymowy idą za locale tekstu do metadanych i fingerprintu", () => {
+    const settings = {
+      ...defaultMediaSettings,
+      tts: { ...defaultMediaSettings.tts, format: "wav" as const, instructions: { "pl-PL": "Mów po polsku.", "en-GB": "Speak British English." } },
+    };
+    const [prompt] = requiredAssetsForLessonExercise(choice, settings, { ttsForAnswers: false, ttsForPrompts: true });
+    expect(prompt!.metadata).toMatchObject({ locale: "pl-PL", format: "wav", instructions: "Mów po polsku." });
+    const vocab = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), settings);
+    expect(vocab[0]!.metadata).toMatchObject({ locale: "en-GB", format: "wav", instructions: "Speak British English." });
+    // locale bez instrukcji nie dostaje pola, a zmiana instrukcji zmienia fingerprint
+    const noFrench = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "jeudi", visualType: "none", sourceLocale: "pl-PL", targetLocale: "fr-FR" }), settings);
+    expect(noFrench[0]!.metadata).not.toHaveProperty("instructions");
+    const otherInstruction = { ...settings, tts: { ...settings.tts, instructions: { "en-GB": "Speak American English." } } };
+    const vocabOther = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), otherInstruction);
+    expect(vocabOther[0]!.fingerprint).not.toBe(vocab[0]!.fingerprint);
+  });
 });
 
 describe("requiredAssetsForLessonCards — nagrania kart nauki (design szkoły §12.2)", () => {
