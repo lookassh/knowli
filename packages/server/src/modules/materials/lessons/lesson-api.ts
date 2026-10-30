@@ -776,6 +776,7 @@ export async function publishLessonDraft(
           role: "target_audio",
           assetId: audio.assetId,
           expectedFingerprint: audio.expectedFingerprint,
+          linkState: audio.state,
         });
         if (status === "pending") firstPendingRevision ??= revision.id;
       }

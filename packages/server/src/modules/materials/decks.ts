@@ -577,6 +577,7 @@ export async function publishDraft(
           role,
           assetId: row.assetId,
           expectedFingerprint: row.expectedFingerprint,
+          linkState: row.state,
         });
         if (status === "pending") firstPending ??= { role, itemRevisionId: revision.id };
         const required = requiredHere?.get(role);

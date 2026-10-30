@@ -8,6 +8,7 @@ import {
   editDraft,
   englishGrammarSubject,
   executeLessonGeneration,
+  executeMediaAsset,
   publishDraft,
   publishLessonDraft,
   readDraft,
@@ -17,6 +18,7 @@ import {
   type Services,
 } from "@learning/server";
 import type { VocabularyItemInput } from "@learning/contracts";
+import { assertAssetPublishable } from "../../packages/server/src/modules/materials/media-reconciliation";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
@@ -176,6 +178,36 @@ describe("publikacja zleca brakujące media trwale (issue #106)", () => {
     expect(rejection).toMatchObject({ code: "validation" });
     // rodzic nie czeka na media, których generacja nie usunie problemu
     expect(rejection).not.toMatchObject({ details: { media: "pending" } });
+  });
+
+  it("zasób gotowy dopiero po uzgodnieniu nie publikuje powiązania, którego sesja nie wybierze", async () => {
+    const generation = await fakes();
+    const app = services(generation);
+    const draft = await createDraft(app, { title: "Dni", items: [item()] });
+    await reconcileDraftAssets(app, draft.id);
+    const link = (await pool.query(
+      `select ra.item_revision_id, ra.asset_id, ra.expected_fingerprint, ra.state
+         from learning_app.revision_assets ra
+         join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+        where ir.deck_version_id = $1 and ra.role = 'target_audio'`,
+      [draft.id],
+    )).rows[0];
+    expect(link.state).toBe("pending");
+    // worker kończy generację między uzgodnieniem a walidacją publikacji
+    await executeMediaAsset(app, link.asset_id);
+    expect((await pool.query("select state from learning_app.media_assets where id = $1", [link.asset_id])).rows[0].state).toBe("ready");
+
+    // sesje wybierają tylko powiązania approved, więc to jeszcze nie jest gotowe
+    await expect(assertAssetPublishable(db, {
+      itemRevisionId: link.item_revision_id,
+      role: "target_audio",
+      assetId: link.asset_id,
+      expectedFingerprint: link.expected_fingerprint,
+      linkState: link.state,
+    })).resolves.toBe("pending");
+    // kolejna publikacja promuje powiązanie i przechodzi
+    await expect(publishDraft(app, draft.id, draft.editNumber)).resolves.toEqual({ deckVersionId: draft.id });
+    expect((await pool.query("select state from learning_app.revision_assets where item_revision_id = $1 and role = 'target_audio'", [link.item_revision_id])).rows[0].state).toBe("approved");
   });
 
   it("nieaktualny numer edycji to konflikt bez uzgadniania mediów", async () => {

@@ -719,6 +719,9 @@ export async function readReadyMediaStream(
  * Zasób w generacji zwraca `"pending"` zamiast błędu: wywołujący kończy
  * pozostałe sprawdzenia i dopiero wtedy zgłasza `mediaPendingError`, żeby
  * nieudany zasób na dalszej karcie nie ukrył się za „przygotowują się”.
+ * Gotowy zasób z powiązaniem innym niż `approved` też jest `"pending"`:
+ * worker mógł go skończyć już po uzgodnieniu w tej transakcji, a sesje
+ * wybierają wyłącznie powiązania `approved`. Ponowna publikacja je promuje.
  */
 export async function assertAssetPublishable(
   db: Executor,
@@ -727,6 +730,7 @@ export async function assertAssetPublishable(
     role: AssetRole;
     assetId: string | null;
     expectedFingerprint: string;
+    linkState: "pending" | "approved" | "omitted";
   },
 ): Promise<"ready" | "pending"> {
   if (input.assetId === null) {
@@ -748,7 +752,7 @@ export async function assertAssetPublishable(
       message: `${input.role} not ready for revision ${input.itemRevisionId}`,
     });
   }
-  return "ready";
+  return input.linkState === "approved" ? "ready" : "pending";
 }
 
 /** Jedyny błąd publikacji, po którym rodzic czeka: generacja trwa i nic innego nie blokuje. */
