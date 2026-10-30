@@ -8,7 +8,7 @@ import { errorMessage } from "./api";
 import { ChildPicker } from "./ChildPicker";
 import { ParentIcon } from "./ParentIcon";
 import { orpc } from "./query-client";
-import { outcomeCounts, responseMark, stepMark, type OutcomeTone } from "./work-card-outcome";
+import { outcomeCounts, responseMark, stepMark, stepOutcome, type OutcomeTone } from "./work-card-outcome";
 import "./progress-panel.css";
 
 /** Kółko wyniku kroku (`.pp-prog-outcome`, wspólne z historią w Postępach). */
@@ -136,7 +136,7 @@ function ResponseRow({ response }: { response: Response }) {
 /** Podsumowanie wyników sesji: liczba kroków poprawnych, błędnych i częściowo poprawnych. */
 function OutcomeSummary({ steps }: { steps: Session["steps"] }) {
   const counts = outcomeCounts(steps);
-  const entries = ([["correct", "success", "check"], ["incorrect", "danger", "x"], ["partial", "warning", "minus"]] as const)
+  const entries = ([["correct", "success", "check"], ["corrected", "warning", "refresh"], ["partial", "warning", "minus"], ["incorrect", "danger", "x"]] as const)
     .filter(([outcome]) => counts[outcome] > 0);
   if (entries.length === 0) return null;
   return (
@@ -174,6 +174,8 @@ function SessionCard({ session }: { session: Session }) {
               <span className="pp-work-step-title">
                 {stepTypeLabel(step.exerciseType)}
                 <span className="pp-prog-muted"> · {messages.workCard.stepState[step.state]}</span>
+                {/* kółko kroku jest dekoracyjne; ten stan nie wynika z odznaki żadnej pojedynczej odpowiedzi */}
+                {stepOutcome(step) === "corrected" && <span className="pp-prog-muted"> · {messages.workCard.stepCorrected}</span>}
               </span>
               {step.responses.map((response, index) => <ResponseRow key={`${response.modality}-${index}`} response={response} />)}
             </div>

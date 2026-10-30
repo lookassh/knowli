@@ -9,15 +9,36 @@ import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_AC
 
 type ResponseOutcome = ParentWorkCardDto["sessions"][number]["steps"][number]["responses"][number]["outcome"];
 
+/** Zapisana ocena jednej umiejętności odpowiedzi (wiersz `assessments`). */
+export interface StoredAssessment {
+  skill: string;
+  outcome: string;
+  details: Record<string, unknown>;
+}
+
+/**
+ * Wynik jednej oceny dla rodzica. `incorrect` w bazie obejmuje też oceny częściowe,
+ * którym dziecko usłyszało „prawie”: wymowę w paśmie „ćwicz” i odpowiedź otwartą
+ * ocenioną przez model jako „prawie” (`model_almost`) — to nie jest „Błędnie”.
+ */
+function assessmentOutcome(row: StoredAssessment): ResponseOutcome {
+  if (row.outcome === "correct") return "correct";
+  if (row.outcome !== "incorrect") return null;
+  const pronunciation = row.details.pronunciation as { band?: unknown } | undefined;
+  if (row.skill === "pronunciation" && pronunciation?.band === "partial") return "partial";
+  if (row.details.verdict === "model_almost") return "partial";
+  return "incorrect";
+}
+
 /**
  * Wynik odpowiedzi z jej ocen (po jednej na umiejętność). Oceny `unassessed` nie
  * rozstrzygają poprawności; pominięcie i „Nie pamiętam” nie są odpowiedzią z treścią.
  */
-export function responseOutcome(modality: string, outcomes: ReadonlySet<string> | undefined): ResponseOutcome {
-  if (modality === "skip" || modality === "dont_remember" || !outcomes) return null;
-  const correct = outcomes.has("correct");
-  const incorrect = outcomes.has("incorrect");
-  return correct && incorrect ? "partial" : correct ? "correct" : incorrect ? "incorrect" : null;
+export function responseOutcome(modality: string, rows: readonly StoredAssessment[] | undefined): ResponseOutcome {
+  if (modality === "skip" || modality === "dont_remember" || !rows) return null;
+  const outcomes = new Set(rows.map(assessmentOutcome).filter((outcome) => outcome !== null));
+  if (outcomes.size === 0) return null;
+  return outcomes.size === 1 ? [...outcomes][0]! : "partial";
 }
 
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
@@ -87,11 +108,15 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
     eq(sessionTasks.childId, query.childId), inArray(sessionTasks.sessionId, sessionIds),
   )).orderBy(asc(sessionTasks.ordinal)) : [];
   const taskIds = tasks.map(task => task.id);
-  const assessmentRows = taskIds.length ? await services.db.select({ attemptId: assessments.attemptId, outcome: assessments.outcome })
+  const assessmentRows = taskIds.length ? await services.db.select({
+    attemptId: assessments.attemptId, skill: assessments.skill, outcome: assessments.outcome, details: assessments.details,
+  })
     .from(assessments).innerJoin(attempts, eq(attempts.id, assessments.attemptId))
     .where(and(eq(assessments.childId, query.childId), inArray(attempts.taskId, taskIds))) : [];
+  const storedByAttempt = new Map<string, StoredAssessment[]>();
   const assessmentByAttempt = new Map<string, Set<string>>();
   for (const row of assessmentRows) {
+    storedByAttempt.set(row.attemptId, [...(storedByAttempt.get(row.attemptId) ?? []), row]);
     const values = assessmentByAttempt.get(row.attemptId) ?? new Set<string>();
     values.add(row.outcome);
     assessmentByAttempt.set(row.attemptId, values);
@@ -195,7 +220,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
           modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection" | "assignment",
           answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer ?? assignmentAnswer,
           feedbackKind, assessment,
-          outcome: responseOutcome(attempt.modality, assessmentByAttempt.get(attempt.id)),
+          outcome: responseOutcome(attempt.modality, storedByAttempt.get(attempt.id)),
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };
       });

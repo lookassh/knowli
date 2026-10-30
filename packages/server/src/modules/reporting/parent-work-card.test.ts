@@ -1,20 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { responseOutcome } from "./parent-work-card";
+import { responseOutcome, type StoredAssessment } from "./parent-work-card";
+
+const row = (skill: string, outcome: string, details: Record<string, unknown> = {}): StoredAssessment => ({ skill, outcome, details });
 
 describe("responseOutcome", () => {
   it("łączy oceny umiejętności jednej odpowiedzi", () => {
-    expect(responseOutcome("text", new Set(["correct"]))).toBe("correct");
-    expect(responseOutcome("text", new Set(["incorrect"]))).toBe("incorrect");
+    expect(responseOutcome("text", [row("recall", "correct")])).toBe("correct");
+    expect(responseOutcome("text", [row("recall", "incorrect")])).toBe("incorrect");
     // treść dobra, pisownia błędna
-    expect(responseOutcome("text", new Set(["correct", "incorrect"]))).toBe("partial");
+    expect(responseOutcome("text", [row("recall", "correct"), row("spelling", "incorrect")])).toBe("partial");
     // ocena nieoceniona nie rozstrzyga poprawności
-    expect(responseOutcome("text", new Set(["correct", "unassessed"]))).toBe("correct");
-    expect(responseOutcome("audio", new Set(["unassessed"]))).toBeNull();
+    expect(responseOutcome("text", [row("recall", "correct"), row("spelling", "unassessed")])).toBe("correct");
+    expect(responseOutcome("audio", [row("pronunciation", "unassessed")])).toBeNull();
     expect(responseOutcome("choice", undefined)).toBeNull();
   });
 
+  it("ocena częściowa zapisana jako błąd nie jest „Błędnie”: wymowa „ćwicz” i „prawie” modelu", () => {
+    expect(responseOutcome("audio", [row("pronunciation", "incorrect", { pronunciation: { provider: "azure", score: 70, band: "partial" } })])).toBe("partial");
+    expect(responseOutcome("audio", [row("recall", "correct"), row("pronunciation", "incorrect", { pronunciation: { band: "partial" } })])).toBe("partial");
+    expect(responseOutcome("text", [row("objective", "incorrect", { verdict: "model_almost", knowledge: "partial" })])).toBe("partial");
+    // decyzja „błędnie” mimo częściowej wiedzy modelu zostaje błędem
+    expect(responseOutcome("text", [row("objective", "incorrect", { verdict: "model_incorrect", knowledge: "partial" })])).toBe("incorrect");
+  });
+
   it("pominięcie i „Nie pamiętam” nie mają wyniku poprawności", () => {
-    expect(responseOutcome("skip", new Set(["incorrect"]))).toBeNull();
-    expect(responseOutcome("dont_remember", new Set(["incorrect"]))).toBeNull();
+    expect(responseOutcome("skip", [row("recall", "incorrect")])).toBeNull();
+    expect(responseOutcome("dont_remember", [row("recall", "incorrect")])).toBeNull();
   });
 });

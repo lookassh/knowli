@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { messages, type ParentWorkCardDto } from "@learning/contracts";
-import { outcomeCounts, responseMark, stepMark } from "./work-card-outcome";
+import { outcomeCounts, responseMark, stepMark, stepOutcome } from "./work-card-outcome";
 
 type Step = ParentWorkCardDto["sessions"][number]["steps"][number];
 type Response = Step["responses"][number];
@@ -28,13 +28,23 @@ describe("responseMark", () => {
   });
 });
 
-describe("stepMark i outcomeCounts", () => {
-  it("krok przyjmuje wynik ostatniej odpowiedzi; liczniki liczą kroki, nie próby", () => {
+describe("stepOutcome, stepMark i outcomeCounts", () => {
+  it("poprawna odpowiedź dopiero po błędzie albo „Nie pamiętam” nie jest samodzielnie poprawna", () => {
     const retried = step([response({ outcome: "incorrect" }), response({ outcome: "correct" })]);
-    expect(stepMark(retried).tone).toBe("success");
+    expect(stepOutcome(retried)).toBe("corrected");
+    expect(stepMark(retried)).toEqual({ tone: "warning", icon: "refresh", label: messages.workCard.stepCorrected });
+    expect(stepOutcome(step([response({ modality: "dont_remember", outcome: null }), response()]))).toBe("corrected");
+    // pominięcie albo nieoceniona próba przed poprawną nie są błędem
+    expect(stepOutcome(step([response({ outcome: null, assessment: "unassessed" }), response()]))).toBe("correct");
+    // ostatnia błędna zostaje błędna
+    expect(stepOutcome(step([response(), response({ outcome: "incorrect" })]))).toBe("incorrect");
+  });
+
+  it("krok bez odpowiedzi; liczniki liczą kroki, nie próby", () => {
     expect(stepMark(step([], "completed")).icon).toBe("eye");
     expect(stepMark(step([], "issued")).label).toBe(messages.workCard.noResponse);
-    expect(outcomeCounts([retried, step([response({ outcome: "partial" })]), step([response({ modality: "skip", outcome: null })])]))
-      .toEqual({ correct: 1, incorrect: 0, partial: 1 });
+    const retried = step([response({ outcome: "incorrect" }), response({ outcome: "correct" })]);
+    expect(outcomeCounts([retried, step([response()]), step([response({ outcome: "partial" })]), step([response({ modality: "skip", outcome: null })])]))
+      .toEqual({ correct: 1, corrected: 1, incorrect: 0, partial: 1 });
   });
 });

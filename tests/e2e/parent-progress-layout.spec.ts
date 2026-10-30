@@ -51,6 +51,10 @@ const workCard = {
       step(5, "recall", "answered", [response({ answerExample: "wednesday", feedbackKind: "capitalization_hint", outcome: "partial" })]),
       step(6, "recall", "answered", [response({ modality: "dont_remember", answerExample: "Nie pamiętam", feedbackKind: null, assessment: "none", outcome: null })]),
       step(7, "listening", "skipped", [response({ modality: "skip", answerExample: null, feedbackKind: null, assessment: "none", outcome: null })]),
+      step(8, "spelling", "completed", [
+        response({ answerExample: "fridey", feedbackKind: "incorrect", outcome: "incorrect" }),
+        response({ answerExample: "friday", feedbackKind: "great", outcome: "correct" }),
+      ]),
     ],
   }],
 };
@@ -136,10 +140,12 @@ test("Karta pracy: wynik każdej odpowiedzi oznaczony kolorem, ikoną i tekstem"
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto("/parent/work-card");
   const steps = page.getByTestId("work-card-step");
-  await expect(steps).toHaveCount(6);
+  await expect(steps).toHaveCount(7);
   // kółko kroku: prezentacja neutralna, potem poprawna, błędna, częściowa, „Nie pamiętam” (trudność), pominięcie
   expect(await steps.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-outcome"))))
-    .toEqual(["neutral", "success", "danger", "warning", "warning", "neutral"]);
+    .toEqual(["neutral", "success", "danger", "warning", "warning", "neutral", "warning"]);
+  // poprawna dopiero po błędzie: osobny stan kroku, nie „Poprawnie”
+  await expect(steps.nth(6)).toContainText(messages.workCard.stepCorrected);
 
   const responses = page.getByTestId("work-card-response");
   await expect(responses.nth(0)).toContainText(messages.workCard.outcome.correct);
@@ -159,6 +165,7 @@ test("Karta pracy: wynik każdej odpowiedzi oznaczony kolorem, ikoną i tekstem"
   const summary = page.getByTestId("work-card-outcomes");
   await expect(summary.getByTestId("work-card-outcomes-correct")).toHaveText(messages.workCard.outcomeCount.correct.replace("{n}", "1"));
   await expect(summary.getByTestId("work-card-outcomes-incorrect")).toHaveText(messages.workCard.outcomeCount.incorrect.replace("{n}", "1"));
+  await expect(summary.getByTestId("work-card-outcomes-corrected")).toHaveText(messages.workCard.outcomeCount.corrected.replace("{n}", "1"));
   await expect(summary.getByTestId("work-card-outcomes-partial")).toHaveText(messages.workCard.outcomeCount.partial.replace("{n}", "1"));
 
   // telefon: kółko kroku obok treści, treść mieści się w karcie, bez przewijania w poziomie
