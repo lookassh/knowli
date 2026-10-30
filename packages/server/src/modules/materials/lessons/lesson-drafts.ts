@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { LessonCommandSchema, SchoolLessonCommandSchema, type LessonCommand, type SchoolLessonCommand } from "@learning/contracts";
+import {
+  LessonCommandSchema,
+  LessonVoiceToneSchema,
+  SchoolLessonCommandSchema,
+  type LessonCommand,
+  type LessonVoiceTone,
+  type SchoolLessonCommand,
+} from "@learning/contracts";
 import type { Clock, Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
 import {
@@ -394,6 +401,15 @@ function buildPoolInput(
   };
 }
 
+/**
+ * Ton lektora z niezaufanego wyjścia modelu: nieznana wartość albo `null`
+ * znaczą „brak tonu” (styl domyślny roli), nigdy błąd ćwiczenia/karty.
+ */
+function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
+  const parsed = LessonVoiceToneSchema.safeParse(raw);
+  return parsed.success ? { voiceTone: parsed.data } : {};
+}
+
 const rawObjectiveSchema = z
   .object({
     slug: z.string(),
@@ -452,6 +468,7 @@ export function buildDynamicTopicData(
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
+        ...sanitizedVoiceTone(card.voiceTone),
       })),
     };
     const objectiveErrors = validateObjective(objective);
@@ -682,6 +699,7 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
   }
   if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
   if (typeof r.familyId === "string") out.familyId = r.familyId;
+  Object.assign(out, sanitizedVoiceTone(r.voiceTone));
   if (Array.isArray(r.keywordOptions)) {
     out.keywordOptions = r.keywordOptions.filter(
       (el): el is { id: string; text: string } =>
@@ -780,6 +798,7 @@ export function buildLessonPayload(
     ...(ex.commonErrors === undefined ? {} : { commonErrors: ex.commonErrors }),
     ...(ex.expectedForm === undefined ? {} : { expectedForm: ex.expectedForm }),
     ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
+    ...(ex.voiceTone === undefined ? {} : { voiceTone: ex.voiceTone }),
     ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
     ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     ...(ex.keywordOptions === undefined ? {} : { keywordOptions: ex.keywordOptions.map((option) => ({ id: option.id, text: option.text })) }),

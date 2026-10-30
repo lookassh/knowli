@@ -17,6 +17,7 @@ import {
   withoutRedundantAcceptedVariants,
 } from "./pool-validation";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
+import { schoolSubject } from "./subjects/school/module";
 import { historyLikeSubject } from "./testing/history-like-subject";
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "./types";
 import { stageOf } from "./stages";
@@ -651,6 +652,30 @@ describe("withoutRedundantAcceptedVariants", () => {
       englishGrammarSubject.normalizer,
     );
     expect(sanitized.acceptedAnswers).toEqual(["He isn't late."]);
+  });
+});
+
+describe("validateLessonExercise — voiceTone", () => {
+  it("odrzuca ton lektora w przedmiocie bez nagrań pytań (gramatyka)", () => {
+    const errors = validateLessonExercise(draft({ voiceTone: "gentle" }), englishGrammarSubject, englishTopic);
+    expect(errors.some((error) => error.startsWith("voiceTone:"))).toBe(true);
+    expect(validateLessonExercise(draft({}), englishGrammarSubject, englishTopic).some((error) => error.startsWith("voiceTone:"))).toBe(false);
+  });
+
+  it("akceptuje ton w przedmiocie z nagraniami pytań (szkoła)", () => {
+    const topic = schoolSubject.buildDynamicTopic!({
+      titlePl: "Przyroda",
+      objectives: [{
+        id: "school.ddeck.foto", titlePl: "Fotosynteza", descriptionEn: "Photosynthesis.",
+        cards: [{ title: "Co to?", body: "Roślina wytwarza cukry." }, { title: "Po co?", body: "Cukry to pokarm." }],
+      }],
+    });
+    const ex: LessonExerciseDraft = {
+      exerciseType: "lesson_open_answer", objectiveId: "school.ddeck.foto", prompt: "Co wytwarza roślina?",
+      answer: "Cukry.", acceptedAnswers: [], focus: [], voiceTone: "curious",
+    };
+    const errors = validateLessonExercise(ex, schoolSubject, topic);
+    expect(errors.some((error) => error.startsWith("voiceTone:"))).toBe(false);
   });
 });
 

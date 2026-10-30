@@ -13,6 +13,9 @@ import {
   submitAttempt,
   FakeAnswerGrader,
   createDatabase,
+  createSchoolLesson,
+  createSubjectRegistry,
+  schoolSubject,
   executeLessonGeneration,
   readLessonDeck,
   ensureLearningPolicy,
@@ -23,6 +26,7 @@ import {
   LessonDraftDtoSchema,
   SubjectCatalogDtoSchema,
   TaskPromptSchema,
+  type LessonDraftDto,
   type LessonExerciseInput,
 } from "@learning/contracts";
 import { testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
@@ -595,6 +599,126 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(res.status).toBe(202);
     const out = (await res.json()) as { generationRunId?: string; runId?: string; deckId: string };
     expect(out.deckId).toBe(deckId);
+  });
+
+  describe("ton lektora (voiceTone) w szkicu szkolnym", () => {
+    const SCHOOL_MATERIAL = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+
+    async function schoolDraft(fakes: FakeGeneration): Promise<{ services: Services; cookie: string; deckId: string; draft: LessonDraftDto }> {
+      const { db } = testDatabase();
+      const services = createServices({
+        db,
+        clock: new ManualClock(),
+        media: fakes.settings,
+        generation: fakes.deps,
+        subjects: createSubjectRegistry([schoolSubject]),
+      });
+      await setupParent(services, "lesson-api-pin");
+      const { token: cookie } = await loginParent(services, "lesson-api-pin");
+      const { runId, deckId } = await createSchoolLesson(services, {
+        subjectTitlePl: "Przyroda i historia",
+        topicTitlePl: "Materiał pilotażowy",
+        material: SCHOOL_MATERIAL,
+        poolSize: 40,
+        clientRequestId: randomUUID(),
+      });
+      await executeLessonGeneration(services, runId);
+      const dto = LessonDeckDtoSchema.parse(await (await call(services, "GET", `lessons/${deckId}`, { cookie })).json());
+      return { services, cookie, deckId, draft: dto.draft! };
+    }
+
+    async function patchExercises(
+      services: Services, cookie: string, draft: LessonDraftDto,
+      change: (ex: LessonExerciseInput, index: number) => LessonExerciseInput,
+    ): Promise<LessonDraftDto> {
+      const response = await call(services, "PATCH", `lesson-drafts/${draft.id}`, {
+        body: { expectedEditNumber: draft.editNumber, exercises: draft.exercises.map(stripToInput).map(change) },
+        cookie,
+      });
+      expect(response.status).toBe(200);
+      return LessonDraftDtoSchema.parse(await response.json());
+    }
+
+    it("edycja samej treści pytania zachowuje ton w DTO i w payloadzie", async () => {
+      const fakes = await fakeGeneration();
+      disposers.push(fakes.dispose);
+      const { services, cookie, draft } = await schoolDraft(fakes);
+      expect(draft.exercises[0]!.voiceTone).toBe("curious");
+      expect(draft.dynamicTopic!.objectives[0]!.cards[0]!.voiceTone).toBe("cheerful");
+
+      const edited = await patchExercises(services, cookie, draft, (ex, i) => {
+        if (i !== 0) return ex;
+        return ex.prompt !== undefined ? { ...ex, prompt: `${ex.prompt} (inaczej)` } : { ...ex, stem: `${ex.stem ?? ""} (inaczej)` };
+      });
+      expect(edited.exercises[0]!.voiceTone).toBe("curious");
+      const rows = await pool.query<{ payload: { voiceTone?: string } }>(
+        "select payload from learning_app.item_revisions where id = $1", [edited.exercises[0]!.revisionId]);
+      expect(rows.rows[0]!.payload.voiceTone).toBe("curious");
+    });
+
+    it("patch dynamicTopic z voiceTone karty zapisuje ton w lesson_context, a nieznany ton odrzuca", async () => {
+      const fakes = await fakeGeneration();
+      disposers.push(fakes.dispose);
+      const { services, cookie, draft } = await schoolDraft(fakes);
+      const objective = draft.dynamicTopic!.objectives[0]!;
+      const cards = (voiceTone: string | undefined) => [{ ...objective.cards[0]!, ...(voiceTone ? { voiceTone } : {}) }, objective.cards[1]!];
+      const patchTopic = (voiceTone: string | undefined) => call(services, "PATCH", `lesson-drafts/${draft.id}`, {
+        body: {
+          expectedEditNumber: draft.editNumber,
+          dynamicTopic: { objectives: draft.dynamicTopic!.objectives.map((o) => o.id === objective.id ? { ...o, cards: cards(voiceTone) } : o) },
+        },
+        cookie,
+      });
+
+      expect((await patchTopic("loud")).status).toBe(400);
+      const ok = await patchTopic("gentle");
+      expect(ok.status).toBe(200);
+      const dto = LessonDraftDtoSchema.parse(await ok.json());
+      expect(dto.dynamicTopic!.objectives[0]!.cards[0]!.voiceTone).toBe("gentle");
+      const [version] = (await pool.query<{ lesson_context: { dynamicTopic: { objectives: { id: string; cards: { voiceTone?: string }[] }[] } } }>(
+        "select lesson_context from learning_app.deck_versions where id = $1", [draft.id])).rows;
+      const stored = version!.lesson_context.dynamicTopic.objectives.find((o) => o.id === objective.id)!;
+      expect(stored.cards[0]!.voiceTone).toBe("gentle");
+    });
+
+    it("zmiana samego tonu po publikacji i kopii szkicu nie tworzy skill_version ani nie rusza postępu dziecka", async () => {
+      const fakes = await fakeGeneration();
+      disposers.push(fakes.dispose);
+      const { services, cookie, deckId, draft } = await schoolDraft(fakes);
+      const publish = await call(services, "POST", `lesson-drafts/${draft.id}/publish`, { body: { expectedEditNumber: draft.editNumber }, cookie });
+      expect(publish.status).toBe(200);
+
+      const child = await createChild(services, { displayName: "Ton", avatarKey: "owl" });
+      const objectiveId = draft.exercises[0]!.objectiveId;
+      await pool.query(`insert into learning_app.child_objective_progress
+        (child_id,subject_id,objective_id,topic_id,status,streak,next_review_at,projection_version)
+        values ($1,'school',$2,'dynamic','needs_confirmation',3,'2000-01-01T00:00:00Z','proj-1')`, [child.id, objectiveId]);
+      const progressBefore = (await pool.query("select * from learning_app.child_objective_progress where child_id = $1", [child.id])).rows;
+      const skillCount = async () => Number((await pool.query<{ n: string }>(
+        `select count(*) as n from learning_app.skill_versions sv
+           join learning_app.learning_items li on li.id = sv.item_id where li.deck_id = $1`, [deckId])).rows[0]!.n);
+      const countBefore = await skillCount();
+      const idsBefore = await objectiveSkillVersionIds(draft.id);
+
+      const forked = await call(services, "POST", `lessons/${deckId}/draft`, { cookie });
+      expect(forked.status).toBe(201);
+      const copy = LessonDraftDtoSchema.parse(await forked.json());
+      expect(copy.exercises[0]!.voiceTone).toBe("curious");
+
+      const retoned = await patchExercises(services, cookie, copy, (ex, i) => (i === 0 ? { ...ex, voiceTone: "mysterious" } : ex));
+      expect(retoned.exercises[0]!.voiceTone).toBe("mysterious");
+      const published = await call(services, "POST", `lesson-drafts/${retoned.id}/publish`, { body: { expectedEditNumber: retoned.editNumber }, cookie });
+      expect(published.status).toBe(200);
+
+      expect(await skillCount()).toBe(countBefore);
+      expect(await objectiveSkillVersionIds(retoned.id)).toEqual(idsBefore);
+      expect((await pool.query("select * from learning_app.child_objective_progress where child_id = $1", [child.id])).rows).toEqual(progressBefore);
+    });
   });
 
   it("nowa wersja z opublikowanej", async () => {

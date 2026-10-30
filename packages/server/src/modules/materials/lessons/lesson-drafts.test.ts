@@ -195,6 +195,56 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
   });
 });
 
+describe("ton lektora (voiceTone) z wyjścia modelu", () => {
+  const rawExercise = {
+    exerciseType: "lesson_open_answer",
+    objectiveId: "school.dx.foto",
+    prompt: "Co to jest fotosynteza?",
+    answer: "Roślina wytwarza cukry.",
+    acceptedAnswers: [],
+    focus: ["cukry"],
+  };
+
+  it("zachowuje znany ton ćwiczenia, a nieznany albo null pomija", () => {
+    expect(toExerciseDraft({ ...rawExercise, voiceTone: "gentle" }).voiceTone).toBe("gentle");
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: "loud" })).toBe(false);
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: null })).toBe(false);
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: 3 })).toBe(false);
+    expect("voiceTone" in toExerciseDraft(rawExercise)).toBe(false);
+  });
+
+  it("przenosi ton do payloadu rewizji i z powrotem", () => {
+    const payload = buildLessonPayload(toExerciseDraft({ ...rawExercise, voiceTone: "curious" }), schoolSubject);
+    expect(payload.voiceTone).toBe("curious");
+    expect(toExerciseDraft(payload).voiceTone).toBe("curious");
+    expect("voiceTone" in buildLessonPayload(toExerciseDraft(rawExercise), schoolSubject)).toBe(false);
+  });
+
+  it("nie zmienia kryteriów celu ani wersji payloadu", () => {
+    const plain = toExerciseDraft(rawExercise);
+    const toned = toExerciseDraft({ ...rawExercise, voiceTone: "mysterious" });
+    expect(buildObjectiveCriteria(toned, schoolSubject, 1)).toEqual(buildObjectiveCriteria(plain, schoolSubject, 1));
+    expect(lessonPayloadVersion(toned, schoolSubject)).toBe(lessonPayloadVersion(plain, schoolSubject));
+  });
+
+  it("karty zagadnień: znany ton zachowany, nieznany i null pominięte", () => {
+    const raw = {
+      slug: "a",
+      titlePl: "Zagadnienie",
+      descriptionEn: "Topic description.",
+      cards: [
+        { title: "Karta 1", body: "Treść 1.", voiceTone: "cheerful" },
+        { title: "Karta 2", body: "Treść 2.", voiceTone: "loud" },
+        { title: "Karta 3", body: "Treść 3.", voiceTone: null },
+        { title: "Karta 4", body: "Treść 4." },
+      ],
+    };
+    const cards = buildDynamicTopicData([raw], "deck", "Temat").data!.objectives[0]!.cards;
+    expect(cards[0]!.voiceTone).toBe("cheerful");
+    expect(cards.slice(1).every((card) => !("voiceTone" in card))).toBe(true);
+  });
+});
+
 describe("stripParentAddedFlags (generacja nie jest źródłem rodzica)", () => {
   it("usuwa flagę parentAdded z cytatów ćwiczeń generowanych", () => {
     const draft = toExerciseDraft({

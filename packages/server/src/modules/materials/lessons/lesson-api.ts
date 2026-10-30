@@ -170,6 +170,7 @@ function exerciseDtoFromPayload(
     ...(draft.commonErrors === undefined ? {} : { commonErrors: [...draft.commonErrors] }),
     ...(draft.expectedForm === undefined ? {} : { expectedForm: draft.expectedForm }),
     ...(draft.familyId === undefined ? {} : { familyId: draft.familyId }),
+    ...(draft.voiceTone === undefined ? {} : { voiceTone: draft.voiceTone }),
     ...(draft.sourceRefs === undefined ? {} : { sourceRefs: draft.sourceRefs.map((ref) => ({ ...ref })) }),
     ...(draft.calculation === undefined ? {} : { calculation: draft.calculation }),
     ...(draft.keywordOptions === undefined ? {} : { keywordOptions: draft.keywordOptions.map((o) => ({ ...o })) }),
@@ -276,7 +277,11 @@ async function readLessonDraftDto(
             objectives: context.dynamicTopic.objectives.map((o) => ({
               id: o.id,
               titlePl: o.titlePl,
-              cards: o.cards.map((card) => ({ title: card.title, body: card.body })),
+              cards: o.cards.map((card) => ({
+                title: card.title,
+                body: card.body,
+                ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+              })),
             })),
           },
         }),
@@ -642,7 +647,11 @@ export async function editLessonDraft(
           id: objective.id,
           titlePl: objective.titlePl,
           descriptionEn: currentById.get(objective.id)!.descriptionEn,
-          cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+          cards: objective.cards.map((card) => ({
+            title: card.title,
+            body: card.body,
+            ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+          })),
         })),
       };
       const topicErrors = validateDynamicTopicData(subject, nextDynamicTopic);

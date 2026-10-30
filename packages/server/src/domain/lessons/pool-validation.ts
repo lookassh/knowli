@@ -234,6 +234,9 @@ export function validateLessonExercise(
     }
   }
 
+  if (ex.voiceTone !== undefined && subject.ttsForPrompts !== true) {
+    errors.push(`voiceTone: ton lektora niedozwolony dla przedmiotu „${subject.id}” (brak nagrań pytań)`);
+  }
   validateVisualSubject(ex, errors);
   if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
     errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");
