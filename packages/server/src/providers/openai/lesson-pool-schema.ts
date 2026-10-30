@@ -1,6 +1,22 @@
+import { LessonVoiceToneSchema } from "@learning/contracts";
 import type { LessonPoolInput } from "../../ports/ai";
 
 const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
+
+/** Strict-mode pole tonu lektora: nullable enum z kontraktu (`null` = styl roli). */
+export const voiceToneProperty = (): Record<string, unknown> => ({
+  type: ["null", "string"],
+  enum: [null, ...LessonVoiceToneSchema.options],
+});
+
+/** Dokłada wymagane pole `voiceTone` do gałęzi ćwiczenia (strict mode: pole także w `required`). */
+function withVoiceTone(branch: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...branch,
+    required: [...(branch.required as string[]), "voiceTone"],
+    properties: { ...(branch.properties as Record<string, unknown>), voiceTone: voiceToneProperty() },
+  };
+}
 
 export const poolExerciseTypes = (types: readonly string[]): string[] =>
   types.filter((type) => !NON_POOL_EXERCISE_TYPES.has(type));
@@ -174,13 +190,15 @@ export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unk
     const types = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
     if (types.length === 0) throw new Error(`objective ${objective.id} has no supported pool exercise types`);
     const regularTypes = types.filter((type) => !DEDICATED_BRANCH_TYPES.has(type));
+    // Ton lektora dotyczy każdej gałęzi poza kalkulacją (jej treść składa kod z szablonu).
+    const toned = (branch: Record<string, unknown>) => (input.voiceTones === true ? withVoiceTone(branch) : branch);
     return [
-      ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
+      ...(regularTypes.length > 0 ? [toned(lessonExerciseSchema(input, objective, regularTypes))] : []),
       ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_match") ? [matchExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_group") ? [groupExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_cloze") ? [clozeExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_keywords") ? [toned(keywordsExerciseSchema(objective.id))] : []),
+      ...(types.includes("lesson_match") ? [toned(matchExerciseSchema(objective.id))] : []),
+      ...(types.includes("lesson_group") ? [toned(groupExerciseSchema(objective.id))] : []),
+      ...(types.includes("lesson_cloze") ? [toned(clozeExerciseSchema(objective.id))] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

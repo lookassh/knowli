@@ -7,6 +7,10 @@ function isObjectWith(value: unknown, fields: readonly string[]): boolean {
     fields.every((field) => typeof (value as Record<string, unknown>)[field] === "string");
 }
 
+/** Ton lektora z surowego rekordu modelu; `null` i brak pola nie trafiają do wyniku (sanityzacja w szkicu). */
+const voiceToneOf = (record: Record<string, unknown>): { voiceTone?: string } =>
+  typeof record.voiceTone === "string" ? { voiceTone: record.voiceTone } : {};
+
 /**
  * Pary, grupy (design szkoły §10.6) i luki z bankiem (§13.6) z modelu niosą
  * tylko teksty i przypisania.
@@ -37,6 +41,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         sourceRefs: record.sourceRefs,
+        ...voiceToneOf(record),
       };
     }
     if (record.exerciseType === "lesson_group") {
@@ -56,6 +61,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         sourceRefs: record.sourceRefs,
+        ...voiceToneOf(record),
       };
     }
     if (record.exerciseType === "lesson_cloze") {
@@ -75,6 +81,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         sourceRefs: record.sourceRefs,
+        ...voiceToneOf(record),
       };
     }
     return raw;

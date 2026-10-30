@@ -41,6 +41,37 @@ describe("FakeLlmProvider lesson pool", () => {
   });
 });
 
+describe("FakeLlmProvider voice tones", () => {
+  const poolInput = {
+    subjectId: "school",
+    subjectTitle: "Szkoła",
+    answerLocale: "pl-PL",
+    promptLocale: "pl-PL",
+    promptProfile: { generationRole: "lesson", gradingRole: "grade", almostDefinition: "close" },
+    exerciseTypes: ["lesson_open_answer", "lesson_choice"],
+    transforms: [],
+    objectives: [{ id: "o1", descriptionEn: "d", exerciseTypes: ["lesson_open_answer", "lesson_choice"], errorCategories: [] }],
+    material: "Skala mapy pozwala przeliczyć odległość.",
+    countPerObjective: 3,
+    stageCounts: { guided: 1, productive: 0, independent: 2 },
+    graderAvailable: false,
+  } satisfies LessonPoolInput;
+  const objectivesInput = { subjectTitle: "Szkoła", topicTitle: "Mapa", material: "Pierwsze zdanie. Drugie zdanie.", generationRole: "role" };
+
+  it("gives the first exercise curious and the first card cheerful only when voiceTones is set", async () => {
+    const llm = new FakeLlmProvider();
+    const on = await llm.generateLessonPool({ ...poolInput, voiceTones: true });
+    expect(on.exercises.map((e) => (e as { voiceTone?: unknown }).voiceTone)).toEqual(["curious", undefined, undefined]);
+    const off = await llm.generateLessonPool(poolInput);
+    for (const exercise of off.exercises) expect(exercise).not.toHaveProperty("voiceTone");
+
+    const cardsOn = (await llm.generateLessonObjectives({ ...objectivesInput, voiceTones: true })).objectives as { cards: Record<string, unknown>[] }[];
+    expect(cardsOn[0]!.cards.map((c) => c.voiceTone)).toEqual(["cheerful", undefined]);
+    const cardsOff = (await llm.generateLessonObjectives(objectivesInput)).objectives as { cards: Record<string, unknown>[] }[];
+    for (const card of cardsOff[0]!.cards) expect(card).not.toHaveProperty("voiceTone");
+  });
+});
+
 describe("FakeTtsProvider", () => {
   const base = { text: "Świetnie!", locale: "pl-PL", voice: "fake-voice", format: "mp3" as const };
 
