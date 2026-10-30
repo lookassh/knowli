@@ -714,7 +714,12 @@ export async function readReadyMediaStream(
   return { body: singleChunk(new Uint8Array(blob.bytes)), mimeType: asset.mimeType ?? blob.mimeType, byteCount: blob.bytes.byteLength, immutableCache: true };
 }
 
-/** Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu. */
+/**
+ * Publikacja sprawdza gotowość i zgodność fingerprintu powiązanego zasobu.
+ * Zasób w generacji zwraca `"pending"` zamiast błędu: wywołujący kończy
+ * pozostałe sprawdzenia i dopiero wtedy zgłasza `mediaPendingError`, żeby
+ * nieudany zasób na dalszej karcie nie ukrył się za „przygotowują się”.
+ */
 export async function assertAssetPublishable(
   db: Executor,
   input: {
@@ -723,7 +728,7 @@ export async function assertAssetPublishable(
     assetId: string | null;
     expectedFingerprint: string;
   },
-): Promise<void> {
+): Promise<"ready" | "pending"> {
   if (input.assetId === null) {
     throw new AppError("validation", {
       message: `${input.role} not linked for revision ${input.itemRevisionId}`,
@@ -736,15 +741,20 @@ export async function assertAssetPublishable(
       .where(eq(mediaAssets.id, input.assetId))
   )[0];
   if (asset && asset.state === "pending" && asset.fingerprint === input.expectedFingerprint) {
-    // generacja jest zlecona i trwa: rodzic czeka i publikuje ponownie
-    throw new AppError("validation", {
-      message: `${input.role} pending for revision ${input.itemRevisionId}`,
-      details: { media: "pending" } satisfies MediaPendingDetails,
-    });
+    return "pending";
   }
   if (!asset || asset.state !== "ready" || asset.fingerprint !== input.expectedFingerprint) {
     throw new AppError("validation", {
       message: `${input.role} not ready for revision ${input.itemRevisionId}`,
     });
   }
+  return "ready";
+}
+
+/** Jedyny błąd publikacji, po którym rodzic czeka: generacja trwa i nic innego nie blokuje. */
+export function mediaPendingError(pending: { role: AssetRole; itemRevisionId: string }): AppError {
+  return new AppError("validation", {
+    message: `${pending.role} pending for revision ${pending.itemRevisionId}`,
+    details: { media: "pending" } satisfies MediaPendingDetails,
+  });
 }

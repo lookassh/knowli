@@ -158,6 +158,26 @@ describe("publikacja zleca brakujące media trwale (issue #106)", () => {
     expect((await readDraft(app, draft.id)).assets.find((asset) => asset.role === "illustration")?.state).toBe("failed");
   });
 
+  it("nieudany zasób na dalszej karcie wygrywa z generacją na wcześniejszej", async () => {
+    const generation = await fakes();
+    const app = services(generation);
+    const draft = await createDraft(app, { title: "Dni", items: [item(), item({ source: "piątek", target: "Friday" })] });
+    await reconcileDraftAssets(app, draft.id);
+    // karta 0 czeka na generację, karta 1 ma audio, którego generacja się nie udała
+    await pool.query(
+      `update learning_app.media_assets set state = 'failed'
+        where id = (select ra.asset_id from learning_app.revision_assets ra
+                      join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+                     where ir.deck_version_id = $1 and ir.position = 1 and ra.role = 'target_audio')`,
+      [draft.id],
+    );
+
+    const rejection = await publishDraft(app, draft.id, draft.editNumber).catch((error: unknown) => error);
+    expect(rejection).toMatchObject({ code: "validation" });
+    // rodzic nie czeka na media, których generacja nie usunie problemu
+    expect(rejection).not.toMatchObject({ details: { media: "pending" } });
+  });
+
   it("nieaktualny numer edycji to konflikt bez uzgadniania mediów", async () => {
     const generation = await fakes();
     const app = services(generation);

@@ -44,7 +44,7 @@ import { VOCABULARY_SKILLS, type VocabularySkill } from "../../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
-import { assertAssetPublishable, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor } from "./media-reconciliation";
+import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor, type AssetRole } from "./media-reconciliation";
 import {
   assertEditable,
   bumpEditNumber,
@@ -554,6 +554,7 @@ export async function publishDraft(
     // Walidator publikacji: obowiązkowe audio gotowe i zgodne z fingerprintem,
     // obraz świadomie pominięty albo gotowy. Wymagany TTS nie może być pominięty.
     const settings = services.media;
+    let firstPending: { role: AssetRole; itemRevisionId: string } | null = null;
     for (const revision of revisions) {
       const mine = assets.filter((a) => a.itemRevisionId === revision.id);
       const requiredHere = settings
@@ -571,12 +572,13 @@ export async function publishDraft(
             message: `missing ready ${role} for revision ${revision.id}`,
           });
         }
-        await assertAssetPublishable(tx, {
+        const status = await assertAssetPublishable(tx, {
           itemRevisionId: revision.id,
           role,
           assetId: row.assetId,
           expectedFingerprint: row.expectedFingerprint,
         });
+        if (status === "pending") firstPending ??= { role, itemRevisionId: revision.id };
         const required = requiredHere?.get(role);
         if (requiredHere && (!required || required.fingerprint !== row.expectedFingerprint)) {
           throw new AppError("validation", {
@@ -612,6 +614,9 @@ export async function publishDraft(
         await checkLinked("example_audio");
       }
     }
+
+    // generacja zgłaszana po wszystkich kartach: inny błąd ma pierwszeństwo
+    if (firstPending) throw mediaPendingError(firstPending);
 
     const now = services.clock.now();
     await tx

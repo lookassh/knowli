@@ -33,7 +33,7 @@ import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { assertAssetPublishable, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
+import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
 import {
@@ -763,6 +763,7 @@ export async function publishLessonDraft(
         .select()
         .from(revisionAssets)
         .where(inArray(revisionAssets.itemRevisionId, revisionIds));
+      let firstPendingRevision: string | null = null;
       for (const revision of revisions) {
         const audio = assets.find((a) => a.itemRevisionId === revision.id && a.role === "target_audio");
         if (!audio || audio.assetId === null) {
@@ -770,13 +771,16 @@ export async function publishLessonDraft(
             message: `missing ready target_audio for revision ${revision.id}`,
           });
         }
-        await assertAssetPublishable(tx, {
+        const status = await assertAssetPublishable(tx, {
           itemRevisionId: revision.id,
           role: "target_audio",
           assetId: audio.assetId,
           expectedFingerprint: audio.expectedFingerprint,
         });
+        if (status === "pending") firstPendingRevision ??= revision.id;
       }
+      // generacja zgłaszana po wszystkich ćwiczeniach: inny błąd ma pierwszeństwo
+      if (firstPendingRevision) throw mediaPendingError({ role: "target_audio", itemRevisionId: firstPendingRevision });
     }
 
     const now = services.clock.now();
