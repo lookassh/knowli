@@ -3,6 +3,7 @@ import { messages, type UiAudioKey } from "@learning/contracts";
 import { ActionButton } from "./ActionButton";
 import { IconActionButton } from "./IconActionButton";
 import { KidIcon } from "./KidIcon";
+import { ListenButton } from "./ListenButton";
 import { SoundRing } from "../motion/SoundRing";
 
 /** Jawny odsłuch krótkiej instrukcji albo komunikatu interfejsu. W wierszu
@@ -36,11 +37,17 @@ export function GuidanceButton({
     }
   };
   return <>
-    <IconActionButton className="kid-icon-button" data-testid={testId} variant={inInstruction ? "outlined" : undefined}
-      aria-label={inInstruction ? messages.kid.listenInstruction : messages.kid.listen} data-sound-active={playing || undefined} onClick={() => void play()}>
-      <KidIcon name={inInstruction ? "question" : "volume"} />
-      {playing && <SoundRing />}
-    </IconActionButton>
+    {inInstruction ? (
+      <IconActionButton className="kid-icon-button" data-testid={testId} variant="outlined"
+        aria-label={messages.kid.listenInstruction} data-sound-active={playing || undefined} onClick={() => void play()}>
+        <KidIcon name="question" />
+        {playing && <SoundRing />}
+      </IconActionButton>
+    ) : (
+      <ListenButton data-testid={testId} aria-label={messages.kid.listen} data-sound-active={playing || undefined} onClick={() => void play()}>
+        {playing && <SoundRing />}
+      </ListenButton>
+    )}
     {failed && showError && <div className="kid-notice" role="alert" data-testid={`${testId}-error`}>
       <p>{messages.errors.picture_guidance_unavailable}</p>
       <ActionButton priority="secondary" fullWidth={false} size="sm" onClick={() => void play()}>{messages.errors.picture_audio_retry}</ActionButton>

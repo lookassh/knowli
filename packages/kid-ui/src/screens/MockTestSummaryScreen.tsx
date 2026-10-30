@@ -3,8 +3,7 @@ import { messages, type MockTestSummaryDto, type SessionActivityResultDto, type 
 import { ActionButton } from "../components/ActionButton";
 import { ScoreStars } from "../components/ScoreStars";
 import { Chip } from "../components/Chip";
-import { IconActionButton } from "../components/IconActionButton";
-import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { RowList, RowListItem } from "../components/RowList";
 import { EmptyScene } from "../illustrations/EmptyScene";
 import { KidScreen } from "../layout/KidScreen";
@@ -77,7 +76,7 @@ export function MockTestSummaryScreen({ summary, activity, detailsLoading, detai
             <MockTestStatusChip status={status} skipped={skipped} data-testid="kid-mock-status" />
             {detail.type === "perSkill" && solution.results.map(result => <Chip className={mockTestResultBadgeClass(result)} key={result.skill}>{mockTestResultBadgeLabel(result)}</Chip>)}
           </span>}
-          trailing={solution.audioAssetId ? <IconActionButton variant="tonal" className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))}><KidIcon name="volume" /></IconActionButton> : undefined}
+          trailing={solution.audioAssetId ? <ListenButton className="kid-mock-row__audio" aria-label={messages.kid.listen} onClick={() => run(onPlay(solution.taskId))} /> : undefined}
         />;
       })}</RowList>
       {error && <p role="alert" className="kid-alert">{messages.kid.offlineMessage}</p>}

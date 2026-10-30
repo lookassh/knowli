@@ -1,7 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { messages } from "@learning/contracts";
-import { IconActionButton } from "./IconActionButton";
 import { KidIcon, type KidIconName } from "./KidIcon";
+import { ListenButton } from "./ListenButton";
 import classes from "./ExerciseInstruction.module.css";
 
 export interface ExerciseInstructionAudio {
@@ -21,10 +21,8 @@ export function ExerciseInstruction({ instruction, icon, audio, guidance }: {
   return (
     <header className={`kid-exercise-instruction ${classes.root}`} data-testid="kid-instruction">
       {audio ? (
-        <IconActionButton ref={audio.ref} disabled={audio.disabled} onClick={audio.onPlay}
-          aria-label={messages.kid.listen} data-testid="kid-play">
-          <KidIcon name="volume" />
-        </IconActionButton>
+        <ListenButton ref={audio.ref} disabled={audio.disabled} onClick={audio.onPlay}
+          aria-label={messages.kid.listen} data-testid="kid-play" />
       ) : <KidIcon name={icon} className="kid-exercise-instruction-icon" />}
       <span className={classes.text}>{instruction}</span>
       {guidance}

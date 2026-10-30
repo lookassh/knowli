@@ -1,5 +1,5 @@
 import { messages } from "@learning/contracts";
-import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { Visual } from "../visuals/Visual";
 import { ExerciseFrame } from "./ExerciseFrame";
 import { SpeechRecordButton } from "./SpeechRecordButton";
@@ -58,19 +58,12 @@ export function SpeechView(props: ExerciseProps) {
       )}
       actions={<div className="kid-speech-actions">
         {task.prompt.audioAssetId !== null && (
-          <ActionButton
-            priority="secondary"
-            fullWidth={false}
-            size="sm"
-            type="button"
-            className="kid-audio-round kid-audio-round-sm"
+          <ListenButton
             data-testid="kid-play"
             aria-label={messages.kid.listen}
             disabled={busy || (recordingPhase !== "idle" && !automaticRecording)}
             onClick={handlers.onPlay}
-          >
-            <KidIcon name="volume" />
-          </ActionButton>
+          />
         )}
       </div>}
       secondaryActions={(!micAvailable || technicalRecordingIssue) && <div className="kid-secondary-actions">
