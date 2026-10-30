@@ -9,6 +9,7 @@ import { ExerciseFeedbackDock, type FeedbackDockTone } from "./ExerciseFeedbackD
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { ExerciseGuidanceProvider } from "../exercises/exercise-guidance";
 import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { GuidanceButton } from "../components/GuidanceButton";
 import { QuestionAudioButton } from "../components/QuestionAudioButton";
 import { MeaningVisualView } from "../visuals/MeaningVisualView";
@@ -332,7 +333,7 @@ export function LearnScreen({
                   <p>{messages.kid.revealTitle}</p>
                   {screen.reveal.visual && <MeaningVisualView visual={screen.reveal.visual} mediaUrl={(assetId) => controller.mediaUrl(assetId)} />}
                   <p className="kid-word">{screen.reveal.target}</p>
-                  {screen.reveal.audioAssetId && <IconActionButton className="kid-audio-round" data-testid="kid-reveal-audio" radius="50%" style={{ width: 64, height: 64, minWidth: 64, minHeight: 64 }} onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen}><KidIcon name="volume" /></IconActionButton>}
+                  {screen.reveal.audioAssetId && <ListenButton size="lg" data-testid="kid-reveal-audio" onClick={() => void controller.playRevealAudio()} aria-label={messages.kid.listen} />}
                 </section>
               )} actions={<RevealActions busy={busy} onConfirm={() => void controller.confirmReveal()} />} />
             ) : (

@@ -7,7 +7,8 @@ export type KidIconName =
   | "almost" | "info";
 
 const paths: Record<KidIconName, ReactElement> = {
-  volume: <><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></>,
+  // Pełny korpus głośnika z zaokrąglonymi rogami i dwie fale: czytelny także w 48 px.
+  volume: <><path d="M3 9.75C3 8.78 3.78 8 4.75 8H7.5l4.1-3.6c.65-.57 1.65-.11 1.65.75v13.7c0 .86-1 1.32-1.65.75L7.5 16H4.75C3.78 16 3 15.22 3 14.25z" fill="currentColor"/><path d="M16.5 9a4 4 0 0 1 0 6M19.2 6.3a8 8 0 0 1 0 11.4" strokeWidth="2"/></>,
   microphone: <><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></>,
   "microphone-off": <><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9V5a3 3 0 0 0-5.8-1M5 10v2a7 7 0 0 0 11.2 5.6M19 10v2a7 7 0 0 1-.7 3.05M12 19v3m-4 0h8M3 3l18 18"/></>,
   book: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8m-8 4h8"/></>,
@@ -23,7 +24,8 @@ const paths: Record<KidIconName, ReactElement> = {
   lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 4v3"/></>,
   sparkles: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l1 2.5 2.5 1-2.5 1L19 23l-1-2.5-2.5-1 2.5-1z"/></>,
   retry: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.5-3"/></>,
-  question: <><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.6 2.6 0 1 1 4.4 1.9c-1.1 1-1.9 1.3-1.9 3.1m0 3h.01"/></>,
+  // Sam znak zapytania bez koła: przycisk pomocy ma już własny obrys.
+  question: <><path d="M8 8a4 4 0 1 1 6.1 3.4c-1.25.75-2.1 1.6-2.1 3.1v.5" strokeWidth="2.4"/><circle cx="12" cy="19.5" r="1.5" fill="currentColor" stroke="none"/></>,
   almost: <path d="M4 13c2.5-3 5-3 8 0s5.5 3 8 0"/>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></>,
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { messages } from "@learning/contracts";
 import { KidIcon } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import { Visual } from "../visuals/Visual";
 import { ExerciseFrame } from "./ExerciseFrame";
 import type { ExerciseProps } from "./types";
@@ -65,18 +66,13 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
               {task.prompt.target}
               </p>
             {task.prompt.audioAssetId !== null && (
-              <ActionButton
-                fullWidth={false}
-                size="sm"
-                type="button"
-                className="kid-audio-round"
+              <ListenButton
+                size="lg"
                 data-testid="kid-play"
                 disabled={busy}
                 onClick={handlers.onPlay}
                 aria-label={messages.kid.listen}
-              >
-                <KidIcon name="volume" />
-              </ActionButton>
+              />
             )}
           </div>
           <p className="kid-source" data-testid="kid-source">
@@ -88,18 +84,12 @@ export function ExposureView({ task, busy, mediaUrl, dock, handlers }: ExerciseP
                 {task.prompt.example}
                 </p>
               {task.prompt.exampleAudioAssetId !== null && (
-                <ActionButton
-                  fullWidth={false}
-                  size="sm"
-                  type="button"
-                  className="kid-audio-round kid-audio-round-sm"
+                <ListenButton
                   data-testid="kid-play-example"
                   disabled={busy}
                   onClick={handlers.onPlayExample}
                   aria-label={messages.kid.listenExample}
-                >
-                  <KidIcon name="volume" />
-                </ActionButton>
+                />
               )}
             </div>
           )}

@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { messages } from "@learning/contracts";
-import { IconActionButton } from "./IconActionButton";
-import { KidIcon } from "./KidIcon";
+import { ListenButton } from "./ListenButton";
 import { SoundRing } from "../motion/SoundRing";
 
 /** „Posłuchaj pytania” (design szkoły §11.4): odsłuch nagrania polecenia
@@ -30,10 +29,9 @@ export function QuestionAudioButton({ onPlay, disabled, label = messages.kid.lis
     }
   };
   return (
-    <IconActionButton className="kid-icon-button" data-testid="kid-question-audio" variant="outlined" disabled={disabled}
+    <ListenButton data-testid="kid-question-audio" disabled={disabled}
       aria-label={label} data-sound-active={playing || undefined} onClick={() => void play()}>
-      <KidIcon name="volume" />
       {playing && <SoundRing />}
-    </IconActionButton>
+    </ListenButton>
   );
 }

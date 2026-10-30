@@ -184,6 +184,26 @@ test("exposure keeps the complete word card above its action without scrolling o
     await page.screenshot({ path: testInfo.outputPath(`exposure-${viewport.width}x${viewport.height}.png`) });
   }
 
+  // Zoomed narrow phones (320px at 160% and 200%): the speaker moves under its
+  // text instead of squeezing the word out between two 64px side columns.
+  for (const viewport of [{ width: 200, height: 640 }, { width: 160, height: 640 }]) {
+    await page.setViewportSize(viewport);
+    const material = await page.getByTestId("kid-material").boundingBox();
+    for (const [textId, playId] of [["kid-target", "kid-play"], ["kid-example", "kid-play-example"]] as const) {
+      const text = page.getByTestId(textId);
+      const play = page.getByTestId(playId);
+      await play.scrollIntoViewIfNeeded();
+      const [textBox, playBox] = await Promise.all([text.boundingBox(), play.boundingBox()]);
+      expect(textBox!.width, `${textId} keeps room at ${viewport.width}px`).toBeGreaterThan(60);
+      expect(playBox!.y, `${playId} under ${textId} at ${viewport.width}px`).toBeGreaterThanOrEqual(textBox!.y + textBox!.height - 1);
+      for (const bounds of [textBox!, playBox!]) {
+        expect(bounds.x).toBeGreaterThanOrEqual(material!.x - 1);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(material!.x + material!.width + 1);
+      }
+      expect(playBox!.width).toBeGreaterThanOrEqual(48);
+    }
+  }
+
   // Accessibility and unusually short windows retain the complete card through scrolling.
   for (const viewport of [{ width: 640, height: 360 }, { width: 760, height: 450 }, { width: 360, height: 640 }]) {
     await page.setViewportSize(viewport);
@@ -197,6 +217,44 @@ test("exposure keeps the complete word card above its action without scrolling o
       expect(bounds!.y + bounds!.height, testId).toBeLessThanOrEqual(viewport.height + 1);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  }
+});
+
+test("exposure keeps a long word whole beside its speaker and on the card axis", async ({ page }) => {
+  const fixture = recallLayoutFixture();
+  const assetId = "10000000-0000-4000-8000-000000000106";
+  fixture.tasks = [{ ...fixture.tasks[0]!, exerciseType: "exposure", direction: null, prompt: {
+    kind: "exposure", target: "strawberry", source: "truskawka", example: null,
+    audioAssetId: assetId, exampleAudioAssetId: null, imageAssetId: null, visualType: "color", visualData: { color: "#ff0000" },
+  } }];
+  await installKidUiFixture(page, fixture);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").click();
+  await expect(page.getByTestId("kid-target")).toHaveText("strawberry");
+
+  for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 640 }, { width: 922, height: 1000 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.evaluate(() => {
+      const textBox = (id: string) => {
+        const range = document.createRange();
+        range.selectNodeContents(document.querySelector(`[data-testid='${id}']`)!);
+        return { lines: new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size, box: range.getBoundingClientRect() };
+      };
+      const material = document.querySelector("[data-testid='kid-material']")!.getBoundingClientRect();
+      const play = document.querySelector("[data-testid='kid-play']")!.getBoundingClientRect();
+      const target = textBox("kid-target");
+      const source = textBox("kid-source");
+      return { targetLines: target.lines, targetCenter: target.box.left + target.box.width / 2,
+        sourceCenter: source.box.left + source.box.width / 2,
+        play: { left: play.left, right: play.right }, material: { left: material.left, right: material.right } };
+    });
+    expect(geometry.targetLines, `word breaks at ${viewport.width}px`).toBe(1);
+    expect(geometry.play.left).toBeGreaterThanOrEqual(geometry.material.left - 1);
+    expect(geometry.play.right).toBeLessThanOrEqual(geometry.material.right + 1);
+    // With room to spare the word sits on the card axis, in line with its translation.
+    if (viewport.width >= 600) expect(Math.abs(geometry.targetCenter - geometry.sourceCenter)).toBeLessThanOrEqual(2);
   }
 });
 
