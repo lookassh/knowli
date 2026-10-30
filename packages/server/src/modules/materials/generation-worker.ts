@@ -81,6 +81,12 @@ export async function runDueGenerationWork(
           inArray(generationRuns.state, ["queued", "running"]),
           eq(mediaAssets.state, "pending"),
           or(isNull(mediaAssets.leaseToken), sql`${mediaAssets.leaseUntil} < ${services.clock.now()}`),
+          // TTS tylko z konfiguracji tego workera (design szkoły §11.7): zadania innego
+          // providera/modelu czekają w kolejce na zgodny worker, bez zmiany stanu.
+          ...(services.media ? [or(
+            not(eq(generationRuns.kind, "tts")),
+            and(eq(mediaAssets.provider, services.media.tts.provider), eq(mediaAssets.model, services.media.tts.model)),
+          )!] : []),
           ...(activeIds.length ? [notInArray(generationRuns.assetId, activeIds)] : []),
           ...(seenAttempts.length > 0
             ? [not(or(...seenAttempts.map(({ id, attempts }) => and(eq(generationRuns.assetId, id), eq(generationRuns.attempts, attempts))))!)]

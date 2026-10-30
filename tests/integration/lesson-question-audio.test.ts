@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, publishLessonDraft, readLessonDeck,
+  completePresentation, createChild, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork, publishLessonDraft, readLessonDeck,
   startSession, submitAttempt,
 } from "@learning/server";
 import type { LessonExerciseInput, TaskDto } from "@learning/contracts";
@@ -195,26 +195,56 @@ describe("„Posłuchaj pytania” — nagranie po publikacji", () => {
 });
 
 describe("„Posłuchaj pytania” — zmiana dostawcy TTS (OpenAI → OpenRouter)", () => {
-  it("worker nie wysyła zadania zleconego innym modelem do nowego dostawcy; kolejna edycja zleca nagranie z nowym fingerprintem", async () => {
+  const OPEN_ROUTER = { ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } };
+
+  async function stateOf(assetId: string): Promise<{ asset: string; runs: string[] }> {
+    const asset = (await pool.query("select state from learning_app.media_assets where id = $1", [assetId])).rows[0].state;
+    const runs = (await pool.query("select state from learning_app.generation_runs where asset_id = $1", [assetId])).rows.map((row) => row.state);
+    return { asset, runs };
+  }
+
+  it("nowy worker nie wysyła starego zlecenia do nowego dostawcy ani nie zmienia jego stanu; edycja zleca nagranie z nowym fingerprintem", async () => {
     const { versionId } = await seedDraft();
     const draft = await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
     const [stale] = await promptAudio(versionId);
 
     const fakes = await fakeGeneration();
     try {
-      const openRouter = { ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } };
-      const worker = createServices({ db, clock: new ManualClock(), media: openRouter, generation: fakes.deps });
+      const worker = createServices({ db, clock: new ManualClock(), media: OPEN_ROUTER, generation: fakes.deps });
       await executeMediaAsset(worker, stale!.assetId);
+      expect(await runDueGenerationWork(worker, { lesson: 0, deck: 0, tts: 50, images: 0 })).toMatchObject({ processed: 0 });
       expect(fakes.tts.requests).toHaveLength(0);
-      expect((await pool.query("select state from learning_app.media_assets where id = $1", [stale!.assetId])).rows[0].state).toBe("failed");
-      expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [stale!.assetId])).rows.map((row) => row.state))
-        .toEqual(["superseded"]);
+      expect(await stateOf(stale!.assetId)).toEqual({ asset: "pending", runs: ["queued"] });
 
       await editLessonDraft(worker, versionId, { expectedEditNumber: draft.editNumber, exercises: exercises() });
       const [fresh] = await promptAudio(versionId);
       expect(fresh!.assetId).not.toBe(stale!.assetId);
       expect((await pool.query("select provider, model from learning_app.media_assets where id = $1", [fresh!.assetId])).rows[0])
         .toEqual({ provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" });
+      await executeMediaAsset(worker, fresh!.assetId);
+      expect(fakes.tts.requests).toHaveLength(1);
+      expect((await stateOf(fresh!.assetId)).asset).toBe("ready");
+    } finally {
+      await fakes.dispose();
+    }
+  });
+
+  it("stary worker w trakcie wdrożenia nie unieważnia nagrania zleconego już z nową konfiguracją", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(createServices({ db, clock: new ManualClock(), media: OPEN_ROUTER }), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [fresh] = await promptAudio(versionId);
+
+    const fakes = await fakeGeneration();
+    try {
+      const oldWorker = createServices({ db, clock: new ManualClock(), media: MEDIA, generation: fakes.deps });
+      await executeMediaAsset(oldWorker, fresh!.assetId);
+      expect(await runDueGenerationWork(oldWorker, { lesson: 0, deck: 0, tts: 50, images: 0 })).toMatchObject({ processed: 0 });
+      expect(fakes.tts.requests).toHaveLength(0);
+      expect(await stateOf(fresh!.assetId)).toEqual({ asset: "pending", runs: ["queued"] });
+
+      const newWorker = createServices({ db, clock: new ManualClock(), media: OPEN_ROUTER, generation: fakes.deps });
+      await runDueGenerationWork(newWorker, { lesson: 0, deck: 0, tts: 50, images: 0 });
+      expect((await stateOf(fresh!.assetId)).asset).toBe("ready");
     } finally {
       await fakes.dispose();
     }

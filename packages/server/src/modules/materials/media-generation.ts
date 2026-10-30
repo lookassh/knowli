@@ -94,27 +94,16 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
 }
 
 /**
- * Pending TTS zlecony przy innym providerze lub modelu niż bieżące ustawienia
- * workera (np. po przełączeniu z OpenAI na OpenRouter, design szkoły §11.2)
- * nie trafia do nowego endpointu ze starym modelem — ten by go nie znał,
- * a zasób nigdy nie stałby się gotowy. Kończy się jako zastąpiony bez
- * wywołania providera; nagranie z bieżącym fingerprintem zleca kolejne
- * uzgodnienie (edycja szkicu, katalog komunikatów przy starcie workera).
+ * TTS zlecony przy innym providerze lub modelu niż ustawienia tego workera
+ * (np. w trakcie przełączania z OpenAI na OpenRouter, design szkoły §11.7)
+ * nie trafia do bieżącego endpointu: nowy nie zna starego modelu, a stary
+ * worker nie może trwale unieważnić nagrań zleconych już z nową konfiguracją.
+ * Zadanie zostaje w kolejce bez zmiany stanu dla workera ze zgodną konfiguracją.
  */
-async function supersedeStaleTts(services: Services, asset: typeof mediaAssets.$inferSelect): Promise<boolean> {
+function isForeignTts(services: Services, asset: typeof mediaAssets.$inferSelect): boolean {
   const current = services.media?.tts;
-  if (asset.kind !== "tts" || !current) return false;
-  if (asset.provider === current.provider && asset.model === current.model) return false;
-  return services.db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${asset.fingerprint}))`);
-    const locked = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, asset.id)).for("update"))[0];
-    if (locked?.state !== "pending") return false;
-    await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
-      .where(eq(mediaAssets.id, asset.id));
-    await tx.update(generationRuns).set({ state: "superseded", errorCode: null, finishedAt: services.clock.now() })
-      .where(and(eq(generationRuns.assetId, asset.id), inArray(generationRuns.state, ["queued", "running"])));
-    return true;
-  });
+  return asset.kind === "tts" && current !== undefined
+    && (asset.provider !== current.provider || asset.model !== current.model);
 }
 
 /**
@@ -142,7 +131,7 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
     return;
   }
   if (await supersedeDisabledLessonTts(services, asset)) return;
-  if (await supersedeStaleTts(services, asset)) return;
+  if (isForeignTts(services, asset)) return;
 
   const leaseToken = randomUUID();
   const now = services.clock.now();
