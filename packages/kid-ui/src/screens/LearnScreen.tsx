@@ -127,7 +127,8 @@ export function LearnScreen({
     ? <QuestionAudioButton key={task.taskId} onPlay={() => controller.playQuestionAudio()}
         disabled={offline || busy || screen.processing || screen.recordingPhase !== "idle"} />
     : null;
-  const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) ? "true" : "false";
+  const questionAudioError = questionAudioButton !== null && screen.questionAudioError === true;
+  const actionNotice = screen.taskAudioError != null || (screen.guidanceError && instructionAudioKey) || questionAudioError ? "true" : "false";
   const micAvailable = screen.session.mode !== "mock_test" && screen.session.microphoneEnabled && !screen.micDenied;
   const micState = screen.session.mode === "mock_test" ? "off"
     : !screen.session.microphoneEnabled ? "off"
@@ -299,6 +300,7 @@ export function LearnScreen({
           </p>
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
+        {questionAudioError && <div className="kid-notice" role="alert" data-testid="kid-question-audio-error"><p>{messages.kid.questionAudioUnavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-question-audio-retry" onClick={() => void controller.playQuestionAudio()}>{messages.kid.questionAudioRetry}</ActionButton></div>}
         {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
       </div>
 

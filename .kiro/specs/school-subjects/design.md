@@ -1428,3 +1428,10 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   (`prompt_audio` → `ttsForPrompts`).
 - DTO rodzica (szkic lekcji i zestawu słówek) pomija `prompt_audio` — nie jest
   decyzją rodzica ani warunkiem publikacji.
+- Review PR (CodeRabbit, gitar): komunikat błędu odsłuchu pytania jest stanem
+  kontrolera (`questionAudioError`) i stoi w pasku statusu z przewijaniem ramy
+  (`data-action-notice`), nie w wierszu instrukcji — przy 320×480 i długim
+  poleceniu „Sprawdź” pozostaje osiągalne; „Nie pamiętam” w treningu zatrzymuje
+  odsłuch; ponowne dotknięcie nie gasi wskaźnika nowego odsłuchu; worker
+  syntetyzuje model zapisany w rekordzie zasobu (fingerprint), nie bieżący
+  `UMIEM_TTS_MODEL`.

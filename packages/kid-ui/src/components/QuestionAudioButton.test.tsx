@@ -21,16 +21,16 @@ describe("QuestionAudioButton (design szkoły §11.4)", () => {
     expect((screen.getByTestId("kid-question-audio") as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("błąd odtwarzania pokazuje komunikat z ponowieniem i nie blokuje zadania", async () => {
+  it("błąd odtwarzania nie zostawia komunikatu w wierszu instrukcji (pokazuje go pasek statusu)", async () => {
     const onPlay = vi.fn(async () => { throw new Error("playback failed"); });
     renderKid(<QuestionAudioButton onPlay={onPlay} disabled={false} />);
-    await act(async () => { fireEvent.click(screen.getByTestId("kid-question-audio")); });
-    expect(screen.getByTestId("kid-question-audio-error").textContent).toContain("Nie udało się odtworzyć pytania");
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Odtwórz pytanie" })); });
-    expect(onPlay).toHaveBeenCalledTimes(2);
+    const button = screen.getByTestId("kid-question-audio");
+    await act(async () => { fireEvent.click(button); });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(button.getAttribute("data-sound-active")).toBeNull();
   });
 
-  it("ponowne dotknięcie: koniec poprzedniego odtwarzania nie gasi wskaźnika ani nie pokazuje błędu", async () => {
+  it("ponowne dotknięcie: koniec poprzedniego odtwarzania nie gasi wskaźnika nowego", async () => {
     const pending: { resolve: () => void; reject: (error: Error) => void }[] = [];
     const onPlay = vi.fn(() => new Promise<void>((resolve, reject) => { pending.push({ resolve, reject }); }));
     renderKid(<QuestionAudioButton onPlay={onPlay} disabled={false} />);
@@ -40,7 +40,6 @@ describe("QuestionAudioButton (design szkoły §11.4)", () => {
     // Zatrzymanie pierwszego odtwarzania przez drugie dotknięcie domyka jego obietnicę (także błędem).
     await act(async () => { pending[0]!.reject(new Error("stopped")); });
     expect(button.getAttribute("data-sound-active")).toBe("true");
-    expect(screen.queryByTestId("kid-question-audio-error")).toBeNull();
     await act(async () => { pending[1]!.resolve(); });
     expect(button.getAttribute("data-sound-active")).toBeNull();
   });

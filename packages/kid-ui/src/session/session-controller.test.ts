@@ -2266,6 +2266,26 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-question"]);
   });
 
+  it("błąd odtwarzania pytania trafia do stanu ekranu, a nowa próba go czyści", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), choice, { failPlaybackBeforeStart: true });
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: true, offline: false });
+  });
+
+  it("„Nie pamiętam” zatrzymuje trwający odsłuch pytania", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gap = taskDto("tq", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "Pająk ma ___ nóg.", questionAudioAssetId: "asset-question" });
+    const harness = await startAtTask(baseState(), gap, { playGate: gate });
+    const playing = harness.controller.playQuestionAudio();
+    const stopsBefore = harness.media.stops;
+    await harness.controller.notRemember();
+    expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+    release();
+    await playing;
+  });
+
   it("feedback wyboru pamięta wybraną opcję także przez awarię sieci i retry", async () => {
     const chosen = "88888888-8888-8888-8888-888888888888";
     const listening = taskDto("t1", {

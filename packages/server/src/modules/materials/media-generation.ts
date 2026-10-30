@@ -160,6 +160,9 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
             locale: metadata.locale!,
             voice: metadata.voice!,
             format: "mp3",
+            // Model z rekordu zasobu (wchodzi do jego fingerprintu), nie bieżący
+            // UMIEM_TTS_MODEL — zmiana env nie może zapisać nagrania pod starym fingerprintem.
+            model: asset.model,
           }, signal)
         : await deps.image.generate({
             prompt: metadata.prompt!,

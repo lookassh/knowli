@@ -163,8 +163,15 @@ describe("„Posłuchaj pytania” — zadanie dziecka", () => {
     const mockTask = await reach(active, mock.sessionId, STEM);
     expect(mockTask.prompt).toMatchObject({ questionAudioAssetId: row!.assetId });
 
-    const events = await pool.query(`select kind from learning_app.learning_events where child_id = $1 and kind like '%disclos%'`, [child.id]);
+    // Odsłuch pytania nie jest ujawnieniem: wydanie zadań z nagraniem nie zapisuje
+    // zdarzeń audio ani podpowiedzi (szkoła nie ma `ttsForAnswers`).
+    const events = await pool.query(
+      `select kind from learning_app.learning_events where child_id = $1 and kind in ('audio_issued', 'hint_issued', 'audio_played')`,
+      [child.id],
+    );
     expect(events.rows).toEqual([]);
+    const kinds = await pool.query(`select distinct kind from learning_app.learning_events where child_id = $1`, [child.id]);
+    expect(kinds.rows.length).toBeGreaterThan(0);
   });
 });
 

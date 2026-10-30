@@ -95,6 +95,8 @@ export interface LearningScreen {
   error: string | null;
   guidanceError?: boolean;
   taskAudioError?: "blocked" | "failed" | null;
+  /** „Posłuchaj pytania” nie odtworzyło nagrania (komunikat w pasku statusu, nie w wierszu instrukcji). */
+  questionAudioError?: boolean;
   /** Dyktowanie odpowiedzi lekcji; brak = zadanie bez dyktowania. */
   dictation?: DictationState | null;
 }
@@ -882,6 +884,7 @@ export class LearningSessionController {
         recordingNotice: null, technicalRecordingIssue: false,
         error: null,
         taskAudioError: null,
+        questionAudioError: false,
       };
       this.#emit();
       // Pierwsze otrzymane zadanie uruchamia lokalny pomiar (design §2) — także
@@ -1111,6 +1114,8 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const task = screen.task;
+    // Podpowiedź po „Nie pamiętam” nie może grać razem z nagraniem pytania.
+    this.#stopPlayback();
     this.#setLearning({ taskAudioError: null });
     this.#setLearning({ busy: true });
     const disclose = async (): Promise<void> => {
@@ -1418,8 +1423,8 @@ export class LearningSessionController {
   /**
    * „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania,
    * które dziecko już widzi — bez zgody serwera, zdarzenia i ekspozycji.
-   * Rzuca przy błędzie odtwarzania (przycisk pokazuje komunikat); awaria sieci
-   * idzie zwykłą ścieżką offline.
+   * Błąd odtwarzania ustawia `questionAudioError` (komunikat w pasku statusu
+   * z przewijaniem ramy); awaria sieci idzie zwykłą ścieżką offline.
    */
   async playQuestionAudio(): Promise<void> {
     if (this.#autoCaptureActive) this.cancelRecording();
@@ -1430,6 +1435,7 @@ export class LearningSessionController {
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
     const playbackGeneration = this.#beginPlayback();
+    this.#setLearning({ questionAudioError: false });
     try {
       await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
     } catch (error) {
@@ -1439,7 +1445,7 @@ export class LearningSessionController {
         this.#handleFailure(error);
         return;
       }
-      throw error;
+      this.#setLearning({ questionAudioError: true });
     }
   }
 
