@@ -239,3 +239,107 @@ describe("pary i grupy: kartkówka", () => {
     expect(report.objectives.find((row) => row.objectiveId === OBJECTIVE)!.correct).toBeGreaterThanOrEqual(2);
   });
 });
+
+/**
+ * „Uzupełnij tekst” (design szkoły §13): luki z bankiem słów na PostgreSQL —
+ * zapis szkicu, wydanie zadania bez klucza, ocena przypisań luka → słowo,
+ * feedback z uzupełnionym tekstem i omówienie kartkówki.
+ */
+const CLOZE: LessonExerciseInput = {
+  ...common, exerciseType: "lesson_cloze", instructionPl: "Uzupełnij tekst.", focus: [],
+  clozeText: "Równik dzieli Ziemię na ___ północną i południową. Południki łączą ___.",
+  gapAnswers: ["półkulę", "bieguny"],
+  extraWords: ["równoleżniki"],
+  answer: "półkulę, bieguny",
+};
+const FILLED = "Równik dzieli Ziemię na półkulę północną i południową. Południki łączą bieguny.";
+
+async function publishedClozeWorld() {
+  const active = services();
+  const child = await createChild(active, { displayName: "Luki", avatarKey: "owl" });
+  const { deckId, versionId } = await seedDraft();
+  const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: [CLOZE, ...pool7().slice(2)] });
+  await publishLessonDraft(active, versionId, draft.editNumber);
+  await pool.query("insert into learning_app.assignments (id,child_id,deck_id,test_date,test_goals) values ($1,$2,$3,CURRENT_DATE + 7,ARRAY['lesson'])", [randomUUID(), child.id, deckId]);
+  return { active, child, deckId, draft };
+}
+
+describe("uzupełnij tekst: szkic, trening i kartkówka", () => {
+  it("zapisuje luki w szkicu i odrzuca słowo z banku widoczne w tekście", async () => {
+    const active = services();
+    const { versionId } = await seedDraft();
+    const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: [CLOZE] });
+    expect(draft.exercises[0]).toMatchObject({ exerciseType: "lesson_cloze", clozeText: CLOZE.clozeText, gapAnswers: ["półkulę", "bieguny"], extraWords: ["równoleżniki"] });
+    const leaking = { ...CLOZE, clozeText: "Równik dzieli Ziemię na ___, a bieguny łączą ___." };
+    await expect(editLessonDraft(active, versionId, { expectedEditNumber: draft.editNumber, exercises: [leaking] }))
+      .rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("prompt bez klucza; błąd pokazuje uzupełniony tekst i jest wspomagany", async () => {
+    const { active, child, deckId } = await publishedClozeWorld();
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
+    const task = await reach(active, session.sessionId, "lesson_cloze");
+    const prompt = task.prompt as { kind: string; segments: ({ text: string } | { gapId: string })[]; words: { id: string; text: string }[] };
+    expect(prompt.words.map((word) => word.text).sort()).toEqual(["bieguny", "półkulę", "równoleżniki"]);
+    expect(JSON.stringify(task.prompt)).not.toMatch(/assignments|targetIds|gapAnswers|filledText|clozeText/);
+    const key = await keyOf(task.taskId);
+    const gapIds = prompt.segments.flatMap((segment) => ("gapId" in segment ? [segment.gapId] : []));
+    expect(key.assignments.map((entry) => entry.itemId)).toEqual(gapIds);
+
+    const swapped = [
+      { itemId: key.assignments[0]!.itemId, targetId: key.assignments[1]!.targetId },
+      { itemId: key.assignments[1]!.itemId, targetId: key.assignments[0]!.targetId },
+    ];
+    const wrong = await submitAttempt(active, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "assignment", assignments: swapped });
+    expect(wrong.feedback).toEqual({ kind: "incorrect", correctText: FILLED });
+    const rows = (await pool.query(`select a.independent, a.outcome, t.modality from learning_app.assessments a
+      join learning_app.attempts t on t.id = a.attempt_id where t.task_id = $1`, [task.taskId])).rows;
+    expect(rows).toEqual([{ independent: false, outcome: "incorrect", modality: "assignment" }]);
+  });
+
+  it("dystraktor w luce albo brak luki → 400 bez próby", async () => {
+    const { active, child, deckId } = await publishedClozeWorld();
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
+    const task = await reach(active, session.sessionId, "lesson_cloze");
+    const key = await keyOf(task.taskId);
+    await expect(submitAttempt(active, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "assignment", assignments: key.assignments.slice(0, 1).concat({ itemId: randomUUID(), targetId: key.assignments[1]!.targetId }) }))
+      .rejects.toMatchObject({ code: "validation" });
+    const sameWord = key.assignments.map((entry) => ({ itemId: entry.itemId, targetId: key.assignments[0]!.targetId }));
+    await expect(submitAttempt(active, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "assignment", assignments: sameWord }))
+      .rejects.toMatchObject({ code: "validation" });
+    expect(await attemptsOf(task.taskId)).toEqual([]);
+  });
+
+  it("kartkówka: omówienie pokazuje tekst ze słowami dziecka i poprawny tekst", async () => {
+    const { active, child, deckId } = await publishedClozeWorld();
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false, mode: "mock_test" });
+    let seen = false;
+    for (let i = 0; i < 20; i++) {
+      const task = await nextTask(active, session.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "lesson_card") { await completePresentation(active, { taskId: task.taskId }); continue; }
+      if (task.exerciseType === "lesson_cloze") {
+        seen = true;
+        const key = await keyOf(task.taskId);
+        const swapped = [
+          { itemId: key.assignments[0]!.itemId, targetId: key.assignments[1]!.targetId },
+          { itemId: key.assignments[1]!.itemId, targetId: key.assignments[0]!.targetId },
+        ];
+        const result = await submitAttempt(active, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "assignment", assignments: swapped });
+        expect(result.feedback).toBeNull();
+        continue;
+      }
+      await submitAttempt(active, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "skip" });
+    }
+    expect(seen).toBe(true);
+    await endSession(active, session.sessionId);
+    const summary = await readLessonMockTestSummary(active, session.sessionId);
+    const cloze = summary.solutions.find((solution) => solution.exerciseType === "lesson_cloze")!;
+    expect(cloze).toMatchObject({
+      prompt: "Uzupełnij tekst.",
+      outcome: "incorrect",
+      correctAnswer: FILLED,
+      childAnswer: "Równik dzieli Ziemię na bieguny północną i południową. Południki łączą półkulę.",
+    });
+  });
+});

@@ -54,6 +54,21 @@ describe("session activity lesson snapshot formatting", () => {
     expect(describeTaskPrompt(prompt)).toMatchObject({ stimulus: "Co to jest fotosynteza?", options: ["światło", "cukry", "tlen", "korzenie"] });
   });
 
+  it("cloze: text with numbered gaps as stimulus, bank as options, correct variant as `n → word`", () => {
+    const [g1, g2, w1, w2, w3] = ["1", "2", "3", "4", "5"].map((n) => `${n.repeat(8)}-1111-4111-8111-111111111111`);
+    const prompt = TaskPromptSchema.parse({
+      kind: "lesson_cloze", instructionPl: "Uzupełnij",
+      segments: [{ text: "Roślina pobiera " }, { gapId: g1 }, { text: " i " }, { gapId: g2 }, { text: "." }],
+      words: [{ id: w1, text: "sole" }, { id: w2, text: "wodę" }, { id: w3, text: "tlen" }],
+    });
+    expect(describeTaskPrompt(prompt)).toEqual({ instruction: "Uzupełnij", stimulus: "Roślina pobiera [1] i [2].", options: ["sole", "wodę", "tlen"] });
+    const key = LessonAnswerSnapshotSchema.parse({
+      answer: "wodę, sole", itemIds: [g1, g2], itemValues: { [g1!]: "1", [g2!]: "2", [w1!]: "sole", [w2!]: "wodę", [w3!]: "tlen" },
+      assignments: [{ itemId: g1, targetId: w2 }, { itemId: g2, targetId: w1 }], filledText: "Roślina pobiera wodę i sole.",
+    });
+    expect(lessonAnswerValues(key, prompt).acceptedAnswers).toEqual(["1 → wodę; 2 → sole"]);
+  });
+
   it("shorten prompts describe the question together with the child original answer", () => {
     const prompt = TaskPromptSchema.parse({ kind: "lesson_shorten", instructionPl: "Skróć", prompt: "Co to jest?", originalAnswer: "Długa odpowiedź.", answerSegments: [{ text: "Długa odpowiedź.", state: "plain" }] });
     expect(describeTaskPrompt(prompt)).toMatchObject({ instruction: "Skróć", stimulus: "Co to jest? | Długa odpowiedź.", options: [] });

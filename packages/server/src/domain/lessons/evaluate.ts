@@ -28,8 +28,9 @@ export interface LessonAnswerKey {
   readonly minSelected?: number;
   readonly maxSelected?: number;
   /**
-   * `lesson_match` / `lesson_group` (design szkoły §10.3): poprawne przypisania
-   * (element → cel), dozwolone cele i czy cel można użyć tylko raz (pary).
+   * `lesson_match` / `lesson_group` (design szkoły §10.3) i `lesson_cloze`
+   * (§13.3, luka → słowo): poprawne przypisania (element → cel), dozwolone cele
+   * i czy cel można użyć tylko raz (pary, luki).
    */
   readonly assignments?: readonly { readonly itemId: string; readonly targetId: string }[];
   readonly targetIds?: readonly string[];

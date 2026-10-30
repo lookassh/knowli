@@ -287,3 +287,29 @@ Zależy od etapów 1–2 i 7 (typy ćwiczeń); niezależny od 3–6.
       przebieg bramek i niezależny review przed PR.
 - [ ] Odbiór na fizycznym urządzeniu: głośność, zatrzymanie przed
       nagrywaniem odpowiedzi.
+
+## Etap 10 — „Uzupełnij tekst” (design §13)
+
+Luki z bankiem słów w przedmiotach szkolnych; bez migracji (modalność
+`assignment` z Etapu 7).
+
+- [x] Kontrakt i decyzje (design §13, wybór typu i akceptacja właściciela
+      2026-10-30).
+- [x] Kontrakty: `lesson_cloze` w listach typów, pola payloadu i limity,
+      Kid DTO z segmentami i bankiem (`.strict()`), przypisania od 2.
+- [x] Domena: `cloze.ts`, walidacja puli (liczba luk, słowo między lukami,
+      słowa banku poza tekstem), etap `guided`, tożsamość, `questionReadText`.
+- [x] Generator: ścisła gałąź structured output, prompt szkoły, składanie
+      odpowiedzi w `lesson-assignments.ts`.
+- [x] Silnik: materializacja (UUID luk, bank bez kolejności luk), feedback
+      z uzupełnionym tekstem, kartkówka, ocena aktywności, nagranie pytania.
+- [x] Edytor rodzica (Mantine): tekst z „___”, pola słów za liczbą luk,
+      słowa-pułapki, podgląd uzupełnionego tekstu.
+- [x] Kid UI: `LessonClozeView` (luki w tekście jako znaczniki, miejsca
+      i bank stukaniem), testy widoku.
+- [x] Testy integracyjne (`lesson-assignments.test.ts`) i spec geometrii
+      `lesson-cloze-layout.spec.ts` (partycja `mocked`, 5 viewportów).
+- [x] Dokumentacja (SPEC, architektura), przegląd API → MCP → skill; pełny
+      przebieg bramek i niezależny review przed PR.
+- [ ] Pilotaż z dzieckiem: czy numerowane luki i miejsca pod tekstem są
+      zrozumiałe; odbiór na fizycznym telefonie.

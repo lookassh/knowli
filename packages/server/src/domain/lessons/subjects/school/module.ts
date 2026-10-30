@@ -24,6 +24,7 @@ export const SCHOOL_EXERCISE_TYPES: readonly LessonExerciseType[] = [
   "lesson_order",
   "lesson_match",
   "lesson_group",
+  "lesson_cloze",
   "lesson_gap",
   "lesson_open_answer",
   "lesson_calculation",

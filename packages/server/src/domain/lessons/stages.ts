@@ -21,6 +21,8 @@ export const STAGE_BY_TYPE: Readonly<Record<LessonExerciseType, LessonStage>> = 
   // Pary i grupy: elementy widoczne, rozpoznanie zamiast przypomnienia (design szkoły §10.3).
   lesson_match: "guided",
   lesson_group: "guided",
+  // Luki z bankiem słów: bank widoczny, rozpoznanie w kontekście (design szkoły §13.3).
+  lesson_cloze: "guided",
 };
 
 /** Etapy oceniane (poza intro-kartą): guided, productive, independent. */

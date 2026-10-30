@@ -142,7 +142,9 @@ odpowiedzi, różnymi sposobami.
    `lesson_calculation`, a od etapu 7 (decyzja właściciela 2026-10-29,
    wcześniejsze wyłączenie „dopasowywania par” uchylone) `lesson_match`
    („Połącz w pary”) i `lesson_group` („Pogrupuj”) — ocenianie
-   deterministycznie z przypisań, bez modelu (design §10). Typów gramatycznych (`lesson_notice`,
+   deterministycznie z przypisań, bez modelu (design §10) — a od etapu 10
+   (decyzja właściciela 2026-10-30) `lesson_cloze` („Uzupełnij tekst”: luki
+   z bankiem słów, ocena z przypisań luka → słowo, design §13). Typów gramatycznych (`lesson_notice`,
    `lesson_short_answer`, `lesson_error_fix`, `lesson_transform`) nie włącza się.
 2. `lesson_card` SHALL pozostawać ekspozycją bez próby, oceny i zużycia budżetu.
 3. Typy zamknięte i luka z dopasowaniem do zatwierdzonych wariantów SHALL być

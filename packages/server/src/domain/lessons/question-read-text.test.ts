@@ -46,6 +46,13 @@ describe("questionReadText — tekst nagrania „Posłuchaj pytania” (design s
     })).toBe(`${messages.kid.lessonGroupInstruction} Ssaki. Ptaki.`);
   });
 
+  it("luki z bankiem: polecenie i tekst z „luka” — bez słów z banku", () => {
+    expect(questionReadText({
+      exerciseType: "lesson_cloze",
+      clozeText: "Roślina pobiera ___ z powietrza i ____ z gleby",
+    })).toBe(`${messages.kid.lessonClozeInstruction} Roślina pobiera luka z powietrza i luka z gleby.`);
+  });
+
   it("obliczenia i typy gramatyki nie mają nagrania", () => {
     expect(questionReadText({ exerciseType: "lesson_calculation", instructionPl: "Oblicz", prompt: "3/4 + 1/2" })).toBeNull();
     expect(questionReadText({ exerciseType: "lesson_transform", instructionPl: "Zmień", stem: "She plays." })).toBeNull();

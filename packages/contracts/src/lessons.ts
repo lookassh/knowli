@@ -53,6 +53,13 @@ export const MAX_GROUP_ITEMS = 8;
 export const MIN_ITEMS_PER_GROUP = 2;
 export const MAX_GROUP_LABEL_LENGTH = 30;
 export const MAX_GROUP_ITEM_LENGTH = 40;
+/** „Uzupełnij tekst” (`lesson_cloze`, design szkoły §13.1): tekst ≤300 znaków, 2–4 luki, 1–2 dystraktory. */
+export const MAX_CLOZE_TEXT_LENGTH = 300;
+export const MIN_CLOZE_GAPS = 2;
+export const MAX_CLOZE_GAPS = 4;
+export const MIN_CLOZE_EXTRA = 1;
+export const MAX_CLOZE_EXTRA = 2;
+export const MAX_CLOZE_WORD_LENGTH = 30;
 
 /** Typy ćwiczeń lekcji (design „Typy ćwiczeń i etapy”). */
 export const LESSON_EXERCISE_TYPES = [
@@ -69,6 +76,7 @@ export const LESSON_EXERCISE_TYPES = [
   "lesson_keywords",
   "lesson_match",
   "lesson_group",
+  "lesson_cloze",
 ] as const;
 export type LessonExerciseTypeDto = (typeof LESSON_EXERCISE_TYPES)[number];
 export const LessonExerciseTypeSchema = z.enum(LESSON_EXERCISE_TYPES);
@@ -270,6 +278,12 @@ export const LessonExerciseInputSchema = z.object({
     text: z.string().min(1).max(MAX_GROUP_ITEM_LENGTH),
     groupId: z.string().min(1).max(40),
   }).strict()).min(MIN_GROUP_ITEMS).max(MAX_GROUP_ITEMS).optional(),
+  /** `lesson_cloze`: tekst z lukami (ciąg 2+ podkreśleń w miejscu luki). */
+  clozeText: z.string().min(1).max(MAX_CLOZE_TEXT_LENGTH).optional(),
+  /** `lesson_cloze`: słowo do każdej luki w kolejności tekstu (klucz tylko dla serwera i rodzica). */
+  gapAnswers: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_GAPS).max(MAX_CLOZE_GAPS).optional(),
+  /** `lesson_cloze`: dystraktory w banku słów. */
+  extraWords: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_EXTRA).max(MAX_CLOZE_EXTRA).optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
