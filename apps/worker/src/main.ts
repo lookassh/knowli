@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { buildWorkerServices } from "./composition";
-import { prepareUiAudio } from "@learning/server";
+import { countForeignPendingTts, prepareUiAudio } from "@learning/server";
 import { createWorkerLoop, workerLoopSettingsFromEnv } from "./loop";
 import { processDueWork } from "./tasks";
 
@@ -9,6 +9,11 @@ const HEALTH_PORT = Number(process.env.WORKER_HEALTH_PORT ?? 9301);
 async function main(): Promise<void> {
   const { services, pool } = buildWorkerServices();
   await prepareUiAudio(services);
+  // Zadania TTS innego providera/modelu czekają bez zmiany stanu (design szkoły §11.7).
+  const foreignTts = await countForeignPendingTts(services);
+  if (foreignTts > 0) {
+    console.warn(`[worker] ${foreignTts} oczekujących nagrań TTS zleconych przy innym providerze/modelu niż UMIEM_TTS_PROVIDER/UMIEM_TTS_MODEL tego workera — nie zostaną wykonane; sprawdź, czy web i worker mają te same ustawienia TTS`);
+  }
   const settings = workerLoopSettingsFromEnv(process.env);
   const loop = createWorkerLoop({
     ...settings,

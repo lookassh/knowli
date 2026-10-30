@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultMediaSettings } from "../../config";
-import { requiredAssetsForLessonExercise } from "./media-reconciliation";
+import { requiredAssetsFor, requiredAssetsForLessonExercise } from "./media-reconciliation";
+import { payloadToItem } from "./item-payload";
 
 describe("requiredAssetsForLessonExercise — nagranie pytania (design szkoły §11.2)", () => {
   const choice = {
@@ -34,5 +35,15 @@ describe("requiredAssetsForLessonExercise — nagranie pytania (design szkoły �
   it("`ttsForAnswers` nadal zleca `target_audio` odpowiedzi", () => {
     const required = requiredAssetsForLessonExercise({ ...choice, answerLocale: "en-GB", answer: "eight" }, defaultMediaSettings, { ttsForAnswers: true, ttsForPrompts: false });
     expect(required.map((asset) => asset.role)).toEqual(["target_audio"]);
+  });
+
+  it("głos zależy od locale: angielskie słówko głosem en-GB, polskie pytanie głosem domyślnym", () => {
+    const settings = { ...defaultMediaSettings, tts: { ...defaultMediaSettings.tts, voice: "pl-PL-Harper", voices: { "en-GB": "en-GB-Emily" } } };
+    const [prompt] = requiredAssetsForLessonExercise(choice, settings, { ttsForAnswers: false, ttsForPrompts: true });
+    expect(prompt!.metadata).toMatchObject({ locale: "pl-PL", voice: "pl-PL-Harper" });
+    const vocab = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", example: "Today is Thursday.", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), settings);
+    expect(vocab.map((asset) => asset.metadata.voice)).toEqual(["en-GB-Emily", "en-GB-Emily"]);
+    const defaultVoice = requiredAssetsFor(payloadToItem({ source: "czwartek", target: "Thursday", visualType: "none", sourceLocale: "pl-PL", targetLocale: "en-GB" }), defaultMediaSettings);
+    expect(vocab[0]!.fingerprint).not.toBe(defaultVoice[0]!.fingerprint);
   });
 });

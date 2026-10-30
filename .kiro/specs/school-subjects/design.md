@@ -1450,7 +1450,15 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   providerem i modelem; pozostałe czekają w kolejce bez zmiany stanu (nowy
   endpoint nie zna starego modelu, a stary worker w trakcie wdrożenia nie może
   trwale unieważnić nagrań zleconych już z nową konfiguracją). Nagranie
-  z bieżącym fingerprintem zleca kolejna edycja szkicu albo start workera
-  (katalog komunikatów); stare zlecenia zostają jako nieużywane `pending`.
+  z bieżącym fingerprintem zleca kolejna edycja szkicu, publikacja albo start
+  workera (katalog komunikatów); stare zlecenia zostają jako nieużywane `pending`.
   Opublikowane lekcje bez gotowego nagrania pytań dostaną je po edycji
   i ponownej publikacji.
+- Review przed wypchnięciem (2026-10-30): jeden głos dla wszystkich nagrań
+  czytałby angielskie słówka polskim lektorem — głos zależy od locale treści
+  (`UMIEM_TTS_VOICE_<JĘZYK>_<REGION>`, np. `en-GB` → `en-GB-Emily`, w fingerprincie;
+  bez tych zmiennych fingerprinty bez zmian). Nieudane nagranie pytania
+  publikacja zleca ponownie (`keepFailed` z #176 nie dotyczy `prompt_audio`,
+  bo rodzic go nie regeneruje). Worker zgłasza przy starcie liczbę zadań TTS
+  innej konfiguracji. Klucz innego dostawcy bez jego BASE_URL to błąd
+  konfiguracji. Komunikat błędu odsłuchu znika po odpowiedzi i „Nie pamiętam”.

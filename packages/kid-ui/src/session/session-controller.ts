@@ -1116,7 +1116,7 @@ export class LearningSessionController {
     const task = screen.task;
     // Podpowiedź po „Nie pamiętam” nie może grać razem z nagraniem pytania.
     this.#stopPlayback();
-    this.#setLearning({ taskAudioError: null });
+    this.#setLearning({ taskAudioError: null, questionAudioError: false });
     this.#setLearning({ busy: true });
     const disclose = async (): Promise<void> => {
       const disclosure = await this.#api.authorizeDisclosure(taskId, "hint");
@@ -1164,7 +1164,7 @@ export class LearningSessionController {
     if (!screen?.task || screen.busy || screen.offline) return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true, transitioning: true,
+    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false,
       pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");

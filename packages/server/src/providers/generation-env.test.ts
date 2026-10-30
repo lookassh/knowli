@@ -179,6 +179,13 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
       .toThrow("UMIEM_TTS_BASE_URL must use https:// outside test/development");
   });
 
+  it("klucz OpenRouter bez UMIEM_TTS_BASE_URL to błąd konfiguracji — nie trafia do api.openai.com", () => {
+    expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_PROVIDER: "openrouter", UMIEM_TTS_API_KEY: "sk-or" }))
+      .toThrow('UMIEM_TTS_API_KEY for provider "openrouter" requires UMIEM_TTS_BASE_URL');
+    // własny klucz OpenAI bez BASE_URL nadal dozwolony
+    expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_API_KEY: "sk-tts" })).not.toThrow();
+  });
+
   it("własny UMIEM_TTS_BASE_URL bez UMIEM_TTS_API_KEY to błąd konfiguracji — klucz OpenAI nie trafia do innego hosta", () => {
     expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1" }))
       .toThrow("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY");

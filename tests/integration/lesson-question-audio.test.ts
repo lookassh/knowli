@@ -136,6 +136,18 @@ describe("„Posłuchaj pytania” — przygotowanie nagrań", () => {
     expect(after[1]!.assetId).toBe(rows[1]!.assetId);
   });
 
+  it("publikacja zleca ponownie nieudane nagranie pytania (nie jest decyzją rodzica)", async () => {
+    const active = services();
+    const { versionId } = await seedDraft();
+    const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [failed] = await promptAudio(versionId);
+    await pool.query("update learning_app.media_assets set state = 'failed', lease_token = null where id = $1", [failed!.assetId]);
+    await publishLessonDraft(active, versionId, draft.editNumber);
+    const [requeued] = await promptAudio(versionId);
+    expect(requeued!.assetId).not.toBe(failed!.assetId);
+    expect(requeued).toMatchObject({ state: "pending", text: failed!.text });
+  });
+
   it("publikacja nie czeka na nagrania; rodzic nie dostaje ich jako zasobów do decyzji", async () => {
     const { active, deckId, versionId } = await publishedWorld();
     expect((await promptAudio(versionId)).every((row) => row.state === "pending")).toBe(true);

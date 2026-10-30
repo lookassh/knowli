@@ -25,7 +25,8 @@ function secureBaseUrl(env: Record<string, string | undefined>, name: "UMIEM_LLM
 
 /**
  * Endpoint i klucz TTS. Własny `UMIEM_TTS_BASE_URL` wymaga własnego
- * `UMIEM_TTS_API_KEY` — klucz OpenAI nigdy nie trafia do innego hosta.
+ * `UMIEM_TTS_API_KEY` — klucz OpenAI nigdy nie trafia do innego hosta, a klucz
+ * dostawcy innego niż OpenAI nie trafia bez BASE_URL do api.openai.com.
  * Bez BASE_URL: api.openai.com z `UMIEM_TTS_API_KEY` albo `OPENAI_API_KEY`.
  */
 function ttsEndpointFromEnv(env: Record<string, string | undefined>, openAiKey: string): { apiKey: string; baseUrl?: string } {
@@ -33,6 +34,11 @@ function ttsEndpointFromEnv(env: Record<string, string | undefined>, openAiKey: 
   const ownKey = nonEmpty(env.UMIEM_TTS_API_KEY);
   if (baseUrl !== undefined && ownKey === undefined) {
     throw new Error("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+  }
+  // Klucz innego dostawcy (np. OpenRouter) bez jego BASE_URL poszedłby do api.openai.com.
+  const provider = nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai";
+  if (baseUrl === undefined && ownKey !== undefined && provider !== "openai") {
+    throw new Error(`UMIEM_TTS_API_KEY for provider "${provider}" requires UMIEM_TTS_BASE_URL (the key is never sent to api.openai.com)`);
   }
   return { apiKey: ownKey ?? openAiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 }

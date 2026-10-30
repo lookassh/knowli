@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { MediaPendingDetails } from "@learning/contracts";
-import type { MediaSettings, Services } from "../../config";
+import { ttsVoiceFor, type MediaSettings, type Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
   deckVersions,
@@ -35,47 +35,9 @@ export function requiredAssetsFor(
   item: ReturnType<typeof payloadToItem>,
   settings: MediaSettings,
 ): RequiredAsset[] {
-  const required: RequiredAsset[] = [
-    {
-      role: "target_audio",
-      kind: "tts",
-      fingerprint: ttsFingerprint({
-        text: item.target,
-        locale: item.locales.target,
-        provider: settings.tts.provider,
-        model: settings.tts.model,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      }),
-      metadata: {
-        kind: "tts",
-        text: item.target,
-        locale: item.locales.target,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      },
-    },
-  ];
+  const required: RequiredAsset[] = [ttsAsset("target_audio", item.target, item.locales.target, settings)];
   if (item.example !== undefined) {
-    required.push({
-      role: "example_audio",
-      kind: "tts",
-      fingerprint: ttsFingerprint({
-        text: item.example,
-        locale: item.locales.target,
-        provider: settings.tts.provider,
-        model: settings.tts.model,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      }),
-      metadata: {
-        kind: "tts",
-        text: item.example,
-        locale: item.locales.target,
-        voice: settings.tts.voice,
-        format: settings.tts.format,
-      },
-    });
+    required.push(ttsAsset("example_audio", item.example, item.locales.target, settings));
   }
   if (item.visualType === "image") {
     const prompt = illustrationPrompt(item);
@@ -124,6 +86,7 @@ export interface LessonTtsFlags {
 const PROMPT_AUDIO_LOCALE = "pl-PL";
 
 function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
+  const voice = ttsVoiceFor(settings.tts, locale);
   return {
     role,
     kind: "tts",
@@ -132,14 +95,14 @@ function ttsAsset(role: AssetRole, text: string, locale: string, settings: Media
       locale,
       provider: settings.tts.provider,
       model: settings.tts.model,
-      voice: settings.tts.voice,
+      voice,
       format: settings.tts.format,
     }),
     metadata: {
       kind: "tts",
       text,
       locale,
-      voice: settings.tts.voice,
+      voice,
       format: settings.tts.format,
     },
   };
@@ -360,7 +323,9 @@ export async function reconcileDraftAssetsTx(
               .from(mediaAssets)
               .where(eq(mediaAssets.id, existing.assetId))
           )[0];
-          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed) {
+          // Nagranie pytania nie jest decyzją rodzica (brak „Regeneruj” w panelu,
+          // design szkoły §11.2) i jest tanie: publikacja zleca je ponownie.
+          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed && req.role !== "prompt_audio") {
             continue;
           }
           if (asset && asset.fingerprint === req.fingerprint && asset.state !== "failed") {

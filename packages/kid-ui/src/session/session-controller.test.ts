@@ -2278,6 +2278,17 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual(["https://media.test/asset-question", "https://media.test/asset-question"]);
   });
 
+  it("komunikat błędu odsłuchu pytania znika po wysłaniu odpowiedzi", async () => {
+    const choice = taskDto("tq", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", options: [{ id: "o1", text: "osiem" }], questionAudioAssetId: "asset-question" });
+    const state = baseState();
+    const harness = await startAtTask(state, choice, { failPlaybackBeforeStart: true });
+    await harness.controller.playQuestionAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: true });
+    state.attempts = [attemptDto({ taskId: "tq", modality: "choice", taskState: "issued", feedback: { kind: "incorrect", correctText: "osiem" } })];
+    await harness.controller.answerChoice("o1");
+    expect(harness.controller.getScreen()).toMatchObject({ questionAudioError: false });
+  });
+
   it("„Nie pamiętam” zatrzymuje trwający odsłuch pytania", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
