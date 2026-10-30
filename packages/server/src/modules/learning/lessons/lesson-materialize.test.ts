@@ -436,7 +436,7 @@ describe("materializeCard — nagranie „Posłuchaj karty” (design szkoły §
     }],
   });
   const objective = topic.objectives[0]!;
-  const plan = { kind: "card", objectiveId: objective.id, cardPurpose: "introduce" } as Parameters<typeof materializeCard>[0];
+  const plan = { kind: "card", objectiveId: objective.id, cardPurpose: "intro" } as Parameters<typeof materializeCard>[0];
   const audioId = "22222222-2222-4222-8222-222222222222";
 
   it("dołącza gotowe nagranie karty; nie zmienia ekspozycji karty", () => {
