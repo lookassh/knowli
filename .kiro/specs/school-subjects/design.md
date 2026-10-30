@@ -1684,10 +1684,22 @@ reguł stanu, ewentualnie tylko alias nazwy.
   opisują odpowiedź jako `1 → słowo; 2 → słowo`, a ocena aktywności sesji
   dostaje jako wariant poprawny ten sam zapis (nie uzupełniony tekst), żeby
   porównywała odpowiedzi w jednym formacie; bodźcem jest tekst z „[1]”, „[2]”.
-- **Tasowanie**: `shuffleUnsolved` przesuwa układ cyklicznie aż do
+- **Tasowanie (review przed PR) — zmiana reguły 13.4**: zakaz każdego układu
+  banku ze słowami luk w kolejności luk przy 2 lukach wymuszał zawsze odwrotną
+  kolejność, czyli zdradzał przypisanie. Układ „rozwiązany” to teraz bank,
+  który **zaczyna się** słowami luk w kolejności luk; poza tym kolejność słów
+  luk w banku jest losowa. `shuffleUnsolved` przesuwa układ cyklicznie aż do
   nierozwiązanego (najwyżej n − 1 kroków) — dla par, grup i „Ułóż” wynik bez
-  zmian (wystarczał jeden krok), dla banku z dystraktorami na początku jeden
-  krok nie zawsze zmienia kolejność słów luk.
+  zmian (wystarczał jeden krok).
+- **Walidacja (review)**: słowo luki i słowo-pułapka muszą mieć 1–3 słowa
+  z literami lub cyframi (limit z 13.1 egzekwowany, nie tylko w prompcie;
+  słowa z samych znaków jak „>” albo spacji omijały kontrolę powtórzeń).
+  Materializacja niespójnego payloadu (liczba luk ≠ liczba słów) to błąd
+  serwera, nie zadanie bez klucza.
+- **Edytor (review)**: pola słów nie są ucinane, gdy rodzic chwilowo usuwa
+  „___” w trakcie pisania; do payloadu, odpowiedzi i podglądu idą słowa
+  widocznych luk. Słowa są pozycyjne — przesunięcie luk w tekście przesuwa
+  przypisanie, co rodzic widzi w podglądzie uzupełnionego tekstu.
 - Luka w tekście ma dla czytnika ekranu ukryty opis („luka 1, pusta” /
   „luka 1: tlen”), a widoczny znacznik (numer i słowo albo „…”) jest
   `aria-hidden`; miejsca luk mają etykiety „Luka n: wybierz słowo” / „Luka n:

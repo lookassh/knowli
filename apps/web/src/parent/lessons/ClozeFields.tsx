@@ -1,6 +1,6 @@
 import { Button, Group, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { messages, MAX_CLOZE_EXTRA, MAX_CLOZE_TEXT_LENGTH, MAX_CLOZE_WORD_LENGTH } from "@learning/contracts";
-import { clozeAnswerOf, filledClozeOf, syncGapAnswers, type EditableLessonExercise } from "./lesson-editor-state";
+import { clozeAnswerOf, clozeWordsOf, filledClozeOf, syncGapAnswers, type EditableLessonExercise } from "./lesson-editor-state";
 
 type Patch = Partial<EditableLessonExercise>;
 
@@ -18,8 +18,9 @@ export default function ClozeFields({ exercise, index, disabled, onChange }: {
   const t = messages.lessons;
   const text = exercise.clozeText ?? "";
   const answers = exercise.gapAnswers ?? [];
+  const visible = clozeWordsOf(exercise);
   const extra = exercise.extraWords ?? [];
-  const setAnswers = (next: string[]) => onChange({ gapAnswers: next, answer: clozeAnswerOf({ gapAnswers: next }) });
+  const setAnswers = (next: string[]) => onChange({ gapAnswers: next, answer: clozeAnswerOf({ clozeText: text, gapAnswers: next }) });
   return (
     <fieldset className="pp-lesson-fieldset pp-lesson-wide" data-testid={`cloze-${index}`}>
       <legend>{t.clozeTextLabel}</legend>
@@ -29,9 +30,9 @@ export default function ClozeFields({ exercise, index, disabled, onChange }: {
           onChange={(e) => {
             const nextText = e.currentTarget.value;
             const next = syncGapAnswers(nextText, answers);
-            onChange({ clozeText: nextText, gapAnswers: next, answer: clozeAnswerOf({ gapAnswers: next }) });
+            onChange({ clozeText: nextText, gapAnswers: next, answer: clozeAnswerOf({ clozeText: nextText, gapAnswers: next }) });
           }} />
-        {answers.map((word, gi) => (
+        {visible.map((word, gi) => (
           <TextInput key={gi} size="md" data-testid={`cloze-gap-${index}-${gi}`} value={word} disabled={disabled} maxLength={MAX_CLOZE_WORD_LENGTH}
             label={t.clozeGapLabel.replace("{n}", String(gi + 1))}
             onChange={(e) => {
@@ -61,7 +62,7 @@ export default function ClozeFields({ exercise, index, disabled, onChange }: {
           </Button>
         )}
         <Text size="sm" fw={600}>{t.clozePreviewLabel}</Text>
-        <Text size="sm" data-testid={`cloze-preview-${index}`}>{filledClozeOf(text, answers)}</Text>
+        <Text size="sm" data-testid={`cloze-preview-${index}`}>{filledClozeOf(text, visible)}</Text>
       </Stack>
     </fieldset>
   );

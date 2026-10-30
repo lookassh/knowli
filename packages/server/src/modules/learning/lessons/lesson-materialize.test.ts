@@ -431,15 +431,24 @@ describe("materializeExercise — luki z bankiem (design szkoły §13)", () => {
     expect(task.exposures).toEqual(["tk-1"]);
   });
 
-  it("bank nigdy nie stoi w kolejności luk, także gdy dystraktory są na początku", () => {
-    for (let i = 0; i < 80; i++) {
+  it("bank nie zaczyna się słowami luk w kolejności luk, ale kolejność banku nie zdradza przypisania", () => {
+    let inGapOrder = 0;
+    for (let i = 0; i < 200; i++) {
       const task = cloze(`cloze-order-${i}`);
       const prompt = task.prompt as { words: { id: string }[] };
       const key = answerKeyOf(task);
       const answerIds = key.assignments!.map((entry) => entry.targetId);
+      expect(prompt.words.slice(0, 2).map((word) => word.id)).not.toEqual(answerIds);
       const positions = prompt.words.map((word) => answerIds.indexOf(word.id)).filter((position) => position >= 0);
-      expect(positions).not.toEqual([...positions].sort((a, b) => a - b));
+      if (positions[0] === 0) inGapOrder += 1;
     }
+    // Przy 2 lukach słowo luki 1 stoi w banku przed słowem luki 2 mniej więcej co drugi raz, nie nigdy.
+    expect(inGapOrder).toBeGreaterThan(40);
+    expect(inGapOrder).toBeLessThan(160);
+  });
+
+  it("niespójny payload (liczba luk ≠ liczba słów) to błąd serwera, nie zadanie bez klucza", () => {
+    expect(() => cloze("cloze-broken", { gapAnswers: ["dwutlenek węgla"] })).toThrow(/invalid private cloze payload/);
   });
 });
 

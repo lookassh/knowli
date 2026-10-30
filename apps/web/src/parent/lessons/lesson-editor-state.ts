@@ -196,15 +196,29 @@ export function clozeGapCountOf(text: string): number {
   return text.split(CLOZE_GAP).length - 1;
 }
 
-/** Pola słów luk dopasowane do liczby luk w tekście: dopisuje puste, ucina nadmiarowe. */
+/** Liczba pól słów pokazywanych w edytorze: tyle, ile luk w tekście (najwyżej 4). */
+export function clozeFieldCountOf(text: string): number {
+  return Math.min(clozeGapCountOf(text), 4);
+}
+
+/**
+ * Pola słów luk po zmianie tekstu: dopisuje puste, ale nie ucina wpisanych —
+ * chwilowe usunięcie „___” w trakcie pisania nie kasuje słowa. Do payloadu
+ * i odpowiedzi idą tylko pola widocznych luk (`clozeWordsOf`).
+ */
 export function syncGapAnswers(text: string, answers: readonly string[]): string[] {
-  const count = Math.min(clozeGapCountOf(text), 4);
-  return Array.from({ length: count }, (_, index) => answers[index] ?? "");
+  const count = clozeFieldCountOf(text);
+  return answers.length >= count ? [...answers] : [...answers, ...Array.from({ length: count - answers.length }, () => "")];
+}
+
+/** Słowa widocznych luk w kolejności tekstu. */
+export function clozeWordsOf(exercise: Pick<EditableLessonExercise, "clozeText" | "gapAnswers">): string[] {
+  return (exercise.gapAnswers ?? []).slice(0, clozeFieldCountOf(exercise.clozeText ?? ""));
 }
 
 /** Odpowiedź `lesson_cloze` liczona ze słów luk (jak w domenie serwera): złączone „, ”. */
-export function clozeAnswerOf(exercise: Pick<EditableLessonExercise, "gapAnswers">): string {
-  return (exercise.gapAnswers ?? []).join(", ");
+export function clozeAnswerOf(exercise: Pick<EditableLessonExercise, "clozeText" | "gapAnswers">): string {
+  return clozeWordsOf(exercise).map((word) => word.trim()).join(", ");
 }
 
 /** Podgląd rodzica: tekst ze słowami w lukach (puste słowo zostawia „___”). */
@@ -365,10 +379,10 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
   if (type === "lesson_cloze") {
     // Odpowiedź wynika ze słów luk; puste pola słów-pułapek nie blokują zapisu.
     input.clozeText = exercise.clozeText ?? "";
-    input.gapAnswers = (exercise.gapAnswers ?? []).map((word) => word.trim());
+    input.gapAnswers = clozeWordsOf(exercise).map((word) => word.trim());
     const extraWords = (exercise.extraWords ?? []).map((word) => word.trim()).filter((word) => word.length > 0);
     if (extraWords.length > 0) input.extraWords = extraWords;
-    input.answer = clozeAnswerOf({ gapAnswers: input.gapAnswers });
+    input.answer = clozeAnswerOf(exercise);
     input.acceptedAnswers = [];
     input.focus = [];
   }

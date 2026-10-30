@@ -394,18 +394,22 @@ export function materializeExercise(
     }
     case "lesson_cloze": {
       // Design szkoły §13.2/13.4: tekst pocięty na luki z UUID w każdym zadaniu,
-      // bank tasowany tak, by słowa luk nie stały w kolejności luk.
+      // bank tasowany tak, by nie zaczynał się słowami luk w kolejności luk.
+      // Zakaz każdego układu „w kolejności luk” przy 2 lukach wymuszałby zawsze
+      // odwrotną kolejność i zdradzał przypisanie (korekta §13.10).
       const text = payload.clozeText ?? "";
       const answers = payload.gapAnswers ?? [];
+      const parts = clozeParts(text);
+      if (answers.length < 2 || parts.length - 1 !== answers.length) {
+        throw new AppError("internal", { message: "invalid private cloze payload" });
+      }
       const gaps = answers.map((word, index) => ({ id: randomUUID(), number: String(index + 1), word: { id: randomUUID(), text: word } }));
       const extras = (payload.extraWords ?? []).map((word) => ({ id: randomUUID(), text: word }));
       const gapOrder = new Map(gaps.map((gap, index) => [gap.word.id, index] as const));
-      const words = shuffleUnsolved([...gaps.map((gap) => gap.word), ...extras], shuffleSeed, (arranged) => {
-        const positions = arranged.flatMap((word) => (gapOrder.has(word.id) ? [gapOrder.get(word.id)!] : []));
-        return positions.every((position, i) => i === 0 || positions[i - 1]! < position);
-      });
-      const segments = clozeParts(text).flatMap((part, index) => [
-        ...(index === 0 ? [] : [{ gapId: gaps[index - 1]?.id ?? randomUUID() }]),
+      const words = shuffleUnsolved([...gaps.map((gap) => gap.word), ...extras], shuffleSeed,
+        (arranged) => gaps.every((_, index) => gapOrder.get(arranged[index]?.id ?? "") === index));
+      const segments = parts.flatMap((part, index) => [
+        ...(index === 0 ? [] : [{ gapId: gaps[index - 1]!.id }]),
         ...(part === "" ? [] : [{ text: part }]),
       ]);
       const prompt: TaskPrompt = {

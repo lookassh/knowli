@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LessonDraftDto } from "@learning/contracts";
 import {
   clozeGapCountOf,
+  clozeWordsOf,
   createLessonSnapshot,
   filledClozeOf,
   syncGapAnswers,
@@ -187,8 +188,11 @@ describe("toLessonDraftPatch", () => {
   it("luki: pola słów podążają za liczbą luk, a podgląd wstawia słowa w tekst", () => {
     expect(clozeGapCountOf("a ___ b ____ c __")).toBe(3);
     expect(syncGapAnswers("a ___ b ___ c ___", ["x"])).toEqual(["x", "", ""]);
-    expect(syncGapAnswers("a ___ b", ["x", "y"])).toEqual(["x"]);
     expect(syncGapAnswers("a ___ b ___ c ___ d ___ e ___", [])).toHaveLength(4);
+    // Chwilowe usunięcie luki nie kasuje wpisanych słów; do payloadu idą tylko słowa widocznych luk.
+    expect(syncGapAnswers("a ___ b", ["x", "y"])).toEqual(["x", "y"]);
+    expect(clozeWordsOf({ clozeText: "a ___ b", gapAnswers: ["x", "y"] })).toEqual(["x"]);
+    expect(syncGapAnswers("a ___ b ___ c", ["x", "y"])).toEqual(["x", "y"]);
     expect(filledClozeOf("Roślina pobiera ___ i ___.", ["wodę", " "])).toBe("Roślina pobiera wodę i ___.");
   });
 

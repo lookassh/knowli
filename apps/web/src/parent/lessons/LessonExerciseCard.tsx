@@ -6,7 +6,7 @@ import { messages, type CalculationSpec } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
 import AssignmentFields from "./AssignmentFields";
 import ClozeFields from "./ClozeFields";
-import { filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
+import { clozeWordsOf, filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
 const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_gap"]);
@@ -16,7 +16,7 @@ const UNITS = ["cm", "m", "km"].map((unit) => ({ value: unit, label: unit }));
 export function exercisePreview(ex: EditableLessonExercise): { text: string; answer: string } {
   // Luki z bankiem: tekst z lukami i uzupełniony tekst do sprawdzenia (design szkoły §13.7).
   if (ex.exerciseType === "lesson_cloze") {
-    return { text: ex.clozeText ?? "", answer: filledClozeOf(ex.clozeText ?? "", ex.gapAnswers ?? []) };
+    return { text: ex.clozeText ?? "", answer: filledClozeOf(ex.clozeText ?? "", clozeWordsOf(ex)) };
   }
   const text = ex.stem || ex.statement || ex.prompt || ex.instructionPl;
   const option = ex.options?.find((candidate) => candidate.id === ex.correctOption)?.text;

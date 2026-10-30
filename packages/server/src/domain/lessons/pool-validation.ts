@@ -65,6 +65,9 @@ export const MAX_NOTICE_SENTENCES = 3;
 export const MIN_NOTICE_SEGMENTS = 1;
 export const MAX_NOTICE_SEGMENTS = 15;
 
+/** `lesson_cloze`: słowo luki i słowo-pułapka mają 1–3 słowa (design szkoły §13.1). */
+export const MAX_CLOZE_WORD_TOKENS = 3;
+
 /** Maksymalna liczba tokenów odpowiedzi dla `lesson_gap`. */
 export const MAX_GAP_ANSWER_TOKENS = 3;
 
@@ -539,6 +542,11 @@ function validateCloze(ex: LessonExerciseDraft, errors: string[]): void {
     errors.push("clozeText: podkreślenie poza znacznikiem luki");
   }
   const bank = [...answers, ...extra];
+  for (const word of bank) {
+    const count = wordsOfText(word).length;
+    if (count === 0) errors.push(`gapAnswers: „${word}” nie zawiera liter ani cyfr`);
+    else if (count > MAX_CLOZE_WORD_TOKENS) errors.push(`gapAnswers: „${word}” ma więcej niż ${MAX_CLOZE_WORD_TOKENS} słowa`);
+  }
   for (const [a, b] of confusableTexts(bank)) {
     errors.push(`gapAnswers: „${b}” powiela „${a}” albo się w nim zawiera`);
   }
