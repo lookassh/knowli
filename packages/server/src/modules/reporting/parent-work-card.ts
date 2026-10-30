@@ -7,6 +7,19 @@ import { AppError } from "../../errors";
 import { attempts, assessments, childProfiles, deckVersions, familySettings, learningSessions, sessionTasks } from "../../db/schema";
 import { activityDetailsAvailable, resolveInterruptedSessionActivity, SESSION_ACTIVITY_REVIEW_DEADLINE_MS, type StoredReport } from "../learning";
 
+type ResponseOutcome = ParentWorkCardDto["sessions"][number]["steps"][number]["responses"][number]["outcome"];
+
+/**
+ * Wynik odpowiedzi z jej ocen (po jednej na umiejętność). Oceny `unassessed` nie
+ * rozstrzygają poprawności; pominięcie i „Nie pamiętam” nie są odpowiedzią z treścią.
+ */
+export function responseOutcome(modality: string, outcomes: ReadonlySet<string> | undefined): ResponseOutcome {
+  if (modality === "skip" || modality === "dont_remember" || !outcomes) return null;
+  const correct = outcomes.has("correct");
+  const incorrect = outcomes.has("incorrect");
+  return correct && incorrect ? "partial" : correct ? "correct" : incorrect ? "incorrect" : null;
+}
+
 /** Read-only, child-scoped work report. The HTTP parent router authenticates before calling this. */
 export async function readParentWorkCard(services: Services, input: unknown): Promise<ParentWorkCardDto> {
   const parsed = ParentWorkCardQuerySchema.parse(input);
@@ -182,6 +195,7 @@ export async function readParentWorkCard(services: Services, input: unknown): Pr
           modality: attempt.modality as "choice" | "text" | "audio" | "dont_remember" | "skip" | "sequence" | "selection" | "assignment",
           answerExample: attempt.modality === "dont_remember" ? "Nie pamiętam" : textAnswer ?? optionAnswer ?? sequenceAnswer ?? selectionAnswer ?? assignmentAnswer,
           feedbackKind, assessment,
+          outcome: responseOutcome(attempt.modality, assessmentByAttempt.get(attempt.id)),
           responseSeconds: Math.max(0, Math.ceil((attempt.receivedAt.getTime() - task.issuedAt.getTime()) / 1000)),
         };
       });
