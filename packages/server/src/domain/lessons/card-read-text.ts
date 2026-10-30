@@ -11,12 +11,15 @@ export const CARD_READ_MAX_LENGTH = 2000;
 const BULLET = /[•▪◦‣]/;
 
 /**
- * Zapis matematyczny, który lektor bywa czyta błędnie (§12.1): cyfra–`/`/`:`/`^`–cyfra,
- * indeksy górne i dolne Unicode, symbole działań i relacji, `=` między operandami.
+ * Zapis matematyczny, który lektor bywa czyta błędnie (§12.1, §12.7): cyfra–`/`/`:`–cyfra,
+ * `^` przy literze lub cyfrze, `*`/`<`/`>`/`x` między liczbami, ułamki i kreska ułamkowa
+ * Unicode, indeksy górne i dolne, symbole działań i relacji, `=` między operandami.
  */
 const MATH_NOTATION: readonly RegExp[] = [
-  /\d\s*[/:^]\s*\d/,
-  /[²³¹⁰-₟]/,
+  /\d\s*[/:]\s*\d/,
+  /[\p{L}\p{N}]\s*\^\s*[\p{L}\p{N}]/u,
+  /\d\s*[*<>xX]\s*\d/,
+  /[\u00B2\u00B3\u00B9\u2070-\u209F\u00BC-\u00BE\u2150-\u215F\u2044]/,
   /[·×÷√π≤≥≠≈±∞°]/,
   /[\p{L}\p{N})\]]\s*=\s*[\p{L}\p{N}([−-]/u,
 ];

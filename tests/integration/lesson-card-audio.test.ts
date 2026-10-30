@@ -61,29 +61,35 @@ beforeEach(async () => {
 });
 afterAll(() => pool.end());
 
-async function seedDraft() {
+const ROOTS = "school.ddeck000.korzenie";
+
+async function seedDraft(options: { extraObjective?: boolean } = {}) {
   const deckId = randomUUID();
   const versionId = randomUUID();
   await pool.query("insert into learning_app.decks (id,title,kind) values ($1,'Pająki','lesson')", [deckId]);
+  const objectives = [{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.", cards: CARDS }];
+  if (options.extraObjective) {
+    objectives.push({ id: ROOTS, titlePl: "Korzenie", descriptionEn: "Roots.", cards: [{ title: "Korzenie", body: "Korzeń pobiera wodę." }, { title: "Łodyga", body: "Łodyga niesie wodę." }] });
+  }
   const context = {
-    subjectId: "school", topicId: "dynamic", topicVersion: 1, objectiveIds: [OBJECTIVE], poolSize: 20,
+    subjectId: "school", topicId: "dynamic", topicVersion: 1, objectiveIds: objectives.map((objective) => objective.id), poolSize: 20,
     examples: { [OBJECTIVE]: ["Pająk krzyżak tka sieć"] }, material: MATERIAL, subjectTitlePl: "Przyroda",
-    dynamicTopic: { titlePl: "Pająki", objectives: [{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.", cards: CARDS }] },
+    dynamicTopic: { titlePl: "Pająki", objectives },
   };
   await pool.query(`insert into learning_app.deck_versions (id,deck_id,version_number,edit_number,state,title,lesson_context)
     values ($1,$2,1,1,'draft','Pająki',$3::jsonb)`, [versionId, deckId, JSON.stringify(context)]);
   return { deckId, versionId };
 }
 
-interface CardAudioRow { cardIndex: number; assetId: string; text: string; locale: string; state: string }
+interface CardAudioRow { objectiveId: string; cardIndex: number; assetId: string; text: string; locale: string; state: string }
 
 async function cardAudio(versionId: string): Promise<CardAudioRow[]> {
   return (await pool.query<CardAudioRow>(
-    `select ca.card_index as "cardIndex", ca.asset_id as "assetId", ma.metadata->>'text' as text, ma.metadata->>'locale' as locale, ma.state
+    `select ca.objective_id as "objectiveId", ca.card_index as "cardIndex", ca.asset_id as "assetId", ma.metadata->>'text' as text, ma.metadata->>'locale' as locale, ma.state
        from learning_app.lesson_card_assets ca
        join learning_app.media_assets ma on ma.id = ca.asset_id
       where ca.deck_version_id = $1
-      order by ca.card_index`,
+      order by ca.objective_id desc, ca.card_index`,
     [versionId],
   )).rows;
 }
@@ -138,6 +144,31 @@ describe("„Posłuchaj karty” — przygotowanie nagrań", () => {
     expect(after[0]!.assetId).toBe(rows[0]!.assetId);
     expect(after[1]).toMatchObject({ text: "Owady. Owad ma sześć nóg i czułki. Pająk krzyżak tka sieć.", state: "pending" });
     expect(after[1]!.assetId).not.toBe(rows[1]!.assetId);
+  });
+
+  it("usunięcie zagadnienia usuwa nagrania jego kart w tej samej edycji", async () => {
+    const active = services();
+    const { versionId } = await seedDraft({ extraObjective: true });
+    const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    expect((await cardAudio(versionId)).map((row) => [row.objectiveId, row.cardIndex]))
+      .toEqual([[OBJECTIVE, 0], [OBJECTIVE, 1], [ROOTS, 0], [ROOTS, 1]]);
+    await editLessonDraft(active, versionId, {
+      expectedEditNumber: draft.editNumber,
+      dynamicTopic: { objectives: [{ id: OBJECTIVE, titlePl: "Pająki", cards: CARDS }] },
+    });
+    expect((await cardAudio(versionId)).map((row) => [row.objectiveId, row.cardIndex])).toEqual([[OBJECTIVE, 0], [OBJECTIVE, 1]]);
+  });
+
+  it("publikacja zleca ponownie nieudane nagranie karty (nie jest decyzją rodzica)", async () => {
+    const active = services();
+    const { versionId } = await seedDraft();
+    const draft = await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [failed] = await cardAudio(versionId);
+    await pool.query("update learning_app.media_assets set state = 'failed', lease_token = null where id = $1", [failed!.assetId]);
+    await publishLessonDraft(active, versionId, draft.editNumber);
+    const [requeued] = await cardAudio(versionId);
+    expect(requeued!.assetId).not.toBe(failed!.assetId);
+    expect(requeued).toMatchObject({ state: "pending", text: failed!.text });
   });
 
   it("publikacja nie czeka na nagrania kart; rodzic ich nie widzi; wiersze opublikowanej wersji są niezmienne", async () => {

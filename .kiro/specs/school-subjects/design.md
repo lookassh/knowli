@@ -1572,7 +1572,8 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   `questionAudioAssetId`: najnowszy gotowy zasób TTS o fingerprincie równym
   `expected_fingerprint` wiersza karty (`objective_id`, `card_index`) wersji
   sesji — ta sama reguła co `loadExercises` w §11.7 (nagranie gotowe po
-  publikacji liczy się przy kolejnym wydaniu karty). Tylko gdy przedmiot ma
+  publikacji liczy się od następnej sesji: sesja treningowa zamraża prompty
+  kart przy starcie). Tylko gdy przedmiot ma
   `ttsForPrompts`. Prompt wydanej karty pozostaje niezmienny.
 - Nazwa pola wspólna z pytaniami (`questionAudioAssetId`, schemat
   `QuestionAudioSchema`): znaczy „nagranie widocznej treści zadania na
@@ -1650,3 +1651,10 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
   przed `complete-presentation` i czyści komunikat błędu odsłuchu.
 - Równoległy etap odsłuchu opcji też planuje §12 i migrację `0028`; kto scali
   drugi, przenumerowuje (sekcja → §13, migracja → `0029`).
+- Review przed PR: wykrywanie wzorów rozszerzone poza listę z 12.1 o ułamki
+  i kreskę ułamkową Unicode (`½`, `3⁄4`), `^` przy literze (`x^2`) oraz `*`,
+  `<`, `>` i `x` między liczbami (`2 x 3`); `+` i `-` nie blokują (lektor
+  czyta je poprawnie). Błąd odsłuchu karty ma własny komunikat („Nie udało
+  się odtworzyć karty…”, „Odtwórz kartę”). Wdrożenie: klient sprzed zmiany
+  odrzuca kartę z nowym polem (ścisły schemat promptu, jak przy §11) —
+  otwarta karta PWA wymaga odświeżenia.

@@ -507,6 +507,8 @@ export const messages = {
     listenLessonCard: "Posłuchaj karty",
     questionAudioUnavailable: "Nie udało się odtworzyć pytania. Przeczytaj je albo spróbuj jeszcze raz.",
     questionAudioRetry: "Odtwórz pytanie",
+    cardAudioUnavailable: "Nie udało się odtworzyć karty. Przeczytaj ją albo spróbuj jeszcze raz.",
+    cardAudioRetry: "Odtwórz kartę",
     understand: "Rozumiem",
     instructionExposure: "Poznaj nowe słowo",
     instructionListening: "Posłuchaj i wybierz",

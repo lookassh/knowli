@@ -19,7 +19,7 @@ describe("cardReadText — tekst nagrania „Posłuchaj karty” (design szkoły
   });
 
   it("karta z zapisem matematycznym nie ma nagrania", () => {
-    for (const body of ["Połowa to 1/2 całości.", "Pole kwadratu to a².", "Woda to H₂O.", "2 · 3 to sześć.", "Wzór: v = s / t", "x=5", "Skala 1:100.", "Woda wrze w 100°C."]) {
+    for (const body of ["Połowa to 1/2 całości.", "Pole kwadratu to a².", "Woda to H₂O.", "2 · 3 to sześć.", "Wzór: v = s / t", "x=5", "Skala 1:100.", "Woda wrze w 100°C.", "½ jabłka", "3⁄4 tortu", "x^2", "2 x 3 to sześć", "3 < 5", "4*2"]) {
       expect(cardReadText({ title: "Matematyka", body, examples: [] }), body).toBeNull();
     }
     expect(cardReadText({ title: "Ułamki", body: "Ułamek to część całości.", examples: ["3/4 pizzy"] })).toBeNull();
