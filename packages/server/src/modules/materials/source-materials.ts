@@ -10,7 +10,7 @@ import {
   type SourceMaterialSummaryDto,
 } from "@learning/contracts";
 import type { Services } from "../../config";
-import type { Executor } from "../../db/client";
+import type { Executor, Tx } from "../../db/client";
 import { deckVersions, decks, sourceMaterials } from "../../db/schema";
 import { AppError } from "../../errors";
 import { deckStateOf } from "./decks";
@@ -138,6 +138,64 @@ export async function deleteSourceMaterial(services: Services, id: string): Prom
   if (deleted.length === 0) {
     throw new AppError("not_found");
   }
+}
+
+/**
+ * Odczyt źródła do skopiowania do nowego zestawu (design §3.3): jedno
+ * zapytanie `FOR KEY SHARE` w transakcji tworzenia zestawu. Blokada trzyma się
+ * do jej końca, więc równoległe `deleteSourceMaterial` (blokada `FOR UPDATE`)
+ * czeka na zatwierdzenie zestawu i dopiero potem zeruje jego odnośnik — zamiast
+ * unieważnić klucz obcy w trakcie wstawiania zestawu. Równoległa edycja
+ * (`updateSourceMaterial`, też `FOR UPDATE`) jest serializowana tak samo, a
+ * `body` i `revision` pochodzą z jednej wersji wiersza. Źródło usunięte przed
+ * odczytem → `not_found` (nigdy błąd 500 z naruszenia klucza obcego).
+ * Wołać wyłącznie w transakcji domyślnej izolacji (read committed), w której
+ * zapytanie blokujące ponownie ocenia wiersz po czekaniu na cudzą blokadę.
+ */
+export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ body: string; revision: number }> {
+  const [source] = await tx
+    .select({ body: sourceMaterials.body, revision: sourceMaterials.revision })
+    .from(sourceMaterials)
+    .where(eq(sourceMaterials.id, id))
+    .for("key share");
+  if (!source) {
+    throw new AppError("not_found");
+  }
+  return source;
+}
+
+/** Pochodzenie zestawu w DTO rodzica: tytuł źródła oraz rewizja skopiowana i bieżąca. */
+export interface DeckSourceInfo {
+  id: string;
+  title: string;
+  copiedRevision: number;
+  currentRevision: number;
+}
+
+/**
+ * Pochodzenie zestawu z żywego źródła; `undefined`, gdy zestaw powstał z
+ * wklejonego tekstu albo źródło usunięto (odnośnik jest wtedy `null`).
+ */
+export async function readDeckSource(
+  db: Executor,
+  deck: { sourceMaterialId: string | null; sourceMaterialRevision: number | null },
+): Promise<DeckSourceInfo | undefined> {
+  if (deck.sourceMaterialId === null || deck.sourceMaterialRevision === null) {
+    return undefined;
+  }
+  const [source] = await db
+    .select({ id: sourceMaterials.id, title: sourceMaterials.title, revision: sourceMaterials.revision })
+    .from(sourceMaterials)
+    .where(eq(sourceMaterials.id, deck.sourceMaterialId));
+  if (!source) {
+    return undefined;
+  }
+  return {
+    id: source.id,
+    title: source.title,
+    copiedRevision: deck.sourceMaterialRevision,
+    currentRevision: source.revision,
+  };
 }
 
 /**

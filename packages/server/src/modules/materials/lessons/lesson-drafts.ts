@@ -56,6 +56,7 @@ import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-ge
 import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
+import { lockSourceMaterialForCopy } from "../source-materials";
 
 /**
  * Generowanie i zapis szkicu lekcji (design „Generowanie puli (worker)”).
@@ -204,17 +205,55 @@ export async function createLesson(
   });
 }
 
-/** Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i przedmiotów o stałym tytule). */
+/**
+ * Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i
+ * przedmiotów o stałym tytule). Tekst pochodzi z dokładnie jednego miejsca:
+ * wklejonego `material` albo zapisanego źródła (`sourceMaterialId`), którego
+ * tekst serwer kopiuje w transakcji tworzenia.
+ */
 export interface MaterialLessonInput {
   subjectId: string;
   /** Nazwa przedmiotu od rodzica; brak = tytuł przedmiotu z modułu (`subject.titlePl`). */
   subjectTitlePl?: string;
   topicTitlePl: string;
-  material: string;
+  material?: string | undefined;
+  sourceMaterialId?: string | undefined;
   instruction?: string;
   poolSize?: number;
   deckId?: string;
   clientRequestId: string;
+}
+
+/** Skąd pochodzi tekst zestawu: wklejony przez rodzica albo skopiowany z zapisanego źródła. */
+type MaterialTextSource =
+  | { kind: "pasted"; material: string }
+  | { kind: "source"; sourceMaterialId: string };
+
+/** Dokładnie jedno z `material` / `sourceMaterialId`; oba albo żadne → `validation`. */
+function materialTextSource(cmd: MaterialLessonInput): MaterialTextSource {
+  if (cmd.material !== undefined && cmd.sourceMaterialId === undefined) {
+    return { kind: "pasted", material: cmd.material };
+  }
+  if (cmd.sourceMaterialId !== undefined && cmd.material === undefined) {
+    return { kind: "source", sourceMaterialId: cmd.sourceMaterialId };
+  }
+  throw new AppError("validation", { message: "provide exactly one of material or sourceMaterialId" });
+}
+
+/**
+ * Tekst zestawu w transakcji tworzenia. Ze źródła czyta go (razem z rewizją)
+ * pod `FOR KEY SHARE` i zwraca pochodzenie do zapisu w `decks`; wklejony tekst
+ * nie ma pochodzenia.
+ */
+async function resolveMaterialText(
+  tx: Tx,
+  textSource: MaterialTextSource,
+): Promise<{ material: string; origin?: { sourceMaterialId: string; revision: number } }> {
+  if (textSource.kind === "pasted") {
+    return { material: textSource.material };
+  }
+  const copied = await lockSourceMaterialForCopy(tx, textSource.sourceMaterialId);
+  return { material: copied.body, origin: { sourceMaterialId: textSource.sourceMaterialId, revision: copied.revision } };
 }
 
 /**
@@ -223,6 +262,12 @@ export interface MaterialLessonInput {
  * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
  * Dotyczy przedmiotów z `buildDynamicTopic`; nazwę przedmiotu zapisuje tylko
  * wtedy, gdy podał ją rodzic (szkoła) — inaczej tytuł pochodzi z przedmiotu.
+ *
+ * Ze źródła (`sourceMaterialId`) tekst i rewizję czyta pierwsze zapytanie
+ * transakcji tworzenia (`FOR KEY SHARE`, `lockSourceMaterialForCopy`); tekst
+ * trafia do `lesson_context.material` i `generation_runs.input.material` jako
+ * kopia, a `decks.source_material_id/_revision` zapisują pochodzenie. Po
+ * utworzeniu źródło nie jest już czytane. Brak źródła → `not_found`.
  */
 export async function createMaterialLesson(
   services: Services,
@@ -232,10 +277,13 @@ export async function createMaterialLesson(
   if (materialCreationMode(subject) === undefined) {
     throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
+  const textSource = materialTextSource(cmd);
   const poolSize = cmd.poolSize ?? 60;
   const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
 
   return enqueueGenerationRun(services.db, `lesson:${cmd.clientRequestId}`, async (tx) => {
+    // Pierwsze zapytanie transakcji: blokada źródła poprzedza każdy zapis zestawu.
+    const { material, origin } = await resolveMaterialText(tx, textSource);
     const deckId = cmd.deckId ?? randomUUID();
     const versionId = randomUUID();
     const runId = randomUUID();
@@ -245,13 +293,18 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       examples: {},
       rejectedCount: 0,
     };
-    await tx.insert(decks).values({ id: deckId, title, kind: "lesson" });
+    await tx.insert(decks).values({
+      id: deckId,
+      title,
+      kind: "lesson",
+      ...(origin === undefined ? {} : { sourceMaterialId: origin.sourceMaterialId, sourceMaterialRevision: origin.revision }),
+    });
     await tx.insert(deckVersions).values({
       id: versionId,
       deckId,
@@ -271,7 +324,7 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       topicTitlePl: cmd.topicTitlePl,

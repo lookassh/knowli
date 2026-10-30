@@ -146,15 +146,31 @@ export type LessonCommand = z.infer<typeof LessonCommandSchema>;
 export const MAX_SCHOOL_SUBJECT_TITLE_LENGTH = 80;
 export const MAX_SCHOOL_TOPIC_TITLE_LENGTH = 120;
 
+/**
+ * Źródło tekstu zestawu z materiału: dokładnie jedno z dwóch — wklejony
+ * `material` albo `sourceMaterialId` zapisanego źródła (design 2026-10-30,
+ * §3.3; serwer kopiuje wtedy jego tekst). Oba albo żadne to `validation`.
+ */
+function requireExactlyOneTextSource(
+  command: { material?: string | undefined; sourceMaterialId?: string | undefined },
+  ctx: z.core.$RefinementCtx,
+): void {
+  if ((command.material === undefined) === (command.sourceMaterialId === undefined)) {
+    ctx.addIssue({ code: "custom", path: ["sourceMaterialId"], message: "provide exactly one of material or sourceMaterialId" });
+  }
+}
+
+/** Zestaw szkolny; tekst z `material` albo ze źródła (`sourceMaterialId`, dokładnie jedno). */
 export const SchoolLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
   subjectTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_SUBJECT_TITLE_LENGTH),
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
-  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
+  sourceMaterialId: UuidSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
-}).strict();
+}).strict().superRefine(requireExactlyOneTextSource);
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
 
 /**
@@ -162,16 +178,18 @@ export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
  * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
  * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
  * Przedmiot z nazwą od rodzica (szkolny) zostaje przy `SchoolLessonCommandSchema`.
+ * Tekst pochodzi z `material` albo ze źródła (`sourceMaterialId`) — dokładnie jedno.
  */
 export const MaterialLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
   subjectId: z.string().min(1).max(64),
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
-  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
+  sourceMaterialId: UuidSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
-}).strict();
+}).strict().superRefine(requireExactlyOneTextSource);
 export type MaterialLessonCommand = z.infer<typeof MaterialLessonCommandSchema>;
 
 /** Rodzaj zagadnienia tematu dynamicznego: grupa słów albo rama zdaniowa (przedmioty, które go używają). */
@@ -383,6 +401,17 @@ export const LessonDeckDtoSchema = z.object({
   published: LessonDraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
+  /**
+   * Pochodzenie z materiału źródłowego rodzica (design 2026-10-30, §3.3):
+   * tytuł źródła i rewizja skopiowana przy tworzeniu zestawu obok bieżącej.
+   * Brak pola, gdy zestaw powstał z wklejonego tekstu albo źródło usunięto.
+   */
+  source: z.object({
+    id: UuidSchema,
+    title: z.string(),
+    copiedRevision: z.number().int().min(1),
+    currentRevision: z.number().int().min(1),
+  }).strict().optional(),
   /**
    * Informacja o providerze oceny dowolnych odpowiedzi (wymaganie 10.1). Bez
    * sekretów — tylko czy model jest dostępny i jego nazwa z konfiguracji.

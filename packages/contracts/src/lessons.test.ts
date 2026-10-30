@@ -323,6 +323,24 @@ describe("LessonDeckDtoSchema", () => {
     expect(LessonDeckDtoSchema.parse(withGrading).sessionTaskBudget).toBe(20);
     expect(LessonDeckDtoSchema.parse({ ...withGrading, sessionTaskBudget: 7 }).sessionTaskBudget).toBe(7);
   });
+  describe("source (pochodzenie z materiału źródłowego)", () => {
+    const withGrading = { ...base, grading: { available: false } };
+    const source = { id: UUID3, title: "Rozdział 4: Pogoda", copiedRevision: 1, currentRevision: 2 };
+    it("jest opcjonalne: zestaw bez źródła nie ma pola", () => {
+      expect(LessonDeckDtoSchema.parse(withGrading)).not.toHaveProperty("source");
+    });
+    it("przyjmuje tytuł i obie rewizje", () => {
+      expect(LessonDeckDtoSchema.parse({ ...withGrading, source }).source).toEqual(source);
+    });
+    it("odrzuca niepełne lub błędne źródło", () => {
+      expect(LessonDeckDtoSchema.safeParse({ ...withGrading, source: { ...source, id: "x" } }).success).toBe(false);
+      expect(LessonDeckDtoSchema.safeParse({ ...withGrading, source: { ...source, copiedRevision: 0 } }).success).toBe(false);
+      expect(LessonDeckDtoSchema.safeParse({ ...withGrading, source: { ...source, currentRevision: 1.5 } }).success).toBe(false);
+      const { title: _title, ...withoutTitle } = source;
+      expect(LessonDeckDtoSchema.safeParse({ ...withGrading, source: withoutTitle }).success).toBe(false);
+      expect(LessonDeckDtoSchema.safeParse({ ...withGrading, source: { ...source, extra: 1 } }).success).toBe(false);
+    });
+  });
 });
 
 describe("ObjectiveProgressDtoSchema", () => {
@@ -476,6 +494,33 @@ describe("MaterialLessonCommandSchema (zestaw z materiału bez nazwy przedmiotu 
     expect(MaterialLessonCommandSchema.safeParse({ ...base, extra: 1 }).success).toBe(false);
     expect(MaterialLessonCommandSchema.safeParse({ ...base, subjectTitlePl: "Angielski" }).success).toBe(false);
   });
+  describe("źródło tekstu: dokładnie jedno z material / sourceMaterialId", () => {
+    const { material: _material, ...withoutMaterial } = base;
+    it("przyjmuje sourceMaterialId zamiast materiału", () => {
+      const parsed = MaterialLessonCommandSchema.parse({ ...withoutMaterial, sourceMaterialId: UUID3 });
+      expect(parsed.sourceMaterialId).toBe(UUID3);
+      expect(parsed.material).toBeUndefined();
+    });
+    it("przyjmuje sam wklejony materiał jak dotąd", () => {
+      const parsed = MaterialLessonCommandSchema.parse(base);
+      expect(parsed.material).toBe("I like pizza.");
+      expect(parsed.sourceMaterialId).toBeUndefined();
+    });
+    it("odrzuca oba pola naraz", () => {
+      const result = MaterialLessonCommandSchema.safeParse({ ...base, sourceMaterialId: UUID3 });
+      expect(result.success).toBe(false);
+    });
+    it("odrzuca brak obu pól", () => {
+      expect(MaterialLessonCommandSchema.safeParse(withoutMaterial).success).toBe(false);
+    });
+    it("odrzuca sourceMaterialId, które nie jest uuid, i pusty materiał z sourceMaterialId", () => {
+      expect(MaterialLessonCommandSchema.safeParse({ ...withoutMaterial, sourceMaterialId: "nie-uuid" }).success).toBe(false);
+      expect(MaterialLessonCommandSchema.safeParse({ ...withoutMaterial, sourceMaterialId: UUID3, material: "   " }).success).toBe(false);
+    });
+    it("zostaje ścisłe przy sourceMaterialId", () => {
+      expect(MaterialLessonCommandSchema.safeParse({ ...withoutMaterial, sourceMaterialId: UUID3, extra: 1 }).success).toBe(false);
+    });
+  });
 });
 
 describe("SchoolLessonCommandSchema i pola v3", () => {
@@ -494,6 +539,24 @@ describe("SchoolLessonCommandSchema i pola v3", () => {
       clientRequestId: UUID,
     });
     expect(tooLong.success).toBe(false);
+  });
+
+  describe("źródło tekstu: dokładnie jedno z material / sourceMaterialId", () => {
+    const base = { subjectTitlePl: "Geografia", topicTitlePl: "Mapa", clientRequestId: UUID };
+    it("przyjmuje sourceMaterialId zamiast materiału", () => {
+      expect(SchoolLessonCommandSchema.parse({ ...base, sourceMaterialId: UUID3 }).sourceMaterialId).toBe(UUID3);
+    });
+    it("przyjmuje sam wklejony materiał jak dotąd", () => {
+      expect(SchoolLessonCommandSchema.safeParse({ ...base, material: "Skala mapy." }).success).toBe(true);
+    });
+    it("odrzuca oba pola naraz oraz brak obu", () => {
+      expect(SchoolLessonCommandSchema.safeParse({ ...base, material: "Skala mapy.", sourceMaterialId: UUID3 }).success).toBe(false);
+      expect(SchoolLessonCommandSchema.safeParse(base).success).toBe(false);
+    });
+    it("odrzuca sourceMaterialId, które nie jest uuid, oraz dodatkowe pola", () => {
+      expect(SchoolLessonCommandSchema.safeParse({ ...base, sourceMaterialId: "nie-uuid" }).success).toBe(false);
+      expect(SchoolLessonCommandSchema.safeParse({ ...base, sourceMaterialId: UUID3, extra: 1 }).success).toBe(false);
+    });
   });
 
   it("przyjmuje ćwiczenie otwarte z polami v3 i dłuższą odpowiedzią wzorcową", () => {
