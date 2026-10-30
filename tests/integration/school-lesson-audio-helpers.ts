@@ -54,8 +54,8 @@ function openAnswer(answer: string, index: number): LessonExerciseInput {
 export function spiderExercises(firstStem?: string): LessonExerciseInput[] {
   const choices = ["osiem", "sześć", "sieci"].map((answer, index) =>
     choice(index === 0 && firstStem !== undefined ? firstStem : `Wybierz słowo: ${answer}.`, answer));
-  const gaps = ["osiem", "sześć"].map(gap);
-  const openAnswers = ["Pająk ma osiem nóg.", "Owady mają sześć nóg."].map(openAnswer);
+  const gaps = ["osiem", "sześć"].map((answer) => gap(answer));
+  const openAnswers = ["Pająk ma osiem nóg.", "Owady mają sześć nóg."].map((answer, index) => openAnswer(answer, index));
   return [...choices, ...gaps, ...openAnswers];
 }
 

@@ -57,5 +57,7 @@ function clean(text: string): string | undefined {
 /** Kropka po fragmencie bez znaku końca zdania (przecinek/średnik przed punktem znika). */
 function withStop(text: string): string {
   if (/[.!?:…]$/.test(text)) return text;
-  return `${text.replace(/[,;]+$/, "")}.`;
+  let end = text.length;
+  while (end > 0 && (text[end - 1] === "," || text[end - 1] === ";")) end -= 1;
+  return `${text.slice(0, end)}.`;
 }
