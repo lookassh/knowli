@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.34.6",
   "scripts": {
     "eval:school-grader": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/evaluate-school-grader.mts",
+    "eval:tts-styles": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/sample-tts-styles.mts",
     "eval:dictation-stt": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/evaluate-dictation-stt.mts",
     "test:unit": "vitest run --config vitest.unit.config.ts",
     "contracts:export-learning-overview": "node apps/worker/node_modules/tsx/dist/cli.mjs scripts/export-learning-overview-schema.ts",
