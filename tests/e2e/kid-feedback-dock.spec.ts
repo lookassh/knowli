@@ -420,7 +420,7 @@ test("spelling comparison uses the display font and underlines the wrong places"
       const computed = getComputedStyle(node);
       return { family: computed.fontFamily, line: computed.textDecorationLine, thickness: computed.textDecorationThickness };
     });
-    expect(style.family, "pill font").toContain("KnowliKidFredoka");
+    expect(style.family, "pill font").toContain("KnowliKidNunito");
     expect(style.line, "pill underline").toContain("underline");
     expect(Number.parseFloat(style.thickness)).toBeGreaterThanOrEqual(2);
   }
