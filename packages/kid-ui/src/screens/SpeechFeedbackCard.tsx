@@ -95,6 +95,8 @@ export function SpeechFeedbackContent(props: SpeechFeedbackCardProps & { inDock?
                   .filter((verdict) => view.fragments.some((fragment) => fragment.verdict === verdict))
                   .map((verdict) => (
                     <li key={verdict} className={`kid-speech-feedback__legend--${verdict}`}>
+                      {/* Próbka w stylu fragmentu słowa: klucz koloru zostaje także w panelu w tonie wyniku. */}
+                      <span className={`kid-fragment kid-fragment--${verdict} kid-speech-feedback__legend-sample`} aria-hidden="true">abc</span>
                       {fragmentDescriptions[verdict]}
                     </li>
                   ))}

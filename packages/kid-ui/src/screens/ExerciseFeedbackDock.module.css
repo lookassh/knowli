@@ -193,6 +193,7 @@
 .dock .content :global(.kid-speech-feedback__local),
 .dock .content :global(.kid-speech-feedback__error),
 .dock .content :global(.kid-speech-feedback__reference h3),
+.dock .content :global(.kid-speech-feedback__legend),
 .dock .content :global(.kid-speech-feedback__legend li),
 .dock .content :global(.kid-lesson-feedback__hint) {
   color: inherit;
