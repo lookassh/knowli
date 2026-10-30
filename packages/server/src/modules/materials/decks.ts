@@ -158,7 +158,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
     vocabularyFormat: version.vocabularyFormat,
     title: version.title,
     items,
-    assets: assets.map((a) => ({
+    assets: assets.flatMap((a) => a.role === "prompt_audio" ? [] : [{
       itemRevisionId: a.itemRevisionId,
       role: a.role,
       state:
@@ -170,7 +170,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
               ? "failed"
               : "pending",
       assetId: a.assetId,
-    })),
+    }]),
   };
 }
 

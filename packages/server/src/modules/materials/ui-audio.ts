@@ -6,7 +6,7 @@ import {
   type UiAudioCatalogDto,
   type UiAudioKey,
 } from "@learning/contracts";
-import type { Services } from "../../config";
+import { ttsVoiceFor, type Services } from "../../config";
 import { generationRuns, mediaAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { ttsFingerprint } from "../../domain/media-fingerprint";
@@ -20,6 +20,7 @@ function settingsOf(services: Services) {
 function requestOf(services: Services, key: UiAudioKey) {
   const settings = settingsOf(services);
   const text = UI_AUDIO_TEXTS[key];
+  const voice = ttsVoiceFor(settings, "pl-PL");
   return {
     text,
     fingerprint: ttsFingerprint({
@@ -27,7 +28,7 @@ function requestOf(services: Services, key: UiAudioKey) {
       locale: "pl-PL",
       provider: settings.provider,
       model: settings.model,
-      voice: settings.voice,
+      voice,
       format: settings.format,
     }),
     metadata: {
@@ -35,7 +36,7 @@ function requestOf(services: Services, key: UiAudioKey) {
       uiAudioKey: key,
       text,
       locale: "pl-PL",
-      voice: settings.voice,
+      voice,
       format: settings.format,
     },
   };

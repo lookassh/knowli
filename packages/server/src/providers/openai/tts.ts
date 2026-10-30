@@ -27,7 +27,7 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: input.model || model,
           voice: input.voice,
           input: input.text,
           response_format: input.format,

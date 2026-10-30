@@ -9,7 +9,7 @@ export type { DeckKind } from "./deck-kind";
 export { applyItems, archiveDeck, copyRevisionsSkillsAssets, createDraft, createDraftFromPublished, createEmptyDeck, editDraft, listDecks, publishDraft, readDeck, readDraft, removeAssignment, updateDeckSettings, upsertAssignment } from "./decks";
 export { claimQueuedRun, enqueueGenerationRun, markRun } from "./generation-runs";
 export { MAX_AUTOMATIC_ATTEMPTS, errorCodeOf, requireGeneration } from "./generation-runtime";
-export { runDueGenerationWork } from "./generation-worker";
+export { countForeignPendingTts, runDueGenerationWork } from "./generation-worker";
 export type { WorkerLimits } from "./generation-worker";
 export { enqueueDeckGeneration, executeGeneration, readGeneration, retryGeneration } from "./generation";
 export { buildPayload, payloadToItem, validateItems } from "./item-payload";

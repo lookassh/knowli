@@ -62,6 +62,8 @@ export interface LoadedExercise {
   payload: LessonExercisePayload;
   targetKey: string;
   audioAssetId: string | null;
+  /** Gotowe nagranie „Posłuchaj pytania” (design szkoły §11); brak = bez przycisku. */
+  questionAudioAssetId?: string | null;
 }
 
 export interface MaterializedLessonTask {
@@ -177,6 +179,8 @@ export function materializeExercise(
   // wsparciem (wym. 4.6), ale w kartkówce zdradzałby odpowiedź. `audioAssetId`
   // jest już wykluczone z promptów typów zamkniętych przez schemat kontraktu.
   const audio = subject.ttsForAnswers && !mockTest && exercise.audioAssetId ? { audioAssetId: exercise.audioAssetId } : {};
+  // Nagranie pytania powtarza widoczną treść, więc zostaje też w kartkówce (design szkoły §11.3).
+  const questionAudio = subject.ttsForPrompts && exercise.questionAudioAssetId ? { questionAudioAssetId: exercise.questionAudioAssetId } : {};
 
   const baseKey: Record<string, unknown> = {
     exerciseType: payload.exerciseType,
@@ -240,6 +244,7 @@ export function materializeExercise(
         instructionPl,
         stem: payload.stem ?? "",
         options: options.map((o) => ({ id: o.id, text: o.text })),
+        ...questionAudio,
       };
       return {
         ...common,
@@ -269,7 +274,7 @@ export function materializeExercise(
       // bloki nigdy nie startują w kolejności kanonicznej (już ułożone)
       // porównanie po tekście: zamiana dwóch identycznych klocków też wygląda na ułożone zdanie
       const shuffled = shuffleUnsolved(canonical, shuffleSeed, (arranged) => arranged.every((item, i) => item.text === canonical[i]!.text));
-      const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })) };
+      const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })), ...questionAudio };
       return {
         ...common,
         prompt,
@@ -279,7 +284,7 @@ export function materializeExercise(
     }
     case "lesson_gap": {
       // Kartkówka: żadnej podpowiedzi (ujawniałaby odpowiedź); trening zachowuje hint.
-      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}), ...audio };
+      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}), ...audio, ...questionAudio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     case "lesson_error_fix": {
@@ -318,6 +323,7 @@ export function materializeExercise(
         options: options.map((o) => ({ id: o.id, text: o.text })),
         minSelected: 2,
         maxSelected,
+        ...questionAudio,
       };
       return {
         ...common,
@@ -335,7 +341,7 @@ export function materializeExercise(
       const left = seededShuffle(pairs.map((pair) => pair.left), shuffleSeed);
       const right = shuffleUnsolved([...pairs.map((pair) => pair.right), ...extras], `${shuffleSeed}:right`,
         (arranged) => left.every((item, i) => arranged[i]?.id === partnerOf.get(item.id)));
-      const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right };
+      const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right, ...questionAudio };
       return {
         ...common,
         prompt,
@@ -364,6 +370,7 @@ export function materializeExercise(
         instructionPl: payload.instructionPl ?? messages.kid.lessonGroupInstruction,
         groups: groups.map((group) => ({ id: group.id, text: group.text })),
         items: items.map((item) => ({ id: item.id, text: item.text })),
+        ...questionAudio,
       };
       return {
         ...common,
@@ -386,7 +393,7 @@ export function materializeExercise(
         locale === "pl-PL" || locale === "en-GB" ? { promptLocale: locale } : {};
       // Dyktowanie: tylko gdy wywołujący (trening) je zaoferował — kartkówka nie przekazuje.
       const speech = !mockTest && options.speechInput ? { speechInput: options.speechInput } : {};
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...promptLocale, ...speech };
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...questionAudio, ...promptLocale, ...speech };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:
