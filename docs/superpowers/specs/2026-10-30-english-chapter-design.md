@@ -1,6 +1,6 @@
 # Źródła i lekcja „Angielski — rozdział” — projekt
 
-Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: zapisany projekt do przeglądu; zapis nie oznacza rozpoczęcia implementacji.
+Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; następny krok to plan wdrożenia Etapu 1.
 
 ## 1. Cel
 
@@ -401,7 +401,7 @@ Nowe pliki trafiają do `tests/e2e/spec-projects.ts` i `tests/integration-bucket
 
 ## 10. Etapy i PR
 
-Każdy etap kończy się osobnym PR do scalenia przez właściciela. **Kolejność zmieniona po przeglądzie — wymaga potwierdzenia właściciela.** Największe ryzyko (wykonalność generacji) idzie pierwsze, a źródła są dodatkiem do działającej lekcji:
+Każdy etap kończy się osobnym PR do scalenia przez właściciela. Kolejność zmieniona po przeglądzie i potwierdzona przez właściciela (2026-10-30). Największe ryzyko (wykonalność generacji) idzie pierwsze, a źródła są dodatkiem do działającej lekcji:
 
 1. **Przedmiot „Angielski — rozdział”** z wklejonym materiałem (sekcja 4, bez `sourceMaterialId`) + próba z prawdziwym modelem na Unit 1–2. Z próby raportujemy liczbę zagadnień, odrzuceń według powodów i spełnienie minimów; materiał próby nie trafia do repozytorium. Ten PR zawiera też niniejszą specyfikację.
 2. **Źródła** + lekcja rozdziału i lekcja szkolna ze źródła (sekcja 3).
@@ -459,4 +459,6 @@ Przegląd trzech niezależnych krytyków (architektura i silnik; dane, ujawnieni
   - jedna poprawna kolejność klocków bez powtórzeń;
   - normalizator w `subjects/english/`;
   - odwołanie do §22 architektury.
-- **Kolejność etapów:** lekcja rozdziału pierwsza (z próbą na prawdziwym modelu), źródła drugie — do potwierdzenia przez właściciela.
+- **Kolejność etapów:** lekcja rozdziału pierwsza (z próbą na prawdziwym modelu), źródła drugie — potwierdzone przez właściciela.
+
+Wersja 2 zaakceptowana przez właściciela 2026-10-30.
