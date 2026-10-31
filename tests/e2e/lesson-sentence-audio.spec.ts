@@ -1,6 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { AttemptDto, FeedbackDto, TaskDto } from "@learning/contracts";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
 import { lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
 
 /**
@@ -206,5 +207,163 @@ test("sentence button fits the feedback dock on every form factor", async ({ pag
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `page overflow at ${label}`).toBe(false);
     expect(await page.getByTestId("kid-feedback-dock").evaluate((element) => element.scrollWidth > element.clientWidth + 1), `dock overflow at ${label}`).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`sentence-audio-${label}.png`) });
+  }
+});
+
+/**
+ * Tekst z lukami i bankiem słów („Angielski — rozdział”, `lesson_cloze` z
+ * `contentLocale` en-GB): odczyt pełnego, kilkuzdaniowego tekstu po odpowiedzi.
+ * Dłuższy bodziec niż jednozdaniowe luki gramatyki, a `correctText` to cały
+ * wypełniony tekst — dok musi zmieścić w viewporcie „Posłuchaj zdania”, „?”
+ * i „Dalej” także w niskim landscape (<480 px), a długa treść wyniku przewija
+ * się wewnątrz doku. Treść jest zmyślona. Symulacja nie zastępuje odbioru na
+ * fizycznym urządzeniu.
+ */
+const clozeUid = (n: number) => `10000000-0000-4000-8000-0000000009${String(n).padStart(2, "0")}`;
+const clozeSolution = ["sun hat", "swimming costume", "sandcastle"];
+const clozeTask: TaskDto = {
+  taskId: clozeUid(41), sessionId: ids.sessionId, ordinal: 1, exerciseType: "lesson_cloze", direction: null, state: "issued", remainingAssessed: 2,
+  prompt: {
+    kind: "lesson_cloze",
+    instructionPl: "W weekend jedziemy nad morze. Rano zakładam kapelusz przeciwsłoneczny i strój kąpielowy. Mój młodszy brat buduje na plaży duży zamek z piasku, a mama kupuje nam lody. Uzupełnij tekst.",
+    contentLocale: "en-GB",
+    segments: [
+      { text: "At the weekend we go to the seaside. In the morning I put on my " },
+      { gapId: clozeUid(42) },
+      { text: " and my " },
+      { gapId: clozeUid(43) },
+      { text: ". My little brother builds a big " },
+      { gapId: clozeUid(44) },
+      { text: " on the beach, and Mum buys us ice cream." },
+    ],
+    words: [
+      { id: clozeUid(51), text: "sun hat" },
+      { id: clozeUid(52), text: "swimming costume" },
+      { id: clozeUid(53), text: "sandcastle" },
+      { id: clozeUid(54), text: "umbrella" },
+      { id: clozeUid(55), text: "woolly gloves" },
+    ],
+  },
+};
+/** Pełny wypełniony tekst z poprawnymi słowami (jak `filledText` serwera). */
+const clozeFilledText = (() => {
+  if (clozeTask.prompt.kind !== "lesson_cloze") throw new Error("cloze fixture expected");
+  let gap = 0;
+  return clozeTask.prompt.segments.map((segment) => ("gapId" in segment ? clozeSolution[gap++] : segment.text)).join("");
+})();
+
+const clozeAttempt = (feedback: FeedbackDto): AttemptDto => ({
+  attemptId: clozeUid(61), taskId: clozeTask.taskId, state: "completed", modality: "assignment",
+  taskState: "answered", stepId: "s1", receivedAt: "2026-10-31T10:00:01.000Z", completedAt: "2026-10-31T10:00:01.000Z",
+  feedback,
+});
+
+const CLOZE_VIEWPORTS = [
+  { width: 360, height: 800 },
+  { width: 812, height: 375 },
+  { width: 740, height: 420 },
+  { width: 768, height: 1024 },
+];
+
+const CLOZE_FEEDBACKS: { kind: string; feedback: FeedbackDto }[] = [
+  { kind: "great", feedback: { kind: "great", correctAudioAssetId: sentenceAssetId } },
+  { kind: "incorrect", feedback: { kind: "incorrect", correctText: clozeFilledText, correctAudioAssetId: sentenceAssetId } },
+];
+
+interface Box { x: number; y: number; width: number; height: number }
+
+const within = (inner: Box, outer: Box): boolean => inner.x >= outer.x - 1 && inner.y >= outer.y - 1
+  && inner.x + inner.width <= outer.x + outer.width + 1 && inner.y + inner.height <= outer.y + outer.height + 1;
+const overlaps = (a: Box, b: Box): boolean => a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1
+  && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
+
+async function boxOf(locator: Locator): Promise<Box> {
+  const bounds = await locator.boundingBox();
+  if (bounds === null) throw new Error("element has no layout box");
+  return bounds;
+}
+
+test.describe("cloze with a word bank: sentence readback dock geometry", () => {
+  for (const viewport of CLOZE_VIEWPORTS) {
+    for (const { kind, feedback } of CLOZE_FEEDBACKS) {
+      const label = `${viewport.width}x${viewport.height}`;
+      test(`„Posłuchaj zdania” and „Dalej” fit ${label} after a ${kind} answer`, async ({ page }, testInfo) => {
+        const posted = recordAttemptPosts(page);
+        await spyAudio(page);
+        const media = trackMedia(page);
+        await installKidUiFixture(page, { ...lessonAudioFixture(ids, [clozeTask]), attempts: [clozeAttempt(feedback)] });
+        await openLessonTask(page, "kid-lesson-cloze");
+        await page.setViewportSize(viewport);
+        await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+        await expect(page.getByTestId("kid-lesson-cloze-gap")).toHaveCount(3);
+        expect(media).toEqual([]);
+
+        // Odpowiedź ułożona w przeglądarce: trzy stuknięcia w bank, potem „Sprawdź”.
+        await tapPoolAndCheck(page, "kid-lesson-cloze-option", 3, posted);
+        const dock = page.getByTestId("kid-feedback-dock");
+        await expect(dock).toBeVisible();
+        if (kind === "great") await expect(page.getByTestId("kid-feedback")).toContainText("Świetnie!");
+        else await expect(page.getByTestId("kid-feedback-correct-answer")).toHaveText(clozeFilledText);
+
+        // Nagranie całego tekstu gra raz, bez akcji dziecka.
+        await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(1);
+        expect(media).toEqual([sentencePath]);
+
+        // Dok i jego akcje stoją w viewporcie bez przewijania strony.
+        const viewportBox: Box = { x: 0, y: 0, width: viewport.width, height: viewport.height };
+        const dockBox = await boxOf(dock);
+        expect(within(dockBox, viewportBox), `dock in viewport at ${label}: ${JSON.stringify(dockBox)}`).toBe(true);
+        const sentence = dock.getByTestId("kid-sentence-audio");
+        const guidance = dock.getByTestId("kid-guidance-play");
+        const next = dock.getByTestId("kid-next");
+        await expect(sentence).toHaveAttribute("aria-label", "Posłuchaj zdania");
+        const boxes = { sentence: await boxOf(sentence), guidance: await boxOf(guidance), next: await boxOf(next) };
+        for (const [name, bounds] of Object.entries(boxes)) {
+          expect(within(bounds, dockBox), `${name} inside dock at ${label}: ${JSON.stringify(bounds)}`).toBe(true);
+          expect(within(bounds, viewportBox), `${name} inside viewport at ${label}: ${JSON.stringify(bounds)}`).toBe(true);
+          expect(bounds.width, `${name} width at ${label}`).toBeGreaterThanOrEqual(48);
+          expect(bounds.height, `${name} height at ${label}`).toBeGreaterThanOrEqual(48);
+        }
+        // „Dalej” to akcja główna.
+        expect(boxes.next.height, `next height at ${label}`).toBeGreaterThanOrEqual(54);
+        expect(overlaps(boxes.sentence, boxes.guidance), `sentence/guidance overlap at ${label}`).toBe(false);
+        expect(overlaps(boxes.sentence, boxes.next), `sentence/next overlap at ${label}`).toBe(false);
+        expect(overlaps(boxes.guidance, boxes.next), `guidance/next overlap at ${label}`).toBe(false);
+        // Wynik z całym tekstem mieści się w szerokości doku (wysokość przewija się w środku).
+        const result = await boxOf(page.getByTestId("kid-feedback"));
+        expect(result.x, `feedback inside dock at ${label}`).toBeGreaterThanOrEqual(dockBox.x - 1);
+        expect(result.x + result.width, `feedback inside dock at ${label}`).toBeLessThanOrEqual(dockBox.x + dockBox.width + 1);
+
+        const overflow = await page.evaluate(() => {
+          const horizontal = (element: Element | null): boolean => element !== null && element.scrollWidth > element.clientWidth + 1;
+          return {
+            page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            material: horizontal(document.querySelector("[data-testid='kid-material']")),
+            dock: horizontal(document.querySelector("[data-testid='kid-feedback-dock']")),
+            feedback: horizontal(document.querySelector("[data-testid='kid-feedback']")),
+          };
+        });
+        expect(overflow, `horizontal overflow at ${label}`).toEqual({ page: false, material: false, dock: false, feedback: false });
+        await page.screenshot({ path: testInfo.outputPath(`cloze-sentence-audio-${kind}-${label}.png`) });
+
+        // Długi wypełniony tekst nie jest trwale przycięty: po przewinięciu treści wyniku do końca
+        // jego ostatnia linia stoi w obszarze treści doku i w viewporcie.
+        if (kind === "incorrect") {
+          const content = dock.locator(".kid-feedback-content");
+          await content.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+          const contentBox = await boxOf(content);
+          const answerBox = await boxOf(page.getByTestId("kid-feedback-correct-answer"));
+          expect(answerBox.y + answerBox.height, `last line in feedback content at ${label}`).toBeLessThanOrEqual(contentBox.y + contentBox.height + 1);
+          expect(answerBox.y + answerBox.height, `last line in viewport at ${label}`).toBeLessThanOrEqual(viewport.height + 1);
+          await content.evaluate((element) => { element.scrollTop = 0; });
+        }
+
+        // Autoodtwarzanie nie powtórzyło się samo; „Posłuchaj zdania” gra drugi raz.
+        expect((await audioCounters(page)).plays).toBe(1);
+        await sentence.click();
+        await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(2);
+        expect(media).toEqual([sentencePath, sentencePath]);
+      });
+    }
   }
 });
