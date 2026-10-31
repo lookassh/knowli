@@ -154,7 +154,7 @@ export async function settledDockReserve(page: Page): Promise<{
 }
 
 /** Browser-side state of the overlap probe (`installDockOverlapProbe`), kept on `window`. */
-type DockOverlapProbeState = { samples: number[]; settled: number | null; scale: number; error: string | null };
+type DockOverlapProbeState = { samples: number[]; settled: number | null; window: string | null; scale: number; error: string | null };
 
 /**
  * Records, frame by frame, how far the result panel covers the material content (spec 2026-10-31 §3.2, §5.1).
@@ -170,10 +170,13 @@ type DockOverlapProbeState = { samples: number[]; settled: number | null; scale:
  * observers corrected it first), and that layout is sampled in the next frame instead.
  * A sample is the lowest bottom edge among the children of `.kid-material-content` minus the top edge of
  * `.kid-feedback-overlay` (an element without the entrance transform), in screen pixels: positive means covered.
+ * With `until` (a resize step), after-paint samples count towards settling only once the window has that size: the
+ * resize lands in a later round trip, and a probe started at once could settle on the old layout first and prove
+ * nothing about the resize. The window size at settling is reported as `window` either way.
  */
-export async function installDockOverlapProbe(page: Page, options: { startNow?: boolean } = {}): Promise<void> {
-  await page.evaluate((startNow) => {
-    const state: DockOverlapProbeState = { samples: [], settled: null, scale: 1, error: null };
+export async function installDockOverlapProbe(page: Page, options: { startNow?: boolean; until?: Viewport } = {}): Promise<void> {
+  await page.evaluate(({ startNow, until }) => {
+    const state: DockOverlapProbeState = { samples: [], settled: null, window: null, scale: 1, error: null };
     (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe = state;
     const overlap = (): number | null => {
       const content = document.querySelector(".kid-material-content");
@@ -192,7 +195,9 @@ export async function installDockOverlapProbe(page: Page, options: { startNow?: 
       let mutations = 0;
       const mutationCounter = new MutationObserver((records) => { mutations += records.length; });
       mutationCounter.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
-      const frameState = () => `${mutations}:${window.innerWidth}x${window.innerHeight}`;
+      const windowSize = () => `${window.innerWidth}x${window.innerHeight}`;
+      const frameState = () => `${mutations}:${windowSize()}`;
+      const atTarget = () => until === null || windowSize() === `${until.width}x${until.height}`;
       let paintedState = frameState();
       const observer = new ResizeObserver(() => {
         record();
@@ -217,18 +222,22 @@ export async function installDockOverlapProbe(page: Page, options: { startNow?: 
           frames += 1;
           if (frameState() === paintedState) {
             const value = record();
-            identical = value !== null && value === previous ? identical + 1 : 1;
+            // Samples of a window other than the target are recorded (they must not cover either) but never settle.
+            if (value === null || !atTarget()) identical = 0;
+            else identical = value === previous ? identical + 1 : 1;
             previous = value;
-            if (value !== null && identical >= 5) {
+            if (identical >= 5) {
               stop();
               state.scale = document.querySelector(".kid-page")?.currentCSSZoom ?? 1;
+              state.window = windowSize();
               state.settled = value;
               return;
             }
           }
           if (frames >= 600) {
             stop();
-            state.error = `the overlap did not settle in 600 frames: ${JSON.stringify(state.samples.slice(-10))}`;
+            const target = until === null ? "" : ` at ${until.width}x${until.height} (window ${windowSize()})`;
+            state.error = `the overlap did not settle${target} in 600 frames: ${JSON.stringify(state.samples.slice(-10))}`;
             return;
           }
           afterPaint();
@@ -246,19 +255,24 @@ export async function installDockOverlapProbe(page: Page, options: { startNow?: 
       start();
     });
     watcher.observe(document.body, { childList: true, subtree: true });
-  }, options.startNow ?? false);
+  }, { startNow: options.startNow ?? false, until: options.until ?? null });
 }
 
-/** Waits for the probe to settle and returns its samples, the settled overlap (screen px) and the Kid UI scale. */
-export async function readDockOverlapProbe(page: Page): Promise<{ samples: number[]; settled: number; scale: number }> {
+/**
+ * Waits for the probe to settle and returns its samples, the settled overlap (screen px), the window size it settled
+ * in (`1280x600`) and the Kid UI scale.
+ */
+export async function readDockOverlapProbe(page: Page): Promise<{ samples: number[]; settled: number; window: string; scale: number }> {
   const handle = await page.waitForFunction(() => {
     const state = (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe;
     return state !== undefined && (state.settled !== null || state.error !== null) ? state : null;
   }, undefined, { timeout: 15_000 });
   const state = await handle.jsonValue() as DockOverlapProbeState;
   await handle.dispose();
-  if (state.error !== null || state.settled === null) throw new Error(`dock overlap probe: ${state.error ?? "no settled value"}`);
-  return { samples: state.samples, settled: state.settled, scale: state.scale };
+  if (state.error !== null || state.settled === null || state.window === null) {
+    throw new Error(`dock overlap probe: ${state.error ?? "no settled value"}`);
+  }
+  return { samples: state.samples, settled: state.settled, window: state.window, scale: state.scale };
 }
 
 /**

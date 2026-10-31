@@ -1,7 +1,7 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { FeedbackDto, TaskDto } from "@learning/contracts";
 import {
-  clozeTask, clozeUid, completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, longSpellingHintFeedback,
+  clozeTask, clozeUid, completedRecallFixture, completedTextChoiceFixture, letterTask, lessonCardFixture, longSpellingHintFeedback,
   makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
 } from "./helpers/kid-fixtures";
 import {
@@ -297,9 +297,16 @@ test.describe("touch tablet in landscape", () => {
     await expectDockCorners(page, "rounded");
     expectRectsUnchanged(field, await boxes(page, "[data-testid='kid-input']"), "field after the verdict with the keyboard open");
 
-    // A phone in landscape keeps the regular frame: the panel is a bottom sheet.
-    await resizeAndSettle(page, { width: 844, height: 390 });
-    await expectDockCorners(page, "sheet");
+    // Each touch threshold on its own keeps the regular frame, where the panel is a bottom sheet: a phone in landscape,
+    // a window narrower than 960 px (900 x 600) and one lower than 480 px (1366 x 470: very short, the session
+    // scrolls as a page).
+    const sessionFrame = page.getByTestId("kid-session-frame");
+    for (const viewport of [{ width: 844, height: 390 }, { width: 900, height: 600 }, { width: 1366, height: 470 }]) {
+      await resizeAndSettle(page, viewport);
+      if (viewport.height < 480) await expect(sessionFrame).toHaveAttribute("data-viewport-very-short", "true");
+      else await expect(sessionFrame).not.toHaveAttribute("data-viewport-very-short");
+      await expectDockCorners(page, "sheet");
+    }
   });
 });
 
@@ -358,7 +365,8 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
 // right verdict. `bound`: the material height limits the tiles after the wrong verdict (otherwise the width or the cap
 // decides, and a panel cannot shrink them); that is where the panel used to shrink them. The audio notice takes ~87 inner px
 // of the material. 3440x1440 without the notice keeps constant tiles over the 300 cap (`minTile`: but not under 290 px).
-// 844x390 is a very short window: no reserve, the empty footer is hidden.
+// 768x600 has the reserve too (from 600 px wide) in the 560 px column, below the expanded width. 844x390 is a very short
+// window: no reserve, the empty footer is hidden.
 interface PictureVerdictWindow {
   viewport: Viewport; scale: number; bound: boolean; notice?: boolean; minTile?: number; rootFont?: string; veryShort?: boolean;
 }
@@ -369,6 +377,7 @@ const PICTURE_VERDICT_WINDOWS: PictureVerdictWindow[] = [
   { viewport: ULTRAWIDE, scale: 1.6, bound: true, minTile: 290 },
   { viewport: PHONE, scale: 1, bound: false },
   { viewport: LAPTOP, scale: 1, bound: true, rootFont: "125%" },
+  { viewport: { width: 768, height: 600 }, scale: 1, bound: true },
   { viewport: { width: 844, height: 390 }, scale: 1, bound: false, veryShort: true },
 ];
 
@@ -543,7 +552,7 @@ for (const { width, height, scale } of TALL_WINDOWS.filter(({ width }) => width 
 
 test("long lesson card scrolls inside the material", async ({ page }) => {
   await page.setViewportSize(ULTRAWIDE);
-  await openSession(page, longLessonCardFixture());
+  await openSession(page, lessonCardFixture());
   await expect(page.getByTestId("kid-lesson-card")).toBeVisible();
   await waitForKidScale(page, 1.6);
   await page.evaluate(async () => { await document.fonts.ready; });
@@ -590,9 +599,12 @@ function silentSpeechTask(): TaskDto {
 }
 
 // --kid-compact-frame-offset (spec 2026-10-31 §3.4): with a mouse or touchpad the compact frame leaves 90 inner px above
-// the instruction, which the zoom multiplies on screen. The word card and the illustrated tasks get none; picture
-// choice has no compact frame at all. `verdict` answers the task and names the answers that must not move.
+// the instruction, which the zoom multiplies on screen. The word cards, the illustrated tasks and the lesson card get
+// none (their content is short here, so an offset would show); picture choice has no compact frame at all. `verdict`
+// answers the task and names the answers that must not move.
 const COMPACT_FRAME_OFFSET = 90;
+const SHORT_LESSON_CARD = { title: "Pająki", body: "Pająk ma osiem nóg, a owad sześć.", examples: ["Pająk tka sieć."] };
+const NO_OFFSET_KINDS = ["exposure", "picture_exposure", "picture_recall", "picture_speech"] as const;
 const OFFSET_KINDS: {
   name: string; promptKind: string; offset: boolean; open: (page: Page) => Promise<void>;
   verdict?: { answers: string; give: (page: Page) => Promise<void> };
@@ -628,8 +640,9 @@ const OFFSET_KINDS: {
     open: (page) => openSession(page, { ...recallFixture(), tasks: [letterTask("kot", "c_t")] }) },
   { name: "speech", promptKind: "speech", offset: true,
     open: (page) => openSession(page, { ...recallFixture(), tasks: [silentSpeechTask()] }) },
-  { name: "word card", promptKind: "exposure", offset: false,
-    open: (page) => openSession(page, { ...recallFixture(), tasks: [taskFor("exposure")] }) },
+  ...NO_OFFSET_KINDS.map((promptKind) => ({ name: promptKind, promptKind, offset: false,
+    open: (page: Page) => openSession(page, { ...recallFixture(), tasks: [taskFor(promptKind)] }) })),
+  { name: "lesson card", promptKind: "lesson_card", offset: false, open: (page) => openSession(page, lessonCardFixture(SHORT_LESSON_CARD)) },
   { name: "picture choice", promptKind: "picture_listening", offset: false, open: (page) => openPictureChoice(page) },
 ];
 
@@ -667,9 +680,12 @@ test("regular frame and pinch zoom have no top offset", async ({ page }) => {
       .toBeLessThanOrEqual(6);
     expect(Math.abs(await frameTopOffset(page)), `${name}: no space above the instruction`).toBeLessThanOrEqual(1);
   }
-  // A pinch zoom (data-zoomed) on the 34" window scrolls the session as a page: no offset there either.
+  // A pinch zoom (data-zoomed) on the 34" window scrolls the session as a page: no offset there either. Without the
+  // zoom the same window has the full offset, so the zero below is the zoom's doing.
   await resizeAndSettle(page, ULTRAWIDE);
   await waitForKidScale(page, 1.6);
+  const unzoomed = await frameTopOffset(page);
+  expect(Math.abs(unzoomed - COMPACT_FRAME_OFFSET * 1.6), `before the pinch zoom: the full offset, got ${unzoomed}`).toBeLessThanOrEqual(2);
   await emulatePinchZoom(page);
   await nextFrames(page);
   expect(Math.abs(await frameTopOffset(page)), "pinch zoom: no space above the instruction").toBeLessThanOrEqual(1);
@@ -719,14 +735,40 @@ test("overlay dock reserve is exact", async ({ page }) => {
     .toBeGreaterThanOrEqual(geometry.dockTop - (8 * ULTRAWIDE_SCALE + 3));
 });
 
+// Seventy words of the long prompt: twelve lines in the 720 px column, so the written answer takes about 80 of the
+// 90 inner px offset at 900 inner px of height. Eleven lines (a wrap about 3% tighter) would still take part of it;
+// thirteen (about 8% wider) would leave no offset and scroll the material.
+const OFFSET_TAKING_PROMPT = `${LONG_RECALL_PROMPT} ${LONG_RECALL_PROMPT}`.split(" ").slice(0, 70).join(" ");
+
+// The offset gives way first (spec 2026-10-31 §3.4, `flex-shrink: 1000000`): content a little too tall for the full
+// offset takes part of it, and the material keeps every pixel of its content. With a shrink factor of 1000 the material
+// gave up a fraction of a pixel along with the offset, which leaves a 1 px scroll range (and a scroll bar).
+test("the top offset gives way before the material", async ({ page }) => {
+  await page.setViewportSize(ULTRAWIDE);
+  await openWrittenRecall(page, completedRecallFixture({ prompt: OFFSET_TAKING_PROMPT }));
+  await page.getByTestId("kid-input").fill("cat");
+  await waitForKidScale(page, ULTRAWIDE_SCALE);
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await nextFrames(page);
+  const offset = await frameTopOffset(page);
+  const material = await page.getByTestId("kid-material").evaluate((element) =>
+    ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+  const details = JSON.stringify({ offset, material, fullOffset: COMPACT_FRAME_OFFSET * ULTRAWIDE_SCALE });
+  expect(offset, `the prompt takes part of the offset: ${details}`).toBeGreaterThan(1);
+  expect(offset, `the prompt leaves part of the offset: ${details}`).toBeLessThan(COMPACT_FRAME_OFFSET * ULTRAWIDE_SCALE - 1);
+  expect(material.scrollHeight, `the material shows all of its content: ${details}`).toBe(material.clientHeight);
+});
+
 /**
  * Reads the overlap probe (`installDockOverlapProbe`): in no sampled frame does the panel cover the material content by
  * more than the 8 inner px correction threshold of `ExerciseFrame` (screen px: 8 x scale, + 1 for rounding), and once
- * settled the content ends above the panel (spec 2026-10-31 §1, §3.2).
+ * settled the content ends above the panel (spec 2026-10-31 §1, §3.2). `settledIn`: the window the probe must have
+ * settled in (a resize step).
  */
-async function expectPanelNeverCovers(page: Page, label: string): Promise<void> {
+async function expectPanelNeverCovers(page: Page, label: string, settledIn?: Viewport): Promise<void> {
   const probe = await readDockOverlapProbe(page);
   const details = `${label}: ${JSON.stringify(probe)}`;
+  if (settledIn) expect(probe.window, `the probe settled after the resize: ${details}`).toBe(`${settledIn.width}x${settledIn.height}`);
   expect(probe.samples.length, `the probe sampled frames: ${details}`).toBeGreaterThan(0);
   expect(Math.max(...probe.samples), `overlap in every sampled frame: ${details}`).toBeLessThanOrEqual(8 * probe.scale + 1);
   expect(probe.settled, `overlap once settled: ${details}`).toBeLessThanOrEqual(1);
@@ -762,9 +804,16 @@ test("result panel never covers the material in a painted frame", async ({ page 
     await expectPanelNeverCovers(page, label);
 
     if (resizeTo) {
-      await installDockOverlapProbe(page, { startNow: true });
+      const resizedLabel = `${label} resized to ${resizeTo.width}x${resizeTo.height}`;
+      await installDockOverlapProbe(page, { startNow: true, until: resizeTo });
       await resizeAndSettle(page, resizeTo);
-      await expectPanelNeverCovers(page, `${label} resized to ${resizeTo.width}x${resizeTo.height}`);
+      await expectPanelNeverCovers(page, resizedLabel, resizeTo);
+      const resized = await settledDockReserve(page);
+      const resizedDetails = `${resizedLabel}: ${JSON.stringify({ before: geometry, after: resized })}`;
+      // The resize moved the material under the panel, and the panel still covers the answer without its reserve.
+      expect(resized.clientHeight !== geometry.clientHeight || resized.scrollTop !== geometry.scrollTop,
+        `the resize changed the material: ${resizedDetails}`).toBe(true);
+      expect(resized.inlineReserve, `the reserve is still engaged: ${resizedDetails}`).toBeGreaterThan(0);
     }
   }
 });
@@ -820,7 +869,7 @@ const READING_MEASURE_CASES = [
     name: "lesson card", text: ".kid-lesson-card__body", exclude: undefined, blocks: [".kid-lesson-card__body", ".kid-lesson-card__examples"],
     open: async (page: Page) => {
       await page.setViewportSize(LAPTOP);
-      await openSession(page, longLessonCardFixture());
+      await openSession(page, lessonCardFixture());
       await expect(page.getByTestId("kid-lesson-card")).toBeVisible();
     },
   },
@@ -843,24 +892,44 @@ test("lesson text keeps about 60 characters per line in the 720 px column", asyn
     const details = `${name}: characters per line ${JSON.stringify(lines)}`;
     expect(longest, `the longest line is at least 45 characters: ${details}`).toBeGreaterThanOrEqual(45);
     expect(longest, `the longest line is at most 65 characters: ${details}`).toBeLessThanOrEqual(65);
+    const leftEdges: number[] = [];
     for (const block of blocks) {
       const insets = await insetsInParent(page, block);
       expect(Math.abs(insets.left - insets.right), `${name}: ${block} sits in the middle of the column: ${JSON.stringify(insets)}`)
         .toBeLessThanOrEqual(2);
+      leftEdges.push((await boxes(page, block))[0]!.left);
     }
+    // The card body and its examples start on one line, whatever the length of their text (`inline-size: 100%`).
+    expect(Math.max(...leftEdges) - Math.min(...leftEdges), `${name}: ${blocks.join(" and ")} share the left edge: ${JSON.stringify(leftEdges)}`)
+      .toBeLessThanOrEqual(1);
   }
 });
+
+/** The written answer whose long prompt scrolls the material before the verdict, answered; the dock shows `feedback`. */
+async function openOverflowingRecall(page: Page, viewport: Viewport, feedback?: FeedbackDto) {
+  await page.setViewportSize(viewport);
+  await openWrittenRecall(page, overflowingRecallFixture(feedback));
+  await page.getByTestId("kid-input").fill("the children walked");
+}
 
 /** A material that already scrolls before the verdict: the written answer with a long prompt and the cloze text. */
 const SCROLLING_MATERIAL_CASES = [
   ...[LAPTOP, PHONE].map((viewport) => ({
     name: "written answer", viewport, submit: "kid-submit",
-    open: async (page: Page) => {
-      await page.setViewportSize(viewport);
-      await openWrittenRecall(page, overflowingRecallFixture());
-      await page.getByTestId("kid-input").fill("the children walked");
-    },
+    open: (page: Page) => openOverflowingRecall(page, viewport),
   })),
+  // A panel 20 px over the footer while the child reads the prompt from the top. The short panel is stretched by a
+  // style, so the excess does not depend on fonts. The correcting scroll needs the scroll range the reserve adds, so it
+  // runs on the layout with the reserve (spec 2026-10-31 §3.2): run on the layout before it, it stopped at the old end
+  // and left about 4 px of the answer under the panel (an excess in (16, 24] px leaves 0–8 px), below the 8 px threshold.
+  {
+    name: "written answer under a panel 20 px over the footer", viewport: SMALL_LAPTOP, submit: "kid-submit",
+    open: async (page: Page) => {
+      await openOverflowingRecall(page, SMALL_LAPTOP, { kind: "great" });
+      await page.addStyleTag({ content: ".kid-feedback-overlay { height: calc(100% + 20px); }" });
+      await page.getByTestId("kid-material").evaluate((element) => { element.scrollTop = 0; });
+    },
+  },
   ...[SMALL_LAPTOP, LAPTOP].map((viewport) => ({
     name: "cloze with a lesson hint", viewport, submit: "kid-lesson-check",
     open: async (page: Page) => {
@@ -925,31 +994,37 @@ test("retry hands the footer back to the answer at once", async ({ page }) => {
     await expect(dock).toBeVisible();
     const first = await settledDockReserve(page);
 
-    // The retry and the hit test run in one evaluate, a frame apart, so the check lands well inside the 140 ms exit
-    // animation however slow the test runner is. The retry clears the field and disables the action until there is an
-    // answer again; a disabled button is still the element at its own point, so the hit test needs no typing.
+    // The retry and the hit test run in one evaluate, so the check lands well inside the 140 ms exit animation however
+    // slow the test runner is. The retry is local state, which React commits without waiting for a frame, so the action
+    // is looked up after a microtask and then task by task (`setTimeout(0)`). The retry clears the field and disables
+    // the action until there is an answer again; a disabled button is still the element at its own point, so the hit
+    // test needs no typing.
     const hit = await page.evaluate(async () => {
-      const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+      const findAction = () => document.querySelector<HTMLElement>("[data-testid='kid-submit']");
       document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock'] [data-testid='kid-next']")!.click();
-      let action: HTMLElement | null = null;
-      for (let frames = 0; frames < 5 && action === null; frames += 1) {
-        await frame();
-        action = document.querySelector<HTMLElement>("[data-testid='kid-submit']");
+      await Promise.resolve();
+      let action = findAction();
+      for (let tasks = 0; tasks < 10 && action === null; tasks += 1) {
+        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        action = findAction();
       }
-      if (action === null) return { action: false, leaving: false, onAction: false, target: null };
+      if (action === null) return { action: false, popped: null, onAction: false, target: null };
       const { left, top, width, height } = action.getBoundingClientRect();
       const target = document.elementFromPoint(left + width / 2, top + height / 2);
+      // The panel still on the page is the leaving one, popped out of the layout by AnimatePresence.
+      const popped = document.querySelector(".kid-feedback-overlay")?.closest("[data-motion-pop-id]");
       return {
         action: true,
-        // The panel still on the page is the leaving one, popped out of the layout by AnimatePresence.
-        leaving: document.querySelector(".kid-feedback-overlay")?.closest("[data-motion-pop-id]") != null,
+        popped: popped ? getComputedStyle(popped).pointerEvents : null,
         onAction: target !== null && action.contains(target),
         target: target === null ? null : `${target.tagName.toLowerCase()}.${target.className}`,
       };
     });
+    const hitDetails = `${label}: ${JSON.stringify(hit)}`;
     expect(hit.action, `the answer action is back after the retry: ${label}`).toBe(true);
-    expect(hit.leaving, `the panel is still animating out: ${label}: ${JSON.stringify(hit)}`).toBe(true);
-    expect(hit.onAction, `the action, not the leaving panel, takes the click: ${label}: ${JSON.stringify(hit)}`).toBe(true);
+    expect(hit.popped, `the panel is still animating out: ${hitDetails}`).not.toBeNull();
+    expect(hit.popped, `the leaving panel lets clicks through: ${hitDetails}`).toBe("none");
+    expect(hit.onAction, `the action, not the leaving panel, takes the click: ${hitDetails}`).toBe(true);
 
     await expect(page.locator(".kid-feedback-overlay")).toHaveCount(0);
     const reserve = await page.locator(".kid-material-content").evaluate((element: HTMLElement) =>

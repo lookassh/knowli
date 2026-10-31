@@ -30,7 +30,7 @@ function cardTask(withAudio: boolean): TaskDto {
     taskId, sessionId, ordinal: 0, exerciseType: "lesson_card", direction: null, state: "issued", remainingAssessed: 2,
     prompt: {
       kind: "lesson_card",
-      card: LONG_LESSON_CARD,
+      card: { ...LONG_LESSON_CARD, examples: [...LONG_LESSON_CARD.examples] },
       ...(withAudio ? { questionAudioAssetId } : {}),
     },
   };

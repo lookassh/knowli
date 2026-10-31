@@ -106,9 +106,9 @@ describe("MicrophoneSettingsButton", () => {
     const screenSize = { width: 600, height: 800 };
     const buttonRect = rect(540, 20, 48, 48);
     const panelRect = rect(0, 0, 400, 200);
+    const rectsByTestId: Record<string, DOMRect> = { "kid-mic-settings": buttonRect, "kid-mic-settings-panel": panelRect };
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const testId = this.getAttribute("data-testid");
-      return testId === "kid-mic-settings" ? buttonRect : testId === "kid-mic-settings-panel" ? panelRect : rect(0, 0, 0, 0);
+      return rectsByTestId[this.getAttribute("data-testid") ?? ""] ?? rect(0, 0, 0, 0);
     });
     // --kid-safe-* are not set in jsdom, so the component's 16 px floor applies on every side.
     renderKid(

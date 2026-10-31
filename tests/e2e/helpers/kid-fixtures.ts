@@ -41,9 +41,16 @@ export function letterTask(prompt: string, fragment: string): TaskDto {
     direction: "source_to_target", prompt: { kind: "letter_completion", prompt, fragment } };
 }
 
-/** One issued task of the given prompt kind with fixed texts (the layout specs only need its shape). */
+/**
+ * One issued task of the given prompt kind with fixed texts (the layout specs only need its shape). The picture tasks
+ * show a colour and have no recording.
+ */
 export function taskFor(kind: TaskDto["prompt"]["kind"]): TaskDto {
   const common = { taskId, sessionId, ordinal: 0, state: "issued" as const, remainingAssessed: 1 };
+  const visual = { kind: "color" as const, color: "#ff0000" };
+  if (kind === "picture_exposure") return { ...common, exerciseType: "exposure", direction: null, prompt: { kind, visual, audioAssetId: null } };
+  if (kind === "picture_recall") return { ...common, exerciseType: "recall", direction: null, prompt: { kind, visual } };
+  if (kind === "picture_speech") return { ...common, exerciseType: "speech", direction: null, prompt: { kind, visual, audioAssetId: null } };
   if (kind === "exposure") return { ...common, exerciseType: "exposure" as const, direction: null, prompt: {
     kind: "exposure" as const, source: "kot", target: "cat", example: "The cat is sleeping.", audioAssetId: assetId,
     exampleAudioAssetId: assetId, imageAssetId: assetId, visualType: "image" as const,
@@ -151,19 +158,22 @@ export const clozeTask: TaskDto = {
   },
 };
 
+/** The text of a lesson card, read-only: the shared cards are frozen, so one test cannot change them for another. */
+export interface LessonCardText { readonly title: string; readonly body: string; readonly examples: readonly string[] }
+
 /** The longest lesson card: a long title, a body at the schema limit (1200 characters, bulleted) and three examples. */
-export const LONG_LESSON_CARD: { title: string; body: string; examples: string[] } = {
+export const LONG_LESSON_CARD: LessonCardText = Object.freeze({
   title: "Czym różnią się pająki od owadów żyjących w ogrodzie za domem?",
   body: (
     "Pająki nie są owadami, chociaż wiele osób tak myśli. • Pająk ma osiem nóg, a owad sześć. "
     + "• Ciało pająka składa się z dwóch części: głowotułowia i odwłoka. • Pająki nie mają czułków ani skrzydeł. "
     + "Większość pająków tka sieci z cienkich, mocnych nici, które wytwarzają kądziołki na końcu odwłoka. "
   ).repeat(5).slice(0, 1200).trim(),
-  examples: ["Pająk krzyżak tka okrągłą sieć.", "Mucha ma sześć nóg i skrzydła.", "Kosarz ma bardzo długie nogi."],
-};
+  examples: Object.freeze(["Pająk krzyżak tka okrągłą sieć.", "Mucha ma sześć nóg i skrzydła.", "Kosarz ma bardzo długie nogi."]),
+});
 
-/** A lesson session whose only task is the longest card (long title, 1200-character body, three examples) with its recording. */
-export function longLessonCardFixture(): KidUiFixture {
+/** A lesson session whose only task is the given card (by default the longest one) with its recording. */
+export function lessonCardFixture(text: LessonCardText = LONG_LESSON_CARD): KidUiFixture {
   const ids = {
     childId: "10000000-0000-4000-8000-000000000b01",
     deckId: "10000000-0000-4000-8000-000000000b02",
@@ -175,7 +185,7 @@ export function longLessonCardFixture(): KidUiFixture {
     direction: null, state: "issued", remainingAssessed: 2,
     prompt: {
       kind: "lesson_card",
-      card: LONG_LESSON_CARD,
+      card: { ...text, examples: [...text.examples] },
       questionAudioAssetId: "10000000-0000-4000-8000-000000000b21",
     },
   };
