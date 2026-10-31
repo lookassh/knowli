@@ -69,6 +69,7 @@ export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./module
 export { countForeignPendingTts, runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {
   createLesson,
+  createLessonFromMaterial,
   createSchoolLesson,
   executeLessonGeneration,
   regenerateObjective,
@@ -97,7 +98,7 @@ export {
   readReadyMediaStream,
   type ReadyMediaStream,
 } from "./modules/materials";
-export { prepareUiAudio, readUiAudio } from "./modules/materials";
+export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./modules/materials";
 export {
   buildPayload,
   payloadToItem,

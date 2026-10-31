@@ -40,6 +40,17 @@ export function validateSubject(module: SubjectModule): string[] {
     errors,
   );
 
+  // Tworzenie z materiału wymaga obu opcji naraz: tematu dynamicznego i źródła
+  // tytułu przedmiotu. Jedna bez drugiej to przedmiot, którego nie da się
+  // utworzyć z materiału (katalog i formularz rodzica patrzą na obie).
+  if ((module.buildDynamicTopic === undefined) !== (module.materialSubjectTitle === undefined)) {
+    errors.push(
+      module.buildDynamicTopic === undefined
+        ? "Przedmiot: materialSubjectTitle wymaga buildDynamicTopic"
+        : "Przedmiot: buildDynamicTopic wymaga materialSubjectTitle",
+    );
+  }
+
   for (const topic of module.topics) {
     validateTopic(topic, module, subjectTypes, errors);
   }

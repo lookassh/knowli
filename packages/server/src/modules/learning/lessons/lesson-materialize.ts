@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { messages, type CalculationSpec, type SpeechInputDto, type TaskPrompt } from "@learning/contracts";
+import { LessonContentLocaleSchema, messages, type CalculationSpec, type LessonContentLocale, type SpeechInputDto, type TaskPrompt } from "@learning/contracts";
 import type { Services } from "../../../config";
 import { DEFAULT_DICTATION_POLICY } from "../../../domain/lessons/dictation";
 import { AppError } from "../../../errors";
-import { computeTargetKey } from "../../../domain/target-key";
+import { lessonTextTargetKey } from "../../../domain/lessons/exposure-key";
 import { renderCalculationPrompt } from "../../../domain/lessons/calculation";
 import { renderCard } from "../../../domain/lessons/card";
 import { clozeParts, fillCloze } from "../../../domain/lessons/cloze";
@@ -68,6 +68,8 @@ export interface LoadedExercise {
   audioAssetId: string | null;
   /** Gotowe nagranie „Posłuchaj pytania” (design szkoły §11); brak = bez przycisku. */
   questionAudioAssetId?: string | null;
+  /** Gotowe nagranie pełnego zdania feedbacku (rola `feedback_audio`); brak = bez odczytu po odpowiedzi. */
+  feedbackAudioAssetId?: string | null;
 }
 
 export interface MaterializedLessonTask {
@@ -117,6 +119,12 @@ export function shuffleUnsolved<T>(items: readonly T[], seed: string, isSolved: 
   return arranged;
 }
 
+/** Kid DTO zna tylko języki materiału (`pl-PL`, `en-GB`); inny język przedmiotu = brak atrybutu. */
+function lessonLocale(value: string): LessonContentLocale | undefined {
+  const parsed = LessonContentLocaleSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /** Polecenie przekształcenia z tematu, gdy payload go nie niesie. */
 function transformInstruction(topic: LessonTopic, payload: LessonExercisePayload): string | undefined {
   if (payload.exerciseType !== "lesson_transform" || !payload.transformId) return undefined;
@@ -143,8 +151,9 @@ export function materializeCard(
     exerciseType: "lesson_card",
     prompt: { kind: "lesson_card", card: rendered, ...questionAudio },
     answerKey: { exerciseType: "lesson_card", objectiveId: objective.id, subjectId: subject.id, cardPurpose: plan.cardPurpose },
-    // Karta ujawnia przykłady → ekspozycje kluczy przykładów (znormalizowane w answerLocale).
-    exposures: examples.map((example) => computeTargetKey(example, subject.answerLocale)),
+    // Karta ujawnia przykłady → ekspozycje kluczy przykładów w normalizacji przedmiotu
+    // (ta sama co klucze ćwiczeń: przykład i rozwiązane zdanie luki to jedna ekspozycja).
+    exposures: examples.map((example) => lessonTextTargetKey(subject, example)),
     context: { objectiveId: objective.id, cardPurpose: plan.cardPurpose, cardIndex },
     itemRevisionId: firstExerciseRevisionId,
   };
@@ -205,6 +214,9 @@ export function materializeExercise(
     focus: payload.focus,
     independentCheck: plan.independentCheck,
     reason: plan.reason,
+    // Nagranie zdania po odpowiedzi trafia wyłącznie do prywatnego klucza (nie do promptu dziecka)
+    // i nie istnieje w kartkówce, by nie zdradzać odpowiedzi.
+    ...(subject.ttsForFeedbackSentence && !mockTest && exercise.feedbackAudioAssetId ? { feedbackAudioAssetId: exercise.feedbackAudioAssetId } : {}),
     // Migawka celu: ścieżka oceny nie musi szukać celu w katalogu (tematy dynamiczne).
     ...(objective ? { objectiveSnapshot: { objectiveTitlePl: objective.titlePl, topicId: topic.id, topicVersion: topic.version, descriptionEn: objective.descriptionEn, errorCategories: [...objective.errorCategories], hints: { ...objective.hints }, topicTitlePl: topic.titlePl, extraErrorCategories: topic.extraErrorCategories.map((c) => ({ ...c })) } } : {}),
   };
@@ -220,6 +232,9 @@ export function materializeExercise(
   }
   const taskContext: Record<string, unknown> = { reason: plan.reason, objectiveId: payload.objectiveId, independentCheck: plan.independentCheck };
   const common = { exerciseType: payload.exerciseType, itemRevisionId: exercise.revisionId, context: taskContext } as const;
+  // Treść zadań zamkniętych i luki jest w języku odpowiedzi przedmiotu; nieznany język = brak pola.
+  const answerLocale = lessonLocale(subject.answerLocale);
+  const contentLocale: { contentLocale?: LessonContentLocale } = answerLocale ? { contentLocale: answerLocale } : {};
 
   switch (payload.exerciseType) {
     case "lesson_notice": {
@@ -257,6 +272,7 @@ export function materializeExercise(
         instructionPl,
         stem: payload.stem ?? "",
         options: options.map((o) => ({ id: o.id, text: o.text })),
+        ...contentLocale,
         ...questionAudio,
       };
       return {
@@ -287,7 +303,7 @@ export function materializeExercise(
       // bloki nigdy nie startują w kolejności kanonicznej (już ułożone)
       // porównanie po tekście: zamiana dwóch identycznych klocków też wygląda na ułożone zdanie
       const shuffled = shuffleUnsolved(canonical, shuffleSeed, (arranged) => arranged.every((item, i) => item.text === canonical[i]!.text));
-      const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })), ...questionAudio };
+      const prompt: TaskPrompt = { kind: "lesson_order", instructionPl, items: shuffled.map((item) => ({ id: item.id, text: item.text })), ...contentLocale, ...questionAudio };
       return {
         ...common,
         prompt,
@@ -297,7 +313,7 @@ export function materializeExercise(
     }
     case "lesson_gap": {
       // Kartkówka: żadnej podpowiedzi (ujawniałaby odpowiedź); trening zachowuje hint.
-      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}), ...audio, ...questionAudio };
+      const prompt: TaskPrompt = { kind: "lesson_gap", instructionPl, stemWithGap: payload.stem ?? "", ...(!mockTest && payload.hint ? { hint: payload.hint } : {}), ...audio, ...contentLocale, ...questionAudio };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     case "lesson_error_fix": {
@@ -354,7 +370,7 @@ export function materializeExercise(
       const left = seededShuffle(pairs.map((pair) => pair.left), shuffleSeed);
       const right = shuffleUnsolved([...pairs.map((pair) => pair.right), ...extras], `${shuffleSeed}:right`,
         (arranged) => left.every((item, i) => arranged[i]?.id === partnerOf.get(item.id)));
-      const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right, ...questionAudio };
+      const prompt: TaskPrompt = { kind: "lesson_match", instructionPl: payload.instructionPl ?? messages.kid.lessonMatchInstruction, left, right, ...contentLocale, ...questionAudio };
       return {
         ...common,
         prompt,
@@ -383,6 +399,7 @@ export function materializeExercise(
         instructionPl: payload.instructionPl ?? messages.kid.lessonGroupInstruction,
         groups: groups.map((group) => ({ id: group.id, text: group.text })),
         items: items.map((item) => ({ id: item.id, text: item.text })),
+        ...contentLocale,
         ...questionAudio,
       };
       return {
@@ -423,6 +440,7 @@ export function materializeExercise(
         instructionPl: payload.instructionPl ?? messages.kid.lessonClozeInstruction,
         segments,
         words,
+        ...contentLocale,
         ...questionAudio,
       };
       return {
@@ -444,12 +462,16 @@ export function materializeExercise(
     case "lesson_open_answer": {
       // Język pytania podajemy tylko, gdy przedmiot ma jeden język (szkoła); w gramatyce
       // pytanie bywa angielskie albo jest polskim źródłem tłumaczenia — nie zgadujemy.
-      const locale = subject.promptLocale === subject.answerLocale ? subject.promptLocale : null;
-      const promptLocale: { promptLocale?: "pl-PL" | "en-GB" } =
-        locale === "pl-PL" || locale === "en-GB" ? { promptLocale: locale } : {};
+      // Przedmiot, który zna język pytania mimo różnych języków (rozdział: polski bodziec, angielska
+      // odpowiedź), podaje go w `openAnswerPromptLocale`.
+      const locale = subject.openAnswerPromptLocale ?? (subject.promptLocale === subject.answerLocale ? subject.promptLocale : null);
+      const knownPromptLocale = locale === null ? undefined : lessonLocale(locale);
+      const promptLocale: { promptLocale?: LessonContentLocale } = knownPromptLocale ? { promptLocale: knownPromptLocale } : {};
+      // Język pola odpowiedzi: zawsze język odpowiedzi przedmiotu (gdy to pl-PL/en-GB).
+      const answerLocaleField: { answerLocale?: LessonContentLocale } = answerLocale ? { answerLocale } : {};
       // Dyktowanie: tylko gdy wywołujący (trening) je zaoferował — kartkówka nie przekazuje.
       const speech = !mockTest && options.speechInput ? { speechInput: options.speechInput } : {};
-      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...questionAudio, ...promptLocale, ...speech };
+      const prompt: TaskPrompt = { kind: "lesson_open_answer", instructionPl, prompt: payload.prompt ?? "", ...audio, ...questionAudio, ...promptLocale, ...answerLocaleField, ...speech };
       return { ...common, prompt, answerKey: baseKey, exposures: [] };
     }
     default:

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createChild, createServices, editLessonDraft, publishLessonDraft } from "@learning/server";
+import { createChild, createServices, editLessonDraft, publishLessonDraft, type SubjectRegistry } from "@learning/server";
 import type { LessonExerciseInput } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 
@@ -19,8 +19,21 @@ export const FAKE_MEDIA = {
   image: { provider: "fake", model: "fake-image", size: "1024x1024", quality: "low", format: "webp" },
 };
 
-export function audioServices(media: typeof FAKE_MEDIA = FAKE_MEDIA) {
-  return createServices({ db, clock: new ManualClock(), media });
+type AudioMedia = NonNullable<Parameters<typeof createServices>[0]["media"]>;
+
+export const PL_LANGUAGE_INSTRUCTION = "PL.";
+export const EN_LANGUAGE_INSTRUCTION = "EN.";
+
+/** Ustawienia TTS ze stylem wypowiedzi (`UMIEM_TTS_STYLE=instructions`) i instrukcjami języka pl-PL i en-GB. */
+export function styledMedia(): AudioMedia {
+  const media: AudioMedia = structuredClone(FAKE_MEDIA);
+  media.tts.style = "instructions";
+  media.tts.instructions = { "pl-PL": PL_LANGUAGE_INSTRUCTION, "en-GB": EN_LANGUAGE_INSTRUCTION };
+  return media;
+}
+
+export function audioServices(media: AudioMedia = FAKE_MEDIA, subjects?: SubjectRegistry) {
+  return createServices({ db, clock: new ManualClock(), media, ...(subjects ? { subjects } : {}) });
 }
 
 export interface SeedObjective {

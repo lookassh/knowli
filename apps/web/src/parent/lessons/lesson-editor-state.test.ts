@@ -5,6 +5,8 @@ import {
   clozeWordsOf,
   createLessonSnapshot,
   filledClozeOf,
+  formatRejectedReason,
+  otherRejectedCount,
   syncGapAnswers,
   applyCalculationPreview,
   groupCalculationFamilies,
@@ -14,6 +16,7 @@ import {
   nextRequiredElementId,
   stageOfExerciseType,
   toLessonDraftPatch,
+  topRejectedReasons,
 } from "./lesson-editor-state";
 
 function draft(overrides: Partial<LessonDraftDto> = {}): LessonDraftDto {
@@ -460,5 +463,65 @@ describe("calculation editor", () => {
     const variants = [ex, { ...ex, clientKey: "variant-2" }, { ...ex, clientKey: "other-objective", objectiveId: "other" }];
     expect(groupCalculationFamilies(variants).map(g => g.exercises.length)).toEqual([2, 1]);
     expect(groupCalculationFamilies(variants.filter(e => e.clientKey !== ex.clientKey)).map(g => g.exercises.length)).toEqual([1, 1]);
+  });
+});
+
+describe("topRejectedReasons (powody odrzuceń przy generowaniu)", () => {
+  it("zwraca najczęstsze powody malejąco, przy remisie alfabetycznie, do limitu 5", () => {
+    const reasons = {
+      "słowo spoza materiału: raining": 3,
+      "inny powód": 1,
+      "słowo spoza materiału: boots": 3,
+      "zdanie bez słownictwa z materiału": 2,
+      "powód A": 1,
+      "powód B": 1,
+      "powód C": 1,
+    };
+    expect(topRejectedReasons(reasons)).toEqual([
+      { reason: "słowo spoza materiału: boots", count: 3 },
+      { reason: "słowo spoza materiału: raining", count: 3 },
+      { reason: "zdanie bez słownictwa z materiału", count: 2 },
+      { reason: "inny powód", count: 1 },
+      { reason: "powód A", count: 1 },
+    ]);
+    expect(topRejectedReasons(reasons, 2)).toHaveLength(2);
+  });
+
+  it("brak powodów (undefined albo pusty obiekt) daje pustą listę", () => {
+    expect(topRejectedReasons(undefined)).toEqual([]);
+    expect(topRejectedReasons({})).toEqual([]);
+  });
+});
+
+describe("otherRejectedCount (odrzucenia spoza wypisanych powodów)", () => {
+  const listed = [{ reason: "słowo spoza materiału: raining", count: 3 }, { reason: "tylko słowa pomocnicze: the", count: 2 }];
+
+  it("to różnica liczby odrzuconych i sumy wypisanych powodów (inne powody walidacji, powody spoza pierwszej piątki)", () => {
+    expect(otherRejectedCount(12, listed)).toBe(7);
+    expect(otherRejectedCount(6, listed)).toBe(1);
+  });
+
+  it("gdy wypisane powody pokrywają wszystkie odrzucenia, nie ma innych powodów", () => {
+    expect(otherRejectedCount(5, listed)).toBe(0);
+    expect(otherRejectedCount(0, [])).toBe(0);
+  });
+
+  it("nigdy nie jest ujemna (liczniki z kilku przebiegów mogą się rozjechać)", () => {
+    expect(otherRejectedCount(3, listed)).toBe(0);
+  });
+});
+
+describe("formatRejectedReason (wiersz raportu odrzuceń)", () => {
+  const TEMPLATE = "{reason} ×{n}";
+
+  it("podstawia powód i liczbę do szablonu komunikatu", () => {
+    expect(formatRejectedReason(TEMPLATE, "słowo spoza materiału: raining", 3)).toBe("słowo spoza materiału: raining ×3");
+  });
+
+  it("powód z $&, $$, $` i {n} trafia do tekstu dosłownie (nie jest wzorcem podstawienia ani szablonem)", () => {
+    expect(formatRejectedReason(TEMPLATE, "słowo spoza materiału: a$&b", 2)).toBe("słowo spoza materiału: a$&b ×2");
+    expect(formatRejectedReason(TEMPLATE, "cena $$ i $` i $'", 1)).toBe("cena $$ i $` i $' ×1");
+    expect(formatRejectedReason(TEMPLATE, "tylko słowa pomocnicze: {n}", 5)).toBe("tylko słowa pomocnicze: {n} ×5");
+    expect(formatRejectedReason(TEMPLATE, "{reason}", 4)).toBe("{reason} ×4");
   });
 });

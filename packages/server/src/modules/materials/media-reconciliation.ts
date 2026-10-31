@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { MediaPendingDetails } from "@learning/contracts";
-import { ttsInstructionsFor, ttsVoiceFor, type MediaSettings, type Services } from "../../config";
+import { ttsVoiceFor, type MediaSettings, type Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
   deckVersions,
@@ -15,14 +15,17 @@ import {
 } from "../../db/schema";
 import { AppError } from "../../errors";
 import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../domain/media-fingerprint";
+import type { TtsStyle } from "../../domain/tts-style";
+import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 import { payloadToItem } from "./item-payload";
+import { feedbackSentenceText } from "../../domain/lessons/feedback-sentence-text";
 import { questionReadText } from "../../domain/lessons/question-read-text";
 import { renderCard } from "../../domain/lessons/card";
 import { cardReadText } from "../../domain/lessons/card-read-text";
 import { resolveLessonTopic } from "../../domain/lessons/topic-resolution";
 import type { DynamicTopicData, LessonTopic } from "../../domain/lessons/types";
 
-export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio";
+export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio" | "feedback_audio";
 
 interface RequiredAsset {
   role: AssetRole;
@@ -85,14 +88,20 @@ function isLessonExercisePayload(payload: Record<string, unknown>): boolean {
 export interface LessonTtsFlags {
   ttsForAnswers: boolean;
   ttsForPrompts: boolean;
+  ttsForFeedbackSentence: boolean;
 }
 
 /** Locale nagrania pytania: polecenia i pytania przedmiotów szkolnych są po polsku (design szkoły §11.2). */
 const PROMPT_AUDIO_LOCALE = "pl-PL";
 
-function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings): RequiredAsset {
+/**
+ * Styl wypowiedzi (spec tonu TTS) przekazują tylko nagrania pytań i kart; słówka
+ * i `target_audio` bez stylu, więc ich fingerprinty się nie zmieniają. Sam styl
+ * nie trafia do metadanych — wchodzi do `instructions`.
+ */
+function ttsAsset(role: AssetRole, text: string, locale: string, settings: MediaSettings, style?: TtsStyle): RequiredAsset {
   const voice = ttsVoiceFor(settings.tts, locale);
-  const instructions = ttsInstructionsFor(settings.tts, locale);
+  const instructions = ttsRequestInstructions(settings.tts, locale, style);
   return {
     role,
     kind: "tts",
@@ -136,9 +145,32 @@ export function requiredAssetsForLessonExercise(
   }
   const question = flags.ttsForPrompts ? questionReadText(questionSourceOf(payload)) : null;
   if (question !== null) {
-    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings));
+    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, "lesson_question"));
+  }
+  // Pełne zdanie czytane po odpowiedzi: bez stylu (style dotyczą pl-PL), język z `answerLocale`.
+  const sentence = flags.ttsForFeedbackSentence && answerLocale !== "" ? feedbackSentenceText(feedbackSourceOf(payload)) : null;
+  if (sentence !== null) {
+    required.push(ttsAsset("feedback_audio", sentence, answerLocale, settings));
   }
   return required;
+}
+
+function feedbackSourceOf(payload: Record<string, unknown>) {
+  const entries = (value: unknown) =>
+    Array.isArray(value)
+      ? value.flatMap((entry: unknown) => {
+          const { id, text } = (entry ?? {}) as { id?: unknown; text?: unknown };
+          return typeof id === "string" && typeof text === "string" ? [{ id, text }] : [];
+        })
+      : undefined;
+  return {
+    exerciseType: optionalText(payload.exerciseType) ?? "",
+    stem: optionalText(payload.stem),
+    answer: optionalText(payload.answer),
+    options: entries(payload.options),
+    correctOption: optionalText(payload.correctOption),
+    items: entries(payload.items),
+  };
 }
 
 function optionalText(value: unknown): string | undefined {
@@ -194,7 +226,7 @@ export function requiredAssetsForLessonCards(
     objective.cards.forEach((card, cardIndex) => {
       const text = cardReadText(renderCard(card, [...(context.examples[objective.id] ?? [])]));
       if (text !== null) {
-        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings) });
+        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings, "lesson_card") });
       }
     });
   }
@@ -314,7 +346,7 @@ export async function reconcileDraftAssetsTx(
 
   // Dla ćwiczeń lekcji strategia zasobów zależy od flag TTS przedmiotu;
   // czytamy je raz z lesson_context tej wersji (słówka ich nie potrzebują).
-  const flags: LessonTtsFlags = { ttsForAnswers: false, ttsForPrompts: false };
+  const flags: LessonTtsFlags = { ttsForAnswers: false, ttsForPrompts: false, ttsForFeedbackSentence: false };
   if (revisions.some((r) => isLessonExercisePayload(r.payload))) {
     const row = (
       await tx
@@ -327,6 +359,7 @@ export async function reconcileDraftAssetsTx(
     if (subject) {
       flags.ttsForAnswers = subject.ttsForAnswers;
       flags.ttsForPrompts = subject.ttsForPrompts;
+      flags.ttsForFeedbackSentence = subject.ttsForFeedbackSentence;
     }
   }
 
@@ -372,9 +405,9 @@ export async function reconcileDraftAssetsTx(
               .from(mediaAssets)
               .where(eq(mediaAssets.id, existing.assetId))
           )[0];
-          // Nagranie pytania nie jest decyzją rodzica (brak „Regeneruj” w panelu,
-          // design szkoły §11.2) i jest tanie: publikacja zleca je ponownie.
-          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed && req.role !== "prompt_audio") {
+          // Nagranie pytania i zdania feedbacku nie jest decyzją rodzica (brak „Regeneruj”
+          // w panelu, design szkoły §11.2) i jest tanie: publikacja zleca je ponownie.
+          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed && req.role !== "prompt_audio" && req.role !== "feedback_audio") {
             continue;
           }
           if (asset && asset.fingerprint === req.fingerprint && asset.state !== "failed") {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lessonExerciseIdentity } from "./exercise-identity";
+import { lessonExerciseIdentity, lessonExerciseStimulus, lessonExerciseStimulusRecord } from "./exercise-identity";
 import type { LessonExerciseDraft } from "./types";
 
 function exercise(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
@@ -75,3 +75,66 @@ describe("lessonExerciseIdentity", () => {
     expect(lessonExerciseIdentity(first)).toBe(lessonExerciseIdentity(second));
   });
 });
+
+describe("lessonExerciseIdentity — polecenie jako bodziec (instructionIsStimulus)", () => {
+  const withInstruction = { instructionIsStimulus: true } as const;
+  const gap = (instructionPl: string) => exercise({
+    exerciseType: "lesson_gap", stem: "It's ___ today.", answer: "snowing", focus: ["snowing"], instructionPl,
+  });
+
+  it("bez opcji polecenie nie wpływa na tożsamość (zachowanie dzisiejsze)", () => {
+    const first = gap("Dziś pada śnieg. Wpisz brakujące słowo.");
+    const second = gap("Dziś jest zimno. Wpisz brakujące słowo.");
+    expect(lessonExerciseIdentity(first)).toBe(lessonExerciseIdentity(second));
+    expect(lessonExerciseIdentity(first, {})).toBe(lessonExerciseIdentity(second));
+    expect(lessonExerciseIdentity(first, { instructionIsStimulus: false })).toBe(lessonExerciseIdentity(second));
+  });
+
+  it("z opcją to samo zdanie z innym poleceniem to dwa ćwiczenia", () => {
+    const first = gap("Dziś pada śnieg. Wpisz brakujące słowo.");
+    const second = gap("Dziś jest zimno. Wpisz brakujące słowo.");
+    expect(lessonExerciseIdentity(first, withInstruction)).not.toBe(lessonExerciseIdentity(second, withInstruction));
+  });
+
+  it("z opcją polecenie jest normalizowane (spacje, wielkość liter)", () => {
+    expect(lessonExerciseIdentity(gap("Dziś pada śnieg."), withInstruction))
+      .toBe(lessonExerciseIdentity(gap("  DZIŚ   pada	śnieg. "), withInstruction));
+  });
+
+  it("z opcją dotyczy lesson_choice, lesson_gap i lesson_order", () => {
+    const choice = (instructionPl: string) => exercise({
+      exerciseType: "lesson_choice", stem: "It's ___ today.", instructionPl,
+      options: [{ id: "a", text: "snowing" }, { id: "b", text: "raining" }],
+    });
+    const order = (instructionPl: string) => exercise({
+      exerciseType: "lesson_order", instructionPl, items: [{ id: "a", text: "I'm" }, { id: "b", text: "cold" }],
+    });
+    for (const make of [choice, order, gap]) {
+      expect(lessonExerciseIdentity(make("Pierwsze polecenie."), withInstruction))
+        .not.toBe(lessonExerciseIdentity(make("Drugie polecenie."), withInstruction));
+      expect(lessonExerciseIdentity(make("Pierwsze polecenie."))).toBe(lessonExerciseIdentity(make("Drugie polecenie.")));
+    }
+  });
+
+  it("bodziec z opcją to para [polecenie, dotychczasowy bodziec]", () => {
+    const first = gap("Dziś pada śnieg.");
+    expect(lessonExerciseStimulus(first, withInstruction))
+      .toBe(JSON.stringify(["dziś pada śnieg.", lessonExerciseStimulus(first)]));
+    expect(lessonExerciseStimulusRecord(first, withInstruction).stimulus).toBe(lessonExerciseStimulus(first, withInstruction));
+    expect(lessonExerciseStimulusRecord(first).stimulus).toBe(lessonExerciseStimulus(first));
+  });
+
+  it("z opcją brak polecenia daje pusty składnik, nie błąd", () => {
+    const bare = exercise({ exerciseType: "lesson_gap", stem: "It's ___ today.", instructionPl: undefined });
+    expect(lessonExerciseStimulus(bare, withInstruction)).toBe(JSON.stringify(["", lessonExerciseStimulus(bare)]));
+  });
+
+  it("opcja nie zmienia tożsamości innych typów ćwiczeń", () => {
+    const match = exercise({ exerciseType: "lesson_match", instructionPl: "Połącz.", pairs: [{ left: "coat", right: "płaszcz" }] });
+    const open = exercise({ exerciseType: "lesson_open_answer", prompt: "Przetłumacz: Mam płaszcz.", instructionPl: "Przetłumacz." });
+    for (const other of [match, open]) {
+      expect(lessonExerciseIdentity(other, withInstruction)).toBe(lessonExerciseIdentity(other));
+    }
+  });
+});
+

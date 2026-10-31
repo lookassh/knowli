@@ -115,7 +115,7 @@ Hermesa zachowują dotychczasowy kontrakt; konsument nie wymaga aktualizacji.
 ## Ustawienia medialne i fingerprinty
 
 `UMIEM_TTS_PROVIDER/MODEL/VOICE/FORMAT` (z `UMIEM_TTS_VOICE_*` i `UMIEM_TTS_INSTRUCTIONS_*`) oraz `UMIEM_IMAGE_PROVIDER/MODEL/SIZE/QUALITY/FORMAT`
-wchodzą do fingerprintów zasobów. Zasady potwierdzone próbą:
+wchodzą do fingerprintów zasobów. `UMIEM_TTS_STYLE` (`instructions` albo `none`; brak = `none`, inna wartość to błąd startu) włącza styl wypowiedzi TTS i też musi być identyczny w web i workerze. Zasady potwierdzone próbą:
 
 - web i worker muszą mieć **identyczne** wartości (fingerprint liczony w obu
   procesach);
@@ -126,6 +126,8 @@ wchodzą do fingerprintów zasobów. Zasady potwierdzone próbą:
   (zgodnie z projektem — nic nie nadpisuje gotowych zasobów);
 - zapis `MediaStore.putImmutable` jest idempotentny i adresowany treścią;
   replay z lokalnego wolumenu trwa < 1 ms i nie woła API.
+
+Ponowne nagranie wybranych komunikatów Kid UI (np. gdy brzmienie się nie udało): CLI zleca nowy take dla podanych kluczy, a poprzedni gra dalej, aż nowy będzie gotowy. W kontenerze: `docker compose exec worker node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/regenerate-ui-audio.ts correct`; w dev: `pnpm media:regenerate-ui-audio <klucz…>`. Dozwolone klucze (`UiAudioKeySchema`): `profile_select`, `deck_select`, `exposure`, `listening`, `speech`, `recall`, `correct`, `partial`, `incorrect`, `unevaluated`, `skip`, `dont_remember`, `end`, `retry`, `mic_unavailable`, `audio_unavailable`, `summary`. CLI liczy fingerprinty ze swojego `process.env`, więc musi działać z środowiskiem workera (`UMIEM_TTS_*`, w tym `UMIEM_TTS_STYLE`); w innym środowisku powstanie nagranie pod złym fingerprintem albo wiersz z domyślnym `openai`/`gpt-4o-mini-tts`, którego worker nie wykona (zostaje oczekujący).
 
 Decyzja po próbie: domyślny głos pozostaje `alloy`. Ewentualna zmiana w
 `defaultMediaSettings` (np. `alloy` → `fable`) jest tania dopóki żaden realny

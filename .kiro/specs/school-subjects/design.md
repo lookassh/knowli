@@ -1339,6 +1339,7 @@ z Etapu 6) nie mają gotowego nagrania — przycisk się nie pojawia. Wskazówka
   komunikatów interfejsu przygotowuje się na nowo przy starcie workera.
 - **Publikacja nie czeka** na nagrania pytań: brak gotowego nagrania oznacza
   tylko brak przycisku. Awaria TTS nie blokuje rodzica.
+- **Ton wypowiedzi:** nagranie pytania dostaje styl roli (`lesson_question`), a w etapie B także ton wybrany per ćwiczenie; zasady stylu, profil instrukcji i fingerprint opisuje `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md`.
 - Tylko nowe wersje lekcji: istniejące opublikowane lekcje dostaną nagrania
   przy następnej edycji i publikacji (bez migracji danych wstecz).
 
@@ -1573,6 +1574,7 @@ podniesieniu limitów karty nie wyślemy niekontrolowanie długiego tekstu.
 - **Publikacja nie czeka** na nagrania kart; brak gotowego nagrania = brak
   przycisku. Nieudane nagranie karty publikacja zleca ponownie (jak
   `prompt_audio`, bez `keepFailed`). Awaria TTS nie blokuje rodzica.
+- **Ton wypowiedzi:** nagranie karty dostaje styl roli (`lesson_card`), a w etapie B także ton wybrany per karta; zasady stylu i fingerprint opisuje `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md`.
 - Worker traktuje odwołania z `lesson_card_assets` jak `prompt_audio`
   (zbędne, gdy przedmiot nie ma `ttsForPrompts`).
 - Tylko nowe wersje: opublikowane lekcje dostaną nagrania kart przy

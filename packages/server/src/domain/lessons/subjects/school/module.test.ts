@@ -132,6 +132,15 @@ describe("przedmiot school", () => {
     expect(validateSubject(schoolSubject)).toEqual([]);
   });
 
+  it("jawnie włącza cytaty źródłowe i tytuł przedmiotu od rodzica oraz niesie reguły typów w profilu", () => {
+    expect(schoolSubject.sourceQuotes).toBe(true);
+    expect(schoolSubject.materialSubjectTitle).toBe("parent");
+    expect(Object.keys(schoolSubject.prompts.typeRules ?? {}).sort()).toEqual(["lesson_cloze", "lesson_group", "lesson_match"]);
+    expect(schoolSubject.prompts.typeRules?.lesson_match).toContain("taken from the parent material");
+    // Zagadnienia szkoły nie mają rodzaju ani własnych reguł etapu zagadnień.
+    expect(schoolSubject.prompts.objectivesRules).toBeUndefined();
+  });
+
   it("składa temat dynamiczny i rozwiązuje go przez rejestr", () => {
     const topic = schoolSubject.buildDynamicTopic!(dynamicData);
     expect(topic.id).toBe("dynamic");
@@ -528,5 +537,11 @@ describe("uzupełnij tekst (lesson_cloze)", () => {
 
   it("prompt generatora opisuje luki z bankiem słów", () => {
     expect(schoolSubject.prompts.fieldRules).toContain("lesson_cloze");
+  });
+});
+
+describe("schoolSubject — zdanie feedbacku", () => {
+  it("nie nagrywa zdania po odpowiedzi", () => {
+    expect(schoolSubject.ttsForFeedbackSentence).toBe(false);
   });
 });

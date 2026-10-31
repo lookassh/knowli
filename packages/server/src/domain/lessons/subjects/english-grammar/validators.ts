@@ -1,6 +1,6 @@
 import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { normalizeTokens } from "../../normalize";
-import { englishNormalizer } from "./normalizer";
+import { englishNormalizer } from "../english/normalizer";
 
 /**
  * Reguły walidacji specyficzne dla przedmiotu `english_grammar`

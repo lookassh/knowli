@@ -37,12 +37,13 @@ export function LessonChoiceView({ task, busy, optionOutcomes, dock, handlers }:
         {task.prompt.visualSubject && (
           <p className="kid-lesson-visual" data-testid="kid-lesson-visual" role="img" aria-label={messages.kid.lessonVisualSubjects[task.prompt.visualSubject]}>{VISUAL_GLYPHS[task.prompt.visualSubject]}</p>
         )}
-        <p className="kid-lesson-stem" data-testid="kid-lesson-stem">{task.prompt.stem}</p>
+        <p className="kid-lesson-stem" data-testid="kid-lesson-stem" lang={task.prompt.contentLocale}>{task.prompt.stem}</p>
         <AnswerGrid
           options={options.map((option) => ({ id: option.id, label: option.text, content: null }))}
           outcomes={optionOutcomes}
           disabled={busy}
           optionRefs={optionRefs}
+          optionLang={task.prompt.contentLocale}
           onChoose={handlers.onAnswerChoice}
           className="kid-options"
         />

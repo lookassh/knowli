@@ -27,6 +27,9 @@ export interface Clock {
 
 export const systemClock: Clock = { now: () => new Date() };
 
+/** Tryb stylu wypowiedzi TTS: `instructions` dokleja ton do instrukcji dostawcy. */
+export type TtsStyleMode = "instructions" | "none";
+
 /**
  * Tożsamość ustawień medialnych używana w fingerprintach. Samo nazewnictwo
  * providerów/modeli nie jest sekretem; klucze API żyją w adapterach.
@@ -45,6 +48,12 @@ export interface MediaSettings {
      * „pies” czy „1410” bez niej bywają czytane po angielsku.
      */
     instructions?: Readonly<Record<string, string>>;
+    /**
+     * Wyłącznik operatora stylu wypowiedzi (`UMIEM_TTS_STYLE`, spec §2.2).
+     * Brak pola = bez stylu; `none` z env też zapisujemy jako brak pola, więc
+     * `defaultMediaSettings` i fingerprinty istniejących zasobów się nie zmieniają.
+     */
+    style?: TtsStyleMode;
     format: TtsFormat;
   };
   image: { provider: string; model: string; size: string; quality: string; format: string };
@@ -88,10 +97,18 @@ function ttsFormatFromEnv(raw: string | undefined): TtsFormat {
   throw new Error("UMIEM_TTS_FORMAT must be mp3 or wav");
 }
 
+/** `none` i brak wartości dają `undefined` (brak pola w ustawieniach). */
+function ttsStyleFromEnv(raw: string | undefined): TtsStyleMode | undefined {
+  if (raw === undefined || raw === "" || raw === "none") return undefined;
+  if (raw === "instructions") return raw;
+  throw new Error("UMIEM_TTS_STYLE must be instructions or none");
+}
+
 /** Nadpisywalne zmiennymi środowiskowymi (nazwy, nie sekrety). */
 export function mediaSettingsFromEnv(env: Record<string, string | undefined>): MediaSettings {
   const voices = perLocaleFromEnv(env, "UMIEM_TTS_VOICE");
   const instructions = perLocaleFromEnv(env, "UMIEM_TTS_INSTRUCTIONS");
+  const style = ttsStyleFromEnv(env.UMIEM_TTS_STYLE);
   return {
     // Puste UMIEM_TTS_* jak nieustawione — tak samo jak adapter TTS w workerze
     // (generation-env), żeby fingerprint opisywał faktycznie użyty model.
@@ -101,6 +118,7 @@ export function mediaSettingsFromEnv(env: Record<string, string | undefined>): M
       voice: env.UMIEM_TTS_VOICE || defaultMediaSettings.tts.voice,
       ...(Object.keys(voices).length > 0 ? { voices } : {}),
       ...(Object.keys(instructions).length > 0 ? { instructions } : {}),
+      ...(style ? { style } : {}),
       format: ttsFormatFromEnv(env.UMIEM_TTS_FORMAT),
     },
     image: {

@@ -2,14 +2,16 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork, publishLessonDraft, readLessonDeck,
-  startSession, submitAttempt,
+  startSession, submitAttempt, createSubjectRegistry, schoolSubject, ttsFingerprint,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
-  audioServices, FAKE_MEDIA, markTtsReady, publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises, truncateLessonAudioTables,
+  audioServices, EN_LANGUAGE_INSTRUCTION, FAKE_MEDIA, markTtsReady, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson, seedSchoolDraft,
+  SPIDER_OBJECTIVE, spiderExercises, styledMedia, truncateLessonAudioTables,
 } from "./school-lesson-audio-helpers";
+import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";
 
 /**
  * Etap 8 przedmiotów szkolnych (design §11): „Posłuchaj pytania” na
@@ -103,6 +105,62 @@ describe("„Posłuchaj pytania” — przygotowanie nagrań", () => {
     expect((await promptAudio(versionId)).every((row) => row.state === "pending")).toBe(true);
     const deck = await readLessonDeck(active, deckId);
     expect(JSON.stringify(deck)).not.toContain("prompt_audio");
+  });
+});
+
+interface AudioMetadataRow { role: string; fingerprint: string; metadata: Record<string, unknown> }
+
+async function audioMetadata(versionId: string, role: string): Promise<AudioMetadataRow[]> {
+  return (await pool.query<AudioMetadataRow>(
+    `select ra.role, ma.fingerprint, ma.metadata
+       from learning_app.revision_assets ra
+       join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+       join learning_app.media_assets ma on ma.id = ra.asset_id
+      where ir.deck_version_id = $1 and ra.role = $2
+      order by ir.position`,
+    [versionId, role],
+  )).rows;
+}
+
+describe("„Posłuchaj pytania” — styl roli (UMIEM_TTS_STYLE)", () => {
+  it("nagranie pytania dostaje instrukcję języka i zdanie stylu lesson_question; klucz stylu nie trafia do metadanych", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(styledMedia()), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const rows = await audioMetadata(versionId, "prompt_audio");
+    expect(rows).toHaveLength(exercises().length);
+    for (const row of rows) {
+      expect(row.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_question}`);
+      expect(row.metadata).not.toHaveProperty("style");
+    }
+  });
+
+  it("target_audio odpowiedzi (en-GB) pozostaje bez stylu — sama instrukcja języka", async () => {
+    const english = createSubjectRegistry([{ ...schoolSubject, ttsForAnswers: true, answerLocale: "en-GB" }]);
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(styledMedia(), english), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const answers = await audioMetadata(versionId, "target_audio");
+    expect(answers.length).toBeGreaterThan(0);
+    for (const row of answers) {
+      expect(row.metadata.locale).toBe("en-GB");
+      expect(row.metadata.instructions).toBe(EN_LANGUAGE_INSTRUCTION);
+    }
+    const prompts = await audioMetadata(versionId, "prompt_audio");
+    for (const row of prompts) expect(row.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_question}`);
+  });
+
+  it("bez stylu w ustawieniach fingerprint nagrania pytania jest liczony z samej instrukcji języka (jak przed stylem)", async () => {
+    const plain = { ...MEDIA, tts: { ...MEDIA.tts, instructions: { "pl-PL": PL_LANGUAGE_INSTRUCTION } } };
+    const { versionId } = await seedDraft();
+    await editLessonDraft(audioServices(plain), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const rows = await audioMetadata(versionId, "prompt_audio");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.metadata.instructions).toBe(PL_LANGUAGE_INSTRUCTION);
+      expect(row.fingerprint).toBe(ttsFingerprint({
+        text: row.metadata.text as string, locale: "pl-PL", provider: plain.tts.provider, model: plain.tts.model,
+        voice: plain.tts.voice, format: plain.tts.format, instructions: PL_LANGUAGE_INSTRUCTION,
+      }));
+    }
   });
 });
 

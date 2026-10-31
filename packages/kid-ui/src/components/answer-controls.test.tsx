@@ -320,4 +320,16 @@ describe("sentence field and instruction guidance", () => {
     expect(dock.getAttribute("data-variant")).toBe("tonal");
     expect(dock.querySelector("svg circle")).toBeNull();
   });
+
+  it("GuidanceButton in the dock next to a sentence speaker is an outlined question that keeps the dock name", () => {
+    const onPlay = vi.fn(async () => {});
+    renderKid(<GuidanceButton audioKey="correct" onPlay={onPlay} testId="kid-guidance-play" icon="question" />);
+    const dock = screen.getByTestId("kid-guidance-play");
+    expect(dock.getAttribute("aria-label")).toBe("Posłuchaj");
+    expect(dock.getAttribute("data-variant")).toBe("outlined");
+    expect(dock.getAttribute("data-guidance-icon")).toBe("question");
+    expect(dock.querySelector("svg circle")).not.toBeNull();
+    fireEvent.click(dock);
+    expect(onPlay).toHaveBeenCalledWith("correct");
+  });
 });

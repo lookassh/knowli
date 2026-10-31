@@ -102,6 +102,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/server/src/domain/task-completion.ts | Decyzja o stanie zadania po próbie; `attempts.ts` koordynuje zapis wyniku |
 | packages/server/src/domain/task-materialization.ts | Składa prompt i prywatny klucz z gotowych opcji; `sessions.ts` tasuje opcje, tworzy ID i zapisuje zadanie |
 | packages/server/src/domain/session-limits.ts | Czyste limity czasu sesji współdzielone przez sesje, próby i raportowanie |
+| packages/server/src/domain/tts-style.ts | Role stylu wypowiedzi TTS (komunikaty, pytania i karty lekcji) |
 | packages/server/src/domain/progress.ts | Wyliczanie projekcji z historii |
 | packages/server/src/domain/learning-work.ts | Oddzielne terminy i gotowość Recall, pisowni i wymowy |
 | packages/server/src/domain/support-cycle.ts | Odtwarzanie pojedynczego cyklu wsparcia z historii sesji |
@@ -153,6 +154,7 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/src/ports/ai.ts | LlmProvider, TtsProvider, SttProvider, PronunciationProvider, ImageProvider |
 | packages/server/src/ports/media.ts | MediaStore |
 | packages/server/src/providers/openai/ | Adaptery LLM i TTS; modeli nie zapisujemy w domenie |
+| packages/server/src/providers/tts-style-profile.ts | Instrukcja TTS z doklejonym zdaniem stylu roli (`UMIEM_TTS_STYLE`); czysta funkcja |
 | packages/server/src/providers/azure/ | Ocena wymowy i ewentualna niezależna transkrypcja |
 | packages/server/src/providers/images/ | Pierwszy wybrany adapter ilustracji |
 | packages/server/src/providers/media/local.ts | Prywatny wolumen; putImmutable/get, zapis bez nadpisywania blobów |
@@ -162,6 +164,8 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/drizzle.config.ts | Ustawienia generatora migracji |
 | apps/worker/src/main.ts | Rejestracja zadań i graceful shutdown |
 | apps/worker/src/rebuild-progress.ts | Jednorazowe CLI odbudowy projekcji; nie uruchamia pętli workera |
+| apps/worker/src/regenerate-ui-audio.ts | Jednorazowe CLI ponownego nagrania wskazanych komunikatów Kid UI (`media:regenerate-ui-audio`) |
+| scripts/sample-tts-styles.mts | Próbki do odsłuchu stylów TTS (`eval:tts-styles`); poza bazą i mediami aplikacji |
 | apps/worker/src/tasks.ts | Powiązanie nazw Graphile z przypadkami użycia |
 | apps/worker/src/composition.ts | Składanie zależności workera |
 
@@ -224,7 +228,12 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/src/domain/lessons/lesson-policy.ts | Parametry selektora/polityki lekcji |
 | packages/server/src/domain/lessons/pool-validation.ts | Walidacja ćwiczeń (ogólna + walidatory przedmiotu) |
 | packages/server/src/domain/lessons/mock-test-plan.ts | Plan kartkówki lekcji |
-| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts`, `topics/to-be.ts` |
+| packages/server/src/domain/lessons/subjects/english/ | Wspólny normalizator angielski dla przedmiotów językowych: `normalizer.ts`, `contractions.ts` (przeniesiony z `english-grammar/` bez zmiany zachowania) |
+| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts`, `topics/to-be.ts` (normalizator: `subjects/english/`) |
+| packages/server/src/domain/lessons/subjects/english-chapter/ | Przedmiot „Angielski — rozdział” (`english_chapter`): `module.ts`, `lexicon.ts` (słownik materiału), `validators.ts` (walidacja przedmiotu i czyszczenie świeżej puli), `exposure.ts` (tekst ekspozycji), `prompts.ts` |
+| packages/server/src/domain/lessons/subjects/school/ | Przedmiot szkolny (`school`): `module.ts`, `validators.ts`, `prompts.ts` |
+| packages/server/src/domain/lessons/material-creation.ts | Wspólny predykat tworzenia zestawu z materiału (`materialCreationMode`, `requiresParentSubjectTitle`) dla katalogu przedmiotów i poleceń tworzenia |
+| packages/server/src/domain/lessons/exposure-key.ts | `lessonExerciseTargetKey` — klucz ekspozycji ćwiczenia z tekstu wskazanego przez przedmiot (`exposureText`) |
 | packages/server/src/domain/lessons/testing/history-like-subject.ts | Fixture przedmiotu nie-językowego (dowód niezależności silnika) |
 | packages/server/src/modules/materials/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-supervision.ts`, `lesson-generation-{control,errors,policy}.ts` (autorstwo, generowanie i nadzór nad materiałem lekcji) |
 | packages/server/src/modules/learning/lessons/ | `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-deck-overview.ts` (sesje, próby i kartkówki lekcji) |
@@ -236,6 +245,8 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/drizzle/0007_lessons.sql | Migracja: `decks.kind`, `lesson_context`, `lesson_verdicts`, `child_objective_progress`, triggery i CHECK-i |
 
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
+
+Próba generowania lekcji z materiału na prawdziwym modelu (2026-10-30, ręczna i płatna, nigdy w CI): `pnpm probe:chapter` (`vitest.probe.config.ts`, `tests/probes/chapter-generation.probe.test.ts`). Wymaga `UMIEM_PROBE_MATERIAL` ze ścieżką do materiału poza repozytorium (opcjonalnie `UMIEM_PROBE_SUBJECT=school`, `UMIEM_PROBE_DUMP` — też poza repozytorium); bez zmiennej plik jest pomijany. Pliki `*.probe.test.ts` nie należą do konfiguracji unit ani integration.
 
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/family/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
 

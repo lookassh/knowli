@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { messages, UiAudioKeySchema } from "@learning/contracts";
-import { isUiAudioAssetMetadata, UI_AUDIO_TEXTS } from "./ui-audio-catalog";
+import { isUiAudioAssetMetadata, UI_AUDIO_STYLES, UI_AUDIO_TEXTS } from "./ui-audio-catalog";
 
 describe("katalog stałych wskazówek audio", () => {
   it("ma polski, niepersonalizowany tekst dla każdego z 17 kluczy", () => {
@@ -11,6 +11,12 @@ describe("katalog stałych wskazówek audio", () => {
       expect(text).toBeTruthy();
       expect(text).not.toMatch(/\b(?:Ala|Szymek|Krzyś)\b/);
     }
+  });
+
+  it("przypisuje styl wypowiedzi każdemu z kluczy", () => {
+    expect(Object.keys(UI_AUDIO_STYLES).sort()).toEqual([...UiAudioKeySchema.options].sort());
+    expect(UI_AUDIO_STYLES.correct).toBe("ui_praise");
+    expect(UI_AUDIO_STYLES.summary).toBe("ui_closing");
   });
 
   it("rozpoznaje tylko metadane UI z kluczem i stałym polskim TTS", () => {

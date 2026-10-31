@@ -789,6 +789,29 @@ describe("validatePool", () => {
     expect(result.valid).toEqual([first]);
     expect(result.rejected.some(({ exercise }) => exercise === duplicate)).toBe(true);
   });
+
+  it("instructionIsStimulus: to samo zdanie z innym poleceniem nie jest duplikatem", () => {
+    const first = draft({ stem: "It's ___ today.", answer: "snowing", focus: ["snowing"], hint: undefined,
+      instructionPl: "Dziś pada śnieg. Wpisz brakujące słowo.", objectiveId: "english_grammar.present_simple.question" });
+    const second = draft({ stem: "It's ___ today.", answer: "snowing", focus: ["snowing"], hint: undefined,
+      instructionPl: "Dziś sypie śnieg. Wpisz brakujące słowo.", objectiveId: "english_grammar.present_simple.question" });
+    // Bez opcji (dzisiejsze zachowanie): polecenie jest kosmetyczne, drugie ćwiczenie to duplikat.
+    const without = validatePool([first, second], englishGrammarSubject, englishTopic);
+    expect(without.valid).toEqual([first]);
+    expect(without.rejected.some(({ exercise }) => exercise === second)).toBe(true);
+    const withOption = validatePool([first, second], { ...englishGrammarSubject, instructionIsStimulus: true }, englishTopic);
+    expect(withOption.rejected.filter(({ errors }) => errors.some((error) => error.startsWith("stimulus:")))).toEqual([]);
+    expect(withOption.valid).toEqual([first, second]);
+  });
+
+  it("instructionIsStimulus: to samo polecenie i zdanie nadal jest duplikatem", () => {
+    const first = draft({ stem: "It's ___ today.", answer: "snowing", focus: ["snowing"], hint: undefined,
+      instructionPl: "Dziś pada śnieg.", objectiveId: "english_grammar.present_simple.question" });
+    const second = { ...first, instructionPl: "  DZIŚ pada   śnieg. " };
+    const result = validatePool([first, second], { ...englishGrammarSubject, instructionIsStimulus: true }, englishTopic);
+    expect(result.valid).toEqual([first]);
+    expect(result.rejected.some(({ exercise }) => exercise === second)).toBe(true);
+  });
 });
 
 describe("poolCoverage", () => {

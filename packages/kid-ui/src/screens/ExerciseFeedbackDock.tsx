@@ -1,8 +1,10 @@
 import type { ReactElement, ReactNode } from "react";
 import { m, useIsPresent } from "motion/react";
+import { messages } from "@learning/contracts";
 import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kidDockOrigin, kidSpringGentle } from "../motion/kid-motion";
 import { BurstParticles } from "../components/CelebrationBurst";
 import { KidIcon, type KidIconName } from "../components/KidIcon";
+import { ListenButton } from "../components/ListenButton";
 import classes from "./ExerciseFeedbackDock.module.css";
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
@@ -33,6 +35,7 @@ export function ExerciseFeedbackDock({
   secondary,
   celebrate = false,
   guidance,
+  sentenceAudio = null,
 }: {
   tone: FeedbackDockTone;
   kind?: "answer" | "speech";
@@ -43,6 +46,8 @@ export function ExerciseFeedbackDock({
   celebrate?: boolean;
   /** Przycisk odsłuchu komunikatu o wyniku, za treścią w górnym wierszu (po odznace tonu). */
   guidance?: ReactNode;
+  /** Powtórka nagrania pełnego zdania w feedbacku lekcji („Posłuchaj zdania”). */
+  sentenceAudio?: { onPlay: () => void } | null;
 }): ReactElement {
   const isPresent = useIsPresent();
   return (
@@ -64,6 +69,12 @@ export function ExerciseFeedbackDock({
           <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
         </span>
         <div className={classes.content}>{children}</div>
+        {sentenceAudio && (
+          <div className={classes.guidance}>
+            <ListenButton data-testid="kid-sentence-audio" aria-label={messages.kid.listenExample}
+              title={messages.kid.listenExample} onClick={sentenceAudio.onPlay} />
+          </div>
+        )}
         {guidance && <div className={classes.guidance}>{guidance}</div>}
       </div>
       <div className={classes.actions}>
