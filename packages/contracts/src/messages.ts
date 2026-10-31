@@ -152,6 +152,10 @@ export const messages = {
     retryGenerationRequest: "Ponów tworzenie",
     generationFailed: "Generowanie nie udało się.",
     noPictureMaterial: "Nie udało się dobrać słów, które można jasno pokazać obrazkiem. Zmień temat i spróbuj ponownie.",
+    // Zestaw słówek ze źródła (design 2026-10-30 §6.2): żadne słowo nie przeszło sprawdzenia z tekstem
+    // źródła (run `no_source_items`) i liczba pozycji odrzuconych przy tym sprawdzeniu.
+    noSourceItems: "Nie znaleziono w tekście źródła słówek do zestawu. Zmień zawężenie albo spróbuj ponownie.",
+    rejectedFromSource: "Pominięto pozycji spoza tekstu źródła: {n}",
     retryGeneration: "Ponów generowanie",
     states: {
       draft: "Szkic",
@@ -1041,6 +1045,7 @@ export const messages = {
     counter: "{n}/16000 znaków",
     createChapterLesson: "Utwórz lekcję rozdziału",
     createSchoolLesson: "Utwórz lekcję szkolną",
+    createVocabulary: "Utwórz zestaw słówek",
     decksHeading: "Zestawy z tego źródła",
     deleteConfirm: "Usunąć źródło? Zestawy ({n}) zostaną, stracą tylko odnośnik.",
     deleteConfirmNoDecks: "Usunąć źródło? Nie powstał z niego żaden zestaw.",
@@ -1058,6 +1063,19 @@ export const messages = {
     notFound: "Nie ma takiego źródła. Mogło zostać usunięte.",
     /** Tworzenie lekcji: tekst źródła zmieniono po wyświetleniu podglądu; podgląd odświeżony, rodzic tworzy ponownie. */
     changedBeforeCreate: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.",
+    /** Jak `changedBeforeCreate`, dla zestawu słówek ze źródła. */
+    changedBeforeCreateVocabulary: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz zestaw ponownie.",
+    /** Ponowny odczyt źródła po konflikcie rewizji nie udał się — tworzenie czeka na świeży tekst. */
+    refreshFailed: "Nie udało się odświeżyć źródła.",
+    /** Nowy zestaw słówek ze źródła (design 2026-10-30 §6.2). */
+    newVocabularyTitle: "Nowy zestaw słówek ze źródła",
+    vocabularyMaxItemsLabel: "Najwięcej słówek",
+    vocabularyMaxItemsHint: "Od 1 do 100. Domyślnie 20.",
+    vocabularyInstructionLabel: "Zawężenie (opcjonalnie)",
+    vocabularyInstructionPlaceholder: "np. tylko pogoda",
+    vocabularyInstructionHint: "Słowa wybieramy wyłącznie z tekstu źródła.",
+    createVocabularySubmit: "Utwórz zestaw",
+    creatingVocabulary: "Tworzę zestaw…",
     updatedAt: "Ostatnia zmiana {date}",
     deckCount: { one: "{n} zestaw", few: "{n} zestawy", many: "{n} zestawów" } as Record<string, string>,
     noDecks: "Z tego źródła nie powstał jeszcze żaden zestaw.",

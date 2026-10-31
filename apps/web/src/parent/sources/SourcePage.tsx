@@ -18,6 +18,7 @@ import {
   deleteConfirmText,
   formatSourceDate,
   newLessonFromSource,
+  newVocabularyFromSource,
   sourceLessonKinds,
   sourcePatch,
   sourceValuesValid,
@@ -47,7 +48,8 @@ const LESSON_BUTTONS: Array<{ kind: SourceLessonKind; label: string; testId: str
 /**
  * Strona źródła (design 2026-10-30 §3.4): podgląd i edycja tekstu, przyciski
  * tworzenia lekcji rozdziału i szkolnej (tylko dla przedmiotów obecnych
- * w katalogu lekcji), zestawy z tego źródła oraz usunięcie z potwierdzeniem
+ * w katalogu lekcji) i zestawu słówek (zawsze, §6.2), zestawy z tego źródła
+ * oraz usunięcie z potwierdzeniem
  * podającym liczbę zestawów. Edycja wysyła tylko zmienione pola z rewizją
  * z chwili wejścia w edycję — zmiana z innego okna kończy się konfliktem (409),
  * a nie cichym nadpisaniem. Fokus: po konflikcie na „Odśwież”, po innym błędzie
@@ -315,17 +317,21 @@ export default function SourcePage({
         <Text size="sm" mt={status ? 4 : 0} role="status" data-testid="source-status">{status ?? ""}</Text>
       </div>
 
-      {lessonButtons.length > 0 ? (
-        <div className="pp-source-actions">
-          {lessonButtons.map((button) => (
-            <Button key={button.kind} size="md" variant={button.variant} leftSection={<ParentIcon name="graduation-cap" />}
-              data-testid={button.testId} disabled={catalogQuery.isPending}
-              onClick={() => onNavigate(newLessonFromSource(source.id, button.kind))}>
-              {button.label}
-            </Button>
-          ))}
-        </div>
-      ) : (
+      <div className="pp-source-actions">
+        {lessonButtons.map((button) => (
+          <Button key={button.kind} size="md" variant={button.variant} leftSection={<ParentIcon name="graduation-cap" />}
+            data-testid={button.testId} disabled={catalogQuery.isPending}
+            onClick={() => onNavigate(newLessonFromSource(source.id, button.kind))}>
+            {button.label}
+          </Button>
+        ))}
+        {/* zestaw słówek nie zależy od katalogu przedmiotów lekcji — przycisk jest zawsze */}
+        <Button size="md" variant="light" leftSection={<ParentIcon name="book-open" />} data-testid="source-create-vocabulary"
+          onClick={() => onNavigate(newVocabularyFromSource(source.id))}>
+          {messages.sources.createVocabulary}
+        </Button>
+      </div>
+      {lessonButtons.length === 0 && (
         <Text size="sm" className="pp-editor-muted" data-testid="source-no-lesson-subjects">{messages.sources.noLessonSubjects}</Text>
       )}
 

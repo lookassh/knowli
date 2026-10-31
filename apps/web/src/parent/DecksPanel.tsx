@@ -36,6 +36,7 @@ import LessonEditor from "./lessons/LessonEditor";
 import NewLessonForm from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
+import NewVocabularyFromSource from "./sources/NewVocabularyFromSource";
 import { DECK_STATE_TONE, filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } from "./deck-list-grouping";
 import { ParentIcon } from "./ParentIcon";
 import type { ParentRoute } from "./parent-routes";
@@ -127,8 +128,9 @@ function NewLessonFromSource({
 
 /**
  * Sekcja Zestawy: lista pogrupowana po stanie, tworzenie materiału oraz —
- * według adresu — edytor zestawu (`/parent/decks/{id}`) albo formularz nowej
- * lekcji (`/parent/lessons/new`, ze źródła: `?source=…&subject=…`).
+ * według adresu — edytor zestawu (`/parent/decks/{id}`), formularz nowej
+ * lekcji (`/parent/lessons/new`, ze źródła: `?source=…&subject=…`) albo
+ * nowego zestawu słówek ze źródła (`/parent/vocabulary/new?source=…`).
  */
 export default function DecksPanel({
   route,
@@ -183,8 +185,8 @@ export default function DecksPanel({
     };
   }, []);
 
-  // Powrót z edytora lub formularza lekcji do listy odświeża listę (jak dawny „Wróć”).
-  const editorOpen = route.deckId !== undefined || route.newLesson === true;
+  // Powrót z edytora lub formularza lekcji albo słówek ze źródła do listy odświeża listę (jak dawny „Wróć”).
+  const editorOpen = route.deckId !== undefined || route.newLesson === true || route.newVocabulary === true;
   const wasEditorOpen = useRef(editorOpen);
   useEffect(() => {
     if (wasEditorOpen.current && !editorOpen) void onChanged().catch(() => undefined);
@@ -391,6 +393,25 @@ export default function DecksPanel({
         childrenList={childrenList}
         onEditorStateChange={registerEditorState}
         onBack={openList}
+        onOpenSource={(sourceId) => onNavigate(sourceRoute(sourceId))}
+      />
+    );
+  }
+
+  if (route.newVocabulary && route.sourceId !== undefined) {
+    return (
+      <NewVocabularyFromSource
+        key={route.sourceId}
+        sourceId={route.sourceId}
+        registerEditorState={registerEditorState}
+        onOpenSource={(sourceId) => onNavigate(sourceRoute(sourceId))}
+        onCreated={(createdDeckId) => {
+          // formularz znika z historii — „wstecz” z nowego zestawu prowadzi do strony źródła, nie do formularza
+          openDeck(createdDeckId, "vocabulary", { replace: true });
+          void onChanged().catch(() => undefined);
+          // nowy zestaw na liście zestawów źródła
+          void queryClient.invalidateQueries({ queryKey: orpc.sources.key() });
+        }}
       />
     );
   }
