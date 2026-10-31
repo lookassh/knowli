@@ -115,7 +115,10 @@ Właściciel reguł: `learning/lessons` (materializacja i próby), media:
   - `revealsAnswer(feedback)` — feedback ujawnia rozwiązanie własnego zadania
     (wyklucza `not_assessed` i podpowiedzi bez `correctText`);
   - feedback nie jest ofertą trenera precyzji (`lesson_precision_hint`);
-  - klucz zadania ma `feedbackAudioAssetId`.
+  - klucz zadania ma `feedbackAudioAssetId`;
+  - odpowiedź kończy zadanie (następny stan zadania nie jest `issued`) — np. `model_other`
+    niepoprawne, które zostawia zadanie otwarte do ponowienia, nie dostaje nagrania,
+    aby ponowienie nie było oznaczone jako wsparte `model_audio` (ustalenie z implementacji).
   Feedback z identyfikatorem zapisuje się w `attempts.feedback`, więc ponowny
   odczyt próby zwraca to samo.
 - **Ekspozycja:** w tej samej transakcji, po `discloseLessonFeedback`, serwer
@@ -144,6 +147,14 @@ Właściciel reguł: `learning/lessons` (materializacja i próby), media:
   inne odtwarzanie (np. komunikat) przerywa poprzednie.
   Pobieranie następnego zadania w tle działa jak dziś.
 - **Komunikat głosowy feedbacku** pozostaje ręczny — nie nakłada się na odczyt.
+- **„Nie pamiętam” (ustalenie z implementacji):** w lekcjach, gdy wynik niesie
+  nagranie, ekran zostaje na wyniku (dok + autoodtwarzanie + „Posłuchaj zdania”) aż
+  do „Dalej”, zamiast przeskakiwać do następnego zadania; bez nagrania zostaje
+  dotychczasowy przepływ.
+- **Ikona komunikatu (ustalenie z implementacji):** gdy dok pokazuje „Posłuchaj
+  zdania”, przycisk komunikatu głosowego używa obrysowanej ikony „?”
+  (`GuidanceButton icon="question"`), by dziecko nie widziało dwóch identycznych
+  głośników.
 - **Responsywność:** przycisk mieści się w doku feedbacku w portrait, landscape
   telefonu, tablecie i desktopie (testy geometrii).
 
