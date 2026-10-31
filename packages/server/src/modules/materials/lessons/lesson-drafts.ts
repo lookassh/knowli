@@ -51,7 +51,6 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import {
   claimQueuedRun,
   enqueueGenerationRun,
-  findEnqueuedRun,
   supersedeLessonRuns,
 } from "../generation-runs";
 import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
@@ -59,7 +58,7 @@ import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-ge
 import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
-import { isSourceChangedConflict, lockSourceMaterialForCopy } from "../source-materials";
+import { committedRetryAfterSourceChange, lockSourceMaterialForCopy } from "../source-materials";
 
 /**
  * Generowanie i zapis szkicu lekcji (design „Generowanie puli (worker)”).
@@ -360,33 +359,14 @@ export async function createMaterialLesson(
       input: input as unknown as Record<string, unknown>,
     });
     return { runId, deckId };
-  }).catch((error: unknown) => committedRetryAfterSourceChange(services, textSource, dedupeKey, error));
-}
-
-/**
- * Ponowienie po równoległym usunięciu albo zmianie tekstu źródła: pierwsze
- * żądanie z tym samym kluczem zatwierdziło zestaw już po naszym sprawdzeniu
- * klucza (usunięcie i edycja czekały na jego blokadę `FOR KEY SHARE`), a źródło
- * zniknęło albo dostało nową rewizję treści przed naszą blokadą — odczyt źródła
- * kończy się `not_found` albo konfliktem rewizji, choć polecenie wykonano.
- * Wtedy, jak przy duplikacie klucza w `enqueueGenerationRun`, odpowiedzią jest
- * zestaw tamtego żądania (świeże zapytanie poza wycofaną transakcją). Każdy
- * inny błąd — i te dwa bez zatwierdzonego runu — przechodzi dalej.
- */
-async function committedRetryAfterSourceChange(
-  services: Services,
-  textSource: MaterialTextSource,
-  dedupeKey: string,
-  error: unknown,
-): Promise<{ runId: string; deckId: string }> {
-  const sourceGoneOrChanged = (error instanceof AppError && error.code === "not_found") || isSourceChangedConflict(error);
-  if (textSource.kind === "source" && sourceGoneOrChanged) {
-    const committed = await findEnqueuedRun(services.db, dedupeKey);
-    if (committed) {
-      return committed;
+  }).catch((error: unknown) => {
+    // Ponowienie po równoległym usunięciu albo zmianie tekstu źródła zwraca zestaw
+    // pierwszego żądania (wspólne ze słówkami ze źródła); wklejony tekst — bez tego.
+    if (textSource.kind === "source") {
+      return committedRetryAfterSourceChange(services.db, dedupeKey, error);
     }
-  }
-  throw error;
+    throw error;
+  });
 }
 
 /**

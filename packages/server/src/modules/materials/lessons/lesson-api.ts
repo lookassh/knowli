@@ -348,6 +348,8 @@ async function latestLessonRun(db: Executor, deckVersionId: string): Promise<Gen
     state: run.state as GenerationDto["state"],
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
+    // Lekcje liczą odrzucenia w `LessonDraftDto.rejectedCount` (z `lesson_context`), nie w runie.
+    rejectedCount: null,
   };
 }
 

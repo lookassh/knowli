@@ -58,6 +58,8 @@ describe("przedmiot english_chapter", () => {
       materialSubjectTitle: "fixed",
       ttsForAnswers: false,
       ttsForPrompts: false,
+      // Pełne angielskie zdanie po odpowiedzi (Etap 3, mechanizm #194).
+      ttsForFeedbackSentence: true,
     });
     expect(englishChapterSubject.usesV3Payload).toBeUndefined();
     expect(englishChapterSubject.spokenAnswers).toBeUndefined();
