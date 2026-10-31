@@ -43,6 +43,8 @@ import {
   readGeneration,
   readLessonDeck,
   readParentWorkCard,
+  regenerateLessonCardAudio,
+  regenerateLessonPromptAudio,
   regenerateObjective,
   regenerateRevisionAsset,
   removeAssignment,
@@ -111,6 +113,8 @@ vi.mock("@learning/server", async (importActual) => {
     decideLessonVerdict: vi.fn(),
     acceptVerdictAsVariant: vi.fn(),
     regenerateObjective: vi.fn(),
+    regenerateLessonPromptAudio: vi.fn(),
+    regenerateLessonCardAudio: vi.fn(),
     retryGeneration: vi.fn(),
     upsertAssignment: vi.fn(),
     removeAssignment: vi.fn(),
@@ -1270,6 +1274,33 @@ describe("parent oRPC router — lesson-drafts", () => {
     expect(deckIdOfLessonVersion).toHaveBeenCalledWith(services, lessonDraftId);
     expect(regenerateObjective).toHaveBeenCalledWith(services, { deckId, ...command });
   });
+
+  it("regeneratePromptAudio zleca ponowne nagranie pytania i zwraca 202 {assetId}", async () => {
+    vi.mocked(regenerateLessonPromptAudio).mockResolvedValueOnce({ assetId });
+
+    const response = await call(`/lesson-drafts/${lessonDraftId}/prompt-audio/regenerate`, jsonInit({ itemRevisionId: draftId }));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ assetId });
+    expect(regenerateLessonPromptAudio).toHaveBeenCalledWith(services, { lessonDraftId, itemRevisionId: draftId });
+  });
+
+  it("regenerateCardAudio zleca ponowne nagranie karty i zwraca 202 {assetId}", async () => {
+    vi.mocked(regenerateLessonCardAudio).mockResolvedValueOnce({ assetId });
+
+    const response = await call(`/lesson-drafts/${lessonDraftId}/card-audio/regenerate`, jsonInit({ objectiveId: "obj-1", cardIndex: 1 }));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ assetId });
+    expect(regenerateLessonCardAudio).toHaveBeenCalledWith(services, { lessonDraftId, objectiveId: "obj-1", cardIndex: 1 });
+  });
+
+  it("regenerateCardAudio odrzuca ujemny indeks karty bez wołania przypadku użycia", async () => {
+    const response = await call(`/lesson-drafts/${lessonDraftId}/card-audio/regenerate`, jsonInit({ objectiveId: "obj-1", cardIndex: -1 }));
+
+    expect(response.status).toBe(400);
+    expect(regenerateLessonCardAudio).not.toHaveBeenCalled();
+  });
 });
 
 describe("parent oRPC router — generation", () => {
@@ -1600,6 +1631,8 @@ describe("parent oRPC router — CSRF (Origin)", () => {
         jsonInit({ objectiveId: "obj-1", count: 4, expectedEditNumber: 1, clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, evil),
         vi.mocked(regenerateObjective),
       ],
+      [`/lesson-drafts/${lessonDraftId}/prompt-audio/regenerate`, jsonInit({ itemRevisionId: draftId }, evil), vi.mocked(regenerateLessonPromptAudio)],
+      [`/lesson-drafts/${lessonDraftId}/card-audio/regenerate`, jsonInit({ objectiveId: "obj-1", cardIndex: 0 }, evil), vi.mocked(regenerateLessonCardAudio)],
       [`/generation/${runId}/retry`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(retryGeneration)],
       [
         `/assignments/${childId}/${deckId}`,

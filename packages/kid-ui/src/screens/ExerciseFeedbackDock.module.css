@@ -16,6 +16,17 @@
   position: relative;
 }
 
+/* Zwarta rama zadania na wysokim oknie (ExerciseFrame, spec
+   2026-10-30-kid-ui-large-screens §3.2): panel stoi tuż pod odpowiedziami, nad
+   wolnym miejscem, a nie przy dolnej krawędzi okna, więc ma zaokrąglone
+   wszystkie rogi. Wybór obrazków nie dostaje zwartej ramy — tam panel zostaje
+   arkuszem przy dole. */
+@media (min-width: 840px) and (min-height: 781px) {
+  :global(.kid-exercise-frame):not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) .dock {
+    border-radius: var(--kid-shape-xxl);
+  }
+}
+
 .correct {
   --dock-bg: var(--kid-color-success-container);
   --dock-fg: var(--kid-color-on-success-container);
@@ -157,7 +168,7 @@
 }
 
 .content :global(.kid-answer-feedback) {
-  max-height: min(36vh, 300px);
+  max-height: min(calc(36 * var(--kid-vh)), 300px);
 }
 
 .content :global(.kid-feedback-content) {
@@ -168,7 +179,7 @@
 }
 
 .content :global(.kid-speech-feedback) {
-  max-height: min(36vh, 300px);
+  max-height: min(calc(36 * var(--kid-vh)), 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }

@@ -6,7 +6,7 @@ import type {
   LlmProvider,
 } from "../../ports/ai";
 import { GenerationProviderError } from "../../ports/generation-error";
-import { lessonPoolJsonSchema, poolExerciseTypes } from "./lesson-pool-schema";
+import { lessonPoolJsonSchema, poolExerciseTypes, voiceToneProperty } from "./lesson-pool-schema";
 import { materializeGeneratedCalculations } from "../lesson-calculations";
 import { materializeGeneratedKeywords } from "../lesson-keywords";
 import { materializeGeneratedAssignments } from "../lesson-assignments";
@@ -113,6 +113,16 @@ function deckOutputRules(input: LlmGenerateDeckInput): string[] {
     ] : []),
   ];
 }
+
+/**
+ * Reguła doboru tonu lektora (spec TTS §4.3); tylko dla przedmiotów z `ttsForPrompts`.
+ * `mysterious` (szept) tylko w kartach — pytania nie są szeptane, więc ćwiczenia go nie dostają.
+ */
+const VOICE_TONE_BASE_RULE =
+  "voiceTone: choose only when it clearly fits; usually null. " +
+  "`cheerful` for fun facts or playful examples; `gentle` for sensitive or difficult content; `curious` for questions that invite the child to think.";
+const VOICE_TONE_RULE =
+  `${VOICE_TONE_BASE_RULE} \`mysterious\` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences.`;
 
 /**
  * Jawny przydział etapu samodzielnego, gdy przedmiot wymaga różnych pytań
@@ -292,6 +302,9 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   if (input.promptProfile.fieldRules !== undefined) {
     parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
   }
+  if (input.voiceTones === true) {
+    parts.push(`${VOICE_TONE_BASE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits).`);
+  }
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +
       "Each non-calculation exercise object has fields: exerciseType, objectiveId, instructionPl (child-facing instruction in the prompt language), " +
@@ -415,7 +428,7 @@ function lessonExamplesToRecord(raw: unknown): Record<string, string[]> {
 }
 
 /** Schema etapu zagadnień tematu dynamicznego (przedmioty z materiału rodzica). */
-function lessonObjectivesJsonSchema(): Record<string, unknown> {
+function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
@@ -438,8 +451,12 @@ function lessonObjectivesJsonSchema(): Record<string, unknown> {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "body"],
-                properties: { title: { type: "string" }, body: { type: "string" } },
+                required: voiceTones ? ["title", "body", "voiceTone"] : ["title", "body"],
+                properties: {
+                  title: { type: "string" },
+                  body: { type: "string" },
+                  ...(voiceTones ? { voiceTone: voiceToneProperty() } : {}),
+                },
               },
             },
           },
@@ -460,6 +477,7 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
     "kind (an objective kind such as words or frame, only when the subject rules for objectives ask for it; otherwise null), " +
     "cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; " +
     "you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). " +
+    (input.voiceTones === true ? `Each card also has ${VOICE_TONE_RULE} ` : "") +
     (rules === undefined || rules === "" ? "" : `Subject rules for objectives: ${rules} `) +
     "Return strict JSON only."
   );
@@ -508,7 +526,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       return { items: parsed.items ?? [] };
     },
     async generateLessonObjectives(input: LessonObjectivesInput, signal?: AbortSignal) {
-      const schema = lessonObjectivesJsonSchema();
+      const schema = lessonObjectivesJsonSchema(input.voiceTones === true);
       const system = lessonObjectivesSystemPrompt(input);
       const user = lessonUserMaterial({
         material: input.material,

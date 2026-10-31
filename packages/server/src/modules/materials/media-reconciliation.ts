@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { MediaPendingDetails } from "@learning/contracts";
+import { LessonVoiceToneSchema, type MediaPendingDetails } from "@learning/contracts";
 import { ttsVoiceFor, type MediaSettings, type Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import {
@@ -15,7 +15,7 @@ import {
 } from "../../db/schema";
 import { AppError } from "../../errors";
 import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../domain/media-fingerprint";
-import type { TtsStyle } from "../../domain/tts-style";
+import { lessonPromptStyle, type TtsStyle } from "../../domain/tts-style";
 import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 import { payloadToItem } from "./item-payload";
 import { feedbackSentenceText } from "../../domain/lessons/feedback-sentence-text";
@@ -145,7 +145,8 @@ export function requiredAssetsForLessonExercise(
   }
   const question = flags.ttsForPrompts ? questionReadText(questionSourceOf(payload)) : null;
   if (question !== null) {
-    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, "lesson_question"));
+    const style = lessonPromptStyle("lesson_question", voiceToneOf(payload.voiceTone), question);
+    required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, style));
   }
   // Pełne zdanie czytane po odpowiedzi: bez stylu (style dotyczą pl-PL), język z `answerLocale`.
   const sentence = flags.ttsForFeedbackSentence && answerLocale !== "" ? feedbackSentenceText(feedbackSourceOf(payload)) : null;
@@ -153,6 +154,12 @@ export function requiredAssetsForLessonExercise(
     required.push(ttsAsset("feedback_audio", sentence, answerLocale, settings));
   }
   return required;
+}
+
+/** Ton lektora z payloadu rewizji; wartość spoza enumu (np. stary payload) = brak tonu. */
+function voiceToneOf(value: unknown) {
+  const parsed = LessonVoiceToneSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function feedbackSourceOf(payload: Record<string, unknown>) {
@@ -233,7 +240,8 @@ export function requiredAssetsForLessonCards(
     objective.cards.forEach((card, cardIndex) => {
       const text = cardReadText(renderCard(card, [...(context.examples[objective.id] ?? [])]));
       if (text !== null) {
-        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings, "lesson_card") });
+        const style = lessonPromptStyle("lesson_card", card.voiceTone, text);
+        required.push({ objectiveId: objective.id, cardIndex, asset: ttsAsset("prompt_audio", text, PROMPT_AUDIO_LOCALE, settings, style) });
       }
     });
   }

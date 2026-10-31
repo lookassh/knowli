@@ -5,9 +5,12 @@
  *   corepack pnpm eval:tts-styles -- --out <katalog poza repozytorium> [--allow-none]
  *   UMIEM_FAKE_PROVIDERS=1 corepack pnpm eval:tts-styles -- --out <katalog>   # sanity pipeline'u (bajty fake)
  *
- * Generuje z bieżącą konfiguracją (.env: UMIEM_TTS_*, w tym UMIEM_TTS_STYLE) 17 komunikatów Kid UI oraz po jednym
- * przykładowym pytaniu i karcie lekcji (stałe teksty poniżej) i zapisuje `<rola>-<klucz>.wav|mp3` oraz `index.txt`
- * (plik, rola, głos, tekst, instrukcja). Bez `UMIEM_TTS_STYLE=instructions` odmawia (próbki bez stylu nie mają sensu
+ * Generuje z bieżącą konfiguracją (.env: UMIEM_TTS_*, w tym UMIEM_TTS_STYLE) 17 komunikatów Kid UI, po jednym
+ * przykładowym pytaniu i karcie lekcji (stałe teksty poniżej) oraz próbki tonów lekcji (etap B): po jednej na ton,
+ * a dla `mysterious` dwie — pytanie (pytania nie są szeptane: `curious`) i karta „Czy wiesz, że…” (szept
+ * pierwszego zdania, czyli tytułu). Teksty tonów mają kształt produkcyjnego tekstu nagrania: pytanie zaczyna
+ * się od polecenia, karta od tytułu. Zapisuje `<styl>-<klucz>.wav|mp3` oraz `index.txt`
+ * (plik, rola lub ton, styl efektywny, głos, tekst, instrukcja). Bez `UMIEM_TTS_STYLE=instructions` odmawia (próbki bez stylu nie mają sensu
  * do odsłuchu stylów); `--allow-none` pozwala wygenerować je mimo to (np. sanity pipeline'u). Narzędzie próby: nie dotyka bazy ani mediów aplikacji, a katalog wyjściowy
  * musi leżeć poza repozytorium (próbki nie są częścią kodu). Do usługi TTS trafiają wyłącznie stałe teksty
  * interfejsu i przykładowe teksty z tego pliku — bez danych dziecka. Klucze nie są wypisywane.
@@ -16,8 +19,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mediaSettingsFromEnv, ttsVoiceFor } from "../packages/server/src/config";
+import { LessonVoiceToneSchema, type LessonVoiceTone } from "@learning/contracts";
 import { UI_AUDIO_STYLES, UI_AUDIO_TEXTS } from "../packages/server/src/domain/ui-audio-catalog";
-import type { TtsStyle } from "../packages/server/src/domain/tts-style";
+import { lessonPromptStyle, type TtsStyle } from "../packages/server/src/domain/tts-style";
 import { createGenerationDepsFromEnv } from "../packages/server/src/providers/generation-env";
 import { ttsRequestInstructions } from "../packages/server/src/providers/tts-style-profile";
 
@@ -32,6 +36,27 @@ const LESSON_SAMPLES: { style: "lesson_question" | "lesson_card"; key: string; t
     text: "Fotosynteza. Rośliny wytwarzają pokarm dzięki światłu słonecznemu. Liście pobierają światło, wodę i powietrze.",
   },
 ];
+
+/**
+ * Próbki tonów (spec tonu TTS §3.6, etap B): ton nakładany jak w rekonsyliacji nagrań (`lessonPromptStyle`),
+ * więc indeks pokazuje ton zamówiony i styl efektywny. Fikcyjne teksty, bez danych dziecka.
+ */
+const TONE_SAMPLES: Record<
+  LessonVoiceTone,
+  { role: "lesson_question" | "lesson_card"; key: string; text: string }[]
+> = {
+  cheerful: [{ role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym słowem. Który owoc ma pestki na zewnątrz?" }],
+  curious: [{ role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym zdaniem. Jak myślisz, dlaczego niebo jest niebieskie?" }],
+  gentle: [{ role: "lesson_card", key: "karta", text: "Strach. Czasem się boimy. To zupełnie normalne, a strach mija." }],
+  mysterious: [
+    { role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym zdaniem. Co robią liście nocą?" },
+    {
+      role: "lesson_card",
+      key: "karta",
+      text: "Ciekawostka. Czy wiesz, że drzewa rozmawiają ze sobą? Robią to pod ziemią, przez cieniutkie korzenie.",
+    },
+  ],
+};
 
 function argValue(name: string): string | undefined {
   const prefixed = process.argv.find((arg) => arg.startsWith(`--${name}=`));
@@ -94,6 +119,8 @@ interface Sample {
   file: string;
   style: TtsStyle;
   text: string;
+  /** Ton zamówiony przez autora (próbki tonów); `style` to styl efektywny po regule szeptu. */
+  requestedTone?: LessonVoiceTone;
 }
 const samples: Sample[] = [
   ...(Object.keys(UI_AUDIO_TEXTS) as (keyof typeof UI_AUDIO_TEXTS)[]).map((key) => ({
@@ -106,6 +133,14 @@ const samples: Sample[] = [
     style: sample.style as TtsStyle,
     text: sample.text,
   })),
+  ...LessonVoiceToneSchema.options.flatMap((tone) =>
+    TONE_SAMPLES[tone].map((sample) => ({
+      file: `${sample.role}-${tone}-${sample.key}.${extension}`,
+      style: lessonPromptStyle(sample.role, tone, sample.text),
+      text: sample.text,
+      requestedTone: tone,
+    })),
+  ),
 ];
 
 console.log(
@@ -133,7 +168,9 @@ for (const sample of samples) {
     index.push(
       [
         `plik: ${sample.file}`,
-        `rola: ${sample.style}`,
+        sample.requestedTone === undefined
+          ? `rola: ${sample.style}`
+          : `ton: ${sample.requestedTone} → styl: ${sample.style}`,
         `głos: ${voice}`,
         `tekst: ${sample.text}`,
         `instrukcja: ${instructions ?? "(brak)"}`,

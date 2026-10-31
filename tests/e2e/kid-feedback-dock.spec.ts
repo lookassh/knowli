@@ -3,35 +3,10 @@ import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { kidTokenColor } from "./helpers/contrast";
 import { measure, resizeAndSettle } from "./helpers/kid-layout";
 import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
+import { attemptId, baseFixture, completedRecallFixture, sessionId, taskId } from "./helpers/kid-fixtures";
+import { waitForKidScale } from "./helpers/kid-frame";
 
-const childId = "10000000-0000-4000-8000-000000000001";
-const deckId = "10000000-0000-4000-8000-000000000002";
-const sessionId = "10000000-0000-4000-8000-000000000003";
-const taskId = "10000000-0000-4000-8000-000000000004";
-const attemptId = "10000000-0000-4000-8000-000000000010";
 const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
-
-function baseFixture() {
-  return {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" as const }],
-    decks: [{ deckId, title: "Dni tygodnia", itemCount: 7, independentlyRecalledCount: 0, testDate: null,
-      recommended: true, mockTestAvailable: false, activeSession: null }],
-    session: { mode: "training" as const, sessionId, childId, deckId, deckVersionId: "10000000-0000-4000-8000-000000000005",
-      policyId: "default", microphoneEnabled: false, state: "active" as const, taskBudget: 1, tasksIssued: 1,
-      assessedTasksIssued: 1, startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
-  };
-}
-
-function completedRecallFixture() {
-  return {
-    ...baseFixture(),
-    tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "recall" as const, direction: "source_to_target" as const,
-      state: "issued" as const, prompt: { kind: "recall" as const, prompt: "kot" }, remainingAssessed: 1 }],
-    attempts: [{ attemptId, taskId, state: "completed" as const, modality: "text" as const,
-      feedback: { kind: "great" as const }, taskState: "completed" as const, stepId: null,
-      receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z" }],
-  };
-}
 
 function completedReadingFixture() {
   return {
@@ -169,10 +144,12 @@ test("incorrect written feedback retries with an empty, focused input", async ({
 });
 
 test("choice feedback dock fits tablet and desktop viewports", async ({ page }) => {
-  for (const viewport of [{ width: 768, height: 1024 }, { width: 1440, height: 960 }]) {
+  // 1440x960 zooms by 1.06; the dock and options are compared with each other and the window, all in screen pixels.
+  for (const viewport of [{ width: 768, height: 1024, scale: 1 }, { width: 1440, height: 960, scale: 1.06 }]) {
     await page.setViewportSize(viewport);
     await installKidUiFixture(page, completedReadingFixture());
     await openTask(page);
+    await waitForKidScale(page, viewport.scale);
     await page.getByTestId("kid-option").first().click();
     const dock = page.getByTestId("kid-feedback-dock");
     await expect(dock).toBeVisible();

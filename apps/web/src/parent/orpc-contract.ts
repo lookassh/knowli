@@ -162,6 +162,19 @@ export const LessonRegenerateCommandSchema = z.object({
 }).strict();
 export type LessonRegenerateCommand = z.infer<typeof LessonRegenerateCommandSchema>;
 
+/** Wejście POST /lesson-drafts/{lessonDraftId}/prompt-audio/regenerate: ścieżka + rewizja ćwiczenia. */
+const LessonPromptAudioRegenerateInputSchema = z.object({
+  lessonDraftId: UuidSchema,
+  itemRevisionId: UuidSchema,
+}).strict();
+
+/** Wejście POST /lesson-drafts/{lessonDraftId}/card-audio/regenerate: ścieżka + miejsce karty w temacie. */
+const LessonCardAudioRegenerateInputSchema = z.object({
+  lessonDraftId: UuidSchema,
+  objectiveId: z.string().min(1).max(200),
+  cardIndex: z.number().int().nonnegative(),
+}).strict();
+
 /** Wejście POST /lesson-drafts/{lessonDraftId}/regenerate: ścieżka + polecenie. */
 const LessonRegenerateInputSchema = LessonRegenerateCommandSchema.extend({ lessonDraftId: UuidSchema });
 
@@ -440,6 +453,18 @@ export const parentApiContract = {
       .input(LessonRegenerateInputSchema)
       .output(z.object({ generationRunId: UuidSchema, deckId: UuidSchema }))
       .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/regenerate", successStatus: 202 })),
+
+    /** „Nagraj ponownie” pytania (spec tonu TTS §4.5): nowa generacja nagrania; tylko szkic. */
+    regeneratePromptAudio: oc
+      .input(LessonPromptAudioRegenerateInputSchema)
+      .output(z.object({ assetId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate", successStatus: 202 })),
+
+    /** „Nagraj ponownie” karty zagadnienia (spec tonu TTS §4.5): nowa generacja nagrania; tylko szkic. */
+    regenerateCardAudio: oc
+      .input(LessonCardAudioRegenerateInputSchema)
+      .output(z.object({ assetId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/card-audio/regenerate", successStatus: 202 })),
   },
 
   /** Runy generacji materiałów: odczyt statusu i ponowienie nieudanego. */

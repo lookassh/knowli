@@ -32,6 +32,7 @@ export function materializeGeneratedKeywords(exercises: unknown[]): unknown[] {
       acceptedAnswers: [],
       focus: [],
       sourceRefs: record.sourceRefs,
+      ...(typeof record.voiceTone === "string" ? { voiceTone: record.voiceTone } : {}),
     };
   });
 }

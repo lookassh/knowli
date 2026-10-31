@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LessonPoolInput } from "../../ports/ai";
-import { lessonPoolJsonSchema } from "./lesson-pool-schema";
+import { lessonPoolJsonSchema, voiceToneProperty } from "./lesson-pool-schema";
 
 const input: LessonPoolInput = {
   subjectId: "subject",
@@ -147,6 +147,45 @@ describe("lessonPoolJsonSchema — pary i grupy (design szkoły §10.6)", () => 
     expect(cloze.properties.gapAnswers).toMatchObject({ minItems: 2, maxItems: 4 });
     expect(cloze.properties.extraWords).toMatchObject({ minItems: 1, maxItems: 2 });
     expect(cloze.properties.clozeText).toMatchObject({ maxLength: 300 });
+  });
+});
+
+describe("lessonPoolJsonSchema — ton lektora (stage B)", () => {
+  const tones = [null, "cheerful", "curious", "gentle", "mysterious"];
+  const allTypes = ["lesson_choice", "lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group", "lesson_cloze"];
+  const wide: LessonPoolInput = {
+    ...input,
+    exerciseTypes: allTypes,
+    objectives: [{ ...input.objectives[0]!, exerciseTypes: allTypes }],
+  };
+
+  it("voiceToneProperty is a nullable strict enum of the contract tones; without whisper there is no mysterious", () => {
+    expect(voiceToneProperty()).toEqual({ type: ["null", "string"], enum: tones });
+    expect(voiceToneProperty({ whisper: false })).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
+  });
+
+  it("adds a required nullable voiceTone to every branch except calculation when voiceTones is true", () => {
+    const schema = lessonPoolJsonSchema({ ...wide, voiceTones: true }) as any;
+    const branches = schema.properties.exercises.items.anyOf;
+    expect(branches).toHaveLength(6);
+    for (const branch of branches) {
+      const type = branch.properties.exerciseType.enum[0];
+      if (type === "lesson_calculation") {
+        expect(branch.properties).not.toHaveProperty("voiceTone");
+        expect(branch.required).not.toContain("voiceTone");
+        continue;
+      }
+      // Pytania nie są szeptane: ćwiczenia nie dostają `mysterious`.
+      expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
+      expect(branch.required).toContain("voiceTone");
+      expect(branch.required.sort()).toEqual(Object.keys(branch.properties).sort());
+    }
+  });
+
+  it("is byte-identical to the schema without the flag when voiceTones is false or absent", () => {
+    const base = JSON.stringify(lessonPoolJsonSchema(wide));
+    expect(JSON.stringify(lessonPoolJsonSchema({ ...wide, voiceTones: false }))).toBe(base);
+    expect(base).not.toContain("voiceTone");
   });
 });
 

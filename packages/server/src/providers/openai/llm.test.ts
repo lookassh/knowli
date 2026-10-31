@@ -449,6 +449,48 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
   });
 });
 
+describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
+  const RULE = "voiceTone: choose only when it clearly fits";
+  type Body = { response_format: { json_schema: { schema: any } }; messages: Array<{ role: string; content: string }> };
+  const bodyAt = (fetchMock: { mock: { calls: unknown[][] } }, index: number) =>
+    JSON.parse((fetchMock.mock.calls[index]![1] as RequestInit).body as string) as Body;
+  const systemOf = (body: Body) => body.messages.find((m) => m.role === "system")!.content;
+  const OBJECTIVES_INPUT = { subjectTitle: "Przyroda", topicTitle: "Las", material: "Las to ekosystem.", generationRole: "You write cards." };
+
+  it("pool prompt and schema carry the tone rule and field only when voiceTones is true", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonPool({ ...INPUT, voiceTones: true });
+    await provider.generateLessonPool(INPUT);
+    const on = bodyAt(fetchMock, 0);
+    const off = bodyAt(fetchMock, 1);
+    expect(systemOf(on)).toContain(RULE);
+    // Pytania nie są szeptane: reguła ćwiczeń w ogóle nie wspomina `mysterious`.
+    expect(systemOf(on)).not.toContain("mysterious");
+    expect(on.response_format.json_schema.schema.properties.exercises.items.required).toContain("voiceTone");
+    expect(systemOf(off)).not.toContain("voiceTone");
+    expect(JSON.stringify(off.response_format.json_schema.schema)).not.toContain("voiceTone");
+  });
+
+  it("objectives prompt and card schema carry the tone rule and field only when voiceTones is true", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ objectives: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAiLlmProvider({ apiKey: "k" });
+    await provider.generateLessonObjectives({ ...OBJECTIVES_INPUT, voiceTones: true });
+    await provider.generateLessonObjectives(OBJECTIVES_INPUT);
+    const on = bodyAt(fetchMock, 0);
+    const off = bodyAt(fetchMock, 1);
+    const card = on.response_format.json_schema.schema.properties.objectives.items.properties.cards.items;
+    expect(card.required).toEqual(["title", "body", "voiceTone"]);
+    expect(card.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle", "mysterious"] });
+    expect(systemOf(on)).toContain(RULE);
+    expect(systemOf(on)).toContain("curiosities/riddles such as »Czy wiesz, że…« with at least two sentences");
+    expect(systemOf(off)).not.toContain("voiceTone");
+    expect(JSON.stringify(off.response_format.json_schema.schema)).not.toContain("voiceTone");
+  });
+});
+
 describe("createOpenAiLlmProvider.generateLessonPool — bloki pary/grupy/luki składane z profilu przedmiotu", () => {
   const PAIRING_TYPES = ["lesson_choice", "lesson_match", "lesson_group", "lesson_cloze"];
   const pairingInput = (overrides: Partial<LessonPoolInput>): LessonPoolInput => ({

@@ -297,6 +297,9 @@ function fakeLessonExercises(input: LessonPoolInput): {
     exercises.push(fakeExercise(type, objective.id, nextAnswer(input.material), input, input.existingExercises?.length ?? 0));
   }
 
+  // Przykładowy ton lektora (etap B): tylko gdy generator ma go zwracać.
+  if (input.voiceTones === true && exercises.length > 0) exercises[0] = { ...exercises[0]!, voiceTone: "curious" };
+
   return { exercises, examples };
 }
 
@@ -413,7 +416,7 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
   } else {
     sections.push({ title: input.topicTitle, body: input.material.trim() });
   }
-  return sections.map((section, i) => {
+  const objectives = sections.map((section, i) => {
     const sentences = section.body.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
     const first = (sentences[0] ?? section.title).slice(0, 280);
     const second = (sentences[1] ?? sentences[0] ?? section.title).slice(0, 280);
@@ -430,6 +433,12 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
       ...(input.objectivesRules === undefined ? {} : { kind: i === 0 ? "words" : "frame" }),
     };
   });
+  // Przykładowy ton pierwszej karty (etap B): tylko gdy generator ma go zwracać.
+  if (input.voiceTones === true) {
+    const cards = objectives[0]?.cards as Record<string, unknown>[] | undefined;
+    if (cards?.[0]) cards[0] = { ...cards[0], voiceTone: "cheerful" };
+  }
+  return objectives;
 }
 
 /** Pola v3 dla fake puli przedmiotu szkolnego (uziemienie = początek materiału). */
