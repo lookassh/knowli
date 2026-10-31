@@ -1252,4 +1252,26 @@ test.describe("screenshots", () => {
       await attachScreenshot(page, testInfo, `deck-screen-${size}`);
     });
   }
+
+  // The same two answer screens one step earlier: the question as the child sees it before the verdict (the tests above
+  // show the screen after it), also on the small laptop window the follow-ups were measured on.
+  const BEFORE_VERDICT = [
+    { screen: "picture choice", width: 1280, height: 600, scale: 1, open: openPictureTiles },
+    { screen: "picture choice", width: 1536, height: 730, scale: 1, open: openPictureTiles },
+    { screen: "written answer", width: 3440, height: 1440, scale: 1.6, open: openWrittenRecall },
+  ] as const;
+
+  for (const { screen, width, height, scale, open } of BEFORE_VERDICT) {
+    test(`screenshot: ${screen} before the verdict at ${width}x${height}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await open(page);
+      await waitForKidScale(page, scale);
+      await attachScreenshot(page, testInfo, `${screen.replace(" ", "-")}-before-verdict-${width}x${height}`);
+    });
+  }
 });
+
+async function openPictureTiles(page: Page) {
+  await openPictureChoice(page, fourPictureTilesFixture());
+  await expect(page.getByTestId("kid-option")).toHaveCount(4);
+}
