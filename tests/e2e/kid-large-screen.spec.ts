@@ -1,11 +1,14 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, makeDeck, openDeckScreen, recallFixture, sessionId } from "./helpers/kid-fixtures";
-import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
+import {
+  boxes, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, nextFrames, pictureTileLimit, pictureTiles,
+  settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
+} from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
-import { installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { fourPictureTilesFixture, openPictureChoice } from "./helpers/picture-fixtures";
 
 // The screenshot tests at the end attach PNGs as test attachments (body, not a file path). The list and github
 // reporters do not save body attachments; to get the PNGs run
@@ -27,21 +30,8 @@ const SESSION_WINDOWS = [
 
 const ULTRAWIDE = { width: 3440, height: 1440 };
 
-// --kid-column-max-width and --kid-visual-choice-max-size from expanded width on (spec §3.1): 720 / 300 px in inner pixels.
+// --kid-column-max-width from expanded width on (spec §3.1): 720 px in inner pixels. The tile cap (300 px) is VISUAL_CHOICE_MAX.
 const COLUMN_MAX = 720;
-const VISUAL_CHOICE_MAX = 300;
-
-async function openPictureChoice(page: Page, fixture: KidUiFixture = pictureChoiceLayoutFixture()) {
-  await installKidUiFixture(page, fixture);
-  // Without the instruction audio the session shows an "audio unavailable" notice that takes ~87 px of the material.
-  await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
-    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").first().click();
-  await page.getByTestId("kid-done").click();
-  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
-}
 
 /** Opens the first task of a single-profile, single-deck session. */
 async function openSession(page: Page, fixture: KidUiFixture) {
@@ -266,37 +256,6 @@ test.describe("touch device with the on-screen keyboard open", () => {
   });
 });
 
-/** Four colour tiles: no image assets, so the tile size is the only thing under test. */
-function fourPictureTilesFixture(): KidUiFixture {
-  const fixture = pictureChoiceLayoutFixture();
-  const listening = fixture.tasks[1];
-  if (!listening || listening.prompt.kind !== "picture_listening") throw new Error("picture listening fixture missing");
-  const colors = ["#ffff00", "#ff00ff", "#00ffff", "#ff8800"];
-  fixture.tasks = [fixture.tasks[0]!, {
-    ...listening,
-    prompt: { ...listening.prompt, options: colors.map((color, index) => ({
-      id: `10000000-0000-4000-8000-${String(90 + index).padStart(12, "0")}`,
-      labelPl: `Kolor ${index + 1}`,
-      visual: { kind: "color" as const, color },
-    })) },
-  }, fixture.tasks[2]!];
-  return fixture;
-}
-
-/** Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are). */
-async function pictureTiles(page: Page) {
-  return page.evaluate(() => {
-    const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
-      const { left, top, width, height } = element.getBoundingClientRect();
-      return { left, top, width, height };
-    });
-    // 100cqw / 100cqh come from the nearest size container above the tile grid.
-    let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
-    while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
-    return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
-  });
-}
-
 for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 }, { width: 3440, height: 1440, scale: 1.6 }]) {
   test(`picture tiles use the new cap and keep their size after the verdict at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
@@ -308,8 +267,7 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
 
     const before = await pictureTiles(page);
     // --visual-choice-size: the cap, half the material width, or the material height shared by two rows (never below 112).
-    const gap = 12;
-    const limit = Math.min(VISUAL_CHOICE_MAX, (before.container.width - gap) / 2, Math.max(112, (before.container.height - gap) / 2));
+    const { limit } = pictureTileLimit(before.container);
     if (width === ULTRAWIDE.width) {
       // The material is tall and wide enough here, so only the cap can decide: 300 x 1.6 = 480, not 260 x 1.6 = 416.
       expect(limit, `material allows the full cap: ${JSON.stringify(before.container)}`).toBe(VISUAL_CHOICE_MAX);
@@ -322,16 +280,10 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
     await page.getByTestId("kid-option").first().click();
     await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
     await expect(page.getByTestId("kid-next")).toBeVisible();
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await nextFrames(page);
 
     const after = await pictureTiles(page);
-    expect(after.tiles).toHaveLength(before.tiles.length);
-    for (const [index, tile] of after.tiles.entries()) {
-      const was = before.tiles[index]!;
-      for (const key of ["left", "top", "width", "height"] as const) {
-        expect(Math.abs(tile[key] - was[key]), `tile ${index} ${key} after the verdict: ${JSON.stringify({ was, tile })}`).toBeLessThanOrEqual(1);
-      }
-    }
+    expectRectsUnchanged(before.tiles, after.tiles, "picture tile after the verdict");
   });
 }
 
@@ -340,17 +292,6 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
 // scales, so each test also waits for its zoom; the band is measured in screen pixels against the window height.
 const TALL_WINDOWS = SESSION_WINDOWS.filter(({ height }) => height >= 781);
 const MAX_BAND = 0.15;
-
-/** Screen rectangles of all elements matching the selector, in document order. */
-async function boxes(page: Page, selector: string) {
-  return page.locator(selector).evaluateAll((elements) => elements.map((element) => {
-    const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
-    return { left, top, right, bottom, width, height };
-  }));
-}
-
-const nextFrames = (page: Page) =>
-  page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
 /**
  * In the compact frame the result panel floats under the answers, so all its corners are rounded; picture choice keeps
@@ -394,11 +335,7 @@ for (const { width, height, scale } of TALL_WINDOWS) {
     const [dock] = await boxes(page, "[data-testid='kid-feedback-dock']");
     const details = JSON.stringify({ before, after, dock });
     expect(after).toHaveLength(4);
-    for (const [index, option] of after.entries()) {
-      for (const key of ["left", "top", "width", "height"] as const) {
-        expect(Math.abs(option[key] - before[index]![key]), `option ${index} ${key} after the verdict: ${details}`).toBeLessThanOrEqual(1);
-      }
-    }
+    expectRectsUnchanged(before, after, "option after the verdict");
     const band = dock!.top - Math.max(...after.map((option) => option.bottom));
     expect(band, `panel below the options: ${details}`).toBeGreaterThanOrEqual(-1);
     expect(band, `no empty band between the options and the panel: ${details}`).toBeLessThanOrEqual(MAX_BAND * height);
@@ -510,35 +447,6 @@ function longSpellingHintFixture(): KidUiFixture {
   return { ...fixture, tasks: [{ ...fixture.tasks[0]!, prompt: { kind: "recall", prompt: LONG_RECALL_PROMPT } }] };
 }
 
-/** Reads the overlay reserve geometry once it stops changing (the reserve and its correcting scroll take a few frames). */
-async function settledDockReserve(page: Page) {
-  return page.evaluate(async () => {
-    const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
-    const read = () => {
-      const material = document.querySelector<HTMLElement>("[data-testid='kid-material']")!;
-      const content = material.querySelector<HTMLElement>(".kid-material-content")!;
-      const dock = document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock']")!;
-      return {
-        inlineReserve: Number.parseFloat(content.style.paddingBottom) || 0,
-        scrollTop: material.scrollTop,
-        scrollHeight: material.scrollHeight,
-        clientHeight: material.clientHeight,
-        lastChildBottom: content.lastElementChild!.getBoundingClientRect().bottom,
-        dockTop: dock.getBoundingClientRect().top,
-      };
-    };
-    let previous = read();
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await frame();
-      await frame();
-      const next = read();
-      if (JSON.stringify(next) === JSON.stringify(previous)) return next;
-      previous = next;
-    }
-    throw new Error(`the dock reserve did not settle in 60 frames: ${JSON.stringify(previous)}`);
-  });
-}
-
 test("overlay dock reserve is exact", async ({ page }) => {
   await page.setViewportSize(ULTRAWIDE);
   await openWrittenRecall(page, longSpellingHintFixture());
@@ -559,8 +467,8 @@ test("overlay dock reserve is exact", async ({ page }) => {
   // above the dock in the grown material row and the bound below would not test the scroll.
   expect(geometry.scrollTop, `correcting scroll ran: ${details}`).toBeGreaterThan(0);
   // The correcting scroll leaves the answer 8 inner px above the dock: not under it, and not scrolled past it.
-  expect(geometry.lastChildBottom, `answer above the dock: ${details}`).toBeLessThanOrEqual(geometry.dockTop + 1);
-  expect(geometry.lastChildBottom, `answer right above the dock: ${details}`)
+  expect(geometry.contentBottom, `answer above the dock: ${details}`).toBeLessThanOrEqual(geometry.dockTop + 1);
+  expect(geometry.contentBottom, `answer right above the dock: ${details}`)
     .toBeGreaterThanOrEqual(geometry.dockTop - (8 * ULTRAWIDE_SCALE + 3));
 });
 
@@ -586,7 +494,9 @@ test("microphone panel opens under its button", async ({ page }) => {
   expect(Math.abs(panelBox.x - buttonBox.x), `panel aligned with the button: ${details}`).toBeLessThanOrEqual(2);
 });
 
-// A question long enough to push the answer field below the visible material at 3440x1440.
+// A question long enough to push the answer field below the visible material at 3440x1440. It is not
+// LONG_LESSON_CARD.body on purpose: that text is a bulleted card body, this one is a plain question prompt that ends
+// with the question itself.
 const LONG_LESSON_TEXT = (
   "Pająki nie są owadami, chociaż wiele osób tak myśli. Pająk ma osiem nóg, a owad sześć. "
   + "Ciało pająka składa się z dwóch części: głowotułowia i odwłoka. Pająki nie mają czułków ani skrzydeł. "

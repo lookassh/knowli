@@ -1,4 +1,5 @@
-import type { KidUiFixture } from "./kid-ui-fixture";
+import { expect, type Page } from "@playwright/test";
+import { installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./kid-ui-fixture";
 
 const childId = "10000000-0000-4000-8000-000000000001";
 const deckId = "10000000-0000-4000-8000-000000000002";
@@ -66,4 +67,43 @@ export function pictureChoiceLayoutFixture(): KidUiFixture {
       fixture.tasks[2]!,
     ],
   };
+}
+
+/** Four colour tiles: no image assets, so the tile size is the only thing under test. */
+export function fourPictureTilesFixture(): KidUiFixture {
+  const fixture = pictureChoiceLayoutFixture();
+  const listening = fixture.tasks[1];
+  if (!listening || listening.prompt.kind !== "picture_listening") throw new Error("picture listening fixture missing");
+  const colors = ["#ffff00", "#ff00ff", "#00ffff", "#ff8800"];
+  fixture.tasks = [fixture.tasks[0]!, {
+    ...listening,
+    prompt: { ...listening.prompt, options: colors.map((color, index) => ({
+      id: `10000000-0000-4000-8000-${String(90 + index).padStart(12, "0")}`,
+      labelPl: `Kolor ${index + 1}`,
+      visual: { kind: "color" as const, color },
+    })) },
+  }, fixture.tasks[2]!];
+  return fixture;
+}
+
+/**
+ * Installs the fixture and walks profile -> deck -> "Gotowe" to the picture listening task. It does not set the window:
+ * the caller sets the viewport first. The instruction recording `…0012` is stubbed with a silent WAV unless
+ * `stubInstructionAudio` is false; without it the session shows an "audio unavailable" notice that takes ~87 px of the material.
+ */
+export async function openPictureChoice(
+  page: Page,
+  fixture: KidUiFixture = pictureChoiceLayoutFixture(),
+  { stubInstructionAudio = true }: { stubInstructionAudio?: boolean } = {},
+): Promise<void> {
+  await installKidUiFixture(page, fixture);
+  if (stubInstructionAudio) {
+    await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
+      route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
+  }
+  await page.goto("/");
+  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-deck").first().click();
+  await page.getByTestId("kid-done").click();
+  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 }

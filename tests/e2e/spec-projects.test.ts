@@ -30,12 +30,24 @@ const REAL_BACKEND_SIGNALS: readonly RegExp[] = [
   /auth-secret"\)\.fill/,
 ];
 
-// Mockowany spec musi faktycznie zaślepiać API w przeglądarce.
-const MOCK_SIGNALS: readonly RegExp[] = [
-  /installKidUiFixture/,
-  // helpers/kid-fixtures.ts: openDeckScreen instaluje fixture Kid UI.
-  /openDeckScreen\(/,
-  /page\.route\("\*\*\/api\/v1\/parent\/\*\*"/,
+/**
+ * The spec imports a helper that installs a Kid UI fixture (also in a multi-line import) and calls it. A local function
+ * with the same name, an import that is never called, or the same name imported from another module is not a signal.
+ */
+function usesFixtureHelper(content: string, name: string, modulePath: string): boolean {
+  const escapedModule = modulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const imported = new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']${escapedModule}["']`);
+  return imported.test(content) && new RegExp(`\\b${name}\\(`).test(content);
+}
+
+// A mocked spec must really stub the API in the browser.
+const MOCK_SIGNALS: readonly ((content: string) => boolean)[] = [
+  (content) => /installKidUiFixture/.test(content),
+  // helpers/kid-fixtures.ts: openDeckScreen installs the Kid UI fixture.
+  (content) => usesFixtureHelper(content, "openDeckScreen", "./helpers/kid-fixtures"),
+  // helpers/picture-fixtures.ts: openPictureChoice installs the Kid UI fixture.
+  (content) => usesFixtureHelper(content, "openPictureChoice", "./helpers/picture-fixtures"),
+  (content) => /page\.route\("\*\*\/api\/v1\/parent\/\*\*"/.test(content),
 ];
 
 describe("partycja speców E2E (spec-projects)", () => {
@@ -76,11 +88,31 @@ describe("partycja speców E2E (spec-projects)", () => {
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {
     const content = readFileSync(join(E2E_DIR, file), "utf8");
     expect(
-      MOCK_SIGNALS.some((pattern) => pattern.test(content)),
-      `${file}: brak zaślepki API (installKidUiFixture / route parent)`,
+      MOCK_SIGNALS.some((signal) => signal(content)),
+      `${file}: brak zaślepki API (installKidUiFixture / openDeckScreen / openPictureChoice / route parent)`,
     ).toBe(true);
     for (const pattern of REAL_BACKEND_SIGNALS) {
       expect(content, `${file}: sygnał realnego backendu ${String(pattern)}`).not.toMatch(pattern);
     }
+  });
+});
+
+describe("usesFixtureHelper (sygnał zaślepki ze wspólnego helpera)", () => {
+  const kidFixtures = "./helpers/kid-fixtures";
+
+  it("rozpoznaje import razem z wywołaniem, także import wielowierszowy", () => {
+    expect(usesFixtureHelper(`import { makeDeck, openDeckScreen } from "${kidFixtures}";\nawait openDeckScreen(page, []);`, "openDeckScreen", kidFixtures)).toBe(true);
+    expect(usesFixtureHelper(`import {\n  makeDeck,\n  openDeckScreen,\n} from '${kidFixtures}';\nawait openDeckScreen(page, []);`, "openDeckScreen", kidFixtures)).toBe(true);
+  });
+
+  it("lokalna funkcja o tej samej nazwie bez importu nie jest zaślepką", () => {
+    const local = "async function openDeckScreen(page) { await page.goto('/'); }\nawait openDeckScreen(page);";
+    expect(usesFixtureHelper(local, "openDeckScreen", kidFixtures)).toBe(false);
+  });
+
+  it("sam import bez wywołania albo import z innego modułu nie jest zaślepką", () => {
+    expect(usesFixtureHelper(`import { openDeckScreen } from "${kidFixtures}";`, "openDeckScreen", kidFixtures)).toBe(false);
+    expect(usesFixtureHelper('import { openDeckScreen } from "./other";\nawait openDeckScreen(page);', "openDeckScreen", kidFixtures)).toBe(false);
+    expect(usesFixtureHelper(`import { openDeckScreens } from "${kidFixtures}";\nawait openDeckScreens(page);`, "openDeckScreen", kidFixtures)).toBe(false);
   });
 });

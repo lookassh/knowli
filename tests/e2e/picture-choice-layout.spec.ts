@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
-import { assertKidLayout, installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+import { expect, test } from "@playwright/test";
+import { assertKidLayout } from "./helpers/kid-ui-fixture";
+import { openPictureChoice, pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 import { kidTokenColor } from "./helpers/contrast";
 import { expectFrameFillsViewport, waitForKidScale } from "./helpers/kid-frame";
 
@@ -27,18 +27,6 @@ function contrastRatio(foreground: string, background: string): number {
   return (luminances[0]! + 0.05) / (luminances[1]! + 0.05);
 }
 
-async function openPictureChoices(page: Page, fixture: KidUiFixture, viewport = viewports[0]!) {
-  await page.setViewportSize(viewport);
-  await installKidUiFixture(page, fixture);
-  await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
-    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-  await page.getByTestId("kid-deck").first().click();
-  await page.getByTestId("kid-done").click();
-  await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
-}
-
 test("cztery ilustracje tworzą czytelną zwartą siatkę także między progami responsywności", async ({ page }, testInfo) => {
   const fixture = pictureChoiceLayoutFixture();
   const task = fixture.tasks[1]!;
@@ -48,7 +36,8 @@ test("cztery ilustracje tworzą czytelną zwartą siatkę także między progami
     labelPl: `Obrazek ${index + 1}`,
     visual: { kind: "image", imageAssetId: "10000000-0000-4000-8000-000000000015" },
   }));
-  await openPictureChoices(page, fixture, { width: 360, height: 560 });
+  await page.setViewportSize({ width: 360, height: 560 });
+  await openPictureChoice(page, fixture);
 
   for (const [width, height, scale] of [[360, 560, 1], [390, 740, 1], [489, 500, 1], [498, 610, 1],
     [599, 650, 1], [600, 650, 1], [699, 780, 1], [700, 780, 1], [840, 480, 1], [768, 1024, 1], [1392, 984, 1.09]] as const) {
@@ -92,7 +81,8 @@ for (const count of [2, 3, 4]) {
       labelPl: `Obrazek ${index + 1}`,
       visual: { kind: "image", imageAssetId: "10000000-0000-4000-8000-000000000015" },
     }));
-    await openPictureChoices(page, fixture, { width: 360, height: 560 });
+    await page.setViewportSize({ width: 360, height: 560 });
+    await openPictureChoice(page, fixture);
     await page.getByTestId("kid-option").first().click();
     const next = page.getByTestId("kid-next");
     await expect(next).toBeVisible();
@@ -119,7 +109,8 @@ for (const count of [2, 3, 4]) {
 }
 
 test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }, testInfo) => {
-  await openPictureChoices(page, pictureChoiceLayoutFixture());
+  await page.setViewportSize({ width: 360, height: 640 });
+  await openPictureChoice(page);
 
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(3);
@@ -199,7 +190,8 @@ test("trzy odpowiedzi obrazkowe mieszczą się bez przewijania", async ({ page }
 });
 
 test("wynik zajmuje rzeczywistą stopkę pod zwartą siatką na telefonie i desktopie", async ({ page }, testInfo) => {
-  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 844 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPictureChoice(page);
   await expect(page.getByTestId("kid-exercise-actions")).toBeEmpty();
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
@@ -234,7 +226,8 @@ test("landscape zachowuje dostęp do siatki i stopki bez pustej bocznej kolumny"
   const fixture = pictureChoiceLayoutFixture();
   const original = fixture.attempts![0]!;
   fixture.attempts = [{ ...original, feedback: { kind: "incorrect", correctText: "żółty" }, taskState: "issued" }];
-  await openPictureChoices(page, fixture, { width: 844, height: 390 });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await openPictureChoice(page, fixture);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const checkOptions = async () => {
     for (const option of await page.getByTestId("kid-option").all()) {
@@ -278,7 +271,8 @@ test("cyfra działa z klawiatury w ciemnym motywie, pokazuje błąd i pozwala sp
   const submitted: unknown[] = [];
   let responseIndex = 0;
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await openPictureChoices(page, fixture);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await openPictureChoice(page, fixture);
   await page.route(`**/api/v1/kid/tasks/${task.taskId}/attempts`, async (route) => {
     submitted.push(route.request().postDataJSON());
     const response = fixture.attempts?.[responseIndex];
@@ -370,7 +364,8 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
     { ...listening, prompt: { ...listening.prompt, options: [...listening.prompt.options, fourth] } },
     fixture.tasks[2]!,
   ];
-  await openPictureChoices(page, fixture, { width: 390, height: 844 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPictureChoice(page, fixture);
 
   const options = page.getByTestId("kid-option");
   await expect(options).toHaveCount(4);
@@ -423,7 +418,8 @@ test("cztery opcje mieszczą się na typowym telefonie, a w niskim widoku pozost
 });
 
 test("powiększenie pozwala dosięgnąć ostatniej odpowiedzi i przycisku końca", async ({ page }) => {
-  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 390, height: 700 });
+  await page.setViewportSize({ width: 390, height: 700 });
+  await openPictureChoice(page);
   await page.evaluate(() => {
     const viewport = window.visualViewport;
     if (!viewport) throw new Error("visualViewport is required for this browser test");
@@ -441,7 +437,8 @@ test("powiększenie pozwala dosięgnąć ostatniej odpowiedzi i przycisku końca
 });
 
 test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji", async ({ page }) => {
-  await openPictureChoices(page, pictureChoiceLayoutFixture(), { width: 640, height: 360 });
+  await page.setViewportSize({ width: 640, height: 360 });
+  await openPictureChoice(page);
   const root = await page.getByTestId("kid-session-frame").boundingBox();
   expect(root).not.toBeNull();
   expect(root!.x + root!.width).toBeLessThanOrEqual(641);
@@ -457,7 +454,8 @@ test("układ poziomy zachowuje dostęp do wszystkich odpowiedzi i końca sesji",
 
 test("trzy odpowiedzi i cyfra pozostają czytelne w ciemnym motywie", async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await openPictureChoices(page, pictureChoiceLayoutFixture());
+  await page.setViewportSize({ width: 360, height: 640 });
+  await openPictureChoice(page);
   await assertKidLayout(page);
 
   const options = page.getByTestId("kid-option");

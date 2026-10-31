@@ -92,12 +92,48 @@ export function completedTextChoiceFixture() {
   };
 }
 
-/** Lesson card body at the schema limit (1200 characters), as in lesson-card-audio-layout.spec.ts. */
-const LONG_LESSON_CARD_BODY = (
-  "Pająki nie są owadami, chociaż wiele osób tak myśli. • Pająk ma osiem nóg, a owad sześć. "
-  + "• Ciało pająka składa się z dwóch części: głowotułowia i odwłoka. • Pająki nie mają czułków ani skrzydeł. "
-  + "Większość pająków tka sieci z cienkich, mocnych nici, które wytwarzają kądziołki na końcu odwłoka. "
-).repeat(5).slice(0, 1200).trim();
+/** Ids of the "Uzupełnij tekst" task below: the 0008xx range, as in lesson-cloze-layout.spec.ts (session ...803, task ...811, gaps ...820-823). */
+export const clozeUid = (n: number) => `10000000-0000-4000-8000-0000000008${String(n).padStart(2, "0")}`;
+
+/** A lesson cloze task: text with four gaps and a bank of six words (the correct ones are 'dwutlenek węgla', 'światła słonecznego', 'cukry', 'tlen'). */
+export const clozeTask: TaskDto = {
+  taskId: "10000000-0000-4000-8000-000000000811", sessionId: "10000000-0000-4000-8000-000000000803", ordinal: 0,
+  exerciseType: "lesson_cloze", direction: null, state: "issued", remainingAssessed: 2,
+  prompt: {
+    kind: "lesson_cloze",
+    instructionPl: "Uzupełnij tekst. Wybierz słowo do każdej luki.",
+    segments: [
+      { text: "Roślina pobiera z powietrza " },
+      { gapId: clozeUid(20) },
+      { text: ", a korzeniami czerpie z gleby wodę i rozpuszczone w niej sole mineralne. W zielonych liściach, dzięki energii " },
+      { gapId: clozeUid(21) },
+      { text: ", powstają " },
+      { gapId: clozeUid(22) },
+      { text: ". Do powietrza roślina oddaje przy tym " },
+      { gapId: clozeUid(23) },
+      { text: ", którym oddychają zwierzęta i ludzie." },
+    ],
+    words: [
+      { id: clozeUid(30), text: "światła słonecznego" },
+      { id: clozeUid(31), text: "tlen" },
+      { id: clozeUid(32), text: "dwutlenek węgla" },
+      { id: clozeUid(33), text: "azot" },
+      { id: clozeUid(34), text: "cukry" },
+      { id: clozeUid(35), text: "chlorofil" },
+    ],
+  },
+};
+
+/** The longest lesson card: a long title, a body at the schema limit (1200 characters, bulleted) and three examples. */
+export const LONG_LESSON_CARD: { title: string; body: string; examples: string[] } = {
+  title: "Czym różnią się pająki od owadów żyjących w ogrodzie za domem?",
+  body: (
+    "Pająki nie są owadami, chociaż wiele osób tak myśli. • Pająk ma osiem nóg, a owad sześć. "
+    + "• Ciało pająka składa się z dwóch części: głowotułowia i odwłoka. • Pająki nie mają czułków ani skrzydeł. "
+    + "Większość pająków tka sieci z cienkich, mocnych nici, które wytwarzają kądziołki na końcu odwłoka. "
+  ).repeat(5).slice(0, 1200).trim(),
+  examples: ["Pająk krzyżak tka okrągłą sieć.", "Mucha ma sześć nóg i skrzydła.", "Kosarz ma bardzo długie nogi."],
+};
 
 /** A lesson session whose only task is the longest card (long title, 1200-character body, three examples) with its recording. */
 export function longLessonCardFixture(): KidUiFixture {
@@ -112,11 +148,7 @@ export function longLessonCardFixture(): KidUiFixture {
     direction: null, state: "issued", remainingAssessed: 2,
     prompt: {
       kind: "lesson_card",
-      card: {
-        title: "Czym różnią się pająki od owadów żyjących w ogrodzie za domem?",
-        body: LONG_LESSON_CARD_BODY,
-        examples: ["Pająk krzyżak tka okrągłą sieć.", "Mucha ma sześć nóg i skrzydła.", "Kosarz ma bardzo długie nogi."],
-      },
+      card: LONG_LESSON_CARD,
       questionAudioAssetId: "10000000-0000-4000-8000-000000000b21",
     },
   };
