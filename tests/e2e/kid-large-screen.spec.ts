@@ -2,7 +2,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { FeedbackDto, TaskDto } from "@learning/contracts";
 import {
   clozeTask, clozeUid, completedRecallFixture, completedTextChoiceFixture, letterTask, lessonCardFixture, longSpellingHintFeedback,
-  makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
+  makeDeck, mediumSpellingHintFeedback, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
 } from "./helpers/kid-fixtures";
 import {
   boxes, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, lineLengths, nextFrames,
@@ -1004,6 +1004,264 @@ test("a first overlap of a few pixels is corrected", async ({ page }) => {
   expect(settled.inlineReserve, `the reserve is engaged: ${details}`).toBeGreaterThan(0);
   expect(Math.abs(settled.scrollTop - 13), `scrolled by the 5 px overlap + 8: ${details}`).toBeLessThanOrEqual(1);
   await expectPanelNeverCovers(page, "first overlap of 5 px at 1280x600");
+});
+
+// The result card takes the free space under the answer (spec 2026-10-31-kid-ui-dock-followups §3.1, §5): past the old
+// limit min(36vh, 300px), as far as the panel does not cover the content and ends at least 12 inner px above the bottom
+// edge of the exercise frame. All rows answer a short prompt ("kot"), which leaves free space under the footer.
+const CARD_LIMIT = 300;
+
+/**
+ * The result card and its panel, in inner px against the top edge of the exercise frame: the card height and its natural
+ * height (with the part its scroll area hides), whether the card scrolls, the card-limit variable on the overlay, the
+ * lowest content edge and the edges of the overlay, the panel action, the answer and the instruction.
+ */
+async function cardState(page: Page) {
+  return page.evaluate(() => {
+    const frame = document.querySelector<HTMLElement>("[data-testid='kid-exercise']")!;
+    const zoom = frame.currentCSSZoom || 1;
+    const frameTop = frame.getBoundingClientRect().top;
+    const edges = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { top: (rect.top - frameTop) / zoom, bottom: (rect.bottom - frameTop) / zoom, width: rect.width / zoom };
+    };
+    const overlay = document.querySelector<HTMLElement>(".kid-feedback-overlay");
+    const card = overlay?.querySelector<HTMLElement>(".kid-answer-feedback, .kid-speech-feedback") ?? null;
+    // The answer card scrolls its content area; the speech card scrolls itself.
+    const scroller = card?.querySelector<HTMLElement>(".kid-feedback-content") ?? card;
+    const content = document.querySelector(".kid-material-content")!;
+    const material = document.querySelector<HTMLElement>("[data-testid='kid-material']")!;
+    const variable = overlay?.style.getPropertyValue("--kid-feedback-card-max") ?? "";
+    return {
+      zoom,
+      frameHeight: frame.offsetHeight,
+      card: card?.offsetHeight ?? 0,
+      natural: card && scroller ? card.offsetHeight + scroller.scrollHeight - scroller.clientHeight : 0,
+      cardScrolls: scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false,
+      variable: variable === "" ? null : Number.parseFloat(variable),
+      contentBottom: (Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)) - frameTop) / zoom,
+      materialScrolls: material.scrollHeight > material.clientHeight,
+      overlay: edges(".kid-feedback-overlay"),
+      next: edges("[data-testid='kid-next']"),
+      answer: edges("[data-testid='kid-input'], .kid-lesson-cloze__text"),
+      instruction: edges("[data-testid='kid-instruction']"),
+      actions: edges("[data-testid='kid-exercise-actions']"),
+    };
+  });
+}
+
+/** Opens the written answer to "kot" with the given verdict and types the answer; the session status stays empty. */
+async function openShortPromptAnswer(page: Page, viewport: Viewport, scale: number, feedback: FeedbackDto) {
+  await page.setViewportSize(viewport);
+  await openWrittenRecall(page, completedRecallFixture({ feedback }));
+  await waitForKidScale(page, scale);
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await page.getByTestId("kid-input").fill("the children walked");
+  await nextFrames(page);
+  await expect(page.getByTestId("kid-session-status")).toHaveText("");
+}
+
+/** Sends the answer with the overlap probe running and waits for the reserve to settle. */
+async function sendAndSettle(page: Page, submit = "kid-submit", probe: Parameters<typeof installDockOverlapProbe>[1] = {}) {
+  await installDockOverlapProbe(page, probe);
+  await page.getByTestId(submit).click();
+  await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  return settledDockReserve(page);
+}
+
+type CardSpaceCase = {
+  name: string;
+  viewport: Viewport;
+  scale: number;
+  frame: "compact" | "regular";
+  open: (page: Page, viewport: Viewport, scale: number) => Promise<void>;
+  submit?: string;
+  // "whole": the card shows all of its content; "space": the free space limits the card and its content still scrolls.
+  fits: "whole" | "space";
+  // Also checks the card height in the first frame the panel can be painted in.
+  firstFrame?: boolean;
+};
+
+const shortPromptHint = (feedback: FeedbackDto) => (page: Page, viewport: Viewport, scale: number) =>
+  openShortPromptAnswer(page, viewport, scale, feedback);
+
+/** One row of the card table: the card grows past the old limit, the answer stays, the panel stays in the frame. */
+async function expectCardTakesFreeSpace(page: Page, row: CardSpaceCase) {
+  const label = `${row.name} at ${row.viewport.width}x${row.viewport.height}`;
+  await row.open(page, row.viewport, row.scale);
+  const before = await cardState(page);
+  const settled = await sendAndSettle(page, row.submit, { cardHeight: row.firstFrame });
+  const probe = await expectPanelNeverCovers(page, label);
+  const after = await cardState(page);
+  const details = `${label}: ${JSON.stringify({ before, after, settled, firstCardHeight: probe.firstCardHeight })}`;
+  expect(after.natural, `the card content is taller than the old limit: ${details}`).toBeGreaterThan(CARD_LIMIT);
+  expect(after.variable, `the card limit is set from the free space: ${details}`).toBeGreaterThan(CARD_LIMIT);
+  expect(after.card, `the card grew past the old limit: ${details}`).toBeGreaterThan(CARD_LIMIT + 10);
+  expect(after.cardScrolls, `${row.fits === "whole" ? "the whole card is shown" : "the free space limits the card"}: ${details}`)
+    .toBe(row.fits === "space");
+  expect(after.next!.bottom, `the panel action stays in the frame: ${details}`).toBeLessThanOrEqual(after.frameHeight + 0.5);
+  if (row.frame === "compact") {
+    // The reserve moves the footer down into the free space; the answer and the top offset stay.
+    for (const key of ["answer", "instruction"] as const) {
+      expect(Math.abs(after[key]!.top - before[key]!.top), `${key} keeps its place: ${details}`).toBeLessThanOrEqual(1);
+    }
+    expect(after.materialScrolls, `the material does not scroll: ${details}`).toBe(false);
+    if (row.fits === "space") {
+      const below = after.frameHeight - after.overlay!.bottom;
+      expect(below, `the panel ends 12 px above the frame bottom: ${details}`).toBeGreaterThanOrEqual(10);
+      expect(below, `the panel ends 12 px above the frame bottom: ${details}`).toBeLessThanOrEqual(15);
+    }
+  } else {
+    // The regular frame: the panel stops 28 px under the centred content and needs no reserve.
+    expect(settled.inlineReserve, `no reserve: ${details}`).toBe(0);
+    const gap = after.overlay!.top - after.contentBottom;
+    expect(gap, `the panel ends 28 px under the content: ${details}`).toBeGreaterThanOrEqual(26);
+    expect(gap, `the panel ends 28 px under the content: ${details}`).toBeLessThanOrEqual(32);
+  }
+  if (row.firstFrame) {
+    expect(probe.firstCardHeight, `the first frame with the panel has the grown card: ${details}`).not.toBeNull();
+    expect(Math.abs(probe.firstCardHeight! - after.card), `the first frame with the panel has the grown card: ${details}`)
+      .toBeLessThanOrEqual(1);
+  }
+}
+
+const MOUSE_CARD_SPACE_CASES: CardSpaceCase[] = [
+  { name: "medium hint", viewport: ULTRAWIDE, scale: 1.6, frame: "compact", fits: "whole", firstFrame: true,
+    open: shortPromptHint(mediumSpellingHintFeedback) },
+  { name: "medium hint", viewport: { width: 3440, height: 1300 }, scale: 1.44, frame: "compact", fits: "whole",
+    open: shortPromptHint(mediumSpellingHintFeedback) },
+  { name: "long hint", viewport: ULTRAWIDE, scale: 1.6, frame: "compact", fits: "space", open: shortPromptHint(longSpellingHintFeedback) },
+  { name: "long hint", viewport: { width: 820, height: 1180 }, scale: 1, frame: "regular", fits: "space",
+    open: shortPromptHint(longSpellingHintFeedback) },
+];
+
+for (const row of MOUSE_CARD_SPACE_CASES) {
+  test(`result card takes the free space under the answer: ${row.name} at ${row.viewport.width}x${row.viewport.height}`, async ({ page }) => {
+    await expectCardTakesFreeSpace(page, row);
+  });
+}
+
+// Where there is no free space (a laptop), the old limit stays: the variable is set, but 36vh of the window wins.
+test("result card keeps the old limit without free space", async ({ page }) => {
+  await openShortPromptAnswer(page, LAPTOP, 1, longSpellingHintFeedback);
+  await sendAndSettle(page);
+  const state = await cardState(page);
+  expect(state.variable, `the card limit is set: ${JSON.stringify(state)}`).toBeGreaterThan(0);
+  expect(Math.abs(state.card - 0.36 * LAPTOP.height), `the card keeps 36vh: ${JSON.stringify(state)}`).toBeLessThanOrEqual(1);
+});
+
+// A change of the frame height alone is measured again (spec §3.1): 840 px wide windows keep scale 1 at every height,
+// so the inner frame really changes. 1000 → 960 is less than the 90 px top offset: without measuring the frame the
+// card would keep its size and the offset would give way, moving the answer.
+test("result card follows the frame size", async ({ page }) => {
+  await openShortPromptAnswer(page, { width: 840, height: 1000 }, 1, longSpellingHintFeedback);
+  await sendAndSettle(page);
+  const tall = await cardState(page);
+  await resizeAndSettle(page, { width: 840, height: 960 });
+  await settledDockReserve(page);
+  const shorter = await cardState(page);
+  const details = JSON.stringify({ tall, shorter });
+  expect(tall.variable, `the variable wins over the 300 px limit at 1000: ${details}`).toBeGreaterThan(CARD_LIMIT);
+  expect(shorter.variable, `the variable wins over the 300 px limit at 960: ${details}`).toBeGreaterThan(CARD_LIMIT);
+  expect(Math.abs(tall.variable! - shorter.variable! - (tall.frameHeight - shorter.frameHeight)),
+    `the card limit follows the frame height: ${details}`).toBeLessThanOrEqual(2);
+  for (const state of [tall, shorter]) {
+    expect(Math.abs(state.instruction!.top - COMPACT_FRAME_OFFSET), `the full top offset: ${details}`).toBeLessThanOrEqual(2);
+  }
+  expect(Math.abs(shorter.answer!.top - tall.answer!.top), `the answer keeps its place: ${details}`).toBeLessThanOrEqual(1);
+
+  const small = { width: 840, height: 800 };
+  await installDockOverlapProbe(page, { startNow: true, until: small });
+  await resizeAndSettle(page, small);
+  await expectPanelNeverCovers(page, "840x960 resized to 840x800", small);
+  const smallest = await cardState(page);
+  const smallDetails = JSON.stringify({ shorter, smallest });
+  expect(smallest.variable ?? 0, `the card limit is measured again: ${smallDetails}`).toBeLessThan(shorter.variable!);
+  expect(smallest.overlay!.bottom, `the panel stays in the frame: ${smallDetails}`).toBeLessThanOrEqual(smallest.frameHeight + 0.5);
+});
+
+// A pinch zoom turns the session into a scrolling page (spec §3.1, §3.2): no card limit from the free space there.
+test("pinch zoom brings back the old card limit", async ({ page }) => {
+  await page.addInitScript(() => {
+    const browserWindow = window as typeof window & { dockRevealCalls?: number };
+    browserWindow.dockRevealCalls = 0;
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
+      original.call(this, options);
+    };
+  });
+  await openShortPromptAnswer(page, ULTRAWIDE, ULTRAWIDE_SCALE, longSpellingHintFeedback);
+  await sendAndSettle(page);
+  const grown = await cardState(page);
+  expect(grown.card, `the card grew before the pinch zoom: ${JSON.stringify(grown)}`).toBeGreaterThan(CARD_LIMIT + 10);
+  await emulatePinchZoom(page);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+  await nextFrames(page);
+  const zoomed = await cardState(page);
+  const details = JSON.stringify({ grown, zoomed });
+  expect(zoomed.variable, `no card limit variable: ${details}`).toBeNull();
+  expect(Math.abs(zoomed.card - CARD_LIMIT), `the old card limit: ${details}`).toBeLessThanOrEqual(1);
+});
+
+test.describe("touch tablet in portrait", () => {
+  // A touch tablet never scales and has no top offset; 1024 px wide it has the 720 px column and the compact frame.
+  test.use({ viewport: { width: 1024, height: 1366 }, isMobile: true, hasTouch: true });
+
+  const tablet = { width: 1024, height: 1366 };
+  const TOUCH_CARD_SPACE_CASES: CardSpaceCase[] = [
+    { name: "long hint", viewport: tablet, scale: 1, frame: "compact", fits: "whole", open: shortPromptHint(longSpellingHintFeedback) },
+    // The lesson panel (the child's text, the hint, the solution and its recording) is about 1100 px: the free space
+    // limits it, with another overhead than the spelling card.
+    {
+      name: "cloze with a lesson hint", viewport: tablet, scale: 1, frame: "compact", fits: "space", submit: "kid-lesson-check",
+      open: async (page, viewport) => {
+        await installKidUiFixture(page, clozeHintFixture());
+        await openLessonTask(page, viewport, "kid-lesson-cloze");
+        await page.evaluate(async () => { await document.fonts.ready; });
+        for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
+        await nextFrames(page);
+      },
+    },
+  ];
+
+  for (const row of TOUCH_CARD_SPACE_CASES) {
+    test(`result card takes the free space under the answer: ${row.name}`, async ({ page }) => {
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+      await expectCardTakesFreeSpace(page, row);
+    });
+  }
+
+  // The 300 px card limit is the same at both heights (36vh is more than 300), so only measuring the frame again lets
+  // the card grow.
+  test("result card grows when the frame grows", async ({ page }) => {
+    await openShortPromptAnswer(page, { width: 1024, height: 900 }, 1, longSpellingHintFeedback);
+    await sendAndSettle(page);
+    const lower = await cardState(page);
+    await resizeAndSettle(page, tablet);
+    await settledDockReserve(page);
+    const taller = await cardState(page);
+    const details = JSON.stringify({ lower, taller });
+    expect(lower.card, `the card grew at 1024x900: ${details}`).toBeGreaterThan(CARD_LIMIT + 10);
+    expect(lower.cardScrolls, `the free space limits the card at 1024x900: ${details}`).toBe(true);
+    expect(taller.variable, `the card limit is measured again: ${details}`).toBeGreaterThan(lower.variable!);
+    expect(taller.cardScrolls, `the whole card is shown at 1024x1366: ${details}`).toBe(false);
+  });
+
+  // The verdict takes the focus, which closes the on-screen keyboard: the frame grows after the panel appears.
+  test("result card grows once the on-screen keyboard closes", async ({ page }) => {
+    await openShortPromptAnswer(page, { width: 1024, height: 700 }, 1, longSpellingHintFeedback);
+    await sendAndSettle(page, "kid-submit", { until: tablet });
+    const typing = await cardState(page);
+    await resizeAndSettle(page, tablet);
+    await expectPanelNeverCovers(page, "1024x700 resized to 1024x1366", tablet);
+    const closed = await cardState(page);
+    const details = JSON.stringify({ typing, closed });
+    expect(closed.variable, `the card limit is measured again: ${details}`).not.toBe(typing.variable);
+    expect(closed.cardScrolls, `the whole card is shown once the keyboard is closed: ${details}`).toBe(false);
+  });
 });
 
 const SECOND_ATTEMPT_ID = "10000000-0000-4000-8000-000000000011";

@@ -176,8 +176,11 @@
   justify-content: center;
 }
 
+/* Limit karty: 36vh, najwyżej 300 px — chyba że pod odpowiedzią jest więcej
+   wolnego miejsca. `--kid-feedback-card-max` ustawia na nakładce ExerciseFrame
+   (spec 2026-10-31-kid-ui-dock-followups §3.1); bez niej zostaje dotychczasowy limit. */
 .content :global(.kid-answer-feedback) {
-  max-height: min(calc(36 * var(--kid-vh)), 300px);
+  max-height: max(min(calc(36 * var(--kid-vh)), 300px), var(--kid-feedback-card-max, 0px));
 }
 
 .content :global(.kid-feedback-content) {
@@ -188,7 +191,7 @@
 }
 
 .content :global(.kid-speech-feedback) {
-  max-height: min(calc(36 * var(--kid-vh)), 300px);
+  max-height: max(min(calc(36 * var(--kid-vh)), 300px), var(--kid-feedback-card-max, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
