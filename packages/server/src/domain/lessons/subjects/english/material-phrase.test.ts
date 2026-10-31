@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_NORMALIZER_VARIANTS } from "./normalizer";
-import { isSentenceFrame, materialPhraseIndex, phraseInMaterial } from "./material-phrase";
+import { isMaterialVocabularyTarget, isSentenceFrame, materialPhraseIndex, phraseInMaterial } from "./material-phrase";
 
 function inMaterial(target: string, material: string): boolean {
   return phraseInMaterial(target, materialPhraseIndex(material));
@@ -132,5 +132,35 @@ describe("isSentenceFrame — ramy z lukami", () => {
 
   it.each(["coat", "a T-shirt", "What's the weather like?", "Mr. Smith", "a_b", "It's raining."])("„%s” nie jest ramą", (target) => {
     expect(isSentenceFrame(target)).toBe(false);
+  });
+});
+
+describe("isMaterialVocabularyTarget — słówko z tekstu źródła", () => {
+  const MATERIAL = "What's the weather like? It's sunny. I'm wearing a coat and boots. Put it in on the shelf.";
+  const index = materialPhraseIndex(MATERIAL);
+
+  it.each(["the coats", "wearing", "sunny", "a coat and boots", "What's the weather like?", "it is sunny"])(
+    "przyjmuje „%s” z tekstu",
+    (target) => {
+      expect(isMaterialVocabularyTarget(target, index)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["I'm wearing (a) …", "rama będąca początkiem tekstu"],
+    ["What's the ___ like?", "rama z podkreśleniami"],
+    ["it is", "same słowa funkcyjne, choć stoją w tekście"],
+    ["in on", "same przyimki, choć stoją w tekście"],
+    ["it's", "skrót ze słów funkcyjnych"],
+    ["the", "same wiodące słowa"],
+    ["umbrella", "słowo spoza tekstu"],
+    ["", "pusty element"],
+  ])("odrzuca „%s” (%s)", (target) => {
+    expect(isMaterialVocabularyTarget(target, index)).toBe(false);
+  });
+
+  it("rama będąca początkiem tekstu przechodzi samo dopasowanie frazy — odrzuca ją sprawdzenie ramy", () => {
+    expect(phraseInMaterial("I'm wearing (a) …", index)).toBe(true);
+    expect(isSentenceFrame("I'm wearing (a) …")).toBe(true);
   });
 });

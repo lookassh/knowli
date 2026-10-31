@@ -1,5 +1,5 @@
 import { normalizeTokens } from "../../normalize";
-import { withoutLeading } from "./function-words";
+import { FUNCTION_WORDS, withoutLeading } from "./function-words";
 import { formsOf } from "./inflection";
 import { englishNormalizer } from "./normalizer";
 
@@ -104,6 +104,20 @@ function continuesFrom(index: MaterialPhraseIndex, node: number, target: readonl
   );
 }
 
+/** Czy niepusta sekwencja tokenów (bez wiodących słów) idzie po kolejnych tokenach tekstu. */
+function tokensInMaterial(tokens: readonly string[], index: MaterialPhraseIndex): boolean {
+  if (tokens.length === 0) return false;
+  const forms = tokens.map((token) => new Set(formsOf(token)));
+  const starts = new Set<number>();
+  for (const form of forms[0]!) {
+    for (const node of index.nodesByForm.get(form) ?? []) starts.add(node);
+  }
+  for (const start of starts) {
+    if (continuesFrom(index, start, forms, 1)) return true;
+  }
+  return false;
+}
+
 /**
  * `target` występuje w tekście jako ciągła fraza: w którymś wariancie
  * normalizacji (rozwinięcia skrótów elementu) tokeny bez wiodących
@@ -112,19 +126,23 @@ function continuesFrom(index: MaterialPhraseIndex, node: number, target: readonl
  * pasuje. Ram z lukami nie odrzuca — to `isSentenceFrame`.
  */
 export function phraseInMaterial(target: string, index: MaterialPhraseIndex): boolean {
-  for (const variant of englishNormalizer.normalize(target)) {
+  return englishNormalizer.normalize(target).some((variant) => tokensInMaterial(withoutLeading(variant), index));
+}
+
+/**
+ * Słówko zestawu ze źródła (§6.2) na wyjściu modelu: nie jest ramą z luką
+ * (`isSentenceFrame` — rama będąca początkiem zdania tekstu przeszłaby samo
+ * dopasowanie, bo luka znika przy normalizacji), występuje w tekście jako fraza
+ * (`phraseInMaterial`) i w tym samym wariancie normalizacji ma słowo treści —
+ * token spoza `FUNCTION_WORDS`. Same słowa funkcyjne („it is”, „in on”, „it's”)
+ * nie są słówkiem, nawet gdy stoją w tekście.
+ */
+export function isMaterialVocabularyTarget(target: string, index: MaterialPhraseIndex): boolean {
+  if (isSentenceFrame(target)) return false;
+  return englishNormalizer.normalize(target).some((variant) => {
     const tokens = withoutLeading(variant);
-    if (tokens.length === 0) continue;
-    const forms = tokens.map((token) => new Set(formsOf(token)));
-    const starts = new Set<number>();
-    for (const form of forms[0]!) {
-      for (const node of index.nodesByForm.get(form) ?? []) starts.add(node);
-    }
-    for (const start of starts) {
-      if (continuesFrom(index, start, forms, 1)) return true;
-    }
-  }
-  return false;
+    return tokens.some((token) => !FUNCTION_WORDS.has(token)) && tokensInMaterial(tokens, index);
+  });
 }
 
 /** Luka ramy zdaniowej: wielokropek, trzy kropki, co najmniej dwa podkreślenia albo nawias. */

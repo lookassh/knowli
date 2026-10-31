@@ -12,13 +12,25 @@ import {
 } from "@learning/contracts";
 import type { Services } from "../../config";
 import type { Tx } from "../../db/client";
-import { claimQueuedRun, enqueueGenerationRun, markRun, markRunSucceeded, supersedeLessonRuns } from "./generation-runs";
+import type { LlmGenerateDeckInput } from "../../ports/ai";
+import {
+  claimQueuedRun,
+  enqueueGenerationRun,
+  markRun,
+  markRunSucceeded,
+  markRunWithoutSourceItems,
+  supersedeLessonRuns,
+} from "./generation-runs";
 import { deckVersions, decks, generationRuns, mediaAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { applyItems } from "./decks";
 import { committedRetryAfterSourceChange, lockSourceMaterialForCopy } from "./source-materials";
 import { validateItems } from "./item-payload";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
+import {
+  isMaterialVocabularyTarget,
+  materialPhraseIndex,
+} from "../../domain/lessons/subjects/english/material-phrase";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeMediaAsset } from "./media-generation";
 import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "./generation-runtime";
@@ -36,6 +48,13 @@ const GeneratedItemSchema = z.object({
 });
 const GeneratedDeckSchema = z.object({
   items: z.array(GeneratedItemSchema).max(MAX_DECK_ITEMS),
+});
+/**
+ * Wynik modelu w trybie ze źródła: tylko kształt listy — każdy element
+ * waliduje osobno `selectMaterialItems`, więc zły element nie psuje reszty.
+ */
+const GeneratedMaterialDeckSchema = z.object({
+  items: z.array(z.unknown()),
 });
 
 /** Domyślna para języków zestawu słówek; w trybie ze źródła jedyna dozwolona. */
@@ -57,9 +76,12 @@ type DeckRunCommon = {
   maxItems: number;
   vocabularyFormat: VocabularyFormat;
 };
-type DeckRunInput =
-  | (DeckRunCommon & { prompt: string; mode?: undefined })
-  | (DeckRunCommon & { mode: "material"; material: string; instruction?: string });
+type DeckRunWords =
+  | { prompt: string; mode?: undefined }
+  | { mode: "material"; material: string; instruction?: string };
+type DeckRunInput = DeckRunCommon & DeckRunWords;
+/** Odczyt inputu runu: runy z opisu sprzed formatów słówek nie mają `vocabularyFormat` (standard). */
+type StoredDeckRunInput = Omit<DeckRunCommon, "vocabularyFormat"> & { vocabularyFormat?: VocabularyFormat } & DeckRunWords;
 
 type ParsedGenerationCommand = z.output<typeof GenerationCommandSchema>;
 
@@ -283,9 +305,10 @@ export async function retryGeneration(services: Services, runId: string): Promis
           .where(eq(mediaAssets.id, asset.id));
       }
     }
+    // liczba odrzuceń należy do zakończonej próby (porażka `no_source_items`); nowa próba zapisze własną
     await tx
       .update(generationRuns)
-      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null })
+      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, rejectedCount: null })
       .where(eq(generationRuns.id, runId));
   });
   return { runId };
@@ -320,22 +343,33 @@ export async function executeGeneration(services: Services, runId: string, signa
     return;
   }
 
-  const runInput = run.input as {
-    prompt: string;
-    locales: { source: string; target: string };
-    maxItems: number;
-    vocabularyFormat?: VocabularyFormat;
-  };
-  let generated: z.infer<typeof GeneratedDeckSchema>;
-  try {
-    const result = await deps.llm.generateDeck({
+  const runInput = run.input as StoredDeckRunInput;
+  const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
+  const llmInput: LlmGenerateDeckInput = runInput.mode === "material"
+    ? {
+      material: runInput.material,
+      ...(runInput.instruction === undefined ? {} : { instruction: runInput.instruction }),
+      sourceLocale: runInput.locales.source,
+      targetLocale: runInput.locales.target,
+      maxItems: runInput.maxItems,
+      vocabularyFormat,
+    }
+    : {
       prompt: runInput.prompt,
       sourceLocale: runInput.locales.source,
       targetLocale: runInput.locales.target,
       maxItems: runInput.maxItems,
-      vocabularyFormat: runInput.vocabularyFormat ?? "standard",
-    }, signal);
-    generated = GeneratedDeckSchema.parse(result);
+      vocabularyFormat,
+    };
+  let generated:
+    | { mode: "description"; items: z.infer<typeof GeneratedDeckSchema>["items"] }
+    | { mode: "material"; material: string; items: unknown[] };
+  try {
+    const result = await deps.llm.generateDeck(llmInput, signal);
+    // tryb opisu: cały wynik pod schematem (wszystko-albo-nic); tryb ze źródła: sama lista
+    generated = runInput.mode === "material"
+      ? { mode: "material", material: runInput.material, items: GeneratedMaterialDeckSchema.parse(result).items }
+      : { mode: "description", items: GeneratedDeckSchema.parse(result).items };
   } catch (error) {
     if (signal?.aborted) {
       await markRun(services.db, services.clock, runId, "queued", null);
@@ -357,30 +391,39 @@ export async function executeGeneration(services: Services, runId: string, signa
     return;
   }
 
-  const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
-  if (generated.items.length === 0) {
-    await markRun(services.db, services.clock, runId, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
-    return;
-  }
-
-  const items: VocabularyItemInput[] = generated.items.map((item) => ({
-    source: item.source,
-    target: item.target,
-    acceptedAnswers: item.acceptedAnswers,
-    ...(item.example === undefined ? {} : { example: item.example }),
-    visualType: item.visualType,
-    ...(item.visualData === undefined ? {} : { visualData: item.visualData }),
-    locales: runInput.locales,
-  }));
-  try {
-    validateItems(items);
-    validateVocabularyFormatItems(vocabularyFormat, items);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "validation") {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+  let items: VocabularyItemInput[];
+  let rejectedCount: number | null;
+  if (generated.mode === "material") {
+    const selection = selectMaterialItems(generated.items, {
+      material: generated.material,
+      locales: runInput.locales,
+      vocabularyFormat,
+      maxItems: runInput.maxItems,
+    });
+    if (selection.items.length === 0) {
+      // szkic bez zmian; liczba odrzuceń widoczna przy porażce
+      await markRunWithoutSourceItems(services.db, services.clock, runId, selection.rejectedCount);
       return;
     }
-    throw error;
+    ({ items, rejectedCount } = selection);
+  } else {
+    if (generated.items.length === 0) {
+      await markRun(services.db, services.clock, runId, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
+      return;
+    }
+    items = generated.items.map((item) => toVocabularyItem(item, runInput.locales));
+    try {
+      validateItems(items);
+      validateVocabularyFormatItems(vocabularyFormat, items);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "validation") {
+        await markRun(services.db, services.clock, runId, "failed", "validation");
+        return;
+      }
+      throw error;
+    }
+    // tryb opisu: walidacja wszystko-albo-nic, więc bez liczby odrzuceń
+    rejectedCount = null;
   }
 
   await services.db.transaction(async (tx) => {
@@ -399,7 +442,65 @@ export async function executeGeneration(services: Services, runId: string, signa
     await applyItems(tx, version.id, version.deckId, items);
     await reconcileDraftAssetsTx(tx, services, version);
     await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
-    // tryb opisu: walidacja wszystko-albo-nic, więc bez liczby odrzuceń
-    await markRunSucceeded(tx, services.clock, runId, null);
+    await markRunSucceeded(tx, services.clock, runId, rejectedCount);
   });
+}
+
+type GeneratedItem = z.infer<typeof GeneratedItemSchema>;
+
+function toVocabularyItem(item: GeneratedItem, locales: { source: string; target: string }): VocabularyItemInput {
+  return {
+    source: item.source,
+    target: item.target,
+    acceptedAnswers: item.acceptedAnswers,
+    ...(item.example === undefined ? {} : { example: item.example }),
+    visualType: item.visualType,
+    ...(item.visualData === undefined ? {} : { visualData: item.visualData }),
+    locales,
+  };
+}
+
+/** Czy reguła zestawu (rzucająca `AppError("validation")`) przyjmuje element; inne błędy przechodzą dalej. */
+function passesValidation(check: () => void): boolean {
+  try {
+    check();
+    return true;
+  } catch (error) {
+    if (error instanceof AppError && error.code === "validation") return false;
+    throw error;
+  }
+}
+
+/**
+ * Walidacja per element zestawu ze źródła (design 2026-10-30 §6.2): każdy
+ * element wyniku modelu osobno — schemat elementu, reguły formatu
+ * (`validateVocabularyFormatItems`), słówko z tekstu (`isMaterialVocabularyTarget`:
+ * nie rama z luką, ze słowem treści, fraza z tekstu) i brak duplikatu celu wśród
+ * już przyjętych (`validateItems`; pierwszy wygrywa). Niepoprawny element jest
+ * odrzucany, reszta zostaje. Przyjęte ponad `maxItems` są obcinane i nie liczą
+ * się jako odrzucone. Gwarancja „tylko słowa z tekstu” należy do tej walidacji,
+ * nie do promptu — zawężenie rodzica nie może dodać słów.
+ */
+function selectMaterialItems(
+  raw: readonly unknown[],
+  options: { material: string; locales: { source: string; target: string }; vocabularyFormat: VocabularyFormat; maxItems: number },
+): { items: VocabularyItemInput[]; rejectedCount: number } {
+  const index = materialPhraseIndex(options.material);
+  const accepted: VocabularyItemInput[] = [];
+  let rejectedCount = 0;
+  for (const candidate of raw) {
+    const parsed = GeneratedItemSchema.safeParse(candidate);
+    const item = parsed.success ? toVocabularyItem(parsed.data, options.locales) : undefined;
+    if (
+      item === undefined
+      || !isMaterialVocabularyTarget(item.target, index)
+      || !passesValidation(() => validateVocabularyFormatItems(options.vocabularyFormat, [item]))
+      || !passesValidation(() => validateItems([...accepted, item]))
+    ) {
+      rejectedCount += 1;
+      continue;
+    }
+    accepted.push(item);
+  }
+  return { items: accepted.slice(0, options.maxItems), rejectedCount };
 }

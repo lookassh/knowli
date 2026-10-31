@@ -8,7 +8,8 @@ import { englishGrammarSubject } from "../domain/lessons/subjects/english-gramma
 import { presentSimpleV1 } from "../domain/lessons/subjects/english-grammar/topics/present-simple";
 import type { LessonPoolInput } from "../ports/ai";
 import { toExerciseDraft } from "../modules/materials/lessons/lesson-drafts";
-import { FakeLlmProvider, FakeTtsProvider } from "./fake";
+import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
+import { DEFAULT_FAKE_DECK_ITEMS, FakeLlmProvider, FakeTtsProvider } from "./fake";
 
 describe("FakeLlmProvider lesson pool", () => {
   it("produces a publishable 3/4/2 grammar pool after functional-stimulus deduplication", async () => {
@@ -129,6 +130,60 @@ describe("FakeLlmProvider — rozdział angielskiego", () => {
     expect(withRules.map((objective) => objective.kind)).toEqual(["words", "frame"]);
     const withoutRules = (await llm.generateLessonObjectives(base)).objectives as { kind?: string }[];
     expect(withoutRules.every((objective) => !("kind" in objective))).toBe(true);
+  });
+});
+
+describe("FakeLlmProvider — zestaw słówek ze źródła", () => {
+  const SOURCE_TEXT = [
+    "What's the weather like? It's sunny. It's raining.",
+    "I'm wearing a coat and boots. She is wearing a pink T-shirt. Don't forget your coat!",
+  ].join("\n");
+  const sourceInput = (overrides: Partial<{ maxItems: number; vocabularyFormat: "standard" | "picture" }> = {}) => ({
+    material: SOURCE_TEXT,
+    sourceLocale: "pl-PL",
+    targetLocale: "en-GB",
+    maxItems: 50,
+    vocabularyFormat: "standard" as const,
+    ...overrides,
+  });
+
+  it("bez kolejki: różne słowa treści z tekstu (≥ 3 litery), znaczenie i pierwsze zdanie z tym słowem", async () => {
+    const llm = new FakeLlmProvider();
+    const { items } = await llm.generateDeck(sourceInput());
+
+    expect(items.map((item) => item.target)).toEqual(["weather", "like", "sunny", "raining", "wearing", "coat", "boots", "pink", "shirt", "forget"]);
+    expect(items.find((item) => item.target === "coat")).toEqual({
+      source: "„coat” po polsku",
+      target: "coat",
+      acceptedAnswers: [],
+      example: "I'm wearing a coat and boots.",
+      visualType: "none",
+    });
+    expect(items.find((item) => item.target === "shirt")!.example).toBe("She is wearing a pink T-shirt.");
+    // każdy element przechodzi walidację serwera trybu ze źródła
+    const index = materialPhraseIndex(SOURCE_TEXT);
+    expect(items.every((item) => isMaterialVocabularyTarget(item.target, index))).toBe(true);
+    expect(llm.requests).toEqual([sourceInput()]);
+  });
+
+  it("limit maxItems; format obrazkowy daje ilustracje dopuszczalne w zestawie obrazkowym", async () => {
+    const llm = new FakeLlmProvider();
+    const limited = await llm.generateDeck(sourceInput({ maxItems: 3 }));
+    expect(limited.items.map((item) => item.target)).toEqual(["weather", "like", "sunny"]);
+
+    const picture = await llm.generateDeck(sourceInput({ vocabularyFormat: "picture", maxItems: 2 }));
+    expect(picture.items.map((item) => item.visualType)).toEqual(["image", "image"]);
+  });
+
+  it("kolejka zachowań nadal ma pierwszeństwo przed elementami z tekstu; tryb opisu bez zmian", async () => {
+    const llm = new FakeLlmProvider();
+    const queued = [{ source: "parasol", target: "umbrella", acceptedAnswers: [], visualType: "none" }];
+    llm.queue({ items: queued });
+    expect((await llm.generateDeck(sourceInput())).items).toEqual(queued);
+
+    const description = new FakeLlmProvider();
+    const { items } = await description.generateDeck({ prompt: "dni tygodnia", sourceLocale: "pl-PL", targetLocale: "en-GB", maxItems: 10 });
+    expect(items).toEqual(DEFAULT_FAKE_DECK_ITEMS);
   });
 });
 

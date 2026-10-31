@@ -1,17 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createServices,
   createSourceMaterial,
   deleteSourceMaterial,
   enqueueDeckGeneration,
+  executeGeneration,
   getSourceMaterial,
   readDeck,
   readGeneration,
+  retryGeneration,
   updateSourceMaterial,
   type Services,
 } from "@learning/server";
 import type { GenerationCommand } from "@learning/contracts";
 import { markRunSucceeded } from "../../packages/server/src/modules/materials/generation-runs";
+import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { buildTestServices, ManualClock, testDatabase } from "./helpers";
 
 /**
@@ -20,9 +24,11 @@ import { buildTestServices, ManualClock, testDatabase } from "./helpers";
  * (pochodzenie w `decks`, tekst w niezmiennym inpucie runu), kontrola rewizji
  * treści z podglądu rodzica, idempotentne ponowienie po edycji i usunięciu
  * źródła, odnośnik `source` w `DeckDto` oraz liczba odrzuceń w runie
- * (`rejected_count`, `GenerationDto.rejectedCount`). Samo generowanie z tekstu
- * (worker, prompt, walidacja per element) dopisuje Etap 4, Task 3.
- * Teksty są fikcyjne — materiał z podręcznika nie trafia do repozytorium.
+ * (`rejected_count`, `GenerationDto.rejectedCount`) oraz generowanie z tekstu:
+ * worker z fałszywym LLM, walidacja per element (spoza tekstu, ramy, duplikaty,
+ * format obrazkowy, limit) i porażka `no_source_items`; tryb opisu zostaje
+ * wszystko-albo-nic. Teksty są fikcyjne — materiał z podręcznika nie trafia do
+ * repozytorium.
  */
 
 const { pool } = testDatabase();
@@ -370,5 +376,193 @@ describe("słówka ze źródła — tworzenie zestawu (integracja)", () => {
     await expect(pool.query("update learning_app.generation_runs set rejected_count = -1 where id = $1", [runId]))
       .rejects.toMatchObject({ code: "23514", constraint: "generation_runs_rejected_count_nonnegative" });
     expect((await readGeneration(services, runId)).rejectedCount).toBe(0);
+  });
+});
+
+describe("słówka ze źródła — generowanie wyłącznie z tekstu (integracja)", () => {
+  let fakes: FakeGeneration;
+  let services: Services;
+
+  beforeEach(async () => {
+    await pool.query(
+      `truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets,
+              learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
+              learning_app.learning_items, learning_app.deck_versions, learning_app.decks,
+              learning_app.source_materials cascade`,
+    );
+    fakes = await fakeGeneration();
+    const { db } = testDatabase();
+    services = createServices({ db, clock: new ManualClock("2026-10-31T10:00:00.000Z"), media: fakes.settings, generation: fakes.deps });
+  });
+
+  afterEach(async () => {
+    await fakes.dispose();
+  });
+
+  async function generateFromSource(overrides: Partial<GenerationCommand> = {}): Promise<{ runId: string; deckId: string }> {
+    const sourceMaterialId = (await createSourceMaterial(services, { clientRequestId: randomUUID(), title: SOURCE_TITLE, body: CHAPTER_TEXT })).id;
+    const created = await enqueueDeckGeneration(services, {
+      sourceMaterialId,
+      expectedSourceRevision: 1,
+      idempotencyKey: `source-vocabulary-run-${randomUUID()}`,
+      ...overrides,
+    });
+    await executeGeneration(services, created.runId);
+    return created;
+  }
+
+  async function draftItems(deckId: string): Promise<Array<Record<string, unknown>>> {
+    const rows = await query<{ payload: Record<string, unknown> }>(
+      `select r.payload from learning_app.item_revisions r join learning_app.deck_versions v on v.id = r.deck_version_id
+        where v.deck_id = $1 order by r.position`, [deckId],
+    );
+    return rows.map((row) => row.payload);
+  }
+
+  async function draftVersion(deckId: string): Promise<{ state: string; edit_number: number }> {
+    const [version] = await query<{ state: string; edit_number: number }>(
+      "select state, edit_number from learning_app.deck_versions where deck_id = $1", [deckId],
+    );
+    return version!;
+  }
+
+  const item = (target: string, source: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
+    ({ source, target, acceptedAnswers: [], visualType: "none", ...extra });
+
+  it("zostawia pozycje z tekstu, odrzuca spoza tekstu, ramę i element bez celu; liczba odrzuceń w runie i DTO", async () => {
+    // zawężenie próbuje dodać słowa (plan Etapu 4, Review Focus 3), a model je dopisuje
+    fakes.llm.queue({
+      items: [
+        item("the coats", "płaszcze"), // rodzajnik i liczba mnoga; w tekście „a coat” (Review Focus 2)
+        item("red", "czerwony", { visualType: "color", visualData: { color: "#ff0000" } }),
+        item("I'm wearing (a) …", "Mam na sobie…"), // rama będąca początkiem zdania tekstu
+        item("wearing", "mieć na sobie"),
+        { source: "buty", acceptedAnswers: [] }, // bez `target`
+        item("umbrella", "parasol"),
+        item("sunny", "słonecznie", { example: "It's sunny." }),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource({ instruction: "tylko ubrania i pogoda; dodaj kolory" });
+
+    const request = fakes.llm.requests.at(-1)!;
+    expect(request).toEqual({
+      material: CHAPTER_TEXT,
+      instruction: "tylko ubrania i pogoda; dodaj kolory",
+      sourceLocale: "pl-PL",
+      targetLocale: "en-GB",
+      maxItems: 50,
+      vocabularyFormat: "standard",
+    });
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", errorCode: null, rejectedCount: 4 });
+    expect((await storedVocabularyDeck(deckId)).run.rejected_count).toBe(4);
+    expect((await readDeck(services, deckId)).generation).toMatchObject({ id: runId, state: "succeeded", rejectedCount: 4 });
+    expect(await draftVersion(deckId)).toMatchObject({ state: "review" });
+    expect(await draftItems(deckId)).toEqual([
+      expect.objectContaining({ target: "the coats", source: "płaszcze", sourceLocale: "pl-PL", targetLocale: "en-GB" }),
+      expect.objectContaining({ target: "wearing", source: "mieć na sobie" }),
+      expect.objectContaining({ target: "sunny", source: "słonecznie", example: "It's sunny." }),
+    ]);
+  });
+
+  it("duplikat celu: pierwszy wygrywa, drugi odrzucony; same słowa funkcyjne z tekstu też odrzucone", async () => {
+    fakes.llm.queue({
+      items: [
+        item("boots", "buty"),
+        item("Boots", "kozaki"),
+        item("it is", "to jest"), // stoi w tekście („It's”), ale nie ma słowa treści
+        item("pink", "różowy"),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 2 });
+    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source])).toEqual([["boots", "buty"], ["pink", "różowy"]]);
+  });
+
+  it("wszystkie pozycje spoza tekstu: porażka no_source_items z liczbą odrzuceń, szkic bez zmian; ponowienie zeruje liczbę", async () => {
+    fakes.llm.queue({ items: [item("umbrella", "parasol"), item("red", "czerwony"), item("scarf", "szalik")] });
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "failed", errorCode: "no_source_items", rejectedCount: 3 });
+    expect((await readDeck(services, deckId)).generation).toMatchObject({ state: "failed", errorCode: "no_source_items", rejectedCount: 3 });
+    expect(await draftVersion(deckId)).toEqual({ state: "draft", edit_number: 1 });
+    expect(await draftItems(deckId)).toEqual([]);
+    expect(fakes.llm.requests).toHaveLength(1);
+
+    // ręczne ponowienie: liczba odrzuceń należy do poprzedniej próby
+    await retryGeneration(services, runId);
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "queued", errorCode: null, rejectedCount: null });
+    fakes.llm.queue({ items: [item("coat", "płaszcz")] });
+    await executeGeneration(services, runId);
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 0 });
+    expect((await draftItems(deckId)).map((payload) => payload.target)).toEqual(["coat"]);
+  });
+
+  it("pusty wynik modelu w trybie ze źródła to no_source_items bez odrzuceń, także w formacie obrazkowym", async () => {
+    fakes.llm.queue({ items: [] });
+
+    const { runId, deckId } = await generateFromSource({ vocabularyFormat: "picture" });
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "failed", errorCode: "no_source_items", rejectedCount: 0 });
+    expect(await draftVersion(deckId)).toEqual({ state: "draft", edit_number: 1 });
+  });
+
+  it("maxItems obcina przyjęte pozycje bez liczenia ich jako odrzuconych", async () => {
+    fakes.llm.queue({ items: [item("coat", "płaszcz"), item("boots", "buty"), item("raining", "pada deszcz")] });
+
+    const { runId, deckId } = await generateFromSource({ maxItems: 2 });
+
+    expect(fakes.llm.requests.at(-1)).toMatchObject({ maxItems: 2 });
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 0 });
+    expect((await draftItems(deckId)).map((payload) => payload.target)).toEqual(["coat", "boots"]);
+  });
+
+  it("format obrazkowy: pozycja bez reprezentacji obrazkowej odrzucona, poprawne zostają", async () => {
+    fakes.llm.queue({
+      items: [
+        item("boots", "buty", { visualType: "image" }),
+        { source: "płaszcz", target: "coat", acceptedAnswers: [] }, // bez `visualType` — domyślnie none
+        item("pink", "różowy", { visualType: "color", visualData: { color: "#ffc0cb" } }),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource({ vocabularyFormat: "picture" });
+
+    expect(fakes.llm.requests.at(-1)).toMatchObject({ vocabularyFormat: "picture" });
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 1 });
+    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.visualType])).toEqual([["boots", "image"], ["pink", "color"]]);
+  });
+
+  it("bez kolejki fałszywy LLM daje słowa treści z tekstu i żadna pozycja nie jest odrzucana", async () => {
+    const { runId, deckId } = await generateFromSource({ maxItems: 4 });
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 0 });
+    expect(await draftItems(deckId)).toEqual([
+      expect.objectContaining({ target: "weather", source: "„weather” po polsku", example: "What's the weather like?" }),
+      expect.objectContaining({ target: "like" }),
+      expect.objectContaining({ target: "sunny", example: "It's sunny." }),
+      expect.objectContaining({ target: "raining", example: "It's raining." }),
+    ]);
+  });
+
+  it("tryb opisu bez zmian: jedna zła pozycja to porażka walidacji całości, a sukces nie ma liczby odrzuceń", async () => {
+    fakes.llm.queue({ items: [item("Monday", "poniedziałek"), item("", "wtorek")] });
+    const broken = await enqueueDeckGeneration(services, { prompt: "Dni tygodnia po angielsku.", idempotencyKey: `description-${randomUUID()}` });
+    await executeGeneration(services, broken.runId);
+
+    expect(fakes.llm.requests.at(-1)).toEqual({ prompt: "Dni tygodnia po angielsku.", sourceLocale: "pl-PL", targetLocale: "en-GB", maxItems: 50, vocabularyFormat: "standard" });
+    expect(await readGeneration(services, broken.runId)).toMatchObject({ state: "failed", errorCode: "validation", rejectedCount: null });
+    expect(await draftItems(broken.deckId)).toEqual([]);
+    expect(await draftVersion(broken.deckId)).toEqual({ state: "draft", edit_number: 1 });
+
+    // słowa spoza jakiegokolwiek tekstu i bez sprawdzania fraz — tryb opisu nie zna materiału
+    fakes.llm.queue({ items: [item("Monday", "poniedziałek"), item("Tuesday", "wtorek")] });
+    const ok = await enqueueDeckGeneration(services, { prompt: "Dni tygodnia po angielsku.", idempotencyKey: `description-${randomUUID()}` });
+    await executeGeneration(services, ok.runId);
+    expect(await readGeneration(services, ok.runId)).toMatchObject({ state: "succeeded", rejectedCount: null });
+    expect((await draftItems(ok.deckId)).map((payload) => payload.target)).toEqual(["Monday", "Tuesday"]);
   });
 });

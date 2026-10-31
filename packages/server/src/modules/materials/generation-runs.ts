@@ -113,6 +113,30 @@ export async function markRunSucceeded(
 }
 
 /**
+ * Porażka runu `deck` ze źródła, gdy żaden element nie przeszedł walidacji per
+ * element (`no_source_items`, design 2026-10-30 §6.2), razem z liczbą odrzuceń
+ * — panel rodzica pokazuje ją także przy porażce. Szkic zostaje bez zmian.
+ * Pozostałe pola jak `markRun(…, "failed", "no_source_items")`.
+ */
+export async function markRunWithoutSourceItems(
+  db: Executor,
+  clock: Clock,
+  runId: string,
+  rejectedCount: number,
+): Promise<void> {
+  await db
+    .update(generationRuns)
+    .set({
+      state: "failed",
+      errorCode: "no_source_items",
+      nextAttemptAt: null,
+      finishedAt: clock.now(),
+      rejectedCount,
+    })
+    .where(eq(generationRuns.id, runId));
+}
+
+/**
  * Called only while the owning deck version is locked. A parent edit or a
  * successful generation makes outstanding runs for that edit stale before
  * they can publish their result.

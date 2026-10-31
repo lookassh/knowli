@@ -3,13 +3,18 @@
  * domena i moduły nie znają Azure/OpenAI. Sygnał przerwania przekazuje worker.
  */
 
-export interface LlmGenerateDeckInput {
-  prompt: string;
+/**
+ * Wejście generacji zestawu słówek. Tryb „z opisu”: `prompt` rodzica, model
+ * dobiera słowa do tematu. Tryb ze źródła (design 2026-10-30 §6.2): tekst źródła
+ * w `material` i opcjonalne zawężenie `instruction` — model ma wypisać wyłącznie
+ * słowa z tekstu, ale gwarancją jest walidacja per element w module generacji.
+ */
+export type LlmGenerateDeckInput = {
   sourceLocale: string;
   targetLocale: string;
   maxItems: number;
   vocabularyFormat?: "standard" | "picture";
-}
+} & ({ prompt: string } | { material: string; instruction?: string });
 
 /** Surowy element od LLM; moduł generacji waliduje go Zodem przed zapisem. */
 export interface LlmGeneratedItem {
