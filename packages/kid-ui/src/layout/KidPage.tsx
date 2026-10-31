@@ -16,7 +16,7 @@ export function KidPage({
     : undefined;
 
   return (
-    <KidViewportProvider viewport={{ width: viewport.width, height: viewport.height, offsetTop: viewport.offsetTop, zoomed: viewport.zoomed }}>
+    <KidViewportProvider viewport={{ width: viewport.width, height: viewport.height, offsetTop: viewport.offsetTop, zoomed: viewport.zoomed, scale: viewport.scale }}>
       <div
         className={["kid-ui", "kid-page", session ? "kid-page--session" : "kid-page--flow"]
           .filter(Boolean)
