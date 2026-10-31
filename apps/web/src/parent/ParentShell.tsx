@@ -107,7 +107,7 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, child
           ) : (
             <ParentIcon name={meta.icon} />
           )}
-          {meta.label}
+          <span className="pp-shell-label">{meta.label}</span>
         </a>
       );
     });

@@ -117,14 +117,27 @@
   white-space: nowrap;
 }
 
-/* 600–767 px: pięć zakładek z ikonami (ok. 609 px przy pełnym odstępie) nie mieści się
-   w pasku (576 px przy 600 px, mniej z klasycznym paskiem przewijania) — węższy odstęp
-   daje ok. 538 px, więc bez ucięcia piątej zakładki i bez przewijania paska */
+/* 600–767 px: pięć zakładek z ikonami (ok. 609 px przy lokalnych fontach, ponad 650 px przy
+   szerszych fontach Linuksa) nie mieści się w pasku (576 px przy 600 px, ok. 559 px z klasycznym
+   paskiem przewijania). Niezależnie od metryki fontu ikony znikają (nazwa sekcji to widoczny tekst
+   linku, ikona jest dekoracyjna), a zakładki dzielą szerokość paska po równo — sam tekst zajmuje
+   tu ok. 330–400 px, więc zostaje duży zapas także przy szerokim foncie zastępczym. */
 @media (max-width: 47.99em) {
   .pp-shell-tab {
-    gap: 6px;
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 0;
     padding: 0 10px;
   }
+
+  .pp-shell-tab .pp-icon {
+    display: none;
+  }
+}
+
+/* Etykieta sekcji: jedna linia, stała wysokość paska */
+.pp-shell-label {
+  white-space: nowrap;
 }
 
 .pp-shell-tab:hover {
@@ -137,12 +150,14 @@
   font-weight: 700;
 }
 
-/* pięć sekcji: na 320 px po ok. 62 px na sekcję — pigułka ikony i etykieta mieszczą się w kolumnie */
+/* pięć sekcji: na 320 px po ok. 62 px na sekcję — pigułka ikony i etykieta mieszczą się w kolumnie.
+   Etykieta zawsze w jednej linii (przy szerszym foncie kończy się wielokropkiem, pełny tekst
+   pozostaje nazwą dostępną linku), więc pasek ma stałą wysokość i nie wychodzi poza ekran. */
 .pp-shell-bottomnav {
   --pp-shell-muted: #565a70;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 6px 4px env(safe-area-inset-bottom);
+  padding: 6px 2px env(safe-area-inset-bottom);
 }
 
 .pp-shell-navitem {
@@ -151,9 +166,19 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 56px;
-  font-size: 12px;
+  min-width: 0;
+  height: 56px;
+  padding: 0 2px;
+  overflow: hidden;
+  font-size: calc(var(--mantine-font-size-xs) - 1px);
+  line-height: 1.25;
   text-align: center;
+}
+
+.pp-shell-navitem .pp-shell-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pp-shell-pill {

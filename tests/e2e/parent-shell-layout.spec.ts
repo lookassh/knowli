@@ -104,6 +104,79 @@ test("600 px z klasycznym paskiem przewijania: pięć zakładek nadal mieści si
   expect(last.x + last.width).toBeLessThanOrEqual(600 - 17 + 0.5);
 });
 
+/**
+ * Fonty CI (Linux) są szersze niż lokalne (Windows). Szerszy zamiennik plus rozstrzelenie liter
+ * symuluje te metryki lokalnie i niezależnie od zainstalowanych fontów (samo rozstrzelenie
+ * gwarantuje, że tekst jest szerszy także tam, gdzie „DejaVu Sans” i „Verdana” nie istnieją).
+ * Zwraca stosunek szerokości etykiety „Karta pracy” po symulacji do szerokości przed nią.
+ */
+async function simulateWideFonts(page: Page): Promise<number> {
+  const width = () => page.getByTestId("tab-work-card").locator(".pp-shell-label").evaluate((label) => label.getBoundingClientRect().width);
+  const before = await width();
+  await page.addStyleTag({
+    content: 'html, body, body * { font-family: "DejaVu Sans", Verdana, sans-serif !important; letter-spacing: 0.03em !important; }',
+  });
+  return (await width()) / before;
+}
+
+/** Zapas szerokości paska zakładek: szerokość paska minus naturalna szerokość etykiet, odstępów i dopełnień. */
+async function topRowSpareWidth(page: Page): Promise<number> {
+  return page.locator("nav.pp-shell-tabs").evaluate((nav) => {
+    let natural = 0;
+    for (const tab of Array.from(nav.children)) {
+      const style = getComputedStyle(tab);
+      const label = tab.querySelector(".pp-shell-label")!.getBoundingClientRect().width;
+      natural += label + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    }
+    natural += (nav.children.length - 1) * parseFloat(getComputedStyle(nav).columnGap || "0");
+    return nav.clientWidth - natural;
+  });
+}
+
+test("szerokie fonty CI: dolny pasek na telefonie ma stałą wysokość, etykiety w jednej linii i pełne nazwy linków", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
+    await page.setViewportSize(viewport);
+    await openSignedInPanel(page);
+    expect(await simulateWideFonts(page), `szerokość etykiety @${viewport.width}`).toBeGreaterThan(1.02);
+    await expectNoHorizontalOverflow(page);
+    for (const id of TABS) {
+      const tab = page.getByTestId(id);
+      const box = (await tab.boundingBox())!;
+      expect(box.height, `${id} @${viewport.width}`).toBeGreaterThanOrEqual(44);
+      expect(box.height, `stała wysokość ${id} @${viewport.width}`).toBeLessThanOrEqual(56.5);
+      expect(box.y + box.height, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.height + 0.5);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(await tab.evaluate((element) => element.scrollWidth - element.clientWidth), id).toBeLessThanOrEqual(0);
+      // etykieta to jedna linia (wysokość linii 11 px × 1,25), nawet gdy kończy się wielokropkiem
+      const label = await tab.locator(".pp-shell-label").evaluate((element) => element.getBoundingClientRect().height);
+      expect(label, `etykieta ${id} @${viewport.width}`).toBeLessThan(18);
+    }
+    // wielokropek jest tylko wizualny: nazwa dostępna to pełna etykieta
+    await expect(page.getByRole("link", { name: messages.workCard.title, exact: true })).toHaveAttribute("href", "/parent/work-card");
+    await expect(page.getByTestId("tab-work-card")).toHaveText(messages.workCard.title);
+  }
+});
+
+test("szerokie fonty CI: pięć zakładek pod nagłówkiem z zapasem ≥ 80 px, także z klasycznym paskiem przewijania", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 960 });
+  await openSignedInPanel(page);
+  expect(await simulateWideFonts(page)).toBeGreaterThan(1.02);
+  for (const scrollbar of [0, 17]) {
+    await page.addStyleTag({ content: `.mantine-AppShell-header { right: ${scrollbar}px !important; }` });
+    const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+      scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+    }));
+    expect(tabs.scrollWidth, `pasek ${scrollbar} px`).toBeLessThanOrEqual(tabs.clientWidth);
+    expect(tabs.scrollHeight, `pasek ${scrollbar} px`).toBeLessThanOrEqual(tabs.clientHeight);
+    expect(await topRowSpareWidth(page), `zapas ${scrollbar} px`).toBeGreaterThanOrEqual(80);
+    const last = (await page.getByTestId("tab-work-card").boundingBox())!;
+    expect(last.x + last.width, `ostatnia zakładka ${scrollbar} px`).toBeLessThanOrEqual(600 - scrollbar + 0.5);
+    // ikony znikają z zakładek, ale nazwa sekcji pozostaje widocznym tekstem linku
+    await expect(page.getByTestId("tab-work-card").locator(".pp-icon")).toBeHidden();
+    await expect(page.getByRole("link", { name: messages.workCard.title, exact: true })).toBeVisible();
+  }
+});
+
 test("wybrany tryb ciemny przeżywa odświeżenie strony", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openSignedInPanel(page);
