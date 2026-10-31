@@ -230,6 +230,22 @@ test.describe("touch tablet in landscape", () => {
   });
 });
 
+test.describe("touch device with the on-screen keyboard open", () => {
+  // The keyboard (interactiveWidget: resizes-content) leaves a landscape tablet a window under 480 px high. From 960 px
+  // wide the column keeps 720 px whatever the height (spec §3.1); a phone in landscape (at most 932 px wide) keeps 560.
+  test.use({ viewport: { width: 1024, height: 420 }, isMobile: true, hasTouch: true });
+
+  test("a landscape tablet keeps the 720 px column, a landscape phone keeps 560 px", async ({ page }) => {
+    await openWrittenRecall(page);
+    await waitForKidScale(page, 1);
+    await expectColumn(page, ".kid-learning", "1024x420 touch", COLUMN_MAX);
+
+    await resizeAndSettle(page, { width: 844, height: 390 });
+    await waitForKidScale(page, 1);
+    await expectColumn(page, ".kid-learning", "844x390 touch", 560);
+  });
+});
+
 /** Four colour tiles: no image assets, so the tile size is the only thing under test. */
 function fourPictureTilesFixture(): KidUiFixture {
   const fixture = pictureChoiceLayoutFixture();
@@ -316,6 +332,30 @@ async function boxes(page: Page, selector: string) {
 const nextFrames = (page: Page) =>
   page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
+/**
+ * In the compact frame the result panel floats under the answers, so all its corners are rounded; picture choice keeps
+ * its frame and the panel stays a bottom sheet (rounded top, square bottom).
+ */
+async function expectDockCorners(page: Page, shape: "rounded" | "sheet") {
+  const corners = await page.getByTestId("kid-feedback-dock").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      top: Number.parseFloat(style.borderTopLeftRadius),
+      bottomLeft: Number.parseFloat(style.borderBottomLeftRadius),
+      bottomRight: Number.parseFloat(style.borderBottomRightRadius),
+    };
+  });
+  const details = JSON.stringify(corners);
+  expect(corners.top, `panel top corners rounded: ${details}`).toBeGreaterThan(0);
+  if (shape === "rounded") {
+    expect(corners.bottomLeft, `panel bottom corners as round as the top: ${details}`).toBe(corners.top);
+    expect(corners.bottomRight, `panel bottom corners as round as the top: ${details}`).toBe(corners.top);
+  } else {
+    expect(corners.bottomLeft, `bottom-sheet panel: ${details}`).toBe(0);
+    expect(corners.bottomRight, `bottom-sheet panel: ${details}`).toBe(0);
+  }
+}
+
 for (const { width, height, scale } of TALL_WINDOWS) {
   test(`text choice has no empty band at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
@@ -343,6 +383,7 @@ for (const { width, height, scale } of TALL_WINDOWS) {
     expect(band, `panel below the options: ${details}`).toBeGreaterThanOrEqual(-1);
     expect(band, `no empty band between the options and the panel: ${details}`).toBeLessThanOrEqual(MAX_BAND * height);
     expect(dock!.bottom, `panel in the window: ${details}`).toBeLessThanOrEqual(height + 1);
+    await expectDockCorners(page, "rounded");
   });
 
   test(`written answer has no empty band at ${width}x${height}`, async ({ page }) => {
@@ -366,6 +407,7 @@ for (const { width, height, scale } of TALL_WINDOWS) {
     expect(after.dock.top - after.input.bottom, `no empty band between the field and the panel: ${details}`)
       .toBeLessThanOrEqual(MAX_BAND * height);
     expect(after.dock.bottom, `panel in the window: ${details}`).toBeLessThanOrEqual(height + 1);
+    await expectDockCorners(page, "rounded");
   });
 }
 
@@ -396,6 +438,7 @@ for (const { width, height, scale } of TALL_WINDOWS.filter(({ width }) => width 
     const band = dock!.top - Math.max(...tiles.map((tile) => tile.bottom));
     expect(band, `panel below the tiles: ${details}`).toBeGreaterThanOrEqual(-1);
     expect(band, `no empty band between the tiles and the panel: ${details}`).toBeLessThanOrEqual(MAX_BAND * height);
+    await expectDockCorners(page, "sheet");
   });
 }
 

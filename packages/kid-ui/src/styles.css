@@ -150,7 +150,9 @@
   /* Widths of the session and flow-screen column and the largest picture tile,
      in inner pixels (KidPage's zoom multiplies them on a large window). From
      expanded width on (the media query below) they grow to 720px and 300px; the
-     height condition leaves a phone in landscape as it was. */
+     height condition leaves a phone in landscape (at most 932px wide) as it was.
+     From 960px wide the height does not matter: a tablet in landscape (1024px
+     and wider) keeps the wide column while its on-screen keyboard is open. */
   --kid-column-max-width: 560px;
   --kid-visual-choice-max-size: 260px;
   /* Window units. KidPage scales a large window with CSS zoom (inline
@@ -166,7 +168,7 @@
   --kid-vw: calc(1vw / var(--kid-zoom, 1));
 }
 
-@media (min-width: 840px) and (min-height: 480px) {
+@media (min-width: 840px) and (min-height: 480px), (min-width: 960px) {
   :root:has(.kid-ui),
   .kid-theme,
   .kid-ui {
