@@ -1,5 +1,5 @@
 import { normalizeTokens } from "../../normalize";
-import { FUNCTION_WORDS, withoutLeading } from "./function-words";
+import { withoutLeading } from "./function-words";
 import { formsOf } from "./inflection";
 import { englishNormalizer } from "./normalizer";
 
@@ -132,17 +132,14 @@ export function phraseInMaterial(target: string, index: MaterialPhraseIndex): bo
 /**
  * Słówko zestawu ze źródła (§6.2) na wyjściu modelu: nie jest ramą z luką
  * (`isSentenceFrame` — rama będąca początkiem zdania tekstu przeszłaby samo
- * dopasowanie, bo luka znika przy normalizacji), występuje w tekście jako fraza
- * (`phraseInMaterial`) i w tym samym wariancie normalizacji ma słowo treści —
- * token spoza `FUNCTION_WORDS`. Same słowa funkcyjne („it is”, „in on”, „it's”)
- * nie są słówkiem, nawet gdy stoją w tekście.
+ * dopasowanie, bo luka znika przy normalizacji) i występuje w tekście jako fraza
+ * (`phraseInMaterial`). Słowa funkcyjne stojące w tekście („it is”, „today”,
+ * „How are you?”) są dozwolone — rozdział uczy też zwrotów i słów pytających,
+ * a o doborze decyduje rodzic przy sprawdzaniu szkicu (przegląd Etapu 4).
+ * Odrzucane są tylko element pusty i same wiodące `a`/`an`/`the`/`to`.
  */
 export function isMaterialVocabularyTarget(target: string, index: MaterialPhraseIndex): boolean {
-  if (isSentenceFrame(target)) return false;
-  return englishNormalizer.normalize(target).some((variant) => {
-    const tokens = withoutLeading(variant);
-    return tokens.some((token) => !FUNCTION_WORDS.has(token)) && tokensInMaterial(tokens, index);
-  });
+  return !isSentenceFrame(target) && phraseInMaterial(target, index);
 }
 
 /** Luka ramy zdaniowej: wielokropek, trzy kropki, co najmniej dwa podkreślenia albo nawias. */

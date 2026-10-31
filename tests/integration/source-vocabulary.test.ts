@@ -15,7 +15,7 @@ import {
 } from "@learning/server";
 import type { GenerationCommand } from "@learning/contracts";
 import { markRunSucceeded } from "../../packages/server/src/modules/materials/generation-runs";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { fakeGeneration, type FakeGeneration, type LlmBehavior } from "./fakes";
 import { buildTestServices, ManualClock, testDatabase } from "./helpers";
 
 /**
@@ -166,6 +166,18 @@ describe("słówka ze źródła — tworzenie zestawu (integracja)", () => {
     expect(stored.run.input).not.toHaveProperty("prompt");
   });
 
+  it("tytuł z samych białych znaków daje tytuł źródła, a podany jest przycinany", async () => {
+    const sourceId = await seedSource();
+
+    const blank = await enqueueDeckGeneration(services, sourceCommand(sourceId, { title: " \n\t " }));
+    const padded = await enqueueDeckGeneration(services, sourceCommand(sourceId, { title: "  Pogoda — słówka \n" }));
+
+    expect((await storedVocabularyDeck(blank.deckId)).deck.title).toBe(SOURCE_TITLE);
+    expect((await storedVocabularyDeck(blank.deckId)).version.title).toBe(SOURCE_TITLE);
+    expect((await storedVocabularyDeck(padded.deckId)).deck.title).toBe("Pogoda — słówka");
+    expect((await storedVocabularyDeck(padded.deckId)).version.title).toBe("Pogoda — słówka");
+  });
+
   it("zawężenie jest przycinane, a samo białe znaki go nie dają", async () => {
     const sourceId = await seedSource();
 
@@ -293,6 +305,59 @@ describe("słówka ze źródła — tworzenie zestawu (integracja)", () => {
     } finally {
       release();
       await Promise.allSettled([retry]);
+    }
+  });
+
+  /** Czeka, aż zapytanie innej sesji pasujące do wzorca zawiśnie na blokadzie (jak w source-materials.test.ts). */
+  async function waitUntilBlocked(pattern: RegExp, timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    let waiting: string[] = [];
+    while (Date.now() < deadline) {
+      const rows = await query<{ query: string }>(
+        "select query from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()",
+      );
+      if (rows.some((row) => pattern.test(row.query))) return;
+      waiting = rows.map((row) => row.query);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`zapytanie ${String(pattern)} nie czeka na blokadzie; czekają: ${JSON.stringify(waiting)}`);
+  }
+
+  // Obietnice w locie są deklarowane przed `try` i domykane w `finally` po zwolnieniu
+  // blokady: nieudana asercja nie zostawia pracy w tle, która wpadłaby w następny test.
+  it("usunięcie źródła czeka na tworzenie zestawu słówek i potem zeruje odnośnik, a zestaw zostaje z kopią tekstu", async () => {
+    const sourceId = await seedSource();
+    // Blokada tabeli wersji zatrzymuje tworzenie PO zablokowaniu źródła: wstawienie
+    // zestawu czeka, a źródło jest już zablokowane `FOR KEY SHARE` (`lockSourceMaterialForCopy`).
+    const blocker = await pool.connect();
+    let creating: Promise<Outcome<Awaited<ReturnType<typeof enqueueDeckGeneration>>>> | undefined;
+    let deleting: Promise<Outcome<void>> | undefined;
+    try {
+      await blocker.query("begin");
+      await blocker.query("lock table learning_app.deck_versions in access exclusive mode");
+      creating = settle(enqueueDeckGeneration(services, sourceCommand(sourceId)));
+      await waitUntilBlocked(/insert into "learning_app"\."decks"/i);
+
+      deleting = settle(deleteSourceMaterial(services, sourceId));
+      await waitUntilBlocked(/delete from "learning_app"\."source_materials"/i);
+      // Źródło wciąż istnieje: usuwanie czeka na blokadę trzymaną przez tworzenie.
+      expect(await count("source_materials")).toBe(1);
+
+      await blocker.query("commit");
+      const created = await creating;
+      expect(await deleting).toEqual({ ok: true, value: undefined });
+
+      if (!created.ok) throw created.error;
+      const stored = await storedVocabularyDeck(created.value.deckId);
+      expect(stored.deck).toEqual({ title: SOURCE_TITLE, kind: "vocabulary", source_material_id: null, source_material_revision: 1 });
+      expect(stored.run).toMatchObject({ id: created.value.runId, state: "queued" });
+      expect(stored.run.input).toMatchObject({ mode: "material", material: CHAPTER_TEXT });
+      expect(await count("source_materials")).toBe(0);
+      expect(await readDeck(services, created.value.deckId)).not.toHaveProperty("source");
+    } finally {
+      await blocker.query("rollback").catch(() => undefined);
+      blocker.release();
+      await Promise.allSettled([creating, deleting]);
     }
   });
 
@@ -465,20 +530,68 @@ describe("słówka ze źródła — generowanie wyłącznie z tekstu (integracja
     ]);
   });
 
-  it("duplikat celu: pierwszy wygrywa, drugi odrzucony; same słowa funkcyjne z tekstu też odrzucone", async () => {
+  it("duplikat celu: pierwszy wygrywa, drugi odrzucony; słowa funkcyjne stojące w tekście zostają", async () => {
     fakes.llm.queue({
       items: [
         item("boots", "buty"),
         item("Boots", "kozaki"),
-        item("it is", "to jest"), // stoi w tekście („It's”), ale nie ma słowa treści
+        item("it is", "to jest"), // same słowa funkcyjne, ale stoją w tekście („It's”) — zostają
         item("pink", "różowy"),
+        item("where", "gdzie"), // słowo funkcyjne spoza tekstu — odrzucone jak każde inne
       ],
     });
 
     const { runId, deckId } = await generateFromSource();
 
     expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 2 });
-    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source])).toEqual([["boots", "buty"], ["pink", "różowy"]]);
+    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source])).toEqual([
+      ["boots", "buty"], ["it is", "to jest"], ["pink", "różowy"],
+    ]);
+  });
+
+  it("odrzucony element nie zajmuje celu: niepoprawny pierwszy „boots”, poprawny drugi „Boots” zostaje", async () => {
+    fakes.llm.queue({
+      items: [
+        { source: "buty", target: "boots", acceptedAnswers: [] }, // format obrazkowy bez `visualType`
+        item("Boots", "kozaki", { visualType: "image" }),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource({ vocabularyFormat: "picture" });
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 1 });
+    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source, payload.visualType])).toEqual([
+      ["Boots", "kozaki", "image"],
+    ]);
+  });
+
+  it.each([
+    ["lista nie jest tablicą", { items: "x" }],
+    ["lista dłuższa niż trzykrotny limit zestawu", { items: Array.from({ length: 301 }, (_, i) => ({ source: `płaszcz ${i}`, target: "coat" })) }],
+  ])("zły kształt wyniku modelu (%s): porażka walidacji bez liczby odrzuceń, szkic bez zmian", async (_label, result) => {
+    fakes.llm.queue(result as unknown as LlmBehavior);
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "failed", errorCode: "validation", rejectedCount: null });
+    expect(await draftVersion(deckId)).toEqual({ state: "draft", edit_number: 1 });
+    expect(await draftItems(deckId)).toEqual([]);
+  });
+
+  it("błąd transportu providera: run wraca do kolejki jak w trybie opisu, a kolejna próba zapisuje szkic", async () => {
+    fakes.llm.queue({ error: "llm timeout", retryable: true }, { items: [item("coat", "płaszcz")] });
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "queued", attempts: 1, errorCode: null, rejectedCount: null });
+    expect(await draftVersion(deckId)).toEqual({ state: "draft", edit_number: 1 });
+    expect(await draftItems(deckId)).toEqual([]);
+
+    await executeGeneration(services, runId);
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", attempts: 2, rejectedCount: 0 });
+    expect(fakes.llm.requests).toHaveLength(2);
+    expect(fakes.llm.requests.every((request) => "material" in request && request.material === CHAPTER_TEXT)).toBe(true);
+    expect((await draftItems(deckId)).map((payload) => payload.target)).toEqual(["coat"]);
   });
 
   it("wszystkie pozycje spoza tekstu: porażka no_source_items z liczbą odrzuceń, szkic bez zmian; ponowienie zeruje liczbę", async () => {
@@ -510,13 +623,23 @@ describe("słówka ze źródła — generowanie wyłącznie z tekstu (integracja
     expect(await draftVersion(deckId)).toEqual({ state: "draft", edit_number: 1 });
   });
 
-  it("maxItems obcina przyjęte pozycje bez liczenia ich jako odrzuconych", async () => {
-    fakes.llm.queue({ items: [item("coat", "płaszcz"), item("boots", "buty"), item("raining", "pada deszcz")] });
+  it("pełny zestaw (maxItems) kończy sprawdzanie: dalsze pozycje nie są ani przyjęte, ani liczone jako odrzucone", async () => {
+    fakes.llm.queue({ items: [item("coat", "płaszcz"), item("boots", "buty"), item("umbrella", "parasol"), item("raining", "pada deszcz")] });
 
     const { runId, deckId } = await generateFromSource({ maxItems: 2 });
 
     expect(fakes.llm.requests.at(-1)).toMatchObject({ maxItems: 2 });
+    // „umbrella” spoza tekstu stoi już po zapełnieniu zestawu — nie jest liczona
     expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 0 });
+    expect((await draftItems(deckId)).map((payload) => payload.target)).toEqual(["coat", "boots"]);
+  });
+
+  it("odrzucenia przed zapełnieniem zestawu się liczą", async () => {
+    fakes.llm.queue({ items: [item("umbrella", "parasol"), item("coat", "płaszcz"), item("scarf", "szalik"), item("boots", "buty"), item("hat", "czapka")] });
+
+    const { runId, deckId } = await generateFromSource({ maxItems: 2 });
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 2 });
     expect((await draftItems(deckId)).map((payload) => payload.target)).toEqual(["coat", "boots"]);
   });
 

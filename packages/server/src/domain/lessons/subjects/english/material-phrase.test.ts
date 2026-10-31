@@ -29,6 +29,8 @@ describe("phraseInMaterial — fraza na granicach słów", () => {
     ["red hat", "She's wearing a red, hat.", "interpunkcja tekstu znika"],
     ["Monday", "on MONDAY morning", "wielkie litery w tekście"],
     ["tom", "This is Tom's hat.", "dopełniacz"],
+    ["red cherries", "a red cherry", "-ies we frazie: liczba mnoga w elemencie"],
+    ["red cherry", "I see red cherries.", "-ies we frazie: liczba mnoga w tekście"],
   ])("przyjmuje „%s” w „%s” (%s)", (target, material) => {
     expect(inMaterial(target, material)).toBe(true);
   });
@@ -48,6 +50,13 @@ describe("phraseInMaterial — fraza na granicach słów", () => {
     ["it is has", "It's sunny.", "rozwinięcia jednego skrótu się nie mieszają"],
     ["her boots", "his boots", "słowa funkcyjne tylko dokładnie"],
     ["coat", "", "pusty tekst"],
+    ["sing", "I'm single.", "początek dłuższego słowa"],
+    ["car", "Take care!", "początek dłuższego słowa"],
+    ["bus", "I'm busy.", "początek dłuższego słowa"],
+    ["   ", "a coat", "same białe znaki"],
+    [" \t\n ", "a coat", "same białe znaki"],
+    ["?!", "a coat?!", "sama interpunkcja"],
+    ["- , .", "a coat - , .", "sama interpunkcja"],
   ])("odrzuca „%s” w „%s” (%s)", (target, material) => {
     expect(inMaterial(target, material)).toBe(false);
   });
@@ -136,7 +145,11 @@ describe("isSentenceFrame — ramy z lukami", () => {
 });
 
 describe("isMaterialVocabularyTarget — słówko z tekstu źródła", () => {
-  const MATERIAL = "What's the weather like? It's sunny. I'm wearing a coat and boots. Put it in on the shelf.";
+  const MATERIAL = [
+    "What's the weather like? It's sunny. I'm wearing a coat and boots. Put it in on the shelf.",
+    // „What's” to jeden token (tabela skrótów go nie rozwija), więc samo „what” potrzebuje „What” w tekście.
+    "Is it cold today? Yes, it is. How are you? What colour is it?",
+  ].join(" ");
   const index = materialPhraseIndex(MATERIAL);
 
   it.each(["the coats", "wearing", "sunny", "a coat and boots", "What's the weather like?", "it is sunny"])(
@@ -146,14 +159,23 @@ describe("isMaterialVocabularyTarget — słówko z tekstu źródła", () => {
     },
   );
 
+  // Słowa funkcyjne stojące w tekście źródła zostają (decyzja z przeglądu Etapu 4): rozdział
+  // uczy też zwrotów i słów pytających, a o doborze decyduje rodzic przy sprawdzaniu szkicu.
+  it.each(["it is", "in on", "it's", "today", "yes", "what", "How are you?"])(
+    "przyjmuje „%s” — słowa funkcyjne stojące w tekście",
+    (target) => {
+      expect(isMaterialVocabularyTarget(target, index)).toBe(true);
+    },
+  );
+
   it.each([
     ["I'm wearing (a) …", "rama będąca początkiem tekstu"],
     ["What's the ___ like?", "rama z podkreśleniami"],
-    ["it is", "same słowa funkcyjne, choć stoją w tekście"],
-    ["in on", "same przyimki, choć stoją w tekście"],
-    ["it's", "skrót ze słów funkcyjnych"],
     ["the", "same wiodące słowa"],
+    ["a", "same wiodące słowa"],
+    ["to", "same wiodące słowa"],
     ["umbrella", "słowo spoza tekstu"],
+    ["where", "słowo funkcyjne spoza tekstu"],
     ["", "pusty element"],
   ])("odrzuca „%s” (%s)", (target) => {
     expect(isMaterialVocabularyTarget(target, index)).toBe(false);

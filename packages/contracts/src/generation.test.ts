@@ -98,6 +98,15 @@ describe("GenerationCommandSchema", () => {
     expect(GenerationCommandSchema.safeParse({ prompt: "", idempotencyKey }).success).toBe(false);
   });
 
+  it("still tolerates unknown keys in both modes (not strict) and drops them", () => {
+    const fromPrompt = GenerationCommandSchema.safeParse({ prompt: "zwierzęta", idempotencyKey, clientHint: "web-1" });
+    const fromSource = GenerationCommandSchema.safeParse({ sourceMaterialId, expectedSourceRevision: 1, idempotencyKey, clientHint: "web-1" });
+    expect(fromPrompt.success).toBe(true);
+    expect(fromSource.success).toBe(true);
+    expect(fromPrompt.data).not.toHaveProperty("clientHint");
+    expect(fromSource.data).not.toHaveProperty("clientHint");
+  });
+
   it("still validates the shared fields in source mode", () => {
     const base = { sourceMaterialId, expectedSourceRevision: 1, idempotencyKey };
     expect(GenerationCommandSchema.safeParse({ ...base, maxItems: 101 }).success).toBe(false);

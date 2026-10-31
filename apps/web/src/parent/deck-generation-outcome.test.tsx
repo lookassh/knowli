@@ -19,7 +19,8 @@ describe("DeckGenerationOutcome (edytor zestawu słówek)", () => {
   it("zestaw ze źródła z odrzuconymi pozycjami: liczba pominiętych", () => {
     const markup = render(run({ rejectedCount: 3 }));
     expect(markup).toContain('data-testid="vocabulary-rejected-count"');
-    expect(markup).toContain("Pominięto pozycji spoza tekstu źródła: 3");
+    expect(markup).toContain(messages.decks.rejectedFromSource.replace("{n}", "3"));
+    expect(messages.decks.rejectedFromSource).toBe("Pominięto pozycji spoza tekstu lub niepoprawnych: {n}");
     expect(markup).not.toContain('data-testid="generation-failed"');
   });
 
@@ -37,7 +38,7 @@ describe("DeckGenerationOutcome (edytor zestawu słówek)", () => {
     expect(messages.decks.noSourceItems).toBe("Nie znaleziono w tekście źródła słówek do zestawu. Zmień zawężenie albo spróbuj ponownie.");
     expect(markup).toContain('data-testid="generation-retry"');
     expect(markup).not.toContain(messages.decks.generationFailed);
-    expect(markup).toContain("Pominięto pozycji spoza tekstu źródła: 5");
+    expect(markup).toContain(messages.decks.rejectedFromSource.replace("{n}", "5"));
   });
 
   it("komunikaty porażki według kodu: obrazkowy, ze źródła, pozostałe bez zmian", () => {

@@ -153,9 +153,10 @@ export const messages = {
     generationFailed: "Generowanie nie udało się.",
     noPictureMaterial: "Nie udało się dobrać słów, które można jasno pokazać obrazkiem. Zmień temat i spróbuj ponownie.",
     // Zestaw słówek ze źródła (design 2026-10-30 §6.2): żadne słowo nie przeszło sprawdzenia z tekstem
-    // źródła (run `no_source_items`) i liczba pozycji odrzuconych przy tym sprawdzeniu.
+    // źródła (run `no_source_items`) i liczba pozycji odrzuconych przy walidacji per element — spoza
+    // tekstu, ale też duplikatów, ram z luką i pozycji w złym formacie (`rejectedCount`).
     noSourceItems: "Nie znaleziono w tekście źródła słówek do zestawu. Zmień zawężenie albo spróbuj ponownie.",
-    rejectedFromSource: "Pominięto pozycji spoza tekstu źródła: {n}",
+    rejectedFromSource: "Pominięto pozycji spoza tekstu lub niepoprawnych: {n}",
     retryGeneration: "Ponów generowanie",
     states: {
       draft: "Szkic",

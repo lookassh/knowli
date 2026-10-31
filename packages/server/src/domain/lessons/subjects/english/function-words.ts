@@ -1,8 +1,11 @@
 /**
  * Słowa funkcyjne przedmiotów angielskich. Używają ich słownik materiału
- * rozdziału (`english-chapter/lexicon.ts`, design „Angielski — rozdział” §4.4),
- * odmiana (`inflection.ts`: rdzeń będący słowem funkcyjnym to szum) i
- * dopasowanie słówek do tekstu źródła (`material-phrase.ts`, §6.2).
+ * rozdziału (`english-chapter/lexicon.ts`, design „Angielski — rozdział” §4.4)
+ * i odmiana (`inflection.ts`: rdzeń będący słowem funkcyjnym to szum, więc
+ * pośrednio także dopasowanie słówek do tekstu źródła, §6.2). Zestaw słówek ze
+ * źródła NIE odrzuca słów funkcyjnych stojących w tekście (`material-phrase.ts`,
+ * przegląd Etapu 4); stąd pochodzą tylko wiodące słowa pomijane (`withoutLeading`).
+ * Fałszywy LLM filtruje nimi własną, deterministyczną listę słów (`providers/fake.ts`).
  */
 
 /**

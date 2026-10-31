@@ -50,11 +50,19 @@ const GeneratedDeckSchema = z.object({
   items: z.array(GeneratedItemSchema).max(MAX_DECK_ITEMS),
 });
 /**
+ * Górna granica długości listy modelu w trybie ze źródła: trzykrotny limit
+ * zestawu zostawia miejsce na pozycje odrzucone (spoza tekstu, duplikaty), a
+ * dłuższa lista to wynik zbiegły, którego prompt nie zamawia — porażka walidacji
+ * jak przekroczenie `MAX_DECK_ITEMS` w trybie opisu. Ogranicza też pracę
+ * `selectMaterialItems` (każdy element sprawdza duplikat wśród przyjętych).
+ */
+const MAX_MATERIAL_ENVELOPE_ITEMS = MAX_DECK_ITEMS * 3;
+/**
  * Wynik modelu w trybie ze źródła: tylko kształt listy — każdy element
  * waliduje osobno `selectMaterialItems`, więc zły element nie psuje reszty.
  */
 const GeneratedMaterialDeckSchema = z.object({
-  items: z.array(z.unknown()),
+  items: z.array(z.unknown()).max(MAX_MATERIAL_ENVELOPE_ITEMS),
 });
 
 /** Domyślna para języków zestawu słówek; w trybie ze źródła jedyna dozwolona. */
@@ -123,8 +131,9 @@ function deckWordSourceOf(cmd: ParsedGenerationCommand): DeckWordSource {
  * Ze źródła (`sourceMaterialId`, design 2026-10-30 §6.2): pierwsze zapytanie
  * transakcji tworzenia blokuje źródło `FOR KEY SHARE` (`lockSourceMaterialForCopy`)
  * i kopiuje jego tekst do inputu runu, a `decks.source_material_id/_revision`
- * zapisują pochodzenie (rewizja TREŚCI). Tytuł = podany albo tytuł źródła z tej
- * samej wersji wiersza; para języków stała `pl-PL` → `en-GB`;
+ * zapisują pochodzenie (rewizja TREŚCI). Tytuł = podany (przycięty; same białe
+ * znaki znaczą brak tytułu) albo tytuł źródła z tej samej wersji wiersza; para
+ * języków stała `pl-PL` → `en-GB`;
  * `generation_prompt` = null (opisu nie ma). Brak źródła → `not_found`; rewizja
  * treści inna niż `expectedSourceRevision` → `conflict` z
  * `LessonSourceChangedDetails`, bez zapisu. Ponowienie tego samego klucza po
@@ -149,7 +158,7 @@ export async function enqueueDeckGeneration(
       const locales = DEFAULT_DECK_LOCALES;
       await insertGenerationDraft(tx, {
         ...ids,
-        title: cmd.title ?? source.title,
+        title: cmd.title?.trim() || source.title,
         origin: { sourceMaterialId: wordSource.sourceMaterialId, sourceMaterialRevision: source.bodyRevision },
         locales,
         vocabularyFormat: cmd.vocabularyFormat,
@@ -475,11 +484,13 @@ function passesValidation(check: () => void): boolean {
  * Walidacja per element zestawu ze źródła (design 2026-10-30 §6.2): każdy
  * element wyniku modelu osobno — schemat elementu, reguły formatu
  * (`validateVocabularyFormatItems`), słówko z tekstu (`isMaterialVocabularyTarget`:
- * nie rama z luką, ze słowem treści, fraza z tekstu) i brak duplikatu celu wśród
- * już przyjętych (`validateItems`; pierwszy wygrywa). Niepoprawny element jest
- * odrzucany, reszta zostaje. Przyjęte ponad `maxItems` są obcinane i nie liczą
- * się jako odrzucone. Gwarancja „tylko słowa z tekstu” należy do tej walidacji,
- * nie do promptu — zawężenie rodzica nie może dodać słów.
+ * nie rama z luką, fraza z tekstu; słowa funkcyjne stojące w tekście są
+ * dozwolone) i brak duplikatu celu wśród już przyjętych (`validateItems`;
+ * pierwszy wygrywa, odrzucony element celu nie zajmuje). Niepoprawny element
+ * jest odrzucany, reszta zostaje. Po przyjęciu `maxItems` pozycji sprawdzanie
+ * się kończy: dalsze elementy nie są ani przyjęte, ani liczone jako odrzucone.
+ * Gwarancja „tylko słowa z tekstu” należy do tej walidacji, nie do promptu —
+ * zawężenie rodzica nie może dodać słów.
  */
 function selectMaterialItems(
   raw: readonly unknown[],
@@ -489,6 +500,7 @@ function selectMaterialItems(
   const accepted: VocabularyItemInput[] = [];
   let rejectedCount = 0;
   for (const candidate of raw) {
+    if (accepted.length >= options.maxItems) break;
     const parsed = GeneratedItemSchema.safeParse(candidate);
     const item = parsed.success ? toVocabularyItem(parsed.data, options.locales) : undefined;
     if (
@@ -502,5 +514,5 @@ function selectMaterialItems(
     }
     accepted.push(item);
   }
-  return { items: accepted.slice(0, options.maxItems), rejectedCount };
+  return { items: accepted, rejectedCount };
 }
