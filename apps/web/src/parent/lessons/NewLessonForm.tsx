@@ -5,7 +5,7 @@ import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInp
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
-import { callParent, errorMessage, parentClient } from "../api";
+import { callParent, errorMessage, isSourceChangedError, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
@@ -141,12 +141,20 @@ function validationError(values: NewLessonValues, path: LessonPath, fromSource: 
   return null;
 }
 
+/** Źródło, z którego powstaje polecenie: identyfikator i rewizja treści wyświetlonego podglądu. */
+export interface CommandSource {
+  id: string;
+  bodyRevision: number;
+}
+
 /**
  * Polecenie utworzenia lekcji z nowymi identyfikatorami zestawu i żądania.
- * Ze źródła (`sourceMaterialId`) polecenie niesie odwołanie zamiast tekstu —
- * serwer kopiuje bieżący tekst źródła (kontrakt: dokładnie jedno z dwóch).
+ * Ze źródła polecenie niesie odwołanie zamiast tekstu (`sourceMaterialId`) i
+ * rewizję treści podglądu (`expectedSourceRevision`) — serwer kopiuje tekst
+ * źródła tylko wtedy, gdy to wciąż ten, który rodzic widział (kontrakt:
+ * dokładnie jedno z `material` / `sourceMaterialId`).
  */
-export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMaterialId?: string): PendingLesson {
+export function buildCommand(values: NewLessonValues, path: LessonPath, source?: CommandSource): PendingLesson {
   const instruction = values.instruction.trim();
   const shared = {
     deckId: crypto.randomUUID(),
@@ -154,7 +162,9 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMa
     poolSize: Number(values.poolSize),
     clientRequestId: crypto.randomUUID(),
   };
-  const text = sourceMaterialId !== undefined ? { sourceMaterialId } : { material: values.material.trim() };
+  const text = source !== undefined
+    ? { sourceMaterialId: source.id, expectedSourceRevision: source.bodyRevision }
+    : { material: values.material.trim() };
   switch (path) {
     case "school":
       return { kind: "school", command: { ...shared, ...text, subjectTitlePl: values.schoolSubjectName.trim(), topicTitlePl: values.topicTitle.trim() } };
@@ -163,6 +173,25 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMa
     case "catalog":
       return { kind: "catalog", command: { ...shared, material: values.material.trim(), subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
   }
+}
+
+/**
+ * Wynik polecenia utworzenia lekcji, które nie skończyło się przyjęciem:
+ * `source-missing` — źródło usunięto w innym oknie (404), `source-changed` —
+ * tekst źródła zmieniono po wyświetleniu podglądu (409 z
+ * `LessonSourceChangedDetails`), `rejected` — inne ostateczne odrzucenie,
+ * `uncertain` — wynik nieznany (ponowienie tym samym poleceniem). Pierwsze dwa
+ * są rozpoznawane tylko w trybie źródła; w żadnym z trzech ostatecznych zestaw
+ * nie powstał, bo serwer sprawdza wcześniejsze polecenie z tym kluczem przed
+ * odczytem źródła.
+ */
+export type CreateFailure = "source-missing" | "source-changed" | "rejected" | "uncertain";
+
+export function classifyCreateFailure(cause: unknown, fromSource: boolean): CreateFailure {
+  if (fromSource && httpStatusOf(cause) === 404) return "source-missing";
+  if (fromSource && isSourceChangedError(cause)) return "source-changed";
+  if (isDefinitiveGenerationRejection(cause)) return "rejected";
+  return "uncertain";
 }
 
 /**
@@ -178,8 +207,11 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMa
  * Ze źródła (`source`, design 2026-10-30 §3.4) zamiast pola materiału jest
  * tytuł i podgląd tekstu źródła (tylko do odczytu) z linkiem „Zmień źródło”
  * (lista źródeł), przycisk u góry wraca do strony źródła („Wróć do źródła”),
- * a polecenie niesie `sourceMaterialId`; do wyboru są tylko przedmioty
- * tworzone z materiału.
+ * a polecenie niesie `sourceMaterialId` z rewizją treści podglądu; do wyboru
+ * są tylko przedmioty tworzone z materiału. Gdy tekst źródła zmieniono w innym
+ * oknie, serwer odrzuca polecenie (409): formularz odświeża podgląd
+ * (`onSourceChanged`), pokazuje komunikat, a ponowne „Utwórz lekcję” jest
+ * potwierdzeniem nowego tekstu.
  */
 export default function NewLessonForm({
   onCreated,
@@ -188,12 +220,16 @@ export default function NewLessonForm({
   source,
   initialSubjectId,
   onOpenSource,
+  onSourceChanged,
 }: {
   onCreated: (deckId: string) => void;
   onCancel: () => void;
   registerEditorState: (state: EditorLeaveState) => void;
-  /** Źródło, z którego powstaje lekcja (tekst do podglądu; serwer kopiuje go przy tworzeniu). */
-  source?: { id: string; title: string; body: string } | undefined;
+  /**
+   * Źródło, z którego powstaje lekcja: tekst do podglądu i jego rewizja treści
+   * (serwer kopiuje tekst przy tworzeniu, jeśli rewizja wciąż się zgadza).
+   */
+  source?: { id: string; title: string; body: string; bodyRevision: number } | undefined;
   /** Przedmiot wybrany od startu (np. z przycisku na stronie źródła). */
   initialSubjectId?: string | undefined;
   /**
@@ -201,6 +237,8 @@ export default function NewLessonForm({
    * (`null` — „Zmień źródło” i powrót po usunięciu źródła w innym oknie).
    */
   onOpenSource?: ((sourceId: string | null) => void) | undefined;
+  /** Tryb źródła: ponowny odczyt źródła po konflikcie rewizji (odświeża podgląd i rewizję). */
+  onSourceChanged?: (() => Promise<unknown>) | undefined;
 }) {
   const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
@@ -218,6 +256,8 @@ export default function NewLessonForm({
   const mounted = useRef(false);
   // źródło usunięte w innym oknie (404 przy tworzeniu): link prowadzi do listy źródeł, tworzenie wyłączone
   const [sourceMissing, setSourceMissing] = useState(false);
+  // podgląd odświeża się po konflikcie rewizji źródła — do tego czasu tworzenie jest wyłączone
+  const [refreshingSource, setRefreshingSource] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -295,7 +335,7 @@ export default function NewLessonForm({
         form.setFieldError("submit", invalid);
         return;
       }
-      lesson = buildCommand(values, path, source?.id);
+      lesson = buildCommand(values, path, source);
       pending.current = lesson;
     }
     creatingRef.current = true;
@@ -312,20 +352,35 @@ export default function NewLessonForm({
       registerEditorState({ dirty: false, busy: false });
       onCreated(acceptance.deckId);
     } catch (cause) {
-      if (fromSource && httpStatusOf(cause) === 404) {
-        // Źródło usunięto w innym oknie. Odpowiedź jest ostateczna: serwer sprawdza wcześniejsze
-        // polecenie z tym kluczem przed odczytem źródła, więc zestaw nie powstał — bez ponowienia.
-        pending.current = null;
+      const failure = classifyCreateFailure(cause, fromSource);
+      if (failure === "uncertain") {
+        if (mounted.current) form.setFieldError("submit", messages.lessons.createUncertain);
+        return;
+      }
+      // Odpowiedź ostateczna: serwer sprawdza wcześniejsze polecenie z tym kluczem przed
+      // odczytem źródła, więc zestaw nie powstał — następna wysyłka buduje nowe polecenie.
+      pending.current = null;
+      if (failure === "source-missing") {
+        // źródło usunięto w innym oknie — bez ponowienia
         if (mounted.current) {
           setSourceMissing(true);
           form.setFieldError("submit", messages.sources.notFound);
         }
-      } else if (isDefinitiveGenerationRejection(cause)) {
-        pending.current = null;
+      } else if (failure === "source-changed") {
+        // Tekst źródła zmieniono w innym oknie po wyświetleniu podglądu: podgląd odświeża
+        // się do bieżącej wersji, a ponowne „Utwórz lekcję” potwierdza nowy tekst.
+        if (mounted.current) {
+          form.setFieldError("submit", messages.sources.changedBeforeCreate);
+          setRefreshingSource(true);
+        }
+        try {
+          await onSourceChanged?.();
+        } finally {
+          if (mounted.current) setRefreshingSource(false);
+        }
+      } else if (httpStatusOf(cause) !== 401 && mounted.current) {
         // 401: logowanie otwiera globalny handler, formularz zostaje
-        if (httpStatusOf(cause) !== 401 && mounted.current) form.setFieldError("submit", errorMessage(cause));
-      } else if (mounted.current) {
-        form.setFieldError("submit", messages.lessons.createUncertain);
+        form.setFieldError("submit", errorMessage(cause));
       }
     } finally {
       creatingRef.current = false;
@@ -521,7 +576,7 @@ export default function NewLessonForm({
                 data-testid="lesson-create-submit"
                 leftSection={creating ? <Loader size={16} color="currentColor" /> : undefined}
                 onClick={() => void submit()}
-                disabled={creating || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
+                disabled={creating || refreshingSource || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
               >
                 {creating ? messages.lessons.creating : hasPending ? messages.lessons.retryCreate : messages.lessons.createLesson}
               </Button>

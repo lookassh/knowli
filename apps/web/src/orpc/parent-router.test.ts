@@ -283,6 +283,7 @@ const sourceSummaryDto = {
 };
 const sourceDto = {
   ...sourceSummaryDto,
+  bodyRevision: 1,
   body: "Fikcyjny tekst rozdziału o pogodzie.",
   decks: [{
     deckId,

@@ -470,22 +470,29 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
     ].join("\n");
 
-    const chapterCommand = (sourceMaterialId: string, overrides: Partial<{ clientRequestId: string; topicTitlePl: string }> = {}) => ({
+    // `expectedSourceRevision` — rewizja treści z podglądu rodzica; świeże źródło ma 1.
+    const chapterCommand = (
+      sourceMaterialId: string,
+      overrides: Partial<{ clientRequestId: string; topicTitlePl: string; expectedSourceRevision: number }> = {},
+    ) => ({
       subjectId: "english_chapter",
       topicTitlePl: "Unit 1",
       sourceMaterialId,
+      expectedSourceRevision: 1,
       poolSize: 40,
       clientRequestId: randomUUID(),
       ...overrides,
     });
-    const schoolCommand = (sourceMaterialId: string, overrides: Partial<{ clientRequestId: string }> = {}) => ({
+    const schoolCommand = (sourceMaterialId: string, overrides: Partial<{ clientRequestId: string; expectedSourceRevision: number }> = {}) => ({
       subjectTitlePl: "Przyroda",
       topicTitlePl: "Materiał",
       sourceMaterialId,
+      expectedSourceRevision: 1,
       poolSize: 40,
       clientRequestId: randomUUID(),
       ...overrides,
     });
+    const SOURCE_CHANGED = { code: "conflict", details: { reason: "source_changed" } };
 
     async function seedSource(body = CHAPTER_TEXT, title = "Rozdział 4: Pogoda"): Promise<string> {
       return (await createSourceMaterial(services, { clientRequestId: randomUUID(), title, body })).id;
@@ -535,7 +542,8 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       const sourceId = await seedSource();
       await updateSourceMaterial(services, sourceId, { expectedRevision: 1, body: `${CHAPTER_TEXT}\nIt's sunny.` });
 
-      const { deckId } = await createLessonFromMaterial(services, chapterCommand(sourceId));
+      // podgląd rodzica pokazał rewizję treści 2 — to ją serwer kopiuje
+      const { deckId } = await createLessonFromMaterial(services, chapterCommand(sourceId, { expectedSourceRevision: 2 }));
 
       const stored = await storedLesson(deckId);
       expect(stored.material).toBe(`${CHAPTER_TEXT}\nIt's sunny.`);
@@ -613,6 +621,7 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       await updateSourceMaterial(services, sourceId, { expectedRevision: 1, title: "Nowy tytuł" });
       await updateSourceMaterial(services, sourceId, { expectedRevision: 2, title: "Jeszcze nowszy tytuł" });
 
+      // zmiana samego tytułu po podglądzie (rewizja treści 1) nie blokuje tworzenia
       const { deckId } = await createLessonFromMaterial(services, chapterCommand(sourceId));
 
       expect(await storedRevisions(sourceId)).toEqual({ revision: 3, body_revision: 1 });
@@ -665,6 +674,34 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       expect(await count("generation_runs")).toBe(0);
     });
 
+    it("podgląd sprzed zmiany tekstu źródła: konflikt source_changed i żadnego zapisu", async () => {
+      const sourceId = await seedSource();
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 1, body: "Tekst zmieniony w innym oknie." });
+
+      await expect(createLessonFromMaterial(services, chapterCommand(sourceId))).rejects.toMatchObject(SOURCE_CHANGED);
+      await expect(createSchoolLesson(services, schoolCommand(sourceId))).rejects.toMatchObject(SOURCE_CHANGED);
+
+      expect(await count("decks")).toBe(0);
+      expect(await count("deck_versions")).toBe(0);
+      expect(await count("generation_runs")).toBe(0);
+      // źródło bez zmian: konflikt niczego w nim nie zapisuje
+      expect(await storedRevisions(sourceId)).toEqual({ revision: 2, body_revision: 2 });
+    });
+
+    it("rewizja podglądu zgodna z bieżącą: zestaw z tym tekstem i tą rewizją; rewizja z przyszłości to też konflikt", async () => {
+      const sourceId = await seedSource();
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 1, body: "Druga wersja tekstu." });
+      await expect(createSchoolLesson(services, schoolCommand(sourceId, { expectedSourceRevision: 3 }))).rejects.toMatchObject(SOURCE_CHANGED);
+
+      const { deckId } = await createSchoolLesson(services, schoolCommand(sourceId, { expectedSourceRevision: 2 }));
+
+      const stored = await storedLesson(deckId);
+      expect(stored.material).toBe("Druga wersja tekstu.");
+      expect(stored.runMaterial).toBe("Druga wersja tekstu.");
+      expect(stored.deck).toEqual({ source_material_id: sourceId, source_material_revision: 2 });
+      expect(await count("decks")).toBe(1);
+    });
+
     it("oba źródła tekstu albo żadne to błąd walidacji, bez zapisu", async () => {
       const sourceId = await seedSource();
       const base = { subjectId: "english_chapter", topicTitlePl: "Unit 1", poolSize: 40, clientRequestId: randomUUID() };
@@ -672,17 +709,25 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       await expect(createLessonFromMaterial(services, { ...base, material: CHAPTER_TEXT, sourceMaterialId: sourceId })).rejects.toMatchObject({ name: "ZodError" });
       await expect(createLessonFromMaterial(services, base as never)).rejects.toMatchObject({ name: "ZodError" });
       await expect(createSchoolLesson(services, { ...schoolCommand(sourceId), material: SCHOOL_TEXT })).rejects.toMatchObject({ name: "ZodError" });
+      // źródło bez rewizji podglądu i rewizja podglądu przy wklejonym tekście
+      const { expectedSourceRevision: _revision, ...withoutRevision } = chapterCommand(sourceId);
+      await expect(createLessonFromMaterial(services, withoutRevision)).rejects.toMatchObject({ name: "ZodError" });
+      await expect(createLessonFromMaterial(services, { ...base, material: CHAPTER_TEXT, expectedSourceRevision: 1 })).rejects.toMatchObject({ name: "ZodError" });
 
       expect(await count("decks")).toBe(0);
       expect(await count("generation_runs")).toBe(0);
     });
 
-    it("ponowienie z tym samym clientRequestId zwraca ten sam zestaw, także po usunięciu źródła", async () => {
+    it("ponowienie z tym samym clientRequestId zwraca ten sam zestaw, także po edycji i usunięciu źródła", async () => {
       const sourceId = await seedSource();
       const request = chapterCommand(sourceId);
 
       const first = await createLessonFromMaterial(services, request);
       await expect(createLessonFromMaterial(services, request)).resolves.toEqual(first);
+      // klucz idempotencji jest sprawdzany przed odczytem źródła: nowsza rewizja treści nie daje 409
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 1, body: "Tekst po utworzeniu lekcji." });
+      await expect(createLessonFromMaterial(services, request)).resolves.toEqual(first);
+      expect((await storedLesson(first.deckId)).material).toBe(CHAPTER_TEXT);
       await deleteSourceMaterial(services, sourceId);
       await expect(createLessonFromMaterial(services, request)).resolves.toEqual(first);
 
@@ -720,6 +765,47 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         await waiting;
         const first = await createLessonFromMaterial(services, request);
         await deleteSourceMaterial(services, sourceId);
+        release();
+
+        expect(await retry).toEqual({ ok: true, value: first });
+        expect(await count("decks")).toBe(1);
+        expect(await count("generation_runs")).toBe(1);
+        expect((await storedLesson(first.deckId)).material).toBe(CHAPTER_TEXT);
+      } finally {
+        release();
+        await Promise.allSettled([retry]);
+      }
+    });
+
+    it("ponowienie po równoległej zmianie tekstu źródła zwraca zestaw zatwierdzony przez pierwsze żądanie", async () => {
+      const sourceId = await seedSource();
+      const request = chapterCommand(sourceId);
+      // Jak wyżej, ale zamiast usunięcia edycja tekstu: ponowienie blokuje źródło już
+      // z nową rewizją treści, więc jego własny odczyt kończy się konfliktem rewizji.
+      let markWaiting!: () => void;
+      const waiting = new Promise<void>((resolve) => { markWaiting = resolve; });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const db = services.db;
+      const gatedDb = new Proxy(db, {
+        get(target, property) {
+          if (property === "transaction") {
+            return async (...args: unknown[]) => {
+              markWaiting();
+              await gate;
+              return (target.transaction as (...transactionArgs: unknown[]) => Promise<unknown>).apply(target, args);
+            };
+          }
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? (value as (...valueArgs: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      let retry: Promise<Outcome<Awaited<ReturnType<typeof createLessonFromMaterial>>>> | undefined;
+      try {
+        retry = settle(createLessonFromMaterial({ ...services, db: gatedDb }, request));
+        await waiting;
+        const first = await createLessonFromMaterial(services, request);
+        await updateSourceMaterial(services, sourceId, { expectedRevision: 1, body: "Tekst zmieniony po pierwszym żądaniu." });
         release();
 
         expect(await retry).toEqual({ ok: true, value: first });
@@ -805,7 +891,7 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         }
       });
 
-      it("tworzenie czekające na trwającą edycję kopiuje nową treść razem z nową rewizją", async () => {
+      it("tworzenie czekające na trwającą edycję tekstu widzi nową rewizję i kończy się konfliktem, bez kopii", async () => {
         const sourceId = await seedSource();
         const editor = await pool.connect();
         let creating: Promise<Outcome<Awaited<ReturnType<typeof createSchoolLesson>>>> | undefined;
@@ -821,11 +907,11 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
           await editor.query("commit");
           const created = await creating;
 
-          if (!created.ok) throw created.error;
-          const { deckId } = created.value;
-          const stored = await storedLesson(deckId);
-          expect(stored.material).toBe("Nowa treść po edycji.");
-          expect(stored.deck).toEqual({ source_material_id: sourceId, source_material_revision: 2 });
+          // Podgląd rodzica pokazywał rewizję treści 1. Zapytanie blokujące ocenia wiersz
+          // ponownie po commicie edycji i widzi rewizję 2, więc nie kopiuje niewidzianego tekstu.
+          expect(created).toMatchObject({ ok: false, error: SOURCE_CHANGED });
+          expect(await count("decks")).toBe(0);
+          expect(await count("generation_runs")).toBe(0);
         } finally {
           await editor.query("rollback").catch(() => undefined);
           editor.release();
@@ -945,7 +1031,7 @@ describe("Parent API źródeł (HTTP, /api/v1/parent/sources)", () => {
     expect(await json(list)).toEqual([summary]);
     const detail = await api("GET", `/sources/${id}`);
     expect(detail.status).toBe(200);
-    expect(await json(detail)).toEqual({ ...summary, body: "Fikcyjny tekst rozdziału.", decks: [] });
+    expect(await json(detail)).toEqual({ ...summary, bodyRevision: 1, body: "Fikcyjny tekst rozdziału.", decks: [] });
 
     clock.advanceMs(60_000);
     const updated = await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 1, title: "Nowy tytuł" } });
@@ -955,6 +1041,8 @@ describe("Parent API źródeł (HTTP, /api/v1/parent/sources)", () => {
       title: "Nowy tytuł",
       body: "Fikcyjny tekst rozdziału.",
       revision: 2,
+      // sam tytuł: rewizja treści bez zmian
+      bodyRevision: 1,
       updatedAt: "2026-10-31T10:01:00.000Z",
       decks: [],
     });
@@ -1093,6 +1181,7 @@ describe("Parent API źródeł (HTTP, /api/v1/parent/sources)", () => {
       subjectId: "english_chapter",
       topicTitlePl: "Unit 1",
       sourceMaterialId: id,
+      expectedSourceRevision: 1,
       poolSize: 40,
       clientRequestId: randomUUID(),
     });
@@ -1113,5 +1202,45 @@ describe("Parent API źródeł (HTTP, /api/v1/parent/sources)", () => {
     const orphaned = await api("GET", `/lessons/${deckId}`);
     expect(orphaned.status).toBe(200);
     expect(await json(orphaned)).not.toHaveProperty("source");
+  });
+
+  it("creates a lesson only from the previewed body revision: 409 source_changed for a stale preview, 400 without it", async () => {
+    const id = await createSource({ body: "Zagadnienie 1: Pogoda\nIt's raining." });
+    const preview = await json<{ revision: number; bodyRevision: number }>(await api("GET", `/sources/${id}`));
+    expect(preview).toMatchObject({ revision: 1, bodyRevision: 1 });
+    const lesson = (overrides: Record<string, unknown> = {}) => ({
+      subjectId: "english_chapter",
+      topicTitlePl: "Unit 1",
+      sourceMaterialId: id,
+      expectedSourceRevision: preview.bodyRevision,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+      ...overrides,
+    });
+
+    // w innym oknie: najpierw sam tytuł (rewizja treści bez zmian), potem tekst
+    expect((await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 1, title: "Nowy tytuł" } })).status).toBe(200);
+    expect((await json<{ revision: number; bodyRevision: number }>(await api("GET", `/sources/${id}`)))).toMatchObject({ revision: 2, bodyRevision: 1 });
+    expect((await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 2, body: "Tekst zmieniony w innym oknie." } })).status).toBe(200);
+
+    const stale = await api("POST", "/lessons/material", { body: lesson() });
+    expect(stale.status).toBe(409);
+    expect(await json(stale)).toMatchObject({ code: "conflict", details: { reason: "source_changed" } });
+    expect(await count("decks")).toBe(0);
+
+    const missingRevision = await api("POST", "/lessons/material", { body: lesson({ expectedSourceRevision: undefined }) });
+    expect(missingRevision.status).toBe(400);
+    expect(await count("decks")).toBe(0);
+
+    const refreshed = await json<{ bodyRevision: number; body: string }>(await api("GET", `/sources/${id}`));
+    expect(refreshed).toMatchObject({ bodyRevision: 2, body: "Tekst zmieniony w innym oknie." });
+    const created = await api("POST", "/lessons/school", {
+      body: { subjectTitlePl: "Przyroda", topicTitlePl: "Pogoda", sourceMaterialId: id, expectedSourceRevision: refreshed.bodyRevision, poolSize: 40, clientRequestId: randomUUID() },
+    });
+    expect(created.status).toBe(202);
+    const { deckId } = await json<{ deckId: string }>(created);
+    expect((await json<{ source?: unknown }>(await api("GET", `/lessons/${deckId}`))).source).toEqual({
+      id, title: "Nowy tytuł", copiedRevision: 2, currentRevision: 2,
+    });
   });
 });

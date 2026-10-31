@@ -79,15 +79,21 @@ describe("source material DTOs", () => {
 
   it("parses the summary and the full DTO with decks", () => {
     expect(SourceMaterialSummaryDtoSchema.parse(summary)).toEqual(summary);
-    expect(SourceMaterialDtoSchema.parse({ ...summary, body: "Tekst", decks: [deck] }).decks[0]).toEqual(deck);
-    expect(SourceMaterialDtoSchema.safeParse({ ...summary, body: "Tekst", decks: [{ ...deck, copiedRevision: null, stale: false }] }).success).toBe(true);
+    expect(SourceMaterialDtoSchema.parse({ ...summary, bodyRevision: 1, body: "Tekst", decks: [deck] }).decks[0]).toEqual(deck);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, bodyRevision: 1, body: "Tekst", decks: [{ ...deck, copiedRevision: null, stale: false }] }).success).toBe(true);
+  });
+
+  it("requires the body revision of the full source (the preview sent back as expectedSourceRevision)", () => {
+    expect(SourceMaterialDtoSchema.parse({ ...summary, bodyRevision: 2, body: "Tekst", decks: [] }).bodyRevision).toBe(2);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, body: "Tekst", decks: [] }).success).toBe(false);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, bodyRevision: 0, body: "Tekst", decks: [] }).success).toBe(false);
   });
 
   it("rejects invalid revisions, kinds, states and counts", () => {
     expect(SourceMaterialSummaryDtoSchema.safeParse({ ...summary, revision: 0 }).success).toBe(false);
     expect(SourceMaterialSummaryDtoSchema.safeParse({ ...summary, deckCount: -1 }).success).toBe(false);
-    expect(SourceMaterialDtoSchema.safeParse({ ...summary, body: "T", decks: [{ ...deck, kind: "quiz" }] }).success).toBe(false);
-    expect(SourceMaterialDtoSchema.safeParse({ ...summary, body: "T", decks: [{ ...deck, state: "deleted" }] }).success).toBe(false);
-    expect(SourceMaterialDtoSchema.safeParse({ ...summary, decks: [] }).success).toBe(false);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, bodyRevision: 1, body: "T", decks: [{ ...deck, kind: "quiz" }] }).success).toBe(false);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, bodyRevision: 1, body: "T", decks: [{ ...deck, state: "deleted" }] }).success).toBe(false);
+    expect(SourceMaterialDtoSchema.safeParse({ ...summary, bodyRevision: 1, decks: [] }).success).toBe(false);
   });
 });

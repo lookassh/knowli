@@ -74,8 +74,14 @@ export const SourceMaterialDeckDtoSchema = z.object({
 });
 export type SourceMaterialDeckDto = z.infer<typeof SourceMaterialDeckDtoSchema>;
 
-/** Pełne źródło: tekst i zestawy utworzone z niego (także zarchiwizowane). */
+/**
+ * Pełne źródło: tekst i zestawy utworzone z niego (także zarchiwizowane).
+ * `bodyRevision` to rewizja TREŚCI (rośnie tylko przy zmianie tekstu) —
+ * formularz lekcji ze źródła odsyła ją jako `expectedSourceRevision`, żeby
+ * serwer skopiował dokładnie ten tekst, który rodzic widział w podglądzie.
+ */
 export const SourceMaterialDtoSchema = SourceMaterialSummaryDtoSchema.extend({
+  bodyRevision: z.number().int().min(1),
   body: z.string(),
   decks: z.array(SourceMaterialDeckDtoSchema),
 });

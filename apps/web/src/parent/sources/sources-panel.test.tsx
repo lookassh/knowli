@@ -19,6 +19,7 @@ const source: SourceMaterialDto = {
   ...summaries[0]!,
   // jeden z dwóch zestawów jest zarchiwizowany — deckCount go pomija (jak na serwerze)
   deckCount: 1,
+  bodyRevision: 2,
   body: "I like pizza.\nDo you like apples?",
   decks: [
     { deckId: "10000000-0000-4000-8000-000000000001", title: "Angielski — rozdział: Unit 3", kind: "lesson", state: "published", copiedRevision: 1, stale: true },

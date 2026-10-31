@@ -27,6 +27,8 @@ interface StoredSource {
   title: string;
   body: string;
   revision: number;
+  /** Rewizja treści (rośnie tylko przy zmianie tekstu) — `expectedSourceRevision` tworzenia lekcji. */
+  bodyRevision: number;
   createdAt: string;
   updatedAt: string;
   decks: Array<{ deckId: string; title: string; kind: "lesson" | "vocabulary"; state: string; copiedRevision: number | null; stale: boolean }>;
@@ -44,7 +46,11 @@ interface Api {
   conflictNext: boolean;
   /** Tyle najbliższych POST /sources kończy się błędem 500 (wynik niepewny). */
   createFailures: number;
-  /** Status odpowiedzi tworzenia lekcji (202 przyjęte; 404 — źródło usunięte w innym oknie). */
+  /**
+   * Status odpowiedzi tworzenia lekcji (202 przyjęte; 404 — źródło usunięte w innym oknie).
+   * Niezależnie od niego, jak serwer: `expectedSourceRevision` inne niż bieżąca rewizja
+   * treści źródła daje 409 z `details.reason = "source_changed"`.
+   */
   lessonStatus: number;
   /** Lista zestawów kolejnych odczytów GET /decks (ostatnia zostaje). */
   deckLists: unknown[][];
@@ -65,6 +71,7 @@ function storedSource(): StoredSource {
     title: "Unit 3 — Food",
     body: BODY,
     revision: 2,
+    bodyRevision: 2,
     createdAt: "2026-10-30T12:00:00.000Z",
     updatedAt: "2026-10-31T12:00:00.000Z",
     decks: [
@@ -122,7 +129,7 @@ async function mockApi(page: Page): Promise<Api> {
       if (existing) return route.fulfill({ status: 200, json: { id: existing.id } });
       const id = NEW_IDS.find((candidate) => !api.sources.has(candidate))!;
       api.sources.set(id, {
-        id, title: body.title, body: body.body, revision: 1, createdAt: "2026-10-31T13:00:00.000Z", updatedAt: "2026-10-31T13:00:00.000Z",
+        id, title: body.title, body: body.body, revision: 1, bodyRevision: 1, createdAt: "2026-10-31T13:00:00.000Z", updatedAt: "2026-10-31T13:00:00.000Z",
         decks: [], requestId: body.clientRequestId,
       });
       return route.fulfill({ status: 201, json: { id } });
@@ -146,10 +153,10 @@ async function mockApi(page: Page): Promise<Api> {
         }
         if (api.conflictNext) {
           api.conflictNext = false;
-          api.sources.set(id, { ...stored, body: `${stored.body}\nWe like apples.`, revision: stored.revision + 1 });
+          api.sources.set(id, { ...stored, body: `${stored.body}\nWe like apples.`, revision: stored.revision + 1, bodyRevision: stored.bodyRevision + 1 });
           return route.fulfill({ status: 409, json: envelope("conflict", "Wersja jest nieaktualna.") });
         }
-        const updated = { ...stored, ...(patch.title ? { title: patch.title } : {}), ...(patch.body ? { body: patch.body } : {}), revision: stored.revision + 1,
+        const updated = { ...stored, ...(patch.title ? { title: patch.title } : {}), ...(patch.body ? { body: patch.body, bodyRevision: stored.bodyRevision + 1 } : {}), revision: stored.revision + 1,
           decks: stored.decks.map((deck) => ({ ...deck, stale: true })) };
         api.sources.set(id, updated);
         return route.fulfill({ json: withCount(updated) });
@@ -164,6 +171,10 @@ async function mockApi(page: Page): Promise<Api> {
       const body = request.postDataJSON() as Record<string, unknown>;
       api.lessonCreates.push({ path, body });
       if (api.lessonStatus === 404) return route.fulfill({ status: 404, json: envelope("not_found", "Nie znaleziono źródła.") });
+      const source = typeof body.sourceMaterialId === "string" ? api.sources.get(body.sourceMaterialId) : undefined;
+      if (source && body.expectedSourceRevision !== source.bodyRevision) {
+        return route.fulfill({ status: 409, json: { ...envelope("conflict", "Konflikt."), details: { reason: "source_changed" } } });
+      }
       return route.fulfill({ status: 202, json: { runId: "00000000-0000-4000-8000-0000000000aa", deckId: body.deckId } });
     }
     // edytor lekcji po utworzeniu: odczyt nieistotny dla tego speca
@@ -353,7 +364,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
       expect(api.lessonCreates).toHaveLength(1);
       expect(api.lessonCreates[0]!.path).toBe("/lessons/material");
-      expect(api.lessonCreates[0]!.body).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3 — Food", sourceMaterialId: SOURCE_ID });
+      expect(api.lessonCreates[0]!.body).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3 — Food", sourceMaterialId: SOURCE_ID, expectedSourceRevision: 2 });
       expect(api.lessonCreates[0]!.body).not.toHaveProperty("material");
     });
   });
@@ -564,6 +575,33 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("lesson-source-missing-change")).toHaveAttribute("href", "/parent/sources");
     await page.getByTestId("lesson-source-missing-change").click();
     await expect(page).toHaveURL(/\/parent\/sources$/);
+    await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+  });
+
+  test("lekcja ze źródła zmienionego w innym oknie: 409 odświeża podgląd, ponowne utworzenie wysyła nową rewizję", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto(`/parent/lessons/new?source=${SOURCE_ID}&subject=english_chapter`);
+    await expect(page.getByTestId("lesson-source-preview")).toHaveValue(BODY);
+    // w innym oknie: tekst źródła zmieniono po wyświetleniu podglądu
+    const stored = api.sources.get(SOURCE_ID)!;
+    api.sources.set(SOURCE_ID, { ...stored, body: `${BODY}\nWe like bananas.`, revision: stored.revision + 1, bodyRevision: stored.bodyRevision + 1 });
+
+    await page.getByTestId("lesson-create-submit").click();
+    await expect(page.getByTestId("api-error")).toContainText(messages.sources.changedBeforeCreate);
+    await expect(page.getByTestId("lesson-source-preview")).toHaveValue(/We like bananas\./);
+    await expect(page.getByTestId("lesson-create-submit")).toBeEnabled();
+    await expect(page.getByTestId("lesson-create-submit")).toHaveText(messages.lessons.createLesson);
+    await expect(page).toHaveURL(new RegExp(`/parent/lessons/new\\?source=${SOURCE_ID}&subject=english_chapter$`));
+    expect(api.lessonCreates).toHaveLength(1);
+    expect(api.lessonCreates[0]!.body).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 2 });
+    await expectNoHorizontalOverflow(page);
+
+    // ponowne „Utwórz lekcję” potwierdza nowy tekst: nowe polecenie z bieżącą rewizją treści
+    await page.getByTestId("lesson-create-submit").click();
+    await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+    expect(api.lessonCreates).toHaveLength(2);
+    expect(api.lessonCreates[1]!.body).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+    expect(api.lessonCreates[1]!.body.clientRequestId).not.toBe(api.lessonCreates[0]!.body.clientRequestId);
     await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
   });
 
