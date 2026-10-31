@@ -211,6 +211,8 @@ interface Scenario {
   services: () => Services;
   answer: Answer;
   withPriorSuccess?: boolean;
+  /** Dodatkowe zatwierdzone warianty przekształcenia (`lessonWorld.transformVariants`). */
+  transformVariants?: readonly string[];
 }
 
 /** Jedno dziecko, jedna lekcja (z nagraniem albo bez), odpowiedź na pierwsze zadanie typu. */
@@ -221,6 +223,7 @@ async function play(scenario: Scenario, feedbackAudio: "ready" | "pending" | nul
   const lesson = await lessonWorld(pool, {
     childId: child.id, richPool: true, now, withObjectiveAssessment: scenario.withPriorSuccess ?? false,
     ...(feedbackAudio ? { withFeedbackAudio: feedbackAudio } : {}),
+    ...(scenario.transformVariants ? { transformVariants: scenario.transformVariants } : {}),
   });
   const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
   const task = await issueUntil(services, session.sessionId, scenario.type);
@@ -310,6 +313,22 @@ describe("feedback lekcji bez nagrania zdania", () => {
     const { attempt, task } = await play({ type: "lesson_choice", services: plain, answer: () => ({ modality: "skip" }) }, "ready");
     expect(attempt.feedback).toBeNull();
     expect(await audioEvents(task.taskId)).toEqual([]);
+  });
+
+  it("„prawie” z najbliższym zatwierdzonym wariantem ≠ kanoniczny — omówienie pokazuje wariant, bez correctAudioAssetId i audio_issued", async () => {
+    // Literówka poza focus w wariancie dłuższym od kanonicznego „she plays”: najbliższy wariant to „Yes, she plays.”.
+    const variant = "Yes, she plays.";
+    const { attempt, task, key } = await play({
+      type: "lesson_transform", services: () => graderServices(), answer: text("Yess, she plays."), withPriorSuccess: true, transformVariants: [variant],
+    }, "ready");
+    expect(key.answer).toBe("she plays");
+    expect(key.acceptedAnswers).toContain(variant);
+    expect(attempt.feedback).toMatchObject({ kind: "lesson_almost", correctText: variant });
+    expect(attempt.feedback?.correctAudioAssetId).toBeUndefined();
+    expect(attempt.taskState).toBe("answered");
+    expect(await audioEvents(task.taskId)).toEqual([]);
+    // Nagranie zadania jest w kluczu — brak w feedbacku wynika z bramki wariantu, nie z braku zasobu.
+    expect(key.feedbackAudioAssetId).toBe(await feedbackAssetOf(task.taskId));
   });
 
   it("not_assessed (brak modelu przy no_match) — bez correctAudioAssetId i audio_issued", async () => {

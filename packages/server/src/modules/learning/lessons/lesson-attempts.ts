@@ -213,8 +213,11 @@ async function assistanceFor(
   return { assistance: [...assistance], feedbackCount };
 }
 
-/** Tekst rozwiązania własnego zadania pokazywany dziecku (design feedback). */
-function correctTextFor(task: TaskRow, key: LessonTaskAnswerKey): string {
+/**
+ * Kanoniczny tekst rozwiązania własnego zadania pokazywany dziecku (design
+ * feedback). Nagranie zdania (`feedback_audio`) czyta to samo rozwiązanie.
+ */
+function correctTextFor(key: LessonTaskAnswerKey): string {
   if (key.exerciseType === "lesson_choice" || key.exerciseType === "lesson_short_answer") {
     return key.optionValues?.[key.correctOptionId ?? ""] ?? key.answer;
   }
@@ -262,7 +265,7 @@ function gradeLessonAnswer(
   skipFormCheck = false,
 ): LessonGradeResult {
   const objectiveId = key.objectiveId;
-  const correctText = correctTextFor(task, key);
+  const correctText = correctTextFor(key);
 
   // „Pomiń” → próba bez ocen (jak słówka): nie ma ObjectiveGrade.
   if (input.modality === "skip") {
@@ -980,11 +983,16 @@ export function revealsAnswer(feedback: FeedbackDto): boolean {
  * (tylko trening — kartkówka nie dostaje go w kluczu i nie ma feedbacku).
  * Nagranie ujawnia rozwiązanie, więc towarzyszy wyłącznie feedbackowi, który
  * je już pokazuje; oferta trenera precyzji i „Pomiń” (null) go nie dostają.
+ * Nagranie czyta rozwiązanie kanoniczne, więc omówienie pokazujące inny
+ * zatwierdzony wariant (`correctText` najbliższego wariantu ≠ `correctTextFor`)
+ * też go nie dostaje: dziecko nie słyszy innego zdania, niż widzi. Bez pola
+ * nagrania nie ma też pieczęci `audio_issued`.
  * Wywołujący stosuje ją tylko, gdy odpowiedź kończy zadanie (stan ≠ `issued`).
  */
 export function withFeedbackSentenceAudio(feedback: FeedbackDto | null, key: LessonTaskAnswerKey): FeedbackDto | null {
   if (feedback === null || key.feedbackAudioAssetId === undefined) return feedback;
   if (feedback.kind === "lesson_precision_hint" || !revealsAnswer(feedback)) return feedback;
+  if (feedback.correctText !== undefined && feedback.correctText !== correctTextFor(key)) return feedback;
   return { ...feedback, correctAudioAssetId: key.feedbackAudioAssetId };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fillCloze } from "./cloze";
 import { feedbackSentenceText } from "./feedback-sentence-text";
 
 const items = (...texts: string[]) => texts.map((text, i) => ({ id: `i${i}`, text }));
@@ -30,9 +31,37 @@ describe("feedbackSentenceText", () => {
     expect(feedbackSentenceText({ exerciseType, answer: "  She  plays football every day. " })).toBe("She plays football every day.");
   });
 
+  it("lesson_cloze wstawia słowa luk w kolejności — tekst jak w omówieniu (`fillCloze`)", () => {
+    const clozeText = "It's ___ today. I'm wearing my ___.";
+    const gapAnswers = ["sunny", "T-shirt"];
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers })).toBe("It's sunny today. I'm wearing my T-shirt.");
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers })).toBe(fillCloze(clozeText, gapAnswers));
+    // Wspólne zasady: białe znaki i spacja przed interpunkcją jak w pozostałych typach.
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText: "  It's ____ today .  I'm wearing my ___. ", gapAnswers }))
+      .toBe("It's sunny today. I'm wearing my T-shirt.");
+  });
+
+  it("lesson_cloze bez kompletu słów, z nadmiarem słów albo bez luk daje null", () => {
+    const clozeText = "It's ___ today. I'm wearing my ___.";
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers: ["sunny"] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers: ["sunny", " "] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers: ["sunny", "T-shirt", "boots"] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText, gapAnswers: ["sunny", "", "T-shirt"] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText: "It's sunny today.", gapAnswers: [] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", gapAnswers: ["sunny"] })).toBeNull();
+  });
+
+  it("lesson_cloze dłuższy niż 200 znaków (po wstawieniu słów) daje null", () => {
+    const gapAnswers = ["sunny", "windy"];
+    // `${filler} sunny and windy.` = długość wypełniacza + 17 znaków.
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText: `${"a".repeat(184)} ___ and ___.`, gapAnswers })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_cloze", clozeText: `${"a".repeat(183)} ___ and ___.`, gapAnswers })).toHaveLength(200);
+  });
+
   it.each([
     "lesson_card", "lesson_notice", "lesson_short_answer", "lesson_match",
-    "lesson_group", "lesson_cloze", "lesson_calculation", "lesson_keywords",
+    "lesson_group", "lesson_calculation", "lesson_keywords",
   ])("%s nie ma zdania", (exerciseType) => {
     expect(feedbackSentenceText({ exerciseType, answer: "She plays football." })).toBeNull();
   });
