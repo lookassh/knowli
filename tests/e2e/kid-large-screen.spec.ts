@@ -692,12 +692,35 @@ const SCREENSHOT_WINDOWS = [
   { width: 3440, height: 1440, scale: 1.6 },
 ] as const;
 
+/**
+ * Waits for a settled picture: fonts loaded, no running finite CSS/WAAPI animation, and the computed opacity of every
+ * element of the page unchanged for ten frames. reducedMotion drops Motion's transforms but keeps its opacity fades, and those
+ * are driven from JS (inline style per frame), so `getAnimations()` alone does not see them.
+ */
+async function waitForSettledPicture(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+    const opacities = () => [...document.querySelectorAll(".kid-page *")]
+      .map((element) => getComputedStyle(element).opacity).join(",");
+    let previous = "";
+    let stableFrames = 0;
+    for (let attempt = 0; attempt < 300 && stableFrames < 10; attempt += 1) {
+      await frame();
+      const next = opacities();
+      // Endless animations (if any) never finish, so only finite ones count.
+      const running = document.getAnimations().some((animation) =>
+        animation.playState === "running" && animation.effect?.getComputedTiming().iterations !== Infinity);
+      stableFrames = next === previous && !running ? stableFrames + 1 : 0;
+      previous = next;
+    }
+    if (stableFrames < 10) throw new Error("the page did not settle: opacity or animations kept changing for 300 frames");
+  });
+}
+
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
-  await page.evaluate(async () => { await document.fonts.ready; });
-  await nextFrames(page);
-  const path = testInfo.outputPath(`${name}.png`);
-  await page.screenshot({ path });
-  await testInfo.attach(name, { path, contentType: "image/png" });
+  await waitForSettledPicture(page);
+  await testInfo.attach(name, { body: await page.screenshot(), contentType: "image/png" });
 }
 
 for (const { width, height, scale } of SCREENSHOT_WINDOWS) {
