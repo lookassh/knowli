@@ -147,6 +147,17 @@
   --kid-warm-text: var(--kid-color-warm);
   --kid-warm-line: var(--kid-color-warm);
   --kid-visual-choice-min-size: 112px;
+  /* Window units. KidPage scales a large window with CSS zoom (inline
+     --kid-zoom), and zoom multiplies vh/dvh/svh/vw by the scale, so every
+     window-relative length is written calc(N * var(--kid-dvh)) etc. Each token
+     keeps its unit kind (dvh stays dvh); the fallback 1 applies outside zoom.
+     Not registered with @property: --kid-zoom must substitute on the element
+     that declares the token. Raw units are rejected by
+     tests/kid-design-tokens.test.ts. */
+  --kid-vh: calc(1vh / var(--kid-zoom, 1));
+  --kid-dvh: calc(1dvh / var(--kid-zoom, 1));
+  --kid-svh: calc(1svh / var(--kid-zoom, 1));
+  --kid-vw: calc(1vw / var(--kid-zoom, 1));
 }
 
 /* Scrollbars in theme colours instead of the system ones: a thin outline
@@ -165,12 +176,12 @@
   color-scheme: dark;
   color: var(--kid-text);
   background: var(--kid-bg);
-  min-height: 100dvh;
+  min-height: calc(100 * var(--kid-dvh));
   font-family: inherit;
 }
 
 .kid-page--flow {
-  min-height: 100dvh;
+  min-height: calc(100 * var(--kid-dvh));
 }
 
 .kid-page--session {
@@ -178,9 +189,9 @@
   z-index: 1;
   inset-inline: 0;
   top: 0;
-  height: 100dvh;
+  height: calc(100 * var(--kid-dvh));
   min-height: 0;
-  max-height: 100dvh;
+  max-height: calc(100 * var(--kid-dvh));
   overflow: hidden;
 }
 
@@ -344,7 +355,7 @@
    stimulus scale of .kid-source, so the hierarchy holds and the whole card fits
    a 360x540 phone without scrolling. */
 .kid-ui .kid-exposure-content .kid-source {
-  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
+  font-size: clamp(var(--kid-type-headline-sm-size), calc(6 * var(--kid-vw)), var(--kid-type-display-sm-size));
 }
 
 @media (max-height: 420px) {
@@ -547,7 +558,7 @@
 /* ── Ekran zestawów „Co dziś robimy?” (Zatoka) ── */
 
 .kid-deck-screen {
-  min-height: 100dvh;
+  min-height: calc(100 * var(--kid-dvh));
 }
 
 .kid-deck-screen .kid-greeting {
@@ -748,8 +759,8 @@
   position: fixed;
   z-index: 5;
   box-sizing: border-box;
-  width: min(280px, calc(100vw - max(16px, var(--kid-safe-left)) - max(16px, var(--kid-safe-right))));
-  max-height: min(70dvh, 320px);
+  width: min(280px, calc(100 * var(--kid-vw) - max(16px, var(--kid-safe-left)) - max(16px, var(--kid-safe-right))));
+  max-height: min(calc(70 * var(--kid-dvh)), 320px);
   overflow-y: auto;
   padding: 16px;
   border: 1px solid var(--kid-line);
@@ -806,7 +817,7 @@
    larger than the answer cards (title-md) and the typed answer (headline-sm). */
 .kid-ui .kid-word {
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-display-sm-size), 10vw, var(--kid-type-display-lg-size));
+  font-size: clamp(var(--kid-type-display-sm-size), calc(10 * var(--kid-vw)), var(--kid-type-display-lg-size));
   font-weight: var(--kid-type-display-sm-weight);
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -816,7 +827,7 @@
 
 .kid-source {
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-size));
+  font-size: clamp(var(--kid-type-display-sm-size), calc(9 * var(--kid-vw)), var(--kid-type-display-size));
   font-weight: var(--kid-type-display-sm-weight);
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -881,20 +892,20 @@
 }
 
 .kid-visual-number {
-  width: min(60vw, 240px);
+  width: min(calc(60 * var(--kid-vw)), 240px);
   height: auto;
 }
 
 .kid-visual-sequence {
-  width: min(80vw, 320px);
+  width: min(calc(80 * var(--kid-vw)), 320px);
   height: auto;
 }
 
 /* Ilustracja karty (SPEC §24): obraz wspiera znaczenie, duża i zaokrąglona,
    żeby czytać się dobrze na telefonie; brak obrazu wraca do .kid-visual. */
 .kid-illustration {
-  width: min(60vw, 260px);
-  height: min(36svh, 260px);
+  width: min(calc(60 * var(--kid-vw)), 260px);
+  height: min(calc(36 * var(--kid-svh)), 260px);
   object-fit: contain;
   border-radius: var(--kid-shape-xl);
   border: 0;
@@ -1375,7 +1386,7 @@
   inset-inline-end: 0;
   top: calc(100% + 8px);
   box-sizing: border-box;
-  width: min(280px, calc(100vw - 48px));
+  width: min(280px, calc(100 * var(--kid-vw) - 48px));
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--kid-accent);
@@ -1548,7 +1559,7 @@
   gap: 4px;
   margin: 8px 0 0;
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-display-sm-size), 9vw, var(--kid-type-display-lg-size));
+  font-size: clamp(var(--kid-type-display-sm-size), calc(9 * var(--kid-vw)), var(--kid-type-display-lg-size));
   font-weight: var(--kid-type-display-weight);
   overflow-wrap: anywhere;
 }
@@ -2693,7 +2704,7 @@
 .kid-lesson-source {
   margin: 0;
   font-family: var(--kid-font-display);
-  font-size: clamp(var(--kid-type-headline-sm-size), 6vw, var(--kid-type-display-sm-size));
+  font-size: clamp(var(--kid-type-headline-sm-size), calc(6 * var(--kid-vw)), var(--kid-type-display-sm-size));
   font-weight: var(--kid-type-headline-sm-weight);
   color: var(--md-sys-color-on-surface);
   text-align: center;

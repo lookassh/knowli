@@ -157,7 +157,7 @@
 }
 
 .content :global(.kid-answer-feedback) {
-  max-height: min(36vh, 300px);
+  max-height: min(calc(36 * var(--kid-vh)), 300px);
 }
 
 .content :global(.kid-feedback-content) {
@@ -168,7 +168,7 @@
 }
 
 .content :global(.kid-speech-feedback) {
-  max-height: min(36vh, 300px);
+  max-height: min(calc(36 * var(--kid-vh)), 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }

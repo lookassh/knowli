@@ -1,7 +1,7 @@
 .root {
   box-sizing: border-box;
   width: min(100%, 560px);
-  min-height: 100dvh;
+  min-height: calc(100 * var(--kid-dvh));
   min-width: 0;
   margin-inline: auto;
   padding-top: max(16px, env(safe-area-inset-top));

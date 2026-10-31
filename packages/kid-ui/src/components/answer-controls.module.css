@@ -148,7 +148,7 @@
   display: block;
   line-height: 1.4;
   min-height: calc(4.2em + 22px);
-  max-height: max(calc(4.2em + 22px), min(16.8em, 40dvh));
+  max-height: max(calc(4.2em + 22px), min(16.8em, calc(40 * var(--kid-dvh))));
   field-sizing: content;
   resize: none;
   overflow-y: auto;
