@@ -1,118 +1,130 @@
 # Kid UI na dużych ekranach — poprawki po PR #200
 
-**Status:** projekt uzgodniony w rozmowie 2026-10-31. Właściciel wybrał stały odstęp od góry dla zwartego układu na wysokim oknie (zamiast wyśrodkowania), zaakceptował projekt i poprosił o PR po review trzech niezależnych krytyków (spec, plan, gałąź). Uzupełnia `2026-10-30-kid-ui-large-screens-design.md` (dalej: „spec #200”); tam, gdzie się różnią, obowiązuje ten dokument.
+**Status:** projekt uzgodniony w rozmowie 2026-10-31. Właściciel wybrał stały odstęp od góry dla zwartego układu na wysokim oknie (zamiast wyśrodkowania), zaakceptował projekt i poprosił o PR po review trzech niezależnych krytyków (spec, plan, gałąź). Wersja 2 — po review trzech krytyków specu (mechanizm, UX na urządzeniach, testy). Uzupełnia `2026-10-30-kid-ui-large-screens-design.md` (dalej: „spec #200”); tam, gdzie się różnią, obowiązuje ten dokument.
 
 ## 1. Problem i kryteria
 
 Po PR #200 zostały znane ograniczenia (spec #200 §2, §7 i raport PR):
 
-1. **Kafelki obrazków kurczą się w chwili werdyktu**, gdy ich rozmiar ogranicza wysokość materiału — np. laptop 1536×730 (Windows 125%): ok. 258 → 220 px. Przyczyna: w ramie `flow` zadań z obrazkami stopka przed werdyktem jest pusta (`.actions:empty { display: none }`), a panel wyniku zajmuje ją dopiero po werdykcie; materiał traci jego wysokość, a kafelki liczą rozmiar z `100cqh`. To samo dzieje się na 3440×1440, gdy widać komunikat „audio niedostępne” (pasek statusu zabiera ok. 87 px wewnętrznych i limit 300 px przestaje wystarczać).
-2. **Panel wyniku może przez klatkę zasłonić treść.** Rezerwa pod panelem w trybie `overlay` (`dockPad` w `ExerciseFrame`) jest liczona w `useEffect`, czyli po pierwszym malowaniu; werdykt przychodzi z sieci, więc React nie wykonuje efektu przed malowaniem. Dotyczy zwartego układu na 34" i każdego ekranu z trybem `overlay`.
-3. **Rezerwa nie wydłuża przewijania, gdy materiał już się przewija.** `.materialContent` ma `flex: 1` (podstawa 0) i jawne `min-height`, więc nie rośnie razem z dziećmi wystającymi poza nią; padding rezerwy zostaje wewnątrz pudełka, a zakres przewijania kończy się na dzieciach — panel zasłania koniec treści (poza zwartym układem). Zmiana na `flex: 1 0 auto` na stałe psuła `kid-responsive.spec.ts` (karta słowa na telefonie), dlatego wtedy ją cofnięto.
+1. **Kafelki obrazków kurczą się w chwili werdyktu**, gdy ich rozmiar ogranicza wysokość materiału — np. laptop 1536×730 (Windows 125%): ok. 258 → 220 px. Przyczyna: w ramie `flow` wyboru obrazków stopka przed werdyktem jest pusta (`.actions:empty { display: none }`), a panel wyniku zajmuje ją dopiero po werdykcie; materiał traci jego wysokość, a kafelki liczą rozmiar ze `100cqh`. To samo dzieje się na 3440×1440, gdy widać komunikat „audio niedostępne” (pasek statusu zabiera ok. 87 px wewnętrznych).
+2. **Panel wyniku może zasłonić treść na co najmniej jedną malowaną klatkę.** Rezerwa pod panelem w trybie `overlay` (`dockPad` w `ExerciseFrame`) powstaje z `setDockPad` wywołanego w `useEffect`; ta aktualizacja stanu trafia do zwykłego pasa Reacta i renderuje się dopiero po malowaniu. Do tego w chwili werdyktu wychodzące akcje zadania (`Fragment` w `AnimatePresence mode="popLayout"`) zostają jeszcze w układzie — fragmentu nie da się „wypchnąć” — więc pierwszy pomiar widzi stopkę podwójnej wysokości i zaniża zakładkę (zwarty układ: ok. 118 px; w zwykłym zadaniu pisemnym z krótkim błędnym werdyktem na 3440×1440 bramka rezerwy w ogóle się nie włącza aż do `ResizeObserver`, którego aktualizacja też ląduje po malowaniu).
+3. **Rezerwa nie wydłuża przewijania, gdy materiał już się przewija.** `.materialContent` ma `flex: 1` (podstawa 0) i jawne `min-height`, więc nie rośnie razem z dziećmi; padding rezerwy zostaje wewnątrz pudełka, a zakres przewijania kończy się na dzieciach — panel zasłania koniec treści (poza zwartym układem). `flex: 1 0 auto` na stałe psuło `kid-responsive.spec.ts` (karta słowa na telefonie), dlatego w #200 je cofnięto.
 4. **Na 34" odpowiedź pisemna, litery i mowa zajmują górną połowę ekranu** — zwarty układ (spec #200 §3.2) stawia instrukcję, materiał i stopkę u góry, a 40–60% wysokości pod nimi jest puste.
 5. **Tablet z Androidem w poziomie traci zwarty układ przy otwartej klawiaturze.** `interactiveWidget: "resizes-content"` zmniejsza okno poniżej 781 px, warunek zwartego układu przestaje pasować i pole odpowiedzi przeskakuje w trakcie pisania.
-6. **Tekst z lukami nie ma limitu długości wiersza** (karty lekcji mają `60ch`, spec #200 §3.1).
+6. **Limit długości wiersza tekstu nie działa.** Spec #200 §3.1 dał kartom lekcji `max-inline-size: 60ch`, ale `ch` to szerokość cyfry `0` (w Nunito 0,6 em), więc 60ch przy 1,15 rem to ok. 660 px — tyle, ile ma materiał kolumny 720 px; reguła prawie nic nie zmienia, a wiersz ma ok. 70–80 znaków. Tekst z lukami (1,3 rem) nie ma limitu wcale (wiersz ok. 79 znaków przy 688 px).
 
 Kryteria sukcesu:
 
-- Kafelki obrazków i obrazek-pytanie „Co to jest?” mają ten sam rozmiar i położenie (± 1 px) przed werdyktem i po nim — dla werdyktu poprawnego i błędnego, na oknach 1536×730, 1280×600, 390×750, 360×640 i 3440×1440 (także z widocznym komunikatem audio).
-- Panel wyniku nie zachodzi na treść materiału w żadnej malowanej klatce (sprawdzane w pierwszym callbacku `MutationObserver` po wstawieniu panelu — przed malowaniem).
-- Gdy materiał przewija się już przed werdyktem, po werdykcie koniec treści da się przewinąć ponad górną krawędź panelu (także poza zwartym układem).
-- W zwartym układzie (poza wyborem obrazków) nad instrukcją jest stały odstęp 90 px wewnętrznych (na 34" pełny ekran: 144 px ekranu); odpowiedzi nadal nie przesuwają się w chwili werdyktu.
-- Dotykowy tablet w poziomie (≥ 960 px szerokości) zachowuje zwarty układ po otwarciu klawiatury, dopóki wysokość okna ≥ 480 px.
-- Tekst z lukami ma wiersz nie szerszy niż `60ch` swojej czcionki.
-- Bez regresji: wszystkie testy jednostkowe i pełne `pnpm test:e2e:shards`.
+- **Wybór obrazków** (`picture_listening`) od szerokości 600 px: kafelki mają ten sam rozmiar i położenie (± 1 px) przed werdyktem i po nim, dla werdyktu poprawnego i błędnego (z podpowiedzią głosową i bez), na 1536×730, 1280×600 i 3440×1440 z widocznym komunikatem „audio niedostępne”. Na 3440×1440 bez komunikatu kafelki zostają na limicie 300 px (kryterium spec #200).
+- **Panel wyniku nie zachodzi na treść materiału w żadnej malowanej klatce:** od pierwszego callbacku `MutationObserver` po wstawieniu panelu przez kolejne klatki aż do ustalenia — zakładka ≤ 8 px (próg korekty z `ExerciseFrame`), a po ustaleniu ≤ 1 px.
+- Gdy materiał przewija się już przed werdyktem, po werdykcie koniec treści jest nad panelem, także po przewinięciu materiału do końca (także poza zwartym układem).
+- **Zwarty układ przy myszy lub touchpadzie** (poza wyborem obrazków): nad instrukcją odstęp do 90 px wewnętrznych (34" pełny ekran: 144 px ekranu), który znika, zanim materiał zacznie się przewijać; odpowiedzi nadal nie przesuwają się w chwili werdyktu na oknach z testów #200.
+- **Dotykowy tablet w poziomie** (≥ 960 px szerokości) zachowuje zwarty układ po otwarciu klawiatury, dopóki wysokość okna ≥ 480 px.
+- Tekst kart lekcji i tekst z lukami mają wiersz ok. 60 znaków (najdłuższy wiersz testowego tekstu ≤ 65 znaków) w kolumnie 720 px.
+- Bez regresji: `pnpm typecheck`, `pnpm test:unit`, pełne `pnpm test:e2e:shards`.
 
 ## 2. Zakres
 
-Wyłącznie `packages/kid-ui`, testy i dokumentacja. Bez zmian Kid API, DTO, kontraktów, bazy, serwera, panelu rodzica, MCP i `SKILL.md`. Jeden PR.
+Wyłącznie `packages/kid-ui`, testy i dokumentacja. Bez zmian Kid API, DTO, kontraktów, bazy, serwera, panelu rodzica, MCP i `SKILL.md`. Jeden PR. Do tego długi w testach z raportu PR #200 (§5.2).
 
-Do tego długi w testach z raportu PR #200 (§5.2). Poza zakresem: pozostałe drobne uwagi krytyków #200 (m.in. `:not()` w regule zwartej nakładki, warunek „≥ 2 wiersze” na telefonie, testy klawiatury zależne od głębokości JSX, długość punktu w `AGENTS.md`), pierwsze malowanie w skali 1 przy pełnym załadowaniu strony (spec #200 §4.1) oraz zmiana zachowania, gdy sam komunikat audio pojawia się w trakcie zadania — robi wtedy miejsce kosztem materiału, zgodnie z decyzją z PR #145 (komunikat z przyciskiem nie może zasłaniać odpowiedzi).
+Świadomie poza zakresem (raportowane w PR):
+
+- **Telefony (< 600 px szerokości) w wyborze obrazków** — bez rezerwy. Typowy telefon w pionie (≥ ok. 680 px wysokości okna) ma kafelki ograniczone szerokością i nie zmienia ich przy werdykcie; mały telefon (np. 375×548) nadal je zmniejsza w chwili werdyktu (np. 165 → 112 px), bo stała rezerwa dwuwierszowego panelu (ok. 160 px) dałaby 112 px już przed odpowiedzią.
+- **Obrazek-pytanie w „Co to jest?”** (`picture_recognition`) nadal maleje w chwili werdyktu (`38cqh`): to bodziec, nie odpowiedź (niezmiennik spec #200 dotyczy odpowiedzi), a rezerwa zmniejszyłaby go przed odpowiedzią nawet o ok. 26% na telefonie.
+- Pojawienie się samego komunikatu audio w trakcie zadania nadal robi mu miejsce kosztem materiału (decyzja z PR #145: komunikat z przyciskiem nie zasłania odpowiedzi).
+- Pierwsze malowanie w skali 1 przy pełnym załadowaniu strony (spec #200 §4.1) i pozostałe drobne uwagi krytyków #200 (`:not()` w regule zwartej nakładki, warunek „≥ 2 wiersze” na telefonie, testy klawiatury zależne od głębokości JSX, długość punktu w `AGENTS.md`).
 
 ## 3. Zachowanie i mechanizm
 
-### 3.1 Stała rezerwa stopki w zadaniach z obrazkami
+### 3.1 Stała rezerwa stopki w wyborze obrazków
 
-- Nowy token w bloku tokenów `styles.css`: `--kid-picture-dock-space` — wysokość stopki ramy (`.actions`, `box-sizing: border-box`, z paddingiem 8 + 4 px) z panelem wyniku `compact` z jednowierszowym komunikatem. Dwie wartości: domyślna (okno < 600 px — panel w dwóch wierszach: treść nad szeroką akcją) i od `(min-width: 600px)` (panel w jednym wierszu: treść obok akcji). Wartości wynikają z pomiaru prawdziwego panelu dla werdyktu poprawnego i błędnego (zaokrąglone w górę do pełnego piksela); komentarz przy tokenie podaje skład (np. akcja 54 + padding panelu 2 × 10 + padding stopki 12).
-- W ramie `flow` z `data-prompt-kind` `picture_listening` lub `picture_recognition` stopka ma `min-height: var(--kid-picture-dock-space)` i nie jest ukrywana, gdy jest pusta. Panel wyniku pojawia się w zarezerwowanym miejscu (u góry stopki), więc wiersz materiału ma tę samą wysokość przed werdyktem i po nim, a kafelki (`100cqh`) oraz obrazek-pytanie (`38cqh`) nie zmieniają rozmiaru. Panel wyższy niż rezerwa (dłuższy komunikat) zmniejsza je tylko o nadwyżkę.
-- Wyjątek: przy powiększeniu gestem (`data-zoomed="true"`) i w bardzo niskim oknie (`data-viewport-very-short="true"`) strona przewija się w całości, materiał nie ma określonej wysokości (`container-type: inline-size`), więc rezerwy nie ma — pusta stopka jest ukryta jak dziś.
-- Skutek: przed werdyktem kafelki ograniczone wysokością mają od razu rozmiar „po werdykcie” (laptop 1536×730: ok. 220 px przez całe zadanie), a pod nimi stoi puste miejsce na panel. Kafelki ograniczone szerokością (telefon w pionie, tablet, 34" z limitem 300 px) nie zmieniają się. Kryterium spec #200 (odstęp kafelki → panel ≤ 15% wysokości okna na 3440×1300 i 3440×1440) obowiązuje dalej.
+- Nowy token w bloku tokenów `styles.css`: `--kid-picture-dock-height` — minimalna wysokość panelu wyniku `compact` w jednym wierszu (od 600 px szerokości: treść obok akcji). Zapisany jako skład z tokenów i `rem` (części tekstowe w `rem`, żeby rosły z rozmiarem czcionki systemu), np. `calc(2 * 10px + max(54px, <wysokość dwóch bloków komunikatu błędnego werdyktu>))`; skład wynika z CSS panelu i `AnswerFeedback` (błędny werdykt pokazuje etykietę i poprawną odpowiedź w dwóch blokach, a w wierszu może stać przycisk podpowiedzi głosowej 48 px) i jest potwierdzony pomiarem prawdziwego panelu dla obu werdyktów.
+- Od `(min-width: 600px)`, w ramie `flow` z `data-prompt-kind="picture_listening"` (poza `data-zoomed="true"` i `data-viewport-very-short="true"`):
+  - stopka `.actions` ma `min-height: calc(var(--kid-picture-dock-height) + 12px)` (padding stopki 8 + 4) i nie jest ukrywana, gdy jest pusta;
+  - panel wyniku w tej ramie ma `min-height: var(--kid-picture-dock-height)`.
+  Poprawny i błędny werdykt dają wtedy z konstrukcji tę samą wysokość stopki, a wiersz materiału (i `100cqh` kafelków) nie zmienia się w chwili werdyktu. Panel wyższy niż token (dłuższy komunikat) zmniejsza kafelki tylko o nadwyżkę. Siatka ma odstęp 8 px między ścieżkami niezależnie od tego, czy stopka jest pusta, czy ukryta (sprawdzone w review), więc rezerwa zmienia wiersz materiału dokładnie o wysokość stopki.
+- Skutek: kafelki ograniczone wysokością mają od razu rozmiar „po werdykcie” (laptop 1536×730: ok. 220 px przez całe zadanie; 1280×600: ok. 159 px), a pod nimi stoi pusta stopka w kolorze tła (wygląda jak dolny margines). Kafelki ograniczone szerokością lub limitem (tablet w pionie, 34") nie zmieniają się. Kryterium spec #200 (odstęp kafelki → panel ≤ 15% wysokości okna na 3440×1300 i 3440×1440, limit 300 px na 3440×1440) obowiązuje dalej; jeśli pomiar pokaże, że token przekracza zapas limitu 300 px, implementacja zatrzymuje się i zgłasza to przed zmianą testu.
 
-### 3.2 Rezerwa liczona przed malowaniem
+### 3.2 Rezerwa gotowa przed malowaniem
 
-- Pomiar rezerwy (`measure` w `ExerciseFrame`) i ponowny pomiar po zmianie `dockPad` działają w izomorficznym efekcie layoutu (ten sam helper co w `layout/viewport.ts`, wydzielony do współdzielonego modułu w `layout/`). `setDockPad` w efekcie layoutu powoduje synchroniczny ponowny render przed malowaniem, a ponowny pomiar po zmianie `dockPad` (też efekt layoutu, wywołanie synchroniczne) wykonuje korektę przewinięcia, gdy zakres przewijania już istnieje. Ponowny pomiar w `requestAnimationFrame` i `ResizeObserver` zostają jako zabezpieczenie (np. dla czcionek i obrazków dociąganych później).
-- Efekt odsłonięcia panelu (`scheduleFeedbackDockReveal`) zostaje w `useEffect` — przewija stronę dopiero po ułożeniu.
-- Pomiar prostokątów pozostaje w jednostkach z spec #200 §4.4 (`toLayoutPx`).
+- **Akcje poza `AnimatePresence`.** W `ExerciseFrame` pod `AnimatePresence mode="popLayout"` zostaje wyłącznie panel wyniku (kotwica `overlay` albo `flowDock`); akcje zadania renderują się obok, warunkowo, bez obecności. W chwili werdyktu znikają w tym samym commicie co pojawia się panel, więc pierwszy pomiar widzi ułożoną stopkę. Wyjście panelu (ponowna próba) działa jak dziś: panel jest wypychany z układu i animuje wyjście, a akcje wracają od razu.
+- **Pomiar w efekcie layoutu.** Efekt rezerwy działa w izomorficznym efekcie layoutu (helper z `layout/viewport.ts` wydzielony do współdzielonego modułu w `layout/`) i zależy od obecności panelu (`hasDock`), `task.taskId` i trybu, nie od tożsamości węzła JSX `dock` (LearnScreen tworzy go przy każdym renderze). `setDockPad` w efekcie layoutu daje synchroniczny ponowny render przed malowaniem; efekt po zmianie `dockPad` (też layoutu) mierzy od razu synchronicznie i wykonuje korektę przewinięcia, gdy zakres przewijania już istnieje. Pomiar w `requestAnimationFrame` zostaje jako zabezpieczenie.
+- **Późniejsze pomiary przed malowaniem.** Pomiar wywołany przez `ResizeObserver` lub `requestAnimationFrame` zatwierdza `setDockPad` przez `flushSync` (callback `ResizeObserver` działa przed malowaniem; `flushSync` nie jest wołany wewnątrz efektu layoutu — tam wystarcza zwykły `setState`).
+- Efekt odsłonięcia panelu (`scheduleFeedbackDockReveal`) zostaje w `useEffect`. Pomiar prostokątów zostaje w jednostkach ze spec #200 §4.4 (`toLayoutPx`).
 
 ### 3.3 Rezerwa wydłuża przewijanie przewijanego materiału
 
-- Gdy rezerwa jest aktywna (`dockPad > 0`), `.materialContent` dostaje atrybut `data-dock-reserve` i regułę `flex: 1 0 auto` — pudełko rośnie razem z dziećmi, a padding rezerwy leży pod ostatnim z nich. Bez rezerwy zostaje `flex: 1` (zachowanie, na którym opiera się karta słowa na telefonie).
-- Zwarty układ już dziś ma `flex: none` (spec #200 §3.2) — bez zmian.
+- Gdy rezerwa jest aktywna (`dockPad > 0`), `.materialContent` dostaje atrybut `data-dock-reserve` i regułę `flex: 1 0 auto` — pudełko rośnie razem z dziećmi, a padding rezerwy leży pod ostatnim z nich. Bez rezerwy zostaje `flex: 1` (karta słowa na telefonie, która nie ma panelu).
+- Specyficzność reguły `.materialContent[data-dock-reserve]` (0,2,0) zostaje niższa niż reguły zwartego układu `flex: none` (0,3,0).
 
-### 3.4 Odstęp od góry w zwartym układzie
+### 3.4 Odstęp od góry w zwartym układzie (mysz lub touchpad)
 
-- Nowy token `--kid-compact-frame-offset: 90px` (10% wysokości projektowej 900 px wewnętrznych). W regule zwartego układu (§3.5) rama zadania poza wyborem obrazków dostaje `padding-top: var(--kid-compact-frame-offset)`.
-- Stałe piksele wewnętrzne, nie jednostki okna: otwarta klawiatura tabletu (§3.5) nie przesuwa wtedy treści, a pod `zoom` odstęp rośnie ze skalą jak reszta interfejsu (3440×1440: 144 px ekranu; 1920×1080: 108; tablet 1366×1024: 90).
-- Przy treści dłuższej niż okno odstęp zostaje, a materiał przewija się o 90 px wcześniej (przyjęte).
+- Nowy token `--kid-compact-frame-offset: 90px` (10% wysokości projektowej 900 px wewnętrznych).
+- Odstęp dostaje tylko zwarty układ przy `(hover: hover) and (pointer: fine)` (duży monitor ze skalą), poza wyborem obrazków i poza powiększeniem gestem (`data-zoomed="true"`). Tablet dotykowy (§3.5) ma odstęp 0 — otwarta klawiatura nie może go zmienić, a na krótszych oknach dotykowych odstęp kosztowałby 16–25% ramy.
+- **Odstęp ustępuje pierwszy.** Zwarty układ (§3.5, oba warianty wskaźnika) przechodzi z siatki `auto minmax(0, max-content) auto` na równoważną kolumnę flex: instrukcja i stopka `flex: none`, materiał `flex: 0 1 auto; min-height: 0` (podstawa = wysokość treści, kurczy się do 0 i przewija jak dotąd), wszystko u góry. Odstęp to pseudo-element przed instrukcją `flex: 0 1000 <odstęp>` z ujemnym marginesem kompensującym `gap`; przy `pointer: fine` (poza `data-zoomed="true"`) odstęp = `var(--kid-compact-frame-offset)`, w pozostałych przypadkach 0. Gdy treść się nie mieści, najpierw kurczy się odstęp, potem materiał. Krótka treść (odpowiedź pisemna, litery, mowa, wybór tekstu) dostaje pełny odstęp; długa (karta słowa, długa karta lekcji) — zero. Jeśli w chwili werdyktu grupa przestaje się mieścić, odstęp maleje i odpowiedzi przesuwają się w górę o najwyżej tyle (przyjęte: zachowuje widoczność panelu).
+- Stałe piksele wewnętrzne, nie jednostki okna: pod `zoom` odstęp rośnie ze skalą (3440×1440: 144 px ekranu; 1920×1080: 108).
+- Instrukcja zadania z obrazkami (bez odstępu) stoi wyżej niż w kolejnym zadaniu tekstowym — przyjęte (wybór obrazków nie ma zapasu wysokości przy 900 px wewnętrznych).
 
 ### 3.5 Warunek zwartego układu
 
-`@media (min-width: 840px) and (min-height: 781px), (min-width: 960px) and (min-height: 480px) and (pointer: coarse)` — w `ExerciseFrame.module.css` i `ExerciseFeedbackDock.module.css` (zaokrąglony panel). Druga gałąź działa jak gałąź „≥ 960” kolumny 720 px (spec #200 §3.1): dotykowy tablet w poziomie (≥ 1024 px szerokości) zachowuje zwarty układ, gdy klawiatura obniża okno. Telefony w poziomie (≤ 932 px) gałęzi nie spełniają. Próg 480 trzyma zwarty układ z dala od trybu bardzo niskiego okna (`≤ 479`, przewijana strona).
+`@media (min-width: 840px) and (min-height: 781px), (min-width: 960px) and (min-height: 480px) and (pointer: coarse)` — w `ExerciseFrame.module.css` i `ExerciseFeedbackDock.module.css` (zaokrąglony panel). Druga gałąź działa jak gałąź „≥ 960” kolumny 720 px (spec #200 §3.1): dotykowy tablet w poziomie (≥ 1024 px szerokości) zachowuje zwarty układ, gdy klawiatura obniża okno. Telefony w poziomie (≤ 932 px) gałęzi nie spełniają. Próg 480 trzyma zwarty układ z dala od trybu bardzo niskiego okna (≤ 479, przewijana strona).
 
-Skutek uboczny (przyjęty): dotykowy tablet o szerokości ≥ 960 i wysokości 480–780 px dostaje zwarty układ także bez klawiatury (dotąd zwykły). Reguły niskiego okna (`max-height: 780px` / `560px`) zmniejszają wtedy tylko wysokości opcji i odstępy, co nie koliduje z siatką zwartego układu.
+Skutki uboczne (przyjęte): dotykowy tablet ≥ 960 × 480–780 dostaje zwarty układ także bez klawiatury (bez odstępu z §3.4). Po otwarciu klawiatury reguła `max-height: 700px` (`styles.css`) nadal zmniejsza górny padding sesji o 8 px, więc rama zadania przesuwa się o 8 px w górę — położenie elementów względem ramy się nie zmienia. Treść wymiarowana jednostkami okna (ilustracja `36svh`, pole tekstowe `40dvh`) może się zmniejszyć. Fizyczne zachowanie dotyczy głównie dużych tabletów z Androidem; 10–12" tablety z klawiaturą zwykle schodzą poniżej 480 px (tryb bardzo niskiego okna, jak dziś).
 
-### 3.6 Tekst z lukami
+### 3.6 Długość wiersza tekstu
 
-`.kid-lesson-cloze__text` dostaje `max-inline-size: 60ch` (wyrównanie bez zmian). Przy czcionce `--kid-type-title-size` limit może być bliski szerokości materiału kolumny 720 px — implementacja mierzy szerokość wiersza przed i po; jeśli reguła nic nie zmienia, test i tak pilnuje limitu, a raport PR podaje to wprost.
+- Nowy token `--kid-reading-measure` (w `ch`, np. ok. 45ch), dobrany pomiarem tak, żeby typowy polski tekst lekcji miał ok. 60 znaków w wierszu przy czcionce Nunito niezależnie od jej rozmiaru (`ch` skaluje się z czcionką elementu).
+- Używają go `.kid-lesson-card__body`, `.kid-lesson-card__examples` (zamiast `60ch`) i `.kid-lesson-cloze__text`. Na telefonie kolumna jest węższa niż limit — bez zmian.
 
 ## 4. Pliki
 
-- `packages/kid-ui/src/styles.css` — tokeny `--kid-picture-dock-space`, `--kid-compact-frame-offset`; `max-inline-size` tekstu z lukami.
-- `packages/kid-ui/src/exercises/ExerciseFrame.module.css` — rezerwa stopki zadań z obrazkami, `[data-dock-reserve]`, odstęp i nowy warunek zwartego układu.
-- `packages/kid-ui/src/exercises/ExerciseFrame.tsx` — efekty layoutu, atrybut `data-dock-reserve`, komentarze.
-- `packages/kid-ui/src/screens/ExerciseFeedbackDock.module.css` — nowy warunek zwartego układu.
-- `packages/kid-ui/src/layout/` — współdzielony izomorficzny efekt layoutu (używany przez `viewport.ts` i `ExerciseFrame`).
+- `packages/kid-ui/src/styles.css` — tokeny `--kid-picture-dock-height`, `--kid-compact-frame-offset`, `--kid-reading-measure`; użycie tokenu długości wiersza.
+- `packages/kid-ui/src/exercises/ExerciseFrame.tsx` — akcje poza `AnimatePresence`, efekty layoutu, `flushSync`, zależności efektu, atrybut `data-dock-reserve`, komentarze.
+- `packages/kid-ui/src/exercises/ExerciseFrame.module.css` — rezerwa stopki wyboru obrazków, `[data-dock-reserve]`, nowy warunek zwartego układu, odstęp (kolumna flex) przy `pointer: fine`.
+- `packages/kid-ui/src/screens/ExerciseFeedbackDock.module.css` — nowy warunek zwartego układu; `min-height` panelu w wyborze obrazków.
+- `packages/kid-ui/src/layout/` — współdzielony izomorficzny efekt layoutu (`viewport.ts` i `ExerciseFrame`).
 
 ## 5. Testy
 
 ### 5.1 Nowe zachowanie (E2E najpierw na czerwono, potem zielono)
 
-W `tests/e2e/kid-large-screen.spec.ts` (projekt `mocked`) lub w specu geometrii, którego dotyczy:
+Konsolidacja: jedna strona na okno z przebiegiem werdykt błędny → ponowna próba → werdykt poprawny (jak `picture-choice-layout.spec.ts`), pętle okien z `resizeAndSettle`; razem ok. 12–15 nowych testów w projekcie `mocked`. Wspólne helpery zamiast kopii (bramka duplikacji SonarCloud ≤ 3%): `expectRectsUnchanged`, `boxes`, `nextFrames`, `pictureTiles`, `settledDockReserve` i sonda „zakładka w każdej klatce” w `tests/e2e/helpers/kid-frame.ts`; fixture wyboru obrazków i „Co to jest?” w `tests/e2e/helpers/picture-fixtures.ts`; jedno `openPictureChoice` zamiast kopii w `kid-large-screen` i `picture-choice-layout`.
 
-- kafelki obrazków (4 opcje) i „Co to jest?”: prostokąty kafelków (oraz obrazka-pytania) przed werdyktem i po nim równe ± 1 px, dla werdyktu poprawnego i błędnego, na 1536×730, 1280×600, 390×750, 360×640; na 3440×1440 z widocznym komunikatem „audio niedostępne” (nagranie zaślepione błędem). Kontrolnie 844×390 (bardzo niskie okno): pusta stopka ukryta, brak poziomego przepełnienia;
-- rezerwa przed malowaniem: `MutationObserver` zainstalowany przed wysłaniem odpowiedzi; w pierwszym callbacku, w którym istnieje panel, maksimum dolnych krawędzi dzieci `.kid-material-content` ≤ górna krawędź panelu + 1 (prostokąty w px ekranu, reduced motion). Przypadki: 3440×1440 (zwarty) i 1536×730 (zwykły) z długą podpowiedzią pisowni (`longSpellingHintFixture`);
-- przewijany materiał: 1536×730 i 390×750, zadanie pisemne z treścią przewijaną już przed werdyktem (`scrollHeight > clientHeight`) i długim panelem — po ustaleniu rezerwy koniec treści nad panelem, a po przewinięciu materiału do końca też;
-- odstęp od góry: 3440×1440, 3440×1300, 1920×1080 i dotykowy 1366×1024 — górna krawędź instrukcji − górna krawędź ramy zadania = 90 × skala (± 2) dla odpowiedzi pisemnej, wyboru tekstu i liter; wybór obrazków bez odstępu;
-- tablet z klawiaturą: kontekst dotykowy (`isMobile`, `hasTouch`) 1366×1024, fokus w polu odpowiedzi, okno zmniejszone do 1366×600 — instrukcja, pole i akcja na tej samej wysokości (± 1) co przed zmniejszeniem; 1280×720 dotykowo — zwarty układ; 844×390 dotykowo — zwykły;
-- tekst z lukami przy kolumnie 720: szerokość `.kid-lesson-cloze__text` ≤ 60 × szerokość znaku `0` tej czcionki + 1.
+- **Kafelki (§3.1).** Na 1536×730, 1280×600 i 3440×1440 z widocznym komunikatem audio (pomiar „przed” dopiero po pojawieniu się komunikatu): warunek wstępny — kafelki są ograniczone wysokością (wzór `limit` z `kid-large-screen.spec.ts`); prostokąty kafelków przed werdyktem, po błędnym (z podpowiedzią głosową) i po poprawnym równe ± 1 px. Strażnicy (nie czerwone): 3440×1440 bez komunikatu — kafelki 300 px; 390×750 — bez zmian; 844×390 (bardzo niskie okno) — pusta stopka ukryta, brak poziomego przepełnienia.
+- **Zakładka w każdej klatce (§3.2).** Sonda instalowana przed wysłaniem odpowiedzi: `MutationObserver` wykrywa panel, potem próbkowanie w każdym `requestAnimationFrame` aż do ustalenia (co najmniej 5 klatek). Zakładka = maksimum dolnych krawędzi dzieci `.kid-material-content` − górna krawędź `.kid-feedback-overlay` (element bez transformacji; nie `kid-feedback-dock`, który ma jeszcze `initial` `scale`), w px ekranu. Kryterium: w każdej próbce ≤ 8 px, po ustaleniu ≤ 1 px. Przypadki: 3440×1440 (zwarty) z krótkim błędnym werdyktem pisemnym oraz z długą podpowiedzią pisowni; 1536×730 (zwykły) z długą podpowiedzią — warunki wstępne po ustaleniu: rezerwa > 0, a na 1536×730 także `scrollTop > 0`.
+- **Przewijany materiał (§3.3).** 1536×730 i 390×750, zadanie pisemne z nowym, dłuższym poleceniem z `helpers/kid-fixtures.ts` (warunek wstępny przed werdyktem: `scrollHeight > clientHeight`) i długim panelem: po ustaleniu koniec treści nad panelem; po przewinięciu materiału do końca też.
+- **Odstęp (§3.4).** Przy myszy 3440×1440, 3440×1300 i 1920×1080: górna krawędź instrukcji − górna krawędź ramy zadania = 90 × skala (± 2) dla odpowiedzi pisemnej, wyboru tekstu i liter; wybór obrazków — 0; karta słowa przy 1440×960 (istniejący test w `kid-responsive.spec.ts`) — instrukcja nadal tuż pod paskiem (odstęp ustępuje); długa karta lekcji na 3440×1440 — odstęp ≈ 0, a „Dalej” w oknie. Kontrolnie przy myszy 1536×730 i 1366×600 — zwykły układ, bez odstępu.
+- **Tablet (§3.5).** Kontekst dotykowy (`hasTouch`, `isMobile`): 1366×1024, tekstowe zadanie pisemne, fokus w polu, okno zmniejszone do 1366×600 — położenie instrukcji, pola i akcji względem górnej krawędzi ramy zadania bez zmian (± 1); panel wyniku zaokrąglony (`expectDockCorners("rounded")`) i odpowiedzi bez przesunięcia po werdykcie; odstęp 0. 1280×720 dotykowo — zwarty układ; 844×390 dotykowo — zwykły.
+- **Długość wiersza (§3.6).** Przy kolumnie 720 px (1536×730): najdłuższy wiersz testowego tekstu karty lekcji i tekstu z lukami ≤ 65 znaków (wiersze liczone z prostokątów znaków przez `Range`); dziś ok. 70–80 — test czerwony przed zmianą.
 
-Istniejące testy geometrii (m.in. `kid-responsive`, `picture-choice-layout`, `kid-feedback-dock`, `kid-feedback-layout`, specy `lesson-*-layout`) muszą przejść; zmiana oczekiwanych wartości wymaga uzasadnienia w raporcie zadania.
+Istniejące testy, które zmieniają oczekiwania (każda zmiana uzasadniona w raporcie zadania): `kid-responsive.spec.ts` (wysokość stopki po werdykcie w wyborze obrazków przy ≥ 600 px — równa zamiast większej; odstęp instrukcji w zwartym układzie), `kid-large-screen.spec.ts` (kafelki, „no empty band”), `picture-choice-layout.spec.ts`, specy `lesson-*-layout` przy 1280×800 (odstęp) i `kid-flow.spec.ts` (projekt `real`). Pozostałe testy geometrii muszą przejść bez zmian.
 
 ### 5.2 Długi w testach
 
-- **Zrzuty ekranu** (10 testów `screenshot:` w `kid-large-screen.spec.ts`) uruchamiają się tylko z `UMIEM_E2E_SCREENSHOTS=1` (`test.skip` z komunikatem); `AGENTS.md` (sekcja Running and verifying) opisuje, jak je uruchomić.
-- **Reguła jednostek okna** (`tests/kid-design-tokens.test.ts`): wyrażenie z flagą `i` (wielkie litery jednostek), skanowanie stylów inline w plikach `.ts` i `.tsx` (bez testów); nowa reguła: tokeny jednostek okna nie są rejestrowane przez `@property`.
-- **Powrót do skali 1:** E2E „rescales on resize” kończy krokiem 1280×800 → `waitForKidScale(page, 1)`, brak inline `zoom` i `--kid-zoom`, rama sesji = okno; unit `KidPage.test.tsx`: zmiana wskaźnika z myszy na dotyk usuwa `--kid-zoom` i przywraca `data-kid-scale="1"`.
-- **Panel mikrofonu przy powiększeniu:** unit w `MicrophoneSettingsButton.test.tsx` z `currentCSSZoom` = 1,6 (podstawionym przez `Object.defineProperty`) i wąskim oknem — odstęp pod przyciskiem 8 × zoom, margines 16 × zoom przy dociśnięciu do krawędzi, zapisane `left`/`top` podzielone przez zoom.
-- **Długa karta lekcji:** jedna definicja treści (tytuł, treść 1200 znaków, przykłady) w `tests/e2e/helpers/kid-fixtures.ts`, używana przez `kid-large-screen.spec.ts` i `lesson-card-audio-layout.spec.ts`.
-- **Strażnik `openDeckScreen`** (`tests/e2e/spec-projects.test.ts`): sygnał zaślepki tylko przy imporcie `openDeckScreen` z `./helpers/kid-fixtures`.
-- Przy okazji testu rezerwy: `settledDockReserve` i test „overlay dock reserve is exact” mierzą maksimum dolnych krawędzi dzieci treści (jak kod produkcyjny), nie `lastElementChild`; komentarz o „znanym ograniczeniu” (§1 pkt 3) znika.
+- **Zrzuty ekranu** (10 testów `screenshot:` w `kid-large-screen.spec.ts`) w `test.describe` z `test.skip(!process.env.UMIEM_E2E_SCREENSHOTS, …)`; `AGENTS.md` (Running and verifying) opisuje uruchomienie.
+- **Reguła jednostek okna** (`tests/kid-design-tokens.test.ts`): flaga `i`; skanowanie stylów w plikach `.ts` i `.tsx` (bez testów) po usunięciu komentarzy; dopasowanie także jednostek po interpolacji (`${n}vh`). Nowa reguła na surowym CSS (z blokiem tokenów) i TS: tokeny jednostek okna i `--kid-zoom` nie są rejestrowane przez `@property` ani `CSS.registerProperty`.
+- **Powrót do skali 1:** E2E „rescales on resize” kończy krokiem 1280×800 → `waitForKidScale(page, 1)`, brak inline `zoom` i `--kid-zoom`, rama sesji = okno; unit `KidPage.test.tsx` — `setFine(false)` po skali > 1 usuwa `--kid-zoom` i daje `data-kid-scale="1"`.
+- **Panel mikrofonu przy powiększeniu:** unit w `MicrophoneSettingsButton.test.tsx` — `currentCSSZoom` = 1,6 podstawione na `Element.prototype` (panel powstaje przy otwarciu), `getBoundingClientRect` per element, wąskie okno; odstęp pod przyciskiem 8 × zoom, margines 16 × zoom przy dociśnięciu do krawędzi, zapisane `left`/`top` podzielone przez zoom; podstawienia przywracane po teście.
+- **Długa karta lekcji:** jedna definicja treści (tytuł, treść 1200 znaków, przykłady) w `tests/e2e/helpers/kid-fixtures.ts`, używana przez `kid-large-screen.spec.ts` (także zamiast `LONG_LESSON_TEXT`) i `lesson-card-audio-layout.spec.ts`.
+- **Strażnik `openDeckScreen`** (`tests/e2e/spec-projects.test.ts`): sygnał zaślepki tylko przy imporcie `openDeckScreen` z `./helpers/kid-fixtures` (także wielowierszowym) i wywołaniu `openDeckScreen(`.
+- `settledDockReserve` i test „overlay dock reserve is exact” mierzą maksimum dolnych krawędzi dzieci treści (jak kod produkcyjny), nie `lastElementChild`; komentarz o „znanym ograniczeniu” (§1 pkt 3) znika.
 
 **Przed PR:** `pnpm typecheck`, `pnpm test:unit`, pełne `pnpm test:e2e:shards` na buildzie produkcyjnym.
 
-**Niezweryfikowane — raportowane jawnie:** fizyczny monitor 34", laptop i tablet z prawdziwą klawiaturą; animacje Motion (E2E emuluje reduced motion — test przed malowaniem sprawdza geometrię układu, nie przebieg animacji wejścia panelu).
+**Niezweryfikowane — raportowane jawnie:** fizyczny monitor 34", laptop i tablet z prawdziwą klawiaturą; animacje Motion (E2E emuluje reduced motion — sonda klatek sprawdza geometrię układu, nie przebieg animacji wejścia panelu); duże czcionki systemowe Androida (token w `rem` ma je pokryć, bez testu).
 
 ## 6. Dokumentacja
 
 - Ten dokument.
-- Spec #200: §2 (kurczenie kafelków — rozwiązane tutaj), §3.2 (nowy warunek i odstęp) — krótkie adnotacje z odsyłaczem.
-- `AGENTS.md`, sekcja Kid UI: warunek zwartego układu z gałęzią dotykową, odstęp od góry, rezerwa stopki zadań z obrazkami; sekcja Running and verifying: `UMIEM_E2E_SCREENSHOTS=1`.
+- Spec #200: §2 (kurczenie kafelków — rozwiązane tutaj dla ≥ 600 px), §3.1 (`60ch` zastąpione tokenem długości wiersza), §3.2 (nowy warunek i odstęp) — krótkie adnotacje z odsyłaczem.
+- `AGENTS.md`, sekcja Kid UI: warunek zwartego układu z gałęzią dotykową, odstęp przy `pointer: fine`, rezerwa stopki wyboru obrazków, token długości wiersza; sekcja Running and verifying: `UMIEM_E2E_SCREENSHOTS=1`.
 - `docs/architecture.md` i `docs/folder-structure.md` tylko jeśli opisują zmieniane miejsca.
 
 ## 7. Ryzyka i przyjęte kompromisy
 
-- **Rezerwa stopki to stała wartość**, nie pomiar panelu, który jeszcze nie istnieje. Panel dłuższy niż jeden wiersz komunikatu zmniejsza kafelki o nadwyżkę. Za duża wartość tylko zmniejsza kafelki przed werdyktem — dlatego wartości wynikają z pomiaru, a test porównuje rozmiar przed i po.
+- **Rezerwa stopki to token, nie pomiar** panelu, który jeszcze nie istnieje. Panel dłuższy niż token zmniejsza kafelki o nadwyżkę; `min-height` panelu wyrównuje werdykt poprawny do błędnego.
 - **Mniejsze kafelki przed werdyktem** na oknach ograniczonych wysokością (laptop) — świadomy wybór: rozmiar stały zamiast skoku.
-- **Odstęp od góry przy długiej treści** zabiera 90 px wewnętrznych materiałowi.
+- **Odstęp może ustąpić w chwili werdyktu** w prawie pełnej ramie — odpowiedzi przesuwają się wtedy w górę (najwyżej o 90 px wewnętrznych) zamiast chować koniec materiału.
+- **Zwarty układ jako kolumna flex** zastępuje siatkę z #200 (równoważne rozmieszczenie bez odstępu) — pokrywają go istniejące testy zwartego układu (#200: brak pustego pasa, odpowiedzi bez przesunięcia, rezerwa `overlay`, długa karta lekcji) i nowe testy odstępu.
 - **Tablet dotykowy 960+ × 480–780** dostaje zwarty układ bez klawiatury (§3.5).
-- **Efekt layoutu** wymusza synchroniczny układ przy pojawieniu się panelu (raz na werdykt i przy zmianach rozmiaru) — koszt pomijalny.
+- **`flushSync` w `ResizeObserver`** wymusza synchroniczny commit przy zmianie rozmiaru z panelem — raz na zmianę, koszt pomijalny.
