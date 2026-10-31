@@ -38,7 +38,7 @@ export function feedbackSentenceText(source: FeedbackSentenceSource): string | n
     default:
       return null;
   }
-  const sentence = raw?.trim().replace(/\s+/g, " ").replace(/\s+([.,!?])/g, "$1");
+  const sentence = raw?.trim().replace(/\s+/g, " ").replace(/ ([.,!?])/g, "$1");
   if (!sentence || sentence.length > FEEDBACK_SENTENCE_MAX_LENGTH) return null;
   return sentence;
 }
