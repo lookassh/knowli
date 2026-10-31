@@ -59,6 +59,10 @@ Nazwy pakietów: @learning/contracts, @learning/kid-ui i @learning/server. apps/
 | apps/web/src/parent/LeaveEditorDialog.tsx | Dostępny dialog „Zostań / Opuść bez zapisu” |
 | apps/web/src/parent/ChildEditor.tsx | Profile i przypisania |
 | apps/web/src/parent/ProgressPanel.tsx | Widok postępu i pomyłek |
+| apps/web/src/parent/parent-routes.ts | Trasy panelu: sekcje (w tym `/parent/sources`, `/parent/sources/{sourceId}`) i `/parent/lessons/new?source=…&subject=…` |
+| apps/web/src/parent/sources/ | Zakładka „Źródła” (Etap 2, 2026-10-31): `SourcesPanel.tsx` (lista, nowe źródło), `SourcePage.tsx` (podgląd, edycja z kontrolą rewizji, usunięcie, zestawy ze źródła), `SourceFields.tsx` (wspólne pola), `sources-state.ts` (czysta logika: patch zmienionych pól, polecenie, etykiety), `sources-panel.css` |
+| apps/web/src/parent/lessons/LessonSourceNote.tsx | Notka „Ze źródła: …” i „Źródło zmieniono od utworzenia tego zestawu.” w edytorze lekcji |
+| apps/web/src/parent/plain-click.ts | Zwykłe kliknięcie linku (bez modyfikatorów) przechodzące przez blokadę wyjścia; wspólne dla zakładek i linków do źródeł |
 | apps/web/src/composition.ts | Złożenie zależności serwerowych dla web |
 
 Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym dostępem do modułów ani bazy. Jeżeli router urośnie, można podzielić go na route.ts poszczególnych endpointów bez zmiany API. Wszystkie endpointy mutujące są dynamiczne i nie są cache'owane jako strony.
@@ -94,6 +98,7 @@ Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/
 | packages/contracts/src/decks.ts | Publiczne schematy zestawów i poleceń rodzica |
 | packages/contracts/src/kid.ts | Publiczne TaskDto, AttemptInput, AttemptDto, SessionDto, DisclosureInput/Dto, PresentationCompletionInput/Dto |
 | packages/contracts/src/progress.ts | Podsumowanie per umiejętność |
+| packages/contracts/src/source-materials.ts | Źródła materiału rodzica: wejście tworzenia, patch z `expectedRevision`, DTO listy i szczegółu (tylko Parent API) |
 | packages/contracts/src/messages.ts | Jeden katalog polskich komunikatów UI współdzielony przez web i kid-ui; bez logiki |
 | packages/server/src/domain/types.ts | Prywatne AnswerKey, Grade, History, Policy |
 | packages/server/src/domain/evaluate.ts | Reguły treści i pisowni |
@@ -130,6 +135,7 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/src/modules/learning/learning-settings.ts | Ustawienia polityki nauki dziecka (progi wymowy, nowe wersje polityki) |
 | packages/server/src/modules/family/auth.ts | Hasło/PIN, sesje i limity logowania |
 | packages/server/src/modules/materials/decks.ts | Szkice, rewizje, przypisania, publikacja |
+| packages/server/src/modules/materials/source-materials.ts | Źródła materiału rodzica: tworzenie (idempotentne), edycja z rewizją, usuwanie, lista i odczyt; `lockSourceMaterialForCopy` (`FOR KEY SHARE`) i `readDeckSource` dla tworzenia i DTO lekcji |
 | packages/server/src/modules/materials/generation.ts | Zlecanie zestawu słówek, odczyt i retry runów; wykonanie treści słówek oraz delegowanie runów mediów |
 | packages/server/src/modules/materials/generation-runs.ts | Współdzielony cykl życia runów generacji (zlecenie idempotentne, claim CAS, status, unieważnianie runów lekcji) dla wykonawców słówek, lekcji i mediów |
 | packages/server/src/modules/materials/media-generation.ts | Wykonanie jednego zasobu TTS/ilustracji: lease assetu, wywołanie providera, zapis niezmiennego pliku i finalizacja asset/run |
@@ -190,6 +196,9 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 | tests/integration/speech.test.ts | Timeouty, zatwierdzone warianty, częściowy wynik, brak audio na dysku |
 | tests/integration/reporting.test.ts | Rozdzielenie dzieci i mylonych par |
 | tests/e2e/parent-flow.spec.ts | Generacja → review → publikacja |
+| tests/integration/source-materials.test.ts | Źródła na PostgreSQL: idempotencja, rewizje, usunięcie bez utraty zestawów, kopia do lekcji, współbieżność (`FOR KEY SHARE`), HTTP Parent API |
+| tests/e2e/parent-sources-layout.spec.ts | Zakładka „Źródła” z zaślepionym API: lista, edycja, konflikt, usunięcie i formularz lekcji ze źródła na czterech rozmiarach okna |
+| tests/e2e/parent-sources.spec.ts | Źródło → lekcja → notka w edytorze → edycja → usunięcie na prawdziwej bazie i workerze (projekt `real`, kosz 4) |
 | tests/e2e/kid-flow.spec.ts | Sesja z mikrofonem i bez, błędy sieci |
 | tests/e2e/privacy.spec.ts | Brak sekretów i odpowiedzi w DTO |
 | tests/e2e/learning-algorithm.spec.ts | Mały zestaw i cykl pomocy w interfejsie dziecka |
@@ -246,6 +255,8 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
 
 Próba generowania lekcji z materiału na prawdziwym modelu (2026-10-30, ręczna i płatna, nigdy w CI): `pnpm probe:chapter` (`vitest.probe.config.ts`, `tests/probes/chapter-generation.probe.test.ts`). Wymaga `UMIEM_PROBE_MATERIAL` ze ścieżką do materiału poza repozytorium (opcjonalnie `UMIEM_PROBE_SUBJECT=school`, `UMIEM_PROBE_DUMP` — też poza repozytorium); bez zmiennej plik jest pomijany. Pliki `*.probe.test.ts` nie należą do konfiguracji unit ani integration.
+
+Źródła materiału (Etap 2 rozdziału, 2026-10-31): tabela i kolumny pochodzenia zestawu w migracji `packages/server/drizzle/0029_source_materials.sql` (odwzorowane w `docs/schema.sql`), przypadki użycia w `modules/materials/source-materials.ts`, grupa `sources` w `apps/web/src/parent/orpc-contract.ts` i `apps/web/src/orpc/parent-router.ts`, panel w `apps/web/src/parent/sources/`. Lekcje ze źródła korzystają z `lockSourceMaterialForCopy` w `modules/materials/lessons/lesson-drafts.ts`, a `LessonDeckDto.source` składa `lesson-api.ts`. Źródeł nie ma w Kid API, MCP ani `learning-overview`. Opis: `docs/architecture.md` §19.10, SPEC §37.
 
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/family/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
 
