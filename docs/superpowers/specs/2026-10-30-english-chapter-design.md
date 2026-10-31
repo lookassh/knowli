@@ -220,7 +220,7 @@ Skutki tej decyzji:
 
 - zadanie samodzielne = zdanie, którego rozwiązania dziecko jeszcze nie widziało;
 - treść karty i słowo widoczne w parach, grupach lub banku słów nie są ekspozycją (jak dziś w lekcjach); ekspozycją karty są wyłącznie jej przykłady (`lesson_context.examples`), dlatego karty nie niosą par zdań polskie → angielskie (4.2);
-- klucze lekcji i słówek pokrywają się dokładnie wtedy, gdy tekst po normalizacji i język są równe — dla pojedynczych słów i wielowyrazowych zwrotów (np. tłumaczenie „poniedziałek” → „Monday” i słówko „Monday” albo „Pada deszcz.” → „It's raining.” i słówko „It's raining”); ekspozycje są wspólne dla dziecka. Zwykle klucz zdania nie pokrywa się z celem słówka, więc zdania lekcji i słówka się nie blokują. Przy pokryciu blokada jest w praktyce asymetryczna: słówka liczą samodzielność w oknie 300 s od ujawnienia, lekcje — od jakiegokolwiek wcześniejszego ujawnienia, więc ekspozycja słówka trwale odbiera samodzielność tłumaczeniu rozdziału o identycznym tekście, a ekspozycja z lekcji blokuje słówko tylko na 300 s (do uwzględnienia w Etapie 4, słówkach ze źródła);
+- klucze lekcji i słówek pokrywają się dokładnie wtedy, gdy tekst po normalizacji i język są równe — dla pojedynczych słów i wielowyrazowych zwrotów (np. tłumaczenie „poniedziałek” → „Monday” i słówko „Monday” albo „Pada deszcz.” → „It's raining.” i słówko „It's raining”); ekspozycje są wspólne dla dziecka. Zwykle klucz zdania nie pokrywa się z celem słówka, więc zdania lekcji i słówka się nie blokują. Przy pokryciu blokada jest w praktyce asymetryczna: słówka liczą samodzielność w oknie 300 s od ujawnienia, lekcje — od jakiegokolwiek wcześniejszego ujawnienia, więc ekspozycja słówka trwale odbiera samodzielność tłumaczeniu rozdziału o identycznym tekście, a ekspozycja z lekcji blokuje słówko tylko na 300 s (Etap 4, słówka ze źródła, tego nie zmienił — „Stan Etapu 4”, sekcja 10);
 - znane ograniczenie: słowo pokazane w lekcji tylko jako część treści karty, par, grupy, banku albo zdania nie chroni samodzielnego przypominania tego słowa w zestawie słówek;
 - znane ograniczenie (ziarnistość uzupełniania tekstu): kluczem tekstu z lukami jest cały uzupełniony tekst, więc zdanie rozwiązane wewnątrz uzupełniania nie blokuje luki ani tłumaczenia tego samego zdania.
 
@@ -298,6 +298,8 @@ Zasady wspólne: przycięcie i scalenie białych znaków (bez spacji przed `.,!?
 
 ## 6. Słówka ze źródła
 
+Stan: zaimplementowane w Etapie 4 (2026-10-31); ustalenia i odstępstwa od tej sekcji — „Ustalenia implementacji” w 6.2 i „Stan Etapu 4” w sekcji 10.
+
 ### 6.1. Dwie ścieżki
 
 | Ścieżka | Skąd słowa | Zmiana |
@@ -331,19 +333,28 @@ Zasady wspólne: przycięcie i scalenie białych znaków (bez spacji przed `.,!?
 
 **Bez zmian:** ilustracje i wizualizacje deterministyczne, TTS słów, przegląd, publikacja, scheduler, umiejętności.
 
+**Ustalenia implementacji (Etap 4, 2026-10-31)** — rozstrzygnięcia, których ta sekcja nie określała:
+
+- para języków stała `pl-PL` → `en-GB` (`locales` zabronione przy `sourceMaterialId`); `expectedSourceRevision` (rewizja treści podglądu) wymagane jak przy lekcji ze źródła (3.3), z tym samym 409 `source_changed`;
+- formularz: „Najwięcej słówek” 1–100, domyślnie 20 (serwer bez wartości w poleceniu nadal przyjmuje 50); nazwa domyślnie tytuł źródła, a pusta albo z samych białych znaków daje tytuł źródła także po stronie serwera;
+- słówko z tekstu: `target` jest frazą z tekstu (normalizacja wyżej) i nie jest ramą z luką (`…`, `...`, `__`, nawias). Słowa funkcyjne i zwroty stojące w tekście są dozwolone („today”, „yes”, „How are you?”) — w odróżnieniu od lekcji (4.4) nie jest wymagane słowo treści. Element złożony tylko z wiodącego `a`/`an`/`the`/`to` nie jest słówkiem. Sprawdzany jest wyłącznie `target`; `acceptedAnswers` i `example` nie są porównywane z tekstem;
+- elementy są sprawdzane w kolejności modelu, a po przyjęciu `maxItems` sprawdzanie się kończy: dalsze elementy nie są ani przyjęte, ani liczone jako odrzucone; lista modelu dłuższa niż 3 × `MAX_DECK_ITEMS` (300) albo o złym kształcie to błąd walidacji całego runu (`validation`);
+- zero przyjętych = porażka z kodem `no_source_items` (szkic bez zmian, liczba odrzuceń zapisana); w edytorze „Pominięto pozycji spoza tekstu lub niepoprawnych: {n}”;
+- liczba odrzuceń w nowej kolumnie `generation_runs.rejected_count` (migracja `0031`): input runu jest niezmiennym żądaniem, a wersja słówek nie ma `lesson_context`.
+
 ## 7. Kontrakty, API, MCP
 
 - `packages/contracts`:
   - schematy źródeł (`SourceMaterialInput`, `SourceMaterialPatch`, `SourceMaterialDto`, `SourceMaterialSummaryDto`);
   - `MaterialLessonCommandSchema` (Etap 1; w pierwszej wersji projektu `ChapterLessonCommandSchema`, z `sourceMaterialId` dopiero w Etapie 2);
-  - `sourceMaterialId` w `SchoolLessonCommandSchema` i `GenerationCommandSchema` (z regułą „dokładnie jedno źródło tekstu”) oraz `instruction` w `GenerationCommandSchema`; w Etapie 2 reguła obowiązuje w `SchoolLessonCommandSchema` i `MaterialLessonCommandSchema`, a `GenerationCommandSchema` (słówka) dostaje pole w Etapie 4;
-  - `rejectedCount` w `GenerationDto`;
+  - `sourceMaterialId` w `SchoolLessonCommandSchema` i `GenerationCommandSchema` (z regułą „dokładnie jedno źródło tekstu”) oraz `instruction` w `GenerationCommandSchema`; w Etapie 2 reguła obowiązuje w `SchoolLessonCommandSchema` i `MaterialLessonCommandSchema`, a `GenerationCommandSchema` (słówka) dostał w Etapie 4 `sourceMaterialId` z wymaganym `expectedSourceRevision` i `instruction` (≤ `MAX_GENERATION_INSTRUCTION_LENGTH` = 500), bez `locales` przy źródle; schemat nadal bez `.strict()`;
+  - `rejectedCount` w `GenerationDto` (Etap 4; z kolumny `generation_runs.rejected_count`, `null` dla trybu opisu i runów bez walidacji per element);
   - `creation` i `subjectTitleRequired` w `SubjectCatalogDto`;
-  - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica — w Etapie 2 wyłącznie dla lekcji, jako opcjonalne `LessonDeckDto.source { id, title, copiedRevision, currentRevision }` (rewizje treści; tytuł i bieżąca rewizja treści pochodzą z żywego źródła, więc pole znika po jego usunięciu); DTO zestawu słówek dostanie odnośnik w Etapie 4;
+  - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica — w Etapie 2 wyłącznie dla lekcji, jako opcjonalne `LessonDeckDto.source { id, title, copiedRevision, currentRevision }` (rewizje treści; tytuł i bieżąca rewizja treści pochodzą z żywego źródła, więc pole znika po jego usunięciu); DTO zestawu słówek dostał odnośnik w Etapie 4 (`DeckDto.source`, ten sam kształt `DeckSourceDtoSchema` w `contracts/decks.ts`, a `LessonDeckSourceDtoSchema` jest jego aliasem); `DeckSummaryDto` (lista zestawów) odnośnika nie ma — zestawy źródła wymienia strona źródła;
   - `rejectedReasons` w DTO szkicu lekcji;
   - opcjonalne `contentLocale` i `answerLocale` w promptach lekcji Kid DTO.
 - Serwerowe schematy `.strict()` dostają nowe pola. Kid UI także waliduje zadania i sesje ścisłymi schematami z `@learning/contracts` (`parseWith(TaskDtoSchema/SessionDtoSchema)`, błąd daje ogólny `KidApiError("internal")`), a silnik ustawia `contentLocale` i `answerLocale` dla każdego przedmiotu lekcji. Pakiet Kid UI zbudowany przed zmianą odrzuci więc zadania lekcji typów, które niosą nowe pola — wybór, układankę, lukę, pary, grupy, uzupełnianie tekstu (`contentLocale`) i odpowiedź otwartą (`answerLocale`), także w gramatyce i szkole; karty i pozostałe typy lekcji nie są dotknięte — więc web i Kid UI/PWA wdrażamy razem, a po wdrożeniu otwartą kartę lub PWA trzeba odświeżyć — jak przy wcześniejszych dodaniach pól w ścisłych schematach (np. `promptLocale`). Nowy klient ze starszym serwerem działa, bo pola są opcjonalne.
-- Porty: `LessonObjectivesInput.objectivesRules`, `LlmGenerateDeckInput.material` i `instruction`; zmiany w adapterze OpenAI, schemacie puli (`sourceRefs` zależne od `sourceQuotes`) i fałszywym providerze.
+- Porty: `LessonObjectivesInput.objectivesRules`, `LlmGenerateDeckInput.material` i `instruction` (Etap 4: unia `{ prompt }` | `{ material, instruction? }`); zmiany w adapterze OpenAI, schemacie puli (`sourceRefs` zależne od `sourceQuotes`) i fałszywym providerze.
 - Procedury oRPC rodzica dla źródeł i lekcji rozdziału. Kid API bez nowych endpointów.
 - MCP i `SKILL.md`: bez zmian. Raport Hermesa (`learning-overview`) filtruje do `kind='vocabulary'`, więc lekcje i źródła są poza nim. Słówka ze źródła to zwykłe zestawy słówek o niezmienionym znaczeniu danych. Uzasadnienie w opisie każdego PR.
 
@@ -422,7 +433,7 @@ Każdy etap kończy się osobnym PR do scalenia przez właściciela. Kolejność
 1. **Przedmiot „Angielski — rozdział”** z wklejonym materiałem (sekcja 4, bez `sourceMaterialId`) + próba z prawdziwym modelem na Unit 1–2 (wykonano na odtworzonym Unit 1). Z próby raportujemy liczbę zagadnień, odrzuceń według powodów i spełnienie minimów; materiał próby nie trafia do repozytorium. Ten PR zawiera też niniejszą specyfikację.
 2. **Źródła** + lekcja rozdziału i lekcja szkolna ze źródła (sekcja 3) — zaimplementowane, stan w „Stan Etapu 2” niżej.
 3. **Lektor po odpowiedzi** (sekcja 5) — zaimplementowany na mechanizmie z #194, stan w „Stan Etapu 3” niżej.
-4. **Słówka ze źródła** (sekcja 6).
+4. **Słówka ze źródła** (sekcja 6) — zaimplementowane, stan w „Stan Etapu 4” niżej.
 
 Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `docs/architecture.md` §19 (nowe opcje `SubjectModule`, źródła, odczyt zdania w rozdziale) i §22 (temat dynamiczny poza przedmiotem szkolnym), `docs/schema.sql`.
 
@@ -528,6 +539,51 @@ Opis architektury: `docs/architecture.md` §19.9, produktu: SPEC §37 („Etap 3
 - pilotaż z dzieckiem (czy odczyt zdania po odpowiedzi pomaga, a nie przeszkadza).
 
 **Wdrożenie:** opublikowane lekcje rozdziału dostają nagrania po „Utwórz nową wersję” → „Publikuj” (jak w #194); API → MCP → skill bez zmian.
+
+### Stan Etapu 4 (2026-10-31)
+
+**Zaimplementowane** (gałąź `claude/english-chapter-4-source-vocab`, na bazie Etapu 3; plan `docs/superpowers/plans/2026-10-31-english-chapter-stage4-source-vocabulary.md`):
+
+- kontrakty: `GenerationCommandSchema` z trybem źródła (`sourceMaterialId` + `expectedSourceRevision` + `instruction` ≤ 500, wzajemnie wykluczający z `prompt`, bez `locales`; `superRefine`), `DeckSourceDtoSchema` w `decks.ts` (alias `LessonDeckSourceDtoSchema`), `DeckDto.source`, `GenerationDto.rejectedCount`, `MAX_GENERATION_INSTRUCTION_LENGTH`, teksty panelu w `messages.ts`;
+- domena (`subjects/english/`): `material-phrase.ts` (`materialPhraseIndex`, `phraseInMaterial`, `isSentenceFrame`, `isMaterialVocabularyTarget`), `inflection.ts` (`stemsOf`/`formsOf` przeniesione z `english-chapter/lexicon.ts` bez zmiany zachowania) i `function-words.ts` (`FUNCTION_WORDS`, `withoutLeading`);
+- dane: kolumna `generation_runs.rejected_count` z CHECK `>= 0`, migracja `0031_generation_rejected_count.sql`, `docs/schema.sql`;
+- serwer (obszar `materials/`): `enqueueDeckGeneration` w trybie źródła (kopia tekstu przez `lockSourceMaterialForCopy` — teraz z tytułem — w transakcji tworzenia, odnośnik `decks.source_material_id/revision`, input runu `mode: "material"`), wspólny `committedRetryAfterSourceChange` w `source-materials.ts` dla lekcji i słówek, `deckStateOf` w pliku-liściu `deck-state.ts`, `markRunSucceeded` i `markRunWithoutSourceItems` w `generation-runs.ts`; worker: walidacja per element (`selectMaterialItems`), `no_source_items`, `rejected_count`;
+- providerzy: prompt trybu materiału w adapterze OpenAI (tekst i notatka rodzica ogrodzone jak w lekcjach, tryb opisu bez zmian), fałszywy LLM z domyślnymi słowami z tekstu;
+- panel rodzica: „Utwórz zestaw słówek” na stronie źródła, trasa `/parent/vocabulary/new?source=<uuid>`, formularz `NewVocabularyFromSource.tsx` (409 z odświeżeniem podglądu, 404, niepewny zapis z ponowieniem tym samym poleceniem), wspólne `sources/source-refresh.ts` dla formularzy lekcji i słówek, notka „Ze źródła” w edytorze zestawu słówek, liczba pominiętych pozycji i komunikat `no_source_items`.
+
+Opis architektury: `docs/architecture.md` §19.10 („Słówka ze źródła”), produktu: SPEC §37 („Etap 4: słówka ze źródła”).
+
+**Ustalenia i odstępstwa od projektu** (sekcja 6.2, „Ustalenia implementacji”):
+
+- stała para języków `pl-PL` → `en-GB` (projekt jej nie określał; `locales` przy źródle są błędem walidacji);
+- domyślnie 20 słówek w formularzu (projekt: tylko „≤ `MAX_DECK_ITEMS`”); serwer bez `maxItems` w poleceniu nadal przyjmuje 50;
+- kod porażki `no_source_items` dla zera przyjętych elementów (projekt: „błąd generowania”);
+- liczba odrzuceń w nowej kolumnie `generation_runs.rejected_count` (migracja `0031`) zamiast w inpucie runu albo wersji — input to niezmienne żądanie, a wersja słówek nie ma `lesson_context`;
+- `DeckSummaryDto` (lista zestawów) bez odnośnika do źródła — strona źródła wymienia swoje zestawy, więc bez zbiorczego `readDeckSource` (uwaga z końcowego przeglądu Etapu 2 przestała być potrzebna);
+- reguła „słówko z tekstu” bez wymogu słowa treści: słowa funkcyjne i zwroty stojące w tekście („today”, „yes”, „How are you?”) są przyjmowane, odpada tylko element z samych wiodących `a`/`an`/`the`/`to` i rama z luką (pierwsza wersja implementacji wymagała słowa treści jak lekcja w 4.4 i odrzucała prawdziwe słówka rozdziału);
+- sprawdzanie kończy się po przyjęciu `maxItems` elementów, więc elementy dalej w odpowiedzi modelu nie są liczone jako odrzucone;
+- tytuł z samych białych znaków daje tytuł źródła także po stronie serwera, a zawężenie z samych białych znaków jest pomijane.
+
+**Znane ograniczenia:**
+
+- kolizje rdzeni prostej odmiany odziedziczone po `stemsOf` (4.4): „seed” pasuje do „see”, „hated” do „hat”;
+- fraza może przekraczać interpunkcję (dopasowanie po tokenach): „red apples” pasuje do „I like red. Apples are sweet.”;
+- zawężenia pilnuje tylko model — serwer sprawdza obecność w tekście, nie zgodność z zawężeniem;
+- `acceptedAnswers` i `example` nie są porównywane z tekstem.
+
+Rodzic sprawdza szkic przed publikacją, więc te przypadki widzi i może poprawić.
+
+Bez zmian w Etapie 4 zostaje asymetria wspólnych kluczy ekspozycji lekcji i słówek (4.5): zestaw słówek i lekcja rozdziału z tego samego źródła częściej mają ten sam tekst (zwrot „It's raining” jako słówko i odpowiedź tłumaczenia), więc ekspozycja słówka może trwale odebrać samodzielność takiemu tłumaczeniu. Etap nie dodał tu osobnej reguły; skutek w nauce nie był mierzony.
+
+**Zweryfikowane:** (uzupełnia Task 6)
+
+**Niezweryfikowane:**
+
+- prawdziwy model na prawdziwym rozdziale (dobór słów i zwrotów, liczba pominiętych pozycji, posłuszeństwo zawężeniu, format obrazkowy) — testy używają fałszywego LLM, który wypisuje słowa z tekstu, oraz kolejki zachowań;
+- pilotaż z rodzicem i dzieckiem (czy formularz, zawężenie i liczba pominiętych pozycji są zrozumiałe);
+- fizyczne urządzenia: układ formularza i edytora sprawdzono wyłącznie w emulacji okna przeglądarki.
+
+**Wdrożenie:** migracja `0031` przed nowym webem i workerem (addytywna kolumna `NULL`; stary kod działa na nowym schemacie, nowy na starym — nie); worker razem z webem albo przed nim, bo stary worker nie rozpozna runu `mode: "material"`; otwartą kartę panelu trzeba odświeżyć. API → MCP → skill bez zmian: `learning-overview` filtruje do `kind = 'vocabulary'`, więc zestaw ze źródła trafia do raportu jak każdy zestaw słówek, ze znaczeniem danych bez zmian, a raport nie używa `GenerationCommand`, `GenerationDto` ani DTO zestawu.
 
 ## 11. Poza zakresem
 
