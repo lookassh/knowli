@@ -1,5 +1,6 @@
 import { createSubjectRegistry, type SubjectRegistry } from "../registry";
 import type { SubjectModule } from "../types";
+import { englishChapterSubject } from "./english-chapter/module";
 import { englishGrammarSubject } from "./english-grammar/module";
 import { schoolSubject } from "./school/module";
 
@@ -10,7 +11,7 @@ import { schoolSubject } from "./school/module";
  * niczego stąd nie importuje). Dodanie przedmiotu = import modułu tutaj i wpis
  * w `PRODUCTION_SUBJECTS`.
  */
-export const PRODUCTION_SUBJECTS: readonly SubjectModule[] = [englishGrammarSubject, schoolSubject];
+export const PRODUCTION_SUBJECTS: readonly SubjectModule[] = [englishGrammarSubject, schoolSubject, englishChapterSubject];
 
 /** Buduje rejestr przedmiotów produkcyjnych (waliduje każdy przez `validateSubject`). */
 export function createProductionSubjectRegistry(): SubjectRegistry {

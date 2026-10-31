@@ -10,6 +10,7 @@ import {
   createDraftFromPublished,
   createEmptyDeck,
   createLesson,
+  createLessonFromMaterial,
   createSchoolLesson,
   createLessonDraftFromPublished,
   decideLessonVerdict,
@@ -356,6 +357,10 @@ const lessonsCreateSchool = parentOs.lessons.createSchool
   .use(sameOriginMiddleware)
   .handler(async ({ context, input }) => createSchoolLesson(context.services, input));
 
+const lessonsCreateFromMaterial = parentOs.lessons.createFromMaterial
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => createLessonFromMaterial(context.services, input));
+
 const lessonsGet = parentOs.lessons.get.handler(async ({ context, input }) =>
   readLessonDeck(context.services, input.deckId),
 );
@@ -555,6 +560,7 @@ export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
     previewCalculation: lessonsPreviewCalculation,
     create: lessonsCreate,
     createSchool: lessonsCreateSchool,
+    createFromMaterial: lessonsCreateFromMaterial,
     get: lessonsGet,
     progress: lessonsProgress,
     verdicts: lessonsVerdicts,

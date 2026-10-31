@@ -47,6 +47,8 @@ export interface LlmPromptProfileInput {
   readonly almostDefinition: string;
   /** Dziedzinowe reguły semantyki pól ćwiczeń (opcjonalne, od przedmiotu). */
   readonly fieldRules?: string;
+  /** Semantyka typów par, grup i luk (opcjonalna, od przedmiotu); adapter dokłada ją do części strukturalnej bloku. */
+  readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
 }
 
 /** Ile ćwiczeń danego etapu wygenerować dla jednego celu (partia per cel). */
@@ -101,6 +103,8 @@ export interface LessonObjectivesInput {
   readonly generationRole: string;
   /** Czy karty zagadnień niosą `voiceTone` (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
   readonly voiceTones?: boolean;
+  /** Reguły przedmiotu dla podziału materiału na zagadnienia (opcjonalne). */
+  readonly objectivesRules?: string;
 }
 export interface LlmProvider {
   readonly name: string;

@@ -188,27 +188,44 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
       "code computes the answer from keyOptionIds. Skip lesson_keywords when the open answer has fewer than two essential concepts.",
     );
   }
-  if (input.exerciseTypes.includes("lesson_match") || input.exerciseTypes.includes("lesson_group")) {
+  const pairingTypes = (["lesson_match", "lesson_group"] as const).filter((type) => input.exerciseTypes.includes(type));
+  if (pairingTypes.length > 0) {
+    // Część strukturalna (pola, limity) należy do adaptera; semantykę typu dokłada profil przedmiotu.
+    const typeRule = (type: (typeof pairingTypes)[number]) => {
+      const rule = input.promptProfile.typeRules?.[type];
+      return rule === undefined || rule.trim() === "" ? "" : ` ${rule}`;
+    };
+    const structure = {
+      lesson_match:
+        "lesson_match: pairs (3 to 5 objects {left, right}: left of at most 40 characters, right of at most 100 characters) and extraRight " +
+        "(0 to 2 extra right-side texts that match none of the left items)." + typeRule("lesson_match"),
+      lesson_group:
+        "lesson_group: groups (2 or 3 objects {id: g1..g3, label of at most 30 characters}) and groupItems " +
+        "(4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group)." + typeRule("lesson_group"),
+    };
+    const several = pairingTypes.length > 1;
     parts.push(
-      "lesson_match and lesson_group are guided types with their own strict branches: return ONLY exerciseType, objectiveId, instructionPl " +
-      "(a short child-facing instruction in the prompt language, e.g. which things to connect or sort) and their fields below plus sourceRefs; " +
-      "code computes the answer. lesson_match: pairs (3 to 5 objects {left, right}: left is a concept, place or cause of at most 40 characters, " +
-      "right is its definition, feature or effect of at most 100 characters, both taken from the parent material) and extraRight (0 to 2 extra " +
-      "right-side texts from the material that match none of the left items). Use it when the material pairs concepts with definitions, places " +
-      "with features or causes with effects. lesson_group: groups (2 or 3 objects {id: g1..g3, label of at most 30 characters}) and groupItems " +
-      "(4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group). Use it when the material classifies things (e.g. mammals/birds, " +
-      "lowlands/uplands). Texts on one side must be distinct and none may contain another as whole words; an item must not repeat a group label. " +
-      "Skip these types when the material has no such pairs or classification.",
+      (several
+        ? "lesson_match and lesson_group are guided types with their own strict branches"
+        : `${pairingTypes[0]} is a guided type with its own strict branch`) +
+      ": return ONLY exerciseType, objectiveId, instructionPl " +
+      `(a short child-facing instruction in the prompt language, e.g. which things to connect or sort) and ${several ? "their" : "its"} fields below` +
+      `${input.groundingRequired ? " plus sourceRefs" : ""}; code computes the answer. ` +
+      pairingTypes.map((type) => structure[type]).join(" ") +
+      " Texts on one side must be distinct and none may contain another as whole words" +
+      `${pairingTypes.includes("lesson_group") ? "; an item must not repeat a group label" : ""}.`,
     );
   }
   if (input.exerciseTypes.includes("lesson_cloze")) {
+    const clozeRule = input.promptProfile.typeRules?.lesson_cloze;
     parts.push(
       "lesson_cloze is a guided type with its own strict branch: return ONLY exerciseType, objectiveId, instructionPl (a short child-facing " +
-      "instruction in the prompt language), clozeText, gapAnswers, extraWords and sourceRefs; code computes the answer. clozeText: 2 to 4 short " +
-      "sentences close to the parent material (at most 300 characters, vocabulary for a child of about 8) with 2 to 4 gaps written as ___ and " +
-      "at least one word between two gaps. gapAnswers: the word for each gap in text order (1 to 3 words, at most 30 characters): concepts, names " +
-      "or numbers from the material, never conjunctions, prepositions or words guessable from grammar alone. extraWords: 1 or 2 distractors from " +
-      "the same material and category that fit no gap. Exactly one bank word fits each gap (never two gaps whose words could be swapped), and no " +
+      `instruction in the prompt language), clozeText, gapAnswers, extraWords${input.groundingRequired ? " and sourceRefs" : ""}; ` +
+      "code computes the answer. clozeText: 2 to 4 short sentences (at most 300 characters) with 2 to 4 gaps written as ___ and " +
+      "at least one word between two gaps. gapAnswers: the word for each gap in text order (1 to 3 words, at most 30 characters). " +
+      "extraWords: 1 or 2 distractors that fit no gap. " +
+      (clozeRule === undefined || clozeRule.trim() === "" ? "" : `${clozeRule} `) +
+      "Exactly one bank word fits each gap (never two gaps whose words could be swapped), and no " +
       "bank word appears in clozeText outside the gaps.",
     );
   }
@@ -345,7 +362,7 @@ function lessonExamplesToRecord(raw: unknown): Record<string, string[]> {
   return result;
 }
 
-/** Schema etapu zagadnień tematu dynamicznego (przedmioty szkolne). */
+/** Schema etapu zagadnień tematu dynamicznego (przedmioty z materiału rodzica). */
 function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown> {
   return {
     type: "object",
@@ -357,11 +374,13 @@ function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["slug", "titlePl", "descriptionEn", "cards"],
+          required: ["slug", "titlePl", "descriptionEn", "kind", "cards"],
           properties: {
             slug: { type: "string" },
             titlePl: { type: "string" },
             descriptionEn: { type: "string" },
+            // Strict wymaga pola; null = przedmiot bez rodzajów zagadnień.
+            kind: { type: ["string", "null"], enum: ["words", "frame", null] },
             cards: {
               type: "array",
               items: {
@@ -383,15 +402,18 @@ function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown
 }
 
 function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
+  const rules = input.objectivesRules?.trim();
   return (
     `${input.generationRole} ` +
     `Subject: ${input.subjectTitle}. Topic: ${input.topicTitle}. ` +
     "Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. " +
     "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
     "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), " +
+    "kind (an objective kind such as words or frame, only when the subject rules for objectives ask for it; otherwise null), " +
     "cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; " +
     "you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). " +
     (input.voiceTones === true ? `Each card also has ${VOICE_TONE_RULE} ` : "") +
+    (rules === undefined || rules === "" ? "" : `Subject rules for objectives: ${rules} `) +
     "Return strict JSON only."
   );
 }

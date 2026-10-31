@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { validatePool } from "../domain/lessons/pool-validation";
+import { lessonExerciseIdentity, lessonExerciseStimulusRecord } from "../domain/lessons/exercise-identity";
+import { poolCoverage, validatePool } from "../domain/lessons/pool-validation";
 import { stageOf } from "../domain/lessons/stages";
+import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
+import { refineChapterPool } from "../domain/lessons/subjects/english-chapter/validators";
 import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
 import { presentSimpleV1 } from "../domain/lessons/subjects/english-grammar/topics/present-simple";
 import type { LessonPoolInput } from "../ports/ai";
@@ -69,6 +72,94 @@ describe("FakeLlmProvider voice tones", () => {
     expect(cardsOn[0]!.cards.map((c) => c.voiceTone)).toEqual(["cheerful", undefined]);
     const cardsOff = (await llm.generateLessonObjectives(objectivesInput)).objectives as { cards: Record<string, unknown>[] }[];
     for (const card of cardsOff[0]!.cards) expect(card).not.toHaveProperty("voiceTone");
+  });
+});
+
+describe("FakeLlmProvider — rozdział angielskiego", () => {
+  const MATERIAL = [
+    "Zagadnienie 1: Ubrania",
+    "coat, boots, dress, skirt, t-shirt",
+    "Zagadnienie 2: Pogoda",
+    "It's raining. It's snowing. What's the weather like?",
+  ].join("\n");
+
+  const topic = englishChapterSubject.buildDynamicTopic!({
+    titlePl: "Unit 1",
+    objectives: [{
+      id: "english_chapter.ddeck.clothes",
+      titlePl: "Ubrania",
+      descriptionEn: "Clothes",
+      kind: "words",
+      cards: [{ title: "Słówka", body: "coat — płaszcz" }, { title: "Jeszcze", body: "boots — buty" }],
+    }],
+  });
+
+  function chapterInput(overrides: Partial<LessonPoolInput> = {}): LessonPoolInput {
+    return {
+      subjectId: englishChapterSubject.id,
+      subjectTitle: englishChapterSubject.titlePl,
+      answerLocale: englishChapterSubject.answerLocale,
+      promptLocale: englishChapterSubject.promptLocale,
+      promptProfile: { generationRole: "lesson", gradingRole: "chapter", almostDefinition: "close" },
+      exerciseTypes: englishChapterSubject.exerciseTypes,
+      transforms: [],
+      objectives: [{
+        id: topic.objectives[0]!.id,
+        descriptionEn: "Clothes",
+        exerciseTypes: topic.objectives[0]!.exerciseTypes,
+        errorCategories: [],
+      }],
+      material: MATERIAL,
+      countPerObjective: 14,
+      stageCounts: { guided: 4, productive: 7, independent: 3 },
+      graderAvailable: false,
+      deduplication: "exercise",
+      ...overrides,
+    };
+  }
+
+  it("buduje pulę ze słów materiału: przechodzi słownik, walidację puli i pokrycie 3/3/2", async () => {
+    const raw = await new FakeLlmProvider().generateLessonPool(chapterInput());
+    const drafts = raw.exercises.map(toExerciseDraft);
+
+    expect(refineChapterPool(drafts, { material: MATERIAL }).rejected).toEqual([]);
+    const result = validatePool(drafts, englishChapterSubject, topic);
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(14);
+    expect(poolCoverage(result.valid, [topic.objectives[0]!.id], englishChapterSubject.poolMinimums!)).toEqual([]);
+  });
+
+  it("nie dodaje cytatów ani podpowiedzi, a polecenia są unikalne i niosą polskie zdanie", async () => {
+    const raw = await new FakeLlmProvider().generateLessonPool(chapterInput());
+    const exercises = raw.exercises as Record<string, unknown>[];
+    for (const exercise of exercises) {
+      expect(exercise).not.toHaveProperty("sourceRefs");
+      expect(exercise).not.toHaveProperty("hint");
+    }
+    const instructions = exercises
+      .filter((exercise) => exercise.exerciseType !== "lesson_open_answer")
+      .map((exercise) => exercise.instructionPl);
+    expect(new Set(instructions).size).toBe(instructions.length);
+    expect(instructions.every((text) => typeof text === "string" && /Zdanie numer \d+/u.test(text))).toBe(true);
+  });
+
+  it("dogenerowanie kontynuuje numerację, więc tożsamości ćwiczeń się nie powtarzają", async () => {
+    const llm = new FakeLlmProvider();
+    const options = { instructionIsStimulus: true };
+    const first = await llm.generateLessonPool(chapterInput());
+    const existingExercises = first.exercises.map((exercise) => lessonExerciseStimulusRecord(toExerciseDraft(exercise), options));
+    const second = await llm.generateLessonPool(chapterInput({ existingExercises }));
+    const identities = [...first.exercises, ...second.exercises].map((exercise) => lessonExerciseIdentity(toExerciseDraft(exercise), options));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  it("zagadnienia z regułami podziału dostają rodzaj: pierwsze words, kolejne frame; bez reguł bez rodzaju", async () => {
+    const llm = new FakeLlmProvider();
+    const base = { subjectTitle: "Angielski — rozdział", topicTitle: "Unit 1", material: MATERIAL, generationRole: "role" };
+    const withRules = (await llm.generateLessonObjectives({ ...base, objectivesRules: "kinds" })).objectives as { kind?: string }[];
+    expect(withRules.map((objective) => objective.kind)).toEqual(["words", "frame"]);
+    const withoutRules = (await llm.generateLessonObjectives(base)).objectives as { kind?: string }[];
+    expect(withoutRules.every((objective) => !("kind" in objective))).toBe(true);
   });
 });
 

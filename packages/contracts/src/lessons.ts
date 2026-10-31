@@ -95,6 +95,13 @@ export const SubjectCatalogDtoSchema = z.object({
   subjects: z.array(z.object({
     id: z.string().min(1),
     titlePl: z.string().min(1),
+    /**
+     * Sposób tworzenia zestawu: `catalog` — temat i reguły z katalogu,
+     * `material` — zagadnienia powstają z materiału rodzica (przedmiot bez tematów katalogowych).
+     */
+    creation: z.enum(["catalog", "material"]),
+    /** Czy rodzic nazywa przedmiot własnym tytułem (zestawy szkolne); `false` = stały tytuł przedmiotu. */
+    subjectTitleRequired: z.boolean(),
     topics: z.array(z.object({
       id: z.string().min(1),
       version: z.number().int().positive(),
@@ -159,7 +166,31 @@ export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
 export const LessonVoiceToneSchema = z.enum(["cheerful", "curious", "gentle", "mysterious"]);
 export type LessonVoiceTone = z.infer<typeof LessonVoiceToneSchema>;
 
-/** Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych). */
+/**
+ * Polecenie utworzenia zestawu z materiału rodzica dla przedmiotu o stałym
+ * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
+ * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
+ * Przedmiot z nazwą od rodzica (szkolny) zostaje przy `SchoolLessonCommandSchema`.
+ */
+export const MaterialLessonCommandSchema = z.object({
+  deckId: UuidSchema.optional(),
+  subjectId: z.string().min(1).max(64),
+  topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  instruction: z.string().max(500).optional(),
+  poolSize: z.number().int().min(20).max(160).optional(),
+  clientRequestId: UuidSchema,
+}).strict();
+export type MaterialLessonCommand = z.infer<typeof MaterialLessonCommandSchema>;
+
+/** Rodzaj zagadnienia tematu dynamicznego: grupa słów albo rama zdaniowa (przedmioty, które go używają). */
+export const DynamicObjectiveKindSchema = z.enum(["words", "frame"]);
+export type DynamicObjectiveKind = z.infer<typeof DynamicObjectiveKindSchema>;
+
+/**
+ * Zagadnienie tematu dynamicznego w widoku rodzica (bez pól modelowych).
+ * `kind` jest opcjonalne i należy do serwera: patch rodzica go nie zmienia.
+ */
 export const DynamicObjectiveDtoSchema = z.object({
   id: z.string().min(1).max(200),
   titlePl: z.string().min(1).max(120),
@@ -169,6 +200,7 @@ export const DynamicObjectiveDtoSchema = z.object({
     /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
     voiceTone: LessonVoiceToneSchema.optional(),
   }).strict()).min(2).max(4),
+  kind: DynamicObjectiveKindSchema.optional(),
 }).strict();
 export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
 
@@ -365,6 +397,11 @@ export const LessonDraftDtoSchema = z.object({
   /** Nagrania kart zagadnień (tylko karty z wierszem nagrania); brak pola = brak nagrań kart. */
   cardAudio: z.array(LessonCardAudioDtoSchema).optional(),
   rejectedCount: z.number().int().nonnegative(),
+  /**
+   * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z
+   * `refineGeneratedPool`) z licznikami; tekst powodu jest dla rodzica, bez danych dziecka.
+   */
+  rejectedReasons: z.record(z.string(), z.number().int().positive()).optional(),
   /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (zestawy szkolne). */
   droppedObjectiveCount: z.number().int().nonnegative().optional(),
   coverage: z.array(CoverageGapDtoSchema),

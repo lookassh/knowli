@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { CalculationSpec } from "@learning/contracts";
+import { createServices } from "../../../config";
+import { LessonDraftDtoSchema, type CalculationSpec } from "@learning/contracts";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { validatePool } from "../../../domain/lessons/pool-validation";
-import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
+import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildLessonPayload, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withoutVoiceToneUnlessAllowed } from "./lesson-drafts";
+import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, sumRejectedReasons, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withoutVoiceToneUnlessAllowed, withSubjectObjectiveKinds } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -163,6 +164,14 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     expect(collectBatchExerciseMetadata([validChoiceRaw("plays"), null], true).answers).toEqual(["plays"]);
   });
 
+  it("rekordy bodźców partii uwzględniają polecenie tylko przy instructionIsStimulus", () => {
+    const raw = { ...validChoiceRaw("plays"), instructionPl: "Dziś pada śnieg." };
+    const plain = collectBatchExerciseMetadata([raw], true).exerciseRecords[0]!;
+    const withInstruction = collectBatchExerciseMetadata([raw], true, { instructionIsStimulus: true }).exerciseRecords[0]!;
+    expect(withInstruction.stimulus).toBe(JSON.stringify(["dziś pada śnieg.", plain.stimulus]));
+    expect(collectBatchExerciseMetadata([raw], true, {}).exerciseRecords[0]).toEqual(plain);
+  });
+
   it("summarizes rejection rules and counts without logging answer text", () => {
     const summary = summarizeLessonPoolValidation({
       rawCount: 2,
@@ -239,7 +248,7 @@ describe("ton lektora (voiceTone) z wyjścia modelu", () => {
         { title: "Karta 4", body: "Treść 4." },
       ],
     };
-    const cards = buildDynamicTopicData([raw], "deck", "Temat").data!.objectives[0]!.cards;
+    const cards = buildDynamicTopicData([raw], "school", "deck", "Temat").data!.objectives[0]!.cards;
     expect(cards[0]!.voiceTone).toBe("cheerful");
     expect(cards.slice(1).every((card) => !("voiceTone" in card))).toBe(true);
   });
@@ -253,7 +262,7 @@ describe("ton lektora (voiceTone) z wyjścia modelu", () => {
     expect(withoutVoiceToneUnlessAllowed(plain, englishGrammarSubject)).toBe(plain);
 
     const raw = { slug: "a", titlePl: "Zagadnienie", descriptionEn: "Topic description.", cards: [{ title: "K", body: "T.", voiceTone: "cheerful" }] };
-    const cards = buildDynamicTopicData([raw], "deck", "Temat", () => [], false).data!.objectives[0]!.cards;
+    const cards = buildDynamicTopicData([raw], "school", "deck", "Temat", () => [], false).data!.objectives[0]!.cards;
     expect("voiceTone" in cards[0]!).toBe(false);
   });
 });
@@ -306,25 +315,177 @@ describe("objectiveBatchCounts (pula strukturalnie publikowalna i nieprzekraczan
   });
 });
 
+describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
+  const topic = (subject: SubjectModule) => {
+    if (subject.buildDynamicTopic) {
+      return subject.buildDynamicTopic({
+        titlePl: "T",
+        objectives: [{
+          id: "x.dd.a", titlePl: "A", descriptionEn: "A.",
+          cards: [{ title: "1", body: "1" }, { title: "2", body: "2" }],
+        }],
+      });
+    }
+    return subject.topics[0]!;
+  };
+  const build = (subject: SubjectModule) => {
+    const resolved = topic(subject);
+    return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, true, []);
+  };
+
+  it("groundingRequired wynika z sourceQuotes przedmiotu, nie z obecności validatePoolExtra", () => {
+    expect(build(schoolSubject).groundingRequired).toBe(true);
+    expect(build(englishGrammarSubject).groundingRequired).toBe(false);
+    // validatePoolExtra bez sourceQuotes nie wymusza już cytatów.
+    const extraOnly: SubjectModule = { ...schoolSubject, sourceQuotes: undefined };
+    expect(extraOnly.validatePoolExtra).toBeDefined();
+    expect(build(extraOnly).groundingRequired).toBe(false);
+    expect(build({ ...schoolSubject, sourceQuotes: false }).groundingRequired).toBe(false);
+  });
+
+  it("przenosi reguły typów z profilu przedmiotu do profilu promptu, a brak reguł pomija pola", () => {
+    const withRules = build(schoolSubject).promptProfile;
+    expect(withRules.typeRules).toEqual(schoolSubject.prompts.typeRules);
+    expect(withRules).not.toHaveProperty("objectivesRules");
+    const bare = build({ ...schoolSubject, prompts: { ...schoolSubject.prompts, typeRules: undefined } }).promptProfile;
+    expect(bare).not.toHaveProperty("typeRules");
+    expect(build(englishGrammarSubject).promptProfile).not.toHaveProperty("typeRules");
+  });
+});
+
 describe("buildDynamicTopicData (wadliwe zagadnienie nie przerywa generacji)", () => {
   const card = (n: number) => ({ title: `Karta ${n}`, body: `Treść karty ${n}.` });
   const raw = (slug: string, cards = [card(1), card(2)], titlePl = `Zagadnienie ${slug}`) =>
     ({ slug, titlePl, descriptionEn: "Topic description.", cards });
-  const validate = (objective: Parameters<NonNullable<Parameters<typeof buildDynamicTopicData>[3]>>[0]) =>
+  const validate = (objective: Parameters<NonNullable<Parameters<typeof buildDynamicTopicData>[4]>>[0]) =>
     validateDynamicTopicData(schoolSubject, { titlePl: "Temat", objectives: [objective] });
 
   it("pomija zagadnienie z jedną kartą albo pustym tytułem, a pozostałe zachowuje", () => {
-    const built = buildDynamicTopicData([raw("a"), raw("b", [card(1)]), raw("c", undefined, "  "), raw("d")], "deck", "Temat", validate);
+    const built = buildDynamicTopicData([raw("a"), raw("b", [card(1)]), raw("c", undefined, "  "), raw("d")], "school", "deck", "Temat", validate);
     expect(built.data?.objectives.map((o) => o.id)).toEqual(["school.ddeck.a", "school.ddeck.d"]);
     expect(built.errors).toHaveLength(2);
     expect(validateDynamicTopicData(schoolSubject, built.data!)).toEqual([]);
   });
 
   it("nadaje unikalne identyfikatory także wtedy, gdy sufiks koliduje z innym slugiem", () => {
-    const built = buildDynamicTopicData([raw("a"), raw("a_3"), raw("a")], "deck", "Temat", validate);
+    const built = buildDynamicTopicData([raw("a"), raw("a_3"), raw("a")], "school", "deck", "Temat", validate);
     const ids = built.data!.objectives.map((o) => o.id);
     expect(new Set(ids).size).toBe(3);
     expect(validateDynamicTopicData(schoolSubject, built.data!)).toEqual([]);
+  });
+
+  it("prefiks identyfikatora celu pochodzi z przedmiotu, a szkoła zachowuje dotychczasowy", () => {
+    const chapter = buildDynamicTopicData([raw("clothes")], "english_chapter", "deck1", "T");
+    expect(chapter.data?.objectives.map((o) => o.id)).toEqual(["english_chapter.ddeck1.clothes"]);
+    const school = buildDynamicTopicData([raw("clothes")], "school", "deck1", "T");
+    expect(school.data?.objectives.map((o) => o.id)).toEqual(["school.ddeck1.clothes"]);
+  });
+
+  it("przenosi rodzaj zagadnienia (words/frame), a null, brak i nieznana wartość dają brak pola", () => {
+    const built = buildDynamicTopicData(
+      [{ ...raw("a"), kind: "words" }, { ...raw("b"), kind: "frame" }, { ...raw("c"), kind: null }, raw("d"), { ...raw("e"), kind: "other" }],
+      "english_chapter", "deck1", "T",
+    );
+    const objectives = built.data!.objectives;
+    expect(objectives.map((o) => o.kind)).toEqual(["words", "frame", undefined, undefined, undefined]);
+    for (const objective of objectives.slice(2)) expect(objective).not.toHaveProperty("kind");
+  });
+});
+
+describe("withSubjectObjectiveKinds (rodzaj zagadnienia zapisuje tylko przedmiot, który z niego korzysta)", () => {
+  const data: DynamicTopicData = {
+    titlePl: "Temat",
+    objectives: [
+      { id: "x.d1.a", titlePl: "A", descriptionEn: "A.", cards: [{ title: "t", body: "b" }, { title: "t2", body: "b2" }], kind: "words" },
+      { id: "x.d1.b", titlePl: "B", descriptionEn: "B.", cards: [{ title: "t", body: "b" }, { title: "t2", body: "b2" }] },
+    ],
+  };
+
+  it("przedmiot bez prompts.objectivesRules (szkoła) nigdy nie zapisuje kind", () => {
+    expect(schoolSubject.prompts.objectivesRules).toBeUndefined();
+    const stored = withSubjectObjectiveKinds(schoolSubject, data);
+    for (const objective of stored.objectives) expect(objective).not.toHaveProperty("kind");
+    expect(stored.objectives.map((o) => o.id)).toEqual(["x.d1.a", "x.d1.b"]);
+    expect(stored.titlePl).toBe("Temat");
+  });
+
+  it("przedmiot z prompts.objectivesRules zachowuje kind", () => {
+    const optedIn: SubjectModule = { ...schoolSubject, prompts: { ...schoolSubject.prompts, objectivesRules: "3–5 zagadnień." } };
+    const stored = withSubjectObjectiveKinds(optedIn, data);
+    expect(stored).toBe(data);
+    expect(stored.objectives.map((o) => o.kind)).toEqual(["words", undefined]);
+  });
+
+  it("nie zmienia danych wejściowych", () => {
+    withSubjectObjectiveKinds(schoolSubject, data);
+    expect(data.objectives[0]!.kind).toBe("words");
+  });
+});
+
+describe("refineGeneratedDrafts (czyszczenie świeżo wygenerowanej puli)", () => {
+  const gap = (answer: string): LessonExerciseDraft => ({
+    exerciseType: "lesson_gap", objectiveId: "o1", stem: `It's ___ today.`, answer, acceptedAnswers: [], focus: [answer],
+  });
+  const withRefine = (refine: NonNullable<SubjectModule["refineGeneratedPool"]>): SubjectModule =>
+    ({ ...englishGrammarSubject, refineGeneratedPool: refine });
+
+  it("przedmiot bez haka zwraca pulę bez zmian i bez odrzuceń", () => {
+    const drafts = [gap("a"), gap("b")];
+    expect(refineGeneratedDrafts(englishGrammarSubject, drafts, "material")).toEqual({
+      kept: drafts, rejectedCount: 0, rejectedReasons: {},
+    });
+    expect(refineGeneratedDrafts(schoolSubject, drafts, "material").kept).toEqual(drafts);
+  });
+
+  it("odrzucenia z haka zwiększają rejectedCount i są zliczone po powodzie", () => {
+    const drafts = [gap("raining"), gap("coat"), gap("snowing"), gap("hat")];
+    const subject = withRefine((all) => ({
+      kept: all.filter((d) => d.answer === "coat"),
+      rejected: [
+        { exercise: all[0]!, reason: "słowo spoza materiału: raining" },
+        { exercise: all[2]!, reason: "słowo spoza materiału: raining" },
+        { exercise: all[3]!, reason: "słowo spoza materiału: hat" },
+      ],
+    }));
+    const result = refineGeneratedDrafts(subject, drafts, "material");
+    expect(result.kept.map((d) => d.answer)).toEqual(["coat"]);
+    expect(result.rejectedCount).toBe(3);
+    expect(result.rejectedReasons).toEqual({ "słowo spoza materiału: raining": 2, "słowo spoza materiału: hat": 1 });
+  });
+
+  it("przekazuje hakowi materiał i szkice", () => {
+    const seen: { drafts: readonly LessonExerciseDraft[]; material: string }[] = [];
+    const drafts = [gap("a")];
+    refineGeneratedDrafts(withRefine((all, ctx) => { seen.push({ drafts: all, material: ctx.material }); return { kept: [...all], rejected: [] }; }),
+      drafts, "Clothes: coat, hat");
+    expect(seen).toEqual([{ drafts, material: "Clothes: coat, hat" }]);
+  });
+
+  it("powody o nazwach z prototypu obiektu (constructor, toString, __proto__) są liczone jak każde inne", () => {
+    const reasons = ["constructor", "toString", "__proto__", "__proto__", "hasOwnProperty"];
+    const drafts = reasons.map((_, index) => gap(`w${index}`));
+    const subject = withRefine((all) => ({ kept: [], rejected: all.map((exercise, index) => ({ exercise, reason: reasons[index]! })) }));
+    const result = refineGeneratedDrafts(subject, drafts, "m");
+    const expected: [string, number][] = [["constructor", 1], ["toString", 1], ["__proto__", 2], ["hasOwnProperty", 1]];
+    expect(Object.entries(result.rejectedReasons)).toEqual(expected);
+    expect(result.rejectedCount).toBe(5);
+    // Zwykły obiekt (JSONB, DTO), którego prototypu nie podmienił klucz „__proto__”.
+    expect(Object.getPrototypeOf(result.rejectedReasons)).toBe(Object.prototype);
+    expect(LessonDraftDtoSchema.shape.rejectedReasons.safeParse(result.rejectedReasons).success).toBe(true);
+
+    // Kolejny przebieg sumuje liczniki odczytane z JSONB (JSON.parse daje własne pola, także „__proto__”).
+    const stored = JSON.parse(JSON.stringify(result.rejectedReasons)) as Record<string, number>;
+    const summed = sumRejectedReasons(stored, result.rejectedReasons);
+    expect(Object.entries(summed)).toEqual(expected.map(([reason, count]) => [reason, 2 * count]));
+    expect(Object.getPrototypeOf(summed)).toBe(Object.prototype);
+    expect(Object.entries(sumRejectedReasons(undefined, result.rejectedReasons))).toEqual(expected);
+  });
+
+  it("hak bez odrzuceń zwraca puste zliczenie", () => {
+    const drafts = [gap("a")];
+    expect(refineGeneratedDrafts(withRefine((all) => ({ kept: [...all], rejected: [] })), drafts, "m")).toEqual({
+      kept: drafts, rejectedCount: 0, rejectedReasons: {},
+    });
   });
 });
 
@@ -388,5 +549,28 @@ describe("poolStageCounts (rachunek nie zabiera miejsca wymaganym pytaniom otwar
     expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 15)).toEqual(splitStages(15));
     // 5 → 2/2/1: przesunięcie zabrałoby produktywnemu minimum 2, więc podział zostaje.
     expect(poolStageCounts(schoolSubject, ["lesson_open_answer", "lesson_calculation"], 5)).toEqual(splitStages(5));
+  });
+});
+
+describe("createLessonFromMaterial / createMaterialLesson (zestaw z materiału tylko dla przedmiotów o stałym tytule)", () => {
+  // Odrzucenie następuje przed jakimkolwiek zapisem, więc baza nie jest potrzebna.
+  const services = createServices({ db: {} as never });
+  const command = {
+    topicTitlePl: "Unit 1",
+    material: "I like pizza.",
+    clientRequestId: "11111111-1111-4111-8111-111111111111",
+  };
+
+  it("przedmiot katalogowy (bez buildDynamicTopic) kończy się validation", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "english_grammar" })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_grammar" })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("przedmiot z nazwą od rodzica (szkoła) idzie ścieżką szkolną, nie tą", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "school" })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("nieznany przedmiot kończy się validation", async () => {
+    await expect(createLessonFromMaterial(services, { ...command, subjectId: "history" })).rejects.toMatchObject({ code: "validation" });
   });
 });

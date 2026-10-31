@@ -92,6 +92,12 @@
   font-size: var(--mantine-font-size-sm);
 }
 
+.pp-lesson-rejected-reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--mantine-font-size-sm);
+}
+
 .pp-lesson-start {
   align-self: flex-start;
 }

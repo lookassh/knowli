@@ -17,6 +17,7 @@ import {
   GenerationCommandSchema,
   GenerationDtoSchema,
   LessonCommandSchema,
+  MaterialLessonCommandSchema,
   SchoolLessonCommandSchema,
   LessonDynamicTopicPatchSchema,
   LessonDeckDtoSchema,
@@ -386,6 +387,11 @@ export const parentApiContract = {
       .input(SchoolLessonCommandSchema)
       .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))
       .meta(openapi({ method: "POST", path: "/lessons/school", successStatus: 202 })),
+
+    createFromMaterial: oc
+      .input(MaterialLessonCommandSchema)
+      .output(z.object({ runId: UuidSchema, deckId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lessons/material", successStatus: 202 })),
 
     get: oc
       .input(DeckPathSchema)

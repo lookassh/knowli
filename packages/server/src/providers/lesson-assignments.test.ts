@@ -33,6 +33,21 @@ describe("materializeGeneratedAssignments", () => {
     expect(broken!.answer).toBeUndefined();
   });
 
+  it("przedmiot bez cytatów: sourceRefs null albo brak daje ćwiczenie bez pola sourceRefs, cytaty zostają", () => {
+    const cloze = {
+      exerciseType: "lesson_cloze", objectiveId: "o", instructionPl: "",
+      clozeText: "I wear a ___ and ___.", gapAnswers: ["coat", "hat"], extraWords: ["scarf"],
+    };
+    const exercises = materializeGeneratedAssignments([
+      { ...match, sourceRefs: null }, { ...group, sourceRefs: null }, { ...cloze, sourceRefs: null },
+      { ...match, sourceRefs: undefined }, cloze, match,
+    ]) as Record<string, unknown>[];
+    for (const exercise of exercises.slice(0, 5)) expect(exercise).not.toHaveProperty("sourceRefs");
+    expect(exercises[0]).toMatchObject({ answer: "równik, południk, biegun" });
+    expect(exercises[2]).toMatchObject({ answer: "coat, hat" });
+    expect(exercises[5]).toHaveProperty("sourceRefs", match.sourceRefs);
+  });
+
   it("pozostawia inne ćwiczenia i odbiera odpowiedź rekordom o złym kształcie", () => {
     const gap = { exerciseType: "lesson_gap", answer: "x" };
     const [same, broken] = materializeGeneratedAssignments([gap, { ...match, pairs: [null] }]) as Record<string, unknown>[];

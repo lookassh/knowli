@@ -28,8 +28,9 @@ import {
   skillVersions,
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import { computeTargetKey } from "../../../domain/target-key";
+import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
+import { materialCreationMode, requiresParentSubjectTitle } from "../../../domain/lessons/material-creation";
 import { poolCoverage, validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
@@ -64,6 +65,7 @@ interface LessonContextView {
   objectiveIds: string[];
   examples: Record<string, string[]>;
   rejectedCount: number;
+  rejectedReasons?: Record<string, number>;
   droppedObjectiveCount?: number;
   material: string;
   subjectTitlePl?: string;
@@ -79,6 +81,7 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     objectiveIds: ctx.objectiveIds ?? [],
     examples: ctx.examples ?? {},
     rejectedCount: ctx.rejectedCount ?? 0,
+    ...(ctx.rejectedReasons && Object.keys(ctx.rejectedReasons).length > 0 ? { rejectedReasons: ctx.rejectedReasons } : {}),
     ...(ctx.droppedObjectiveCount ? { droppedObjectiveCount: ctx.droppedObjectiveCount } : {}),
     material: ctx.material ?? "",
     ...(ctx.subjectTitlePl ? { subjectTitlePl: ctx.subjectTitlePl } : {}),
@@ -122,6 +125,10 @@ export function lessonCatalog(services: Services): SubjectCatalogDto {
       return {
         id: subject.id,
         titlePl: subject.titlePl,
+        // Zagadnienia z materiału rodzica zamiast tematów katalogowych; nazwę przedmiotu podaje rodzic tylko tam, gdzie moduł tego chce.
+        // Te same reguły stosują polecenia tworzenia (`material-creation`), więc formularz nie obiecuje ścieżki odrzucanej przez serwer.
+        creation: materialCreationMode(subject) === undefined ? "catalog" as const : "material" as const,
+        subjectTitleRequired: requiresParentSubjectTitle(subject),
         topics: [...latestByTopic.values()].map((topic) => ({
           id: topic.id,
           version: topic.version,
@@ -289,6 +296,7 @@ async function readLessonDraftDto(
                 body: card.body,
                 ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
               })),
+              ...(o.kind === undefined ? {} : { kind: o.kind }),
             })),
           },
         }),
@@ -310,6 +318,7 @@ async function readLessonDraftDto(
     }]),
     ...(audio.cards.length > 0 ? { cardAudio: audio.cards } : {}),
     rejectedCount: context.rejectedCount,
+    ...(context.rejectedReasons ? { rejectedReasons: context.rejectedReasons } : {}),
     ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
     coverage,
   };
@@ -506,7 +515,7 @@ async function loadCurrentLessonRevisions(tx: Tx, versionId: string): Promise<Cu
  * odpowiedzi/wariantów/`focus`/celu tworzy nową `skill_version` (predecessor +
  * revision_number+1); zmiana wyłącznie polecenia zachowuje klucz. Nowe ćwiczenia
  * (bez `id`) dostają nowy learning_item i skill_version. Usunięte znikają wraz
- * z powiązaniami. `target_key` z `computeTargetKey(answer, answerLocale)`.
+ * z powiązaniami. `target_key` z `lessonExerciseTargetKey` (domyślnie `computeTargetKey(answer, answerLocale)`).
  */
 async function applyLessonExercisesEdit(
   tx: Tx,
@@ -538,7 +547,7 @@ async function applyLessonExercisesEdit(
     const tempPosition = TEMP_POSITION_OFFSET + position;
     const draft = toExerciseDraft(ex as unknown);
     const payload = buildLessonPayload(draft, subject);
-    const targetKey = computeTargetKey(draft.answer, subject.answerLocale);
+    const targetKey = lessonExerciseTargetKey(subject, draft);
 
     if (ex.id) {
       const existing = byItemId.get(ex.id)!;
@@ -636,7 +645,8 @@ export async function editLessonDraft(
 
     // Patch tematu dynamicznego (zagadnienia z materiału): edycja tytułów/kart
     // istniejących celów i usuwanie celów przez pominięcie. `descriptionEn`
-    // zachowujemy z zapisanego kontekstu; temat walidujemy regułami katalogu.
+    // i `kind` (pola serwera) zachowujemy z zapisanego kontekstu; temat
+    // walidujemy regułami katalogu.
     let nextDynamicTopic: DynamicTopicData | undefined;
     let deletedObjectiveIds: string[] = [];
     if (patch.dynamicTopic !== undefined) {
@@ -651,16 +661,20 @@ export async function editLessonDraft(
       }
       nextDynamicTopic = {
         titlePl: context.dynamicTopic.titlePl,
-        objectives: patch.dynamicTopic.objectives.map((objective) => ({
-          id: objective.id,
-          titlePl: objective.titlePl,
-          descriptionEn: currentById.get(objective.id)!.descriptionEn,
-          cards: objective.cards.map((card) => ({
-            title: card.title,
-            body: card.body,
-            ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
-          })),
-        })),
+        objectives: patch.dynamicTopic.objectives.map((objective) => {
+          const current = currentById.get(objective.id)!;
+          return {
+            id: objective.id,
+            titlePl: objective.titlePl,
+            descriptionEn: current.descriptionEn,
+            cards: objective.cards.map((card) => ({
+              title: card.title,
+              body: card.body,
+              ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+            })),
+            ...(current.kind === undefined ? {} : { kind: current.kind }),
+          };
+        }),
       };
       const topicErrors = validateDynamicTopicData(subject, nextDynamicTopic);
       if (topicErrors.length > 0) {
