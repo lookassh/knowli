@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
-import { completedRecallFixture, makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
+import { completedRecallFixture, completedTextChoiceFixture, longLessonCardFixture, makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
 import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
@@ -36,11 +36,16 @@ async function openPictureChoice(page: Page, fixture: KidUiFixture = pictureChoi
   await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", "picture_listening");
 }
 
-async function openWrittenRecall(page: Page, fixture: KidUiFixture = completedRecallFixture()) {
+/** Opens the first task of a single-profile, single-deck session. */
+async function openSession(page: Page, fixture: KidUiFixture) {
   await installKidUiFixture(page, fixture);
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
+}
+
+async function openWrittenRecall(page: Page, fixture: KidUiFixture = completedRecallFixture()) {
+  await openSession(page, fixture);
   await expect(page.getByTestId("kid-input")).toBeVisible();
 }
 
@@ -294,15 +299,136 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
   });
 }
 
+// Compact exercise frame from 840 x 781 on (spec §3.2): the instruction, the answers and the footer (action or
+// result panel) stand together at the top, so no empty band separates the answers from the footer. Every window here
+// scales, so each test also waits for its zoom; the band is measured in screen pixels against the window height.
+const TALL_WINDOWS = SESSION_WINDOWS.filter(({ height }) => height >= 781);
+const MAX_BAND = 0.15;
+
+/** Screen rectangles of all elements matching the selector, in document order. */
+async function boxes(page: Page, selector: string) {
+  return page.locator(selector).evaluateAll((elements) => elements.map((element) => {
+    const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+    return { left, top, right, bottom, width, height };
+  }));
+}
+
+const nextFrames = (page: Page) =>
+  page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+for (const { width, height, scale } of TALL_WINDOWS) {
+  test(`text choice has no empty band at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openSession(page, completedTextChoiceFixture());
+    await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-feedback-layout", "flow");
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    await waitForKidScale(page, scale);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const before = await boxes(page, "[data-testid='kid-option']");
+
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await nextFrames(page);
+
+    const after = await boxes(page, "[data-testid='kid-option']");
+    const [dock] = await boxes(page, "[data-testid='kid-feedback-dock']");
+    const details = JSON.stringify({ before, after, dock });
+    expect(after).toHaveLength(4);
+    for (const [index, option] of after.entries()) {
+      for (const key of ["left", "top", "width", "height"] as const) {
+        expect(Math.abs(option[key] - before[index]![key]), `option ${index} ${key} after the verdict: ${details}`).toBeLessThanOrEqual(1);
+      }
+    }
+    const band = dock!.top - Math.max(...after.map((option) => option.bottom));
+    expect(band, `panel below the options: ${details}`).toBeGreaterThanOrEqual(-1);
+    expect(band, `no empty band between the options and the panel: ${details}`).toBeLessThanOrEqual(MAX_BAND * height);
+    expect(dock!.bottom, `panel in the window: ${details}`).toBeLessThanOrEqual(height + 1);
+  });
+
+  test(`written answer has no empty band at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openWrittenRecall(page);
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-input").fill("cat");
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const before = await measure(page, { input: "[data-testid='kid-input']", submit: "[data-testid='kid-submit']" });
+    const band = before.submit.top - before.input.bottom;
+    expect(band, `action below the field: ${JSON.stringify(before)}`).toBeGreaterThanOrEqual(0);
+    expect(band, `no empty band between the field and the action: ${JSON.stringify(before)}`).toBeLessThanOrEqual(MAX_BAND * height);
+
+    await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await settledDockReserve(page);
+    const after = await measure(page, { input: "[data-testid='kid-input']", dock: "[data-testid='kid-feedback-dock']" });
+    const details = JSON.stringify({ before: before.input, after });
+    expect(after.input.bottom, `field not covered by the panel: ${details}`).toBeLessThanOrEqual(after.dock.top + 1);
+    expect(Math.abs(after.input.top - before.input.top), `field stays in place: ${details}`).toBeLessThanOrEqual(1);
+    expect(after.dock.top - after.input.bottom, `no empty band between the field and the panel: ${details}`)
+      .toBeLessThanOrEqual(MAX_BAND * height);
+    expect(after.dock.bottom, `panel in the window: ${details}`).toBeLessThanOrEqual(height + 1);
+  });
+}
+
+// Picture choice keeps its frame (excluded from the compact rule): the tiles fill the material height (cqh) anyway.
+for (const { width, height, scale } of TALL_WINDOWS.filter(({ width }) => width === ULTRAWIDE.width)) {
+  test(`picture choice has no empty band at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openPictureChoice(page, fourPictureTilesFixture());
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    await waitForKidScale(page, scale);
+    await page.evaluate(async () => { await document.fonts.ready; });
+
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    await expect(page.getByTestId("kid-next")).toBeVisible();
+    await nextFrames(page);
+
+    const tiles = await boxes(page, "[data-testid='kid-option']");
+    const [dock] = await boxes(page, "[data-testid='kid-feedback-dock']");
+    const details = JSON.stringify({ tiles, dock });
+    for (const [index, tile] of [...tiles, dock!].entries()) {
+      const name = index < tiles.length ? `tile ${index}` : "panel";
+      expect(tile.left, `${name} in the window: ${details}`).toBeGreaterThanOrEqual(-1);
+      expect(tile.top, `${name} in the window: ${details}`).toBeGreaterThanOrEqual(-1);
+      expect(tile.right, `${name} in the window: ${details}`).toBeLessThanOrEqual(width + 1);
+      expect(tile.bottom, `${name} in the window: ${details}`).toBeLessThanOrEqual(height + 1);
+    }
+    const band = dock!.top - Math.max(...tiles.map((tile) => tile.bottom));
+    expect(band, `panel below the tiles: ${details}`).toBeGreaterThanOrEqual(-1);
+    expect(band, `no empty band between the tiles and the panel: ${details}`).toBeLessThanOrEqual(MAX_BAND * height);
+  });
+}
+
+test("long lesson card scrolls inside the material", async ({ page }) => {
+  await page.setViewportSize(ULTRAWIDE);
+  await openSession(page, longLessonCardFixture());
+  await expect(page.getByTestId("kid-lesson-card")).toBeVisible();
+  await waitForKidScale(page, 1.6);
+  await page.evaluate(async () => { await document.fonts.ready; });
+
+  // The material track keeps its minimum 0: content longer than the window scrolls inside the material.
+  const material = await page.getByTestId("kid-material").evaluate((element) =>
+    ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+  expect(material.scrollHeight, `material scrolls: ${JSON.stringify(material)}`).toBeGreaterThan(material.clientHeight);
+  const [next] = await boxes(page, "[data-testid='kid-lesson-next']");
+  expect(next!.top, `main action in the window: ${JSON.stringify(next)}`).toBeGreaterThanOrEqual(0);
+  expect(next!.bottom, `main action in the window: ${JSON.stringify(next)}`).toBeLessThanOrEqual(ULTRAWIDE.height + 1);
+  await expectSessionFitsWindow(page, ULTRAWIDE);
+});
+
 // JS measurements under zoom (spec §4.4): rectangles are screen pixels, offset/scroll lengths and position: fixed
 // lengths are inner pixels. The checks below compare screen rectangles only, at scale 1.6.
 const ULTRAWIDE_SCALE = 1.6;
 
-// A long source prompt (about half the material's height) and a spelling hint whose dock covers the answer form.
-// The material must not overflow before the verdict: .materialContent (flex: 1 with an explicit min-height) does not
-// grow with overflowing children, so the reserve padding would not lengthen the scroll range — a known limitation.
-const LONG_RECALL_PROMPT = "Przetłumacz całe zdanie: dzieci szły starym drewnianym mostem nad rzeką i liczyły łódki, "
-  + "które powoli płynęły do portu, zanim słońce schowało się za wzgórzami, a w miasteczku zapaliły się wszystkie światła.";
+// A long source prompt and a spelling hint whose dock (382 inner px over a 54 px footer) covers the answer form.
+// 3440x1440 has the compact frame (spec §3.2): the reserve grows the material row instead, and only once the material
+// reaches its limit does the reserve lengthen the scroll range and the correcting scroll run — the path under test.
+// So the prompt fills enough of the material for that (about 2/3), yet still fits before the verdict: outside the
+// compact frame .materialContent (flex: 1 with an explicit min-height) does not grow with overflowing children, so
+// the reserve padding would not lengthen the scroll range there — a known limitation.
+const LONG_RECALL_PROMPT = "Przeczytaj uważnie całą historyjkę, a potem przetłumacz zdanie na angielski, pilnując kolejności "
+  + "słów i małych liter: dzieci szły starym drewnianym mostem nad rzeką i liczyły łódki, które powoli płynęły do portu, "
+  + "zanim słońce schowało się za wzgórzami, a w miasteczku zapaliły się wszystkie światła.";
 const HINT_START = "The children walked along the old wooden bridge near the river, ";
 const HINT_FIX = "counting the little boats";
 const HINT_END = " that sailed slowly towards the harbour before the sun went down behind the hills and the lights came on.";
@@ -332,6 +458,8 @@ async function settledDockReserve(page: Page) {
       return {
         inlineReserve: Number.parseFloat(content.style.paddingBottom) || 0,
         scrollTop: material.scrollTop,
+        scrollHeight: material.scrollHeight,
+        clientHeight: material.clientHeight,
         lastChildBottom: content.lastElementChild!.getBoundingClientRect().bottom,
         dockTop: dock.getBoundingClientRect().top,
       };
@@ -352,8 +480,10 @@ test("overlay dock reserve is exact", async ({ page }) => {
   await page.setViewportSize(ULTRAWIDE);
   await openWrittenRecall(page, longSpellingHintFixture());
   await waitForKidScale(page, ULTRAWIDE_SCALE);
-  expect(await page.getByTestId("kid-material").evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
-    "the long prompt still fits the material before the verdict").toBe(true);
+  const material = await page.getByTestId("kid-material").evaluate((element) =>
+    ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+  expect(material.scrollHeight, `the long prompt still fits the material before the verdict: ${JSON.stringify(material)}`)
+    .toBeLessThanOrEqual(material.clientHeight + 1);
   await page.getByTestId("kid-input").fill("the children walked");
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
@@ -362,6 +492,9 @@ test("overlay dock reserve is exact", async ({ page }) => {
   const details = JSON.stringify(geometry);
   // The dock really covers the content: without overlap the reserve stays off and the bound below proves nothing.
   expect(geometry.inlineReserve, `dock reserve engaged: ${details}`).toBeGreaterThan(0);
+  // The reserve lengthened the scroll range and the correcting scroll ran; without it the content would simply end
+  // above the dock in the grown material row and the bound below would not test the scroll.
+  expect(geometry.scrollTop, `correcting scroll ran: ${details}`).toBeGreaterThan(0);
   // The correcting scroll leaves the answer 8 inner px above the dock: not under it, and not scrolled past it.
   expect(geometry.lastChildBottom, `answer above the dock: ${details}`).toBeLessThanOrEqual(geometry.dockTop + 1);
   expect(geometry.lastChildBottom, `answer right above the dock: ${details}`)

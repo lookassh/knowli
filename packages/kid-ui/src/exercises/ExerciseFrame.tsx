@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
@@ -178,6 +178,11 @@ export function ExerciseFrame({
       observer.observe(overlay);
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       if (content) observer.observe(content);
+      // Pierwszy pomiar może jeszcze widzieć wychodzące akcje zadania obok
+      // panelu (AnimatePresence), czyli panel niżej niż po ich zniknięciu.
+      // W zwartym układzie (§3.2) materiał nie zmienia wtedy rozmiaru, więc
+      // ponowny pomiar wyzwala dopiero kurcząca się stopka.
+      if (anchor.parentElement) observer.observe(anchor.parentElement);
     }
     return () => {
       measureRef.current = null;
@@ -194,14 +199,21 @@ export function ExerciseFrame({
     return () => cancelAnimationFrame(frame);
   }, [dockPad]);
 
+  // Rezerwa to zawsze padding pod treścią. Minimalną wysokość treści (100%
+  // materiału + rezerwa) liczy CSS z `--dock-reserve`, bo inline `minHeight`
+  // nie dałoby się nadpisać: w zwartym układzie wysokiego okna (§3.2) treść
+  // rośnie tylko o padding. Warunek to ta sama media query co siatka, w module
+  // CSS — prościej niż matchMedia w JS (pomiar okna należy do KidPage) albo
+  // atrybut odczytywany ze stanu CSS.
+  const reserveStyle = dock !== undefined && dockPad > 0
+    ? { paddingBottom: dockPad + 4, "--dock-reserve": `${dockPad}px` } as CSSProperties
+    : undefined;
+
   return (
     <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
       <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} guidance={guidance} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
-        <div
-          className={`kid-material-content ${classes.materialContent}`}
-          style={dock !== undefined && dockPad > 0 ? { paddingBottom: dockPad + 4, minHeight: `calc(100% + ${dockPad}px)` } : undefined}
-        >{content}</div>
+        <div className={`kid-material-content ${classes.materialContent}`} style={reserveStyle}>{content}</div>
       </div>
       <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
         <AnimatePresence mode="popLayout" initial={false}>
