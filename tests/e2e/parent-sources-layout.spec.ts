@@ -4,7 +4,9 @@ import { messages } from "@learning/contracts";
 /**
  * Zakładka „Źródła” panelu rodzica (Etap 2, design 2026-10-30 §3.4): lista,
  * nowe źródło, edycja z konfliktem rewizji (409), usunięcie z potwierdzeniem
- * i przyciski tworzenia lekcji ze źródła. API rodzica zaślepione
+ * i przyciski tworzenia lekcji ze źródła; przypadki brzegowe (telefon): fokus
+ * po błędach, ochrona niezapisanych zmian, błędy wczytywania, linki do
+ * nieistniejącego źródła i limit tekstu. API rodzica zaślepione
  * w przeglądarce (stan w pamięci testu), teksty fikcyjne.
  */
 
@@ -47,6 +49,11 @@ interface Api {
   /** Lista zestawów kolejnych odczytów GET /decks (ostatnia zostaje). */
   deckLists: unknown[][];
   deckListCalls: number;
+  /** Status odczytu listy źródeł i strony źródła (200 — zwykła odpowiedź; inny — błąd). */
+  listStatus: number;
+  getStatus: number;
+  /** Status następnego PATCH (200 — zwykły zapis; inny — błąd bez zmiany źródła). */
+  patchStatus: number;
 }
 
 const BODY = "Unit 3 — Food\npizza — pizza\napple — jabłko\nI like pizza. Do you like apples?";
@@ -85,7 +92,9 @@ async function mockApi(page: Page): Promise<Api> {
   const api: Api = {
     sources: new Map([[SOURCE_ID, storedSource()]]), creates: [], patches: [], deletes: [], lessonCreates: [],
     conflictNext: false, createFailures: 0, lessonStatus: 202, deckLists: [[]], deckListCalls: 0,
+    listStatus: 200, getStatus: 200, patchStatus: 200,
   };
+  const failure = (status: number) => ({ status, json: { ...envelope(status >= 500 ? "internal" : "validation", "Błąd."), retryable: status >= 500 } });
   await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const method = request.method();
@@ -98,6 +107,7 @@ async function mockApi(page: Page): Promise<Api> {
       return route.fulfill({ json: list });
     }
     if (path === "/sources" && method === "GET") {
+      if (api.listStatus !== 200) return route.fulfill(failure(api.listStatus));
       return route.fulfill({ json: [...api.sources.values()].map(summary) });
     }
     if (path === "/sources" && method === "POST") {
@@ -122,10 +132,18 @@ async function mockApi(page: Page): Promise<Api> {
       const id = sourceMatch[1]!;
       const stored = api.sources.get(id);
       if (!stored) return route.fulfill({ status: 404, json: envelope("not_found", "Nie znaleziono.") });
-      if (method === "GET") return route.fulfill({ json: withCount(stored) });
+      if (method === "GET") {
+        if (api.getStatus !== 200) return route.fulfill(failure(api.getStatus));
+        return route.fulfill({ json: withCount(stored) });
+      }
       if (method === "PATCH") {
         const patch = request.postDataJSON() as { expectedRevision: number; title?: string; body?: string };
         api.patches.push(patch);
+        if (api.patchStatus !== 200) {
+          const status = api.patchStatus;
+          api.patchStatus = 200;
+          return route.fulfill(failure(status));
+        }
         if (api.conflictNext) {
           api.conflictNext = false;
           api.sources.set(id, { ...stored, body: `${stored.body}\nWe like apples.`, revision: stored.revision + 1 });
@@ -230,10 +248,16 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("source-meta")).toContainText("2 zestawy");
       await expect(page.getByTestId("source-deck-2")).toContainText(messages.decks.states.archived);
 
+      // stały region na żywo jest od początku na stronie (pusty) — ogłoszenie zapisu zmienia tylko tekst
+      await expect(page.getByTestId("source-status")).toHaveAttribute("role", "status");
+      await expect(page.getByTestId("source-status")).toHaveText("");
+
       await page.getByTestId("source-edit").click();
       await expect(page.getByTestId("source-body")).toHaveValue(BODY);
       // „Edytuj” znika — fokus przechodzi do pola tytułu, nie na <body>
       await expect(page.getByTestId("source-title")).toBeFocused();
+      // źródło ma zestawy: uwaga, że zmiana ich nie zmieni
+      await expect(page.getByTestId("source-edit-hint")).toHaveText(messages.sources.editHint);
       // bez zmian nie ma czego zapisać (zapis podbiłby rewizję i oznaczył zestawy jako nieaktualne)
       await expect(page.getByTestId("source-save")).toBeDisabled();
       await expectNoHorizontalOverflow(page);
@@ -246,6 +270,8 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("source-conflict")).toContainText(messages.sources.conflict);
       expect(api.patches).toEqual([{ expectedRevision: 2, title: "Unit 3 — Jedzenie" }]);
       await expect(page.getByTestId("source-save")).toBeDisabled();
+      // „Zapisz” jest wyłączone — fokus przechodzi na następny krok, „Odśwież”
+      await expect(page.getByTestId("source-conflict-refresh")).toBeFocused();
       await expectNoHorizontalOverflow(page);
 
       // „Odśwież” odrzuca wpisane zmiany — najpierw potwierdzenie; anulowanie je zostawia
@@ -269,6 +295,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByTestId("source-body").fill("I like pizza.");
       await page.getByTestId("source-save").click();
       await expect(page.getByTestId("source-preview")).toHaveText("I like pizza.");
+      await expect(page.getByTestId("source-status")).toHaveText(messages.sources.saved);
       expect(api.patches[1]).toEqual({ expectedRevision: 3, body: "I like pizza." });
     });
 
@@ -301,7 +328,14 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("lesson-source")).toContainText(messages.sources.fromSource.replace("{title}", "Unit 3 — Food"));
       await expect(page.getByTestId("lesson-material")).toHaveCount(0);
 
+      // „Zmień źródło” prowadzi do listy źródeł, a przycisk u góry z powrotem na stronę źródła
+      await expect(page.getByTestId("lesson-source-change")).toHaveAttribute("href", "/parent/sources");
       await page.getByTestId("lesson-source-change").click();
+      await expect(page).toHaveURL(/\/parent\/sources$/);
+      await page.getByTestId("source-row-0").click();
+      await page.getByTestId("source-create-school").click();
+      await expect(page.getByTestId("new-lesson-cancel")).toHaveText(messages.sources.backToSource);
+      await page.getByTestId("new-lesson-cancel").click();
       await expect(page).toHaveURL(new RegExp(`/parent/sources/${SOURCE_ID}$`));
       await page.getByTestId("source-create-chapter").click();
       await expect(page).toHaveURL(new RegExp(`/parent/lessons/new\\?source=${SOURCE_ID}&subject=english_chapter$`));
@@ -335,6 +369,8 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await page.getByTestId("source-body").fill("I play football.");
     await page.getByTestId("source-create-submit").click();
     await expect(page.getByTestId("api-error")).toContainText(messages.sources.createUncertain);
+    // fokus na komunikacie błędu (przycisk zapisu był wyłączony w trakcie wysyłki)
+    await expect(page.getByTestId("api-error")).toBeFocused();
     await expect(page.getByTestId("source-create-submit")).toHaveText(messages.sources.retryCreate);
     // ponowienie wysyła dokładnie to, co widać — pola zablokowane do rozstrzygnięcia
     await expect(page.getByTestId("source-title")).toBeDisabled();
@@ -354,6 +390,155 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page).toHaveURL(new RegExp(`/parent/sources/${NEW_IDS[1]}$`));
     expect(api.creates).toHaveLength(3);
     expect(api.creates[2]!.clientRequestId).not.toBe(api.creates[0]!.clientRequestId);
+
+    // źródło bez zestawów: potwierdzenie usunięcia mówi, że nie powstał z niego żaden zestaw
+    await page.getByTestId("source-delete").click();
+    await expect(page.getByTestId("source-delete-dialog")).toContainText(messages.sources.deleteConfirmNoDecks);
+    await page.getByTestId("source-delete-cancel").click();
+    expect(api.deletes).toEqual([]);
+  });
+
+  test("okno nowego źródła: puste zamyka się od razu, szkic odrzuca dopiero potwierdzenie", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/parent/sources");
+    await page.getByTestId("new-source-open").click();
+    await page.getByTestId("source-create-cancel").click();
+    await expect(page.getByTestId("new-source-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("source-discard-dialog")).toHaveCount(0);
+
+    await page.getByTestId("new-source-open").click();
+    await page.getByTestId("source-title").fill("Unit 4 — Sport");
+    await page.getByTestId("source-create-cancel").click();
+    await expect(page.getByTestId("source-discard-dialog")).toContainText(messages.sources.discardConfirm);
+    await expectTargets(page, ["source-discard-cancel", "source-discard-confirm"], 390);
+    // „Wróć do edycji” zostawia szkic w otwartym oknie
+    await page.getByTestId("source-discard-cancel").click();
+    await expect(page.getByTestId("source-discard-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("source-title")).toHaveValue("Unit 4 — Sport");
+
+    // × też pyta, a „Odrzuć” zamyka okno, czyści szkic i zdejmuje ochronę wyjścia
+    await page.getByTestId("new-source-close").click();
+    await page.getByTestId("source-discard-confirm").click();
+    await expect(page.getByTestId("new-source-dialog")).toHaveCount(0);
+    await page.getByTestId("tab-decks").click();
+    await expect(page).toHaveURL(/\/parent\/decks$/);
+    await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+    await page.getByTestId("tab-sources").click();
+    await page.getByTestId("new-source-open").click();
+    await expect(page.getByTestId("source-title")).toHaveValue("");
+  });
+
+  test("niezapisana edycja źródła i wpisany szkic nowego źródła zatrzymują wyjście", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/parent/decks");
+    await page.getByTestId("tab-sources").click();
+    await page.getByTestId("source-row-0").click();
+    await page.getByTestId("source-edit").click();
+    await page.getByTestId("source-title").fill("Unit 3 — Jedzenie");
+
+    await page.getByTestId("tab-decks").click();
+    await expect(page.getByTestId("leave-editor-dialog")).toContainText(messages.decks.leaveDescription);
+    await page.getByTestId("leave-editor-stay").click();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${SOURCE_ID}$`));
+    await expect(page.getByTestId("source-title")).toHaveValue("Unit 3 — Jedzenie");
+
+    // „wstecz” z niezapisaną edycją też pyta
+    await page.goBack();
+    await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+    await page.getByTestId("leave-editor-stay").click();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${SOURCE_ID}$`));
+    await expect(page.getByTestId("source-title")).toHaveValue("Unit 3 — Jedzenie");
+
+    await page.getByTestId("source-edit-cancel").click();
+    await page.getByTestId("source-back").click();
+    await expect(page).toHaveURL(/\/parent\/sources$/);
+    await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+
+    // wpisany szkic w otwartym oknie nowego źródła: „wstecz” pyta, „Zostań” zostawia okno ze szkicem
+    await page.getByTestId("new-source-open").click();
+    await page.getByTestId("source-body").fill("I play football.");
+    await page.goBack();
+    await expect(page.getByTestId("leave-editor-dialog")).toBeVisible();
+    await page.getByTestId("leave-editor-stay").click();
+    await expect(page).toHaveURL(/\/parent\/sources$/);
+    await expect(page.getByTestId("new-source-dialog")).toBeVisible();
+    await expect(page.getByTestId("source-body")).toHaveValue("I play football.");
+  });
+
+  test("błędy wczytywania listy i strony źródła: komunikat z ponowieniem zamiast pustego stanu", async ({ page }) => {
+    const api = await mockApi(page);
+    api.listStatus = 503;
+    await page.goto("/parent/sources");
+    // odczyt jest ponawiany po 5xx — komunikat po wyczerpaniu ponowień
+    await expect(page.getByTestId("sources-load-error")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("sources-empty")).toHaveCount(0);
+    await expectTargets(page, ["sources-load-retry"], 390);
+    api.listStatus = 200;
+    await page.getByTestId("sources-load-retry").click();
+    await expect(page.getByTestId("source-row-0")).toContainText("Unit 3 — Food");
+    await expect(page.getByTestId("sources-load-error")).toHaveCount(0);
+
+    api.getStatus = 503;
+    await page.goto(`/parent/sources/${SOURCE_ID}`);
+    await expect(page.getByTestId("source-load-error")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("source-not-found")).toHaveCount(0);
+    await expectTargets(page, ["source-back", "source-load-retry"], 390);
+    api.getStatus = 200;
+    await page.getByTestId("source-load-retry").click();
+    await expect(page.getByTestId("source-heading")).toHaveText("Unit 3 — Food");
+  });
+
+  test("link do nieistniejącego źródła i do nowej lekcji z nim: brak źródła i powrót do listy źródeł", async ({ page }) => {
+    await mockApi(page);
+    const missing = "3d4e5f60-7182-4c9d-8e0f-2a3b4c5d6e7f";
+    await page.goto(`/parent/sources/${missing}`);
+    await expect(page.getByTestId("source-not-found")).toContainText(messages.sources.notFound);
+    await expectNoHorizontalOverflow(page);
+    await expectTargets(page, ["source-back"], 390);
+    await page.getByTestId("source-back").click();
+    await expect(page).toHaveURL(/\/parent\/sources$/);
+
+    await page.goto(`/parent/lessons/new?source=${missing}&subject=english_chapter`);
+    await expect(page.getByTestId("lesson-source-not-found")).toContainText(messages.sources.notFound);
+    await expect(page.getByTestId("new-lesson-form")).toHaveCount(0);
+    await expectTargets(page, ["lesson-source-back"], 390);
+    await expect(page.getByTestId("lesson-source-back")).toHaveText(messages.sources.backToList);
+    await page.getByTestId("lesson-source-back").click();
+    await expect(page).toHaveURL(/\/parent\/sources$/);
+    await expect(page.getByTestId("source-row-0")).toBeVisible();
+  });
+
+  test("zapis kończy się błędem serwera: fokus na komunikacie, edycja zostaje", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto(`/parent/sources/${SOURCE_ID}`);
+    await page.getByTestId("source-edit").click();
+    await page.getByTestId("source-title").fill("Unit 3 — Jedzenie");
+    api.patchStatus = 500;
+    await page.getByTestId("source-save").click();
+    await expect(page.getByTestId("source-error")).toBeVisible();
+    await expect(page.getByTestId("source-error")).toBeFocused();
+    await expect(page.getByTestId("source-title")).toHaveValue("Unit 3 — Jedzenie");
+
+    // ponowny zapis się udaje i ogłasza wynik w regionie na żywo
+    await page.getByTestId("source-save").click();
+    await expect(page.getByTestId("source-status")).toHaveText(messages.sources.saved);
+    await expect(page.getByTestId("source-heading")).toHaveText("Unit 3 — Jedzenie");
+    await expect(page.getByTestId("source-error")).toHaveCount(0);
+  });
+
+  test("tekst na limicie 16 000 znaków: widoczna uwaga pod licznikiem", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/parent/sources");
+    await page.getByTestId("new-source-open").click();
+    await page.getByTestId("source-title").fill("Długi rozdział");
+    await page.getByTestId("source-body").fill("a".repeat(15_999));
+    await expect(page.getByTestId("source-body-limit")).toHaveText("");
+    // wklejony tekst dłuższy niż limit: pole go ucina, a formularz mówi o tym wprost
+    await page.getByTestId("source-body").fill("b".repeat(16_050));
+    await expect(page.getByTestId("source-body-limit")).toHaveText(messages.sources.bodyAtLimit);
+    await expect(page.getByTestId("source-body-limit")).toHaveAttribute("role", "status");
+    await expect(page.getByTestId("source-body-counter")).toHaveText(messages.sources.counter.replace("{n}", "16000"));
+    await expectNoHorizontalOverflow(page);
   });
 
   test("lekcja ze źródła usuniętego w innym oknie: 404 jest ostateczne, bez ponawiania", async ({ page }) => {
@@ -366,6 +551,8 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("lesson-create-submit")).toHaveText(messages.lessons.createLesson);
     await expect(page.getByTestId("lesson-create-submit")).toBeDisabled();
     expect(api.lessonCreates).toHaveLength(1);
+    // strony źródła już nie ma — przycisk u góry prowadzi do listy źródeł
+    await expect(page.getByTestId("new-lesson-cancel")).toHaveText(messages.sources.backToList);
     await expectNoHorizontalOverflow(page);
     await expectTargets(page, ["lesson-source-missing-change"], 390);
 
@@ -384,6 +571,25 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     api.sources.delete(SOURCE_ID);
     await page.getByTestId("source-save").click();
     await expect(page.getByTestId("source-error")).toHaveText(messages.sources.notFound);
+    await expect(page.getByTestId("source-error")).toBeFocused();
+    // wpisany tekst zostaje do skopiowania; po wyjściu z edycji — brak źródła, nie stara kopia
+    await expect(page.getByTestId("source-title")).toHaveValue("Unit 3 — Jedzenie");
+    await page.getByTestId("source-edit-cancel").click();
+    await expect(page.getByTestId("source-not-found")).toContainText(messages.sources.notFound);
+    await expect(page.getByTestId("source-page")).toHaveCount(0);
+  });
+
+  test("strona źródła usuniętego w innym oknie: odświeżenie z 404 zastępuje kopię z pamięci", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto(`/parent/sources/${SOURCE_ID}`);
+    await expect(page.getByTestId("source-heading")).toHaveText("Unit 3 — Food");
+    await page.getByTestId("source-back").click();
+    api.sources.delete(SOURCE_ID);
+    // powrót na stronę z pamięci podręcznej: odczyt w tle kończy się 404
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${SOURCE_ID}$`));
+    await expect(page.getByTestId("source-not-found")).toContainText(messages.sources.notFound);
+    await expect(page.getByTestId("source-delete")).toHaveCount(0);
   });
 
   test("zestaw spoza wczytanej listy: jedno odświeżenie listy przed komunikatem o braku zestawu", async ({ page }) => {

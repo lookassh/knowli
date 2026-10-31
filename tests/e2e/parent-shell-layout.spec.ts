@@ -65,19 +65,43 @@ test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async
 });
 
 test("od 600 px: zakładki pod nagłówkiem, akcje w nagłówku", async ({ page }) => {
-  for (const viewport of [{ width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+  // 600 i 640 px: najwęższe szerokości z rzędem zakładek — piąta zakładka nie może wyjść poza pasek
+  for (const viewport of [{ width: 600, height: 960 }, { width: 640, height: 360 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
     await expect(page.getByTestId("parent-menu")).toHaveCount(0);
     for (const id of [...TABS, "to-learning", "parent-logout", "color-scheme-menu"]) {
       const box = await page.getByTestId(id).boundingBox();
-      expect(box, id).not.toBeNull();
-      expect(box!.height, id).toBeGreaterThanOrEqual(44);
-      expect(box!.y, id).toBeLessThan(140);
-      expect(box!.x + box!.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(box, `${id} @${viewport.width}`).not.toBeNull();
+      expect(box!.height, `${id} @${viewport.width}`).toBeGreaterThanOrEqual(44);
+      expect(box!.y, `${id} @${viewport.width}`).toBeLessThan(140);
+      expect(box!.x + box!.width, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.width + 0.5);
     }
+    // pasek zakładek mieści wszystkie zakładki: bez przewijania w poziomie (pasek przewijania
+    // w pasku o stałej wysokości dawałby też przewijanie w pionie)
+    const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+      scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+    }));
+    expect(tabs.scrollWidth, `pasek zakładek @${viewport.width}`).toBeLessThanOrEqual(tabs.clientWidth);
+    expect(tabs.scrollHeight, `pasek zakładek @${viewport.width}`).toBeLessThanOrEqual(tabs.clientHeight);
   }
+});
+
+test("600 px z klasycznym paskiem przewijania: pięć zakładek nadal mieści się w pasku", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 960 });
+  await openSignedInPanel(page);
+  // Chromium testów ukrywa paski przewijania; klasyczny pasek (17 px) zabiera szerokość
+  // przypiętemu nagłówkowi, a media query nadal widzi 600 px — symulacja: węższy nagłówek.
+  await page.addStyleTag({ content: ".mantine-AppShell-header { right: 17px !important; }" });
+  const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+    scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+  }));
+  expect(tabs.clientWidth).toBeLessThan(570);
+  expect(tabs.scrollWidth).toBeLessThanOrEqual(tabs.clientWidth);
+  expect(tabs.scrollHeight).toBeLessThanOrEqual(tabs.clientHeight);
+  const last = (await page.getByTestId("tab-work-card").boundingBox())!;
+  expect(last.x + last.width).toBeLessThanOrEqual(600 - 17 + 0.5);
 });
 
 test("wybrany tryb ciemny przeżywa odświeżenie strony", async ({ page }) => {

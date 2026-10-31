@@ -6,12 +6,13 @@ import { loginParent } from "./helpers/parent-session";
 
 /**
  * E2E zakładki „Źródła” na prawdziwej bazie, workerze i fałszywych providerach
- * (Etap 2, design 2026-10-30 §3.4): rodzic zapisuje źródło (fikcyjny rozdział),
- * tworzy z niego lekcję rozdziału (formularz bez pola materiału, polecenie
- * z `sourceMaterialId`), czeka na generację workera, widzi w edytorze „Ze źródła”,
- * po edycji źródła — notkę o zmianie, a po jego usunięciu lekcja zostaje
- * z własną kopią tekstu, bez odnośnika. Efekt sprawdzany w interfejsie, w API
- * rodzica i w bazie (`decks.source_material_id`, kontekst wersji zestawu).
+ * (Etap 2, design 2026-10-30 §3.4, §8): rodzic zapisuje źródło (fikcyjny
+ * rozdział), tworzy z niego lekcję rozdziału (formularz bez pola materiału,
+ * polecenie z `sourceMaterialId`), czeka na generację workera i publikuje
+ * lekcję, widzi w edytorze „Ze źródła”, po edycji tekstu źródła — notkę
+ * o zmianie, a po jego usunięciu opublikowana lekcja zostaje z własną kopią
+ * tekstu, bez odnośnika. Efekt sprawdzany w interfejsie, w API rodzica i w bazie
+ * (`decks.source_material_id`, kontekst wersji zestawu).
  */
 
 test.afterAll(closeWorldDatabase);
@@ -34,7 +35,7 @@ interface StoredDeck {
   source_material_revision: number | null;
 }
 
-test("rodzic tworzy źródło, lekcję rozdziału, edytuje i usuwa źródło — lekcja zostaje z własną kopią", async ({ page }) => {
+test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuwa źródło — lekcja zostaje z własną kopią", async ({ page }) => {
   const title = `Rozdział ${randomUUID().slice(0, 8)}: Ubrania i pogoda`;
   const pool = await worldPool();
   await loginParent(page);
@@ -123,10 +124,26 @@ test("rodzic tworzy źródło, lekcję rozdziału, edytuje i usuwa źródło —
   expect(created.deck).toEqual({ source_material_id: sourceId, source_material_revision: 1 });
   expect(created.materials).toEqual([CHAPTER_BODY]);
 
-  // 4. Strona źródła pokazuje zestaw bez znacznika zmiany; edycja dopisuje linię do tekstu.
+  // 3a. Publikacja lekcji ze źródła (design §8: źródło → lekcja rozdziału → publikacja).
+  await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
+  const published = page.waitForResponse((r) =>
+    r.request().method() === "POST" && /\/api\/v1\/parent\/lesson-drafts\/.+\/publish$/.test(new URL(r.url()).pathname),
+  );
+  await page.getByTestId("publish-lesson").click();
+  expect((await published).ok()).toBe(true);
+  await expect(page.getByTestId("publish-status")).toBeVisible();
+  const afterPublish = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
+  expect(afterPublish.state).toBe("published");
+  expect(afterPublish.published?.exercises.length).toBe(afterCreate.draft?.exercises.length);
+  // publikacja nie zmienia pochodzenia: ta sama kopia i rewizja treści źródła
+  expect(afterPublish.source).toEqual({ id: sourceId, title, copiedRevision: 1, currentRevision: 1 });
+  expect((await storedLesson()).materials).toEqual([CHAPTER_BODY]);
+
+  // 4. Strona źródła pokazuje opublikowany zestaw bez znacznika zmiany; edycja dopisuje linię do tekstu.
   await page.getByTestId("lesson-source-link").click();
   await expect(page).toHaveURL(new RegExp(`/parent/sources/${sourceId}$`));
   await expect(page.getByTestId("source-deck-0")).toHaveAttribute("data-deck-id", deckId);
+  await expect(page.getByTestId("source-deck-0")).toContainText(messages.decks.states.published!);
   await expect(page.getByTestId("source-deck-stale-0")).toHaveCount(0);
   await page.getByTestId("source-edit").click();
   await page.getByTestId("source-body").fill(`${CHAPTER_BODY}\n${ADDED_LINE}`);
@@ -173,7 +190,8 @@ test("rodzic tworzy źródło, lekcję rozdziału, edytuje i usuwa źródło —
   await expect(page.getByTestId("lesson-source-link")).toHaveCount(0);
   const afterDelete = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
   expect(afterDelete.source).toBeUndefined();
-  expect(afterDelete.draft?.exercises.length).toBe(afterCreate.draft?.exercises.length);
+  expect(afterDelete.state).toBe("published");
+  expect(afterDelete.published?.exercises.length).toBe(afterPublish.published?.exercises.length);
   const removed = await storedLesson();
   expect(removed.deck?.source_material_id).toBeNull();
   expect(removed.materials).toEqual([CHAPTER_BODY]);
