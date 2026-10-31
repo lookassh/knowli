@@ -17,6 +17,20 @@ export async function waitForKidScale(page: Page, expected: number): Promise<voi
   }, expected), { message: `Kid UI scale ${expected}` }).toBe("ok");
 }
 
+/**
+ * Emulates a pinch zoom: `visualViewport.scale` reads 2 and a viewport resize event tells KidPage, which then marks
+ * the page `data-zoomed="true"` (the session scrolls as a page). The window size and the Kid UI scale stay as they were.
+ */
+export async function emulatePinchZoom(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is required for this browser test");
+    Object.defineProperty(viewport, "scale", { configurable: true, value: 2 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-zoomed", "true");
+}
+
 /** The session frame covers the whole window (± 1 px) on screen, whatever the scale. */
 export async function expectFrameFillsViewport(page: Page, viewport: Viewport): Promise<void> {
   const frame = page.getByTestId("kid-session-frame");

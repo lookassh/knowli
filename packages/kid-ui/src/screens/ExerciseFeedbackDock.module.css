@@ -16,12 +16,13 @@
   position: relative;
 }
 
-/* Zwarta rama zadania na wysokim oknie (ExerciseFrame, spec
-   2026-10-30-kid-ui-large-screens §3.2): panel stoi tuż pod odpowiedziami, nad
-   wolnym miejscem, a nie przy dolnej krawędzi okna, więc ma zaokrąglone
-   wszystkie rogi. Wybór obrazków nie dostaje zwartej ramy — tam panel zostaje
-   arkuszem przy dole. */
-@media (min-width: 840px) and (min-height: 781px) {
+/* Zwarta rama zadania (ExerciseFrame, spec 2026-10-30-kid-ui-large-screens §3.2;
+   warunek ze spec 2026-10-31-kid-ui-large-screens-followups §3.5 — wysokie okno
+   albo dotykowy tablet w poziomie od 960 × 480, także z otwartą klawiaturą):
+   panel stoi tuż pod odpowiedziami, nad wolnym miejscem, a nie przy dolnej
+   krawędzi okna, więc ma zaokrąglone wszystkie rogi. Wybór obrazków nie dostaje
+   zwartej ramy — tam panel zostaje arkuszem przy dole. */
+@media (min-width: 840px) and (min-height: 781px), (min-width: 960px) and (min-height: 480px) and (pointer: coarse) {
   :global(.kid-exercise-frame):not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) .dock {
     border-radius: var(--kid-shape-xxl);
   }

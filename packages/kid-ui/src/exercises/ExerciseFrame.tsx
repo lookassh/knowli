@@ -15,7 +15,8 @@ import {
 } from "./feedback-dock-reveal";
 
 /**
- * Rama zadania: siatka instrukcja / materiał / akcje. Zwykle przewija się
+ * Rama zadania: siatka instrukcja / materiał / akcje (w zwartym układzie
+ * kolumna flex z odstępem od góry, ExerciseFrame.module.css). Zwykle przewija się
  * tylko materiał; przy długiej odpowiedzi wyboru rama też może się przewinąć,
  * aby zachować pełny tekst i czytelne minimum materiału. AppShell nie przeszedł
  * weryfikacji runtime (jego hooki wymagają `useEffectEvent`,
@@ -234,10 +235,10 @@ export function ExerciseFrame({
 
   // Rezerwa to zawsze padding pod treścią. Minimalną wysokość treści (100%
   // materiału + rezerwa) liczy CSS z `--dock-reserve`, bo inline `minHeight`
-  // nie dałoby się nadpisać: w zwartym układzie wysokiego okna (§3.2) treść
-  // rośnie tylko o padding. Warunek to ta sama media query co siatka, w module
-  // CSS — prościej niż matchMedia w JS (pomiar okna należy do KidPage) albo
-  // atrybut odczytywany ze stanu CSS. `data-dock-reserve` (ten sam warunek)
+  // nie dałoby się nadpisać: w zwartym układzie (§3.2, warunek ze spec
+  // 2026-10-31 §3.5) treść rośnie tylko o padding. Warunek to ta sama media
+  // query co zwarty układ, w module CSS — prościej niż matchMedia w JS (pomiar
+  // okna należy do KidPage) albo atrybut odczytywany ze stanu CSS. `data-dock-reserve` (ten sam warunek)
   // pozwala treści rosnąć razem z dziećmi, żeby rezerwa wydłużała przewijanie
   // materiału, który przewija się już przed werdyktem (spec 2026-10-31 §3.3).
   const reserveActive = dock !== undefined && dockPad > 0;

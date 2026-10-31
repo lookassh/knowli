@@ -2,11 +2,11 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { FeedbackDto, TaskDto } from "@learning/contracts";
 import {
   clozeTask, clozeUid, completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, longSpellingHintFeedback,
-  makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId,
+  makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
 } from "./helpers/kid-fixtures";
 import {
-  boxes, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, nextFrames, pictureTileLimit,
-  pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
+  boxes, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, nextFrames,
+  pictureTileLimit, pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
 } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
@@ -256,6 +256,50 @@ test.describe("touch tablet in landscape", () => {
     await openDeckScreen(page, [makeDeck(0)]);
     await waitForKidScale(page, 1);
     await expectColumn(page, "[data-kid-screen='true']", "1366x1024 touch", COLUMN_MAX);
+  });
+
+  // The on-screen keyboard (interactiveWidget: resizes-content) lowers the window below 781 px; from 960 x 480 a coarse
+  // pointer keeps the compact frame (spec 2026-10-31 §3.5), so the field does not jump while the child types, and a
+  // touch screen gets no top offset (§3.4). Under 700 px the session's top padding shrinks by 8 px (styles.css), so the
+  // positions are taken against the exercise frame, not the window.
+  test("compact frame keeps its layout while the keyboard is open", async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+    const keyboardOpen = { width: 1366, height: 600 };
+    const form = { instruction: "[data-testid='kid-instruction']", input: "[data-testid='kid-input']", submit: "[data-testid='kid-submit']" };
+    await openWrittenRecall(page);
+    await waitForKidScale(page, 1);
+    const input = page.getByTestId("kid-input");
+    await input.fill("cat");
+    await input.focus();
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const closed = await topsInFrame(page, form);
+    expect(Math.abs(closed.instruction), `no space above the instruction: ${JSON.stringify(closed)}`).toBeLessThanOrEqual(1);
+
+    await resizeAndSettle(page, keyboardOpen);
+    await expect(input).toBeFocused();
+    const typing = await topsInFrame(page, form);
+    for (const key of Object.keys(form) as (keyof typeof form)[]) {
+      expect(Math.abs(typing[key] - closed[key]), `${key} keeps its place in the frame: ${JSON.stringify({ closed, typing })}`)
+        .toBeLessThanOrEqual(1);
+    }
+
+    // A shorter tablet window is compact too: the footer right under the content (track gap 8 + content padding 4).
+    await resizeAndSettle(page, { width: 1280, height: 720 });
+    const gap = await footerBelowContent(page);
+    expect(gap, "footer below the content at 1280x720").toBeGreaterThanOrEqual(-1);
+    expect(gap, "footer right under the content at 1280x720").toBeLessThanOrEqual(8 + 4 + 1);
+
+    await resizeAndSettle(page, keyboardOpen);
+    const field = await boxes(page, "[data-testid='kid-input']");
+    await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await settledDockReserve(page);
+    await expectDockCorners(page, "rounded");
+    expectRectsUnchanged(field, await boxes(page, "[data-testid='kid-input']"), "field after the verdict with the keyboard open");
+
+    // A phone in landscape keeps the regular frame: the panel is a bottom sheet.
+    await resizeAndSettle(page, { width: 844, height: 390 });
+    await expectDockCorners(page, "sheet");
   });
 });
 
@@ -514,6 +558,123 @@ test("long lesson card scrolls inside the material", async ({ page }) => {
   await expectSessionFitsWindow(page, ULTRAWIDE);
 });
 
+/** Top edges of the selected elements below the top edge of the exercise frame, in screen pixels. */
+async function topsInFrame<K extends string>(page: Page, selectors: Record<K, string>): Promise<Record<K, number>> {
+  const layout = await measure(page, { ...selectors, frame: "[data-testid='kid-exercise']" });
+  const keys = Object.keys(selectors) as K[];
+  return Object.fromEntries(keys.map((key) => [key, layout[key].top - layout.frame.top])) as Record<K, number>;
+}
+
+/**
+ * The footer's top edge below the lowest bottom edge among the children of `.kid-material-content` (screen px). The
+ * material track ends 8 px above the footer in either frame; only in the compact frame does the content end there too.
+ */
+async function footerBelowContent(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const content = document.querySelector(".kid-material-content")!;
+    const footer = document.querySelector("[data-testid='kid-exercise-actions']")!;
+    return footer.getBoundingClientRect().top - Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom));
+  });
+}
+
+/** The space above the instruction: its top edge below the top edge of the exercise frame (screen px). */
+async function frameTopOffset(page: Page): Promise<number> {
+  return (await topsInFrame(page, { instruction: "[data-testid='kid-instruction']" })).instruction;
+}
+
+/** A speech task without a microphone and without a recording of the word (no audio notice can arrive later). */
+function silentSpeechTask(): TaskDto {
+  const task = taskFor("speech");
+  if (task.prompt.kind !== "speech") throw new Error("speech task expected");
+  return { ...task, prompt: { ...task.prompt, audioAssetId: null } };
+}
+
+// --kid-compact-frame-offset (spec 2026-10-31 §3.4): with a mouse or touchpad the compact frame leaves 90 inner px above
+// the instruction, which the zoom multiplies on screen. The word card and the illustrated tasks get none; picture
+// choice has no compact frame at all. `verdict` answers the task and names the answers that must not move.
+const COMPACT_FRAME_OFFSET = 90;
+const OFFSET_KINDS: {
+  name: string; promptKind: string; offset: boolean; open: (page: Page) => Promise<void>;
+  verdict?: { answers: string; give: (page: Page) => Promise<void> };
+}[] = [
+  {
+    name: "written answer", promptKind: "recall", offset: true,
+    open: async (page) => {
+      await openWrittenRecall(page);
+      await page.getByTestId("kid-input").fill("cat");
+    },
+    verdict: {
+      answers: "[data-testid='kid-input']",
+      give: async (page) => {
+        await page.getByTestId("kid-submit").click();
+        await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+        await settledDockReserve(page);
+      },
+    },
+  },
+  {
+    name: "text choice", promptKind: "reading", offset: true,
+    open: (page) => openSession(page, completedTextChoiceFixture()),
+    verdict: {
+      answers: "[data-testid='kid-option']",
+      give: async (page) => {
+        await page.getByTestId("kid-option").first().click();
+        await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+        await nextFrames(page);
+      },
+    },
+  },
+  { name: "missing letters", promptKind: "letter_completion", offset: true,
+    open: (page) => openSession(page, { ...recallFixture(), tasks: [letterTask("kot", "c_t")] }) },
+  { name: "speech", promptKind: "speech", offset: true,
+    open: (page) => openSession(page, { ...recallFixture(), tasks: [silentSpeechTask()] }) },
+  { name: "word card", promptKind: "exposure", offset: false,
+    open: (page) => openSession(page, { ...recallFixture(), tasks: [taskFor("exposure")] }) },
+  { name: "picture choice", promptKind: "picture_listening", offset: false, open: (page) => openPictureChoice(page) },
+];
+
+for (const { width, height, scale } of SESSION_WINDOWS.filter(({ width }) => width >= 1920)) {
+  test(`compact frame top offset by task kind at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    for (const { name, promptKind, offset, open, verdict } of OFFSET_KINDS) {
+      await open(page);
+      await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-prompt-kind", promptKind);
+      await waitForKidScale(page, scale);
+      await page.evaluate(async () => { await document.fonts.ready; });
+      await nextFrames(page);
+      const expected = offset ? COMPACT_FRAME_OFFSET * scale : 0;
+      const actual = await frameTopOffset(page);
+      expect(Math.abs(actual - expected), `${name}: space above the instruction ${actual}, expected ${expected}`)
+        .toBeLessThanOrEqual(offset ? 2 : 1);
+      if (!verdict) continue;
+      const before = await boxes(page, verdict.answers);
+      await verdict.give(page);
+      expectRectsUnchanged(before, await boxes(page, verdict.answers), `${name}: answer after the verdict`);
+    }
+  });
+}
+
+test("regular frame and pinch zoom have no top offset", async ({ page }) => {
+  await page.setViewportSize(LAPTOP);
+  await openWrittenRecall(page);
+  // Below 781 px a mouse gets the regular frame: the footer stays at the bottom edge and nothing is added on top.
+  for (const viewport of [LAPTOP, { width: 1366, height: 600 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    await waitForKidScale(page, 1);
+    const layout = await measure(page, { frame: "[data-testid='kid-exercise']", footer: "[data-testid='kid-exercise-actions']" });
+    expect(Math.abs(layout.footer.bottom - layout.frame.bottom), `${name}: footer at the bottom of the frame: ${JSON.stringify(layout)}`)
+      .toBeLessThanOrEqual(6);
+    expect(Math.abs(await frameTopOffset(page)), `${name}: no space above the instruction`).toBeLessThanOrEqual(1);
+  }
+  // A pinch zoom (data-zoomed) on the 34" window scrolls the session as a page: no offset there either.
+  await resizeAndSettle(page, ULTRAWIDE);
+  await waitForKidScale(page, 1.6);
+  await emulatePinchZoom(page);
+  await nextFrames(page);
+  expect(Math.abs(await frameTopOffset(page)), "pinch zoom: no space above the instruction").toBeLessThanOrEqual(1);
+});
+
 // JS measurements under zoom (spec §4.4): rectangles are screen pixels, offset/scroll lengths and position: fixed
 // lengths are inner pixels. The checks below compare screen rectangles only, at scale 1.6.
 const ULTRAWIDE_SCALE = 1.6;
@@ -550,6 +711,8 @@ test("overlay dock reserve is exact", async ({ page }) => {
   // The reserve lengthened the scroll range and the correcting scroll ran; without it the content would simply end
   // above the dock in the grown material row and the bound below would not test the scroll.
   expect(geometry.scrollTop, `correcting scroll ran: ${details}`).toBeGreaterThan(0);
+  // The top offset gives way first (spec 2026-10-31 §3.4): once the material scrolls, none is left above the instruction.
+  expect(await frameTopOffset(page), `no top offset once the material scrolls: ${details}`).toBeLessThanOrEqual(1);
   // The correcting scroll leaves the answer 8 inner px above the dock: not under it, and not scrolled past it.
   expect(geometry.contentBottom, `answer above the dock: ${details}`).toBeLessThanOrEqual(geometry.dockTop + 1);
   expect(geometry.contentBottom, `answer right above the dock: ${details}`)
