@@ -735,28 +735,48 @@ test("overlay dock reserve is exact", async ({ page }) => {
     .toBeGreaterThanOrEqual(geometry.dockTop - (8 * ULTRAWIDE_SCALE + 3));
 });
 
-// Seventy words of the long prompt: twelve lines in the 720 px column, so the written answer takes about 80 of the
-// 90 inner px offset at 900 inner px of height. Eleven lines (a wrap about 3% tighter) would still take part of it;
-// thirteen (about 8% wider) would leave no offset and scroll the material.
-const OFFSET_TAKING_PROMPT = `${LONG_RECALL_PROMPT} ${LONG_RECALL_PROMPT}`.split(" ").slice(0, 70).join(" ");
-
 // The offset gives way first (spec 2026-10-31 §3.4, `flex-shrink: 1000000`): content a little too tall for the full
 // offset takes part of it, and the material keeps every pixel of its content. With a shrink factor of 1000 the material
-// gave up a fraction of a pixel along with the offset, which leaves a 1 px scroll range (and a scroll bar).
+// gave up a fraction of a pixel along with the offset, which leaves a 1 px scroll range (and a scroll bar). The content
+// is lengthened by a test style measured from the free space under the footer, not by wrapping text (spec
+// 2026-10-31-kid-ui-dock-followups §3.4): 45 px too tall takes half of the offset; 120 px too tall takes all of it and
+// only then 30 px of the material.
 test("the top offset gives way before the material", async ({ page }) => {
   await page.setViewportSize(ULTRAWIDE);
-  await openWrittenRecall(page, completedRecallFixture({ prompt: OFFSET_TAKING_PROMPT }));
+  await openWrittenRecall(page);
   await page.getByTestId("kid-input").fill("cat");
   await waitForKidScale(page, ULTRAWIDE_SCALE);
   await page.evaluate(async () => { await document.fonts.ready; });
   await nextFrames(page);
-  const offset = await frameTopOffset(page);
-  const material = await page.getByTestId("kid-material").evaluate((element) =>
-    ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
-  const details = JSON.stringify({ offset, material, fullOffset: COMPACT_FRAME_OFFSET * ULTRAWIDE_SCALE });
-  expect(offset, `the prompt takes part of the offset: ${details}`).toBeGreaterThan(1);
-  expect(offset, `the prompt leaves part of the offset: ${details}`).toBeLessThan(COMPACT_FRAME_OFFSET * ULTRAWIDE_SCALE - 1);
-  expect(material.scrollHeight, `the material shows all of its content: ${details}`).toBe(material.clientHeight);
+  const fullOffset = await frameTopOffset(page);
+  expect(Math.abs(fullOffset - COMPACT_FRAME_OFFSET * ULTRAWIDE_SCALE), `the full offset: ${fullOffset}`).toBeLessThanOrEqual(2);
+  // Free space under the footer, in inner px.
+  const free = await page.evaluate(() => {
+    const frame = document.querySelector("[data-testid='kid-exercise']")!;
+    const footer = document.querySelector("[data-testid='kid-exercise-actions']")!;
+    return (frame.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom) / (frame.currentCSSZoom || 1);
+  });
+  expect(free, "free space under the footer of a short prompt").toBeGreaterThan(50);
+
+  const style = await page.addStyleTag({ content: "/* lengthens the material content below */" });
+  const lengthen = async (extra: number) => {
+    await style.evaluate((element, px) => {
+      element.textContent = `.kid-material-content { padding-block-end: calc(4px + ${px}px) !important; }`;
+    }, extra);
+    await nextFrames(page);
+    const material = await page.getByTestId("kid-material").evaluate((element) => element.scrollHeight - element.clientHeight);
+    return { offset: await frameTopOffset(page), scrollRange: material };
+  };
+  const half = await lengthen(free + 45);
+  const halfDetails = JSON.stringify({ fullOffset, free, half });
+  expect(Math.abs(half.offset - (fullOffset - 45 * ULTRAWIDE_SCALE)), `45 px too tall takes 45 px of the offset: ${halfDetails}`)
+    .toBeLessThanOrEqual(2 * ULTRAWIDE_SCALE);
+  expect(half.scrollRange, `the material shows all of its content: ${halfDetails}`).toBe(0);
+
+  const over = await lengthen(free + COMPACT_FRAME_OFFSET + 30);
+  const overDetails = JSON.stringify({ fullOffset, free, over });
+  expect(over.offset, `no offset left: ${overDetails}`).toBeLessThanOrEqual(1);
+  expect(Math.abs(over.scrollRange - 30), `only then the material scrolls: ${overDetails}`).toBeLessThanOrEqual(1);
 });
 
 /**
@@ -1204,6 +1224,62 @@ test("pinch zoom brings back the old card limit", async ({ page }) => {
   const details = JSON.stringify({ grown, zoomed });
   expect(zoomed.variable, `no card limit variable: ${details}`).toBeNull();
   expect(Math.abs(zoomed.card - CARD_LIMIT), `the old card limit: ${details}`).toBeLessThanOrEqual(1);
+  await expectPanelFillsFooter(page, "pinch zoom at 3440x1440");
+});
+
+/**
+ * In page-scroll mode the panel spans the footer (± 1 screen px) and the empty action slots of its anchor take no
+ * space (spec 2026-10-31-kid-ui-dock-followups §3.2).
+ */
+async function expectPanelFillsFooter(page: Page, label: string) {
+  const [panel] = await boxes(page, ".kid-feedback-overlay");
+  const [footer] = await boxes(page, "[data-testid='kid-exercise-actions']");
+  expect(Math.abs(panel!.width - footer!.width), `${label}: the panel spans the footer: ${JSON.stringify({ panel, footer })}`)
+    .toBeLessThanOrEqual(1);
+  const slotBoxes = await page.locator(".kid-feedback-overlay").locator("xpath=..")
+    .locator("[data-testid='kid-primary-slot'], [data-testid='kid-secondary-slot']")
+    .evaluateAll((slots) => slots.map((slot) => slot.getClientRects().length));
+  expect(slotBoxes, `${label}: the empty action slots take no space`).toEqual(slotBoxes.map(() => 0));
+}
+
+// A very short window (a phone in landscape) scrolls the session as a page and the panel is part of it: it takes the
+// place of the actions, over the whole footer, instead of the first grid column under a row of empty slots (spec
+// 2026-10-31-kid-ui-dock-followups §3.2). The reveal scrolls the page, so positions are taken against the frame.
+const PAGE_SCROLL_DOCK_CASES = [
+  ...[{ width: 844, height: 390 }, { width: 667, height: 375 }].map((viewport) => ({
+    name: "written answer", viewport, answer: "[data-testid='kid-input']", submit: "kid-submit",
+    open: async (page: Page) => {
+      await page.setViewportSize(viewport);
+      await openWrittenRecall(page, completedRecallFixture({ feedback: { kind: "incorrect", correctText: "cat" } }));
+      await page.getByTestId("kid-input").fill("dog");
+    },
+  })),
+  {
+    name: "cloze", viewport: { width: 812, height: 375 }, answer: ".kid-lesson-cloze__text", submit: "kid-lesson-check",
+    open: async (page: Page) => {
+      await installKidUiFixture(page, clozeHintFixture());
+      await openLessonTask(page, { width: 812, height: 375 }, "kid-lesson-cloze");
+      for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
+    },
+  },
+];
+
+test("result panel takes the place of the actions when the page scrolls", async ({ page }) => {
+  for (const { name, viewport, answer, submit, open } of PAGE_SCROLL_DOCK_CASES) {
+    const label = `${name} at ${viewport.width}x${viewport.height}`;
+    await open(page);
+    await expect(page.locator(".kid-page")).toHaveAttribute("data-viewport-very-short", "true");
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const before = await topsInFrame(page, { slot: "[data-testid='kid-primary-slot']", answer });
+    await page.getByTestId(submit).click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await nextFrames(page);
+    const after = await topsInFrame(page, { panel: ".kid-feedback-overlay", answer });
+    const details = `${label}: ${JSON.stringify({ before, after })}`;
+    expect(Math.abs(after.panel - before.slot), `the panel stands where the actions stood: ${details}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.answer - before.answer), `the answer keeps its place: ${details}`).toBeLessThanOrEqual(1);
+    await expectPanelFillsFooter(page, label);
+  }
 });
 
 test.describe("touch tablet in portrait", () => {
