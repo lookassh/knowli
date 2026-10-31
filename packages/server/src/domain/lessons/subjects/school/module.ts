@@ -87,7 +87,11 @@ export const schoolSubject: SubjectModule = {
         id: objective.id,
         titlePl: objective.titlePl,
         descriptionEn: objective.descriptionEn,
-        cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+        cards: objective.cards.map((card) => ({
+          title: card.title,
+          body: card.body,
+          ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+        })),
         errorCategories: [...OBJECTIVE_CATEGORIES],
         hints: { ...OBJECTIVE_HINTS },
         exerciseTypes: [...SCHOOL_EXERCISE_TYPES],

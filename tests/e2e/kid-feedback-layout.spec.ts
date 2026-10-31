@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { waitForKidScale } from "./helpers/kid-frame";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
@@ -54,9 +55,12 @@ test(`${kind}: incorrect feedback keeps ${correctText} and retry label readable`
   // Before screenshots or manual scrolling, the verdict must reveal its action.
   await expect(page.getByTestId("kid-next")).toBeInViewport({ ratio: 0.98 });
 
-  for (const viewport of [{ width: 384, height: 640 }, { width: 360, height: 540 }, { width: 320, height: 480 },
-    { width: 640, height: 360 }, { width: 768, height: 1024 }, { width: 1440, height: 960 }]) {
+  // 1440x960 zooms by 1.06. Rectangles are compared with rectangles or the window (screen pixels) and
+  // scrollHeight with clientHeight (layout pixels), so no check mixes the two.
+  for (const viewport of [{ width: 384, height: 640, scale: 1 }, { width: 360, height: 540, scale: 1 }, { width: 320, height: 480, scale: 1 },
+    { width: 640, height: 360, scale: 1 }, { width: 768, height: 1024, scale: 1 }, { width: 1440, height: 960, scale: 1.06 }]) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     await page.screenshot({ path: testInfo.outputPath(`feedback-${viewport.width}x${viewport.height}.png`) });
     const retry = page.getByTestId("kid-next");
     await retry.scrollIntoViewIfNeeded();

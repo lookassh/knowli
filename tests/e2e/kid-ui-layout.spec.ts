@@ -1,29 +1,9 @@
 import { expect as baseExpect, test } from "@playwright/test";
-import type { TaskDto } from "@learning/contracts";
 import { assertKidLayout, installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { expectReadableOnDarkContainer, kidTokenColor } from "./helpers/contrast";
+import { recallFixture, taskFor, taskId } from "./helpers/kid-fixtures";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
-
-const childId = "10000000-0000-4000-8000-000000000001";
-const deckId = "10000000-0000-4000-8000-000000000002";
-const sessionId = "10000000-0000-4000-8000-000000000003";
-const taskId = "10000000-0000-4000-8000-000000000004";
-const assetId = "10000000-0000-4000-8000-000000000006";
-const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
-
-function recallFixture(recordingMode: "hold" | "toggle" = "hold") {
-  return {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode }],
-    decks: [{ deckId, title: "Dni tygodnia", itemCount: 7, independentlyRecalledCount: 0, testDate: null,
-      recommended: true, mockTestAvailable: false, activeSession: null }],
-    session: { mode: "training" as const, sessionId, childId, deckId, deckVersionId: "10000000-0000-4000-8000-000000000005",
-      policyId: "default", microphoneEnabled: false, state: "active" as const, taskBudget: 1, tasksIssued: 1,
-      assessedTasksIssued: 1, startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
-    tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "recall" as const, direction: "source_to_target" as const,
-      state: "issued" as const, prompt: { kind: "recall" as const, prompt: "kot" }, remainingAssessed: 1 }],
-  };
-}
 
 async function openRecall(page: Parameters<typeof installKidUiFixture>[0]) {
   await installKidUiFixture(page, recallFixture());
@@ -31,28 +11,6 @@ async function openRecall(page: Parameters<typeof installKidUiFixture>[0]) {
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").click();
   await expect(page.getByTestId("kid-input")).toBeVisible();
-}
-
-function taskFor(kind: TaskDto["prompt"]["kind"]): TaskDto {
-  const common = { taskId, sessionId, ordinal: 0, state: "issued" as const, remainingAssessed: 1 };
-  if (kind === "exposure") return { ...common, exerciseType: "exposure" as const, direction: null, prompt: {
-    kind: "exposure" as const, source: "kot", target: "cat", example: "The cat is sleeping.", audioAssetId: assetId,
-    exampleAudioAssetId: assetId, imageAssetId: assetId, visualType: "image" as const,
-  } };
-  if (kind === "listening") return { ...common, exerciseType: "listening" as const, direction: "target_to_source" as const, prompt: {
-    kind: "listening" as const, audioAssetId: assetId,
-    options: ["marzec", "kwiecień", "październik"].map((text, index) => ({ id: optionIds[index]!, text })),
-  } };
-  if (kind === "reading") return { ...common, exerciseType: kind, direction: "target_to_source", prompt: {
-    kind, text: "cat", options: ["kot", "pies", "ptak"].map((text, index) => ({ id: optionIds[index]!, text })),
-  } };
-  if (kind === "reverse_recognition") return { ...common, exerciseType: kind, direction: "target_to_source", prompt: {
-    kind, prompt: "kot", options: ["cat", "dog", "bird"].map((text, index) => ({ id: optionIds[index]!, text })),
-  } };
-  if (kind === "spelling") return { ...common, exerciseType: "spelling" as const, direction: "source_to_target" as const, prompt: { kind, prompt: "kot" } };
-  if (kind === "letter_completion") return { ...common, exerciseType: "letter_completion" as const, direction: "source_to_target" as const, prompt: { kind, prompt: "kot", fragment: "c_t" } };
-  if (kind === "speech") return { ...common, exerciseType: "speech" as const, direction: "source_to_target" as const, prompt: { kind, text: "cat", audioAssetId: assetId, imageAssetId: null, visualType: "none" as const } };
-  return { ...common, exerciseType: "recall" as const, direction: "source_to_target" as const, prompt: { kind: "recall" as const, prompt: "kot" } };
 }
 
 async function openTask(page: Parameters<typeof installKidUiFixture>[0], task: ReturnType<typeof taskFor>) {

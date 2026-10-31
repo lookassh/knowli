@@ -181,6 +181,15 @@ const mockHandlers = {
   onPrepareRecording: vi.fn(),
 };
 
+/** Letters and gaps of a letter-completion fragment that is a single word (e.g. "_a_er"). */
+function singleWordLetters(result: unknown): any[] {
+  const form = (result as any).props.content.props.children[1];
+  const [word] = form.props.children.props.children;
+  return word.props.children;
+}
+
+const attachRef = (el: any, mock: any) => (el.props.ref ?? el.ref)(mock);
+
 function createExerciseProps(overrides: Partial<ExerciseProps> & { task: TaskDto }): ExerciseProps {
   return {
     busy: false,
@@ -313,12 +322,10 @@ describe("Keyboard Navigation & Focus Management", () => {
         LetterCompletionView(createExerciseProps({ task: taskMultiGap }))
       );
 
-      const form = (result as any).props.content.props.children[1];
-      const children = form.props.children.props.children;
+      const children = singleWordLetters(result);
       const secondGap = children[2]; // index 2 is '_'
 
       // Attach refs
-      const attachRef = (el: any, mock: any) => (el.props.ref ?? el.ref)(mock);
       attachRef(children[0], mockGaps[0]);
       attachRef(secondGap, mockGaps[2]);
 
@@ -346,9 +353,7 @@ describe("Keyboard Navigation & Focus Management", () => {
         LetterCompletionView(createExerciseProps({ task: taskMultiGap }))
       );
 
-      const form = (result as any).props.content.props.children[1];
-      const children = form.props.children.props.children;
-      const attachRef = (el: any, mock: any) => (el.props.ref ?? el.ref)(mock);
+      const children = singleWordLetters(result);
       attachRef(children[0], mockGaps[0]);
       attachRef(children[2], mockGaps[2]);
 

@@ -20,10 +20,11 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* --dock-reserve: rezerwa pod panelem wyniku w trybie overlay (ustawia ExerciseFrame). */
 .materialContent {
   box-sizing: border-box;
   width: 100%;
-  min-height: 100%;
+  min-height: calc(100% + var(--dock-reserve, 0px));
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -97,6 +98,28 @@
 
 .flowDock {
   min-width: 0;
+}
+
+/* Zwarty układ na wysokim oknie (spec 2026-10-30-kid-ui-large-screens §3.2):
+   materiał nie rozciąga się na całą wysokość ramy, więc instrukcja, odpowiedzi
+   i stopka (akcja albo panel wyniku) stoją razem u góry, a wolne miejsce zostaje
+   pod nimi. Panel wyniku pojawia się pod odpowiedziami, które się nie
+   przesuwają. Ścieżka materiału ma minimum 0: długa treść nadal przewija się
+   w materiale. Próg 781 px wyłącza regułę na laptopach z regułami niskiego
+   okna. Wybór obrazków bez zmian: kafelki i tak wypełniają materiał (cqh). */
+@media (min-width: 840px) and (min-height: 781px) {
+  .root:not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) {
+    grid-template-rows: auto minmax(0, max-content) auto;
+    align-content: start;
+  }
+
+  /* Treść ma wysokość własną, nie 100% materiału: rezerwa pod panelem
+     (padding-bottom) powiększa wiersz materiału zamiast nachodzić na treść,
+     a przy materiale u limitu wydłuża zakres przewijania. */
+  .root[data-feedback-layout="overlay"] .materialContent {
+    flex: none;
+    min-height: 0;
+  }
 }
 
 /* Only the frame owns the available material rectangle. Size containment

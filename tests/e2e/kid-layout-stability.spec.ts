@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { completedRecallFixture } from "./helpers/kid-fixtures";
 
 const childId = "10000000-0000-4000-8000-000000000001";
 const deckId = "10000000-0000-4000-8000-000000000002";
@@ -38,22 +39,6 @@ function recallFixture() {
       completedAt: "2026-10-11T10:00:01.000Z",
     }],
   };
-}
-
-function completedRecallFixture() {
-  const fixture = recallFixture();
-  fixture.attempts = [{
-    attemptId,
-    taskId,
-    state: "completed",
-    modality: "text",
-    feedback: { kind: "great" },
-    taskState: "completed",
-    stepId: null,
-    receivedAt: "2026-10-11T10:00:00.000Z",
-    completedAt: "2026-10-11T10:00:01.000Z",
-  }];
-  return fixture;
 }
 
 function completedReadingFixture() {

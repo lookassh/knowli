@@ -212,6 +212,15 @@ export const SchoolLessonCommandSchema = z.object({
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
 
 /**
+ * Ton lektora nagrania pytania ćwiczenia lub karty nauki (spec TTS §4.1).
+ * Brak pola = styl domyślny roli nagrania; wartości „default” celowo nie ma.
+ * Ton nie trafia do Kid DTO ani do `SubjectCatalogDtoSchema` i nie wpływa
+ * na `payload_version`.
+ */
+export const LessonVoiceToneSchema = z.enum(["cheerful", "curious", "gentle", "mysterious"]);
+export type LessonVoiceTone = z.infer<typeof LessonVoiceToneSchema>;
+
+/**
  * Polecenie utworzenia zestawu z materiału rodzica dla przedmiotu o stałym
  * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
  * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
@@ -243,7 +252,12 @@ export type DynamicObjectiveKind = z.infer<typeof DynamicObjectiveKindSchema>;
 export const DynamicObjectiveDtoSchema = z.object({
   id: z.string().min(1).max(200),
   titlePl: z.string().min(1).max(120),
-  cards: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(1200) }).strict()).min(2).max(4),
+  cards: z.array(z.object({
+    title: z.string().min(1).max(120),
+    body: z.string().min(1).max(1200),
+    /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
+    voiceTone: LessonVoiceToneSchema.optional(),
+  }).strict()).min(2).max(4),
   kind: DynamicObjectiveKindSchema.optional(),
 }).strict();
 export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
@@ -374,12 +388,38 @@ export const LessonExerciseInputSchema = z.object({
   gapAnswers: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_GAPS).max(MAX_CLOZE_GAPS).optional(),
   /** `lesson_cloze`: dystraktory w banku słów. */
   extraWords: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_EXTRA).max(MAX_CLOZE_EXTRA).optional(),
+  /** Ton lektora nagrania pytania; brak = styl domyślny roli (spec TTS §4.1). */
+  voiceTone: LessonVoiceToneSchema.optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
+/**
+ * Stan nagrania pytania lub karty w panelu rodzica (spec tonu TTS §4.5): stan
+ * najnowszej generacji o oczekiwanym fingerprincie; `assetId` tylko dla gotowej
+ * (odsłuch przez `/api/v1/media/:id`). `previousAssetId` tylko przy `pending`
+ * i `failed`: najnowsze gotowe ujęcie tego samego tekstu, które słyszy dziecko,
+ * dopóki nowe się nagrywa albo gdy nowe się nie udało.
+ */
+export const LessonPromptAudioDtoSchema = z.object({
+  state: z.enum(["pending", "ready", "failed"]),
+  assetId: UuidSchema.optional(),
+  previousAssetId: UuidSchema.optional(),
+}).strict();
+export type LessonPromptAudioDto = z.infer<typeof LessonPromptAudioDtoSchema>;
+
 const LessonExerciseDraftDtoSchema = LessonExerciseInputSchema.extend({
   revisionId: UuidSchema,
+  /** Nagranie pytania; brak = ćwiczenie nie ma nagrania dla tego tekstu. Tylko do odczytu. */
+  promptAudio: LessonPromptAudioDtoSchema.optional(),
 });
+
+/** Nagranie karty zagadnienia w szkicu (miejsce karty w temacie + stan). */
+export const LessonCardAudioDtoSchema = z.object({
+  objectiveId: z.string().min(1),
+  cardIndex: z.number().int().nonnegative(),
+  audio: LessonPromptAudioDtoSchema,
+}).strict();
+export type LessonCardAudioDto = z.infer<typeof LessonCardAudioDtoSchema>;
 
 /** Brak pokrycia publikacyjnego per cel i etap (design „Generowanie puli”). */
 export const CoverageGapDtoSchema = z.object({
@@ -412,6 +452,8 @@ export const LessonDraftDtoSchema = z.object({
   examples: z.record(z.string(), z.array(z.string())),
   exercises: z.array(LessonExerciseDraftDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
+  /** Nagrania kart zagadnień (tylko karty z wierszem nagrania); brak pola = brak nagrań kart. */
+  cardAudio: z.array(LessonCardAudioDtoSchema).optional(),
   rejectedCount: z.number().int().nonnegative(),
   /**
    * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z

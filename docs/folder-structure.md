@@ -74,7 +74,8 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/KidApp.tsx | Główne widoki, przejścia i złożenie przenośnych ekranów |
 | packages/kid-ui/src/api/client.ts | KidApi na OpenAPILink (oRPC) z konfigurowalnym baseUrl |
 | packages/kid-ui/src/theme/KidThemeProvider.tsx | Scoped Mantine theme dla dziecięcego UI |
-| packages/kid-ui/src/layout/KidPage.tsx | Pomiar viewportu i hostowy podział flow/session |
+| packages/kid-ui/src/layout/KidPage.tsx | Pomiar viewportu, skala dużego okna (CSS zoom) i hostowy podział flow/session |
+| packages/kid-ui/src/layout/css-zoom.ts | Przeliczanie pikseli ekranu na wewnętrzne pod zoomem `KidPage` (`cssZoomOf`, `toLayoutPx`) |
 | packages/kid-ui/src/layout/KidScreen.tsx | Wspólny ekran Mantine z nagłówkiem, treścią i akcjami |
 | packages/kid-ui/src/components/ | Wspólne przyciski, postęp, ikony i feedback dostępny dotykowo |
 | packages/kid-ui/src/screens/ | Ekrany profilu, talii, podsumowań, próbnych testów i przebiegu lekcji |
@@ -86,7 +87,7 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/visuals/ | Wizualizacje znaczeń i okładek |
 | packages/kid-ui/src/styles.css oraz pliki CSS Modules | Warstwa wizualna Kid UI i style własnych komponentów Mantine |
 
-Uzupełnienie UI (2026-10-24): `KidThemeProvider` ogranicza nocny motyw Mantine do aplikacji dziecka; `KidPage` mierzy viewport bez zależności od Next.js, a `KidScreen` i `ExerciseFrame` dzielą widok na stabilne sloty. Style rodzica pozostają poza tym zakresem. Macierz Playwright obejmuje wirtualne ekrany telefonów, tabletów i desktopu; nie jest odbiorem fizycznego urządzenia. Fizyczny test Galaxy S10e/PWA pozostaje osobnym dowodem.
+Uzupełnienie UI (2026-10-24): `KidThemeProvider` ogranicza nocny motyw Mantine do aplikacji dziecka; `KidPage` mierzy viewport bez zależności od Next.js (od 2026-10-30 także skaluje duże okno z myszą przez CSS `zoom`, skala 1–1,6, z jednostkami okna w tokenach `--kid-vh/--kid-dvh/--kid-svh/--kid-vw`), a `KidScreen` i `ExerciseFrame` dzielą widok na stabilne sloty. Style rodzica pozostają poza tym zakresem. Macierz Playwright obejmuje wirtualne ekrany telefonów, tabletów i desktopu; nie jest odbiorem fizycznego urządzenia. Fizyczny test Galaxy S10e/PWA pozostaje osobnym dowodem.
 
 Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/server. Zwykły img i serwerowy media URL wystarczą do ilustracji. Transport API nie jest wbudowany w komponent ćwiczenia; dostarcza go KidApp przez zależność.
 
