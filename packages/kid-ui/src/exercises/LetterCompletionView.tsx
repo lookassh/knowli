@@ -18,6 +18,14 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
 
   const fragment = task.prompt.kind === "letter_completion" ? task.prompt.fragment : "";
   const characters = Array.from(fragment);
+  // Słowa to ciągi znaków bez spacji; każda spacja jest osobnym elementem między nimi. Indeksy zostają pozycjami w `characters`.
+  const parts: Array<{ space: false; indices: number[] } | { space: true; index: number }> = [];
+  characters.forEach((character, index) => {
+    const last = parts[parts.length - 1];
+    if (character === " ") parts.push({ space: true, index });
+    else if (last && !last.space) last.indices.push(index);
+    else parts.push({ space: false, indices: [index] });
+  });
   const gapPositions = characters.flatMap((character, index) => character === "_" ? [index] : []);
   const complete = gapPositions.length > 0 && gapPositions.every((position) => Boolean(letters[position]));
   const disabled = busy || recording;
@@ -38,6 +46,60 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
 
   if (task.prompt.kind !== "letter_completion") return null;
 
+  const renderCharacter = (character: string, index: number) => character === "_" ? (
+    <LetterField
+      key={index}
+      ref={(input) => { inputRefs.current[index] = input; }}
+      className="kid-letter-input"
+      data-testid="kid-letter-input"
+      aria-label={format(messages.kid.missingLetterPosition, { n: index + 1 })}
+      value={letters[index] ?? ""}
+      onChange={(event) => {
+        const value = event.target.value.normalize("NFC");
+        if (Array.from(value).length > 1) return;
+        updateLetters({ ...letters, [index]: value });
+        handlers.onEdit();
+        if (value !== "") {
+          const nextPosition = gapPositions.find((position) => position > index);
+          if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Backspace") {
+          if (!letters[index] || letters[index] === "") {
+            const prevPosition = [...gapPositions].reverse().find((position) => position < index);
+            if (prevPosition !== undefined) {
+              event.preventDefault();
+              const prevInput = inputRefs.current[prevPosition];
+              prevInput?.focus({ preventScroll: true });
+              prevInput?.select();
+            }
+          }
+        } else if (event.key === "ArrowLeft") {
+          const prevPosition = [...gapPositions].reverse().find((position) => position < index);
+          if (prevPosition !== undefined) {
+            event.preventDefault();
+            inputRefs.current[prevPosition]?.focus({ preventScroll: true });
+          }
+        } else if (event.key === "ArrowRight") {
+          const nextPosition = gapPositions.find((position) => position > index);
+          if (nextPosition !== undefined) {
+            event.preventDefault();
+            inputRefs.current[nextPosition]?.focus({ preventScroll: true });
+          }
+        }
+      }}
+      maxLength={1}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      disabled={disabled}
+    />
+  ) : (
+    <m.span key={index} className="kid-letter-fixed" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }} style={{ display: "inline-block" }}>{character}</m.span>
+  );
+
   return (
     <ExerciseFrame
       actionLayout="inline"
@@ -57,58 +119,10 @@ export function LetterCompletionView({ task, busy, recording, handlers, letterDr
             }}
           >
             <div className="kid-letter-fragment" data-testid="kid-fragment" role="group" aria-label={messages.kid.fillLetters}>
-              {characters.map((character, index) => character === "_" ? (
-                <LetterField
-                  key={index}
-                  ref={(input) => { inputRefs.current[index] = input; }}
-                  className="kid-letter-input"
-                  data-testid="kid-letter-input"
-                  aria-label={format(messages.kid.missingLetterPosition, { n: index + 1 })}
-                  value={letters[index] ?? ""}
-                  onChange={(event) => {
-                    const value = event.target.value.normalize("NFC");
-                    if (Array.from(value).length > 1) return;
-                    updateLetters({ ...letters, [index]: value });
-                    handlers.onEdit();
-                    if (value !== "") {
-                      const nextPosition = gapPositions.find((position) => position > index);
-                      if (nextPosition !== undefined) inputRefs.current[nextPosition]?.focus({ preventScroll: true });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Backspace") {
-                      if (!letters[index] || letters[index] === "") {
-                        const prevPosition = [...gapPositions].reverse().find((position) => position < index);
-                        if (prevPosition !== undefined) {
-                          event.preventDefault();
-                          const prevInput = inputRefs.current[prevPosition];
-                          prevInput?.focus({ preventScroll: true });
-                          prevInput?.select();
-                        }
-                      }
-                    } else if (event.key === "ArrowLeft") {
-                      const prevPosition = [...gapPositions].reverse().find((position) => position < index);
-                      if (prevPosition !== undefined) {
-                        event.preventDefault();
-                        inputRefs.current[prevPosition]?.focus({ preventScroll: true });
-                      }
-                    } else if (event.key === "ArrowRight") {
-                      const nextPosition = gapPositions.find((position) => position > index);
-                      if (nextPosition !== undefined) {
-                        event.preventDefault();
-                        inputRefs.current[nextPosition]?.focus({ preventScroll: true });
-                      }
-                    }
-                  }}
-                  maxLength={1}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  disabled={disabled}
-                />
-              ) : (
-                <m.span key={index} className="kid-letter-fixed" initial={kidEntranceInitial} animate={kidEntranceAnimate} transition={{ ...kidSpringGentle, delay: kidStaggerDelay(index) }} style={{ display: "inline-block" }}>{character}</m.span>
+              {parts.map((part) => part.space ? renderCharacter(" ", part.index) : (
+                <div key={part.indices[0]} className="kid-letter-word">
+                  {part.indices.map((index) => renderCharacter(characters[index]!, index))}
+                </div>
               ))}
             </div>
           </form>

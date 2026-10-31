@@ -18,13 +18,14 @@ import { imageFingerprint, illustrationPrompt, ttsFingerprint } from "../../doma
 import { lessonPromptStyle, type TtsStyle } from "../../domain/tts-style";
 import { ttsRequestInstructions } from "../../providers/tts-style-profile";
 import { payloadToItem } from "./item-payload";
+import { feedbackSentenceText } from "../../domain/lessons/feedback-sentence-text";
 import { questionReadText } from "../../domain/lessons/question-read-text";
 import { renderCard } from "../../domain/lessons/card";
 import { cardReadText } from "../../domain/lessons/card-read-text";
 import { resolveLessonTopic } from "../../domain/lessons/topic-resolution";
 import type { DynamicTopicData, LessonTopic } from "../../domain/lessons/types";
 
-export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio";
+export type AssetRole = "target_audio" | "example_audio" | "illustration" | "prompt_audio" | "feedback_audio";
 
 interface RequiredAsset {
   role: AssetRole;
@@ -87,6 +88,7 @@ function isLessonExercisePayload(payload: Record<string, unknown>): boolean {
 export interface LessonTtsFlags {
   ttsForAnswers: boolean;
   ttsForPrompts: boolean;
+  ttsForFeedbackSentence: boolean;
 }
 
 /** Locale nagrania pytania: polecenia i pytania przedmiotów szkolnych są po polsku (design szkoły §11.2). */
@@ -146,6 +148,11 @@ export function requiredAssetsForLessonExercise(
     const style = lessonPromptStyle("lesson_question", voiceToneOf(payload.voiceTone), question);
     required.push(ttsAsset("prompt_audio", question, PROMPT_AUDIO_LOCALE, settings, style));
   }
+  // Pełne zdanie czytane po odpowiedzi: bez stylu (style dotyczą pl-PL), język z `answerLocale`.
+  const sentence = flags.ttsForFeedbackSentence && answerLocale !== "" ? feedbackSentenceText(feedbackSourceOf(payload)) : null;
+  if (sentence !== null) {
+    required.push(ttsAsset("feedback_audio", sentence, answerLocale, settings));
+  }
   return required;
 }
 
@@ -153,6 +160,24 @@ export function requiredAssetsForLessonExercise(
 function voiceToneOf(value: unknown) {
   const parsed = LessonVoiceToneSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
+}
+
+function feedbackSourceOf(payload: Record<string, unknown>) {
+  const entries = (value: unknown) =>
+    Array.isArray(value)
+      ? value.flatMap((entry: unknown) => {
+          const { id, text } = (entry ?? {}) as { id?: unknown; text?: unknown };
+          return typeof id === "string" && typeof text === "string" ? [{ id, text }] : [];
+        })
+      : undefined;
+  return {
+    exerciseType: optionalText(payload.exerciseType) ?? "",
+    stem: optionalText(payload.stem),
+    answer: optionalText(payload.answer),
+    options: entries(payload.options),
+    correctOption: optionalText(payload.correctOption),
+    items: entries(payload.items),
+  };
 }
 
 function optionalText(value: unknown): string | undefined {
@@ -329,7 +354,7 @@ export async function reconcileDraftAssetsTx(
 
   // Dla ćwiczeń lekcji strategia zasobów zależy od flag TTS przedmiotu;
   // czytamy je raz z lesson_context tej wersji (słówka ich nie potrzebują).
-  const flags: LessonTtsFlags = { ttsForAnswers: false, ttsForPrompts: false };
+  const flags: LessonTtsFlags = { ttsForAnswers: false, ttsForPrompts: false, ttsForFeedbackSentence: false };
   if (revisions.some((r) => isLessonExercisePayload(r.payload))) {
     const row = (
       await tx
@@ -342,6 +367,7 @@ export async function reconcileDraftAssetsTx(
     if (subject) {
       flags.ttsForAnswers = subject.ttsForAnswers;
       flags.ttsForPrompts = subject.ttsForPrompts;
+      flags.ttsForFeedbackSentence = subject.ttsForFeedbackSentence;
     }
   }
 
@@ -387,9 +413,9 @@ export async function reconcileDraftAssetsTx(
               .from(mediaAssets)
               .where(eq(mediaAssets.id, existing.assetId))
           )[0];
-          // Nagranie pytania nie jest decyzją rodzica (brak „Regeneruj” w panelu,
-          // design szkoły §11.2) i jest tanie: publikacja zleca je ponownie.
-          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed && req.role !== "prompt_audio") {
+          // Nagranie pytania i zdania feedbacku nie jest decyzją rodzica (brak „Regeneruj”
+          // w panelu, design szkoły §11.2) i jest tanie: publikacja zleca je ponownie.
+          if (asset && asset.fingerprint === req.fingerprint && asset.state === "failed" && options.keepFailed && req.role !== "prompt_audio" && req.role !== "feedback_audio") {
             continue;
           }
           if (asset && asset.fingerprint === req.fingerprint && asset.state !== "failed") {

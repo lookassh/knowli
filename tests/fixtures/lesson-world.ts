@@ -50,6 +50,12 @@ export interface LessonWorldOptions {
    * = brak audio. Wymaga `richPool`, by istniały ćwiczenia wszystkich typów.
    */
   withTargetAudioFor?: readonly string[];
+  /**
+   * Dosiewa nagranie pełnego zdania (`feedback_audio`) do KAŻDEJ rewizji wersji
+   * przed publikacją: `ready` = gotowe przed wydaniem zadania, `pending` =
+   * jeszcze w przygotowaniu (test może je potem oznaczyć jako gotowe).
+   */
+  withFeedbackAudio?: "ready" | "pending";
   /** Seed one issued contact while omitting all schedulable objectives. */
   unschedulableDailyRound?: boolean;
 }
@@ -133,6 +139,9 @@ export async function lessonWorld(sourcePool: Pool, options: LessonWorldOptions 
     // Dosiew gotowego target_audio PRZED publikacją (po publikacji trigger blokuje).
     if (options.withTargetAudioFor && options.withTargetAudioFor.length > 0) {
       await attachLessonTargetAudio(pool, versionId, options.withTargetAudioFor);
+    }
+    if (options.withFeedbackAudio) {
+      await attachLessonFeedbackAudio(pool, versionId, options.withFeedbackAudio);
     }
     if (options.publish !== false) {
       await pool.query(
@@ -502,6 +511,48 @@ export async function attachLessonTargetAudio(
       `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
        values ($1, 'target_audio', $2, $3, 'approved')`,
       [row.id, assetId, `fp-${assetId}`],
+    );
+    byRevision.set(row.id, assetId);
+  }
+  return byRevision;
+}
+
+/**
+ * Dołącza nagranie zdania feedbacku (`feedback_audio`) do każdej rewizji wersji —
+ * jak planowanie mediów przy przygotowaniu lekcji gramatyki. Zasób `ready` ma
+ * komplet pól gotowego blobu; `pending` czeka na worker. Zwraca mapę
+ * `revisionId -> assetId`.
+ */
+export async function attachLessonFeedbackAudio(
+  pool: Pool,
+  versionId: string,
+  state: "ready" | "pending",
+): Promise<Map<string, string>> {
+  const rows = await pool.query<{ id: string }>(
+    "select id from learning_app.item_revisions where deck_version_id = $1 order by position",
+    [versionId],
+  );
+  const byRevision = new Map<string, string>();
+  for (const row of rows.rows) {
+    const assetId = randomUUID();
+    if (state === "ready") {
+      await pool.query(
+        `insert into learning_app.media_assets
+           (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model, metadata)
+         values ($1, 'tts', $2, 1, 'ready', $3, $4, 'audio/mpeg', 1024, 'fake', 'fake-tts', '{}'::jsonb)`,
+        [assetId, `fp-feedback-${assetId}`, `blob/${assetId}`, `sha-${assetId}`],
+      );
+    } else {
+      await pool.query(
+        `insert into learning_app.media_assets (id, kind, fingerprint, generation_number, state, provider, model, metadata)
+         values ($1, 'tts', $2, 1, 'pending', 'fake', 'fake-tts', '{}'::jsonb)`,
+        [assetId, `fp-feedback-${assetId}`],
+      );
+    }
+    await pool.query(
+      `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
+       values ($1, 'feedback_audio', $2, $3, 'pending')`,
+      [row.id, assetId, `fp-feedback-${assetId}`],
     );
     byRevision.set(row.id, assetId);
   }

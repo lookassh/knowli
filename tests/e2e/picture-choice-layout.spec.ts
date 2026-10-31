@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { assertKidLayout, installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 import { kidTokenColor } from "./helpers/contrast";
+import { expectFrameFillsViewport, waitForKidScale } from "./helpers/kid-frame";
 
 const viewports = [
   { width: 360, height: 640 },
@@ -49,10 +50,11 @@ test("cztery ilustracje tworzą czytelną zwartą siatkę także między progami
   }));
   await openPictureChoices(page, fixture, { width: 360, height: 560 });
 
-  for (const [width, height] of [[360, 560], [390, 740], [489, 500], [498, 610],
-    [599, 650], [600, 650], [699, 780], [700, 780], [840, 480], [768, 1024], [1392, 984]] as const) {
+  for (const [width, height, scale] of [[360, 560, 1], [390, 740, 1], [489, 500, 1], [498, 610, 1],
+    [599, 650, 1], [600, 650, 1], [699, 780, 1], [700, 780, 1], [840, 480, 1], [768, 1024, 1], [1392, 984, 1.09]] as const) {
     await page.setViewportSize({ width, height });
-    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${height}px`);
+    await waitForKidScale(page, scale);
+    await expectFrameFillsViewport(page, { width, height });
     await expect.poll(() => page.getByTestId("kid-option").evaluateAll((elements) => {
       const boxes = elements.map((element) => element.getBoundingClientRect());
       return Math.min(...boxes.map((box) => box.width));
@@ -70,8 +72,9 @@ test("cztery ilustracje tworzą czytelną zwartą siatkę także między progami
       };
     });
     expect(geometry.square, JSON.stringify({ width, height, geometry })).toBe(true);
-    expect(geometry.horizontalGap).toBeGreaterThanOrEqual(8);
-    expect(geometry.horizontalGap).toBeLessThanOrEqual(16);
+    // The gap is a rectangle difference (screen pixels) and its 8-16 px range a layout length: compare in layout pixels.
+    expect(geometry.horizontalGap / scale).toBeGreaterThanOrEqual(8);
+    expect(geometry.horizontalGap / scale).toBeLessThanOrEqual(16);
     expect(geometry.centerOffset).toBeLessThanOrEqual(1);
     expect(geometry.materialCenterOffset).toBeLessThanOrEqual(1);
     expect(geometry.horizontalOverflow).toBe(false);
@@ -93,9 +96,11 @@ for (const count of [2, 3, 4]) {
     await page.getByTestId("kid-option").first().click();
     const next = page.getByTestId("kid-next");
     await expect(next).toBeVisible();
-    for (const [width, height] of [[360, 560], [489, 500], [600, 650], [844, 390], [1392, 984]] as const) {
+    // 1392x984 zooms by 1.09; the remaining checks compare rectangles with the window (screen pixels).
+    for (const [width, height, scale] of [[360, 560, 1], [489, 500, 1], [600, 650, 1], [844, 390, 1], [1392, 984, 1.09]] as const) {
       await page.setViewportSize({ width, height });
-      await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${height}px`);
+      await waitForKidScale(page, scale);
+      await expectFrameFillsViewport(page, { width, height });
       // A resize can switch to page scrolling and schedule the footer reveal.
       // Wait for that frame before checking manual access to earlier options.
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

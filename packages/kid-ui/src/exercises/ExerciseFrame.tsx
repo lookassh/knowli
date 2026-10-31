@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
+import { toLayoutPx } from "../layout/css-zoom";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
@@ -136,11 +137,13 @@ export function ExerciseFrame({
     const measure = () => {
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
+      // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
+      // (zoom dużego okna) — krawędzie z prostokątów przeliczamy przed porównaniem.
       const contentBottom = content && content.children.length > 0
-        ? Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom))
+        ? toLayoutPx(Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)), material)
         : null;
       // Górna krawędź panelu bez transformacji animacji wejścia.
-      const dockTop = anchor.getBoundingClientRect().bottom - overlay.offsetHeight;
+      const dockTop = toLayoutPx(anchor.getBoundingClientRect().bottom, material) - overlay.offsetHeight;
       const overlap = contentBottom === null ? 0 : contentBottom - dockTop;
       // Bramka rezerwy zatrzaskuje się na cały panel: późniejsze pomiary
       // (rAF, ResizeObserver) nie włączają jej wbrew pierwszemu pomiarowi,
@@ -175,6 +178,11 @@ export function ExerciseFrame({
       observer.observe(overlay);
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       if (content) observer.observe(content);
+      // Pierwszy pomiar może jeszcze widzieć wychodzące akcje zadania obok
+      // panelu (AnimatePresence), czyli panel niżej niż po ich zniknięciu.
+      // W zwartym układzie (§3.2) materiał nie zmienia wtedy rozmiaru, więc
+      // ponowny pomiar wyzwala dopiero kurcząca się stopka.
+      if (anchor.parentElement) observer.observe(anchor.parentElement);
     }
     return () => {
       measureRef.current = null;
@@ -191,14 +199,21 @@ export function ExerciseFrame({
     return () => cancelAnimationFrame(frame);
   }, [dockPad]);
 
+  // Rezerwa to zawsze padding pod treścią. Minimalną wysokość treści (100%
+  // materiału + rezerwa) liczy CSS z `--dock-reserve`, bo inline `minHeight`
+  // nie dałoby się nadpisać: w zwartym układzie wysokiego okna (§3.2) treść
+  // rośnie tylko o padding. Warunek to ta sama media query co siatka, w module
+  // CSS — prościej niż matchMedia w JS (pomiar okna należy do KidPage) albo
+  // atrybut odczytywany ze stanu CSS.
+  const reserveStyle = dock !== undefined && dockPad > 0
+    ? { paddingBottom: dockPad + 4, "--dock-reserve": `${dockPad}px` } as CSSProperties
+    : undefined;
+
   return (
     <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
       <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} guidance={guidance} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
-        <div
-          className={`kid-material-content ${classes.materialContent}`}
-          style={dock !== undefined && dockPad > 0 ? { paddingBottom: dockPad + 4, minHeight: `calc(100% + ${dockPad}px)` } : undefined}
-        >{content}</div>
+        <div className={`kid-material-content ${classes.materialContent}`} style={reserveStyle}>{content}</div>
       </div>
       <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
         <AnimatePresence mode="popLayout" initial={false}>

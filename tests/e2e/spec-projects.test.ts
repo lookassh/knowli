@@ -33,6 +33,8 @@ const REAL_BACKEND_SIGNALS: readonly RegExp[] = [
 // Mockowany spec musi faktycznie zaślepiać API w przeglądarce.
 const MOCK_SIGNALS: readonly RegExp[] = [
   /installKidUiFixture/,
+  // helpers/kid-fixtures.ts: openDeckScreen instaluje fixture Kid UI.
+  /openDeckScreen\(/,
   /page\.route\("\*\*\/api\/v1\/parent\/\*\*"/,
 ];
 

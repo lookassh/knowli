@@ -8,21 +8,26 @@ import { SoundRing } from "../motion/SoundRing";
 
 /** Jawny odsłuch krótkiej instrukcji albo komunikatu interfejsu. W wierszu
  * instrukcji (`placement="instruction"`) przycisk jest obrysowany, ze znakiem
- * zapytania i własną nazwą, żeby nie udawał odsłuchu słowa stojącego obok. */
+ * zapytania i własną nazwą, żeby nie udawał odsłuchu słowa stojącego obok.
+ * `icon="question"` w doku: ten sam obrysowany „?” przy nazwie doku — gdy obok
+ * stoi głośnik odczytu zdania, komunikat nie może wyglądać jak drugi głośnik. */
 export function GuidanceButton({
   audioKey,
   onPlay,
   testId,
   showError = true,
   placement = "dock",
+  icon,
 }: {
   audioKey: UiAudioKey;
   onPlay: (key: UiAudioKey) => Promise<void>;
   testId: string;
   showError?: boolean;
   placement?: "instruction" | "dock";
+  icon?: "speaker" | "question";
 }) {
   const inInstruction = placement === "instruction";
+  const question = (icon ?? (inInstruction ? "question" : "speaker")) === "question";
   const [failed, setFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const play = async () => {
@@ -37,14 +42,14 @@ export function GuidanceButton({
     }
   };
   return <>
-    {inInstruction ? (
-      <IconActionButton className="kid-icon-button" data-testid={testId} variant="outlined"
-        aria-label={messages.kid.listenInstruction} data-sound-active={playing || undefined} onClick={() => void play()}>
+    {question ? (
+      <IconActionButton className="kid-icon-button" data-testid={testId} variant="outlined" data-guidance-icon="question"
+        aria-label={inInstruction ? messages.kid.listenInstruction : messages.kid.listen} data-sound-active={playing || undefined} onClick={() => void play()}>
         <KidIcon name="question" />
         {playing && <SoundRing />}
       </IconActionButton>
     ) : (
-      <ListenButton data-testid={testId} aria-label={messages.kid.listen} data-sound-active={playing || undefined} onClick={() => void play()}>
+      <ListenButton data-testid={testId} data-guidance-icon="speaker" aria-label={messages.kid.listen} data-sound-active={playing || undefined} onClick={() => void play()}>
         {playing && <SoundRing />}
       </ListenButton>
     )}

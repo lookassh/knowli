@@ -3,7 +3,7 @@
   color: var(--md-sys-color-on-surface);
   background: var(--md-sys-color-surface-container-lowest);
   font-family: var(--kid-font-body);
-  min-height: 100dvh;
+  min-height: calc(100 * var(--kid-dvh));
   -webkit-tap-highlight-color: transparent;
 }
 

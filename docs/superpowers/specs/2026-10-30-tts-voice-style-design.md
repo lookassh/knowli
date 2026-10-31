@@ -426,3 +426,5 @@ Etap B:
   generacji.
 - Kid UI bez zmian geometrii — brak nowych testów layoutu. E2E panelu tylko,
   jeśli istniejący spec edytora lekcji obejmuje kartę ćwiczenia.
+
+Nota (2026-10-31): nagranie zdania feedbacku gramatyki (`feedback_audio`, design `2026-10-30-lesson-sentence-readback-design.md`) powstaje bez stylu wypowiedzi (`voiceTone` nie dotyczy tej roli); en-GB dostaje tylko instrukcję wymowy języka.
