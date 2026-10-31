@@ -129,7 +129,11 @@ Właściciel reguł: `learning/lessons` (materializacja i próby), media:
   zdarzenia z `occurredAt <= receivedAt`, zadanie lekcji kończy jedna oceniona
   odpowiedź (bez retry po ocenie), a ekspozycja `targetKey` jest ta sama co
   feedbacku tekstowego. Zdanie ujawnia wyłącznie to, co już widać: bodziec
-  i rozwiązanie z feedbacku.
+  i rozwiązanie z feedbacku. Zastrzeżenie: dla `lesson_open_answer`,
+  `lesson_transform` i `lesson_error_fix` zaakceptowanych jako wariant (`great`,
+  bez `correctText`) odczyt to zdanie kanoniczne, którego dziecko nie widziało
+  na ekranie; ekspozycja (`targetKey`) jest jednak ta sama co feedbacku, więc
+  kwalifikacja się nie zmienia.
 - **Kontrakt:** `FeedbackDto.correctAudioAssetId` bez zmiany schematu; komentarz
   uogólniony na „nagranie rozwiązania ujawniane wyłącznie w feedbacku”. Istniejąca
   reguła „`not_assessed` nie niesie audio” obowiązuje.

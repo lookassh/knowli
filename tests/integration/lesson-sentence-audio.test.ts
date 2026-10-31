@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createChild, createLesson, createLessonDraftFromPublished, createServices, createSubjectRegistry, englishGrammarSubject,
-  executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt, readLessonDeck, startSession, submitAttempt,
+  executeLessonGeneration, FakeAnswerGrader, runDueGenerationWork, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt, readLessonDeck, startSession, submitAttempt,
 } from "@learning/server";
 import type { AttemptDto, AttemptInput, TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
@@ -92,6 +92,27 @@ describe("lekcja gramatyki — nagranie zdania feedbacku", () => {
     expect((await feedbackRows(second.id)).map((row) => row.text).sort()).toEqual(created.map((row) => row.text).sort());
     expect(await mediaCount()).toBe(mediaAfterFirst);
     expect(await ttsRuns()).toBe(runsAfterFirst);
+  });
+
+  it("worker syntezuje zdania feedbacku (en-GB) i nie unieważnia ich przy włączonej fladze", async () => {
+    const { fakes, draft } = await generatedGrammarLesson();
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    for (let pass = 0; pass < 20; pass += 1) {
+      const result = await runDueGenerationWork(services, { lesson: 0, deck: 0, tts: 50, images: 0 });
+      if (result.processed === 0) break;
+    }
+    const rows = await feedbackRows(draft.id);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.state === "ready")).toBe(true);
+    const requested = fakes.tts.requests.filter((request) => request.locale === "en-GB").map((request) => request.text);
+    for (const row of rows) expect(requested).toContain(row.text);
+    // To pełne zdania (bez znacznika luki), nie same odpowiedzi.
+    expect(rows.some((row) => row.text.split(" ").length >= 3)).toBe(true);
+    expect(rows.every((row) => !row.text.includes("___"))).toBe(true);
+    const runs = (await pool.query<{ state: string }>("select state from learning_app.generation_runs where kind = 'tts'")).rows;
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.some((run) => run.state === "superseded")).toBe(false);
+    expect(runs.some((run) => run.state === "failed")).toBe(false);
   });
 
   it("CHECK roli przyjmuje feedback_audio", async () => {
@@ -263,6 +284,14 @@ describe("feedback lekcji gramatyki ujawnia nagranie zdania", () => {
       expect(played.independent).toBe(baseline.independent);
     });
   }
+
+  it("odpowiedź produktywna po wcześniejszym sukcesie jest samodzielna także z odczytem zdania", async () => {
+    const scenario: Scenario = { type: "lesson_gap", services: plain, answer: (_task, key) => ({ modality: "text", text: key.answer as string }), withPriorSuccess: true };
+    const played = await play(scenario, "ready");
+    expect(played.attempt.feedback?.correctAudioAssetId).toBe(await feedbackAssetOf(played.task.taskId));
+    expect(played.independent).toBe(true);
+    expect((await play(scenario, null)).independent).toBe(true);
+  });
 
   it("ponowny odczyt i idempotentne ponowienie zwracają ten sam identyfikator bez drugiego audio_issued", async () => {
     const { services, attempt, task, input } = await play(WITH_AUDIO[0]!.scenario, "ready");
