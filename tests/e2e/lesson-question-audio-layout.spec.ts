@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { expectReachableOnSmallPhone, LESSON_AUDIO_VIEWPORTS, lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
+import { expectFrameFillsViewport } from "./helpers/kid-frame";
 
 /**
  * „Posłuchaj pytania” (design szkoły §11.4, API zaślepione w przeglądarce):
@@ -68,7 +69,7 @@ test("question audio sits in the instruction row and fits every form factor", as
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
-    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+    await expectFrameFillsViewport(page, viewport);
     const button = page.getByTestId("kid-question-audio");
     await button.scrollIntoViewIfNeeded();
     const bounds = (await button.boundingBox())!;

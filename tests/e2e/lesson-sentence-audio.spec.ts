@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { AttemptDto, FeedbackDto, TaskDto } from "@learning/contracts";
+import { expectFrameFillsViewport } from "./helpers/kid-frame";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
 
@@ -180,7 +181,7 @@ test("sentence button fits the feedback dock on every form factor", async ({ pag
   ]) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
-    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+    await expectFrameFillsViewport(page, viewport);
     const button = page.getByTestId("kid-sentence-audio");
     await button.scrollIntoViewIfNeeded();
     const bounds = (await button.boundingBox())!;

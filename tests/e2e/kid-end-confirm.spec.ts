@@ -135,10 +135,15 @@ test("confirmation sheet sits on the bottom edge with reachable 48 px actions on
       end: "[data-testid='kid-end-confirm-end']",
     });
     expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
-    expect(layout.scrim, `scrim covers the viewport: ${name}`).toMatchObject({ left: 0, top: 0, width: viewport.width, height: viewport.height });
+    // Screen pixels: the scrim covers the window to within 1 px of sub-pixel rounding.
+    for (const [key, expected] of [["left", 0], ["top", 0], ["width", viewport.width], ["height", viewport.height]] as const) {
+      expect(Math.abs(layout.scrim[key] - expected), `scrim ${key} covers the viewport: ${name}`).toBeLessThanOrEqual(1);
+    }
     expect(layout.sheet.left, `sheet left: ${name}`).toBeGreaterThanOrEqual(0);
     expect(layout.sheet.right, `sheet right: ${name}`).toBeLessThanOrEqual(viewport.width);
-    expect(layout.sheet.width, `sheet width: ${name}`).toBeLessThanOrEqual(560);
+    // The sheet takes --kid-column-max-width: 560 px, 720 px from 840 x 480 on (all these windows are unscaled).
+    const columnCap = viewport.width >= 840 && viewport.height >= 480 ? 720 : 560;
+    expect(Math.abs(layout.sheet.width - Math.min(columnCap, viewport.width)), `sheet is as wide as the column: ${name}`).toBeLessThanOrEqual(1);
     expect(Math.abs((layout.sheet.left + layout.sheet.right) / 2 - viewport.width / 2), `sheet centred: ${name}`).toBeLessThanOrEqual(1);
     for (const [label, rect] of [["continue", layout.continueButton], ["end", layout.end]] as const) {
       expect(rect.height, `${label} height: ${name}`).toBeGreaterThanOrEqual(54);

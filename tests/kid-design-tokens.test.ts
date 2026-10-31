@@ -81,6 +81,25 @@ describe("kid-ui design tokens", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("uses zoom-aware viewport tokens instead of raw viewport units", () => {
+    /* KidPage scales the whole page with CSS zoom on large windows, which
+       multiplies viewport units by the scale. Only --kid-vh/-dvh/-svh/-vw
+       (they divide by --kid-zoom) may carry a window-relative length. */
+    const RAW_VIEWPORT_UNIT = /\d+(?:\.\d+)?(?:[sld])?v(?:h|w|i|b|min|max)\b/g;
+    const fromCss = cssFiles.flatMap((url) => [...styleRules(url).matchAll(RAW_VIEWPORT_UNIT)]
+      .map((match) => `${relative(url)}: ${match[0]}`));
+    const fromTsx = files(SRC, /\.tsx$/)
+      .filter((url) => !/\.test\.tsx$/.test(url.pathname))
+      .flatMap((url) => [...readFileSync(url, "utf8").matchAll(RAW_VIEWPORT_UNIT)].map((match) => `${relative(url)}: ${match[0]}`));
+    expect([...fromCss, ...fromTsx]).toEqual([]);
+  });
+
+  it("defines the window-unit tokens by dividing through --kid-zoom, keeping each unit kind", () => {
+    const styles = readFileSync(new URL("styles.css", SRC), "utf8");
+    const defined = [...styles.matchAll(/--kid-(vh|dvh|svh|vw):\s*([^;]+);/g)].map((match) => `${match[1]}: ${match[2]}`);
+    expect(defined).toEqual(["vh", "dvh", "svh", "vw"].map((unit) => `${unit}: calc(1${unit} / var(--kid-zoom, 1))`));
+  });
+
   it("keeps literal colors out of components (deterministic visuals and illustrations excepted)", () => {
     const offenders = files(SRC, /\.tsx?$/)
       .filter((url) => !relative(url).startsWith("visuals/") && !relative(url).startsWith("illustrations/") && !/\.test\.tsx?$/.test(url.pathname))

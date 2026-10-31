@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectFrameFillsViewport } from "./helpers/kid-frame";
 
 /**
  * Geometria zadania rachunkowego (`lesson_calculation`) na wspólnym widoku
@@ -49,7 +50,7 @@ test("calculation keeps the Polish prompt, result field and actions inside the f
 
   for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
-    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+    await expectFrameFillsViewport(page, viewport);
     const frame = (await page.getByTestId("kid-session-frame").boundingBox())!;
     const material = (await page.getByTestId("kid-material").boundingBox())!;
     expect(material.x, `material left at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(frame.x - 1);

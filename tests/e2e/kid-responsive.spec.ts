@@ -1,8 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 import { endSessionFromHeader } from "./helpers/kid-session";
+import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle, type Rect } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
+
+/** Short phones up to a desktop; 1440x960 zooms by 1.06 (overflow and reachability need no unit conversion). */
+const REACH_VIEWPORTS = [
+  { width: 360, height: 320, scale: 1 },
+  { width: 360, height: 420, scale: 1 },
+  { width: 360, height: 640, scale: 1 },
+  { width: 360, height: 760, scale: 1 },
+  { width: 768, height: 1024, scale: 1 },
+  { width: 1440, height: 960, scale: 1.06 },
+] as const;
 
 const SESSION_HEADER_VIEWPORTS = [
   { width: 360, height: 800 },
@@ -147,14 +158,16 @@ test("exposure keeps the complete word card above its action without scrolling o
   await expect(page.getByTestId("kid-target")).toHaveText("computer room");
   await expect(page.getByTestId("kid-task-audio-error")).toHaveCount(0);
 
-  for (const viewport of [{ width: 384, height: 640 }, { width: 360, height: 640 }, { width: 360, height: 540 },
-    { width: 390, height: 660 }, { width: 768, height: 1024 }, { width: 1440, height: 960 }]) {
+  for (const viewport of [{ width: 384, height: 640, scale: 1 }, { width: 360, height: 640, scale: 1 }, { width: 360, height: 540, scale: 1 },
+    { width: 390, height: 660, scale: 1 }, { width: 768, height: 1024, scale: 1 }, { width: 1440, height: 960, scale: 1.06 }]) {
     await page.setViewportSize(viewport);
-    await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+    await waitForKidScale(page, viewport.scale);
+    await expectFrameFillsViewport(page, viewport);
     const header = await page.locator(".kid-header").boundingBox();
     const instruction = await page.getByTestId("kid-instruction").boundingBox();
+    // Rectangles are screen pixels while the 44/60 px gap budget is a layout length, so it grows with the zoom.
     expect(instruction!.y - (header!.y + header!.height), "instruction should stay close to the top bar")
-      .toBeLessThanOrEqual(viewport.height <= 700 ? 44 : 60);
+      .toBeLessThanOrEqual((viewport.height <= 700 ? 44 : 60) * viewport.scale);
     await expect.poll(() => page.evaluate(() => {
       const selectors = [".kid-learning", ".kid-exercise-frame", ".kid-material", ".kid-material-content", ".kid-exposure-content"];
       return selectors.filter((selector) => {
@@ -188,6 +201,8 @@ test("exposure keeps the complete word card above its action without scrolling o
   // text instead of squeezing the word out between two 64px side columns.
   for (const viewport of [{ width: 200, height: 640 }, { width: 160, height: 640 }]) {
     await page.setViewportSize(viewport);
+    // The loop above ends at a scaled window (1440x960, 1.06): measure only once the zoom is gone.
+    await waitForKidScale(page, 1);
     const material = await page.getByTestId("kid-material").boundingBox();
     for (const [textId, playId] of [["kid-target", "kid-play"], ["kid-example", "kid-play-example"]] as const) {
       const text = page.getByTestId(textId);
@@ -234,8 +249,10 @@ test("exposure keeps a long word whole beside its speaker and on the card axis",
   await page.getByTestId("kid-deck").click();
   await expect(page.getByTestId("kid-target")).toHaveText("strawberry");
 
-  for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 640 }, { width: 922, height: 1000 }]) {
+  // 922x1000 zooms by 1.09; every check below compares rectangles with rectangles (screen pixels).
+  for (const viewport of [{ width: 320, height: 640, scale: 1 }, { width: 360, height: 640, scale: 1 }, { width: 922, height: 1000, scale: 1.09 }]) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     const geometry = await page.evaluate(() => {
       const textBox = (id: string) => {
         const range = document.createRange();
@@ -378,21 +395,20 @@ test("deck flow stays within the viewport matrix and keeps all decks reachable",
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
 
-  for (const viewport of [
-    { width: 360, height: 320 },
-    { width: 360, height: 420 },
-    { width: 360, height: 640 },
-    { width: 360, height: 760 },
-    { width: 768, height: 1024 },
-    { width: 1440, height: 960 },
-  ]) {
+  for (const viewport of REACH_VIEWPORTS) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflow, `horizontal overflow at ${viewport.width}x${viewport.height}`).toBe(false);
     const finalDeck = page.getByTestId("kid-deck-card").last();
-    await finalDeck.scrollIntoViewIfNeeded();
+    // Scroll as the child would (wheel input), not programmatically: scrollIntoViewIfNeeded can
+    // reach content that overflow: hidden keeps away from the user.
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.wheel(0, -100_000);
+    await page.mouse.wheel(0, 100_000);
     await expect(finalDeck).toBeVisible();
+    await expect(finalDeck.getByTestId("kid-deck")).toBeInViewport({ ratio: 0.98 });
     await expect(finalDeck.getByTestId("kid-deck-title")).toContainText("Długi tytuł");
     if (viewport.width === 360 && viewport.height === 640 || viewport.width === 1440) {
       await page.screenshot({ path: testInfo.outputPath(`decks-${viewport.width}x${viewport.height}.png`), fullPage: true });
@@ -426,15 +442,9 @@ test("summary actions remain reachable without horizontal overflow on short phon
   await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 
-  for (const viewport of [
-    { width: 360, height: 320 },
-    { width: 360, height: 420 },
-    { width: 360, height: 640 },
-    { width: 360, height: 760 },
-    { width: 768, height: 1024 },
-    { width: 1440, height: 960 },
-  ]) {
+  for (const viewport of REACH_VIEWPORTS) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflow, `horizontal overflow at ${viewport.width}x${viewport.height}`).toBe(false);
     const again = page.getByTestId("kid-again");
@@ -447,28 +457,15 @@ test("summary actions remain reachable without horizontal overflow on short phon
   }
 });
 
+// The large desktop zooms by 1.2. Touch targets are measured on screen, where zoom only enlarges them.
 const materialViewports = [
-  { name: "compact portrait", width: 360, height: 640 },
-  { name: "compact landscape", width: 640, height: 360 },
-  { name: "compact-height landscape band", width: 760, height: 450 },
-  { name: "expanded width compact height", width: 840, height: 480 },
-  { name: "expanded landscape", width: 1024, height: 600 },
-  { name: "large desktop", width: 1920, height: 1080 },
+  { name: "compact portrait", width: 360, height: 640, scale: 1 },
+  { name: "compact landscape", width: 640, height: 360, scale: 1 },
+  { name: "compact-height landscape band", width: 760, height: 450, scale: 1 },
+  { name: "expanded width compact height", width: 840, height: 480, scale: 1 },
+  { name: "expanded landscape", width: 1024, height: 600, scale: 1 },
+  { name: "large desktop", width: 1920, height: 1080, scale: 1.2 },
 ] as const;
-
-async function expectInteractiveTargets(page: import("@playwright/test").Page, selectors: string[]) {
-  const targets = await page.evaluate((wanted) => wanted.flatMap((selector) =>
-    [...document.querySelectorAll<HTMLElement>(selector)].map((element) => {
-      const rect = element.getBoundingClientRect();
-      return { selector, width: rect.width, height: rect.height };
-    }),
-  ), selectors);
-  expect(targets.length).toBeGreaterThan(0);
-  for (const target of targets) {
-    expect(target.height, `${target.selector} touch height`).toBeGreaterThanOrEqual(48);
-    expect(target.width, `${target.selector} touch width`).toBeGreaterThanOrEqual(48);
-  }
-}
 
 test("Material window classes keep written answers reachable with 48px targets", async ({ page }) => {
   await installKidUiFixture(page, recallLayoutFixture());
@@ -479,6 +476,7 @@ test("Material window classes keep written answers reachable with 48px targets",
 
   for (const viewport of materialViewports) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth
       || document.body.scrollWidth > document.body.clientWidth);
     expect(overflow, `horizontal overflow: ${viewport.name}`).toBe(false);
@@ -517,6 +515,7 @@ test("Material window classes keep every picture choice reachable", async ({ pag
 
   for (const viewport of materialViewports) {
     await page.setViewportSize(viewport);
+    await waitForKidScale(page, viewport.scale);
     await page.evaluate(async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });
