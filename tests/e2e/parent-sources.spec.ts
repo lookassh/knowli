@@ -56,7 +56,7 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
   await expect(page).toHaveURL(new RegExp(`/parent/sources/${UUID}$`));
   const sourceId = new URL(page.url()).pathname.split("/").pop()!;
   await expect(page.getByTestId("source-heading")).toHaveText(title);
-  await expect(page.getByTestId("source-preview")).toContainText("coat, boots, dress, skirt, t-shirt");
+  await expect(page.getByTestId("source-preview")).toHaveValue(/coat, boots, dress, skirt, t-shirt/);
   await expect(page.getByTestId("source-no-decks")).toBeVisible();
 
   // Źródło jest na liście (z prawdziwej bazy) i wraca po przeładowaniu strony.
@@ -76,7 +76,7 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
   await expect(page.getByTestId("lesson-subject")).toHaveValue("english_chapter");
   await expect(page.getByTestId("lesson-material")).toHaveCount(0);
   await expect(page.getByTestId("lesson-source")).toContainText(messages.sources.fromSource.replace("{title}", title));
-  await expect(page.getByTestId("lesson-source-preview")).toContainText("I'm wearing a coat.");
+  await expect(page.getByTestId("lesson-source-preview")).toHaveValue(/I'm wearing a coat\./);
   await expect(page.getByTestId("material-topic-name")).toHaveValue(title);
   await page.getByTestId("lesson-pool-size").fill("40");
 
@@ -153,7 +153,7 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
   await page.getByTestId("source-save").click();
   expect((await patched).status()).toBe(200);
   await expect(page.getByTestId("source-status")).toHaveText(messages.sources.saved);
-  await expect(page.getByTestId("source-preview")).toContainText(ADDED_LINE);
+  await expect(page.getByTestId("source-preview")).toHaveValue(`${CHAPTER_BODY}\n${ADDED_LINE}`);
   await expect(page.getByTestId("source-deck-stale-0")).toHaveText(messages.sources.sourceChanged);
 
   // 5. Lekcja ma własną kopię: edytor pokazuje notkę zmiany, a tekst lekcji się nie zmienia.

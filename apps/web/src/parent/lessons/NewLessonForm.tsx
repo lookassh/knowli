@@ -449,9 +449,16 @@ export default function NewLessonForm({
                   </Anchor>
                 </Group>
                 {/* tekst źródła tylko do podglądu — serwer skopiuje go przy tworzeniu lekcji */}
-                <div className="pp-source-preview" data-testid="lesson-source-preview" role="region" aria-labelledby="lesson-source-title" tabIndex={0}>
-                  {source.body}
-                </div>
+                <Textarea
+                  size="md"
+                  readOnly
+                  autosize
+                  maxRows={12}
+                  value={source.body}
+                  className="pp-source-preview"
+                  data-testid="lesson-source-preview"
+                  aria-labelledby="lesson-source-title"
+                />
               </div>
             ) : (
               <div>

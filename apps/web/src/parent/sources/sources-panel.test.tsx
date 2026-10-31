@@ -86,6 +86,12 @@ describe("SourcePage", () => {
     expect(markup).toContain("Unit 3 — Food");
     expect(markup).toContain('data-testid="source-preview"');
     expect(markup).toContain("Do you like apples?");
+    // podgląd to natywne pole tylko do odczytu nazwane nagłówkiem — bez tabIndex na zwykłym div
+    const preview = markup.match(/<textarea[^>]*data-testid="source-preview"[^>]*>/)?.[0] ?? "";
+    expect(preview).toMatch(/readonly/i);
+    expect(preview).toContain('aria-labelledby="source-preview-label"');
+    expect(preview).not.toMatch(/tabindex/i);
+    expect(markup).not.toContain('role="region"');
     expect(markup).toContain('data-testid="source-create-chapter"');
     expect(markup).toContain(messages.sources.createChapterLesson);
     expect(markup).toContain('data-testid="source-create-school"');

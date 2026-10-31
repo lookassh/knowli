@@ -232,6 +232,10 @@ describe("NewLessonForm", () => {
       expect(markup).toContain(messages.sources.fromSource.replace("{title}", "Unit 3 — Food"));
       expect(markup).toContain('data-testid="lesson-source-preview"');
       expect(markup).toContain("Do you like apples?");
+      const preview = markup.match(/<textarea[^>]*data-testid="lesson-source-preview"[^>]*>/)?.[0] ?? "";
+      expect(preview).toMatch(/readonly/i);
+      expect(preview).toContain('aria-labelledby="lesson-source-title"');
+      expect(preview).not.toMatch(/tabindex/i);
       // „Zmień źródło” prowadzi do listy źródeł, a przycisk u góry wraca do strony źródła
       expect(markup).toContain('data-testid="lesson-source-change"');
       expect(markup).toContain('href="/parent/sources"');

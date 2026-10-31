@@ -240,9 +240,13 @@ for (const viewport of VIEWPORTS) {
     test("edycja: tylko zmienione pola, konflikt 409 pokazuje komunikat i odświeżenie", async ({ page }) => {
       const api = await mockApi(page);
       await page.goto(`/parent/sources/${SOURCE_ID}`);
-      await expect(page.getByTestId("source-preview")).toContainText("I like pizza.");
+      await expect(page.getByTestId("source-preview")).toHaveValue(BODY);
       await expectNoHorizontalOverflow(page);
-      await expectTargets(page, ["source-back", "source-create-chapter", "source-create-school", "source-edit", "source-delete", "source-deck-0"], viewport.width);
+      await expectTargets(page, ["source-back", "source-preview", "source-create-chapter", "source-create-school", "source-edit", "source-delete", "source-deck-0"], viewport.width);
+      // podgląd to natywne pole tylko do odczytu: fokusowalne z klawiatury bez tabIndex, nazwane nagłówkiem
+      await expect(page.getByTestId("source-preview")).toHaveAttribute("readonly", "");
+      await expect(page.getByTestId("source-preview")).not.toHaveAttribute("tabindex", /.*/);
+      await expect(page.getByRole("textbox", { name: messages.sources.previewLabel })).toHaveValue(BODY);
       await expect(page.getByTestId("source-deck-stale-0")).toHaveText(messages.sources.sourceChanged);
       // nagłówek liczy zestawy jak lista (bez zarchiwizowanego), lista zestawów pokazuje wszystkie trzy
       await expect(page.getByTestId("source-meta")).toContainText("2 zestawy");
@@ -286,7 +290,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByTestId("source-conflict-refresh").click();
       await page.getByTestId("source-refresh-confirm").click();
       await expect(page.getByTestId("source-conflict")).toHaveCount(0);
-      await expect(page.getByTestId("source-preview")).toContainText("We like apples.");
+      await expect(page.getByTestId("source-preview")).toHaveValue(/We like apples\./);
       await expect(page.getByTestId("source-heading")).toHaveText("Unit 3 — Food");
       await expect(page.getByTestId("source-edit")).toBeFocused();
 
@@ -294,7 +298,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByTestId("source-edit").click();
       await page.getByTestId("source-body").fill("I like pizza.");
       await page.getByTestId("source-save").click();
-      await expect(page.getByTestId("source-preview")).toHaveText("I like pizza.");
+      await expect(page.getByTestId("source-preview")).toHaveValue("I like pizza.");
       await expect(page.getByTestId("source-status")).toHaveText(messages.sources.saved);
       expect(api.patches[1]).toEqual({ expectedRevision: 3, body: "I like pizza." });
     });
@@ -340,10 +344,10 @@ for (const viewport of VIEWPORTS) {
       await page.getByTestId("source-create-chapter").click();
       await expect(page).toHaveURL(new RegExp(`/parent/lessons/new\\?source=${SOURCE_ID}&subject=english_chapter$`));
       await expect(page.getByTestId("lesson-subject")).toHaveValue("english_chapter");
-      await expect(page.getByTestId("lesson-source-preview")).toContainText("Do you like apples?");
+      await expect(page.getByTestId("lesson-source-preview")).toHaveValue(/Do you like apples\?/);
       await expect(page.getByTestId("material-topic-name")).toHaveValue("Unit 3 — Food");
       await expectNoHorizontalOverflow(page);
-      await expectTargets(page, ["new-lesson-cancel", "lesson-subject", "lesson-source-change", "material-topic-name", "lesson-create-submit"], viewport.width);
+      await expectTargets(page, ["new-lesson-cancel", "lesson-subject", "lesson-source-change", "lesson-source-preview", "material-topic-name", "lesson-create-submit"], viewport.width);
 
       await page.getByTestId("lesson-create-submit").click();
       await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Center, Group, Loader, Paper, Stack, Text, ThemeIcon, Title, UnstyledButton, VisuallyHidden } from "@mantine/core";
+import { Alert, Box, Button, Center, Group, Loader, Paper, Stack, Text, Textarea, ThemeIcon, Title, UnstyledButton, VisuallyHidden } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type SourceMaterialPatch } from "@learning/contracts";
@@ -377,10 +377,17 @@ export default function SourcePage({
                 {messages.sources.edit}
               </Button>
             </Group>
-            {/* przewijany obszar dostępny z klawiatury */}
-            <div className="pp-source-preview" data-testid="source-preview" role="region" aria-labelledby="source-preview-label" tabIndex={0}>
-              {source.body}
-            </div>
+            {/* pole tylko do odczytu: przewijane i dostępne z klawiatury natywnie, bez tabIndex */}
+            <Textarea
+              size="md"
+              readOnly
+              autosize
+              maxRows={12}
+              value={source.body}
+              className="pp-source-preview"
+              data-testid="source-preview"
+              aria-labelledby="source-preview-label"
+            />
           </Stack>
         )}
       </Paper>

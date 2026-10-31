@@ -1,24 +1,13 @@
 /* Zakładka „Źródła” (design 2026-10-30 §3.4). Wiersze listy i zestawów: decks-panel.css;
    tekst pomocniczy: .pp-editor-muted (deck-editor.css). */
 
-/* Podgląd tekstu źródła (strona źródła i formularz nowej lekcji): tylko do odczytu,
-   z zachowanymi wierszami, przewijany w pionie — długi rozdział nie rozpycha strony. */
-.pp-source-preview {
+/* Podgląd tekstu źródła (strona źródła i formularz nowej lekcji): Mantine Textarea tylko do odczytu,
+   z zachowanymi wierszami; autosize rośnie do 12 wierszy, dalej pole przewija się samo (natywnie
+   fokusowalne z klawiatury) — długi rozdział nie rozpycha strony. */
+.pp-source-preview textarea {
   max-height: min(50dvh, 420px);
-  overflow-y: auto;
-  padding: 12px 14px;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: 12px;
-  background: var(--mantine-color-default);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--mantine-font-size-sm);
   line-height: 1.55;
-}
-
-.pp-source-preview:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: 2px;
 }
 
 /* uwaga o limicie 16 000 znaków pod licznikiem (stały region na żywo, pusty poniżej limitu) */
