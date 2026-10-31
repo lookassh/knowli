@@ -1,4 +1,4 @@
-import type { KidDeckDto } from "@learning/contracts";
+import type { FeedbackDto, KidDeckDto } from "@learning/contracts";
 import type { Page } from "@playwright/test";
 import { installKidUiFixture } from "./kid-ui-fixture";
 
@@ -21,13 +21,14 @@ export function baseFixture() {
   };
 }
 
-export function completedRecallFixture() {
+/** A written recall task answered by one completed attempt; `feedback` is what the dock shows. */
+export function completedRecallFixture({ feedback = { kind: "great" } }: { feedback?: FeedbackDto } = {}) {
   return {
     ...baseFixture(),
     tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "recall" as const, direction: "source_to_target" as const,
       state: "issued" as const, prompt: { kind: "recall" as const, prompt: "kot" }, remainingAssessed: 1 }],
     attempts: [{ attemptId, taskId, state: "completed" as const, modality: "text" as const,
-      feedback: { kind: "great" as const }, taskState: "completed" as const, stepId: null,
+      feedback, taskState: "completed" as const, stepId: null,
       receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z" }],
   };
 }

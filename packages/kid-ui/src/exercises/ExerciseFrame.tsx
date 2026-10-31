@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactElement, type ReactNod
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
+import { toLayoutPx } from "../layout/css-zoom";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
@@ -136,11 +137,13 @@ export function ExerciseFrame({
     const measure = () => {
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
+      // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
+      // (zoom dużego okna) — krawędzie z prostokątów przeliczamy przed porównaniem.
       const contentBottom = content && content.children.length > 0
-        ? Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom))
+        ? toLayoutPx(Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)), material)
         : null;
       // Górna krawędź panelu bez transformacji animacji wejścia.
-      const dockTop = anchor.getBoundingClientRect().bottom - overlay.offsetHeight;
+      const dockTop = toLayoutPx(anchor.getBoundingClientRect().bottom, material) - overlay.offsetHeight;
       const overlap = contentBottom === null ? 0 : contentBottom - dockTop;
       // Bramka rezerwy zatrzaskuje się na cały panel: późniejsze pomiary
       // (rAF, ResizeObserver) nie włączają jej wbrew pierwszemu pomiarowi,

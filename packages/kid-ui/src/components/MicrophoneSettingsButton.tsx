@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { messages } from "@learning/contracts";
+import { cssZoomOf } from "../layout/css-zoom";
 import { useKidPageViewport } from "../layout/viewport";
 import { IconActionButton } from "./IconActionButton";
 import { KidIcon } from "./KidIcon";
@@ -30,14 +31,18 @@ export function MicrophoneSettingsButton({
     const panel = panelRef.current;
     if (!button || !panel || viewport.width === null || viewport.height === null) return;
 
+    // Położenie liczymy w px ekranu (prostokąty, rozmiar okna). Odstęp 8 px i marginesy bezpieczne są w px
+    // wewnętrznych, więc rosną z zoomem dużego okna, a długości position: fixed zoom mnoży jeszcze raz.
+    const zoom = cssZoomOf(button);
     const buttonRect = button.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     const styles = window.getComputedStyle(button);
-    const inset = (name: string) => Math.max(16, Number.parseFloat(styles.getPropertyValue(name)) || 0);
+    const inset = (name: string) => Math.max(16, Number.parseFloat(styles.getPropertyValue(name)) || 0) * zoom;
     const left = Math.max(inset("--kid-safe-left"), Math.min(buttonRect.left, viewport.width - panelRect.width - inset("--kid-safe-right")));
     const viewportTop = viewport.offsetTop;
-    const top = Math.max(viewportTop + inset("--kid-safe-top"), Math.min(buttonRect.bottom + 8, viewportTop + viewport.height - panelRect.height - inset("--kid-safe-bottom")));
-    setPanelPosition({ position: "fixed", left, top });
+    const top = Math.max(viewportTop + inset("--kid-safe-top"), Math.min(buttonRect.bottom + 8 * zoom, viewportTop + viewport.height - panelRect.height - inset("--kid-safe-bottom")));
+    const panelZoom = cssZoomOf(panel);
+    setPanelPosition({ position: "fixed", left: left / panelZoom, top: top / panelZoom });
   }, [viewport.width, viewport.height, viewport.offsetTop]);
 
   useLayoutEffect(() => {
