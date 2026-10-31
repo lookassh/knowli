@@ -57,7 +57,7 @@ import {
   type ObjectiveHistoryEntry,
 } from "../../../domain/lessons/progress";
 import { loadPolicy } from "../../../policies/registry";
-import { lockTaskWithSession } from "../events";
+import { lockTaskWithSession, sealPostAnswerAudio } from "../events";
 import { discloseFeedbackEvent, requestHashOf } from "../attempt-shared";
 import { lessonSessionContextOf, type LessonSessionContext } from "./lesson-sessions";
 import { dictationFingerprint, dictationStateOf } from "./lesson-dictation";
@@ -975,6 +975,31 @@ export function revealsAnswer(feedback: FeedbackDto): boolean {
   return true;
 }
 
+/**
+ * Dokleja do feedbacku nagranie pełnego zdania zamrożone w kluczu zadania
+ * (tylko trening — kartkówka nie dostaje go w kluczu i nie ma feedbacku).
+ * Nagranie ujawnia rozwiązanie, więc towarzyszy wyłącznie feedbackowi, który
+ * je już pokazuje; oferta trenera precyzji i „Pomiń” (null) go nie dostają.
+ */
+export function withFeedbackSentenceAudio(feedback: FeedbackDto | null, key: LessonTaskAnswerKey): FeedbackDto | null {
+  if (feedback === null || key.feedbackAudioAssetId === undefined) return feedback;
+  if (feedback.kind === "lesson_precision_hint" || !revealsAnswer(feedback)) return feedback;
+  return { ...feedback, correctAudioAssetId: key.feedbackAudioAssetId };
+}
+
+/** Pieczęć odsłuchu zdania, gdy feedback niesie nagranie (po `discloseLessonFeedback`). */
+async function sealFeedbackSentenceAudio(
+  tx: Tx,
+  task: TaskRow,
+  itemId: string,
+  feedback: FeedbackDto | null,
+  receivedAt: Date,
+  now: Date,
+): Promise<void> {
+  if (feedback?.correctAudioAssetId === undefined) return;
+  await sealPostAnswerAudio(tx, { childId: task.childId, taskId: task.id, itemId, targetKey: keyOf(task).targetKey, receivedAt, now });
+}
+
 /** Zapis ekspozycji feedbacku lekcji przed odpowiedzią HTTP (jak słówka). */
 async function discloseLessonFeedback(
   tx: Tx,
@@ -1094,7 +1119,8 @@ async function finalizeLessonAttempt(
   const shortenOffer = !mockTest && valid.modality === "text" && taskState !== "issued"
     ? await offerShortenFollowUp(tx, services, { task, session, itemId, attemptId, childAnswer: valid.text, result, now: receivedAt })
     : null;
-  const feedback = mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback;
+  // Nagranie zdania doklejone PRZED zapisem — ponowny odczyt zwraca ten sam identyfikator.
+  const feedback = withFeedbackSentenceAudio(mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback, key);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -1107,6 +1133,7 @@ async function finalizeLessonAttempt(
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji (spec
   // client-reward-time); próba zostawia tylko ocenę i ekspozycje.
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt, start.feedbackPriorCount);
+  await sealFeedbackSentenceAudio(tx, task, itemId, feedback, receivedAt, receivedAt);
   return {
     attemptId,
     taskId: task.id,
@@ -1572,7 +1599,7 @@ async function finalizeGradedAttempt(
   const shortenOffer = !mockTest && taskState !== "issued"
     ? await offerShortenFollowUp(tx, services, { task, session: freshSession, itemId, attemptId, childAnswer: args.childAnswer, result, now: receivedAt })
     : null;
-  const feedback = mockTest ? null : shortenOffer ?? result.feedback;
+  const feedback = withFeedbackSentenceAudio(mockTest ? null : shortenOffer ?? result.feedback, key);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -1589,6 +1616,7 @@ async function finalizeGradedAttempt(
   // an unavailable grader changes mastery, not whether the child did the work.
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji.
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
+  await sealFeedbackSentenceAudio(tx, task, itemId, feedback, receivedAt, services.clock.now());
   return {
     attemptId,
     taskId: task.id,

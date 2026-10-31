@@ -42,7 +42,7 @@ import type {
   SkillGrade,
 } from "../../domain/types";
 import { loadPolicy } from "../../policies/registry";
-import { lockTaskWithSession, writeSealedEvent, contextOf } from "./events";
+import { lockTaskWithSession, writeSealedEvent, contextOf, sealPostAnswerAudio } from "./events";
 import { requestHashOf, discloseFeedbackEvent } from "./attempt-shared";
 import { submitLessonAttempt, readLessonAttempt } from "./lessons/lesson-attempts";
 import { readSkillHistories, skillHistoryKey } from "./skill-history";
@@ -396,26 +396,9 @@ async function finalizeAttemptRow(
     revision.targetLocale, knownCounts?.feedbackPriorCount,
   );
   // picture_recognition: zgoda na odsłuch poprawnego słowa (feedback) to
-  // ujawnienie rozwiązania — pieczęcimy audio_issued z ekspozycją celu w tej
-  // samej transakcji, przed zwrotem oceny w HTTP (arch §9.2). Odsłuch następuje
-  // PO odpowiedzi: czytniki liczą audio z occurredAt <= receivedAt jako wsparcie
-  // przed próbą, a w ścieżce świeżej próby `now` równa się receivedAt — stąd
-  // znacznik ściśle późniejszy (issue #187).
+  // ujawnienie rozwiązania — pieczęć audio_issued po odpowiedzi (issue #187).
   if (feedback?.correctAudioAssetId !== undefined) {
-    const disclosedAt = new Date(Math.max(now.getTime(), attempt.receivedAt.getTime() + 1));
-    const prior = await tx
-      .select({ id: learningEvents.id })
-      .from(learningEvents)
-      .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
-    await writeSealedEvent(tx, {
-      childId: session.childId,
-      taskId: task.id,
-      itemId,
-      kind: "audio_issued",
-      stepId: `${task.id}:d${prior.length + 1}`,
-      occurredAt: disclosedAt,
-      exposures: [targetKey],
-    });
+    await sealPostAnswerAudio(tx, { childId: session.childId, taskId: task.id, itemId, targetKey, receivedAt: attempt.receivedAt, now });
   }
   if (session.mode === "mock_test") {
     await writeSealedEvent(tx, {
