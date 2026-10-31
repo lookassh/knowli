@@ -43,7 +43,9 @@ export function MicrophoneSettingsButton({
     const top = Math.max(viewportTop + inset("--kid-safe-top"), Math.min(buttonRect.bottom + 8 * zoom, viewportTop + viewport.height - panelRect.height - inset("--kid-safe-bottom")));
     const panelZoom = cssZoomOf(panel);
     setPanelPosition({ position: "fixed", left: left / panelZoom, top: top / panelZoom });
-  }, [viewport.width, viewport.height, viewport.offsetTop]);
+    // The zoom is read from the DOM, but viewport.scale re-runs the placement when only the scale changes
+    // (e.g. the pointer type changes while the window keeps its size).
+  }, [viewport.width, viewport.height, viewport.offsetTop, viewport.scale]);
 
   useLayoutEffect(() => {
     if (!opened) return;

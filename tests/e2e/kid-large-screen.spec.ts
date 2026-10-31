@@ -559,7 +559,8 @@ test("microphone panel opens under its button", async ({ page }) => {
   const panelBox = (await panel.boundingBox())!;
   const details = JSON.stringify({ buttonBox, panelBox });
   const buttonBottom = buttonBox.y + buttonBox.height;
-  expect(panelBox.y, `panel below the button: ${details}`).toBeGreaterThanOrEqual(buttonBottom);
+  // The 8 px gap is an inner length, so it is 8 x 1.6 on screen: an unscaled 8 px gap fails the lower bound.
+  expect(panelBox.y, `panel below the button by the scaled gap: ${details}`).toBeGreaterThanOrEqual(buttonBottom + 8 * ULTRAWIDE_SCALE - 2);
   expect(panelBox.y, `panel right below the button: ${details}`).toBeLessThanOrEqual(buttonBottom + 8 * ULTRAWIDE_SCALE + 2);
   // The 280 px panel fits the window, so it starts at the button's left edge.
   expect(Math.abs(panelBox.x - buttonBox.x), `panel aligned with the button: ${details}`).toBeLessThanOrEqual(2);
