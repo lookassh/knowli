@@ -256,7 +256,7 @@ export function lessonSessionContextOf(session: { context: Record<string, unknow
 export async function loadExercises(
   tx: Executor,
   deckVersionId: string,
-  options: { questionAudio?: boolean } = {},
+  options: { questionAudio?: boolean; feedbackAudio?: boolean } = {},
 ): Promise<LoadedExercise[]> {
   const revisions = await tx
     .select({ id: itemRevisions.id, itemId: itemRevisions.itemId, position: itemRevisions.position, payload: itemRevisions.payload, targetKey: itemRevisions.targetKey })
@@ -309,6 +309,27 @@ export async function loadExercises(
     if (!promptAudioByRevision.has(row.itemRevisionId)) promptAudioByRevision.set(row.itemRevisionId, row.assetId);
   }
 
+  // Nagranie pełnego zdania feedbacku: rozwiązywane jak `prompt_audio`.
+  const feedbackAudioRows = revisionIds.length && options.feedbackAudio !== false
+    ? await tx
+        .select({ itemRevisionId: revisionAssets.itemRevisionId, assetId: mediaAssets.id })
+        .from(revisionAssets)
+        .innerJoin(mediaAssets, eq(mediaAssets.fingerprint, revisionAssets.expectedFingerprint))
+        .where(
+          and(
+            inArray(revisionAssets.itemRevisionId, revisionIds),
+            eq(revisionAssets.role, "feedback_audio"),
+            eq(mediaAssets.kind, "tts"),
+            eq(mediaAssets.state, "ready"),
+          ),
+        )
+        .orderBy(desc(mediaAssets.generationNumber))
+    : [];
+  const feedbackAudioByRevision = new Map<string, string>();
+  for (const row of feedbackAudioRows) {
+    if (!feedbackAudioByRevision.has(row.itemRevisionId)) feedbackAudioByRevision.set(row.itemRevisionId, row.assetId);
+  }
+
   return revisions.map((r) => ({
     revisionId: r.id,
     itemId: r.itemId,
@@ -317,6 +338,7 @@ export async function loadExercises(
     targetKey: r.targetKey,
     audioAssetId: audioByRevision.get(r.id) ?? null,
     questionAudioAssetId: promptAudioByRevision.get(r.id) ?? null,
+    feedbackAudioAssetId: feedbackAudioByRevision.get(r.id) ?? null,
   }));
 }
 
@@ -827,7 +849,7 @@ export async function lessonDeckListValues(
   const context = lessonContextOf(version);
   const { topic } = requireTopic(services, context);
   // Lista zestawów liczy tylko postęp — nagrania pytań są zbędne.
-  const exercises = await loadExercises(exec, args.deckVersionId, { questionAudio: false });
+  const exercises = await loadExercises(exec, args.deckVersionId, { questionAudio: false, feedbackAudio: false });
   const objectiveOrder = topic.objectives.map((o) => o.id).filter((id) => context.objectiveIds.includes(id));
 
   // Postęp celów: tylko cele z ćwiczeniami w puli liczą się do rekomendacji

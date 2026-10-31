@@ -99,6 +99,8 @@ interface LessonTaskAnswerKey extends LessonAnswerKey {
   targetKey: string;
   independentCheck?: boolean;
   reason?: string;
+  /** Zamrożone przy wydaniu zadania nagranie pełnego zdania (feedback po odpowiedzi); tylko trening. */
+  feedbackAudioAssetId?: string;
   optionValues?: Record<string, string>;
   itemValues?: Record<string, string>;
   segmentValues?: Record<string, string>;
