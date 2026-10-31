@@ -3,10 +3,13 @@ import type { LessonPoolInput } from "../../ports/ai";
 
 const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
 
-/** Strict-mode pole tonu lektora: nullable enum z kontraktu (`null` = styl roli). */
-export const voiceToneProperty = (): Record<string, unknown> => ({
+/**
+ * Strict-mode pole tonu lektora: nullable enum z kontraktu (`null` = styl roli).
+ * `whisper: false` (ćwiczenia) pomija `mysterious` — pytania nie są szeptane (spec tonu TTS §4.3).
+ */
+export const voiceToneProperty = ({ whisper = true }: { whisper?: boolean } = {}): Record<string, unknown> => ({
   type: ["null", "string"],
-  enum: [null, ...LessonVoiceToneSchema.options],
+  enum: [null, ...LessonVoiceToneSchema.options.filter((tone) => whisper || tone !== "mysterious")],
 });
 
 /** Dokłada wymagane pole `voiceTone` do gałęzi ćwiczenia (strict mode: pole także w `required`). */
@@ -14,7 +17,7 @@ function withVoiceTone(branch: Record<string, unknown>): Record<string, unknown>
   return {
     ...branch,
     required: [...(branch.required as string[]), "voiceTone"],
-    properties: { ...(branch.properties as Record<string, unknown>), voiceTone: voiceToneProperty() },
+    properties: { ...(branch.properties as Record<string, unknown>), voiceTone: voiceToneProperty({ whisper: false }) },
   };
 }
 

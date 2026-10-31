@@ -33,8 +33,9 @@ Decyzje właściciela:
    styl roli z etapu A.
 4. **Lista tonów B:** `cheerful` (radośnie), `curious` (z ciekawością),
    `gentle` (łagodnie), `mysterious` (tajemniczo, szept pierwszego zdania).
-5. **Szept tylko przy ≥ 2 zdaniach** tekstu nagrania; przy jednym zdaniu
-   serwer używa `curious` (§4.3).
+5. **Szept tylko w kartach i tylko przy ≥ 2 zdaniach** tekstu nagrania; przy
+   jednym zdaniu, a w pytaniu zawsze, serwer używa `curious` (§4.3; pytania
+   bez szeptu — decyzja właściciela 2026-10-31).
 6. **Ponowne nagranie:** polecenie serwisowe dla komunikatów Kid UI (etap A)
    oraz odsłuch i przycisk „Nagraj ponownie” dla pytań i kart w edytorze
    lekcji (etap B).
@@ -186,7 +187,8 @@ barrel. Bez endpointu i UI.
 `scripts/sample-tts-styles.mts` (`pnpm eval:tts-styles -- --out <katalog>`):
 z prawdziwym kluczem i bieżącą konfiguracją generuje do katalogu spoza repo
 17 komunikatów, po jednym pytaniu i karcie w każdej roli, a w etapie B po
-jednej próbce każdego tonu (z jednym i dwoma zdaniami dla `mysterious`).
+jednej próbce każdego tonu (dla `mysterious` pytanie — bez szeptu — i karta;
+teksty w kształcie produkcyjnym: pytanie od polecenia, karta od tytułu).
 Nic nie trafia do bazy. W opisie PR: lista odsłuchanych plików i decyzja
 właściciela o brzmieniu.
 
@@ -297,8 +299,11 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 - **„Ton lektora”** (Mantine `NativeSelect`: Domyślny / Radośnie / Z ciekawością /
   Łagodnie / Tajemniczo) w edytorze ćwiczenia (`LessonExerciseCard`) i karty
   zagadnienia. „Domyślny” usuwa pole. Widoczny dla przedmiotów z
-  `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla
-  wszystkich kart; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
+  `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla ich
+  kart (przedmiot bez nagrań, np. „Angielski — rozdział”, nie ma pola, a serwer
+  odrzuca ton karty jak ton ćwiczenia). „Tajemniczo” tylko przy karcie — w
+  pytaniu, gdy ton jest już zapisany, pole go pokazuje, ale nagranie brzmi
+  `curious`; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
   (karta: „Ton działa, gdy karta ma nagranie.”). Panel nie liczy
   `questionReadText`/`cardReadText` — to funkcje serwera.
 - **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
@@ -323,8 +328,9 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   odpowiadają 202 z `{ assetId }`. Przypadki użycia w `materials/lessons/` wg §2.4,
   w transakcji z blokadą wersji; opublikowana wersja → `immutable`.
 - **Zmiana konfiguracji TTS:** nowa generacja kopiuje żądanie (provider, model,
-  metadane) najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne z
-  bieżącą konfiguracją. Dlatego procedury najpierw, w tej samej transakcji,
+  metadane) najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne ze swoim
+  providerem i modelem (po zmianie samego głosu lub stylu wykona stare
+  zlecenie — z jego, starą instrukcją). Dlatego procedury najpierw, w tej samej transakcji,
   uzgadniają media szkicu jak zapis (`reconcileDraftAssetsTx`). Gdy od
   ostatniego zapisu zmieniła się konfiguracja (provider, model, głos, styl),
   wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie (nowe zlecenie
@@ -332,7 +338,8 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   zasobowi; kolejnej generacji nie zlecamy. Uzgodnienie obejmuje cały szkic, jak
   zapis, więc przenosi do bieżącej konfiguracji wszystkie jego pytania i karty
   (płatne nagrania). Dlatego „Nagraj ponownie” jest też przy `pending`: zlecenie
-  starej konfiguracji worker pomija, a przycisk przenosi je do bieżącej. Rodzic nie musi niczego
+  innego providera lub modelu worker pomija, a przycisk przenosi je do bieżącej
+  konfiguracji. Rodzic nie musi niczego
   zapisywać (zapis czystego szkicu i tak nic nie wysyła). Brak ustawień
   mediów → `internal`.
 - **Błąd „Nagraj ponownie”** znika, gdy zmieni się stan nagrania (zapis
@@ -403,7 +410,7 @@ Etap B:
   schematy strict generatora z nullable enum we wszystkich gałęziach poza
   `lesson_calculation`; bez pola przy `voiceTones: false`.
 - Domena: sanityzacja nieznanego tonu; gramatyka odrzuca pole; reguła szeptu
-  (1 zdanie → `curious`, 2 zdania → `mysterious`).
+  (1 zdanie → `curious`, 2 zdania → `mysterious`; pytanie zawsze `curious`).
 - Edytor (jednostkowe stanu): round-trip DTO → forma → patch zachowuje
   `voiceTone` w ćwiczeniu i karcie; „Domyślny” usuwa pole; zmiana tonu
   wykrywana przez `lessonExerciseChanged`.

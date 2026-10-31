@@ -7,8 +7,9 @@
  *
  * Generuje z bieżącą konfiguracją (.env: UMIEM_TTS_*, w tym UMIEM_TTS_STYLE) 17 komunikatów Kid UI, po jednym
  * przykładowym pytaniu i karcie lekcji (stałe teksty poniżej) oraz próbki tonów lekcji (etap B): po jednej na ton,
- * a dla `mysterious` dwie — z tekstem jednozdaniowym (reguła szeptu zamienia go na `curious`) i dwuzdaniowym
- * „Czy wiesz, że…” (zostaje `mysterious`). Zapisuje `<styl>-<klucz>.wav|mp3` oraz `index.txt`
+ * a dla `mysterious` dwie — pytanie (pytania nie są szeptane: `curious`) i karta „Czy wiesz, że…” (szept
+ * pierwszego zdania, czyli tytułu). Teksty tonów mają kształt produkcyjnego tekstu nagrania: pytanie zaczyna
+ * się od polecenia, karta od tytułu. Zapisuje `<styl>-<klucz>.wav|mp3` oraz `index.txt`
  * (plik, rola lub ton, styl efektywny, głos, tekst, instrukcja). Bez `UMIEM_TTS_STYLE=instructions` odmawia (próbki bez stylu nie mają sensu
  * do odsłuchu stylów); `--allow-none` pozwala wygenerować je mimo to (np. sanity pipeline'u). Narzędzie próby: nie dotyka bazy ani mediów aplikacji, a katalog wyjściowy
  * musi leżeć poza repozytorium (próbki nie są częścią kodu). Do usługi TTS trafiają wyłącznie stałe teksty
@@ -44,15 +45,15 @@ const TONE_SAMPLES: Record<
   LessonVoiceTone,
   { role: "lesson_question" | "lesson_card"; key: string; text: string }[]
 > = {
-  cheerful: [{ role: "lesson_question", key: "pytanie", text: "Który owoc ma pestki na zewnątrz? Zgadnij!" }],
-  curious: [{ role: "lesson_question", key: "pytanie", text: "Jak myślisz, dlaczego niebo jest niebieskie?" }],
-  gentle: [{ role: "lesson_card", key: "karta", text: "Czasem się boimy. To zupełnie normalne, a strach mija." }],
+  cheerful: [{ role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym słowem. Który owoc ma pestki na zewnątrz?" }],
+  curious: [{ role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym zdaniem. Jak myślisz, dlaczego niebo jest niebieskie?" }],
+  gentle: [{ role: "lesson_card", key: "karta", text: "Strach. Czasem się boimy. To zupełnie normalne, a strach mija." }],
   mysterious: [
-    { role: "lesson_card", key: "jedno-zdanie", text: "Czy wiesz, że liście oddychają?" },
+    { role: "lesson_question", key: "pytanie", text: "Odpowiedz jednym zdaniem. Co robią liście nocą?" },
     {
       role: "lesson_card",
-      key: "dwa-zdania",
-      text: "Czy wiesz, że drzewa rozmawiają ze sobą? Robią to pod ziemią, przez cieniutkie korzenie.",
+      key: "karta",
+      text: "Ciekawostka. Czy wiesz, że drzewa rozmawiają ze sobą? Robią to pod ziemią, przez cieniutkie korzenie.",
     },
   ],
 };

@@ -84,10 +84,15 @@ function systemPrompt(input: LlmGenerateDeckInput): string {
   ].join(" ");
 }
 
-/** Reguła doboru tonu lektora (spec TTS §4.3); tylko dla przedmiotów z `ttsForPrompts`. */
-const VOICE_TONE_RULE =
-  "voiceTone: choose only when it clearly fits; usually null. `mysterious` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences; " +
+/**
+ * Reguła doboru tonu lektora (spec TTS §4.3); tylko dla przedmiotów z `ttsForPrompts`.
+ * `mysterious` (szept) tylko w kartach — pytania nie są szeptane, więc ćwiczenia go nie dostają.
+ */
+const VOICE_TONE_BASE_RULE =
+  "voiceTone: choose only when it clearly fits; usually null. " +
   "`cheerful` for fun facts or playful examples; `gentle` for sensitive or difficult content; `curious` for questions that invite the child to think.";
+const VOICE_TONE_RULE =
+  `${VOICE_TONE_BASE_RULE} \`mysterious\` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences.`;
 
 /**
  * Jawny przydział etapu samodzielnego, gdy przedmiot wymaga różnych pytań
@@ -268,7 +273,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
   }
   if (input.voiceTones === true) {
-    parts.push(`${VOICE_TONE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits); never \`mysterious\` for exercises (questions are never whispered).`);
+    parts.push(`${VOICE_TONE_BASE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits).`);
   }
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +

@@ -58,8 +58,8 @@ export type PromptAudioTarget =
  * Przy `pending` i `failed` „Posłuchaj poprzedniego” odtwarza ujęcie, które
  * słyszy dziecko, gdy takie jest. „Nagraj ponownie” jest w każdym stanie: przy
  * `pending` serwer zwraca trwające nagranie, chyba że zmieniła się konfiguracja
- * lektora — wtedy przenosi je do bieżącej (zlecenie starej konfiguracji worker
- * pomija, więc bez tego „Nagrywanie…” trwałoby bez końca). Nowe nagranie tylko w szkicu i bez
+ * lektora — wtedy przenosi je do bieżącej (zlecenie innego providera lub modelu
+ * worker pomija, więc bez tego „Nagrywanie…” trwałoby bez końca). Nowe nagranie tylko w szkicu i bez
  * niezapisanych zmian (`locked`) — serwer generuje je z zapisanego tekstu
  * i tonu. Po sukcesie odświeżamy odczyt lekcji; dopóki nagranie jest
  * `pending`, edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…”

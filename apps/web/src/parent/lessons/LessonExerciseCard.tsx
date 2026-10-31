@@ -83,7 +83,8 @@ interface LessonExerciseCardProps {
 function sameCardProps(prev: LessonExerciseCardProps, next: LessonExerciseCardProps): boolean {
   if (prev.calculation !== null || next.calculation !== null) return false;
   if (prev.audio?.state !== next.audio?.state || prev.audio?.assetId !== next.audio?.assetId) return false;
-  if (prev.promptAudio?.state !== next.promptAudio?.state || prev.promptAudio?.assetId !== next.promptAudio?.assetId) return false;
+  if (prev.promptAudio?.state !== next.promptAudio?.state || prev.promptAudio?.assetId !== next.promptAudio?.assetId
+    || prev.promptAudio?.previousAssetId !== next.promptAudio?.previousAssetId) return false;
   return (Object.keys(next) as (keyof LessonExerciseCardProps)[])
     .every((key) => key === "audio" || key === "promptAudio" || key === "calculation" || Object.is(prev[key], next[key]));
 }

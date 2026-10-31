@@ -319,6 +319,16 @@ describe("„Posłuchaj pytania” — stan nagrania w szkicu rodzica (spec tonu
     await markReady(row!.assetId);
     expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
 
+    // Generacja anulowana przez workera (run „superseded”, np. tekst zmieniono przed nagraniem)
+    // nie jest nieudanym nagraniem: panel dalej widzi gotowe ujęcie.
+    const cancelled = await addGeneration(row!.assetId, "failed");
+    await pool.query(
+      `insert into learning_app.generation_runs (id, asset_id, kind, dedupe_key, state, input)
+       values ($1, $2, 'tts', $3, 'superseded', '{}'::jsonb)`,
+      [randomUUID(), cancelled, `asset:${cancelled}`],
+    );
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
+
     // Nowsza nieudana generacja tego samego tekstu: stan „failed”, a starsze gotowe ujęcie
     // (słyszy je dziecko) zostaje do odsłuchu.
     await addGeneration(row!.assetId, "failed");

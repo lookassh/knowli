@@ -456,8 +456,8 @@ describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
     const on = bodyAt(fetchMock, 0);
     const off = bodyAt(fetchMock, 1);
     expect(systemOf(on)).toContain(RULE);
-    expect(systemOf(on)).toContain("curiosities/riddles such as »Czy wiesz, że…« with at least two sentences");
-    expect(systemOf(on)).toContain("never `mysterious` for exercises");
+    // Pytania nie są szeptane: reguła ćwiczeń w ogóle nie wspomina `mysterious`.
+    expect(systemOf(on)).not.toContain("mysterious");
     expect(on.response_format.json_schema.schema.properties.exercises.items.required).toContain("voiceTone");
     expect(systemOf(off)).not.toContain("voiceTone");
     expect(JSON.stringify(off.response_format.json_schema.schema)).not.toContain("voiceTone");
@@ -475,6 +475,7 @@ describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
     expect(card.required).toEqual(["title", "body", "voiceTone"]);
     expect(card.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle", "mysterious"] });
     expect(systemOf(on)).toContain(RULE);
+    expect(systemOf(on)).toContain("curiosities/riddles such as »Czy wiesz, że…« with at least two sentences");
     expect(systemOf(off)).not.toContain("voiceTone");
     expect(JSON.stringify(off.response_format.json_schema.schema)).not.toContain("voiceTone");
   });

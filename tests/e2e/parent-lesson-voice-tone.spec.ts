@@ -56,8 +56,8 @@ interface Calls {
   markCardPending: () => void;
 }
 
-async function openLesson(page: Page, options: { cardRegenerateFails?: boolean } = {}): Promise<Calls> {
-  let current: typeof draft = draft;
+async function openLesson(page: Page, options: { cardRegenerateFails?: boolean; subjectId?: string } = {}): Promise<Calls> {
+  let current: typeof draft = options.subjectId ? { ...draft, subjectId: options.subjectId } : draft;
   const calls: Calls = {
     requests: [],
     markCardPending: () => {
@@ -97,6 +97,8 @@ async function openLesson(page: Page, options: { cardRegenerateFails?: boolean }
     }
     return route.fulfill({ json: [] });
   });
+  // Spec w partycji mocked: odsłuch (`new Audio`) nie może sięgać do prawdziwego serwera mediów.
+  await page.route("**/api/v1/media/**", (route) => route.fulfill({ status: 200, contentType: "audio/mpeg", body: "" }));
   await page.goto(`/parent/decks/${deckId}`);
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId(`examples-${OBJ}`)).toBeVisible();
@@ -200,6 +202,13 @@ test("błąd „Nagraj ponownie” karty znika, gdy zmieni się stan nagrania", 
   calls.markCardPending();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-pending`)).toBeVisible();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toHaveCount(0);
+});
+
+test("przedmiot bez nagrań (rozdział angielskiego): karty bez pola „Ton lektora”", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLesson(page, { subjectId: "english_chapter" });
+  await expect(page.getByTestId(`dynamic-card-title-${OBJ}-0`)).toBeVisible();
+  await expect(page.getByTestId(`dynamic-card-voice-tone-${OBJ}-0`)).toHaveCount(0);
 });
 
 test("telefon 320 px: ton i sterowanie nagraniami bez przepełnienia poziomego", async ({ page }) => {

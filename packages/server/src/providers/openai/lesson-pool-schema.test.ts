@@ -159,8 +159,9 @@ describe("lessonPoolJsonSchema — ton lektora (stage B)", () => {
     objectives: [{ ...input.objectives[0]!, exerciseTypes: allTypes }],
   };
 
-  it("voiceToneProperty is a nullable strict enum of the contract tones", () => {
+  it("voiceToneProperty is a nullable strict enum of the contract tones; without whisper there is no mysterious", () => {
     expect(voiceToneProperty()).toEqual({ type: ["null", "string"], enum: tones });
+    expect(voiceToneProperty({ whisper: false })).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
   });
 
   it("adds a required nullable voiceTone to every branch except calculation when voiceTones is true", () => {
@@ -174,7 +175,8 @@ describe("lessonPoolJsonSchema — ton lektora (stage B)", () => {
         expect(branch.required).not.toContain("voiceTone");
         continue;
       }
-      expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: tones });
+      // Pytania nie są szeptane: ćwiczenia nie dostają `mysterious`.
+      expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
       expect(branch.required).toContain("voiceTone");
       expect(branch.required.sort()).toEqual(Object.keys(branch.properties).sort());
     }

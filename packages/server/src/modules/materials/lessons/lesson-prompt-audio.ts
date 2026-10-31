@@ -42,6 +42,11 @@ function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[
   return groups;
 }
 
+// Generacja anulowana przez workera (zlecenie bez odniesień, np. tekst zmieniono przed
+// nagraniem: zasób `failed`, run `superseded`) nie jest próbą nagrania, więc jej nie liczymy —
+// inaczej panel pokazałby „Nie udało się nagrać”.
+const notCancelled = sql`not exists (select 1 from ${generationRuns} where ${generationRuns.assetId} = ${mediaAssets.id} and ${generationRuns.state} = 'superseded')`;
+
 /**
  * Stan nagrań wersji lekcji: pytania per rewizja i karty w kolejności zagadnień
  * tematu. Wiersz bez żadnej generacji swojego fingerprintu (albo brak wiersza)
@@ -57,7 +62,7 @@ export async function readLessonAudioStates(
     .from(revisionAssets)
     .innerJoin(itemRevisions, eq(itemRevisions.id, revisionAssets.itemRevisionId))
     .innerJoin(mediaAssets, eq(mediaAssets.fingerprint, revisionAssets.expectedFingerprint))
-    .where(and(eq(itemRevisions.deckVersionId, versionId), eq(revisionAssets.role, "prompt_audio"), eq(mediaAssets.kind, "tts")))
+    .where(and(eq(itemRevisions.deckVersionId, versionId), eq(revisionAssets.role, "prompt_audio"), eq(mediaAssets.kind, "tts"), notCancelled))
     .orderBy(desc(mediaAssets.generationNumber));
   const prompts = new Map<string, LessonPromptAudioDto>();
   for (const [itemRevisionId, generations] of groupBy(promptRows, (row) => row.itemRevisionId)) {
@@ -68,7 +73,7 @@ export async function readLessonAudioStates(
     .select({ objectiveId: lessonCardAssets.objectiveId, cardIndex: lessonCardAssets.cardIndex, id: mediaAssets.id, state: mediaAssets.state })
     .from(lessonCardAssets)
     .innerJoin(mediaAssets, eq(mediaAssets.fingerprint, lessonCardAssets.expectedFingerprint))
-    .where(and(eq(lessonCardAssets.deckVersionId, versionId), eq(mediaAssets.kind, "tts")))
+    .where(and(eq(lessonCardAssets.deckVersionId, versionId), eq(mediaAssets.kind, "tts"), notCancelled))
     .orderBy(desc(mediaAssets.generationNumber));
   const cardsByKey = new Map<string, LessonCardAudioDto>();
   for (const [key, generations] of groupBy(cardRows, (row) => `${row.cardIndex}:${row.objectiveId}`)) {

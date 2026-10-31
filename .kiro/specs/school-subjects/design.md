@@ -181,7 +181,8 @@ generator (zwykle `null`) albo rodzic w edytorze; brak pola = styl domyślny rol
 (`lesson_question` / `lesson_card`). Pole służy tylko nagraniu pytania lub karty:
 nie trafia do Kid DTO, nie wchodzi do kryteriów ani `payload_version` i nie tworzy
 nowej `skill_version`, więc nie resetuje postępu. Reguła szeptu: `mysterious` przy
-tekście nagrania krótszym niż dwa zdania daje efektywnie `curious`. Szczegóły:
+tekście nagrania krótszym niż dwa zdania, a w pytaniu zawsze, daje efektywnie
+`curious` (pytania nie są szeptane; „Tajemniczo” w edytorze tylko przy karcie). Szczegóły:
 `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md` §4 oraz §11 i §12 niżej.
 
 Pokrycie minimalne publikacji na zagadnienie (do potwierdzenia na pilotażu):

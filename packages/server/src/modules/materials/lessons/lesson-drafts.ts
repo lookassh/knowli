@@ -466,10 +466,13 @@ function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
 /**
  * Ton lektora ma sens tylko dla przedmiotu z nagraniami pytań (`ttsForPrompts`).
  * Luźny dostawca mógłby go dopisać do ćwiczeń innego przedmiotu — wtedy pole
- * jest po prostu odrzucane, a ćwiczenie nie przepada na walidacji puli.
+ * jest po prostu odrzucane, a ćwiczenie nie przepada na walidacji puli. Tylko
+ * wyjście modelu: rodzic może zapisać dowolny ton z kontraktu.
  */
 export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subject: Pick<SubjectModule, "ttsForPrompts">): LessonExerciseDraft {
-  if (subject.ttsForPrompts === true || draft.voiceTone === undefined) return draft;
+  // `mysterious` w ćwiczeniu z modelu też odpada: pytania nie są szeptane (spec tonu TTS §4.3),
+  // a edytor pokazałby „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
+  if (draft.voiceTone === undefined || (subject.ttsForPrompts === true && draft.voiceTone !== "mysterious")) return draft;
   const { voiceTone: _dropped, ...rest } = draft;
   return rest;
 }

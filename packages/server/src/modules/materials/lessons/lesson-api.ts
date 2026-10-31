@@ -658,6 +658,10 @@ export async function editLessonDraft(
         if (!currentById.has(objective.id)) {
           throw new AppError("validation", { message: `unknown dynamic objective: ${objective.id}` });
         }
+        // Ton lektora karty ma skutek tylko w przedmiocie z nagraniami (jak ton ćwiczenia w walidacji puli).
+        if (!subject.ttsForPrompts && objective.cards.some((card) => card.voiceTone !== undefined)) {
+          throw new AppError("validation", { message: `voiceTone requires a subject with recorded prompts: ${objective.id}` });
+        }
       }
       nextDynamicTopic = {
         titlePl: context.dynamicTopic.titlePl,
