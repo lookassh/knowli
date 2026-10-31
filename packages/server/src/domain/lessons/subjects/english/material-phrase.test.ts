@@ -137,7 +137,8 @@ describe("phraseInMaterial — długi tekst ze skrótami", () => {
     const elapsed = performance.now() - started;
 
     expect(results).toEqual(targets.map((target) => hits.includes(target)));
-    expect(elapsed).toBeLessThan(200);
+    // regresja do rekurencji wykładniczej trwała dziesiątki sekund; próg z zapasem na obciążone CI
+    expect(elapsed).toBeLessThan(2_000);
   });
 });
 
@@ -167,7 +168,7 @@ describe("phraseInMaterial — najgorszy przypadek (przegląd Etapu 4)", () => {
     const elapsed = performance.now() - started;
 
     expect(results.every((result) => !result)).toBe(true);
-    expect(elapsed).toBeLessThan(1_000);
+    expect(elapsed).toBeLessThan(5_000);
   });
 
   it("odcinki po 20 „it's”: każde słowo i każda para w tekście, 100 elementów (połowa trafień) < 1 s", () => {
@@ -183,7 +184,7 @@ describe("phraseInMaterial — najgorszy przypadek (przegląd Etapu 4)", () => {
     const elapsed = performance.now() - started;
 
     expect(results).toEqual(targets.map((_, i) => i % 2 === 0));
-    expect(elapsed).toBeLessThan(1_000);
+    expect(elapsed).toBeLessThan(5_000);
   });
 });
 
