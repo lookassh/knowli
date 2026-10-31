@@ -108,10 +108,17 @@ test("600 px z klasycznym paskiem przewijania: pięć zakładek nadal mieści si
  * Fonty CI (Linux) są szersze niż lokalne (Windows). Szerszy zamiennik plus rozstrzelenie liter
  * symuluje te metryki lokalnie i niezależnie od zainstalowanych fontów (samo rozstrzelenie
  * gwarantuje, że tekst jest szerszy także tam, gdzie „DejaVu Sans” i „Verdana” nie istnieją).
- * Zwraca stosunek szerokości etykiety „Karta pracy” po symulacji do szerokości przed nią.
+ * Zwraca stosunek naturalnej szerokości tekstu etykiety „Karta pracy” po symulacji do szerokości przed nią.
  */
 async function simulateWideFonts(page: Page): Promise<number> {
-  const width = () => page.getByTestId("tab-work-card").locator(".pp-shell-label").evaluate((label) => label.getBoundingClientRect().width);
+  // Naturalna szerokość tekstu (zakres obejmujący zawartość), a nie pudełka etykiety: etykieta ma
+  // `overflow: hidden` i `text-overflow: ellipsis` w elemencie o stałej szerokości, więc jej pudełko
+  // jest przycięte i na CI (gdzie „DejaVu Sans” już jest aktywny) stosunek wynosiłby dokładnie 1.
+  const width = () => page.getByTestId("tab-work-card").locator(".pp-shell-label").evaluate((label) => {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    return range.getBoundingClientRect().width;
+  });
   const before = await width();
   await page.addStyleTag({
     content: 'html, body, body * { font-family: "DejaVu Sans", Verdana, sans-serif !important; letter-spacing: 0.03em !important; }',
