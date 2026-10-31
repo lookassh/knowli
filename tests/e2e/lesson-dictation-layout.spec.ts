@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { AttemptDto, DictationDto, TaskDto } from "@learning/contracts";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { expectFrameFillsViewport } from "./helpers/kid-frame";
 
 /**
  * Dyktowanie odpowiedzi otwartej w interfejsie dziecka (Etap 3 przedmiotów
@@ -175,7 +176,7 @@ interface Target { testId: string; minHeight?: number }
 
 async function expectReachable(page: Page, viewport: { width: number; height: number }, targets: readonly Target[]): Promise<void> {
   const label = `${viewport.width}x${viewport.height}`;
-  await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+  await expectFrameFillsViewport(page, viewport);
   const frame = (await page.getByTestId("kid-session-frame").boundingBox())!;
   const material = (await page.getByTestId("kid-material").boundingBox())!;
   expect(material.x, `material left at ${label}`).toBeGreaterThanOrEqual(frame.x - 1);

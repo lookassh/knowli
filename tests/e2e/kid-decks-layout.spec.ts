@@ -1,42 +1,9 @@
-import type { KidDeckDto } from "@learning/contracts";
-import { expect as baseExpect, test, type Page } from "@playwright/test";
-import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { expect as baseExpect, test } from "@playwright/test";
+import { makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
 import { expectBandSpansRoot, expectInsideRoot, resizeAndSettle } from "./helpers/kid-layout";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 test.use({ viewport: { width: 390, height: 844 } });
-
-const childId = "10000000-0000-4000-8000-000000000001";
-const sessionId = "10000000-0000-4000-8000-000000000003";
-
-function makeDeck(index: number, options: Partial<KidDeckDto> = {}): KidDeckDto {
-  return {
-    deckId: `10000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
-    title: `Angielski zestaw ${index + 1}`,
-    itemCount: 12,
-    independentlyRecalledCount: 3,
-    testDate: "2026-10-23",
-    recommended: index % 2 === 0,
-    mockTestAvailable: true,
-    activeSession: null,
-    ...options,
-  };
-}
-
-async function openDeckScreen(page: Page, decks: KidDeckDto[]) {
-  page.setDefaultTimeout(5_000);
-  await installKidUiFixture(page, {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" }],
-    decks,
-    session: { mode: "training", sessionId, childId, deckId: decks[0]?.deckId ?? makeDeck(0).deckId,
-      deckVersionId: "10000000-0000-4000-8000-000000000004", policyId: "default", microphoneEnabled: false,
-      state: "active", taskBudget: 1, tasksIssued: 0, assessedTasksIssued: 0,
-      startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
-    tasks: [],
-  });
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-}
 
 test("deck card actions address the same deck", async ({ page }) => {
   const decks = [makeDeck(0), makeDeck(1)];
@@ -206,7 +173,10 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
         }
       }
     }
-    // Karta rekomendowana nie dzieli się na kolumny: kolumna ekranu jest ograniczona do 560 px.
+    // Kolumna ekranu to --kid-column-max-width: 560 px, od 840 × 480 px 720 px (1440 × 900 nie jest skalowane). Lista kart jest
+    // jednokolumnowa niezależnie od szerokości, więc karty rekomendowane stoją jedna pod drugą w tej samej kolumnie.
+    const columnCap = viewport.width >= 840 && viewport.height >= 480 ? 720 : 560;
+    expect(Math.abs(layout.root.width - Math.min(columnCap, viewport.width)), `screen column is the token width: ${name}`).toBeLessThanOrEqual(1);
     expect(layout.cards[0]!.top, `recommended cards stack: ${name}`).toBeLessThan(layout.cards[1]!.top);
     expect(Math.abs(layout.cards[0]!.left - layout.cards[1]!.left), `recommended cards share a column: ${name}`).toBeLessThanOrEqual(1);
     if (viewport.width === 360 || viewport.width === 844) {

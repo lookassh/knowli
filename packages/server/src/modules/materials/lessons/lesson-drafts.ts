@@ -3,9 +3,11 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   LessonCommandSchema,
+  LessonVoiceToneSchema,
   MaterialLessonCommandSchema,
   SchoolLessonCommandSchema,
   type LessonCommand,
+  type LessonVoiceTone,
   type MaterialLessonCommand,
   type SchoolLessonCommand,
 } from "@learning/contracts";
@@ -544,9 +546,34 @@ export function buildPoolInput(
     graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
     deduplication: subject.poolDeduplication ?? "answer",
+    voiceTones: subject.ttsForPrompts === true,
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
+}
+
+/**
+ * Ton lektora z niezaufanego wyjścia modelu: nieznana wartość albo `null`
+ * znaczą „brak tonu” (styl domyślny roli), nigdy błąd ćwiczenia/karty.
+ */
+function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
+  const parsed = LessonVoiceToneSchema.safeParse(raw);
+  return parsed.success ? { voiceTone: parsed.data } : {};
+}
+
+/**
+ * Ton lektora ma sens tylko dla przedmiotu z nagraniami pytań (`ttsForPrompts`).
+ * Luźny dostawca mógłby go dopisać do ćwiczeń innego przedmiotu — wtedy pole
+ * jest po prostu odrzucane, a ćwiczenie nie przepada na walidacji puli. Tylko
+ * wyjście modelu: rodzic może zapisać dowolny ton z kontraktu.
+ */
+export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subject: Pick<SubjectModule, "ttsForPrompts">): LessonExerciseDraft {
+  if (draft.voiceTone === undefined) return draft;
+  // `mysterious` w ćwiczeniu z modelu → `curious`, jak brzmi nagranie (pytania nie są szeptane,
+  // spec tonu TTS §4.3) — edytor nie pokaże „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
+  if (subject.ttsForPrompts === true) return draft.voiceTone === "mysterious" ? { ...draft, voiceTone: "curious" } : draft;
+  const { voiceTone: _dropped, ...rest } = draft;
+  return rest;
 }
 
 const rawObjectiveSchema = z
@@ -595,6 +622,7 @@ export function buildDynamicTopicData(
   deckId: string,
   topicTitle: string,
   validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+  allowVoiceTone = true,
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
   const used = new Set<string>();
@@ -614,6 +642,7 @@ export function buildDynamicTopicData(
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
+        ...(allowVoiceTone ? sanitizedVoiceTone(card.voiceTone) : {}),
       })),
       ...(kind === undefined ? {} : { kind }),
     };
@@ -900,6 +929,7 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
   }
   if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
   if (typeof r.familyId === "string") out.familyId = r.familyId;
+  Object.assign(out, sanitizedVoiceTone(r.voiceTone));
   if (Array.isArray(r.keywordOptions)) {
     out.keywordOptions = r.keywordOptions.filter(
       (el): el is { id: string; text: string } =>
@@ -998,6 +1028,7 @@ export function buildLessonPayload(
     ...(ex.commonErrors === undefined ? {} : { commonErrors: ex.commonErrors }),
     ...(ex.expectedForm === undefined ? {} : { expectedForm: ex.expectedForm }),
     ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
+    ...(ex.voiceTone === undefined ? {} : { voiceTone: ex.voiceTone }),
     ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
     ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     ...(ex.keywordOptions === undefined ? {} : { keywordOptions: ex.keywordOptions.map((option) => ({ id: option.id, text: option.text })) }),
@@ -1262,6 +1293,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
             material: input.material,
             ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
             generationRole: subject.prompts.generationRole,
+            voiceTones: subject.ttsForPrompts === true,
             ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
           },
           signal,
@@ -1270,7 +1302,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       await control.assertCurrent();
       const topicTitle = input.topicTitlePl ?? "";
       const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
-        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
+        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
       }
@@ -1367,6 +1399,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
+      .map((draft) => withoutVoiceToneUnlessAllowed(draft, subject))
       .map(withoutEmptyOptionalArrays)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {

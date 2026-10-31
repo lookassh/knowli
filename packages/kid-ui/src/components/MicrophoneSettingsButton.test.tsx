@@ -73,7 +73,7 @@ describe("MicrophoneSettingsButton", () => {
       } as unknown as VisualViewport,
     });
     const renderSettings = (offsetTop: number) => (
-      <KidViewportProvider viewport={{ width: 360, height: 640, offsetTop, zoomed: false }}>
+      <KidViewportProvider viewport={{ width: 360, height: 640, offsetTop, zoomed: false, scale: 1 }}>
         <MicrophoneSettingsButton microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} />
       </KidViewportProvider>
     );

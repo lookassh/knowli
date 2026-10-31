@@ -1,4 +1,33 @@
-import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, createElement, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+
+// Measuring in a layout effect sets the scale before the first paint of a client-side mount. A full server-rendered
+// page load still paints the server markup (the loading screen) at scale 1 before hydration and then jumps to the
+// scale. On the server useLayoutEffect would only warn.
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+// Layout scale of a large window (spec 2026-10-30-kid-ui-large-screens §3.4): the child UI is designed
+// for an 840 x 900 window and grows proportionally, up to KID_SCALE_MAX, only where a fine pointer exists.
+export const KID_SCALE_REFERENCE_WIDTH = 840;
+export const KID_SCALE_REFERENCE_HEIGHT = 900;
+export const KID_SCALE_MAX = 1.6;
+// Phones and tablets stay at 1: the on-screen keyboard resizes the window and the scale would jump on every keystroke.
+export const KID_FINE_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
+
+export function computeKidLayoutScale({
+  width,
+  height,
+  finePointer,
+}: {
+  width: number;
+  height: number;
+  finePointer: boolean;
+}): number {
+  if (!finePointer || !Number.isFinite(width) || !Number.isFinite(height)) return 1;
+  const fit = Math.min(width / KID_SCALE_REFERENCE_WIDTH, height / KID_SCALE_REFERENCE_HEIGHT, KID_SCALE_MAX);
+  if (fit <= 1) return 1;
+  // Round down to 0.01 (the epsilon absorbs floating-point error, e.g. 949.2 / 840 = 1.13) so the inner window never drops below 840 x 900.
+  return Math.floor(fit * 100 + 1e-9) / 100;
+}
 
 export interface KidViewportMeasurement {
   height: number;
@@ -40,9 +69,10 @@ export interface KidViewport {
   height: number | null;
   offsetTop: number;
   zoomed: boolean;
+  scale: number;
 }
 
-const SERVER_VIEWPORT: KidViewport = { width: null, height: null, offsetTop: 0, zoomed: false };
+const SERVER_VIEWPORT: KidViewport = { width: null, height: null, offsetTop: 0, zoomed: false, scale: 1 };
 
 const KidViewportContext = createContext<KidViewport>(SERVER_VIEWPORT);
 
@@ -57,27 +87,35 @@ export function useKidPageViewport(): KidViewport {
 export function useKidViewport(): KidViewport {
   const [viewport, setViewport] = useState<KidViewport>(SERVER_VIEWPORT);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const visualViewport = window.visualViewport;
+    const finePointerQuery = typeof window.matchMedia === "function" ? window.matchMedia(KID_FINE_POINTER_QUERY) : null;
     const update = () => {
       setViewport({
         width: Number.isFinite(window.innerWidth) ? Math.max(0, window.innerWidth) : 0,
         ...computeKidViewport({
           innerHeight: window.innerHeight,
-          visualViewport: visualViewport === null ? null : {
+          visualViewport: visualViewport == null ? null : {
             height: visualViewport.height,
             offsetTop: visualViewport.offsetTop,
             scale: visualViewport.scale,
           },
         }),
+        scale: computeKidLayoutScale({
+          width: window.innerWidth,
+          height: window.innerHeight,
+          finePointer: finePointerQuery?.matches ?? false,
+        }),
       });
     };
     update();
     window.addEventListener("resize", update);
+    finePointerQuery?.addEventListener("change", update);
     visualViewport?.addEventListener("resize", update);
     visualViewport?.addEventListener("scroll", update);
     return () => {
       window.removeEventListener("resize", update);
+      finePointerQuery?.removeEventListener("change", update);
       visualViewport?.removeEventListener("resize", update);
       visualViewport?.removeEventListener("scroll", update);
     };

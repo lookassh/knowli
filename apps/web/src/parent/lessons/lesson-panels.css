@@ -147,6 +147,10 @@
   margin: -4px -6px 8px 0;
 }
 
+.pp-lesson-prompt-audio {
+  margin-bottom: 8px;
+}
+
 .pp-lesson-ex-num {
   flex: 1 1 auto;
   min-width: 0;
