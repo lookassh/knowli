@@ -89,8 +89,11 @@ async function supersedeDisabledLessonTts(services: Services, asset: typeof medi
       const subjectId = (reference.lessonContext as { subjectId?: string } | null)?.subjectId;
       const subject = typeof subjectId === "string" ? services.subjects.getSubject(subjectId) : undefined;
       if (reference.kind !== "lesson" || !subject) return false;
-      // Nagranie pytania zależy od `ttsForPrompts`, nagranie odpowiedzi od `ttsForAnswers`.
-      return reference.role === "prompt_audio" ? !subject.ttsForPrompts : !subject.ttsForAnswers;
+      // Nagranie pytania zależy od `ttsForPrompts`, zdania feedbacku od
+      // `ttsForFeedbackSentence`, nagranie odpowiedzi od `ttsForAnswers`.
+      if (reference.role === "prompt_audio") return !subject.ttsForPrompts;
+      if (reference.role === "feedback_audio") return !subject.ttsForFeedbackSentence;
+      return !subject.ttsForAnswers;
     })) return false;
     await tx.update(mediaAssets).set({ state: "failed", leaseToken: null, leaseUntil: null })
       .where(eq(mediaAssets.id, asset.id));

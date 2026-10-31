@@ -201,11 +201,9 @@ describe("generowanie puli lekcji (integracja)", () => {
     );
     expect(skills[0]!.count).toBe(revisions.length);
 
-    // Gramatyka nie zleca TTS odpowiedzi ani nie przypina zasobów audio.
-    const assets = await query<{ kind: string }>("select kind from learning_app.media_assets");
-    expect(assets).toEqual([]);
-    const roles = await query<{ role: string }>("select role from learning_app.revision_assets");
-    expect(roles).toEqual([]);
+    // Gramatyka nie zleca TTS odpowiedzi; przypina wyłącznie nagrania zdań feedbacku.
+    const roles = await query<{ role: string }>("select distinct role from learning_app.revision_assets");
+    expect(roles).toEqual([{ role: "feedback_audio" }]);
   });
 
   it("pełna generacja wielocelowa przekazuje bodźce wcześniejszych partii do deduplikacji ćwiczeń", async () => {

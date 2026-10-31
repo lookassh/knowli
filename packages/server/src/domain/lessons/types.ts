@@ -200,6 +200,12 @@ export interface SubjectModule {
   /** „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania (`pl-PL`) przy przygotowaniu materiału. */
   readonly ttsForPrompts: boolean;
   /**
+   * Odczyt pełnego, poprawnego zdania ćwiczenia po odpowiedzi dziecka (rola
+   * `feedback_audio`): nagranie powstaje przy przygotowaniu materiału. Osobne
+   * od `ttsForAnswers` (audio odpowiedzi przed odpowiedzią).
+   */
+  readonly ttsForFeedbackSentence: boolean;
+  /**
    * Odpowiedź mówiona (dyktowanie do pola, design szkoły §5): język nagrania
    * i typy ćwiczeń, które ją przyjmują. Brak = przedmiot bez mikrofonu.
    */

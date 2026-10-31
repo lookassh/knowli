@@ -41,4 +41,5 @@ export const englishGrammarSubject: SubjectModule = {
   // Gramatyka ćwiczy zastosowanie reguły; audio odpowiedzi ujawniałoby rozwiązanie.
   ttsForAnswers: false,
   ttsForPrompts: false,
+  ttsForFeedbackSentence: true,
 };

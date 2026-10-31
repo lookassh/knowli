@@ -282,8 +282,8 @@ async function readLessonDraftDto(
         }),
     examples: context.examples,
     exercises,
-    // Nagranie pytania nie jest zasobem do decyzji rodzica (design szkoły §11.2).
-    assets: assetRows.flatMap((a) => a.role === "prompt_audio" ? [] : [{
+    // Nagranie pytania i zdania feedbacku nie jest zasobem do decyzji rodzica (design szkoły §11.2).
+    assets: assetRows.flatMap((a) => a.role === "prompt_audio" || a.role === "feedback_audio" ? [] : [{
       itemRevisionId: a.itemRevisionId,
       role: a.role,
       state:
