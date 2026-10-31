@@ -49,7 +49,8 @@ export async function handleKidApi(request: Request, services: Services): Promis
  * (zadanie 13): dokładna kompozycja catch-all
  * `apps/web/src/app/api/v1/parent/[...path]/route.ts` — router oRPC obsługuje
  * cały kontrakt (auth/login-setup-logout, children/decks/drafts/mock-tests/
- * work-card/lekcje/werdykty/lesson-drafts/generation/assignments/progress),
+ * work-card/lekcje/werdykty/lesson-drafts/generation/assignments/progress/
+ * sources),
  * a brak dopasowania rzuca `not_found`. `segments` pozostają akceptowane
  * wyłącznie dla zapisu istniejących testów — dopasowanie oRPC chodzi po
  * pełnym URL żądania, więc są ignorowane.

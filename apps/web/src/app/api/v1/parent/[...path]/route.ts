@@ -35,7 +35,7 @@ const dispatch = withApi<RouteContext>(async (request, _context) => {
   throw new AppError("not_found");
 });
 
-/** Catch-all API rodzica — jedyny serwer /api/v1/parent: auth, dzieci, zestawy, lekcje i postępy. */
+/** Catch-all API rodzica — jedyny serwer /api/v1/parent: auth, dzieci, zestawy, lekcje, źródła i postępy. */
 export const GET = (request: Request, context: RouteContext): Promise<Response> =>
   dispatch(request, context);
 export const POST = (request: Request, context: RouteContext): Promise<Response> =>

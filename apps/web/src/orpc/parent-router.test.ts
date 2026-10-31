@@ -13,9 +13,11 @@ import {
   createLessonFromMaterial,
   createSchoolLesson,
   createLessonDraftFromPublished,
+  createSourceMaterial,
   decideLessonVerdict,
   deckIdOfLessonVersion,
   deleteChild,
+  deleteSourceMaterial,
   editDraft,
   editLessonDraft,
   enqueueDeckGeneration,
@@ -23,12 +25,14 @@ import {
   getMockTestReportForSession,
   getPronunciationSettings,
   getProgress,
+  getSourceMaterial,
   lessonCatalog,
   lessonObjectiveProgress,
   listChildren,
   listDecks,
   listMockTestReportsForDeck,
   listLessonVerdicts,
+  listSourceMaterials,
   loginParent,
   logoutParent,
   omitRevisionAsset,
@@ -51,6 +55,7 @@ import {
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
+  updateSourceMaterial,
   upsertAssignment,
   type Services,
 } from "@learning/server";
@@ -114,6 +119,11 @@ vi.mock("@learning/server", async (importActual) => {
     upsertAssignment: vi.fn(),
     removeAssignment: vi.fn(),
     readParentWorkCard: vi.fn(),
+    createSourceMaterial: vi.fn(),
+    updateSourceMaterial: vi.fn(),
+    deleteSourceMaterial: vi.fn(),
+    listSourceMaterials: vi.fn(),
+    getSourceMaterial: vi.fn(),
   };
 });
 
@@ -128,6 +138,8 @@ const sessionId = "33333333-3333-4333-8333-333333333333";
 const runId = "55555555-5555-4555-8555-555555555555";
 const verdictId = "22222222-2222-4222-8222-222222222222";
 const lessonDraftId = "12121212-1212-4121-8121-121212121212";
+const sourceId = "66666666-6666-4666-8666-666666666666";
+const sourceRequestId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const sessionCookie = { cookie: "parent_session=session-token" };
 
 const childDto = {
@@ -265,6 +277,27 @@ const generationDto = {
   attempts: 1,
   errorCode: null,
 };
+const sourceSummaryDto = {
+  id: sourceId,
+  title: "Rozdział 4: Pogoda",
+  revision: 2,
+  createdAt: instant,
+  updatedAt: instant,
+  deckCount: 1,
+};
+const sourceDto = {
+  ...sourceSummaryDto,
+  bodyRevision: 1,
+  body: "Fikcyjny tekst rozdziału o pogodzie.",
+  decks: [{
+    deckId,
+    title: "Lekcja ze źródła",
+    kind: "lesson" as const,
+    state: "draft" as const,
+    copiedRevision: 1,
+    stale: true,
+  }],
+};
 const progressDto = {
   childId,
   childName: "Ola",
@@ -360,6 +393,8 @@ describe("parent oRPC router — sesja rodzica", () => {
       ["lessons.verdicts", `/lessons/${deckId}/verdicts`, vi.mocked(listLessonVerdicts)],
       ["generation.get", `/generation/${runId}`, vi.mocked(readGeneration)],
       ["progress.get", `/progress?childId=${childId}&deckId=${deckId}`, vi.mocked(getProgress)],
+      ["sources.list", "/sources", vi.mocked(listSourceMaterials)],
+      ["sources.get", `/sources/${sourceId}`, vi.mocked(getSourceMaterial)],
     ];
 
     for (const [label, path, useCase] of reads) {
@@ -382,6 +417,23 @@ describe("parent oRPC router — sesja rodzica", () => {
 
     expect(response.status).toBe(401);
     expect(enqueueDeckGeneration).not.toHaveBeenCalled();
+  });
+
+  it("każda mutacja źródeł bez sesji pada na unauthorized/401 bez wywołania przypadków użycia", async () => {
+    vi.mocked(requireParent).mockRejectedValue(new AppError("unauthorized"));
+
+    const mutations: Array<[string, string, RequestInit, Mock]> = [
+      ["sources.create", "/sources", jsonInit({ clientRequestId: sourceRequestId, title: "Tytuł", body: "Treść" }), vi.mocked(createSourceMaterial)],
+      ["sources.update", `/sources/${sourceId}`, { ...jsonInit({ expectedRevision: 1, title: "Nowy" }), method: "PATCH" }, vi.mocked(updateSourceMaterial)],
+      ["sources.delete", `/sources/${sourceId}`, { method: "DELETE", headers: sessionCookie }, vi.mocked(deleteSourceMaterial)],
+    ];
+
+    for (const [label, path, init, useCase] of mutations) {
+      const response = await call(path, init);
+      expect(response.status, label).toBe(401);
+      expect(ApiErrorSchema.parse(await response.json()).code, label).toBe("unauthorized");
+      expect(useCase, label).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -1286,6 +1338,139 @@ describe("parent oRPC router — progress", () => {
   });
 });
 
+describe("parent oRPC router — sources", () => {
+  const createBody = { clientRequestId: sourceRequestId, title: "Rozdział 4: Pogoda", body: "Fikcyjny tekst rozdziału o pogodzie." };
+
+  function patchInit(body: unknown): RequestInit {
+    return { ...jsonInit(body), method: "PATCH" };
+  }
+
+  it("list zwraca streszczenia źródeł (200, bez no-store jak lista zestawów)", async () => {
+    vi.mocked(listSourceMaterials).mockResolvedValueOnce([sourceSummaryDto]);
+
+    const response = await call("/sources", { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+    await expect(response.json()).resolves.toEqual([sourceSummaryDto]);
+    expect(listSourceMaterials).toHaveBeenCalledWith(services);
+  });
+
+  it("get zwraca pełne źródło z tekstem i zestawami (200)", async () => {
+    vi.mocked(getSourceMaterial).mockResolvedValueOnce(sourceDto);
+
+    const response = await call(`/sources/${sourceId}`, { headers: sessionCookie });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(sourceDto);
+    expect(getSourceMaterial).toHaveBeenCalledWith(services, sourceId);
+  });
+
+  it("get z niepoprawnym identyfikatorem kończy się validation/400, a nieznane źródło not_found/404", async () => {
+    const malformed = await call("/sources/nie-uuid", { headers: sessionCookie });
+    expect(malformed.status).toBe(400);
+    expect(ApiErrorSchema.parse(await malformed.json()).code).toBe("validation");
+    expect(getSourceMaterial).not.toHaveBeenCalled();
+
+    vi.mocked(getSourceMaterial).mockRejectedValueOnce(new AppError("not_found"));
+    const missing = await call(`/sources/${sourceId}`, { headers: sessionCookie });
+    expect(missing.status).toBe(404);
+    expect(ApiErrorSchema.parse(await missing.json()).code).toBe("not_found");
+  });
+
+  it("create zwraca 201 {id} przy utworzeniu i 200 {id} przy ponowieniu (dynamiczny status)", async () => {
+    vi.mocked(createSourceMaterial)
+      .mockResolvedValueOnce({ id: sourceId, created: true })
+      .mockResolvedValueOnce({ id: sourceId, created: false });
+
+    const created = await call("/sources", jsonInit(createBody));
+    const retried = await call("/sources", jsonInit(createBody));
+
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toEqual({ id: sourceId });
+    expect(retried.status).toBe(200);
+    await expect(retried.json()).resolves.toEqual({ id: sourceId });
+    expect(createSourceMaterial).toHaveBeenCalledTimes(2);
+    expect(createSourceMaterial).toHaveBeenCalledWith(services, createBody);
+  });
+
+  it("create odrzuca niepoprawne ciało przed wywołaniem przypadku użycia (400 validation)", async () => {
+    const invalid = [
+      { ...createBody, clientRequestId: "nie-uuid" },
+      { ...createBody, title: "   " },
+      { ...createBody, title: "a".repeat(121) },
+      { ...createBody, body: " " },
+      { ...createBody, body: "a".repeat(16_001) },
+      { ...createBody, extra: true },
+      { title: "Bez identyfikatora", body: "Treść" },
+    ];
+
+    for (const body of invalid) {
+      const response = await call("/sources", jsonInit(body));
+      expect(response.status, JSON.stringify(body).slice(0, 80)).toBe(400);
+      expect(ApiErrorSchema.parse(await response.json()).code).toBe("validation");
+    }
+    expect(createSourceMaterial).not.toHaveBeenCalled();
+  });
+
+  it("create z tym samym identyfikatorem i inną treścią mapuje conflict na 409", async () => {
+    vi.mocked(createSourceMaterial).mockRejectedValueOnce(new AppError("conflict"));
+
+    const response = await call("/sources", jsonInit(createBody));
+
+    expect(response.status).toBe(409);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("conflict");
+  });
+
+  it("update numeruje źródło ścieżką i przekazuje patch z expectedRevision (200)", async () => {
+    vi.mocked(updateSourceMaterial).mockResolvedValueOnce(sourceDto);
+    const patch = { expectedRevision: 1, title: "Nowy tytuł" };
+
+    const response = await call(`/sources/${sourceId}`, patchInit(patch));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(sourceDto);
+    expect(updateSourceMaterial).toHaveBeenCalledWith(services, sourceId, patch);
+  });
+
+  it("update odrzuca pusty patch i nieznane pola (400 validation), a przestarzałą rewizję mapuje na 409", async () => {
+    for (const body of [{ expectedRevision: 1 }, { title: "Bez rewizji" }, { expectedRevision: 0, title: "X" }, { expectedRevision: 1, title: "X", extra: 1 }]) {
+      const response = await call(`/sources/${sourceId}`, patchInit(body));
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(ApiErrorSchema.parse(await response.json()).code).toBe("validation");
+    }
+    expect(updateSourceMaterial).not.toHaveBeenCalled();
+
+    vi.mocked(updateSourceMaterial).mockRejectedValueOnce(new AppError("conflict"));
+    const stale = await call(`/sources/${sourceId}`, patchInit({ expectedRevision: 1, body: "Tekst" }));
+    expect(stale.status).toBe(409);
+    expect(ApiErrorSchema.parse(await stale.json()).code).toBe("conflict");
+
+    vi.mocked(updateSourceMaterial).mockRejectedValueOnce(new AppError("not_found"));
+    const missing = await call(`/sources/${sourceId}`, patchInit({ expectedRevision: 1, body: "Tekst" }));
+    expect(missing.status).toBe(404);
+  });
+
+  it("delete zwraca 204 z pustym ciałem", async () => {
+    vi.mocked(deleteSourceMaterial).mockResolvedValueOnce(undefined);
+
+    const response = await call(`/sources/${sourceId}`, { method: "DELETE", headers: sessionCookie });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(deleteSourceMaterial).toHaveBeenCalledWith(services, sourceId);
+  });
+
+  it("delete nieznanego źródła kończy się not_found/404", async () => {
+    vi.mocked(deleteSourceMaterial).mockRejectedValueOnce(new AppError("not_found"));
+
+    const response = await call(`/sources/${sourceId}`, { method: "DELETE", headers: sessionCookie });
+
+    expect(response.status).toBe(404);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("not_found");
+  });
+});
+
 describe("parent oRPC router — CSRF (Origin)", () => {
   it("mutacje z obcym Origin kończą się forbidden/403 bez wywołania przypadków użycia", async () => {
     const evil = { origin: "http://evil.example" };
@@ -1418,6 +1603,17 @@ describe("parent oRPC router — CSRF (Origin)", () => {
         vi.mocked(upsertAssignment),
       ],
       [`/assignments/${childId}/${deckId}`, { method: "DELETE", headers: { ...sessionCookie, ...evil } }, vi.mocked(removeAssignment)],
+      ["/sources", jsonInit({ clientRequestId: sourceRequestId, title: "Tytuł", body: "Treść" }, evil), vi.mocked(createSourceMaterial)],
+      [
+        `/sources/${sourceId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ expectedRevision: 1, title: "Nowy tytuł" }),
+          headers: { "content-type": "application/json", ...sessionCookie, ...evil },
+        },
+        vi.mocked(updateSourceMaterial),
+      ],
+      [`/sources/${sourceId}`, { method: "DELETE", headers: { ...sessionCookie, ...evil } }, vi.mocked(deleteSourceMaterial)],
     ];
 
     for (const [path, init, useCase] of cases) {
@@ -1517,6 +1713,41 @@ describe("parent oRPC — pełne koło klient→handler (OpenAPILink)", () => {
     expect(created.status).toBe(201);
     expect(created.body).toEqual({ deckId });
     expect(resumed.status).toBe(200);
+    vi.unstubAllGlobals();
+  });
+
+  it("sources.create rozróżnia 201/200 w detailed output po stronie klienta, a sources.delete zwraca void", async () => {
+    stubFetchWithHandler();
+    vi.mocked(createSourceMaterial)
+      .mockResolvedValueOnce({ id: sourceId, created: true })
+      .mockResolvedValueOnce({ id: sourceId, created: false });
+    vi.mocked(deleteSourceMaterial).mockResolvedValueOnce(undefined);
+    const command = { clientRequestId: sourceRequestId, title: "Rozdział 4: Pogoda", body: "Fikcyjny tekst." };
+
+    const created = await callParent(() => parentClient.sources.create(command));
+    const retried = await callParent(() => parentClient.sources.create(command));
+    const removed = await callParent(() => parentClient.sources.delete({ sourceId }));
+
+    expect(created.status).toBe(201);
+    expect(created.body).toEqual({ id: sourceId });
+    expect(retried.status).toBe(200);
+    expect(retried.body).toEqual({ id: sourceId });
+    expect(removed).toBeUndefined();
+    expect(deleteSourceMaterial).toHaveBeenCalledWith(services, sourceId);
+    vi.unstubAllGlobals();
+  });
+
+  it("sources.update i sources.get przez klienta: ścieżka + patch, DTO bez zmian", async () => {
+    stubFetchWithHandler();
+    vi.mocked(updateSourceMaterial).mockResolvedValueOnce(sourceDto);
+    vi.mocked(getSourceMaterial).mockResolvedValueOnce(sourceDto);
+
+    const updated = await callParent(() => parentClient.sources.update({ sourceId, expectedRevision: 1, body: "Nowy tekst." }));
+    const fetched = await callParent(() => parentClient.sources.get({ sourceId }));
+
+    expect(updated).toEqual(sourceDto);
+    expect(fetched).toEqual(sourceDto);
+    expect(updateSourceMaterial).toHaveBeenCalledWith(services, sourceId, { expectedRevision: 1, body: "Nowy tekst." });
     vi.unstubAllGlobals();
   });
 

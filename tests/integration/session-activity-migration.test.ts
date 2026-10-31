@@ -50,6 +50,9 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
   const services = createServices({ db, clock });
   try {
     await pool.query("alter table learning_app.decks add column session_task_budget integer not null default 20");
+    // Pochodzenie zestawu ze źródła (0030): bieżący insert do decks wymienia te kolumny.
+    await pool.query("alter table learning_app.decks add column source_material_id uuid");
+    await pool.query("alter table learning_app.decks add column source_material_revision integer");
     // Bieżący kod TS wstawia także kolumny nagrodowe profili z 0021; dodajemy
     // je tylko na czas seedu i usuwamy przed pełną migracją, by 0021 przeszedł
     // dokładnie jak w produkcji.
@@ -105,6 +108,8 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
     await pool.query(`insert into learning_app.deck_reward_projection (child_id,deck_id,earned_points) values ($1,$2,7)`, [child.id, draft.deckId]);
     await pool.query(`insert into learning_app.reward_day_projection (child_id,timezone,local_date,credited_milliseconds) values ($1,'Europe/Warsaw','2026-10-16',90000)`, [child.id]);
     await pool.query("alter table learning_app.decks drop column session_task_budget");
+    await pool.query("alter table learning_app.decks drop column source_material_id");
+    await pool.query("alter table learning_app.decks drop column source_material_revision");
     await pool.query("alter table learning_app.child_profiles drop column reward_points");
     await pool.query("alter table learning_app.child_profiles drop column reward_remainder_ms");
     return { childId: child.id };

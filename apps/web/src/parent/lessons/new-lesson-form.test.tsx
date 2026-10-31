@@ -1,9 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+// @vitest-environment jsdom
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
-import NewLessonForm, { buildCommand, canSubmitLesson, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues } from "./NewLessonForm";
+import NewLessonForm, {
+  buildCommand, canSubmitLesson, classifyCreateFailure, defaultPoolSize, initialLessonValues, lessonPathOf, sourceRefreshOutcome,
+  type NewLessonValues, type SourceRefreshOutcome,
+} from "./NewLessonForm";
+import { ApiCallError } from "../api";
 import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
+import { parentTheme } from "../theme";
+
+// Polecenia tworzenia lekcji zaślepione; pozostałe procedury klienta bez zmian (odczyty w testach są wstawione do pamięci).
+const lessonsApi = vi.hoisted(() => ({ createFromMaterial: vi.fn(), createSchool: vi.fn(), create: vi.fn() }));
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  const parentClient = new Proxy(actual.parentClient, {
+    get: (target, key) => (key === "lessons" ? lessonsApi : Reflect.get(target, key)),
+  });
+  return { ...actual, parentClient };
+});
 
 const grammar = {
   id: "english_grammar",
@@ -169,6 +188,227 @@ describe("NewLessonForm", () => {
     expect(markup).toContain('data-testid="school-material-hint"');
     expect(markup).not.toContain(messages.lessons.chapterTopicLabel);
     expect(markup).toContain("0/16000 znaków");
+  });
+
+  describe("lekcja ze źródła", () => {
+    const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.\nDo you like apples?", bodyRevision: 3 };
+
+    it("wartości startowe: wskazany przedmiot z materiału i tytuł źródła jako temat", () => {
+      expect(initialLessonValues(catalog, { subjectId: "school", topicTitle: source.title, fromSource: true })).toMatchObject({
+        subjectId: "school", topicId: "", objectiveIds: [], topicTitle: "Unit 3 — Food", material: "",
+      });
+      expect(initialLessonValues(catalog, { subjectId: "english_chapter", fromSource: true }).subjectId).toBe("english_chapter");
+      // przedmiot spoza ścieżki z materiału (albo nieznany) → pierwszy przedmiot z materiału
+      expect(initialLessonValues(catalog, { subjectId: "english_grammar", fromSource: true }).subjectId).toBe("school");
+      expect(initialLessonValues(catalog, { subjectId: "nieznany", fromSource: true }).subjectId).toBe("school");
+      // bez źródła wskazany przedmiot też wybiera się od startu
+      expect(initialLessonValues(catalog, { subjectId: "english_chapter" }).subjectId).toBe("english_chapter");
+    });
+
+    it("tekst pochodzi ze źródła: pusty materiał nie blokuje wysyłki", () => {
+      const chapterValues = values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], material: "", topicTitle: "Unit 3" });
+      expect(canSubmitLesson(chapterValues, catalog)).toBe(false);
+      expect(canSubmitLesson(chapterValues, catalog, true)).toBe(true);
+      expect(canSubmitLesson({ ...chapterValues, topicTitle: " " }, catalog, true)).toBe(false);
+      const schoolValues = values({ subjectId: "school", topicId: "", objectiveIds: [], material: "", topicTitle: "Mapa" });
+      expect(canSubmitLesson(schoolValues, catalog, true)).toBe(false);
+      expect(canSubmitLesson({ ...schoolValues, schoolSubjectName: "Geografia" }, catalog, true)).toBe(true);
+    });
+
+    it("rozdział: polecenie z sourceMaterialId i rewizją treści podglądu, bez materiału", () => {
+      const pending = buildCommand(
+        values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 3", material: "" }),
+        "material",
+        source,
+      );
+      expect(pending.kind).toBe("material");
+      expect(pending.command).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3", sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+      expect(pending.command).not.toHaveProperty("material");
+    });
+
+    it("szkoła: polecenie z sourceMaterialId, bez materiału", () => {
+      const pending = buildCommand(
+        values({ subjectId: "school", topicId: "", objectiveIds: [], schoolSubjectName: "Geografia", topicTitle: "Mapa", material: "ignorowany" }),
+        "school",
+        source,
+      );
+      expect(pending.kind).toBe("school");
+      expect(pending.command).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Mapa", sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+      expect(pending.command).not.toHaveProperty("material");
+    });
+
+    it("bez źródła polecenie nie niesie rewizji źródła", () => {
+      const pending = buildCommand(values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 3" }), "material");
+      expect(pending.command).not.toHaveProperty("sourceMaterialId");
+      expect(pending.command).not.toHaveProperty("expectedSourceRevision");
+    });
+
+    it("odpowiedź tworzenia: zmienione źródło i usunięte źródło są ostateczne, inny konflikt — niepewny", () => {
+      const changed = new ApiCallError("Konflikt.", "conflict", 409, { reason: "source_changed" });
+      const otherConflict = new ApiCallError("Konflikt.", "conflict", 409);
+      const missing = new ApiCallError("Nie znaleziono.", "not_found", 404);
+      const invalid = new ApiCallError("Błąd.", "validation", 400);
+      expect(classifyCreateFailure(changed, true)).toBe("source-changed");
+      expect(classifyCreateFailure(missing, true)).toBe("source-missing");
+      expect(classifyCreateFailure(invalid, true)).toBe("rejected");
+      // konflikt bez szczegółów zmienionego źródła nie daje komunikatu o zmianie — wynik pozostaje niepewny
+      expect(classifyCreateFailure(otherConflict, true)).toBe("uncertain");
+      expect(classifyCreateFailure(new ApiCallError("Konflikt.", "conflict", 409, { reason: "other" }), true)).toBe("uncertain");
+      // bez źródła (wklejony tekst) te odpowiedzi nie dotyczą źródła
+      expect(classifyCreateFailure(changed, false)).toBe("uncertain");
+      expect(classifyCreateFailure(missing, false)).toBe("uncertain");
+      expect(classifyCreateFailure(new TypeError("Failed to fetch"), true)).toBe("uncertain");
+      expect(messages.sources.changedBeforeCreate).toBe("Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.");
+    });
+
+    it("formularz: podgląd źródła tylko do odczytu i link „Zmień źródło” zamiast pola materiału", () => {
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+      const markup = renderParentMarkup(
+        <NewLessonForm source={source} initialSubjectId="school" onOpenSource={vi.fn()} onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />,
+        queryClient,
+      );
+      expect(markup).not.toContain('data-testid="lesson-material"');
+      expect(markup).not.toContain('data-testid="lesson-material-counter"');
+      expect(markup).toContain('data-testid="lesson-source"');
+      expect(markup).toContain(messages.sources.fromSource.replace("{title}", "Unit 3 — Food"));
+      expect(markup).toContain('data-testid="lesson-source-preview"');
+      expect(markup).toContain("Do you like apples?");
+      const preview = markup.match(/<textarea[^>]*data-testid="lesson-source-preview"[^>]*>/)?.[0] ?? "";
+      expect(preview).toMatch(/readonly/i);
+      expect(preview).toContain('aria-labelledby="lesson-source-title"');
+      expect(preview).not.toMatch(/tabindex/i);
+      // „Zmień źródło” prowadzi do listy źródeł, a przycisk u góry wraca do strony źródła
+      expect(markup).toContain('data-testid="lesson-source-change"');
+      expect(markup).toContain('href="/parent/sources"');
+      expect(markup).not.toContain(`href="/parent/sources/${SOURCE_ID}"`);
+      expect(markup).toContain(messages.sources.changeSource);
+      expect(markup).toContain(messages.sources.backToSource);
+      expect(markup).not.toContain(messages.decks.backToList);
+      // tylko przedmioty tworzone z materiału; wskazany wybrany od startu
+      expect(markup).toContain('value="school" selected=""');
+      expect(markup).toContain('value="english_chapter"');
+      expect(markup).not.toContain('value="english_grammar"');
+      expect(markup).toContain('data-testid="school-subject-name"');
+      expect(markup).toContain('value="Unit 3 — Food"');
+    });
+  });
+
+  describe("odświeżenie źródła po konflikcie rewizji", () => {
+    const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const RUN_ID = "00000000-0000-4000-8000-0000000000aa";
+    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.", bodyRevision: 3 };
+    type Source = typeof source;
+    type Refresh = (setSource: (next: Source) => void) => Promise<SourceRefreshOutcome>;
+    const sourceChanged = () => new ApiCallError("Konflikt.", "conflict", 409, { reason: "source_changed" });
+
+    beforeEach(() => {
+      if (typeof window.matchMedia !== "function") {
+        window.matchMedia = ((query: string) => ({
+          matches: false, media: query, onchange: null,
+          addEventListener: () => undefined, removeEventListener: () => undefined,
+          addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+      }
+      // jsdom nie ma Font Loading API, z którego korzysta autosize pola tekstowego Mantine
+      if (!("fonts" in document)) {
+        Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
+      }
+      lessonsApi.createFromMaterial.mockReset();
+    });
+    afterEach(cleanup);
+
+    /** Formularz ze źródłem w stanie rodzica (jak `NewLessonFromSource`): `refresh` może podmienić źródło. */
+    function renderFromSource(refresh: Refresh) {
+      const onCreated = vi.fn();
+      const registerEditorState = vi.fn();
+      const onCancel = vi.fn();
+      const onOpenSource = vi.fn();
+      function Harness() {
+        const [current, setCurrent] = useState(source);
+        return (
+          <NewLessonForm source={current} initialSubjectId="english_chapter" onOpenSource={onOpenSource} onSourceChanged={() => refresh(setCurrent)}
+            onCreated={onCreated} onCancel={onCancel} registerEditorState={registerEditorState} />
+        );
+      }
+      const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+      queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MantineProvider theme={parentTheme}><Harness /></MantineProvider>
+        </QueryClientProvider>,
+      );
+      return { onCreated };
+    }
+    const submitButton = () => screen.getByTestId("lesson-create-submit") as HTMLButtonElement;
+    const sentCommand = (call: number) => lessonsApi.createFromMaterial.mock.calls[call]![0] as Record<string, unknown>;
+
+    it("nieudane odświeżenie: tworzenie wyłączone z „Spróbuj ponownie”; udane z nową rewizją — nowe polecenie z tą rewizją", async () => {
+      lessonsApi.createFromMaterial
+        .mockRejectedValueOnce(sourceChanged())
+        .mockImplementationOnce(async (command: { deckId: string }) => ({ runId: RUN_ID, deckId: command.deckId }));
+      const refresh = vi.fn<Refresh>()
+        .mockResolvedValueOnce({ status: "failed" })
+        .mockImplementationOnce(async (setSource) => {
+          setSource({ ...source, body: "I like pizza.\nWe like bananas.", bodyRevision: 4 });
+          return { status: "refreshed", bodyRevision: 4 };
+        });
+      const { onCreated } = renderFromSource(refresh);
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.refreshFailed));
+      expect(messages.sources.refreshFailed).toBe("Nie udało się odświeżyć źródła.");
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(submitButton().disabled).toBe(true);
+      expect(sentCommand(0)).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+      const retry = screen.getByTestId("lesson-source-refresh-retry");
+      expect(retry.textContent).toBe(messages.parentShell.retry);
+
+      fireEvent.click(retry);
+      await waitFor(() => expect(submitButton().disabled).toBe(false));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(screen.queryByTestId("lesson-source-refresh-retry")).toBeNull();
+      expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.changedBeforeCreate);
+      expect((screen.getByTestId("lesson-source-preview") as HTMLTextAreaElement).value).toContain("We like bananas.");
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+      expect(lessonsApi.createFromMaterial).toHaveBeenCalledTimes(2);
+      expect(sentCommand(1)).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 4 });
+      expect(sentCommand(1).clientRequestId).not.toBe(sentCommand(0).clientRequestId);
+    });
+
+    it("odświeżenie bez nowej rewizji treści nie odblokowuje tworzenia", async () => {
+      lessonsApi.createFromMaterial.mockRejectedValueOnce(sourceChanged());
+      renderFromSource(async () => ({ status: "refreshed", bodyRevision: 3 }));
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.refreshFailed));
+      expect(submitButton().disabled).toBe(true);
+      expect(screen.getByTestId("lesson-source-refresh-retry")).toBeTruthy();
+    });
+
+    it("źródło usunięte (404 przy odświeżeniu): stan usuniętego źródła, bez ponawiania", async () => {
+      lessonsApi.createFromMaterial.mockRejectedValueOnce(sourceChanged());
+      renderFromSource(async () => ({ status: "missing" }));
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.notFound));
+      expect(submitButton().disabled).toBe(true);
+      expect(screen.queryByTestId("lesson-source-refresh-retry")).toBeNull();
+      expect(screen.getByTestId("lesson-source-missing-change").getAttribute("href")).toBe("/parent/sources");
+      expect(screen.getByTestId("new-lesson-cancel").textContent).toContain(messages.sources.backToList);
+    });
+
+    it("wynik refetch(): 404 — źródło usunięte, inny błąd — nieudane (mimo starych danych), sukces — bieżąca rewizja", () => {
+      const old = { bodyRevision: 3 };
+      expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Nie znaleziono.", "not_found", 404), data: old })).toEqual({ status: "missing" });
+      expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Błąd.", "internal", 500), data: old })).toEqual({ status: "failed" });
+      expect(sourceRefreshOutcome({ isError: true, error: new TypeError("Failed to fetch"), data: old })).toEqual({ status: "failed" });
+      expect(sourceRefreshOutcome({ isError: false, error: null, data: { bodyRevision: 4 } })).toEqual({ status: "refreshed", bodyRevision: 4 });
+      expect(sourceRefreshOutcome({ isError: false, error: null, data: undefined })).toEqual({ status: "failed" });
+    });
   });
 
   it("gramatyka: wybór tematu i reguł, licznik do 8000", () => {

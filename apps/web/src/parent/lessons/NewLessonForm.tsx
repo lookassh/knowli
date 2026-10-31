@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Alert, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
-import { callParent, errorMessage, parentClient } from "../api";
+import { callParent, errorMessage, isSourceChangedError, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
+import { routePath } from "../parent-routes";
+import { plainClick } from "../plain-click";
 import { httpStatusOf, orpc } from "../query-client";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import "./lesson-panels.css";
+import "../sources/sources-panel.css";
 
 const MATERIAL_MAX = 8000;
 const POOL_MIN = 20;
@@ -44,9 +47,30 @@ export interface NewLessonValues {
   topicTitle: string;
 }
 
-/** Wartości startowe z katalogu: pierwszy przedmiot, pierwszy temat, wszystkie jego reguły. */
-export function initialLessonValues(catalog: SubjectCatalogDto | undefined): NewLessonValues {
-  const subject = catalog?.subjects[0];
+/**
+ * Przedmioty do wyboru w formularzu. Lekcja ze źródła ma tekst ze źródła,
+ * więc tylko przedmioty tworzone z materiału (polecenia katalogowe nie
+ * przyjmują `sourceMaterialId`).
+ */
+export function lessonSubjects(catalog: SubjectCatalogDto | undefined, fromSource = false): SubjectCatalogDto["subjects"] {
+  const subjects = catalog?.subjects ?? [];
+  return fromSource ? subjects.filter((subject) => subject.creation === "material") : subjects;
+}
+
+/** Wybór startowy formularza: przedmiot wskazany w adresie i tytuł tematu (tytuł źródła). */
+export interface LessonPreset {
+  subjectId?: string | undefined;
+  topicTitle?: string | undefined;
+  fromSource?: boolean | undefined;
+}
+
+/**
+ * Wartości startowe z katalogu: wskazany (albo pierwszy dostępny) przedmiot,
+ * pierwszy temat, wszystkie jego reguły; ze źródła — tytuł źródła jako temat.
+ */
+export function initialLessonValues(catalog: SubjectCatalogDto | undefined, preset: LessonPreset = {}): NewLessonValues {
+  const subjects = lessonSubjects(catalog, preset.fromSource);
+  const subject = subjects.find((s) => s.id === preset.subjectId) ?? subjects[0];
   const topic = subject?.topics[0];
   const objectiveIds = topic?.objectives.map((o) => o.id) ?? [];
   return {
@@ -58,7 +82,7 @@ export function initialLessonValues(catalog: SubjectCatalogDto | undefined): New
     poolSize: defaultPoolSize(objectiveIds.length),
     poolSizeTouched: false,
     schoolSubjectName: "",
-    topicTitle: "",
+    topicTitle: (preset.topicTitle ?? "").trim().slice(0, MAX_SCHOOL_TOPIC_TITLE_LENGTH),
   };
 }
 
@@ -83,8 +107,9 @@ export function lessonPathOf(catalog: SubjectCatalogDto | undefined, subjectId: 
 /**
  * Brak możliwości wysłania (przycisk wyłączony). Komunikat walidacji przy
  * kliknięciu daje `validationError` — wyłączony przycisk zwykle go uprzedza.
+ * Ze źródła (`fromSource`) tekst nie pochodzi z pola materiału.
  */
-export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalogDto | undefined): boolean {
+export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalogDto | undefined, fromSource = false): boolean {
   const path = lessonPathOf(catalog, values.subjectId);
   const pool = values.poolSize;
   const poolValid = typeof pool === "number" && Number.isInteger(pool) && pool >= POOL_MIN && pool <= (path === "catalog" ? POOL_MAX : MATERIAL_POOL_MAX);
@@ -95,18 +120,20 @@ export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalog
     const topicName = values.topicTitle.trim().length;
     return (path === "material" || (subjectName > 0 && subjectName <= MAX_SCHOOL_SUBJECT_TITLE_LENGTH))
       && topicName > 0 && topicName <= MAX_SCHOOL_TOPIC_TITLE_LENGTH
-      && material > 0 && material <= MAX_SCHOOL_MATERIAL_LENGTH;
+      && (fromSource || (material > 0 && material <= MAX_SCHOOL_MATERIAL_LENGTH));
   }
+  // polecenie katalogowe nie przyjmuje źródła — formularz ze źródłem nie oferuje takich przedmiotów
+  if (fromSource) return false;
   const subject = catalog?.subjects.find((s) => s.id === values.subjectId);
   const topic = subject?.topics.find((t) => t.id === values.topicId);
   return topic !== undefined && values.objectiveIds.length > 0 && material > 0 && material <= MATERIAL_MAX;
 }
 
-function validationError(values: NewLessonValues, path: LessonPath): string | null {
+function validationError(values: NewLessonValues, path: LessonPath, fromSource: boolean): string | null {
   const material = values.material.trim().length;
   if (path !== "catalog") {
     if ((path === "school" && values.schoolSubjectName.trim().length === 0) || values.topicTitle.trim().length === 0) return messages.lessons.schoolMaterialRequired;
-    if (material === 0 || material > MAX_SCHOOL_MATERIAL_LENGTH) return messages.lessons.schoolMaterialRequired;
+    if (!fromSource && (material === 0 || material > MAX_SCHOOL_MATERIAL_LENGTH)) return messages.lessons.schoolMaterialRequired;
     return null;
   }
   if (values.objectiveIds.length === 0) return messages.lessons.objectivesRequired;
@@ -114,23 +141,78 @@ function validationError(values: NewLessonValues, path: LessonPath): string | nu
   return null;
 }
 
-export function buildCommand(values: NewLessonValues, path: LessonPath): PendingLesson {
+/** Źródło, z którego powstaje polecenie: identyfikator i rewizja treści wyświetlonego podglądu. */
+export interface CommandSource {
+  id: string;
+  bodyRevision: number;
+}
+
+/**
+ * Polecenie utworzenia lekcji z nowymi identyfikatorami zestawu i żądania.
+ * Ze źródła polecenie niesie odwołanie zamiast tekstu (`sourceMaterialId`) i
+ * rewizję treści podglądu (`expectedSourceRevision`) — serwer kopiuje tekst
+ * źródła tylko wtedy, gdy to wciąż ten, który rodzic widział (kontrakt:
+ * dokładnie jedno z `material` / `sourceMaterialId`).
+ */
+export function buildCommand(values: NewLessonValues, path: LessonPath, source?: CommandSource): PendingLesson {
   const instruction = values.instruction.trim();
   const shared = {
     deckId: crypto.randomUUID(),
-    material: values.material.trim(),
     ...(instruction ? { instruction } : {}),
     poolSize: Number(values.poolSize),
     clientRequestId: crypto.randomUUID(),
   };
+  const text = source !== undefined
+    ? { sourceMaterialId: source.id, expectedSourceRevision: source.bodyRevision }
+    : { material: values.material.trim() };
   switch (path) {
     case "school":
-      return { kind: "school", command: { ...shared, subjectTitlePl: values.schoolSubjectName.trim(), topicTitlePl: values.topicTitle.trim() } };
+      return { kind: "school", command: { ...shared, ...text, subjectTitlePl: values.schoolSubjectName.trim(), topicTitlePl: values.topicTitle.trim() } };
     case "material":
-      return { kind: "material", command: { ...shared, subjectId: values.subjectId, topicTitlePl: values.topicTitle.trim() } };
+      return { kind: "material", command: { ...shared, ...text, subjectId: values.subjectId, topicTitlePl: values.topicTitle.trim() } };
     case "catalog":
-      return { kind: "catalog", command: { ...shared, subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
+      return { kind: "catalog", command: { ...shared, material: values.material.trim(), subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
   }
+}
+
+/**
+ * Wynik polecenia utworzenia lekcji, które nie skończyło się przyjęciem:
+ * `source-missing` — źródło usunięto w innym oknie (404), `source-changed` —
+ * tekst źródła zmieniono po wyświetleniu podglądu (409 z
+ * `LessonSourceChangedDetails`), `rejected` — inne ostateczne odrzucenie,
+ * `uncertain` — wynik nieznany (ponowienie tym samym poleceniem). Pierwsze dwa
+ * są rozpoznawane tylko w trybie źródła; w żadnym z trzech ostatecznych zestaw
+ * nie powstał, bo serwer sprawdza wcześniejsze polecenie z tym kluczem przed
+ * odczytem źródła.
+ */
+export type CreateFailure = "source-missing" | "source-changed" | "rejected" | "uncertain";
+
+export function classifyCreateFailure(cause: unknown, fromSource: boolean): CreateFailure {
+  if (fromSource && httpStatusOf(cause) === 404) return "source-missing";
+  if (fromSource && isSourceChangedError(cause)) return "source-changed";
+  if (isDefinitiveGenerationRejection(cause)) return "rejected";
+  return "uncertain";
+}
+
+/**
+ * Wynik ponownego odczytu źródła po konflikcie rewizji (`onSourceChanged`):
+ * `refreshed` — bieżące źródło z jego rewizją treści, `missing` — źródło
+ * usunięto w innym oknie (404), `failed` — odczyt się nie udał, podgląd
+ * pozostaje nieaktualny.
+ */
+export type SourceRefreshOutcome =
+  | { status: "refreshed"; bodyRevision: number }
+  | { status: "missing" }
+  | { status: "failed" };
+
+/**
+ * Wynik `refetch()` odczytu źródła jako `SourceRefreshOutcome`. `refetch()` nie
+ * odrzuca obietnicy przy błędzie, a dane poprzedniego odczytu zostają — o
+ * wyniku decyduje błąd tego odczytu, nie obecność danych.
+ */
+export function sourceRefreshOutcome(result: { isError: boolean; error: unknown; data: { bodyRevision: number } | undefined }): SourceRefreshOutcome {
+  if (result.isError) return httpStatusOf(result.error) === 404 ? { status: "missing" } : { status: "failed" };
+  return result.data !== undefined ? { status: "refreshed", bodyRevision: result.data.bodyRevision } : { status: "failed" };
 }
 
 /**
@@ -142,28 +224,72 @@ export function buildCommand(values: NewLessonValues, path: LessonPath): Pending
  * ponowienia (to samo `deckId`), także po zmianie przedmiotu (W15). Wpisane
  * dane chroni leave guard; 401 obsługuje globalny handler (przy wpisanych
  * danych logowanie w oknie nad formularzem).
+ *
+ * Ze źródła (`source`, design 2026-10-30 §3.4) zamiast pola materiału jest
+ * tytuł i podgląd tekstu źródła (tylko do odczytu) z linkiem „Zmień źródło”
+ * (lista źródeł), przycisk u góry wraca do strony źródła („Wróć do źródła”),
+ * a polecenie niesie `sourceMaterialId` z rewizją treści podglądu; do wyboru
+ * są tylko przedmioty tworzone z materiału. Gdy tekst źródła zmieniono w innym
+ * oknie, serwer odrzuca polecenie (409): formularz odświeża podgląd
+ * (`onSourceChanged`), pokazuje komunikat, a ponowne „Utwórz lekcję” jest
+ * potwierdzeniem nowego tekstu. Tworzenie czeka na udane odświeżenie z nową
+ * rewizją treści: nieudane pokazuje komunikat z „Spróbuj ponownie”, a 404 —
+ * stan usuniętego źródła.
  */
 export default function NewLessonForm({
   onCreated,
   onCancel,
   registerEditorState,
+  source,
+  initialSubjectId,
+  onOpenSource,
+  onSourceChanged,
 }: {
   onCreated: (deckId: string) => void;
   onCancel: () => void;
   registerEditorState: (state: EditorLeaveState) => void;
+  /**
+   * Źródło, z którego powstaje lekcja: tekst do podglądu i jego rewizja treści
+   * (serwer kopiuje tekst przy tworzeniu, jeśli rewizja wciąż się zgadza).
+   */
+  source?: { id: string; title: string; body: string; bodyRevision: number } | undefined;
+  /** Przedmiot wybrany od startu (np. z przycisku na stronie źródła). */
+  initialSubjectId?: string | undefined;
+  /**
+   * Tryb źródła: strona źródła (`sourceId` — „Wróć do źródła”) albo lista źródeł
+   * (`null` — „Zmień źródło” i powrót po usunięciu źródła w innym oknie).
+   */
+  onOpenSource?: ((sourceId: string | null) => void) | undefined;
+  /**
+   * Tryb źródła: ponowny odczyt źródła po konflikcie rewizji (odświeża podgląd
+   * i rewizję w `source`); wynik mówi, czy odczyt się udał.
+   */
+  onSourceChanged?: (() => Promise<SourceRefreshOutcome>) | undefined;
 }) {
+  const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
   const catalog = catalogQuery.data;
+  const sourceTitle = source?.title;
   const form = useForm<NewLessonValues>({
     mode: "controlled",
     // Katalog już w pamięci podręcznej (lub wstawiony) ustawia wartości od pierwszego renderu.
-    initialValues: initialLessonValues(catalog),
+    initialValues: initialLessonValues(catalog, { subjectId: initialSubjectId, topicTitle: sourceTitle, fromSource }),
     // komunikat wysyłki (np. niepewne utworzenie) zostaje do następnego kliknięcia, także po zmianie przedmiotu
     clearInputErrorOnChange: false,
   });
   const pending = useRef<PendingLesson | null>(null);
   const creatingRef = useRef(false);
   const mounted = useRef(false);
+  // źródło usunięte w innym oknie (404 przy tworzeniu): link prowadzi do listy źródeł, tworzenie wyłączone
+  const [sourceMissing, setSourceMissing] = useState(false);
+  // podgląd odświeża się po konflikcie rewizji źródła — do udanego odświeżenia tworzenie jest wyłączone
+  const [refreshingSource, setRefreshingSource] = useState(false);
+  // odświeżenie podglądu się nie udało: komunikat z „Spróbuj ponownie”, tworzenie nadal wyłączone
+  const [sourceRefreshFailed, setSourceRefreshFailed] = useState(false);
+  // rewizja treści odrzucona przez serwer (409): podgląd z tą rewizją jest nieaktualny,
+  // więc tworzenie czeka, aż `source` przyniesie nową
+  const [staleSourceRevision, setStaleSourceRevision] = useState<number | null>(null);
+  const sourceOutdated = staleSourceRevision !== null && source?.bodyRevision === staleSourceRevision;
 
   useEffect(() => {
     mounted.current = true;
@@ -175,8 +301,8 @@ export default function NewLessonForm({
   // Katalog ustala wartości startowe — formularz bez zmian rodzica nie jest „brudny”.
   const { initialize } = form;
   useEffect(() => {
-    if (catalog) initialize(initialLessonValues(catalog));
-  }, [catalog, initialize]);
+    if (catalog) initialize(initialLessonValues(catalog, { subjectId: initialSubjectId, topicTitle: sourceTitle, fromSource }));
+  }, [catalog, initialize, initialSubjectId, sourceTitle, fromSource]);
 
   const create = useMutation({
     mutationFn: (lesson: PendingLesson) => callParent(() => {
@@ -196,6 +322,7 @@ export default function NewLessonForm({
   const values = form.getValues();
   const path = lessonPathOf(catalog, values.subjectId);
   const fromMaterial = path !== "catalog";
+  const subjects = lessonSubjects(catalog, fromSource);
   const subject = catalog?.subjects.find((s) => s.id === values.subjectId);
   const topic = subject?.topics.find((t) => t.id === values.topicId);
   const materialMax = fromMaterial ? MAX_SCHOOL_MATERIAL_LENGTH : MATERIAL_MAX;
@@ -231,16 +358,44 @@ export default function NewLessonForm({
     setObjectives(current.includes(id) ? current.filter((o) => o !== id) : [...current, id]);
   };
 
+  /**
+   * Ponowny odczyt źródła po konflikcie rewizji. Tworzenie wraca dopiero po
+   * udanym odczycie z rewizją treści inną niż odrzucona (`stale`); nieudany
+   * odczyt zostawia komunikat z „Spróbuj ponownie”, a 404 — stan usuniętego źródła.
+   */
+  const refreshSource = async (stale: number | null): Promise<void> => {
+    setRefreshingSource(true);
+    let outcome: SourceRefreshOutcome = { status: "failed" };
+    try {
+      if (onSourceChanged) outcome = await onSourceChanged();
+    } catch {
+      // odczyt zgłoszony wyjątkiem to także nieudane odświeżenie
+    }
+    if (!mounted.current) return;
+    setRefreshingSource(false);
+    if (outcome.status === "missing") {
+      setSourceRefreshFailed(false);
+      setSourceMissing(true);
+      form.setFieldError("submit", messages.sources.notFound);
+    } else if (outcome.status === "refreshed" && outcome.bodyRevision !== stale) {
+      setSourceRefreshFailed(false);
+      form.setFieldError("submit", messages.sources.changedBeforeCreate);
+    } else {
+      setSourceRefreshFailed(true);
+      form.setFieldError("submit", messages.sources.refreshFailed);
+    }
+  };
+
   const submit = async (): Promise<void> => {
     if (creatingRef.current) return;
     let lesson = pending.current;
     if (!lesson) {
-      const invalid = validationError(values, path);
+      const invalid = validationError(values, path, fromSource);
       if (invalid) {
         form.setFieldError("submit", invalid);
         return;
       }
-      lesson = buildCommand(values, path);
+      lesson = buildCommand(values, path, source);
       pending.current = lesson;
     }
     creatingRef.current = true;
@@ -257,12 +412,33 @@ export default function NewLessonForm({
       registerEditorState({ dirty: false, busy: false });
       onCreated(acceptance.deckId);
     } catch (cause) {
-      if (isDefinitiveGenerationRejection(cause)) {
-        pending.current = null;
+      const failure = classifyCreateFailure(cause, fromSource);
+      if (failure === "uncertain") {
+        if (mounted.current) form.setFieldError("submit", messages.lessons.createUncertain);
+        return;
+      }
+      // Odpowiedź ostateczna: serwer sprawdza wcześniejsze polecenie z tym kluczem przed
+      // odczytem źródła, więc zestaw nie powstał — następna wysyłka buduje nowe polecenie.
+      pending.current = null;
+      if (failure === "source-missing") {
+        // źródło usunięto w innym oknie — bez ponowienia
+        if (mounted.current) {
+          setSourceMissing(true);
+          form.setFieldError("submit", messages.sources.notFound);
+        }
+      } else if (failure === "source-changed") {
+        // Tekst źródła zmieniono w innym oknie po wyświetleniu podglądu: podgląd odświeża
+        // się do bieżącej wersji, a ponowne „Utwórz lekcję” potwierdza nowy tekst.
+        const rejected = lesson.kind === "catalog" ? undefined : lesson.command.expectedSourceRevision;
+        const stale = rejected ?? source?.bodyRevision ?? null;
+        if (mounted.current) {
+          form.setFieldError("submit", messages.sources.changedBeforeCreate);
+          setStaleSourceRevision(stale);
+          await refreshSource(stale);
+        }
+      } else if (httpStatusOf(cause) !== 401 && mounted.current) {
         // 401: logowanie otwiera globalny handler, formularz zostaje
-        if (httpStatusOf(cause) !== 401 && mounted.current) form.setFieldError("submit", errorMessage(cause));
-      } else if (mounted.current) {
-        form.setFieldError("submit", messages.lessons.createUncertain);
+        form.setFieldError("submit", errorMessage(cause));
       }
     } finally {
       creatingRef.current = false;
@@ -272,12 +448,26 @@ export default function NewLessonForm({
   const submitError = form.errors.submit;
   const counterTemplate = fromMaterial ? messages.lessons.schoolMaterialCounter : messages.lessons.materialCounter;
 
+  // „Zmień źródło” prowadzi do listy źródeł (wybór innego), a przycisk u góry — z powrotem
+  // na stronę źródła; po usunięciu źródła w innym oknie oba prowadzą do listy.
+  const changeSourceHref = routePath({ section: "sources" });
+  const changeSource = (event: MouseEvent) => {
+    if (!plainClick(event) || !onOpenSource) return;
+    event.preventDefault();
+    onOpenSource(null);
+  };
+  const back = source === undefined
+    ? { label: messages.decks.backToList, onClick: onCancel }
+    : sourceMissing
+      ? { label: messages.sources.backToList, onClick: () => onOpenSource?.(null) }
+      : { label: messages.sources.backToSource, onClick: () => onOpenSource?.(source.id) };
+
   return (
     <Stack gap="md" data-testid="new-lesson-form" className="pp-editor pp-lesson-new">
       <div>
-        <Button variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="new-lesson-cancel" onClick={onCancel}
+        <Button variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="new-lesson-cancel" onClick={back.onClick}
           leftSection={<ParentIcon name="chevron-left" />}>
-          {messages.decks.backToList}
+          {back.label}
         </Button>
         <Title order={1} fz={{ base: 22, sm: 26 }} mt={6}>{messages.lessons.newLessonTitle}</Title>
       </div>
@@ -306,7 +496,7 @@ export default function NewLessonForm({
                 value={values.subjectId}
                 disabled={creating}
                 onChange={(e) => chooseSubject(e.currentTarget.value)}
-                data={catalog.subjects.map((s) => ({ value: s.id, label: s.titlePl }))}
+                data={subjects.map((s) => ({ value: s.id, label: s.titlePl }))}
               />
               {path === "catalog" && (
                 <NativeSelect
@@ -355,26 +545,56 @@ export default function NewLessonForm({
               </fieldset>
             )}
 
-            <div>
-              <Textarea
-                size="md"
-                label={fromMaterial ? messages.lessons.schoolMaterialLabel : messages.lessons.materialLabel}
-                data-testid="lesson-material"
-                autosize
-                minRows={6}
-                maxRows={16}
-                maxLength={materialMax}
-                placeholder={messages.lessons.materialPlaceholder}
-                disabled={creating}
-                aria-describedby="lesson-material-counter"
-                {...form.getInputProps("material")}
-              />
-              {path === "school" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="school-material-hint">{messages.lessons.schoolMaterialHint}</Text>}
-              {path === "material" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="material-hint">{messages.lessons.chapterMaterialHint}</Text>}
-              <Text size="sm" mt={6} ta="right" className="pp-editor-muted" id="lesson-material-counter" data-testid="lesson-material-counter">
-                {counterTemplate.replace("{n}", String(values.material.length))}
-              </Text>
-            </div>
+            {source ? (
+              <div data-testid="lesson-source" className="pp-lesson-source">
+                <Group justify="space-between" align="center" gap="xs" wrap="wrap">
+                  <Text fw={600} size="sm" id="lesson-source-title" className="pp-lesson-source-title">
+                    {messages.sources.fromSource.replace("{title}", source.title)}
+                  </Text>
+                  <Anchor
+                    href={changeSourceHref}
+                    size="sm"
+                    className="pp-lesson-source-change"
+                    data-testid="lesson-source-change"
+                    onClick={changeSource}
+                  >
+                    {messages.sources.changeSource}
+                  </Anchor>
+                </Group>
+                {/* tekst źródła tylko do podglądu — serwer skopiuje go przy tworzeniu lekcji */}
+                <Textarea
+                  size="md"
+                  readOnly
+                  autosize
+                  maxRows={12}
+                  value={source.body}
+                  className="pp-source-preview"
+                  data-testid="lesson-source-preview"
+                  aria-labelledby="lesson-source-title"
+                />
+              </div>
+            ) : (
+              <div>
+                <Textarea
+                  size="md"
+                  label={fromMaterial ? messages.lessons.schoolMaterialLabel : messages.lessons.materialLabel}
+                  data-testid="lesson-material"
+                  autosize
+                  minRows={6}
+                  maxRows={16}
+                  maxLength={materialMax}
+                  placeholder={messages.lessons.materialPlaceholder}
+                  disabled={creating}
+                  aria-describedby="lesson-material-counter"
+                  {...form.getInputProps("material")}
+                />
+                {path === "school" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="school-material-hint">{messages.lessons.schoolMaterialHint}</Text>}
+                {path === "material" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="material-hint">{messages.lessons.chapterMaterialHint}</Text>}
+                <Text size="sm" mt={6} ta="right" className="pp-editor-muted" id="lesson-material-counter" data-testid="lesson-material-counter">
+                  {counterTemplate.replace("{n}", String(values.material.length))}
+                </Text>
+              </div>
+            )}
 
             <TextInput size="md" label={messages.lessons.instructionLabel} data-testid="lesson-instruction" maxLength={500} disabled={creating}
               {...form.getInputProps("instruction")} />
@@ -397,7 +617,20 @@ export default function NewLessonForm({
 
             {submitError && (
               <Alert color="red" variant="light" role="alert" data-testid="api-error" icon={<ParentIcon name="alert-triangle" />}>
-                {submitError}
+                <Stack gap={4} align="flex-start">
+                  <span>{submitError}</span>
+                  {sourceRefreshFailed && !sourceMissing && (
+                    <Button size="md" variant="light" color="red" data-testid="lesson-source-refresh-retry" loading={refreshingSource}
+                      onClick={() => void refreshSource(staleSourceRevision)}>
+                      {messages.parentShell.retry}
+                    </Button>
+                  )}
+                  {sourceMissing && (
+                    <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="lesson-source-missing-change" onClick={changeSource}>
+                      {messages.sources.changeSource}
+                    </Anchor>
+                  )}
+                </Stack>
               </Alert>
             )}
             <Group justify="flex-end">
@@ -407,7 +640,7 @@ export default function NewLessonForm({
                 data-testid="lesson-create-submit"
                 leftSection={creating ? <Loader size={16} color="currentColor" /> : undefined}
                 onClick={() => void submit()}
-                disabled={creating || (!hasPending && !canSubmitLesson(values, catalog))}
+                disabled={creating || refreshingSource || sourceRefreshFailed || sourceOutdated || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
               >
                 {creating ? messages.lessons.creating : hasPending ? messages.lessons.retryCreate : messages.lessons.createLesson}
               </Button>

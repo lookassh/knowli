@@ -51,6 +51,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import {
   claimQueuedRun,
   enqueueGenerationRun,
+  findEnqueuedRun,
   supersedeLessonRuns,
 } from "../generation-runs";
 import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
@@ -58,6 +59,7 @@ import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-ge
 import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
+import { isSourceChangedConflict, lockSourceMaterialForCopy } from "../source-materials";
 
 /**
  * Generowanie i zapis szkicu lekcji (design „Generowanie puli (worker)”).
@@ -206,17 +208,62 @@ export async function createLesson(
   });
 }
 
-/** Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i przedmiotów o stałym tytule). */
+/**
+ * Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i
+ * przedmiotów o stałym tytule). Tekst pochodzi z dokładnie jednego miejsca:
+ * wklejonego `material` albo zapisanego źródła (`sourceMaterialId`), którego
+ * tekst serwer kopiuje w transakcji tworzenia.
+ */
 export interface MaterialLessonInput {
   subjectId: string;
   /** Nazwa przedmiotu od rodzica; brak = tytuł przedmiotu z modułu (`subject.titlePl`). */
   subjectTitlePl?: string;
   topicTitlePl: string;
-  material: string;
+  material?: string | undefined;
+  sourceMaterialId?: string | undefined;
+  /** Rewizja treści źródła z podglądu rodzica; wymagana przy `sourceMaterialId`. */
+  expectedSourceRevision?: number | undefined;
   instruction?: string;
   poolSize?: number;
   deckId?: string;
   clientRequestId: string;
+}
+
+/** Skąd pochodzi tekst zestawu: wklejony przez rodzica albo skopiowany z zapisanego źródła. */
+type MaterialTextSource =
+  | { kind: "pasted"; material: string }
+  | { kind: "source"; sourceMaterialId: string; expectedBodyRevision: number };
+
+/**
+ * Dokładnie jedno z `material` / `sourceMaterialId`, a przy źródle także
+ * `expectedSourceRevision` (i tylko przy nim); inaczej → `validation`.
+ */
+function materialTextSource(cmd: MaterialLessonInput): MaterialTextSource {
+  if (cmd.material !== undefined && cmd.sourceMaterialId === undefined && cmd.expectedSourceRevision === undefined) {
+    return { kind: "pasted", material: cmd.material };
+  }
+  if (cmd.sourceMaterialId !== undefined && cmd.material === undefined && cmd.expectedSourceRevision !== undefined) {
+    return { kind: "source", sourceMaterialId: cmd.sourceMaterialId, expectedBodyRevision: cmd.expectedSourceRevision };
+  }
+  throw new AppError("validation", {
+    message: "provide exactly one of material or sourceMaterialId (with expectedSourceRevision)",
+  });
+}
+
+/**
+ * Tekst zestawu w transakcji tworzenia. Ze źródła czyta go (razem z rewizją
+ * treści) pod `FOR KEY SHARE`, sprawdza rewizję z podglądu rodzica i zwraca
+ * pochodzenie do zapisu w `decks`; wklejony tekst nie ma pochodzenia.
+ */
+async function resolveMaterialText(
+  tx: Tx,
+  textSource: MaterialTextSource,
+): Promise<{ material: string; origin?: { sourceMaterialId: string; bodyRevision: number } }> {
+  if (textSource.kind === "pasted") {
+    return { material: textSource.material };
+  }
+  const copied = await lockSourceMaterialForCopy(tx, textSource.sourceMaterialId, textSource.expectedBodyRevision);
+  return { material: copied.body, origin: { sourceMaterialId: textSource.sourceMaterialId, bodyRevision: copied.bodyRevision } };
 }
 
 /**
@@ -225,6 +272,22 @@ export interface MaterialLessonInput {
  * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
  * Dotyczy przedmiotów z `buildDynamicTopic`; nazwę przedmiotu zapisuje tylko
  * wtedy, gdy podał ją rodzic (szkoła) — inaczej tytuł pochodzi z przedmiotu.
+ *
+ * Ze źródła (`sourceMaterialId`) tekst i rewizję treści czyta pierwsze
+ * zapytanie transakcji tworzenia (`FOR KEY SHARE`, `lockSourceMaterialForCopy`);
+ * transakcję otwiera `enqueueGenerationRun`, a jej treścią jest wywołanie
+ * zwrotne poniżej. Tekst trafia do `lesson_context.material`
+ * i `generation_runs.input.material` jako kopia, a
+ * `decks.source_material_id/_revision` zapisują pochodzenie (rewizja treści
+ * źródła, nie rewizja współbieżności). Po utworzeniu źródło nie jest już
+ * czytane. Brak źródła → `not_found`; rewizja treści inna niż
+ * `expectedSourceRevision` (tekst zmieniono po wyświetleniu podglądu) →
+ * `conflict` z `LessonSourceChangedDetails`, bez zapisu. Ponowienie z tym samym
+ * `clientRequestId` zwraca istniejący zestaw, zanim źródło zostanie odczytane
+ * (`enqueueGenerationRun`), więc późniejsza edycja ani usunięcie źródła go nie
+ * psują. Gdy wcześniejsze żądanie z tym samym kluczem zatwierdziło zestaw już
+ * po naszym sprawdzeniu klucza, a źródło usunięto albo zmieniono przed naszą
+ * blokadą, wynikiem jest zestaw tamtego żądania.
  */
 export async function createMaterialLesson(
   services: Services,
@@ -234,10 +297,14 @@ export async function createMaterialLesson(
   if (materialCreationMode(subject) === undefined) {
     throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
+  const textSource = materialTextSource(cmd);
   const poolSize = cmd.poolSize ?? 60;
   const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
+  const dedupeKey = `lesson:${cmd.clientRequestId}`;
 
-  return enqueueGenerationRun(services.db, `lesson:${cmd.clientRequestId}`, async (tx) => {
+  return enqueueGenerationRun(services.db, dedupeKey, async (tx) => {
+    // Pierwsze zapytanie transakcji: blokada źródła poprzedza każdy zapis zestawu.
+    const { material, origin } = await resolveMaterialText(tx, textSource);
     const deckId = cmd.deckId ?? randomUUID();
     const versionId = randomUUID();
     const runId = randomUUID();
@@ -247,13 +314,18 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       examples: {},
       rejectedCount: 0,
     };
-    await tx.insert(decks).values({ id: deckId, title, kind: "lesson" });
+    await tx.insert(decks).values({
+      id: deckId,
+      title,
+      kind: "lesson",
+      ...(origin === undefined ? {} : { sourceMaterialId: origin.sourceMaterialId, sourceMaterialRevision: origin.bodyRevision }),
+    });
     await tx.insert(deckVersions).values({
       id: versionId,
       deckId,
@@ -273,7 +345,7 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       topicTitlePl: cmd.topicTitlePl,
@@ -283,12 +355,38 @@ export async function createMaterialLesson(
       deckVersionId: versionId,
       expectedEditNumber: 1,
       kind: "lesson",
-      dedupeKey: `lesson:${cmd.clientRequestId}`,
+      dedupeKey,
       state: "queued",
       input: input as unknown as Record<string, unknown>,
     });
     return { runId, deckId };
-  });
+  }).catch((error: unknown) => committedRetryAfterSourceChange(services, textSource, dedupeKey, error));
+}
+
+/**
+ * Ponowienie po równoległym usunięciu albo zmianie tekstu źródła: pierwsze
+ * żądanie z tym samym kluczem zatwierdziło zestaw już po naszym sprawdzeniu
+ * klucza (usunięcie i edycja czekały na jego blokadę `FOR KEY SHARE`), a źródło
+ * zniknęło albo dostało nową rewizję treści przed naszą blokadą — odczyt źródła
+ * kończy się `not_found` albo konfliktem rewizji, choć polecenie wykonano.
+ * Wtedy, jak przy duplikacie klucza w `enqueueGenerationRun`, odpowiedzią jest
+ * zestaw tamtego żądania (świeże zapytanie poza wycofaną transakcją). Każdy
+ * inny błąd — i te dwa bez zatwierdzonego runu — przechodzi dalej.
+ */
+async function committedRetryAfterSourceChange(
+  services: Services,
+  textSource: MaterialTextSource,
+  dedupeKey: string,
+  error: unknown,
+): Promise<{ runId: string; deckId: string }> {
+  const sourceGoneOrChanged = (error instanceof AppError && error.code === "not_found") || isSourceChangedConflict(error);
+  if (textSource.kind === "source" && sourceGoneOrChanged) {
+    const committed = await findEnqueuedRun(services.db, dedupeKey);
+    if (committed) {
+      return committed;
+    }
+  }
+  throw error;
 }
 
 /**

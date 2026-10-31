@@ -37,6 +37,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
+import { readDeckSource } from "../source-materials";
 import {
   assertEditable,
   bumpEditNumber,
@@ -393,6 +394,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
       .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
   )[0];
   const publishedVersionId = deck.publishedVersionId ?? null;
+  const source = await readDeckSource(db, deck);
   const state: LessonDeckDto["state"] = deck.archivedAt
     ? "archived"
     : editable
@@ -409,6 +411,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
     published: publishedVersionId ? await readLessonDraftDto(db, services, publishedVersionId) : null,
     generation: editable ? await latestLessonRun(db, editable.id) : null,
     assignments: await lessonAssignments(db, id),
+    ...(source === undefined ? {} : { source }),
     // Wymaganie 10.1: provider oceny dowolnych odpowiedzi (nazwa modelu z
     // konfiguracji, bez sekretów). `available=false` steruje komunikatem rodzica.
     grading: services.grader ? { available: true, model: services.grader.provider.model } : { available: false },

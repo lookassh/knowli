@@ -22,6 +22,7 @@ import { orpc } from "../query-client";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import LessonExerciseCard, { type CalculationControls } from "./LessonExerciseCard";
 import ArchiveLessonDialog from "./ArchiveLessonDialog";
+import LessonSourceNote from "./LessonSourceNote";
 import PromptAudioControls, { VoiceToneSelect } from "./PromptAudioControls";
 import { EditorActionBar, EditorAssignments, EditorErrorText } from "../EditorAssignments";
 import { ParentIcon } from "../ParentIcon";
@@ -92,6 +93,7 @@ export default function LessonEditor({
   onBack,
   onEditorStateChange,
   onArchived,
+  onOpenSource,
 }: {
   deckId: string;
   childrenList: ChildDto[];
@@ -99,6 +101,8 @@ export default function LessonEditor({
   onEditorStateChange: (state: EditorLeaveState) => void;
   /** Lekcja usunięta z listy z menu ⋯ — panel oznacza ją od razu i wraca do listy. */
   onArchived: () => void;
+  /** Link „Ze źródła: …” — otwiera stronę źródła w panelu (przez leave guard). */
+  onOpenSource: (sourceId: string) => void;
 }) {
   const [deck, setDeck] = useState<LessonDeckDto | null>(null);
   const [form, setForm] = useState<EditableLessonForm | null>(null);
@@ -1096,13 +1100,14 @@ export default function LessonEditor({
           </Menu>
         )}
       </Group>
-      <Group gap="xs" mt={6} mb="md" className="pp-editor-meta">
+      <Group gap="xs" mt={6} mb={deck?.source ? 4 : "md"} className="pp-editor-meta">
         <span className="pp-status-badge" data-tone="info">{messages.lessons.kindLabel.lesson}</span>
         {deck?.state === "published" && <span className="pp-status-badge" data-tone="success" data-testid="publish-status">{messages.decks.published}</span>}
         {draft && deck?.state === "published" && <span className="pp-status-badge" data-tone="warning">{messages.decks.states.draft}</span>}
         {deck?.state === "archived" && <span className="pp-status-badge">{messages.decks.states.archived}</span>}
         {subjectLine && <Text size="sm" className="pp-editor-muted">{subjectLine}</Text>}
       </Group>
+      {deck?.source && <LessonSourceNote source={deck.source} onOpen={onOpenSource} />}
 
       <Stack gap="md">
         {generating && (

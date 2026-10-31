@@ -19,4 +19,5 @@ export { regenerateLessonCardAudio, regenerateLessonPromptAudio } from "./lesson
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
 export { executeMediaAsset } from "./media-generation";
 export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";
+export { createSourceMaterial, deleteSourceMaterial, getSourceMaterial, listSourceMaterials, updateSourceMaterial } from "./source-materials";
 export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./ui-audio";
