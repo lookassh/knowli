@@ -1,5 +1,5 @@
 import type { LessonExerciseType, SubjectModule } from "../../types";
-import { englishNormalizer } from "./normalizer";
+import { englishNormalizer } from "../english/normalizer";
 import { ENGLISH_GRAMMAR_ERROR_CATEGORIES } from "./error-categories";
 import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";

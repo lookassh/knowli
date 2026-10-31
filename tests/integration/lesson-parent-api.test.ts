@@ -259,6 +259,35 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(crossOrigin.status).toBe(403);
   });
 
+  it("POST /lessons/material tworzy zestaw rozdziału (202), a szkołę i gramatykę odrzuca (400)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { services, cookie } = await freshParent(fakes);
+    const body = {
+      subjectId: "english_chapter", topicTitlePl: "Unit 1", material: "I like pizza. What do you like?", clientRequestId: randomUUID(),
+    };
+
+    const created = await call(services, "POST", "lessons/material", { body, cookie });
+    expect(created.status).toBe(202);
+    const { deckId, runId } = (await created.json()) as { deckId: string; runId: string };
+    const [deck] = (await pool.query("select title from learning_app.decks where id = $1", [deckId])).rows as Array<{ title: string }>;
+    expect(deck!.title).toBe("Angielski — rozdział: Unit 1");
+    // to samo polecenie jest idempotentne
+    const again = await call(services, "POST", "lessons/material", { body, cookie });
+    expect(again.status).toBe(202);
+    expect(await again.json()).toEqual({ deckId, runId });
+
+    for (const subjectId of ["school", "english_grammar", "nieznany"]) {
+      const rejected = await call(services, "POST", "lessons/material", { body: { ...body, subjectId, clientRequestId: randomUUID() }, cookie });
+      expect(rejected.status, subjectId).toBe(400);
+      expect((await rejected.json()).code, subjectId).toBe("validation");
+    }
+    const crossOrigin = await call(services, "POST", "lessons/material", { body: { ...body, clientRequestId: randomUUID() }, cookie, origin: "https://attacker.example" });
+    expect(crossOrigin.status).toBe(403);
+    const noSession = await call(services, "POST", "lessons/material", { body: { ...body, clientRequestId: randomUUID() }, cookie: null });
+    expect(noSession.status).toBe(401);
+  });
+
   it("katalog zawiera english_grammar / present_simple z celami", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
@@ -269,6 +298,12 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     const catalog = SubjectCatalogDtoSchema.parse(await res.json());
     const subject = catalog.subjects.find((s) => s.id === SUBJECT)!;
     expect(subject.titlePl).toBe("Angielski — gramatyka");
+    expect(subject).toMatchObject({ creation: "catalog", subjectTitleRequired: false });
+    // przedmioty tworzone z materiału: szkoła z nazwą od rodzica, rozdział ze stałym tytułem
+    expect(catalog.subjects.find((s) => s.id === "school")).toMatchObject({ creation: "material", subjectTitleRequired: true, topics: [] });
+    expect(catalog.subjects.find((s) => s.id === "english_chapter")).toMatchObject({
+      titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [],
+    });
     const topic = subject.topics.find((t) => t.id === TOPIC)!;
     expect(topic.objectives.some((o) => o.id === OBJECTIVE)).toBe(true);
     const objective = topic.objectives.find((o) => o.id === OBJECTIVE)!;

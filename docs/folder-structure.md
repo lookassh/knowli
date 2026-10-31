@@ -227,7 +227,12 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/src/domain/lessons/lesson-policy.ts | Parametry selektora/polityki lekcji |
 | packages/server/src/domain/lessons/pool-validation.ts | Walidacja ćwiczeń (ogólna + walidatory przedmiotu) |
 | packages/server/src/domain/lessons/mock-test-plan.ts | Plan kartkówki lekcji |
-| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `normalizer.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts`, `topics/to-be.ts` |
+| packages/server/src/domain/lessons/subjects/english/ | Wspólny normalizator angielski dla przedmiotów językowych: `normalizer.ts`, `contractions.ts` (przeniesiony z `english-grammar/` bez zmiany zachowania) |
+| packages/server/src/domain/lessons/subjects/english-grammar/ | `module.ts`, `error-categories.ts`, `validators.ts`, `prompts.ts`, `topics/present-simple.ts`, `topics/to-be.ts` (normalizator: `subjects/english/`) |
+| packages/server/src/domain/lessons/subjects/english-chapter/ | Przedmiot „Angielski — rozdział” (`english_chapter`): `module.ts`, `lexicon.ts` (słownik materiału), `validators.ts` (walidacja przedmiotu i czyszczenie świeżej puli), `exposure.ts` (tekst ekspozycji), `prompts.ts` |
+| packages/server/src/domain/lessons/subjects/school/ | Przedmiot szkolny (`school`): `module.ts`, `validators.ts`, `prompts.ts` |
+| packages/server/src/domain/lessons/material-creation.ts | Wspólny predykat tworzenia zestawu z materiału (`materialCreationMode`, `requiresParentSubjectTitle`) dla katalogu przedmiotów i poleceń tworzenia |
+| packages/server/src/domain/lessons/exposure-key.ts | `lessonExerciseTargetKey` — klucz ekspozycji ćwiczenia z tekstu wskazanego przez przedmiot (`exposureText`) |
 | packages/server/src/domain/lessons/testing/history-like-subject.ts | Fixture przedmiotu nie-językowego (dowód niezależności silnika) |
 | packages/server/src/modules/materials/lessons/ | `lesson-api.ts`, `lesson-drafts.ts`, `lesson-supervision.ts`, `lesson-generation-{control,errors,policy}.ts` (autorstwo, generowanie i nadzór nad materiałem lekcji) |
 | packages/server/src/modules/learning/lessons/ | `lesson-sessions.ts`, `lesson-attempts.ts`, `lesson-materialize.ts`, `lesson-mock-tests.ts`, `lesson-deck-overview.ts` (sesje, próby i kartkówki lekcji) |
@@ -239,6 +244,8 @@ Lekcje i moduły przedmiotów (moduł gramatyki, 2026-10-12): silnik i przedmiot
 | packages/server/drizzle/0007_lessons.sql | Migracja: `decks.kind`, `lesson_context`, `lesson_verdicts`, `child_objective_progress`, triggery i CHECK-i |
 
 Testy lekcji: `packages/server/src/domain/lessons/*.test.ts` (jednostkowe, kontrolowany zegar), `tests/integration/lesson-*.test.ts` (PostgreSQL + fake grader), `tests/e2e/lesson-*.spec.ts` (Playwright, fake providerzy). Fixtures lekcji w `tests/fixtures/`.
+
+Próba generowania lekcji z materiału na prawdziwym modelu (2026-10-30, ręczna i płatna, nigdy w CI): `pnpm probe:chapter` (`vitest.probe.config.ts`, `tests/probes/chapter-generation.probe.test.ts`). Wymaga `UMIEM_PROBE_MATERIAL` ze ścieżką do materiału poza repozytorium (opcjonalnie `UMIEM_PROBE_SUBJECT=school`, `UMIEM_PROBE_DUMP` — też poza repozytorium); bez zmiennej plik jest pomijany. Pliki `*.probe.test.ts` nie należą do konfiguracji unit ani integration.
 
 Edycja profilu: `contracts/src/decks.ts` definiuje `ChildPatchSchema`, `server/src/modules/family/profiles.ts` implementuje `updateChild`, a PATCH `/children/{id}` udostępnia router oRPC Parent API (`apps/web/src/parent/orpc-contract.ts` + `apps/web/src/orpc/parent-router.ts`). `ChildEditor.tsx` odpowiada także za formularz imienia i awatara; istniejąca historia nie jest modyfikowana.
 

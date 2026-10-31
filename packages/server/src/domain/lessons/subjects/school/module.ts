@@ -65,6 +65,10 @@ export const schoolSubject: SubjectModule = {
   usesV3Payload: true,
   // Rodziny pytań współdzielą odpowiedź wzorcową, więc deduplikacja musi iść po tożsamości ćwiczenia.
   poolDeduplication: "exercise",
+  // Każde ćwiczenie opiera się na dokładnym cytacie z materiału rodzica.
+  sourceQuotes: true,
+  // Rodzic nazywa przedmiot własnym tytułem (np. „Historia”).
+  materialSubjectTitle: "parent",
   poolMinimums: { guided: 3, productive: 2, independent: 2 },
   validateExercise: validateSchoolExercise,
   ttsForAnswers: false,

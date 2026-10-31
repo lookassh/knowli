@@ -1,8 +1,9 @@
 /**
  * Zamknięta, deklaratywna tabela skrótów angielskich (design „Normalizacja”).
- * Dane należą do przedmiotu `english_grammar`, nie do silnika. Każdy skrót
- * (klucz po normalizacji bazowej: lowercase, apostrof zwykły) odwzorowuje się
- * na listę równoważnych rozwinięć; skrót wieloznaczny ma więcej niż jedno.
+ * Dane należą do przedmiotów angielskich (`english_grammar`, `english_chapter`),
+ * nie do silnika. Każdy skrót (klucz po normalizacji bazowej: lowercase,
+ * apostrof zwykły) odwzorowuje się na listę równoważnych rozwinięć; skrót
+ * wieloznaczny ma więcej niż jedno.
  *
  * Formy bez apostrofu są włączone WYŁĄCZNIE dla zamkniętej listy z briefu
  * (`doesnt`, `dont`, `isnt`, `arent`, `wasnt`, `werent`, `havent`, `hasnt`,

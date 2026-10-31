@@ -113,13 +113,23 @@ function keywordsExerciseSchema(objectiveId: string): Record<string, unknown> {
 const strictObject = (properties: Record<string, unknown>) => ({
   type: "object", additionalProperties: false, required: Object.keys(properties), properties,
 });
-const groundedQuotes = { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) };
+const quoteItems = strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } });
+
+/**
+ * Cytaty gałęzi pary/grupy/luki: przy uziemieniu 1–3 obowiązkowe, inaczej
+ * nullowalne (tryb strict wymaga pola, więc przedmiot bez cytatów dostaje `null`).
+ */
+function dedicatedSourceRefs(input: LessonPoolInput): Record<string, unknown> {
+  return input.groundingRequired === true
+    ? { type: "array", minItems: 1, maxItems: 3, items: quoteItems }
+    : { type: ["array", "null"], items: quoteItems };
+}
 
 /**
  * „Połącz w pary” (design szkoły §10.6): tylko teksty par i dystraktorów —
  * odpowiedź składa kod, model jej nie podaje.
  */
-function matchExerciseSchema(objectiveId: string): Record<string, unknown> {
+function matchExerciseSchema(input: LessonPoolInput, objectiveId: string): Record<string, unknown> {
   return strictObject({
     exerciseType: { type: "string", enum: ["lesson_match"] },
     objectiveId: { type: "string", enum: [objectiveId] },
@@ -129,12 +139,12 @@ function matchExerciseSchema(objectiveId: string): Record<string, unknown> {
       items: strictObject({ left: { type: "string", minLength: 1, maxLength: 40 }, right: { type: "string", minLength: 1, maxLength: 100 } }),
     },
     extraRight: { type: "array", maxItems: 2, items: { type: "string", minLength: 1, maxLength: 100 } },
-    sourceRefs: groundedQuotes,
+    sourceRefs: dedicatedSourceRefs(input),
   });
 }
 
 /** „Pogrupuj”: grupy i elementy z przynależnością; odpowiedź składa kod. */
-function groupExerciseSchema(objectiveId: string): Record<string, unknown> {
+function groupExerciseSchema(input: LessonPoolInput, objectiveId: string): Record<string, unknown> {
   return strictObject({
     exerciseType: { type: "string", enum: ["lesson_group"] },
     objectiveId: { type: "string", enum: [objectiveId] },
@@ -147,12 +157,12 @@ function groupExerciseSchema(objectiveId: string): Record<string, unknown> {
       type: "array", minItems: 4, maxItems: 8,
       items: strictObject({ text: { type: "string", minLength: 1, maxLength: 40 }, groupId: { type: "string", minLength: 1, maxLength: 40 } }),
     },
-    sourceRefs: groundedQuotes,
+    sourceRefs: dedicatedSourceRefs(input),
   });
 }
 
 /** „Uzupełnij tekst” (design szkoły §13.6): tekst z lukami, słowa luk i dystraktory; odpowiedź składa kod. */
-function clozeExerciseSchema(objectiveId: string): Record<string, unknown> {
+function clozeExerciseSchema(input: LessonPoolInput, objectiveId: string): Record<string, unknown> {
   return strictObject({
     exerciseType: { type: "string", enum: ["lesson_cloze"] },
     objectiveId: { type: "string", enum: [objectiveId] },
@@ -160,7 +170,7 @@ function clozeExerciseSchema(objectiveId: string): Record<string, unknown> {
     clozeText: { type: "string", minLength: 1, maxLength: 300 },
     gapAnswers: { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1, maxLength: 30 } },
     extraWords: { type: "array", minItems: 1, maxItems: 2, items: { type: "string", minLength: 1, maxLength: 30 } },
-    sourceRefs: groundedQuotes,
+    sourceRefs: dedicatedSourceRefs(input),
   });
 }
 
@@ -178,9 +188,9 @@ export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unk
       ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
       ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
       ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_match") ? [matchExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_group") ? [groupExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_cloze") ? [clozeExerciseSchema(objective.id)] : []),
+      ...(types.includes("lesson_match") ? [matchExerciseSchema(input, objective.id)] : []),
+      ...(types.includes("lesson_group") ? [groupExerciseSchema(input, objective.id)] : []),
+      ...(types.includes("lesson_cloze") ? [clozeExerciseSchema(input, objective.id)] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

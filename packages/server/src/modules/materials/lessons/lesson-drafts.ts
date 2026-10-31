@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { LessonCommandSchema, SchoolLessonCommandSchema, type LessonCommand, type SchoolLessonCommand } from "@learning/contracts";
+import {
+  LessonCommandSchema,
+  MaterialLessonCommandSchema,
+  SchoolLessonCommandSchema,
+  type LessonCommand,
+  type MaterialLessonCommand,
+  type SchoolLessonCommand,
+} from "@learning/contracts";
 import type { Clock, Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
 import {
@@ -14,17 +21,20 @@ import {
   skillVersions,
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import { computeTargetKey } from "../../../domain/target-key";
+import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
 import {
   DEFAULT_LESSON_POLICY,
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
+import { materialCreationMode } from "../../../domain/lessons/material-creation";
 import { answersEquivalent, keywordsAnswer, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
-import { lessonExerciseStimulus } from "../../../domain/lessons/exercise-identity";
 import {
   lessonExerciseIdentity,
+  lessonExerciseStimulus,
   lessonExerciseStimulusRecord,
+  lessonIdentityOptionsOf,
+  type LessonExerciseIdentityOptions,
   type LessonExerciseStimulus,
 } from "../../../domain/lessons/exercise-identity";
 import type {
@@ -73,6 +83,8 @@ interface LessonContext {
   dynamicTopic?: DynamicTopicData;
   /** Licznik ćwiczeń odrzuconych przy walidacji (dla panelu rodzica). */
   rejectedCount: number;
+  /** Powody odrzuceń z czyszczenia świeżej puli (`refineGeneratedPool`) z licznikami; bez danych dziecka. */
+  rejectedReasons?: Record<string, number>;
   /** Zagadnienia odrzucone/pominięte na etapie generowania tematu (szkoła; panel rodzica). */
   droppedObjectiveCount?: number;
 }
@@ -192,25 +204,39 @@ export async function createLesson(
   });
 }
 
+/** Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i przedmiotów o stałym tytule). */
+export interface MaterialLessonInput {
+  subjectId: string;
+  /** Nazwa przedmiotu od rodzica; brak = tytuł przedmiotu z modułu (`subject.titlePl`). */
+  subjectTitlePl?: string;
+  topicTitlePl: string;
+  material: string;
+  instruction?: string;
+  poolSize?: number;
+  deckId?: string;
+  clientRequestId: string;
+}
+
 /**
- * Tworzenie zestawu przedmiotu szkolnego: deck lekcji + szkic + run `lesson`
+ * Tworzenie zestawu z materiału rodzica: deck lekcji + szkic + run `lesson`
  * bez celów — zagadnienia wyprowadzi etap generacji z materiału i zapisze
  * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
+ * Dotyczy przedmiotów z `buildDynamicTopic`; nazwę przedmiotu zapisuje tylko
+ * wtedy, gdy podał ją rodzic (szkoła) — inaczej tytuł pochodzi z przedmiotu.
  */
-export async function createSchoolLesson(
+export async function createMaterialLesson(
   services: Services,
-  cmd: SchoolLessonCommand,
+  cmd: MaterialLessonInput,
 ): Promise<{ runId: string; deckId: string }> {
-  const valid = SchoolLessonCommandSchema.parse(cmd);
-  const subject = requireSubject(services, "school");
-  if (!subject.buildDynamicTopic) {
-    throw new AppError("internal", { message: "school subject without dynamic topics" });
+  const subject = requireSubject(services, cmd.subjectId);
+  if (materialCreationMode(subject) === undefined) {
+    throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
-  const poolSize = valid.poolSize ?? 60;
-  const title = [...`${valid.subjectTitlePl}: ${valid.topicTitlePl}`].slice(0, 120).join("");
+  const poolSize = cmd.poolSize ?? 60;
+  const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
 
-  return enqueueGenerationRun(services.db, `lesson:${valid.clientRequestId}`, async (tx) => {
-    const deckId = valid.deckId ?? randomUUID();
+  return enqueueGenerationRun(services.db, `lesson:${cmd.clientRequestId}`, async (tx) => {
+    const deckId = cmd.deckId ?? randomUUID();
     const versionId = randomUUID();
     const runId = randomUUID();
     const context: LessonContext = {
@@ -219,9 +245,9 @@ export async function createSchoolLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: valid.material,
-      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
-      subjectTitlePl: valid.subjectTitlePl,
+      material: cmd.material,
+      ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
+      ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       examples: {},
       rejectedCount: 0,
     };
@@ -245,23 +271,54 @@ export async function createSchoolLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: valid.material,
-      ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
-      subjectTitlePl: valid.subjectTitlePl,
-      topicTitlePl: valid.topicTitlePl,
+      material: cmd.material,
+      ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
+      ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
+      topicTitlePl: cmd.topicTitlePl,
     };
     await tx.insert(generationRuns).values({
       id: runId,
       deckVersionId: versionId,
       expectedEditNumber: 1,
       kind: "lesson",
-      dedupeKey: `lesson:${valid.clientRequestId}`,
+      dedupeKey: `lesson:${cmd.clientRequestId}`,
       state: "queued",
       input: input as unknown as Record<string, unknown>,
     });
     return { runId, deckId };
   });
 }
+
+/**
+ * Tworzenie zestawu przedmiotu szkolnego: rodzic nazywa przedmiot własnym
+ * tytułem, a zestaw powstaje z materiału (`createMaterialLesson`).
+ */
+export async function createSchoolLesson(
+  services: Services,
+  cmd: SchoolLessonCommand,
+): Promise<{ runId: string; deckId: string }> {
+  const valid = SchoolLessonCommandSchema.parse(cmd);
+  return createMaterialLesson(services, { ...valid, subjectId: "school" });
+}
+
+/**
+ * Tworzenie zestawu z materiału dla przedmiotu o stałym tytule (np. „Angielski
+ * — rozdział”): rodzic podaje tytuł tematu i materiał, bez nazwy przedmiotu.
+ * Przedmiot bez tematów dynamicznych albo z nazwą od rodzica (szkoła) to
+ * `validation` — szkoła ma własne polecenie.
+ */
+export async function createLessonFromMaterial(
+  services: Services,
+  cmd: MaterialLessonCommand,
+): Promise<{ runId: string; deckId: string }> {
+  const valid = MaterialLessonCommandSchema.parse(cmd);
+  const subject = requireSubject(services, valid.subjectId);
+  if (materialCreationMode(subject) !== "fixed") {
+    throw new AppError("validation", { message: `subject does not create lessons from parent material: ${subject.id}` });
+  }
+  return createMaterialLesson(services, valid);
+}
+
 /**
  * Rozkład liczby ćwiczeń celu na etapy wg `stageMix` (sumuje do `count`).
  * Reszta z zaokrągleń trafia do etapu produktywnego (największy udział).
@@ -347,7 +404,7 @@ function batchesForObjectives(
 }
 
 /** Składa `LessonPoolInput` dla jednego celu z danych rejestru (port nie zna przedmiotu). */
-function buildPoolInput(
+export function buildPoolInput(
   subject: SubjectModule,
   topic: LessonTopic,
   objectiveId: string,
@@ -369,6 +426,7 @@ function buildPoolInput(
       gradingRole: subject.prompts.gradingRole,
       almostDefinition: subject.prompts.almostDefinition,
       ...(subject.prompts.fieldRules === undefined ? {} : { fieldRules: subject.prompts.fieldRules }),
+      ...(subject.prompts.typeRules === undefined ? {} : { typeRules: subject.prompts.typeRules }),
     },
     exerciseTypes: [...subject.exerciseTypes],
     transforms: topic.transforms.map((t) => ({ id: t.id, instructionPl: t.instructionPl })),
@@ -386,7 +444,7 @@ function buildPoolInput(
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
-    groundingRequired: subject.validatePoolExtra !== undefined,
+    groundingRequired: subject.sourceQuotes === true,
     deduplication: subject.poolDeduplication ?? "answer",
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
@@ -398,6 +456,8 @@ const rawObjectiveSchema = z
     slug: z.string(),
     titlePl: z.string(),
     descriptionEn: z.string(),
+    // Strict structured output zwraca `kind` zawsze (`null` = brak rodzaju); nieznana wartość to brak rodzaju, nie błąd kształtu.
+    kind: z.unknown().optional(),
     cards: z.array(z.object({ title: z.string(), body: z.string() }).passthrough()),
   })
   .passthrough();
@@ -423,13 +483,17 @@ function sanitizeObjectiveSlug(raw: string, index: number, used: Set<string>): s
 
 /**
  * Składa `DynamicTopicData` z surowych zagadnień modelu: identyfikatory celów
- * `school.d<deckId>.<slug>` nadaje serwer. Rekordy o złym kształcie albo
- * niespełniające reguł przedmiotu (`validateObjective`, np. 2–4 karty, niepuste
- * teksty) są odrzucane pojedynczo — jedno wadliwe zagadnienie nie przerywa
- * całej generacji; zero poprawnych celów zwraca błędy zamiast danych.
+ * `<subjectId>.d<deckId>.<slug>` nadaje serwer (prefiks to identyfikator
+ * przedmiotu, np. `school.d…`). Rodzaj zagadnienia (`kind`) przechodzi tylko
+ * jako `words`/`frame`; `null`, brak i nieznana wartość dają brak pola.
+ * Rekordy o złym kształcie albo niespełniające reguł przedmiotu
+ * (`validateObjective`, np. 2–4 karty, niepuste teksty) są odrzucane
+ * pojedynczo — jedno wadliwe zagadnienie nie przerywa całej generacji; zero
+ * poprawnych celów zwraca błędy zamiast danych.
  */
 export function buildDynamicTopicData(
   rawObjectives: unknown[],
+  subjectId: string,
   deckId: string,
   topicTitle: string,
   validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
@@ -444,14 +508,16 @@ export function buildDynamicTopicData(
       return;
     }
     const slug = sanitizeObjectiveSlug(parsed.data.slug || parsed.data.titlePl, index, used);
-    const objective = {
-      id: `school.d${deckId}.${slug}`,
+    const kind = parsed.data.kind === "words" || parsed.data.kind === "frame" ? parsed.data.kind : undefined;
+    const objective: DynamicTopicData["objectives"][number] = {
+      id: `${subjectId}.d${deckId}.${slug}`,
       titlePl: [...parsed.data.titlePl.trim()].slice(0, 120).join(""),
       descriptionEn: [...parsed.data.descriptionEn.trim()].slice(0, 400).join(""),
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
       })),
+      ...(kind === undefined ? {} : { kind }),
     };
     const objectiveErrors = validateObjective(objective);
     if (objectiveErrors.length > 0) {
@@ -545,6 +611,53 @@ export function splitByPoolExtra(
   return { kept, extraRejected };
 }
 
+/**
+ * Czyści świeżo wygenerowaną pulę hakiem przedmiotu `refineGeneratedPool` i
+ * zlicza odrzucenia po powodzie (dla panelu rodzica; powody bez danych dziecka).
+ * Wołana wyłącznie w generacji (także dogenerowaniu) — nie przy edycji rodzica
+ * ani publikacji. Przedmiot bez haka zwraca pulę bez zmian i bez zliczeń.
+ */
+export function refineGeneratedDrafts(
+  subject: SubjectModule,
+  drafts: readonly LessonExerciseDraft[],
+  material: string,
+): { kept: LessonExerciseDraft[]; rejectedCount: number; rejectedReasons: Record<string, number> } {
+  if (!subject.refineGeneratedPool) return { kept: [...drafts], rejectedCount: 0, rejectedReasons: {} };
+  const refined = subject.refineGeneratedPool(drafts, { material });
+  const counts = new Map<string, number>();
+  for (const { reason } of refined.rejected) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return { kept: refined.kept, rejectedCount: refined.rejected.length, rejectedReasons: Object.fromEntries(counts) };
+}
+
+/**
+ * Sumuje liczniki powodów odrzuceń (kolejne przebiegi generacji tej samej
+ * wersji). Powód pochodzi od przedmiotu (pośrednio z wyjścia modelu), więc
+ * liczymy w `Map`, a obiekt składa `Object.fromEntries` (własne pola): powód
+ * „constructor”, „toString” czy „__proto__” nie czyta ani nie podmienia
+ * prototypu zwykłego obiektu.
+ */
+export function sumRejectedReasons(
+  previous: Readonly<Record<string, number>> | undefined,
+  added: Readonly<Record<string, number>>,
+): Record<string, number> {
+  const total = new Map<string, number>(Object.entries(previous ?? {}));
+  for (const [reason, count] of Object.entries(added)) total.set(reason, (total.get(reason) ?? 0) + count);
+  return Object.fromEntries(total);
+}
+
+/**
+ * Rodzaj zagadnienia (`kind`) zapisuje tylko przedmiot, który z niego korzysta
+ * (ma `prompts.objectivesRules`); dla pozostałych (np. szkoły) pole nigdy nie
+ * trafia do `dynamicTopic`, nawet gdy model je zwrócił.
+ */
+export function withSubjectObjectiveKinds(subject: SubjectModule, data: DynamicTopicData): DynamicTopicData {
+  if (subject.prompts.objectivesRules !== undefined) return data;
+  return {
+    ...data,
+    objectives: data.objectives.map(({ kind: _kind, ...objective }) => objective),
+  };
+}
+
 /** Wersja payloadu rewizji: 3, gdy ćwiczenie niesie pola v3, inaczej 2. */
 export function lessonPayloadVersion(ex: LessonExerciseDraft, subject: SubjectModule): number {
   if (subject.usesV3Payload !== true) return 2;
@@ -611,7 +724,11 @@ export function isWellShapedRawExercise(raw: unknown): boolean {
   return rawExerciseShapeSchema.safeParse(raw).success;
 }
 
-export function collectBatchExerciseMetadata(exercises: unknown[], deduplicateByExercise: boolean): {
+export function collectBatchExerciseMetadata(
+  exercises: unknown[],
+  deduplicateByExercise: boolean,
+  identityOptions: LessonExerciseIdentityOptions = {},
+): {
   answers: string[];
   exerciseRecords: LessonExerciseStimulus[];
 } {
@@ -622,7 +739,7 @@ export function collectBatchExerciseMetadata(exercises: unknown[], deduplicateBy
     const answer = (exercise as { answer?: unknown }).answer;
     if (typeof answer === "string" && answer.trim() !== "") answers.push(answer);
     if (deduplicateByExercise) {
-      exerciseRecords.push(lessonExerciseStimulusRecord(toExerciseDraft(exercise)));
+      exerciseRecords.push(lessonExerciseStimulusRecord(toExerciseDraft(exercise), identityOptions));
     }
   }
   return { answers, exerciseRecords };
@@ -652,14 +769,18 @@ export function summarizeLessonPoolValidation(input: {
   rejectedErrors: readonly string[];
   duplicateCount: number;
   validCount: number;
+  /** Odrzucone przez `refineGeneratedPool` (nie niosą reguł walidacji puli). */
+  refineRejected?: number;
 }): string {
   const ruleCounts = new Map<string, number>();
   for (const error of input.rejectedErrors) {
     const rule = /^([a-z][a-z0-9_]*):/i.exec(error)?.[1] ?? "other";
     ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
   }
+  const refineRejected = input.refineRejected ?? 0;
+  if (refineRejected > 0) ruleCounts.set("czyszczenie", refineRejected);
   const reasons = [...ruleCounts.entries()].map(([rule, count]) => `${rule}×${count}`).join(", ") || "-";
-  const rejected = input.shapeRejected + input.outOfScopeCount + input.rejectedExerciseCount + input.duplicateCount;
+  const rejected = input.shapeRejected + input.outOfScopeCount + input.rejectedExerciseCount + input.duplicateCount + refineRejected;
   return `surowe=${input.rawCount} zły_kształt=${input.shapeRejected} obcy_cel=${input.outOfScopeCount} odrzucone=${rejected} ważne=${input.validCount}; reguły: ${reasons}`;
 }
 
@@ -821,7 +942,7 @@ export function buildObjectiveCriteria(
     ...(ex.keyOptionIds === undefined ? {} : { keyTerms: keywordsAnswer(ex) }),
     // Pary, grupy i luki: zmiana przypisań to nowe kryterium oceny (stara próba nie awansuje nowego).
     ...(ex.exerciseType === "lesson_match" || ex.exerciseType === "lesson_group" || ex.exerciseType === "lesson_cloze"
-      ? { assignments: lessonExerciseStimulus(ex) }
+      ? { assignments: lessonExerciseStimulus(ex, lessonIdentityOptionsOf(subject)) }
       : {}),
     topicVersion,
   };
@@ -881,7 +1002,7 @@ export async function applyLessonExercises(
       position,
       payloadVersion: lessonPayloadVersion(ex, subject),
       payload: buildLessonPayload(ex, subject),
-      targetKey: computeTargetKey(ex.answer, subject.answerLocale),
+      targetKey: lessonExerciseTargetKey(subject, ex),
     });
     await tx.insert(itemRevisionSkills).values({
       itemRevisionId: revisionId,
@@ -905,7 +1026,7 @@ async function existingAnswersOf(tx: Tx, versionId: string): Promise<string[]> {
 }
 
 /** Funkcjonalne bodźce ćwiczeń już zapisanych w wersji szkicu. */
-async function existingExercisesOf(tx: Executor, versionId: string): Promise<LessonExerciseStimulus[]> {
+async function existingExercisesOf(tx: Executor, versionId: string, subject: SubjectModule): Promise<LessonExerciseStimulus[]> {
   const rows = await tx
     .select({ payload: itemRevisions.payload })
     .from(itemRevisions)
@@ -915,7 +1036,7 @@ async function existingExercisesOf(tx: Executor, versionId: string): Promise<Les
     const value = payload as Record<string, unknown>;
     if (typeof value.objectiveId !== "string" || typeof value.exerciseType !== "string" || typeof value.answer !== "string") return [];
     const exercise = toExerciseDraft(value);
-    return [lessonExerciseStimulusRecord(exercise)];
+    return [lessonExerciseStimulusRecord(exercise, lessonIdentityOptionsOf(subject))];
   });
 }
 
@@ -987,7 +1108,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   // Runy dogenerowania utworzone przed wprowadzeniem polityki exercise mają
   // tylko existingAnswers. Dla gramatyki odbudowujemy bodźce z bieżącego szkicu.
   const legacyExistingExercises = subject.poolDeduplication === "exercise" && input.regenerate && input.regenerate.existingExercises === undefined
-    ? await existingExercisesOf(services.db, input.deckVersionId)
+    ? await existingExercisesOf(services.db, input.deckVersionId, subject)
     : [];
 
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
@@ -1043,13 +1164,14 @@ export async function executeLessonGeneration(services: Services, runId: string,
             material: input.material,
             ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
             generationRole: subject.prompts.generationRole,
+            ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
           },
           signal,
         ),
       );
       await control.assertCurrent();
       const topicTitle = input.topicTitlePl ?? "";
-      const built = buildDynamicTopicData(objectivesResult.objectives, input.deckId, topicTitle, (objective) =>
+      const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
         validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
@@ -1058,9 +1180,10 @@ export async function executeLessonGeneration(services: Services, runId: string,
       if (topicErrors.length > 0) {
         throw new AppError("validation", { message: `dynamic topic invalid: ${topicErrors.join("; ")}` });
       }
-      dynamicTopicData = built.data;
-      topic = subject.buildDynamicTopic!(built.data);
-      batches = batchesForObjectives(built.data.objectives.map((objective) => objective.id), input.poolSize, subject, runId);
+      const storedData = withSubjectObjectiveKinds(subject, built.data);
+      dynamicTopicData = storedData;
+      topic = subject.buildDynamicTopic!(storedData);
+      batches = batchesForObjectives(storedData.objectives.map((objective) => objective.id), input.poolSize, subject, runId);
       console.log(`[lesson] run=${runId} etap zagadnień: cele=${batches.length}`);
       droppedObjectiveCount = built.errors.length;
       if (droppedObjectiveCount > 0) {
@@ -1096,7 +1219,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       const scoped = filterExercisesToRequestedObjective(result.exercises, batch.objectiveId);
       outOfScopeCount += scoped.outOfScopeCount;
       rawExercises.push(...scoped.exercises);
-      const metadata = collectBatchExerciseMetadata(scoped.exercises, subject.poolDeduplication === "exercise");
+      const metadata = collectBatchExerciseMetadata(scoped.exercises, subject.poolDeduplication === "exercise", lessonIdentityOptionsOf(subject));
       earlierAnswers.push(...metadata.answers);
       earlierExercises.push(...metadata.exerciseRecords);
       const rawExamples = result.examples;
@@ -1157,9 +1280,13 @@ export async function executeLessonGeneration(services: Services, runId: string,
       await markCurrentRun(services.db, "failed", "validation");
       return;
     }
+    // Czyszczenie świeżego wyjścia modelu hakiem przedmiotu (tylko generacja,
+    // także dogenerowanie): odrzucenia liczą się do rejectedCount i są zliczone
+    // po powodzie w rejectedReasons dla rodzica.
+    const refined = refineGeneratedDrafts(subject, drafts, input.material);
     // Walidacja puli z materiałem (przedmiot: uziemienie cytatów, rodziny pytań)
     // przed walidacją semantyczną — odrzucone ćwiczenia liczą się do rejectedCount.
-    const grounded = splitByPoolExtra(subject, stripParentAddedFlags(drafts), input.material);
+    const grounded = splitByPoolExtra(subject, stripParentAddedFlags(refined.kept), input.material);
     const poolResult = validatePool(grounded.kept, subject, topic);
     const valid = poolResult.valid;
     const rejected = [...grounded.extraRejected, ...poolResult.rejected];
@@ -1169,11 +1296,12 @@ export async function executeLessonGeneration(services: Services, runId: string,
     const existingExerciseSet = new Set(batches.flatMap((b) => b.existingExercises).map((exercise) =>
       JSON.stringify([exercise.objectiveId, exercise.exerciseType, exercise.stimulus]),
     ));
+    const identityOptions = lessonIdentityOptionsOf(subject);
     const uniqueValid: LessonExerciseDraft[] = [];
     let dupAgainstExisting = 0;
     for (const ex of valid) {
       const clash = subject.poolDeduplication === "exercise"
-        ? existingExerciseSet.has(lessonExerciseIdentity(ex))
+        ? existingExerciseSet.has(lessonExerciseIdentity(ex, identityOptions))
         : [...existingSet].some((a) => answersEquivalent(a, ex.answer, subject.normalizer));
       if (clash) {
         dupAgainstExisting += 1;
@@ -1181,7 +1309,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
         uniqueValid.push(ex);
       }
     }
-    const rejectedCount = shapeRejected + outOfScopeCount + rejected.length + dupAgainstExisting;
+    const rejectedCount = shapeRejected + outOfScopeCount + refined.rejectedCount + rejected.length + dupAgainstExisting;
 
     console.log(
       `[lesson] run=${runId} walidacja puli: ${summarizeLessonPoolValidation({
@@ -1192,6 +1320,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
         rejectedErrors: rejected.flatMap((item) => item.errors),
         duplicateCount: dupAgainstExisting,
         validCount: uniqueValid.length,
+        refineRejected: refined.rejectedCount,
       })}`,
     );
     // Porzucone warianty redundantne nie są odrzuceniem (nie trafiają do
@@ -1210,12 +1339,14 @@ export async function executeLessonGeneration(services: Services, runId: string,
         )[0];
         if (version && version.state !== "published" && version.editNumber === run.expectedEditNumber) {
           const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+          const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, refined.rejectedReasons);
           await tx
             .update(deckVersions)
             .set({
               lessonContext: {
                 ...prevContext,
                 rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+                ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
                 droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
               } as unknown as Record<string, unknown>,
             })
@@ -1251,11 +1382,13 @@ export async function executeLessonGeneration(services: Services, runId: string,
       // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
       // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
       const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+      const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, refined.rejectedReasons);
       const nextContext: LessonContext = {
         ...prevContext,
         ...(dynamicTopicData ? { dynamicTopic: dynamicTopicData, objectiveIds: dynamicTopicData.objectives.map((o) => o.id) } : {}),
         examples: { ...prevContext.examples, ...examples },
         rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+        ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
         droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
       };
       await tx
@@ -1339,7 +1472,7 @@ export async function regenerateObjective(
       const subject = services.subjects.getSubject(context.subjectId);
       if (!subject) throw new AppError("validation", { message: "unknown subject" });
       const existingAnswers = subject.poolDeduplication === "exercise" ? [] : await existingAnswersOf(tx, version.id);
-      const existingExercises = subject.poolDeduplication === "exercise" ? await existingExercisesOf(tx, version.id) : [];
+      const existingExercises = subject.poolDeduplication === "exercise" ? await existingExercisesOf(tx, version.id, subject) : [];
       const runId = randomUUID();
       const runInput: LessonRunInput = {
         deckId: args.deckId,

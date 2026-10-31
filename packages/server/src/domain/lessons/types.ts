@@ -83,14 +83,23 @@ export type LessonExpectedForm = "short" | "one_sentence" | "explanation" | "lis
 /**
  * Dane tematu dynamicznego: zagadnienia wyprowadzone z materiału rodzica,
  * zapisane w `lesson_context.dynamicTopic`. Identyfikatory celów są pełne
- * (`school.d<deckId>.<slug>`), nadawane przez serwer przy generowaniu.
+ * (`<subjectId>.d<deckId>.<slug>`), nadawane przez serwer przy generowaniu.
  */
 export interface DynamicObjectiveData {
   readonly id: string;
   readonly titlePl: string;
   readonly descriptionEn: string;
   readonly cards: readonly { readonly title: string; readonly body: string }[];
+  /**
+   * Rodzaj zagadnienia, gdy przedmiot dzieli materiał na różne rodzaje:
+   * `words` — grupa słów, `frame` — rama zdaniowa. Przedmiot, który go nie
+   * używa (np. szkolny), nie ustawia pola; brak = rodzaj domyślny przedmiotu.
+   */
+  readonly kind?: DynamicObjectiveKind;
 }
+
+/** Rodzaje zagadnienia tematu dynamicznego (opcjonalne, zależne od przedmiotu). */
+export type DynamicObjectiveKind = "words" | "frame";
 
 export interface DynamicTopicData {
   readonly titlePl: string;
@@ -113,6 +122,17 @@ export interface SubjectPromptProfile {
    * Opcjonalne: przedmiot bez reguł pól pomija pole.
    */
   readonly fieldRules?: string;
+  /**
+   * Semantyka typów z własną ścisłą gałęzią schematu puli (pary, grupy, luki):
+   * adapter składa blok z części strukturalnej (pola, limity) i tego opisu.
+   * Brak reguły typu = sama część strukturalna.
+   */
+  readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
+  /**
+   * Reguły etapu zagadnień tematu dynamicznego (ile zagadnień, ich rodzaje,
+   * treść kart) doklejane do promptu podziału materiału. Brak = ogólny opis.
+   */
+  readonly objectivesRules?: string;
 }
 
 /**
@@ -183,6 +203,13 @@ export interface SubjectModule {
   readonly titlePl: string; // „Angielski — gramatyka”
   readonly answerLocale: string; // "en-GB" — język odpowiedzi dziecka
   readonly promptLocale: string; // "pl-PL" — język poleceń
+  /**
+   * Język pytania w `lesson_open_answer`, gdy przedmiot go zna (np. angielski
+   * rozdział: bodziec jest po polsku, odpowiedź po angielsku). Brak = reguła
+   * domyślna: pytanie dostaje język tylko, gdy `promptLocale` równa się
+   * `answerLocale`.
+   */
+  readonly openAnswerPromptLocale?: string;
   readonly exerciseTypes: readonly LessonExerciseType[]; // typy wspierane przez przedmiot
   readonly errorCategories: readonly ErrorCategory[]; // kategorie przedmiotu (poza bazowymi)
   readonly normalizer: AnswerNormalizer;
@@ -194,6 +221,52 @@ export interface SubjectModule {
   readonly poolMinimums?: { readonly guided: number; readonly productive: number; readonly independent: number };
   /** Jak rozpoznawać duplikaty w puli; odpowiedzi pozostają osobną osią ekspozycji. */
   readonly poolDeduplication?: "answer" | "exercise";
+  /**
+   * Czy ćwiczenia muszą nieść cytaty źródłowe `sourceRefs` z materiału rodzica:
+   * steruje `groundingRequired` w generacji i wymaganiem cytatów w gałęziach
+   * schematu par, grup i luk. Brak = `false` (przedmiot bez cytatów).
+   */
+  readonly sourceQuotes?: boolean;
+  /**
+   * Skąd pochodzi tytuł przedmiotu zestawu z materiału: `parent` — rodzic
+   * nazywa przedmiot własnym tytułem (np. szkolny), `fixed` — stały
+   * `titlePl` przedmiotu. Brak = przedmiot nie tworzy zestawów z materiału.
+   */
+  readonly materialSubjectTitle?: "parent" | "fixed";
+  /**
+   * Czy polecenie (`instructionPl`) niesie bodziec znaczenia: tożsamość ćwiczeń
+   * `lesson_choice`, `lesson_gap` i `lesson_order` uwzględnia wtedy znormalizowane
+   * polecenie, więc to samo zdanie z innym poleceniem to dwa ćwiczenia. Brak = `false`.
+   */
+  readonly instructionIsStimulus?: boolean;
+  /**
+   * Tekst, z którego liczony jest `target_key` ćwiczenia (ekspozycja). Brak =
+   * `answer`. Wołany przy zapisie rewizji szkicu (generacja i edycja rodzica).
+   */
+  exposureText?(draft: LessonExerciseDraft): string;
+  /**
+   * Normalizacja tekstu przed liczeniem `target_key` (np. bez końcowej
+   * interpunkcji, z prostym apostrofem). Obowiązuje każdy tekst ekspozycji
+   * lekcji przedmiotu — ćwiczenia (`exposureText`/`answer`) i przykłady kart —
+   * więc ten sam tekst ma jeden klucz. Brak = tekst bez zmian (dotychczasowe
+   * klucze). Zmiana istniejącej normalizacji zmienia zapisane klucze: wymaga
+   * decyzji o migracji (kopie szkiców zachowują klucze zapisane wcześniej).
+   */
+  normalizeExposureText?(text: string): string;
+  /**
+   * Walidacja i czyszczenie WYŁĄCZNIE świeżo wygenerowanych ćwiczeń (wyjście
+   * modelu, także dogenerowanie): odrzuca ćwiczenie z powodem albo zwraca je
+   * w `kept` już bez pojedynczych wadliwych elementów (np. wariantów odpowiedzi).
+   * Nie działa przy edycji rodzica ani publikacji — w odróżnieniu od
+   * `validatePoolExtra`, która obowiązuje zawsze. Powody są zliczane dla rodzica.
+   */
+  refineGeneratedPool?(
+    drafts: readonly LessonExerciseDraft[],
+    ctx: { material: string },
+  ): {
+    kept: LessonExerciseDraft[];
+    rejected: { exercise: LessonExerciseDraft; reason: string }[];
+  };
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej

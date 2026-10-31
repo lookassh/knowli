@@ -46,7 +46,7 @@ const lesson = {
 
 const catalog = {
   subjects: [{
-    id: "english_grammar", titlePl: "Gramatyka angielska",
+    id: "english_grammar", titlePl: "Gramatyka angielska", creation: "catalog", subjectTitleRequired: false,
     topics: [{
       id: "present_simple", version: 1, titlePl: "Present Simple",
       objectives: [
@@ -209,6 +209,48 @@ test("menu ⋯ lekcji: usunięcie z listy po potwierdzeniu wraca do listy bez te
   expect(calls.requests.filter((r) => r.method === "POST" && r.path.endsWith("/archive"))).toHaveLength(1);
   // lista z serwera jeszcze pokazuje lekcję jako aktywną — panel ukrywa ją od razu
   await expect(page.locator(`[data-deck-id="${deckId}"]`)).toHaveCount(0);
+});
+
+test("rozdział angielskiego: powody odrzuceń pod licznikiem i rodzaj zagadnienia przy regule", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const WORDS = "english_chapter.d1.clothes";
+  const FRAME = "english_chapter.d1.i_like";
+  const card = (title: string) => [{ title, body: "Słowa z rozdziału." }, { title: `${title} 2`, body: "Zdania z rozdziału." }];
+  const chapter = {
+    ...version(draftId, "draft", 2),
+    title: "Angielski — rozdział: Unit 1", subjectId: "english_chapter", topicId: "dynamic",
+    objectiveIds: [WORDS, FRAME],
+    examples: {},
+    // 12 odrzuceń, z czego 8 wyjaśnia pięć wypisanych powodów — reszta to „inne powody: 4”.
+    rejectedCount: 12,
+    rejectedReasons: { "słowo spoza materiału: raining": 3, "zdanie bez słownictwa z materiału": 2, "inny powód": 1, "powód A": 1, "powód B": 1, "powód C": 1 },
+    dynamicTopic: { titlePl: "Unit 1", objectives: [
+      { id: WORDS, titlePl: "Ubrania", kind: "words", cards: card("Ubrania") },
+      { id: FRAME, titlePl: "I like", kind: "frame", cards: card("I like") },
+    ] },
+    exercises: [choice(1, WORDS), choice(2, FRAME)],
+  };
+  await openLesson(page, { data: { ...lesson, draft: chapter, published: null, assignments: [] } as unknown as typeof lesson });
+  await expect(page.getByTestId("rejected-count")).toContainText("12");
+  // Lista jest podpisana jako powody sprawdzania słów z materiału (nie wszystkie odrzucenia).
+  await expect(page.getByTestId("rejected-reasons-label")).toHaveText(messages.lessons.rejectedReasonsLabel);
+  await expect(page.getByRole("list", { name: messages.lessons.rejectedReasonsLabel })).toBeVisible();
+  // do 5 najczęstszych, malejąco; remis alfabetycznie; na końcu odrzucenia bez wypisanego powodu
+  const reasons = page.getByTestId("rejected-reasons").getByRole("listitem");
+  await expect(reasons).toHaveCount(6);
+  await expect(reasons.nth(0)).toHaveText("słowo spoza materiału: raining ×3");
+  await expect(reasons.nth(1)).toHaveText("zdanie bez słownictwa z materiału ×2");
+  await expect(page.getByTestId("rejected-other")).toHaveText("inne powody: 4");
+  await expect(page.getByTestId(`objective-kind-${WORDS}`)).toHaveText(messages.lessons.objectiveKind.words!);
+  await expect(page.getByTestId(`objective-kind-${FRAME}`)).toHaveText(messages.lessons.objectiveKind.frame!);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("lekcja bez powodów odrzuceń i bez rodzaju zagadnień nie pokazuje listy ani znaczka", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLesson(page);
+  await expect(page.getByTestId("rejected-reasons")).toHaveCount(0);
+  await expect(page.locator('[data-testid^="objective-kind-"]')).toHaveCount(0);
 });
 
 test("zagadnienie szkolne przy 320 px: pola z przyciskami bez przepełnienia, usunięcie zagadnienia po potwierdzeniu", async ({ page }) => {
