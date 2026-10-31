@@ -55,6 +55,17 @@ describe("withFeedbackSentenceAudio", () => {
       expect(withFeedbackSentenceAudio({ kind: "great" }, translation)).toEqual({ kind: "great", correctAudioAssetId: ASSET });
     });
 
+    it.each([
+      { exerciseType: "lesson_transform", answer: "She plays football.", variant: "Yes, she plays football." },
+      { exerciseType: "lesson_error_fix", answer: "He goes to school.", variant: "He goes to school every day." },
+    ])("gramatyka ($exerciseType): „prawie” z innym zatwierdzonym wariantem — bez nagrania; z kanoniczną odpowiedzią — z nagraniem", ({ exerciseType, answer, variant }) => {
+      const grammar = key(ASSET, { exerciseType, answer, acceptedAnswers: [variant], subjectId: "english_grammar" } as Partial<Key>);
+      const shownVariant: FeedbackDto = { kind: "lesson_almost", correctText: variant };
+      expect(withFeedbackSentenceAudio(shownVariant, grammar)).toEqual(shownVariant);
+      const shownCanonical: FeedbackDto = { kind: "lesson_almost", correctText: answer };
+      expect(withFeedbackSentenceAudio(shownCanonical, grammar)).toEqual({ ...shownCanonical, correctAudioAssetId: ASSET });
+    });
+
     it("tekst kanoniczny typu zamkniętego to pokazany tekst rozwiązania (opcja, luki z bankiem, klocki)", () => {
       const choice = key(ASSET, { exerciseType: "lesson_choice", answer: "coat", correctOptionId: "o1", optionValues: { o1: "coat", o2: "dress" } });
       expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "coat" }, choice)?.correctAudioAssetId).toBe(ASSET);

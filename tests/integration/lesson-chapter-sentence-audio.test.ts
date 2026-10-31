@@ -17,6 +17,7 @@ import {
   type Services,
 } from "@learning/server";
 import type { AttemptDto, AttemptInput, TaskDto } from "@learning/contracts";
+import { lessonTextTargetKey } from "../../packages/server/src/domain/lessons/exposure-key";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { ManualClock, testDatabase } from "./helpers";
 
@@ -67,7 +68,11 @@ const gap = (objectiveId: string, instructionPl: string, stem: string, answer: s
   exerciseType: "lesson_gap", objectiveId, instructionPl, stem, answer, acceptedAnswers: [], focus: [answer],
 });
 
-/** Zagadnienie słów: pary, grupy, luki z bankiem, wybór, luki, tłumaczenia (minima 3/3/2). */
+/**
+ * Zagadnienie słów: pary, grupy, luki z bankiem, wybór, luki, tłumaczenia (minima 3/3/2).
+ * Rozwiązane zdania (klucze ekspozycji) są różne w obu zagadnieniach, więc pieczęć
+ * odczytu i `targetKey` jednoznacznie wskazują jedno ćwiczenie.
+ */
 function wordsPool(objectiveId: string) {
   return [
     {
@@ -92,8 +97,8 @@ function wordsPool(objectiveId: string) {
     choice(objectiveId, "Mam na sobie sukienkę. Wybierz słowo.", "I'm wearing a ___.", "dress", "skirt"),
     gap(objectiveId, "Mam na sobie płaszcz. Wpisz brakujące słowo.", "I'm wearing a ___.", "coat"),
     gap(objectiveId, "Ona ma na sobie spódnicę. Wpisz brakujące słowo.", "She is wearing a ___.", "skirt"),
-    gap(objectiveId, "Mam na sobie buty. Wpisz brakujące słowo.", "I'm wearing ___.", "boots"),
-    translation(objectiveId, "Mam dziś na sobie płaszcz.", "I'm wearing a coat today.", "Today I'm wearing a coat.", "coat"),
+    gap(objectiveId, "Mam dziś na sobie czapkę. Wpisz brakujące słowo.", "I'm wearing a ___ today.", "hat"),
+    translation(objectiveId, "Ona ma dziś na sobie czapkę.", "She is wearing a hat today.", "Today she is wearing a hat.", "hat"),
     translation(objectiveId, "Ona ma dziś na sobie sukienkę.", "She is wearing a dress today.", "Today she is wearing a dress.", "dress"),
   ];
 }
@@ -108,11 +113,11 @@ function framePool(objectiveId: string) {
     },
     choice(objectiveId, "Mam na sobie buty. Wybierz słowo.", "I'm wearing ___.", "boots", "hat"),
     choice(objectiveId, "Mam dziś na sobie płaszcz. Wybierz słowo.", "I'm wearing a ___ today.", "coat", "skirt"),
-    gap(objectiveId, "Mam dziś na sobie płaszcz. Wpisz brakujące słowo.", "I'm ___ a coat today.", "wearing"),
-    gap(objectiveId, "Ona ma na sobie sukienkę. Wpisz brakujące słowo.", "She is wearing a ___.", "dress"),
+    gap(objectiveId, "Mam dziś na sobie spódnicę. Wpisz brakujące słowo.", "I'm ___ a skirt today.", "wearing"),
+    gap(objectiveId, "Ona ma na sobie płaszcz. Wpisz brakujące słowo.", "She is wearing a ___.", "coat"),
     gap(objectiveId, "Ona ma dziś na sobie spódnicę. Wpisz brakujące słowo.", "She is wearing a ___ today.", "skirt"),
     translation(objectiveId, "Mam dziś na sobie buty.", "I'm wearing boots today.", "Today I'm wearing boots.", "boots"),
-    translation(objectiveId, "Ona ma dziś na sobie spódnicę.", "She is wearing a skirt today.", "Today she is wearing a skirt.", "skirt"),
+    translation(objectiveId, "Ona ma dziś na sobie buty.", "She is wearing boots today.", "Today she is wearing boots.", "boots"),
   ];
 }
 
@@ -266,8 +271,54 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
       await completePresentation(services, { taskId: task.taskId });
       task = await nextTask(services, session.sessionId);
     }
-    expect(task?.exerciseType).toBe("lesson_open_answer");
-    return task!;
+    if (task === null) throw new Error("sesja po terminie powtórki skończyła się bez zadania — brak należnego tłumaczenia");
+    expect(task.exerciseType, "pierwsze zadanie po terminie powtórki").toBe("lesson_open_answer");
+    return task;
+  }
+
+  /** Pierwsze zadanie typu w sesji; wcześniejsze karty przechodzą, inne zadania są pomijane. */
+  async function skipUntil(services: Services, sessionId: string, type: string): Promise<TaskDto> {
+    for (let step = 0; step < 40; step++) {
+      const task = await nextTask(services, sessionId);
+      if (task === null) throw new Error(`sesja skończyła się przed zadaniem ${type}`);
+      if (task.exerciseType === type) return task;
+      if (task.exerciseType === "lesson_card") await completePresentation(services, { taskId: task.taskId });
+      else await submit(services, task, { modality: "skip" });
+    }
+    throw new Error(`nie doczekano zadania ${type} w 40 krokach`);
+  }
+
+  /**
+   * Rozwiązane zdanie, które dziecko widzi po odpowiedzi: publiczny prompt zadania
+   * (Kid DTO) z rozwiązaniem z klucza — niezależnie od payloadu rewizji.
+   */
+  function solvedSentenceSeen(task: TaskDto, key: Record<string, unknown>): string {
+    const prompt = task.prompt;
+    switch (prompt.kind) {
+      case "lesson_choice": {
+        const correct = prompt.options.find((option) => option.id === key.correctOptionId);
+        if (correct === undefined) throw new Error("prompt wyboru bez poprawnej opcji z klucza");
+        return prompt.stem.replace(/_{2,}/u, correct.text);
+      }
+      case "lesson_cloze": {
+        const wordOf = new Map((key.assignments as { itemId: string; targetId: string }[]).map((entry) => [entry.itemId, entry.targetId]));
+        const words = new Map(prompt.words.map((word) => [word.id, word.text]));
+        return prompt.segments.map((segment) => {
+          if (!("gapId" in segment)) return segment.text;
+          const word = words.get(wordOf.get(segment.gapId) ?? "");
+          if (word === undefined) throw new Error(`luka ${segment.gapId} bez słowa z klucza`);
+          return word;
+        }).join("");
+      }
+      case "lesson_gap":
+        return prompt.stemWithGap.replace(/_{2,}/u, key.answer as string);
+      case "lesson_order": {
+        const texts = new Map(prompt.items.map((item) => [item.id, item.text]));
+        return (key.itemIds as string[]).map((id) => texts.get(id)).join(" ");
+      }
+      default:
+        throw new Error(`brak zdania do porównania dla ${prompt.kind}`);
+    }
   }
 
   async function feedbackAssetOf(taskId: string): Promise<{ assetId: string; text: string } | null> {
@@ -326,6 +377,12 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
     }
     // Luki z bankiem: pełny tekst, nie lista słów (`answer`).
     expect(rows.find((row) => row.type === "lesson_cloze")!.metadata).toMatchObject({ text: "I'm wearing a coat and boots." });
+    // Każde ćwiczenie ze zdaniem ma własny klucz rozwiązanego zdania (bez kolizji między zagadnieniami).
+    const sentenceKeys = (await query<{ type: string; target_key: string }>(
+      "select payload->>'exerciseType' as type, target_key from learning_app.item_revisions where deck_version_id = $1", [draft.id],
+    )).filter((row) => SENTENCE_TYPES.includes(row.type)).map((row) => row.target_key);
+    expect(sentenceKeys.length).toBe(rows.filter((row) => SENTENCE_TYPES.includes(row.type)).length);
+    expect(new Set(sentenceKeys).size, "rozwiązane zdania fixture muszą być różne").toBe(sentenceKeys.length);
     // Przedmiot nie ma nagrań odpowiedzi, pytań ani kart.
     expect((await query<{ role: string }>(
       `select distinct ra.role from learning_app.revision_assets ra
@@ -361,10 +418,15 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
         [entry!.task.taskId],
       ))[0]!.payload;
       await expectSentenceReadback(entry!, shownSentence(payload));
+      // `targetKey` zadania (i pieczęci odczytu) to klucz zdania, które dziecko widzi rozwiązane —
+      // ta sama normalizacja przedmiotu co silnik (kontrakt Etapu 1).
+      const seen = solvedSentenceSeen(entry!.task, entry!.key);
+      expect(entry!.key.targetKey, `${type}: ${seen}`).toBe(lessonTextTargetKey(services.subjects.getSubject("english_chapter")!, seen));
     }
     // Luki z bankiem: nagranie to dokładnie tekst omówienia (`filledText` klucza zadania).
     const cloze = firstOf("lesson_cloze")!;
     expect((await feedbackAssetOf(cloze.task.taskId))!.text).toBe(cloze.key.filledText);
+    expect(solvedSentenceSeen(cloze.task, cloze.key)).toBe(cloze.key.filledText);
 
     for (const type of ["lesson_match", "lesson_group"]) {
       for (const entry of played.filter((item) => item.task.exerciseType === type)) {
@@ -379,22 +441,16 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
     const wrongChild = await createChild(services, { displayName: "Pomyłka", avatarKey: "owl" });
     await assign(wrongChild.id, deckId);
     const session = await startSession(services, { childId: wrongChild.id, deckId, microphoneEnabled: false });
-    let task = await nextTask(services, session.sessionId);
-    while (task !== null && task.exerciseType !== "lesson_choice") {
-      if (task.exerciseType === "lesson_card") await completePresentation(services, { taskId: task.taskId });
-      else await submit(services, task, { modality: "skip" });
-      task = await nextTask(services, session.sessionId);
-    }
-    expect(task?.exerciseType).toBe("lesson_choice");
-    const key = await answerKey(task!.taskId);
-    const wrong = (task!.prompt as { options: { id: string }[] }).options.find((option) => option.id !== key.correctOptionId)!;
-    const attempt = await submit(services, task!, { modality: "choice", optionId: wrong.id });
+    const task = await skipUntil(services, session.sessionId, "lesson_choice");
+    const key = await answerKey(task.taskId);
+    const wrong = (task.prompt as { options: { id: string }[] }).options.find((option) => option.id !== key.correctOptionId)!;
+    const attempt = await submit(services, task, { modality: "choice", optionId: wrong.id });
     expect(attempt.feedback).toMatchObject({ kind: "incorrect", correctText: (key.optionValues as Record<string, string>)[key.correctOptionId as string] });
-    const stem = (task!.prompt as { stem: string }).stem;
-    await expectSentenceReadback({ task: task!, key, attempt }, stem.replace(/_{2,}/u, attempt.feedback!.correctText!));
+    const stem = (task.prompt as { stem: string }).stem;
+    await expectSentenceReadback({ task, key, attempt }, stem.replace(/_{2,}/u, attempt.feedback!.correctText!));
   });
 
-  it("tłumaczenie: poprawne czyta odpowiedź kanoniczną; „prawie” z pokazanym innym wariantem — bez nagrania i bez pieczęci", async () => {
+  it("tłumaczenie: poprawne i „prawie” z kanoniczną odpowiedzią czytają ją; „prawie” z pokazanym innym wariantem — bez nagrania i bez pieczęci", async () => {
     const { services, clock, deckId, draft } = await chapterWorld();
     await publishLessonDraft(services, draft.id, draft.editNumber);
     await runWorker(services);
@@ -406,6 +462,18 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
     const exactAttempt = await submit(services, exactTask, { modality: "text", text: exactKey.answer as string });
     expect(exactAttempt.feedback?.kind).toBe("great");
     await expectSentenceReadback({ task: exactTask, key: exactKey, attempt: exactAttempt }, exactKey.answer as string);
+
+    // Literówka poza sprawdzanym słowem w odpowiedzi kanonicznej: najbliższy wariant = kanoniczny → odczyt zdania.
+    const canonical = await createChild(services, { displayName: "Kanon", avatarKey: "owl" });
+    await assign(canonical.id, deckId);
+    const canonicalTask = await dueTranslation(services, clock, canonical.id, deckId);
+    const canonicalKey = await answerKey(canonicalTask.taskId);
+    const canonicalTypo = (canonicalKey.answer as string).replace("wearing", "wearring");
+    expect(canonicalTypo).not.toBe(canonicalKey.answer);
+    const canonicalAttempt = await submit(services, canonicalTask, { modality: "text", text: canonicalTypo });
+    expect(canonicalAttempt.feedback).toMatchObject({ kind: "lesson_almost", correctText: canonicalKey.answer });
+    expect(canonicalAttempt.taskState).toBe("answered");
+    await expectSentenceReadback({ task: canonicalTask, key: canonicalKey, attempt: canonicalAttempt }, canonicalKey.answer as string);
 
     const almost = await createChild(services, { displayName: "Prawie", avatarKey: "owl" });
     await assign(almost.id, deckId);

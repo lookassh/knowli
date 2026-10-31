@@ -152,7 +152,7 @@ describe("requiredAssetsForLessonExercise — zdanie feedbacku (feedback_audio)"
     expect(required.map((asset) => asset.role)).toEqual(["feedback_audio"]);
     expect(required[0]!.metadata).toEqual({
       kind: "tts", text: "It's sunny today. I'm wearing my T-shirt.", locale: "en-GB",
-      voice: required[0]!.metadata.voice, format: settings.tts.format, instructions: "Speak British English.",
+      voice: expect.any(String), format: settings.tts.format, instructions: "Speak British English.",
     });
     // Inne słowo luki to inne nagranie; niekompletne luki albo uszkodzony payload — bez nagrania.
     const other = requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["windy", "T-shirt"] }, settings, on)[0]!;
@@ -160,6 +160,21 @@ describe("requiredAssetsForLessonExercise — zdanie feedbacku (feedback_audio)"
     expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["sunny"] }, settings, on)).toEqual([]);
     expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["sunny", 7] }, settings, on)).toEqual([]);
     expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: "sunny, T-shirt" }, settings, on)).toEqual([]);
+  });
+
+  it("lesson_cloze z flagami szkoły (ttsForFeedbackSentence: false) nie zleca feedback_audio", () => {
+    const flags = {
+      ttsForAnswers: schoolSubject.ttsForAnswers, ttsForPrompts: schoolSubject.ttsForPrompts, ttsForFeedbackSentence: schoolSubject.ttsForFeedbackSentence,
+    };
+    expect(flags.ttsForFeedbackSentence).toBe(false);
+    const cloze = {
+      exerciseType: "lesson_cloze", answerLocale: "pl-PL", instructionPl: "Uzupełnij tekst.",
+      clozeText: "Roślina pobiera ___ z powietrza.", gapAnswers: ["dwutlenek węgla"], extraWords: ["tlen"], answer: "dwutlenek węgla",
+    };
+    const roles = requiredAssetsForLessonExercise(cloze, defaultMediaSettings, flags).map((asset) => asset.role);
+    expect(roles).not.toContain("feedback_audio");
+    // To samo ćwiczenie z flagą odczytu zdania zleca nagranie — brak wynika z flagi, nie z payloadu.
+    expect(requiredAssetsForLessonExercise(cloze, defaultMediaSettings, { ...flags, ttsForFeedbackSentence: true }).map((asset) => asset.role)).toContain("feedback_audio");
   });
 
   it("lesson_choice bez luki w zdaniu nie ma zdania do przeczytania", () => {

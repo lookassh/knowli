@@ -92,12 +92,12 @@ test("plays the sentence once after a gap answer and replays it from the dock", 
   expect(media).toEqual([]);
   await answer(page);
   await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(1);
-  expect(media).toEqual([sentencePath]);
+  await expect.poll(() => media).toEqual([sentencePath]);
   const replay = page.getByTestId("kid-feedback-dock").getByTestId("kid-sentence-audio");
   await expect(replay).toHaveAttribute("aria-label", "Posłuchaj zdania");
   await replay.click();
   await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(2);
-  expect(media).toEqual([sentencePath, sentencePath]);
+  await expect.poll(() => media).toEqual([sentencePath, sentencePath]);
 });
 
 test("the dock message audio is an outlined question, not a second speaker, next to the sentence button", async ({ page }) => {
@@ -132,7 +132,7 @@ test("„Nie pamiętam” with a sentence recording shows the result with readba
   await expect(page.getByTestId("kid-feedback-correct-answer")).toContainText("He goes to school.");
   await expect(page.getByTestId("kid-sentence-audio")).toBeVisible();
   await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(1);
-  expect(media).toEqual([sentencePath]);
+  await expect.poll(() => media).toEqual([sentencePath]);
   await page.getByTestId("kid-next").click();
   await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
   await expect(page.getByTestId("kid-feedback-dock")).toHaveCount(0);
@@ -216,8 +216,10 @@ test("sentence button fits the feedback dock on every form factor", async ({ pag
  * Dłuższy bodziec niż jednozdaniowe luki gramatyki, a `correctText` to cały
  * wypełniony tekst — dok musi zmieścić w viewporcie „Posłuchaj zdania”, „?”
  * i „Dalej” także w niskim landscape (<480 px), a długa treść wyniku przewija
- * się wewnątrz doku. Treść jest zmyślona. Symulacja nie zastępuje odbioru na
- * fizycznym urządzeniu.
+ * się wewnątrz doku. Materiał obok doku zachowuje czytelne minimum, a pierwszą
+ * lukę tekstu da się przewinąć do kontenera materiału nad dokiem (telefon,
+ * landscape, tablet, desktop). Treść jest zmyślona. Symulacja nie zastępuje
+ * odbioru na fizycznym urządzeniu.
  */
 const clozeUid = (n: number) => `10000000-0000-4000-8000-0000000009${String(n).padStart(2, "0")}`;
 const clozeSolution = ["sun hat", "swimming costume", "sandcastle"];
@@ -263,12 +265,22 @@ const CLOZE_VIEWPORTS = [
   { width: 812, height: 375 },
   { width: 740, height: 420 },
   { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
 ];
 
 const CLOZE_FEEDBACKS: { kind: string; feedback: FeedbackDto }[] = [
   { kind: "great", feedback: { kind: "great", correctAudioAssetId: sentenceAssetId } },
   { kind: "incorrect", feedback: { kind: "incorrect", correctText: clozeFilledText, correctAudioAssetId: sentenceAssetId } },
 ];
+
+/**
+ * Najmniejsza widoczna wysokość materiału obok doku: dwa cele dotykowe 48 px
+ * (wiersz tekstu z luką i miejsce luki). Pomiar 2026-10-31: z nakładką
+ * najciaśniej jest na 360×800 po błędzie (dok z całym tekstem zakrywa dół
+ * materiału, nad nim zostaje ok. 167 px); przy wysokości <480 (812×375,
+ * 740×420) materiał ma naturalną wysokość ok. 407 px i przewija strona.
+ */
+const MIN_VISIBLE_MATERIAL = 96;
 
 interface Box { x: number; y: number; width: number; height: number }
 
@@ -307,7 +319,7 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
 
         // Nagranie całego tekstu gra raz, bez akcji dziecka.
         await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(1);
-        expect(media).toEqual([sentencePath]);
+        await expect.poll(() => media).toEqual([sentencePath]);
 
         // Dok i jego akcje stoją w viewporcie bez przewijania strony.
         const viewportBox: Box = { x: 0, y: 0, width: viewport.width, height: viewport.height };
@@ -329,6 +341,26 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         expect(overlaps(boxes.sentence, boxes.guidance), `sentence/guidance overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.sentence, boxes.next), `sentence/next overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.guidance, boxes.next), `guidance/next overlap at ${label}`).toBe(false);
+
+        // Kontener materiału obok doku. Poniżej 480 px wysokości przewija się strona, a dok stoi
+        // w przepływie pod materiałem; wyżej dok jest nakładką na dolną krawędź materiału
+        // (`ExerciseFrame`), więc widoczny materiał kończy się na górnej krawędzi doku.
+        const pageScrolls = viewport.height < 480;
+        if (pageScrolls) await expect(page.locator(".kid-page")).toHaveAttribute("data-viewport-very-short", "true");
+        else await expect(page.locator(".kid-page")).not.toHaveAttribute("data-viewport-very-short", "true");
+        const material = page.getByTestId("kid-material");
+        const materialBox = await boxOf(material);
+        const materialBottom = materialBox.y + materialBox.height;
+        const geometry = `material ${JSON.stringify(materialBox)}, dock ${JSON.stringify(dockBox)} at ${label}`;
+        if (pageScrolls) {
+          expect(materialBottom, `material bottom above the dock: ${geometry}`).toBeLessThanOrEqual(dockBox.y + 1);
+          // Materiał ma naturalną wysokość (nie jest ściśnięty przez dok ani przycięty) — przewija strona.
+          expect(materialBox.height, `material height: ${geometry}`).toBeGreaterThanOrEqual(MIN_VISIBLE_MATERIAL);
+          expect(await material.evaluate((element) => element.scrollHeight <= element.clientHeight + 1), `material clipped: ${geometry}`).toBe(true);
+        } else {
+          const visible = Math.min(materialBottom, dockBox.y) - Math.max(materialBox.y, 0);
+          expect(visible, `material visible above the dock: ${geometry}`).toBeGreaterThanOrEqual(MIN_VISIBLE_MATERIAL);
+        }
         // Wynik z całym tekstem mieści się w szerokości doku (wysokość przewija się w środku).
         const result = await boxOf(page.getByTestId("kid-feedback"));
         expect(result.x, `feedback inside dock at ${label}`).toBeGreaterThanOrEqual(dockBox.x - 1);
@@ -358,11 +390,22 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
           await content.evaluate((element) => { element.scrollTop = 0; });
         }
 
+        // Pierwszą lukę tekstu da się przewinąć do kontenera materiału: w nim, w viewporcie i nad dokiem.
+        const firstGap = page.getByTestId("kid-lesson-cloze-gap").first();
+        await firstGap.scrollIntoViewIfNeeded();
+        const gapBox = await boxOf(firstGap);
+        const materialNow = await boxOf(material);
+        const dockNow = await boxOf(dock);
+        const reached = `gap ${JSON.stringify(gapBox)}, material ${JSON.stringify(materialNow)}, dock ${JSON.stringify(dockNow)} at ${label}`;
+        expect(within(gapBox, materialNow), `first gap inside material: ${reached}`).toBe(true);
+        expect(within(gapBox, viewportBox), `first gap inside viewport: ${reached}`).toBe(true);
+        expect(gapBox.y + gapBox.height, `first gap above the dock: ${reached}`).toBeLessThanOrEqual(dockNow.y + 1);
+
         // Autoodtwarzanie nie powtórzyło się samo; „Posłuchaj zdania” gra drugi raz.
         expect((await audioCounters(page)).plays).toBe(1);
         await sentence.click();
         await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(2);
-        expect(media).toEqual([sentencePath, sentencePath]);
+        await expect.poll(() => media).toEqual([sentencePath, sentencePath]);
       });
     }
   }
