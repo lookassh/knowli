@@ -174,7 +174,7 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | apps/worker/src/tasks.ts | Powiązanie nazw Graphile z przypadkami użycia |
 | apps/worker/src/composition.ts | Składanie zależności workera |
 
-DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie tworzymy pustych adapterów wszystkich przyszłych usług.
+DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material (nauka z dokumentów, OCR/PDF — nie mylić z tabelą `source_materials` z Etapu 2, czyli zapisanym tekstem rozdziału rodzica). Nie tworzymy pustych adapterów wszystkich przyszłych usług.
 
 ## 6. Testy i deployment
 
@@ -196,9 +196,9 @@ DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material. Nie
 | tests/integration/speech.test.ts | Timeouty, zatwierdzone warianty, częściowy wynik, brak audio na dysku |
 | tests/integration/reporting.test.ts | Rozdzielenie dzieci i mylonych par |
 | tests/e2e/parent-flow.spec.ts | Generacja → review → publikacja |
-| tests/integration/source-materials.test.ts | Źródła na PostgreSQL: idempotencja, rewizje, usunięcie bez utraty zestawów, kopia do lekcji, współbieżność (`FOR KEY SHARE`), HTTP Parent API |
-| tests/e2e/parent-sources-layout.spec.ts | Zakładka „Źródła” z zaślepionym API: lista, edycja, konflikt, usunięcie i formularz lekcji ze źródła na czterech rozmiarach okna |
-| tests/e2e/parent-sources.spec.ts | Źródło → lekcja → notka w edytorze → edycja → usunięcie na prawdziwej bazie i workerze (projekt `real`, kosz 4) |
+| tests/integration/source-materials.test.ts | Źródła na PostgreSQL: idempotencja, rewizje (współbieżności i treści), zapis bez zmian, usunięcie bez utraty zestawów, kopia do lekcji, współbieżność (`FOR KEY SHARE`, ponowienie po usunięciu), CHECK-i, HTTP Parent API |
+| tests/e2e/parent-sources-layout.spec.ts | Zakładka „Źródła” z zaślepionym API: lista, edycja, konflikt, usunięcie i formularz lekcji ze źródła na czterech rozmiarach okna; przypadki brzegowe (fokus po błędach, ochrona wyjścia, błędy wczytywania, nieistniejące źródło, limit tekstu) na telefonie |
+| tests/e2e/parent-sources.spec.ts | Źródło → lekcja → publikacja → notka w edytorze → edycja → usunięcie na prawdziwej bazie i workerze (projekt `real`, kosz 4) |
 | tests/e2e/kid-flow.spec.ts | Sesja z mikrofonem i bez, błędy sieci |
 | tests/e2e/privacy.spec.ts | Brak sekretów i odpowiedzi w DTO |
 | tests/e2e/learning-algorithm.spec.ts | Mały zestaw i cykl pomocy w interfejsie dziecka |

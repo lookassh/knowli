@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Gałąź `claude/english-chapter-2-sources` (stos na `claude/english-chapter-1-lesson`, PR #192); PR Etapu 2 ma bazę `claude/english-chapter-1-lesson`.
+- Gałąź `claude/english-chapter-2-sources`, pierwotnie stos na `claude/english-chapter-1-lesson` (PR #192); po scaleniu #192 do `main` (46e626c0) gałąź przeniesiono na `main`, więc PR Etapu 2 ma bazę `main`.
 - Kolejny numer migracji: `0029`; wpis w `packages/server/drizzle/meta/_journal.json` (`idx` 29, `when` o ok. 1e8 większy od 0028); styl jak `0020_deck_session_task_budget.sql`. Migracja nie może naruszyć triggerów `decks_kind_immutable` (0007) ani `decks_cover_asset_guard` (0011).
 - `source_materials`: `title` 1–120 po trim, `body` 1–16 000 po trim (`MAX_SCHOOL_MATERIAL_LENGTH`), `revision` od 1; uuid PK nadawany przez aplikację (`randomUUID()`), `timestamps()` jak w schemacie.
 - Obszar `materials/` importuje tylko `materials` i `family`; inne obszary i web tylko przez barrele (`modules/materials/index.ts`, `packages/server/src/index.ts`).
@@ -116,4 +116,4 @@
 
 - [ ] `corepack pnpm typecheck`, `test:unit`, `test:integration`, `test:e2e:shards` (build produkcyjny) — PASS.
 - [ ] Niezależny przegląd kilkoma subagentami; jedna fala poprawek; ponowna weryfikacja.
-- [ ] Push `claude/english-chapter-2-sources`; PR z bazą `claude/english-chapter-1-lesson`; opis: zakres, migracja 0029, wpływ API → MCP → skill (brak), wdrożenie (migracja przed web), sprawdzenia, niezweryfikowane.
+- [ ] Push `claude/english-chapter-2-sources`; PR z bazą `main`; opis: zakres, migracja 0029, wpływ API → MCP → skill (brak), wdrożenie (migracja przed web i worker), sprawdzenia, niezweryfikowane.

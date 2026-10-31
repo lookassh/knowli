@@ -30,7 +30,7 @@ CREATE TABLE "learning_app"."source_materials" (
 -- tekstu. Usunięcie źródła zeruje odnośnik (ON DELETE SET NULL), treść zestawu i
 -- skopiowana rewizja zostają; oba CHECK-i przepuszczają taki wiersz. UPDATE
 -- wywołany przez klucz obcy nie rusza kolumn kind ani cover_asset_id, więc
--- decks_cover_asset_guard (0011, UPDATE OF cover_asset_id, kind) się nie
+-- decks_cover_asset_guard (0011, INSERT OR UPDATE OF cover_asset_id, kind) się nie
 -- uruchamia, a decks_kind_immutable (0007, BEFORE UPDATE bez listy kolumn)
 -- uruchamia się i przepuszcza wiersz, bo kind się nie zmienia.
 ALTER TABLE "learning_app"."decks" ADD COLUMN "source_material_id" uuid;
