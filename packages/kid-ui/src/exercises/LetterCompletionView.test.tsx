@@ -93,8 +93,12 @@ describe("LetterCompletionView word grouping", () => {
     fireEvent.keyDown(second, { key: "ArrowLeft" });
     expect(document.activeElement).toBe(first);
 
-    // An empty gap hands focus back to the previous gap, across the space between the words.
-    fireEvent.keyDown(second, { key: "Backspace" });
+    // Backspace in an empty gap hands focus back to the previous gap in another word and selects its letter.
+    fireEvent.change(first, { target: { value: "i" } });
+    expect(document.activeElement).toBe(second);
+    const notCancelled = fireEvent.keyDown(second, { key: "Backspace" });
+    expect(notCancelled).toBe(false);
     expect(document.activeElement).toBe(first);
+    expect([first.selectionStart, first.selectionEnd]).toEqual([0, 1]);
   });
 });
