@@ -12,7 +12,7 @@ export type TtsStyle = TtsRoleStyle | LessonVoiceTone;
  * Polskie skróty, po których kropka z odstępem nie kończy zdania („np. sowy”). Niedoszacowanie liczby
  * zdań jest bezpieczne (szept wymaga co najmniej dwóch), a przeszacowanie zaszeptałoby jedno zdanie.
  */
-const ABBREVIATION_DOT = /(?<![\p{L}\d])(np|itp|itd|tzn|tzw|tj|m\.in|p\.n\.e|n\.e|r|w|ok|godz|dr|prof|tys|mln|mld)\.(?=\s)/giu;
+const ABBREVIATION_DOT = /(?<![\p{L}\d])(np|itp|itd|tzn|tzw|tj|m\.in|p\.n\.e|n\.e|r|w|ok|godz|dr|prof|tys|mln|mld|św|ul|ks)\.(?=\s)/giu;
 
 /**
  * Liczba zdań w tekście nagrania (spec tonu TTS §4.3): po normalizacji odstępów zdanie to fragment

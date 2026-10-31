@@ -43,6 +43,9 @@ describe("sentenceCount", () => {
     expect(sentenceCount("W XV w. zbudowano zamek.")).toBe(1);
     expect(sentenceCount("W 50 r. p.n.e. Rzym rósł.")).toBe(1);
     expect(sentenceCount("W 966 r. n.e. Polska przyjęła chrzest.")).toBe(1);
+    expect(sentenceCount("Czy wiesz, że św. Wojciech zginął w Prusach?")).toBe(1);
+    expect(sentenceCount("Szkoła stoi przy ul. Lipowej.")).toBe(1);
+    expect(sentenceCount("Ks. Jan uczył dzieci.")).toBe(1);
   });
 
   it("nadal liczy dwa zdania, gdy skrót nie jest przed odstępem lub tekst ma inne granice", () => {

@@ -247,6 +247,10 @@ export function validateLessonExercise(
   if (ex.voiceTone !== undefined && subject.ttsForPrompts !== true) {
     errors.push(`voiceTone: ton lektora niedozwolony dla przedmiotu „${subject.id}” (brak nagrań pytań)`);
   }
+  // Rachunek nie ma nagrania pytania z tonem (edytor go nie pokazuje, generator nie zwraca).
+  if (ex.voiceTone !== undefined && ex.exerciseType === "lesson_calculation") {
+    errors.push("voiceTone: ton lektora niedozwolony dla lesson_calculation");
+  }
   validateVisualSubject(ex, errors);
   if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
     errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");

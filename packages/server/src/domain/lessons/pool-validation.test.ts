@@ -676,6 +676,9 @@ describe("validateLessonExercise — voiceTone", () => {
     };
     const errors = validateLessonExercise(ex, schoolSubject, topic);
     expect(errors.some((error) => error.startsWith("voiceTone:"))).toBe(false);
+    // Rachunek nie ma tonu nawet w przedmiocie z nagraniami (edytor go nie pokazuje).
+    const calculation = validateLessonExercise({ ...ex, exerciseType: "lesson_calculation" }, schoolSubject, topic);
+    expect(calculation).toContain("voiceTone: ton lektora niedozwolony dla lesson_calculation");
   });
 });
 

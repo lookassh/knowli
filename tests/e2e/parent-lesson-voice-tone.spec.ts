@@ -117,6 +117,9 @@ test("ton lektora trafia do patcha bez stanu nagrań, a „Nagraj ponownie” wo
   const tone = page.getByTestId("exercise-voice-tone-0");
   await expect(tone).toHaveValue("cheerful");
   await tone.selectOption("gentle");
+  // Niezapisana zmiana: serwer nagrałby zapisany tekst i ton, więc „Nagraj ponownie” jest zablokowane.
+  await expect(page.getByTestId("exercise-prompt-audio-1-regenerate")).toBeDisabled();
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-regenerate`)).toBeDisabled();
   await page.getByTestId("save-lesson").click();
   await expect.poll(() => calls.requests.filter((request) => request.method === "PATCH").length).toBe(1);
 

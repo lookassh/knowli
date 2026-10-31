@@ -470,9 +470,10 @@ function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
  * wyjście modelu: rodzic może zapisać dowolny ton z kontraktu.
  */
 export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subject: Pick<SubjectModule, "ttsForPrompts">): LessonExerciseDraft {
-  // `mysterious` w ćwiczeniu z modelu też odpada: pytania nie są szeptane (spec tonu TTS §4.3),
-  // a edytor pokazałby „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
-  if (draft.voiceTone === undefined || (subject.ttsForPrompts === true && draft.voiceTone !== "mysterious")) return draft;
+  if (draft.voiceTone === undefined) return draft;
+  // `mysterious` w ćwiczeniu z modelu → `curious`, jak brzmi nagranie (pytania nie są szeptane,
+  // spec tonu TTS §4.3) — edytor nie pokaże „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
+  if (subject.ttsForPrompts === true) return draft.voiceTone === "mysterious" ? { ...draft, voiceTone: "curious" } : draft;
   const { voiceTone: _dropped, ...rest } = draft;
   return rest;
 }

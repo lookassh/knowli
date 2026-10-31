@@ -178,7 +178,9 @@ async function reconcileThenNextTx(
   if (!before) {
     throw new AppError("not_found");
   }
-  await reconcileDraftAssetsTx(tx, services, version);
+  // `keepFailed`: nieudane zasoby wymagające decyzji rodzica (odpowiedzi, ilustracje) zostają;
+  // nieudane nagrania pytań i kart uzgodnienie i tak zleca ponownie (nie są decyzją rodzica).
+  await reconcileDraftAssetsTx(tx, services, version, { keepFailed: true });
   const after = await readRow();
   if (!after) {
     throw new AppError("not_found");

@@ -260,8 +260,8 @@ describe("ton lektora (voiceTone) z wyjścia modelu", () => {
     expect(withoutVoiceToneUnlessAllowed(toned, schoolSubject).voiceTone).toBe("gentle");
     const plain = toExerciseDraft(rawExercise);
     expect(withoutVoiceToneUnlessAllowed(plain, englishGrammarSubject)).toBe(plain);
-    // Pytania nie są szeptane: `mysterious` z modelu odpada także w przedmiocie z nagraniami.
-    expect("voiceTone" in withoutVoiceToneUnlessAllowed(toExerciseDraft({ ...rawExercise, voiceTone: "mysterious" }), schoolSubject)).toBe(false);
+    // Pytania nie są szeptane: `mysterious` z modelu staje się `curious` (tak brzmi nagranie).
+    expect(withoutVoiceToneUnlessAllowed(toExerciseDraft({ ...rawExercise, voiceTone: "mysterious" }), schoolSubject).voiceTone).toBe("curious");
 
     const raw = { slug: "a", titlePl: "Zagadnienie", descriptionEn: "Topic description.", cards: [{ title: "K", body: "T.", voiceTone: "cheerful" }] };
     const cards = buildDynamicTopicData([raw], "school", "deck", "Temat", () => [], false).data!.objectives[0]!.cards;

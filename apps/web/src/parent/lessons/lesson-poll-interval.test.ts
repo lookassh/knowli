@@ -42,8 +42,10 @@ describe("lessonPollInterval", () => {
   });
 
   it("odpytuje, gdy nagranie pytania albo karty czeka (nie ma ich w assets)", () => {
-    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftPromptAudio: ["ready", "pending"] }))).toBe(1000);
-    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftCardAudio: ["pending"] }))).toBe(1000);
+    // Same nagrania pytań i kart: rzadziej (co 3 s).
+    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftPromptAudio: ["ready", "pending"] }))).toBe(3000);
+    expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftCardAudio: ["pending"] }))).toBe(3000);
+    expect(lessonPollInterval(lesson({ draftAssets: ["pending"], draftCardAudio: ["pending"] }))).toBe(1000);
     expect(lessonPollInterval(lesson({ draftAssets: ["approved"], draftPromptAudio: ["ready", "failed"], draftCardAudio: ["ready"] }))).toBe(false);
   });
 });

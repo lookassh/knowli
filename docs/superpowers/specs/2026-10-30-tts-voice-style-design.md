@@ -336,8 +336,11 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie (nowe zlecenie
   albo gotowe nagranie wspólne z inną wersją), a stan wiersza odpowiada temu
   zasobowi; kolejnej generacji nie zlecamy. Uzgodnienie obejmuje cały szkic, jak
-  zapis, więc przenosi do bieżącej konfiguracji wszystkie jego pytania i karty
-  (płatne nagrania). Dlatego „Nagraj ponownie” jest też przy `pending`: zlecenie
+  zapis (z `keepFailed`: nieudane odpowiedzi i ilustracje czekają na decyzję
+  rodzica), więc przenosi do bieżącej konfiguracji wszystkie jego pytania i karty
+  i zleca ponownie ich nieudane nagrania (płatne nagrania). Nowe ujęcie wspólnego
+  fingerprintu słyszy też dziecko w każdej opublikowanej lekcji o tym samym
+  tekście, tonie i konfiguracji — także w innym zestawie. Dlatego „Nagraj ponownie” jest też przy `pending`: zlecenie
   innego providera lub modelu worker pomija, a przycisk przenosi je do bieżącej
   konfiguracji. Rodzic nie musi niczego
   zapisywać (zapis czystego szkicu i tak nic nie wysyła). Brak ustawień
@@ -345,7 +348,8 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 - **Błąd „Nagraj ponownie”** znika, gdy zmieni się stan nagrania (zapis
   szkicu, odpytywanie), zamiast wisieć obok nowego stanu.
 - **Odświeżanie:** dopóki jakieś nagranie pytania lub karty jest `pending`,
-  edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…” znika samo,
+  edytor odpytuje lekcję (`lessonPollInterval`, co 3 s, gdy czekają tylko
+  nagrania pytań i kart), więc „Nagrywanie…” znika samo,
   gdy nagranie będzie gotowe albo nieudane.
 - **Świeża kopia opublikowanej lekcji** nie ma jeszcze wierszy nagrań kart:
   sterowanie kartami pojawia się dopiero po pierwszej zapisanej edycji

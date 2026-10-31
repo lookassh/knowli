@@ -60,7 +60,11 @@ export function regenCountValid(count: number): boolean {
   return Number.isInteger(count) && count >= 1 && count <= 60;
 }
 
-/** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji (także nagrania pytań i kart) czekają. */
+/**
+ * Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają;
+ * co 3 s, gdy czekają tylko nagrania pytań i kart (trwają kilka sekund, a zlecenie, którego worker
+ * nie wykona, nie powinno obciążać serwera odpytywaniem co sekundę).
+ */
 export function lessonPollInterval(deck: LessonDeckDto | undefined): number | false {
   if (!deck) return false;
   const generating = deck.generation?.state === "queued" || deck.generation?.state === "running";
@@ -69,7 +73,8 @@ export function lessonPollInterval(deck: LessonDeckDto | undefined): number | fa
   // nagrania pytań i kart nie są w `assets` (serwer je pomija) — ich stan niosą ćwiczenia i `cardAudio`
   const promptAudioPending = visible?.exercises.some((exercise) => exercise.promptAudio?.state === "pending") ?? false;
   const cardAudioPending = visible?.cardAudio?.some((card) => card.audio.state === "pending") ?? false;
-  return generating || assetsPending || promptAudioPending || cardAudioPending ? 1000 : false;
+  if (generating || assetsPending) return 1000;
+  return promptAudioPending || cardAudioPending ? 3000 : false;
 }
 
 /**
@@ -737,7 +742,10 @@ export default function LessonEditor({
     );
   };
 
-  /** Nagranie karty zagadnienia: tylko dla karty bez zmian od zapisu (tytuł, treść i ton) i tylko gdy zapis ma dla niej wpis. */
+  /**
+   * Nagranie karty zagadnienia: tylko dla karty bez zmian od zapisu (tytuł, treść, ton i przykłady
+   * zagadnienia — czytany tekst karty je obejmuje) i tylko gdy zapis ma dla niej wpis.
+   */
   const cardAudio = (objectiveId: string, cardIndex: number) => {
     const entry = active?.cardAudio?.find((candidate) => candidate.objectiveId === objectiveId && candidate.cardIndex === cardIndex);
     if (!entry) return null;
@@ -746,6 +754,7 @@ export default function LessonEditor({
       const current = form?.dynamicObjectives?.find((o) => o.id === objectiveId)?.cards[cardIndex];
       const same = (a: EditableDynamicCard) => JSON.stringify([a.title, a.body, a.voiceTone ?? null]);
       if (!saved || !current || same(saved) !== same(current)) return null;
+      if (JSON.stringify(examplesForm?.[objectiveId] ?? draft?.examples?.[objectiveId] ?? []) !== JSON.stringify(draft?.examples?.[objectiveId] ?? [])) return null;
     }
     return entry.audio;
   };
