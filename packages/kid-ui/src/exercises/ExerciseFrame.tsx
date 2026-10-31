@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
-import { toLayoutPx } from "../layout/css-zoom";
+import { cssZoomOf, toLayoutPx } from "../layout/css-zoom";
 import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
@@ -126,9 +126,9 @@ export function ExerciseFrame({
   // wchodzi pod panel; inaczej nie powstaje zbędny ogon scrolla. Rezerwa
   // jest wyliczana od zera przy każdej zmianie rozmiaru (materiał, panel,
   // okno/klawiatura), więc nie rośnie monotonicznie. Przewinięcie
-  // korygujące następuje tylko, gdy zakładka przekracza próg — po
-  // korekcie znika, więc pomiary nie dokładają scrolla w pętli, a po
-  // otwarciu klawiatury ekranowej albo rotacji liczy się jeszcze raz.
+  // korygujące następuje od zakładki 1 px ekranu — po korekcie znika, więc
+  // pomiary nie dokładają scrolla w pętli, a po otwarciu klawiatury
+  // ekranowej albo rotacji liczy się jeszcze raz.
   //
   // Rezerwa jest gotowa przed malowaniem (spec 2026-10-31 §3.2): efekt layoutu
   // mierzy w commicie, w którym pojawia się panel, a `setDockPad` z efektu
@@ -167,15 +167,21 @@ export function ExerciseFrame({
       const contentBottom = content && content.children.length > 0
         ? toLayoutPx(Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)), material)
         : null;
-      // Górna krawędź panelu bez transformacji animacji wejścia.
-      const dockTop = toLayoutPx(anchor.getBoundingClientRect().bottom, material) - overlay.offsetHeight;
+      // Górna krawędź panelu z prostokąta nakładki — ułamkowa, bez zaokrąglenia
+      // offsetHeight. Nakładka nie ma transformacji: animacja wejścia działa na
+      // panelu w jej wnętrzu.
+      const dockTop = toLayoutPx(overlay.getBoundingClientRect().top, material);
       const overlap = contentBottom === null ? 0 : contentBottom - dockTop;
+      // Próg 1 px ekranu (spec 2026-10-31-kid-ui-dock-followups §3.3): od niego
+      // włącza się bramka rezerwy i działa korekta przewinięcia. Mniejsza
+      // zakładka to zaokrąglenia — nie dokłada zakresu przewijania ani nie przewija.
+      const covers = overlap * cssZoomOf(material) >= 1;
       // Bramka rezerwy zatrzaskuje się na cały panel: późniejsze pomiary
       // (rAF, ResizeObserver) nie włączają jej wbrew pierwszemu pomiarowi,
       // a włącza ją dopiero realna zakładka po zmianie rozmiaru.
       if (gatedDockRef.current?.overlay !== overlay) {
-        gatedDockRef.current = { overlay, enabled: overlap > 0 };
-      } else if (overlap > 0) {
+        gatedDockRef.current = { overlay, enabled: covers };
+      } else if (covers) {
         gatedDockRef.current.enabled = true;
       }
       const targetPad = gatedDockRef.current.enabled ? excess : 0;
@@ -189,13 +195,13 @@ export function ExerciseFrame({
         else setDockPad(targetPad);
         return;
       }
-      // Po korekcie zakładka znika (treść kończy się nad panelem), więc
+      // Po korekcie zakładka znika (treść kończy się 8 px nad panelem), więc
       // kolejne pomiary nie dokładają scrolla; następna korekta następuje
-      // dopiero, gdy zakładka znów przekroczy próg (klawiatura, rotacja,
+      // dopiero, gdy zakładka znów osiągnie próg (klawiatura, rotacja,
       // wzrost treści albo panelu). Klucz korekty pomija ręczne
       // przewinięcie dziecka: sam re-render z tym samym panelem,
       // rozmiarem materiału i treścią nie przewija ponownie.
-      if (overlap > 8) {
+      if (covers) {
         const scrollKey = `${material.clientWidth}x${material.clientHeight}:${material.scrollHeight}`;
         if (scrolledKeyRef.current?.overlay !== overlay || scrolledKeyRef.current.key !== scrollKey) {
           scrolledKeyRef.current = { overlay, key: scrollKey };

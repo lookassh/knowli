@@ -761,17 +761,18 @@ test("the top offset gives way before the material", async ({ page }) => {
 
 /**
  * Reads the overlap probe (`installDockOverlapProbe`): in no sampled frame does the panel cover the material content by
- * more than the 8 inner px correction threshold of `ExerciseFrame` (screen px: 8 x scale, + 1 for rounding), and once
- * settled the content ends above the panel (spec 2026-10-31 §1, §3.2). `settledIn`: the window the probe must have
- * settled in (a resize step).
+ * more than the 1 screen px correction threshold of `ExerciseFrame` (+ 1 for rounding), and once settled the content
+ * ends above the panel (spec 2026-10-31 §1, §3.2; threshold: spec 2026-10-31-kid-ui-dock-followups §3.3). `settledIn`:
+ * the window the probe must have settled in (a resize step). Returns the probe result.
  */
-async function expectPanelNeverCovers(page: Page, label: string, settledIn?: Viewport): Promise<void> {
+async function expectPanelNeverCovers(page: Page, label: string, settledIn?: Viewport) {
   const probe = await readDockOverlapProbe(page);
   const details = `${label}: ${JSON.stringify(probe)}`;
   if (settledIn) expect(probe.window, `the probe settled after the resize: ${details}`).toBe(`${settledIn.width}x${settledIn.height}`);
   expect(probe.samples.length, `the probe sampled frames: ${details}`).toBeGreaterThan(0);
-  expect(Math.max(...probe.samples), `overlap in every sampled frame: ${details}`).toBeLessThanOrEqual(8 * probe.scale + 1);
+  expect(Math.max(...probe.samples), `overlap in every sampled frame: ${details}`).toBeLessThanOrEqual(2);
   expect(probe.settled, `overlap once settled: ${details}`).toBeLessThanOrEqual(1);
+  return probe;
 }
 
 // The reserve under the result panel is ready before the first frame that shows the panel (spec 2026-10-31 §3.2):
@@ -921,7 +922,8 @@ const SCROLLING_MATERIAL_CASES = [
   // A panel 20 px over the footer while the child reads the prompt from the top. The short panel is stretched by a
   // style, so the excess does not depend on fonts. The correcting scroll needs the scroll range the reserve adds, so it
   // runs on the layout with the reserve (spec 2026-10-31 §3.2): run on the layout before it, it stopped at the old end
-  // and left about 4 px of the answer under the panel (an excess in (16, 24] px leaves 0–8 px), below the 8 px threshold.
+  // and left about 4 px of the answer under the panel (an excess in (16, 24] px leaves 0–8 px), below the then 8 px
+  // threshold (1 screen px since spec 2026-10-31-kid-ui-dock-followups §3.3).
   {
     name: "written answer under a panel 20 px over the footer", viewport: SMALL_LAPTOP, submit: "kid-submit",
     open: async (page: Page) => {
@@ -966,6 +968,42 @@ test("the reserve lengthens an already scrolling material", async ({ page }) => 
     expect(atEnd.contentBottom, `content above the panel when scrolled to the end: ${label}: ${JSON.stringify(atEnd)}`)
       .toBeLessThanOrEqual(atEnd.dockTop + 1);
   }
+});
+
+// The correcting scroll runs from a 1 screen px overlap (spec 2026-10-31-kid-ui-dock-followups §3.3); up to 8 inner px
+// stayed under the panel before. A style stretches the panel so that it covers the answer by exactly 5 px: the overlay
+// top is the anchor top (footer top + 8) minus the stretch, whatever the anchor height. The reserve does not move the
+// centred content of the regular frame, so the correction scrolls by the overlap plus 8 px.
+test("a first overlap of a few pixels is corrected", async ({ page }) => {
+  await page.setViewportSize(SMALL_LAPTOP);
+  await openWrittenRecall(page);
+  await waitForKidScale(page, 1);
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await nextFrames(page);
+  const before = await page.evaluate(() => {
+    const content = document.querySelector(".kid-material-content")!;
+    const footer = document.querySelector("[data-testid='kid-exercise-actions']")!.getBoundingClientRect();
+    return {
+      contentBottom: Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)),
+      footerTop: footer.top,
+      footerHeight: footer.height,
+    };
+  });
+  const stretch = before.footerTop + 8 - before.contentBottom + 5;
+  await page.addStyleTag({ content: `.kid-feedback-overlay { height: calc(100% + ${stretch}px) !important; }` });
+  await page.getByTestId("kid-input").fill("cat");
+  await installDockOverlapProbe(page);
+  await page.getByTestId("kid-submit").click();
+  await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+
+  const settled = await settledDockReserve(page);
+  const footerHeight = (await boxes(page, "[data-testid='kid-exercise-actions']"))[0]!.height;
+  const details = JSON.stringify({ before, stretch, settled, footerHeight });
+  // The footer keeps its height at the verdict, so the overlap really is 5 px.
+  expect(Math.abs(footerHeight - before.footerHeight), `footer height unchanged: ${details}`).toBeLessThanOrEqual(0.5);
+  expect(settled.inlineReserve, `the reserve is engaged: ${details}`).toBeGreaterThan(0);
+  expect(Math.abs(settled.scrollTop - 13), `scrolled by the 5 px overlap + 8: ${details}`).toBeLessThanOrEqual(1);
+  await expectPanelNeverCovers(page, "first overlap of 5 px at 1280x600");
 });
 
 const SECOND_ATTEMPT_ID = "10000000-0000-4000-8000-000000000011";
