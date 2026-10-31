@@ -1236,7 +1236,10 @@ export class LearningSessionController {
     }
     // „Rozumiem” potwierdziło już pokazany wzorzec. Po zapisaniu trudności
     // przechodzimy do wsparcia, bez drugiego feedbacku na zamkniętym formularzu.
-    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued") {
+    // Wyjątek: lekcja z nagraniem zdania — pokazujemy wynik z odczytem
+    // i „Posłuchaj zdania” do kliknięcia „Dalej” (design odczytu zdania §1, §7).
+    const sentenceReadback = attempt.feedback?.correctAudioAssetId !== undefined && isLessonTask(this.#screen.task);
+    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued" && !sentenceReadback) {
       // Zachowaj wzorzec do atomowej podmiany zadania w #loadNext:
       // usunięcie reveal wcześniej odsłoniłoby poprzedni formularz na czas sieci.
       this.#setLearning({ feedback: null, processing: false, busy: true });
@@ -1273,7 +1276,7 @@ export class LearningSessionController {
     // Lekcja: feedback z rozwiązaniem niesie nagranie pełnego zdania — gramy je
     // raz od razu (design odczytu zdania §7). Zablokowane autoodtwarzanie i błąd
     // pliku są ciche; zostaje przycisk „Posłuchaj zdania” w doku.
-    if (attempt.feedback?.correctAudioAssetId !== undefined && isLessonTask(this.#screen.task)) {
+    if (sentenceReadback) {
       void this.playSentenceAudio();
     }
   }

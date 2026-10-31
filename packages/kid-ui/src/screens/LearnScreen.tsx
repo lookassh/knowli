@@ -114,8 +114,14 @@ export function LearnScreen({
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
+  // Odczyt pełnego zdania w doku lekcji; obok niego komunikat dostaje „?”,
+  // nie drugi głośnik.
+  const sentenceAudio = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined
+    ? { onPlay: () => void controller.playSentenceAudio() }
+    : null;
   const guidanceButton = instructionAudioKey
-    ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false} />
+    ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false}
+        {...(sentenceAudio !== null ? { icon: "question" as const } : {})} />
     : null;
   // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
   const instructionGuidanceButton = instructionAudioKey
@@ -268,9 +274,7 @@ export function LearnScreen({
         tone={answerDockTone(feedback.dto)}
         celebrate={celebrateInDock}
         guidance={guidanceButton}
-        sentenceAudio={isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined
-          ? { onPlay: () => void controller.playSentenceAudio() }
-          : null}
+        sentenceAudio={sentenceAudio}
         primary={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
           onNext={() => void controller.continueLearning()} />}
         secondary={lessonFeedbackView(feedback.dto)?.technical === true && feedback.retry ? (

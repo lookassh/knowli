@@ -78,7 +78,10 @@ async function answer(page: Page): Promise<void> {
 async function open(page: Page, attempts: AttemptDto[], mode: AudioMode = "hold", tasks: (TaskDto | null)[] = [first, second]): Promise<string[]> {
   await spyAudio(page, mode);
   const media = trackMedia(page);
-  await installKidUiFixture(page, { ...lessonAudioFixture(ids, tasks as TaskDto[]), attempts });
+  await installKidUiFixture(page, {
+    ...lessonAudioFixture(ids, tasks as TaskDto[]), attempts,
+    disclosure: { taskId: first.taskId, stepId: "d1", kind: "hint", reveal: { target: "goes" } },
+  });
   await openLessonTask(page, "kid-lesson-gap");
   return media;
 }
@@ -94,6 +97,44 @@ test("plays the sentence once after a gap answer and replays it from the dock", 
   await replay.click();
   await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(2);
   expect(media).toEqual([sentencePath, sentencePath]);
+});
+
+test("the dock message audio is an outlined question, not a second speaker, next to the sentence button", async ({ page }) => {
+  await open(page, [withSentence]);
+  await answer(page);
+  const dock = page.getByTestId("kid-feedback-dock");
+  const guidance = dock.getByTestId("kid-guidance-play");
+  const sentence = dock.getByTestId("kid-sentence-audio");
+  await expect(guidance).toHaveAttribute("aria-label", "Posłuchaj");
+  await expect(guidance).toHaveAttribute("data-guidance-icon", "question");
+  await expect(guidance).toHaveAttribute("data-variant", "outlined");
+  await expect(sentence).toHaveAttribute("data-variant", "tonal");
+  await expect(sentence).toHaveClass(/kid-listen/);
+  await expect(guidance).not.toHaveClass(/kid-listen/);
+});
+
+test("without the sentence recording the dock message audio keeps the speaker", async ({ page }) => {
+  await open(page, [attempt({ kind: "great" })]);
+  await answer(page);
+  const guidance = page.getByTestId("kid-feedback-dock").getByTestId("kid-guidance-play");
+  await expect(guidance).toHaveAttribute("data-guidance-icon", "speaker");
+  await expect(guidance).toHaveClass(/kid-listen/);
+});
+
+test("„Nie pamiętam” with a sentence recording shows the result with readback until „Dalej”", async ({ page }) => {
+  const media = await open(page, [{ ...attempt({ kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: sentenceAssetId }), modality: "dont_remember" }]);
+  await page.getByTestId("kid-not-remember").click();
+  await expect(page.getByTestId("kid-reveal")).toContainText("goes");
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-reveal")).toHaveCount(0);
+  await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+  await expect(page.getByTestId("kid-feedback-correct-answer")).toContainText("He goes to school.");
+  await expect(page.getByTestId("kid-sentence-audio")).toBeVisible();
+  await expect.poll(() => audioCounters(page).then((c) => c.plays)).toBe(1);
+  expect(media).toEqual([sentencePath]);
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
+  await expect(page.getByTestId("kid-feedback-dock")).toHaveCount(0);
 });
 
 test("„Dalej” stops the reading and the next task has no sentence button", async ({ page }) => {
@@ -154,6 +195,11 @@ test("sentence button fits the feedback dock on every form factor", async ({ pag
     expect(bounds.y, `in viewport at ${label}`).toBeGreaterThanOrEqual(-1);
     expect(bounds.x + bounds.width, `in viewport at ${label}`).toBeLessThanOrEqual(viewport.width + 1);
     expect(bounds.y + bounds.height, `in viewport at ${label}`).toBeLessThanOrEqual(viewport.height + 1);
+    // Obrysowany „?” komunikatu obok też ma pełny cel i mieści się w doku.
+    const guidance = (await page.getByTestId("kid-feedback-dock").getByTestId("kid-guidance-play").boundingBox())!;
+    expect(guidance.width, `guidance width at ${label}`).toBeGreaterThanOrEqual(48);
+    expect(guidance.height, `guidance height at ${label}`).toBeGreaterThanOrEqual(48);
+    expect(guidance.x + guidance.width, `guidance inside dock at ${label}`).toBeLessThanOrEqual(dock.x + dock.width + 1);
     // „Dalej” pozostaje osiągalne obok przycisku odczytu.
     const next = (await page.getByTestId("kid-next").boundingBox())!;
     expect(next.y + next.height, `next in viewport at ${label}`).toBeLessThanOrEqual(viewport.height + 1);

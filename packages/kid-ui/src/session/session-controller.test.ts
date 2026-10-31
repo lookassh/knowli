@@ -3442,6 +3442,36 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
   });
 
+  it("„Nie pamiętam” w lekcji z nagraniem zdania pokazuje wynik z odczytem i czeka na „Dalej”", async () => {
+    const state = baseState();
+    state.attempts = [attemptDto({ taskId: "tg", modality: "dont_remember", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", correctAudioAssetId: SENTENCE } })];
+    const harness = await startAtTask(state, gap());
+    state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
+    await harness.controller.notRemember();
+    expect(harness.controller.getScreen()).toMatchObject({ reveal: { target: "Thursday" } });
+    await harness.controller.confirmReveal();
+    await tick();
+    expect(harness.controller.getScreen()).toMatchObject({
+      task: { taskId: "tg" }, reveal: null, busy: false,
+      feedback: { modality: "dont_remember", retry: false, dto: { kind: "incorrect", correctAudioAssetId: SENTENCE } },
+    });
+    expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
+    await harness.controller.continueLearning();
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "tn" }, feedback: null });
+  });
+
+  it("„Nie pamiętam” w lekcji bez nagrania zdania przechodzi dalej jak dotąd", async () => {
+    const state = baseState();
+    state.attempts = [attemptDto({ taskId: "tg", modality: "dont_remember", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes." } })];
+    const harness = await startAtTask(state, gap());
+    state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
+    await harness.controller.notRemember();
+    await harness.controller.confirmReveal();
+    await tick();
+    expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "tn" }, feedback: null, reveal: null });
+    expect(harness.media.playUrls).toEqual([]);
+  });
+
   it("picture_recognition nie odtwarza poprawnego słowa samo (odsłuch zostaje ręczny)", async () => {
     const option = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const recognition = taskDto("tr", {
