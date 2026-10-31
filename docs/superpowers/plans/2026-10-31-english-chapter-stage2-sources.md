@@ -54,7 +54,7 @@
   - create idempotentne: ten sam `clientRequestId` i treść → ten sam `id`, `created: false`; inna treść → `conflict`; równoległe dwa create z tym samym `clientRequestId` → jeden rekord;
   - update: `expectedRevision` równe → `revision+1`, `updatedAt` rośnie; nierówne → `conflict`; brak źródła → `not_found`;
   - delete: źródło znika, zestaw z odnośnikiem zostaje z `source_material_id = null` (zestaw wstaw bezpośrednio SQL-em albo przez Task 3 — tu SQL);
-  - list/get: `deckCount` pomija zarchiwizowane; `stale` = `copiedRevision < revision`.
+  - list/get: `deckCount` pomija zarchiwizowane; `stale` = `copiedRevision < body_revision`.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3: Implementacja.** `request_hash` = sha256 z JSON `{title, body}` po trim (lokalnie w materials, bez importu z `learning`). Create: `insert … onConflictDoNothing({ target: clientRequestId })`, potem odczyt i porównanie hasha (różny → `conflict`). Update w transakcji z `FOR UPDATE`. Migracja ręcznie pisana SQL (snapshoty drizzle od 0018 to znany dług — nie generować ich).
 - [ ] **Step 4:** Run testy pliku + `corepack pnpm exec vitest run --config vitest.unit.config.ts packages/contracts packages/server/src/modules` + `tests/integration-buckets.test.ts` — PASS.
@@ -66,7 +66,8 @@
 
 **Interfaces:**
 - Komendy: dokładnie jedno z `material` / `sourceMaterialId` (uuid) — `.strict()` + `superRefine`; oba albo żaden → `validation`.
-- `createMaterialLesson`: gdy `sourceMaterialId`, w tej samej transakcji co dziś: `select … from source_materials where id = $1 for key share` → brak → `AppError("not_found")`; `lesson_context.material` i `generation_runs.input.material` = `body`; `decks.source_material_id`/`source_material_revision` = id/`revision`.
+- `createMaterialLesson`: gdy `sourceMaterialId`, w tej samej transakcji co dziś: `select … from source_materials where id = $1 for key share` → brak → `AppError("not_found")`; `lesson_context.material` i `generation_runs.input.material` = `body`; `decks.source_material_id`/`source_material_revision` = id/`body_revision`.
+- Po przeglądzie PR #193 (zrobione): komenda ze `sourceMaterialId` niesie wymagane `expectedSourceRevision` (rewizja treści podglądu, `SourceMaterialDto.bodyRevision`); po blokadzie `FOR KEY SHARE` inna `body_revision` → `AppError("conflict")` z `details: { reason: "source_changed" }` (`LessonSourceChangedDetailsSchema`), bez zapisu; ponowienie z tym samym `clientRequestId` zwraca istniejący zestaw przed odczytem źródła. Panel odświeża podgląd i pokazuje `messages.sources.changedBeforeCreate`; ponowne „Utwórz lekcję” jest potwierdzeniem.
 - `LessonDeckDtoSchema.source?: { id: string; title: string; copiedRevision: number; currentRevision: number }` (brak, gdy zestaw bez źródła albo źródło usunięte).
 
 - [ ] **Step 1: Testy (failing).** Kontrakty (oba/żaden → błąd). Integracja: lekcja rozdziału i szkolna ze źródła kopiują tekst i rewizję; edycja źródła po utworzeniu nie zmienia `lesson_context.material`, a DTO ma `currentRevision > copiedRevision`; usunięcie źródła → DTO bez `source`, lekcja działa (dogenerowanie używa kopii); źródło nieistniejące → `not_found`; równoległe usunięcie w trakcie tworzenia (dwie transakcje) → `not_found` albo zestaw z kopią, nigdy 500; ponowienie tego samego `clientRequestId` → ten sam zestaw.

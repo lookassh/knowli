@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
+  LessonSourceChangedDetailsSchema,
   SourceMaterialInputSchema,
   SourceMaterialPatchSchema,
   UuidSchema,
   type LessonDeckSourceDto,
+  type LessonSourceChangedDetails,
   type SourceMaterialDto,
   type SourceMaterialInput,
   type SourceMaterialPatch,
@@ -170,10 +172,20 @@ export async function deleteSourceMaterial(services: Services, id: string): Prom
  * `body` i `bodyRevision` (rewizja treści — to ją zapisuje zestaw) pochodzą
  * z jednej wersji wiersza. Źródło usunięte przed odczytem → `not_found` (nigdy
  * błąd 500 z naruszenia klucza obcego).
+ *
+ * `expectedBodyRevision` to rewizja treści, z której rodzic widział podgląd.
+ * Inna bieżąca rewizja (tekst zmieniono w innym oknie, także przez edycję, na
+ * którą to zapytanie czekało) → `conflict` z `LessonSourceChangedDetails`, zanim
+ * cokolwiek zostanie skopiowane: zestaw nigdy nie dostaje tekstu, którego rodzic
+ * nie widział. Zmiana samego tytułu nie zmienia rewizji treści, więc nie blokuje.
  * Wołać wyłącznie w transakcji domyślnej izolacji (read committed), w której
  * zapytanie blokujące ponownie ocenia wiersz po czekaniu na cudzą blokadę.
  */
-export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ body: string; bodyRevision: number }> {
+export async function lockSourceMaterialForCopy(
+  tx: Tx,
+  id: string,
+  expectedBodyRevision: number,
+): Promise<{ body: string; bodyRevision: number }> {
   const [source] = await tx
     .select({ body: sourceMaterials.body, bodyRevision: sourceMaterials.bodyRevision })
     .from(sourceMaterials)
@@ -182,7 +194,19 @@ export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ b
   if (!source) {
     throw new AppError("not_found");
   }
+  if (source.bodyRevision !== expectedBodyRevision) {
+    throw new AppError("conflict", {
+      message: "source body changed since the preview",
+      details: { reason: "source_changed" } satisfies LessonSourceChangedDetails,
+    });
+  }
   return source;
+}
+
+/** Konflikt tworzenia zestawu ze źródła zmienionego po podglądzie (`lockSourceMaterialForCopy`). */
+export function isSourceChangedConflict(error: unknown): boolean {
+  return error instanceof AppError && error.code === "conflict"
+    && LessonSourceChangedDetailsSchema.safeParse(error.details).success;
 }
 
 /**
@@ -301,6 +325,7 @@ async function readSourceMaterial(db: Executor, id: string): Promise<SourceMater
     title: source.title,
     body: source.body,
     revision: source.revision,
+    bodyRevision: source.bodyRevision,
     createdAt: source.createdAt.toISOString(),
     updatedAt: source.updatedAt.toISOString(),
     deckCount: deckRows.filter((row) => row.archivedAt === null).length,

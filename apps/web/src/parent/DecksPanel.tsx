@@ -77,22 +77,24 @@ function deckMetaParts(deck: DeckSummaryDto): string[] {
 
 /**
  * Formularz nowej lekcji ze źródła (`/parent/lessons/new?source=…`): najpierw
- * odczyt źródła (tytuł i tekst do podglądu), potem zwykły formularz w trybie
- * źródła. Źródło usunięte albo z niepełnego linku — komunikat i powrót do
+ * odczyt źródła (tytuł, tekst do podglądu i jego rewizja treści), potem zwykły
+ * formularz w trybie źródła; po konflikcie rewizji przy tworzeniu formularz
+ * odczytuje źródło ponownie. Źródło usunięte albo z niepełnego linku — komunikat i powrót do
  * listy źródeł (tam rodzic wybiera inne źródło).
  */
 function NewLessonFromSource({
   sourceId,
   onOpenSource,
   ...formProps
-}: { sourceId: string; onOpenSource: (sourceId: string | null) => void } & Omit<ComponentProps<typeof NewLessonForm>, "source" | "onOpenSource">) {
+}: { sourceId: string; onOpenSource: (sourceId: string | null) => void } & Omit<ComponentProps<typeof NewLessonForm>, "source" | "onOpenSource" | "onSourceChanged">) {
   const query = useQuery(orpc.sources.get.queryOptions({ input: { sourceId } }));
   const source = query.data;
   if (source !== undefined) {
     return (
       <NewLessonForm
-        source={{ id: source.id, title: source.title, body: source.body }}
+        source={{ id: source.id, title: source.title, body: source.body, bodyRevision: source.bodyRevision }}
         onOpenSource={onOpenSource}
+        onSourceChanged={() => query.refetch()}
         {...formProps}
       />
     );

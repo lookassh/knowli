@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
-import NewLessonForm, { buildCommand, canSubmitLesson, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues } from "./NewLessonForm";
+import NewLessonForm, { buildCommand, canSubmitLesson, classifyCreateFailure, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues } from "./NewLessonForm";
+import { ApiCallError } from "../api";
 import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
 
@@ -173,7 +174,7 @@ describe("NewLessonForm", () => {
 
   describe("lekcja ze źródła", () => {
     const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
-    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.\nDo you like apples?" };
+    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.\nDo you like apples?", bodyRevision: 3 };
 
     it("wartości startowe: wskazany przedmiot z materiału i tytuł źródła jako temat", () => {
       expect(initialLessonValues(catalog, { subjectId: "school", topicTitle: source.title, fromSource: true })).toMatchObject({
@@ -197,14 +198,14 @@ describe("NewLessonForm", () => {
       expect(canSubmitLesson({ ...schoolValues, schoolSubjectName: "Geografia" }, catalog, true)).toBe(true);
     });
 
-    it("rozdział: polecenie z sourceMaterialId, bez materiału", () => {
+    it("rozdział: polecenie z sourceMaterialId i rewizją treści podglądu, bez materiału", () => {
       const pending = buildCommand(
         values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 3", material: "" }),
         "material",
-        SOURCE_ID,
+        source,
       );
       expect(pending.kind).toBe("material");
-      expect(pending.command).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3", sourceMaterialId: SOURCE_ID });
+      expect(pending.command).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3", sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
       expect(pending.command).not.toHaveProperty("material");
     });
 
@@ -212,11 +213,35 @@ describe("NewLessonForm", () => {
       const pending = buildCommand(
         values({ subjectId: "school", topicId: "", objectiveIds: [], schoolSubjectName: "Geografia", topicTitle: "Mapa", material: "ignorowany" }),
         "school",
-        SOURCE_ID,
+        source,
       );
       expect(pending.kind).toBe("school");
-      expect(pending.command).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Mapa", sourceMaterialId: SOURCE_ID });
+      expect(pending.command).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Mapa", sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
       expect(pending.command).not.toHaveProperty("material");
+    });
+
+    it("bez źródła polecenie nie niesie rewizji źródła", () => {
+      const pending = buildCommand(values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 3" }), "material");
+      expect(pending.command).not.toHaveProperty("sourceMaterialId");
+      expect(pending.command).not.toHaveProperty("expectedSourceRevision");
+    });
+
+    it("odpowiedź tworzenia: zmienione źródło i usunięte źródło są ostateczne, inny konflikt — niepewny", () => {
+      const changed = new ApiCallError("Konflikt.", "conflict", 409, { reason: "source_changed" });
+      const otherConflict = new ApiCallError("Konflikt.", "conflict", 409);
+      const missing = new ApiCallError("Nie znaleziono.", "not_found", 404);
+      const invalid = new ApiCallError("Błąd.", "validation", 400);
+      expect(classifyCreateFailure(changed, true)).toBe("source-changed");
+      expect(classifyCreateFailure(missing, true)).toBe("source-missing");
+      expect(classifyCreateFailure(invalid, true)).toBe("rejected");
+      // konflikt bez szczegółów zmienionego źródła nie daje komunikatu o zmianie — wynik pozostaje niepewny
+      expect(classifyCreateFailure(otherConflict, true)).toBe("uncertain");
+      expect(classifyCreateFailure(new ApiCallError("Konflikt.", "conflict", 409, { reason: "other" }), true)).toBe("uncertain");
+      // bez źródła (wklejony tekst) te odpowiedzi nie dotyczą źródła
+      expect(classifyCreateFailure(changed, false)).toBe("uncertain");
+      expect(classifyCreateFailure(missing, false)).toBe("uncertain");
+      expect(classifyCreateFailure(new TypeError("Failed to fetch"), true)).toBe("uncertain");
+      expect(messages.sources.changedBeforeCreate).toBe("Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.");
     });
 
     it("formularz: podgląd źródła tylko do odczytu i link „Zmień źródło” zamiast pola materiału", () => {

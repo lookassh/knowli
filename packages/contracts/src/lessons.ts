@@ -152,9 +152,15 @@ export const MAX_SCHOOL_TOPIC_TITLE_LENGTH = 120;
  * §3.3; serwer kopiuje wtedy jego tekst). Oba albo żadne to `validation`.
  * Brak obu zgłaszamy przy `material` — to pole podświetla formularz rodzica;
  * oba naraz przy `sourceMaterialId` (zbędne odwołanie obok wklejonego tekstu).
+ *
+ * `expectedSourceRevision` towarzyszy wyłącznie `sourceMaterialId` i jest przy
+ * nim wymagane: to rewizja TREŚCI źródła (`SourceMaterialDto.bodyRevision`),
+ * z której rodzic widział podgląd. Inna rewizja w chwili tworzenia to
+ * `conflict` z `LessonSourceChangedDetails` — serwer nie kopiuje tekstu,
+ * którego rodzic nie widział.
  */
 function requireExactlyOneTextSource(
-  command: { material?: string | undefined; sourceMaterialId?: string | undefined },
+  command: { material?: string | undefined; sourceMaterialId?: string | undefined; expectedSourceRevision?: number | undefined },
   ctx: z.core.$RefinementCtx,
 ): void {
   const hasMaterial = command.material !== undefined;
@@ -165,16 +171,40 @@ function requireExactlyOneTextSource(
       path: [hasMaterial ? "sourceMaterialId" : "material"],
       message: "provide exactly one of material or sourceMaterialId",
     });
+    return;
+  }
+  if (hasSource !== (command.expectedSourceRevision !== undefined)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectedSourceRevision"],
+      message: "expectedSourceRevision is required with sourceMaterialId and only with it",
+    });
   }
 }
 
-/** Zestaw szkolny; tekst z `material` albo ze źródła (`sourceMaterialId`, dokładnie jedno). */
+/** Rewizja treści źródła z podglądu rodzica (dodatnia liczba całkowita). */
+const ExpectedSourceRevisionSchema = z.number().int().min(1);
+
+/**
+ * `details` błędu `conflict` tworzenia lekcji ze źródła, gdy tekst źródła
+ * zmieniono po wyświetleniu podglądu (`expectedSourceRevision` różne od
+ * bieżącej rewizji treści). Zestaw nie powstał; panel odświeża podgląd, a rodzic
+ * potwierdza nowy tekst ponownym utworzeniem. Odróżnia ten konflikt od innych.
+ */
+export const LessonSourceChangedDetailsSchema = z.object({ reason: z.literal("source_changed") }).strict();
+export type LessonSourceChangedDetails = z.infer<typeof LessonSourceChangedDetailsSchema>;
+
+/**
+ * Zestaw szkolny; tekst z `material` albo ze źródła (`sourceMaterialId` razem
+ * z `expectedSourceRevision`, dokładnie jedno).
+ */
 export const SchoolLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
   subjectTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_SUBJECT_TITLE_LENGTH),
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
   material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
   sourceMaterialId: UuidSchema.optional(),
+  expectedSourceRevision: ExpectedSourceRevisionSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
@@ -186,7 +216,8 @@ export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
  * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
  * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
  * Przedmiot z nazwą od rodzica (szkolny) zostaje przy `SchoolLessonCommandSchema`.
- * Tekst pochodzi z `material` albo ze źródła (`sourceMaterialId`) — dokładnie jedno.
+ * Tekst pochodzi z `material` albo ze źródła (`sourceMaterialId` razem
+ * z `expectedSourceRevision`) — dokładnie jedno.
  */
 export const MaterialLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
@@ -194,6 +225,7 @@ export const MaterialLessonCommandSchema = z.object({
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
   material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
   sourceMaterialId: UuidSchema.optional(),
+  expectedSourceRevision: ExpectedSourceRevisionSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
