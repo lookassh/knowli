@@ -34,6 +34,13 @@ Poza zakresem tego etapu:
 - pomysły z kolejnych etapów: „Powtórz za lektorem”, „Posłuchaj i uzupełnij”,
   wolniejsze odtwarzanie — budują na nagraniu z tego etapu.
 
+**Uzupełnienie (Etap 3 rozdziału, 2026-10-31).** Mechanizm jest generyczny: od Etapu 3
+„Angielski — rozdział” (`english_chapter`) też ma flagę `ttsForFeedbackSentence = true`
+(projekt: `docs/superpowers/specs/2026-10-30-english-chapter-design.md` §5). Rozdział
+używa tego samego nagrania, klucza zadania, pieczęci i Kid UI; dochodzą dwa dodatki
+generyczne: `lesson_cloze` w §4 i bramka wariantu w §6. Zapis „tylko `english_grammar`”
+powyżej opisuje zakres #194.
+
 ## 3. Zmiana uzgodnionych wymagań
 
 Wymaganie 2.13 specyfikacji gramatyki zakazywało nagrań w gramatyce, bo głośnik
@@ -64,11 +71,16 @@ Nowa czysta funkcja `feedbackSentenceText(source)` w
 | `lesson_choice` | `stem` z jedną luką zastąpioną tekstem opcji wskazanej przez `correctOption`; bez luki → `null` |
 | `lesson_order` | teksty `items` w kolejności kanonicznej, złączone spacją, bez spacji przed `.,!?` |
 | `lesson_error_fix`, `lesson_transform`, `lesson_open_answer` | `answer` (pełne zdanie) |
-| pozostałe (`lesson_card`, `lesson_notice`, `lesson_short_answer`, `lesson_match`, `lesson_group`, `lesson_cloze`, `lesson_calculation`, `lesson_keywords`) | `null` |
+| `lesson_cloze` (Uzupełnienie Etapu 3 rozdziału, 2026-10-31) | `fillCloze(clozeText, gapAnswers)` (`domain/lessons/cloze.ts`), gdy liczba odpowiedzi równa się liczbie luk i żadna nie jest pusta; inaczej `null` |
+| pozostałe (`lesson_card`, `lesson_notice`, `lesson_short_answer`, `lesson_match`, `lesson_group`, `lesson_calculation`, `lesson_keywords`) | `null` |
 
 Zasady wspólne: przycięcie i scalenie białych znaków, wynik pusty albo dłuższy niż
 200 znaków → `null` (bez nagrania). Funkcja nie dokleja polskich poleceń ani
 podpowiedzi (`hint`).
+
+Uzupełnienie Etapu 3 rozdziału: `FeedbackSentenceSource` dostaje `clozeText` i
+`gapAnswers`. Gramatyka nie ma `lesson_cloze`, a szkoła ma flagę `false`, więc ten
+wiersz działa dziś tylko w rozdziale.
 
 ## 5. Przedmiot i media
 
@@ -118,7 +130,12 @@ Właściciel reguł: `learning/lessons` (materializacja i próby), media:
   - klucz zadania ma `feedbackAudioAssetId`;
   - odpowiedź kończy zadanie (następny stan zadania nie jest `issued`) — np. `model_other`
     niepoprawne, które zostawia zadanie otwarte do ponowienia, nie dostaje nagrania,
-    aby ponowienie nie było oznaczone jako wsparte `model_audio` (ustalenie z implementacji).
+    aby ponowienie nie było oznaczone jako wsparte `model_audio` (ustalenie z implementacji);
+  - (Uzupełnienie Etapu 3 rozdziału, 2026-10-31 — bramka wariantu) feedback nie pokazuje
+    `correctText` różnego od kanonicznego tekstu rozwiązania zadania (`correctTextFor`),
+    np. „Prawie!” z najbliższym zatwierdzonym wariantem: dziecko nie ma usłyszeć innego
+    zdania niż widzi. Bramka jest generyczna (`withFeedbackSentenceAudio`), więc obejmuje
+    też gramatykę; bez nagrania nie ma też pieczęci `audio_issued`.
   Feedback z identyfikatorem zapisuje się w `attempts.feedback`, więc ponowny
   odczyt próby zwraca to samo.
 - **Ekspozycja:** w tej samej transakcji, po `discloseLessonFeedback`, serwer
@@ -133,7 +150,8 @@ Właściciel reguł: `learning/lessons` (materializacja i próby), media:
   `lesson_transform` i `lesson_error_fix` zaakceptowanych jako wariant (`great`,
   bez `correctText`) odczyt to zdanie kanoniczne, którego dziecko nie widziało
   na ekranie; ekspozycja (`targetKey`) jest jednak ta sama co feedbacku, więc
-  kwalifikacja się nie zmienia.
+  kwalifikacja się nie zmienia. Bramka wariantu (wyżej) dotyczy tylko feedbacku z
+  `correctText`; `great` bez niego nadal dostaje zdanie kanoniczne.
 - **Kontrakt:** `FeedbackDto.correctAudioAssetId` bez zmiany schematu; komentarz
   uogólniony na „nagranie rozwiązania ujawniane wyłącznie w feedbacku”. Istniejąca
   reguła „`not_assessed` nie niesie audio” obowiązuje.
