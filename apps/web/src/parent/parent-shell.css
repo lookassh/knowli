@@ -117,6 +117,16 @@
   white-space: nowrap;
 }
 
+/* 600–767 px: pięć zakładek z ikonami (ok. 609 px przy pełnym odstępie) nie mieści się
+   w pasku (576 px przy 600 px, mniej z klasycznym paskiem przewijania) — węższy odstęp
+   daje ok. 538 px, więc bez ucięcia piątej zakładki i bez przewijania paska */
+@media (max-width: 47.99em) {
+  .pp-shell-tab {
+    gap: 6px;
+    padding: 0 10px;
+  }
+}
+
 .pp-shell-tab:hover {
   color: var(--mantine-color-text);
 }

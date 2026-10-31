@@ -3,11 +3,13 @@
 import type { Ref } from "react";
 import { Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { messages } from "@learning/contracts";
-import { SOURCE_BODY_MAX, SOURCE_TITLE_MAX, sourceCounter, type SourceFormValues } from "./sources-state";
+import { SOURCE_BODY_MAX, SOURCE_TITLE_MAX, sourceBodyAtLimit, sourceCounter, type SourceFormValues } from "./sources-state";
 
 /**
  * Pola źródła wspólne dla nowego źródła i edycji: tytuł oraz tekst rozdziału
- * z podpowiedzią i licznikiem znaków (limit 16 000).
+ * z podpowiedzią i licznikiem znaków (limit 16 000). `maxLength` ucina wklejony
+ * nadmiar bez ostrzeżenia przeglądarki, więc tekst na limicie dostaje widoczną
+ * uwagę w stałym regionie na żywo (czytnik ogłasza ją po wklejeniu).
  */
 export default function SourceFields({
   values,
@@ -24,6 +26,7 @@ export default function SourceFields({
   /** Pole tytułu dla edycji w treści strony (poza oknem): fokus ustawia wywołujący. */
   titleRef?: Ref<HTMLInputElement>;
 }) {
+  const atLimit = sourceBodyAtLimit(values.body);
   return (
     <Stack gap="md">
       <TextInput
@@ -58,6 +61,10 @@ export default function SourceFields({
         </Text>
         <Text size="sm" mt={2} ta="right" className="pp-editor-muted" id="source-body-counter" data-testid="source-body-counter">
           {sourceCounter(values.body.length)}
+        </Text>
+        {/* stały region na żywo (pusty poniżej limitu): czytnik ogłasza samą zmianę tekstu */}
+        <Text size="sm" mt={atLimit ? 2 : 0} fw={600} className="pp-source-limit" id="source-body-limit" data-testid="source-body-limit" role="status">
+          {atLimit ? messages.sources.bodyAtLimit : ""}
         </Text>
       </div>
     </Stack>

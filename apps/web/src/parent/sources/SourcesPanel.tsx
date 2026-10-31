@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Affix, Alert, Box, Button, Center, Group, Loader, Modal, Paper, Stack, Text, ThemeIcon, Title, UnstyledButton } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type SourceMaterialInput } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { ParentIcon } from "../ParentIcon";
 import type { ParentRoute } from "../parent-routes";
 import { httpStatusOf, orpc } from "../query-client";
+import { runOnce } from "../run-once";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import SourceFields from "./SourceFields";
 import SourcePage from "./SourcePage";
@@ -17,6 +19,7 @@ import {
   formatSourceDate,
   isUncertainFailure,
   newSourceCommand,
+  sourceDraftTyped,
   sourceValuesValid,
   type SourceFormValues,
 } from "./sources-state";
@@ -51,6 +54,9 @@ export default function SourcesPanel({ route, onNavigate, registerEditorState }:
  * Zapis z kluczem idempotencji: niepewna odpowiedź zostawia polecenie do
  * ponowienia (ten sam `clientRequestId`), a pola są wtedy zablokowane —
  * ponowienie wysyła dokładnie to, co widać. Wpisany tekst chroni leave guard.
+ * Zamknięcie okna („Anuluj”, ×, Esc, kliknięcie obok) odrzuca szkic — po
+ * potwierdzeniu, gdy coś wpisano — więc zamknięte okno nigdy nie zostawia
+ * niewidocznych niezapisanych zmian. Błąd zapisu dostaje fokus.
  */
 function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps, "route">) {
   const compact = useMediaQuery(COMPACT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
@@ -59,9 +65,12 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
   const [dialogOpen, setDialogOpen] = useState(false);
   const [values, setValues] = useState<SourceFormValues>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  // każdy nowy błąd (także ten sam tekst drugi raz) przenosi fokus na komunikat
+  const [errorShown, setErrorShown] = useState(0);
   const pending = useRef<SourceMaterialInput | null>(null);
   const creatingRef = useRef(false);
   const mounted = useRef(true);
+  const errorAlert = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -76,12 +85,51 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
   });
   const creating = create.isPending;
   const hasPending = pending.current !== null;
-  const dirty = hasPending || values.title.trim() !== "" || values.body.trim() !== "";
+  const dirty = hasPending || sourceDraftTyped(values);
 
   useEffect(() => {
     registerEditorState({ dirty, busy: creating });
   }, [registerEditorState, dirty, creating]);
   useEffect(() => () => registerEditorState({ dirty: false, busy: false }), [registerEditorState]);
+  useEffect(() => {
+    if (errorShown > 0) errorAlert.current?.focus();
+  }, [errorShown]);
+
+  const showError = (message: string) => {
+    setError(message);
+    setErrorShown((count) => count + 1);
+  };
+
+  /** Odrzuca szkic: pola, polecenie do ponowienia i komunikat; okno się zamyka. */
+  const discardDraft = () => {
+    const hadPending = pending.current !== null;
+    pending.current = null;
+    setValues(EMPTY);
+    setError(null);
+    setDialogOpen(false);
+    // niepewny zapis mógł się udać — lista pokaże wtedy nowe źródło
+    if (hadPending) void queryClient.invalidateQueries({ queryKey: orpc.sources.list.queryKey() });
+  };
+
+  /** Zamknięcie okna: puste od razu, ze szkicem — po potwierdzeniu odrzucenia. */
+  const requestClose = () => {
+    if (creatingRef.current) return;
+    if (pending.current === null && !sourceDraftTyped(values)) {
+      discardDraft();
+      return;
+    }
+    modals.openConfirmModal({
+      title: messages.sources.discardTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{pending.current === null ? messages.sources.discardConfirm : messages.sources.discardPendingConfirm}</Text>,
+      labels: { confirm: messages.sources.discard, cancel: messages.sources.keepEditing },
+      confirmProps: { color: "red", size: "md", "data-testid": "source-discard-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "source-discard-cancel" } as Record<string, unknown>,
+      attributes: { content: { "data-testid": "source-discard-dialog" } },
+      onConfirm: runOnce(discardDraft),
+    });
+  };
 
   const submit = async (): Promise<void> => {
     if (creatingRef.current) return;
@@ -106,11 +154,11 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
     } catch (cause) {
       const status = httpStatusOf(cause);
       if (isUncertainFailure(status)) {
-        if (mounted.current) setError(messages.sources.createUncertain);
+        if (mounted.current) showError(messages.sources.createUncertain);
       } else {
         pending.current = null;
         // 401: logowanie otwiera globalny handler, wpisany tekst zostaje
-        if (status !== 401 && mounted.current) setError(errorMessage(cause));
+        if (status !== 401 && mounted.current) showError(errorMessage(cause));
       }
     } finally {
       creatingRef.current = false;
@@ -148,7 +196,7 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
         <Alert color="red" variant="light" role="alert" data-testid="sources-load-error">
           <Stack gap="sm" align="flex-start">
             <Text size="sm">{errorMessage(list.error)}</Text>
-            <Button size="md" variant="light" color="red" onClick={() => void list.refetch()}>{messages.parentShell.retry}</Button>
+            <Button size="md" variant="light" color="red" data-testid="sources-load-retry" onClick={() => void list.refetch()}>{messages.parentShell.retry}</Button>
           </Stack>
         </Alert>
       )}
@@ -188,7 +236,7 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
 
       <Modal
         opened={dialogOpen}
-        onClose={() => { if (!creatingRef.current) setDialogOpen(false); }}
+        onClose={requestClose}
         title={messages.sources.newSource}
         fullScreen={compact}
         centered
@@ -202,12 +250,12 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
         <Stack gap="md" className="pp-editor">
           <SourceFields values={values} onChange={setValues} disabled={creating || hasPending} autoFocusTitle />
           {error && (
-            <Alert color="red" variant="light" role="alert" data-testid="api-error" icon={<ParentIcon name="alert-triangle" />}>
+            <Alert ref={errorAlert} tabIndex={-1} color="red" variant="light" role="alert" data-testid="api-error" icon={<ParentIcon name="alert-triangle" />}>
               {error}
             </Alert>
           )}
           <Group justify="flex-end" gap="sm">
-            <Button size="md" variant="default" data-testid="source-create-cancel" disabled={creating} onClick={() => setDialogOpen(false)}>
+            <Button size="md" variant="default" data-testid="source-create-cancel" disabled={creating} onClick={requestClose}>
               {messages.sources.cancel}
             </Button>
             <Button

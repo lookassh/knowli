@@ -223,7 +223,7 @@ describe("NewLessonForm", () => {
       const queryClient = new QueryClient();
       queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
       const markup = renderParentMarkup(
-        <NewLessonForm source={source} initialSubjectId="school" onChangeSource={vi.fn()} onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />,
+        <NewLessonForm source={source} initialSubjectId="school" onOpenSource={vi.fn()} onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />,
         queryClient,
       );
       expect(markup).not.toContain('data-testid="lesson-material"');
@@ -232,9 +232,13 @@ describe("NewLessonForm", () => {
       expect(markup).toContain(messages.sources.fromSource.replace("{title}", "Unit 3 — Food"));
       expect(markup).toContain('data-testid="lesson-source-preview"');
       expect(markup).toContain("Do you like apples?");
+      // „Zmień źródło” prowadzi do listy źródeł, a przycisk u góry wraca do strony źródła
       expect(markup).toContain('data-testid="lesson-source-change"');
-      expect(markup).toContain(`href="/parent/sources/${SOURCE_ID}"`);
+      expect(markup).toContain('href="/parent/sources"');
+      expect(markup).not.toContain(`href="/parent/sources/${SOURCE_ID}"`);
       expect(markup).toContain(messages.sources.changeSource);
+      expect(markup).toContain(messages.sources.backToSource);
+      expect(markup).not.toContain(messages.decks.backToList);
       // tylko przedmioty tworzone z materiału; wskazany wybrany od startu
       expect(markup).toContain('value="school" selected=""');
       expect(markup).toContain('value="english_chapter"');

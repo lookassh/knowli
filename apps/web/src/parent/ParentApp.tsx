@@ -7,7 +7,7 @@ import { messages } from "@learning/contracts";
 import { ApiCallError, callParent, errorMessage, parentClient } from "./api";
 import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
-import LeaveEditorDialog from "./LeaveEditorDialog";
+import LeaveEditorDialog, { GLOBAL_DIALOG_Z_INDEX } from "./LeaveEditorDialog";
 import ProgressPanel from "./ProgressPanel";
 import SourcesPanel from "./sources/SourcesPanel";
 import WorkCardPanel from "./WorkCardPanel";
@@ -227,6 +227,7 @@ export default function ParentApp() {
         closeOnEscape={false}
         centered
         radius="lg"
+        zIndex={GLOBAL_DIALOG_Z_INDEX}
         title={messages.auth.reauthTitle}
         attributes={{ content: { "data-testid": "reauth-dialog" } }}
       >

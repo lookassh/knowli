@@ -4,6 +4,7 @@ import {
   MAX_SOURCE_TITLE_LENGTH,
   type SourceMaterialInput,
   type SourceMaterialPatch,
+  type SubjectCatalogDto,
 } from "@learning/contracts";
 import { polishPlural } from "../deck-list-grouping";
 import type { ParentRoute } from "../parent-routes";
@@ -20,6 +21,22 @@ export const SOURCE_BODY_MAX = MAX_SCHOOL_MATERIAL_LENGTH;
 export const CHAPTER_SUBJECT_ID = "english_chapter";
 export const SCHOOL_SUBJECT_ID = "school";
 
+export type SourceLessonKind = "chapter" | "school";
+
+const SUBJECT_OF_KIND: Record<SourceLessonKind, string> = { chapter: CHAPTER_SUBJECT_ID, school: SCHOOL_SUBJECT_ID };
+
+/**
+ * Rodzaje lekcji, które da się utworzyć ze źródła według katalogu: przedmiot
+ * musi w nim być i powstawać z materiału — inaczej formularz po cichu wybrałby
+ * inny przedmiot. `null`, gdy katalogu jeszcze nie ma (wczytywanie albo błąd;
+ * formularz pokaże wtedy własny stan katalogu).
+ */
+export function sourceLessonKinds(catalog: SubjectCatalogDto | undefined): SourceLessonKind[] | null {
+  if (catalog === undefined) return null;
+  return (Object.keys(SUBJECT_OF_KIND) as SourceLessonKind[]).filter((kind) =>
+    catalog.subjects.some((subject) => subject.id === SUBJECT_OF_KIND[kind] && subject.creation === "material"));
+}
+
 export interface SourceFormValues {
   title: string;
   body: string;
@@ -30,6 +47,19 @@ export function sourceValuesValid(values: SourceFormValues): boolean {
   const title = values.title.trim().length;
   const body = values.body.trim().length;
   return title > 0 && title <= SOURCE_TITLE_MAX && body > 0 && body <= SOURCE_BODY_MAX;
+}
+
+/**
+ * Tekst doszedł do limitu pola (`maxLength` ucina wklejony nadmiar bez
+ * ostrzeżenia) — formularz pokazuje wtedy widoczną uwagę o limicie.
+ */
+export function sourceBodyAtLimit(body: string): boolean {
+  return body.length >= SOURCE_BODY_MAX;
+}
+
+/** Wpisano coś w okno nowego źródła (zamknięcie pyta wtedy o odrzucenie). */
+export function sourceDraftTyped(values: SourceFormValues): boolean {
+  return values.title.trim() !== "" || values.body.trim() !== "";
 }
 
 /**
@@ -62,7 +92,9 @@ export function sourceCounter(length: number): string {
   return messages.sources.counter.replace("{n}", String(length));
 }
 
+/** Potwierdzenie usunięcia: liczba zestawów, które stracą odnośnik, albo informacja, że nie ma żadnego. */
 export function deleteConfirmText(deckCount: number): string {
+  if (deckCount === 0) return messages.sources.deleteConfirmNoDecks;
   return messages.sources.deleteConfirm.replace("{n}", String(deckCount));
 }
 
@@ -78,13 +110,18 @@ export function formatSourceDate(instant: string): string {
 }
 
 /** Formularz nowej lekcji z tekstem źródła i przedmiotem wybranym przyciskiem. */
-export function newLessonFromSource(sourceId: string, kind: "chapter" | "school"): ParentRoute {
+export function newLessonFromSource(sourceId: string, kind: SourceLessonKind): ParentRoute {
   return {
     section: "decks",
     newLesson: true,
     sourceId,
-    subjectId: kind === "chapter" ? CHAPTER_SUBJECT_ID : SCHOOL_SUBJECT_ID,
+    subjectId: SUBJECT_OF_KIND[kind],
   };
+}
+
+/** Widok źródła w panelu: jego strona albo (`null`) lista źródeł. */
+export function sourceRoute(sourceId: string | null): ParentRoute {
+  return sourceId === null ? { section: "sources" } : { section: "sources", sourceId };
 }
 
 /**

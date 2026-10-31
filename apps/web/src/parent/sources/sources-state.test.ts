@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messages } from "@learning/contracts";
+import { messages, type SubjectCatalogDto } from "@learning/contracts";
 import {
   CHAPTER_SUBJECT_ID,
   SCHOOL_SUBJECT_ID,
@@ -9,8 +9,12 @@ import {
   isUncertainFailure,
   newLessonFromSource,
   newSourceCommand,
+  sourceBodyAtLimit,
   sourceCounter,
+  sourceDraftTyped,
+  sourceLessonKinds,
   sourcePatch,
+  sourceRoute,
   sourceValuesValid,
 } from "./sources-state";
 
@@ -63,9 +67,47 @@ describe("sources state", () => {
     expect(sourceCounter(1234)).toBe("1234/16000 znaków");
   });
 
-  it("potwierdzenie usunięcia podaje liczbę zestawów", () => {
+  it("potwierdzenie usunięcia podaje liczbę zestawów, a bez zestawów mówi, że ich nie ma", () => {
     expect(deleteConfirmText(3)).toBe("Usunąć źródło? Zestawy (3) zostaną, stracą tylko odnośnik.");
-    expect(deleteConfirmText(0)).toBe("Usunąć źródło? Zestawy (0) zostaną, stracą tylko odnośnik.");
+    expect(deleteConfirmText(1)).toBe("Usunąć źródło? Zestawy (1) zostaną, stracą tylko odnośnik.");
+    expect(deleteConfirmText(0)).toBe("Usunąć źródło? Nie powstał z niego żaden zestaw.");
+  });
+
+  it("limit tekstu: uwaga od 16000 znaków (pole ucina wklejony nadmiar)", () => {
+    expect(sourceBodyAtLimit("x".repeat(15_999))).toBe(false);
+    expect(sourceBodyAtLimit("x".repeat(16_000))).toBe(true);
+  });
+
+  it("wpisany szkic nowego źródła: tytuł albo tekst inne niż same spacje", () => {
+    expect(sourceDraftTyped({ title: "", body: "" })).toBe(false);
+    expect(sourceDraftTyped({ title: "  ", body: "\n" })).toBe(false);
+    expect(sourceDraftTyped({ title: "Unit 3", body: "" })).toBe(true);
+    expect(sourceDraftTyped({ title: "", body: "I like pizza." })).toBe(true);
+  });
+
+  it("adres źródła: strona źródła albo lista źródeł", () => {
+    expect(sourceRoute(SOURCE_ID)).toEqual({ section: "sources", sourceId: SOURCE_ID });
+    expect(sourceRoute(null)).toEqual({ section: "sources" });
+  });
+
+  describe("sourceLessonKinds: przyciski tylko dla przedmiotów z katalogu tworzonych z materiału", () => {
+    const subject = (id: string, creation: "catalog" | "material") => ({ id, titlePl: id, creation, subjectTitleRequired: id === "school", topics: [] });
+    const catalogOf = (...subjects: SubjectCatalogDto["subjects"]): SubjectCatalogDto => ({ subjects });
+
+    it("bez katalogu (wczytywanie, błąd) — nieznane", () => {
+      expect(sourceLessonKinds(undefined)).toBeNull();
+    });
+
+    it("oba przedmioty w katalogu", () => {
+      expect(sourceLessonKinds(catalogOf(subject("english_grammar", "catalog"), subject("school", "material"), subject("english_chapter", "material"))))
+        .toEqual(["chapter", "school"]);
+    });
+
+    it("brakujący przedmiot albo przedmiot spoza ścieżki z materiału — bez przycisku", () => {
+      expect(sourceLessonKinds(catalogOf(subject("school", "material")))).toEqual(["school"]);
+      expect(sourceLessonKinds(catalogOf(subject("english_chapter", "catalog"), subject("school", "material")))).toEqual(["school"]);
+      expect(sourceLessonKinds(catalogOf(subject("english_grammar", "catalog")))).toEqual([]);
+    });
   });
 
   it("liczba zestawów z polską odmianą", () => {
@@ -114,5 +156,19 @@ describe("sources state", () => {
       fromSource: "Ze źródła: {title}",
       sourceChanged: "Źródło zmieniono od utworzenia tego zestawu.",
     });
+  });
+
+  it("komunikaty po przeglądzie: neutralne, bez podwójnych nazw i z jasnym skutkiem edycji", () => {
+    expect(messages.sources).toMatchObject({
+      deleteConfirmNoDecks: "Usunąć źródło? Nie powstał z niego żaden zestaw.",
+      notFound: "Nie ma takiego źródła. Mogło zostać usunięte.",
+      updatedAt: "Ostatnia zmiana {date}",
+      editHint: "Zmiana nie zmieni istniejących zestawów. Aby jej użyć, utwórz nową lekcję.",
+      backToSource: "Wróć do źródła",
+    });
+    // nagłówek podglądu i etykieta pola edycji nazywają ten sam tekst tak samo
+    expect(messages.sources.previewLabel).toBe(messages.sources.bodyLabel);
+    // okno wyjścia służy wszystkim edytorom panelu — bez „w tym zestawie”
+    expect(messages.decks.leaveDescription).toBe("Jeśli teraz wyjdziesz, niezapisane zmiany przepadną.");
   });
 });

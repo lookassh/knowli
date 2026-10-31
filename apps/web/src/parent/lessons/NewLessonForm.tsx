@@ -176,7 +176,8 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMa
  * danych logowanie w oknie nad formularzem).
  *
  * Ze źródła (`source`, design 2026-10-30 §3.4) zamiast pola materiału jest
- * tytuł i podgląd tekstu źródła (tylko do odczytu) z linkiem „Zmień źródło”,
+ * tytuł i podgląd tekstu źródła (tylko do odczytu) z linkiem „Zmień źródło”
+ * (lista źródeł), przycisk u góry wraca do strony źródła („Wróć do źródła”),
  * a polecenie niesie `sourceMaterialId`; do wyboru są tylko przedmioty
  * tworzone z materiału.
  */
@@ -186,7 +187,7 @@ export default function NewLessonForm({
   registerEditorState,
   source,
   initialSubjectId,
-  onChangeSource,
+  onOpenSource,
 }: {
   onCreated: (deckId: string) => void;
   onCancel: () => void;
@@ -195,8 +196,11 @@ export default function NewLessonForm({
   source?: { id: string; title: string; body: string } | undefined;
   /** Przedmiot wybrany od startu (np. z przycisku na stronie źródła). */
   initialSubjectId?: string | undefined;
-  /** „Zmień źródło” — powrót do strony źródła; `null` — do listy źródeł (źródło usunięte). */
-  onChangeSource?: ((sourceId: string | null) => void) | undefined;
+  /**
+   * Tryb źródła: strona źródła (`sourceId` — „Wróć do źródła”) albo lista źródeł
+   * (`null` — „Zmień źródło” i powrót po usunięciu źródła w innym oknie).
+   */
+  onOpenSource?: ((sourceId: string | null) => void) | undefined;
 }) {
   const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
@@ -331,21 +335,26 @@ export default function NewLessonForm({
   const submitError = form.errors.submit;
   const counterTemplate = fromMaterial ? messages.lessons.schoolMaterialCounter : messages.lessons.materialCounter;
 
-  // „Zmień źródło”: strona źródła, a po jego usunięciu — lista źródeł
-  const changeSourceTarget = source === undefined || sourceMissing ? null : source.id;
-  const changeSourceHref = routePath(changeSourceTarget === null ? { section: "sources" } : { section: "sources", sourceId: changeSourceTarget });
+  // „Zmień źródło” prowadzi do listy źródeł (wybór innego), a przycisk u góry — z powrotem
+  // na stronę źródła; po usunięciu źródła w innym oknie oba prowadzą do listy.
+  const changeSourceHref = routePath({ section: "sources" });
   const changeSource = (event: MouseEvent) => {
-    if (!plainClick(event) || !onChangeSource) return;
+    if (!plainClick(event) || !onOpenSource) return;
     event.preventDefault();
-    onChangeSource(changeSourceTarget);
+    onOpenSource(null);
   };
+  const back = source === undefined
+    ? { label: messages.decks.backToList, onClick: onCancel }
+    : sourceMissing
+      ? { label: messages.sources.backToList, onClick: () => onOpenSource?.(null) }
+      : { label: messages.sources.backToSource, onClick: () => onOpenSource?.(source.id) };
 
   return (
     <Stack gap="md" data-testid="new-lesson-form" className="pp-editor pp-lesson-new">
       <div>
-        <Button variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="new-lesson-cancel" onClick={onCancel}
+        <Button variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="new-lesson-cancel" onClick={back.onClick}
           leftSection={<ParentIcon name="chevron-left" />}>
-          {messages.decks.backToList}
+          {back.label}
         </Button>
         <Title order={1} fz={{ base: 22, sm: 26 }} mt={6}>{messages.lessons.newLessonTitle}</Title>
       </div>

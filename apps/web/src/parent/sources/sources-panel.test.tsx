@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { messages, type SourceMaterialDto, type SourceMaterialSummaryDto } from "@learning/contracts";
+import { messages, type SourceMaterialDto, type SourceMaterialSummaryDto, type SubjectCatalogDto } from "@learning/contracts";
 import SourcesPanel from "./SourcesPanel";
 import SourcePage from "./SourcePage";
+import { ApiCallError } from "../api";
 import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
 
@@ -31,9 +32,18 @@ function withList(list: SourceMaterialSummaryDto[]): QueryClient {
   return queryClient;
 }
 
-function withSource(dto: SourceMaterialDto): QueryClient {
+const fullCatalog: SubjectCatalogDto = {
+  subjects: [
+    { id: "english_grammar", titlePl: "Gramatyka angielska", creation: "catalog", subjectTitleRequired: false, topics: [] },
+    { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] },
+    { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [] },
+  ],
+};
+
+function withSource(dto: SourceMaterialDto, catalog: SubjectCatalogDto | null = fullCatalog): QueryClient {
   const queryClient = new QueryClient();
   queryClient.setQueryData(orpc.sources.get.queryOptions({ input: { sourceId: dto.id } }).queryKey, dto);
+  if (catalog) queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
   return queryClient;
 }
 
@@ -107,5 +117,71 @@ describe("SourcePage", () => {
     const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource({ ...source, decks: [] }));
     expect(markup).toContain('data-testid="source-no-decks"');
     expect(markup).toContain(messages.sources.noDecks);
+  });
+
+  it("podgląd ma nagłówek „Tekst rozdziału”, a data zmiany — „Ostatnia zmiana”", () => {
+    const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+    expect(markup).toMatch(/id="source-preview-label"[^>]*>Tekst rozdziału</);
+    expect(markup).toContain("Ostatnia zmiana 31.10.2026");
+  });
+
+  it("stały, początkowo pusty region na żywo dla „Zapisano zmiany.”", () => {
+    const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+    expect(markup).toMatch(/<p[^>]*role="status"[^>]*data-testid="source-status"[^>]*><\/p>/);
+    expect(markup).not.toContain(messages.sources.saved);
+  });
+
+  describe("przyciski tworzenia lekcji według katalogu", () => {
+    it("oba przedmioty w katalogu: oba przyciski aktywne", () => {
+      const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+      expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*data-testid="source-create-chapter"/);
+      expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*data-testid="source-create-school"/);
+      expect(markup).not.toContain('data-testid="source-no-lesson-subjects"');
+    });
+
+    it("katalog jeszcze się wczytuje: przyciski są, ale wyłączone", () => {
+      const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, null));
+      expect(markup).toMatch(/<button[^>]*disabled=""[^>]*data-testid="source-create-chapter"/);
+      expect(markup).toMatch(/<button[^>]*disabled=""[^>]*data-testid="source-create-school"/);
+    });
+
+    it("przedmiotu nie ma w katalogu: bez jego przycisku (formularz nie wybierze innego przedmiotu)", () => {
+      const schoolOnly = { subjects: fullCatalog.subjects.filter((subject) => subject.id !== "english_chapter") };
+      const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, schoolOnly));
+      expect(markup).not.toContain('data-testid="source-create-chapter"');
+      expect(markup).toContain('data-testid="source-create-school"');
+
+      const none = { subjects: fullCatalog.subjects.filter((subject) => subject.creation !== "material") };
+      const empty = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, none));
+      expect(empty).not.toContain('data-testid="source-create-chapter"');
+      expect(empty).not.toContain('data-testid="source-create-school"');
+      expect(empty).toContain(messages.sources.noLessonSubjects);
+    });
+  });
+
+  it("źródło usunięte w innym oknie: odświeżenie z 404 pokazuje brak źródła mimo danych w pamięci", () => {
+    const queryClient = withSource(source);
+    const key = orpc.sources.get.queryOptions({ input: { sourceId: SOURCE_ID } }).queryKey;
+    queryClient.getQueryCache().find({ queryKey: key })!.setState({
+      status: "error",
+      error: new ApiCallError("Nie znaleziono.", "not_found", 404),
+    });
+    const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, queryClient);
+    expect(markup).toContain('data-testid="source-not-found"');
+    expect(markup).toContain(messages.sources.notFound);
+    expect(markup).toContain('data-testid="source-back"');
+    expect(markup).not.toContain('data-testid="source-page"');
+    expect(markup).not.toContain("Do you like apples?");
+  });
+
+  it("inny błąd odświeżenia z danymi w pamięci: strona zostaje", () => {
+    const queryClient = withSource(source);
+    const key = orpc.sources.get.queryOptions({ input: { sourceId: SOURCE_ID } }).queryKey;
+    queryClient.getQueryCache().find({ queryKey: key })!.setState({
+      status: "error",
+      error: new ApiCallError("Błąd serwera.", "internal", 500),
+    });
+    const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, queryClient);
+    expect(markup).toContain('data-testid="source-page"');
   });
 });

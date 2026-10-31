@@ -40,6 +40,7 @@ import { DECK_STATE_TONE, filterByKind, groupDecksByState, polishPlural, type De
 import { ParentIcon } from "./ParentIcon";
 import type { ParentRoute } from "./parent-routes";
 import { httpStatusOf, orpc } from "./query-client";
+import { sourceRoute } from "./sources/sources-state";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import { formatFamilyDate } from "./family-date";
 import "./decks-panel.css";
@@ -77,20 +78,21 @@ function deckMetaParts(deck: DeckSummaryDto): string[] {
 /**
  * Formularz nowej lekcji ze źródła (`/parent/lessons/new?source=…`): najpierw
  * odczyt źródła (tytuł i tekst do podglądu), potem zwykły formularz w trybie
- * źródła. Źródło usunięte albo z niepełnego linku — komunikat i powrót.
+ * źródła. Źródło usunięte albo z niepełnego linku — komunikat i powrót do
+ * listy źródeł (tam rodzic wybiera inne źródło).
  */
 function NewLessonFromSource({
   sourceId,
-  onChangeSource,
+  onOpenSource,
   ...formProps
-}: { sourceId: string } & Omit<ComponentProps<typeof NewLessonForm>, "source">) {
+}: { sourceId: string; onOpenSource: (sourceId: string | null) => void } & Omit<ComponentProps<typeof NewLessonForm>, "source" | "onOpenSource">) {
   const query = useQuery(orpc.sources.get.queryOptions({ input: { sourceId } }));
   const source = query.data;
   if (source !== undefined) {
     return (
       <NewLessonForm
         source={{ id: source.id, title: source.title, body: source.body }}
-        onChangeSource={onChangeSource}
+        onOpenSource={onOpenSource}
         {...formProps}
       />
     );
@@ -113,7 +115,10 @@ function NewLessonFromSource({
           )}
         </Stack>
       </Alert>
-      <Button variant="default" size="md" onClick={formProps.onCancel}>{messages.decks.backToList}</Button>
+      <Button variant="default" size="md" data-testid="lesson-source-back" leftSection={<ParentIcon name="chevron-left" />}
+        onClick={() => onOpenSource(null)}>
+        {messages.sources.backToList}
+      </Button>
     </Stack>
   );
 }
@@ -406,7 +411,7 @@ export default function DecksPanel({
         <NewLessonFromSource
           key={route.sourceId}
           sourceId={route.sourceId}
-          onChangeSource={(sourceId) => onNavigate(sourceId === null ? { section: "sources" } : { section: "sources", sourceId })}
+          onOpenSource={(sourceId) => onNavigate(sourceRoute(sourceId))}
           {...formProps}
         />
       );

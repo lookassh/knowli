@@ -21,6 +21,11 @@
   outline-offset: 2px;
 }
 
+/* uwaga o limicie 16 000 znaków pod licznikiem (stały region na żywo, pusty poniżej limitu) */
+.pp-source-limit {
+  color: var(--pp-status-warning-fg);
+}
+
 .pp-source-actions {
   display: flex;
   flex-wrap: wrap;

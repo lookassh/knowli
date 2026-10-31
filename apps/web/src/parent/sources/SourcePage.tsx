@@ -18,9 +18,11 @@ import {
   deleteConfirmText,
   formatSourceDate,
   newLessonFromSource,
+  sourceLessonKinds,
   sourcePatch,
   sourceValuesValid,
   type SourceFormValues,
+  type SourceLessonKind,
 } from "./sources-state";
 import "../decks-panel.css";
 import "../deck-editor.css";
@@ -37,12 +39,19 @@ function isConflict(error: unknown): boolean {
   return httpStatusOf(error) === 409 || (error instanceof ApiCallError && error.code === "conflict");
 }
 
+const LESSON_BUTTONS: Array<{ kind: SourceLessonKind; label: string; testId: string; variant: "filled" | "light" }> = [
+  { kind: "chapter", label: messages.sources.createChapterLesson, testId: "source-create-chapter", variant: "filled" },
+  { kind: "school", label: messages.sources.createSchoolLesson, testId: "source-create-school", variant: "light" },
+];
+
 /**
  * Strona źródła (design 2026-10-30 §3.4): podgląd i edycja tekstu, przyciski
- * tworzenia lekcji rozdziału i szkolnej, zestawy z tego źródła oraz usunięcie
- * z potwierdzeniem podającym liczbę zestawów. Edycja wysyła tylko zmienione
- * pola z rewizją z chwili wejścia w edycję — zmiana z innego okna kończy się
- * konfliktem (409), a nie cichym nadpisaniem.
+ * tworzenia lekcji rozdziału i szkolnej (tylko dla przedmiotów obecnych
+ * w katalogu lekcji), zestawy z tego źródła oraz usunięcie z potwierdzeniem
+ * podającym liczbę zestawów. Edycja wysyła tylko zmienione pola z rewizją
+ * z chwili wejścia w edycję — zmiana z innego okna kończy się konfliktem (409),
+ * a nie cichym nadpisaniem. Fokus: po konflikcie na „Odśwież”, po innym błędzie
+ * na komunikacie błędu; „Zapisano zmiany.” ogłasza stały region na żywo.
  */
 export default function SourcePage({
   sourceId,
@@ -56,11 +65,14 @@ export default function SourcePage({
   const queryClient = useQueryClient();
   const options = orpc.sources.get.queryOptions({ input: { sourceId } });
   const query = useQuery(options);
+  const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
   const source = query.data;
   const [base, setBase] = useState<EditBase | null>(null);
   const [values, setValues] = useState<SourceFormValues>({ title: "", body: "" });
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // każdy nowy błąd (także ten sam tekst drugi raz) przenosi fokus na komunikat
+  const [errorShown, setErrorShown] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,6 +81,8 @@ export default function SourcePage({
   const mounted = useRef(true);
   const editButton = useRef<HTMLButtonElement>(null);
   const titleField = useRef<HTMLInputElement>(null);
+  const refreshButton = useRef<HTMLButtonElement>(null);
+  const errorAlert = useRef<HTMLDivElement>(null);
   const restoreEditFocus = useRef(false);
 
   useEffect(() => {
@@ -105,6 +119,19 @@ export default function SourcePage({
     }
   }, [editing]);
 
+  // po konflikcie „Zapisz” jest wyłączone — następny krok to „Odśwież”
+  useEffect(() => {
+    if (conflict) refreshButton.current?.focus();
+  }, [conflict]);
+  useEffect(() => {
+    if (errorShown > 0) errorAlert.current?.focus();
+  }, [errorShown]);
+
+  const showError = (message: string) => {
+    setError(message);
+    setErrorShown((count) => count + 1);
+  };
+
   const startEdit = () => {
     if (!source) return;
     setBase({ title: source.title, body: source.body, revision: source.revision });
@@ -138,10 +165,14 @@ export default function SourcePage({
       if (!mounted.current) return;
       const code = httpStatusOf(cause);
       if (isConflict(cause)) setConflict(true);
-      // źródło usunięte w innym oknie
-      else if (code === 404) setError(messages.sources.notFound);
+      // źródło usunięte w innym oknie: odczyt też się o tym dowie — po wyjściu z edycji
+      // strona pokaże brak źródła zamiast starej kopii z pamięci podręcznej
+      else if (code === 404) {
+        showError(messages.sources.notFound);
+        void query.refetch();
+      }
       // 401: logowanie w oknie nad stroną otwiera globalny handler, edycja zostaje
-      else if (code !== 401) setError(errorMessage(cause));
+      else if (code !== 401) showError(errorMessage(cause));
     } finally {
       savingRef.current = false;
     }
@@ -170,7 +201,9 @@ export default function SourcePage({
       const result = await query.refetch();
       if (!mounted.current) return;
       if (result.isError) {
-        setError(errorMessage(result.error));
+        // źródło usunięte w innym oknie: zmiany i tak odrzucono — strona pokazuje brak źródła
+        if (httpStatusOf(result.error) === 404) stopEdit();
+        else showError(errorMessage(result.error));
         return;
       }
       setError(null);
@@ -204,7 +237,7 @@ export default function SourcePage({
       const code = httpStatusOf(cause);
       // źródło usunięte już w innym oknie — efekt jest ten sam
       if (code === 404) afterDelete();
-      else if (code !== 401) setError(errorMessage(cause));
+      else if (code !== 401) showError(errorMessage(cause));
     } finally {
       deletingRef.current = false;
       if (mounted.current) setDeleting(false);
@@ -234,29 +267,40 @@ export default function SourcePage({
     </Button>
   );
 
-  if (source === undefined) {
-    if (query.isPending) {
+  // Źródło usunięte w innym oknie: odświeżenie w tle kończy się 404, choć dane są
+  // jeszcze w pamięci podręcznej — wtedy też „nie ma takiego źródła” (edycja w toku
+  // zostaje, żeby wpisany tekst dało się skopiować; jej zapis pokaże ten sam komunikat).
+  const gone = httpStatusOf(query.error) === 404;
+  if (source === undefined || (gone && !editing)) {
+    if (source === undefined && query.isPending) {
       return (
         <Center py="xl" role="status" data-testid="source-loading">
           <Group gap="sm"><Loader size="sm" /><Text>{messages.parentShell.loading}</Text></Group>
         </Center>
       );
     }
-    const notFound = httpStatusOf(query.error) === 404;
     return (
-      <Stack gap="md" align="flex-start" data-testid={notFound ? "source-not-found" : "source-load-error"}>
+      <Stack gap="md" align="flex-start" data-testid={gone ? "source-not-found" : "source-load-error"}>
         {backButton}
-        <Alert color={notFound ? "gray" : "red"} variant="light" w="100%" role={notFound ? undefined : "alert"}>
+        <Alert color={gone ? "gray" : "red"} variant="light" w="100%" role={gone ? undefined : "alert"}>
           <Stack gap="sm" align="flex-start">
-            <Text size="sm">{notFound ? messages.sources.notFound : errorMessage(query.error)}</Text>
-            {!notFound && (
-              <Button size="md" variant="light" color="red" onClick={() => void query.refetch()}>{messages.parentShell.retry}</Button>
+            <Text size="sm">{gone ? messages.sources.notFound : errorMessage(query.error)}</Text>
+            {!gone && (
+              <Button size="md" variant="light" color="red" data-testid="source-load-retry" onClick={() => void query.refetch()}>
+                {messages.parentShell.retry}
+              </Button>
             )}
           </Stack>
         </Alert>
       </Stack>
     );
   }
+
+  // Przyciski tylko dla przedmiotów z katalogu lekcji (inaczej formularz po cichu wybrałby
+  // inny przedmiot); w trakcie wczytywania katalogu wyłączone, przy jego błędzie formularz
+  // pokaże własny komunikat z ponowieniem.
+  const lessonKinds = sourceLessonKinds(catalogQuery.data);
+  const lessonButtons = LESSON_BUTTONS.filter((button) => lessonKinds === null || lessonKinds.includes(button.kind));
 
   return (
     <Stack gap="lg" className="pp-editor pp-source-page" data-testid="source-page">
@@ -267,22 +311,26 @@ export default function SourcePage({
           {/* jak na liście: bez zestawów zarchiwizowanych; potwierdzenie usunięcia liczy wszystkie (każdy traci odnośnik) */}
           {[messages.sources.updatedAt.replace("{date}", formatSourceDate(source.updatedAt)), deckCountLabel(source.deckCount)].join(" · ")}
         </Text>
+        {/* stały region na żywo: czytnik ogłasza samą zmianę tekstu („Zapisano zmiany.”) */}
+        <Text size="sm" mt={status ? 4 : 0} role="status" data-testid="source-status">{status ?? ""}</Text>
       </div>
 
-      <div className="pp-source-actions">
-        <Button size="md" leftSection={<ParentIcon name="graduation-cap" />} data-testid="source-create-chapter"
-          onClick={() => onNavigate(newLessonFromSource(source.id, "chapter"))}>
-          {messages.sources.createChapterLesson}
-        </Button>
-        <Button size="md" variant="light" leftSection={<ParentIcon name="graduation-cap" />} data-testid="source-create-school"
-          onClick={() => onNavigate(newLessonFromSource(source.id, "school"))}>
-          {messages.sources.createSchoolLesson}
-        </Button>
-      </div>
+      {lessonButtons.length > 0 ? (
+        <div className="pp-source-actions">
+          {lessonButtons.map((button) => (
+            <Button key={button.kind} size="md" variant={button.variant} leftSection={<ParentIcon name="graduation-cap" />}
+              data-testid={button.testId} disabled={catalogQuery.isPending}
+              onClick={() => onNavigate(newLessonFromSource(source.id, button.kind))}>
+              {button.label}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <Text size="sm" className="pp-editor-muted" data-testid="source-no-lesson-subjects">{messages.sources.noLessonSubjects}</Text>
+      )}
 
-      {status && <Text size="sm" role="status" data-testid="source-status">{status}</Text>}
       {error && (
-        <Alert color="red" variant="light" role="alert" data-testid="source-error" icon={<ParentIcon name="alert-triangle" />}>
+        <Alert ref={errorAlert} tabIndex={-1} color="red" variant="light" role="alert" data-testid="source-error" icon={<ParentIcon name="alert-triangle" />}>
           {error}
         </Alert>
       )}
@@ -291,11 +339,14 @@ export default function SourcePage({
         {editing ? (
           <Stack gap="md">
             <SourceFields values={values} onChange={setValues} disabled={saving || refreshing} titleRef={titleField} />
+            {source.decks.length > 0 && (
+              <Text size="sm" className="pp-editor-muted" data-testid="source-edit-hint">{messages.sources.editHint}</Text>
+            )}
             {conflict && (
               <Alert color="yellow" variant="light" role="alert" data-testid="source-conflict" icon={<ParentIcon name="alert-triangle" />}>
                 <Stack gap="sm" align="flex-start">
                   <Text size="sm">{messages.sources.conflict}</Text>
-                  <Button size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="source-conflict-refresh"
+                  <Button ref={refreshButton} size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="source-conflict-refresh"
                     disabled={refreshing} onClick={confirmRefresh}>
                     {messages.sources.refresh}
                   </Button>
