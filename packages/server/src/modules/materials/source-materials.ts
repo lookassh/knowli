@@ -5,7 +5,7 @@ import {
   SourceMaterialInputSchema,
   SourceMaterialPatchSchema,
   UuidSchema,
-  type LessonDeckSourceDto,
+  type DeckSourceDto,
   type LessonSourceChangedDetails,
   type SourceMaterialDto,
   type SourceMaterialInput,
@@ -16,7 +16,8 @@ import type { Services } from "../../config";
 import type { Executor, Tx } from "../../db/client";
 import { deckVersions, decks, sourceMaterials } from "../../db/schema";
 import { AppError } from "../../errors";
-import { deckStateOf } from "./decks";
+import { deckStateOf } from "./deck-state";
+import { findEnqueuedRun } from "./generation-runs";
 
 /**
  * Źródła — materiał źródłowy rodzica (design 2026-10-30 „Angielski — rozdział”,
@@ -169,8 +170,9 @@ export async function deleteSourceMaterial(services: Services, id: string): Prom
  * czeka na zatwierdzenie zestawu i dopiero potem zeruje jego odnośnik — zamiast
  * unieważnić klucz obcy w trakcie wstawiania zestawu. Równoległa edycja
  * (`updateSourceMaterial`, też `FOR UPDATE`) jest serializowana tak samo, a
- * `body` i `bodyRevision` (rewizja treści — to ją zapisuje zestaw) pochodzą
- * z jednej wersji wiersza. Źródło usunięte przed odczytem → `not_found` (nigdy
+ * `title`, `body` i `bodyRevision` (rewizja treści — to ją zapisuje zestaw)
+ * pochodzą z jednej wersji wiersza (tytuł to domyślna nazwa zestawu słówek ze
+ * źródła, §6.2). Źródło usunięte przed odczytem → `not_found` (nigdy
  * błąd 500 z naruszenia klucza obcego).
  *
  * `expectedBodyRevision` to rewizja treści, z której rodzic widział podgląd.
@@ -185,9 +187,9 @@ export async function lockSourceMaterialForCopy(
   tx: Tx,
   id: string,
   expectedBodyRevision: number,
-): Promise<{ body: string; bodyRevision: number }> {
+): Promise<{ title: string; body: string; bodyRevision: number }> {
   const [source] = await tx
-    .select({ body: sourceMaterials.body, bodyRevision: sourceMaterials.bodyRevision })
+    .select({ title: sourceMaterials.title, body: sourceMaterials.body, bodyRevision: sourceMaterials.bodyRevision })
     .from(sourceMaterials)
     .where(eq(sourceMaterials.id, id))
     .for("key share");
@@ -210,14 +212,43 @@ export function isSourceChangedConflict(error: unknown): boolean {
 }
 
 /**
- * Pochodzenie zestawu z żywego źródła (`LessonDeckDto.source`): tytuł źródła
- * oraz rewizja treści skopiowana i bieżąca; `undefined`, gdy zestaw powstał z
- * wklejonego tekstu albo źródło usunięto (odnośnik jest wtedy `null`).
+ * Ponowienie tworzenia zestawu ze źródła po równoległym usunięciu albo zmianie
+ * tekstu źródła — wspólne dla lekcji (`createMaterialLesson`) i słówek
+ * (`enqueueDeckGeneration`). Pierwsze żądanie z tym samym kluczem idempotencji
+ * zatwierdziło zestaw już po naszym sprawdzeniu klucza (usunięcie i edycja
+ * czekały na jego blokadę `FOR KEY SHARE`), a źródło zniknęło albo dostało nową
+ * rewizję treści przed naszą blokadą — odczyt źródła kończy się `not_found` albo
+ * konfliktem rewizji, choć polecenie wykonano. Wtedy, jak przy duplikacie klucza
+ * w `enqueueGenerationRun`, odpowiedzią jest zestaw tamtego żądania (świeże
+ * zapytanie poza wycofaną transakcją). Każdy inny błąd — i te dwa bez
+ * zatwierdzonego runu — przechodzi dalej. Wołać tylko dla tworzenia ze źródła:
+ * inaczej `not_found` nie oznacza zniknięcia źródła.
+ */
+export async function committedRetryAfterSourceChange(
+  db: Executor,
+  dedupeKey: string,
+  error: unknown,
+): Promise<{ runId: string; deckId: string }> {
+  const sourceGoneOrChanged = (error instanceof AppError && error.code === "not_found") || isSourceChangedConflict(error);
+  if (sourceGoneOrChanged) {
+    const committed = await findEnqueuedRun(db, dedupeKey);
+    if (committed) {
+      return committed;
+    }
+  }
+  throw error;
+}
+
+/**
+ * Pochodzenie zestawu z żywego źródła (`LessonDeckDto.source`, `DeckDto.source`):
+ * tytuł źródła oraz rewizja treści skopiowana i bieżąca; `undefined`, gdy
+ * zestaw powstał z wklejonego tekstu albo opisu, albo źródło usunięto
+ * (odnośnik jest wtedy `null`).
  */
 export async function readDeckSource(
   db: Executor,
   deck: { sourceMaterialId: string | null; sourceMaterialRevision: number | null },
-): Promise<LessonDeckSourceDto | undefined> {
+): Promise<DeckSourceDto | undefined> {
   if (deck.sourceMaterialId === null || deck.sourceMaterialRevision === null) {
     return undefined;
   }

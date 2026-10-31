@@ -218,6 +218,13 @@
       "when": 1793490000000,
       "tag": "0030_source_materials",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793590000000,
+      "tag": "0031_generation_rejected_count",
+      "breakpoints": true
     }
   ]
 }

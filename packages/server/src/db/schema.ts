@@ -456,9 +456,16 @@ export const generationRuns = app.table(
     nextAttemptAt: timestamps("next_attempt_at"),
     createdAt: timestamps("created_at").notNull().defaultNow(),
     finishedAt: timestamps("finished_at"),
+    // Słówka ze źródła (design 2026-10-30 §6.2): elementy odrzucone przy walidacji
+    // per element (spoza tekstu, niepoprawne, duplikaty), zapisywane przy sukcesie
+    // (`markRunSucceeded`) i przy porażce `no_source_items`, gdy nic nie przeszło
+    // (`markRunWithoutSourceItems`). NULL — run bez walidacji per element (opis,
+    // lekcje, media) albo niezakończony. Lekcje liczą odrzucenia w `lesson_context`.
+    rejectedCount: integer("rejected_count"),
   },
   (t) => [
     check("generation_runs_kind_allowed", sql`${t.kind} in ('deck', 'lesson', 'tts', 'illustration')`),
+    check("generation_runs_rejected_count_nonnegative", sql`${t.rejectedCount} is null or ${t.rejectedCount} >= 0`),
     check(
       "generation_runs_state_allowed",
       sql`${t.state} in ('queued', 'running', 'succeeded', 'failed', 'superseded')`,

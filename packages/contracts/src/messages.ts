@@ -152,6 +152,14 @@ export const messages = {
     retryGenerationRequest: "Ponów tworzenie",
     generationFailed: "Generowanie nie udało się.",
     noPictureMaterial: "Nie udało się dobrać słów, które można jasno pokazać obrazkiem. Zmień temat i spróbuj ponownie.",
+    // Zestaw słówek ze źródła (design 2026-10-30 §6.2): żadne słowo nie przeszło sprawdzenia z tekstem
+    // źródła (run `no_source_items`) i liczba pozycji odrzuconych przy walidacji per element — spoza
+    // tekstu, ale też duplikatów, ram z luką i pozycji w złym formacie (`rejectedCount`).
+    // Ponowienie powtarza zamrożone polecenie (to samo zawężenie i rodzaj) — inne zawężenie wymaga nowego zestawu ze źródła.
+    noSourceItems: "Nie znaleziono w tekście źródła słówek do zestawu. Ponów generowanie albo utwórz nowy zestaw ze źródła z innym zawężeniem lub w rodzaju standardowym.",
+    /** Link przy porażce `no_source_items` do strony źródła zestawu (stamtąd nowy zestaw z innym zawężeniem). */
+    goToSource: "Przejdź do źródła",
+    rejectedFromSource: "Pominięto pozycji spoza tekstu lub niepoprawnych: {n}",
     retryGeneration: "Ponów generowanie",
     states: {
       draft: "Szkic",
@@ -1041,6 +1049,7 @@ export const messages = {
     counter: "{n}/16000 znaków",
     createChapterLesson: "Utwórz lekcję rozdziału",
     createSchoolLesson: "Utwórz lekcję szkolną",
+    createVocabulary: "Utwórz zestaw słówek",
     decksHeading: "Zestawy z tego źródła",
     deleteConfirm: "Usunąć źródło? Zestawy ({n}) zostaną, stracą tylko odnośnik.",
     deleteConfirmNoDecks: "Usunąć źródło? Nie powstał z niego żaden zestaw.",
@@ -1058,8 +1067,20 @@ export const messages = {
     notFound: "Nie ma takiego źródła. Mogło zostać usunięte.",
     /** Tworzenie lekcji: tekst źródła zmieniono po wyświetleniu podglądu; podgląd odświeżony, rodzic tworzy ponownie. */
     changedBeforeCreate: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.",
-    /** Tworzenie lekcji: odświeżenie podglądu po zmianie źródła się nie udało; tworzenie czeka na udane odświeżenie. */
+    /** Jak `changedBeforeCreate`, dla zestawu słówek ze źródła. */
+    changedBeforeCreateVocabulary: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz zestaw ponownie.",
+    /** Tworzenie lekcji lub zestawu: odświeżenie podglądu po zmianie źródła się nie udało; tworzenie czeka na udane odświeżenie. */
     refreshFailed: "Nie udało się odświeżyć źródła.",
+    /** Nowy zestaw słówek ze źródła (design 2026-10-30 §6.2). */
+    newVocabularyTitle: "Nowy zestaw słówek ze źródła",
+    vocabularyMaxItemsLabel: "Najwięcej słówek",
+    vocabularyMaxItemsHint: "Od 1 do 100. Domyślnie 20.",
+    vocabularyMaxItemsInvalid: "Podaj liczbę od 1 do 100.",
+    vocabularyInstructionLabel: "Zawężenie (opcjonalnie)",
+    vocabularyInstructionPlaceholder: "np. tylko pogoda",
+    vocabularyInstructionHint: "Słowa wybieramy wyłącznie z tekstu źródła.",
+    createVocabularySubmit: "Utwórz zestaw",
+    creatingVocabulary: "Tworzę zestaw…",
     updatedAt: "Ostatnia zmiana {date}",
     deckCount: { one: "{n} zestaw", few: "{n} zestawy", many: "{n} zestawów" } as Record<string, string>,
     noDecks: "Z tego źródła nie powstał jeszcze żaden zestaw.",

@@ -47,6 +47,27 @@ describe("parent routes", () => {
     expect(routeFromPath(`/parent/sources?source=${SOURCE_ID}`)).toEqual({ section: "sources" });
   });
 
+  it("reads and writes the new vocabulary deck form from a source", () => {
+    expect(routeFromPath(`/parent/vocabulary/new?source=${SOURCE_ID}`))
+      .toEqual({ section: "decks", newVocabulary: true, sourceId: SOURCE_ID });
+    expect(routeFromPath(`/parent/vocabulary/new?source=${SOURCE_ID.toUpperCase()}&utm=x`))
+      .toEqual({ section: "decks", newVocabulary: true, sourceId: SOURCE_ID });
+    expect(routePath({ section: "decks", newVocabulary: true, sourceId: SOURCE_ID }))
+      .toBe(`/parent/vocabulary/new?source=${SOURCE_ID}`);
+  });
+
+  it("has no new vocabulary view without a valid source (the form needs one)", () => {
+    expect(routeFromPath("/parent/vocabulary/new")).toBeNull();
+    expect(routeFromPath("/parent/vocabulary/new?")).toBeNull();
+    expect(routeFromPath("/parent/vocabulary/new?source=nie-uuid")).toBeNull();
+    expect(routeFromPath(`/parent/vocabulary/new?source=${SOURCE_ID}x`)).toBeNull();
+    expect(routeFromPath(`/parent/vocabulary/new?subject=english_chapter`)).toBeNull();
+    expect(routeFromPath("/parent/vocabulary")).toBeNull();
+    expect(routeFromPath(`/parent/vocabulary/new/${SOURCE_ID}`)).toBeNull();
+    // bez źródła adres formularza nie istnieje, więc nie ma go z czego zapisać jako widoku
+    expect(routeFromPath(routePath({ section: "decks", newVocabulary: true }))).toBeNull();
+  });
+
   it("has no view for the panel root and unknown addresses", () => {
     expect(routeFromPath("/parent")).toBeNull();
     expect(routeFromPath("/parent/")).toBeNull();
@@ -78,6 +99,7 @@ describe("parent routes", () => {
       { section: "decks", newLesson: true, sourceId: SOURCE_ID },
       { section: "decks", newLesson: true, subjectId: "school" },
       { section: "decks", newLesson: true, sourceId: SOURCE_ID, subjectId: "english_chapter" },
+      { section: "decks", newVocabulary: true, sourceId: SOURCE_ID },
       { section: "sources", sourceId: SOURCE_ID },
     ];
     for (const route of routes) {
