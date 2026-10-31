@@ -221,8 +221,15 @@ export function isMaterialVocabularyTarget(target: string, index: MaterialPhrase
   return !isSentenceFrame(target) && phraseInMaterial(target, index);
 }
 
-/** Końcowa interpunkcja zdania (i białe znaki między nią) zdejmowana z zapisu słówka. */
-const TRAILING_PUNCTUATION = /[\s.!?…,;:]+$/u;
+/** Końcowa interpunkcja zdania (i spacje między nią) zdejmowana z zapisu słówka. */
+const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([" ", ".", "!", "?", "…", ",", ";", ":"]);
+
+/** Liniowe zdjęcie końcowych znaków ze zbioru (bez wyrażenia z nawrotami). */
+function trimTrailing(text: string, chars: ReadonlySet<string>): string {
+  let end = text.length;
+  while (end > 0 && chars.has(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
+}
 
 /**
  * Zapis słówka zestawu ze źródła (przegląd Etapu 4): NFC, apostrofy typograficzne
@@ -234,7 +241,7 @@ const TRAILING_PUNCTUATION = /[\s.!?…,;:]+$/u;
  * idzie po surowym celu — zdjęty wielokropek ukryłby lukę.
  */
 export function materialTargetText(text: string): string {
-  return text.normalize("NFC").replace(APOSTROPHE_VARIANTS, "'").replace(/\s+/gu, " ").trim().replace(TRAILING_PUNCTUATION, "");
+  return trimTrailing(text.normalize("NFC").replace(APOSTROPHE_VARIANTS, "'").replace(/\s+/gu, " ").trim(), TRAILING_PUNCTUATION);
 }
 
 /**

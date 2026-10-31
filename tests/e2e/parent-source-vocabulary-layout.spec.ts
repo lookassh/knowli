@@ -158,14 +158,21 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 }
 
-async function expectTargets(page: Page, ids: string[], width: number): Promise<void> {
+async function expectTargets(page: Page, ids: string[], width: number, containerId?: string): Promise<void> {
+  const container = containerId ? await page.getByTestId(containerId).boundingBox() : null;
+  if (containerId) expect(container, containerId).not.toBeNull();
   for (const id of ids) {
     const box = await page.getByTestId(id).boundingBox();
     expect(box, id).not.toBeNull();
-    // ≥ 44 px; tolerancja 0,01 px na zaokrąglenie przekształceń okna
+    // ≥ 44 px jak w pozostałych specyfikacjach panelu rodzica (48 px to próg Kid UI);
+    // tolerancja 0,01 px na zaokrąglenie przekształceń okna
     expect(box!.height, id).toBeGreaterThanOrEqual(44 - 0.01);
     expect(box!.x, id).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width, id).toBeLessThanOrEqual(width + 0.5);
+    if (container) {
+      expect(box!.x, `${id} inside ${containerId}`).toBeGreaterThanOrEqual(container.x - 0.5);
+      expect(box!.x + box!.width, `${id} inside ${containerId}`).toBeLessThanOrEqual(container.x + container.width + 0.5);
+    }
   }
 }
 
@@ -211,7 +218,10 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("new-vocabulary-cancel")).toHaveText(messages.sources.backToSource);
       await expect(page.getByTestId("new-vocabulary-source-change")).toHaveAttribute("href", "/parent/sources");
       await expectNoHorizontalOverflow(page);
-      await expectTargets(page, FORM_TARGETS, viewport.width);
+      // „Wróć” (`pp-editor-back`) celowo wysuwa się ujemnym marginesem jak w edytorach — tylko w viewporcie;
+      // kontrolki formularza leżą też w kontenerze formularza.
+      await expectTargets(page, FORM_TARGETS.slice(0, 1), viewport.width);
+      await expectTargets(page, FORM_TARGETS.slice(1), viewport.width, "new-vocabulary-form");
 
       // liczba spoza 1–100: błąd przy polu (aria-invalid), „Utwórz zestaw” wyłączone
       await page.getByTestId("new-vocabulary-max-items").fill("101");
@@ -269,7 +279,7 @@ for (const viewport of VIEWPORTS) {
       expect(api.generates).toHaveLength(1);
       expect(api.generates[0]).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 2 });
       await expectNoHorizontalOverflow(page);
-      await expectTargets(page, ["new-vocabulary-submit"], viewport.width);
+      await expectTargets(page, ["new-vocabulary-submit"], viewport.width, "new-vocabulary-form");
 
       await page.getByTestId("new-vocabulary-submit").click();
       await expect(page).toHaveURL(/\/parent\/decks\/20000000-0000-4000-8000-000000000001$/);
