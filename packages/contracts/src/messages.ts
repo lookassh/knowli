@@ -1065,7 +1065,7 @@ export const messages = {
     changedBeforeCreate: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.",
     /** Jak `changedBeforeCreate`, dla zestawu słówek ze źródła. */
     changedBeforeCreateVocabulary: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz zestaw ponownie.",
-    /** Ponowny odczyt źródła po konflikcie rewizji nie udał się — tworzenie czeka na świeży tekst. */
+    /** Tworzenie lekcji lub zestawu: odświeżenie podglądu po zmianie źródła się nie udało; tworzenie czeka na udane odświeżenie. */
     refreshFailed: "Nie udało się odświeżyć źródła.",
     /** Nowy zestaw słówek ze źródła (design 2026-10-30 §6.2). */
     newVocabularyTitle: "Nowy zestaw słówek ze źródła",

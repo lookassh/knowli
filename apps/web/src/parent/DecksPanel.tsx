@@ -33,7 +33,7 @@ import { callParent, ApiCallError, errorMessage, parentClient } from "./api";
 import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
 import LessonEditor from "./lessons/LessonEditor";
-import NewLessonForm from "./lessons/NewLessonForm";
+import NewLessonForm, { sourceRefreshOutcome } from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
 import NewVocabularyFromSource from "./sources/NewVocabularyFromSource";
@@ -80,7 +80,9 @@ function deckMetaParts(deck: DeckSummaryDto): string[] {
  * Formularz nowej lekcji ze źródła (`/parent/lessons/new?source=…`): najpierw
  * odczyt źródła (tytuł, tekst do podglądu i jego rewizja treści), potem zwykły
  * formularz w trybie źródła; po konflikcie rewizji przy tworzeniu formularz
- * odczytuje źródło ponownie. Źródło usunięte albo z niepełnego linku — komunikat i powrót do
+ * odczytuje źródło ponownie (`refetch()` nie odrzuca obietnicy przy błędzie,
+ * więc formularz dostaje wynik odczytu i bez udanego nie wraca do tworzenia).
+ * Źródło usunięte albo z niepełnego linku — komunikat i powrót do
  * listy źródeł (tam rodzic wybiera inne źródło).
  */
 function NewLessonFromSource({
@@ -95,7 +97,7 @@ function NewLessonFromSource({
       <NewLessonForm
         source={{ id: source.id, title: source.title, body: source.body, bodyRevision: source.bodyRevision }}
         onOpenSource={onOpenSource}
-        onSourceChanged={() => query.refetch()}
+        onSourceChanged={async () => sourceRefreshOutcome(await query.refetch())}
         {...formProps}
       />
     );

@@ -1,10 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+// @vitest-environment jsdom
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
-import NewLessonForm, { buildCommand, canSubmitLesson, classifyCreateFailure, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues } from "./NewLessonForm";
+import NewLessonForm, {
+  buildCommand, canSubmitLesson, classifyCreateFailure, defaultPoolSize, initialLessonValues, lessonPathOf, sourceRefreshOutcome,
+  type NewLessonValues, type SourceRefreshOutcome,
+} from "./NewLessonForm";
 import { ApiCallError } from "../api";
 import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
+import { parentTheme } from "../theme";
+
+// Polecenia tworzenia lekcji zaślepione; pozostałe procedury klienta bez zmian (odczyty w testach są wstawione do pamięci).
+const lessonsApi = vi.hoisted(() => ({ createFromMaterial: vi.fn(), createSchool: vi.fn(), create: vi.fn() }));
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  const parentClient = new Proxy(actual.parentClient, {
+    get: (target, key) => (key === "lessons" ? lessonsApi : Reflect.get(target, key)),
+  });
+  return { ...actual, parentClient };
+});
 
 const grammar = {
   id: "english_grammar",
@@ -274,6 +292,122 @@ describe("NewLessonForm", () => {
       expect(markup).not.toContain('value="english_grammar"');
       expect(markup).toContain('data-testid="school-subject-name"');
       expect(markup).toContain('value="Unit 3 — Food"');
+    });
+  });
+
+  describe("odświeżenie źródła po konflikcie rewizji", () => {
+    const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const RUN_ID = "00000000-0000-4000-8000-0000000000aa";
+    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.", bodyRevision: 3 };
+    type Source = typeof source;
+    type Refresh = (setSource: (next: Source) => void) => Promise<SourceRefreshOutcome>;
+    const sourceChanged = () => new ApiCallError("Konflikt.", "conflict", 409, { reason: "source_changed" });
+
+    beforeEach(() => {
+      if (typeof window.matchMedia !== "function") {
+        window.matchMedia = ((query: string) => ({
+          matches: false, media: query, onchange: null,
+          addEventListener: () => undefined, removeEventListener: () => undefined,
+          addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+      }
+      // jsdom nie ma Font Loading API, z którego korzysta autosize pola tekstowego Mantine
+      if (!("fonts" in document)) {
+        Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
+      }
+      lessonsApi.createFromMaterial.mockReset();
+    });
+    afterEach(cleanup);
+
+    /** Formularz ze źródłem w stanie rodzica (jak `NewLessonFromSource`): `refresh` może podmienić źródło. */
+    function renderFromSource(refresh: Refresh) {
+      const onCreated = vi.fn();
+      const registerEditorState = vi.fn();
+      const onCancel = vi.fn();
+      const onOpenSource = vi.fn();
+      function Harness() {
+        const [current, setCurrent] = useState(source);
+        return (
+          <NewLessonForm source={current} initialSubjectId="english_chapter" onOpenSource={onOpenSource} onSourceChanged={() => refresh(setCurrent)}
+            onCreated={onCreated} onCancel={onCancel} registerEditorState={registerEditorState} />
+        );
+      }
+      const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+      queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MantineProvider theme={parentTheme}><Harness /></MantineProvider>
+        </QueryClientProvider>,
+      );
+      return { onCreated };
+    }
+    const submitButton = () => screen.getByTestId("lesson-create-submit") as HTMLButtonElement;
+    const sentCommand = (call: number) => lessonsApi.createFromMaterial.mock.calls[call]![0] as Record<string, unknown>;
+
+    it("nieudane odświeżenie: tworzenie wyłączone z „Spróbuj ponownie”; udane z nową rewizją — nowe polecenie z tą rewizją", async () => {
+      lessonsApi.createFromMaterial
+        .mockRejectedValueOnce(sourceChanged())
+        .mockImplementationOnce(async (command: { deckId: string }) => ({ runId: RUN_ID, deckId: command.deckId }));
+      const refresh = vi.fn<Refresh>()
+        .mockResolvedValueOnce({ status: "failed" })
+        .mockImplementationOnce(async (setSource) => {
+          setSource({ ...source, body: "I like pizza.\nWe like bananas.", bodyRevision: 4 });
+          return { status: "refreshed", bodyRevision: 4 };
+        });
+      const { onCreated } = renderFromSource(refresh);
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.refreshFailed));
+      expect(messages.sources.refreshFailed).toBe("Nie udało się odświeżyć źródła.");
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(submitButton().disabled).toBe(true);
+      expect(sentCommand(0)).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+      const retry = screen.getByTestId("lesson-source-refresh-retry");
+      expect(retry.textContent).toBe(messages.parentShell.retry);
+
+      fireEvent.click(retry);
+      await waitFor(() => expect(submitButton().disabled).toBe(false));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(screen.queryByTestId("lesson-source-refresh-retry")).toBeNull();
+      expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.changedBeforeCreate);
+      expect((screen.getByTestId("lesson-source-preview") as HTMLTextAreaElement).value).toContain("We like bananas.");
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+      expect(lessonsApi.createFromMaterial).toHaveBeenCalledTimes(2);
+      expect(sentCommand(1)).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 4 });
+      expect(sentCommand(1).clientRequestId).not.toBe(sentCommand(0).clientRequestId);
+    });
+
+    it("odświeżenie bez nowej rewizji treści nie odblokowuje tworzenia", async () => {
+      lessonsApi.createFromMaterial.mockRejectedValueOnce(sourceChanged());
+      renderFromSource(async () => ({ status: "refreshed", bodyRevision: 3 }));
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.refreshFailed));
+      expect(submitButton().disabled).toBe(true);
+      expect(screen.getByTestId("lesson-source-refresh-retry")).toBeTruthy();
+    });
+
+    it("źródło usunięte (404 przy odświeżeniu): stan usuniętego źródła, bez ponawiania", async () => {
+      lessonsApi.createFromMaterial.mockRejectedValueOnce(sourceChanged());
+      renderFromSource(async () => ({ status: "missing" }));
+
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.sources.notFound));
+      expect(submitButton().disabled).toBe(true);
+      expect(screen.queryByTestId("lesson-source-refresh-retry")).toBeNull();
+      expect(screen.getByTestId("lesson-source-missing-change").getAttribute("href")).toBe("/parent/sources");
+      expect(screen.getByTestId("new-lesson-cancel").textContent).toContain(messages.sources.backToList);
+    });
+
+    it("wynik refetch(): 404 — źródło usunięte, inny błąd — nieudane (mimo starych danych), sukces — bieżąca rewizja", () => {
+      const old = { bodyRevision: 3 };
+      expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Nie znaleziono.", "not_found", 404), data: old })).toEqual({ status: "missing" });
+      expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Błąd.", "internal", 500), data: old })).toEqual({ status: "failed" });
+      expect(sourceRefreshOutcome({ isError: true, error: new TypeError("Failed to fetch"), data: old })).toEqual({ status: "failed" });
+      expect(sourceRefreshOutcome({ isError: false, error: null, data: { bodyRevision: 4 } })).toEqual({ status: "refreshed", bodyRevision: 4 });
+      expect(sourceRefreshOutcome({ isError: false, error: null, data: undefined })).toEqual({ status: "failed" });
     });
   });
 
