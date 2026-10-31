@@ -149,13 +149,16 @@ export function ExerciseFrame({
     const anchor = anchorRef.current;
     const overlay = overlayRef.current;
     if (!material || !anchor || !overlay) return;
-    // `layout` — wywołanie z efektu layoutu (tutaj albo po zmianie `dockPad`):
-    // zwykły `setDockPad` i od razu korekta przewinięcia. `observer` — callback
+    // Nowa rezerwa zawsze kończy pomiar: korektę przewinięcia robi efekt
+    // `[dockPad]` na świeżym układzie, jeszcze przed malowaniem. Liczona tutaj
+    // byłaby na układzie sprzed rezerwy — przy materiale, który już się
+    // przewija, zatrzymałaby się na starym końcu zakresu i zostawiła pod
+    // panelem kilka px, poniżej progu kolejnej korekty. `layout` — wywołanie
+    // z efektu layoutu (tutaj albo po zmianie `dockPad`): zwykły `setDockPad`,
+    // który React renderuje synchronicznie. `observer` — callback
     // `ResizeObserver` albo `requestAnimationFrame`, czyli poza Reactem, ale
-    // też przed malowaniem: nowa rezerwa wchodzi przez `flushSync`, a korektę
-    // przewinięcia robi efekt `[dockPad]` na świeżym układzie (tutaj byłaby
-    // liczona na układzie sprzed rezerwy). `flushSync` nigdy nie jest wołany
-    // w efekcie layoutu — React by ostrzegał.
+    // też przed malowaniem: rezerwa wchodzi przez `flushSync`. `flushSync`
+    // nigdy nie jest wołany w efekcie layoutu — React by ostrzegał.
     const measure = (mode: "layout" | "observer") => {
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
@@ -178,15 +181,13 @@ export function ExerciseFrame({
       const targetPad = gatedDockRef.current.enabled ? excess : 0;
       if (targetPad !== requestedPadRef.current) {
         requestedPadRef.current = targetPad;
-        if (mode === "observer") {
-          // Synchroniczna zmiana rozmiaru w callbacku obserwatora może dać
-          // nieszkodliwe zdarzenie „ResizeObserver loop completed with
-          // undelivered notifications”: powiadomienia o elementach, które
-          // zmieniły rozmiar przez nową rezerwę, przechodzą do następnej klatki.
-          flushSync(() => setDockPad(targetPad));
-          return;
-        }
-        setDockPad(targetPad);
+        // Synchroniczna zmiana rozmiaru w callbacku obserwatora może dać
+        // nieszkodliwe zdarzenie „ResizeObserver loop completed with
+        // undelivered notifications”: powiadomienia o elementach, które
+        // zmieniły rozmiar przez nową rezerwę, przechodzą do następnej klatki.
+        if (mode === "observer") flushSync(() => setDockPad(targetPad));
+        else setDockPad(targetPad);
+        return;
       }
       // Po korekcie zakładka znika (treść kończy się nad panelem), więc
       // kolejne pomiary nie dokładają scrolla; następna korekta następuje
@@ -223,9 +224,10 @@ export function ExerciseFrame({
     };
   }, [hasDock, task.taskId, flowFeedback]);
 
-  // Po zmianie rezerwy zakres scrolla dopiero powstaje — pomiar sprzed niej
-  // mógł zostać przycięty, więc korekta powtarza się od razu na świeżym
-  // układzie (synchronicznie, przed malowaniem) i jeszcze w następnej klatce.
+  // Po zmianie rezerwy zakres scrolla dopiero powstaje, a pomiar, który ją
+  // zlecił, nie przewijał — korekta przewinięcia następuje tutaj, od razu na
+  // świeżym układzie (synchronicznie, przed malowaniem) i jeszcze w następnej
+  // klatce.
   useIsomorphicLayoutEffect(() => {
     if (dockPad === 0) return;
     measureRef.current?.("layout");
