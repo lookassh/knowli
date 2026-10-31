@@ -1,6 +1,8 @@
 import { createContext, createElement, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
-// Measuring in a layout effect keeps the first paint from jumping by the scale; on the server it would only warn.
+// Measuring in a layout effect sets the scale before the first paint of a client-side mount. A full server-rendered
+// page load still paints the server markup (the loading screen) at scale 1 before hydration and then jumps to the
+// scale. On the server useLayoutEffect would only warn.
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 // Layout scale of a large window (spec 2026-10-30-kid-ui-large-screens §3.4): the child UI is designed

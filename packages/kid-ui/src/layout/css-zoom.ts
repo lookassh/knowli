@@ -1,7 +1,9 @@
 /**
- * CSS zoom of a large window (KidPage, spec 2026-10-30-kid-ui-large-screens §4.4): getBoundingClientRect()
- * and `position: fixed` offsets are screen pixels, while offset*, client*, scroll* and ResizeObserver sizes
- * are inner (layout) pixels. Convert before mixing the two.
+ * CSS zoom of a large window (KidPage, spec 2026-10-30-kid-ui-large-screens §4.4): rectangles
+ * (getBoundingClientRect()) are screen pixels, while offset*, client*, scroll*, ResizeObserver sizes and every
+ * length written into a style (also `left`/`top` of a `position: fixed` element) are inner (layout) pixels that
+ * the zoom multiplies when painting. Convert before mixing the two: a value taken from a rectangle is divided by
+ * cssZoomOf(...) before it is written into a style.
  */
 
 /** Effective CSS zoom of the element; 1 where the browser does not report it (jsdom) or reports nonsense. */

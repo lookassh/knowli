@@ -14,7 +14,7 @@
 
 - Zakres: `packages/kid-ui`, testy, dokumentacja. Bez zmian API, DTO, serwera, panelu rodzica, MCP, `SKILL.md`, manifestu PWA. Jeden PR.
 - Skala: `min(innerWidth / 840, innerHeight / 900)`, przedział [1; 1,6], `Math.floor(s * 100 + 1e-9) / 100`; > 1 tylko gdy `matchMedia("(hover: hover) and (pointer: fine)")` pasuje; nieprawidłowe wejście → 1.
-- Kolumna: `--kid-column-max-width` 560 px, przy `(min-width: 840px) and (min-height: 480px)` 720 px. Kafelki: `--kid-visual-choice-max-size` 260 px → 300 px przy tym samym warunku.
+- Kolumna: `--kid-column-max-width` 560 px, przy `(min-width: 840px) and (min-height: 480px), (min-width: 960px)` 720 px (druga gałąź od review gałęzi 2026-10-31: tablet w poziomie z otwartą klawiaturą). Kafelki: `--kid-visual-choice-max-size` 260 px → 300 px przy tym samym warunku.
 - Zwarty układ ramy: `(min-width: 840px) and (min-height: 781px)`, poza `picture_listening`/`picture_recognition`.
 - Tokeny okna: `--kid-vh`, `--kid-dvh`, `--kid-svh`, `--kid-vw` = `calc(1<unit> / var(--kid-zoom, 1))` w bloku tokenów; zero surowych jednostek okna poza nim.
 - Poza `KidPage` nic nie ustawia `zoom`; tokenów nie rejestrować `@property`.

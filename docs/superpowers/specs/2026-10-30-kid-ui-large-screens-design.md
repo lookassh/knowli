@@ -25,11 +25,11 @@ Poza zakresem: osobne układy desktopowe (np. 4 obrazki w rzędzie), więcej kol
 
 ### 3.1 Szersza kolumna od szerokości expanded
 
-- Token `--kid-column-max-width`: 560 px; przy `@media (min-width: 840px) and (min-height: 480px)` 720 px. Warunek wysokości zostawia telefony w poziomie (np. 844×390, 915×412) bez zmian.
+- Token `--kid-column-max-width`: 560 px; przy `@media (min-width: 840px) and (min-height: 480px), (min-width: 960px)` 720 px. Warunek wysokości zostawia telefony w poziomie (np. 844×390, 915×412; telefony w poziomie mają ≤ 932 px szerokości) bez zmian. Druga gałąź (szerokość ≥ 960 przy każdej wysokości) obejmuje tablet w poziomie (≥ 1024 px szerokości): otwarta klawiatura ekranowa (`interactiveWidget: "resizes-content"`) obniża jego okno poniżej 480 px i bez tej gałęzi kolumna i kafelki kurczyłyby się przy każdym wpisywaniu (2026-10-31, po review gałęzi).
 - Używają go `.kid-learning` (sesja), `.root` w `KidScreen.module.css` (ekrany profili, zestawów, podsumowań — wspólna szerokość, bez skoku przy wejściu w sesję) i arkusz `EndSessionConfirm` (dziś `min(560px, 100%)`).
 - Token `--kid-visual-choice-max-size`: 260 px; przy tym samym warunku 300 px (zamiast literału `260px` w `--visual-choice-size`). Przy 320 px kafelki kurczyłyby się w chwili pojawienia się panelu wyniku (np. 512 → 488 px na 3440×1440); przy 300 px rozmiar jest stały.
 - Tekst kart lekcji (`.kid-lesson-card__body` i pokrewne bloki ciągłego tekstu) dostaje `max-inline-size: 60ch`, żeby wiersz przy 720 px nie przekraczał ok. 60 znaków.
-- Ekrany pozostają jednokolumnowe. Przyjęte skutki szerszej kolumny: siatki `auto-fit` dostają kolumnę więcej (np. `.kid-lesson-group__bins` 2 → 3, `.kid-summary-stats`); tablet w poziomie (≥ 840 × ≥ 480) dostaje kolumnę 720 px.
+- Ekrany pozostają jednokolumnowe. Przyjęte skutki szerszej kolumny: siatki `auto-fit` dostają kolumnę więcej (np. `.kid-lesson-group__bins` 2 → 3, `.kid-summary-stats`); tablet w poziomie (≥ 840 × ≥ 480, a od 960 px szerokości także z otwartą klawiaturą) dostaje kolumnę 720 px.
 
 ### 3.2 Zwarty układ zadania na wysokim oknie
 
@@ -49,6 +49,8 @@ Przy `@media (min-width: 840px) and (min-height: 781px)` rama zadania (`Exercise
 - Skala > 1 wyłącznie gdy pasuje `(hover: hover) and (pointer: fine)` (laptop, PC). Telefony i tablety mają zawsze 1 — m.in. dlatego, że klawiatura ekranowa (`interactiveWidget: "resizes-content"` w layoutach Kid UI) zmienia wysokość okna i skala skakałaby przy każdym wpisywaniu.
 - Skala > 1 powiększa cały Kid UI (tekst, przyciski, obrazki, kolumnę, odstępy) jak powiększenie przeglądarki.
 - Własność: przy skali > 1 wewnętrzne okno układu (`innerWidth/skala` × `innerHeight/skala`) ma co najmniej 840 × 900 px, a prawdziwe okno jest nie mniejsze niż wewnętrzne. Gdy ogranicza wysokość, wewnętrzne okno ma ok. 900 px wysokości (do limitu 1,6); gdy ogranicza szerokość (proporcje węższe niż ok. 0,93:1, np. monitor w pionie), może być wyższe — wtedy zwarty układ z §3.2 zapobiega pustemu pasowi.
+- `innerWidth` (podstawa skali) i media queries obejmują klasyczny pasek przewijania dokumentu, a układ go nie obejmuje. W oknie ograniczonym szerokością na przewijanej stronie flow wewnętrzna szerokość układu może więc wyjść kilka pikseli (do ok. 10 px) poniżej 840 (np. 1146×1300 przy skali 1,36 i cienkim pasku ok. 11 px: (1146 − 11) / 1,36 ≈ 835). To nieszkodliwe: media queries widzą prawdziwe okno, z progów szerokości o układzie decyduje tu tylko token kolumny (720 px), a kolumna 720 px nadal mieści się w tej szerokości.
+- Warunek kolumny 720 px (§3.1) ma gałąź „szerokość ≥ 960 przy każdej wysokości”, żeby klawiatura ekranowa tabletu w poziomie (np. 1024 × ok. 420 po otwarciu) nie zwężała kolumny ani kafelków; skala tabletu i tak wynosi 1.
 
 Szacunki (okno w px CSS po skalowaniu systemu; kolumna — wewnętrzna; ostatnia kolumna — na ekranie):
 
@@ -72,7 +74,7 @@ Szacunki (okno w px CSS po skalowaniu systemu; kolumna — wewnętrzna; ostatnia
 ### 4.1 Skala w `KidPage`
 
 - `layout/viewport.ts`: czysta funkcja `computeKidLayoutScale({ width, height, finePointer }): number` ze stałymi `KID_SCALE_REFERENCE_WIDTH = 840`, `KID_SCALE_REFERENCE_HEIGHT = 900`, `KID_SCALE_MAX = 1.6`. `KidViewport` dostaje pole `scale` (serwer i stan początkowy: 1). `finePointer` pochodzi z `matchMedia("(hover: hover) and (pointer: fine)")`; zmiana tego zapytania przelicza widok jak `resize`.
-- Pomiar okna przechodzi z `useEffect` na efekt layoutu po stronie klienta (izomorficzny `useLayoutEffect`), żeby pierwsze malowanie nie skakało o skalę.
+- Pomiar okna przechodzi z `useEffect` na efekt layoutu po stronie klienta (izomorficzny `useLayoutEffect`), żeby pierwsze malowanie nie skakało o skalę przy montowaniu po stronie klienta. Przy pełnym załadowaniu strony renderowanej na serwerze ekran ładowania maluje się w skali 1 jeszcze przed hydratacją, a potem przeskakuje do skali — efekt layoutu tego nie zapobiega (przyjęte: dotyczy tylko ekranu ładowania).
 - `KidPage` pozostaje jedynym właścicielem pomiaru okna i jedynym źródłem skali. Gdy `scale > 1`, na `.kid-page` ustawia inline `zoom: scale`, zmienną `--kid-zoom: scale` i `data-kid-scale`; przy skali 1 nie ustawia `zoom` ani `--kid-zoom` (zachowanie jak dziś), `data-kid-scale="1"`.
 - Ramka sesji: inline `height = viewport.height / scale`, `top = viewport.offsetTop / scale` (pod `zoom` długości inline są mnożone przez skalę).
 - Progi `data-viewport-short` (≤ 700) i `data-viewport-very-short` (≤ 479) liczone jak dziś z prawdziwej wysokości; przy skali > 1 prawdziwa i wewnętrzna wysokość przekraczają 900, więc oba są wyłączone.
@@ -97,10 +99,10 @@ Zmienne niezarejestrowane: `var(--kid-zoom)` podstawia się na elemencie deklara
 
 ### 4.4 Pomiary w JS
 
-Pod `zoom` `getBoundingClientRect()` i pozycje `position: fixed` są w pikselach ekranu (× skala), a `offsetHeight`, `clientHeight`, `scrollHeight`, `scrollTop`, `offsetTop` i `ResizeObserver` w pikselach wewnętrznych; `innerWidth/innerHeight` i `visualViewport` nie zależą od zoomu elementu. Helper w `layout/` przelicza długość z pikseli ekranu na wewnętrzne przez `element.currentCSSZoom` (brak, 0 lub wartość nieskończona → 1). Dwa miejsca dziś mieszają jednostki:
+Pod `zoom` prostokąty (`getBoundingClientRect()`, prostokąty Playwrighta) są w pikselach ekranu (× skala), a `offsetHeight`, `clientHeight`, `scrollHeight`, `scrollTop`, `offsetTop`, `ResizeObserver` i długości zapisywane w stylach — także `left`/`top` elementu `position: fixed` — w pikselach wewnętrznych: zoom mnoży je przy rysowaniu (§4.5: `left: 100px` → 150), więc wartość wziętą z prostokąta przed zapisem do stylu trzeba podzielić przez `cssZoomOf(...)`; `innerWidth/innerHeight` i `visualViewport` nie zależą od zoomu elementu. Helper w `layout/` przelicza długość z pikseli ekranu na wewnętrzne przez `element.currentCSSZoom` (brak, 0 lub wartość nieskończona → 1). Dwa miejsca dziś mieszają jednostki:
 
 - `ExerciseFrame` (tryb overlay): `contentBottom` i dolna krawędź kotwicy z prostokątów przeliczone na piksele wewnętrzne przed porównaniem z `offsetHeight` i dodaniem do `scrollTop`.
-- `MicrophoneSettingsButton`: obliczenie pozycji zostaje w pikselach ekranu (prostokąty, `viewport.width/height/offsetTop`, odstępy bezpieczne 16 px), a dopiero wynikowe `left` i `top` dzielone są przez zoom przed zapisem jako `position: fixed`.
+- `MicrophoneSettingsButton`: obliczenie pozycji zostaje w pikselach ekranu (prostokąty, `viewport.width/height/offsetTop`), a dopiero wynikowe `left` i `top` dzielone są przez zoom przed zapisem jako `position: fixed`. Odstęp 8 px pod przyciskiem i marginesy bezpieczne 16 px (`max(16px, safe-area)`) to długości wewnętrzne, więc przed użyciem są mnożone przez zoom (piksele ekranu) — tak samo jak CSS `max(16px, …)` pod zoomem daje 16 × skala px na ekranie. Pozycja przelicza się także przy zmianie skali bez zmiany rozmiaru okna (np. zmiana wskaźnika).
 
 Pozostałe użycia są bezpieczne pod zoomem (sprawdzone w review): `scrollIntoView` w `feedback-dock-reveal`, `AnimatePresence mode="popLayout"` (mierzy i zapisuje w pikselach wewnętrznych); brak portali, `IntersectionObserver`, `canvas`, `srcset`.
 
