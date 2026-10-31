@@ -31,6 +31,27 @@ export async function emulatePinchZoom(page: Page): Promise<void> {
   await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-zoomed", "true");
 }
 
+/**
+ * Counts the reveals of the result panel: calls of `scrollIntoView` on `.kid-feedback-overlay`
+ * (`scheduleFeedbackDockReveal`). Install before the page loads; read with `dockRevealCalls`.
+ */
+export async function installDockRevealSpy(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const browserWindow = window as typeof window & { dockRevealCalls?: number };
+    browserWindow.dockRevealCalls = 0;
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
+      original?.call(this, options);
+    };
+  });
+}
+
+/** How many times the result panel was revealed since the page loaded (`installDockRevealSpy`). */
+export async function dockRevealCalls(page: Page): Promise<number | undefined> {
+  return page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls);
+}
+
 /** The session frame covers the whole window (± 1 px) on screen, whatever the scale. */
 export async function expectFrameFillsViewport(page: Page, viewport: Viewport): Promise<void> {
   const frame = page.getByTestId("kid-session-frame");

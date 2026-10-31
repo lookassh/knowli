@@ -8,7 +8,7 @@ import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
-import { feedbackCardMax } from "./feedback-card-space";
+import { feedbackCardMax, type FeedbackCardGeometry } from "./feedback-card-space";
 import {
   scheduleFeedbackDockReveal,
   shouldRevealFeedbackDock,
@@ -158,7 +158,7 @@ export function ExerciseFrame({
     // `[dockPad]` na świeżym układzie, jeszcze przed malowaniem. Liczona tutaj
     // byłaby na układzie sprzed rezerwy — przy materiale, który już się
     // przewija, zatrzymałaby się na starym końcu zakresu i zostawiła pod
-    // panelem kilka px, poniżej progu kolejnej korekty. `layout` — wywołanie
+    // panelem kilka px. `layout` — wywołanie
     // z efektu layoutu (tutaj albo po zmianie `dockPad`): zwykły `setDockPad`,
     // który React renderuje synchronicznie. `observer` — callback
     // `ResizeObserver` albo `requestAnimationFrame`, czyli poza Reactem, ale
@@ -294,7 +294,6 @@ export function ExerciseFrame({
             <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
               {hasActions && <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />}
               <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
-              {/* Bez propsa `style`: limit karty to zmienna w stylu inline (syncCardSpace). */}
               <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
             </div>
           )) : null}
@@ -311,13 +310,13 @@ type CardSpaceLatch = { overlay: HTMLElement; key: string };
 
 /**
  * Limit karty wyniku z wolnego miejsca pod odpowiedzią (spec 2026-10-31-kid-ui-dock-followups
- * §3.1) jako `--kid-feedback-card-max` na nakładce; CSS panelu bierze większy z niego
- * i z dotychczasowego limitu. Liczony raz na klucz: panel, rozmiar ramy, tryb przewijanej
- * strony, pełny odstęp od góry (zwarta albo zwykła rama) i reszta panelu poza kartą.
- * Klucz zmienia się z oknem, klawiaturą, komunikatem i strukturą panelu, a nie z samym
- * wzrostem karty. Geometria z `feedbackCardMax` nie zależy od rezerwy, przewinięcia
- * korygującego ani ustępującego odstępu, więc ponowne liczenie nie powiększa karty w pętli.
- * W trybie przewijanej strony (powiększenie gestem, bardzo niskie okno) limitu nie ma.
+ * §3.1) jako `--kid-feedback-card-max` na nakładce — styl inline ustawiany poza Reactem; CSS
+ * panelu bierze większy z niego i z dotychczasowego limitu. Liczony od nowa tylko przy zmianie
+ * klucza: panel, rozmiar ramy, dolna krawędź treści bez wpływu panelu (bez rezerwy, przewinięcia
+ * korygującego i ustępującego odstępu) i reszta panelu poza kartą. Klucz zmienia się z oknem,
+ * klawiaturą, komunikatem, treścią i strukturą panelu, a nie z wzrostem samej karty, więc
+ * ponowne liczenie nie powiększa karty w pętli. W trybie przewijanej strony (powiększenie gestem,
+ * bardzo niskie okno) limitu nie ma.
  */
 function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, material: HTMLElement): CardSpaceLatch | null {
   const frame = overlay.closest<HTMLElement>(".kid-exercise-frame");
@@ -328,31 +327,40 @@ function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, mater
   }
   const page = overlay.closest<HTMLElement>(".kid-page");
   const pageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
-  // Pełny odstęp to podstawa elementu-odstępu zwartej ramy; gdzie go nie ma — `auto`, czyli 0.
-  const fullOffset = Number.parseFloat(getComputedStyle(frame, "::before").flexBasis) || 0;
-  const overlayHeight = toLayoutPx(overlay.getBoundingClientRect().height, material);
-  const key = `${frame.offsetWidth}x${frame.offsetHeight}:${pageScroll}:${fullOffset}:${Math.round(overlayHeight - card.offsetHeight)}`;
+  const geometry = pageScroll ? null : cardGeometry(frame, card, overlay, material);
+  const key = geometry === null
+    ? `none:${pageScroll}`
+    : [
+      `${frame.offsetWidth}x${geometry.frameHeight}`,
+      Math.round(geometry.contentBottom + geometry.scrollTop + geometry.offsetGiven),
+      overlay.offsetHeight - card.offsetHeight,
+    ].join(":");
   if (latch?.overlay === overlay && latch.key === key) return latch;
-  const cardMax = pageScroll ? null : measureCardMax(frame, card, material, fullOffset, overlayHeight);
+  const cardMax = geometry === null ? null : feedbackCardMax(geometry);
   if (cardMax === null) overlay.style.removeProperty(CARD_MAX_PROPERTY);
   else overlay.style.setProperty(CARD_MAX_PROPERTY, `${cardMax}px`);
   return { overlay, key };
 }
 
-/** Geometria ramy dla `feedbackCardMax`: prostokąty względem górnej krawędzi ramy, w px wewnętrznych. */
-function measureCardMax(frame: HTMLElement, card: HTMLElement, material: HTMLElement, fullOffset: number, overlayHeight: number) {
+/**
+ * Geometria ramy dla `feedbackCardMax`: prostokąty względem górnej krawędzi ramy, w px
+ * wewnętrznych; `null`, gdy brak treści albo rama się przepełnia (komunikat z przewijaną ramą
+ * nie ma wiarygodnej dolnej krawędzi).
+ */
+function cardGeometry(frame: HTMLElement, card: HTMLElement, overlay: HTMLElement, material: HTMLElement): FeedbackCardGeometry | null {
   const content = material.querySelector<HTMLElement>(".kid-material-content");
   const first = frame.firstElementChild;
-  // Przepełniona rama (komunikat z przewijaną ramą) nie ma wiarygodnej dolnej krawędzi.
   if (!content || content.children.length === 0 || !first || frame.scrollHeight > frame.clientHeight + 1) return null;
+  // Pełny odstęp to podstawa elementu-odstępu zwartej ramy; gdzie go nie ma — `auto`, czyli 0.
+  const fullOffset = Number.parseFloat(getComputedStyle(frame, "::before").flexBasis) || 0;
   const frameTop = frame.getBoundingClientRect().top;
   const contentBottom = Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom));
-  return feedbackCardMax({
+  return {
     frameHeight: frame.offsetHeight,
     contentBottom: toLayoutPx(contentBottom - frameTop, material),
     scrollTop: material.scrollTop,
     offsetGiven: Math.max(0, fullOffset - toLayoutPx(first.getBoundingClientRect().top - frameTop, material)),
-    overlayHeight,
+    overlayHeight: toLayoutPx(overlay.getBoundingClientRect().height, material),
     cardHeight: card.offsetHeight,
-  });
+  };
 }

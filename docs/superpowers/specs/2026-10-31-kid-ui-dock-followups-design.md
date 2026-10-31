@@ -87,7 +87,7 @@ Poza zakresem, raportowane w PR jako kandydaci:
 - `cardMax = floor(available − 8 − overhead)`. 8 to zapas na zaokrąglenia, a panel nie styka się z dolną krawędzią ramy.
 - Funkcja zwraca `null`, gdy `cardMax ≤ 0`.
 
-**Kiedy liczyć.** Raz na klucz `(węzeł nakładki, frame.offsetWidth × frame.offsetHeight, tryb strony, fullOffset, round(overhead))`, w zatrzasku `useRef` obok `gatedDockRef`.
+**Kiedy liczyć.** Raz na klucz `(węzeł nakładki, frame.offsetWidth × frame.offsetHeight, round(contentBottom0), overlay.offsetHeight − card.offsetHeight)`, a w trybie przewijanej strony — stały klucz bez zmiennej. Zatrzask to `useRef` obok `gatedDockRef`. `contentBottom0` (z `fullOffset`) nie zależy od panelu, więc jest w kluczu bezpiecznie: zmiana treści po werdykcie (poprawka z review gałęzi) przelicza limit, a wzrost samej karty nie.
 
 - Przy zmianie klucza wartość jest liczona od nowa z bieżącej geometrii, w tym samym pomiarze, przed odczytem `excess` i zakładki. Klucz zmienia się przy pierwszym pomiarze panelu, przy zmianie okna, klawiatury, obrotu, komunikatu zmieniającego wysokość ramy, przy przejściu między ramą zwartą a zwykłą oraz przy zmianie struktury panelu.
 - `ResizeObserver` pomiaru obserwuje także samą ramę (`.kid-exercise-frame`). W zwartej ramie zmiana jej wysokości nie zmienia materiału, treści ani stopki: zmienia się tylko odstęp od góry albo wolne miejsce pod stopką. Bez obserwacji ramy klucz nie byłby sprawdzany, a ustępujący odstęp przesunąłby odpowiedzi.
@@ -251,7 +251,7 @@ Komentarze o progu 8 px w testach i kodzie są aktualizowane.
 ## 7. Ryzyka i przyjęte kompromisy
 
 - **Stała `24` w kodzie powtarza paddingi z CSS.** Zmiana paddingów stopki albo odstępu ramy bez zmiany stałej przesunie granicę panelu o kilka px. Wykryją to testy „pole odpowiedzi ± 1” i „panel 12 px nad ramą”.
-- **Zmiana struktury panelu po pojawieniu się** (np. dochodzą akcje) bez zmiany rozmiaru ramy nie przelicza wartości. Dzisiejsze panele pojawiają się z pełną treścią.
+- **Zmiana treści albo struktury panelu po pojawieniu się** przelicza wartość: w kluczu są też dolna krawędź treści bez wpływu panelu i reszta panelu poza kartą (poprawka z review gałęzi). Treść absolutnie pozycjonowana tego nie zmienia (niżej).
 - **Karta rośnie po zamknięciu klawiatury** (nowy klucz). Zmiana wysokości następuje razem z dużą zmianą układu po zamknięciu klawiatury.
 - **Duży panel na wysokim tablecie** zakrywa puste miejsce materiału, nigdy treść. Położenie „Dalej” różni się między zadaniami bardziej niż dziś.
 - **Elementy absolutnie pozycjonowane w treści** (np. dymki) nie liczą się do `contentBottom`, jak dotąd.

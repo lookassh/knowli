@@ -5,8 +5,9 @@ import {
   makeDeck, mediumSpellingHintFeedback, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
 } from "./helpers/kid-fixtures";
 import {
-  boxes, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, lineLengths, nextFrames,
-  pictureTileLimit, pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
+  boxes, dockRevealCalls, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe,
+  installDockRevealSpy, lineLengths, nextFrames, pictureTileLimit, pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX,
+  waitForKidScale,
 } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
@@ -868,6 +869,13 @@ function clozeHintFixture(): KidUiFixture {
   return lessonTaskFixture(CLOZE_IDS, CLOZE_DECK, [clozeTask], [assignmentAttempt(clozeUid(90), clozeTask.taskId, feedback)]);
 }
 
+/** Opens "Uzupełnij tekst" (`clozeHintFixture`) and fills the four gaps, ready for "Sprawdź" (`kid-lesson-check`). */
+async function openAnsweredCloze(page: Page, viewport: Viewport) {
+  await installKidUiFixture(page, clozeHintFixture());
+  await openLessonTask(page, viewport, "kid-lesson-cloze");
+  for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
+}
+
 /** How far the first matching element sits from the left and right edge of its parent's content box (screen px). */
 async function insetsInParent(page: Page, selector: string): Promise<{ left: number; right: number }> {
   return page.locator(selector).first().evaluate((element) => {
@@ -954,11 +962,7 @@ const SCROLLING_MATERIAL_CASES = [
   },
   ...[SMALL_LAPTOP, LAPTOP].map((viewport) => ({
     name: "cloze with a lesson hint", viewport, submit: "kid-lesson-check",
-    open: async (page: Page) => {
-      await installKidUiFixture(page, clozeHintFixture());
-      await openLessonTask(page, viewport, "kid-lesson-cloze");
-      for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
-    },
+    open: (page: Page) => openAnsweredCloze(page, viewport),
   })),
 ];
 
@@ -1056,6 +1060,8 @@ async function cardState(page: Page) {
     const variable = overlay?.style.getPropertyValue("--kid-feedback-card-max") ?? "";
     return {
       zoom,
+      // `flex` for the compact frame, `grid` for the regular one.
+      display: getComputedStyle(frame).display,
       frameHeight: frame.offsetHeight,
       card: card?.offsetHeight ?? 0,
       natural: card && scroller ? card.offsetHeight + scroller.scrollHeight - scroller.clientHeight : 0,
@@ -1115,9 +1121,18 @@ async function expectCardTakesFreeSpace(page: Page, row: CardSpaceCase) {
   const settled = await sendAndSettle(page, row.submit, { cardHeight: row.firstFrame });
   const probe = await expectPanelNeverCovers(page, label);
   const after = await cardState(page);
-  const details = `${label}: ${JSON.stringify({ before, after, settled, firstCardHeight: probe.firstCardHeight })}`;
+  // The card limit expected from the layout before the verdict (spec §3.1): the frame below the content, minus the
+  // footer clearance (24) and the slack (8), minus the rest of the panel around the card.
+  const expected = Math.floor(before.frameHeight - before.contentBottom - 24 - 8
+    - (after.overlay!.bottom - after.overlay!.top - after.card));
+  const details = `${label}: ${JSON.stringify({ expected, before, after, settled, firstCardHeight: probe.firstCardHeight })}`;
+  expect(before.display, `the ${row.frame} frame: ${details}`).toBe(row.frame === "compact" ? "flex" : "grid");
   expect(after.natural, `the card content is taller than the old limit: ${details}`).toBeGreaterThan(CARD_LIMIT);
-  expect(after.variable, `the card limit is set from the free space: ${details}`).toBeGreaterThan(CARD_LIMIT);
+  if (row.fits === "whole") {
+    // Fonts other than the ones measured (fixture comment) would show up here first, not as a scrolling card.
+    expect(after.natural, `the card content fits the free space with room to spare: ${details}`).toBeLessThan(expected - 10);
+  }
+  expect(Math.abs(after.variable! - expected), `the card limit comes from the free space: ${details}`).toBeLessThanOrEqual(2);
   expect(after.card, `the card grew past the old limit: ${details}`).toBeGreaterThan(CARD_LIMIT + 10);
   expect(after.cardScrolls, `${row.fits === "whole" ? "the whole card is shown" : "the free space limits the card"}: ${details}`)
     .toBe(row.fits === "space");
@@ -1150,7 +1165,7 @@ async function expectCardTakesFreeSpace(page: Page, row: CardSpaceCase) {
 const MOUSE_CARD_SPACE_CASES: CardSpaceCase[] = [
   { name: "medium hint", viewport: ULTRAWIDE, scale: 1.6, frame: "compact", fits: "whole", firstFrame: true,
     open: shortPromptHint(mediumSpellingHintFeedback) },
-  { name: "medium hint", viewport: { width: 3440, height: 1300 }, scale: 1.44, frame: "compact", fits: "whole",
+  { name: "medium hint", viewport: { width: 3440, height: 1300 }, scale: 1.44, frame: "compact", fits: "whole", firstFrame: true,
     open: shortPromptHint(mediumSpellingHintFeedback) },
   { name: "long hint", viewport: ULTRAWIDE, scale: 1.6, frame: "compact", fits: "space", open: shortPromptHint(longSpellingHintFeedback) },
   { name: "long hint", viewport: { width: 820, height: 1180 }, scale: 1, frame: "regular", fits: "space",
@@ -1163,8 +1178,8 @@ for (const row of MOUSE_CARD_SPACE_CASES) {
   });
 }
 
-// Where there is no free space (a laptop), the old limit stays: the variable is set, but 36vh of the window wins.
-test("result card keeps the old limit without free space", async ({ page }) => {
+// Where the free space is smaller (a laptop), the old limit stays: the variable is set, but 36vh of the window wins.
+test("result card keeps 36vh where the free space is smaller", async ({ page }) => {
   await openShortPromptAnswer(page, LAPTOP, 1, longSpellingHintFeedback);
   await sendAndSettle(page);
   const state = await cardState(page);
@@ -1202,24 +1217,36 @@ test("result card follows the frame size", async ({ page }) => {
   expect(smallest.overlay!.bottom, `the panel stays in the frame: ${smallDetails}`).toBeLessThanOrEqual(smallest.frameHeight + 0.5);
 });
 
+// A change of the content alone (e.g. a notice inside the material) is measured again, too (spec §3.1): the card gives
+// back the space the content takes, and the answer and the top offset stay. A padding under the last content block
+// lengthens the content without moving the answer.
+test("result card follows the content", async ({ page }) => {
+  await openShortPromptAnswer(page, ULTRAWIDE, ULTRAWIDE_SCALE, longSpellingHintFeedback);
+  await sendAndSettle(page);
+  const before = await cardState(page);
+  await page.addStyleTag({ content: ".kid-material-content > :last-child { padding-block-end: 40px !important; }" });
+  await nextFrames(page);
+  await settledDockReserve(page);
+  const after = await cardState(page);
+  const details = JSON.stringify({ before, after });
+  expect(before.variable, `the card limit is set: ${details}`).not.toBeNull();
+  expect(Math.abs(before.variable! - (after.variable ?? 0) - 40), `the card gives back the 40 px: ${details}`).toBeLessThanOrEqual(2);
+  expect(Math.abs(after.instruction!.top - COMPACT_FRAME_OFFSET), `the full top offset: ${details}`).toBeLessThanOrEqual(2);
+  expect(Math.abs(after.answer!.top - before.answer!.top), `the answer keeps its place: ${details}`).toBeLessThanOrEqual(1);
+});
+
 // A pinch zoom turns the session into a scrolling page (spec §3.1, §3.2): no card limit from the free space there.
 test("pinch zoom brings back the old card limit", async ({ page }) => {
-  await page.addInitScript(() => {
-    const browserWindow = window as typeof window & { dockRevealCalls?: number };
-    browserWindow.dockRevealCalls = 0;
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
-      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
-      original.call(this, options);
-    };
-  });
+  await installDockRevealSpy(page);
   await openShortPromptAnswer(page, ULTRAWIDE, ULTRAWIDE_SCALE, longSpellingHintFeedback);
   await sendAndSettle(page);
   const grown = await cardState(page);
   expect(grown.card, `the card grew before the pinch zoom: ${JSON.stringify(grown)}`).toBeGreaterThan(CARD_LIMIT + 10);
+  expect(await dockRevealCalls(page), "no reveal before the pinch zoom").toBe(0);
   await emulatePinchZoom(page);
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+  await expect.poll(() => dockRevealCalls(page)).toBe(1);
   await nextFrames(page);
+  expect(await dockRevealCalls(page), "revealed once").toBe(1);
   const zoomed = await cardState(page);
   const details = JSON.stringify({ grown, zoomed });
   expect(zoomed.variable, `no card limit variable: ${details}`).toBeNull();
@@ -1239,7 +1266,8 @@ async function expectPanelFillsFooter(page: Page, label: string) {
   const slotBoxes = await page.locator(".kid-feedback-overlay").locator("xpath=..")
     .locator("[data-testid='kid-primary-slot'], [data-testid='kid-secondary-slot']")
     .evaluateAll((slots) => slots.map((slot) => slot.getClientRects().length));
-  expect(slotBoxes, `${label}: the empty action slots take no space`).toEqual(slotBoxes.map(() => 0));
+  // Both slots are there (primary and secondary) and neither has a box.
+  expect(slotBoxes, `${label}: the empty action slots take no space`).toEqual([0, 0]);
 }
 
 // A very short window (a phone in landscape) scrolls the session as a page and the panel is part of it: it takes the
@@ -1247,7 +1275,7 @@ async function expectPanelFillsFooter(page: Page, label: string) {
 // 2026-10-31-kid-ui-dock-followups §3.2). The reveal scrolls the page, so positions are taken against the frame.
 const PAGE_SCROLL_DOCK_CASES = [
   ...[{ width: 844, height: 390 }, { width: 667, height: 375 }].map((viewport) => ({
-    name: "written answer", viewport, answer: "[data-testid='kid-input']", submit: "kid-submit",
+    name: "written answer", viewport, layout: "inline", answer: "[data-testid='kid-input']", submit: "kid-submit",
     open: async (page: Page) => {
       await page.setViewportSize(viewport);
       await openWrittenRecall(page, completedRecallFixture({ feedback: { kind: "incorrect", correctText: "cat" } }));
@@ -1255,20 +1283,17 @@ const PAGE_SCROLL_DOCK_CASES = [
     },
   })),
   {
-    name: "cloze", viewport: { width: 812, height: 375 }, answer: ".kid-lesson-cloze__text", submit: "kid-lesson-check",
-    open: async (page: Page) => {
-      await installKidUiFixture(page, clozeHintFixture());
-      await openLessonTask(page, { width: 812, height: 375 }, "kid-lesson-cloze");
-      for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
-    },
+    name: "cloze", viewport: { width: 812, height: 375 }, layout: "stacked", answer: ".kid-lesson-cloze__text", submit: "kid-lesson-check",
+    open: (page: Page) => openAnsweredCloze(page, { width: 812, height: 375 }),
   },
 ];
 
 test("result panel takes the place of the actions when the page scrolls", async ({ page }) => {
-  for (const { name, viewport, answer, submit, open } of PAGE_SCROLL_DOCK_CASES) {
+  for (const { name, viewport, layout, answer, submit, open } of PAGE_SCROLL_DOCK_CASES) {
     const label = `${name} at ${viewport.width}x${viewport.height}`;
     await open(page);
     await expect(page.locator(".kid-page")).toHaveAttribute("data-viewport-very-short", "true");
+    await expect(page.getByTestId("kid-exercise")).toHaveAttribute("data-action-layout", layout);
     await page.evaluate(async () => { await document.fonts.ready; });
     const before = await topsInFrame(page, { slot: "[data-testid='kid-primary-slot']", answer });
     await page.getByTestId(submit).click();
@@ -1294,10 +1319,8 @@ test.describe("touch tablet in portrait", () => {
     {
       name: "cloze with a lesson hint", viewport: tablet, scale: 1, frame: "compact", fits: "space", submit: "kid-lesson-check",
       open: async (page, viewport) => {
-        await installKidUiFixture(page, clozeHintFixture());
-        await openLessonTask(page, viewport, "kid-lesson-cloze");
+        await openAnsweredCloze(page, viewport);
         await page.evaluate(async () => { await document.fonts.ready; });
-        for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
         await nextFrames(page);
       },
     },
@@ -1335,7 +1358,7 @@ test.describe("touch tablet in portrait", () => {
     await expectPanelNeverCovers(page, "1024x700 resized to 1024x1366", tablet);
     const closed = await cardState(page);
     const details = JSON.stringify({ typing, closed });
-    expect(closed.variable, `the card limit is measured again: ${details}`).not.toBe(typing.variable);
+    expect(closed.variable, `the card limit is measured again: ${details}`).toBeGreaterThan(typing.variable ?? 0);
     expect(closed.cardScrolls, `the whole card is shown once the keyboard is closed: ${details}`).toBe(false);
   });
 });

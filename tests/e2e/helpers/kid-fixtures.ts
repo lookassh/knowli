@@ -88,8 +88,10 @@ const HINT_FIX = "counting the little boats";
 const HINT_END = " that sailed slowly towards the harbour before the sun went down behind the hills and the lights came on.";
 
 /**
- * A spelling hint with a long sentence and one wrong fragment: about 600 inner px of card, cut by the 300 px card limit
- * (the dock is then about 382 inner px over a 54 px footer and covers the answer form).
+ * A spelling hint with a long sentence and one wrong fragment: about 600 inner px of card. Under a short prompt the card
+ * grows into the free space (spec 2026-10-31-kid-ui-dock-followups §3.1); under the long prompt of
+ * `kid-large-screen.spec.ts` there is none, the card keeps the 300 px limit and its dock (about 382 inner px over a
+ * 54 px footer) covers the answer form.
  */
 export const longSpellingHintFeedback: FeedbackDto = {
   kind: "spelling_hint",
