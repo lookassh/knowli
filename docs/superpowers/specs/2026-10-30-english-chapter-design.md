@@ -566,7 +566,7 @@ Opis architektury: `docs/architecture.md` §19.10 („Słówka ze źródła”),
 - tytuł z samych białych znaków daje tytuł źródła także po stronie serwera, a zawężenie z samych białych znaków jest pomijane;
 - przyjęte `target` i `acceptedAnswers` są zapisywane w ujednoliconej postaci: typograficzne apostrofy zamienione na `'`, białe znaki zwinięte, końcowa interpunkcja zdania (`.!?…,;:`) usunięta; prompt każe modelowi pomijać końcową interpunkcję (projekt zapisu nie określał; poprawka z końcowej fali Etapu 4);
 - duplikat rozpoznaje także klucz dopasowania (tokeny po pominięciu wiodących `a`/`an`/`the`/`to`, bez interpunkcji): „the coat” po „coat” jest odrzucone i liczone w `rejectedCount`;
-- dopasowanie frazy przechodzi graf tekstu zbiorem pozycji frontowych zamiast rekurencji po wszystkich ścieżkach, więc praca jest ograniczona długością elementu i liczbą węzłów, także przy wieloznacznych skrótach;
+- dopasowanie frazy przechodzi graf tekstu zbiorem pozycji frontowych zamiast rekurencji po wszystkich ścieżkach, z szybkim odrzuceniem przy braku tokenu albo sąsiedniej pary form w tekście; praca rośnie z liczbą wariantów skrótów elementu (do 32), jego długością i liczbą krawędzi tekstu — bez wykładniczego wzrostu (test: 16 000 znaków „it's” i 300 złośliwych elementów w ok. 73 ms), choć celowo spreparowany tekst z wynikiem modelu może nadal zająć workerowi kilkanaście sekund;
 - w trybie materiału zawężenie rodzica (PARENT NOTE) stoi poza ogrodzeniem „treat as material” — jest poleceniem rodzica, które tylko zawęża wybór, a nie materiałem;
 - komunikat `no_source_items` brzmi „Nie znaleziono w tekście źródła słówek do zestawu. Ponów generowanie albo utwórz nowy zestaw ze źródła z innym zawężeniem lub w rodzaju standardowym.” i ma odnośnik „Przejdź do źródła”, gdy zestaw ma źródło — ponowienie powtarza zamrożone polecenie (to samo zawężenie i rodzaj), więc inne zawężenie wymaga nowego zestawu ze źródła (pierwsza wersja brzmiała „… Zmień zawężenie albo spróbuj ponownie.”).
 
@@ -584,7 +584,7 @@ Dla pierwszych sześciu rodzic sprawdza szkic przed publikacją, więc te przypa
 
 Bez zmian w Etapie 4 zostaje asymetria wspólnych kluczy ekspozycji lekcji i słówek (4.5): zestaw słówek i lekcja rozdziału z tego samego źródła częściej mają ten sam tekst (zwrot „It's raining” jako słówko i odpowiedź tłumaczenia), więc ekspozycja słówka może trwale odebrać samodzielność takiemu tłumaczeniu. Etap nie dodał tu osobnej reguły; skutek w nauce nie był mierzony.
 
-**Zweryfikowane:** (uzupełnia Task 6)
+**Zweryfikowane:** typecheck; testy jednostkowe 3399; integracja 66 plików / 725 testów (+2 pominięte) — w tym `source-vocabulary.test.ts` (tworzenie z kopią tekstu, 409 przy nieaktualnej wersji, ponowienia po edycji i usunięciu źródła, przeplatanie z usuwaniem, walidacja per element, `no_source_items`, `maxItems`, zapis celu bez końcowej interpunkcji, duplikaty po kluczu dopasowania); E2E `test:e2e:shards`: real 33/33/21/35 (w tym przebieg źródło → zestaw słówek → edytor w `parent-sources.spec.ts`) i mocked 337 (w tym `parent-source-vocabulary-layout.spec.ts` na 320×640, 390×844, 768×1024, 1280×800) — jeden test animacji Kid UI (`kid-motion.spec.ts`, kod poza zakresem etapu) padł pod obciążeniem równoległym, a osobno przeszedł 6/6.
 
 **Niezweryfikowane:**
 
