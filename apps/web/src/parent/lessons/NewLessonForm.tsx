@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Alert, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
+import { routePath } from "../parent-routes";
+import { plainClick } from "../plain-click";
 import { httpStatusOf, orpc } from "../query-client";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import "./lesson-panels.css";
+import "../sources/sources-panel.css";
 
 const MATERIAL_MAX = 8000;
 const POOL_MIN = 20;
@@ -44,9 +47,30 @@ export interface NewLessonValues {
   topicTitle: string;
 }
 
-/** Wartości startowe z katalogu: pierwszy przedmiot, pierwszy temat, wszystkie jego reguły. */
-export function initialLessonValues(catalog: SubjectCatalogDto | undefined): NewLessonValues {
-  const subject = catalog?.subjects[0];
+/**
+ * Przedmioty do wyboru w formularzu. Lekcja ze źródła ma tekst ze źródła,
+ * więc tylko przedmioty tworzone z materiału (polecenia katalogowe nie
+ * przyjmują `sourceMaterialId`).
+ */
+export function lessonSubjects(catalog: SubjectCatalogDto | undefined, fromSource = false): SubjectCatalogDto["subjects"] {
+  const subjects = catalog?.subjects ?? [];
+  return fromSource ? subjects.filter((subject) => subject.creation === "material") : subjects;
+}
+
+/** Wybór startowy formularza: przedmiot wskazany w adresie i tytuł tematu (tytuł źródła). */
+export interface LessonPreset {
+  subjectId?: string | undefined;
+  topicTitle?: string | undefined;
+  fromSource?: boolean | undefined;
+}
+
+/**
+ * Wartości startowe z katalogu: wskazany (albo pierwszy dostępny) przedmiot,
+ * pierwszy temat, wszystkie jego reguły; ze źródła — tytuł źródła jako temat.
+ */
+export function initialLessonValues(catalog: SubjectCatalogDto | undefined, preset: LessonPreset = {}): NewLessonValues {
+  const subjects = lessonSubjects(catalog, preset.fromSource);
+  const subject = subjects.find((s) => s.id === preset.subjectId) ?? subjects[0];
   const topic = subject?.topics[0];
   const objectiveIds = topic?.objectives.map((o) => o.id) ?? [];
   return {
@@ -58,7 +82,7 @@ export function initialLessonValues(catalog: SubjectCatalogDto | undefined): New
     poolSize: defaultPoolSize(objectiveIds.length),
     poolSizeTouched: false,
     schoolSubjectName: "",
-    topicTitle: "",
+    topicTitle: (preset.topicTitle ?? "").trim().slice(0, MAX_SCHOOL_TOPIC_TITLE_LENGTH),
   };
 }
 
@@ -83,8 +107,9 @@ export function lessonPathOf(catalog: SubjectCatalogDto | undefined, subjectId: 
 /**
  * Brak możliwości wysłania (przycisk wyłączony). Komunikat walidacji przy
  * kliknięciu daje `validationError` — wyłączony przycisk zwykle go uprzedza.
+ * Ze źródła (`fromSource`) tekst nie pochodzi z pola materiału.
  */
-export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalogDto | undefined): boolean {
+export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalogDto | undefined, fromSource = false): boolean {
   const path = lessonPathOf(catalog, values.subjectId);
   const pool = values.poolSize;
   const poolValid = typeof pool === "number" && Number.isInteger(pool) && pool >= POOL_MIN && pool <= (path === "catalog" ? POOL_MAX : MATERIAL_POOL_MAX);
@@ -95,18 +120,20 @@ export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalog
     const topicName = values.topicTitle.trim().length;
     return (path === "material" || (subjectName > 0 && subjectName <= MAX_SCHOOL_SUBJECT_TITLE_LENGTH))
       && topicName > 0 && topicName <= MAX_SCHOOL_TOPIC_TITLE_LENGTH
-      && material > 0 && material <= MAX_SCHOOL_MATERIAL_LENGTH;
+      && (fromSource || (material > 0 && material <= MAX_SCHOOL_MATERIAL_LENGTH));
   }
+  // polecenie katalogowe nie przyjmuje źródła — formularz ze źródłem nie oferuje takich przedmiotów
+  if (fromSource) return false;
   const subject = catalog?.subjects.find((s) => s.id === values.subjectId);
   const topic = subject?.topics.find((t) => t.id === values.topicId);
   return topic !== undefined && values.objectiveIds.length > 0 && material > 0 && material <= MATERIAL_MAX;
 }
 
-function validationError(values: NewLessonValues, path: LessonPath): string | null {
+function validationError(values: NewLessonValues, path: LessonPath, fromSource: boolean): string | null {
   const material = values.material.trim().length;
   if (path !== "catalog") {
     if ((path === "school" && values.schoolSubjectName.trim().length === 0) || values.topicTitle.trim().length === 0) return messages.lessons.schoolMaterialRequired;
-    if (material === 0 || material > MAX_SCHOOL_MATERIAL_LENGTH) return messages.lessons.schoolMaterialRequired;
+    if (!fromSource && (material === 0 || material > MAX_SCHOOL_MATERIAL_LENGTH)) return messages.lessons.schoolMaterialRequired;
     return null;
   }
   if (values.objectiveIds.length === 0) return messages.lessons.objectivesRequired;
@@ -114,22 +141,27 @@ function validationError(values: NewLessonValues, path: LessonPath): string | nu
   return null;
 }
 
-export function buildCommand(values: NewLessonValues, path: LessonPath): PendingLesson {
+/**
+ * Polecenie utworzenia lekcji z nowymi identyfikatorami zestawu i żądania.
+ * Ze źródła (`sourceMaterialId`) polecenie niesie odwołanie zamiast tekstu —
+ * serwer kopiuje bieżący tekst źródła (kontrakt: dokładnie jedno z dwóch).
+ */
+export function buildCommand(values: NewLessonValues, path: LessonPath, sourceMaterialId?: string): PendingLesson {
   const instruction = values.instruction.trim();
   const shared = {
     deckId: crypto.randomUUID(),
-    material: values.material.trim(),
     ...(instruction ? { instruction } : {}),
     poolSize: Number(values.poolSize),
     clientRequestId: crypto.randomUUID(),
   };
+  const text = sourceMaterialId !== undefined ? { sourceMaterialId } : { material: values.material.trim() };
   switch (path) {
     case "school":
-      return { kind: "school", command: { ...shared, subjectTitlePl: values.schoolSubjectName.trim(), topicTitlePl: values.topicTitle.trim() } };
+      return { kind: "school", command: { ...shared, ...text, subjectTitlePl: values.schoolSubjectName.trim(), topicTitlePl: values.topicTitle.trim() } };
     case "material":
-      return { kind: "material", command: { ...shared, subjectId: values.subjectId, topicTitlePl: values.topicTitle.trim() } };
+      return { kind: "material", command: { ...shared, ...text, subjectId: values.subjectId, topicTitlePl: values.topicTitle.trim() } };
     case "catalog":
-      return { kind: "catalog", command: { ...shared, subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
+      return { kind: "catalog", command: { ...shared, material: values.material.trim(), subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
   }
 }
 
@@ -142,22 +174,38 @@ export function buildCommand(values: NewLessonValues, path: LessonPath): Pending
  * ponowienia (to samo `deckId`), także po zmianie przedmiotu (W15). Wpisane
  * dane chroni leave guard; 401 obsługuje globalny handler (przy wpisanych
  * danych logowanie w oknie nad formularzem).
+ *
+ * Ze źródła (`source`, design 2026-10-30 §3.4) zamiast pola materiału jest
+ * tytuł i podgląd tekstu źródła (tylko do odczytu) z linkiem „Zmień źródło”,
+ * a polecenie niesie `sourceMaterialId`; do wyboru są tylko przedmioty
+ * tworzone z materiału.
  */
 export default function NewLessonForm({
   onCreated,
   onCancel,
   registerEditorState,
+  source,
+  initialSubjectId,
+  onChangeSource,
 }: {
   onCreated: (deckId: string) => void;
   onCancel: () => void;
   registerEditorState: (state: EditorLeaveState) => void;
+  /** Źródło, z którego powstaje lekcja (tekst do podglądu; serwer kopiuje go przy tworzeniu). */
+  source?: { id: string; title: string; body: string } | undefined;
+  /** Przedmiot wybrany od startu (np. z przycisku na stronie źródła). */
+  initialSubjectId?: string | undefined;
+  /** „Zmień źródło” — powrót do strony źródła. */
+  onChangeSource?: ((sourceId: string) => void) | undefined;
 }) {
+  const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
   const catalog = catalogQuery.data;
+  const sourceTitle = source?.title;
   const form = useForm<NewLessonValues>({
     mode: "controlled",
     // Katalog już w pamięci podręcznej (lub wstawiony) ustawia wartości od pierwszego renderu.
-    initialValues: initialLessonValues(catalog),
+    initialValues: initialLessonValues(catalog, { subjectId: initialSubjectId, topicTitle: sourceTitle, fromSource }),
     // komunikat wysyłki (np. niepewne utworzenie) zostaje do następnego kliknięcia, także po zmianie przedmiotu
     clearInputErrorOnChange: false,
   });
@@ -175,8 +223,8 @@ export default function NewLessonForm({
   // Katalog ustala wartości startowe — formularz bez zmian rodzica nie jest „brudny”.
   const { initialize } = form;
   useEffect(() => {
-    if (catalog) initialize(initialLessonValues(catalog));
-  }, [catalog, initialize]);
+    if (catalog) initialize(initialLessonValues(catalog, { subjectId: initialSubjectId, topicTitle: sourceTitle, fromSource }));
+  }, [catalog, initialize, initialSubjectId, sourceTitle, fromSource]);
 
   const create = useMutation({
     mutationFn: (lesson: PendingLesson) => callParent(() => {
@@ -196,6 +244,7 @@ export default function NewLessonForm({
   const values = form.getValues();
   const path = lessonPathOf(catalog, values.subjectId);
   const fromMaterial = path !== "catalog";
+  const subjects = lessonSubjects(catalog, fromSource);
   const subject = catalog?.subjects.find((s) => s.id === values.subjectId);
   const topic = subject?.topics.find((t) => t.id === values.topicId);
   const materialMax = fromMaterial ? MAX_SCHOOL_MATERIAL_LENGTH : MATERIAL_MAX;
@@ -235,12 +284,12 @@ export default function NewLessonForm({
     if (creatingRef.current) return;
     let lesson = pending.current;
     if (!lesson) {
-      const invalid = validationError(values, path);
+      const invalid = validationError(values, path, fromSource);
       if (invalid) {
         form.setFieldError("submit", invalid);
         return;
       }
-      lesson = buildCommand(values, path);
+      lesson = buildCommand(values, path, source?.id);
       pending.current = lesson;
     }
     creatingRef.current = true;
@@ -306,7 +355,7 @@ export default function NewLessonForm({
                 value={values.subjectId}
                 disabled={creating}
                 onChange={(e) => chooseSubject(e.currentTarget.value)}
-                data={catalog.subjects.map((s) => ({ value: s.id, label: s.titlePl }))}
+                data={subjects.map((s) => ({ value: s.id, label: s.titlePl }))}
               />
               {path === "catalog" && (
                 <NativeSelect
@@ -355,26 +404,53 @@ export default function NewLessonForm({
               </fieldset>
             )}
 
-            <div>
-              <Textarea
-                size="md"
-                label={fromMaterial ? messages.lessons.schoolMaterialLabel : messages.lessons.materialLabel}
-                data-testid="lesson-material"
-                autosize
-                minRows={6}
-                maxRows={16}
-                maxLength={materialMax}
-                placeholder={messages.lessons.materialPlaceholder}
-                disabled={creating}
-                aria-describedby="lesson-material-counter"
-                {...form.getInputProps("material")}
-              />
-              {path === "school" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="school-material-hint">{messages.lessons.schoolMaterialHint}</Text>}
-              {path === "material" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="material-hint">{messages.lessons.chapterMaterialHint}</Text>}
-              <Text size="sm" mt={6} ta="right" className="pp-editor-muted" id="lesson-material-counter" data-testid="lesson-material-counter">
-                {counterTemplate.replace("{n}", String(values.material.length))}
-              </Text>
-            </div>
+            {source ? (
+              <div data-testid="lesson-source" className="pp-lesson-source">
+                <Group justify="space-between" align="center" gap="xs" wrap="wrap">
+                  <Text fw={600} size="sm" id="lesson-source-title" className="pp-lesson-source-title">
+                    {messages.sources.fromSource.replace("{title}", source.title)}
+                  </Text>
+                  <Anchor
+                    href={routePath({ section: "sources", sourceId: source.id })}
+                    size="sm"
+                    className="pp-lesson-source-change"
+                    data-testid="lesson-source-change"
+                    onClick={(event) => {
+                      if (!plainClick(event) || !onChangeSource) return;
+                      event.preventDefault();
+                      onChangeSource(source.id);
+                    }}
+                  >
+                    {messages.sources.changeSource}
+                  </Anchor>
+                </Group>
+                {/* tekst źródła tylko do podglądu — serwer skopiuje go przy tworzeniu lekcji */}
+                <div className="pp-source-preview" data-testid="lesson-source-preview" role="region" aria-labelledby="lesson-source-title" tabIndex={0}>
+                  {source.body}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Textarea
+                  size="md"
+                  label={fromMaterial ? messages.lessons.schoolMaterialLabel : messages.lessons.materialLabel}
+                  data-testid="lesson-material"
+                  autosize
+                  minRows={6}
+                  maxRows={16}
+                  maxLength={materialMax}
+                  placeholder={messages.lessons.materialPlaceholder}
+                  disabled={creating}
+                  aria-describedby="lesson-material-counter"
+                  {...form.getInputProps("material")}
+                />
+                {path === "school" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="school-material-hint">{messages.lessons.schoolMaterialHint}</Text>}
+                {path === "material" && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="material-hint">{messages.lessons.chapterMaterialHint}</Text>}
+                <Text size="sm" mt={6} ta="right" className="pp-editor-muted" id="lesson-material-counter" data-testid="lesson-material-counter">
+                  {counterTemplate.replace("{n}", String(values.material.length))}
+                </Text>
+              </div>
+            )}
 
             <TextInput size="md" label={messages.lessons.instructionLabel} data-testid="lesson-instruction" maxLength={500} disabled={creating}
               {...form.getInputProps("instruction")} />
@@ -407,7 +483,7 @@ export default function NewLessonForm({
                 data-testid="lesson-create-submit"
                 leftSection={creating ? <Loader size={16} color="currentColor" /> : undefined}
                 onClick={() => void submit()}
-                disabled={creating || (!hasPending && !canSubmitLesson(values, catalog))}
+                disabled={creating || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
               >
                 {creating ? messages.lessons.creating : hasPending ? messages.lessons.retryCreate : messages.lessons.createLesson}
               </Button>

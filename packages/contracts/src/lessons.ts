@@ -150,13 +150,21 @@ export const MAX_SCHOOL_TOPIC_TITLE_LENGTH = 120;
  * Źródło tekstu zestawu z materiału: dokładnie jedno z dwóch — wklejony
  * `material` albo `sourceMaterialId` zapisanego źródła (design 2026-10-30,
  * §3.3; serwer kopiuje wtedy jego tekst). Oba albo żadne to `validation`.
+ * Brak obu zgłaszamy przy `material` — to pole podświetla formularz rodzica;
+ * oba naraz przy `sourceMaterialId` (zbędne odwołanie obok wklejonego tekstu).
  */
 function requireExactlyOneTextSource(
   command: { material?: string | undefined; sourceMaterialId?: string | undefined },
   ctx: z.core.$RefinementCtx,
 ): void {
-  if ((command.material === undefined) === (command.sourceMaterialId === undefined)) {
-    ctx.addIssue({ code: "custom", path: ["sourceMaterialId"], message: "provide exactly one of material or sourceMaterialId" });
+  const hasMaterial = command.material !== undefined;
+  const hasSource = command.sourceMaterialId !== undefined;
+  if (hasMaterial === hasSource) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasMaterial ? "sourceMaterialId" : "material"],
+      message: "provide exactly one of material or sourceMaterialId",
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   ActionIcon,
   Affix,
@@ -8,8 +8,10 @@ import {
   Badge,
   Box,
   Button,
+  Center,
   Checkbox,
   Group,
+  Loader,
   Paper,
   Stack,
   Text,
@@ -19,6 +21,7 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   messages,
   type ChildDto,
@@ -33,9 +36,10 @@ import LessonEditor from "./lessons/LessonEditor";
 import NewLessonForm from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
-import { filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } from "./deck-list-grouping";
+import { DECK_STATE_TONE, filterByKind, groupDecksByState, polishPlural, type DeckKindFilter } from "./deck-list-grouping";
 import { ParentIcon } from "./ParentIcon";
 import type { ParentRoute } from "./parent-routes";
+import { httpStatusOf, orpc } from "./query-client";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import { formatFamilyDate } from "./family-date";
 import "./decks-panel.css";
@@ -70,18 +74,54 @@ function deckMetaParts(deck: DeckSummaryDto): string[] {
   return parts;
 }
 
-/** Ton koloru stanu zestawu — pary `--pp-status-*` z motywu (oba schematy). */
-const STATE_TONE: Record<DeckSummaryDto["state"], string> = {
-  review: "warning",
-  published: "success",
-  draft: "neutral",
-  archived: "neutral",
-};
+/**
+ * Formularz nowej lekcji ze źródła (`/parent/lessons/new?source=…`): najpierw
+ * odczyt źródła (tytuł i tekst do podglądu), potem zwykły formularz w trybie
+ * źródła. Źródło usunięte albo z niepełnego linku — komunikat i powrót.
+ */
+function NewLessonFromSource({
+  sourceId,
+  onChangeSource,
+  ...formProps
+}: { sourceId: string } & Omit<ComponentProps<typeof NewLessonForm>, "source">) {
+  const query = useQuery(orpc.sources.get.queryOptions({ input: { sourceId } }));
+  const source = query.data;
+  if (source !== undefined) {
+    return (
+      <NewLessonForm
+        source={{ id: source.id, title: source.title, body: source.body }}
+        onChangeSource={onChangeSource}
+        {...formProps}
+      />
+    );
+  }
+  if (query.isPending) {
+    return (
+      <Center py="xl" role="status" data-testid="lesson-source-loading">
+        <Group gap="sm"><Loader size="sm" /><Text>{messages.parentShell.loading}</Text></Group>
+      </Center>
+    );
+  }
+  const notFound = httpStatusOf(query.error) === 404;
+  return (
+    <Stack gap="md" align="flex-start" data-testid={notFound ? "lesson-source-not-found" : "lesson-source-error"}>
+      <Alert color={notFound ? "gray" : "red"} variant="light" w="100%" role={notFound ? undefined : "alert"}>
+        <Stack gap="sm" align="flex-start">
+          <Text size="sm">{notFound ? messages.sources.notFound : errorMessage(query.error)}</Text>
+          {!notFound && (
+            <Button size="md" variant="light" color="red" onClick={() => void query.refetch()}>{messages.parentShell.retry}</Button>
+          )}
+        </Stack>
+      </Alert>
+      <Button variant="default" size="md" onClick={formProps.onCancel}>{messages.decks.backToList}</Button>
+    </Stack>
+  );
+}
 
 /**
  * Sekcja Zestawy: lista pogrupowana po stanie, tworzenie materiału oraz —
  * według adresu — edytor zestawu (`/parent/decks/{id}`) albo formularz nowej
- * lekcji (`/parent/lessons/new`).
+ * lekcji (`/parent/lessons/new`, ze źródła: `?source=…&subject=…`).
  */
 export default function DecksPanel({
   route,
@@ -101,6 +141,7 @@ export default function DecksPanel({
   onNavigate: (route: ParentRoute, options?: { replace?: boolean }) => void;
 }) {
   const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false }) ?? false;
+  const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
   const [vocabularyFormat, setVocabularyFormat] = useState<"standard" | "picture">("standard");
@@ -295,6 +336,7 @@ export default function DecksPanel({
         childrenList={childrenList}
         onEditorStateChange={registerEditorState}
         onBack={openList}
+        onOpenSource={(sourceId) => onNavigate({ section: "sources", sourceId })}
         onArchived={() => {
           // jak archiwizacja z listy: lekcja znika od razu, nieudane odświeżenie listy daje komunikat
           setArchivedIds((current) => new Set([...current, deckId]));
@@ -317,17 +359,29 @@ export default function DecksPanel({
   }
 
   if (route.newLesson) {
-    return (
-      <NewLessonForm
-        registerEditorState={registerEditorState}
-        onCancel={openList}
-        onCreated={(createdDeckId) => {
-          // formularz znika z historii — „wstecz” z nowej lekcji prowadzi do listy, nie do pustego formularza
-          openDeck(createdDeckId, "lesson", { replace: true });
-          void onChanged().catch(() => undefined);
-        }}
-      />
-    );
+    const formProps = {
+      registerEditorState,
+      initialSubjectId: route.subjectId,
+      onCancel: openList,
+      onCreated: (createdDeckId: string) => {
+        // formularz znika z historii — „wstecz” z nowej lekcji prowadzi do listy, nie do pustego formularza
+        openDeck(createdDeckId, "lesson", { replace: true });
+        void onChanged().catch(() => undefined);
+        // nowy zestaw na liście zestawów źródła
+        if (route.sourceId !== undefined) void queryClient.invalidateQueries({ queryKey: orpc.sources.key() });
+      },
+    };
+    if (route.sourceId !== undefined) {
+      return (
+        <NewLessonFromSource
+          key={route.sourceId}
+          sourceId={route.sourceId}
+          onChangeSource={(sourceId) => onNavigate({ section: "sources", sourceId })}
+          {...formProps}
+        />
+      );
+    }
+    return <NewLessonForm key={route.subjectId ?? ""} {...formProps} />;
   }
 
   const pendingGeneration = pendingGenerationCommand.current !== null;
@@ -426,7 +480,7 @@ export default function DecksPanel({
                         <VisuallyHidden data-testid={`deck-kind-${index}`}>{messages.lessons.kindLabel[kind]}</VisuallyHidden>
                         {metaParts.join(" · ")}
                       </Text>
-                      <span className="pp-status-badge" data-tone={STATE_TONE[deck.state]}>
+                      <span className="pp-status-badge" data-tone={DECK_STATE_TONE[deck.state]}>
                         {messages.decks.states[deck.state]}
                       </span>
                     </Box>

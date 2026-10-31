@@ -9,6 +9,7 @@ import ChildEditor from "./ChildEditor";
 import DecksPanel from "./DecksPanel";
 import LeaveEditorDialog from "./LeaveEditorDialog";
 import ProgressPanel from "./ProgressPanel";
+import SourcesPanel from "./sources/SourcesPanel";
 import WorkCardPanel from "./WorkCardPanel";
 import { useParentLeaveGuard } from "./useParentLeaveGuard";
 import { useParentNavigation } from "./useParentNavigation";
@@ -37,7 +38,7 @@ function Brand() {
 
 /**
  * Panel rodzica Umiem!: pierwsze uruchomienie (PIN), logowanie, rama z sekcjami
- * w adresie (/parent/decks, /parent/decks/{id}, /parent/children, …). Stan sesji pochodzi z API —
+ * w adresie (/parent/decks, /parent/decks/{id}, /parent/sources/{id}, /parent/children, …). Stan sesji pochodzi z API —
  * przyciski nie są "zabezpieczeniem".
  */
 export default function ParentApp() {
@@ -207,6 +208,8 @@ export default function ParentApp() {
             onAuthExpired={toLogin}
             onNavigate={navigate}
           />
+        ) : section === "sources" ? (
+          <SourcesPanel route={route} onNavigate={navigate} registerEditorState={leaveGuard.register} />
         ) : section === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} registerEditorState={leaveGuard.register} />
         ) : section === "progress" ? (

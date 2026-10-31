@@ -171,6 +171,79 @@ describe("NewLessonForm", () => {
     expect(markup).toContain("0/16000 znaków");
   });
 
+  describe("lekcja ze źródła", () => {
+    const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const source = { id: SOURCE_ID, title: "Unit 3 — Food", body: "I like pizza.\nDo you like apples?" };
+
+    it("wartości startowe: wskazany przedmiot z materiału i tytuł źródła jako temat", () => {
+      expect(initialLessonValues(catalog, { subjectId: "school", topicTitle: source.title, fromSource: true })).toMatchObject({
+        subjectId: "school", topicId: "", objectiveIds: [], topicTitle: "Unit 3 — Food", material: "",
+      });
+      expect(initialLessonValues(catalog, { subjectId: "english_chapter", fromSource: true }).subjectId).toBe("english_chapter");
+      // przedmiot spoza ścieżki z materiału (albo nieznany) → pierwszy przedmiot z materiału
+      expect(initialLessonValues(catalog, { subjectId: "english_grammar", fromSource: true }).subjectId).toBe("school");
+      expect(initialLessonValues(catalog, { subjectId: "nieznany", fromSource: true }).subjectId).toBe("school");
+      // bez źródła wskazany przedmiot też wybiera się od startu
+      expect(initialLessonValues(catalog, { subjectId: "english_chapter" }).subjectId).toBe("english_chapter");
+    });
+
+    it("tekst pochodzi ze źródła: pusty materiał nie blokuje wysyłki", () => {
+      const chapterValues = values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], material: "", topicTitle: "Unit 3" });
+      expect(canSubmitLesson(chapterValues, catalog)).toBe(false);
+      expect(canSubmitLesson(chapterValues, catalog, true)).toBe(true);
+      expect(canSubmitLesson({ ...chapterValues, topicTitle: " " }, catalog, true)).toBe(false);
+      const schoolValues = values({ subjectId: "school", topicId: "", objectiveIds: [], material: "", topicTitle: "Mapa" });
+      expect(canSubmitLesson(schoolValues, catalog, true)).toBe(false);
+      expect(canSubmitLesson({ ...schoolValues, schoolSubjectName: "Geografia" }, catalog, true)).toBe(true);
+    });
+
+    it("rozdział: polecenie z sourceMaterialId, bez materiału", () => {
+      const pending = buildCommand(
+        values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 3", material: "" }),
+        "material",
+        SOURCE_ID,
+      );
+      expect(pending.kind).toBe("material");
+      expect(pending.command).toMatchObject({ subjectId: "english_chapter", topicTitlePl: "Unit 3", sourceMaterialId: SOURCE_ID });
+      expect(pending.command).not.toHaveProperty("material");
+    });
+
+    it("szkoła: polecenie z sourceMaterialId, bez materiału", () => {
+      const pending = buildCommand(
+        values({ subjectId: "school", topicId: "", objectiveIds: [], schoolSubjectName: "Geografia", topicTitle: "Mapa", material: "ignorowany" }),
+        "school",
+        SOURCE_ID,
+      );
+      expect(pending.kind).toBe("school");
+      expect(pending.command).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Mapa", sourceMaterialId: SOURCE_ID });
+      expect(pending.command).not.toHaveProperty("material");
+    });
+
+    it("formularz: podgląd źródła tylko do odczytu i link „Zmień źródło” zamiast pola materiału", () => {
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+      const markup = renderParentMarkup(
+        <NewLessonForm source={source} initialSubjectId="school" onChangeSource={vi.fn()} onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />,
+        queryClient,
+      );
+      expect(markup).not.toContain('data-testid="lesson-material"');
+      expect(markup).not.toContain('data-testid="lesson-material-counter"');
+      expect(markup).toContain('data-testid="lesson-source"');
+      expect(markup).toContain(messages.sources.fromSource.replace("{title}", "Unit 3 — Food"));
+      expect(markup).toContain('data-testid="lesson-source-preview"');
+      expect(markup).toContain("Do you like apples?");
+      expect(markup).toContain('data-testid="lesson-source-change"');
+      expect(markup).toContain(`href="/parent/sources/${SOURCE_ID}"`);
+      expect(markup).toContain(messages.sources.changeSource);
+      // tylko przedmioty tworzone z materiału; wskazany wybrany od startu
+      expect(markup).toContain('value="school" selected=""');
+      expect(markup).toContain('value="english_chapter"');
+      expect(markup).not.toContain('value="english_grammar"');
+      expect(markup).toContain('data-testid="school-subject-name"');
+      expect(markup).toContain('value="Unit 3 — Food"');
+    });
+  });
+
   it("gramatyka: wybór tematu i reguł, licznik do 8000", () => {
     const markup = renderWithCatalog(grammar);
     expect(markup).toContain('data-testid="lesson-topic"');

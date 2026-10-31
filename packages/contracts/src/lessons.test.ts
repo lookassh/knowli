@@ -506,12 +506,15 @@ describe("MaterialLessonCommandSchema (zestaw z materiału bez nazwy przedmiotu 
       expect(parsed.material).toBe("I like pizza.");
       expect(parsed.sourceMaterialId).toBeUndefined();
     });
-    it("odrzuca oba pola naraz", () => {
+    it("odrzuca oba pola naraz (błąd przy sourceMaterialId)", () => {
       const result = MaterialLessonCommandSchema.safeParse({ ...base, sourceMaterialId: UUID3 });
       expect(result.success).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path)).toEqual([["sourceMaterialId"]]);
     });
-    it("odrzuca brak obu pól", () => {
-      expect(MaterialLessonCommandSchema.safeParse(withoutMaterial).success).toBe(false);
+    it("odrzuca brak obu pól (błąd przy material — polu, które podświetla formularz)", () => {
+      const result = MaterialLessonCommandSchema.safeParse(withoutMaterial);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path)).toEqual([["material"]]);
     });
     it("odrzuca sourceMaterialId, które nie jest uuid, i pusty materiał z sourceMaterialId", () => {
       expect(MaterialLessonCommandSchema.safeParse({ ...withoutMaterial, sourceMaterialId: "nie-uuid" }).success).toBe(false);
@@ -549,9 +552,13 @@ describe("SchoolLessonCommandSchema i pola v3", () => {
     it("przyjmuje sam wklejony materiał jak dotąd", () => {
       expect(SchoolLessonCommandSchema.safeParse({ ...base, material: "Skala mapy." }).success).toBe(true);
     });
-    it("odrzuca oba pola naraz oraz brak obu", () => {
-      expect(SchoolLessonCommandSchema.safeParse({ ...base, material: "Skala mapy.", sourceMaterialId: UUID3 }).success).toBe(false);
-      expect(SchoolLessonCommandSchema.safeParse(base).success).toBe(false);
+    it("odrzuca oba pola naraz (błąd przy sourceMaterialId) oraz brak obu (błąd przy material)", () => {
+      const both = SchoolLessonCommandSchema.safeParse({ ...base, material: "Skala mapy.", sourceMaterialId: UUID3 });
+      expect(both.success).toBe(false);
+      expect(both.error?.issues.map((issue) => issue.path)).toEqual([["sourceMaterialId"]]);
+      const neither = SchoolLessonCommandSchema.safeParse(base);
+      expect(neither.success).toBe(false);
+      expect(neither.error?.issues.map((issue) => issue.path)).toEqual([["material"]]);
     });
     it("odrzuca sourceMaterialId, które nie jest uuid, oraz dodatkowe pola", () => {
       expect(SchoolLessonCommandSchema.safeParse({ ...base, sourceMaterialId: "nie-uuid" }).success).toBe(false);

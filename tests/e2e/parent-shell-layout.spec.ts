@@ -25,22 +25,32 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow).toBeLessThanOrEqual(0);
 }
 
-const TABS = ["tab-decks", "tab-children", "tab-progress", "tab-work-card"];
+const TABS = ["tab-decks", "tab-sources", "tab-children", "tab-progress", "tab-work-card"];
 
 test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async ({ page }) => {
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
+    let previousRight = 0;
     for (const id of TABS) {
       const box = await page.getByTestId(id).boundingBox();
       expect(box, id).not.toBeNull();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
-      expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 0.5);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 0.5);
-      expect(box!.y).toBeGreaterThan(viewport.height - 100);
+      expect(box!.height, id).toBeGreaterThanOrEqual(44);
+      expect(box!.width, id).toBeGreaterThanOrEqual(44);
+      expect(box!.x, id).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(box!.y + box!.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+      expect(box!.y, id).toBeGreaterThan(viewport.height - 100);
+      // pięć zakładek w jednym rzędzie, bez nachodzenia na siebie
+      expect(box!.x, id).toBeGreaterThanOrEqual(previousRight - 0.5);
+      previousRight = box!.x + box!.width;
+      // etykieta mieści się w swojej zakładce (bez ucięcia i wyjścia poza pasek)
+      const label = await page.getByTestId(id).evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
+      expect(label.scroll, id).toBeLessThanOrEqual(label.client);
     }
+    await expect(page.getByTestId("tab-sources")).toHaveText(messages.sources.tab);
+    await expect(page.getByTestId("tab-sources")).toHaveAttribute("href", "/parent/sources");
     await expect(page.getByTestId("to-learning")).toHaveCount(0);
 
     const menu = page.getByTestId("parent-menu");

@@ -1,0 +1,350 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Alert, Box, Button, Center, Group, Loader, Paper, Stack, Text, ThemeIcon, Title, UnstyledButton, VisuallyHidden } from "@mantine/core";
+import { modals } from "@mantine/modals";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { messages, type SourceMaterialPatch } from "@learning/contracts";
+import { ApiCallError, callParent, errorMessage, parentClient } from "../api";
+import { DECK_STATE_TONE } from "../deck-list-grouping";
+import { ParentIcon } from "../ParentIcon";
+import type { ParentRoute } from "../parent-routes";
+import { httpStatusOf, orpc } from "../query-client";
+import { runOnce } from "../run-once";
+import type { EditorLeaveState } from "../useParentLeaveGuard";
+import SourceFields from "./SourceFields";
+import {
+  deckCountLabel,
+  deleteConfirmText,
+  formatSourceDate,
+  newLessonFromSource,
+  sourcePatch,
+  sourceValuesValid,
+  type SourceFormValues,
+} from "./sources-state";
+import "../decks-panel.css";
+import "../deck-editor.css";
+import "./sources-panel.css";
+
+/** Stan źródła w chwili wejścia w edycję: zapis porównuje z nim pola i wysyła jego rewizję. */
+interface EditBase {
+  title: string;
+  body: string;
+  revision: number;
+}
+
+function isConflict(error: unknown): boolean {
+  return httpStatusOf(error) === 409 || (error instanceof ApiCallError && error.code === "conflict");
+}
+
+/**
+ * Strona źródła (design 2026-10-30 §3.4): podgląd i edycja tekstu, przyciski
+ * tworzenia lekcji rozdziału i szkolnej, zestawy z tego źródła oraz usunięcie
+ * z potwierdzeniem podającym liczbę zestawów. Edycja wysyła tylko zmienione
+ * pola z rewizją z chwili wejścia w edycję — zmiana z innego okna kończy się
+ * konfliktem (409), a nie cichym nadpisaniem.
+ */
+export default function SourcePage({
+  sourceId,
+  onNavigate,
+  registerEditorState,
+}: {
+  sourceId: string;
+  onNavigate: (route: ParentRoute, options?: { replace?: boolean }) => void;
+  registerEditorState: (state: EditorLeaveState) => void;
+}) {
+  const queryClient = useQueryClient();
+  const options = orpc.sources.get.queryOptions({ input: { sourceId } });
+  const query = useQuery(options);
+  const source = query.data;
+  const [base, setBase] = useState<EditBase | null>(null);
+  const [values, setValues] = useState<SourceFormValues>({ title: "", body: "" });
+  const [conflict, setConflict] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const mounted = useRef(true);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const restoreEditFocus = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const update = useMutation({
+    mutationFn: (patch: SourceMaterialPatch) => callParent(() => parentClient.sources.update({ sourceId, ...patch })),
+  });
+  const remove = useMutation({
+    mutationFn: () => callParent(() => parentClient.sources.delete({ sourceId })),
+  });
+  const saving = update.isPending;
+  const editing = base !== null;
+  const patch = base ? sourcePatch(base, values) : null;
+  const dirty = patch !== null;
+
+  useEffect(() => {
+    registerEditorState({ dirty, busy: saving || deleting });
+  }, [registerEditorState, dirty, saving, deleting]);
+  useEffect(() => () => registerEditorState({ dirty: false, busy: false }), [registerEditorState]);
+
+  // po wyjściu z edycji fokus wraca do „Edytuj” (pola edycji znikają z ekranu)
+  useEffect(() => {
+    if (!editing && restoreEditFocus.current) {
+      restoreEditFocus.current = false;
+      editButton.current?.focus();
+    }
+  }, [editing]);
+
+  const startEdit = () => {
+    if (!source) return;
+    setBase({ title: source.title, body: source.body, revision: source.revision });
+    setValues({ title: source.title, body: source.body });
+    setConflict(false);
+    setError(null);
+    setStatus(null);
+  };
+
+  const stopEdit = () => {
+    restoreEditFocus.current = true;
+    setBase(null);
+    setConflict(false);
+  };
+
+  const save = async (): Promise<void> => {
+    if (savingRef.current || !base || conflict) return;
+    const changes = sourcePatch(base, values);
+    if (!changes || !sourceValuesValid(values)) return;
+    savingRef.current = true;
+    setError(null);
+    setStatus(null);
+    try {
+      const saved = await update.mutateAsync(changes);
+      queryClient.setQueryData(options.queryKey, saved);
+      void queryClient.invalidateQueries({ queryKey: orpc.sources.list.queryKey() });
+      if (!mounted.current) return;
+      stopEdit();
+      setStatus(messages.sources.saved);
+    } catch (cause) {
+      if (!mounted.current) return;
+      if (isConflict(cause)) setConflict(true);
+      // 401: logowanie w oknie nad stroną otwiera globalny handler, edycja zostaje
+      else if (httpStatusOf(cause) !== 401) setError(errorMessage(cause));
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  /** Po konflikcie: najnowsza wersja źródła zastępuje edycję (zmiany z tego okna przepadają). */
+  const refresh = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      const result = await query.refetch();
+      if (!mounted.current) return;
+      if (result.isError) {
+        setError(errorMessage(result.error));
+        return;
+      }
+      setError(null);
+      stopEdit();
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  };
+
+  const afterDelete = () => {
+    // usunięte źródło nie jest już edycją ani zapisem w toku — przejście do listy nie pyta o wyjście
+    registerEditorState({ dirty: false, busy: false });
+    // strona usuniętego źródła znika z historii — „wstecz” prowadzi dalej, nie do pustej strony
+    onNavigate({ section: "sources" }, { replace: true });
+    queryClient.removeQueries({ queryKey: options.queryKey, exact: true });
+    void queryClient.invalidateQueries({ queryKey: orpc.sources.list.queryKey() });
+    void queryClient.invalidateQueries({ queryKey: orpc.decks.list.queryKey() });
+  };
+
+  const runDelete = async (): Promise<void> => {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await remove.mutateAsync();
+      if (mounted.current) afterDelete();
+    } catch (cause) {
+      if (!mounted.current) return;
+      const code = httpStatusOf(cause);
+      // źródło usunięte już w innym oknie — efekt jest ten sam
+      if (code === 404) afterDelete();
+      else if (code !== 401) setError(errorMessage(cause));
+    } finally {
+      deletingRef.current = false;
+      if (mounted.current) setDeleting(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    if (!source || deletingRef.current) return;
+    modals.openConfirmModal({
+      title: messages.sources.deleteTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{deleteConfirmText(source.decks.length)}</Text>,
+      labels: { confirm: messages.sources.deleteButton, cancel: messages.sources.cancel },
+      confirmProps: { color: "red", size: "md", "data-testid": "source-delete-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "source-delete-cancel" } as Record<string, unknown>,
+      attributes: { content: { "data-testid": "source-delete-dialog" } },
+      onConfirm: runOnce(() => void runDelete()),
+    });
+  };
+
+  const back = () => onNavigate({ section: "sources" });
+  const backButton = (
+    <Button variant="subtle" size="md" px={4} className="pp-editor-back" data-testid="source-back" onClick={back}
+      leftSection={<ParentIcon name="chevron-left" />}>
+      {messages.sources.backToList}
+    </Button>
+  );
+
+  if (source === undefined) {
+    if (query.isPending) {
+      return (
+        <Center py="xl" role="status" data-testid="source-loading">
+          <Group gap="sm"><Loader size="sm" /><Text>{messages.parentShell.loading}</Text></Group>
+        </Center>
+      );
+    }
+    const notFound = httpStatusOf(query.error) === 404;
+    return (
+      <Stack gap="md" align="flex-start" data-testid={notFound ? "source-not-found" : "source-load-error"}>
+        {backButton}
+        <Alert color={notFound ? "gray" : "red"} variant="light" w="100%" role={notFound ? undefined : "alert"}>
+          <Stack gap="sm" align="flex-start">
+            <Text size="sm">{notFound ? messages.sources.notFound : errorMessage(query.error)}</Text>
+            {!notFound && (
+              <Button size="md" variant="light" color="red" onClick={() => void query.refetch()}>{messages.parentShell.retry}</Button>
+            )}
+          </Stack>
+        </Alert>
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack gap="lg" className="pp-editor pp-source-page" data-testid="source-page">
+      <div>
+        {backButton}
+        <Title order={1} fz={{ base: 22, sm: 26 }} className="pp-editor-title" data-testid="source-heading">{source.title}</Title>
+        <Text size="sm" mt={4} className="pp-editor-muted">
+          {[messages.sources.updatedAt.replace("{date}", formatSourceDate(source.updatedAt)), deckCountLabel(source.decks.length)].join(" · ")}
+        </Text>
+      </div>
+
+      <div className="pp-source-actions">
+        <Button size="md" leftSection={<ParentIcon name="graduation-cap" />} data-testid="source-create-chapter"
+          onClick={() => onNavigate(newLessonFromSource(source.id, "chapter"))}>
+          {messages.sources.createChapterLesson}
+        </Button>
+        <Button size="md" variant="light" leftSection={<ParentIcon name="graduation-cap" />} data-testid="source-create-school"
+          onClick={() => onNavigate(newLessonFromSource(source.id, "school"))}>
+          {messages.sources.createSchoolLesson}
+        </Button>
+      </div>
+
+      {status && <Text size="sm" role="status" data-testid="source-status">{status}</Text>}
+      {error && (
+        <Alert color="red" variant="light" role="alert" data-testid="source-error" icon={<ParentIcon name="alert-triangle" />}>
+          {error}
+        </Alert>
+      )}
+
+      <Paper withBorder radius="lg" p={{ base: "md", sm: "lg" }}>
+        {editing ? (
+          <Stack gap="md">
+            <SourceFields values={values} onChange={setValues} disabled={saving || refreshing} autoFocusTitle />
+            {conflict && (
+              <Alert color="yellow" variant="light" role="alert" data-testid="source-conflict" icon={<ParentIcon name="alert-triangle" />}>
+                <Stack gap="sm" align="flex-start">
+                  <Text size="sm">{messages.sources.conflict}</Text>
+                  <Button size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="source-conflict-refresh"
+                    disabled={refreshing} onClick={() => void refresh()}>
+                    {messages.sources.refresh}
+                  </Button>
+                </Stack>
+              </Alert>
+            )}
+            <Group justify="flex-end" gap="sm">
+              <Button size="md" variant="default" data-testid="source-edit-cancel" disabled={saving} onClick={stopEdit}>
+                {messages.sources.cancel}
+              </Button>
+              <Button
+                size="md"
+                data-testid="source-save"
+                leftSection={saving ? <Loader size={16} color="currentColor" /> : undefined}
+                disabled={saving || conflict || patch === null || !sourceValuesValid(values)}
+                onClick={() => void save()}
+              >
+                {saving ? messages.sources.saving : messages.sources.save}
+              </Button>
+            </Group>
+          </Stack>
+        ) : (
+          <Stack gap="sm">
+            <Group justify="space-between" align="center" gap="sm">
+              <Title order={2} fz="lg" id="source-preview-label">{messages.sources.previewLabel}</Title>
+              <Button ref={editButton} size="md" variant="default" leftSection={<ParentIcon name="pencil" />} data-testid="source-edit"
+                disabled={deleting} onClick={startEdit}>
+                {messages.sources.edit}
+              </Button>
+            </Group>
+            {/* przewijany obszar dostępny z klawiatury */}
+            <div className="pp-source-preview" data-testid="source-preview" role="region" aria-labelledby="source-preview-label" tabIndex={0}>
+              {source.body}
+            </div>
+          </Stack>
+        )}
+      </Paper>
+
+      <Stack component="section" gap="xs" aria-labelledby="source-decks-heading">
+        <Title order={2} fz="lg" id="source-decks-heading">{messages.sources.decksHeading}</Title>
+        {source.decks.length === 0 ? (
+          <Text size="sm" className="pp-editor-muted" data-testid="source-no-decks">{messages.sources.noDecks}</Text>
+        ) : (
+          <Stack gap="xs" component="ul" className="pp-decks-list">
+            {source.decks.map((deck, index) => (
+              <Paper key={deck.deckId} component="li" radius="lg" withBorder className="pp-decks-card">
+                <UnstyledButton className="pp-decks-row" data-testid={`source-deck-${index}`} data-deck-id={deck.deckId}
+                  onClick={() => onNavigate({ section: "decks", deckId: deck.deckId })}>
+                  <ThemeIcon size={40} radius="md" variant="light" color={deck.kind === "lesson" ? "violet" : "brand"} aria-hidden="true">
+                    <ParentIcon name={deck.kind === "lesson" ? "graduation-cap" : "book-open"} className="pp-decks-kind-icon" />
+                  </ThemeIcon>
+                  <Box className="pp-decks-body">
+                    <Text fw={600} className="pp-decks-title">{deck.title}</Text>
+                    <VisuallyHidden>{messages.lessons.kindLabel[deck.kind]}</VisuallyHidden>
+                    <span className="pp-status-badge" data-tone={DECK_STATE_TONE[deck.state]}>{messages.decks.states[deck.state]}</span>
+                    {deck.stale && (
+                      <Text size="sm" className="pp-decks-muted" data-testid={`source-deck-stale-${index}`}>{messages.sources.sourceChanged}</Text>
+                    )}
+                  </Box>
+                  <ParentIcon name="chevron-right" className="pp-decks-chevron" />
+                </UnstyledButton>
+              </Paper>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+
+      <div>
+        <Button variant="subtle" color="red" size="md" leftSection={<ParentIcon name="trash-2" />} data-testid="source-delete"
+          disabled={editing || deleting} onClick={confirmDelete}>
+          {deleting ? messages.sources.deleting : messages.sources.delete}
+        </Button>
+      </div>
+    </Stack>
+  );
+}

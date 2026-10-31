@@ -1,0 +1,36 @@
+/* Zakładka „Źródła” (design 2026-10-30 §3.4). Wiersze listy i zestawów: decks-panel.css;
+   tekst pomocniczy: .pp-editor-muted (deck-editor.css). */
+
+/* Podgląd tekstu źródła (strona źródła i formularz nowej lekcji): tylko do odczytu,
+   z zachowanymi wierszami, przewijany w pionie — długi rozdział nie rozpycha strony. */
+.pp-source-preview {
+  max-height: min(50dvh, 420px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 12px;
+  background: var(--mantine-color-default);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.55;
+}
+
+.pp-source-preview:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.pp-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 37.49em) {
+  /* na telefonie przyciski akcji jeden pod drugim na całą szerokość */
+  .pp-source-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
