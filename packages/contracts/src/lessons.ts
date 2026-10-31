@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
-import { AssignmentDtoSchema, DeckStateSchema, RevisionAssetDtoSchema, SessionTaskBudgetSchema } from "./decks";
+import { AssignmentDtoSchema, DeckSourceDtoSchema, DeckStateSchema, RevisionAssetDtoSchema, SessionTaskBudgetSchema } from "./decks";
 import { GenerationDtoSchema } from "./generation";
 import { CalculationSpecSchema } from "./lesson-calculation";
 
@@ -467,20 +467,11 @@ export const LessonDraftDtoSchema = z.object({
 export type LessonDraftDto = z.infer<typeof LessonDraftDtoSchema>;
 
 /**
- * Pochodzenie zestawu z materiału źródłowego rodzica (design 2026-10-30, §3.3):
- * tytuł źródła i rewizja jego TREŚCI skopiowana przy tworzeniu zestawu obok
- * bieżącej rewizji treści (`source_materials.body_revision`). Zmiana samego
- * tytułu źródła nie zmienia `currentRevision` — `currentRevision >
- * copiedRevision` znaczy, że tekst źródła zmieniono po skopiowaniu. Schemat
- * żyje tu (moduł niższy niż `source-materials.ts`), by serwer i panel rodzica
- * typowały go z kontraktu bez cyklu importów.
+ * Pochodzenie zestawu-lekcji z materiału źródłowego rodzica (design 2026-10-30,
+ * §3.3). Kształt i opis pól: `DeckSourceDtoSchema` w `decks.ts` — wspólny
+ * z zestawami słówek ze źródła; ta nazwa zostaje dla dotychczasowych użytkowników.
  */
-export const LessonDeckSourceDtoSchema = z.object({
-  id: UuidSchema,
-  title: z.string(),
-  copiedRevision: z.number().int().min(1),
-  currentRevision: z.number().int().min(1),
-}).strict();
+export const LessonDeckSourceDtoSchema = DeckSourceDtoSchema;
 export type LessonDeckSourceDto = z.infer<typeof LessonDeckSourceDtoSchema>;
 
 /**

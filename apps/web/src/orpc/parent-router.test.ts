@@ -692,6 +692,47 @@ describe("parent oRPC router — decks", () => {
     expect(enqueueDeckGeneration).toHaveBeenCalledWith(services, command);
   });
 
+  it("generate ze źródła przekazuje odnośnik, rewizję i zawężenie, zwracając 202", async () => {
+    vi.mocked(enqueueDeckGeneration).mockResolvedValueOnce({ runId: "55555555-5555-4555-8555-555555555555", deckId });
+
+    const command = {
+      sourceMaterialId: sourceId,
+      expectedSourceRevision: 2,
+      instruction: "tylko pogoda",
+      maxItems: 20,
+      idempotencyKey: "key-source-12345678",
+      vocabularyFormat: "picture" as const,
+    };
+    const response = await call("/decks/generate", jsonInit(command));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ generationRunId: "55555555-5555-4555-8555-555555555555", deckId });
+    expect(enqueueDeckGeneration).toHaveBeenCalledWith(services, command);
+  });
+
+  it("generate ze źródła zmienionego po podglądzie mapuje conflict na 409 z details.reason", async () => {
+    vi.mocked(enqueueDeckGeneration).mockRejectedValueOnce(new AppError("conflict", { details: { reason: "source_changed" } }));
+
+    const response = await call("/decks/generate", jsonInit({ sourceMaterialId: sourceId, expectedSourceRevision: 1, idempotencyKey: "key-source-12345678" }));
+
+    expect(response.status).toBe(409);
+    const body = ApiErrorSchema.parse(await response.json());
+    expect(body.code).toBe("conflict");
+    expect(body.details).toEqual({ reason: "source_changed" });
+  });
+
+  it("generate odrzuca na granicy tryby naraz, źródło bez rewizji i parę języków przy źródle (400 bez wywołania)", async () => {
+    for (const body of [
+      { prompt: "pogoda", sourceMaterialId: sourceId, expectedSourceRevision: 1, idempotencyKey: "key-12345678" },
+      { sourceMaterialId: sourceId, idempotencyKey: "key-12345678" },
+      { sourceMaterialId: sourceId, expectedSourceRevision: 1, locales: { source: "pl-PL", target: "en-GB" }, idempotencyKey: "key-12345678" },
+    ]) {
+      const response = await call("/decks/generate", jsonInit(body));
+      expect(response.status).toBe(400);
+    }
+    expect(enqueueDeckGeneration).not.toHaveBeenCalled();
+  });
+
   it("create zwraca 201 przy utworzeniu i 200 przy bezpiecznym ponowieniu (dynamiczny status)", async () => {
     vi.mocked(createEmptyDeck)
       .mockResolvedValueOnce({ deckId, created: true })

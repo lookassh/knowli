@@ -56,6 +56,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     manual-decks.test.ts
     parent-work-card.test.ts
     reporting.test.ts
+    source-vocabulary.test.ts
   `),
   bucket(`
     assignments-api.test.ts
@@ -89,6 +90,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     learning-overview.test.ts
     lesson-card-audio.test.ts
     lesson-calculation.test.ts
+    lesson-chapter-sentence-audio.test.ts
     lesson-dictation.test.ts
     lesson-generation.test.ts
     lesson-question-audio.test.ts

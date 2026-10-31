@@ -119,6 +119,14 @@ export function newLessonFromSource(sourceId: string, kind: SourceLessonKind): P
   };
 }
 
+/**
+ * Formularz nowego zestawu słówek ze źródła (design 2026-10-30 §6.2). Zawsze
+ * dostępny — nie zależy od katalogu przedmiotów lekcji.
+ */
+export function newVocabularyFromSource(sourceId: string): ParentRoute {
+  return { section: "decks", newVocabulary: true, sourceId };
+}
+
 /** Widok źródła w panelu: jego strona albo (`null`) lista źródeł. */
 export function sourceRoute(sourceId: string | null): ParentRoute {
   return sourceId === null ? { section: "sources" } : { section: "sources", sourceId };

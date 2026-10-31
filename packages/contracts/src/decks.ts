@@ -338,6 +338,24 @@ export const AssignmentDtoSchema = z.object({
 export type AssignmentDto = z.infer<typeof AssignmentDtoSchema>;
 
 /**
+ * Pochodzenie zestawu z materiału źródłowego rodzica (design 2026-10-30, §3.3):
+ * tytuł źródła i rewizja jego TREŚCI skopiowana przy tworzeniu zestawu obok
+ * bieżącej rewizji treści (`source_materials.body_revision`). Zmiana samego
+ * tytułu źródła nie zmienia `currentRevision` — `currentRevision >
+ * copiedRevision` znaczy, że tekst źródła zmieniono po skopiowaniu. Wspólny dla
+ * zestawów-lekcji (`LessonDeckDto.source`) i zestawów słówek (`DeckDto.source`);
+ * żyje tu (moduł niższy niż `lessons.ts` i `source-materials.ts`), by serwer
+ * i panel rodzica typowały go z kontraktu bez cyklu importów.
+ */
+export const DeckSourceDtoSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  copiedRevision: z.number().int().min(1),
+  currentRevision: z.number().int().min(1),
+}).strict();
+export type DeckSourceDto = z.infer<typeof DeckSourceDtoSchema>;
+
+/**
  * Widok zestawu dla panelu rodzica: edytowalny szkic (lub null), opublikowana
  * wersja, najnowszy run generacji szkicu oraz przypisania dzieci.
  */
@@ -353,6 +371,8 @@ export const DeckDtoSchema = z.object({
   published: DraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
+  /** Pochodzenie ze źródła rodzica (tylko zestaw słówek ze źródła); brak pola — opis, ręczny zestaw albo źródło usunięto. */
+  source: DeckSourceDtoSchema.optional(),
 });
 export type DeckDto = z.infer<typeof DeckDtoSchema>;
 

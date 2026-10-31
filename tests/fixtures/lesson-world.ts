@@ -56,6 +56,12 @@ export interface LessonWorldOptions {
    * jeszcze w przygotowaniu (test może je potem oznaczyć jako gotowe).
    */
   withFeedbackAudio?: "ready" | "pending";
+  /**
+   * Dodatkowe zatwierdzone warianty ćwiczenia `lesson_transform` bogatej puli,
+   * obok kanonicznego „she plays” (np. wariant ≠ odpowiedź kanoniczna do testu
+   * bramki odczytu zdania). Wymaga `richPool`; domyślnie brak.
+   */
+  transformVariants?: readonly string[];
   /** Seed one issued contact while omitting all schedulable objectives. */
   unschedulableDailyRound?: boolean;
 }
@@ -131,7 +137,9 @@ export async function lessonWorld(sourcePool: Pool, options: LessonWorldOptions 
     );
     // Publikacja: state=published wymaga published_at; lesson_context niezmienny po publikacji.
     if (options.richPool) {
-      await seedRichPool(pool, { deckId, versionId });
+      await seedRichPool(pool, { deckId, versionId }, options.transformVariants ?? []);
+    } else if (options.transformVariants !== undefined) {
+      throw new Error("transformVariants wymaga richPool");
     }
     if (options.editorReady) {
       await seedEditorPool(pool, { deckId, versionId });
@@ -275,7 +283,7 @@ export const RICH_KEYS = {
  * payload_version 2 i PRAWDZIWY `target_key`. Pozwala testom wydawania zadań
  * zobaczyć kartę → notice → ćwiczenie oraz ekspozycje per typ.
  */
-async function seedRichPool(pool: Pool, version: { deckId: string; versionId: string }): Promise<void> {
+async function seedRichPool(pool: Pool, version: { deckId: string; versionId: string }, transformVariants: readonly string[]): Promise<void> {
   const objectiveId = "english_grammar.present_simple.third_person_s";
   const exercises: { position: number; payload: Record<string, unknown>; answer: string }[] = [
     {
@@ -353,7 +361,7 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
         instructionPl: "Zamień na twierdzenie.",
         statement: "Does she play?",
         answer: RICH_ANSWERS.transform,
-        acceptedAnswers: [RICH_ANSWERS.transform],
+        acceptedAnswers: [RICH_ANSWERS.transform, ...transformVariants],
         // odpowiedź dwuwyrazowa, element sprawdzany to tylko „plays” — literówka
         // w „she” jest POZA focus, więc dopasowanie daje minor_typo (lesson_almost).
         focus: ["plays"],

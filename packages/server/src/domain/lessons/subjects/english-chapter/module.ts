@@ -88,8 +88,9 @@ export const englishChapterSubject: SubjectModule = {
   // Audio odpowiedzi ujawniałoby rozwiązanie; polecenia są krótkie i po polsku.
   ttsForAnswers: false,
   ttsForPrompts: false,
-  // Odczyt zdania po odpowiedzi (spec 2026-10-30-lesson-sentence-readback) obejmuje na razie tylko gramatykę.
-  ttsForFeedbackSentence: false,
+  // Po ocenionej odpowiedzi lektor czyta pełne poprawne zdanie po angielsku (en-GB, bez stylu pl-PL):
+  // wybór z luką, luka, luki z bankiem, układanka, tłumaczenie (spec 2026-10-30-lesson-sentence-readback).
+  ttsForFeedbackSentence: true,
   buildDynamicTopic(data: DynamicTopicData): LessonTopic {
     return {
       id: "dynamic",

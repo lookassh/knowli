@@ -166,6 +166,31 @@ describe("SourcePage", () => {
     });
   });
 
+  describe("przycisk zestawu słówek ze źródła", () => {
+    const vocabularyButton = /<button(?![^>]*disabled)[^>]*data-testid="source-create-vocabulary"/;
+
+    it("jest obok przycisków lekcji i aktywny", () => {
+      const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+      expect(markup).toMatch(vocabularyButton);
+      expect(markup).toContain(messages.sources.createVocabulary);
+      expect(messages.sources.createVocabulary).toBe("Utwórz zestaw słówek");
+      // w jednym rzędzie akcji z przyciskami lekcji
+      const actions = markup.match(/<div class="pp-source-actions">[\s\S]*?<\/div>/)?.[0] ?? "";
+      expect(actions).toContain('data-testid="source-create-chapter"');
+      expect(actions).toContain('data-testid="source-create-vocabulary"');
+    });
+
+    it("nie zależy od katalogu lekcji: aktywny w trakcie wczytywania i bez przedmiotów z materiału", () => {
+      const loading = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, null));
+      expect(loading).toMatch(vocabularyButton);
+
+      const none = { subjects: fullCatalog.subjects.filter((subject) => subject.creation !== "material") };
+      const empty = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, none));
+      expect(empty).toMatch(vocabularyButton);
+      expect(empty).toContain(messages.sources.noLessonSubjects);
+    });
+  });
+
   it("źródło usunięte w innym oknie: odświeżenie z 404 pokazuje brak źródła mimo danych w pamięci", () => {
     const queryClient = withSource(source);
     const key = orpc.sources.get.queryOptions({ input: { sourceId: SOURCE_ID } }).queryKey;
