@@ -265,7 +265,12 @@ Schemat strict: `voiceTone: { type: ["null", "string"], enum: [null, …tony] }`
 - **Reguła szeptu** (`lessonPromptStyle`, §2.1): `mysterious` dla tekstu
   nagrania z mniej niż dwoma zdaniami → `curious`. Zdanie = fragment
   zakończony `.`, `!`, `?` lub `…` (albo końcem tekstu) po normalizacji
-  odstępów. Dotyczy pytań i kart.
+  odstępów; polskie skróty („np.”, „tzw.”, „w.”, „p.n.e.” itd.) nie kończą
+  zdania. W pytaniu `mysterious` → `curious` zawsze: czytany tekst pytania
+  zaczyna się od polecenia, więc szept padłby na polecenie (decyzja właściciela
+  2026-10-31). W karcie szept pada na pierwsze zdanie, czyli tytuł — decyzja
+  właściciela: zostaje. Generator nie dostaje `mysterious` jako propozycji dla
+  ćwiczeń; wybór rodzica „Tajemniczo” w pytaniu brzmi jak „Z ciekawością”.
 
 Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 

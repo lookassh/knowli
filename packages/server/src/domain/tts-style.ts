@@ -31,8 +31,9 @@ export function sentenceCount(text: string): number {
 }
 
 /**
- * Styl nagrania pytania lub karty lekcji: ton autora, a bez niego rola. Reguła szeptu: `mysterious`
- * dla tekstu z mniej niż dwoma zdaniami daje `curious` (spec tonu TTS §4.3).
+ * Styl nagrania pytania lub karty lekcji: ton autora, a bez niego rola. Reguła szeptu (spec tonu
+ * TTS §4.3): `mysterious` daje `curious` dla pytania — jego czytany tekst zaczyna się od polecenia,
+ * więc szept padłby na polecenie, a nie na treść — oraz dla tekstu z mniej niż dwoma zdaniami.
  */
 export function lessonPromptStyle(
   role: "lesson_question" | "lesson_card",
@@ -40,6 +41,6 @@ export function lessonPromptStyle(
   text: string,
 ): TtsStyle {
   if (!tone) return role;
-  if (tone === "mysterious" && sentenceCount(text) < 2) return "curious";
+  if (tone === "mysterious" && (role === "lesson_question" || sentenceCount(text) < 2)) return "curious";
   return tone;
 }

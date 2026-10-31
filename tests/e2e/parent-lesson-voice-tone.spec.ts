@@ -166,6 +166,9 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   await expect(page.getByTestId(`examples-${OBJ}`)).toContainText(messages.lessons.voiceToneCardHint);
   await page.getByTestId("exercise-edit-0").click();
   await expect(page.getByTestId("exercise-0")).toContainText(messages.lessons.voiceToneHint);
+  // Pytania nie są szeptane: „Tajemniczo” tylko przy karcie.
+  await expect(page.getByTestId("exercise-voice-tone-0").locator('option[value="mysterious"]')).toHaveCount(0);
+  await expect(page.getByTestId(`dynamic-card-voice-tone-${OBJ}-0`).locator('option[value="mysterious"]')).toHaveCount(1);
 });
 
 test("„Posłuchaj poprzedniego” odtwarza poprzednie ujęcie, gdy nowe się nagrywa", async ({ page }) => {

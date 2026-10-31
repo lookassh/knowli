@@ -786,7 +786,7 @@ export default function LessonEditor({
                       const body = e.currentTarget.value;
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, body } : c)) });
                     }} />
-                  <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
+                  <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} whisper testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
                     onChange={(voiceTone) => {
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { title: c.title, body: c.body, ...(voiceTone ? { voiceTone } : {}) } : c)) });
                     }} />

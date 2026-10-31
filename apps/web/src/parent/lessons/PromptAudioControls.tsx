@@ -15,26 +15,31 @@ const TONE_LABELS: Record<LessonVoiceTone, string> = {
   mysterious: messages.lessons.voiceToneMysterious,
 };
 
-const TONE_OPTIONS = [
-  { value: "", label: messages.lessons.voiceToneDefault },
-  ...LessonVoiceToneSchema.options.map((tone) => ({ value: tone, label: TONE_LABELS[tone] })),
-];
-
 /**
  * „Ton lektora” ćwiczenia albo karty. „Domyślny” (wartość pusta) usuwa pole
- * z patcha. Wspólny dla karty ćwiczenia i karty zagadnienia.
+ * z patcha. Wspólny dla karty ćwiczenia i karty zagadnienia. Pytanie nigdy nie
+ * jest szeptane (spec tonu TTS §4.3), więc bez `whisper` nie ma „Tajemniczo” —
+ * chyba że ten ton jest już zapisany, żeby pole pokazywało stan.
  */
-export function VoiceToneSelect({ value, disabled, testId, hint = messages.lessons.voiceToneHint, onChange }: {
+export function VoiceToneSelect({ value, disabled, testId, hint = messages.lessons.voiceToneHint, whisper = false, onChange }: {
   value: LessonVoiceTone | undefined;
   disabled: boolean;
   testId: string;
   /** Podpowiedź pod polem: pytanie (domyślnie) albo karta. */
   hint?: string;
+  /** Ton „Tajemniczo” (szept) ma skutek: karta tak, pytanie nie. */
+  whisper?: boolean;
   onChange: (tone: LessonVoiceTone | undefined) => void;
 }) {
+  const options = [
+    { value: "", label: messages.lessons.voiceToneDefault },
+    ...LessonVoiceToneSchema.options
+      .filter((tone) => tone !== "mysterious" || whisper || value === "mysterious")
+      .map((tone) => ({ value: tone, label: TONE_LABELS[tone] })),
+  ];
   return (
     <NativeSelect size="md" label={messages.lessons.voiceToneLabel} description={hint}
-      data-testid={testId} value={value ?? ""} disabled={disabled} data={TONE_OPTIONS}
+      data-testid={testId} value={value ?? ""} disabled={disabled} data={options}
       onChange={(e) => {
         const parsed = LessonVoiceToneSchema.safeParse(e.currentTarget.value);
         onChange(parsed.success ? parsed.data : undefined);

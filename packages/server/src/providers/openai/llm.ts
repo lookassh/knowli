@@ -251,7 +251,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
   }
   if (input.voiceTones === true) {
-    parts.push(`${VOICE_TONE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits).`);
+    parts.push(`${VOICE_TONE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits); never \`mysterious\` for exercises (questions are never whispered).`);
   }
   parts.push(
     'Return strict JSON of the shape {"exercises": [ ... ], "examples": [{"objectiveId": "<id>", "examples": ["<short example sentence>"]}]}. ' +

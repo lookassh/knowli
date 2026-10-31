@@ -70,8 +70,11 @@ describe("lessonPromptStyle", () => {
     expect(lessonPromptStyle("lesson_question", "mysterious", "")).toBe("curious");
   });
 
-  it("zostawia szept dla tekstu z co najmniej dwoma zdaniami", () => {
+  it("zostawia szept dla karty z co najmniej dwoma zdaniami", () => {
     expect(lessonPromptStyle("lesson_card", "mysterious", "Czy wiesz, że…? Sowy widzą w nocy.")).toBe("mysterious");
-    expect(lessonPromptStyle("lesson_question", "mysterious", "Cisza. Co to?")).toBe("mysterious");
+  });
+
+  it("w pytaniu nigdy nie szepcze — czytany tekst zaczyna się od polecenia", () => {
+    expect(lessonPromptStyle("lesson_question", "mysterious", "Odpowiedz jednym zdaniem. Dlaczego sowy polują nocą?")).toBe("curious");
   });
 });

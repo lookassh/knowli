@@ -457,6 +457,7 @@ describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
     const off = bodyAt(fetchMock, 1);
     expect(systemOf(on)).toContain(RULE);
     expect(systemOf(on)).toContain("curiosities/riddles such as »Czy wiesz, że…« with at least two sentences");
+    expect(systemOf(on)).toContain("never `mysterious` for exercises");
     expect(on.response_format.json_schema.schema.properties.exercises.items.required).toContain("voiceTone");
     expect(systemOf(off)).not.toContain("voiceTone");
     expect(JSON.stringify(off.response_format.json_schema.schema)).not.toContain("voiceTone");
