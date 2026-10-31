@@ -35,7 +35,7 @@ const draft = {
   exercises: [
     openAnswer(10, { state: "ready", assetId: uuid(90) }, "cheerful"),
     openAnswer(11, { state: "pending", previousAssetId: uuid(92) }),
-    openAnswer(12, { state: "failed" }),
+    openAnswer(12, { state: "failed", previousAssetId: uuid(93) }),
   ],
   cardAudio: [
     { objectiveId: OBJ, cardIndex: 0, audio: { state: "ready", assetId: uuid(91) } },
@@ -50,11 +50,20 @@ const lesson = {
   grading: { available: true, model: "test-grader" },
 };
 
-interface Calls { requests: Array<{ method: string; path: string; body: unknown }> }
+interface Calls {
+  requests: Array<{ method: string; path: string; body: unknown }>;
+  /** Kolejne odczyty lekcji widzą nagranie karty 1 jako trwające. */
+  markCardPending: () => void;
+}
 
 async function openLesson(page: Page, options: { cardRegenerateFails?: boolean } = {}): Promise<Calls> {
-  const calls: Calls = { requests: [] };
   let current: typeof draft = draft;
+  const calls: Calls = {
+    requests: [],
+    markCardPending: () => {
+      current = { ...current, cardAudio: [current.cardAudio[0]!, { objectiveId: OBJ, cardIndex: 1, audio: { state: "pending" } }] };
+    },
+  };
   await page.route("**/api/v1/parent/**", (route) => {
     const request = route.request();
     const method = request.method();
@@ -82,9 +91,6 @@ async function openLesson(page: Page, options: { cardRegenerateFails?: boolean }
     }
     if (method === "POST" && path.endsWith(`/lesson-drafts/${draftId}/card-audio/regenerate`)) {
       if (options.cardRegenerateFails) {
-        // Nagranie karty rusza mimo błędu odpowiedzi (np. z innej karty przeglądarki):
-        // kolejne odpytanie lekcji widzi je jako trwające.
-        current = { ...current, cardAudio: [current.cardAudio[0]!, { objectiveId: OBJ, cardIndex: 1, audio: { state: "pending" } }] };
         return route.fulfill({ status: 500, json: { code: "internal", message: "Błąd serwera.", retryable: true, requestId: "r" } });
       }
       return route.fulfill({ status: 202, json: { assetId: uuid(96) } });
@@ -139,7 +145,8 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
 
   await expect(page.getByTestId("exercise-prompt-audio-1")).toHaveAttribute("data-audio-state", "pending");
   await expect(page.getByTestId("exercise-prompt-audio-1-pending")).toHaveText(messages.lessons.promptAudioPending);
-  await expect(page.getByTestId("exercise-prompt-audio-1-regenerate")).toHaveCount(0);
+  // „Nagraj ponownie” także w trakcie: wyjście z nagrania zleconego w starej konfiguracji lektora.
+  await expect(page.getByTestId("exercise-prompt-audio-1-regenerate")).toBeVisible();
   await expect(page.getByTestId("exercise-prompt-audio-1-listen")).toHaveCount(0);
   await expect(page.getByTestId("exercise-prompt-audio-1-listen-previous")).toHaveText(messages.lessons.promptAudioListenPrevious);
 
@@ -147,6 +154,7 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   await expect(page.getByTestId("exercise-prompt-audio-2-failed")).toHaveText(messages.lessons.promptAudioFailed);
   await expect(page.getByTestId("exercise-prompt-audio-2-regenerate")).toBeVisible();
   await expect(page.getByTestId("exercise-prompt-audio-2-listen")).toHaveCount(0);
+  await expect(page.getByTestId("exercise-prompt-audio-2-listen-previous")).toHaveText(messages.lessons.promptAudioListenPrevious);
 
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-listen`)).toBeVisible();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-regenerate`)).toBeVisible();
@@ -184,7 +192,9 @@ test("błąd „Nagraj ponownie” karty znika, gdy zmieni się stan nagrania", 
   const call = calls.requests.find((request) => request.path.endsWith("/card-audio/regenerate"))!;
   expect(call.body).toMatchObject({ objectiveId: OBJ, cardIndex: 1 });
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toBeVisible();
-  // Odpytywanie (trwa przez nagrywające się pytanie) przynosi nowy stan karty i czyści błąd.
+  // Nagranie karty rusza mimo błędu odpowiedzi (np. z innej karty przeglądarki); odpytywanie
+  // (trwa przez nagrywające się pytanie) przynosi nowy stan karty i czyści błąd.
+  calls.markCardPending();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-pending`)).toBeVisible();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toHaveCount(0);
 });

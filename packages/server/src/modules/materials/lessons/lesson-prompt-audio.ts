@@ -19,15 +19,16 @@ import { lockVersion } from "../version-ops";
 
 /**
  * Stan najnowszej generacji o oczekiwanym fingerprincie (generacje od
- * najnowszej); `assetId` tylko dla gotowej. Trwająca generacja niesie
- * `previousAssetId` najnowszej gotowej, bo do czasu nowego ujęcia gra poprzednie.
+ * najnowszej); `assetId` tylko dla gotowej. Trwająca albo nieudana generacja
+ * niesie `previousAssetId` najnowszej gotowej: to ujęcie słyszy dziecko
+ * (odsłuch bierze najnowszą gotową generację), więc rodzic może je odtworzyć.
  */
 function audioDto(generations: readonly { id: string; state: string }[]): LessonPromptAudioDto {
   const newest = generations[0]!;
   if (newest.state === "ready") return { state: "ready", assetId: newest.id };
-  if (newest.state === "failed") return { state: "failed" };
+  const state = newest.state === "failed" ? "failed" : "pending";
   const previous = generations.find((generation) => generation.state === "ready");
-  return previous ? { state: "pending", previousAssetId: previous.id } : { state: "pending" };
+  return previous ? { state, previousAssetId: previous.id } : { state };
 }
 
 /** Grupuje wiersze po kluczu, zachowując ich kolejność (tu: od najnowszej generacji). */
@@ -102,6 +103,7 @@ function assertMediaConfigured(services: Services): void {
  * (rodzaj, provider, model, metadane) z najnowszego zasobu — bez przeliczania
  * z bieżącej konfiguracji, więc nowe ujęcie odpowiada dokładnie temu samemu
  * tekstowi i instrukcji. Trwająca generacja → jej `assetId` bez nowego wiersza.
+ * `durationMs` dopisuje worker po nagraniu, więc nie przechodzi na nowe ujęcie.
  */
 async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<string> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${fingerprint}))`);
@@ -118,6 +120,7 @@ async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<str
   if (pending) {
     return pending.id;
   }
+  const { durationMs: _previousDuration, ...metadata } = newest.metadata;
   const id = randomUUID();
   await tx.insert(mediaAssets).values({
     id,
@@ -127,7 +130,7 @@ async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<str
     state: "pending",
     provider: newest.provider,
     model: newest.model,
-    metadata: newest.metadata,
+    metadata,
   });
   await tx.insert(generationRuns).values({
     id: randomUUID(),
@@ -135,7 +138,7 @@ async function enqueueNextGenerationTx(tx: Tx, fingerprint: string): Promise<str
     kind: newest.kind,
     dedupeKey: `asset:${id}`,
     state: "queued",
-    input: newest.metadata,
+    input: metadata,
   });
   return id;
 }
@@ -154,16 +157,18 @@ const CardAudioInputSchema = z.object({
 /**
  * Przed nowym ujęciem uzgadnia media szkicu jak zapis (`reconcileDraftAssetsTx`)
  * w tej samej transakcji. Gdy od ostatniego zapisu zmieniła się konfiguracja TTS
- * (provider, model, głos, styl), wiersz dostaje fingerprint bieżącej konfiguracji
- * i jej nagranie — to już jest nowe ujęcie, więc kolejnej generacji nie zlecamy.
- * Bez zmiany konfiguracji uzgodnienie zostawia wiersz bez zmian.
+ * (provider, model, głos, styl), uzgodnienie przepina wiersz na fingerprint
+ * bieżącej konfiguracji i jego nagranie (nowe zlecenie albo gotowe, wspólne z inną
+ * wersją) wraz ze stanem wiersza — kolejnej generacji nie zlecamy (`rebound`).
+ * Bez zmiany konfiguracji uzgodnienie zostawia wiersz bez zmian, a wywołujący
+ * wskazuje w nim nową generację.
  */
 async function reconcileThenNextTx(
   tx: Tx,
   services: Services,
   version: { id: string; state: string },
   readRow: () => Promise<{ expectedFingerprint: string; assetId: string | null } | undefined>,
-): Promise<string> {
+): Promise<{ assetId: string; rebound: boolean }> {
   const before = await readRow();
   if (!before) {
     throw new AppError("not_found");
@@ -174,9 +179,9 @@ async function reconcileThenNextTx(
     throw new AppError("not_found");
   }
   if (after.expectedFingerprint !== before.expectedFingerprint && after.assetId !== null) {
-    return after.assetId;
+    return { assetId: after.assetId, rebound: true };
   }
-  return enqueueNextGenerationTx(tx, after.expectedFingerprint);
+  return { assetId: await enqueueNextGenerationTx(tx, after.expectedFingerprint), rebound: false };
 }
 
 /**
@@ -203,11 +208,13 @@ export async function regenerateLessonPromptAudio(
           eq(revisionAssets.role, "prompt_audio"),
         ))
     )[0];
-    const assetId = await reconcileThenNextTx(tx, services, version, readRow);
-    await tx
-      .update(revisionAssets)
-      .set({ assetId, state: "pending" })
-      .where(and(eq(revisionAssets.itemRevisionId, valid.itemRevisionId), eq(revisionAssets.role, "prompt_audio")));
+    const { assetId, rebound } = await reconcileThenNextTx(tx, services, version, readRow);
+    if (!rebound) {
+      await tx
+        .update(revisionAssets)
+        .set({ assetId, state: "pending" })
+        .where(and(eq(revisionAssets.itemRevisionId, valid.itemRevisionId), eq(revisionAssets.role, "prompt_audio")));
+    }
     return { assetId };
   });
 }
@@ -234,8 +241,8 @@ export async function regenerateLessonCardAudio(
       await tx.select({ expectedFingerprint: lessonCardAssets.expectedFingerprint, assetId: lessonCardAssets.assetId })
         .from(lessonCardAssets).where(where)
     )[0];
-    const assetId = await reconcileThenNextTx(tx, services, version, readRow);
-    await tx.update(lessonCardAssets).set({ assetId }).where(where);
+    const { assetId, rebound } = await reconcileThenNextTx(tx, services, version, readRow);
+    if (!rebound) await tx.update(lessonCardAssets).set({ assetId }).where(where);
     return { assetId };
   });
 }

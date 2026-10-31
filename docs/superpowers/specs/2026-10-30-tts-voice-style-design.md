@@ -302,13 +302,15 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   (`audio` ma ten sam kształt). To stan najnowszej generacji o oczekiwanym
   fingerprincie (`revision_assets.prompt_audio` / `lesson_card_assets`),
   `assetId` tylko dla gotowej; brak wpisu = brak nagrania dla tego tekstu.
-  `previousAssetId` tylko przy `pending`: najnowsza gotowa generacja tego samego
-  fingerprintu, czyli ujęcie, które gra, dopóki nowe się nagrywa — panel
-  pokazuje wtedy „Posłuchaj poprzedniego”.
+  `previousAssetId` tylko przy `pending` i `failed`: najnowsza gotowa generacja
+  tego samego fingerprintu, czyli ujęcie, które słyszy dziecko, dopóki nowe się
+  nagrywa albo gdy nowe się nie udało — panel pokazuje wtedy „Posłuchaj
+  poprzedniego”.
   Pola są tylko do odczytu i nie wracają w patchu edycji.
 - **Odsłuch i „Nagraj ponownie”:** „Posłuchaj” odtwarza istniejącym
-  `/api/v1/media/:id`. „Nagraj ponownie” (dla `ready` i `failed`, tylko w szkicu
-  i bez niezapisanych zmian) woła procedury oRPC rodzica
+  `/api/v1/media/:id`. „Nagraj ponownie” (w każdym stanie, tylko w szkicu
+  i bez niezapisanych zmian; przy `pending` bez zmiany konfiguracji zwraca
+  trwające nagranie) woła procedury oRPC rodzica
   `lessonDrafts.regeneratePromptAudio({ lessonDraftId, itemRevisionId })`
   (POST `/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate`) i
   `lessonDrafts.regenerateCardAudio({ lessonDraftId, objectiveId, cardIndex })`
@@ -320,8 +322,12 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   bieżącą konfiguracją. Dlatego procedury najpierw, w tej samej transakcji,
   uzgadniają media szkicu jak zapis (`reconcileDraftAssetsTx`). Gdy od
   ostatniego zapisu zmieniła się konfiguracja (provider, model, głos, styl),
-  wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie — to już jest
-  nowe ujęcie, więc kolejnej generacji nie zlecamy. Rodzic nie musi niczego
+  wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie (nowe zlecenie
+  albo gotowe nagranie wspólne z inną wersją), a stan wiersza odpowiada temu
+  zasobowi; kolejnej generacji nie zlecamy. Uzgodnienie obejmuje cały szkic, jak
+  zapis, więc przenosi do bieżącej konfiguracji wszystkie jego pytania i karty
+  (płatne nagrania). Dlatego „Nagraj ponownie” jest też przy `pending`: zlecenie
+  starej konfiguracji worker pomija, a przycisk przenosi je do bieżącej. Rodzic nie musi niczego
   zapisywać (zapis czystego szkicu i tak nic nie wysyła). Brak ustawień
   mediów → `internal`.
 - **Błąd „Nagraj ponownie”** znika, gdy zmieni się stan nagrania (zapis

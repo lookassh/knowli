@@ -275,7 +275,7 @@ describe("„Posłuchaj karty” — stan nagrania w szkicu rodzica (spec tonu T
     await markReady(first!.assetId);
     expect((await readCards())![0]).toEqual({ objectiveId: OBJECTIVE, cardIndex: 0, audio: { state: "ready", assetId: first!.assetId } });
     await addGeneration(first!.assetId, "failed");
-    expect((await readCards())![0]!.audio).toEqual({ state: "failed" });
+    expect((await readCards())![0]!.audio).toEqual({ state: "failed", previousAssetId: first!.assetId });
 
     await pool.query("delete from learning_app.lesson_card_assets where deck_version_id = $1 and card_index = 1", [versionId]);
     expect((await readCards())!.map((card) => card.cardIndex)).toEqual([0]);

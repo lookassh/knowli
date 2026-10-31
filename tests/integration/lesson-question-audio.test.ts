@@ -319,9 +319,10 @@ describe("„Posłuchaj pytania” — stan nagrania w szkicu rodzica (spec tonu
     await markReady(row!.assetId);
     expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
 
-    // Nowsza nieudana generacja tego samego tekstu: stan „failed”, choć starsze nagranie jest gotowe.
+    // Nowsza nieudana generacja tego samego tekstu: stan „failed”, a starsze gotowe ujęcie
+    // (słyszy je dziecko) zostaje do odsłuchu.
     await addGeneration(row!.assetId, "failed");
-    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "failed" });
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "failed", previousAssetId: row!.assetId });
 
     const second = (await readDraft()).exercises[1]!;
     await pool.query("delete from learning_app.revision_assets where item_revision_id = $1 and role = 'prompt_audio'", [second.revisionId]);
@@ -336,16 +337,21 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
     const [row] = await promptAudio(versionId);
     await markReady(row!.assetId);
+    // Długość dopisuje worker po nagraniu — nie może przejść na nowe ujęcie.
+    await pool.query(`update learning_app.media_assets set metadata = metadata || '{"durationMs": 1234}' where id = $1`, [row!.assetId]);
     const original = await mediaAsset(row!.assetId);
     const itemRevisionId = (await readLessonDeck(active, deckId)).draft!.exercises[0]!.revisionId;
 
     // Fingerprint i metadane pochodzą z wiersza i zasobu (konfiguracja bez zmian od zapisu).
     const first = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
     expect(first.assetId).not.toBe(row!.assetId);
+    const { durationMs: _duration, ...requestMetadata } = original.metadata as Record<string, unknown>;
+    expect(_duration).toBe(1234);
     expect(await mediaAsset(first.assetId)).toMatchObject({
       fingerprint: original.fingerprint, generationNumber: original.generationNumber + 1, state: "pending",
-      provider: original.provider, model: original.model, metadata: original.metadata,
+      provider: original.provider, model: original.model, metadata: requestMetadata,
     });
+    expect((await mediaAsset(first.assetId)).metadata).not.toHaveProperty("durationMs");
     expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [first.assetId])).rows).toEqual([{ state: "queued" }]);
     expect(await mediaAsset(row!.assetId)).toEqual(original);
     // Do gotowości nowego ujęcia panel może odtworzyć poprzednie.
@@ -385,6 +391,14 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     // Kolejne kliknięcie w tej samej konfiguracji: trwające nagranie, bez nowego wiersza.
     expect((await regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId })).assetId).toBe(result.assetId);
     expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
+
+    // Powrót do poprzedniej konfiguracji: wiersz wraca do jej gotowego nagrania bez nowego
+    // ujęcia, a stan wiersza odpowiada gotowemu zasobowi (nie „pending”).
+    const back = await regenerateLessonPromptAudio(services(), { lessonDraftId: versionId, itemRevisionId });
+    expect(back.assetId).toBe(row!.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+    expect((await pool.query("select state from learning_app.revision_assets where item_revision_id = $1 and role = 'prompt_audio'", [itemRevisionId])).rows)
+      .toEqual([{ state: "approved" }]);
 
     // Zmiana samego stylu (provider i model te same) też uzgadnia nagranie.
     await markReady(result.assetId);

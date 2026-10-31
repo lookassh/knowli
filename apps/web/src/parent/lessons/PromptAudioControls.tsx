@@ -49,9 +49,12 @@ export type PromptAudioTarget =
 
 /**
  * Odsłuch i „Nagraj ponownie” nagrania pytania lub karty (spec tonu TTS §4.5).
- * `ready` → „Posłuchaj” + „Nagraj ponownie”; `failed` → komunikat + „Nagraj
- * ponownie”; `pending` → „Nagrywanie…” i „Posłuchaj poprzedniego”, gdy jest
- * poprzednie gotowe ujęcie (gra ono, dopóki nowe się nagrywa). Nowe nagranie tylko w szkicu i bez
+ * `ready` → „Posłuchaj”; `pending` → „Nagrywanie…”; `failed` → komunikat.
+ * Przy `pending` i `failed` „Posłuchaj poprzedniego” odtwarza ujęcie, które
+ * słyszy dziecko, gdy takie jest. „Nagraj ponownie” jest w każdym stanie: przy
+ * `pending` serwer zwraca trwające nagranie, chyba że zmieniła się konfiguracja
+ * lektora — wtedy przenosi je do bieżącej (zlecenie starej konfiguracji worker
+ * pomija, więc bez tego „Nagrywanie…” trwałoby bez końca). Nowe nagranie tylko w szkicu i bez
  * niezapisanych zmian (`locked`) — serwer generuje je z zapisanego tekstu
  * i tonu. Po sukcesie odświeżamy odczyt lekcji; dopóki nagranie jest
  * `pending`, edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…”
@@ -92,14 +95,14 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
       {audio.state === "pending" && (
         <Text size="sm" className="pp-editor-muted" role="status" data-testid={`${testId}-pending`}>{messages.lessons.promptAudioPending}</Text>
       )}
-      {audio.state === "pending" && audio.previousAssetId && (
+      {audio.state === "failed" && (
+        <Text size="sm" c="red" role="status" data-testid={`${testId}-failed`}>{messages.lessons.promptAudioFailed}</Text>
+      )}
+      {audio.state !== "ready" && audio.previousAssetId && (
         <Button size="md" variant="light" leftSection={<ParentIcon name="volume" />} data-testid={`${testId}-listen-previous`}
           onClick={() => onPlay(audio.previousAssetId!)}>
           {messages.lessons.promptAudioListenPrevious}
         </Button>
-      )}
-      {audio.state === "failed" && (
-        <Text size="sm" c="red" role="status" data-testid={`${testId}-failed`}>{messages.lessons.promptAudioFailed}</Text>
       )}
       {audio.state === "ready" && audio.assetId && (
         <Button size="md" variant="light" leftSection={<ParentIcon name="volume" />} data-testid={`${testId}-listen`}
@@ -107,7 +110,7 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
           {messages.lessons.promptAudioListen}
         </Button>
       )}
-      {canRegenerate && audio.state !== "pending" && (
+      {canRegenerate && (
         <Button size="md" variant="subtle" leftSection={<ParentIcon name="refresh" />} data-testid={`${testId}-regenerate`}
           disabled={locked || mutation.isPending} loading={mutation.isPending} onClick={regenerate}>
           {messages.lessons.promptAudioRegenerate}
