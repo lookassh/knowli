@@ -1,42 +1,9 @@
-import type { KidDeckDto } from "@learning/contracts";
-import { expect as baseExpect, test, type Page } from "@playwright/test";
-import { installKidUiFixture } from "./helpers/kid-ui-fixture";
+import { expect as baseExpect, test } from "@playwright/test";
+import { makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
 import { expectBandSpansRoot, expectInsideRoot, resizeAndSettle } from "./helpers/kid-layout";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 test.use({ viewport: { width: 390, height: 844 } });
-
-const childId = "10000000-0000-4000-8000-000000000001";
-const sessionId = "10000000-0000-4000-8000-000000000003";
-
-function makeDeck(index: number, options: Partial<KidDeckDto> = {}): KidDeckDto {
-  return {
-    deckId: `10000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
-    title: `Angielski zestaw ${index + 1}`,
-    itemCount: 12,
-    independentlyRecalledCount: 3,
-    testDate: "2026-10-23",
-    recommended: index % 2 === 0,
-    mockTestAvailable: true,
-    activeSession: null,
-    ...options,
-  };
-}
-
-async function openDeckScreen(page: Page, decks: KidDeckDto[]) {
-  page.setDefaultTimeout(5_000);
-  await installKidUiFixture(page, {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" }],
-    decks,
-    session: { mode: "training", sessionId, childId, deckId: decks[0]?.deckId ?? makeDeck(0).deckId,
-      deckVersionId: "10000000-0000-4000-8000-000000000004", policyId: "default", microphoneEnabled: false,
-      state: "active", taskBudget: 1, tasksIssued: 0, assessedTasksIssued: 0,
-      startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
-    tasks: [],
-  });
-  await page.goto("/");
-  await page.getByTestId("kid-profile").click();
-}
 
 test("deck card actions address the same deck", async ({ page }) => {
   const decks = [makeDeck(0), makeDeck(1)];

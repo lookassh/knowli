@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { expectFrameFillsViewport } from "./kid-frame";
 
 /**
  * Osiągalność elementów ćwiczeń z przypisaniami („Połącz w pary”, „Pogrupuj”,
@@ -37,7 +38,7 @@ function locate(page: Page, target: ReachTarget): Locator {
 
 export async function expectTargetsReachable(page: Page, viewport: { width: number; height: number }, targets: readonly ReachTarget[]): Promise<void> {
   const label = `${viewport.width}x${viewport.height}`;
-  await expect(page.getByTestId("kid-session-frame")).toHaveCSS("height", `${viewport.height}px`);
+  await expectFrameFillsViewport(page, viewport);
   const material = await boxOf(page.getByTestId("kid-material"));
   for (const target of targets) {
     const locator = locate(page, target);
