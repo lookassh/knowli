@@ -510,4 +510,18 @@ describe("createLessonFromMaterial / createMaterialLesson (zestaw z materiału t
   it("nieznany przedmiot kończy się validation", async () => {
     await expect(createLessonFromMaterial(services, { ...command, subjectId: "history" })).rejects.toMatchObject({ code: "validation" });
   });
+
+  it("createMaterialLesson wymaga dokładnie jednego z material / sourceMaterialId (przed zapisem)", async () => {
+    const { material, ...withoutMaterial } = command;
+    const sourceMaterialId = "33333333-3333-4333-8333-333333333333";
+    await expect(createMaterialLesson(services, { ...withoutMaterial, subjectId: "english_chapter" })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_chapter", material, sourceMaterialId, expectedSourceRevision: 1 })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("createMaterialLesson wymaga rewizji podglądu przy źródle i tylko przy nim (przed zapisem)", async () => {
+    const { material: _material, ...withoutMaterial } = command;
+    const sourceMaterialId = "33333333-3333-4333-8333-333333333333";
+    await expect(createMaterialLesson(services, { ...withoutMaterial, subjectId: "english_chapter", sourceMaterialId })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_chapter", expectedSourceRevision: 1 })).rejects.toMatchObject({ code: "validation" });
+  });
 });

@@ -1,4 +1,4 @@
-import { MediaPendingDetailsSchema, messages } from "@learning/contracts";
+import { LessonSourceChangedDetailsSchema, MediaPendingDetailsSchema, messages } from "@learning/contracts";
 import { createORPCClient, MalformedResponseError, ORPCError, type AnyORPCError } from "@orpc/client";
 import type { RouterContractClient } from "@orpc/contract";
 import { OpenAPILink } from "@orpc/openapi/fetch";
@@ -111,4 +111,14 @@ export function errorMessage(error: unknown): string {
 export function isMediaPendingError(error: unknown): boolean {
   return error instanceof ApiCallError && error.code === "validation"
     && MediaPendingDetailsSchema.safeParse(error.details).success;
+}
+
+/**
+ * Tworzenie lekcji ze źródła odrzucone, bo tekst źródła zmieniono w innym oknie
+ * po wyświetleniu podglądu (`conflict` z `LessonSourceChangedDetails`): zestaw
+ * nie powstał, a formularz odświeża podgląd przed ponownym utworzeniem.
+ */
+export function isSourceChangedError(error: unknown): boolean {
+  return error instanceof ApiCallError && error.code === "conflict"
+    && LessonSourceChangedDetailsSchema.safeParse(error.details).success;
 }

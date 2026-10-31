@@ -80,8 +80,10 @@ export const englishChapterPrompts: SubjectPromptProfile = {
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
       "weather); group labels are in Polish and items are English words from the chapter. Skip it otherwise.",
     lesson_cloze:
-      "Use 2 to 4 short sentences built on the chapter's frames. instructionPl gives the Polish meaning of the whole text, " +
+      "Use 2 or 3 short sentences built on the chapter's frames. instructionPl gives the Polish meaning of the whole text, " +
       "then a short command, like a workbook: 'W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.' " +
+      "The whole instructionPl (Polish meaning plus command) is at most 120 characters in total, so keep the text to " +
+      "2 or 3 short sentences that fit this limit. " +
       "Every gap is fixed by that Polish meaning: exactly one bank word fits each gap, never two gaps whose words could " +
       "be swapped, and no extra word may match the Polish meaning of any gap. Gap words are content words of this " +
       "objective, never only function words (articles, pronouns, be/do/can, prepositions, this/that, question words). " +

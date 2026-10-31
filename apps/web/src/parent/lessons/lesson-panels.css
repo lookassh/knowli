@@ -27,6 +27,37 @@
   }
 }
 
+/* nowa lekcja ze źródła: podgląd tekstu (.pp-source-preview) i link powrotu do źródła */
+.pp-lesson-source-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pp-lesson-source-change {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.pp-lesson-source .pp-source-preview {
+  margin-top: 4px;
+}
+
+/* --- edytor lekcji: pochodzenie ze źródła --- */
+
+.pp-lesson-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.pp-lesson-source-info {
+  margin-top: 3px;
+}
+
 /* --- panel nadzoru --- */
 
 .pp-sup-child {

@@ -1,4 +1,12 @@
-import type { DeckSummaryDto } from "@learning/contracts";
+import type { DeckState, DeckSummaryDto } from "@learning/contracts";
+
+/** Ton odznaki stanu zestawu — pary `--pp-status-*` z motywu (oba schematy). */
+export const DECK_STATE_TONE: Record<DeckState, string> = {
+  review: "warning",
+  published: "success",
+  draft: "neutral",
+  archived: "neutral",
+};
 
 /** Prezentacyjny filtr rodzaju materiału na liście zestawów. */
 export type DeckKindFilter = "all" | "vocabulary" | "lesson";

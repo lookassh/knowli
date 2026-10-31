@@ -9,6 +9,11 @@ interface LeaveGuard {
   requestLeave(action: () => void | Promise<void>): void;
 }
 
+/** Ścieżka z parametrami (np. nowa lekcja ze źródła: `?source=…&subject=…`). */
+function currentLocation(): string {
+  return window.location.pathname + window.location.search;
+}
+
 /**
  * Widok panelu w adresie (plan §4.1) nad History API, nie nawigacją App
  * Routera: App Router nie pozwala zatrzymać przejścia, a „wstecz” przy
@@ -33,7 +38,7 @@ export function useParentNavigation(guard: LeaveGuard) {
   }, []);
 
   useEffect(() => {
-    const initial = routeFromPath(window.location.pathname);
+    const initial = routeFromPath(currentLocation());
     if (initial === null) {
       window.history.replaceState(window.history.state, "", routePath(DEFAULT_ROUTE));
     }
@@ -46,7 +51,7 @@ export function useParentNavigation(guard: LeaveGuard) {
       // routera Next — nie przywracamy go własnym pushState (stan Next
       // pochodziłby z obcego wpisu); wyjście z dokumentu chroni `beforeunload`.
       if (!window.location.pathname.startsWith(PARENT_ROOT)) return;
-      const target = routeFromPath(window.location.pathname) ?? DEFAULT_ROUTE;
+      const target = routeFromPath(currentLocation()) ?? DEFAULT_ROUTE;
       if (bypassNextPop.current) {
         bypassNextPop.current = false;
         show(target);

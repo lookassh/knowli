@@ -53,6 +53,7 @@ export const MOCKED_SPECS: readonly string[] = [
   "parent-lessons-layout.spec.ts",
   "parent-progress-layout.spec.ts",
   "parent-shell-layout.spec.ts",
+  "parent-sources-layout.spec.ts",
   "parent-work-card.spec.ts",
   "picture-choice-layout.spec.ts",
   "picture-recognition-layout.spec.ts",
@@ -92,6 +93,8 @@ export const REAL_BUCKETS: readonly (readonly string[])[] = [
     "lesson-real-flow.spec.ts",
     "manual-deck-flow.spec.ts",
     "parent-flow.spec.ts",
+    // ok. 15 s; dodany do najlżejszego kosza w przebiegu 2026-10-31 (kosz 4: 1,8 min wobec 2,2/2,5/2,9 min)
+    "parent-sources.spec.ts",
   ],
 ];
 

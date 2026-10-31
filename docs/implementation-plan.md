@@ -27,7 +27,7 @@ Panel zachowuje bazowy numer edycji podczas pollingu, ostrzega przed utratą nie
 - Wymowa nie jest oceną treści; błędne lub niepewne rozpoznanie nie jest wiarygodnym wynikiem wymowy oczekiwanego słowa.
 - Graphile retry nie oznacza exactly-once; idempotencję wyników zapewnia aplikacja.
 - Kid UI nie importuje Next.js ani pakietów serwerowych; wszystkie sekrety i autorytatywne oceny pozostają na serwerze.
-- Nie rozpoczynać source_material, OCR, czatu, realtime ani aplikacji Android.
+- Nie rozpoczynać source_material (nauki z dokumentów), OCR, czatu, realtime ani aplikacji Android. Nie dotyczy to „Źródeł” z Etapu 2 rozdziału angielskiego (tabela `source_materials`, wklejony tekst rozdziału rodzica — SPEC §37).
 - Wersje stabilne przypięte w lockfile i obrazach; nie korzystać produkcyjnie z RC/latest.
 - Wartości proponowane w architekturze są startową konfiguracją, nie wynikiem badań z dzieckiem.
 
