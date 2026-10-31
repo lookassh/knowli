@@ -390,7 +390,7 @@ Zasady wspólne: przycięcie i scalenie białych znaków (bez spacji przed `.,!?
   - bramka wariantu w gramatyce: scenariusz dodawany do `lesson-sentence-audio.test.ts` w Etapie 3 (zachowanie zmienia się także tam); „Prawie!” z wariantem kanonicznym ma nagranie w teście jednostkowym `withFeedbackSentenceAudio` (`lesson-attempts.test.ts`).
 - **Media `feedback_audio` (R02/R06):**
   - nowa wersja starej lekcji nie dubluje zasobów przy niezmienionym tekście (`lesson-sentence-audio.test.ts`), a zmiana tekstu daje nowy fingerprint i zasób (`media.test.ts`);
-  - spóźniony worker i nieudane nagranie: wspólny cykl życia zasobów, testowany dla wszystkich ról w `media.test.ts` i `publish-media-reconcile.test.ts`, bez osobnego testu roli `feedback_audio`;
+  - spóźniony worker i nieudane nagranie: wspólny cykl życia zasobów TTS, testowany w `media.test.ts` i `publish-media-reconcile.test.ts` na nagraniach słówek, ilustracjach i `target_audio`, bez osobnego testu roli `feedback_audio`;
   - wznowienie zadania i dwa klienty: bez osobnego testu rozdziału; mechanizm sesji i kluczy zadań jest współdzielony z #194.
 - **Słówka ze źródła:** odrzucenie pozycji spoza materiału przy zachowaniu reszty, `rejectedCount`.
 
@@ -519,7 +519,7 @@ Opis architektury: `docs/architecture.md` §19.9, produktu: SPEC §37 („Etap 3
 - tekst dłuższy niż 200 znaków nie dostaje nagrania (`FEEDBACK_SENTENCE_MAX_LENGTH` w `feedback-sentence-text.ts`), a `clozeText` może mieć do 300 znaków (`MAX_CLOZE_TEXT_LENGTH` w kontraktach) — długi tekst z lukami po cichu zostaje bez odczytu;
 - istniejący układ `ExerciseFrame` (sprzed Etapu 3, wspólny dla lekcji): przy wysokim materiale bank słów zostaje po błędnej odpowiedzi częściowo pod dokiem omówienia także po przewinięciu materiału do końca (360×800: ok. 43 px), a przy niskiej wysokości w poziomie nad dokiem zostaje pusty pas ukrytych akcji (materiał osiągalny przewinięciem strony). Wykryte testami geometrii Etapu 3, poprawka osobno.
 
-**Zweryfikowane:** typecheck; testy jednostkowe 3195; integracja 65 plików / 687 testów (+2 pominięte) — w tym nowy `lesson-chapter-sentence-audio.test.ts`; E2E `test:e2e:shards`: mocked 319 + real 33/33/21/34, w tym `lesson-sentence-audio.spec.ts` z geometrią doku przy uzupełnianiu tekstu z bankiem słów (360×800, 812×375, 740×420, 768×1024, 1280×800).
+**Zweryfikowane:** typecheck; testy jednostkowe 3205; integracja 65 plików / 692 testy (+2 pominięte) — w tym nowy `lesson-chapter-sentence-audio.test.ts`; E2E `test:e2e:shards`: mocked 322 + real 33/33/21/34, w tym `lesson-sentence-audio.spec.ts` z geometrią doku przy uzupełnianiu tekstu z bankiem słów (360×800, 812×375, 740×420, 768×1024, 1280×800).
 
 **Niezweryfikowane:**
 

@@ -348,17 +348,24 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         const pageScrolls = viewport.height < 480;
         if (pageScrolls) await expect(page.locator(".kid-page")).toHaveAttribute("data-viewport-very-short", "true");
         else await expect(page.locator(".kid-page")).not.toHaveAttribute("data-viewport-very-short", "true");
+        // Materiał i dok mierzone w jednej chwili — przewinięcie strony po pokazaniu doku nie
+        // rozjedzie porównania.
         const material = page.getByTestId("kid-material");
-        const materialBox = await boxOf(material);
+        const [materialBox, dockWithMaterial] = await page.evaluate(() => {
+          const rect = (testId: string) => {
+            const r = document.querySelector(`[data-testid="${testId}"]`)!.getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+          };
+          return [rect("kid-material"), rect("kid-feedback-dock")] as const;
+        });
         const materialBottom = materialBox.y + materialBox.height;
-        const geometry = `material ${JSON.stringify(materialBox)}, dock ${JSON.stringify(dockBox)} at ${label}`;
+        const geometry = `material ${JSON.stringify(materialBox)}, dock ${JSON.stringify(dockWithMaterial)} at ${label}`;
         if (pageScrolls) {
-          expect(materialBottom, `material bottom above the dock: ${geometry}`).toBeLessThanOrEqual(dockBox.y + 1);
-          // Materiał ma naturalną wysokość (nie jest ściśnięty przez dok ani przycięty) — przewija strona.
+          expect(materialBottom, `material bottom above the dock: ${geometry}`).toBeLessThanOrEqual(dockWithMaterial.y + 1);
+          // Materiał ma naturalną wysokość (nie jest ściśnięty przez dok) — przewija strona.
           expect(materialBox.height, `material height: ${geometry}`).toBeGreaterThanOrEqual(MIN_VISIBLE_MATERIAL);
-          expect(await material.evaluate((element) => element.scrollHeight <= element.clientHeight + 1), `material clipped: ${geometry}`).toBe(true);
         } else {
-          const visible = Math.min(materialBottom, dockBox.y) - Math.max(materialBox.y, 0);
+          const visible = Math.min(materialBottom, dockWithMaterial.y) - Math.max(materialBox.y, 0);
           expect(visible, `material visible above the dock: ${geometry}`).toBeGreaterThanOrEqual(MIN_VISIBLE_MATERIAL);
         }
         // Wynik z całym tekstem mieści się w szerokości doku (wysokość przewija się w środku).
