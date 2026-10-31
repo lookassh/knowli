@@ -402,8 +402,13 @@ test("deck flow stays within the viewport matrix and keeps all decks reachable",
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflow, `horizontal overflow at ${viewport.width}x${viewport.height}`).toBe(false);
     const finalDeck = page.getByTestId("kid-deck-card").last();
-    await finalDeck.scrollIntoViewIfNeeded();
+    // Scroll as the child would (wheel input), not programmatically: scrollIntoViewIfNeeded can
+    // reach content that overflow: hidden keeps away from the user.
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.wheel(0, -100_000);
+    await page.mouse.wheel(0, 100_000);
     await expect(finalDeck).toBeVisible();
+    await expect(finalDeck.getByTestId("kid-deck")).toBeInViewport({ ratio: 0.98 });
     await expect(finalDeck.getByTestId("kid-deck-title")).toContainText("Długi tytuł");
     if (viewport.width === 360 && viewport.height === 640 || viewport.width === 1440) {
       await page.screenshot({ path: testInfo.outputPath(`decks-${viewport.width}x${viewport.height}.png`), fullPage: true });
