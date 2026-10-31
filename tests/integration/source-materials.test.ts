@@ -48,6 +48,14 @@ async function count(table: string): Promise<number> {
   return rows[0]!.count;
 }
 
+/** Rewizja współbieżności i rewizja treści źródła prosto z tabeli. */
+async function storedRevisions(id: string): Promise<{ revision: number; body_revision: number }> {
+  const rows = await query<{ revision: number; body_revision: number }>(
+    "select revision, body_revision from learning_app.source_materials where id = $1", [id],
+  );
+  return rows[0]!;
+}
+
 interface DeckSeed {
   title: string;
   kind?: "vocabulary" | "lesson";
@@ -226,6 +234,37 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       expect(bodyOnly).toMatchObject({ title: "Sam tytuł", body: "Sama treść.", revision: 3 });
     });
 
+    it("bumps the body revision only when the body changes; every change bumps the concurrency revision", async () => {
+      const request = input();
+      const created = await createSourceMaterial(services, request);
+      expect(await storedRevisions(created.id)).toEqual({ revision: 1, body_revision: 1 });
+
+      await updateSourceMaterial(services, created.id, { expectedRevision: 1, title: "Sam tytuł" });
+      expect(await storedRevisions(created.id)).toEqual({ revision: 2, body_revision: 1 });
+
+      await updateSourceMaterial(services, created.id, { expectedRevision: 2, body: "Sama treść." });
+      expect(await storedRevisions(created.id)).toEqual({ revision: 3, body_revision: 2 });
+
+      // nowy tytuł z treścią podaną bez zmian (po trim): treść się nie liczy
+      const renamed = await updateSourceMaterial(services, created.id, { expectedRevision: 3, title: "Inny tytuł", body: " Sama treść.\n" });
+      expect(renamed).toMatchObject({ title: "Inny tytuł", body: "Sama treść.", revision: 4 });
+      expect(await storedRevisions(created.id)).toEqual({ revision: 4, body_revision: 2 });
+    });
+
+    it("returns the current source for an edit without changes, without bumping anything", async () => {
+      const request = input();
+      const created = await createSourceMaterial(services, request);
+      clock.advanceMs(60_000);
+
+      const unchanged = await updateSourceMaterial(services, created.id, { expectedRevision: 1, title: ` ${request.title} `, body: `${request.body}\n` });
+
+      expect(unchanged).toMatchObject({ id: created.id, title: request.title, body: request.body, revision: 1, updatedAt: "2026-10-31T10:00:00.000Z" });
+      expect(await storedRevisions(created.id)).toEqual({ revision: 1, body_revision: 1 });
+      expect(await updateSourceMaterial(services, created.id, { expectedRevision: 1, title: request.title })).toEqual(unchanged);
+      // nieaktualna rewizja jest konfliktem także wtedy, gdy edycja niczego nie zmienia
+      await expect(updateSourceMaterial(services, created.id, { expectedRevision: 2, title: request.title })).rejects.toMatchObject({ code: "conflict" });
+    });
+
     it("rejects a mismatched expectedRevision as a conflict without changing anything", async () => {
       const created = await createSourceMaterial(services, input());
       await updateSourceMaterial(services, created.id, { expectedRevision: 1, title: "Druga rewizja" });
@@ -326,12 +365,13 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
     });
 
     it("returns the full text with decks, their kind, state and stale marker", async () => {
-      const created = await createSourceMaterial(services, input({ body: "Pełny tekst źródła." }));
-      await updateSourceMaterial(services, created.id, { expectedRevision: 1, title: "Po edycji" });
+      const created = await createSourceMaterial(services, input({ body: "Pierwsza wersja tekstu." }));
+      // rewizja treści 2 (kopia z rewizji 1 jest nieaktualna); sam tytuł potem już jej nie zmienia
+      await updateSourceMaterial(services, created.id, { expectedRevision: 1, body: "Pełny tekst źródła." });
+      await updateSourceMaterial(services, created.id, { expectedRevision: 2, title: "Po edycji" });
 
       const staleLesson = await insertDeck({ title: "Lekcja ze starej rewizji", kind: "lesson", sourceId: created.id, copiedRevision: 1, createdAt: "2026-10-31T08:00:00.000Z" });
       const currentDeck = await insertDeck({ title: "Zestaw z bieżącej rewizji", sourceId: created.id, copiedRevision: 2, createdAt: "2026-10-31T08:10:00.000Z" });
-      const unknownRevision = await insertDeck({ title: "Bez rewizji", sourceId: created.id, copiedRevision: null, createdAt: "2026-10-31T08:20:00.000Z" });
       const archivedDeck = await insertDeck({ title: "Zarchiwizowany", sourceId: created.id, copiedRevision: 1, archived: true, createdAt: "2026-10-31T08:30:00.000Z" });
       await publishDeckDirectly(currentDeck);
       await insertDeck({ title: "Cudzy zestaw", sourceId: null });
@@ -342,13 +382,13 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         id: created.id,
         title: "Po edycji",
         body: "Pełny tekst źródła.",
-        revision: 2,
-        deckCount: 3,
+        revision: 3,
+        deckCount: 2,
       });
       // Najnowsze zestawy pierwsze; zarchiwizowany jest widoczny, ale nie liczy się do deckCount.
+      // `copiedRevision` i `stale` dotyczą rewizji treści (2), nie rewizji współbieżności (3).
       expect(source.decks).toEqual([
         { deckId: archivedDeck, title: "Zarchiwizowany", kind: "vocabulary", state: "archived", copiedRevision: 1, stale: true },
-        { deckId: unknownRevision, title: "Bez rewizji", kind: "vocabulary", state: "draft", copiedRevision: null, stale: false },
         { deckId: currentDeck, title: "Zestaw z bieżącej rewizji", kind: "vocabulary", state: "published", copiedRevision: 2, stale: false },
         { deckId: staleLesson, title: "Lekcja ze starej rewizji", kind: "lesson", state: "draft", copiedRevision: 1, stale: true },
       ]);
@@ -374,20 +414,21 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
   });
 
   describe("ograniczenia bazy", () => {
-    async function insertRaw(overrides: Partial<{ title: string; body: string; revision: number; clientRequestId: string }> = {}): Promise<void> {
+    async function insertRaw(overrides: Partial<{ title: string; body: string; revision: number; bodyRevision: number; clientRequestId: string }> = {}): Promise<void> {
       await pool.query(
-        `insert into learning_app.source_materials (id, client_request_id, request_hash, title, body, revision)
-         values ($1, $2, 'hash', $3, $4, $5)`,
-        [randomUUID(), overrides.clientRequestId ?? randomUUID(), overrides.title ?? "T", overrides.body ?? "B", overrides.revision ?? 1],
+        `insert into learning_app.source_materials (id, client_request_id, request_hash, title, body, revision, body_revision)
+         values ($1, $2, 'hash', $3, $4, $5, $6)`,
+        [randomUUID(), overrides.clientRequestId ?? randomUUID(), overrides.title ?? "T", overrides.body ?? "B", overrides.revision ?? 1, overrides.bodyRevision ?? 1],
       );
     }
 
-    it("enforces title and body length, positive revision and unique client request id", async () => {
+    it("enforces title and body length, positive revisions and unique client request id", async () => {
       await expect(insertRaw({ title: "" })).rejects.toThrow(/source_materials_title_length/);
       await expect(insertRaw({ title: "a".repeat(121) })).rejects.toThrow(/source_materials_title_length/);
       await expect(insertRaw({ body: "" })).rejects.toThrow(/source_materials_body_length/);
       await expect(insertRaw({ body: "a".repeat(16_001) })).rejects.toThrow(/source_materials_body_length/);
       await expect(insertRaw({ revision: 0 })).rejects.toThrow(/source_materials_revision_positive/);
+      await expect(insertRaw({ bodyRevision: 0 })).rejects.toThrow(/source_materials_body_revision_positive/);
 
       const clientRequestId = randomUUID();
       await insertRaw({ clientRequestId });
@@ -396,6 +437,24 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
 
     it("rejects a deck reference to a missing source", async () => {
       await expect(insertDeck({ title: "Sierota", sourceId: randomUUID() })).rejects.toThrow(/decks_source_material_id_source_materials_id_fk/);
+    });
+
+    it("requires a positive copied revision next to a source reference; deleting the source keeps it", async () => {
+      const created = await createSourceMaterial(services, input());
+
+      await expect(insertDeck({ title: "Zero", sourceId: created.id, copiedRevision: 0 })).rejects.toThrow(/decks_source_material_revision_positive/);
+      await expect(insertDeck({ title: "Bez rewizji", sourceId: created.id, copiedRevision: null })).rejects.toThrow(/decks_source_material_revision_required/);
+      await expect(insertDeck({ title: "Zero bez źródła", sourceId: null, copiedRevision: 0 })).rejects.toThrow(/decks_source_material_revision_positive/);
+      // bez odnośnika rewizja może być pusta (wklejony tekst)
+      await insertDeck({ title: "Z wklejonego tekstu", sourceId: null, copiedRevision: null });
+
+      // ON DELETE SET NULL zeruje tylko odnośnik — rewizja zostaje i oba CHECK-i to przepuszczają
+      const deckId = await insertDeck({ title: "Ze źródła", sourceId: created.id, copiedRevision: 1 });
+      await deleteSourceMaterial(services, created.id);
+      const rows = await query<{ source_material_id: string | null; source_material_revision: number | null }>(
+        "select source_material_id, source_material_revision from learning_app.decks where id = $1", [deckId],
+      );
+      expect(rows[0]).toEqual({ source_material_id: null, source_material_revision: 1 });
     });
   });
 
@@ -531,6 +590,36 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
       expect((await getSourceMaterial(services, sourceId)).decks).toMatchObject([{ deckId, copiedRevision: 1, stale: true }]);
     });
 
+    it("zmiana samego tytułu źródła nie oznacza lekcji jako zmienionej, zmiana tekstu — tak", async () => {
+      const sourceId = await seedSource();
+      const { deckId } = await createLessonFromMaterial(services, chapterCommand(sourceId));
+
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 1, title: "Rozdział 4: Pogoda i ubrania" });
+      expect((await readLessonDeck(services, deckId)).source).toEqual({
+        id: sourceId, title: "Rozdział 4: Pogoda i ubrania", copiedRevision: 1, currentRevision: 1,
+      });
+      expect((await getSourceMaterial(services, sourceId)).decks).toMatchObject([{ deckId, copiedRevision: 1, stale: false }]);
+
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 2, body: `${CHAPTER_TEXT}\nIt's sunny.` });
+      expect((await readLessonDeck(services, deckId)).source).toEqual({
+        id: sourceId, title: "Rozdział 4: Pogoda i ubrania", copiedRevision: 1, currentRevision: 2,
+      });
+      expect((await getSourceMaterial(services, sourceId)).decks).toMatchObject([{ deckId, copiedRevision: 1, stale: true }]);
+      expect((await storedLesson(deckId)).material).toBe(CHAPTER_TEXT);
+    });
+
+    it("lekcja zapisuje rewizję treści źródła, nie rewizję współbieżności", async () => {
+      const sourceId = await seedSource();
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 1, title: "Nowy tytuł" });
+      await updateSourceMaterial(services, sourceId, { expectedRevision: 2, title: "Jeszcze nowszy tytuł" });
+
+      const { deckId } = await createLessonFromMaterial(services, chapterCommand(sourceId));
+
+      expect(await storedRevisions(sourceId)).toEqual({ revision: 3, body_revision: 1 });
+      expect((await storedLesson(deckId)).deck).toEqual({ source_material_id: sourceId, source_material_revision: 1 });
+      expect((await readLessonDeck(services, deckId)).source).toMatchObject({ copiedRevision: 1, currentRevision: 1 });
+    });
+
     it("usunięcie źródła: DTO bez source, a generowanie i dogenerowanie używają kopii", async () => {
       const fakes = await fakeGeneration();
       try {
@@ -599,6 +688,48 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
 
       expect(await count("decks")).toBe(1);
       expect(await count("generation_runs")).toBe(1);
+    });
+
+    it("ponowienie po równoległym usunięciu źródła zwraca zestaw zatwierdzony przez pierwsze żądanie", async () => {
+      const sourceId = await seedSource();
+      const request = chapterCommand(sourceId);
+      // Ponowienie zatrzymane między sprawdzeniem klucza idempotencji (jeszcze bez runu)
+      // a własną transakcją: w tym czasie pierwsze żądanie zapisuje zestaw, a źródło
+      // znika, zanim ponowienie je zablokuje — jego odczyt źródła kończy się not_found.
+      let markWaiting!: () => void;
+      const waiting = new Promise<void>((resolve) => { markWaiting = resolve; });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const db = services.db;
+      const gatedDb = new Proxy(db, {
+        get(target, property) {
+          if (property === "transaction") {
+            return async (...args: unknown[]) => {
+              markWaiting();
+              await gate;
+              return (target.transaction as (...transactionArgs: unknown[]) => Promise<unknown>).apply(target, args);
+            };
+          }
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? (value as (...valueArgs: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      let retry: Promise<Outcome<Awaited<ReturnType<typeof createLessonFromMaterial>>>> | undefined;
+      try {
+        retry = settle(createLessonFromMaterial({ ...services, db: gatedDb }, request));
+        await waiting;
+        const first = await createLessonFromMaterial(services, request);
+        await deleteSourceMaterial(services, sourceId);
+        release();
+
+        expect(await retry).toEqual({ ok: true, value: first });
+        expect(await count("decks")).toBe(1);
+        expect(await count("generation_runs")).toBe(1);
+        expect((await storedLesson(first.deckId)).material).toBe(CHAPTER_TEXT);
+      } finally {
+        release();
+        await Promise.allSettled([retry]);
+      }
     });
 
     it("równoległe żądania z tym samym clientRequestId dają jeden zestaw", async () => {
@@ -680,9 +811,10 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         let creating: Promise<Outcome<Awaited<ReturnType<typeof createSchoolLesson>>>> | undefined;
         try {
           await editor.query("begin");
-          // Tak samo jak updateSourceMaterial: najpierw FOR UPDATE, potem zapis.
+          // Tak samo jak updateSourceMaterial: najpierw FOR UPDATE, potem zapis (zmiana treści
+          // podbija obie rewizje).
           await editor.query("select id from learning_app.source_materials where id = $1 for update", [sourceId]);
-          await editor.query("update learning_app.source_materials set body = $2, revision = 2 where id = $1", [sourceId, "Nowa treść po edycji."]);
+          await editor.query("update learning_app.source_materials set body = $2, revision = 2, body_revision = 2 where id = $1", [sourceId, "Nowa treść po edycji."]);
           creating = settle(createSchoolLesson(services, schoolCommand(sourceId)));
           await waitUntilBlocked(/for key share/i);
 

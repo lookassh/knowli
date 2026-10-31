@@ -164,8 +164,10 @@ export const deckVersions = app.table(
  * Źródło (materiał źródłowy rodzica, design 2026-10-30 §3): wklejony tekst
  * rozdziału, z którego rodzic tworzy lekcje i zestawy. Zestaw KOPIUJE tekst
  * przy tworzeniu i pamięta tylko odnośnik (`decks.source_material_id`) —
- * źródło nie jest czytane po utworzeniu zestawu. `revision` rośnie przy każdej
- * edycji (kontrola współbieżności); `request_hash` to skrót tytułu i treści
+ * źródło nie jest czytane po utworzeniu zestawu. Dwie rewizje: `revision` rośnie
+ * przy każdej zmianie (kontrola współbieżności edycji), `body_revision` — tylko
+ * przy zmianie treści (wersja kopiowanego tekstu, zapisywana w
+ * `decks.source_material_revision`). `request_hash` to skrót tytułu i treści
  * z pierwszego żądania tworzenia (idempotencja po `client_request_id`).
  */
 export const sourceMaterials = app.table(
@@ -177,6 +179,7 @@ export const sourceMaterials = app.table(
     title: text("title").notNull(),
     body: text("body").notNull(),
     revision: integer("revision").notNull().default(1),
+    bodyRevision: integer("body_revision").notNull().default(1),
     createdAt: timestamps("created_at").notNull().defaultNow(),
     updatedAt: timestamps("updated_at").notNull().defaultNow(),
   },
@@ -185,6 +188,7 @@ export const sourceMaterials = app.table(
     check("source_materials_title_length", sql`length(${t.title}) between 1 and 120`),
     check("source_materials_body_length", sql`length(${t.body}) between 1 and 16000`),
     check("source_materials_revision_positive", sql`${t.revision} >= 1`),
+    check("source_materials_body_revision_positive", sql`${t.bodyRevision} >= 1`),
   ],
 );
 
@@ -199,8 +203,9 @@ export const decks = app.table(
     // nie treść — mutacja bez nowego szkicu wersji). Obowiązuje słówka i lekcje.
     sessionTaskBudget: integer("session_task_budget").notNull().default(20),
     // Pochodzenie zestawu (design 2026-10-30 §3.1): źródło, z którego skopiowano
-    // tekst, i jego rewizja w chwili kopiowania. Sam odnośnik jest informacją —
-    // usunięcie źródła zeruje `source_material_id`, a treść zestawu zostaje.
+    // tekst, i rewizja jego treści (`source_materials.body_revision`) w chwili
+    // kopiowania. Sam odnośnik jest informacją — usunięcie źródła zeruje
+    // `source_material_id`, a treść zestawu i skopiowana rewizja zostają.
     sourceMaterialId: uuid("source_material_id").references((): AnyPgColumn => sourceMaterials.id, { onDelete: "set null" }),
     sourceMaterialRevision: integer("source_material_revision"),
     publishedVersionId: uuid("published_version_id"),
@@ -210,6 +215,10 @@ export const decks = app.table(
   (t) => [
     check("decks_kind_allowed", sql`${t.kind} in ('vocabulary', 'lesson')`),
     check("decks_session_task_budget", sql`${t.sessionTaskBudget} between 1 and 100`),
+    // Skopiowana rewizja treści jest dodatnia i obecna przy odnośniku; ON DELETE SET NULL
+    // zeruje tylko odnośnik, więc wiersz po usunięciu źródła przechodzi oba warunki.
+    check("decks_source_material_revision_positive", sql`${t.sourceMaterialRevision} is null or ${t.sourceMaterialRevision} >= 1`),
+    check("decks_source_material_revision_required", sql`${t.sourceMaterialId} is null or ${t.sourceMaterialRevision} is not null`),
     index("decks_source_material_idx").on(t.sourceMaterialId).where(sql`${t.sourceMaterialId} is not null`),
     // Aplikacja ustawia published_version_id wyłącznie na state=published.
     foreignKey({

@@ -49,8 +49,12 @@ export async function enqueueGenerationRun(
   }
 }
 
-/** Odczyt istniejącego runu po kluczu idempotencji, jeśli zna swój `deckId`. */
-async function findEnqueuedRun(
+/**
+ * Odczyt istniejącego runu po kluczu idempotencji, jeśli zna swój `deckId`.
+ * Poza `enqueueGenerationRun` korzysta z niego tworzenie lekcji ze źródła
+ * (ponowienie po równoległym usunięciu źródła, `createMaterialLesson`).
+ */
+export async function findEnqueuedRun(
   db: Executor,
   dedupeKey: string,
 ): Promise<{ runId: string; deckId: string } | null> {

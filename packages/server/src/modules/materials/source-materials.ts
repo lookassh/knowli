@@ -4,6 +4,7 @@ import {
   SourceMaterialInputSchema,
   SourceMaterialPatchSchema,
   UuidSchema,
+  type LessonDeckSourceDto,
   type SourceMaterialDto,
   type SourceMaterialInput,
   type SourceMaterialPatch,
@@ -21,6 +22,11 @@ import { deckStateOf } from "./decks";
  * (`decks.source_material_id`, `decks.source_material_revision`) jest ten
  * obszar. Zestaw KOPIUJE tekst przy tworzeniu — źródło nie jest czytane po
  * utworzeniu zestawu, a jego edycja nie zmienia istniejących zestawów.
+ *
+ * Dwie rewizje źródła: `revision` (kontrola współbieżności — rośnie przy każdej
+ * zmianie, `expectedRevision` edycji) i `body_revision` (wersja treści — rośnie
+ * tylko przy zmianie tekstu). Zestaw zapisuje skopiowaną rewizję treści, więc
+ * zmiana samego tytułu nie oznacza go jako utworzonego ze starszej wersji.
  *
  * Operacje są dostępne tylko rodzicowi (autoryzacja w warstwie HTTP); źródeł nie
  * ma w Kid API ani w MCP.
@@ -60,6 +66,7 @@ export async function createSourceMaterial(
         title: command.title,
         body: command.body,
         revision: 1,
+        bodyRevision: 1,
         createdAt: now,
         updatedAt: now,
       })
@@ -88,7 +95,11 @@ export async function createSourceMaterial(
  * Edytuje tytuł i/lub treść z kontrolą rewizji. Wiersz jest blokowany
  * `FOR UPDATE`, więc dwie przeglądarki edytujące tę samą rewizję są
  * serializowane: pierwsza zapisuje i podnosi `revision`, druga dostaje
- * `conflict` i niczego nie nadpisuje. Brak źródła → `not_found`.
+ * `conflict` i niczego nie nadpisuje. Zmiana tekstu podnosi też
+ * `body_revision`; zmiana samego tytułu — nie. Edycja, w której każde podane
+ * pole równa się zapisanemu (po trim), zwraca bieżące źródło bez zapisu (bez
+ * podbicia rewizji i `updated_at`); nieaktualna `expectedRevision` jest wtedy
+ * nadal `conflict`. Brak źródła → `not_found`.
  */
 export async function updateSourceMaterial(
   services: Services,
@@ -100,7 +111,12 @@ export async function updateSourceMaterial(
 
   return services.db.transaction(async (tx) => {
     const [current] = await tx
-      .select({ revision: sourceMaterials.revision })
+      .select({
+        title: sourceMaterials.title,
+        body: sourceMaterials.body,
+        revision: sourceMaterials.revision,
+        bodyRevision: sourceMaterials.bodyRevision,
+      })
       .from(sourceMaterials)
       .where(eq(sourceMaterials.id, sourceId))
       .for("update");
@@ -110,15 +126,19 @@ export async function updateSourceMaterial(
     if (current.revision !== command.expectedRevision) {
       throw new AppError("conflict");
     }
-    await tx
-      .update(sourceMaterials)
-      .set({
-        ...(command.title === undefined ? {} : { title: command.title }),
-        ...(command.body === undefined ? {} : { body: command.body }),
-        revision: current.revision + 1,
-        updatedAt: services.clock.now(),
-      })
-      .where(eq(sourceMaterials.id, sourceId));
+    const titleChanged = command.title !== undefined && command.title !== current.title;
+    const bodyChanged = command.body !== undefined && command.body !== current.body;
+    if (titleChanged || bodyChanged) {
+      await tx
+        .update(sourceMaterials)
+        .set({
+          ...(titleChanged ? { title: command.title } : {}),
+          ...(bodyChanged ? { body: command.body, bodyRevision: current.bodyRevision + 1 } : {}),
+          revision: current.revision + 1,
+          updatedAt: services.clock.now(),
+        })
+        .where(eq(sourceMaterials.id, sourceId));
+    }
     return readSourceMaterial(tx, sourceId);
   });
 }
@@ -147,14 +167,15 @@ export async function deleteSourceMaterial(services: Services, id: string): Prom
  * czeka na zatwierdzenie zestawu i dopiero potem zeruje jego odnośnik — zamiast
  * unieważnić klucz obcy w trakcie wstawiania zestawu. Równoległa edycja
  * (`updateSourceMaterial`, też `FOR UPDATE`) jest serializowana tak samo, a
- * `body` i `revision` pochodzą z jednej wersji wiersza. Źródło usunięte przed
- * odczytem → `not_found` (nigdy błąd 500 z naruszenia klucza obcego).
+ * `body` i `bodyRevision` (rewizja treści — to ją zapisuje zestaw) pochodzą
+ * z jednej wersji wiersza. Źródło usunięte przed odczytem → `not_found` (nigdy
+ * błąd 500 z naruszenia klucza obcego).
  * Wołać wyłącznie w transakcji domyślnej izolacji (read committed), w której
  * zapytanie blokujące ponownie ocenia wiersz po czekaniu na cudzą blokadę.
  */
-export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ body: string; revision: number }> {
+export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ body: string; bodyRevision: number }> {
   const [source] = await tx
-    .select({ body: sourceMaterials.body, revision: sourceMaterials.revision })
+    .select({ body: sourceMaterials.body, bodyRevision: sourceMaterials.bodyRevision })
     .from(sourceMaterials)
     .where(eq(sourceMaterials.id, id))
     .for("key share");
@@ -164,27 +185,20 @@ export async function lockSourceMaterialForCopy(tx: Tx, id: string): Promise<{ b
   return source;
 }
 
-/** Pochodzenie zestawu w DTO rodzica: tytuł źródła oraz rewizja skopiowana i bieżąca. */
-export interface DeckSourceInfo {
-  id: string;
-  title: string;
-  copiedRevision: number;
-  currentRevision: number;
-}
-
 /**
- * Pochodzenie zestawu z żywego źródła; `undefined`, gdy zestaw powstał z
+ * Pochodzenie zestawu z żywego źródła (`LessonDeckDto.source`): tytuł źródła
+ * oraz rewizja treści skopiowana i bieżąca; `undefined`, gdy zestaw powstał z
  * wklejonego tekstu albo źródło usunięto (odnośnik jest wtedy `null`).
  */
 export async function readDeckSource(
   db: Executor,
   deck: { sourceMaterialId: string | null; sourceMaterialRevision: number | null },
-): Promise<DeckSourceInfo | undefined> {
+): Promise<LessonDeckSourceDto | undefined> {
   if (deck.sourceMaterialId === null || deck.sourceMaterialRevision === null) {
     return undefined;
   }
   const [source] = await db
-    .select({ id: sourceMaterials.id, title: sourceMaterials.title, revision: sourceMaterials.revision })
+    .select({ id: sourceMaterials.id, title: sourceMaterials.title, bodyRevision: sourceMaterials.bodyRevision })
     .from(sourceMaterials)
     .where(eq(sourceMaterials.id, deck.sourceMaterialId));
   if (!source) {
@@ -194,7 +208,7 @@ export async function readDeckSource(
     id: source.id,
     title: source.title,
     copiedRevision: deck.sourceMaterialRevision,
-    currentRevision: source.revision,
+    currentRevision: source.bodyRevision,
   };
 }
 
@@ -246,7 +260,7 @@ export async function getSourceMaterial(services: Services, id: string): Promise
 /**
  * Odczyt źródła razem z zestawami (także zarchiwizowanymi — mają stan
  * „archived”, ale nie wchodzą do `deckCount`). Zestawy: najnowsze pierwsze.
- * `stale` — skopiowana rewizja jest starsza od bieżącej rewizji źródła.
+ * `stale` — skopiowana rewizja treści jest starsza od bieżącej `body_revision`.
  */
 async function readSourceMaterial(db: Executor, id: string): Promise<SourceMaterialDto> {
   const [source] = await db.select().from(sourceMaterials).where(eq(sourceMaterials.id, id));
@@ -296,7 +310,7 @@ async function readSourceMaterial(db: Executor, id: string): Promise<SourceMater
       kind: row.kind as "lesson" | "vocabulary",
       state: deckStateOf(row, editableByDeck.get(row.id) ?? null),
       copiedRevision: row.copiedRevision,
-      stale: row.copiedRevision !== null && row.copiedRevision < source.revision,
+      stale: row.copiedRevision !== null && row.copiedRevision < source.bodyRevision,
     })),
   };
 }

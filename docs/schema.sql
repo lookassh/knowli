@@ -48,7 +48,8 @@ CREATE TABLE source_materials (
   request_hash text NOT NULL, -- sha256 z JSON {title, body} (po trim) z pierwszego żądania
   title text NOT NULL CHECK (length(title) BETWEEN 1 AND 120),
   body text NOT NULL CHECK (length(body) BETWEEN 1 AND 16000),
-  revision integer NOT NULL DEFAULT 1 CHECK (revision >= 1), -- rośnie przy każdej edycji
+  revision integer NOT NULL DEFAULT 1 CHECK (revision >= 1), -- kontrola współbieżności: rośnie przy każdej zmianie
+  body_revision integer NOT NULL DEFAULT 1 CHECK (body_revision >= 1), -- wersja treści: rośnie tylko przy zmianie body
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -59,13 +60,15 @@ CREATE TABLE decks (
   kind text NOT NULL DEFAULT 'vocabulary',
   -- budżet zadań ocenianych sesji nauki zestawu (konfiguracja runtime, 1–100)
   session_task_budget integer NOT NULL DEFAULT 20 CHECK (session_task_budget BETWEEN 1 AND 100),
-  -- pochodzenie zestawu: źródło i jego rewizja w chwili kopiowania tekstu;
-  -- usunięcie źródła zeruje odnośnik (treść zestawu zostaje)
+  -- pochodzenie zestawu: źródło i rewizja jego treści (body_revision) w chwili
+  -- kopiowania tekstu; usunięcie źródła zeruje odnośnik (treść zestawu i rewizja zostają)
   source_material_id uuid REFERENCES source_materials(id) ON DELETE SET NULL,
-  source_material_revision integer,
+  source_material_revision integer CHECK (source_material_revision IS NULL OR source_material_revision >= 1),
   published_version_id uuid,
   archived_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  -- skopiowana rewizja jest obecna przy odnośniku (ON DELETE SET NULL zostawia ją bez odnośnika)
+  CHECK (source_material_id IS NULL OR source_material_revision IS NOT NULL)
 );
 CREATE TABLE deck_versions (
   id uuid PRIMARY KEY,

@@ -27,7 +27,11 @@ export const SourceMaterialInputSchema = z
   .strict();
 export type SourceMaterialInput = z.infer<typeof SourceMaterialInputSchema>;
 
-/** Edycja źródła z kontrolą rewizji; co najmniej jedno z pól `title` / `body`. */
+/**
+ * Edycja źródła z kontrolą rewizji (`expectedRevision` = `revision` z odczytu);
+ * co najmniej jedno z pól `title` / `body`. Edycja, w której każde podane pole
+ * jest równe zapisanemu (po trim), niczego nie zmienia i niczego nie podbija.
+ */
 export const SourceMaterialPatchSchema = z
   .object({
     expectedRevision: z.number().int().min(1),
@@ -40,7 +44,11 @@ export const SourceMaterialPatchSchema = z
   });
 export type SourceMaterialPatch = z.infer<typeof SourceMaterialPatchSchema>;
 
-/** Pozycja listy źródeł; `deckCount` pomija zestawy zarchiwizowane. */
+/**
+ * Pozycja listy źródeł; `deckCount` pomija zestawy zarchiwizowane. `revision`
+ * to rewizja współbieżności — rośnie przy każdej zmianie (także samego tytułu)
+ * i jest `expectedRevision` następnej edycji.
+ */
 export const SourceMaterialSummaryDtoSchema = z.object({
   id: UuidSchema,
   title: z.string(),
@@ -51,7 +59,11 @@ export const SourceMaterialSummaryDtoSchema = z.object({
 });
 export type SourceMaterialSummaryDto = z.infer<typeof SourceMaterialSummaryDtoSchema>;
 
-/** Zestaw utworzony z źródła; `stale` — skopiowana rewizja starsza od bieżącej. */
+/**
+ * Zestaw utworzony ze źródła. `copiedRevision` to rewizja TREŚCI źródła
+ * skopiowana przy tworzeniu zestawu (nie `revision`), a `stale` — tekst źródła
+ * zmieniono od tamtej chwili. Zmiana samego tytułu źródła nie ustawia `stale`.
+ */
 export const SourceMaterialDeckDtoSchema = z.object({
   deckId: UuidSchema,
   title: z.string(),

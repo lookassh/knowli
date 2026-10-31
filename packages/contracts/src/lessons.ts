@@ -393,6 +393,23 @@ export const LessonDraftDtoSchema = z.object({
 export type LessonDraftDto = z.infer<typeof LessonDraftDtoSchema>;
 
 /**
+ * Pochodzenie zestawu z materiału źródłowego rodzica (design 2026-10-30, §3.3):
+ * tytuł źródła i rewizja jego TREŚCI skopiowana przy tworzeniu zestawu obok
+ * bieżącej rewizji treści (`source_materials.body_revision`). Zmiana samego
+ * tytułu źródła nie zmienia `currentRevision` — `currentRevision >
+ * copiedRevision` znaczy, że tekst źródła zmieniono po skopiowaniu. Schemat
+ * żyje tu (moduł niższy niż `source-materials.ts`), by serwer i panel rodzica
+ * typowały go z kontraktu bez cyklu importów.
+ */
+export const LessonDeckSourceDtoSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  copiedRevision: z.number().int().min(1),
+  currentRevision: z.number().int().min(1),
+}).strict();
+export type LessonDeckSourceDto = z.infer<typeof LessonDeckSourceDtoSchema>;
+
+/**
  * Pełny widok zestawu-lekcji dla panelu rodzica (`GET /parent/lessons/:deckId`):
  * edytowalny szkic (lub null), opublikowana wersja (lub null), najnowszy run
  * generacji szkicu i przypisania dzieci — odpowiednik `DeckDto` dla lekcji,
@@ -409,17 +426,8 @@ export const LessonDeckDtoSchema = z.object({
   published: LessonDraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
-  /**
-   * Pochodzenie z materiału źródłowego rodzica (design 2026-10-30, §3.3):
-   * tytuł źródła i rewizja skopiowana przy tworzeniu zestawu obok bieżącej.
-   * Brak pola, gdy zestaw powstał z wklejonego tekstu albo źródło usunięto.
-   */
-  source: z.object({
-    id: UuidSchema,
-    title: z.string(),
-    copiedRevision: z.number().int().min(1),
-    currentRevision: z.number().int().min(1),
-  }).strict().optional(),
+  /** Pochodzenie z materiału źródłowego rodzica; brak pola — wklejony tekst albo źródło usunięto. */
+  source: LessonDeckSourceDtoSchema.optional(),
   /**
    * Informacja o providerze oceny dowolnych odpowiedzi (wymaganie 10.1). Bez
    * sekretów — tylko czy model jest dostępny i jego nazwa z konfiguracji.
