@@ -189,6 +189,11 @@ export function questionAudioOf(task: TaskDto): string | null {
   return "questionAudioAssetId" in prompt && typeof prompt.questionAudioAssetId === "string" ? prompt.questionAudioAssetId : null;
 }
 
+/** Zadanie modułu lekcji (`lesson_*`) — tylko ono dostaje odczyt zdania w feedbacku. */
+export function isLessonTask(task: TaskDto | null | undefined): boolean {
+  return task !== null && task !== undefined && task.exerciseType.startsWith("lesson_");
+}
+
 const AUDIO_DISCLOSURE_EXERCISES = new Set(["recall", "spelling", "letter_completion", "speech", "picture_speech", "lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 
 /**
@@ -1231,7 +1236,10 @@ export class LearningSessionController {
     }
     // „Rozumiem” potwierdziło już pokazany wzorzec. Po zapisaniu trudności
     // przechodzimy do wsparcia, bez drugiego feedbacku na zamkniętym formularzu.
-    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued") {
+    // Wyjątek: lekcja z nagraniem zdania — pokazujemy wynik z odczytem
+    // i „Posłuchaj zdania” do kliknięcia „Dalej” (design odczytu zdania §1, §7).
+    const sentenceReadback = attempt.feedback?.correctAudioAssetId !== undefined && isLessonTask(this.#screen.task);
+    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued" && !sentenceReadback) {
       // Zachowaj wzorzec do atomowej podmiany zadania w #loadNext:
       // usunięcie reveal wcześniej odsłoniłoby poprzedni formularz na czas sieci.
       this.#setLearning({ feedback: null, processing: false, busy: true });
@@ -1264,6 +1272,36 @@ export class LearningSessionController {
     // „Posłuchaj” kończyłoby się konfliktem i błędem audio na karcie wyniku.
     if (attempt.taskState !== "issued" && attempt.feedback?.referenceAudioAvailable !== true) {
       this.#prefetchNextTask(epoch, this.#screen.session.sessionId);
+    }
+    // Lekcja: feedback z rozwiązaniem niesie nagranie pełnego zdania — gramy je
+    // raz od razu (design odczytu zdania §7). Zablokowane autoodtwarzanie i błąd
+    // pliku są ciche; zostaje przycisk „Posłuchaj zdania” w doku.
+    if (sentenceReadback) {
+      void this.playSentenceAudio();
+    }
+  }
+
+  /**
+   * Odczyt pełnego zdania w feedbacku lekcji (automatycznie po wyniku i ręcznie
+   * z doku). Identyfikator przyszedł z oceną, a serwer zapieczętował ujawnienie
+   * (`audio_issued`) przed odpowiedzią HTTP — odtwarzamy plik bezpośrednio.
+   * `picture_recognition` ma własny, ręczny odsłuch słowa (`playCorrectOptionAudio`).
+   */
+  async playSentenceAudio(): Promise<void> {
+    const screen = this.#learning();
+    const feedback = screen?.feedback;
+    const assetId = feedback?.dto?.correctAudioAssetId;
+    if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
+        assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
+    // Poprzednie odtwarzanie (np. pytanie) ustępuje; „Dalej”, nowe zadanie
+    // i każde inne odtwarzanie przerywają odczyt przez #stopPlayback.
+    this.#beginPlayback();
+    try {
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
+    } catch {
+      // Celowo bez stanu błędu: odczyt jest dodatkiem, a przycisk powtórki
+      // zostaje widoczny. Po zakończeniu nie zapisujemy stanu, więc spóźnione
+      // zakończenie nie może dotknąć następnego zadania.
     }
   }
 

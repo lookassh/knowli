@@ -591,7 +591,7 @@ Nie zapisujemy mylonej pary na podstawie niewiarygodnego rozpoznania mowy. Błę
 
 ## 22. TTS i pliki audio
 
-Naturalna wzorcowa wymowa jest obowiązkową częścią modułu słownictwa angielskiego. Początkowa preferencja to TTS OpenAI; konkretny model i głos zostaną dobrane podczas projektowania integracji. Lekcje gramatyki (np. Present Simple) nie generują audio odpowiedzi ani nie pokazują głośnika dziecku.
+Naturalna wzorcowa wymowa jest obowiązkową częścią modułu słownictwa angielskiego. Początkowa preferencja to TTS OpenAI; konkretny model i głos zostaną dobrane podczas projektowania integracji. Lekcje gramatyki (np. Present Simple) nie generują audio odpowiedzi ani nie pokazują głośnika przed odpowiedzią; po ocenionej odpowiedzi czytają pełne poprawne zdanie (nagranie przygotowane przy publikacji).
 
 TTS musi być oddzielony interfejsem od domeny:
 
@@ -919,7 +919,7 @@ Mapują wymagania 1–11 z `.kiro/specs/grammar-module/requirements.md`.
 | A55 | Próbna kartkówka z lekcji gramatyki | Działa na istniejących zasadach z celem „gramatyka" (niedostępnym dla słówek); plan obejmuje reguły proporcjonalnie, preferuje niewidziane i produktywne; raport per reguła z kategoriami i oznaczeniem ocen modelu. | 9 |
 | A56 | Odczyt raportu Hermesa (learning-overview) | Pomija lekcje gramatyki (postęp, kartkówki, planowane sprawdziany); kontrakt v1 i JSON Schema bez zmian; `SKILL.md` informuje, że raport nie obejmuje jeszcze lekcji. | 10 |
 | A57 | Przykładowy przedmiot nie-językowy (fixture) | Przechodzi walidację, generowanie (fake provider) i ocenę bez zmian w silniku; test architektoniczny potwierdza, że silnik nie importuje modułów przedmiotów inaczej niż przez rejestr. | 11 |
-| A58 | Audio odpowiedzi kanonicznej w lekcji gramatyki (TTS) | WYŁĄCZONE 2026-10-14: brak generowania/obowiązku `target_audio`, brak głośnika w zadaniu; stare audio jest ukrywane i nie można go odsłuchać. TTS innych przedmiotów pozostaje konfigurowalne. | 4 |
+| A58 | Audio odpowiedzi kanonicznej w lekcji gramatyki (TTS) | WYŁĄCZONE 2026-10-14: brak generowania/obowiązku `target_audio`, brak głośnika w zadaniu; stare audio jest ukrywane i nie można go odsłuchać. Od 2026-10-31 po ocenionej odpowiedzi czytane jest pełne poprawne zdanie (`feedback_audio`). TTS innych przedmiotów pozostaje konfigurowalne. | 4 |
 | A59 | Opanowanie z modelem i bez modelu | Opanowanie jest osiągalne bez modelu przez produktywne typy deterministyczne (zwł. `lesson_gap`) na ćwiczeniach niewidzianych, jeśli pula je zawiera; model jest wymagany tylko dla odpowiedzi niedopasowanych (głównie tłumaczenie), gdzie bez modelu wynik to „nieocenione" bez kary. Patrz sekcja „Lekcje i przedmioty — ograniczenia". | 6, 7 |
 
 ## 33. Następny krok po zatwierdzeniu specyfikacji
