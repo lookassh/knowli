@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  createLesson, createLessonDraftFromPublished, createServices, executeLessonGeneration, publishLessonDraft, readLessonDeck,
+  createLesson, createLessonDraftFromPublished, createServices, createSubjectRegistry, englishGrammarSubject, executeLessonGeneration, publishLessonDraft, readLessonDeck,
 } from "@learning/server";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
@@ -25,17 +25,19 @@ beforeEach(async () => {
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose(); });
 afterAll(() => pool.end());
 
-async function generatedGrammarLesson() {
+async function generatedGrammarLesson(feedbackSentence = true) {
   const fakes = await fakeGeneration();
   cleanup.push(fakes.dispose);
-  const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+  const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
+    ...(feedbackSentence ? {} : { subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) }),
+  });
   const run = await createLesson(services, {
     subjectId: "english_grammar", topicId: "present_simple", objectiveIds: [OBJECTIVE],
     material: "He plays football. She reads books. She watches TV.", poolSize: 20, clientRequestId: randomUUID(),
   });
   await executeLessonGeneration(services, run.runId);
   const draft = (await readLessonDeck(services, run.deckId)).draft!;
-  return { services, run, draft };
+  return { services, run, draft, fakes };
 }
 
 const feedbackRows = async (versionId: string) => (await pool.query<{ text: string; state: string }>(
@@ -59,28 +61,33 @@ describe("lekcja gramatyki — nagranie zdania feedbacku", () => {
     await expect(publishLessonDraft(services, draft.id, draft.editNumber)).resolves.toEqual({ deckVersionId: draft.id });
   });
 
-  it("nowa wersja starej lekcji (bez feedback_audio) po publikacji ma nagrania, a drugie przejście nie dubluje zasobów", async () => {
-    const { services, run, draft } = await generatedGrammarLesson();
-    await publishLessonDraft(services, draft.id, draft.editNumber);
-    const copy = await createLessonDraftFromPublished(services, run.deckId);
-    // Symulacja lekcji opublikowanej przed zmianą: kopia bez wierszy feedback_audio
-    // (opublikowane wersje są niezmienne, więc usuwamy je w szkicu kopii).
-    await pool.query(
-      `delete from learning_app.revision_assets ra using learning_app.item_revisions ir
-        where ir.id = ra.item_revision_id and ir.deck_version_id = $1 and ra.role = 'feedback_audio'`,
-      [copy.id],
-    );
+  it("nowa wersja starej lekcji (bez feedback_audio) po publikacji zleca nowe nagrania, a drugie przejście nie dubluje zasobów", async () => {
+    // Stara lekcja: wygenerowana i opublikowana, gdy przedmiot nie miał jeszcze flagi.
+    const { services: old, run, draft, fakes } = await generatedGrammarLesson(false);
+    await publishLessonDraft(old, draft.id, draft.editNumber);
+    expect(await feedbackRows(draft.id)).toEqual([]);
+    expect(await mediaCount()).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.generation_runs where kind = 'tts'")).rows[0].count).toBe(0);
+
+    // Po wdrożeniu (domyślny rejestr z flagą): kopia + publikacja uzgadnia media.
+    const current = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const copy = await createLessonDraftFromPublished(current, run.deckId);
     expect(await feedbackRows(copy.id)).toEqual([]);
-    await publishLessonDraft(services, copy.id, copy.editNumber);
+    await publishLessonDraft(current, copy.id, copy.editNumber);
     const created = await feedbackRows(copy.id);
     expect(created.length).toBeGreaterThan(0);
     expect(created.every((row) => row.state === "pending")).toBe(true);
-
     const mediaAfterFirst = await mediaCount();
-    const second = await createLessonDraftFromPublished(services, run.deckId);
-    await publishLessonDraft(services, second.id, second.editNumber);
+    expect(mediaAfterFirst).toBeGreaterThan(0);
+    const ttsRuns = async () => (await pool.query("select count(*)::int as count from learning_app.generation_runs where kind = 'tts' and state = 'queued'")).rows[0].count as number;
+    const runsAfterFirst = await ttsRuns();
+    expect(runsAfterFirst).toBe(mediaAfterFirst);
+
+    const second = await createLessonDraftFromPublished(current, run.deckId);
+    await publishLessonDraft(current, second.id, second.editNumber);
     expect((await feedbackRows(second.id)).map((row) => row.text).sort()).toEqual(created.map((row) => row.text).sort());
     expect(await mediaCount()).toBe(mediaAfterFirst);
+    expect(await ttsRuns()).toBe(runsAfterFirst);
   });
 
   it("CHECK roli przyjmuje feedback_audio", async () => {

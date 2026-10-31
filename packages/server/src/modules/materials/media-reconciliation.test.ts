@@ -125,4 +125,17 @@ describe("requiredAssetsForLessonExercise — zdanie feedbacku (feedback_audio)"
     const after = requiredAssetsForLessonExercise({ ...gap, answer: "kicks" }, defaultMediaSettings, on)[0]!.fingerprint;
     expect(after).not.toBe(before);
   });
+
+  it("lesson_choice składa zdanie z tekstu poprawnej opcji, lesson_order z klocków w kolejności", () => {
+    const choice = requiredAssetsForLessonExercise({
+      exerciseType: "lesson_choice", stem: "She ___ football.", answerLocale: "en-GB",
+      options: [{ id: "a", text: "play" }, { id: "b", text: "plays" }], correctOption: "b",
+    }, defaultMediaSettings, on);
+    expect(choice[0]!.metadata).toMatchObject({ text: "She plays football." });
+    const order = requiredAssetsForLessonExercise({
+      exerciseType: "lesson_order", answerLocale: "en-GB",
+      items: [{ id: "1", text: "She" }, { id: "2", text: "plays" }, { id: "3", text: "football." }],
+    }, defaultMediaSettings, on);
+    expect(order[0]!.metadata).toMatchObject({ text: "She plays football.", locale: "en-GB" });
+  });
 });
