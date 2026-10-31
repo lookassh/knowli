@@ -172,7 +172,7 @@
   --visual-choice-gap: 12px;
   /* Width and actual material height constrain the same square. A readable
      minimum wins over squeezing; the frame supplies scrolling when needed. */
-  --visual-choice-size: min(260px, calc((100cqw - var(--visual-choice-gap)) / 2), max(var(--kid-visual-choice-min-size), calc((100cqh - (var(--visual-choice-rows) - 1) * var(--visual-choice-gap)) / var(--visual-choice-rows))));
+  --visual-choice-size: min(var(--kid-visual-choice-max-size), calc((100cqw - var(--visual-choice-gap)) / 2), max(var(--kid-visual-choice-min-size), calc((100cqh - (var(--visual-choice-rows) - 1) * var(--visual-choice-gap)) / var(--visual-choice-rows))));
   width: max-content;
   max-width: 100%;
   flex: none;

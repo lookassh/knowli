@@ -173,7 +173,10 @@ test("deck cards and rows fit portrait, landscape, tablet and desktop", async ({
         }
       }
     }
-    // Karta rekomendowana nie dzieli się na kolumny: kolumna ekranu jest ograniczona do 560 px.
+    // Kolumna ekranu to --kid-column-max-width: 560 px, od 840 × 480 px 720 px (1440 × 900 nie jest skalowane). Lista kart jest
+    // jednokolumnowa niezależnie od szerokości, więc karty rekomendowane stoją jedna pod drugą w tej samej kolumnie.
+    const columnCap = viewport.width >= 840 && viewport.height >= 480 ? 720 : 560;
+    expect(Math.abs(layout.root.width - Math.min(columnCap, viewport.width)), `screen column is the token width: ${name}`).toBeLessThanOrEqual(1);
     expect(layout.cards[0]!.top, `recommended cards stack: ${name}`).toBeLessThan(layout.cards[1]!.top);
     expect(Math.abs(layout.cards[0]!.left - layout.cards[1]!.left), `recommended cards share a column: ${name}`).toBeLessThanOrEqual(1);
     if (viewport.width === 360 || viewport.width === 844) {

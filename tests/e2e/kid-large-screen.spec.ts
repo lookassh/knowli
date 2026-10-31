@@ -4,7 +4,7 @@ import { completedRecallFixture, makeDeck, openDeckScreen, sessionId } from "./h
 import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
-import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
+import { installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 // Large windows zoom the whole Kid UI by min(width / 840, height / 900), capped at 1.6 and rounded
@@ -20,8 +20,15 @@ const SESSION_WINDOWS = [
 
 const ULTRAWIDE = { width: 3440, height: 1440 };
 
-async function openPictureChoice(page: Page) {
-  await installKidUiFixture(page, pictureChoiceLayoutFixture());
+// --kid-column-max-width and --kid-visual-choice-max-size from expanded width on (spec §3.1): 720 / 300 px in inner pixels.
+const COLUMN_MAX = 720;
+const VISUAL_CHOICE_MAX = 300;
+
+async function openPictureChoice(page: Page, fixture: KidUiFixture = pictureChoiceLayoutFixture()) {
+  await installKidUiFixture(page, fixture);
+  // Without the instruction audio the session shows an "audio unavailable" notice that takes ~87 px of the material.
+  await page.route("**/api/v1/media/10000000-0000-4000-8000-000000000012", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWavBuffer() }));
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
@@ -152,11 +159,140 @@ test("end-session sheet", async ({ page }) => {
   expect(Math.abs(layout.scrim.top), "scrim top").toBeLessThanOrEqual(1);
   expect(Math.abs(layout.scrim.width - ULTRAWIDE.width), "scrim width").toBeLessThanOrEqual(1);
   expect(Math.abs(layout.scrim.height - ULTRAWIDE.height), "scrim height").toBeLessThanOrEqual(1);
-  // The sheet keeps its 560 px column cap in inner pixels, i.e. 560 x 1.6 on screen.
-  expect(layout.sheet.width, "sheet width").toBeLessThanOrEqual(560 * 1.6 + 1);
+  // The sheet takes the 720 px column token (inner pixels), i.e. 720 x 1.6 on screen.
+  expect(layout.sheet.width, "sheet width").toBeLessThanOrEqual(COLUMN_MAX * 1.6 + 1);
+  expect(layout.sheet.width, "sheet is a full column").toBeGreaterThanOrEqual(COLUMN_MAX * 1.6 - 1);
   expect(Math.abs((layout.sheet.left + layout.sheet.right) / 2 - ULTRAWIDE.width / 2), "sheet centred").toBeLessThanOrEqual(1);
   expect(layout.scrollWidth, "horizontal overflow").toBeLessThanOrEqual(layout.innerWidth);
 });
+
+/** Waits for the column (a screen rectangle) to have the expected width and sit in the middle of the window (± 1 px). */
+async function expectColumn(page: Page, selector: string, name: string, expectedWidth: number) {
+  await expect.poll(async () => {
+    const { column, innerWidth } = await measure(page, { column: selector });
+    const centred = Math.abs((column.left + column.right) / 2 - innerWidth / 2) <= 1;
+    return Math.abs(column.width - expectedWidth) <= 1 && centred ? "ok" : JSON.stringify({ column, innerWidth, expectedWidth });
+  }, { message: `column ${selector} at ${name} is ${expectedWidth}px wide and centred` }).toBe("ok");
+}
+
+// The column is 560 px below expanded width or on a low window (a phone in landscape, a tablet in portrait),
+// 720 px from 840 x 480 on; on a narrow phone it is the whole window.
+const COLUMN_CONTROL_WINDOWS = [
+  { width: 844, height: 390, column: 560 },
+  { width: 768, height: 1024, column: 560 },
+] as const;
+
+for (const [name, selector, open] of [
+  ["session", ".kid-learning", (page: Page) => openWrittenRecall(page)],
+  ["flow screen", "[data-kid-screen='true']", (page: Page) => openDeckScreen(page, [makeDeck(0)])],
+] as const) {
+  test(`${name} column width follows the token`, async ({ page }) => {
+    await page.setViewportSize(SESSION_WINDOWS[0]);
+    await open(page);
+    for (const { width, height, scale } of SESSION_WINDOWS) {
+      await resizeAndSettle(page, { width, height });
+      await waitForKidScale(page, scale);
+      await expectColumn(page, selector, `${width}x${height}`, COLUMN_MAX * scale);
+    }
+    for (const { width, height, column } of COLUMN_CONTROL_WINDOWS) {
+      await resizeAndSettle(page, { width, height });
+      await waitForKidScale(page, 1);
+      await expectColumn(page, selector, `${width}x${height}`, column);
+    }
+    await resizeAndSettle(page, { width: 390, height: 750 });
+    await waitForKidScale(page, 1);
+    const phone = await measure(page, { column: selector });
+    // The whole window width: the 16 px margins are padding inside the column.
+    expect(phone.column.width, "phone column fills the window").toBeGreaterThanOrEqual(390 - 1);
+    expect(phone.column.width, "phone column stays in the window").toBeLessThanOrEqual(390 + 1);
+  });
+}
+
+test.describe("touch tablet in landscape", () => {
+  // A touch tablet never scales (no fine pointer) but is wide enough for the 720 px column.
+  test.use({ viewport: { width: 1366, height: 1024 }, isMobile: true, hasTouch: true });
+
+  test("session column is 720 px at scale 1", async ({ page }) => {
+    await openWrittenRecall(page);
+    await waitForKidScale(page, 1);
+    await expectColumn(page, ".kid-learning", "1366x1024 touch", COLUMN_MAX);
+  });
+
+  test("flow screen column is 720 px at scale 1", async ({ page }) => {
+    await openDeckScreen(page, [makeDeck(0)]);
+    await waitForKidScale(page, 1);
+    await expectColumn(page, "[data-kid-screen='true']", "1366x1024 touch", COLUMN_MAX);
+  });
+});
+
+/** Four colour tiles: no image assets, so the tile size is the only thing under test. */
+function fourPictureTilesFixture(): KidUiFixture {
+  const fixture = pictureChoiceLayoutFixture();
+  const listening = fixture.tasks[1];
+  if (!listening || listening.prompt.kind !== "picture_listening") throw new Error("picture listening fixture missing");
+  const colors = ["#ffff00", "#ff00ff", "#00ffff", "#ff8800"];
+  fixture.tasks = [fixture.tasks[0]!, {
+    ...listening,
+    prompt: { ...listening.prompt, options: colors.map((color, index) => ({
+      id: `10000000-0000-4000-8000-${String(90 + index).padStart(12, "0")}`,
+      labelPl: `Kolor ${index + 1}`,
+      visual: { kind: "color" as const, color },
+    })) },
+  }, fixture.tasks[2]!];
+  return fixture;
+}
+
+/** Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are). */
+async function pictureTiles(page: Page) {
+  return page.evaluate(() => {
+    const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
+      const { left, top, width, height } = element.getBoundingClientRect();
+      return { left, top, width, height };
+    });
+    // 100cqw / 100cqh come from the nearest size container above the tile grid.
+    let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
+    while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
+    return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
+  });
+}
+
+for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 }, { width: 3440, height: 1440, scale: 1.6 }]) {
+  test(`picture tiles use the new cap and keep their size after the verdict at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openPictureChoice(page, fourPictureTilesFixture());
+    await waitForKidScale(page, scale);
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    // Let the grid settle (fonts, first layout pass) before reading the tile size.
+    await page.evaluate(async () => { await document.fonts.ready; });
+
+    const before = await pictureTiles(page);
+    // --visual-choice-size: the cap, half the material width, or the material height shared by two rows (never below 112).
+    const gap = 12;
+    const limit = Math.min(VISUAL_CHOICE_MAX, (before.container.width - gap) / 2, Math.max(112, (before.container.height - gap) / 2));
+    if (width === ULTRAWIDE.width) {
+      // The material is tall and wide enough here, so only the cap can decide: 300 x 1.6 = 480, not 260 x 1.6 = 416.
+      expect(limit, `material allows the full cap: ${JSON.stringify(before.container)}`).toBe(VISUAL_CHOICE_MAX);
+    }
+    for (const [index, tile] of before.tiles.entries()) {
+      expect(Math.abs(tile.width - limit * scale), `tile ${index} width: ${JSON.stringify({ tile, limit, scale })}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(tile.height - limit * scale), `tile ${index} height: ${JSON.stringify({ tile, limit, scale })}`).toBeLessThanOrEqual(2);
+    }
+
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    await expect(page.getByTestId("kid-next")).toBeVisible();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+    const after = await pictureTiles(page);
+    expect(after.tiles).toHaveLength(before.tiles.length);
+    for (const [index, tile] of after.tiles.entries()) {
+      const was = before.tiles[index]!;
+      for (const key of ["left", "top", "width", "height"] as const) {
+        expect(Math.abs(tile[key] - was[key]), `tile ${index} ${key} after the verdict: ${JSON.stringify({ was, tile })}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
 
 // JS measurements under zoom (spec §4.4): rectangles are screen pixels, offset/scroll lengths and position: fixed
 // lengths are inner pixels. The checks below compare screen rectangles only, at scale 1.6.

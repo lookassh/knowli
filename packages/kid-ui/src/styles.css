@@ -147,6 +147,12 @@
   --kid-warm-text: var(--kid-color-warm);
   --kid-warm-line: var(--kid-color-warm);
   --kid-visual-choice-min-size: 112px;
+  /* Widths of the session and flow-screen column and the largest picture tile,
+     in inner pixels (KidPage's zoom multiplies them on a large window). From
+     expanded width on (the media query below) they grow to 720px and 300px; the
+     height condition leaves a phone in landscape as it was. */
+  --kid-column-max-width: 560px;
+  --kid-visual-choice-max-size: 260px;
   /* Window units. KidPage scales a large window with CSS zoom (inline
      --kid-zoom), and zoom multiplies vh/dvh/svh/vw by the scale, so every
      window-relative length is written calc(N * var(--kid-dvh)) etc. Each token
@@ -158,6 +164,15 @@
   --kid-dvh: calc(1dvh / var(--kid-zoom, 1));
   --kid-svh: calc(1svh / var(--kid-zoom, 1));
   --kid-vw: calc(1vw / var(--kid-zoom, 1));
+}
+
+@media (min-width: 840px) and (min-height: 480px) {
+  :root:has(.kid-ui),
+  .kid-theme,
+  .kid-ui {
+    --kid-column-max-width: 720px;
+    --kid-visual-choice-max-size: 300px;
+  }
 }
 
 /* Scrollbars in theme colours instead of the system ones: a thin outline
@@ -219,7 +234,7 @@
 .kid-learning {
   box-sizing: border-box;
   width: 100%;
-  max-width: 560px;
+  max-width: var(--kid-column-max-width);
   height: 100%;
   min-height: 0;
   margin-inline: auto;
@@ -2266,14 +2281,17 @@
   justify-content: center;
 }
 
+/* Running text of a card: a line stays near 60 characters in the 720px column. */
 .kid-lesson-card__body {
   margin: 0;
+  max-inline-size: 60ch;
   font-size: var(--kid-type-title-md-size);
   line-height: 1.5;
 }
 
 .kid-lesson-card__examples {
   margin: 0;
+  max-inline-size: 60ch;
   padding-inline-start: 1.1em;
   display: flex;
   flex-direction: column;
@@ -2594,7 +2612,8 @@
 
 /* „Uzupełnij tekst” (design szkoły §13.5): luka w tekście to znacznik z numerem
    (nie przycisk), miejsca luk i bank pod tekstem w jednej kolumnie — kontener
-   materiału ma ok. 530 px także na desktopie, a bank ma stać tuż pod miejscami. */
+   materiału ma ok. 530 px na telefonie i do ok. 690 px od szerokości expanded
+   (kolumna 720 px bez marginesów), a bank ma stać tuż pod miejscami. */
 .kid-lesson-cloze {
   width: 100%;
   display: grid;

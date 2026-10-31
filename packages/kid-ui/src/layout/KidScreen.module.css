@@ -1,6 +1,6 @@
 .root {
   box-sizing: border-box;
-  width: min(100%, 560px);
+  width: min(100%, var(--kid-column-max-width));
   min-height: calc(100 * var(--kid-dvh));
   min-width: 0;
   margin-inline: auto;
