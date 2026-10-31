@@ -98,7 +98,7 @@ Bez zmian zasad: Motion (`m.*`, `LazyMotion` + `domAnimation`), wyłącznie `tra
 Rozstrzygnięcia podjęte podczas wykonania planu; zastępują odpowiednie fragmenty §4–§6.
 
 - Sukces (tertiary) używa tonów 70/20/30/90 zamiast standardowego T80 — w ciemnym M3 primary i tertiary mają tę samą jasność (kontrast 1,00), a §4.1 wymaga różnicy jasności. Zapisane w `scripts/kid-palette.mjs` (`TERTIARY_TONES`) i w komentarzu bloku tokenów.
-- Pas nagłówka obejmuje kolumnę `KidScreen` (maks. 560 px), nie cały viewport na tablecie i desktopie. Z tego samego powodu ekran zestawów ma zawsze jedną kolumnę kart, a siatka profili ma 2 kolumny (compact) i 3 od 600 px.
+- Pas nagłówka obejmuje kolumnę `KidScreen` (maks. 560 px — zastąpione przez `2026-10-30-kid-ui-large-screens-design.md`: od szerokości expanded kolumna ma maks. 720 px, a duże okno z myszą jest dodatkowo powiększane), nie cały viewport na tablecie i desktopie. Z tego samego powodu ekran zestawów ma zawsze jedną kolumnę kart, a siatka profili ma 2 kolumny (compact) i 3 od 600 px.
 - Kafelki profili, jako kontrolki interaktywne, mają granicę `outline`, nie `outline-variant`.
 - Zestaw z aktywną sesją (`resumeOnly` + `activeSession`) jest pełną kartą na początku sekcji kart z główną akcją „Wznów naukę” i drugorzędnym „Zakończ sesję”, niezależnie od `recommended` z serwera. Sekcja kart pojawia się także wtedy, gdy nic innego nie jest rekomendowane.
 - Cele lekcji w podsumowaniu mają neutralną ikonę bez zieleni sukcesu — to ćwiczone reguły, nie zaliczone.
