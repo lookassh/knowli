@@ -121,7 +121,7 @@ describe("phraseInMaterial — długi tekst ze skrótami", () => {
     expect(ambiguous).toBeGreaterThan(300);
   });
 
-  it("każde wystąpienie skrótu jest dopasowywalne, 100 sprawdzeń w < 200 ms", () => {
+  it("każde wystąpienie skrótu jest dopasowywalne, 100 sprawdzeń bez regresji wykładniczej (< 2 s)", () => {
     const hits = [
       "it has finished", "it is finished", "she had eaten", "she would eaten", "purple umbrella", "umbrella cake",
       "a purple umbrella-cake", "he has gone", "he is gone", "they had hidden", "they would hidden", "a yellow kite",
@@ -148,7 +148,7 @@ describe("phraseInMaterial — najgorszy przypadek (przegląd Etapu 4)", () => {
   // rekurencja z każdego początku w każdym z 32 wariantów trwała ~30 s dla 300 elementów.
   const run = (count: number) => Array.from({ length: count }, () => "it's").join(" ");
 
-  it("16 000 znaków „it's” i 300 złośliwych elementów: < 1 s łącznie, wszystkie odrzucone", () => {
+  it("16 000 znaków „it's” i 300 złośliwych elementów: bez regresji wykładniczej (< 5 s), wszystkie odrzucone", () => {
     const material = "it's ".repeat(3_200).trim();
     // ≤ 120 znaków jak cel z modelu; 300 = trzykrotny limit zestawu (koperta trybu ze źródła)
     const adversarial = Array.from({ length: 300 }, (_, i) => {
@@ -171,7 +171,7 @@ describe("phraseInMaterial — najgorszy przypadek (przegląd Etapu 4)", () => {
     expect(elapsed).toBeLessThan(5_000);
   });
 
-  it("odcinki po 20 „it's”: każde słowo i każda para w tekście, 100 elementów (połowa trafień) < 1 s", () => {
+  it("odcinki po 20 „it's”: każde słowo i każda para w tekście, 100 elementów (połowa trafień) bez regresji wykładniczej (< 5 s)", () => {
     // Elementy dłuższe od odcinka przechodzą oba szybkie odrzucenia i giną dopiero w grafie.
     const material = Array.from({ length: 160 }, () => `${run(20)} coat.`).join(" ");
     const targets = Array.from({ length: 100 }, (_, i) => (i % 2 === 0 ? run(18 + (i % 3)) : run(21 + (i % 3))));
