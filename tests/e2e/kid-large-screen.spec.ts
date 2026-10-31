@@ -7,6 +7,13 @@ import { lessonAudioFixture } from "./helpers/lesson-audio";
 import { installKidUiFixture, silentWavBuffer, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
+// The screenshot tests at the end attach PNGs as test attachments (body, not a file path). The list and github
+// reporters do not save body attachments; to get the PNGs run
+// `corepack pnpm exec playwright test tests/e2e/kid-large-screen.spec.ts --reporter=html` (or `--reporter=json`).
+
+// A stuck click or navigation fails fast instead of waiting for the whole test timeout.
+test.use({ actionTimeout: 15_000, navigationTimeout: 30_000 });
+
 // Large windows zoom the whole Kid UI by min(width / 840, height / 900), capped at 1.6 and rounded
 // down to 0.01 (spec 2026-10-30-kid-ui-large-screens §3.4). Expected scales are written out on purpose.
 const SESSION_WINDOWS = [
@@ -124,16 +131,29 @@ test("short flow screens do not scroll", async ({ page }) => {
   await expectFlowFitsWindow("summary");
 });
 
-test("answer text scales", async ({ page }) => {
-  await page.setViewportSize(ULTRAWIDE);
-  await openWrittenRecall(page);
-  await waitForKidScale(page, 1.6);
-  // A rectangle is in screen pixels and offsetHeight in inner pixels: their ratio is the zoom.
-  const ratio = await page.getByTestId("kid-input").evaluate((element: HTMLElement) =>
-    element.getBoundingClientRect().height / element.offsetHeight);
-  expect(ratio).toBeGreaterThanOrEqual(1.59);
-  expect(ratio).toBeLessThanOrEqual(1.61);
-});
+// Spec §1: on a 34" monitor (maximised window and full screen) the typed answer is about 34–39 px on screen.
+const ANSWER_TEXT_SCREEN_PX = { min: 34, max: 39 };
+
+for (const { width, height, scale } of SESSION_WINDOWS.filter(({ width }) => width === ULTRAWIDE.width)) {
+  test(`answer text scales at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openWrittenRecall(page);
+    await page.getByTestId("kid-input").fill("cat");
+    await waitForKidScale(page, scale);
+    const text = await page.getByTestId("kid-input").evaluate((element: HTMLElement) => ({
+      // A rectangle is in screen pixels and offsetHeight in inner pixels: their ratio is the zoom applied to the field.
+      ratio: element.getBoundingClientRect().height / element.offsetHeight,
+      // The computed font size is an inner length; the zoom of the field multiplies it on screen.
+      fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      zoom: element.currentCSSZoom,
+    }));
+    const details = JSON.stringify(text);
+    expect(Math.abs(text.ratio - scale), `the field is drawn at the scale: ${details}`).toBeLessThanOrEqual(0.01);
+    const screenSize = text.fontSize * text.zoom;
+    expect(screenSize, `answer text on screen: ${details}`).toBeGreaterThanOrEqual(ANSWER_TEXT_SCREEN_PX.min);
+    expect(screenSize, `answer text on screen: ${details}`).toBeLessThanOrEqual(ANSWER_TEXT_SCREEN_PX.max);
+  });
+}
 
 test("targets stay large", async ({ page }) => {
   await page.setViewportSize(ULTRAWIDE);
@@ -515,7 +535,7 @@ async function settledDockReserve(page: Page) {
       if (JSON.stringify(next) === JSON.stringify(previous)) return next;
       previous = next;
     }
-    return previous;
+    throw new Error(`the dock reserve did not settle in 60 frames: ${JSON.stringify(previous)}`);
   });
 }
 
@@ -752,7 +772,8 @@ async function waitForSettledPicture(page: Page) {
     for (let attempt = 0; attempt < 300 && stableFrames < 10; attempt += 1) {
       await frame();
       const next = opacities();
-      // Endless animations (if any) never finish, so only finite ones count.
+      // Endless CSS/WAAPI animations (if any) never finish, so only finite ones count here. This exemption covers
+      // getAnimations() only: an endless JS-driven opacity loop would still change the opacities and hit the throw below.
       const running = document.getAnimations().some((animation) =>
         animation.playState === "running" && animation.effect?.getComputedTiming().iterations !== Infinity);
       stableFrames = next === previous && !running ? stableFrames + 1 : 0;
@@ -763,6 +784,9 @@ async function waitForSettledPicture(page: Page) {
 }
 
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
+  // The click that opened the screen leaves the pointer over a control (e.g. "Dalej" in the written answer), which
+  // would show its hover state; move it to the empty corner first.
+  await page.mouse.move(0, 0);
   await waitForSettledPicture(page);
   await testInfo.attach(name, { body: await page.screenshot(), contentType: "image/png" });
 }

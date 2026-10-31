@@ -191,6 +191,8 @@ test("exposure keeps the complete word card above its action without scrolling o
   // text instead of squeezing the word out between two 64px side columns.
   for (const viewport of [{ width: 200, height: 640 }, { width: 160, height: 640 }]) {
     await page.setViewportSize(viewport);
+    // The loop above ends at a scaled window (1440x960, 1.06): measure only once the zoom is gone.
+    await waitForKidScale(page, 1);
     const material = await page.getByTestId("kid-material").boundingBox();
     for (const [textId, playId] of [["kid-target", "kid-play"], ["kid-example", "kid-play-example"]] as const) {
       const text = page.getByTestId(textId);
