@@ -601,9 +601,15 @@ test("the reserve lengthens an already scrolling material", async ({ page }) => 
 const SECOND_ATTEMPT_ID = "10000000-0000-4000-8000-000000000011";
 
 // Review focus 1 (plan 2026-10-31): after "Spróbuj jeszcze raz" the leaving panel never takes the action's click, the
-// reserve drops to 0, and the next wrong verdict gets its reserve again.
+// reserve drops to 0, and the next wrong verdict gets its reserve again without covering the answer in any frame.
+// At 3440x1440 the short wrong verdict covers the form (compact frame), so the reserve there is > 0.
+const RETRY_CASES = [
+  { viewport: ULTRAWIDE, scale: ULTRAWIDE_SCALE, coversForm: true },
+  { viewport: LAPTOP, scale: 1, coversForm: false },
+];
+
 test("retry hands the footer back to the answer at once", async ({ page }) => {
-  for (const { viewport, scale } of [{ viewport: ULTRAWIDE, scale: ULTRAWIDE_SCALE }, { viewport: LAPTOP, scale: 1 }]) {
+  for (const { viewport, scale, coversForm } of RETRY_CASES) {
     const label = `${viewport.width}x${viewport.height}`;
     const fixture = completedRecallFixture({ feedback: { kind: "incorrect", correctText: "cat" } });
     const wrong = { ...fixture.attempts[0]!, taskState: "issued" as const };
@@ -618,20 +624,30 @@ test("retry hands the footer back to the answer at once", async ({ page }) => {
     await expect(dock).toBeVisible();
     const first = await settledDockReserve(page);
 
-    await dock.getByTestId("kid-next").click();
-    // The retry clears the field, and the action stays disabled until there is an answer again.
-    await page.getByTestId("kid-input").fill("dog");
-    const hit = await page.evaluate(() => {
-      const action = document.querySelector<HTMLElement>("[data-testid='kid-submit']")!;
+    // The retry and the hit test run in one evaluate, a frame apart, so the check lands well inside the 140 ms exit
+    // animation however slow the test runner is. The retry clears the field and disables the action until there is an
+    // answer again; a disabled button is still the element at its own point, so the hit test needs no typing.
+    const hit = await page.evaluate(async () => {
+      const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+      document.querySelector<HTMLElement>("[data-testid='kid-feedback-dock'] [data-testid='kid-next']")!.click();
+      let action: HTMLElement | null = null;
+      for (let frames = 0; frames < 5 && action === null; frames += 1) {
+        await frame();
+        action = document.querySelector<HTMLElement>("[data-testid='kid-submit']");
+      }
+      if (action === null) return { action: false, leaving: false, onAction: false, target: null };
       const { left, top, width, height } = action.getBoundingClientRect();
       const target = document.elementFromPoint(left + width / 2, top + height / 2);
       return {
-        leaving: document.querySelector(".kid-feedback-overlay") !== null,
+        action: true,
+        // The panel still on the page is the leaving one, popped out of the layout by AnimatePresence.
+        leaving: document.querySelector(".kid-feedback-overlay")?.closest("[data-motion-pop-id]") != null,
         onAction: target !== null && action.contains(target),
         target: target === null ? null : `${target.tagName.toLowerCase()}.${target.className}`,
       };
     });
-    expect(hit.leaving, `the panel is still animating out: ${label}`).toBe(true);
+    expect(hit.action, `the answer action is back after the retry: ${label}`).toBe(true);
+    expect(hit.leaving, `the panel is still animating out: ${label}: ${JSON.stringify(hit)}`).toBe(true);
     expect(hit.onAction, `the action, not the leaving panel, takes the click: ${label}: ${JSON.stringify(hit)}`).toBe(true);
 
     await expect(page.locator(".kid-feedback-overlay")).toHaveCount(0);
@@ -639,15 +655,18 @@ test("retry hands the footer back to the answer at once", async ({ page }) => {
       Number.parseFloat(element.style.paddingBottom) || 0);
     expect(reserve, `no reserve once the panel is gone: ${label}`).toBe(0);
 
+    await page.getByTestId("kid-input").fill("dog");
+    await installDockOverlapProbe(page);
     await page.getByTestId("kid-submit").click();
     await expect(dock).toBeVisible();
     const again = await settledDockReserve(page);
     const details = `${label}: ${JSON.stringify({ first, again })}`;
-    // The same panel over the same answer gets the same reserve again (at 3440x1440 it covers the form, so it is > 0).
+    // The same panel over the same answer gets the same reserve again.
     expect(again.inlineReserve, `the second wrong verdict gets the reserve again: ${details}`).toBe(first.inlineReserve);
-    if (viewport === ULTRAWIDE) expect(first.inlineReserve, `the panel covers the form: ${details}`).toBeGreaterThan(0);
+    if (coversForm) expect(again.inlineReserve, `the panel covers the form, so the reserve is engaged: ${details}`).toBeGreaterThan(0);
     expect(again.contentBottom, `the second wrong verdict keeps the answer above the panel: ${details}`)
       .toBeLessThanOrEqual(again.dockTop + 1);
+    await expectPanelNeverCovers(page, `${label} second wrong verdict`);
   }
 });
 
