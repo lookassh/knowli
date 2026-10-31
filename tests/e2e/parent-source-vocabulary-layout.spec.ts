@@ -5,10 +5,11 @@ import { messages } from "@learning/contracts";
  * Zestaw słówek ze źródła w panelu rodzica (Etap 4, design 2026-10-30 §6.2):
  * przycisk na stronie źródła, formularz (podgląd tekstu tylko do odczytu,
  * nazwa, rodzaj, najwięcej słówek, zawężenie), polecenie z rewizją podglądu,
- * konflikt 409 z odświeżeniem podglądu, niepewny zapis, źródło usunięte oraz
- * edytor zestawu z notką źródła, liczbą pominiętych pozycji i porażką
- * `no_source_items`. API rodzica zaślepione w przeglądarce (stan w pamięci
- * testu), teksty fikcyjne.
+ * konflikt 409 z odświeżeniem podglądu, niepewny zapis (także utracona
+ * odpowiedź po zapisie zestawu), źródło usunięte oraz edytor zestawu z notką
+ * źródła, liczbą pominiętych pozycji i porażką `no_source_items` z linkiem do
+ * źródła. API rodzica zaślepione w przeglądarce (stan w pamięci testu), teksty
+ * fikcyjne.
  */
 
 const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
@@ -46,6 +47,11 @@ interface Api {
   generates: Array<Record<string, unknown>>;
   /** Tyle najbliższych POST /decks/generate kończy się błędem 500 (wynik niepewny, bez zapisu). */
   generateFailures: number;
+  /**
+   * Utracone odpowiedzi najbliższych POST /decks/generate: zestaw zostaje zapisany (jak na
+   * serwerze), ale klient dostaje 500 albo zerwane połączenie — wynik niepewny.
+   */
+  lostResponses: Array<"500" | "abort">;
   /** Status odczytu strony źródła (200 — zwykła odpowiedź; inny — błąd). */
   getStatus: number;
 }
@@ -67,7 +73,10 @@ function sourceDto(source: StoredSource) {
   };
 }
 
-/** Widok zestawu słówek: szkic z dwoma słowami z tekstu źródła albo (porażka) bez szkicu. */
+/**
+ * Widok zestawu słówek: szkic z dwoma słowami z tekstu źródła albo — jak na serwerze, który
+ * zakłada szkic przy przyjęciu polecenia — po porażce runu pusty szkic tej samej wersji.
+ */
 function deckDto(deck: StoredDeck, source: StoredSource | null) {
   const draftId = deck.id.replace(/^2/, "3");
   const failed = deck.generation.state === "failed";
@@ -80,16 +89,16 @@ function deckDto(deck: StoredDeck, source: StoredSource | null) {
   }));
   return {
     id: deck.id, title: deck.title, state: "draft", coverAssetId: null, sessionTaskBudget: 20,
-    draft: failed ? null : { id: draftId, deckId: deck.id, editNumber: 1, status: "draft", vocabularyFormat: "standard", title: deck.title, items, assets: [] },
+    draft: { id: draftId, deckId: deck.id, editNumber: 1, status: "draft", vocabularyFormat: "standard", title: deck.title, items: failed ? [] : items, assets: [] },
     published: null,
-    generation: { id: RUN_ID, deckId: deck.id, deckVersionId: failed ? null : draftId, attempts: 1, ...deck.generation },
+    generation: { id: RUN_ID, deckId: deck.id, deckVersionId: draftId, attempts: 1, ...deck.generation },
     assignments: [],
     ...(source ? { source: { id: source.id, title: source.title, copiedRevision: deck.copiedRevision, currentRevision: source.bodyRevision } } : {}),
   };
 }
 
 async function mockApi(page: Page): Promise<Api> {
-  const api: Api = { source: storedSource(), decks: new Map(), generates: [], generateFailures: 0, getStatus: 200 };
+  const api: Api = { source: storedSource(), decks: new Map(), generates: [], generateFailures: 0, lostResponses: [], getStatus: 200 };
   await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const method = request.method();
@@ -129,6 +138,9 @@ async function mockApi(page: Page): Promise<Api> {
       const title = typeof body.title === "string" ? body.title : source.title;
       api.decks.set(id, { id, title, idempotencyKey: String(body.idempotencyKey), copiedRevision: source.bodyRevision, generation: { state: "succeeded", errorCode: null, rejectedCount: 2 } });
       source.decks.push({ deckId: id, title, kind: "vocabulary", state: "draft", copiedRevision: source.bodyRevision, stale: false });
+      const lost = api.lostResponses.shift();
+      if (lost === "abort") return route.abort("connectionreset");
+      if (lost === "500") return route.fulfill({ status: 500, json: { ...envelope("internal", "Błąd serwera."), retryable: true } });
       return route.fulfill({ status: 202, json: { generationRunId: RUN_ID, deckId: id } });
     }
     const deckMatch = /^\/decks\/([0-9a-f-]{36})$/.exec(path);
@@ -201,7 +213,15 @@ for (const viewport of VIEWPORTS) {
       await expectNoHorizontalOverflow(page);
       await expectTargets(page, FORM_TARGETS, viewport.width);
 
+      // liczba spoza 1–100: błąd przy polu (aria-invalid), „Utwórz zestaw” wyłączone
+      await page.getByTestId("new-vocabulary-max-items").fill("101");
+      await expect(page.getByTestId("new-vocabulary-max-items")).toHaveAttribute("aria-invalid", "true");
+      await expect(page.getByTestId("new-vocabulary-form")).toContainText(messages.sources.vocabularyMaxItemsInvalid);
+      await expect(page.getByTestId("new-vocabulary-submit")).toBeDisabled();
+      await expectNoHorizontalOverflow(page);
       await page.getByTestId("new-vocabulary-max-items").fill("12");
+      await expect(page.getByTestId("new-vocabulary-max-items")).not.toHaveAttribute("aria-invalid", "true");
+      await expect(page.getByTestId("new-vocabulary-form")).not.toContainText(messages.sources.vocabularyMaxItemsInvalid);
       await page.getByTestId("new-vocabulary-instruction").fill("  tylko owoce  ");
       await page.getByTestId("new-vocabulary-submit").click();
 
@@ -242,6 +262,9 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("new-vocabulary-source-preview")).toHaveValue(/We like bananas\./);
       await expect(page.getByTestId("new-vocabulary-submit")).toBeEnabled();
       await expect(page.getByTestId("new-vocabulary-submit")).toHaveText(messages.sources.createVocabularySubmit);
+      // fokus na odświeżonym tekście do sprawdzenia; komunikat informacyjny, nie błąd
+      await expect(page.getByTestId("new-vocabulary-source-preview")).toBeFocused();
+      await expect(page.getByTestId("new-vocabulary-error")).toHaveAttribute("data-tone", "notice");
       await expect(page).toHaveURL(formUrl);
       expect(api.generates).toHaveLength(1);
       expect(api.generates[0]).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 2 });
@@ -305,6 +328,8 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("new-vocabulary-submit")).toBeDisabled();
     await expect(page.getByTestId("new-vocabulary-source-preview")).toHaveValue(BODY);
     await expect(page.getByTestId("new-vocabulary-refresh-retry")).toHaveText(messages.parentShell.retry);
+    // wyłączone „Utwórz zestaw” oddało fokus ponowieniu odczytu
+    await expect(page.getByTestId("new-vocabulary-refresh-retry")).toBeFocused();
     await expectNoHorizontalOverflow(page);
     await expectTargets(page, ["new-vocabulary-refresh-retry"], 390);
     expect(api.generates).toHaveLength(1);
@@ -332,6 +357,9 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("new-vocabulary-submit")).toHaveText(messages.sources.createVocabularySubmit);
     await expect(page.getByTestId("new-vocabulary-cancel")).toHaveText(messages.sources.backToList);
     expect(api.generates).toHaveLength(1);
+    // jeden „Zmień źródło” — przy komunikacie, z fokusem
+    await expect(page.getByTestId("new-vocabulary-source-change")).toHaveCount(0);
+    await expect(page.getByTestId("new-vocabulary-source-missing-change")).toBeFocused();
     await expectNoHorizontalOverflow(page);
     await expectTargets(page, ["new-vocabulary-source-missing-change"], 390);
     await expect(page.getByTestId("new-vocabulary-source-missing-change")).toHaveAttribute("href", "/parent/sources");
@@ -356,7 +384,41 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("new-vocabulary-form")).toHaveCount(0);
   });
 
-  test("edytor zestawu, gdy w tekście źródła nie było słówek: komunikat no_source_items i notka o zmianie źródła", async ({ page }) => {
+  for (const { lost, change } of [
+    { lost: "500", change: "tekst źródła zmieniono" },
+    { lost: "abort", change: "źródło usunięto" },
+  ] as const) {
+    test(`utracona odpowiedź (${lost}), potem ${change}: ponowienie tym samym poleceniem otwiera zapisany zestaw`, async ({ page }) => {
+      const api = await mockApi(page);
+      api.lostResponses = [lost];
+      await page.goto(`/parent/vocabulary/new?source=${SOURCE_ID}`);
+      await expect(page.getByTestId("new-vocabulary-source-preview")).toHaveValue(BODY);
+      await page.getByTestId("new-vocabulary-submit").click();
+      await expect(page.getByTestId("new-vocabulary-error")).toContainText(messages.decks.generationUncertain);
+      await expect(page.getByTestId("new-vocabulary-submit")).toHaveText(messages.decks.retryGenerationRequest);
+      // zestaw zapisano, choć odpowiedź nie dotarła
+      expect(api.decks.size).toBe(1);
+
+      // w innym oknie, zanim rodzic ponowi: źródło zmienione albo usunięte
+      api.source = lost === "500" ? { ...api.source!, body: `${BODY}\nWe like bananas.`, revision: 3, bodyRevision: 3 } : null;
+      await page.getByTestId("new-vocabulary-submit").click();
+
+      // serwer rozpoznaje klucz przed odczytem źródła — to samo polecenie zwraca zapisany zestaw
+      await expect(page).toHaveURL(/\/parent\/decks\/20000000-0000-4000-8000-000000000001$/);
+      expect(api.generates).toHaveLength(2);
+      expect(api.generates[1]).toEqual(api.generates[0]);
+      expect(api.decks.size).toBe(1);
+      await expect(page.getByTestId("editor-title")).toHaveValue("Unit 3 — Food");
+      await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+      if (lost === "500") {
+        await expect(page.getByTestId("lesson-source-changed")).toHaveText(messages.sources.sourceChanged);
+      } else {
+        await expect(page.getByTestId("lesson-source-note")).toHaveCount(0);
+      }
+    });
+  }
+
+  test("edytor zestawu, gdy w tekście źródła nie było słówek: komunikat no_source_items, link do źródła i notka o zmianie źródła", async ({ page }) => {
     const api = await mockApi(page);
     api.source = { ...api.source!, bodyRevision: 4 };
     api.decks.set(FAILED_DECK_ID, {
@@ -369,7 +431,13 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("vocabulary-rejected-count")).toHaveText(messages.decks.rejectedFromSource.replace("{n}", "6"));
     await expect(page.getByTestId("lesson-source-link")).toHaveAttribute("href", `/parent/sources/${SOURCE_ID}`);
     await expect(page.getByTestId("lesson-source-changed")).toHaveText(messages.sources.sourceChanged);
+    // ponowienie powtarza zamrożone polecenie — inne zawężenie to nowy zestaw ze strony źródła
+    await expect(page.getByTestId("generation-source-link")).toHaveText(messages.decks.goToSource);
+    await expect(page.getByTestId("generation-source-link")).toHaveAttribute("href", `/parent/sources/${SOURCE_ID}`);
     await expectNoHorizontalOverflow(page);
-    await expectTargets(page, ["lesson-source-link", "generation-retry"], 390);
+    await expectTargets(page, ["lesson-source-link", "generation-retry", "generation-source-link"], 390);
+    await page.getByTestId("generation-source-link").click();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${SOURCE_ID}$`));
+    await expect(page.getByTestId("source-create-vocabulary")).toBeVisible();
   });
 });

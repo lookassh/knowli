@@ -510,7 +510,7 @@ export default function NewLessonForm({
               <div data-testid="lesson-source" className="pp-lesson-source">
                 <Group justify="space-between" align="center" gap="xs" wrap="wrap">
                   <Text fw={600} size="sm" id="lesson-source-title" className="pp-lesson-source-title">
-                    {messages.sources.fromSource.replace("{title}", source.title)}
+                    {messages.sources.fromSource.replace("{title}", () => source.title)}
                   </Text>
                   <Anchor
                     href={changeSourceHref}

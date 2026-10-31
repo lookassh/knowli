@@ -61,11 +61,14 @@ export function initialVocabularyValues(sourceTitle: string): VocabularyFromSour
   };
 }
 
+/** „Najwięcej słówek” zgodne z kontraktem: liczba całkowita 1–100 (pusty tekst — pole wyczyszczone). */
+export function vocabularyMaxItemsValid(maxItems: number | string): boolean {
+  return typeof maxItems === "number" && Number.isInteger(maxItems) && maxItems >= 1 && maxItems <= MAX_DECK_ITEMS;
+}
+
 /** Pola zgodne z kontraktem polecenia: 1–100 słówek, nazwa do 200, zawężenie do 500 znaków (po obcięciu spacji). */
 export function canSubmitVocabulary(values: VocabularyFromSourceValues): boolean {
-  const maxItems = values.maxItems;
-  const maxItemsValid = typeof maxItems === "number" && Number.isInteger(maxItems) && maxItems >= 1 && maxItems <= MAX_DECK_ITEMS;
-  return maxItemsValid
+  return vocabularyMaxItemsValid(values.maxItems)
     && values.title.trim().length <= TITLE_MAX
     && values.instruction.trim().length <= MAX_GENERATION_INSTRUCTION_LENGTH;
 }
@@ -133,7 +136,9 @@ export function buildVocabularyCommand(values: VocabularyFromSourceValues, sourc
  * widać). Źródło usunięte w innym oknie (404) wyłącza tworzenie. Tekst zmieniony
  * w innym oknie (409 `source_changed`) odświeża podgląd; „Utwórz zestaw” wraca
  * dopiero po odczycie z rewizją treści inną niż odrzucona — nieudany odczyt
- * (także z tą samą rewizją) pokazuje komunikat z ponowieniem odczytu. Nazwa
+ * (także z tą samą rewizją) pokazuje komunikat z ponowieniem odczytu; po
+ * każdym odczycie i po 404 fokus trafia na następny krok (odświeżony podgląd,
+ * ponowienie odczytu albo „Zmień źródło”). Nazwa
  * zestawu, której rodzic nie zmienił, podąża za tytułem odświeżonego źródła.
  * Wpisane dane chroni leave guard; 401 obsługuje globalny handler.
  */
@@ -169,8 +174,12 @@ export function NewVocabularyForm({
   const [staleRevision, setStaleRevision] = useState<number | null>(null);
   const sourceRefresh: SourceRefreshState = refreshing ? "refreshing" : refreshFailed ? "failed" : "idle";
   const sourceOutdated = staleRevision !== null && source.bodyRevision === staleRevision;
-  // po „Spróbuj ponownie” fokus trafia na następny krok: ponowienie, odświeżony tekst albo „Zmień źródło”
-  const refocusAfterRetry = useRef(false);
+  // po odczycie źródła po konflikcie (z „Utwórz zestaw” albo „Spróbuj ponownie”) i po 404 przy
+  // tworzeniu fokus trafia na następny krok: ponowienie odczytu, odświeżony tekst albo „Zmień źródło”
+  const refocusAfterRefresh = useRef(false);
+  // licznik zakończonych odczytów: efekt fokusu rusza po każdym, także gdy stan się nie zmienił
+  // (szybki odczyt łączy „trwa” i „koniec” w jedno renderowanie)
+  const [refreshRound, setRefreshRound] = useState(0);
   const retryRef = useRef<HTMLButtonElement>(null);
   const previewRef = useRef<HTMLTextAreaElement>(null);
   const missingChangeRef = useRef<HTMLAnchorElement>(null);
@@ -195,10 +204,10 @@ export function NewVocabularyForm({
   }, [source.title, form]);
 
   useEffect(() => {
-    if (refreshing || !refocusAfterRetry.current) return;
-    refocusAfterRetry.current = false;
+    if (refreshing || !refocusAfterRefresh.current) return;
+    refocusAfterRefresh.current = false;
     (refreshFailed ? retryRef.current : sourceMissing ? missingChangeRef.current : previewRef.current)?.focus();
-  }, [refreshing, refreshFailed, sourceMissing]);
+  }, [refreshRound, refreshing, refreshFailed, sourceMissing]);
 
   const create = useMutation({
     mutationFn: (command: GenerationCommand) => callParent(() =>
@@ -232,6 +241,7 @@ export function NewVocabularyForm({
     }
     if (!mounted.current) return;
     setRefreshing(false);
+    setRefreshRound((round) => round + 1);
     if (outcome.status === "missing") {
       setRefreshFailed(false);
       setSourceMissing(true);
@@ -278,6 +288,8 @@ export function NewVocabularyForm({
       pending.current = null;
       if (!mounted.current) return;
       if (failure === "source-missing") {
+        // wyłączone „Utwórz zestaw” traci fokus — trafia on na „Zmień źródło” przy komunikacie
+        refocusAfterRefresh.current = true;
         setSourceMissing(true);
         setSubmitError(messages.sources.notFound);
       } else if (failure === "source-changed") {
@@ -285,6 +297,8 @@ export function NewVocabularyForm({
         const stale = command.expectedSourceRevision ?? source.bodyRevision;
         setSubmitError(messages.sources.changedBeforeCreateVocabulary);
         setStaleRevision(stale);
+        // wyłączone „Utwórz zestaw” traci fokus — po odczycie trafia on na następny krok
+        refocusAfterRefresh.current = true;
         await refreshSource(stale);
       } else if (httpStatusOf(cause) !== 401) {
         // 401: logowanie otwiera globalny handler, formularz zostaje
@@ -300,6 +314,10 @@ export function NewVocabularyForm({
   });
   // ponowienie niepewnego polecenia wysyła dokładnie to, co widać
   const fieldsLocked = creating || hasPending;
+  // błąd od razu przy polu (z `aria-invalid`): puste albo spoza 1–100 blokuje „Utwórz zestaw”
+  const maxItemsError = vocabularyMaxItemsValid(values.maxItems) ? undefined : messages.sources.vocabularyMaxItemsInvalid;
+  // „Źródło zmieniono… utwórz zestaw ponownie” to informacja o odświeżonym podglądzie, nie błąd
+  const submitNotice = submitError === messages.sources.changedBeforeCreateVocabulary;
 
   const changeSourceHref = routePath({ section: "sources" });
   const changeSource = (event: MouseEvent) => {
@@ -333,11 +351,14 @@ export function NewVocabularyForm({
             <div data-testid="new-vocabulary-source" className="pp-lesson-source">
               <Group justify="space-between" align="center" gap="xs" wrap="wrap">
                 <Text fw={600} size="sm" id="new-vocabulary-source-title" className="pp-lesson-source-title">
-                  {messages.sources.fromSource.replace("{title}", source.title)}
+                  {messages.sources.fromSource.replace("{title}", () => source.title)}
                 </Text>
-                <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="new-vocabulary-source-change" onClick={changeSource}>
-                  {messages.sources.changeSource}
-                </Anchor>
+                {/* źródło usunięte: „Zmień źródło” zostaje tylko przy komunikacie (jeden link, cel fokusu) */}
+                {!sourceMissing && (
+                  <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="new-vocabulary-source-change" onClick={changeSource}>
+                    {messages.sources.changeSource}
+                  </Anchor>
+                )}
               </Group>
               {/* tekst źródła tylko do podglądu — słowa wybieramy wyłącznie z niego */}
               <Textarea
@@ -384,6 +405,7 @@ export function NewVocabularyForm({
               clampBehavior="none"
               disabled={fieldsLocked}
               {...form.getInputProps("maxItems")}
+              error={maxItemsError}
             />
 
             <TextInput
@@ -399,7 +421,8 @@ export function NewVocabularyForm({
             />
 
             {submitError && (
-              <Alert color="red" variant="light" role="alert" data-testid="new-vocabulary-error" icon={<ParentIcon name="alert-triangle" />}>
+              <Alert color={submitNotice ? "yellow" : "red"} variant="light" role="alert" data-testid="new-vocabulary-error"
+                data-tone={submitNotice ? "notice" : "error"} icon={<ParentIcon name={submitNotice ? "info" : "alert-triangle"} />}>
                 <Stack gap={4} align="flex-start">
                   <span>{submitError}</span>
                   {/* zostaje w trakcie ponownego odczytu (stan ładowania), żeby nie gubić fokusu */}
@@ -407,7 +430,7 @@ export function NewVocabularyForm({
                     <Button ref={retryRef} size="md" variant="light" color="red" mt={4} leftSection={<ParentIcon name="refresh" />}
                       data-testid="new-vocabulary-refresh-retry" loading={refreshing}
                       onClick={() => {
-                        refocusAfterRetry.current = true;
+                        refocusAfterRefresh.current = true;
                         void refreshSource(staleRevision);
                       }}>
                       {messages.parentShell.retry}

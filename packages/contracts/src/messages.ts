@@ -155,7 +155,10 @@ export const messages = {
     // Zestaw słówek ze źródła (design 2026-10-30 §6.2): żadne słowo nie przeszło sprawdzenia z tekstem
     // źródła (run `no_source_items`) i liczba pozycji odrzuconych przy walidacji per element — spoza
     // tekstu, ale też duplikatów, ram z luką i pozycji w złym formacie (`rejectedCount`).
-    noSourceItems: "Nie znaleziono w tekście źródła słówek do zestawu. Zmień zawężenie albo spróbuj ponownie.",
+    // Ponowienie powtarza zamrożone polecenie (to samo zawężenie i rodzaj) — inne zawężenie wymaga nowego zestawu ze źródła.
+    noSourceItems: "Nie znaleziono w tekście źródła słówek do zestawu. Ponów generowanie albo utwórz nowy zestaw ze źródła z innym zawężeniem lub w rodzaju standardowym.",
+    /** Link przy porażce `no_source_items` do strony źródła zestawu (stamtąd nowy zestaw z innym zawężeniem). */
+    goToSource: "Przejdź do źródła",
     rejectedFromSource: "Pominięto pozycji spoza tekstu lub niepoprawnych: {n}",
     retryGeneration: "Ponów generowanie",
     states: {
@@ -1072,6 +1075,7 @@ export const messages = {
     newVocabularyTitle: "Nowy zestaw słówek ze źródła",
     vocabularyMaxItemsLabel: "Najwięcej słówek",
     vocabularyMaxItemsHint: "Od 1 do 100. Domyślnie 20.",
+    vocabularyMaxItemsInvalid: "Podaj liczbę od 1 do 100.",
     vocabularyInstructionLabel: "Zawężenie (opcjonalnie)",
     vocabularyInstructionPlaceholder: "np. tylko pogoda",
     vocabularyInstructionHint: "Słowa wybieramy wyłącznie z tekstu źródła.",

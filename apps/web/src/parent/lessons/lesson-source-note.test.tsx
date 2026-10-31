@@ -17,6 +17,15 @@ describe("LessonSourceNote", () => {
     expect(markup).not.toContain(messages.sources.sourceChanged);
   });
 
+  it("tytuł z `$&` i `$$` wstawiony dosłownie (nie jako wzorzec zamiany)", () => {
+    const markup = renderParentMarkup(
+      <LessonSourceNote source={{ id: SOURCE_ID, title: "Ceny $& rabaty $$ 5", copiedRevision: 2, currentRevision: 2 }} onOpen={vi.fn()} />,
+    );
+    // statyczny HTML koduje `&` jako `&amp;`
+    expect(markup).toContain("Ze źródła: Ceny $&amp; rabaty $$ 5");
+    expect(markup).not.toContain("{title}");
+  });
+
   it("gdy źródło zmieniono po utworzeniu zestawu — notka o zmianie", () => {
     const markup = renderParentMarkup(
       <LessonSourceNote source={{ id: SOURCE_ID, title: "Unit 3", copiedRevision: 1, currentRevision: 3 }} onOpen={vi.fn()} />,

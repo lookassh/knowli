@@ -30,7 +30,8 @@ export default function LessonSourceNote({ source, onOpen }: { source: DeckSourc
         }}
       >
         <ParentIcon name="file-text" />
-        {messages.sources.fromSource.replace("{title}", source.title)}
+        {/* funkcja zamiast tekstu: tytuł z `$&` czy `$$` nie jest wzorcem zamiany */}
+        {messages.sources.fromSource.replace("{title}", () => source.title)}
       </Anchor>
       {changed && (
         <Group gap={6} wrap="nowrap" align="flex-start" className="pp-editor-muted" data-testid="lesson-source-changed">

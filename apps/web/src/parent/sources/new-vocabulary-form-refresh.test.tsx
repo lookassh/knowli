@@ -126,12 +126,18 @@ describe("NewVocabularyForm — źródło zmienione w innym oknie", () => {
     expect(submit().disabled).toBe(true);
     const retry = screen.getByTestId("new-vocabulary-refresh-retry");
     expect(retry.textContent).toContain(messages.parentShell.retry);
+    // nieudany odczyt to błąd; wyłączone „Utwórz zestaw” oddaje fokus ponowieniu odczytu
+    expect(screen.getByTestId("new-vocabulary-error").getAttribute("data-tone")).toBe("error");
+    expect(document.activeElement).toBe(retry);
 
     await act(async () => { fireEvent.click(retry); });
     await waitFor(() => expect(submit().disabled).toBe(false));
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(screen.queryByTestId("new-vocabulary-refresh-retry")).toBeNull();
     expect(errorText()).toContain(messages.sources.changedBeforeCreateVocabulary);
+    // odświeżony podgląd to informacja (żółta), nie błąd — nadal ogłaszana czytnikom ekranu
+    expect(screen.getByTestId("new-vocabulary-error").getAttribute("data-tone")).toBe("notice");
+    expect(screen.getByTestId("new-vocabulary-error").getAttribute("role")).toBe("alert");
     expect(preview().value).toBe(changed.body);
     expect(submit().textContent).toContain(messages.sources.createVocabularySubmit);
 
@@ -156,8 +162,12 @@ describe("NewVocabularyForm — źródło zmienione w innym oknie", () => {
     expect(screen.getByTestId("new-vocabulary-refresh-retry")).toBeTruthy();
 
     // ponowienie znów z tą samą rewizją — nadal stary podgląd, nadal bez tworzenia
-    await act(async () => { fireEvent.click(screen.getByTestId("new-vocabulary-refresh-retry")); });
+    const retry = screen.getByTestId("new-vocabulary-refresh-retry");
+    await act(async () => { fireEvent.click(retry); });
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
+    // drugi odczyt zakończony: przycisk bez ładowania i z fokusem (dopiero potem stan ma znaczenie)
+    await waitFor(() => expect(retry.hasAttribute("data-loading")).toBe(false));
+    expect(document.activeElement).toBe(retry);
     expect(errorText()).toContain(messages.sources.refreshFailed);
     expect(submit().disabled).toBe(true);
     // Enter w polu formularza też nie wysyła polecenia ze starym podglądem
@@ -204,6 +214,8 @@ describe("NewVocabularyForm — źródło zmienione w innym oknie", () => {
     await act(async () => { fireEvent.click(submit()); });
     await waitFor(() => expect(submit().disabled).toBe(false));
     expect(titleInput().value).toBe(renamed.title);
+    // po 409 i udanym odczycie fokus trafia na odświeżony tekst (jak po „Spróbuj ponownie”)
+    expect(document.activeElement).toBe(preview());
     // nowa domyślna nazwa nie jest zmianą rodzica — wyjście nie pyta o niezapisane dane
     expect(registerEditorState).toHaveBeenLastCalledWith({ dirty: false, busy: false });
 
@@ -231,8 +243,34 @@ describe("NewVocabularyForm — źródło zmienione w innym oknie", () => {
     expect(submit().disabled).toBe(true);
     expect(screen.queryByTestId("new-vocabulary-refresh-retry")).toBeNull();
     expect(screen.getByTestId("new-vocabulary-source-missing-change")).toBeTruthy();
+    // jeden „Zmień źródło” — przy komunikacie, z fokusem; link przy tytule źródła znika
+    expect(screen.queryByTestId("new-vocabulary-source-change")).toBeNull();
+    expect(screen.getAllByText(messages.sources.changeSource)).toHaveLength(1);
+    expect(document.activeElement).toBe(screen.getByTestId("new-vocabulary-source-missing-change"));
     expect(screen.getByTestId("new-vocabulary-cancel").textContent).toContain(messages.sources.backToList);
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NewVocabularyForm — pole „Najwięcej słówek”", () => {
+  it("puste albo spoza 1–100: błąd przy polu (aria-invalid) i wyłączone „Utwórz zestaw”", async () => {
+    renderHarness(fresh());
+    const field = () => screen.getByTestId("new-vocabulary-max-items") as HTMLInputElement;
+    expect(field().getAttribute("aria-invalid")).not.toBe("true");
+    expect(screen.queryByText(messages.sources.vocabularyMaxItemsInvalid)).toBeNull();
+    expect(messages.sources.vocabularyMaxItemsInvalid).toBe("Podaj liczbę od 1 do 100.");
+
+    for (const value of ["", "0", "101"]) {
+      fireEvent.change(field(), { target: { value } });
+      await waitFor(() => expect(field().getAttribute("aria-invalid"), value).toBe("true"));
+      expect(screen.getByText(messages.sources.vocabularyMaxItemsInvalid), value).toBeTruthy();
+      expect(submit().disabled, value).toBe(true);
+    }
+
+    fireEvent.change(field(), { target: { value: "50" } });
+    await waitFor(() => expect(field().getAttribute("aria-invalid")).not.toBe("true"));
+    expect(screen.queryByText(messages.sources.vocabularyMaxItemsInvalid)).toBeNull();
+    expect(submit().disabled).toBe(false);
   });
 });
 
