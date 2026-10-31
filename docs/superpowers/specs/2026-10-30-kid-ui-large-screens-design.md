@@ -125,7 +125,7 @@ Element z `zoom: 1.5` w oknie 1200×800: `200px` → 300 px na ekranie; `100dvh`
 - wybór tekstowy i odpowiedź pisemna: odstęp odpowiedzi → akcja/panel ≤ 15% wysokości okna od 1920×1080; opcje bez przesunięcia po werdykcie;
 - brakujące litery: fraza ≥ 17 znaków w jednym wierszu przy kolumnie 720 (wiersze liczone po środkach pionowych pól i liter); kontrolnie ta sama fraza w ≥ 2 wierszach przy kolumnie 560 (768×1024); na 390×750 litery jednego słowa (≤ 9 znaków) w jednym wierszu, łamanie tylko między słowami;
 - tekst pola odpowiedzi: `rect.height / offsetHeight` ≈ skala (± 0,01);
-- poprawki JS, najpierw na czerwono (przed konwersją jednostek): przy skali 1,6 zadanie z odpowiedzią pisemną i długim feedbackiem, gdzie panel wyniku realnie nachodzi na treść — koniec treści widoczny nad panelem po rezerwie; panel mikrofonu: górna krawędź w `button.bottom + [0; 8 × skala + 2]`, lewa krawędź przy przycisku (± 2 px).
+- poprawki JS, najpierw na czerwono (przed przeliczeniem prostokątów w JS): przy skali 1,6 zadanie z odpowiedzią pisemną i długim feedbackiem, gdzie panel wyniku realnie nachodzi na treść — koniec treści widoczny nad panelem po rezerwie; panel mikrofonu: górna krawędź w `button.bottom + [0; 8 × skala + 2]`, lewa krawędź przy przycisku (± 2 px).
 
 **Istniejące testy do poprawy** (przy oknach 1392×984, 1440×960 i 1920×1080 skala wynosi teraz 1,09 / 1,06 / 1,2):
 
