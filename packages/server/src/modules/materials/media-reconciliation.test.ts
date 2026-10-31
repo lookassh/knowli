@@ -138,4 +138,34 @@ describe("requiredAssetsForLessonExercise — zdanie feedbacku (feedback_audio)"
     }, defaultMediaSettings, on);
     expect(order[0]!.metadata).toMatchObject({ text: "She plays football.", locale: "en-GB" });
   });
+
+  it("lesson_cloze składa tekst ze słów luk (jak `filledText` omówienia), bez stylu pl-PL", () => {
+    const settings = {
+      ...defaultMediaSettings,
+      tts: { ...defaultMediaSettings.tts, style: "instructions" as const, instructions: { "pl-PL": "Mów po polsku.", "en-GB": "Speak British English." } },
+    };
+    const cloze = {
+      exerciseType: "lesson_cloze", answerLocale: "en-GB", instructionPl: "Dziś jest słonecznie. Uzupełnij tekst.",
+      clozeText: "It's ___ today. I'm wearing my ___.", gapAnswers: ["sunny", "T-shirt"], extraWords: ["boots"], answer: "sunny, T-shirt",
+    };
+    const required = requiredAssetsForLessonExercise(cloze, settings, on);
+    expect(required.map((asset) => asset.role)).toEqual(["feedback_audio"]);
+    expect(required[0]!.metadata).toEqual({
+      kind: "tts", text: "It's sunny today. I'm wearing my T-shirt.", locale: "en-GB",
+      voice: required[0]!.metadata.voice, format: settings.tts.format, instructions: "Speak British English.",
+    });
+    // Inne słowo luki to inne nagranie; niekompletne luki albo uszkodzony payload — bez nagrania.
+    const other = requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["windy", "T-shirt"] }, settings, on)[0]!;
+    expect(other.fingerprint).not.toBe(required[0]!.fingerprint);
+    expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["sunny"] }, settings, on)).toEqual([]);
+    expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: ["sunny", 7] }, settings, on)).toEqual([]);
+    expect(requiredAssetsForLessonExercise({ ...cloze, gapAnswers: "sunny, T-shirt" }, settings, on)).toEqual([]);
+  });
+
+  it("lesson_choice bez luki w zdaniu nie ma zdania do przeczytania", () => {
+    expect(requiredAssetsForLessonExercise({
+      exerciseType: "lesson_choice", stem: "What's the weather like?", answerLocale: "en-GB",
+      options: [{ id: "a", text: "It's sunny." }, { id: "b", text: "It's a coat." }], correctOption: "a",
+    }, defaultMediaSettings, on)).toEqual([]);
+  });
 });

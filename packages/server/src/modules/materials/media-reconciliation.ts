@@ -170,11 +170,18 @@ function feedbackSourceOf(payload: Record<string, unknown>) {
     options: entries(payload.options),
     correctOption: optionalText(payload.correctOption),
     items: entries(payload.items),
+    clozeText: optionalText(payload.clozeText),
+    gapAnswers: optionalTexts(payload.gapAnswers),
   };
 }
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+/** Lista tekstów albo `undefined`, gdy to nie lista samych tekstów (bez częściowego odczytu). */
+function optionalTexts(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 }
 
 function questionSourceOf(payload: Record<string, unknown>) {
