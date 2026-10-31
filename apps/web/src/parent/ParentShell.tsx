@@ -17,11 +17,13 @@ import { useMediaQuery } from "@mantine/hooks";
 import { messages } from "@learning/contracts";
 import { ParentIcon, type ParentIconName } from "./ParentIcon";
 import { PARENT_SECTIONS, sectionPath, type ParentSection } from "./parent-routes";
+import { plainClick } from "./plain-click";
 import { useVirtualKeyboardOpen } from "./virtual-keyboard";
 import "./parent-shell.css";
 
 const SECTION_META: Record<ParentSection, { label: string; icon: ParentIconName; testId: string }> = {
   decks: { label: messages.decks.title, icon: "layers", testId: "tab-decks" },
+  sources: { label: messages.sources.tab, icon: "file-text", testId: "tab-sources" },
   children: { label: messages.children.title, icon: "users", testId: "tab-children" },
   progress: { label: messages.progress.title, icon: "trending-up", testId: "tab-progress" },
   "work-card": { label: messages.workCard.title, icon: "clipboard-check", testId: "tab-work-card" },
@@ -34,11 +36,6 @@ const SHORT_QUERY = "(max-height: 29.99em)";
 const SCHEME_ICON: Record<MantineColorScheme, ParentIconName> = { auto: "monitor", light: "sun", dark: "moon" };
 const HEADER_HEIGHT ={ compact: 64, regular: 116 } as const;
 const BOTTOM_NAV_HEIGHT = "calc(72px + env(safe-area-inset-bottom))";
-
-/** Zwykłe kliknięcie zostaje w panelu; Ctrl/⌘/środkowy przycisk otwiera adres jak link. */
-function plainClick(event: MouseEvent): boolean {
-  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
-}
 
 function ColorSchemeControl() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
@@ -110,7 +107,7 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, child
           ) : (
             <ParentIcon name={meta.icon} />
           )}
-          {meta.label}
+          <span className="pp-shell-label">{meta.label}</span>
         </a>
       );
     });

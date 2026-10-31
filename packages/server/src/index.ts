@@ -83,6 +83,8 @@ export {
   publishLessonDraft,
   createLessonDraftFromPublished,
   deckIdOfLessonVersion,
+  regenerateLessonPromptAudio,
+  regenerateLessonCardAudio,
 } from "./modules/materials";
 export {
   lessonObjectiveProgress,
@@ -99,6 +101,13 @@ export {
   type ReadyMediaStream,
 } from "./modules/materials";
 export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./modules/materials";
+export {
+  createSourceMaterial,
+  updateSourceMaterial,
+  deleteSourceMaterial,
+  listSourceMaterials,
+  getSourceMaterial,
+} from "./modules/materials";
 export {
   buildPayload,
   payloadToItem,

@@ -1,8 +1,15 @@
 "use client";
 
-import { Button, Group, Modal, Text } from "@mantine/core";
+import { Button, Group, Modal, Text, getDefaultZIndex } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { messages } from "@learning/contracts";
+
+/**
+ * Okna całego panelu (pytanie o wyjście, ponowne logowanie) nad oknami sekcji.
+ * Ich portale powstają przy starcie panelu, więc przy równym z-index okno sekcji
+ * otwarte później (np. pełnoekranowe „Nowe źródło” na telefonie) zasłaniałoby je.
+ */
+export const GLOBAL_DIALOG_Z_INDEX = getDefaultZIndex("modal") + 10;
 
 /** Pytanie o niezapisane zmiany edytora; Esc i kliknięcie obok znaczą „zostań”. */
 export default function LeaveEditorDialog({
@@ -24,6 +31,7 @@ export default function LeaveEditorDialog({
       fullScreen={false}
       radius="lg"
       size={compact ? "100%" : "md"}
+      zIndex={GLOBAL_DIALOG_Z_INDEX}
       attributes={{ content: { "data-testid": "leave-editor-dialog" } }}
     >
       <Text>{messages.decks.leaveDescription}</Text>

@@ -19,6 +19,10 @@ import {
   LessonCommandSchema,
   MaterialLessonCommandSchema,
   SchoolLessonCommandSchema,
+  SourceMaterialDtoSchema,
+  SourceMaterialInputSchema,
+  SourceMaterialPatchSchema,
+  SourceMaterialSummaryDtoSchema,
   LessonDynamicTopicPatchSchema,
   LessonDeckDtoSchema,
   LessonDraftDtoSchema,
@@ -46,7 +50,7 @@ import {
  * wyłącznie panel w tej samej aplikacji). Obejmuje wszystkie grupy URL:
  * auth (login/setup/logout), children, decks, drafts, mock-tests, work-card,
  * lesson-catalog, lessons, lesson-verdicts, lesson-drafts, generation,
- * assignments i progress.
+ * assignments, progress i sources (materiał źródłowy rodzica).
  * Schematy, ścieżki, metody, statusy (201/202/204) i nagłówki (no-store)
  * odwzorowują dekomisjonowane ręczne trasy (`parent/parent-router.ts` +
  * trasy children); prefix montowania dokleja handler przy `handle()`.
@@ -74,6 +78,8 @@ const RunPathSchema = z.object({ runId: UuidSchema });
 const VerdictPathSchema = z.object({ verdictId: UuidSchema });
 /** Parametr ścieżki `{lessonDraftId}` — wersja szkicu lekcji. */
 const LessonDraftPathSchema = z.object({ lessonDraftId: UuidSchema });
+/** Parametr ścieżki `{sourceId}` — źródło (materiał źródłowy rodzica). */
+const SourcePathSchema = z.object({ sourceId: UuidSchema });
 /** Parametry ścieżki `{childId}/{deckId}` — przypisanie zestawu dziecku. */
 const ChildDeckPathSchema = z.object({ childId: UuidSchema, deckId: UuidSchema });
 
@@ -83,6 +89,10 @@ const ChildUpdateInputSchema = ChildPatchSchema.extend({ childId: UuidSchema }).
 const PronunciationPutInputSchema = PronunciationBandsInputSchema.extend({ childId: UuidSchema });
 /** Wejście PATCH /decks/{deckId}: ścieżka + ustawienia sesji nauki. */
 const DeckSettingsInputSchema = DeckSettingsPatchSchema.extend({ deckId: UuidSchema });
+/** Wejście PATCH /sources/{sourceId}: ścieżka + edycja z kontrolą rewizji. */
+const SourceUpdateInputSchema = SourceMaterialPatchSchema.extend({ sourceId: UuidSchema });
+/** Wynik POST /sources: identyfikator źródła (nowego albo istniejącego przy ponowieniu). */
+const SourceCreateResultSchema = z.object({ id: UuidSchema });
 /** Wejście PATCH /drafts/{draftId}: ścieżka + poprawki szkicu. */
 const DraftEditInputSchema = DraftPatchSchema.extend({ draftId: UuidSchema });
 /** Wejście POST /drafts/{draftId}/publish: ścieżka + optimistic locking. */
@@ -151,6 +161,19 @@ export const LessonRegenerateCommandSchema = z.object({
   clientRequestId: UuidSchema,
 }).strict();
 export type LessonRegenerateCommand = z.infer<typeof LessonRegenerateCommandSchema>;
+
+/** Wejście POST /lesson-drafts/{lessonDraftId}/prompt-audio/regenerate: ścieżka + rewizja ćwiczenia. */
+const LessonPromptAudioRegenerateInputSchema = z.object({
+  lessonDraftId: UuidSchema,
+  itemRevisionId: UuidSchema,
+}).strict();
+
+/** Wejście POST /lesson-drafts/{lessonDraftId}/card-audio/regenerate: ścieżka + miejsce karty w temacie. */
+const LessonCardAudioRegenerateInputSchema = z.object({
+  lessonDraftId: UuidSchema,
+  objectiveId: z.string().min(1).max(200),
+  cardIndex: z.number().int().nonnegative(),
+}).strict();
 
 /** Wejście POST /lesson-drafts/{lessonDraftId}/regenerate: ścieżka + polecenie. */
 const LessonRegenerateInputSchema = LessonRegenerateCommandSchema.extend({ lessonDraftId: UuidSchema });
@@ -430,6 +453,18 @@ export const parentApiContract = {
       .input(LessonRegenerateInputSchema)
       .output(z.object({ generationRunId: UuidSchema, deckId: UuidSchema }))
       .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/regenerate", successStatus: 202 })),
+
+    /** „Nagraj ponownie” pytania (spec tonu TTS §4.5): nowa generacja nagrania; tylko szkic. */
+    regeneratePromptAudio: oc
+      .input(LessonPromptAudioRegenerateInputSchema)
+      .output(z.object({ assetId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate", successStatus: 202 })),
+
+    /** „Nagraj ponownie” karty zagadnienia (spec tonu TTS §4.5): nowa generacja nagrania; tylko szkic. */
+    regenerateCardAudio: oc
+      .input(LessonCardAudioRegenerateInputSchema)
+      .output(z.object({ assetId: UuidSchema }))
+      .meta(openapi({ method: "POST", path: "/lesson-drafts/{lessonDraftId}/card-audio/regenerate", successStatus: 202 })),
   },
 
   /** Runy generacji materiałów: odczyt statusu i ponowienie nieudanego. */
@@ -464,6 +499,42 @@ export const parentApiContract = {
       .input(ProgressQuerySchema)
       .output(ProgressDtoSchema)
       .meta(openapi({ method: "GET", path: "/progress" })),
+  },
+
+  /**
+   * Źródła (materiał źródłowy rodzica): wklejony tekst rozdziału, z którego
+   * powstają lekcje. Wyłącznie Parent API — źródeł nie ma w Kid API ani w MCP.
+   */
+  sources: {
+    list: oc
+      .output(SourceMaterialSummaryDtoSchema.array())
+      .meta(openapi({ method: "GET", path: "/sources" })),
+
+    create: oc
+      .input(SourceMaterialInputSchema)
+      // 201 przy utworzeniu, 200 przy bezpiecznym ponowieniu z tym samym
+      // `clientRequestId` i treścią — status wynika z `created` przypadku użycia.
+      .output(z.object({
+        status: z.union([z.literal(201), z.literal(200)]),
+        headers: z.record(z.string(), z.string()).optional(),
+        body: SourceCreateResultSchema,
+      }))
+      .meta(openapi({ method: "POST", path: "/sources", outputStructure: "detailed" })),
+
+    get: oc
+      .input(SourcePathSchema)
+      .output(SourceMaterialDtoSchema)
+      .meta(openapi({ method: "GET", path: "/sources/{sourceId}" })),
+
+    update: oc
+      .input(SourceUpdateInputSchema)
+      .output(SourceMaterialDtoSchema)
+      .meta(openapi({ method: "PATCH", path: "/sources/{sourceId}" })),
+
+    delete: oc
+      .input(SourcePathSchema)
+      .output(z.void())
+      .meta(openapi({ method: "DELETE", path: "/sources/{sourceId}", successStatus: 204 })),
   },
 
   /**

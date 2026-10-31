@@ -65,7 +65,7 @@ async function skillOf(revisionId: string) {
 }
 
 function editInputs(exercises: readonly Record<string, unknown>[]): LessonExerciseInput[] {
-  return exercises.map(({ revisionId: _revisionId, ...input }) => LessonExerciseInputSchema.parse(input));
+  return exercises.map(({ revisionId: _revisionId, promptAudio: _promptAudio, ...input }) => LessonExerciseInputSchema.parse(input));
 }
 
 beforeEach(async () => {

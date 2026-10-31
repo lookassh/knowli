@@ -6,7 +6,7 @@ import { validatePool } from "../../../domain/lessons/pool-validation";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, sumRejectedReasons, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withSubjectObjectiveKinds } from "./lesson-drafts";
+import { buildDynamicTopicData, buildPoolInput, buildLessonPayload, createLessonFromMaterial, createMaterialLesson, buildObjectiveCriteria, collectBatchExerciseMetadata, filterExercisesToRequestedObjective, minimumCountPerObjective, objectiveBatchCounts, isWellShapedRawExercise, lessonPayloadVersion, poolStageCounts, refineGeneratedDrafts, scopeFamiliesToRun, splitStages, stripParentAddedFlags, sumRejectedReasons, summarizeLessonPoolValidation, toExerciseDraft, withoutEmptyOptionalArrays, withoutVoiceToneUnlessAllowed, withSubjectObjectiveKinds } from "./lesson-drafts";
 
 describe("calculation persistence and grading criteria", () => {
   const calculation = { kind: "scale_distance" as const, params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m" as const, templateFamilyId: "scale" };
@@ -201,6 +201,71 @@ describe("P2-7: strażnik kształtu surowego ćwiczenia (isWellShapedRawExercise
     const wellShaped = raws.filter(isWellShapedRawExercise).map(toExerciseDraft);
     const { valid } = validatePool(wellShaped, englishGrammarSubject, topic);
     expect(valid.map((v) => v.answer)).toEqual(["plays"]);
+  });
+});
+
+describe("ton lektora (voiceTone) z wyjścia modelu", () => {
+  const rawExercise = {
+    exerciseType: "lesson_open_answer",
+    objectiveId: "school.dx.foto",
+    prompt: "Co to jest fotosynteza?",
+    answer: "Roślina wytwarza cukry.",
+    acceptedAnswers: [],
+    focus: ["cukry"],
+  };
+
+  it("zachowuje znany ton ćwiczenia, a nieznany albo null pomija", () => {
+    expect(toExerciseDraft({ ...rawExercise, voiceTone: "gentle" }).voiceTone).toBe("gentle");
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: "loud" })).toBe(false);
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: null })).toBe(false);
+    expect("voiceTone" in toExerciseDraft({ ...rawExercise, voiceTone: 3 })).toBe(false);
+    expect("voiceTone" in toExerciseDraft(rawExercise)).toBe(false);
+  });
+
+  it("przenosi ton do payloadu rewizji i z powrotem", () => {
+    const payload = buildLessonPayload(toExerciseDraft({ ...rawExercise, voiceTone: "curious" }), schoolSubject);
+    expect(payload.voiceTone).toBe("curious");
+    expect(toExerciseDraft(payload).voiceTone).toBe("curious");
+    expect("voiceTone" in buildLessonPayload(toExerciseDraft(rawExercise), schoolSubject)).toBe(false);
+  });
+
+  it("nie zmienia kryteriów celu ani wersji payloadu", () => {
+    const plain = toExerciseDraft(rawExercise);
+    const toned = toExerciseDraft({ ...rawExercise, voiceTone: "mysterious" });
+    expect(buildObjectiveCriteria(toned, schoolSubject, 1)).toEqual(buildObjectiveCriteria(plain, schoolSubject, 1));
+    expect(lessonPayloadVersion(toned, schoolSubject)).toBe(lessonPayloadVersion(plain, schoolSubject));
+  });
+
+  it("karty zagadnień: znany ton zachowany, nieznany i null pominięte", () => {
+    const raw = {
+      slug: "a",
+      titlePl: "Zagadnienie",
+      descriptionEn: "Topic description.",
+      cards: [
+        { title: "Karta 1", body: "Treść 1.", voiceTone: "cheerful" },
+        { title: "Karta 2", body: "Treść 2.", voiceTone: "loud" },
+        { title: "Karta 3", body: "Treść 3.", voiceTone: null },
+        { title: "Karta 4", body: "Treść 4." },
+      ],
+    };
+    const cards = buildDynamicTopicData([raw], "school", "deck", "Temat").data!.objectives[0]!.cards;
+    expect(cards[0]!.voiceTone).toBe("cheerful");
+    expect(cards.slice(1).every((card) => !("voiceTone" in card))).toBe(true);
+  });
+
+  it("przedmiot bez ttsForPrompts: ton z wyjścia modelu jest odrzucany, nie psuje ćwiczenia ani karty", () => {
+    const toned = toExerciseDraft({ ...rawExercise, voiceTone: "gentle" });
+    expect(toned.voiceTone).toBe("gentle");
+    expect("voiceTone" in withoutVoiceToneUnlessAllowed(toned, englishGrammarSubject)).toBe(false);
+    expect(withoutVoiceToneUnlessAllowed(toned, schoolSubject).voiceTone).toBe("gentle");
+    const plain = toExerciseDraft(rawExercise);
+    expect(withoutVoiceToneUnlessAllowed(plain, englishGrammarSubject)).toBe(plain);
+    // Pytania nie są szeptane: `mysterious` z modelu staje się `curious` (tak brzmi nagranie).
+    expect(withoutVoiceToneUnlessAllowed(toExerciseDraft({ ...rawExercise, voiceTone: "mysterious" }), schoolSubject).voiceTone).toBe("curious");
+
+    const raw = { slug: "a", titlePl: "Zagadnienie", descriptionEn: "Topic description.", cards: [{ title: "K", body: "T.", voiceTone: "cheerful" }] };
+    const cards = buildDynamicTopicData([raw], "school", "deck", "Temat", () => [], false).data!.objectives[0]!.cards;
+    expect("voiceTone" in cards[0]!).toBe(false);
   });
 });
 
@@ -509,5 +574,19 @@ describe("createLessonFromMaterial / createMaterialLesson (zestaw z materiału t
 
   it("nieznany przedmiot kończy się validation", async () => {
     await expect(createLessonFromMaterial(services, { ...command, subjectId: "history" })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("createMaterialLesson wymaga dokładnie jednego z material / sourceMaterialId (przed zapisem)", async () => {
+    const { material, ...withoutMaterial } = command;
+    const sourceMaterialId = "33333333-3333-4333-8333-333333333333";
+    await expect(createMaterialLesson(services, { ...withoutMaterial, subjectId: "english_chapter" })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_chapter", material, sourceMaterialId, expectedSourceRevision: 1 })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("createMaterialLesson wymaga rewizji podglądu przy źródle i tylko przy nim (przed zapisem)", async () => {
+    const { material: _material, ...withoutMaterial } = command;
+    const sourceMaterialId = "33333333-3333-4333-8333-333333333333";
+    await expect(createMaterialLesson(services, { ...withoutMaterial, subjectId: "english_chapter", sourceMaterialId })).rejects.toMatchObject({ code: "validation" });
+    await expect(createMaterialLesson(services, { ...command, subjectId: "english_chapter", expectedSourceRevision: 1 })).rejects.toMatchObject({ code: "validation" });
   });
 });

@@ -54,4 +54,19 @@ describe("materializeGeneratedAssignments", () => {
     expect(same).toBe(gap);
     expect(broken!.answer).toBeUndefined();
   });
+
+  it("carries a string voiceTone through match, group and cloze, omitting null or absent", () => {
+    const cloze = {
+      exerciseType: "lesson_cloze", objectiveId: "o", instructionPl: "x",
+      clozeText: "A ___ b ___.", gapAnswers: ["x", "y"], extraWords: ["z"], sourceRefs: [{ quote: "q" }],
+    };
+    const kept = materializeGeneratedAssignments([
+      { ...match, voiceTone: "cheerful" }, { ...group, voiceTone: "curious" }, { ...cloze, voiceTone: "gentle" },
+    ]) as Record<string, unknown>[];
+    expect(kept.map((item) => item.voiceTone)).toEqual(["cheerful", "curious", "gentle"]);
+    const dropped = materializeGeneratedAssignments([
+      { ...match, voiceTone: null }, group, { ...cloze, voiceTone: null },
+    ]) as Record<string, unknown>[];
+    for (const item of dropped) expect(item).not.toHaveProperty("voiceTone");
+  });
 });

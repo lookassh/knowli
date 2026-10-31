@@ -1,0 +1,30 @@
+/* Zakładka „Źródła” (design 2026-10-30 §3.4). Wiersze listy i zestawów: decks-panel.css;
+   tekst pomocniczy: .pp-editor-muted (deck-editor.css). */
+
+/* Podgląd tekstu źródła (strona źródła i formularz nowej lekcji): Mantine Textarea tylko do odczytu,
+   z zachowanymi wierszami; autosize rośnie do 12 wierszy, dalej pole przewija się samo (natywnie
+   fokusowalne z klawiatury) — długi rozdział nie rozpycha strony. */
+.pp-source-preview textarea {
+  max-height: min(50dvh, 420px);
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+/* uwaga o limicie 16 000 znaków pod licznikiem (stały region na żywo, pusty poniżej limitu) */
+.pp-source-limit {
+  color: var(--pp-status-warning-fg);
+}
+
+.pp-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 37.49em) {
+  /* na telefonie przyciski akcji jeden pod drugim na całą szerokość */
+  .pp-source-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -2,10 +2,11 @@
 
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import { ActionIcon, Alert, Button, Checkbox, Group, Menu, NativeSelect, Paper, Radio, Stack, Text, TextInput, Textarea } from "@mantine/core";
-import { messages, type CalculationSpec } from "@learning/contracts";
+import { messages, type CalculationSpec, type LessonPromptAudioDto } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
 import AssignmentFields from "./AssignmentFields";
 import ClozeFields from "./ClozeFields";
+import PromptAudioControls, { VoiceToneSelect } from "./PromptAudioControls";
 import { clozeWordsOf, filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
@@ -54,6 +55,17 @@ interface LessonExerciseCardProps {
   hadAudio: boolean;
   errors: string[] | undefined;
   audio: { state: string; assetId: string | null } | null;
+  /** Przedmiot nagrywa pytania — pokazujemy „Ton lektora” (poza `lesson_calculation`). */
+  voiceToneEnabled: boolean;
+  /** Nagranie pytania zapisanej wersji; null, gdy brak albo ćwiczenie zmieniono od zapisu. */
+  promptAudio: LessonPromptAudioDto | null;
+  /** Wersja szkicu i zestaw potrzebne do „Nagraj ponownie”. */
+  lessonDraftId: string;
+  deckId: string;
+  /** Zapisana rewizja ćwiczenia (cel „Nagraj ponownie”). */
+  itemRevisionId: string;
+  /** Edytor ma niezapisane zmiany — nagranie powstaje z zapisanego tekstu, więc „Nagraj ponownie” czeka na zapis. */
+  audioLocked: boolean;
   calculation: CalculationControls | null;
   /** Stabilne funkcje edytora (wspólne dla wszystkich kart) — karta podaje swój klucz. */
   onToggle: (cardKey: string) => void;
@@ -71,8 +83,10 @@ interface LessonExerciseCardProps {
 function sameCardProps(prev: LessonExerciseCardProps, next: LessonExerciseCardProps): boolean {
   if (prev.calculation !== null || next.calculation !== null) return false;
   if (prev.audio?.state !== next.audio?.state || prev.audio?.assetId !== next.audio?.assetId) return false;
+  if (prev.promptAudio?.state !== next.promptAudio?.state || prev.promptAudio?.assetId !== next.promptAudio?.assetId
+    || prev.promptAudio?.previousAssetId !== next.promptAudio?.previousAssetId) return false;
   return (Object.keys(next) as (keyof LessonExerciseCardProps)[])
-    .every((key) => key === "audio" || key === "calculation" || Object.is(prev[key], next[key]));
+    .every((key) => key === "audio" || key === "promptAudio" || key === "calculation" || Object.is(prev[key], next[key]));
 }
 
 function LessonExerciseCard({
@@ -85,6 +99,12 @@ function LessonExerciseCard({
   hadAudio,
   errors,
   audio,
+  voiceToneEnabled,
+  promptAudio,
+  lessonDraftId,
+  deckId,
+  itemRevisionId,
+  audioLocked,
   calculation,
   onToggle,
   onMutate: mutate,
@@ -161,6 +181,13 @@ function LessonExerciseCard({
         </Alert>
       )}
 
+      {promptAudio && (
+        <div className="pp-lesson-prompt-audio">
+          <PromptAudioControls audio={promptAudio} target={{ kind: "prompt", itemRevisionId }} lessonDraftId={lessonDraftId} deckId={deckId}
+            canRegenerate={editable} locked={busy || audioLocked} testId={`exercise-prompt-audio-${index}`} onPlay={onPlay} />
+        </div>
+      )}
+
       {!open ? (
         <Group justify="space-between" align="flex-end" gap="xs" wrap="nowrap">
           <div className="pp-lesson-ex-preview">
@@ -180,6 +207,13 @@ function LessonExerciseCard({
                 value={ex.instructionPl} disabled={disabled} {...described}
                 onChange={(e) => onMutate({ instructionPl: e.currentTarget.value })} />
             </Field>
+
+            {voiceToneEnabled && ex.exerciseType !== "lesson_calculation" && (
+              <Field>
+                <VoiceToneSelect value={ex.voiceTone} disabled={disabled} testId={`exercise-voice-tone-${index}`}
+                  onChange={(voiceTone) => onMutate({ voiceTone })} />
+              </Field>
+            )}
 
             {ex.calculation && calculation && (
               <fieldset className="pp-lesson-fieldset pp-lesson-wide" disabled={disabled}>

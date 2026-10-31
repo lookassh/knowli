@@ -37,6 +37,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeLessonRuns } from "../generation-runs";
+import { readDeckSource } from "../source-materials";
 import {
   assertEditable,
   bumpEditNumber,
@@ -44,6 +45,7 @@ import {
   lockVersion,
 } from "../version-ops";
 import { buildLessonPayload, buildObjectiveCriteria, lessonPayloadVersion, splitByPoolExtra, toExerciseDraft } from "./lesson-drafts";
+import { readLessonAudioStates } from "./lesson-prompt-audio";
 
 /**
  * API rodzica dla lekcji (zadanie 11). Cienka logika serwerowa za routerem:
@@ -177,6 +179,7 @@ function exerciseDtoFromPayload(
     ...(draft.commonErrors === undefined ? {} : { commonErrors: [...draft.commonErrors] }),
     ...(draft.expectedForm === undefined ? {} : { expectedForm: draft.expectedForm }),
     ...(draft.familyId === undefined ? {} : { familyId: draft.familyId }),
+    ...(draft.voiceTone === undefined ? {} : { voiceTone: draft.voiceTone }),
     ...(draft.sourceRefs === undefined ? {} : { sourceRefs: draft.sourceRefs.map((ref) => ({ ...ref })) }),
     ...(draft.calculation === undefined ? {} : { calculation: draft.calculation }),
     ...(draft.keywordOptions === undefined ? {} : { keywordOptions: draft.keywordOptions.map((o) => ({ ...o })) }),
@@ -256,7 +259,13 @@ async function readLessonDraftDto(
         .where(and(inArray(revisionAssets.itemRevisionId, revisionIds), eq(revisionAssets.role, "target_audio")))
     : [];
 
-  const exercises = revisions.map((r) => exerciseDtoFromPayload(r.itemId, r.id, r.payload));
+  // Stan nagrań pytań i kart do odsłuchu i „Nagraj ponownie” (spec tonu TTS §4.5) — nie są decyzją rodzica.
+  const audio = await readLessonAudioStates(db, versionId, context.objectiveIds);
+  const exercises = revisions.map((r) => {
+    const dto = exerciseDtoFromPayload(r.itemId, r.id, r.payload);
+    const promptAudio = audio.prompts.get(r.id);
+    return promptAudio ? { ...dto, promptAudio } : dto;
+  });
   const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
   const draftSubject = services.subjects.getSubject(context.subjectId);
   const coverage: CoverageGapDto[] = mergeCoverage(
@@ -283,7 +292,11 @@ async function readLessonDraftDto(
             objectives: context.dynamicTopic.objectives.map((o) => ({
               id: o.id,
               titlePl: o.titlePl,
-              cards: o.cards.map((card) => ({ title: card.title, body: card.body })),
+              cards: o.cards.map((card) => ({
+                title: card.title,
+                body: card.body,
+                ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+              })),
               ...(o.kind === undefined ? {} : { kind: o.kind }),
             })),
           },
@@ -304,6 +317,7 @@ async function readLessonDraftDto(
               : "pending",
       assetId: a.assetId,
     }]),
+    ...(audio.cards.length > 0 ? { cardAudio: audio.cards } : {}),
     rejectedCount: context.rejectedCount,
     ...(context.rejectedReasons ? { rejectedReasons: context.rejectedReasons } : {}),
     ...(context.droppedObjectiveCount ? { droppedObjectiveCount: context.droppedObjectiveCount } : {}),
@@ -380,6 +394,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
       .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
   )[0];
   const publishedVersionId = deck.publishedVersionId ?? null;
+  const source = await readDeckSource(db, deck);
   const state: LessonDeckDto["state"] = deck.archivedAt
     ? "archived"
     : editable
@@ -396,6 +411,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
     published: publishedVersionId ? await readLessonDraftDto(db, services, publishedVersionId) : null,
     generation: editable ? await latestLessonRun(db, editable.id) : null,
     assignments: await lessonAssignments(db, id),
+    ...(source === undefined ? {} : { source }),
     // Wymaganie 10.1: provider oceny dowolnych odpowiedzi (nazwa modelu z
     // konfiguracji, bez sekretów). `available=false` steruje komunikatem rodzica.
     grading: services.grader ? { available: true, model: services.grader.provider.model } : { available: false },
@@ -645,6 +661,10 @@ export async function editLessonDraft(
         if (!currentById.has(objective.id)) {
           throw new AppError("validation", { message: `unknown dynamic objective: ${objective.id}` });
         }
+        // Ton lektora karty ma skutek tylko w przedmiocie z nagraniami (jak ton ćwiczenia w walidacji puli).
+        if (!subject.ttsForPrompts && objective.cards.some((card) => card.voiceTone !== undefined)) {
+          throw new AppError("validation", { message: `voiceTone requires a subject with recorded prompts: ${objective.id}` });
+        }
       }
       nextDynamicTopic = {
         titlePl: context.dynamicTopic.titlePl,
@@ -654,7 +674,11 @@ export async function editLessonDraft(
             id: objective.id,
             titlePl: objective.titlePl,
             descriptionEn: current.descriptionEn,
-            cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+            cards: objective.cards.map((card) => ({
+              title: card.title,
+              body: card.body,
+              ...(card.voiceTone === undefined ? {} : { voiceTone: card.voiceTone }),
+            })),
             ...(current.kind === undefined ? {} : { kind: current.kind }),
           };
         }),

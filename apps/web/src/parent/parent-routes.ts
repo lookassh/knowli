@@ -3,15 +3,21 @@
  * Czysta logika: odczyt widoku z adresu i adres widoku.
  */
 
-export const PARENT_SECTIONS = ["decks", "children", "progress", "work-card"] as const;
+export const PARENT_SECTIONS = ["decks", "sources", "children", "progress", "work-card"] as const;
 
 export type ParentSection = (typeof PARENT_SECTIONS)[number];
 
-/** Widok panelu: sekcja, a w sekcji Zestawy opcjonalnie otwarty zestaw albo nowa lekcja. */
+/**
+ * Widok panelu: sekcja, a w niej opcjonalnie otwarty zestaw albo nowa lekcja
+ * (Zestawy) lub otwarte źródło (Źródła). Nowa lekcja ze źródła niesie
+ * `sourceId` i wskazany przedmiot `subjectId` w parametrach adresu.
+ */
 export interface ParentRoute {
   section: ParentSection;
   deckId?: string;
   newLesson?: true;
+  sourceId?: string;
+  subjectId?: string;
 }
 
 export const PARENT_ROOT = "/parent";
@@ -19,6 +25,8 @@ export const DEFAULT_SECTION: ParentSection = "decks";
 export const DEFAULT_ROUTE: ParentRoute = { section: DEFAULT_SECTION };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Identyfikator przedmiotu z katalogu lekcji (np. `english_chapter`; kontrakt: do 64 znaków). */
+const SUBJECT_ID = /^[a-z][a-z0-9_]{0,63}$/;
 
 export function sectionPath(section: ParentSection): string {
   return `${PARENT_ROOT}/${section}`;
@@ -26,15 +34,39 @@ export function sectionPath(section: ParentSection): string {
 
 export function routePath(route: ParentRoute): string {
   if (route.deckId !== undefined) return `${sectionPath("decks")}/${route.deckId}`;
-  if (route.newLesson) return `${PARENT_ROOT}/lessons/new`;
+  if (route.newLesson) {
+    const params = new URLSearchParams();
+    if (route.sourceId !== undefined) params.set("source", route.sourceId);
+    if (route.subjectId !== undefined) params.set("subject", route.subjectId);
+    const query = params.toString();
+    return `${PARENT_ROOT}/lessons/new${query ? `?${query}` : ""}`;
+  }
+  if (route.section === "sources" && route.sourceId !== undefined) return `${sectionPath("sources")}/${route.sourceId}`;
   return sectionPath(route.section);
 }
 
+/** Parametry nowej lekcji ze źródła; nieprawidłowe wartości pomijamy (adres mógł być ręcznie zmieniony). */
+function newLessonRoute(query: string): ParentRoute {
+  const params = new URLSearchParams(query);
+  const source = params.get("source");
+  const subject = params.get("subject");
+  return {
+    section: "decks",
+    newLesson: true,
+    ...(source !== null && UUID.test(source) ? { sourceId: source.toLowerCase() } : {}),
+    ...(subject !== null && SUBJECT_ID.test(subject) ? { subjectId: subject } : {}),
+  };
+}
+
 /**
- * Widok dla ścieżki z adresu. `null` dla `/parent` i adresów nieznanych —
- * panel zastępuje je adresem domyślnej sekcji (bez nowego wpisu historii).
+ * Widok dla ścieżki z adresu (z opcjonalnymi parametrami `?…`). `null` dla
+ * `/parent` i adresów nieznanych — panel zastępuje je adresem domyślnej
+ * sekcji (bez nowego wpisu historii).
  */
-export function routeFromPath(pathname: string): ParentRoute | null {
+export function routeFromPath(location: string): ParentRoute | null {
+  const queryStart = location.indexOf("?");
+  const pathname = queryStart === -1 ? location : location.slice(0, queryStart);
+  const query = queryStart === -1 ? "" : location.slice(queryStart + 1);
   const segments = pathname.split("/").filter(Boolean);
   if (`/${segments[0]}` !== PARENT_ROOT) return null;
   const [, first, second] = segments;
@@ -44,8 +76,11 @@ export function routeFromPath(pathname: string): ParentRoute | null {
   if (segments.length === 3 && first === "decks" && UUID.test(second!)) {
     return { section: "decks", deckId: second!.toLowerCase() };
   }
+  if (segments.length === 3 && first === "sources" && UUID.test(second!)) {
+    return { section: "sources", sourceId: second!.toLowerCase() };
+  }
   if (segments.length === 3 && first === "lessons" && second === "new") {
-    return { section: "decks", newLesson: true };
+    return newLessonRoute(query);
   }
   return null;
 }

@@ -25,22 +25,32 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow).toBeLessThanOrEqual(0);
 }
 
-const TABS = ["tab-decks", "tab-children", "tab-progress", "tab-work-card"];
+const TABS = ["tab-decks", "tab-sources", "tab-children", "tab-progress", "tab-work-card"];
 
 test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async ({ page }) => {
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
+    let previousRight = 0;
     for (const id of TABS) {
       const box = await page.getByTestId(id).boundingBox();
       expect(box, id).not.toBeNull();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
-      expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 0.5);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 0.5);
-      expect(box!.y).toBeGreaterThan(viewport.height - 100);
+      expect(box!.height, id).toBeGreaterThanOrEqual(44);
+      expect(box!.width, id).toBeGreaterThanOrEqual(44);
+      expect(box!.x, id).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(box!.y + box!.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+      expect(box!.y, id).toBeGreaterThan(viewport.height - 100);
+      // pięć zakładek w jednym rzędzie, bez nachodzenia na siebie
+      expect(box!.x, id).toBeGreaterThanOrEqual(previousRight - 0.5);
+      previousRight = box!.x + box!.width;
+      // etykieta mieści się w swojej zakładce (bez ucięcia i wyjścia poza pasek)
+      const label = await page.getByTestId(id).evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
+      expect(label.scroll, id).toBeLessThanOrEqual(label.client);
     }
+    await expect(page.getByTestId("tab-sources")).toHaveText(messages.sources.tab);
+    await expect(page.getByTestId("tab-sources")).toHaveAttribute("href", "/parent/sources");
     await expect(page.getByTestId("to-learning")).toHaveCount(0);
 
     const menu = page.getByTestId("parent-menu");
@@ -55,18 +65,122 @@ test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async
 });
 
 test("od 600 px: zakładki pod nagłówkiem, akcje w nagłówku", async ({ page }) => {
-  for (const viewport of [{ width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+  // 600 i 640 px: najwęższe szerokości z rzędem zakładek — piąta zakładka nie może wyjść poza pasek
+  for (const viewport of [{ width: 600, height: 960 }, { width: 640, height: 360 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
     await expect(page.getByTestId("parent-menu")).toHaveCount(0);
     for (const id of [...TABS, "to-learning", "parent-logout", "color-scheme-menu"]) {
       const box = await page.getByTestId(id).boundingBox();
-      expect(box, id).not.toBeNull();
-      expect(box!.height, id).toBeGreaterThanOrEqual(44);
-      expect(box!.y, id).toBeLessThan(140);
-      expect(box!.x + box!.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(box, `${id} @${viewport.width}`).not.toBeNull();
+      expect(box!.height, `${id} @${viewport.width}`).toBeGreaterThanOrEqual(44);
+      expect(box!.y, `${id} @${viewport.width}`).toBeLessThan(140);
+      expect(box!.x + box!.width, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.width + 0.5);
     }
+    // pasek zakładek mieści wszystkie zakładki: bez przewijania w poziomie (pasek przewijania
+    // w pasku o stałej wysokości dawałby też przewijanie w pionie)
+    const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+      scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+    }));
+    expect(tabs.scrollWidth, `pasek zakładek @${viewport.width}`).toBeLessThanOrEqual(tabs.clientWidth);
+    expect(tabs.scrollHeight, `pasek zakładek @${viewport.width}`).toBeLessThanOrEqual(tabs.clientHeight);
+  }
+});
+
+test("600 px z klasycznym paskiem przewijania: pięć zakładek nadal mieści się w pasku", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 960 });
+  await openSignedInPanel(page);
+  // Chromium testów ukrywa paski przewijania; klasyczny pasek (17 px) zabiera szerokość
+  // przypiętemu nagłówkowi, a media query nadal widzi 600 px — symulacja: węższy nagłówek.
+  await page.addStyleTag({ content: ".mantine-AppShell-header { right: 17px !important; }" });
+  const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+    scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+  }));
+  expect(tabs.clientWidth).toBeLessThan(570);
+  expect(tabs.scrollWidth).toBeLessThanOrEqual(tabs.clientWidth);
+  expect(tabs.scrollHeight).toBeLessThanOrEqual(tabs.clientHeight);
+  const last = (await page.getByTestId("tab-work-card").boundingBox())!;
+  expect(last.x + last.width).toBeLessThanOrEqual(600 - 17 + 0.5);
+});
+
+/**
+ * Fonty CI (Linux) są szersze niż lokalne (Windows). Szerszy zamiennik plus rozstrzelenie liter
+ * symuluje te metryki lokalnie i niezależnie od zainstalowanych fontów (samo rozstrzelenie
+ * gwarantuje, że tekst jest szerszy także tam, gdzie „DejaVu Sans” i „Verdana” nie istnieją).
+ * Zwraca stosunek naturalnej szerokości tekstu etykiety „Karta pracy” po symulacji do szerokości przed nią.
+ */
+async function simulateWideFonts(page: Page): Promise<number> {
+  // Naturalna szerokość tekstu (zakres obejmujący zawartość), a nie pudełka etykiety: etykieta ma
+  // `overflow: hidden` i `text-overflow: ellipsis` w elemencie o stałej szerokości, więc jej pudełko
+  // jest przycięte i na CI (gdzie „DejaVu Sans” już jest aktywny) stosunek wynosiłby dokładnie 1.
+  const width = () => page.getByTestId("tab-work-card").locator(".pp-shell-label").evaluate((label) => {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    return range.getBoundingClientRect().width;
+  });
+  const before = await width();
+  await page.addStyleTag({
+    content: 'html, body, body * { font-family: "DejaVu Sans", Verdana, sans-serif !important; letter-spacing: 0.03em !important; }',
+  });
+  return (await width()) / before;
+}
+
+/** Zapas szerokości paska zakładek: szerokość paska minus naturalna szerokość etykiet, odstępów i dopełnień. */
+async function topRowSpareWidth(page: Page): Promise<number> {
+  return page.locator("nav.pp-shell-tabs").evaluate((nav) => {
+    let natural = 0;
+    for (const tab of Array.from(nav.children)) {
+      const style = getComputedStyle(tab);
+      const label = tab.querySelector(".pp-shell-label")!.getBoundingClientRect().width;
+      natural += label + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    }
+    natural += (nav.children.length - 1) * parseFloat(getComputedStyle(nav).columnGap || "0");
+    return nav.clientWidth - natural;
+  });
+}
+
+test("szerokie fonty CI: dolny pasek na telefonie ma stałą wysokość, etykiety w jednej linii i pełne nazwy linków", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }, { width: 320, height: 568 }]) {
+    await page.setViewportSize(viewport);
+    await openSignedInPanel(page);
+    expect(await simulateWideFonts(page), `szerokość etykiety @${viewport.width}`).toBeGreaterThan(1.02);
+    await expectNoHorizontalOverflow(page);
+    for (const id of TABS) {
+      const tab = page.getByTestId(id);
+      const box = (await tab.boundingBox())!;
+      expect(box.height, `${id} @${viewport.width}`).toBeGreaterThanOrEqual(44);
+      expect(box.height, `stała wysokość ${id} @${viewport.width}`).toBeLessThanOrEqual(56.5);
+      expect(box.y + box.height, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.height + 0.5);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(await tab.evaluate((element) => element.scrollWidth - element.clientWidth), id).toBeLessThanOrEqual(0);
+      // etykieta to jedna linia (wysokość linii 11 px × 1,25), nawet gdy kończy się wielokropkiem
+      const label = await tab.locator(".pp-shell-label").evaluate((element) => element.getBoundingClientRect().height);
+      expect(label, `etykieta ${id} @${viewport.width}`).toBeLessThan(18);
+    }
+    // wielokropek jest tylko wizualny: nazwa dostępna to pełna etykieta
+    await expect(page.getByRole("link", { name: messages.workCard.title, exact: true })).toHaveAttribute("href", "/parent/work-card");
+    await expect(page.getByTestId("tab-work-card")).toHaveText(messages.workCard.title);
+  }
+});
+
+test("szerokie fonty CI: pięć zakładek pod nagłówkiem z zapasem ≥ 80 px, także z klasycznym paskiem przewijania", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 960 });
+  await openSignedInPanel(page);
+  expect(await simulateWideFonts(page)).toBeGreaterThan(1.02);
+  for (const scrollbar of [0, 17]) {
+    await page.addStyleTag({ content: `.mantine-AppShell-header { right: ${scrollbar}px !important; }` });
+    const tabs = await page.locator("nav.pp-shell-tabs").evaluate((nav) => ({
+      scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+    }));
+    expect(tabs.scrollWidth, `pasek ${scrollbar} px`).toBeLessThanOrEqual(tabs.clientWidth);
+    expect(tabs.scrollHeight, `pasek ${scrollbar} px`).toBeLessThanOrEqual(tabs.clientHeight);
+    expect(await topRowSpareWidth(page), `zapas ${scrollbar} px`).toBeGreaterThanOrEqual(80);
+    const last = (await page.getByTestId("tab-work-card").boundingBox())!;
+    expect(last.x + last.width, `ostatnia zakładka ${scrollbar} px`).toBeLessThanOrEqual(600 - scrollbar + 0.5);
+    // ikony znikają z zakładek, ale nazwa sekcji pozostaje widocznym tekstem linku
+    await expect(page.getByTestId("tab-work-card").locator(".pp-icon")).toBeHidden();
+    await expect(page.getByRole("link", { name: messages.workCard.title, exact: true })).toBeVisible();
   }
 });
 

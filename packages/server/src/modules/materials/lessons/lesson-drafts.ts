@@ -3,9 +3,11 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   LessonCommandSchema,
+  LessonVoiceToneSchema,
   MaterialLessonCommandSchema,
   SchoolLessonCommandSchema,
   type LessonCommand,
+  type LessonVoiceTone,
   type MaterialLessonCommand,
   type SchoolLessonCommand,
 } from "@learning/contracts";
@@ -49,6 +51,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import {
   claimQueuedRun,
   enqueueGenerationRun,
+  findEnqueuedRun,
   supersedeLessonRuns,
 } from "../generation-runs";
 import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
@@ -56,6 +59,7 @@ import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-ge
 import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
+import { isSourceChangedConflict, lockSourceMaterialForCopy } from "../source-materials";
 
 /**
  * Generowanie i zapis szkicu lekcji (design „Generowanie puli (worker)”).
@@ -204,17 +208,62 @@ export async function createLesson(
   });
 }
 
-/** Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i przedmiotów o stałym tytule). */
+/**
+ * Polecenie utworzenia zestawu z materiału rodzica (wspólne dla szkoły i
+ * przedmiotów o stałym tytule). Tekst pochodzi z dokładnie jednego miejsca:
+ * wklejonego `material` albo zapisanego źródła (`sourceMaterialId`), którego
+ * tekst serwer kopiuje w transakcji tworzenia.
+ */
 export interface MaterialLessonInput {
   subjectId: string;
   /** Nazwa przedmiotu od rodzica; brak = tytuł przedmiotu z modułu (`subject.titlePl`). */
   subjectTitlePl?: string;
   topicTitlePl: string;
-  material: string;
+  material?: string | undefined;
+  sourceMaterialId?: string | undefined;
+  /** Rewizja treści źródła z podglądu rodzica; wymagana przy `sourceMaterialId`. */
+  expectedSourceRevision?: number | undefined;
   instruction?: string;
   poolSize?: number;
   deckId?: string;
   clientRequestId: string;
+}
+
+/** Skąd pochodzi tekst zestawu: wklejony przez rodzica albo skopiowany z zapisanego źródła. */
+type MaterialTextSource =
+  | { kind: "pasted"; material: string }
+  | { kind: "source"; sourceMaterialId: string; expectedBodyRevision: number };
+
+/**
+ * Dokładnie jedno z `material` / `sourceMaterialId`, a przy źródle także
+ * `expectedSourceRevision` (i tylko przy nim); inaczej → `validation`.
+ */
+function materialTextSource(cmd: MaterialLessonInput): MaterialTextSource {
+  if (cmd.material !== undefined && cmd.sourceMaterialId === undefined && cmd.expectedSourceRevision === undefined) {
+    return { kind: "pasted", material: cmd.material };
+  }
+  if (cmd.sourceMaterialId !== undefined && cmd.material === undefined && cmd.expectedSourceRevision !== undefined) {
+    return { kind: "source", sourceMaterialId: cmd.sourceMaterialId, expectedBodyRevision: cmd.expectedSourceRevision };
+  }
+  throw new AppError("validation", {
+    message: "provide exactly one of material or sourceMaterialId (with expectedSourceRevision)",
+  });
+}
+
+/**
+ * Tekst zestawu w transakcji tworzenia. Ze źródła czyta go (razem z rewizją
+ * treści) pod `FOR KEY SHARE`, sprawdza rewizję z podglądu rodzica i zwraca
+ * pochodzenie do zapisu w `decks`; wklejony tekst nie ma pochodzenia.
+ */
+async function resolveMaterialText(
+  tx: Tx,
+  textSource: MaterialTextSource,
+): Promise<{ material: string; origin?: { sourceMaterialId: string; bodyRevision: number } }> {
+  if (textSource.kind === "pasted") {
+    return { material: textSource.material };
+  }
+  const copied = await lockSourceMaterialForCopy(tx, textSource.sourceMaterialId, textSource.expectedBodyRevision);
+  return { material: copied.body, origin: { sourceMaterialId: textSource.sourceMaterialId, bodyRevision: copied.bodyRevision } };
 }
 
 /**
@@ -223,6 +272,22 @@ export interface MaterialLessonInput {
  * w `lesson_context.dynamicTopic` oraz `objectiveIds` przy finalizacji runu.
  * Dotyczy przedmiotów z `buildDynamicTopic`; nazwę przedmiotu zapisuje tylko
  * wtedy, gdy podał ją rodzic (szkoła) — inaczej tytuł pochodzi z przedmiotu.
+ *
+ * Ze źródła (`sourceMaterialId`) tekst i rewizję treści czyta pierwsze
+ * zapytanie transakcji tworzenia (`FOR KEY SHARE`, `lockSourceMaterialForCopy`);
+ * transakcję otwiera `enqueueGenerationRun`, a jej treścią jest wywołanie
+ * zwrotne poniżej. Tekst trafia do `lesson_context.material`
+ * i `generation_runs.input.material` jako kopia, a
+ * `decks.source_material_id/_revision` zapisują pochodzenie (rewizja treści
+ * źródła, nie rewizja współbieżności). Po utworzeniu źródło nie jest już
+ * czytane. Brak źródła → `not_found`; rewizja treści inna niż
+ * `expectedSourceRevision` (tekst zmieniono po wyświetleniu podglądu) →
+ * `conflict` z `LessonSourceChangedDetails`, bez zapisu. Ponowienie z tym samym
+ * `clientRequestId` zwraca istniejący zestaw, zanim źródło zostanie odczytane
+ * (`enqueueGenerationRun`), więc późniejsza edycja ani usunięcie źródła go nie
+ * psują. Gdy wcześniejsze żądanie z tym samym kluczem zatwierdziło zestaw już
+ * po naszym sprawdzeniu klucza, a źródło usunięto albo zmieniono przed naszą
+ * blokadą, wynikiem jest zestaw tamtego żądania.
  */
 export async function createMaterialLesson(
   services: Services,
@@ -232,10 +297,14 @@ export async function createMaterialLesson(
   if (materialCreationMode(subject) === undefined) {
     throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
+  const textSource = materialTextSource(cmd);
   const poolSize = cmd.poolSize ?? 60;
   const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
+  const dedupeKey = `lesson:${cmd.clientRequestId}`;
 
-  return enqueueGenerationRun(services.db, `lesson:${cmd.clientRequestId}`, async (tx) => {
+  return enqueueGenerationRun(services.db, dedupeKey, async (tx) => {
+    // Pierwsze zapytanie transakcji: blokada źródła poprzedza każdy zapis zestawu.
+    const { material, origin } = await resolveMaterialText(tx, textSource);
     const deckId = cmd.deckId ?? randomUUID();
     const versionId = randomUUID();
     const runId = randomUUID();
@@ -245,13 +314,18 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       examples: {},
       rejectedCount: 0,
     };
-    await tx.insert(decks).values({ id: deckId, title, kind: "lesson" });
+    await tx.insert(decks).values({
+      id: deckId,
+      title,
+      kind: "lesson",
+      ...(origin === undefined ? {} : { sourceMaterialId: origin.sourceMaterialId, sourceMaterialRevision: origin.bodyRevision }),
+    });
     await tx.insert(deckVersions).values({
       id: versionId,
       deckId,
@@ -271,7 +345,7 @@ export async function createMaterialLesson(
       topicVersion: 1,
       objectiveIds: [],
       poolSize,
-      material: cmd.material,
+      material,
       ...(cmd.instruction === undefined ? {} : { instruction: cmd.instruction }),
       ...(cmd.subjectTitlePl === undefined ? {} : { subjectTitlePl: cmd.subjectTitlePl }),
       topicTitlePl: cmd.topicTitlePl,
@@ -281,12 +355,38 @@ export async function createMaterialLesson(
       deckVersionId: versionId,
       expectedEditNumber: 1,
       kind: "lesson",
-      dedupeKey: `lesson:${cmd.clientRequestId}`,
+      dedupeKey,
       state: "queued",
       input: input as unknown as Record<string, unknown>,
     });
     return { runId, deckId };
-  });
+  }).catch((error: unknown) => committedRetryAfterSourceChange(services, textSource, dedupeKey, error));
+}
+
+/**
+ * Ponowienie po równoległym usunięciu albo zmianie tekstu źródła: pierwsze
+ * żądanie z tym samym kluczem zatwierdziło zestaw już po naszym sprawdzeniu
+ * klucza (usunięcie i edycja czekały na jego blokadę `FOR KEY SHARE`), a źródło
+ * zniknęło albo dostało nową rewizję treści przed naszą blokadą — odczyt źródła
+ * kończy się `not_found` albo konfliktem rewizji, choć polecenie wykonano.
+ * Wtedy, jak przy duplikacie klucza w `enqueueGenerationRun`, odpowiedzią jest
+ * zestaw tamtego żądania (świeże zapytanie poza wycofaną transakcją). Każdy
+ * inny błąd — i te dwa bez zatwierdzonego runu — przechodzi dalej.
+ */
+async function committedRetryAfterSourceChange(
+  services: Services,
+  textSource: MaterialTextSource,
+  dedupeKey: string,
+  error: unknown,
+): Promise<{ runId: string; deckId: string }> {
+  const sourceGoneOrChanged = (error instanceof AppError && error.code === "not_found") || isSourceChangedConflict(error);
+  if (textSource.kind === "source" && sourceGoneOrChanged) {
+    const committed = await findEnqueuedRun(services.db, dedupeKey);
+    if (committed) {
+      return committed;
+    }
+  }
+  throw error;
 }
 
 /**
@@ -446,9 +546,34 @@ export function buildPoolInput(
     graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
     deduplication: subject.poolDeduplication ?? "answer",
+    voiceTones: subject.ttsForPrompts === true,
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
+}
+
+/**
+ * Ton lektora z niezaufanego wyjścia modelu: nieznana wartość albo `null`
+ * znaczą „brak tonu” (styl domyślny roli), nigdy błąd ćwiczenia/karty.
+ */
+function sanitizedVoiceTone(raw: unknown): { voiceTone?: LessonVoiceTone } {
+  const parsed = LessonVoiceToneSchema.safeParse(raw);
+  return parsed.success ? { voiceTone: parsed.data } : {};
+}
+
+/**
+ * Ton lektora ma sens tylko dla przedmiotu z nagraniami pytań (`ttsForPrompts`).
+ * Luźny dostawca mógłby go dopisać do ćwiczeń innego przedmiotu — wtedy pole
+ * jest po prostu odrzucane, a ćwiczenie nie przepada na walidacji puli. Tylko
+ * wyjście modelu: rodzic może zapisać dowolny ton z kontraktu.
+ */
+export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subject: Pick<SubjectModule, "ttsForPrompts">): LessonExerciseDraft {
+  if (draft.voiceTone === undefined) return draft;
+  // `mysterious` w ćwiczeniu z modelu → `curious`, jak brzmi nagranie (pytania nie są szeptane,
+  // spec tonu TTS §4.3) — edytor nie pokaże „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
+  if (subject.ttsForPrompts === true) return draft.voiceTone === "mysterious" ? { ...draft, voiceTone: "curious" } : draft;
+  const { voiceTone: _dropped, ...rest } = draft;
+  return rest;
 }
 
 const rawObjectiveSchema = z
@@ -497,6 +622,7 @@ export function buildDynamicTopicData(
   deckId: string,
   topicTitle: string,
   validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+  allowVoiceTone = true,
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
   const used = new Set<string>();
@@ -516,6 +642,7 @@ export function buildDynamicTopicData(
       cards: parsed.data.cards.slice(0, 4).map((card) => ({
         title: [...card.title.trim()].slice(0, 120).join(""),
         body: [...card.body.trim()].slice(0, 1200).join(""),
+        ...(allowVoiceTone ? sanitizedVoiceTone(card.voiceTone) : {}),
       })),
       ...(kind === undefined ? {} : { kind }),
     };
@@ -802,6 +929,7 @@ function v3FieldsOf(r: Record<string, unknown>): Partial<LessonExerciseDraft> {
   }
   if (typeof r.expectedForm === "string") out.expectedForm = r.expectedForm;
   if (typeof r.familyId === "string") out.familyId = r.familyId;
+  Object.assign(out, sanitizedVoiceTone(r.voiceTone));
   if (Array.isArray(r.keywordOptions)) {
     out.keywordOptions = r.keywordOptions.filter(
       (el): el is { id: string; text: string } =>
@@ -900,6 +1028,7 @@ export function buildLessonPayload(
     ...(ex.commonErrors === undefined ? {} : { commonErrors: ex.commonErrors }),
     ...(ex.expectedForm === undefined ? {} : { expectedForm: ex.expectedForm }),
     ...(ex.familyId === undefined ? {} : { familyId: ex.familyId }),
+    ...(ex.voiceTone === undefined ? {} : { voiceTone: ex.voiceTone }),
     ...(ex.sourceRefs === undefined ? {} : { sourceRefs: ex.sourceRefs }),
     ...(ex.calculation === undefined ? {} : { calculation: ex.calculation }),
     ...(ex.keywordOptions === undefined ? {} : { keywordOptions: ex.keywordOptions.map((option) => ({ id: option.id, text: option.text })) }),
@@ -1164,6 +1293,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
             material: input.material,
             ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
             generationRole: subject.prompts.generationRole,
+            voiceTones: subject.ttsForPrompts === true,
             ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
           },
           signal,
@@ -1172,7 +1302,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
       await control.assertCurrent();
       const topicTitle = input.topicTitlePl ?? "";
       const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
-        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }));
+        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
       if (!built.data) {
         throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
       }
@@ -1269,6 +1399,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
     let droppedAcceptedVariants = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
+      .map((draft) => withoutVoiceToneUnlessAllowed(draft, subject))
       .map(withoutEmptyOptionalArrays)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {

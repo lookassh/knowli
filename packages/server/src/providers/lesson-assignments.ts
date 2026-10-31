@@ -7,6 +7,10 @@ function isObjectWith(value: unknown, fields: readonly string[]): boolean {
     fields.every((field) => typeof (value as Record<string, unknown>)[field] === "string");
 }
 
+/** Ton lektora z surowego rekordu modelu; `null` i brak pola nie trafiają do wyniku (sanityzacja w szkicu). */
+const voiceToneOf = (record: Record<string, unknown>): { voiceTone?: string } =>
+  typeof record.voiceTone === "string" ? { voiceTone: record.voiceTone } : {};
+
 /**
  * Cytaty z modelu: przedmiot bez cytatów dostaje w trybie strict `null`, co
  * oznacza brak pola (nie wartość `null` w ćwiczeniu).
@@ -45,6 +49,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         ...quotesOf(record),
+        ...voiceToneOf(record),
       };
     }
     if (record.exerciseType === "lesson_group") {
@@ -64,6 +69,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         ...quotesOf(record),
+        ...voiceToneOf(record),
       };
     }
     if (record.exerciseType === "lesson_cloze") {
@@ -83,6 +89,7 @@ export function materializeGeneratedAssignments(exercises: unknown[]): unknown[]
         acceptedAnswers: [],
         focus: [],
         ...quotesOf(record),
+        ...voiceToneOf(record),
       };
     }
     return raw;

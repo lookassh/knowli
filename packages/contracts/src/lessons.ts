@@ -146,32 +146,99 @@ export type LessonCommand = z.infer<typeof LessonCommandSchema>;
 export const MAX_SCHOOL_SUBJECT_TITLE_LENGTH = 80;
 export const MAX_SCHOOL_TOPIC_TITLE_LENGTH = 120;
 
+/**
+ * Źródło tekstu zestawu z materiału: dokładnie jedno z dwóch — wklejony
+ * `material` albo `sourceMaterialId` zapisanego źródła (design 2026-10-30,
+ * §3.3; serwer kopiuje wtedy jego tekst). Oba albo żadne to `validation`.
+ * Brak obu zgłaszamy przy `material` — to pole podświetla formularz rodzica;
+ * oba naraz przy `sourceMaterialId` (zbędne odwołanie obok wklejonego tekstu).
+ *
+ * `expectedSourceRevision` towarzyszy wyłącznie `sourceMaterialId` i jest przy
+ * nim wymagane: to rewizja TREŚCI źródła (`SourceMaterialDto.bodyRevision`),
+ * z której rodzic widział podgląd. Inna rewizja w chwili tworzenia to
+ * `conflict` z `LessonSourceChangedDetails` — serwer nie kopiuje tekstu,
+ * którego rodzic nie widział.
+ */
+function requireExactlyOneTextSource(
+  command: { material?: string | undefined; sourceMaterialId?: string | undefined; expectedSourceRevision?: number | undefined },
+  ctx: z.core.$RefinementCtx,
+): void {
+  const hasMaterial = command.material !== undefined;
+  const hasSource = command.sourceMaterialId !== undefined;
+  if (hasMaterial === hasSource) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasMaterial ? "sourceMaterialId" : "material"],
+      message: "provide exactly one of material or sourceMaterialId",
+    });
+    return;
+  }
+  if (hasSource !== (command.expectedSourceRevision !== undefined)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectedSourceRevision"],
+      message: "expectedSourceRevision is required with sourceMaterialId and only with it",
+    });
+  }
+}
+
+/** Rewizja treści źródła z podglądu rodzica (dodatnia liczba całkowita). */
+const ExpectedSourceRevisionSchema = z.number().int().min(1);
+
+/**
+ * `details` błędu `conflict` tworzenia lekcji ze źródła, gdy tekst źródła
+ * zmieniono po wyświetleniu podglądu (`expectedSourceRevision` różne od
+ * bieżącej rewizji treści). Zestaw nie powstał; panel odświeża podgląd, a rodzic
+ * potwierdza nowy tekst ponownym utworzeniem. Odróżnia ten konflikt od innych.
+ */
+export const LessonSourceChangedDetailsSchema = z.object({ reason: z.literal("source_changed") }).strict();
+export type LessonSourceChangedDetails = z.infer<typeof LessonSourceChangedDetailsSchema>;
+
+/**
+ * Zestaw szkolny; tekst z `material` albo ze źródła (`sourceMaterialId` razem
+ * z `expectedSourceRevision`, dokładnie jedno).
+ */
 export const SchoolLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
   subjectTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_SUBJECT_TITLE_LENGTH),
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
-  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
+  sourceMaterialId: UuidSchema.optional(),
+  expectedSourceRevision: ExpectedSourceRevisionSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
-}).strict();
+}).strict().superRefine(requireExactlyOneTextSource);
 export type SchoolLessonCommand = z.infer<typeof SchoolLessonCommandSchema>;
+
+/**
+ * Ton lektora nagrania pytania ćwiczenia lub karty nauki (spec TTS §4.1).
+ * Brak pola = styl domyślny roli nagrania; wartości „default” celowo nie ma.
+ * Ton nie trafia do Kid DTO ani do `SubjectCatalogDtoSchema` i nie wpływa
+ * na `payload_version`.
+ */
+export const LessonVoiceToneSchema = z.enum(["cheerful", "curious", "gentle", "mysterious"]);
+export type LessonVoiceTone = z.infer<typeof LessonVoiceToneSchema>;
 
 /**
  * Polecenie utworzenia zestawu z materiału rodzica dla przedmiotu o stałym
  * tytule (np. „Angielski — rozdział”): bez nazwy przedmiotu, bo tytuł zestawu
  * bierze serwer z przedmiotu; rodzic podaje tylko tytuł tematu i materiał.
  * Przedmiot z nazwą od rodzica (szkolny) zostaje przy `SchoolLessonCommandSchema`.
+ * Tekst pochodzi z `material` albo ze źródła (`sourceMaterialId` razem
+ * z `expectedSourceRevision`) — dokładnie jedno.
  */
 export const MaterialLessonCommandSchema = z.object({
   deckId: UuidSchema.optional(),
   subjectId: z.string().min(1).max(64),
   topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
-  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
+  sourceMaterialId: UuidSchema.optional(),
+  expectedSourceRevision: ExpectedSourceRevisionSchema.optional(),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(160).optional(),
   clientRequestId: UuidSchema,
-}).strict();
+}).strict().superRefine(requireExactlyOneTextSource);
 export type MaterialLessonCommand = z.infer<typeof MaterialLessonCommandSchema>;
 
 /** Rodzaj zagadnienia tematu dynamicznego: grupa słów albo rama zdaniowa (przedmioty, które go używają). */
@@ -185,7 +252,12 @@ export type DynamicObjectiveKind = z.infer<typeof DynamicObjectiveKindSchema>;
 export const DynamicObjectiveDtoSchema = z.object({
   id: z.string().min(1).max(200),
   titlePl: z.string().min(1).max(120),
-  cards: z.array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(1200) }).strict()).min(2).max(4),
+  cards: z.array(z.object({
+    title: z.string().min(1).max(120),
+    body: z.string().min(1).max(1200),
+    /** Ton lektora nagrania karty; brak = styl domyślny roli (spec TTS §4.1). */
+    voiceTone: LessonVoiceToneSchema.optional(),
+  }).strict()).min(2).max(4),
   kind: DynamicObjectiveKindSchema.optional(),
 }).strict();
 export type DynamicObjectiveDto = z.infer<typeof DynamicObjectiveDtoSchema>;
@@ -316,12 +388,38 @@ export const LessonExerciseInputSchema = z.object({
   gapAnswers: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_GAPS).max(MAX_CLOZE_GAPS).optional(),
   /** `lesson_cloze`: dystraktory w banku słów. */
   extraWords: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_EXTRA).max(MAX_CLOZE_EXTRA).optional(),
+  /** Ton lektora nagrania pytania; brak = styl domyślny roli (spec TTS §4.1). */
+  voiceTone: LessonVoiceToneSchema.optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 
+/**
+ * Stan nagrania pytania lub karty w panelu rodzica (spec tonu TTS §4.5): stan
+ * najnowszej generacji o oczekiwanym fingerprincie; `assetId` tylko dla gotowej
+ * (odsłuch przez `/api/v1/media/:id`). `previousAssetId` tylko przy `pending`
+ * i `failed`: najnowsze gotowe ujęcie tego samego tekstu, które słyszy dziecko,
+ * dopóki nowe się nagrywa albo gdy nowe się nie udało.
+ */
+export const LessonPromptAudioDtoSchema = z.object({
+  state: z.enum(["pending", "ready", "failed"]),
+  assetId: UuidSchema.optional(),
+  previousAssetId: UuidSchema.optional(),
+}).strict();
+export type LessonPromptAudioDto = z.infer<typeof LessonPromptAudioDtoSchema>;
+
 const LessonExerciseDraftDtoSchema = LessonExerciseInputSchema.extend({
   revisionId: UuidSchema,
+  /** Nagranie pytania; brak = ćwiczenie nie ma nagrania dla tego tekstu. Tylko do odczytu. */
+  promptAudio: LessonPromptAudioDtoSchema.optional(),
 });
+
+/** Nagranie karty zagadnienia w szkicu (miejsce karty w temacie + stan). */
+export const LessonCardAudioDtoSchema = z.object({
+  objectiveId: z.string().min(1),
+  cardIndex: z.number().int().nonnegative(),
+  audio: LessonPromptAudioDtoSchema,
+}).strict();
+export type LessonCardAudioDto = z.infer<typeof LessonCardAudioDtoSchema>;
 
 /** Brak pokrycia publikacyjnego per cel i etap (design „Generowanie puli”). */
 export const CoverageGapDtoSchema = z.object({
@@ -354,6 +452,8 @@ export const LessonDraftDtoSchema = z.object({
   examples: z.record(z.string(), z.array(z.string())),
   exercises: z.array(LessonExerciseDraftDtoSchema),
   assets: z.array(RevisionAssetDtoSchema),
+  /** Nagrania kart zagadnień (tylko karty z wierszem nagrania); brak pola = brak nagrań kart. */
+  cardAudio: z.array(LessonCardAudioDtoSchema).optional(),
   rejectedCount: z.number().int().nonnegative(),
   /**
    * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z
@@ -365,6 +465,23 @@ export const LessonDraftDtoSchema = z.object({
   coverage: z.array(CoverageGapDtoSchema),
 });
 export type LessonDraftDto = z.infer<typeof LessonDraftDtoSchema>;
+
+/**
+ * Pochodzenie zestawu z materiału źródłowego rodzica (design 2026-10-30, §3.3):
+ * tytuł źródła i rewizja jego TREŚCI skopiowana przy tworzeniu zestawu obok
+ * bieżącej rewizji treści (`source_materials.body_revision`). Zmiana samego
+ * tytułu źródła nie zmienia `currentRevision` — `currentRevision >
+ * copiedRevision` znaczy, że tekst źródła zmieniono po skopiowaniu. Schemat
+ * żyje tu (moduł niższy niż `source-materials.ts`), by serwer i panel rodzica
+ * typowały go z kontraktu bez cyklu importów.
+ */
+export const LessonDeckSourceDtoSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  copiedRevision: z.number().int().min(1),
+  currentRevision: z.number().int().min(1),
+}).strict();
+export type LessonDeckSourceDto = z.infer<typeof LessonDeckSourceDtoSchema>;
 
 /**
  * Pełny widok zestawu-lekcji dla panelu rodzica (`GET /parent/lessons/:deckId`):
@@ -383,6 +500,8 @@ export const LessonDeckDtoSchema = z.object({
   published: LessonDraftDtoSchema.nullable(),
   generation: GenerationDtoSchema.nullable(),
   assignments: z.array(AssignmentDtoSchema),
+  /** Pochodzenie z materiału źródłowego rodzica; brak pola — wklejony tekst albo źródło usunięto. */
+  source: LessonDeckSourceDtoSchema.optional(),
   /**
    * Informacja o providerze oceny dowolnych odpowiedzi (wymaganie 10.1). Bez
    * sekretów — tylko czy model jest dostępny i jego nazwa z konfiguracji.

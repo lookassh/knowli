@@ -33,8 +33,9 @@ Decyzje właściciela:
    styl roli z etapu A.
 4. **Lista tonów B:** `cheerful` (radośnie), `curious` (z ciekawością),
    `gentle` (łagodnie), `mysterious` (tajemniczo, szept pierwszego zdania).
-5. **Szept tylko przy ≥ 2 zdaniach** tekstu nagrania; przy jednym zdaniu
-   serwer używa `curious` (§4.3).
+5. **Szept tylko w kartach i tylko przy ≥ 2 zdaniach** tekstu nagrania; przy
+   jednym zdaniu, a w pytaniu zawsze, serwer używa `curious` (§4.3; pytania
+   bez szeptu — decyzja właściciela 2026-10-31).
 6. **Ponowne nagranie:** polecenie serwisowe dla komunikatów Kid UI (etap A)
    oraz odsłuch i przycisk „Nagraj ponownie” dla pytań i kart w edytorze
    lekcji (etap B).
@@ -186,7 +187,8 @@ barrel. Bez endpointu i UI.
 `scripts/sample-tts-styles.mts` (`pnpm eval:tts-styles -- --out <katalog>`):
 z prawdziwym kluczem i bieżącą konfiguracją generuje do katalogu spoza repo
 17 komunikatów, po jednym pytaniu i karcie w każdej roli, a w etapie B po
-jednej próbce każdego tonu (z jednym i dwoma zdaniami dla `mysterious`).
+jednej próbce każdego tonu (dla `mysterious` pytanie — bez szeptu — i karta;
+teksty w kształcie produkcyjnym: pytanie od polecenia, karta od tytułu).
 Nic nie trafia do bazy. W opisie PR: lista odsłuchanych plików i decyzja
 właściciela o brzmieniu.
 
@@ -265,7 +267,12 @@ Schemat strict: `voiceTone: { type: ["null", "string"], enum: [null, …tony] }`
 - **Reguła szeptu** (`lessonPromptStyle`, §2.1): `mysterious` dla tekstu
   nagrania z mniej niż dwoma zdaniami → `curious`. Zdanie = fragment
   zakończony `.`, `!`, `?` lub `…` (albo końcem tekstu) po normalizacji
-  odstępów. Dotyczy pytań i kart.
+  odstępów; polskie skróty („np.”, „tzw.”, „w.”, „p.n.e.” itd.) nie kończą
+  zdania. W pytaniu `mysterious` → `curious` zawsze: czytany tekst pytania
+  zaczyna się od polecenia, więc szept padłby na polecenie (decyzja właściciela
+  2026-10-31). W karcie szept pada na pierwsze zdanie, czyli tytuł — decyzja
+  właściciela: zostaje. Generator nie dostaje `mysterious` jako propozycji dla
+  ćwiczeń; wybór rodzica „Tajemniczo” w pytaniu brzmi jak „Z ciekawością”.
 
 Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 
@@ -289,25 +296,64 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
 
 ### 4.5. Panel rodzica
 
-- **„Ton lektora”** (Mantine `Select`: Domyślny / Radośnie / Z ciekawością /
+- **„Ton lektora”** (Mantine `NativeSelect`: Domyślny / Radośnie / Z ciekawością /
   Łagodnie / Tajemniczo) w edytorze ćwiczenia (`LessonExerciseCard`) i karty
   zagadnienia. „Domyślny” usuwa pole. Widoczny dla przedmiotów z
-  `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla
-  wszystkich kart; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
-  (panel nie liczy `questionReadText`/`cardReadText` — to funkcje serwera).
-- **Odsłuch i „Nagraj ponownie”:** DTO szkicu lekcji dostaje dla ćwiczenia
-  i karty opcjonalne `promptAudio: { state: "pending" | "ready" | "failed", assetId?: uuid }`
-  — stan najnowszej generacji o oczekiwanym fingerprincie
-  (`revision_assets.prompt_audio` / `lesson_card_assets`), `assetId` tylko
-  dla gotowej. Brak pola = brak nagrania dla tego tekstu. Przycisk
-  „Posłuchaj” odtwarza istniejącym `/api/v1/media/:id`. „Nagraj ponownie”
-  (dostępne dla `ready` i `failed`, tylko w szkicu) woła nowe procedury oRPC
-  rodzica `lessons.regeneratePromptAudio({ draftId, itemRevisionId })`
-  i `lessons.regenerateCardAudio({ draftId, objectiveId, cardIndex })` —
-  przypadki użycia w `materials/lessons/` wg §2.4, w transakcji z blokadą
-  wersji jak `regenerateRevisionAsset`; opublikowana wersja → `immutable`.
-- Stan „nagrywanie…” odświeżany zapytaniem TanStack Query po akcji
-  (bez pollingu w tle poza istniejącym wzorcem panelu).
+  `ttsForPrompts` we wszystkich typach poza `lesson_calculation` i dla ich
+  kart (przedmiot bez nagrań, np. „Angielski — rozdział”, nie ma pola, a serwer
+  odrzuca ton karty jak ton ćwiczenia). „Tajemniczo” tylko przy karcie — w
+  pytaniu, gdy ton jest już zapisany, pole go pokazuje, ale nagranie brzmi
+  `curious`; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
+  (karta: „Ton działa, gdy karta ma nagranie.”). Panel nie liczy
+  `questionReadText`/`cardReadText` — to funkcje serwera.
+- **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
+  `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid, previousAssetId?: uuid }`,
+  a szkic opcjonalną listę `cardAudio: [{ objectiveId, cardIndex, audio }]`
+  (`audio` ma ten sam kształt). To stan najnowszej generacji o oczekiwanym
+  fingerprincie (`revision_assets.prompt_audio` / `lesson_card_assets`),
+  `assetId` tylko dla gotowej; brak wpisu = brak nagrania dla tego tekstu.
+  `previousAssetId` tylko przy `pending` i `failed`: najnowsza gotowa generacja
+  tego samego fingerprintu, czyli ujęcie, które słyszy dziecko, dopóki nowe się
+  nagrywa albo gdy nowe się nie udało — panel pokazuje wtedy „Posłuchaj
+  poprzedniego”.
+  Pola są tylko do odczytu i nie wracają w patchu edycji.
+- **Odsłuch i „Nagraj ponownie”:** „Posłuchaj” odtwarza istniejącym
+  `/api/v1/media/:id`. „Nagraj ponownie” (w każdym stanie, tylko w szkicu
+  i bez niezapisanych zmian; przy `pending` bez zmiany konfiguracji zwraca
+  trwające nagranie) woła procedury oRPC rodzica
+  `lessonDrafts.regeneratePromptAudio({ lessonDraftId, itemRevisionId })`
+  (POST `/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate`) i
+  `lessonDrafts.regenerateCardAudio({ lessonDraftId, objectiveId, cardIndex })`
+  (POST `/lesson-drafts/{lessonDraftId}/card-audio/regenerate`); obie
+  odpowiadają 202 z `{ assetId }`. Przypadki użycia w `materials/lessons/` wg §2.4,
+  w transakcji z blokadą wersji; opublikowana wersja → `immutable`.
+- **Zmiana konfiguracji TTS:** nowa generacja kopiuje żądanie (provider, model,
+  metadane) najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne ze swoim
+  providerem i modelem (po zmianie samego głosu lub stylu wykona stare
+  zlecenie — z jego, starą instrukcją). Dlatego procedury najpierw, w tej samej transakcji,
+  uzgadniają media szkicu jak zapis (`reconcileDraftAssetsTx`). Gdy od
+  ostatniego zapisu zmieniła się konfiguracja (provider, model, głos, styl),
+  wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie (nowe zlecenie
+  albo gotowe nagranie wspólne z inną wersją), a stan wiersza odpowiada temu
+  zasobowi; kolejnej generacji nie zlecamy. Uzgodnienie obejmuje cały szkic, jak
+  zapis (z `keepFailed`: nieudane odpowiedzi i ilustracje czekają na decyzję
+  rodzica), więc przenosi do bieżącej konfiguracji wszystkie jego pytania i karty
+  i zleca ponownie ich nieudane nagrania (płatne nagrania). Nowe ujęcie wspólnego
+  fingerprintu słyszy też dziecko w każdej opublikowanej lekcji o tym samym
+  tekście, tonie i konfiguracji — także w innym zestawie. Dlatego „Nagraj ponownie” jest też przy `pending`: zlecenie
+  innego providera lub modelu worker pomija, a przycisk przenosi je do bieżącej
+  konfiguracji. Rodzic nie musi niczego
+  zapisywać (zapis czystego szkicu i tak nic nie wysyła). Brak ustawień
+  mediów → `internal`.
+- **Błąd „Nagraj ponownie”** znika, gdy zmieni się stan nagrania (zapis
+  szkicu, odpytywanie), zamiast wisieć obok nowego stanu.
+- **Odświeżanie:** dopóki jakieś nagranie pytania lub karty jest `pending`,
+  edytor odpytuje lekcję (`lessonPollInterval`, co 3 s, gdy czekają tylko
+  nagrania pytań i kart), więc „Nagrywanie…” znika samo,
+  gdy nagranie będzie gotowe albo nieudane.
+- **Świeża kopia opublikowanej lekcji** nie ma jeszcze wierszy nagrań kart:
+  sterowanie kartami pojawia się dopiero po pierwszej zapisanej edycji
+  szkicu (uzgodnienie mediów).
 - Etykiety w katalogu komunikatów rodzica (`messages`), pl-PL.
 
 ## 5. Błędy i odporność
@@ -368,7 +414,7 @@ Etap B:
   schematy strict generatora z nullable enum we wszystkich gałęziach poza
   `lesson_calculation`; bez pola przy `voiceTones: false`.
 - Domena: sanityzacja nieznanego tonu; gramatyka odrzuca pole; reguła szeptu
-  (1 zdanie → `curious`, 2 zdania → `mysterious`).
+  (1 zdanie → `curious`, 2 zdania → `mysterious`; pytanie zawsze `curious`).
 - Edytor (jednostkowe stanu): round-trip DTO → forma → patch zachowuje
   `voiceTone` w ćwiczeniu i karcie; „Domyślny” usuwa pole; zmiana tonu
   wykrywana przez `lessonExerciseChanged`.

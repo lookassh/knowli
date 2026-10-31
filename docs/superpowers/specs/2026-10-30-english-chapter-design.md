@@ -1,6 +1,6 @@
 # Źródła i lekcja „Angielski — rozdział” — projekt
 
-Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; Etap 1 (przedmiot z wklejonym materiałem) zaimplementowany — stan i wynik próby w sekcji 10; następne etapy czekają na osobne plany.
+Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; Etapy 1–2 zaimplementowane — Etap 1 (przedmiot z wklejonym materiałem) scalony jako #192, Etap 2 (źródła) na gałęzi `claude/english-chapter-2-sources`; stan, wynik próby i odstępstwa w sekcji 10; Etapy 3–4 czekają na osobne plany.
 
 ## 1. Cel
 
@@ -34,31 +34,32 @@ Nowa tabela `source_materials` w obszarze `materials/`:
 | `request_hash` | text | skrót znormalizowanego tytułu i treści z pierwszego żądania |
 | `title` | text | 1–120 znaków po trim |
 | `body` | text | 1–16 000 znaków po trim (limit `MAX_SCHOOL_MATERIAL_LENGTH`) |
-| `revision` | integer | od 1; rośnie przy każdej edycji (kontrola współbieżności) |
+| `revision` | integer | od 1; rośnie przy każdej zmianie, także samego tytułu (kontrola współbieżności edycji) |
+| `body_revision` | integer | od 1; rośnie tylko przy zmianie `body` (wersja kopiowanego tekstu; dodane w Etapie 2 po końcowym przeglądzie) |
 | `created_at`, `updated_at` | timestamptz | |
 
 Nowe kolumny w `decks`:
 
 - `source_material_id uuid null references source_materials(id) on delete set null`,
-- `source_material_revision integer null` — rewizja źródła skopiowana przy tworzeniu.
+- `source_material_revision integer null` — rewizja treści źródła (`body_revision`) skopiowana przy tworzeniu; CHECK: dodatnia i obecna przy niepustym `source_material_id` (oba warunki przepuszczają wiersz po `ON DELETE SET NULL`).
 
 Odnośnik jest informacją o pochodzeniu; treść zestawu nigdy nie jest czytana ze źródła po utworzeniu. Migracja Drizzle z przeglądanym SQL; `docs/schema.sql` uzupełniony.
 
 ### 3.2. Operacje (rodzic, Parent Mode)
 
 - `createSourceMaterial({ clientRequestId, title, body })` — ponowienie z tym samym `clientRequestId` i tą samą treścią zwraca istniejący rekord; z inną treścią → `conflict`. Ponowienie po usunięciu źródła tworzy je od nowa (świadomie akceptowany przypadek brzegowy; bez nagrobków).
-- `updateSourceMaterial({ id, expectedRevision, title?, body? })` — rozbieżna `expectedRevision` → `conflict`.
+- `updateSourceMaterial({ id, expectedRevision, title?, body? })` — rozbieżna `expectedRevision` → `conflict`; zmiana tekstu podnosi `revision` i `body_revision`, zmiana samego tytułu tylko `revision`; edycja, w której każde podane pole równa się zapisanemu (po trim), niczego nie zapisuje i nie podbija.
 - `deleteSourceMaterial({ id })` — usuwa źródło; zestawy zostają, odnośnik staje się `null`.
 - `listSourceMaterials()` — tytuł, daty, liczba niezarchiwizowanych zestawów z tym źródłem.
-- `getSourceMaterial({ id })` — pełny tekst i lista zestawów utworzonych z tego źródła (tytuł, rodzaj, stan, czy skopiowana rewizja jest starsza od bieżącej).
+- `getSourceMaterial({ id })` — pełny tekst i lista zestawów utworzonych z tego źródła (tytuł, rodzaj, stan, czy skopiowana rewizja treści jest starsza od bieżącej `body_revision`).
 
 Każda operacja wymaga sesji rodzica i serwerowej autoryzacji, jak operacje na zestawach. Źródła nie są widoczne w Kid API.
 
 ### 3.3. Tworzenie zestawu ze źródła
 
-Komendy tworzenia przyjmują `sourceMaterialId` jako alternatywę dla wklejonego tekstu (dokładnie jedno z dwóch; oba albo żadne → `validation`). Serwer w transakcji tworzenia:
+Komendy tworzenia przyjmują `sourceMaterialId` jako alternatywę dla wklejonego tekstu (dokładnie jedno z dwóch; oba albo żadne → `validation`). Komenda ze źródłem niesie też wymagane `expectedSourceRevision` — rewizję treści (`body_revision`), z której rodzic widział podgląd; gdy po blokadzie źródła bieżąca rewizja jest inna (tekst zmieniono w innym oknie), serwer kończy polecenie `conflict` (409, `details.reason = "source_changed"`) bez zapisu, a panel odświeża podgląd i rodzic tworzy lekcję ponownie (dodane po przeglądzie PR #193). Serwer w transakcji tworzenia:
 
-1. czyta `body` i `revision` źródła z blokadą `FOR KEY SHARE` (równoległe usunięcie czeka; brak źródła → `not_found`, nie błąd 500 z naruszenia klucza obcego),
+1. czyta `body` i `body_revision` źródła z blokadą `FOR KEY SHARE` (równoległe usunięcie czeka; brak źródła → `not_found`, nie błąd 500 z naruszenia klucza obcego — chyba że ponowienie tego samego polecenia trafia na zestaw zatwierdzony już przez pierwsze żądanie, wtedy zwraca ten zestaw),
 2. kopiuje tekst w to samo miejsce, w którym zestaw przechowuje dziś materiał,
 3. zapisuje `decks.source_material_id` i `decks.source_material_revision`.
 
@@ -74,7 +75,7 @@ Edycja źródła nie zmienia istniejących zestawów.
 - Nowa zakładka **„Źródła”** (w UI słowo „materiał” oznacza już zestaw albo lekcję — stąd inna nazwa).
 - Lista źródeł: tytuł, data zmiany, liczba zestawów; przycisk „Nowe źródło” (tytuł + pole tekstowe z licznikiem znaków).
 - Strona źródła: podgląd i edycja tekstu, usunięcie z potwierdzeniem podającym liczbę zestawów, lista zestawów z tego źródła oraz przyciski „Utwórz lekcję rozdziału”, „Utwórz lekcję szkolną” i (po wdrożeniu sekcji 6) „Utwórz zestaw słówek”. Przycisk otwiera dzisiejszy formularz z tekstem źródła zablokowanym do podglądu.
-- Edytor zestawu ze źródła pokazuje „Ze źródła: <tytuł>” z linkiem, a gdy źródło zmieniono po utworzeniu zestawu — „Źródło zmieniono od utworzenia tego zestawu”.
+- Edytor zestawu ze źródła pokazuje „Ze źródła: <tytuł>” z linkiem, a gdy tekst źródła zmieniono po utworzeniu zestawu (rewizja treści; sam tytuł się nie liczy) — „Źródło zmieniono od utworzenia tego zestawu”.
 - Komunikaty w `messages.ts`; Mantine wyłącznie w `apps/web/src/parent`.
 
 ## 4. Przedmiot `english_chapter`
@@ -149,7 +150,7 @@ Mapowanie etapów w `STAGE_BY_TYPE` bez zmian.
 |---|---|---|---|
 | guided | `lesson_match` | lewa strona po angielsku (słowo, zwrot albo pytanie z rozdziału), prawa: polskie znaczenie albo angielska odpowiedź; 3–5 par + 0–2 dystraktory | strona polska / para pytanie–odpowiedź |
 | guided | `lesson_group` | tylko gdy słowa zagadnienia dzielą się naturalnie na 2–3 kategorie; polskie etykiety, 4–8 angielskich elementów | etykiety grup |
-| guided | `lesson_cloze` | 2–4 krótkie zdania z ram rozdziału, 2–4 luki na słowa z rozdziału, 1–2 słowa-pułapki z materiału; każda luka jednoznaczna, luki niezamienialne, pułapka nie pasuje do znaczenia żadnej luki (ocena całościowa) | polskie znaczenie całego tekstu w `instructionPl` („W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.”) |
+| guided | `lesson_cloze` | 2–3 krótkie zdania z ram rozdziału (całe `instructionPl` — polskie znaczenie i komenda — najwyżej 120 znaków), 2–4 luki na słowa z rozdziału, 1–2 słowa-pułapki z materiału; każda luka jednoznaczna, luki niezamienialne, pułapka nie pasuje do znaczenia żadnej luki (ocena całościowa) | polskie znaczenie całego tekstu w `instructionPl` („W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.”) |
 | guided | `lesson_choice` | angielskie zdanie z luką w `stem`, 2–3 opcje | polskie zdanie w `instructionPl` („Dziś pada śnieg. Wybierz słowo.”) |
 | guided | `lesson_order` | klocki-słowa zdania z ramy; zdania bez przestawnych części (jedna poprawna kolejność) | polskie zdanie w `instructionPl` („Ułóż zdanie: Mam na sobie różowy płaszcz.”) |
 | productive | `lesson_gap` | angielskie zdanie z jedną luką | polskie zdanie w `instructionPl` („Mam na sobie zielony płaszcz. Wpisz brakujące słowo.”) |
@@ -332,10 +333,10 @@ Po normalizacji (4.5) tekst nagrania jest równy `exposureText` ćwiczenia, wię
 - `packages/contracts`:
   - schematy źródeł (`SourceMaterialInput`, `SourceMaterialPatch`, `SourceMaterialDto`, `SourceMaterialSummaryDto`);
   - `MaterialLessonCommandSchema` (Etap 1; w pierwszej wersji projektu `ChapterLessonCommandSchema`, z `sourceMaterialId` dopiero w Etapie 2);
-  - `sourceMaterialId` w `SchoolLessonCommandSchema` i `GenerationCommandSchema` (z regułą „dokładnie jedno źródło tekstu”) oraz `instruction` w `GenerationCommandSchema`;
+  - `sourceMaterialId` w `SchoolLessonCommandSchema` i `GenerationCommandSchema` (z regułą „dokładnie jedno źródło tekstu”) oraz `instruction` w `GenerationCommandSchema`; w Etapie 2 reguła obowiązuje w `SchoolLessonCommandSchema` i `MaterialLessonCommandSchema`, a `GenerationCommandSchema` (słówka) dostaje pole w Etapie 4;
   - `rejectedCount` w `GenerationDto`;
   - `creation` i `subjectTitleRequired` w `SubjectCatalogDto`;
-  - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica;
+  - `sourceMaterialId` i `sourceMaterialRevision` w DTO zestawu dla rodzica — w Etapie 2 wyłącznie dla lekcji, jako opcjonalne `LessonDeckDto.source { id, title, copiedRevision, currentRevision }` (rewizje treści; tytuł i bieżąca rewizja treści pochodzą z żywego źródła, więc pole znika po jego usunięciu); DTO zestawu słówek dostanie odnośnik w Etapie 4;
   - `rejectedReasons` w DTO szkicu lekcji;
   - opcjonalne `contentLocale` i `answerLocale` w promptach lekcji Kid DTO.
 - Serwerowe schematy `.strict()` dostają nowe pola. Kid UI także waliduje zadania i sesje ścisłymi schematami z `@learning/contracts` (`parseWith(TaskDtoSchema/SessionDtoSchema)`, błąd daje ogólny `KidApiError("internal")`), a silnik ustawia `contentLocale` i `answerLocale` dla każdego przedmiotu lekcji. Pakiet Kid UI zbudowany przed zmianą odrzuci więc zadania lekcji typów, które niosą nowe pola — wybór, układankę, lukę, pary, grupy, uzupełnianie tekstu (`contentLocale`) i odpowiedź otwartą (`answerLocale`), także w gramatyce i szkole; karty i pozostałe typy lekcji nie są dotknięte — więc web i Kid UI/PWA wdrażamy razem, a po wdrożeniu otwartą kartę lub PWA trzeba odświeżyć — jak przy wcześniejszych dodaniach pól w ścisłych schematach (np. `promptLocale`). Nowy klient ze starszym serwerem działa, bo pola są opcjonalne.
@@ -416,7 +417,7 @@ Nowe pliki trafiają do `tests/e2e/spec-projects.ts` i `tests/integration-bucket
 Każdy etap kończy się osobnym PR do scalenia przez właściciela. Kolejność zmieniona po przeglądzie i potwierdzona przez właściciela (2026-10-30). Największe ryzyko (wykonalność generacji) idzie pierwsze, a źródła są dodatkiem do działającej lekcji:
 
 1. **Przedmiot „Angielski — rozdział”** z wklejonym materiałem (sekcja 4, bez `sourceMaterialId`) + próba z prawdziwym modelem na Unit 1–2 (wykonano na odtworzonym Unit 1). Z próby raportujemy liczbę zagadnień, odrzuceń według powodów i spełnienie minimów; materiał próby nie trafia do repozytorium. Ten PR zawiera też niniejszą specyfikację.
-2. **Źródła** + lekcja rozdziału i lekcja szkolna ze źródła (sekcja 3).
+2. **Źródła** + lekcja rozdziału i lekcja szkolna ze źródła (sekcja 3) — zaimplementowane, stan w „Stan Etapu 2” niżej.
 3. **Lektor po odpowiedzi** (sekcja 5).
 4. **Słówka ze źródła** (sekcja 6).
 
@@ -424,7 +425,7 @@ Dokumentacja w PR etapów: nowa sekcja `docs/SPEC.md` (§37), uzupełnienie `doc
 
 ### Stan Etapu 1 (2026-10-30)
 
-**Zaimplementowane** (gałąź `claude/english-chapter-1-lesson`, plan `docs/superpowers/plans/2026-10-30-english-chapter-stage1.md`): przedmiot `english_chapter` w `subjects/english-chapter/` (moduł, słownik materiału, walidatory, tekst ekspozycji, prompty); normalizator angielski w `subjects/english/`; generyczne opcje `SubjectModule` (`sourceQuotes`, `materialSubjectTitle`, `instructionIsStimulus`, `exposureText`, `normalizeExposureText`, `refineGeneratedPool`, `openAnswerPromptLocale`, `prompts.typeRules`, `prompts.objectivesRules`) i `DynamicObjectiveData.kind`; `contentLocale`/`answerLocale` w Kid DTO z atrybutami `lang` w Kid UI; `rejectedReasons` w szkicu i edytorze rodzica; `createMaterialLesson`, `createLessonFromMaterial`, `lessons.createFromMaterial` i `creation`/`subjectTitleRequired` w katalogu; fałszywy provider z gałęzią rozdziału; testy jednostkowe, integracyjne (`tests/integration/lesson-chapter.test.ts`) i narzędzie próby `pnpm probe:chapter`. Opis architektury: `docs/architecture.md` §19.9 i §22, produktu: SPEC §37. Odstępstwa od pierwszej wersji projektu: kategorie błędów (4.1), dodatkowa opcja `materialSubjectTitle`, `MaterialLessonCommand` zamiast `ChapterLessonCommand` i tytuł zestawu (4.6), usuwanie niezamówionych pól v3 (4.4). Po końcowym przeglądzie (2026-10-31): wspólna normalizacja ekspozycji ćwiczeń i przykładów kart (`normalizeExposureText`, 4.5), stałe polecenie tłumaczenia i bodziec w uzupełnianiu tekstu (4.1, 4.4), jednoznaczne luki i pary w promptach (4.3), karty ram bez tłumaczeń (4.2), uczciwy raport odrzuceń w edytorze (4.4), `lang` pola luki (4.7), spójność `buildDynamicTopic`/`materialSubjectTitle` w rejestrze oraz test architektoniczny, że silnik i adaptery nie zawierają literałów identyfikatorów przedmiotów (jedyny nazwany wyjątek: `"school"` w `createSchoolLesson`). Nie ma jeszcze: źródeł, lektora (`ttsForFeedback`), słówek ze źródła ani osobnej specyfikacji E2E całego przebiegu rozdziału (Etap 2 i dalsze); formularz rodzica i edytor (rodzaje zagadnień, powody odrzuceń) pokrywają specyfikacje układu `parent-lessons-layout` i `parent-lesson-editor-layout`, a przebieg dziecka — testy integracyjne.
+**Zaimplementowane** (gałąź `claude/english-chapter-1-lesson`, plan `docs/superpowers/plans/2026-10-30-english-chapter-stage1.md`): przedmiot `english_chapter` w `subjects/english-chapter/` (moduł, słownik materiału, walidatory, tekst ekspozycji, prompty); normalizator angielski w `subjects/english/`; generyczne opcje `SubjectModule` (`sourceQuotes`, `materialSubjectTitle`, `instructionIsStimulus`, `exposureText`, `normalizeExposureText`, `refineGeneratedPool`, `openAnswerPromptLocale`, `prompts.typeRules`, `prompts.objectivesRules`) i `DynamicObjectiveData.kind`; `contentLocale`/`answerLocale` w Kid DTO z atrybutami `lang` w Kid UI; `rejectedReasons` w szkicu i edytorze rodzica; `createMaterialLesson`, `createLessonFromMaterial`, `lessons.createFromMaterial` i `creation`/`subjectTitleRequired` w katalogu; fałszywy provider z gałęzią rozdziału; testy jednostkowe, integracyjne (`tests/integration/lesson-chapter.test.ts`) i narzędzie próby `pnpm probe:chapter`. Opis architektury: `docs/architecture.md` §19.9 i §22, produktu: SPEC §37. Odstępstwa od pierwszej wersji projektu: kategorie błędów (4.1), dodatkowa opcja `materialSubjectTitle`, `MaterialLessonCommand` zamiast `ChapterLessonCommand` i tytuł zestawu (4.6), usuwanie niezamówionych pól v3 (4.4). Po końcowym przeglądzie (2026-10-31): wspólna normalizacja ekspozycji ćwiczeń i przykładów kart (`normalizeExposureText`, 4.5), stałe polecenie tłumaczenia i bodziec w uzupełnianiu tekstu (4.1, 4.4), jednoznaczne luki i pary w promptach (4.3), karty ram bez tłumaczeń (4.2), uczciwy raport odrzuceń w edytorze (4.4), `lang` pola luki (4.7), spójność `buildDynamicTopic`/`materialSubjectTitle` w rejestrze oraz test architektoniczny, że silnik i adaptery nie zawierają literałów identyfikatorów przedmiotów (jedyny nazwany wyjątek: `"school"` w `createSchoolLesson`). Nie ma jeszcze: źródeł (Etap 2, stan niżej), lektora (`ttsForFeedback`), słówek ze źródła ani osobnej specyfikacji E2E całego przebiegu rozdziału (Etap 2 i dalsze); formularz rodzica i edytor (rodzaje zagadnień, powody odrzuceń) pokrywają specyfikacje układu `parent-lessons-layout` i `parent-lesson-editor-layout`, a przebieg dziecka — testy integracyjne.
 
 **Próba na prawdziwym modelu** (`google/gemini-3.8-flash`, odtworzony materiał Unit 1, pula 60; `pnpm probe:chapter` z `UMIEM_PROBE_MATERIAL` wskazującym plik poza repozytorium):
 
@@ -447,6 +448,49 @@ Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompc
 - prawdziwy materiał właściciela (NotebookLM): próba objęła odtworzony Unit 1, nie tekst od właściciela;
 - odrzucanie słownikowe na prawdziwym modelu: ani razu nie odrzuciło ćwiczenia za słowo spoza materiału (jedyne odrzucenia słownikowe to elementy bez słowa treści: luka z samym „It's” w przebiegu 5 i element z samym „What's” w przebiegu 6), więc heurystyka odmiany i `FUNCTION_WORDS` nie były sprawdzone na żywo; rozdział oparty na słowach funkcyjnych (przyimki, can/can't) nie był próbowany (4.4, znane ograniczenia);
 - jakość ćwiczeń poza próbkami: mało układanek na pulę (około 3), wybór bywa dwuopcyjny, pojedynczy dystraktor w parach bywa z innej kategorii.
+
+### Stan Etapu 2 (2026-10-31)
+
+**Zaimplementowane** (gałąź `claude/english-chapter-2-sources`, na bazie Etapu 1 (#192, `main`); plan `docs/superpowers/plans/2026-10-31-english-chapter-stage2-sources.md`):
+
+- dane: tabela `source_materials` (z `revision` i `body_revision`), kolumny `decks.source_material_id` (FK `ON DELETE SET NULL`) i `decks.source_material_revision` (rewizja treści) z dwoma CHECK-ami, indeks częściowy, migracja `0030_source_materials.sql` (niewydana; przy scaleniu z `main` przenumerowana z `0029`, które zajęła rola `feedback_audio` z #194 — poprawki końcowego przeglądu weszły do niej na miejscu), `docs/schema.sql`;
+- serwer (obszar `materials/`): `source-materials.ts` z `createSourceMaterial` (idempotencja po `clientRequestId` i `request_hash`), `updateSourceMaterial` (`expectedRevision`, `FOR UPDATE`, zapis bez zmian bez podbicia), `deleteSourceMaterial`, `listSourceMaterials`, `getSourceMaterial`, `lockSourceMaterialForCopy` (`FOR KEY SHARE` w transakcji tworzenia lekcji) i `readDeckSource`; ponowienie tworzenia lekcji po równoległym usunięciu źródła zwraca zestaw pierwszego żądania (`findEnqueuedRun`);
+- kontrakty: `source-materials.ts` (z `bodyRevision` w `SourceMaterialDto`), `sourceMaterialId` z wymaganym `expectedSourceRevision` w `SchoolLessonCommandSchema` i `MaterialLessonCommandSchema` (dokładnie jedno z `material` / `sourceMaterialId`; konflikt nieaktualnego podglądu z `LessonSourceChangedDetailsSchema`), `LessonDeckDto.source` (`LessonDeckSourceDtoSchema`, wspólny typ serwera i panelu), `messages.sources`;
+- Parent API: grupa oRPC `sources` (list, get, create 201/200, update, delete 204), sesja rodzica, kontrola Origin na mutacjach; bez Kid API i MCP;
+- panel rodzica: zakładka „Źródła” (lista, nowe źródło, strona źródła z edycją, usuwaniem i listą zestawów), formularz nowej lekcji w trybie źródła (`/parent/lessons/new?source=…&subject=…`, „Wróć do źródła”, „Zmień źródło” → lista źródeł), notka „Ze źródła: …” i „Źródło zmieniono od utworzenia tego zestawu.” w edytorze lekcji; po końcowym przeglądzie: neutralne okno wyjścia i okno ponownego logowania nad oknami sekcji, odrzucanie szkicu nowego źródła z potwierdzeniem, przyciski lekcji tylko dla przedmiotów z katalogu, uwaga przy edycji źródła z zestawami i przy limicie 16 000 znaków, fokus po błędach i stały region na żywo, rząd zakładek mieszczący się od 600 px;
+- prompt uzupełniania tekstu rozdziału: 2–3 krótkie zdania, całe `instructionPl` najwyżej 120 znaków (sekcja 4.3).
+
+Opis architektury: `docs/architecture.md` §19.10 (blokady, idempotencja, wdrożenie, znane ograniczenia), produktu: SPEC §37 („Etap 2: źródła”).
+
+**Odstępstwa od pierwszej wersji projektu:**
+
+- DTO zestawu niesie `source { id, title, copiedRevision, currentRevision }` zamiast pól `sourceMaterialId` i `sourceMaterialRevision`, i to tylko dla lekcji (sekcja 7); odnośnik w zestawach słówek dochodzi w Etapie 4;
+- dwie rewizje źródła zamiast jednej (3.1): `revision` dla kontroli współbieżności i `body_revision` dla wersji treści; `copiedRevision`, `currentRevision` i `stale` w kontraktach (nazwy bez zmian) dotyczą rewizji treści, więc zmiana samego tytułu nie daje notki „Źródło zmieniono…”; zapis bez zmian niczego nie podbija także po stronie serwera;
+- formularz lekcji ze źródła pokazuje tytuł i podgląd tekstu tylko do odczytu oraz „Zmień źródło” (lista źródeł) zamiast zablokowanego pola (3.4), przycisk u góry wraca do strony źródła, a formularz oferuje wyłącznie przedmioty tworzone z materiału (`creation: "material"`); przyciski tworzenia na stronie źródła są tylko dla przedmiotów obecnych w katalogu;
+- strona źródła wylicza także zestawy zarchiwizowane (stan `archived`), a liczba zestawów na liście i w nagłówku ich nie liczy; potwierdzenie usunięcia podaje liczbę wszystkich zestawów ze strony;
+- przycisk „Utwórz zestaw słówek” nie istnieje (Etap 4).
+
+**Zweryfikowane** (uruchomione podczas implementacji):
+
+- na PostgreSQL (`tests/integration/source-materials.test.ts`, 51 testów po przeglądzie PR #193, kosz integracyjny 3): nieaktualna rewizja podglądu → `source_changed` bez zestawu (także dla tworzenia czekającego na edycję tekstu i przez Parent API), zgodna rewizja → zestaw z tą rewizją, ponowienie po edycji źródła (także w przeplocie z pierwszym żądaniem) → ten sam zestaw; idempotencja i konflikt tworzenia, równoległe tworzenie z tym samym `clientRequestId`, edycja z rewizją i dwie równoległe edycje tej samej rewizji, rewizja treści przy zmianie samego tytułu i tekstu, zapis bez zmian bez podbicia, deterministyczne ponowienie po równoległym usunięciu źródła, CHECK-i pochodzenia, usunięcie bez utraty zestawów (`source_material_id` = `NULL`, kopia tekstu zostaje, triggery `decks` nie przeszkadzają), kopia tekstu i rewizji do lekcji rozdziału i szkolnej, trzy deterministyczne przeploty usunięcie/tworzenie/edycja oraz pętla 12 wyścigów (mutacyjnie: bez `FOR KEY SHARE` cztery testy padają), pełny cykl przez handler Parent API (statusy, 401, 403 dla mutacji z obcego Origin, 400 dla złych ciał);
+- jednostkowo: kontrakty, router oRPC (w tym CSRF dla trzech mutacji), trasy panelu, `sources-state`, markup listy, strony i formularza ze źródła, notka w edytorze, prompt uzupełniania tekstu;
+- Playwright z zaślepionym API (`parent-sources-layout.spec.ts`): na czterech rozmiarach (320×640, 390×844, 768×1024, 1280×800) lista, nowe źródło, edycja tylko zmienionych pól z uwagą o istniejących zestawach, konflikt 409 i „Odśwież” z potwierdzeniem (fokus na „Odśwież”), region „Zapisano zmiany.”, usunięcie z liczbą zestawów, przyciski „Utwórz lekcję…”, „Wróć do źródła” / „Zmień źródło” i formularz ze źródła (żądanie z `sourceMaterialId` i `expectedSourceRevision` bez `material`), fokus po „Edytuj”, cele dotykowe ≥ 44 px bez przepełnienia poziomego; tylko na telefonie 390×844 przypadki brzegowe: ponowienie po niepewnym zapisie (ten sam `clientRequestId`, fokus na komunikacie), 404 z usuniętego źródła przy tworzeniu lekcji, zapisie i stronie z pamięci podręcznej, 409 ze źródła zmienionego po otwarciu formularza (odświeżony podgląd, komunikat, nowe polecenie z bieżącą rewizją), błąd zapisu (fokus), odrzucenie szkicu nowego źródła z potwierdzeniem, ochrona wyjścia przy edycji i szkicu (zakładka i „wstecz”), błędy wczytywania listy i strony, linki do nieistniejącego źródła, potwierdzenie usunięcia bez zestawów i limit 16 000 znaków; `parent-shell-layout.spec.ts` sprawdza pięć zakładek w dolnym pasku na 390, 360 i 320 px oraz w górnym rzędzie na 600×960, 640×360, 844×390, 768×1024 i 1280×800 (pasek bez przewijania, także z symulowanym klasycznym paskiem przewijania przy 600 px);
+- Playwright na prawdziwej bazie i workerze z fałszywym LLM (`parent-sources.spec.ts`, kosz `real` 4): nowe źródło → lekcja ze źródła → notka w edytorze → publikacja lekcji (sekcja 8, dodana po końcowym przeglądzie) → edycja źródła → znacznik zmiany → usunięcie → opublikowana lekcja zostaje z pełną kopią tekstu; spec 3 razy z rzędu stabilny (także po końcowym przeglądzie, z krokiem publikacji), a pełny przebieg `pnpm test:e2e:shards` po końcowym przeglądzie (spec w koszu 4) zakończył się zielono: mocked 301, real 33/33/21/34.
+
+**Niezweryfikowane:**
+
+- pilotaż z rodzicem (czy zakładka „Źródła”, rozróżnienie źródło/zestaw i komunikaty o zmianie źródła są zrozumiałe);
+- fizyczne urządzenia: układ sprawdzono wyłącznie w emulacji okna przeglądarki; górny rząd pięciu zakładek zmierzono przy 600, 640 i 768 px (klasyczny pasek przewijania tylko w symulacji), a przypadki brzegowe zakładki — tylko przy 390×844;
+- skutek skróconego polecenia uzupełniania tekstu na prawdziwym modelu: zmieniono sam prompt (limit 120 znaków egzekwuje walidacja silnika), a próby `pnpm probe:chapter` po zmianie nie powtarzano;
+- generowanie z prawdziwego modelu ze źródła jako wejścia (próba z Etapu 1 objęła tekst wklejony; ścieżka ze źródła używa tego samego generatora);
+- jednoczesne wdrożenie: kolejność migracja `0030` → web i worker (oba używają wspólnego schematu; krok `migrate` w Compose ją wymusza) wynika z projektu, nie była ćwiczona na środowisku wdrożeniowym.
+
+**Uwagi dla Etapu 4** (słówka ze źródła, sekcja 6; z końcowego przeglądu Etapu 2):
+
+- `source-materials.ts` importuje dziś `deckStateOf` z `decks.ts`; zanim `decks.ts` (tworzenie zestawu słówek) zaimportuje kod źródeł, `deckStateOf` trzeba przenieść do osobnego pliku-liścia, żeby nie powstał cykl `decks.ts` ↔ `source-materials.ts`;
+- w kontraktach `source-materials.ts` importuje `decks.ts` i `lessons.ts`; wspólny schemat odnośnika do źródła dla `GenerationCommand` i DTO zestawu słówek trzymać w niższym module (`decks.ts` albo `common.ts`), jak `LessonDeckSourceDtoSchema` w `lessons.ts`, bo import z `source-materials.ts` dałby cykl inicjalizacji stałych;
+- `lockSourceMaterialForCopy` zwraca dziś `body` i `bodyRevision`; domyślny tytuł zestawu słówek z tytułu źródła (6.2) wymaga dołożenia `title` do tego samego zapytania (jedna wersja wiersza);
+- `readDeckSource` robi jedno zapytanie na zestaw — przy odnośniku w DTO listy zestawów trzeba go pobrać zbiorczo dla całej listy (bez N+1).
 
 ## 11. Poza zakresem
 

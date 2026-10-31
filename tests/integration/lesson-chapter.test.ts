@@ -323,6 +323,21 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     expect(version!.lesson_context.dynamicTopic.objectives.map((objective) => objective.kind)).toEqual(["frame", "frame"]);
   });
 
+  it("rodzic: ton lektora karty odrzucony — rozdział nie ma nagrań pytań i kart (spec tonu TTS §4.5)", async () => {
+    const { services } = await chapterWorld();
+    const { draft } = await generateChapter(services);
+    const objectives = draft.dynamicTopic!.objectives;
+    for (const objective of objectives) for (const card of objective.cards) expect(card).not.toHaveProperty("voiceTone");
+    await expect(editLessonDraft(services, draft.id, {
+      expectedEditNumber: draft.editNumber,
+      dynamicTopic: { objectives: objectives.map((objective, index) => ({
+        id: objective.id,
+        titlePl: objective.titlePl,
+        cards: index === 0 ? [{ ...objective.cards[0]!, voiceTone: "cheerful" as const }, ...objective.cards.slice(1)] : objective.cards,
+      })) },
+    })).rejects.toMatchObject({ code: "validation" });
+  });
+
   it("regresja szkoły: createSchoolLesson dalej tworzy cele school.d… z cytatami źródłowymi", async () => {
     const { services } = await chapterWorld();
     const { runId, deckId } = await createSchoolLesson(services, {
