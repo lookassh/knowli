@@ -1058,6 +1058,8 @@ export const messages = {
     notFound: "Nie ma takiego źródła. Mogło zostać usunięte.",
     /** Tworzenie lekcji: tekst źródła zmieniono po wyświetleniu podglądu; podgląd odświeżony, rodzic tworzy ponownie. */
     changedBeforeCreate: "Źródło zmieniono w innym oknie. Sprawdź tekst i utwórz lekcję ponownie.",
+    /** Tworzenie lekcji: odświeżenie podglądu po zmianie źródła się nie udało; tworzenie czeka na udane odświeżenie. */
+    refreshFailed: "Nie udało się odświeżyć źródła.",
     updatedAt: "Ostatnia zmiana {date}",
     deckCount: { one: "{n} zestaw", few: "{n} zestawy", many: "{n} zestawów" } as Record<string, string>,
     noDecks: "Z tego źródła nie powstał jeszcze żaden zestaw.",

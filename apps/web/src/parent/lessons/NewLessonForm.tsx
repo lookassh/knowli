@@ -195,6 +195,27 @@ export function classifyCreateFailure(cause: unknown, fromSource: boolean): Crea
 }
 
 /**
+ * Wynik ponownego odczytu źródła po konflikcie rewizji (`onSourceChanged`):
+ * `refreshed` — bieżące źródło z jego rewizją treści, `missing` — źródło
+ * usunięto w innym oknie (404), `failed` — odczyt się nie udał, podgląd
+ * pozostaje nieaktualny.
+ */
+export type SourceRefreshOutcome =
+  | { status: "refreshed"; bodyRevision: number }
+  | { status: "missing" }
+  | { status: "failed" };
+
+/**
+ * Wynik `refetch()` odczytu źródła jako `SourceRefreshOutcome`. `refetch()` nie
+ * odrzuca obietnicy przy błędzie, a dane poprzedniego odczytu zostają — o
+ * wyniku decyduje błąd tego odczytu, nie obecność danych.
+ */
+export function sourceRefreshOutcome(result: { isError: boolean; error: unknown; data: { bodyRevision: number } | undefined }): SourceRefreshOutcome {
+  if (result.isError) return httpStatusOf(result.error) === 404 ? { status: "missing" } : { status: "failed" };
+  return result.data !== undefined ? { status: "refreshed", bodyRevision: result.data.bodyRevision } : { status: "failed" };
+}
+
+/**
  * Formularz nowej lekcji: przedmiot → temat (z katalogu) → reguły (domyślnie
  * wszystkie) → materiał (licznik, limit 8000) → instrukcja → wielkość puli;
  * przedmiot szkolny zamiast tematu i reguł ma nazwy wpisane przez rodzica,
@@ -211,7 +232,9 @@ export function classifyCreateFailure(cause: unknown, fromSource: boolean): Crea
  * są tylko przedmioty tworzone z materiału. Gdy tekst źródła zmieniono w innym
  * oknie, serwer odrzuca polecenie (409): formularz odświeża podgląd
  * (`onSourceChanged`), pokazuje komunikat, a ponowne „Utwórz lekcję” jest
- * potwierdzeniem nowego tekstu.
+ * potwierdzeniem nowego tekstu. Tworzenie czeka na udane odświeżenie z nową
+ * rewizją treści: nieudane pokazuje komunikat z „Spróbuj ponownie”, a 404 —
+ * stan usuniętego źródła.
  */
 export default function NewLessonForm({
   onCreated,
@@ -237,8 +260,11 @@ export default function NewLessonForm({
    * (`null` — „Zmień źródło” i powrót po usunięciu źródła w innym oknie).
    */
   onOpenSource?: ((sourceId: string | null) => void) | undefined;
-  /** Tryb źródła: ponowny odczyt źródła po konflikcie rewizji (odświeża podgląd i rewizję). */
-  onSourceChanged?: (() => Promise<unknown>) | undefined;
+  /**
+   * Tryb źródła: ponowny odczyt źródła po konflikcie rewizji (odświeża podgląd
+   * i rewizję w `source`); wynik mówi, czy odczyt się udał.
+   */
+  onSourceChanged?: (() => Promise<SourceRefreshOutcome>) | undefined;
 }) {
   const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
@@ -256,8 +282,14 @@ export default function NewLessonForm({
   const mounted = useRef(false);
   // źródło usunięte w innym oknie (404 przy tworzeniu): link prowadzi do listy źródeł, tworzenie wyłączone
   const [sourceMissing, setSourceMissing] = useState(false);
-  // podgląd odświeża się po konflikcie rewizji źródła — do tego czasu tworzenie jest wyłączone
+  // podgląd odświeża się po konflikcie rewizji źródła — do udanego odświeżenia tworzenie jest wyłączone
   const [refreshingSource, setRefreshingSource] = useState(false);
+  // odświeżenie podglądu się nie udało: komunikat z „Spróbuj ponownie”, tworzenie nadal wyłączone
+  const [sourceRefreshFailed, setSourceRefreshFailed] = useState(false);
+  // rewizja treści odrzucona przez serwer (409): podgląd z tą rewizją jest nieaktualny,
+  // więc tworzenie czeka, aż `source` przyniesie nową
+  const [staleSourceRevision, setStaleSourceRevision] = useState<number | null>(null);
+  const sourceOutdated = staleSourceRevision !== null && source?.bodyRevision === staleSourceRevision;
 
   useEffect(() => {
     mounted.current = true;
@@ -326,6 +358,34 @@ export default function NewLessonForm({
     setObjectives(current.includes(id) ? current.filter((o) => o !== id) : [...current, id]);
   };
 
+  /**
+   * Ponowny odczyt źródła po konflikcie rewizji. Tworzenie wraca dopiero po
+   * udanym odczycie z rewizją treści inną niż odrzucona (`stale`); nieudany
+   * odczyt zostawia komunikat z „Spróbuj ponownie”, a 404 — stan usuniętego źródła.
+   */
+  const refreshSource = async (stale: number | null): Promise<void> => {
+    setRefreshingSource(true);
+    let outcome: SourceRefreshOutcome = { status: "failed" };
+    try {
+      if (onSourceChanged) outcome = await onSourceChanged();
+    } catch {
+      // odczyt zgłoszony wyjątkiem to także nieudane odświeżenie
+    }
+    if (!mounted.current) return;
+    setRefreshingSource(false);
+    if (outcome.status === "missing") {
+      setSourceRefreshFailed(false);
+      setSourceMissing(true);
+      form.setFieldError("submit", messages.sources.notFound);
+    } else if (outcome.status === "refreshed" && outcome.bodyRevision !== stale) {
+      setSourceRefreshFailed(false);
+      form.setFieldError("submit", messages.sources.changedBeforeCreate);
+    } else {
+      setSourceRefreshFailed(true);
+      form.setFieldError("submit", messages.sources.refreshFailed);
+    }
+  };
+
   const submit = async (): Promise<void> => {
     if (creatingRef.current) return;
     let lesson = pending.current;
@@ -369,14 +429,12 @@ export default function NewLessonForm({
       } else if (failure === "source-changed") {
         // Tekst źródła zmieniono w innym oknie po wyświetleniu podglądu: podgląd odświeża
         // się do bieżącej wersji, a ponowne „Utwórz lekcję” potwierdza nowy tekst.
+        const rejected = lesson.kind === "catalog" ? undefined : lesson.command.expectedSourceRevision;
+        const stale = rejected ?? source?.bodyRevision ?? null;
         if (mounted.current) {
           form.setFieldError("submit", messages.sources.changedBeforeCreate);
-          setRefreshingSource(true);
-        }
-        try {
-          await onSourceChanged?.();
-        } finally {
-          if (mounted.current) setRefreshingSource(false);
+          setStaleSourceRevision(stale);
+          await refreshSource(stale);
         }
       } else if (httpStatusOf(cause) !== 401 && mounted.current) {
         // 401: logowanie otwiera globalny handler, formularz zostaje
@@ -561,6 +619,12 @@ export default function NewLessonForm({
               <Alert color="red" variant="light" role="alert" data-testid="api-error" icon={<ParentIcon name="alert-triangle" />}>
                 <Stack gap={4} align="flex-start">
                   <span>{submitError}</span>
+                  {sourceRefreshFailed && !sourceMissing && (
+                    <Button size="md" variant="light" color="red" data-testid="lesson-source-refresh-retry" loading={refreshingSource}
+                      onClick={() => void refreshSource(staleSourceRevision)}>
+                      {messages.parentShell.retry}
+                    </Button>
+                  )}
                   {sourceMissing && (
                     <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="lesson-source-missing-change" onClick={changeSource}>
                       {messages.sources.changeSource}
@@ -576,7 +640,7 @@ export default function NewLessonForm({
                 data-testid="lesson-create-submit"
                 leftSection={creating ? <Loader size={16} color="currentColor" /> : undefined}
                 onClick={() => void submit()}
-                disabled={creating || refreshingSource || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
+                disabled={creating || refreshingSource || sourceRefreshFailed || sourceOutdated || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
               >
                 {creating ? messages.lessons.creating : hasPending ? messages.lessons.retryCreate : messages.lessons.createLesson}
               </Button>
