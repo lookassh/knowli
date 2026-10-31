@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { LessonDeckDtoSchema, messages } from "@learning/contracts";
+import { DeckDtoSchema, LessonDeckDtoSchema, messages } from "@learning/contracts";
 import { closeWorldDatabase, worldPool } from "./helpers/world-database";
 import { loginParent } from "./helpers/parent-session";
 
@@ -13,6 +13,13 @@ import { loginParent } from "./helpers/parent-session";
  * o zmianie, a po jego usunięciu opublikowana lekcja zostaje z własną kopią
  * tekstu, bez odnośnika. Efekt sprawdzany w interfejsie, w API rodzica i w bazie
  * (`decks.source_material_id`, kontekst wersji zestawu).
+ *
+ * Etap 4 (design §6.2, §8 „Słówka ze źródła”): z tego samego rodzaju źródła
+ * rodzic tworzy zestaw słówek („Utwórz zestaw słówek”, polecenie
+ * z `sourceMaterialId` i zawężeniem), worker z fałszywym LLM (domyślnie: słowa
+ * z tekstu) wypełnia szkic, edytor pokazuje słówka z tekstu i „Ze źródła”,
+ * zestaw jest na stronie źródła, a po edycji tekstu — notka o zmianie przy
+ * niezmienionym zestawie.
  */
 
 test.afterAll(closeWorldDatabase);
@@ -195,4 +202,139 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
   const removed = await storedLesson();
   expect(removed.deck?.source_material_id).toBeNull();
   expect(removed.materials).toEqual([CHAPTER_BODY]);
+});
+
+/** Fikcyjny tekst o pogodzie i ubraniach (Etap 4: słówka ze źródła). */
+const VOCABULARY_BODY = [
+  "Weather and clothes",
+  "It's cold and windy today. I'm wearing a coat, a scarf and boots.",
+  "Look, it's snowing! My sister is wearing gloves.",
+].join("\n");
+/**
+ * Fałszywy LLM w trybie materiału wypisuje kolejne różne słowa tekstu
+ * (≥ 3 litery, bez słów funkcyjnych i skrótów z apostrofem) do `maxItems`;
+ * tekst ma ich 12, formularz prosi o 8 — reszta nie trafia do zestawu.
+ */
+const VOCABULARY_MAX_ITEMS = 8;
+const EXPECTED_TARGETS = ["weather", "clothes", "cold", "windy", "wearing", "coat", "scarf", "boots"];
+const VOCABULARY_INSTRUCTION = "tylko ubrania i pogoda";
+
+test("rodzic tworzy ze źródła zestaw słówek — słowa z tekstu, notka „Ze źródła”, zestaw na stronie źródła", async ({ page }) => {
+  const title = `Rozdział ${randomUUID().slice(0, 8)}: Weather and clothes`;
+  const pool = await worldPool();
+  await loginParent(page);
+
+  // Źródło przez API rodzica (zapis źródła w UI pokrywa test wyżej).
+  const createdSource = await page.request.post("/api/v1/parent/sources", {
+    data: { clientRequestId: randomUUID(), title, body: VOCABULARY_BODY },
+  });
+  expect(createdSource.status()).toBe(201);
+  const { id: sourceId } = (await createdSource.json()) as { id: string };
+
+  // 1. Strona źródła → „Utwórz zestaw słówek” → formularz z podglądem tekstu.
+  await page.goto(`/parent/sources/${sourceId}`);
+  await expect(page.getByTestId("source-heading")).toHaveText(title);
+  await expect(page.getByTestId("source-no-decks")).toBeVisible();
+  await expect(page.getByTestId("source-create-vocabulary")).toHaveText(messages.sources.createVocabulary);
+  await page.getByTestId("source-create-vocabulary").click();
+  await expect(page).toHaveURL(new RegExp(`/parent/vocabulary/new\\?source=${sourceId}$`));
+  await expect(page.getByTestId("new-vocabulary-form")).toBeVisible();
+  await expect(page.getByTestId("new-vocabulary-source")).toContainText(messages.sources.fromSource.replace("{title}", title));
+  await expect(page.getByTestId("new-vocabulary-source-preview")).toHaveValue(VOCABULARY_BODY);
+  await expect(page.getByTestId("new-vocabulary-title")).toHaveValue(title);
+  await expect(page.getByTestId("new-vocabulary-format")).toHaveValue("standard");
+  await page.getByTestId("new-vocabulary-max-items").fill(String(VOCABULARY_MAX_ITEMS));
+  await page.getByTestId("new-vocabulary-instruction").fill(VOCABULARY_INSTRUCTION);
+
+  const generateRequest = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/api/v1/parent/decks/generate"),
+  );
+  const generateResponse = page.waitForResponse(
+    (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/parent/decks/generate"),
+  );
+  await page.getByTestId("new-vocabulary-submit").click();
+  const command = (await generateRequest).postDataJSON() as Record<string, unknown>;
+  // Polecenie niesie odwołanie do źródła i rewizję podglądu, a nie tekst ani opis.
+  expect(command).toMatchObject({
+    sourceMaterialId: sourceId, expectedSourceRevision: 1, instruction: VOCABULARY_INSTRUCTION,
+    maxItems: VOCABULARY_MAX_ITEMS, vocabularyFormat: "standard",
+  });
+  expect(command).not.toHaveProperty("prompt");
+  expect(command).not.toHaveProperty("material");
+  expect(command).not.toHaveProperty("locales");
+  const accepted = await generateResponse;
+  expect(accepted.status()).toBe(202);
+  const { deckId, generationRunId } = (await accepted.json()) as { deckId: string; generationRunId: string };
+
+  // 2. Edytor zestawu: worker kończy generację, słówka pochodzą z tekstu, notka wskazuje źródło.
+  await expect(page).toHaveURL(new RegExp(`/parent/decks/${deckId}$`));
+  await expect(page.getByTestId("editor-title")).toHaveValue(title);
+  await expect(page.getByTestId("lesson-source-note")).toContainText(messages.sources.fromSource.replace("{title}", title));
+  await expect(page.getByTestId("lesson-source-changed")).toHaveCount(0);
+  await expect(page.getByTestId(`item-card-${VOCABULARY_MAX_ITEMS - 1}`)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId(`item-card-${VOCABULARY_MAX_ITEMS}`)).toHaveCount(0);
+  await expect(page.getByTestId("generation-banner")).toBeHidden();
+  await expect(page.getByTestId("generation-failed")).toHaveCount(0);
+  // fałszywy LLM zwraca wyłącznie słowa z tekstu, więc nic nie pominięto
+  await expect(page.getByTestId("vocabulary-rejected-count")).toHaveCount(0);
+  for (const [index, target] of EXPECTED_TARGETS.entries()) {
+    await expect(page.getByTestId(`item-target-${index}`)).toHaveValue(target);
+  }
+  await expect(page.getByTestId("item-example-5")).toHaveValue("I'm wearing a coat, a scarf and boots.");
+
+  const deck = DeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json());
+  expect(deck.source).toEqual({ id: sourceId, title, copiedRevision: 1, currentRevision: 1 });
+  expect(deck.generation).toMatchObject({ id: generationRunId, state: "succeeded", rejectedCount: 0 });
+  const textWords = new Set(VOCABULARY_BODY.toLowerCase().split(/[^\p{L}']+/u));
+  const targets = deck.draft?.items.map((item) => item.target) ?? [];
+  expect(targets).toEqual(EXPECTED_TARGETS);
+  for (const target of targets) expect(textWords.has(target), target).toBe(true);
+
+  // Baza: odnośnik i rewizja źródła przy zestawie; run niesie kopię tekstu i zawężenie, bez opisu.
+  const storedVocabulary = async () => {
+    const { rows: decks } = await pool.query<StoredDeck>(
+      "select source_material_id, source_material_revision from learning_app.decks where id = $1", [deckId],
+    );
+    const { rows: runs } = await pool.query<{ input: Record<string, unknown>; rejected_count: number | null; state: string }>(
+      "select input, rejected_count, state from learning_app.generation_runs where id = $1", [generationRunId],
+    );
+    return { deck: decks[0], run: runs[0] };
+  };
+  const created = await storedVocabulary();
+  expect(created.deck).toEqual({ source_material_id: sourceId, source_material_revision: 1 });
+  expect(created.run).toMatchObject({ state: "succeeded", rejected_count: 0 });
+  expect(created.run?.input).toMatchObject({
+    mode: "material", material: VOCABULARY_BODY, instruction: VOCABULARY_INSTRUCTION, deckId,
+    maxItems: VOCABULARY_MAX_ITEMS, locales: { source: "pl-PL", target: "en-GB" },
+  });
+  expect(created.run?.input).not.toHaveProperty("prompt");
+
+  // 3. Strona źródła wymienia zestaw słówek bez znacznika zmiany.
+  await page.getByTestId("lesson-source-link").click();
+  await expect(page).toHaveURL(new RegExp(`/parent/sources/${sourceId}$`));
+  await expect(page.getByTestId("source-deck-0")).toHaveAttribute("data-deck-id", deckId);
+  await expect(page.getByTestId("source-deck-0")).toContainText(title);
+  await expect(page.getByTestId("source-deck-0")).toContainText(messages.lessons.kindLabel.vocabulary!);
+  await expect(page.getByTestId("source-deck-stale-0")).toHaveCount(0);
+
+  // 4. Edycja tekstu źródła: strona i edytor pokazują „źródło zmieniono”, zestaw zostaje bez zmian.
+  await page.getByTestId("source-edit").click();
+  await page.getByTestId("source-body").fill(`${VOCABULARY_BODY}\nIt's sunny now.`);
+  const patched = page.waitForResponse(
+    (r) => r.request().method() === "PATCH" && r.url().endsWith(`/api/v1/parent/sources/${sourceId}`),
+  );
+  await page.getByTestId("source-save").click();
+  expect((await patched).status()).toBe(200);
+  await expect(page.getByTestId("source-status")).toHaveText(messages.sources.saved);
+  await expect(page.getByTestId("source-deck-stale-0")).toHaveText(messages.sources.sourceChanged);
+  await page.getByTestId("source-deck-0").click();
+  await expect(page).toHaveURL(new RegExp(`/parent/decks/${deckId}$`));
+  await expect(page.getByTestId("lesson-source-changed")).toHaveText(messages.sources.sourceChanged);
+  await expect(page.getByTestId("item-target-0")).toHaveValue(EXPECTED_TARGETS[0]!);
+  const afterEdit = DeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/decks/${deckId}`)).json());
+  expect(afterEdit.source).toEqual({ id: sourceId, title, copiedRevision: 1, currentRevision: 2 });
+  expect(afterEdit.draft?.items.map((item) => item.target)).toEqual(EXPECTED_TARGETS);
+  const edited = await storedVocabulary();
+  expect(edited.deck).toEqual({ source_material_id: sourceId, source_material_revision: 1 });
+  expect(edited.run?.input).toMatchObject({ material: VOCABULARY_BODY });
 });
