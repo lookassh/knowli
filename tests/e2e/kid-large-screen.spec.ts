@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
 import { completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, makeDeck, openDeckScreen, recallFixture, sessionId } from "./helpers/kid-fixtures";
 import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
@@ -683,3 +683,71 @@ test("a word wider than the screen wraps inside the material on a phone", async 
     expect(leaf.height, `letter field ${index} height`).toBeGreaterThanOrEqual(48);
   }
 });
+
+// Screenshots of the five main screens on a laptop window and on an ultrawide full-screen window, attached to the
+// report (PR description). They assert only what they need to be taken (screen visible, scale applied); the layout
+// itself is checked by the tests above.
+const SCREENSHOT_WINDOWS = [
+  { width: 1536, height: 730, scale: 1 },
+  { width: 3440, height: 1440, scale: 1.6 },
+] as const;
+
+async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await nextFrames(page);
+  const path = testInfo.outputPath(`${name}.png`);
+  await page.screenshot({ path });
+  await testInfo.attach(name, { path, contentType: "image/png" });
+}
+
+for (const { width, height, scale } of SCREENSHOT_WINDOWS) {
+  const size = `${width}x${height}`;
+
+  test(`screenshot: picture choice at ${size}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await openPictureChoice(page, fourPictureTilesFixture());
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    await expect(page.getByTestId("kid-next")).toBeVisible();
+    await attachScreenshot(page, testInfo, `picture-choice-${size}`);
+  });
+
+  test(`screenshot: text choice at ${size}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await openSession(page, completedTextChoiceFixture());
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await attachScreenshot(page, testInfo, `text-choice-${size}`);
+  });
+
+  test(`screenshot: written answer at ${size}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await openWrittenRecall(page);
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-input").fill("cat");
+    await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await settledDockReserve(page);
+    await attachScreenshot(page, testInfo, `written-answer-${size}`);
+  });
+
+  test(`screenshot: missing letters at ${size}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await openSession(page, { ...recallFixture(), tasks: [letterTask("Uzupełnij słowo", LETTER_PHRASE)] });
+    await expect(page.getByTestId("kid-fragment")).toBeVisible();
+    await waitForKidScale(page, scale);
+    await attachScreenshot(page, testInfo, `missing-letters-${size}`);
+  });
+
+  test(`screenshot: deck screen at ${size}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await openDeckScreen(page, [makeDeck(0), makeDeck(1), makeDeck(2)]);
+    await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
+    await waitForKidScale(page, scale);
+    await attachScreenshot(page, testInfo, `deck-screen-${size}`);
+  });
+}
