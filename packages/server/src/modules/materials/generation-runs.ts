@@ -51,8 +51,9 @@ export async function enqueueGenerationRun(
 
 /**
  * Odczyt istniejącego runu po kluczu idempotencji, jeśli zna swój `deckId`.
- * Poza `enqueueGenerationRun` korzysta z niego tworzenie lekcji ze źródła
- * (ponowienie po równoległym usunięciu źródła, `createMaterialLesson`).
+ * Poza `enqueueGenerationRun` korzysta z niego tworzenie zestawu ze źródła
+ * (ponowienie po równoległym usunięciu albo zmianie źródła,
+ * `committedRetryAfterSourceChange` w `source-materials.ts`).
  */
 export async function findEnqueuedRun(
   db: Executor,
@@ -82,6 +83,31 @@ export async function markRun(
       errorCode,
       nextAttemptAt: null,
       finishedAt: state === "queued" ? null : clock.now(),
+    })
+    .where(eq(generationRuns.id, runId));
+}
+
+/**
+ * Sukces runu `deck` razem z liczbą elementów odrzuconych przy walidacji per
+ * element (zestaw słówek ze źródła, design 2026-10-30 §6.2); `null` — run bez
+ * takiej walidacji (tryb „z opisu”, wszystko-albo-nic). Pozostałe pola jak
+ * `markRun(…, "succeeded", null)`. Wołać w transakcji zapisu wyniku, pod
+ * blokadą wersji szkicu — tak jak dotychczasowe oznaczenie sukcesu.
+ */
+export async function markRunSucceeded(
+  db: Executor,
+  clock: Clock,
+  runId: string,
+  rejectedCount: number | null,
+): Promise<void> {
+  await db
+    .update(generationRuns)
+    .set({
+      state: "succeeded",
+      errorCode: null,
+      nextAttemptAt: null,
+      finishedAt: clock.now(),
+      rejectedCount,
     })
     .where(eq(generationRuns.id, runId));
 }

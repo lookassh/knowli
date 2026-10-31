@@ -12,7 +12,6 @@ import {
   type CreateEmptyDeckCommand,
   type DeckDto,
   type DeckSettingsPatch,
-  type DeckState,
   type DeckSummaryDto,
   type DraftDto,
   type DraftItemDto,
@@ -43,6 +42,8 @@ import { computeTargetKey } from "../../domain/target-key";
 import { VOCABULARY_SKILLS, type VocabularySkill } from "../../domain/types";
 import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
+import { deckStateOf } from "./deck-state";
+import { readDeckSource } from "./source-materials";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor, type AssetRole } from "./media-reconciliation";
 import {
@@ -675,6 +676,7 @@ async function latestDeckRun(db: Executor, deckVersionId: string): Promise<Gener
     state: run.state as GenerationDto["state"],
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
+    rejectedCount: run.rejectedCount ?? null,
   };
 }
 
@@ -694,19 +696,11 @@ async function deckAssignments(db: Executor, deckId: string): Promise<Assignment
     .orderBy(asc(childProfiles.createdAt), asc(childProfiles.id));
 }
 
-export function deckStateOf(deck: { archivedAt: Date | null; publishedVersionId: string | null }, editableState: "draft" | "review" | null): DeckState {
-  if (deck.archivedAt) {
-    return "archived";
-  }
-  if (editableState) {
-    return editableState;
-  }
-  return deck.publishedVersionId ? "published" : "draft";
-}
-
 /**
  * Pełny widok zestawu dla panelu rodzica: edytowalny szkic, opublikowana wersja,
- * najnowszy run generacji szkicu i przypisania dzieci z terminami.
+ * najnowszy run generacji szkicu i przypisania dzieci z terminami. Zestaw
+ * utworzony ze źródła rodzica ma `source` (tytuł i rewizje treści z żywego
+ * źródła); pole znika, gdy źródło usunięto, a zestaw z opisu albo ręczny go nie ma.
  */
 export async function readDeck(services: Services, deckId: string): Promise<DeckDto> {
   const id = z.uuid().parse(deckId);
@@ -732,6 +726,7 @@ async function readDeckSnapshot(db: Executor, id: string): Promise<DeckDto> {
       .where(and(eq(deckVersions.deckId, id), inArray(deckVersions.state, ["draft", "review"])))
   )[0];
   const publishedVersionId = deck.publishedVersionId ?? null;
+  const source = await readDeckSource(db, deck);
   return {
     id: deck.id,
     title: deck.title,
@@ -742,6 +737,7 @@ async function readDeckSnapshot(db: Executor, id: string): Promise<DeckDto> {
     published: publishedVersionId ? await readDraftDto(db, publishedVersionId) : null,
     generation: editable ? await latestDeckRun(db, editable.id) : null,
     assignments: await deckAssignments(db, id),
+    ...(source === undefined ? {} : { source }),
   };
 }
 

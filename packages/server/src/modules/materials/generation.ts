@@ -11,10 +11,12 @@ import {
   isVisualDataValid,
 } from "@learning/contracts";
 import type { Services } from "../../config";
-import { claimQueuedRun, enqueueGenerationRun, markRun, supersedeLessonRuns } from "./generation-runs";
+import type { Tx } from "../../db/client";
+import { claimQueuedRun, enqueueGenerationRun, markRun, markRunSucceeded, supersedeLessonRuns } from "./generation-runs";
 import { deckVersions, decks, generationRuns, mediaAssets } from "../../db/schema";
 import { AppError } from "../../errors";
 import { applyItems } from "./decks";
+import { committedRetryAfterSourceChange, lockSourceMaterialForCopy } from "./source-materials";
 import { validateItems } from "./item-payload";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
@@ -36,53 +38,178 @@ const GeneratedDeckSchema = z.object({
   items: z.array(GeneratedItemSchema).max(MAX_DECK_ITEMS),
 });
 
+/** Domyślna para języków zestawu słówek; w trybie ze źródła jedyna dozwolona. */
+const DEFAULT_DECK_LOCALES = { source: "pl-PL", target: "en-GB" } as const;
+/** Domyślna maksymalna liczba pozycji, gdy polecenie jej nie podaje. */
+const DEFAULT_GENERATION_MAX_ITEMS = 50;
+
+/**
+ * Niezmienny input runu `deck` (`generation_runs.input`). Tryb „z opisu” ma
+ * `prompt` i nie ma `mode` (kształt sprzed Etapu 4). Tryb ze źródła
+ * (design 2026-10-30 §6.2) ma `mode: "material"`, KOPIĘ tekstu źródła
+ * w `material` i opcjonalne zawężenie `instruction` — bez `prompt`; worker nie
+ * czyta już źródła, więc jego późniejsza edycja ani usunięcie nie zmienia runu.
+ */
+type DeckRunCommon = {
+  deckId: string;
+  deckVersionId: string;
+  locales: { source: string; target: string };
+  maxItems: number;
+  vocabularyFormat: VocabularyFormat;
+};
+type DeckRunInput =
+  | (DeckRunCommon & { prompt: string; mode?: undefined })
+  | (DeckRunCommon & { mode: "material"; material: string; instruction?: string });
+
+type ParsedGenerationCommand = z.output<typeof GenerationCommandSchema>;
+
+/** Skąd słowa zestawu: opis rodzica albo zapisane źródło z rewizją treści z podglądu. */
+type DeckWordSource =
+  | { kind: "prompt"; prompt: string }
+  | { kind: "source"; sourceMaterialId: string; expectedBodyRevision: number; instruction?: string };
+
+/**
+ * Tryb polecenia po walidacji schematu (dokładnie jedno z `prompt` /
+ * `sourceMaterialId`, rewizja tylko przy źródle). Zawężenie jest przycinane;
+ * same białe znaki znaczą brak zawężenia (schemat przyjmuje je jako niepusty tekst).
+ */
+function deckWordSourceOf(cmd: ParsedGenerationCommand): DeckWordSource {
+  if (cmd.sourceMaterialId !== undefined && cmd.expectedSourceRevision !== undefined && cmd.prompt === undefined) {
+    const instruction = cmd.instruction?.trim();
+    return {
+      kind: "source",
+      sourceMaterialId: cmd.sourceMaterialId,
+      expectedBodyRevision: cmd.expectedSourceRevision,
+      ...(instruction ? { instruction } : {}),
+    };
+  }
+  if (cmd.prompt !== undefined && cmd.sourceMaterialId === undefined) {
+    return { kind: "prompt", prompt: cmd.prompt };
+  }
+  // Nieosiągalne po `GenerationCommandSchema.parse` — obrona przed rozjazdem z kontraktem.
+  throw new AppError("validation", { message: "provide exactly one of prompt or sourceMaterialId" });
+}
+
+/**
+ * Zleca generowanie nowego zestawu słówek (deck + szkic + run `deck`)
+ * idempotentnie po `idempotencyKey` — ponowienie zwraca pierwszy run, także
+ * z innym ciałem (bez skrótu żądania, jak dotąd).
+ *
+ * Z opisu (`prompt`): tytuł z początku opisu, para języków z polecenia albo
+ * domyślna, `generation_prompt` = opis.
+ *
+ * Ze źródła (`sourceMaterialId`, design 2026-10-30 §6.2): pierwsze zapytanie
+ * transakcji tworzenia blokuje źródło `FOR KEY SHARE` (`lockSourceMaterialForCopy`)
+ * i kopiuje jego tekst do inputu runu, a `decks.source_material_id/_revision`
+ * zapisują pochodzenie (rewizja TREŚCI). Tytuł = podany albo tytuł źródła z tej
+ * samej wersji wiersza; para języków stała `pl-PL` → `en-GB`;
+ * `generation_prompt` = null (opisu nie ma). Brak źródła → `not_found`; rewizja
+ * treści inna niż `expectedSourceRevision` → `conflict` z
+ * `LessonSourceChangedDetails`, bez zapisu. Ponowienie tego samego klucza po
+ * edycji albo usunięciu źródła zwraca zestaw pierwszego żądania — zarówno gdy
+ * run już był widoczny (`enqueueGenerationRun`), jak i gdy pierwsze żądanie
+ * zatwierdziło go w trakcie naszego (`committedRetryAfterSourceChange`).
+ */
 export async function enqueueDeckGeneration(
   services: Services,
   input: GenerationCommand,
 ): Promise<{ runId: string; deckId: string }> {
   const cmd = GenerationCommandSchema.parse(input);
-  const prompt = cmd.prompt;
-  if (prompt === undefined) {
-    // Tryb ze źródła (`sourceMaterialId`) dochodzi w Etapie 4, Task 2; do tego czasu kontrakt go przyjmuje, a serwer odmawia.
-    throw new AppError("validation", { message: "generating a deck from a source is not supported yet" });
-  }
-  const locales = cmd.locales ?? { source: "pl-PL", target: "en-GB" };
+  const wordSource = deckWordSourceOf(cmd);
+  const dedupeKey = `deck:${cmd.idempotencyKey}`;
+  const maxItems = cmd.maxItems ?? DEFAULT_GENERATION_MAX_ITEMS;
 
-  return enqueueGenerationRun(services.db, `deck:${cmd.idempotencyKey}`, async (tx) => {
-    const deckId = randomUUID();
-    const versionId = randomUUID();
-    const title = cmd.title ?? prompt.slice(0, 60);
-    const runId = randomUUID();
-    await tx.insert(decks).values({ id: deckId, title });
-    await tx.insert(deckVersions).values({
-      id: versionId,
-      deckId,
-      versionNumber: 1,
-      editNumber: 1,
-      state: "draft",
-      title,
-      sourceLocale: locales.source,
-      targetLocale: locales.target,
+  if (wordSource.kind === "source") {
+    return enqueueGenerationRun(services.db, dedupeKey, async (tx) => {
+      // Pierwsze zapytanie transakcji: blokada źródła poprzedza każdy zapis zestawu.
+      const source = await lockSourceMaterialForCopy(tx, wordSource.sourceMaterialId, wordSource.expectedBodyRevision);
+      const ids = { deckId: randomUUID(), versionId: randomUUID(), runId: randomUUID() };
+      const locales = DEFAULT_DECK_LOCALES;
+      await insertGenerationDraft(tx, {
+        ...ids,
+        title: cmd.title ?? source.title,
+        origin: { sourceMaterialId: wordSource.sourceMaterialId, sourceMaterialRevision: source.bodyRevision },
+        locales,
+        vocabularyFormat: cmd.vocabularyFormat,
+        generationPrompt: null,
+        dedupeKey,
+        input: {
+          mode: "material",
+          material: source.body,
+          ...(wordSource.instruction === undefined ? {} : { instruction: wordSource.instruction }),
+          deckId: ids.deckId,
+          deckVersionId: ids.versionId,
+          locales,
+          maxItems,
+          vocabularyFormat: cmd.vocabularyFormat,
+        },
+      });
+      return { runId: ids.runId, deckId: ids.deckId };
+    }).catch((error: unknown) => committedRetryAfterSourceChange(services.db, dedupeKey, error));
+  }
+
+  const { prompt } = wordSource;
+  const locales = cmd.locales ?? DEFAULT_DECK_LOCALES;
+  return enqueueGenerationRun(services.db, dedupeKey, async (tx) => {
+    const ids = { deckId: randomUUID(), versionId: randomUUID(), runId: randomUUID() };
+    await insertGenerationDraft(tx, {
+      ...ids,
+      title: cmd.title ?? prompt.slice(0, 60),
+      origin: undefined,
+      locales,
       vocabularyFormat: cmd.vocabularyFormat,
       generationPrompt: prompt,
-    });
-    await tx.insert(generationRuns).values({
-      id: runId,
-      deckVersionId: versionId,
-      expectedEditNumber: 1,
-      kind: "deck",
-      dedupeKey: `deck:${cmd.idempotencyKey}`,
-      state: "queued",
+      dedupeKey,
       input: {
         prompt,
-        deckId,
-        deckVersionId: versionId,
+        deckId: ids.deckId,
+        deckVersionId: ids.versionId,
         locales,
-        maxItems: cmd.maxItems ?? 50,
+        maxItems,
         vocabularyFormat: cmd.vocabularyFormat,
       },
     });
-    return { runId, deckId };
+    return { runId: ids.runId, deckId: ids.deckId };
+  });
+}
+
+/** Deck słówek + pierwszy szkic (edycja 1) + run `deck` w kolejce — wspólne dla obu trybów. */
+async function insertGenerationDraft(
+  tx: Tx,
+  draft: {
+    deckId: string;
+    versionId: string;
+    runId: string;
+    title: string;
+    origin: { sourceMaterialId: string; sourceMaterialRevision: number } | undefined;
+    locales: { source: string; target: string };
+    vocabularyFormat: VocabularyFormat;
+    generationPrompt: string | null;
+    dedupeKey: string;
+    input: DeckRunInput;
+  },
+): Promise<void> {
+  await tx.insert(decks).values({ id: draft.deckId, title: draft.title, ...draft.origin });
+  await tx.insert(deckVersions).values({
+    id: draft.versionId,
+    deckId: draft.deckId,
+    versionNumber: 1,
+    editNumber: 1,
+    state: "draft",
+    title: draft.title,
+    sourceLocale: draft.locales.source,
+    targetLocale: draft.locales.target,
+    vocabularyFormat: draft.vocabularyFormat,
+    generationPrompt: draft.generationPrompt,
+  });
+  await tx.insert(generationRuns).values({
+    id: draft.runId,
+    deckVersionId: draft.versionId,
+    expectedEditNumber: 1,
+    kind: "deck",
+    dedupeKey: draft.dedupeKey,
+    state: "queued",
+    input: draft.input,
   });
 }
 
@@ -108,6 +235,7 @@ export async function readGeneration(services: Services, runId: string): Promise
     state: run.state as GenerationDto["state"],
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
+    rejectedCount: run.rejectedCount ?? null,
   };
 }
 
@@ -271,6 +399,7 @@ export async function executeGeneration(services: Services, runId: string, signa
     await applyItems(tx, version.id, version.deckId, items);
     await reconcileDraftAssetsTx(tx, services, version);
     await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
-    await markRun(tx, services.clock, runId, "succeeded", null);
+    // tryb opisu: walidacja wszystko-albo-nic, więc bez liczby odrzuceń
+    await markRunSucceeded(tx, services.clock, runId, null);
   });
 }
