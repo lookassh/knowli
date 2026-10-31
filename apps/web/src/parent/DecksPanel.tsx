@@ -33,7 +33,7 @@ import { callParent, ApiCallError, errorMessage, parentClient } from "./api";
 import { isDefinitiveGenerationRejection, readGenerationAcceptance } from "./generation-request";
 import DeckEditor from "./DeckEditor";
 import LessonEditor from "./lessons/LessonEditor";
-import NewLessonForm, { sourceRefreshOutcome } from "./lessons/NewLessonForm";
+import NewLessonForm from "./lessons/NewLessonForm";
 import ArchiveLessonDialog from "./lessons/ArchiveLessonDialog";
 import NewMaterialDialog, { type NewMaterialStep } from "./NewMaterialDialog";
 import NewVocabularyFromSource from "./sources/NewVocabularyFromSource";
@@ -41,6 +41,7 @@ import { DECK_STATE_TONE, filterByKind, groupDecksByState, polishPlural, type De
 import { ParentIcon } from "./ParentIcon";
 import type { ParentRoute } from "./parent-routes";
 import { httpStatusOf, orpc } from "./query-client";
+import { sourceRefreshOutcome } from "./sources/source-refresh";
 import { sourceRoute } from "./sources/sources-state";
 import type { EditorLeaveState } from "./useParentLeaveGuard";
 import { formatFamilyDate } from "./family-date";

@@ -6,11 +6,9 @@ import NewVocabularyFromSource, {
   buildVocabularyCommand,
   canSubmitVocabulary,
   initialVocabularyValues,
-  sourceRefreshOutcome,
   vocabularySubmitDisabled,
   type VocabularyFromSourceValues,
 } from "./NewVocabularyFromSource";
-import { ApiCallError } from "../api";
 import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
 
@@ -22,7 +20,7 @@ const values = (overrides: Partial<VocabularyFromSourceValues> = {}): Vocabulary
   ...overrides,
 });
 
-const idle = { creating: false, sourceRefresh: "idle" as const, sourceMissing: false, pending: false };
+const idle = { creating: false, sourceRefresh: "idle" as const, sourceMissing: false, pending: false, sourceRevision: 3, staleRevision: null };
 
 function renderForm(): string {
   return renderParentMarkup(
@@ -98,11 +96,9 @@ describe("NewVocabularyFromSource", () => {
     expect(vocabularySubmitDisabled(values(), { ...idle, pending: true, creating: true })).toBe(true);
   });
 
-  it("wynik ponownego odczytu źródła: świeży, usunięte (404) albo nieudany", () => {
-    expect(sourceRefreshOutcome({ isError: false, error: null })).toBe("fresh");
-    expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Nie znaleziono.", "not_found", 404) })).toBe("missing");
-    expect(sourceRefreshOutcome({ isError: true, error: new ApiCallError("Błąd.", "internal", 503) })).toBe("failed");
-    expect(sourceRefreshOutcome({ isError: true, error: new TypeError("Failed to fetch") })).toBe("failed");
+  it("po konflikcie rewizji „Utwórz zestaw” czeka na podgląd z inną rewizją niż odrzucona", () => {
+    expect(vocabularySubmitDisabled(values(), { ...idle, staleRevision: 3 })).toBe(true);
+    expect(vocabularySubmitDisabled(values(), { ...idle, staleRevision: 3, sourceRevision: 4 })).toBe(false);
   });
 
   it("teksty formularza", () => {

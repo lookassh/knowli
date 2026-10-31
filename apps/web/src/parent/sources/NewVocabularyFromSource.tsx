@@ -13,12 +13,12 @@ import {
 } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { readGenerationAcceptance } from "../generation-request";
-import { classifyCreateFailure } from "../lessons/NewLessonForm";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
 import { plainClick } from "../plain-click";
 import { httpStatusOf, orpc } from "../query-client";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
+import { classifyCreateFailure, isFreshSourceRefresh, sourceRefreshOutcome, type SourceRefreshOutcome } from "./source-refresh";
 import "../deck-editor.css";
 import "../lessons/lesson-panels.css";
 import "./sources-panel.css";
@@ -72,8 +72,9 @@ export function canSubmitVocabulary(values: VocabularyFromSourceValues): boolean
 
 /**
  * Odświeżenie źródła po konflikcie rewizji: `idle` — podgląd aktualny,
- * `refreshing` — trwa odczyt, `failed` — odczyt się nie udał (podgląd może być
- * nieaktualny, więc tworzenie czeka na ponowienie odczytu).
+ * `refreshing` — trwa odczyt, `failed` — odczyt się nie udał albo przyniósł
+ * odrzuconą rewizję (podgląd może być nieaktualny, więc tworzenie czeka na
+ * ponowienie odczytu).
  */
 export type SourceRefreshState = "idle" | "refreshing" | "failed";
 
@@ -84,14 +85,20 @@ export interface VocabularySubmitState {
   sourceMissing: boolean;
   /** Niepewne polecenie czeka na ponowienie — wysyłka ponawia je bez sprawdzania pól. */
   pending: boolean;
+  /** Rewizja treści wyświetlanego podglądu. */
+  sourceRevision: number;
+  /** Rewizja odrzucona przez serwer (409) — podgląd z nią jest nieaktualny; `null` — bez konfliktu. */
+  staleRevision: number | null;
 }
 
 /**
  * „Utwórz zestaw” wyłączone: w trakcie wysyłki, dopóki podgląd po konflikcie
- * nie jest świeży, bez źródła (usunięte) albo z polami niezgodnymi z kontraktem.
+ * nie jest świeży (odczyt trwa, nie udał się albo podgląd ma wciąż odrzuconą
+ * rewizję), bez źródła (usunięte) albo z polami niezgodnymi z kontraktem.
  */
 export function vocabularySubmitDisabled(values: VocabularyFromSourceValues, state: VocabularySubmitState): boolean {
   if (state.creating || state.sourceRefresh !== "idle" || state.sourceMissing) return true;
+  if (state.staleRevision !== null && state.sourceRevision === state.staleRevision) return true;
   return !state.pending && !canSubmitVocabulary(values);
 }
 
@@ -116,19 +123,6 @@ export function buildVocabularyCommand(values: VocabularyFromSourceValues, sourc
 }
 
 /**
- * Wynik ponownego odczytu źródła: `fresh` — świeży tekst i rewizja, `missing` —
- * źródło usunięto (404), `failed` — inny błąd (dane w pamięci mogą być stare).
- * Odczyt TanStack (`refetch`) kończy się bez wyjątku także po błędzie, więc
- * rozstrzyga stan wyniku, nie samo zakończenie obietnicy.
- */
-export type SourceRefreshOutcome = "fresh" | "missing" | "failed";
-
-export function sourceRefreshOutcome(result: { isError: boolean; error: unknown }): SourceRefreshOutcome {
-  if (!result.isError) return "fresh";
-  return httpStatusOf(result.error) === 404 ? "missing" : "failed";
-}
-
-/**
  * Formularz nowego zestawu słówek ze źródła (design 2026-10-30 §6.2): tytuł
  * i podgląd tekstu źródła tylko do odczytu (jak w formularzu lekcji), nazwa
  * zestawu, rodzaj, najwięcej słówek i opcjonalne zawężenie. Słowa wybiera
@@ -138,8 +132,10 @@ export function sourceRefreshOutcome(result: { isError: boolean; error: unknown 
  * samym kluczem, a pola są do tego czasu zablokowane (ponowienie wysyła to, co
  * widać). Źródło usunięte w innym oknie (404) wyłącza tworzenie. Tekst zmieniony
  * w innym oknie (409 `source_changed`) odświeża podgląd; „Utwórz zestaw” wraca
- * dopiero ze świeżym tekstem — nieudany odczyt pokazuje komunikat z ponowieniem
- * odczytu. Wpisane dane chroni leave guard; 401 obsługuje globalny handler.
+ * dopiero po odczycie z rewizją treści inną niż odrzucona — nieudany odczyt
+ * (także z tą samą rewizją) pokazuje komunikat z ponowieniem odczytu. Nazwa
+ * zestawu, której rodzic nie zmienił, podąża za tytułem odświeżonego źródła.
+ * Wpisane dane chroni leave guard; 401 obsługuje globalny handler.
  */
 export function NewVocabularyForm({
   source,
@@ -165,7 +161,19 @@ export function NewVocabularyForm({
   const mounted = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [sourceMissing, setSourceMissing] = useState(false);
-  const [sourceRefresh, setSourceRefresh] = useState<SourceRefreshState>("idle");
+  // trwa ponowny odczyt źródła po konflikcie rewizji
+  const [refreshing, setRefreshing] = useState(false);
+  // odczyt się nie udał (albo przyniósł odrzuconą rewizję): komunikat z „Spróbuj ponownie”
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // rewizja treści odrzucona przez serwer (409): tworzenie czeka, aż `source` przyniesie nową
+  const [staleRevision, setStaleRevision] = useState<number | null>(null);
+  const sourceRefresh: SourceRefreshState = refreshing ? "refreshing" : refreshFailed ? "failed" : "idle";
+  const sourceOutdated = staleRevision !== null && source.bodyRevision === staleRevision;
+  // po „Spróbuj ponownie” fokus trafia na następny krok: ponowienie, odświeżony tekst albo „Zmień źródło”
+  const refocusAfterRetry = useRef(false);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const previewRef = useRef<HTMLTextAreaElement>(null);
+  const missingChangeRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -173,6 +181,24 @@ export function NewVocabularyForm({
       mounted.current = false;
     };
   }, []);
+
+  // Domyślna nazwa zestawu (tytuł źródła) podąża za odświeżonym źródłem, dopóki
+  // rodzic jej nie zmienił; niepewne polecenie czeka na ponowienie z tym, co widać.
+  const appliedSourceTitle = useRef(source.title);
+  useEffect(() => {
+    if (appliedSourceTitle.current === source.title) return;
+    appliedSourceTitle.current = source.title;
+    if (pending.current !== null || form.isDirty("title")) return;
+    const title = initialVocabularyValues(source.title).title;
+    form.setInitialValues({ ...form.getInitialValues(), title });
+    form.setFieldValue("title", title);
+  }, [source.title, form]);
+
+  useEffect(() => {
+    if (refreshing || !refocusAfterRetry.current) return;
+    refocusAfterRetry.current = false;
+    (refreshFailed ? retryRef.current : sourceMissing ? missingChangeRef.current : previewRef.current)?.focus();
+  }, [refreshing, refreshFailed, sourceMissing]);
 
   const create = useMutation({
     mutationFn: (command: GenerationCommand) => callParent(() =>
@@ -190,31 +216,38 @@ export function NewVocabularyForm({
   }, [registerEditorState, dirty, creating]);
   useEffect(() => () => registerEditorState({ dirty: false, busy: false }), [registerEditorState]);
 
-  const refreshSource = async (): Promise<void> => {
-    setSourceRefresh("refreshing");
-    let outcome: SourceRefreshOutcome;
+  /**
+   * Ponowny odczyt źródła po konflikcie rewizji. Tworzenie wraca dopiero po
+   * udanym odczycie z rewizją treści inną niż odrzucona (`stale`); odczyt
+   * nieudany albo z tą samą rewizją zostawia komunikat z „Spróbuj ponownie”,
+   * a 404 — stan usuniętego źródła.
+   */
+  const refreshSource = async (stale: number | null): Promise<void> => {
+    setRefreshing(true);
+    let outcome: SourceRefreshOutcome = { status: "failed" };
     try {
       outcome = await onSourceChanged();
     } catch {
-      outcome = "failed";
+      // odczyt zgłoszony wyjątkiem to także nieudane odświeżenie
     }
     if (!mounted.current) return;
-    if (outcome === "fresh") {
-      // podgląd pokazuje bieżący tekst — ponowne „Utwórz zestaw” go potwierdza
-      setSourceRefresh("idle");
-      setSubmitError(messages.sources.changedBeforeCreateVocabulary);
-    } else if (outcome === "missing") {
-      setSourceRefresh("idle");
+    setRefreshing(false);
+    if (outcome.status === "missing") {
+      setRefreshFailed(false);
       setSourceMissing(true);
       setSubmitError(messages.sources.notFound);
+    } else if (isFreshSourceRefresh(outcome, stale)) {
+      // podgląd pokazuje bieżący tekst — ponowne „Utwórz zestaw” go potwierdza
+      setRefreshFailed(false);
+      setSubmitError(messages.sources.changedBeforeCreateVocabulary);
     } else {
-      setSourceRefresh("failed");
+      setRefreshFailed(true);
       setSubmitError(messages.sources.refreshFailed);
     }
   };
 
   const submit = async (): Promise<void> => {
-    if (creatingRef.current || sourceRefresh !== "idle" || sourceMissing) return;
+    if (creatingRef.current || sourceRefresh !== "idle" || sourceMissing || sourceOutdated) return;
     let command = pending.current;
     if (!command) {
       if (!canSubmitVocabulary(values)) return;
@@ -248,8 +281,11 @@ export function NewVocabularyForm({
         setSourceMissing(true);
         setSubmitError(messages.sources.notFound);
       } else if (failure === "source-changed") {
+        // rewizja z odrzuconego polecenia — podgląd z nią jest nieaktualny
+        const stale = command.expectedSourceRevision ?? source.bodyRevision;
         setSubmitError(messages.sources.changedBeforeCreateVocabulary);
-        await refreshSource();
+        setStaleRevision(stale);
+        await refreshSource(stale);
       } else if (httpStatusOf(cause) !== 401) {
         // 401: logowanie otwiera globalny handler, formularz zostaje
         setSubmitError(errorMessage(cause));
@@ -259,7 +295,9 @@ export function NewVocabularyForm({
     }
   };
 
-  const disabled = vocabularySubmitDisabled(values, { creating, sourceRefresh, sourceMissing, pending: hasPending });
+  const disabled = vocabularySubmitDisabled(values, {
+    creating, sourceRefresh, sourceMissing, pending: hasPending, sourceRevision: source.bodyRevision, staleRevision,
+  });
   // ponowienie niepewnego polecenia wysyła dokładnie to, co widać
   const fieldsLocked = creating || hasPending;
 
@@ -308,6 +346,7 @@ export function NewVocabularyForm({
                 autosize
                 maxRows={12}
                 value={source.body}
+                ref={previewRef}
                 className="pp-source-preview"
                 data-testid="new-vocabulary-source-preview"
                 aria-labelledby="new-vocabulary-source-title"
@@ -363,14 +402,20 @@ export function NewVocabularyForm({
               <Alert color="red" variant="light" role="alert" data-testid="new-vocabulary-error" icon={<ParentIcon name="alert-triangle" />}>
                 <Stack gap={4} align="flex-start">
                   <span>{submitError}</span>
-                  {sourceRefresh === "failed" && (
-                    <Button size="md" variant="light" color="red" mt={4} leftSection={<ParentIcon name="refresh" />}
-                      data-testid="new-vocabulary-refresh-retry" onClick={() => void refreshSource()}>
+                  {/* zostaje w trakcie ponownego odczytu (stan ładowania), żeby nie gubić fokusu */}
+                  {refreshFailed && !sourceMissing && (
+                    <Button ref={retryRef} size="md" variant="light" color="red" mt={4} leftSection={<ParentIcon name="refresh" />}
+                      data-testid="new-vocabulary-refresh-retry" loading={refreshing}
+                      onClick={() => {
+                        refocusAfterRetry.current = true;
+                        void refreshSource(staleRevision);
+                      }}>
                       {messages.parentShell.retry}
                     </Button>
                   )}
                   {sourceMissing && (
-                    <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="new-vocabulary-source-missing-change" onClick={changeSource}>
+                    <Anchor ref={missingChangeRef} href={changeSourceHref} size="sm" className="pp-lesson-source-change"
+                      data-testid="new-vocabulary-source-missing-change" onClick={changeSource}>
                       {messages.sources.changeSource}
                     </Anchor>
                   )}
@@ -383,7 +428,7 @@ export function NewVocabularyForm({
                 size="md"
                 className="pp-lesson-submit"
                 data-testid="new-vocabulary-submit"
-                leftSection={creating || sourceRefresh === "refreshing" ? <Loader size={16} color="currentColor" /> : undefined}
+                leftSection={creating || refreshing ? <Loader size={16} color="currentColor" /> : undefined}
                 disabled={disabled}
               >
                 {creating
