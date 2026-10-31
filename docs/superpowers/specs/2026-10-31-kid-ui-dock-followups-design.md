@@ -1,6 +1,6 @@
 # Kid UI: panel wyniku — poprawki po PR #205
 
-**Status:** zakres uzgodniony w rozmowie 2026-10-31 po scaleniu PR #205: trzy poprawki z listy „kandydaci na kolejne zadania” oraz próg korekty przewinięcia obniżony z 8 do 1 px (decyzja właściciela, spec #205 §7). Wersja 2 — po review trzech krytyków (mechanizm, UX na urządzeniach, testy). Uzupełnia `2026-10-31-kid-ui-large-screens-followups-design.md` („spec #205”) i `2026-10-30-kid-ui-large-screens-design.md` („spec #200”). Tam, gdzie się różnią, obowiązuje ten dokument.
+**Status:** zakres uzgodniony w rozmowie 2026-10-31 po scaleniu PR #205: trzy poprawki z listy „kandydaci na kolejne zadania” oraz próg korekty przewinięcia obniżony z 8 do 1 px (decyzja właściciela, spec #205 §7). Wersja 2 — po review trzech krytyków specu (mechanizm, UX na urządzeniach, testy) i poprawkach z review trzech krytyków planu (obserwacja ramy, odczyt odstępu, próg bramki, testy przejść). Uzupełnia `2026-10-31-kid-ui-large-screens-followups-design.md` („spec #205”) i `2026-10-30-kid-ui-large-screens-design.md` („spec #200”). Tam, gdzie się różnią, obowiązuje ten dokument.
 
 ## 1. Problem i kryteria
 
@@ -66,7 +66,7 @@ Poza zakresem, raportowane w PR jako kandydaci:
 - `contentBottom0 = contentBottom + material.scrollTop + offsetGiven`, gdzie:
   - `contentBottom` to maksimum dolnych krawędzi dzieci `.kid-material-content`, jak w obecnym pomiarze;
   - `offsetGiven = max(0, fullOffset − currentOffset)`;
-  - `fullOffset` to obliczona wartość `--frame-offset` ramy (`parseFloat` z `getComputedStyle`, brak = 0);
+  - `fullOffset` to podstawa elementu-odstępu: `parseFloat(getComputedStyle(frame, "::before").flexBasis) || 0`. Element ma ją tylko w zwartej ramie poza wyborem obrazków; gdzie indziej jest `auto`, czyli 0;
   - `currentOffset` to górna krawędź pierwszego dziecka ramy (`.kid-exercise-instruction`) − górna krawędź ramy.
 - Dlaczego to nie zależy od panelu:
   - Rezerwa nie przesuwa treści. W zwykłej ramie obszar zawartości `.materialContent` przy rezerwie to nadal `100% − 8`. W zwartej ramie treść ma wysokość własną.
@@ -87,9 +87,11 @@ Poza zakresem, raportowane w PR jako kandydaci:
 - `cardMax = floor(available − 8 − overhead)`. 8 to zapas na zaokrąglenia, a panel nie styka się z dolną krawędzią ramy.
 - Funkcja zwraca `null`, gdy `cardMax ≤ 0`.
 
-**Kiedy liczyć.** Raz na klucz `(węzeł nakładki, frame.offsetWidth × frame.offsetHeight, tryb strony)`, w zatrzasku `useRef` obok `gatedDockRef`.
+**Kiedy liczyć.** Raz na klucz `(węzeł nakładki, frame.offsetWidth × frame.offsetHeight, tryb strony, fullOffset, round(overhead))`, w zatrzasku `useRef` obok `gatedDockRef`.
 
-- Przy zmianie klucza (pierwszy pomiar panelu, okno, klawiatura, obrót, komunikat zmieniający wysokość ramy) wartość jest liczona od nowa z bieżącej geometrii, w tym samym pomiarze, przed odczytem `excess` i zakładki.
+- Przy zmianie klucza wartość jest liczona od nowa z bieżącej geometrii, w tym samym pomiarze, przed odczytem `excess` i zakładki. Klucz zmienia się przy pierwszym pomiarze panelu, przy zmianie okna, klawiatury, obrotu, komunikatu zmieniającego wysokość ramy, przy przejściu między ramą zwartą a zwykłą oraz przy zmianie struktury panelu.
+- `ResizeObserver` pomiaru obserwuje także samą ramę (`.kid-exercise-frame`). W zwartej ramie zmiana jej wysokości nie zmienia materiału, treści ani stopki: zmienia się tylko odstęp od góry albo wolne miejsce pod stopką. Bez obserwacji ramy klucz nie byłby sprawdzany, a ustępujący odstęp przesunąłby odpowiedzi.
+- `overhead` jest stały, gdy karta rośnie (karta jest wtedy najwyższym elementem wiersza), więc nie powoduje przeliczeń w pętli.
 - W trybie przewijanej strony zmiennej nie ma. Tryb pomiar czyta z `overlay.closest(".kid-page")`.
 - Zatrzask resetuje się tam, gdzie `gatedDockRef` (gałąź `!hasDock || flowFeedback`). Zmienna nie jest wtedy usuwana: wychodzący panel zachowuje rozmiar do końca animacji.
 - `AnimatePresence` może ożywić ten sam węzeł nakładki przy nowym werdykcie w trakcie wyjścia poprzedniego. Zresetowany zatrzask liczy wtedy wartość od nowa i ją nadpisuje.
@@ -123,8 +125,9 @@ Zmiana widoczna przy ponownej próbie w tym trybie: wychodzący panel przez czas
 
 W `ExerciseFrame`:
 
-- Górna krawędź panelu jest ułamkowa: `toLayoutPx(anchor.bottom, material) − overlayHeight` z wysokością nakładki z prostokąta / zoom (zamiast całkowitego `offsetHeight`).
+- Górna krawędź panelu jest ułamkowa: `toLayoutPx(overlay.getBoundingClientRect().top, material)`. Nakładka nie ma transformacji, więc to ta sama wartość co dotychczasowe `anchor.bottom − offsetHeight`, ale bez zaokrąglenia `offsetHeight`.
 - Korekta następuje, gdy `overlap × zoom ≥ 1`, czyli gdy zakładka ma co najmniej 1 px ekranu. Dotąd było `overlap > 8` w px wewnętrznych.
+- Ten sam próg włącza bramkę rezerwy (dotąd `overlap > 0`). Zakładka poniżej 1 px ekranu nie dokłada zakresu przewijania, którego nic by nie wykorzystało.
 - Przewinięcie zostaje `overlap + 8`. Po korekcie treść kończy się 8 px nad panelem, a przy końcu zakresu przewijania 20 px. Kolejne pomiary nie dokładają przewinięcia, bo zakładka jest ujemna, a klucz korekty pomija ponowny pomiar przy tym samym rozmiarze.
 
 Skutek: w zwykłej ramie przy pierwszej zakładce 1–8 px pole odpowiedzi przesuwa się w górę o 9–16 px. Zależy to od urządzenia, rodzaju zadania i wyniku, bo panel błędu jest zwykle wyższy niż panel sukcesu. To świadoma decyzja właściciela.
@@ -152,9 +155,7 @@ Test „the top offset gives way before the material”, 3440×1440, mysz, krót
 - `packages/kid-ui/src/exercises/ExerciseFrame.module.css`: panel zastępujący akcje w trybie przewijanej strony.
 - `packages/kid-ui/src/screens/ExerciseFeedbackDock.module.css`: `max(...)` z `--kid-feedback-card-max` w obu regułach.
 - `tests/e2e/helpers/kid-fixtures.ts`: podpowiedź średniej długości.
-- `tests/e2e/helpers/kid-frame.ts`:
-  - opcja sondy klatek zapisująca wysokość karty w pierwszej próbce;
-  - nowe granice sondy.
+- `tests/e2e/helpers/kid-frame.ts`: opcja sondy klatek zapisująca wysokość karty w pierwszej próbce. Granice sondy są w `expectPanelNeverCovers` (`kid-large-screen.spec.ts`).
 - `tests/e2e/kid-large-screen.spec.ts`: nowe testy (tabele), deterministyczny test odstępu, komentarze progu.
 - `docs/folder-structure.md`, jeśli wymienia pliki `exercises/`.
 
@@ -169,7 +170,7 @@ E2E najpierw na czerwono, potem na zielono. Nowe testy należą do projektu `moc
 - `offsetGiven` i `scrollTop` znoszą przesunięcie treści, czyli ta sama wartość przed i po korekcie lub ustąpieniu odstępu;
 - zaokrąglenie w dół.
 
-**Karta w wolnym miejscu (§3.1).** Zadanie pisemne z krótkim poleceniem. Komunikat statusu sesji pusty (warunek wstępny).
+**Karta w wolnym miejscu (§3.1).** Zadanie pisemne z krótkim poleceniem („kot”) we wszystkich wierszach, także w strażnikach i przejściach. „Długa podpowiedź” = `longSpellingHintFeedback` z krótkim poleceniem, nie `longSpellingHintFixture()` (ta ma długie polecenie). Komunikat statusu sesji pusty (warunek wstępny). „Średnia podpowiedź” to nowa fixture: każdy wiersz (twój zapis, poprawnie) składa się z trzech segmentów po ok. 18–20 znaków. Każdy segment mieści się w jednym wierszu, a dwa nie mieszczą się obok siebie, więc wiersz ma dokładnie 3 linie. Warunki wstępne: naturalna wysokość karty > 300 i < (`cardMax` policzony w teście z geometrii przed werdyktem) − 10.
 
 | Okno | Fixture | Warunki wstępne | Oczekiwane |
 | --- | --- | --- | --- |
@@ -188,7 +189,10 @@ Strażnicy:
 
 Przejścia przy widocznym panelu:
 
-- **Zmiana okna 1600×900 → 1600×800** (mysz, skala 1, zwarta rama w obu). Warunek wstępny: inna `offsetHeight` ramy. Oczekiwane: zmienna przeliczona (karta niższa), sonda klatek: treść nigdy pod panelem, panel w ramie.
+- **Małe zmniejszenie 840×1000 → 840×960** (mysz, skala 1, zwarta rama; zmiana mniejsza niż odstęp od góry). Bez obserwacji ramy nic by nie przeliczyło karty, a odstęp by ustąpił. Warunek wstępny: zmienna > 300 w obu oknach. Oczekiwane: zmienna niższa o ok. 40 px, odstęp od góry nadal 90 (± 2), pole odpowiedzi względem ramy ± 1.
+- **Dalej → 840×800.** Zmienna przeliczona (niższa), sonda klatek: treść nigdy pod panelem, panel w ramie.
+- **Deterministyczny wzrost 1024×900 → 1024×1366 dotykowo.** Limit CSS jest w obu oknach 300 px, więc karta może urosnąć tylko przez przeliczenie po zmianie ramy. Oczekiwane: przy 900 karta ograniczona miejscem (> 300); po zmianie cała karta bez przewijania.
+- Wiersz „klawiatura” sprawdza dodatkowo, że wartość zmiennej się zmieniła.
 - **Powiększenie gestem przy powiększonej karcie** (3440×1440, długa podpowiedź). Oczekiwane:
   - zmiennej nie ma;
   - karta = limit (± 1);
@@ -203,7 +207,7 @@ Przejścia przy widocznym panelu:
 | 844×390 i 667×375 | zadanie pisemne (`inline`), błędny werdykt | Górna krawędź panelu = górna krawędź `kid-primary-slot` przed werdyktem (± 1); szerokość panelu = szerokość treści `.kid-exercise-actions` (± 1); `kid-primary-slot` i `kid-secondary-slot` w kotwicy bez prostokąta (`boundingBox() === null`); pole odpowiedzi ± 1 |
 | 812×375 | tekst z lukami (`stacked`, „Sprawdź”) | jw. |
 
-Wszystkie są czerwone przed zmianą (szerokość albo położenie panelu).
+Wszystkie są czerwone przed zmianą (szerokość albo położenie panelu). Położenia są mierzone względem górnej krawędzi ramy zadania (`[data-testid='kid-exercise']`): odsłonięcie panelu (`scrollIntoView`) przewija stronę, więc prostokąty względem okna przesuwają się o wielkość przewinięcia.
 
 **Próg 1 px (§3.3).** Zwykła rama 1280×600, krótkie polecenie, werdykt `great`:
 
@@ -212,7 +216,7 @@ Wszystkie są czerwone przed zmianą (szerokość albo położenie panelu).
 3. Sonda, wysłanie, `settledDockReserve`.
 4. Oczekiwane: rezerwa > 0, `scrollTop = 13 ± 1`, treść nigdy pod panelem. Przed zmianą `scrollTop = 0`, więc test jest czerwony.
 
-**Granice sondy** (`expectPanelNeverCovers`): każda próbka ≤ 2 px ekranu, po ustaleniu ≤ 1 px ekranu. Przed PR przebieg obciążeniowy testów z sondą: `--repeat-each=15` lokalnie.
+**Granice sondy** (`expectPanelNeverCovers` w `kid-large-screen.spec.ts`): każda próbka ≤ 2 px ekranu, po ustaleniu ≤ 1 px ekranu. Przebieg obciążeniowy testów z sondą na buildzie produkcyjnym (`--repeat-each=15`, projekt `mocked`) po zmianach w `ExerciseFrame`. Po zmianie progu cały projekt `mocked` od razu, bo próg zmienia zachowanie zwykłej ramy także poza tym plikiem.
 
 **Odstęp (§3.4)** jak wyżej.
 
