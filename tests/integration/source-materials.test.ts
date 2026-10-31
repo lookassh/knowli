@@ -9,25 +9,35 @@ import {
   executeLessonGeneration,
   getSourceMaterial,
   listSourceMaterials,
+  loginParent,
   readGeneration,
   readLessonDeck,
   regenerateObjective,
+  setupParent,
   updateSourceMaterial,
   type Services,
 } from "@learning/server";
 import { fakeGeneration } from "./fakes";
-import { buildTestServices, ManualClock, testDatabase } from "./helpers";
+import { buildTestServices, handleParentApi, ManualClock, testDatabase, truncateCoreTables, UUID_PATTERN } from "./helpers";
 
 /**
  * Źródła (materiał źródłowy rodzica) na PostgreSQL (design 2026-10-30, §3):
  * idempotentne tworzenie, kontrola rewizji przy edycji, usunięcie z odnośnikiem
  * zestawu ustawionym na null oraz liczniki i znacznik „stale” w odczycie, a od
  * §3.3 także tworzenie lekcji ze źródła (kopia tekstu i rewizji, brak odczytu
- * źródła po utworzeniu, usunięcie źródła w trakcie tworzenia).
+ * źródła po utworzeniu, usunięcie źródła w trakcie tworzenia). Ostatni blok to
+ * Parent API grupy `sources` przez prawdziwy handler oRPC (§7): statusy, sesja
+ * rodzica, kontrola Origin i walidacja granicy.
  * Teksty są fikcyjne — materiał z podręcznika nie trafia do repozytorium.
  */
 
 const { pool } = testDatabase();
+
+// Poziom pliku: pula współdzielona przez oba bloki describe (przypadki użycia i HTTP),
+// zamykana raz na końcu.
+afterAll(async () => {
+  await pool.end();
+});
 
 async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   return (await pool.query(sql, params)).rows as T[];
@@ -84,10 +94,6 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
   beforeEach(async () => {
     await pool.query("truncate learning_app.decks, learning_app.source_materials cascade");
     ({ services, clock } = buildTestServices("2026-10-31T10:00:00.000Z"));
-  });
-
-  afterAll(async () => {
-    await pool.end();
   });
 
   const input = (overrides: Partial<{ clientRequestId: string; title: string; body: string }> = {}) => ({
@@ -606,18 +612,22 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
     });
 
     describe("usunięcie źródła w trakcie tworzenia", () => {
+      // Obietnice w locie są deklarowane przed `try` i domykane w `finally` po zwolnieniu
+      // blokady: nieudana asercja nie zostawia pracy w tle, która wpadłaby w następny test.
       it("usunięcie czeka na tworzenie i potem zeruje odnośnik, a lekcja zostaje z kopią tekstu", async () => {
         const sourceId = await seedSource();
         // Blokada tabeli wersji zatrzymuje tworzenie PO zablokowaniu źródła: wstawienie
         // zestawu (klucz obcy do wersji) czeka, a źródło jest już zablokowane `FOR KEY SHARE`.
         const blocker = await pool.connect();
+        let creating: Promise<Outcome<Awaited<ReturnType<typeof createLessonFromMaterial>>>> | undefined;
+        let deleting: Promise<Outcome<void>> | undefined;
         try {
           await blocker.query("begin");
           await blocker.query("lock table learning_app.deck_versions in access exclusive mode");
-          const creating = settle(createLessonFromMaterial(services, chapterCommand(sourceId)));
+          creating = settle(createLessonFromMaterial(services, chapterCommand(sourceId)));
           await waitUntilBlocked(/insert into "learning_app"\."decks"/i);
 
-          const deleting = settle(deleteSourceMaterial(services, sourceId));
+          deleting = settle(deleteSourceMaterial(services, sourceId));
           await waitUntilBlocked(/delete from "learning_app"\."source_materials"/i);
           // Źródło wciąż istnieje: usuwanie czeka na blokadę trzymaną przez tworzenie.
           expect(await count("source_materials")).toBe(1);
@@ -626,8 +636,8 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
           const created = await creating;
           expect(await deleting).toEqual({ ok: true, value: undefined });
 
-          expect(created.ok).toBe(true);
-          const { deckId } = (created as { ok: true; value: { deckId: string } }).value;
+          if (!created.ok) throw created.error;
+          const { deckId } = created.value;
           const stored = await storedLesson(deckId);
           expect(stored.material).toBe(CHAPTER_TEXT);
           expect(stored.runMaterial).toBe(CHAPTER_TEXT);
@@ -637,16 +647,18 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         } finally {
           await blocker.query("rollback").catch(() => undefined);
           blocker.release();
+          await Promise.allSettled([creating, deleting]);
         }
       });
 
       it("tworzenie czekające na trwające usunięcie kończy się not_found, nie błędem klucza obcego", async () => {
         const sourceId = await seedSource();
         const deleter = await pool.connect();
+        let creating: Promise<Outcome<Awaited<ReturnType<typeof createLessonFromMaterial>>>> | undefined;
         try {
           await deleter.query("begin");
           await deleter.query("delete from learning_app.source_materials where id = $1", [sourceId]);
-          const creating = settle(createLessonFromMaterial(services, chapterCommand(sourceId)));
+          creating = settle(createLessonFromMaterial(services, chapterCommand(sourceId)));
           await waitUntilBlocked(/for key share/i);
 
           await deleter.query("commit");
@@ -658,31 +670,34 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         } finally {
           await deleter.query("rollback").catch(() => undefined);
           deleter.release();
+          await Promise.allSettled([creating]);
         }
       });
 
       it("tworzenie czekające na trwającą edycję kopiuje nową treść razem z nową rewizją", async () => {
         const sourceId = await seedSource();
         const editor = await pool.connect();
+        let creating: Promise<Outcome<Awaited<ReturnType<typeof createSchoolLesson>>>> | undefined;
         try {
           await editor.query("begin");
           // Tak samo jak updateSourceMaterial: najpierw FOR UPDATE, potem zapis.
           await editor.query("select id from learning_app.source_materials where id = $1 for update", [sourceId]);
           await editor.query("update learning_app.source_materials set body = $2, revision = 2 where id = $1", [sourceId, "Nowa treść po edycji."]);
-          const creating = settle(createSchoolLesson(services, schoolCommand(sourceId)));
+          creating = settle(createSchoolLesson(services, schoolCommand(sourceId)));
           await waitUntilBlocked(/for key share/i);
 
           await editor.query("commit");
           const created = await creating;
 
-          expect(created.ok).toBe(true);
-          const { deckId } = (created as { ok: true; value: { deckId: string } }).value;
+          if (!created.ok) throw created.error;
+          const { deckId } = created.value;
           const stored = await storedLesson(deckId);
           expect(stored.material).toBe("Nowa treść po edycji.");
           expect(stored.deck).toEqual({ source_material_id: sourceId, source_material_revision: 2 });
         } finally {
           await editor.query("rollback").catch(() => undefined);
           editor.release();
+          await Promise.allSettled([creating]);
         }
       });
 
@@ -711,5 +726,260 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         expect(await count("decks")).toBe(outcomes.created);
       });
     });
+  });
+});
+
+describe("Parent API źródeł (HTTP, /api/v1/parent/sources)", () => {
+  const BASE = "http://localhost:3000";
+  let services: Services;
+  let clock: ManualClock;
+  let token: string;
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    await pool.query("truncate learning_app.decks, learning_app.source_materials cascade");
+    ({ services, clock } = buildTestServices("2026-10-31T10:00:00.000Z"));
+    await setupParent(services, "sources-api-pin");
+    ({ token } = await loginParent(services, "sources-api-pin"));
+  });
+
+  interface ApiOptions {
+    body?: unknown;
+    /** `null` — żądanie bez ciasteczka sesji; domyślnie sesja zalogowanego rodzica. */
+    session?: string | null;
+    origin?: string;
+  }
+
+  /** Żądanie przez ten sam handler oRPC co catch-all produkcyjny; jawny Host jak przy serwerze. */
+  function api(method: string, path: string, options: ApiOptions = {}): Promise<Response> {
+    const session = options.session === undefined ? token : options.session;
+    return handleParentApi(
+      new Request(`${BASE}/api/v1/parent${path}`, {
+        method,
+        headers: {
+          host: "localhost:3000",
+          origin: options.origin ?? BASE,
+          ...(options.body === undefined ? {} : { "content-type": "application/json" }),
+          ...(session ? { cookie: `parent_session=${session}` } : {}),
+        },
+        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      }),
+      services,
+    );
+  }
+
+  async function json<T>(response: Response): Promise<T> {
+    return (await response.json()) as T;
+  }
+
+  async function errorCode(response: Response): Promise<string | undefined> {
+    return (await json<{ code?: string }>(response)).code;
+  }
+
+  const sourceCommand = (overrides: Partial<{ clientRequestId: string; title: string; body: string }> = {}) => ({
+    clientRequestId: randomUUID(),
+    title: "Rozdział 4: Pogoda",
+    body: "Fikcyjny tekst rozdziału o pogodzie.",
+    ...overrides,
+  });
+
+  async function createSource(overrides: Parameters<typeof sourceCommand>[0] = {}): Promise<string> {
+    const response = await api("POST", "/sources", { body: sourceCommand(overrides) });
+    expect(response.status).toBe(201);
+    return (await json<{ id: string }>(response)).id;
+  }
+
+  async function revisionOf(id: string): Promise<number> {
+    const rows = await query<{ revision: number }>("select revision from learning_app.source_materials where id = $1", [id]);
+    return rows[0]!.revision;
+  }
+
+  it("creates, lists, reads, edits and deletes a source with the documented statuses", async () => {
+    const command = sourceCommand({ title: "  Rozdział 4: Pogoda ", body: " Fikcyjny tekst rozdziału. " });
+
+    const created = await api("POST", "/sources", { body: command });
+    expect(created.status).toBe(201);
+    const { id } = await json<{ id: string }>(created);
+    expect(id).toMatch(UUID_PATTERN);
+    // Ponowienie tego samego polecenia: to samo źródło, status 200 zamiast 201.
+    const retried = await api("POST", "/sources", { body: command });
+    expect(retried.status).toBe(200);
+    expect(await json(retried)).toEqual({ id });
+    expect(await count("source_materials")).toBe(1);
+
+    const summary = { id, title: "Rozdział 4: Pogoda", revision: 1, createdAt: "2026-10-31T10:00:00.000Z", updatedAt: "2026-10-31T10:00:00.000Z", deckCount: 0 };
+    const list = await api("GET", "/sources");
+    expect(list.status).toBe(200);
+    expect(await json(list)).toEqual([summary]);
+    const detail = await api("GET", `/sources/${id}`);
+    expect(detail.status).toBe(200);
+    expect(await json(detail)).toEqual({ ...summary, body: "Fikcyjny tekst rozdziału.", decks: [] });
+
+    clock.advanceMs(60_000);
+    const updated = await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 1, title: "Nowy tytuł" } });
+    expect(updated.status).toBe(200);
+    expect(await json(updated)).toEqual({
+      ...summary,
+      title: "Nowy tytuł",
+      body: "Fikcyjny tekst rozdziału.",
+      revision: 2,
+      updatedAt: "2026-10-31T10:01:00.000Z",
+      decks: [],
+    });
+    const stale = await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 1, body: "Spóźniona edycja." } });
+    expect(stale.status).toBe(409);
+    expect(await errorCode(stale)).toBe("conflict");
+    expect(await revisionOf(id)).toBe(2);
+
+    const removed = await api("DELETE", `/sources/${id}`);
+    expect(removed.status).toBe(204);
+    expect(await removed.text()).toBe("");
+    expect(await count("source_materials")).toBe(0);
+    for (const [method, path, body] of [
+      ["GET", `/sources/${id}`, undefined],
+      ["PATCH", `/sources/${id}`, { expectedRevision: 2, title: "Duch" }],
+      ["DELETE", `/sources/${id}`, undefined],
+    ] as const) {
+      const response = await api(method, path, { body });
+      expect(response.status, `${method} po usunięciu`).toBe(404);
+      expect(await errorCode(response)).toBe("not_found");
+    }
+    expect(await json(await api("GET", "/sources"))).toEqual([]);
+  });
+
+  it("rejects a retry with the same request id and different content as 409", async () => {
+    const command = sourceCommand();
+    const id = (await json<{ id: string }>(await api("POST", "/sources", { body: command }))).id;
+
+    const conflicting = await api("POST", "/sources", { body: { ...command, body: "Inna treść." } });
+
+    expect(conflicting.status).toBe(409);
+    expect(await errorCode(conflicting)).toBe("conflict");
+    expect(await count("source_materials")).toBe(1);
+    expect((await json<{ body: string }>(await api("GET", `/sources/${id}`))).body).toBe(command.body);
+  });
+
+  it("serializes simultaneous requests: one 201 and one 200 for create, one 200 and one 409 for edit", async () => {
+    const command = sourceCommand();
+    const creations = await Promise.all([
+      api("POST", "/sources", { body: command }),
+      api("POST", "/sources", { body: command }),
+    ]);
+    expect(creations.map((response) => response.status).sort()).toEqual([200, 201]);
+    expect(await count("source_materials")).toBe(1);
+    const [first, second] = await Promise.all(creations.map((response) => json<{ id: string }>(response)));
+    expect(first!.id).toBe(second!.id);
+
+    const edits = await Promise.all([
+      api("PATCH", `/sources/${first!.id}`, { body: { expectedRevision: 1, body: "Edycja z pierwszej przeglądarki." } }),
+      api("PATCH", `/sources/${first!.id}`, { body: { expectedRevision: 1, body: "Edycja z drugiej przeglądarki." } }),
+    ]);
+    expect(edits.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await revisionOf(first!.id)).toBe(2);
+  });
+
+  it("rejects malformed requests at the boundary without writing anything", async () => {
+    const id = await createSource();
+    const valid = sourceCommand();
+
+    for (const body of [
+      { ...valid, clientRequestId: "nie-uuid" },
+      { ...valid, title: "   " },
+      { ...valid, title: "a".repeat(121) },
+      { ...valid, body: " \n " },
+      { ...valid, body: "a".repeat(16_001) },
+      { ...valid, extra: true },
+      { title: valid.title, body: valid.body },
+    ]) {
+      const response = await api("POST", "/sources", { body });
+      expect(response.status, JSON.stringify(body).slice(0, 80)).toBe(400);
+      expect(await errorCode(response)).toBe("validation");
+    }
+    expect(await count("source_materials")).toBe(1);
+
+    for (const body of [
+      { expectedRevision: 1 },
+      { title: "Bez rewizji" },
+      { expectedRevision: 0, title: "X" },
+      { expectedRevision: 1, title: "   " },
+      { expectedRevision: 1, body: "a".repeat(16_001) },
+      { expectedRevision: 1, title: "X", extra: true },
+    ]) {
+      const response = await api("PATCH", `/sources/${id}`, { body });
+      expect(response.status, JSON.stringify(body).slice(0, 80)).toBe(400);
+      expect(await errorCode(response)).toBe("validation");
+    }
+    expect(await revisionOf(id)).toBe(1);
+
+    for (const [method, body] of [["GET", undefined], ["PATCH", { expectedRevision: 1, title: "X" }], ["DELETE", undefined]] as const) {
+      const response = await api(method, "/sources/nie-uuid", { body });
+      expect(response.status, `${method} z niepoprawnym identyfikatorem`).toBe(400);
+      expect(await errorCode(response)).toBe("validation");
+    }
+    expect(await count("source_materials")).toBe(1);
+  });
+
+  it("requires a parent session for every operation", async () => {
+    const id = await createSource();
+
+    for (const [method, path, body] of [
+      ["GET", "/sources", undefined],
+      ["GET", `/sources/${id}`, undefined],
+      ["POST", "/sources", sourceCommand()],
+      ["PATCH", `/sources/${id}`, { expectedRevision: 1, title: "Obcy" }],
+      ["DELETE", `/sources/${id}`, undefined],
+    ] as const) {
+      const response = await api(method, path, { body, session: null });
+      expect(response.status, `${method} ${path}`).toBe(401);
+      expect(await errorCode(response)).toBe("unauthorized");
+    }
+    expect(await count("source_materials")).toBe(1);
+    expect(await revisionOf(id)).toBe(1);
+  });
+
+  it("rejects cross-origin mutations with 403 while reads pass", async () => {
+    const id = await createSource();
+    const attacker = "https://attacker.example";
+
+    for (const [method, path, body] of [
+      ["POST", "/sources", sourceCommand()],
+      ["PATCH", `/sources/${id}`, { expectedRevision: 1, title: "Obcy" }],
+      ["DELETE", `/sources/${id}`, undefined],
+    ] as const) {
+      const response = await api(method, path, { body, origin: attacker });
+      expect(response.status, `${method} ${path}`).toBe(403);
+      expect(await errorCode(response)).toBe("forbidden");
+    }
+    expect(await count("source_materials")).toBe(1);
+    expect(await revisionOf(id)).toBe(1);
+    expect((await api("GET", `/sources/${id}`, { origin: attacker })).status).toBe(200);
+  });
+
+  it("shows decks created from the source with the stale marker and survives deleting the source", async () => {
+    const id = await createSource({ body: "Zagadnienie 1: Pogoda\nIt's raining. It's snowing." });
+    const { deckId } = await createLessonFromMaterial(services, {
+      subjectId: "english_chapter",
+      topicTitlePl: "Unit 1",
+      sourceMaterialId: id,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+
+    const fresh = await json<{ deckCount: number; decks: unknown[] }>(await api("GET", `/sources/${id}`));
+    expect(fresh.deckCount).toBe(1);
+    expect(fresh.decks).toEqual([{ deckId, title: expect.any(String), kind: "lesson", state: "draft", copiedRevision: 1, stale: false }]);
+    expect((await json<Array<{ deckCount: number }>>(await api("GET", "/sources")))[0]!.deckCount).toBe(1);
+
+    expect((await api("PATCH", `/sources/${id}`, { body: { expectedRevision: 1, body: "Zmieniony tekst rozdziału." } })).status).toBe(200);
+    const edited = await json<{ decks: Array<{ copiedRevision: number; stale: boolean }> }>(await api("GET", `/sources/${id}`));
+    expect(edited.decks).toMatchObject([{ copiedRevision: 1, stale: true }]);
+    const lesson = await json<{ source?: unknown }>(await api("GET", `/lessons/${deckId}`));
+    expect(lesson.source).toEqual({ id, title: "Rozdział 4: Pogoda", copiedRevision: 1, currentRevision: 2 });
+
+    expect((await api("DELETE", `/sources/${id}`)).status).toBe(204);
+    expect(await count("decks")).toBe(1);
+    const orphaned = await api("GET", `/lessons/${deckId}`);
+    expect(orphaned.status).toBe(200);
+    expect(await json(orphaned)).not.toHaveProperty("source");
   });
 });

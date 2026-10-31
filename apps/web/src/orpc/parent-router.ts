@@ -13,9 +13,11 @@ import {
   createLessonFromMaterial,
   createSchoolLesson,
   createLessonDraftFromPublished,
+  createSourceMaterial,
   decideLessonVerdict,
   deckIdOfLessonVersion,
   deleteChild,
+  deleteSourceMaterial,
   editDraft,
   editLessonDraft,
   enqueueDeckGeneration,
@@ -23,12 +25,14 @@ import {
   getMockTestReportForSession,
   getProgress,
   getPronunciationSettings,
+  getSourceMaterial,
   isParentSetupRequired,
   lessonCatalog,
   lessonObjectiveProgress,
   listChildren,
   listDecks,
   listLessonVerdicts,
+  listSourceMaterials,
   logoutParent,
   omitRevisionAsset,
   publishDraft,
@@ -49,6 +53,7 @@ import {
   updateChild,
   updateDeckSettings,
   updatePronunciationBands,
+  updateSourceMaterial,
   upsertAssignment,
 } from "@learning/server";
 import { implement, type Router } from "@orpc/server";
@@ -76,7 +81,7 @@ import { assertDeclaredBodyCap } from "./request-limits";
  * ze streamingiem 5 MB), szkice wersji (drafts), kartkówki (mock-tests
  * dispatch lekcja/słówka prowadzi fasada serwera), kartę pracy, lekcje (lessons, lesson-catalog,
  * lesson-verdicts, lesson-drafts), generację (generation), przypisania
- * (assignments) i postępy (progress). Ścieżki spoza kontraktu
+ * (assignments), postępy (progress) i źródła rodzica (sources). Ścieżki spoza kontraktu
  * (`matched === false`) dostają `AppError("not_found")` bezpośrednio
  * w catch-all — fallback legacy został zdekomisjonowany (zadanie 13).
  *
@@ -104,6 +109,7 @@ const parentOs = implement({
   generation: parentApiContract.generation,
   assignments: parentApiContract.assignments,
   progress: parentApiContract.progress,
+  sources: parentApiContract.sources,
 })
   .$context<ORpcContext>()
   .use(appErrorMiddleware)
@@ -443,6 +449,36 @@ const progressGet = parentOs.progress.get.handler(async ({ context, input }) =>
   getProgress(context.services, input.childId, input.deckId),
 );
 
+const sourcesList = parentOs.sources.list.handler(async ({ context }) =>
+  listSourceMaterials(context.services),
+);
+
+const sourcesCreate = parentOs.sources.create
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const result = await createSourceMaterial(context.services, input);
+    // Dynamiczny status sukcesu: 201 przy realnym utworzeniu, 200 gdy ponowienie
+    // z tym samym clientRequestId i treścią zwróciło istniejące źródło.
+    return { status: result.created ? 201 as const : 200 as const, body: { id: result.id } };
+  });
+
+const sourcesGet = parentOs.sources.get.handler(async ({ context, input }) =>
+  getSourceMaterial(context.services, input.sourceId),
+);
+
+const sourcesUpdate = parentOs.sources.update
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const { sourceId, ...patch } = input;
+    return updateSourceMaterial(context.services, sourceId, patch);
+  });
+
+const sourcesDelete = parentOs.sources.delete
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    await deleteSourceMaterial(context.services, input.sourceId);
+  });
+
 /**
  * Stan ekranu logowania (GET /login): czy pokazać setup pierwszego uruchomienia
  * i czy wisząca sesja jest jeszcze ważna. Wygasła sesja nie wywala granicy —
@@ -575,5 +611,12 @@ export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
   },
   progress: {
     get: progressGet,
+  },
+  sources: {
+    list: sourcesList,
+    create: sourcesCreate,
+    get: sourcesGet,
+    update: sourcesUpdate,
+    delete: sourcesDelete,
   },
 });
