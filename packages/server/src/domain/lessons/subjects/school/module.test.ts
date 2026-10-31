@@ -539,3 +539,9 @@ describe("uzupełnij tekst (lesson_cloze)", () => {
     expect(schoolSubject.prompts.fieldRules).toContain("lesson_cloze");
   });
 });
+
+describe("schoolSubject — zdanie feedbacku", () => {
+  it("nie nagrywa zdania po odpowiedzi", () => {
+    expect(schoolSubject.ttsForFeedbackSentence).toBe(false);
+  });
+});

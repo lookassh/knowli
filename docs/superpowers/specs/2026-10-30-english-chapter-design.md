@@ -453,7 +453,7 @@ Strojenie obejmowało: ciągły `focus` tłumaczenia, zerowanie pól v3 w prompc
 
 **Zaimplementowane** (gałąź `claude/english-chapter-2-sources`, na bazie Etapu 1 (#192, `main`); plan `docs/superpowers/plans/2026-10-31-english-chapter-stage2-sources.md`):
 
-- dane: tabela `source_materials` (z `revision` i `body_revision`), kolumny `decks.source_material_id` (FK `ON DELETE SET NULL`) i `decks.source_material_revision` (rewizja treści) z dwoma CHECK-ami, indeks częściowy, migracja `0029_source_materials.sql` (niewydana — poprawki końcowego przeglądu weszły do niej na miejscu), `docs/schema.sql`;
+- dane: tabela `source_materials` (z `revision` i `body_revision`), kolumny `decks.source_material_id` (FK `ON DELETE SET NULL`) i `decks.source_material_revision` (rewizja treści) z dwoma CHECK-ami, indeks częściowy, migracja `0030_source_materials.sql` (niewydana; przy scaleniu z `main` przenumerowana z `0029`, które zajęła rola `feedback_audio` z #194 — poprawki końcowego przeglądu weszły do niej na miejscu), `docs/schema.sql`;
 - serwer (obszar `materials/`): `source-materials.ts` z `createSourceMaterial` (idempotencja po `clientRequestId` i `request_hash`), `updateSourceMaterial` (`expectedRevision`, `FOR UPDATE`, zapis bez zmian bez podbicia), `deleteSourceMaterial`, `listSourceMaterials`, `getSourceMaterial`, `lockSourceMaterialForCopy` (`FOR KEY SHARE` w transakcji tworzenia lekcji) i `readDeckSource`; ponowienie tworzenia lekcji po równoległym usunięciu źródła zwraca zestaw pierwszego żądania (`findEnqueuedRun`);
 - kontrakty: `source-materials.ts`, `sourceMaterialId` w `SchoolLessonCommandSchema` i `MaterialLessonCommandSchema` (dokładnie jedno z `material` / `sourceMaterialId`), `LessonDeckDto.source` (`LessonDeckSourceDtoSchema`, wspólny typ serwera i panelu), `messages.sources`;
 - Parent API: grupa oRPC `sources` (list, get, create 201/200, update, delete 204), sesja rodzica, kontrola Origin na mutacjach; bez Kid API i MCP;
@@ -483,7 +483,7 @@ Opis architektury: `docs/architecture.md` §19.10 (blokady, idempotencja, wdroż
 - fizyczne urządzenia: układ sprawdzono wyłącznie w emulacji okna przeglądarki; górny rząd pięciu zakładek zmierzono przy 600, 640 i 768 px (klasyczny pasek przewijania tylko w symulacji), a przypadki brzegowe zakładki — tylko przy 390×844;
 - skutek skróconego polecenia uzupełniania tekstu na prawdziwym modelu: zmieniono sam prompt (limit 120 znaków egzekwuje walidacja silnika), a próby `pnpm probe:chapter` po zmianie nie powtarzano;
 - generowanie z prawdziwego modelu ze źródła jako wejścia (próba z Etapu 1 objęła tekst wklejony; ścieżka ze źródła używa tego samego generatora);
-- jednoczesne wdrożenie: kolejność migracja `0029` → web i worker (oba używają wspólnego schematu; krok `migrate` w Compose ją wymusza) wynika z projektu, nie była ćwiczona na środowisku wdrożeniowym.
+- jednoczesne wdrożenie: kolejność migracja `0030` → web i worker (oba używają wspólnego schematu; krok `migrate` w Compose ją wymusza) wynika z projektu, nie była ćwiczona na środowisku wdrożeniowym.
 
 **Uwagi dla Etapu 4** (słówka ze źródła, sekcja 6; z końcowego przeglądu Etapu 2):
 

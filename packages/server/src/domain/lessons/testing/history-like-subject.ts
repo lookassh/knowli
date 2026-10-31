@@ -68,4 +68,5 @@ export const historyLikeSubject: SubjectModule = {
   validateExercise: () => [],
   ttsForAnswers: false,
   ttsForPrompts: false,
+  ttsForFeedbackSentence: false,
 };

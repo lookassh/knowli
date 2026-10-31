@@ -675,10 +675,11 @@ export const FeedbackDtoSchema = z.object({
   /** Wskazówka prezentacji; endpoint odsłuchu zawsze ponownie sprawdza uprawnienie. */
   referenceAudioAvailable: z.boolean().optional(),
   /**
-   * Audio poprawnej opcji `picture_recognition`: identyfikator ujawniany
-   * WYŁĄCZNIE w feedbacku wraz z oceną próby (serwer zamyka zdarzenie
-   * `audio_issued` przed odpowiedzią HTTP). Przed odpowiedzią prompt nie
-   * niesie żadnego audio (SPEC A07).
+   * Nagranie rozwiązania ujawniane WYŁĄCZNIE w feedbacku wraz z oceną próby
+   * (poprawna opcja `picture_recognition`, pełne zdanie ćwiczenia lekcji
+   * gramatyki w treningu). Serwer zamyka zdarzenie `audio_issued` przed
+   * odpowiedzią HTTP; przed odpowiedzią prompt nie niesie tego nagrania
+   * (SPEC A07).
    */
   correctAudioAssetId: UuidSchema.optional(),
 }).strict().superRefine((feedback, ctx) => {

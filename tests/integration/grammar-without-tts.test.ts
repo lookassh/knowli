@@ -59,12 +59,13 @@ async function legacyLessonTask(services: Services): Promise<{ childId: string; 
 }
 
 describe("gramatyka bez TTS", () => {
-  it("generacja zapisuje ćwiczenia bez zasobów ani zadań TTS", async () => {
+  it("generacja zapisuje ćwiczenia bez zasobów audio odpowiedzi; zlecone są tylko nagrania zdań feedbacku", async () => {
     const { draft } = await generatedLesson();
     expect(draft.exercises).toHaveLength(20);
     expect(draft.assets).toEqual([]);
-    expect((await pool.query("select count(*)::int as count from learning_app.media_assets")).rows[0].count).toBe(0);
-    expect((await pool.query("select kind from learning_app.generation_runs order by kind")).rows).toEqual([{ kind: "lesson" }]);
+    expect((await pool.query("select count(*)::int as count from learning_app.revision_assets where role <> 'feedback_audio'")).rows[0].count).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.media_assets")).rows[0].count).toBeGreaterThan(0);
+    expect((await pool.query("select distinct kind from learning_app.generation_runs order by kind")).rows).toEqual([{ kind: "lesson" }, { kind: "tts" }]);
   });
 
   it("publikuje kompletną lekcję od razu po generacji tekstu, bez wykonania TTS", async () => {
@@ -105,14 +106,16 @@ describe("gramatyka bez TTS", () => {
   it("worker nie wykonuje wcześniejszych zadań TTS używanych wyłącznie przez wyłączoną gramatykę", async () => {
     const { fakes, draft } = await generatedLesson(true);
     expect(draft.assets).toHaveLength(20);
-    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    // Przedmiot z wyłączonym audio odpowiedzi i zdania feedbacku (jak po wyłączeniu obu flag).
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
+      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) });
     for (let pass = 0; pass < 10; pass += 1) {
       const result = await runDueGenerationWork(services, { lesson: 0, deck: 0, tts: 50, images: 0 });
       if (result.processed === 0) break;
     }
     expect(fakes.tts.requests).toHaveLength(0);
     const runs = (await pool.query("select state from learning_app.generation_runs where kind='tts'")).rows;
-    expect(runs).toHaveLength(20);
+    expect(runs.length).toBeGreaterThanOrEqual(20);
     expect(runs.every(row => row.state === "superseded")).toBe(true);
   });
 
@@ -133,7 +136,10 @@ describe("gramatyka bez TTS", () => {
 
   it("dwa workery nie przywracają anulowanego TTS po odczytaniu tej samej migawki pending", async () => {
     const { fakes, draft } = await generatedLesson(true);
-    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    // Bez odczytu zdania: w popraw/przekształć zdanie równa się odpowiedzi, więc
+    // `target_audio` i `feedback_audio` dzielą zasób, którego włączona rola nie anuluje.
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
+      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) });
     const assetId = draft.assets[0]!.assetId!;
     const originalQuery = pool.query;
     let release!: () => void;

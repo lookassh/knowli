@@ -499,6 +499,40 @@ describe("materializeExercise — nagranie „Posłuchaj pytania” (design szko
   });
 });
 
+describe("materializeExercise — nagranie zdania feedbacku w prywatnym kluczu", () => {
+  const feedbackId = "22222222-2222-4222-8222-222222222222";
+  const payload = {
+    exerciseType: "lesson_choice",
+    objectiveId: "english_grammar.present_simple.third_person_s",
+    instructionPl: "Wybierz poprawną formę.",
+    stem: "She ___ football.",
+    options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
+    correctOption: "a",
+    answer: "plays",
+    acceptedAnswers: [],
+    focus: ["plays"],
+    answerLocale: subject.answerLocale,
+    promptLocale: subject.promptLocale,
+  } as LoadedExercise["payload"];
+  const exercise: LoadedExercise = { ...loaded(payload), feedbackAudioAssetId: feedbackId };
+
+  it("trening z flagą przedmiotu niesie id w kluczu, ale nie w promptcie dziecka", () => {
+    const task = materializeExercise({ independentCheck: false, reason: "practice" }, "f1", exercise, topic, subject);
+    expect(task.answerKey.feedbackAudioAssetId).toBe(feedbackId);
+    expect(JSON.stringify(task.prompt)).not.toContain(feedbackId);
+  });
+
+  it("kartkówka nie niesie id w kluczu", () => {
+    const task = materializeExercise({ independentCheck: true, reason: "due_check" }, "f2", exercise, topic, subject, { mockTest: true });
+    expect(task.answerKey).not.toHaveProperty("feedbackAudioAssetId");
+  });
+
+  it("przedmiot bez flagi nie niesie id w kluczu", () => {
+    const task = materializeExercise({ independentCheck: false, reason: "practice" }, "f3", exercise, topic, { ...subject, ttsForFeedbackSentence: false });
+    expect(task.answerKey).not.toHaveProperty("feedbackAudioAssetId");
+  });
+});
+
 describe("materializeExercise — język treści i odpowiedzi (angielski — rozdział)", () => {
   const base = { objectiveId: "english_grammar.present_simple.third_person_s", instructionPl: "Ćwiczenie.", answer: "x", acceptedAnswers: [], focus: [] as string[] };
   const payloads: Record<string, LoadedExercise["payload"]> = {

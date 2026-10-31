@@ -68,6 +68,8 @@ export interface LoadedExercise {
   audioAssetId: string | null;
   /** Gotowe nagranie „Posłuchaj pytania” (design szkoły §11); brak = bez przycisku. */
   questionAudioAssetId?: string | null;
+  /** Gotowe nagranie pełnego zdania feedbacku (rola `feedback_audio`); brak = bez odczytu po odpowiedzi. */
+  feedbackAudioAssetId?: string | null;
 }
 
 export interface MaterializedLessonTask {
@@ -212,6 +214,9 @@ export function materializeExercise(
     focus: payload.focus,
     independentCheck: plan.independentCheck,
     reason: plan.reason,
+    // Nagranie zdania po odpowiedzi trafia wyłącznie do prywatnego klucza (nie do promptu dziecka)
+    // i nie istnieje w kartkówce, by nie zdradzać odpowiedzi.
+    ...(subject.ttsForFeedbackSentence && !mockTest && exercise.feedbackAudioAssetId ? { feedbackAudioAssetId: exercise.feedbackAudioAssetId } : {}),
     // Migawka celu: ścieżka oceny nie musi szukać celu w katalogu (tematy dynamiczne).
     ...(objective ? { objectiveSnapshot: { objectiveTitlePl: objective.titlePl, topicId: topic.id, topicVersion: topic.version, descriptionEn: objective.descriptionEn, errorCategories: [...objective.errorCategories], hints: { ...objective.hints }, topicTitlePl: topic.titlePl, extraErrorCategories: topic.extraErrorCategories.map((c) => ({ ...c })) } } : {}),
   };

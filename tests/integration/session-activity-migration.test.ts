@@ -50,7 +50,7 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
   const services = createServices({ db, clock });
   try {
     await pool.query("alter table learning_app.decks add column session_task_budget integer not null default 20");
-    // Pochodzenie zestawu ze źródła (0029): bieżący insert do decks wymienia te kolumny.
+    // Pochodzenie zestawu ze źródła (0030): bieżący insert do decks wymienia te kolumny.
     await pool.query("alter table learning_app.decks add column source_material_id uuid");
     await pool.query("alter table learning_app.decks add column source_material_revision integer");
     // Bieżący kod TS wstawia także kolumny nagrodowe profili z 0021; dodajemy

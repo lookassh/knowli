@@ -4,7 +4,7 @@
 
 **Goal:** Rodzic wkleja tekst rozdziału raz jako „źródło” w nowej zakładce „Źródła” i tworzy z niego lekcję rozdziału albo lekcję szkolną; zestaw kopiuje tekst i pamięta odnośnik do źródła.
 
-**Architecture:** Nowa tabela `source_materials` i dwie kolumny `decks` (migracja 0029), przypadki użycia w obszarze `materials/` (`source-materials.ts`), komendy tworzenia lekcji przyjmują `sourceMaterialId` zamiast tekstu, nowa grupa oRPC `sources`, nowa sekcja panelu rodzica. Kopia tekstu w zestawie — źródło nigdy nie jest czytane po utworzeniu zestawu.
+**Architecture:** Nowa tabela `source_materials` i dwie kolumny `decks` (migracja 0030), przypadki użycia w obszarze `materials/` (`source-materials.ts`), komendy tworzenia lekcji przyjmują `sourceMaterialId` zamiast tekstu, nowa grupa oRPC `sources`, nowa sekcja panelu rodzica. Kopia tekstu w zestawie — źródło nigdy nie jest czytane po utworzeniu zestawu.
 
 **Tech Stack:** TypeScript strict, Drizzle/PostgreSQL (migracje SQL w `packages/server/drizzle/`), Zod, oRPC, Mantine 9 + TanStack Query (panel rodzica), Vitest, Playwright.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Gałąź `claude/english-chapter-2-sources`, pierwotnie stos na `claude/english-chapter-1-lesson` (PR #192); po scaleniu #192 do `main` (46e626c0) gałąź przeniesiono na `main`, więc PR Etapu 2 ma bazę `main`.
-- Kolejny numer migracji: `0029`; wpis w `packages/server/drizzle/meta/_journal.json` (`idx` 29, `when` o ok. 1e8 większy od 0028); styl jak `0020_deck_session_task_budget.sql`. Migracja nie może naruszyć triggerów `decks_kind_immutable` (0007) ani `decks_cover_asset_guard` (0011).
+- Kolejny numer migracji: `0030` (pierwotnie `0029`; przenumerowana przy scaleniu z `main`, bo `0029` zajęła rola `feedback_audio` z #194); wpis w `packages/server/drizzle/meta/_journal.json` (`idx` 30, `when` 1793490000000, o 1e8 większy od 0029); styl jak `0020_deck_session_task_budget.sql`. Migracja nie może naruszyć triggerów `decks_kind_immutable` (0007) ani `decks_cover_asset_guard` (0011).
 - `source_materials`: `title` 1–120 po trim, `body` 1–16 000 po trim (`MAX_SCHOOL_MATERIAL_LENGTH`), `revision` od 1; uuid PK nadawany przez aplikację (`randomUUID()`), `timestamps()` jak w schemacie.
 - Obszar `materials/` importuje tylko `materials` i `family`; inne obszary i web tylko przez barrele (`modules/materials/index.ts`, `packages/server/src/index.ts`).
 - Każda operacja źródeł wymaga sesji rodzica; mutacje `sameOriginMiddleware`. Źródeł nie ma w Kid API ani w MCP.
@@ -41,7 +41,7 @@
 
 **Files:**
 - Modify: `packages/server/src/db/schema.ts` (nowa `sourceMaterials`; `decks` + `sourceMaterialId uuid references sourceMaterials.id onDelete set null`, `sourceMaterialRevision integer`)
-- Create: `packages/server/drizzle/0029_source_materials.sql`; Modify `_journal.json`; Modify `docs/schema.sql` (tabela i kolumny)
+- Create: `packages/server/drizzle/0030_source_materials.sql`; Modify `_journal.json`; Modify `docs/schema.sql` (tabela i kolumny)
 - Create: `packages/server/src/modules/materials/source-materials.ts`; Modify `modules/materials/index.ts`, `packages/server/src/index.ts`
 - Create: `packages/contracts/src/source-materials.ts` (+ export w `packages/contracts/src/index.ts`) i `source-materials.test.ts`
 - Create: `tests/integration/source-materials.test.ts`; Modify `tests/integration-buckets.ts` (najlżejszy kosz)
@@ -116,4 +116,4 @@
 
 - [ ] `corepack pnpm typecheck`, `test:unit`, `test:integration`, `test:e2e:shards` (build produkcyjny) — PASS.
 - [ ] Niezależny przegląd kilkoma subagentami; jedna fala poprawek; ponowna weryfikacja.
-- [ ] Push `claude/english-chapter-2-sources`; PR z bazą `main`; opis: zakres, migracja 0029, wpływ API → MCP → skill (brak), wdrożenie (migracja przed web i worker), sprawdzenia, niezweryfikowane.
+- [ ] Push `claude/english-chapter-2-sources`; PR z bazą `main`; opis: zakres, migracja 0030, wpływ API → MCP → skill (brak), wdrożenie (migracja przed web i worker), sprawdzenia, niezweryfikowane.

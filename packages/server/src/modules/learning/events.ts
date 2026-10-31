@@ -144,6 +144,34 @@ export async function writeSealedEvent(tx: Tx, input: SealedEventInput): Promise
   }
 }
 
+/**
+ * Pieczęć odsłuchu rozwiązania ujawnionego w feedbacku po odpowiedzi
+ * (`picture_recognition` słówek, zdanie lekcji gramatyki): `audio_issued`
+ * z ekspozycją celu w tej samej transakcji co feedback, przed odpowiedzią HTTP
+ * (arch §9.2). Odsłuch następuje PO odpowiedzi: czytniki liczą audio
+ * z occurredAt <= receivedAt jako wsparcie przed próbą, a w ścieżce świeżej
+ * próby `now` równa się receivedAt — stąd znacznik ściśle późniejszy (issue #187).
+ */
+export async function sealPostAnswerAudio(
+  tx: Tx,
+  input: { childId: string; taskId: string; itemId: string; targetKey: string; receivedAt: Date; now: Date },
+): Promise<void> {
+  const disclosedAt = new Date(Math.max(input.now.getTime(), input.receivedAt.getTime() + 1));
+  const prior = await tx
+    .select({ id: learningEvents.id })
+    .from(learningEvents)
+    .where(and(eq(learningEvents.taskId, input.taskId), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
+  await writeSealedEvent(tx, {
+    childId: input.childId,
+    taskId: input.taskId,
+    itemId: input.itemId,
+    kind: "audio_issued",
+    stepId: `${input.taskId}:d${prior.length + 1}`,
+    occurredAt: disclosedAt,
+    exposures: [input.targetKey],
+  });
+}
+
 /** Zadanie + blokada wiersza jego sesji — wspólna kolejność dla wszystkich operacji. */
 export async function lockTaskWithSession(tx: Tx, taskId: string) {
   // Jedno zapytanie z joinami daje zadanie oraz dane rewizji i rodzaj zestawu,
