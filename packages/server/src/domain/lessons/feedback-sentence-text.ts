@@ -1,3 +1,5 @@
+import { clozeGapCount, fillCloze } from "./cloze";
+
 /** Pola payloadu ćwiczenia potrzebne do zbudowania poprawnego zdania do odczytu po odpowiedzi. */
 export interface FeedbackSentenceSource {
   readonly exerciseType: string;
@@ -8,15 +10,19 @@ export interface FeedbackSentenceSource {
   readonly correctOption?: string;
   /** Klocki `lesson_order` w kolejności kanonicznej (jak w payloadzie). */
   readonly items?: readonly { readonly id: string; readonly text: string }[];
+  /** `lesson_cloze`: tekst z lukami (2+ podkreśleń) i słowa luk w kolejności luk. */
+  readonly clozeText?: string;
+  readonly gapAnswers?: readonly string[];
 }
 
 /** Najdłuższe zdanie, które nagrywamy (jak limit odpowiedzi dziecka). */
 export const FEEDBACK_SENTENCE_MAX_LENGTH = 200;
 
 /**
- * Pełne, poprawne angielskie zdanie ćwiczenia gramatyki, czytane dziecku po
- * odpowiedzi. `null`, gdy typ nie ma pojedynczego zdania do przeczytania,
- * luka jest niejednoznaczna albo zdanie przekracza limit.
+ * Pełne, poprawne zdanie ćwiczenia lekcji w języku odpowiedzi (albo krótki
+ * tekst luk z bankiem słów), czytane dziecku po odpowiedzi. `null`, gdy typ
+ * nie ma pojedynczego zdania do przeczytania, luka jest niejednoznaczna,
+ * słowa luk nie pasują do tekstu albo zdanie przekracza limit.
  */
 export function feedbackSentenceText(source: FeedbackSentenceSource): string | null {
   let raw: string | undefined;
@@ -29,6 +35,9 @@ export function feedbackSentenceText(source: FeedbackSentenceSource): string | n
       break;
     case "lesson_order":
       raw = source.items?.map((item) => item.text).join(" ");
+      break;
+    case "lesson_cloze":
+      raw = fillClozeText(source.clozeText, source.gapAnswers);
       break;
     case "lesson_error_fix":
     case "lesson_transform":
@@ -48,4 +57,16 @@ function fillGap(stem: string | undefined, fill: string | undefined): string | u
   if (!stem || !fill?.trim()) return undefined;
   if ((stem.match(/_{2,}/g) ?? []).length !== 1) return undefined;
   return stem.replace(/_{2,}/, () => fill.trim());
+}
+
+/**
+ * Tekst luk z bankiem z poprawnymi słowami — ten sam `fillCloze` co `filledText`
+ * klucza zadania (omówienie). Każda luka musi mieć niepuste słowo i żadne słowo
+ * nie może zostać bez luki; inaczej `undefined`.
+ */
+function fillClozeText(text: string | undefined, words: readonly string[] | undefined): string | undefined {
+  if (!text || !words) return undefined;
+  const gaps = clozeGapCount(text);
+  if (gaps === 0 || words.length !== gaps || words.some((word) => !word.trim())) return undefined;
+  return fillCloze(text, words);
 }
