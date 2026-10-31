@@ -136,7 +136,10 @@ describe("gramatyka bez TTS", () => {
 
   it("dwa workery nie przywracają anulowanego TTS po odczytaniu tej samej migawki pending", async () => {
     const { fakes, draft } = await generatedLesson(true);
-    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    // Bez odczytu zdania: w popraw/przekształć zdanie równa się odpowiedzi, więc
+    // `target_audio` i `feedback_audio` dzielą zasób, którego włączona rola nie anuluje.
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
+      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) });
     const assetId = draft.assets[0]!.assetId!;
     const originalQuery = pool.query;
     let release!: () => void;
