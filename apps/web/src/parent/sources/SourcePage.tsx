@@ -68,6 +68,7 @@ export default function SourcePage({
   const deletingRef = useRef(false);
   const mounted = useRef(true);
   const editButton = useRef<HTMLButtonElement>(null);
+  const titleField = useRef<HTMLInputElement>(null);
   const restoreEditFocus = useRef(false);
 
   useEffect(() => {
@@ -93,9 +94,12 @@ export default function SourcePage({
   }, [registerEditorState, dirty, saving, deleting]);
   useEffect(() => () => registerEditorState({ dirty: false, busy: false }), [registerEditorState]);
 
-  // po wyjściu z edycji fokus wraca do „Edytuj” (pola edycji znikają z ekranu)
+  // „Edytuj” znika razem z podglądem: fokus przechodzi do pola tytułu, a po wyjściu
+  // z edycji wraca do „Edytuj” (inaczej spadłby na <body>)
   useEffect(() => {
-    if (!editing && restoreEditFocus.current) {
+    if (editing) {
+      titleField.current?.focus();
+    } else if (restoreEditFocus.current) {
       restoreEditFocus.current = false;
       editButton.current?.focus();
     }
@@ -132,12 +136,31 @@ export default function SourcePage({
       setStatus(messages.sources.saved);
     } catch (cause) {
       if (!mounted.current) return;
+      const code = httpStatusOf(cause);
       if (isConflict(cause)) setConflict(true);
+      // źródło usunięte w innym oknie
+      else if (code === 404) setError(messages.sources.notFound);
       // 401: logowanie w oknie nad stroną otwiera globalny handler, edycja zostaje
-      else if (httpStatusOf(cause) !== 401) setError(errorMessage(cause));
+      else if (code !== 401) setError(errorMessage(cause));
     } finally {
       savingRef.current = false;
     }
+  };
+
+  /** Odświeżenie po konflikcie odrzuca wpisane zmiany — najpierw potwierdzenie. */
+  const confirmRefresh = () => {
+    if (refreshing) return;
+    modals.openConfirmModal({
+      title: messages.sources.refreshTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{messages.sources.refreshConfirm}</Text>,
+      labels: { confirm: messages.sources.refresh, cancel: messages.sources.cancel },
+      confirmProps: { size: "md", "data-testid": "source-refresh-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "source-refresh-cancel" } as Record<string, unknown>,
+      attributes: { content: { "data-testid": "source-refresh-dialog" } },
+      onConfirm: runOnce(() => void refresh()),
+    });
   };
 
   /** Po konflikcie: najnowsza wersja źródła zastępuje edycję (zmiany z tego okna przepadają). */
@@ -240,8 +263,9 @@ export default function SourcePage({
       <div>
         {backButton}
         <Title order={1} fz={{ base: 22, sm: 26 }} className="pp-editor-title" data-testid="source-heading">{source.title}</Title>
-        <Text size="sm" mt={4} className="pp-editor-muted">
-          {[messages.sources.updatedAt.replace("{date}", formatSourceDate(source.updatedAt)), deckCountLabel(source.decks.length)].join(" · ")}
+        <Text size="sm" mt={4} className="pp-editor-muted" data-testid="source-meta">
+          {/* jak na liście: bez zestawów zarchiwizowanych; potwierdzenie usunięcia liczy wszystkie (każdy traci odnośnik) */}
+          {[messages.sources.updatedAt.replace("{date}", formatSourceDate(source.updatedAt)), deckCountLabel(source.deckCount)].join(" · ")}
         </Text>
       </div>
 
@@ -266,13 +290,13 @@ export default function SourcePage({
       <Paper withBorder radius="lg" p={{ base: "md", sm: "lg" }}>
         {editing ? (
           <Stack gap="md">
-            <SourceFields values={values} onChange={setValues} disabled={saving || refreshing} autoFocusTitle />
+            <SourceFields values={values} onChange={setValues} disabled={saving || refreshing} titleRef={titleField} />
             {conflict && (
               <Alert color="yellow" variant="light" role="alert" data-testid="source-conflict" icon={<ParentIcon name="alert-triangle" />}>
                 <Stack gap="sm" align="flex-start">
                   <Text size="sm">{messages.sources.conflict}</Text>
                   <Button size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="source-conflict-refresh"
-                    disabled={refreshing} onClick={() => void refresh()}>
+                    disabled={refreshing} onClick={confirmRefresh}>
                     {messages.sources.refresh}
                   </Button>
                 </Stack>

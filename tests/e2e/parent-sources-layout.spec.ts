@@ -28,19 +28,29 @@ interface StoredSource {
   createdAt: string;
   updatedAt: string;
   decks: Array<{ deckId: string; title: string; kind: "lesson" | "vocabulary"; state: string; copiedRevision: number | null; stale: boolean }>;
+  /** Klucz idempotencji utworzenia (tylko w zaślepce, nie w DTO). */
+  requestId?: string;
 }
 
 interface Api {
   sources: Map<string, StoredSource>;
-  creates: Array<Record<string, unknown>>;
+  creates: Array<{ clientRequestId: string; title: string; body: string }>;
   patches: Array<Record<string, unknown>>;
   deletes: string[];
   lessonCreates: Array<{ path: string; body: Record<string, unknown> }>;
   /** Następny PATCH kończy się konfliktem rewizji, a źródło zmienia się „w innym oknie”. */
   conflictNext: boolean;
+  /** Tyle najbliższych POST /sources kończy się błędem 500 (wynik niepewny). */
+  createFailures: number;
+  /** Status odpowiedzi tworzenia lekcji (202 przyjęte; 404 — źródło usunięte w innym oknie). */
+  lessonStatus: number;
+  /** Lista zestawów kolejnych odczytów GET /decks (ostatnia zostaje). */
+  deckLists: unknown[][];
+  deckListCalls: number;
 }
 
 const BODY = "Unit 3 — Food\npizza — pizza\napple — jabłko\nI like pizza. Do you like apples?";
+const NEW_IDS = [NEW_ID, "2c3d4e5f-6071-4b8c-9d0e-1f2a3b4c5d6e"];
 
 function storedSource(): StoredSource {
   return {
@@ -53,40 +63,66 @@ function storedSource(): StoredSource {
     decks: [
       { deckId: "10000000-0000-4000-8000-000000000001", title: "Angielski — rozdział: Unit 3", kind: "lesson", state: "published", copiedRevision: 1, stale: true },
       { deckId: "10000000-0000-4000-8000-000000000002", title: "Jedzenie — sprawdzian", kind: "lesson", state: "draft", copiedRevision: 2, stale: false },
+      { deckId: "10000000-0000-4000-8000-000000000003", title: "Owoce", kind: "lesson", state: "archived", copiedRevision: 1, stale: true },
     ],
   };
 }
 
+/** `deckCount` jak na serwerze: bez zestawów zarchiwizowanych. */
+function withCount(source: StoredSource) {
+  const { requestId: _requestId, ...dto } = source;
+  return { ...dto, deckCount: source.decks.filter((deck) => deck.state !== "archived").length };
+}
+
 function summary(source: StoredSource) {
-  const { body: _body, decks, ...rest } = source;
-  return { ...rest, deckCount: decks.filter((deck) => deck.state !== "archived").length };
+  const { body: _body, decks: _decks, ...rest } = withCount(source);
+  return rest;
 }
 
 const envelope = (code: string, message: string) => ({ code, message, retryable: false, requestId: "r" });
 
 async function mockApi(page: Page): Promise<Api> {
-  const api: Api = { sources: new Map([[SOURCE_ID, storedSource()]]), creates: [], patches: [], deletes: [], lessonCreates: [], conflictNext: false };
+  const api: Api = {
+    sources: new Map([[SOURCE_ID, storedSource()]]), creates: [], patches: [], deletes: [], lessonCreates: [],
+    conflictNext: false, createFailures: 0, lessonStatus: 202, deckLists: [[]], deckListCalls: 0,
+  };
   await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const method = request.method();
     const path = new URL(request.url()).pathname.replace("/api/v1/parent", "");
     if (path === "/login") return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path === "/lesson-catalog") return route.fulfill({ json: catalog });
+    if (path === "/decks" && method === "GET") {
+      const list = api.deckLists[Math.min(api.deckListCalls, api.deckLists.length - 1)]!;
+      api.deckListCalls += 1;
+      return route.fulfill({ json: list });
+    }
     if (path === "/sources" && method === "GET") {
       return route.fulfill({ json: [...api.sources.values()].map(summary) });
     }
     if (path === "/sources" && method === "POST") {
       const body = request.postDataJSON() as { clientRequestId: string; title: string; body: string };
       api.creates.push(body);
-      api.sources.set(NEW_ID, { id: NEW_ID, title: body.title, body: body.body, revision: 1, createdAt: "2026-10-31T13:00:00.000Z", updatedAt: "2026-10-31T13:00:00.000Z", decks: [] });
-      return route.fulfill({ status: 201, json: { id: NEW_ID } });
+      if (api.createFailures > 0) {
+        api.createFailures -= 1;
+        return route.fulfill({ status: 500, json: { ...envelope("internal", "Błąd serwera."), retryable: true } });
+      }
+      // ponowienie tym samym clientRequestId zwraca to samo źródło (200), nowe polecenie — nowe źródło
+      const existing = [...api.sources.values()].find((source) => source.requestId === body.clientRequestId);
+      if (existing) return route.fulfill({ status: 200, json: { id: existing.id } });
+      const id = NEW_IDS.find((candidate) => !api.sources.has(candidate))!;
+      api.sources.set(id, {
+        id, title: body.title, body: body.body, revision: 1, createdAt: "2026-10-31T13:00:00.000Z", updatedAt: "2026-10-31T13:00:00.000Z",
+        decks: [], requestId: body.clientRequestId,
+      });
+      return route.fulfill({ status: 201, json: { id } });
     }
     const sourceMatch = /^\/sources\/([0-9a-f-]+)$/.exec(path);
     if (sourceMatch) {
       const id = sourceMatch[1]!;
       const stored = api.sources.get(id);
       if (!stored) return route.fulfill({ status: 404, json: envelope("not_found", "Nie znaleziono.") });
-      if (method === "GET") return route.fulfill({ json: stored });
+      if (method === "GET") return route.fulfill({ json: withCount(stored) });
       if (method === "PATCH") {
         const patch = request.postDataJSON() as { expectedRevision: number; title?: string; body?: string };
         api.patches.push(patch);
@@ -98,7 +134,7 @@ async function mockApi(page: Page): Promise<Api> {
         const updated = { ...stored, ...(patch.title ? { title: patch.title } : {}), ...(patch.body ? { body: patch.body } : {}), revision: stored.revision + 1,
           decks: stored.decks.map((deck) => ({ ...deck, stale: true })) };
         api.sources.set(id, updated);
-        return route.fulfill({ json: updated });
+        return route.fulfill({ json: withCount(updated) });
       }
       if (method === "DELETE") {
         api.deletes.push(id);
@@ -109,6 +145,7 @@ async function mockApi(page: Page): Promise<Api> {
     if (method === "POST" && /^\/lessons(\/school|\/material)?$/.test(path)) {
       const body = request.postDataJSON() as Record<string, unknown>;
       api.lessonCreates.push({ path, body });
+      if (api.lessonStatus === 404) return route.fulfill({ status: 404, json: envelope("not_found", "Nie znaleziono źródła.") });
       return route.fulfill({ status: 202, json: { runId: "00000000-0000-4000-8000-0000000000aa", deckId: body.deckId } });
     }
     // edytor lekcji po utworzeniu: odczyt nieistotny dla tego speca
@@ -189,9 +226,14 @@ for (const viewport of VIEWPORTS) {
       await expectNoHorizontalOverflow(page);
       await expectTargets(page, ["source-back", "source-create-chapter", "source-create-school", "source-edit", "source-delete", "source-deck-0"], viewport.width);
       await expect(page.getByTestId("source-deck-stale-0")).toHaveText(messages.sources.sourceChanged);
+      // nagłówek liczy zestawy jak lista (bez zarchiwizowanego), lista zestawów pokazuje wszystkie trzy
+      await expect(page.getByTestId("source-meta")).toContainText("2 zestawy");
+      await expect(page.getByTestId("source-deck-2")).toContainText(messages.decks.states.archived);
 
       await page.getByTestId("source-edit").click();
       await expect(page.getByTestId("source-body")).toHaveValue(BODY);
+      // „Edytuj” znika — fokus przechodzi do pola tytułu, nie na <body>
+      await expect(page.getByTestId("source-title")).toBeFocused();
       // bez zmian nie ma czego zapisać (zapis podbiłby rewizję i oznaczył zestawy jako nieaktualne)
       await expect(page.getByTestId("source-save")).toBeDisabled();
       await expectNoHorizontalOverflow(page);
@@ -206,10 +248,21 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("source-save")).toBeDisabled();
       await expectNoHorizontalOverflow(page);
 
+      // „Odśwież” odrzuca wpisane zmiany — najpierw potwierdzenie; anulowanie je zostawia
       await page.getByTestId("source-conflict-refresh").click();
+      await expect(page.getByTestId("source-refresh-dialog")).toContainText(messages.sources.refreshConfirm);
+      await expectTargets(page, ["source-refresh-cancel", "source-refresh-confirm"], viewport.width);
+      await page.getByTestId("source-refresh-cancel").click();
+      await expect(page.getByTestId("source-refresh-dialog")).toHaveCount(0);
+      await expect(page.getByTestId("source-title")).toHaveValue("Unit 3 — Jedzenie");
+      await expect(page.getByTestId("source-conflict")).toBeVisible();
+
+      await page.getByTestId("source-conflict-refresh").click();
+      await page.getByTestId("source-refresh-confirm").click();
       await expect(page.getByTestId("source-conflict")).toHaveCount(0);
       await expect(page.getByTestId("source-preview")).toContainText("We like apples.");
       await expect(page.getByTestId("source-heading")).toHaveText("Unit 3 — Food");
+      await expect(page.getByTestId("source-edit")).toBeFocused();
 
       // ponowna edycja od najnowszej rewizji zapisuje się
       await page.getByTestId("source-edit").click();
@@ -224,7 +277,8 @@ for (const viewport of VIEWPORTS) {
       await page.goto(`/parent/sources/${SOURCE_ID}`);
       await page.getByTestId("source-delete").click();
       const dialog = page.getByTestId("source-delete-dialog");
-      await expect(dialog).toContainText(messages.sources.deleteConfirm.replace("{n}", "2"));
+      // odnośnik tracą wszystkie zestawy, także zarchiwizowany
+      await expect(dialog).toContainText(messages.sources.deleteConfirm.replace("{n}", "3"));
       await expectNoHorizontalOverflow(page);
       await expectTargets(page, ["source-delete-cancel", "source-delete-confirm"], viewport.width);
       await page.getByTestId("source-delete-cancel").click();
@@ -266,3 +320,87 @@ for (const viewport of VIEWPORTS) {
     });
   });
 }
+
+test.describe("przypadki brzegowe (telefon 390×844)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+  });
+
+  test("niepewny zapis nowego źródła: ponowienie wysyła to samo polecenie, następne źródło ma nowy klucz", async ({ page }) => {
+    const api = await mockApi(page);
+    api.createFailures = 1;
+    await page.goto("/parent/sources");
+    await page.getByTestId("new-source-open").click();
+    await page.getByTestId("source-title").fill("Unit 4 — Sport");
+    await page.getByTestId("source-body").fill("I play football.");
+    await page.getByTestId("source-create-submit").click();
+    await expect(page.getByTestId("api-error")).toContainText(messages.sources.createUncertain);
+    await expect(page.getByTestId("source-create-submit")).toHaveText(messages.sources.retryCreate);
+    // ponowienie wysyła dokładnie to, co widać — pola zablokowane do rozstrzygnięcia
+    await expect(page.getByTestId("source-title")).toBeDisabled();
+    await expect(page.getByTestId("source-body")).toBeDisabled();
+
+    await page.getByTestId("source-create-submit").click();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${NEW_ID}$`));
+    expect(api.creates).toHaveLength(2);
+    expect(api.creates[1]).toEqual(api.creates[0]);
+
+    await page.getByTestId("source-back").click();
+    await page.getByTestId("new-source-open").click();
+    await expect(page.getByTestId("source-title")).toHaveValue("");
+    await page.getByTestId("source-title").fill("Unit 5 — Pogoda");
+    await page.getByTestId("source-body").fill("It is sunny.");
+    await page.getByTestId("source-create-submit").click();
+    await expect(page).toHaveURL(new RegExp(`/parent/sources/${NEW_IDS[1]}$`));
+    expect(api.creates).toHaveLength(3);
+    expect(api.creates[2]!.clientRequestId).not.toBe(api.creates[0]!.clientRequestId);
+  });
+
+  test("lekcja ze źródła usuniętego w innym oknie: 404 jest ostateczne, bez ponawiania", async ({ page }) => {
+    const api = await mockApi(page);
+    api.lessonStatus = 404;
+    await page.goto(`/parent/lessons/new?source=${SOURCE_ID}&subject=english_chapter`);
+    await page.getByTestId("lesson-create-submit").click();
+    await expect(page.getByTestId("api-error")).toContainText(messages.sources.notFound);
+    await expect(page.getByTestId("api-error")).not.toContainText(messages.lessons.createUncertain);
+    await expect(page.getByTestId("lesson-create-submit")).toHaveText(messages.lessons.createLesson);
+    await expect(page.getByTestId("lesson-create-submit")).toBeDisabled();
+    expect(api.lessonCreates).toHaveLength(1);
+    await expectNoHorizontalOverflow(page);
+    await expectTargets(page, ["lesson-source-missing-change"], 390);
+
+    // „Zmień źródło” prowadzi do listy źródeł (strona usuniętego źródła nie istnieje)
+    await expect(page.getByTestId("lesson-source-missing-change")).toHaveAttribute("href", "/parent/sources");
+    await page.getByTestId("lesson-source-missing-change").click();
+    await expect(page).toHaveURL(/\/parent\/sources$/);
+    await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
+  });
+
+  test("zapis źródła usuniętego w innym oknie: komunikat o braku źródła", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto(`/parent/sources/${SOURCE_ID}`);
+    await page.getByTestId("source-edit").click();
+    await page.getByTestId("source-title").fill("Unit 3 — Jedzenie");
+    api.sources.delete(SOURCE_ID);
+    await page.getByTestId("source-save").click();
+    await expect(page.getByTestId("source-error")).toHaveText(messages.sources.notFound);
+  });
+
+  test("zestaw spoza wczytanej listy: jedno odświeżenie listy przed komunikatem o braku zestawu", async ({ page }) => {
+    const api = await mockApi(page);
+    // pierwszy odczyt listy (start panelu) nie zna zestawu ze źródła — powstał w innym oknie
+    api.deckLists = [[], [{ deckId: "10000000-0000-4000-8000-000000000001", title: "Angielski — rozdział: Unit 3", state: "published", kind: "lesson",
+      editableVersionId: null, publishedVersionId: null, itemCount: 24 }]];
+    await page.goto(`/parent/sources/${SOURCE_ID}`);
+    await page.getByTestId("source-deck-0").click();
+    await expect(page).toHaveURL(/\/parent\/decks\/10000000-0000-4000-8000-000000000001$/);
+    await expect(page.getByTestId("lesson-editor")).toBeVisible();
+    await expect(page.getByTestId("deck-not-found")).toHaveCount(0);
+    expect(api.deckListCalls).toBe(2);
+
+    // zestaw, którego nie ma także po odświeżeniu listy — dopiero wtedy komunikat
+    await page.goto("/parent/decks/10000000-0000-4000-8000-0000000000ff");
+    await expect(page.getByTestId("deck-not-found")).toBeVisible();
+    await expect(page.getByTestId("deck-loading")).toHaveCount(0);
+  });
+});

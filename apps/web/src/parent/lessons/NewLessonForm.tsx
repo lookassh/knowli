@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -195,8 +195,8 @@ export default function NewLessonForm({
   source?: { id: string; title: string; body: string } | undefined;
   /** Przedmiot wybrany od startu (np. z przycisku na stronie źródła). */
   initialSubjectId?: string | undefined;
-  /** „Zmień źródło” — powrót do strony źródła. */
-  onChangeSource?: ((sourceId: string) => void) | undefined;
+  /** „Zmień źródło” — powrót do strony źródła; `null` — do listy źródeł (źródło usunięte). */
+  onChangeSource?: ((sourceId: string | null) => void) | undefined;
 }) {
   const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
@@ -212,6 +212,8 @@ export default function NewLessonForm({
   const pending = useRef<PendingLesson | null>(null);
   const creatingRef = useRef(false);
   const mounted = useRef(false);
+  // źródło usunięte w innym oknie (404 przy tworzeniu): link prowadzi do listy źródeł, tworzenie wyłączone
+  const [sourceMissing, setSourceMissing] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -306,7 +308,15 @@ export default function NewLessonForm({
       registerEditorState({ dirty: false, busy: false });
       onCreated(acceptance.deckId);
     } catch (cause) {
-      if (isDefinitiveGenerationRejection(cause)) {
+      if (fromSource && httpStatusOf(cause) === 404) {
+        // Źródło usunięto w innym oknie. Odpowiedź jest ostateczna: serwer sprawdza wcześniejsze
+        // polecenie z tym kluczem przed odczytem źródła, więc zestaw nie powstał — bez ponowienia.
+        pending.current = null;
+        if (mounted.current) {
+          setSourceMissing(true);
+          form.setFieldError("submit", messages.sources.notFound);
+        }
+      } else if (isDefinitiveGenerationRejection(cause)) {
         pending.current = null;
         // 401: logowanie otwiera globalny handler, formularz zostaje
         if (httpStatusOf(cause) !== 401 && mounted.current) form.setFieldError("submit", errorMessage(cause));
@@ -320,6 +330,15 @@ export default function NewLessonForm({
 
   const submitError = form.errors.submit;
   const counterTemplate = fromMaterial ? messages.lessons.schoolMaterialCounter : messages.lessons.materialCounter;
+
+  // „Zmień źródło”: strona źródła, a po jego usunięciu — lista źródeł
+  const changeSourceTarget = source === undefined || sourceMissing ? null : source.id;
+  const changeSourceHref = routePath(changeSourceTarget === null ? { section: "sources" } : { section: "sources", sourceId: changeSourceTarget });
+  const changeSource = (event: MouseEvent) => {
+    if (!plainClick(event) || !onChangeSource) return;
+    event.preventDefault();
+    onChangeSource(changeSourceTarget);
+  };
 
   return (
     <Stack gap="md" data-testid="new-lesson-form" className="pp-editor pp-lesson-new">
@@ -411,15 +430,11 @@ export default function NewLessonForm({
                     {messages.sources.fromSource.replace("{title}", source.title)}
                   </Text>
                   <Anchor
-                    href={routePath({ section: "sources", sourceId: source.id })}
+                    href={changeSourceHref}
                     size="sm"
                     className="pp-lesson-source-change"
                     data-testid="lesson-source-change"
-                    onClick={(event) => {
-                      if (!plainClick(event) || !onChangeSource) return;
-                      event.preventDefault();
-                      onChangeSource(source.id);
-                    }}
+                    onClick={changeSource}
                   >
                     {messages.sources.changeSource}
                   </Anchor>
@@ -473,7 +488,14 @@ export default function NewLessonForm({
 
             {submitError && (
               <Alert color="red" variant="light" role="alert" data-testid="api-error" icon={<ParentIcon name="alert-triangle" />}>
-                {submitError}
+                <Stack gap={4} align="flex-start">
+                  <span>{submitError}</span>
+                  {sourceMissing && (
+                    <Anchor href={changeSourceHref} size="sm" className="pp-lesson-source-change" data-testid="lesson-source-missing-change" onClick={changeSource}>
+                      {messages.sources.changeSource}
+                    </Anchor>
+                  )}
+                </Stack>
               </Alert>
             )}
             <Group justify="flex-end">
@@ -483,7 +505,7 @@ export default function NewLessonForm({
                 data-testid="lesson-create-submit"
                 leftSection={creating ? <Loader size={16} color="currentColor" /> : undefined}
                 onClick={() => void submit()}
-                disabled={creating || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
+                disabled={creating || sourceMissing || (!hasPending && !canSubmitLesson(values, catalog, fromSource))}
               >
                 {creating ? messages.lessons.creating : hasPending ? messages.lessons.retryCreate : messages.lessons.createLesson}
               </Button>

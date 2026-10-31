@@ -16,6 +16,8 @@ const summaries: SourceMaterialSummaryDto[] = [
 
 const source: SourceMaterialDto = {
   ...summaries[0]!,
+  // jeden z dwóch zestawów jest zarchiwizowany — deckCount go pomija (jak na serwerze)
+  deckCount: 1,
   body: "I like pizza.\nDo you like apples?",
   decks: [
     { deckId: "10000000-0000-4000-8000-000000000001", title: "Angielski — rozdział: Unit 3", kind: "lesson", state: "published", copiedRevision: 1, stale: true },
@@ -93,6 +95,12 @@ describe("SourcePage", () => {
     expect(markup).toContain(messages.decks.states.archived);
     expect(markup).toContain('data-testid="source-deck-stale-0"');
     expect(markup).not.toContain('data-testid="source-deck-stale-1"');
+  });
+
+  it("nagłówek liczy zestawy bez zarchiwizowanych, jak lista źródeł", () => {
+    const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+    expect(markup).toMatch(/data-testid="source-meta"[^>]*>[^<]*1 zestaw</);
+    expect(markup).not.toContain("2 zestawy");
   });
 
   it("źródło bez zestawów: komunikat zamiast listy", () => {

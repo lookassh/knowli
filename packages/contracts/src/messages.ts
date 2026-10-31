@@ -1063,6 +1063,8 @@ export const messages = {
     saved: "Zapisano zmiany.",
     cancel: "Anuluj",
     refresh: "Odśwież",
+    refreshTitle: "Odświeżyć źródło?",
+    refreshConfirm: "Zmiany wpisane w tym oknie przepadną. Jeśli chcesz je zachować, najpierw je skopiuj.",
     delete: "Usuń źródło",
     deleteTitle: "Usuń źródło",
     deleteButton: "Usuń",

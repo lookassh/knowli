@@ -184,6 +184,29 @@ export default function DecksPanel({
     wasEditorOpen.current = editorOpen;
   }, [editorOpen, onChanged]);
 
+  // Zestaw spoza listy w pamięci (utworzony w innym oknie, link ze strony źródła, stary link):
+  // przed komunikatem „Nie ma takiego zestawu” jedno odświeżenie listy z ładowaniem.
+  const routeDeckId = route.deckId;
+  const routeDeckKnown = routeDeckId === undefined
+    || knownKinds.current.has(routeDeckId)
+    || decks.some((deck) => deck.deckId === routeDeckId);
+  const [deckLookup, setDeckLookup] = useState<{ deckId: string; done: boolean } | null>(null);
+  const lookedUpDeck = useRef<string | null>(null);
+  useEffect(() => {
+    if (routeDeckId === undefined) {
+      lookedUpDeck.current = null;
+      return;
+    }
+    if (routeDeckKnown || lookedUpDeck.current === routeDeckId) return;
+    lookedUpDeck.current = routeDeckId;
+    setDeckLookup({ deckId: routeDeckId, done: false });
+    void onChanged()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted.current) setDeckLookup((current) => (current?.deckId === routeDeckId ? { deckId: routeDeckId, done: true } : current));
+      });
+  }, [routeDeckId, routeDeckKnown, onChanged]);
+
   const openDeck = (deckId: string, kind: DeckKind, options?: { replace?: boolean }) => {
     knownKinds.current.set(deckId, kind);
     onNavigate({ section: "decks", deckId }, options);
@@ -322,6 +345,13 @@ export default function DecksPanel({
     const kind = knownKinds.current.get(deckId)
       ?? decks.find((deck) => deck.deckId === deckId)?.kind;
     if (kind === undefined) {
+      if (!routeDeckKnown && !(deckLookup?.deckId === deckId && deckLookup.done)) {
+        return (
+          <Center py="xl" role="status" data-testid="deck-loading">
+            <Group gap="sm"><Loader size="sm" /><Text>{messages.parentShell.loading}</Text></Group>
+          </Center>
+        );
+      }
       return (
         <Stack gap="md" align="flex-start" data-testid="deck-not-found">
           <Alert color="gray" variant="light" w="100%">{messages.decks.notFound}</Alert>
@@ -376,7 +406,7 @@ export default function DecksPanel({
         <NewLessonFromSource
           key={route.sourceId}
           sourceId={route.sourceId}
-          onChangeSource={(sourceId) => onNavigate({ section: "sources", sourceId })}
+          onChangeSource={(sourceId) => onNavigate(sourceId === null ? { section: "sources" } : { section: "sources", sourceId })}
           {...formProps}
         />
       );

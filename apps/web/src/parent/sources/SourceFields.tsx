@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import { Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { messages } from "@learning/contracts";
 import { SOURCE_BODY_MAX, SOURCE_TITLE_MAX, sourceCounter, type SourceFormValues } from "./sources-state";
@@ -13,16 +14,20 @@ export default function SourceFields({
   onChange,
   disabled,
   autoFocusTitle = false,
+  titleRef,
 }: {
   values: SourceFormValues;
   onChange: (values: SourceFormValues) => void;
   disabled: boolean;
-  /** Fokus na tytule po otwarciu okna (Mantine `data-autofocus`). */
+  /** Fokus na tytule po otwarciu okna — działa tylko w pułapce fokusu okna Mantine (`data-autofocus`). */
   autoFocusTitle?: boolean;
+  /** Pole tytułu dla edycji w treści strony (poza oknem): fokus ustawia wywołujący. */
+  titleRef?: Ref<HTMLInputElement>;
 }) {
   return (
     <Stack gap="md">
       <TextInput
+        ref={titleRef}
         data-autofocus={autoFocusTitle || undefined}
         size="md"
         id="source-title"
