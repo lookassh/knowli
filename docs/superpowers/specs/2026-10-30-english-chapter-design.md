@@ -261,7 +261,7 @@ Skutki tej decyzji:
 
 `englishChapterSubject.ttsForFeedbackSentence = true`. Bez nowej migracji, roli zasobu i zmiany kontraktu: rola `feedback_audio` pochodzi z migracji `0029` (#194), a `FeedbackDto.correctAudioAssetId` już istnieje. Po ocenionej odpowiedzi w treningu dziecko słyszy pełne poprawne zdanie po angielsku (`en-GB`):
 
-- nagranie powstaje przy przygotowaniu materiału z zatwierdzonego payloadu (TTS w `answerLocale`, bez stylu wypowiedzi, fingerprint z tekstu i głosu); publikacja na nie nie czeka, a nieudane wraca do kolejki przy uzgadnianiu. Opublikowana lekcja dostaje nagrania po „Nowa wersja” → „Opublikuj”;
+- nagranie powstaje przy przygotowaniu materiału z zatwierdzonego payloadu (TTS w `answerLocale`, bez stylu wypowiedzi, fingerprint z tekstu i głosu); publikacja na nie nie czeka, a nieudane wraca do kolejki przy uzgadnianiu. Opublikowana lekcja dostaje nagrania po „Utwórz nową wersję” → „Publikuj”;
 - identyfikator nagrania zapisuje się przy wydaniu zadania w prywatnym kluczu zadania (`LessonTaskAnswerKey.feedbackAudioAssetId`); kartkówka go nie dostaje, a zadanie wydane przed gotowością nagrania zostaje bez odczytu;
 - ujawnia go wyłącznie `FeedbackDto.correctAudioAssetId`, gdy feedback pokazuje rozwiązanie, a odpowiedź kończy zadanie. Nagrania nie ma w próbnej kartkówce, przy „Pomiń”, `not_assessed`, ofercie trenera precyzji ani gdy odpowiedź zostawia zadanie wydane (`issued`);
 - w tej samej transakcji serwer pieczętuje `audio_issued` z ekspozycją `targetKey` zadania (czyli rozwiązanym zdaniem, 4.5) i `occurredAt = max(now, receivedAt + 1 ms)` (wspólny helper `sealPostAnswerAudio`), więc samodzielność próby się nie zmienia;
@@ -280,9 +280,9 @@ Czysta funkcja domenowa `feedbackSentenceText` (`domain/lessons/feedback-sentenc
 | `lesson_open_answer` | `answer` |
 | `lesson_match`, `lesson_group`, `lesson_card` | brak nagrania |
 
-Zasady wspólne: przycięcie i scalenie białych znaków; tekst pusty albo dłuższy niż 200 znaków → brak nagrania. Tekst nagrania to rozwiązane zdanie, czyli to, co omówienie już pokazuje i zapisuje jako ekspozycję (4.5); w uzupełnianiu tekstu jest to ten sam uzupełniony tekst, który pokazuje omówienie (`filledText` w kluczu zadania).
+Zasady wspólne: przycięcie i scalenie białych znaków (bez spacji przed `.,!?`); tekst pusty albo dłuższy niż 200 znaków → brak nagrania. Tekst nagrania to rozwiązane zdanie, czyli to, co omówienie już pokazuje i zapisuje jako ekspozycję (4.5); w uzupełnianiu tekstu jest to ten sam uzupełniony tekst, który pokazuje omówienie (`filledText` w kluczu zadania), równy tekstowi nagrania po ujednoliceniu białych znaków — nagranie jest przycięte i ma scalone białe znaki, a klucz trzyma surowy wynik `fillCloze`.
 
-**Bramka wariantu (generyczna, także w gramatyce).** Dziecko nie może usłyszeć innego zdania niż widzi. Gdy omówienie pokazuje `correctText` różny od kanonicznego tekstu rozwiązania zadania (`correctTextFor`) — np. „Prawie!” z najbliższym zatwierdzonym wariantem tłumaczenia — `withFeedbackSentenceAudio` nie dołącza nagrania, więc nie ma też pieczęci `audio_issued`. Odpowiedź przyjęta jako wariant bez `correctText` (`great`) dostaje nagranie zdania kanonicznego, jak w #194; ekspozycja `targetKey` jest ta sama co feedbacku.
+**Bramka wariantu (generyczna, także w gramatyce).** Bramka działa tylko wtedy, gdy omówienie pokazuje `correctText`: wtedy dziecko nie słyszy innego zdania niż to, które widzi. Gdy `correctText` jest różny od kanonicznego tekstu rozwiązania zadania (`correctTextFor`) — np. „Prawie!” z najbliższym zatwierdzonym wariantem tłumaczenia — `withFeedbackSentenceAudio` nie dołącza nagrania, więc nie ma też pieczęci `audio_issued`. Odpowiedź przyjęta jako wariant bez `correctText` (`great`) dostaje nagranie zdania kanonicznego, jak w #194; ekspozycja `targetKey` jest ta sama co feedbacku.
 
 ### 5.3. Różnice względem wersji 2 projektu
 
@@ -382,17 +382,16 @@ Zasady wspólne: przycięcie i scalenie białych znaków; tekst pusty albo dłu�
   - luka w innym zdaniu z tym samym słowem jest samodzielna;
   - ekspozycja słówka nie blokuje luki i odwrotnie.
 - **Kartkówka:** luka z bodźcem w poleceniu, bez nagrania.
-- **Nagranie w omówieniu:**
-  - brak identyfikatora w wydanym i wznowionym zadaniu;
-  - identyfikator po ocenie deterministycznej i po werdykcie modelu;
-  - tłumaczenie z „Prawie!” i pokazanym innym wariantem: bez nagrania i bez pieczęci `audio_issued`;
-  - `audio_issued` raz i z czasem po `receivedAt`;
-  - ponowienie próby zwraca ten sam identyfikator;
-  - dwa klienty.
+- **Nagranie w omówieniu** — rozdział pokrywa `tests/integration/lesson-chapter-sentence-audio.test.ts`, a mechanizm wspólny z #194 `tests/integration/lesson-sentence-audio.test.ts` (gramatyka):
+  - rozdział: szkic zleca `feedback_audio` w `en-GB` bez stylu wypowiedzi dla wyboru, luki, luk z bankiem, układanki i tłumaczenia, a dla par, grup i kart nie; publikacja na nie nie czeka, a rodzic nie widzi tej roli;
+  - rozdział: po publikacji i workerze ocenione odpowiedzi niosą identyfikator nagrania z jednym `audio_issued` po `receivedAt` i ekspozycją `targetKey`; dla luk z bankiem tekst nagrania jest równy `filledText` po ujednoliceniu białych znaków;
+  - rozdział: tłumaczenie z odpowiedzią kanoniczną dostaje nagranie, a „Prawie!” z pokazanym innym wariantem — bez nagrania i bez pieczęci `audio_issued`;
+  - generycznie (#194): ponowny odczyt i idempotentne ponowienie zwracają ten sam identyfikator bez drugiego `audio_issued`, kartkówka nie dostaje identyfikatora, zadanie wydane przed gotowością nagrania zostaje bez odczytu, „Pomiń”, `not_assessed` i `model_other` bez nagrania, samodzielność próby bez zmian;
+  - bramka wariantu w gramatyce: scenariusz dodawany do `lesson-sentence-audio.test.ts` w Etapie 3 (zachowanie zmienia się także tam); „Prawie!” z wariantem kanonicznym ma nagranie w teście jednostkowym `withFeedbackSentenceAudio` (`lesson-attempts.test.ts`).
 - **Media `feedback_audio` (R02/R06):**
-  - niezmieniony tekst zachowuje zasób, zmieniony dostaje nowy;
-  - spóźniony worker nie zmienia gotowego zasobu;
-  - nieudane nagranie wraca do kolejki.
+  - nowa wersja starej lekcji nie dubluje zasobów przy niezmienionym tekście (`lesson-sentence-audio.test.ts`), a zmiana tekstu daje nowy fingerprint i zasób (`media.test.ts`);
+  - spóźniony worker i nieudane nagranie: wspólny cykl życia zasobów, testowany dla wszystkich ról w `media.test.ts` i `publish-media-reconcile.test.ts`, bez osobnego testu roli `feedback_audio`;
+  - wznowienie zadania i dwa klienty: bez osobnego testu rozdziału; mechanizm sesji i kluczy zadań jest współdzielony z #194.
 - **Słówka ze źródła:** odrzucenie pozycji spoza materiału przy zachowaniu reszty, `rejectedCount`.
 
 **Kid UI:**
@@ -503,7 +502,7 @@ Opis architektury: `docs/architecture.md` §19.10 (blokady, idempotencja, wdroż
 - przedmiot: `englishChapterSubject.ttsForFeedbackSentence = true`; mechanizm (rola `feedback_audio`, klucz zadania, `audio_issued`, Kid UI) pochodzi z #194, więc bez migracji i zmiany kontraktu (sekcja 5.1);
 - domena (generycznie): `feedbackSentenceText` czyta `lesson_cloze` (`fillCloze(clozeText, gapAnswers)`, gdy liczba odpowiedzi równa się liczbie luk i żadna nie jest pusta), a źródło tekstu nagrania dostaje `clozeText` i `gapAnswers` (`feedbackSourceOf` w `media-reconciliation.ts`);
 - silnik prób (generycznie): bramka wariantu w `withFeedbackSentenceAudio` — omówienie z `correctText` innym niż kanoniczny tekst rozwiązania (`correctTextFor`) nie dostaje nagrania ani pieczęci `audio_issued`; dotyczy też gramatyki (sekcja 5.2);
-- Kid UI: zachowanie z #194 bez zmian; geometrię doku omówienia z „Posłuchaj zdania” przy uzupełnianiu tekstu z bankiem słów (dłuższy bodziec) mierzy mockowana specyfikacja Playwright (telefon w pionie i poziomie, niska wysokość, tablet).
+- Kid UI: zachowanie z #194 bez zmian; geometrię doku omówienia z „Posłuchaj zdania” przy uzupełnianiu tekstu z bankiem słów (dłuższy bodziec) mierzy mockowana specyfikacja Playwright `tests/e2e/lesson-sentence-audio.spec.ts` (360×800, 812×375, 740×420, 768×1024, 1280×800; poprawna i błędna odpowiedź; dok, materiał nad dokiem i pierwsza luka osiągalna przewinięciem materiału).
 
 Opis architektury: `docs/architecture.md` §19.9, produktu: SPEC §37 („Etap 3: lektor po odpowiedzi”).
 
@@ -514,17 +513,21 @@ Opis architektury: `docs/architecture.md` §19.9, produktu: SPEC §37 („Etap 3
 - reguła wariantu jest generyczna (bramka w `withFeedbackSentenceAudio`), a nie ograniczona do odpowiedzi otwartej — poprawia też tę samą niezgodność w gramatyce;
 - `lesson_cloze` czytane generycznie: gramatyka nie ma tego typu, a szkoła ma flagę `false`, więc zmiana dotyczy dziś tylko rozdziału.
 
-**Znane ograniczenie:** odpowiedź przyjęta jako wariant bez pokazanego `correctText` (`great`) dostaje nagranie zdania kanonicznego, którego dziecko mogło nie widzieć na ekranie (jak w #194; ekspozycja `targetKey` jest ta sama, więc kwalifikacja się nie zmienia).
+**Znane ograniczenia:**
 
-**Zweryfikowane:** (uzupełnia Task 4)
+- odpowiedź przyjęta jako wariant bez pokazanego `correctText` (`great`) dostaje nagranie zdania kanonicznego, którego dziecko mogło nie widzieć na ekranie (jak w #194; ekspozycja `targetKey` jest ta sama, więc kwalifikacja się nie zmienia). Bramka wariantu działa tylko wtedy, gdy omówienie pokazuje `correctText`;
+- tekst dłuższy niż 200 znaków nie dostaje nagrania (`FEEDBACK_SENTENCE_MAX_LENGTH` w `feedback-sentence-text.ts`), a `clozeText` może mieć do 300 znaków (`MAX_CLOZE_TEXT_LENGTH` w kontraktach) — długi tekst z lukami po cichu zostaje bez odczytu;
+- istniejący układ `ExerciseFrame` (sprzed Etapu 3, wspólny dla lekcji): przy wysokim materiale bank słów zostaje po błędnej odpowiedzi częściowo pod dokiem omówienia także po przewinięciu materiału do końca (360×800: ok. 43 px), a przy niskiej wysokości w poziomie nad dokiem zostaje pusty pas ukrytych akcji (materiał osiągalny przewinięciem strony). Wykryte testami geometrii Etapu 3, poprawka osobno.
+
+**Zweryfikowane:** typecheck; testy jednostkowe 3195; integracja 65 plików / 687 testów (+2 pominięte) — w tym nowy `lesson-chapter-sentence-audio.test.ts`; E2E `test:e2e:shards`: mocked 319 + real 33/33/21/34, w tym `lesson-sentence-audio.spec.ts` z geometrią doku przy uzupełnianiu tekstu z bankiem słów (360×800, 812×375, 740×420, 768×1024, 1280×800).
 
 **Niezweryfikowane:**
 
-- wymowa lektora `en-GB` na fizycznym urządzeniu (głos syntetyczny; sprawdzono tekst nagrań i przepływ, nie brzmienie);
+- wymowa lektora `en-GB` na fizycznym urządzeniu (głos syntetyczny; testy sprawdzają tekst nagrań i przepływ, nie brzmienie);
 - autoodtwarzanie nagrania na fizycznym urządzeniu (polityka autoplay przeglądarek mobilnych; testy geometrii i przepływu to symulacja okna; przy zablokowanym autoodtwarzaniu zostaje „Posłuchaj zdania”);
 - pilotaż z dzieckiem (czy odczyt zdania po odpowiedzi pomaga, a nie przeszkadza).
 
-**Wdrożenie:** opublikowane lekcje rozdziału dostają nagrania po „Nowa wersja” → „Opublikuj” (jak w #194); API → MCP → skill bez zmian.
+**Wdrożenie:** opublikowane lekcje rozdziału dostają nagrania po „Utwórz nową wersję” → „Publikuj” (jak w #194); API → MCP → skill bez zmian.
 
 ## 11. Poza zakresem
 

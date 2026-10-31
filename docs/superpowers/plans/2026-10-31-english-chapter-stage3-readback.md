@@ -20,7 +20,7 @@
 
 ## Review Focus
 
-1. Tekst nagrania luk z bankiem słów równy `filledText` z klucza zadania (to, co omówienie pokazuje); niepełne luki → brak nagrania.
+1. Tekst nagrania luk z bankiem słów równy `filledText` z klucza zadania (to, co omówienie pokazuje) po ujednoliceniu białych znaków (nagranie jest przycięte i ma scalone białe znaki, bez spacji przed `.,!?`, a klucz trzyma surowy wynik `fillCloze`); niepełne luki → brak nagrania.
 2. Bramka wariantu: `lesson_almost` z najbliższym wariantem ≠ kanoniczna odpowiedź → brak `correctAudioAssetId` i brak `audio_issued`; z wariantem równym kanonicznej → nagranie. Gramatyka: to samo.
 3. Rozdział: ekspozycja pieczęci `audio_issued` = `targetKey` zadania (rozwiązane zdanie, kontrakt Etapu 1).
 4. Dok omówienia z „Posłuchaj zdania” przy tekście z lukami (dłuższy bodziec) na telefonie w poziomie i przy niskiej wysokości.
@@ -54,4 +54,4 @@
 
 - [ ] `corepack pnpm typecheck`, `test:unit`, `test:integration`, `test:e2e:shards` — PASS.
 - [ ] Niezależny przegląd kilkoma subagentami; jedna fala poprawek; ponowna weryfikacja.
-- [ ] Push i PR (baza wg Global Constraints): zakres, brak migracji, wpływ API → MCP → skill (brak), wdrożenie (opublikowane lekcje rozdziału dostają nagrania po nowej wersji, jak w #194), sprawdzenia, niezweryfikowane (wymowa `en-GB` i autoodtwarzanie na urządzeniu, pilotaż).
+- [ ] Push i PR (baza wg Global Constraints): zakres, brak migracji, wpływ API → MCP → skill (brak), wdrożenie (opublikowane lekcje rozdziału dostają nagrania po nowej wersji, jak w #194), nota o zmianie zachowania gramatyki — „Prawie!” z wariantem innym niż kanoniczna odpowiedź nie dostaje już odczytu zdania (bramka wariantu); #194 może być już wdrożony, więc zmiana jest widoczna także poza rozdziałem, sprawdzenia, niezweryfikowane (wymowa `en-GB` i autoodtwarzanie na urządzeniu, pilotaż).

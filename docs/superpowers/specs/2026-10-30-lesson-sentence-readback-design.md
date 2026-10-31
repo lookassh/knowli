@@ -85,7 +85,8 @@ wiersz działa dziś tylko w rozdziale.
 ## 5. Przedmiot i media
 
 - **Flaga przedmiotu:** `SubjectModule.ttsForFeedbackSentence: boolean` —
-  `english_grammar: true`, `school: false`, testowy `history-like-subject: false`.
+  `english_grammar: true`, `english_chapter: true` (od Etapu 3 rozdziału),
+  `school: false`, testowy `history-like-subject: false`.
   Znaczenie `ttsForAnswers` (audio przed odpowiedzią) się nie zmienia i dla
   gramatyki pozostaje `false`.
 - **Nowa rola zasobu rewizji `feedback_audio`:** migracja `0029` rozszerza
