@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork, publishLessonDraft, readLessonDeck,
-  startSession, submitAttempt, createSubjectRegistry, schoolSubject, ttsFingerprint,
+  completePresentation, createLessonDraftFromPublished, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork,
+  publishLessonDraft, readLessonDeck, regenerateLessonPromptAudio, startSession, submitAttempt, createSubjectRegistry, schoolSubject, ttsFingerprint,
 } from "@learning/server";
-import type { TaskDto } from "@learning/contracts";
+import type { LessonDraftDto, LessonExerciseInput, TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
-  audioServices, EN_LANGUAGE_INSTRUCTION, FAKE_MEDIA, markTtsReady, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson, seedSchoolDraft,
-  SPIDER_OBJECTIVE, spiderExercises, styledMedia, truncateLessonAudioTables,
+  addGeneration, audioServices, EN_LANGUAGE_INSTRUCTION, FAKE_MEDIA, generationsOf, markTtsReady, mediaAsset, PL_LANGUAGE_INSTRUCTION,
+  publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises, styledMedia, truncateLessonAudioTables,
 } from "./school-lesson-audio-helpers";
 import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";
 
@@ -268,5 +268,188 @@ describe("„Posłuchaj pytania” — zmiana dostawcy TTS (OpenAI → OpenRoute
     } finally {
       await fakes.dispose();
     }
+  });
+});
+
+/** Ćwiczenia szkicu jako wejście edycji (bez pól tylko do odczytu). */
+function inputsOf(draft: LessonDraftDto): LessonExerciseInput[] {
+  return draft.exercises.map(({ revisionId: _revisionId, promptAudio: _promptAudio, ...input }) => input);
+}
+
+const skillVersionCount = async (): Promise<number> =>
+  (await pool.query<{ count: number }>("select count(*)::int as count from learning_app.skill_versions")).rows[0]!.count;
+
+describe("„Posłuchaj pytania” — ton lektora (spec tonu TTS §4.4)", () => {
+  it("ton ćwiczenia trafia do instrukcji nagrania; zmiana tonu = nowy fingerprint, stare gotowe nagranie i umiejętności nietknięte", async () => {
+    const styled = audioServices(styledMedia());
+    const { versionId } = await seedDraft();
+    const toned = exercises();
+    toned[0] = { ...toned[0]!, voiceTone: "cheerful" };
+    const draft = await editLessonDraft(styled, versionId, { expectedEditNumber: 1, exercises: toned });
+    const rows = await audioMetadata(versionId, "prompt_audio");
+    expect(rows[0]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.cheerful}`);
+    expect(rows[1]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.lesson_question}`);
+
+    const [old] = await promptAudio(versionId);
+    await markReady(old!.assetId);
+    const before = await mediaAsset(old!.assetId);
+    const skillVersions = await skillVersionCount();
+
+    const retoned = inputsOf(draft);
+    retoned[0] = { ...retoned[0]!, voiceTone: "gentle" };
+    await editLessonDraft(styled, versionId, { expectedEditNumber: draft.editNumber, exercises: retoned });
+    const after = await audioMetadata(versionId, "prompt_audio");
+    expect(after[0]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.gentle}`);
+    expect(after[0]!.fingerprint).not.toBe(rows[0]!.fingerprint);
+    expect(after[1]!.fingerprint).toBe(rows[1]!.fingerprint);
+    expect(await mediaAsset(old!.assetId)).toEqual(before);
+    expect(await skillVersionCount()).toBe(skillVersions);
+  });
+});
+
+describe("„Posłuchaj pytania” — stan nagrania w szkicu rodzica (spec tonu TTS §4.5)", () => {
+  it("promptAudio = stan najnowszej generacji o oczekiwanym fingerprincie; assetId tylko dla gotowej; brak wiersza = brak pola", async () => {
+    const active = services();
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const readDraft = async () => (await readLessonDeck(active, deckId)).draft!;
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "pending" });
+
+    const [row] = await promptAudio(versionId);
+    await markReady(row!.assetId);
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
+
+    // Generacja anulowana przez workera (run „superseded”, np. tekst zmieniono przed nagraniem)
+    // nie jest nieudanym nagraniem: panel dalej widzi gotowe ujęcie.
+    const cancelled = await addGeneration(row!.assetId, "failed");
+    await pool.query(
+      `insert into learning_app.generation_runs (id, asset_id, kind, dedupe_key, state, input)
+       values ($1, $2, 'tts', $3, 'superseded', '{}'::jsonb)`,
+      [randomUUID(), cancelled, `asset:${cancelled}`],
+    );
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
+
+    // Nowsza nieudana generacja tego samego tekstu: stan „failed”, a starsze gotowe ujęcie
+    // (słyszy je dziecko) zostaje do odsłuchu.
+    await addGeneration(row!.assetId, "failed");
+    expect((await readDraft()).exercises[0]!.promptAudio).toEqual({ state: "failed", previousAssetId: row!.assetId });
+
+    const second = (await readDraft()).exercises[1]!;
+    await pool.query("delete from learning_app.revision_assets where item_revision_id = $1 and role = 'prompt_audio'", [second.revisionId]);
+    expect((await readDraft()).exercises[1]).not.toHaveProperty("promptAudio");
+  });
+});
+
+describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", () => {
+  it("gotowe albo nieudane → nowa generacja pending tego samego fingerprintu z metadanymi zasobu; przy pending zwraca istniejącą", async () => {
+    const active = services();
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await promptAudio(versionId);
+    // Długość dopisuje worker przy nagraniu (gotowy zasób jest niezmienny) — nie może przejść na nowe ujęcie.
+    await pool.query(`update learning_app.media_assets set metadata = metadata || '{"durationMs": 1234}' where id = $1`, [row!.assetId]);
+    await markReady(row!.assetId);
+    const original = await mediaAsset(row!.assetId);
+    const itemRevisionId = (await readLessonDeck(active, deckId)).draft!.exercises[0]!.revisionId;
+
+    // Fingerprint i metadane pochodzą z wiersza i zasobu (konfiguracja bez zmian od zapisu).
+    const first = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
+    expect(first.assetId).not.toBe(row!.assetId);
+    const { durationMs: _duration, ...requestMetadata } = original.metadata as Record<string, unknown>;
+    expect(_duration).toBe(1234);
+    expect(await mediaAsset(first.assetId)).toMatchObject({
+      fingerprint: original.fingerprint, generationNumber: original.generationNumber + 1, state: "pending",
+      provider: original.provider, model: original.model, metadata: requestMetadata,
+    });
+    expect((await mediaAsset(first.assetId)).metadata).not.toHaveProperty("durationMs");
+    expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [first.assetId])).rows).toEqual([{ state: "queued" }]);
+    expect(await mediaAsset(row!.assetId)).toEqual(original);
+    // Do gotowości nowego ujęcia panel może odtworzyć poprzednie.
+    expect((await readLessonDeck(active, deckId)).draft!.exercises[0]!.promptAudio)
+      .toEqual({ state: "pending", previousAssetId: row!.assetId });
+
+    const again = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
+    expect(again.assetId).toBe(first.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(2);
+
+    await pool.query("update learning_app.media_assets set state = 'failed' where id = $1", [first.assetId]);
+    const afterFailure = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
+    expect(await mediaAsset(afterFailure.assetId)).toMatchObject({
+      fingerprint: original.fingerprint, generationNumber: original.generationNumber + 2, state: "pending",
+    });
+  });
+
+  it("zmiana konfiguracji TTS od ostatniego zapisu → uzgodnienie mediów: nagranie w bieżącej konfiguracji bez dodatkowej generacji starej; brak ustawień mediów → internal", async () => {
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await promptAudio(versionId);
+    await markReady(row!.assetId);
+    const itemRevisionId = (await readLessonDeck(services(), deckId)).draft!.exercises[0]!.revisionId;
+    const original = await mediaAsset(row!.assetId);
+    const switchedMedia = { ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } };
+    const switched = audioServices(switchedMedia);
+
+    const result = await regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId });
+    const fresh = await mediaAsset(result.assetId);
+    expect(fresh).toMatchObject({ state: "pending", provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15", generationNumber: 1 });
+    expect(fresh.fingerprint).not.toBe(original.fingerprint);
+    const [moved] = await promptAudio(versionId);
+    expect(moved!.assetId).toBe(result.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+    expect(await mediaAsset(row!.assetId)).toEqual(original);
+
+    // Kolejne kliknięcie w tej samej konfiguracji: trwające nagranie, bez nowego wiersza.
+    expect((await regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId })).assetId).toBe(result.assetId);
+    expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
+
+    // Powrót do poprzedniej konfiguracji: wiersz wraca do jej gotowego nagrania bez nowego
+    // ujęcia, a stan wiersza odpowiada gotowemu zasobowi (nie „pending”).
+    const back = await regenerateLessonPromptAudio(services(), { lessonDraftId: versionId, itemRevisionId });
+    expect(back.assetId).toBe(row!.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+    expect((await pool.query("select state from learning_app.revision_assets where item_revision_id = $1 and role = 'prompt_audio'", [itemRevisionId])).rows)
+      .toEqual([{ state: "approved" }]);
+
+    // Zmiana samego stylu (provider i model te same) też uzgadnia nagranie.
+    await markReady(result.assetId);
+    const styled = await regenerateLessonPromptAudio(audioServices({ ...switchedMedia, tts: { ...switchedMedia.tts, style: "instructions" } }), { lessonDraftId: versionId, itemRevisionId });
+    expect((await mediaAsset(styled.assetId)).fingerprint).not.toBe(fresh.fingerprint);
+    expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
+
+    await expect(regenerateLessonPromptAudio(createServices({ db, clock: new ManualClock() }), { lessonDraftId: versionId, itemRevisionId }))
+      .rejects.toMatchObject({ code: "internal" });
+  });
+
+  it("nieznana rewizja albo szkic → not_found; rewizja bez nagrania pytania → not_found", async () => {
+    const active = services();
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    await expect(regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId: randomUUID() }))
+      .rejects.toMatchObject({ code: "not_found" });
+    const itemRevisionId = (await readLessonDeck(active, deckId)).draft!.exercises[0]!.revisionId;
+    await expect(regenerateLessonPromptAudio(active, { lessonDraftId: randomUUID(), itemRevisionId }))
+      .rejects.toMatchObject({ code: "not_found" });
+    await pool.query("delete from learning_app.revision_assets where item_revision_id = $1 and role = 'prompt_audio'", [itemRevisionId]);
+    await expect(regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId }))
+      .rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("wersja opublikowana → immutable; nowe ujęcie ze szkicu trafia do zadań opublikowanej wersji (wspólny fingerprint)", async () => {
+    const { active, child, deckId, versionId } = await publishedWorld();
+    const [row] = await promptAudio(versionId);
+    await markReady(row!.assetId);
+    const publishedRevision = (await pool.query<{ id: string }>(
+      "select id from learning_app.item_revisions where deck_version_id = $1 order by position limit 1", [versionId],
+    )).rows[0]!.id;
+    await expect(regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId: publishedRevision }))
+      .rejects.toMatchObject({ code: "immutable" });
+
+    const draft = await createLessonDraftFromPublished(active, deckId);
+    expect(draft.exercises[0]!.promptAudio).toEqual({ state: "ready", assetId: row!.assetId });
+    const regenerated = await regenerateLessonPromptAudio(active, { lessonDraftId: draft.id, itemRevisionId: draft.exercises[0]!.revisionId });
+    await markReady(regenerated.assetId);
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
+    const task = await reach(active, session.sessionId, STEM);
+    expect(task.prompt).toMatchObject({ questionAudioAssetId: regenerated.assetId });
   });
 });

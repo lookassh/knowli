@@ -332,8 +332,10 @@ Endpointy lekcji (moduł gramatyki, 2026-10-12; szczegóły w sekcji 19 i `.kiro
 | --- | --- | --- |
 | Parent | POST /api/v1/parent/lessons/generate | 202 + generationRunId + deckId (szkic lekcji + zadanie generowania w jednej transakcji) |
 | Parent | GET /api/v1/parent/subjects | Katalog przedmiotów i tematów do formularza lekcji |
-| Parent | GET /api/v1/parent/lessons/:id | Szkic lekcji: ćwiczenia per reguła, karty, stan puli |
+| Parent | GET /api/v1/parent/lessons/:id | Szkic lekcji: ćwiczenia per reguła, karty, stan puli; opcjonalny `voiceTone` ćwiczenia i karty oraz stan nagrania (`promptAudio` ćwiczenia, `cardAudio` szkicu) |
 | Parent | POST /api/v1/parent/lessons/:id/regenerate | Dogenerowanie ćwiczeń wybranej reguły |
+| Parent | POST /api/v1/parent/lesson-drafts/{lessonDraftId}/prompt-audio/regenerate | Ponowne nagranie pytania ćwiczenia w szkicu (202, `lessonDrafts.regeneratePromptAudio`); nowa generacja tego samego fingerprintu, opublikowana wersja → `immutable` |
+| Parent | POST /api/v1/parent/lesson-drafts/{lessonDraftId}/card-audio/regenerate | Ponowne nagranie karty zagadnienia w szkicu (202, `lessonDrafts.regenerateCardAudio`); jak wyżej |
 | Parent | POST /api/v1/parent/drafts/:id/publish | Publikacja lekcji z wymogiem pokrycia etapów (409 z listą brakujących) — wspólna ścieżka ze słówkami, rozgałęziona po `decks.kind` |
 | Parent | GET /api/v1/parent/lessons/:id/verdicts | Lista ocen modelu (odpowiedź, werdykt, kategoria, komentarz) |
 | Parent | POST /api/v1/parent/lessons/verdicts/:id/decision | Nadpisanie werdyktu rodzica (przyszłe odpowiedzi, bez wstecznego przeliczenia) |

@@ -1,6 +1,25 @@
+import { LessonVoiceToneSchema } from "@learning/contracts";
 import type { LessonPoolInput } from "../../ports/ai";
 
 const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
+
+/**
+ * Strict-mode pole tonu lektora: nullable enum z kontraktu (`null` = styl roli).
+ * `whisper: false` (ćwiczenia) pomija `mysterious` — pytania nie są szeptane (spec tonu TTS §4.3).
+ */
+export const voiceToneProperty = ({ whisper = true }: { whisper?: boolean } = {}): Record<string, unknown> => ({
+  type: ["null", "string"],
+  enum: [null, ...LessonVoiceToneSchema.options.filter((tone) => whisper || tone !== "mysterious")],
+});
+
+/** Dokłada wymagane pole `voiceTone` do gałęzi ćwiczenia (strict mode: pole także w `required`). */
+function withVoiceTone(branch: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...branch,
+    required: [...(branch.required as string[]), "voiceTone"],
+    properties: { ...(branch.properties as Record<string, unknown>), voiceTone: voiceToneProperty({ whisper: false }) },
+  };
+}
 
 export const poolExerciseTypes = (types: readonly string[]): string[] =>
   types.filter((type) => !NON_POOL_EXERCISE_TYPES.has(type));
@@ -184,13 +203,15 @@ export function lessonPoolJsonSchema(input: LessonPoolInput): Record<string, unk
     const types = poolExerciseTypes(objective.exerciseTypes.filter((type) => input.exerciseTypes.includes(type)));
     if (types.length === 0) throw new Error(`objective ${objective.id} has no supported pool exercise types`);
     const regularTypes = types.filter((type) => !DEDICATED_BRANCH_TYPES.has(type));
+    // Ton lektora dotyczy każdej gałęzi poza kalkulacją (jej treść składa kod z szablonu).
+    const toned = (branch: Record<string, unknown>) => (input.voiceTones === true ? withVoiceTone(branch) : branch);
     return [
-      ...(regularTypes.length > 0 ? [lessonExerciseSchema(input, objective, regularTypes)] : []),
+      ...(regularTypes.length > 0 ? [toned(lessonExerciseSchema(input, objective, regularTypes))] : []),
       ...(types.includes("lesson_calculation") ? [calculationExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_keywords") ? [keywordsExerciseSchema(objective.id)] : []),
-      ...(types.includes("lesson_match") ? [matchExerciseSchema(input, objective.id)] : []),
-      ...(types.includes("lesson_group") ? [groupExerciseSchema(input, objective.id)] : []),
-      ...(types.includes("lesson_cloze") ? [clozeExerciseSchema(input, objective.id)] : []),
+      ...(types.includes("lesson_keywords") ? [toned(keywordsExerciseSchema(objective.id))] : []),
+      ...(types.includes("lesson_match") ? [toned(matchExerciseSchema(input, objective.id))] : []),
+      ...(types.includes("lesson_group") ? [toned(groupExerciseSchema(input, objective.id))] : []),
+      ...(types.includes("lesson_cloze") ? [toned(clozeExerciseSchema(input, objective.id))] : []),
     ];
   });
   const objectiveIds = input.objectives.map((objective) => objective.id);

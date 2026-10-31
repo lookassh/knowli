@@ -3,12 +3,13 @@ import {
   LESSON_EXERCISE_TYPES,
   LessonExerciseTypeSchema,
   SubjectCatalogDtoSchema,
+  LessonVoiceToneSchema,
+  DynamicObjectiveDtoSchema,
   LessonCommandSchema,
   SchoolLessonCommandSchema,
   MaterialLessonCommandSchema,
   LessonExerciseInputSchema,
   LessonDraftDtoSchema,
-  DynamicObjectiveDtoSchema,
   LessonDeckDtoSchema,
   ObjectiveProgressDtoSchema,
   LessonVerdictDtoSchema,
@@ -102,6 +103,52 @@ describe("SubjectCatalogDtoSchema", () => {
     const chapter = { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [] };
     const school = { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] };
     expect(SubjectCatalogDtoSchema.safeParse({ subjects: [chapter, school] }).success).toBe(true);
+  });
+});
+
+describe("ton lektora (voiceTone)", () => {
+  const exercise = {
+    exerciseType: "lesson_gap", objectiveId: "o1", stem: "He ___ football.",
+    answer: "plays", acceptedAnswers: [], focus: ["plays"],
+  };
+  const objective = {
+    id: "school.d1.obj", titlePl: "Zagadnienie",
+    cards: [{ title: "Karta 1", body: "Treść 1" }, { title: "Karta 2", body: "Treść 2" }],
+  };
+
+  it("schema accepts the four tones and rejects others, including a default value", () => {
+    for (const tone of ["cheerful", "curious", "gentle", "mysterious"]) {
+      expect(LessonVoiceToneSchema.safeParse(tone).success).toBe(true);
+    }
+    expect(LessonVoiceToneSchema.safeParse("loud").success).toBe(false);
+    expect(LessonVoiceToneSchema.safeParse("default").success).toBe(false);
+  });
+  it("exercise input accepts voiceTone, accepts its absence, rejects an unknown tone", () => {
+    expect(LessonExerciseInputSchema.safeParse({ ...exercise, voiceTone: "curious" }).success).toBe(true);
+    expect(LessonExerciseInputSchema.safeParse(exercise).success).toBe(true);
+    expect(LessonExerciseInputSchema.safeParse({ ...exercise, voiceTone: "loud" }).success).toBe(false);
+  });
+  it("dynamic objective card accepts voiceTone, accepts its absence, rejects an unknown tone", () => {
+    const withTone = { ...objective, cards: [{ ...objective.cards[0], voiceTone: "curious" }, objective.cards[1]] };
+    expect(DynamicObjectiveDtoSchema.safeParse(withTone).success).toBe(true);
+    expect(DynamicObjectiveDtoSchema.safeParse(objective).success).toBe(true);
+    const loud = { ...objective, cards: [{ ...objective.cards[0], voiceTone: "loud" }, objective.cards[1]] };
+    expect(DynamicObjectiveDtoSchema.safeParse(loud).success).toBe(false);
+  });
+  it("static subject catalog does not get a tone (its strict card rejects voiceTone)", () => {
+    const parsed = SubjectCatalogDtoSchema.safeParse({
+      subjects: [{
+        id: "english_grammar", titlePl: "Angielski — gramatyka",
+        topics: [{
+          id: "present_simple", version: 1, titlePl: "Present Simple",
+          objectives: [{
+            id: "english_grammar.present_simple.third_person_s", titlePl: "-s w 3. osobie",
+            cards: [{ title: "Dodaj -s", body: "He plays.", voiceTone: "curious" }],
+          }],
+        }],
+      }],
+    });
+    expect(parsed.success).toBe(false);
   });
 });
 

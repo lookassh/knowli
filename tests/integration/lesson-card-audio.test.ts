@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createServices, editLessonDraft, endSession, nextTask, publishLessonDraft, readLessonDeck,
-  runDueGenerationWork, startSession, submitAttempt,
+  completePresentation, createLessonDraftFromPublished, createServices, editLessonDraft, endSession, nextTask, publishLessonDraft, readLessonDeck,
+  regenerateLessonCardAudio, runDueGenerationWork, startSession, submitAttempt,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
-  audioServices, FAKE_MEDIA, markTtsReady, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson, seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises,
-  styledMedia, truncateLessonAudioTables,
+  addGeneration, audioServices, FAKE_MEDIA, generationsOf, markTtsReady, mediaAsset, PL_LANGUAGE_INSTRUCTION, publishAssignedSpiderLesson,
+  seedSchoolDraft, SPIDER_OBJECTIVE, spiderExercises, styledMedia, truncateLessonAudioTables,
 } from "./school-lesson-audio-helpers";
 import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";
 
@@ -152,17 +152,19 @@ describe("„Posłuchaj karty” — przygotowanie nagrań", () => {
     expect(requeued).toMatchObject({ state: "pending", text: failed!.text });
   });
 
-  it("publikacja nie czeka na nagrania kart; rodzic ich nie widzi; wiersze opublikowanej wersji są niezmienne", async () => {
+  it("publikacja nie czeka na nagrania kart; nie są zasobami do decyzji rodzica; wiersze opublikowanej wersji są niezmienne", async () => {
     const { active, deckId, versionId } = await publishedWorld();
     const rows = await cardAudio(versionId);
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.state === "pending")).toBe(true);
-    // DTO rodzica nie ujawnia nagrań kart ani w oczekiwaniu, ani po przygotowaniu.
+    // Nagrania kart nie trafiają do `assets` (decyzji rodzica) — tylko stan odsłuchu w `cardAudio` (spec tonu TTS §4.5).
     for (const ready of [false, true]) {
       if (ready) for (const row of rows) await markReady(row.assetId);
-      const parentDto = JSON.stringify(await readLessonDeck(active, deckId));
-      for (const row of rows) expect(parentDto).not.toContain(row.assetId);
-      expect(parentDto).not.toContain("questionAudioAssetId");
+      const published = (await readLessonDeck(active, deckId)).published!;
+      const assetsJson = JSON.stringify(published.assets);
+      for (const row of rows) expect(assetsJson).not.toContain(row.assetId);
+      expect(JSON.stringify(published)).not.toContain("questionAudioAssetId");
+      expect(published.cardAudio?.map((card) => card.audio.state)).toEqual(ready ? ["ready", "ready"] : ["pending", "pending"]);
     }
     await expect(pool.query("delete from learning_app.lesson_card_assets where deck_version_id = $1", [versionId]))
       .rejects.toThrow(/immutable/);
@@ -210,5 +212,158 @@ describe("„Posłuchaj karty” — worker", () => {
     } finally {
       await fakes.dispose();
     }
+  });
+});
+
+/** Karty z tonem: „Zagadka:” + jedno zdanie czyta się jako jedno zdanie (dwukropek nie kończy zdania). */
+const TONED_CARDS = [
+  { title: "Zagadka:", body: "Pająk ma osiem nóg.", voiceTone: "mysterious" as const },
+  { title: "Sekret", body: "Pająk nie jest owadem. Owady mają sześć nóg.", voiceTone: "mysterious" as const },
+];
+
+const seedTonedDraft = () =>
+  seedSchoolDraft([{ id: OBJECTIVE, titlePl: "Pająki", descriptionEn: "Spiders.", cards: TONED_CARDS }]);
+
+interface CardMetadataRow { cardIndex: number; assetId: string; fingerprint: string; metadata: Record<string, unknown> }
+
+async function cardRows(versionId: string): Promise<CardMetadataRow[]> {
+  return (await pool.query<CardMetadataRow>(
+    `select ca.card_index as "cardIndex", ca.asset_id as "assetId", ca.expected_fingerprint as fingerprint, ma.metadata
+       from learning_app.lesson_card_assets ca join learning_app.media_assets ma on ma.id = ca.asset_id
+      where ca.deck_version_id = $1 order by ca.objective_id desc, ca.card_index`,
+    [versionId],
+  )).rows;
+}
+
+describe("„Posłuchaj karty” — ton lektora (spec tonu TTS §4.3–4.4)", () => {
+  it("ton karty z tematu trafia do instrukcji (reguła szeptu); zmiana tonu = nowy fingerprint, stare gotowe nagranie nietknięte", async () => {
+    const styled = audioServices(styledMedia());
+    const { versionId } = await seedTonedDraft();
+    const draft = await editLessonDraft(styled, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const rows = await cardRows(versionId);
+    expect(rows.map((row) => row.metadata.text)).toEqual(["Zagadka: Pająk ma osiem nóg.", "Sekret. Pająk nie jest owadem. Owady mają sześć nóg."]);
+    // Jedno zdanie z tonem tajemniczym → ciekawość; dwa i więcej → szept pierwszego zdania.
+    expect(rows[0]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.curious}`);
+    expect(rows[1]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.mysterious}`);
+
+    await markReady(rows[0]!.assetId);
+    const before = await mediaAsset(rows[0]!.assetId);
+    await editLessonDraft(styled, versionId, {
+      expectedEditNumber: draft.editNumber,
+      dynamicTopic: { objectives: [{ id: OBJECTIVE, titlePl: "Pająki", cards: [{ ...TONED_CARDS[0]!, voiceTone: "cheerful" }, TONED_CARDS[1]!] }] },
+    });
+    const after = await cardRows(versionId);
+    expect(after[0]!.metadata.instructions).toBe(`${PL_LANGUAGE_INSTRUCTION} ${STYLE_SENTENCES_PL.cheerful}`);
+    expect(after[0]!.fingerprint).not.toBe(rows[0]!.fingerprint);
+    expect(after[1]!.fingerprint).toBe(rows[1]!.fingerprint);
+    expect(await mediaAsset(rows[0]!.assetId)).toEqual(before);
+  });
+});
+
+describe("„Posłuchaj karty” — stan nagrania w szkicu rodzica (spec tonu TTS §4.5)", () => {
+  it("cardAudio = stan najnowszej generacji o oczekiwanym fingerprincie; assetId tylko dla gotowej; brak wiersza = brak wpisu", async () => {
+    const active = services();
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const readCards = async () => (await readLessonDeck(active, deckId)).draft!.cardAudio;
+    expect(await readCards()).toEqual([
+      { objectiveId: OBJECTIVE, cardIndex: 0, audio: { state: "pending" } },
+      { objectiveId: OBJECTIVE, cardIndex: 1, audio: { state: "pending" } },
+    ]);
+
+    const [first] = await cardAudio(versionId);
+    await markReady(first!.assetId);
+    expect((await readCards())![0]).toEqual({ objectiveId: OBJECTIVE, cardIndex: 0, audio: { state: "ready", assetId: first!.assetId } });
+    await addGeneration(first!.assetId, "failed");
+    expect((await readCards())![0]!.audio).toEqual({ state: "failed", previousAssetId: first!.assetId });
+
+    await pool.query("delete from learning_app.lesson_card_assets where deck_version_id = $1 and card_index = 1", [versionId]);
+    expect((await readCards())!.map((card) => card.cardIndex)).toEqual([0]);
+  });
+});
+
+describe("„Posłuchaj karty” — ponowne nagranie (spec tonu TTS §2.4)", () => {
+  it("gotowe albo nieudane → nowa generacja pending tego samego fingerprintu z metadanymi zasobu; przy pending zwraca istniejącą", async () => {
+    const active = services();
+    const { deckId, versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await cardAudio(versionId);
+    await markReady(row!.assetId);
+    const original = await mediaAsset(row!.assetId);
+    const target = { lessonDraftId: versionId, objectiveId: OBJECTIVE, cardIndex: 0 };
+
+    const first = await regenerateLessonCardAudio(active, target);
+    expect(first.assetId).not.toBe(row!.assetId);
+    expect(await mediaAsset(first.assetId)).toMatchObject({
+      fingerprint: original.fingerprint, generationNumber: original.generationNumber + 1, state: "pending",
+      provider: original.provider, model: original.model, metadata: original.metadata,
+    });
+    expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [first.assetId])).rows).toEqual([{ state: "queued" }]);
+    expect(await mediaAsset(row!.assetId)).toEqual(original);
+    // Do gotowości nowego ujęcia panel może odtworzyć poprzednie.
+    expect((await readLessonDeck(active, deckId)).draft!.cardAudio![0]!.audio).toEqual({ state: "pending", previousAssetId: row!.assetId });
+
+    expect((await regenerateLessonCardAudio(active, target)).assetId).toBe(first.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(2);
+
+    await pool.query("update learning_app.media_assets set state = 'failed' where id = $1", [first.assetId]);
+    const afterFailure = await regenerateLessonCardAudio(active, target);
+    expect(await mediaAsset(afterFailure.assetId)).toMatchObject({
+      fingerprint: original.fingerprint, generationNumber: original.generationNumber + 2, state: "pending",
+    });
+  });
+
+  it("zmiana konfiguracji TTS od ostatniego zapisu → uzgodnienie mediów: nagranie w bieżącej konfiguracji bez dodatkowej generacji starej; brak ustawień mediów → internal", async () => {
+    const { versionId } = await seedDraft();
+    await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
+    const [row] = await cardAudio(versionId);
+    await markReady(row!.assetId);
+    const original = await mediaAsset(row!.assetId);
+    const target = { lessonDraftId: versionId, objectiveId: OBJECTIVE, cardIndex: 0 };
+
+    const switched = audioServices({ ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } });
+    const result = await regenerateLessonCardAudio(switched, target);
+    const fresh = await mediaAsset(result.assetId);
+    expect(fresh).toMatchObject({ state: "pending", provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15", generationNumber: 1 });
+    expect(fresh.fingerprint).not.toBe(original.fingerprint);
+    expect((await cardAudio(versionId))[0]!.assetId).toBe(result.assetId);
+    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+    expect(await mediaAsset(row!.assetId)).toEqual(original);
+    expect((await regenerateLessonCardAudio(switched, target)).assetId).toBe(result.assetId);
+    expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
+
+    await expect(regenerateLessonCardAudio(createServices({ db, clock: new ManualClock() }), target)).rejects.toMatchObject({ code: "internal" });
+  });
+
+  it("nieznana karta albo szkic → not_found", async () => {
+    const active = services();
+    const { versionId } = await seedDraft();
+    await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
+    // Karta 2 ma wzór — bez nagrania i bez wiersza.
+    await expect(regenerateLessonCardAudio(active, { lessonDraftId: versionId, objectiveId: OBJECTIVE, cardIndex: 2 }))
+      .rejects.toMatchObject({ code: "not_found" });
+    await expect(regenerateLessonCardAudio(active, { lessonDraftId: versionId, objectiveId: "school.ddeck000.brak", cardIndex: 0 }))
+      .rejects.toMatchObject({ code: "not_found" });
+    await expect(regenerateLessonCardAudio(active, { lessonDraftId: randomUUID(), objectiveId: OBJECTIVE, cardIndex: 0 }))
+      .rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("wersja opublikowana → immutable; nowe ujęcie ze szkicu trafia do kart opublikowanej wersji (wspólny fingerprint)", async () => {
+    const { active, child, deckId, versionId } = await publishedWorld();
+    for (const row of await cardAudio(versionId)) await markReady(row.assetId);
+    await expect(regenerateLessonCardAudio(active, { lessonDraftId: versionId, objectiveId: OBJECTIVE, cardIndex: 0 }))
+      .rejects.toMatchObject({ code: "immutable" });
+
+    // Nowy szkic dostaje wiersze nagrań kart przy pierwszej edycji (uzgodnienie mediów).
+    const fork = await createLessonDraftFromPublished(active, deckId);
+    const draft = await editLessonDraft(active, fork.id, { expectedEditNumber: fork.editNumber, title: "Pająki 2" });
+    expect(draft.cardAudio?.map((card) => card.audio.state)).toEqual(["ready", "ready"]);
+    const regenerated = await Promise.all([0, 1].map((cardIndex) =>
+      regenerateLessonCardAudio(active, { lessonDraftId: draft.id, objectiveId: OBJECTIVE, cardIndex })));
+    for (const { assetId } of regenerated) await markReady(assetId);
+
+    const session = await startSession(active, { childId: child.id, deckId, microphoneEnabled: false });
+    const card = await firstCard(active, session.sessionId);
+    expect(regenerated.map((entry) => entry.assetId)).toContain(card.prompt.kind === "lesson_card" ? card.prompt.questionAudioAssetId : undefined);
   });
 });

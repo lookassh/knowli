@@ -1116,6 +1116,50 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(Array.isArray(open!.payload.requiredElements)).toBe(true);
   });
 
+  it("zestaw szkolny: ton lektora z generatora trafia do payloadu rewizji, kontekstu i DTO szkicu", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+    const services = createServices({
+      db,
+      clock: new ManualClock(),
+      media: fakes.settings,
+      generation: fakes.deps,
+      subjects: createSubjectRegistry([schoolSubject]),
+    });
+    const material = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+    const { runId, deckId } = await createSchoolLesson(services, {
+      subjectTitlePl: "Przyroda i historia",
+      topicTitlePl: "Materiał pilotażowy",
+      material,
+      poolSize: 40,
+      clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, runId);
+
+    const deck = await readLessonDeck(services, deckId);
+    const toned = deck.draft!.exercises.filter((ex) => ex.voiceTone !== undefined);
+    expect(toned.length).toBeGreaterThan(0);
+    expect(deck.draft!.exercises[0]!.voiceTone).toBe("curious");
+    expect(deck.draft!.dynamicTopic!.objectives[0]!.cards[0]!.voiceTone).toBe("cheerful");
+
+    const [version] = await query<{ lesson_context: { dynamicTopic: { objectives: { cards: { voiceTone?: string }[] }[] } } }>(
+      "select lesson_context from learning_app.deck_versions where id = $1",
+      [deck.draft!.id],
+    );
+    expect(version!.lesson_context.dynamicTopic.objectives[0]!.cards[0]!.voiceTone).toBe("cheerful");
+    const revisions = await query<{ payload: { voiceTone?: string } }>(
+      "select payload from learning_app.item_revisions where deck_version_id = $1 and payload ? 'voiceTone'",
+      [deck.draft!.id],
+    );
+    expect(revisions).toHaveLength(toned.length);
+  });
+
   it("rachunki: liczy parametry, odrzuca pojedyncze wadliwe rekordy i nie ufa parentAdded modelu", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
@@ -1293,7 +1337,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(edited.exercises.every((ex) => ex.objectiveId === kept.id)).toBe(true);
 
     const forged = edited.exercises.map((ex, i) => {
-      const { revisionId: _revisionId, ...input } = ex;
+      const { revisionId: _revisionId, promptAudio: _promptAudio, ...input } = ex;
       return i === 0 ? { ...input, sourceRefs: [{ quote: "tego zdania z pewnością nie ma w materiale źródłowym" }] } : input;
     });
     await expect(

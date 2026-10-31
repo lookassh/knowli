@@ -24,4 +24,13 @@ describe("materializeGeneratedKeywords", () => {
     expect(same).toBe(gap);
     expect(broken!.answer).toBeUndefined();
   });
+
+  it("carries a string voiceTone through and omits null or absent", () => {
+    const [kept, nulled, absent] = materializeGeneratedKeywords([
+      { ...raw, voiceTone: "gentle" }, { ...raw, voiceTone: null }, raw,
+    ]) as Record<string, unknown>[];
+    expect(kept!.voiceTone).toBe("gentle");
+    expect(nulled).not.toHaveProperty("voiceTone");
+    expect(absent).not.toHaveProperty("voiceTone");
+  });
 });

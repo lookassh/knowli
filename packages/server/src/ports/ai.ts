@@ -86,6 +86,8 @@ export interface LessonPoolInput {
   readonly existingAnswers?: readonly string[];
   /** Bodźce już w puli, używane gdy przedmiot deduplikuje całe ćwiczenia. */
   readonly existingExercises?: readonly { objectiveId: string; exerciseType: string; stimulus: string }[];
+  /** Czy generator ma zwracać `voiceTone` ćwiczenia (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
+  readonly voiceTones?: boolean;
 }
 
 /**
@@ -99,6 +101,8 @@ export interface LessonObjectivesInput {
   readonly material: string;
   readonly instruction?: string;
   readonly generationRole: string;
+  /** Czy karty zagadnień niosą `voiceTone` (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
+  readonly voiceTones?: boolean;
   /** Reguły przedmiotu dla podziału materiału na zagadnienia (opcjonalne). */
   readonly objectivesRules?: string;
 }
