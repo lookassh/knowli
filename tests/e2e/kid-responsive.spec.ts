@@ -5,6 +5,16 @@ import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture
 import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle, type Rect } from "./helpers/kid-layout";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
+/** Short phones up to a desktop; 1440x960 zooms by 1.06 (overflow and reachability need no unit conversion). */
+const REACH_VIEWPORTS = [
+  { width: 360, height: 320, scale: 1 },
+  { width: 360, height: 420, scale: 1 },
+  { width: 360, height: 640, scale: 1 },
+  { width: 360, height: 760, scale: 1 },
+  { width: 768, height: 1024, scale: 1 },
+  { width: 1440, height: 960, scale: 1.06 },
+] as const;
+
 const SESSION_HEADER_VIEWPORTS = [
   { width: 360, height: 800 },
   { width: 320, height: 640 },
@@ -385,15 +395,7 @@ test("deck flow stays within the viewport matrix and keeps all decks reachable",
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
 
-  // 1440x960 zooms by 1.06; overflow and reachability need no unit conversion.
-  for (const viewport of [
-    { width: 360, height: 320, scale: 1 },
-    { width: 360, height: 420, scale: 1 },
-    { width: 360, height: 640, scale: 1 },
-    { width: 360, height: 760, scale: 1 },
-    { width: 768, height: 1024, scale: 1 },
-    { width: 1440, height: 960, scale: 1.06 },
-  ]) {
+  for (const viewport of REACH_VIEWPORTS) {
     await page.setViewportSize(viewport);
     await waitForKidScale(page, viewport.scale);
     await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
@@ -435,15 +437,7 @@ test("summary actions remain reachable without horizontal overflow on short phon
   await endSessionFromHeader(page);
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 
-  // 1440x960 zooms by 1.06; overflow and reachability need no unit conversion.
-  for (const viewport of [
-    { width: 360, height: 320, scale: 1 },
-    { width: 360, height: 420, scale: 1 },
-    { width: 360, height: 640, scale: 1 },
-    { width: 360, height: 760, scale: 1 },
-    { width: 768, height: 1024, scale: 1 },
-    { width: 1440, height: 960, scale: 1.06 },
-  ]) {
+  for (const viewport of REACH_VIEWPORTS) {
     await page.setViewportSize(viewport);
     await waitForKidScale(page, viewport.scale);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);

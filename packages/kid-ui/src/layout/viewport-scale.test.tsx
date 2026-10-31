@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
+import { stubFinePointer } from "../test/fine-pointer-stub";
 import { act, cleanup, renderKid, screen } from "../test/render-kid";
-import { KID_FINE_POINTER_QUERY, useKidPageViewport } from "./viewport";
+import { useKidPageViewport } from "./viewport";
 import { KidPage } from "./KidPage";
 
 const originalMatchMedia = window.matchMedia;
@@ -18,37 +19,6 @@ afterEach(() => {
 function setWindowSize(width: number, height: number) {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
   Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
-}
-
-function stubFinePointer(initial: boolean) {
-  let fine = initial;
-  const listeners = new Set<EventListener>();
-  window.matchMedia = ((query: string) => {
-    const fineQuery = query === KID_FINE_POINTER_QUERY;
-    return {
-      get matches() {
-        return fineQuery && fine;
-      },
-      media: query,
-      onchange: null,
-      addEventListener: (type: string, listener: EventListener) => {
-        if (fineQuery && type === "change") listeners.add(listener);
-      },
-      removeEventListener: (type: string, listener: EventListener) => {
-        if (fineQuery && type === "change") listeners.delete(listener);
-      },
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    };
-  }) as typeof window.matchMedia;
-  return {
-    listeners,
-    setFine(next: boolean) {
-      fine = next;
-      for (const listener of [...listeners]) listener(new Event("change"));
-    },
-  };
 }
 
 function ScaleProbe() {
