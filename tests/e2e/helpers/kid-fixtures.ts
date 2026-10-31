@@ -64,16 +64,43 @@ export function taskFor(kind: TaskDto["prompt"]["kind"]): TaskDto {
   return { ...common, exerciseType: "recall" as const, direction: "source_to_target" as const, prompt: { kind: "recall" as const, prompt: "kot" } };
 }
 
-/** A written recall task answered by one completed attempt; `feedback` is what the dock shows. */
-export function completedRecallFixture({ feedback = { kind: "great" } }: { feedback?: FeedbackDto } = {}) {
+/** A written recall task answered by one completed attempt; `feedback` is what the dock shows, `prompt` the source word or sentence. */
+export function completedRecallFixture({ feedback = { kind: "great" }, prompt = "kot" }: { feedback?: FeedbackDto; prompt?: string } = {}) {
   return {
     ...baseFixture(),
     tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "recall" as const, direction: "source_to_target" as const,
-      state: "issued" as const, prompt: { kind: "recall" as const, prompt: "kot" }, remainingAssessed: 1 }],
+      state: "issued" as const, prompt: { kind: "recall" as const, prompt }, remainingAssessed: 1 }],
     attempts: [{ attemptId, taskId, state: "completed" as const, modality: "text" as const,
       feedback, taskState: "completed" as const, stepId: null,
       receivedAt: "2026-10-11T10:00:00.000Z", completedAt: "2026-10-11T10:00:01.000Z" }],
   };
+}
+
+const HINT_START = "The children walked along the old wooden bridge near the river, ";
+const HINT_FIX = "counting the little boats";
+const HINT_END = " that sailed slowly towards the harbour before the sun went down behind the hills and the lights came on.";
+
+/** A spelling hint with a long sentence and one wrong fragment: its dock (about 382 inner px over a 54 px footer) covers the answer form. */
+export const longSpellingHintFeedback: FeedbackDto = {
+  kind: "spelling_hint",
+  correctText: HINT_START + HINT_FIX + HINT_END,
+  spellingDiff: {
+    given: [{ text: HINT_START, state: "plain" }, { text: "cownting the litle bots", state: "pill" }, { text: HINT_END, state: "plain" }],
+    expected: [{ text: HINT_START, state: "plain" }, { text: HINT_FIX, state: "pill" }, { text: HINT_END, state: "plain" }],
+  },
+};
+
+// Long enough that the written-answer material scrolls before any verdict at 1536x730 and at 390x750.
+const OVERFLOWING_RECALL_PROMPT = "Przeczytaj uważnie całą historyjkę, a potem przetłumacz ostatnie zdanie na angielski. "
+  + "Rano dzieci spakowały plecaki, zabrały kanapki, wodę i stary aparat dziadka, a potem wyszły z domu, zanim ktokolwiek "
+  + "zdążył je zatrzymać. Szły długo polną drogą, minęły młyn, sad pełen jabłek i małą kapliczkę na rozstaju dróg, "
+  + "aż w końcu dotarły nad rzekę, gdzie wiatr kołysał trzcinami, a kaczki pływały blisko brzegu. Tam usiadły na trawie, "
+  + "zjadły kanapki i długo patrzyły na wodę. Dzieci szły starym drewnianym mostem nad rzeką i liczyły łódki, które "
+  + "powoli płynęły do portu, zanim słońce schowało się za wzgórzami, a w miasteczku zapaliły się wszystkie światła.";
+
+/** A written recall task whose long prompt already scrolls the material before the verdict; the dock shows `feedback`. */
+export function overflowingRecallFixture(feedback: FeedbackDto = longSpellingHintFeedback): KidUiFixture {
+  return completedRecallFixture({ feedback, prompt: OVERFLOWING_RECALL_PROMPT });
 }
 
 const textChoiceOptionIds = [31, 32, 33, 34].map((suffix) => `10000000-0000-4000-8000-0000000000${suffix}`);

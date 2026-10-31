@@ -1,12 +1,16 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import type { TaskDto } from "@learning/contracts";
-import { completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, makeDeck, openDeckScreen, recallFixture, sessionId } from "./helpers/kid-fixtures";
+import type { FeedbackDto, TaskDto } from "@learning/contracts";
 import {
-  boxes, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, nextFrames, pictureTileLimit, pictureTiles,
-  settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
+  clozeTask, clozeUid, completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, longSpellingHintFeedback,
+  makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId,
+} from "./helpers/kid-fixtures";
+import {
+  boxes, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, nextFrames, pictureTileLimit,
+  pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
 } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
+import { assignmentAttempt, lessonTaskFixture, openLessonTask } from "./helpers/lesson-assignment-task";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { fourPictureTilesFixture, openPictureChoice } from "./helpers/picture-fixtures";
 
@@ -31,6 +35,9 @@ const SESSION_WINDOWS = [
 ] as const;
 
 const ULTRAWIDE = { width: 3440, height: 1440 };
+const LAPTOP = { width: 1536, height: 730 };
+const SMALL_LAPTOP = { width: 1280, height: 600 };
+const PHONE = { width: 390, height: 750 };
 
 // --kid-column-max-width from expanded width on (spec §3.1): 720 px in inner pixels. The tile cap (300 px) is VISUAL_CHOICE_MAX.
 const COLUMN_MAX = 720;
@@ -435,28 +442,14 @@ const ULTRAWIDE_SCALE = 1.6;
 // A long source prompt and a spelling hint whose dock (382 inner px over a 54 px footer) covers the answer form.
 // 3440x1440 has the compact frame (spec §3.2): the reserve grows the material row instead, and only once the material
 // reaches its limit does the reserve lengthen the scroll range and the correcting scroll run — the path under test.
-// So the prompt fills enough of the material for that (about 2/3), yet still fits before the verdict: outside the
-// compact frame .materialContent (flex: 1 with an explicit min-height) does not grow with overflowing children, so
-// the reserve padding would not lengthen the scroll range there — a known limitation.
+// So the prompt fills enough of the material for that (about 2/3), yet still fits before the verdict; a material that
+// already scrolls before the verdict is covered by "the reserve lengthens an already scrolling material".
 const LONG_RECALL_PROMPT = "Przeczytaj uważnie całą historyjkę, a potem przetłumacz zdanie na angielski, pilnując kolejności "
   + "słów i małych liter: dzieci szły starym drewnianym mostem nad rzeką i liczyły łódki, które powoli płynęły do portu, "
   + "zanim słońce schowało się za wzgórzami, a w miasteczku zapaliły się wszystkie światła.";
-const HINT_START = "The children walked along the old wooden bridge near the river, ";
-const HINT_FIX = "counting the little boats";
-const HINT_END = " that sailed slowly towards the harbour before the sun went down behind the hills and the lights came on.";
 
 function longSpellingHintFixture(): KidUiFixture {
-  const fixture = completedRecallFixture({
-    feedback: {
-      kind: "spelling_hint",
-      correctText: HINT_START + HINT_FIX + HINT_END,
-      spellingDiff: {
-        given: [{ text: HINT_START, state: "plain" }, { text: "cownting the litle bots", state: "pill" }, { text: HINT_END, state: "plain" }],
-        expected: [{ text: HINT_START, state: "plain" }, { text: HINT_FIX, state: "pill" }, { text: HINT_END, state: "plain" }],
-      },
-    },
-  });
-  return { ...fixture, tasks: [{ ...fixture.tasks[0]!, prompt: { kind: "recall", prompt: LONG_RECALL_PROMPT } }] };
+  return completedRecallFixture({ feedback: longSpellingHintFeedback, prompt: LONG_RECALL_PROMPT });
 }
 
 test("overlay dock reserve is exact", async ({ page }) => {
@@ -482,6 +475,180 @@ test("overlay dock reserve is exact", async ({ page }) => {
   expect(geometry.contentBottom, `answer above the dock: ${details}`).toBeLessThanOrEqual(geometry.dockTop + 1);
   expect(geometry.contentBottom, `answer right above the dock: ${details}`)
     .toBeGreaterThanOrEqual(geometry.dockTop - (8 * ULTRAWIDE_SCALE + 3));
+});
+
+/**
+ * Reads the overlap probe (`installDockOverlapProbe`): in no sampled frame does the panel cover the material content by
+ * more than the 8 inner px correction threshold of `ExerciseFrame` (screen px: 8 x scale, + 1 for rounding), and once
+ * settled the content ends above the panel (spec 2026-10-31 §1, §3.2).
+ */
+async function expectPanelNeverCovers(page: Page, label: string): Promise<void> {
+  const probe = await readDockOverlapProbe(page);
+  const details = `${label}: ${JSON.stringify(probe)}`;
+  expect(probe.samples.length, `the probe sampled frames: ${details}`).toBeGreaterThan(0);
+  expect(Math.max(...probe.samples), `overlap in every sampled frame: ${details}`).toBeLessThanOrEqual(8 * probe.scale + 1);
+  expect(probe.settled, `overlap once settled: ${details}`).toBeLessThanOrEqual(1);
+}
+
+// The reserve under the result panel is ready before the first frame that shows the panel (spec 2026-10-31 §3.2):
+// a short wrong verdict and a long hint in the compact frame, a long hint in the regular frame (which also scrolls the
+// material to correct), and a window resize while the panel is visible.
+const PAINTED_FRAME_CASES = [
+  { name: "short wrong verdict", viewport: ULTRAWIDE, scale: ULTRAWIDE_SCALE, scrolls: false, resizeTo: null,
+    fixture: () => completedRecallFixture({ feedback: { kind: "incorrect", correctText: "cat" } }) },
+  { name: "long spelling hint", viewport: ULTRAWIDE, scale: ULTRAWIDE_SCALE, scrolls: false, resizeTo: null, fixture: longSpellingHintFixture },
+  { name: "long spelling hint", viewport: LAPTOP, scale: 1, scrolls: true, resizeTo: SMALL_LAPTOP, fixture: longSpellingHintFixture },
+];
+
+test("result panel never covers the material in a painted frame", async ({ page }) => {
+  for (const { name, viewport, scale, scrolls, resizeTo, fixture } of PAINTED_FRAME_CASES) {
+    const label = `${name} at ${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    await openWrittenRecall(page, fixture());
+    await waitForKidScale(page, scale);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await page.getByTestId("kid-input").fill("the children walked");
+    await installDockOverlapProbe(page);
+    await page.getByTestId("kid-submit").click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+
+    const geometry = await settledDockReserve(page);
+    const details = `${label}: ${JSON.stringify(geometry)}`;
+    // Without a real overlap the reserve stays off and the probe proves nothing.
+    expect(geometry.inlineReserve, `the panel covers the answer, so the reserve is engaged: ${details}`).toBeGreaterThan(0);
+    if (scrolls) expect(geometry.scrollTop, `the correcting scroll ran: ${details}`).toBeGreaterThan(0);
+    await expectPanelNeverCovers(page, label);
+
+    if (resizeTo) {
+      await installDockOverlapProbe(page, { startNow: true });
+      await resizeAndSettle(page, resizeTo);
+      await expectPanelNeverCovers(page, `${label} resized to ${resizeTo.width}x${resizeTo.height}`);
+    }
+  }
+});
+
+/** "Uzupełnij tekst" answered with the first bank word in every gap: a lesson hint with the child's text, the hint, the solution and its recording. */
+function clozeHintFixture(): KidUiFixture {
+  const { prompt } = clozeTask;
+  if (prompt.kind !== "lesson_cloze") throw new Error("cloze fixture expected");
+  // Tapping the first bank word four times fills the gaps in this order.
+  const given = ["światła słonecznego", "tlen", "dwutlenek węgla", "azot"];
+  const solution = ["dwutlenek węgla", "światła słonecznego", "cukry", "tlen"];
+  const filled = (words: string[]) => {
+    let gap = 0;
+    return prompt.segments.map((segment) => ("gapId" in segment ? { text: words[gap++]!, gap: true } : { text: segment.text, gap: false }));
+  };
+  const feedback: FeedbackDto = {
+    kind: "lesson_hint",
+    answerSegments: filled(given).map(({ text, gap }) => ({ text, state: gap ? "pill" as const : "plain" as const })),
+    hintPl: "Pomyśl, co roślina pobiera z powietrza, a co do niego oddaje.",
+    correctText: filled(solution).map(({ text }) => text).join(""),
+    correctAudioAssetId: clozeUid(60),
+  };
+  const ids = { childId: clozeUid(1), deckId: clozeUid(2), sessionId: clozeTask.sessionId, versionId: clozeUid(4) };
+  return lessonTaskFixture(ids, { title: "Fotosynteza", subjectTitle: "Przyroda" }, [clozeTask],
+    [assignmentAttempt(clozeUid(90), clozeTask.taskId, feedback)]);
+}
+
+/** A material that already scrolls before the verdict: the written answer with a long prompt and the cloze text. */
+const SCROLLING_MATERIAL_CASES = [
+  ...[LAPTOP, PHONE].map((viewport) => ({
+    name: "written answer", viewport, submit: "kid-submit",
+    open: async (page: Page) => {
+      await page.setViewportSize(viewport);
+      await openWrittenRecall(page, overflowingRecallFixture());
+      await page.getByTestId("kid-input").fill("the children walked");
+    },
+  })),
+  ...[SMALL_LAPTOP, LAPTOP].map((viewport) => ({
+    name: "cloze with a lesson hint", viewport, submit: "kid-lesson-check",
+    open: async (page: Page) => {
+      await installKidUiFixture(page, clozeHintFixture());
+      await openLessonTask(page, viewport, "kid-lesson-cloze");
+      for (let gap = 0; gap < 4; gap += 1) await page.getByTestId("kid-lesson-cloze-option").first().click();
+    },
+  })),
+];
+
+// The reserve lengthens the scroll range of a material that already scrolls before the verdict (spec 2026-10-31 §3.3),
+// also outside the compact frame: the content ends above the panel once settled and when scrolled to the very end.
+test("the reserve lengthens an already scrolling material", async ({ page }) => {
+  for (const { name, viewport, submit, open } of SCROLLING_MATERIAL_CASES) {
+    const label = `${name} at ${viewport.width}x${viewport.height}`;
+    await open(page);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const material = page.getByTestId("kid-material");
+    const before = await material.evaluate((element) => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+    expect(before.scrollHeight, `the material scrolls before the verdict: ${label}: ${JSON.stringify(before)}`)
+      .toBeGreaterThan(before.clientHeight);
+    await installDockOverlapProbe(page);
+    await page.getByTestId(submit).click();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+
+    const settled = await settledDockReserve(page);
+    expect(settled.contentBottom, `content above the panel once settled: ${label}: ${JSON.stringify(settled)}`)
+      .toBeLessThanOrEqual(settled.dockTop + 1);
+    await expectPanelNeverCovers(page, label);
+
+    await material.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await nextFrames(page);
+    const atEnd = await settledDockReserve(page);
+    expect(atEnd.contentBottom, `content above the panel when scrolled to the end: ${label}: ${JSON.stringify(atEnd)}`)
+      .toBeLessThanOrEqual(atEnd.dockTop + 1);
+  }
+});
+
+const SECOND_ATTEMPT_ID = "10000000-0000-4000-8000-000000000011";
+
+// Review focus 1 (plan 2026-10-31): after "Spróbuj jeszcze raz" the leaving panel never takes the action's click, the
+// reserve drops to 0, and the next wrong verdict gets its reserve again.
+test("retry hands the footer back to the answer at once", async ({ page }) => {
+  for (const { viewport, scale } of [{ viewport: ULTRAWIDE, scale: ULTRAWIDE_SCALE }, { viewport: LAPTOP, scale: 1 }]) {
+    const label = `${viewport.width}x${viewport.height}`;
+    const fixture = completedRecallFixture({ feedback: { kind: "incorrect", correctText: "cat" } });
+    const wrong = { ...fixture.attempts[0]!, taskState: "issued" as const };
+    await page.setViewportSize(viewport);
+    await openWrittenRecall(page, { ...fixture, attempts: [wrong, { ...wrong, attemptId: SECOND_ATTEMPT_ID }] });
+    // The fixture emulates reduced motion; the panel's exit animation has to run here.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-input").fill("dog");
+    await page.getByTestId("kid-submit").click();
+    const dock = page.getByTestId("kid-feedback-dock");
+    await expect(dock).toBeVisible();
+    const first = await settledDockReserve(page);
+
+    await dock.getByTestId("kid-next").click();
+    // The retry clears the field, and the action stays disabled until there is an answer again.
+    await page.getByTestId("kid-input").fill("dog");
+    const hit = await page.evaluate(() => {
+      const action = document.querySelector<HTMLElement>("[data-testid='kid-submit']")!;
+      const { left, top, width, height } = action.getBoundingClientRect();
+      const target = document.elementFromPoint(left + width / 2, top + height / 2);
+      return {
+        leaving: document.querySelector(".kid-feedback-overlay") !== null,
+        onAction: target !== null && action.contains(target),
+        target: target === null ? null : `${target.tagName.toLowerCase()}.${target.className}`,
+      };
+    });
+    expect(hit.leaving, `the panel is still animating out: ${label}`).toBe(true);
+    expect(hit.onAction, `the action, not the leaving panel, takes the click: ${label}: ${JSON.stringify(hit)}`).toBe(true);
+
+    await expect(page.locator(".kid-feedback-overlay")).toHaveCount(0);
+    const reserve = await page.locator(".kid-material-content").evaluate((element: HTMLElement) =>
+      Number.parseFloat(element.style.paddingBottom) || 0);
+    expect(reserve, `no reserve once the panel is gone: ${label}`).toBe(0);
+
+    await page.getByTestId("kid-submit").click();
+    await expect(dock).toBeVisible();
+    const again = await settledDockReserve(page);
+    const details = `${label}: ${JSON.stringify({ first, again })}`;
+    // The same panel over the same answer gets the same reserve again (at 3440x1440 it covers the form, so it is > 0).
+    expect(again.inlineReserve, `the second wrong verdict gets the reserve again: ${details}`).toBe(first.inlineReserve);
+    if (viewport === ULTRAWIDE) expect(first.inlineReserve, `the panel covers the form: ${details}`).toBeGreaterThan(0);
+    expect(again.contentBottom, `the second wrong verdict keeps the answer above the panel: ${details}`)
+      .toBeLessThanOrEqual(again.dockTop + 1);
+  }
 });
 
 test("microphone panel opens under its button", async ({ page }) => {
@@ -635,8 +802,6 @@ test("missing letters wrap only between words in the 560 px column", async ({ pa
   expect(analysis.rows, `the phrase needs more than one row in the narrow column: ${analysis.describe()}`).toBeGreaterThanOrEqual(2);
   expect(brokenWords(analysis).length, `no word is broken across rows: ${analysis.describe()}`).toBe(0);
 });
-
-const PHONE = { width: 390, height: 750 };
 
 test("a long word stays on one row on a phone", async ({ page }) => {
   // A short word, then a nine-letter word with five gaps that fits the 358 px row on its own but not after the short word.

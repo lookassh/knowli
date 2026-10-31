@@ -34,6 +34,16 @@
   padding-block: 4px;
 }
 
+/* Z rezerwą pod panelem wyniku (ExerciseFrame ustawia atrybut razem z nią)
+   treść rośnie razem z dziećmi: padding rezerwy leży pod ostatnim z nich, więc
+   wydłuża przewijanie materiału, który przewija się już przed werdyktem
+   (spec 2026-10-31-kid-ui-large-screens-followups §3.3). Bez rezerwy zostaje
+   `flex: 1` (karta słowa na telefonie). Specyficzność 0,2,0 jest niższa niż
+   `flex: none` zwartego układu (0,3,0), który wygrywa. */
+.materialContent[data-dock-reserve] {
+  flex: 1 0 auto;
+}
+
 .actions {
   box-sizing: border-box;
   display: flex;
@@ -190,6 +200,14 @@
   inset-inline: 0;
   bottom: 0;
   z-index: 3;
+}
+
+/* Wychodzący panel (po „Spróbuj jeszcze raz”) AnimatePresence wypycha z układu
+   (`data-motion-pop-id`) i animuje nad akcjami, które już wróciły. `inert`
+   i `pointer-events: none` ma tylko wnętrze panelu; kotwica z pustymi slotami
+   i nakładka przechwytywałyby kliknięcia akcji, dopóki trwa animacja. */
+.actions > [data-motion-pop-id] {
+  pointer-events: none;
 }
 
 .root[data-action-layout="inline"] .actions,

@@ -116,7 +116,8 @@ export async function settledDockReserve(page: Page): Promise<{
     const read = () => {
       const material = document.querySelector<HTMLElement>("[data-testid='kid-material']")!;
       const content = material.querySelector<HTMLElement>(".kid-material-content")!;
-      const overlay = document.querySelector<HTMLElement>(".kid-feedback-overlay")!;
+      const overlay = document.querySelector<HTMLElement>(".kid-feedback-overlay");
+      if (!overlay) throw new Error("settledDockReserve: no .kid-feedback-overlay (flow layout?)");
       return {
         inlineReserve: Number.parseFloat(content.style.paddingBottom) || 0,
         scrollTop: material.scrollTop,
@@ -136,4 +137,112 @@ export async function settledDockReserve(page: Page): Promise<{
     }
     throw new Error(`the dock reserve did not settle in 60 frames: ${JSON.stringify(previous)}`);
   });
+}
+
+/** Browser-side state of the overlap probe (`installDockOverlapProbe`), kept on `window`. */
+type DockOverlapProbeState = { samples: number[]; settled: number | null; scale: number; error: string | null };
+
+/**
+ * Records, frame by frame, how far the result panel covers the material content (spec 2026-10-31 §3.2, §5.1).
+ * A `MutationObserver` waits for `.kid-feedback-overlay` (with `startNow`, an overlay already on the page starts the
+ * probe at once). The first sample is taken right there: the `MutationObserver` callback runs at the end of the task
+ * that inserted the panel, and the browser may paint right after that task, so the reserve must already be in place.
+ * The probe then samples in its own `ResizeObserver` — created after the one in `ExerciseFrame`, and observers run in
+ * creation order, so it sees the state after the frame's correction, just before paint — and after every paint
+ * (`requestAnimationFrame` → `setTimeout(0)`) until five consecutive painted samples are identical.
+ * An after-paint sample is skipped when the window or the DOM changed since the probe last ran inside that frame
+ * (its `requestAnimationFrame` or `ResizeObserver` callback): other tasks may run between the paint and the timeout
+ * (a `setViewportSize` landing there gave a 68 px sample of a layout that was never painted — the next frame's
+ * observers corrected it first), and that layout is sampled in the next frame instead.
+ * A sample is the lowest bottom edge among the children of `.kid-material-content` minus the top edge of
+ * `.kid-feedback-overlay` (an element without the entrance transform), in screen pixels: positive means covered.
+ */
+export async function installDockOverlapProbe(page: Page, options: { startNow?: boolean } = {}): Promise<void> {
+  await page.evaluate((startNow) => {
+    const state: DockOverlapProbeState = { samples: [], settled: null, scale: 1, error: null };
+    (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe = state;
+    const overlap = (): number | null => {
+      const content = document.querySelector(".kid-material-content");
+      const overlay = document.querySelector(".kid-feedback-overlay");
+      if (!content || !overlay || content.children.length === 0) return null;
+      return Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)) - overlay.getBoundingClientRect().top;
+    };
+    const record = () => {
+      const value = overlap();
+      if (value !== null) state.samples.push(value);
+      return value;
+    };
+    const start = () => {
+      record();
+      // What the probe saw inside the current frame: DOM mutation count and window size.
+      let mutations = 0;
+      const mutationCounter = new MutationObserver((records) => { mutations += records.length; });
+      mutationCounter.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+      const frameState = () => `${mutations}:${window.innerWidth}x${window.innerHeight}`;
+      let paintedState = frameState();
+      const observer = new ResizeObserver(() => {
+        record();
+        paintedState = frameState();
+      });
+      for (const selector of [".kid-material", ".kid-material-content", ".kid-feedback-overlay"]) {
+        const element = document.querySelector(selector);
+        if (element) observer.observe(element);
+      }
+      // The document element follows the window, so a resize is sampled even when the frame has not reacted yet.
+      observer.observe(document.documentElement);
+      const stop = () => {
+        observer.disconnect();
+        mutationCounter.disconnect();
+      };
+      let previous: number | null = null;
+      let identical = 0;
+      let frames = 0;
+      const afterPaint = () => requestAnimationFrame(() => {
+        paintedState = frameState();
+        setTimeout(() => {
+          frames += 1;
+          if (frameState() === paintedState) {
+            const value = record();
+            identical = value !== null && value === previous ? identical + 1 : 1;
+            previous = value;
+            if (value !== null && identical >= 5) {
+              stop();
+              state.scale = document.querySelector(".kid-page")?.currentCSSZoom ?? 1;
+              state.settled = value;
+              return;
+            }
+          }
+          if (frames >= 600) {
+            stop();
+            state.error = `the overlap did not settle in 600 frames: ${JSON.stringify(state.samples.slice(-10))}`;
+            return;
+          }
+          afterPaint();
+        }, 0);
+      });
+      afterPaint();
+    };
+    if (startNow && document.querySelector(".kid-feedback-overlay")) {
+      start();
+      return;
+    }
+    const watcher = new MutationObserver(() => {
+      if (!document.querySelector(".kid-feedback-overlay")) return;
+      watcher.disconnect();
+      start();
+    });
+    watcher.observe(document.body, { childList: true, subtree: true });
+  }, options.startNow ?? false);
+}
+
+/** Waits for the probe to settle and returns its samples, the settled overlap (screen px) and the Kid UI scale. */
+export async function readDockOverlapProbe(page: Page): Promise<{ samples: number[]; settled: number; scale: number }> {
+  const handle = await page.waitForFunction(() => {
+    const state = (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe;
+    return state !== undefined && (state.settled !== null || state.error !== null) ? state : null;
+  }, undefined, { timeout: 15_000 });
+  const state = await handle.jsonValue() as DockOverlapProbeState;
+  await handle.dispose();
+  if (state.error !== null || state.settled === null) throw new Error(`dock overlap probe: ${state.error ?? "no settled value"}`);
+  return { samples: state.samples, settled: state.settled, scale: state.scale };
 }

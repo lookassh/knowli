@@ -1,8 +1,10 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import { toLayoutPx } from "../layout/css-zoom";
+import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
@@ -49,7 +51,10 @@ export function ExerciseFrame({
   const overlayRef = useRef<HTMLDivElement>(null);
   const gatedDockRef = useRef<{ overlay: HTMLElement; enabled: boolean } | null>(null);
   const scrolledKeyRef = useRef<{ overlay: HTMLElement; key: string } | null>(null);
-  const measureRef = useRef<(() => void) | null>(null);
+  const measureRef = useRef<((mode: "layout" | "observer") => void) | null>(null);
+  // Ostatnia rezerwa zlecona przez pomiar: pomiar z obserwatora porównuje z nią
+  // nową wartość, bo stan z domknięcia efektu byłby nieaktualny.
+  const requestedPadRef = useRef(0);
   const revealStateRef = useRef<FeedbackDockRevealState>({ overlay: null, required: false });
   const revealCleanupRef = useRef<(() => void) | null>(null);
   const revealTaskIdRef = useRef<string | null>(null);
@@ -123,10 +128,19 @@ export function ExerciseFrame({
   // korygujące następuje tylko, gdy zakładka przekracza próg — po
   // korekcie znika, więc pomiary nie dokładają scrolla w pętli, a po
   // otwarciu klawiatury ekranowej albo rotacji liczy się jeszcze raz.
-  useEffect(() => {
-    if (dock === undefined || flowFeedback) {
+  //
+  // Rezerwa jest gotowa przed malowaniem (spec 2026-10-31 §3.2): efekt layoutu
+  // mierzy w commicie, w którym pojawia się panel, a `setDockPad` z efektu
+  // layoutu React renderuje synchronicznie, zanim przeglądarka cokolwiek
+  // namaluje. Akcje zadania znikają w tym samym commicie (są poza
+  // AnimatePresence), więc pierwszy pomiar widzi ułożoną stopkę. Efekt zależy
+  // od obecności panelu, zadania i trybu — nie od węzła `dock`, który
+  // LearnScreen tworzy przy każdym renderze.
+  useIsomorphicLayoutEffect(() => {
+    if (!hasDock || flowFeedback) {
       gatedDockRef.current = null;
       scrolledKeyRef.current = null;
+      requestedPadRef.current = 0;
       setDockPad(0);
       return;
     }
@@ -134,7 +148,14 @@ export function ExerciseFrame({
     const anchor = anchorRef.current;
     const overlay = overlayRef.current;
     if (!material || !anchor || !overlay) return;
-    const measure = () => {
+    // `layout` — wywołanie z efektu layoutu (tutaj albo po zmianie `dockPad`):
+    // zwykły `setDockPad` i od razu korekta przewinięcia. `observer` — callback
+    // `ResizeObserver` albo `requestAnimationFrame`, czyli poza Reactem, ale
+    // też przed malowaniem: nowa rezerwa wchodzi przez `flushSync`, a korektę
+    // przewinięcia robi efekt `[dockPad]` na świeżym układzie (tutaj byłaby
+    // liczona na układzie sprzed rezerwy). `flushSync` nigdy nie jest wołany
+    // w efekcie layoutu — React by ostrzegał.
+    const measure = (mode: "layout" | "observer") => {
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
@@ -154,7 +175,18 @@ export function ExerciseFrame({
         gatedDockRef.current.enabled = true;
       }
       const targetPad = gatedDockRef.current.enabled ? excess : 0;
-      setDockPad((previous) => (previous === targetPad ? previous : targetPad));
+      if (targetPad !== requestedPadRef.current) {
+        requestedPadRef.current = targetPad;
+        if (mode === "observer") {
+          // Synchroniczna zmiana rozmiaru w callbacku obserwatora może dać
+          // nieszkodliwe zdarzenie „ResizeObserver loop completed with
+          // undelivered notifications”: powiadomienia o elementach, które
+          // zmieniły rozmiar przez nową rezerwę, przechodzą do następnej klatki.
+          flushSync(() => setDockPad(targetPad));
+          return;
+        }
+        setDockPad(targetPad);
+      }
       // Po korekcie zakładka znika (treść kończy się nad panelem), więc
       // kolejne pomiary nie dokładają scrolla; następna korekta następuje
       // dopiero, gdy zakładka znów przekroczy próg (klawiatura, rotacja,
@@ -170,18 +202,17 @@ export function ExerciseFrame({
       }
     };
     measureRef.current = measure;
-    measure();
-    const frame = requestAnimationFrame(measure);
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    measure("layout");
+    // Zabezpieczenie: pomiar jeszcze w następnej klatce.
+    const frame = requestAnimationFrame(() => measure("observer"));
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure("observer"));
     if (observer) {
       observer.observe(material);
       observer.observe(overlay);
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       if (content) observer.observe(content);
-      // Pierwszy pomiar może jeszcze widzieć wychodzące akcje zadania obok
-      // panelu (AnimatePresence), czyli panel niżej niż po ich zniknięciu.
-      // W zwartym układzie (§3.2) materiał nie zmienia wtedy rozmiaru, więc
-      // ponowny pomiar wyzwala dopiero kurcząca się stopka.
+      // Zmiana wysokości stopki przesuwa panel także wtedy, gdy materiał nie
+      // zmienia rozmiaru (zwarty układ, spec 2026-10-30 §3.2).
       if (anchor.parentElement) observer.observe(anchor.parentElement);
     }
     return () => {
@@ -189,13 +220,15 @@ export function ExerciseFrame({
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [dock, flowFeedback]);
+  }, [hasDock, task.taskId, flowFeedback]);
 
-  // Po zmianie rezerwy zakres scrolla dopiero powstaje — pierwszy pomiar
-  // mógł zostać przycięty, więc korekta powtarza się w następnej klatce.
-  useEffect(() => {
+  // Po zmianie rezerwy zakres scrolla dopiero powstaje — pomiar sprzed niej
+  // mógł zostać przycięty, więc korekta powtarza się od razu na świeżym
+  // układzie (synchronicznie, przed malowaniem) i jeszcze w następnej klatce.
+  useIsomorphicLayoutEffect(() => {
     if (dockPad === 0) return;
-    const frame = requestAnimationFrame(() => measureRef.current?.());
+    measureRef.current?.("layout");
+    const frame = requestAnimationFrame(() => measureRef.current?.("observer"));
     return () => cancelAnimationFrame(frame);
   }, [dockPad]);
 
@@ -204,8 +237,11 @@ export function ExerciseFrame({
   // nie dałoby się nadpisać: w zwartym układzie wysokiego okna (§3.2) treść
   // rośnie tylko o padding. Warunek to ta sama media query co siatka, w module
   // CSS — prościej niż matchMedia w JS (pomiar okna należy do KidPage) albo
-  // atrybut odczytywany ze stanu CSS.
-  const reserveStyle = dock !== undefined && dockPad > 0
+  // atrybut odczytywany ze stanu CSS. `data-dock-reserve` (ten sam warunek)
+  // pozwala treści rosnąć razem z dziećmi, żeby rezerwa wydłużała przewijanie
+  // materiału, który przewija się już przed werdyktem (spec 2026-10-31 §3.3).
+  const reserveActive = dock !== undefined && dockPad > 0;
+  const reserveStyle = reserveActive
     ? { paddingBottom: dockPad + 4, "--dock-reserve": `${dockPad}px` } as CSSProperties
     : undefined;
 
@@ -213,27 +249,32 @@ export function ExerciseFrame({
     <div className={`kid-exercise-frame ${classes.root}`} data-testid="kid-exercise" data-prompt-kind={task.prompt.kind} data-feedback-layout={feedbackLayout} data-action-layout={actionLayout}>
       <ExerciseInstruction instruction={presentation.instruction} icon={presentation.icon} audio={instructionAudio} guidance={guidance} />
       <div ref={materialRef} className={`kid-material ${classes.material}`} data-testid="kid-material">
-        <div className={`kid-material-content ${classes.materialContent}`} style={reserveStyle}>{content}</div>
+        <div className={`kid-material-content ${classes.materialContent}`} style={reserveStyle} data-dock-reserve={reserveActive || undefined}>{content}</div>
       </div>
       <div className={`kid-exercise-actions ${classes.actions}`} data-testid="kid-exercise-actions">
-        <AnimatePresence mode="popLayout" initial={false}>
-        {flowFeedback ? (
-          dock ? <div key="kid-dock" ref={overlayRef} className={classes.flowDock}>{dock}</div> : <Fragment key="kid-actions">
+        {/* Akcje zadania są poza AnimatePresence: fragmentu nie da się wypchnąć
+            z układu, więc jako wychodzące dziecko zostawałby w stopce obok
+            panelu. Znikają w tym samym commicie, w którym pojawia się panel,
+            i wracają od razu po ponownej próbie, gdy panel jeszcze wychodzi. */}
+        {!dock && (flowFeedback ? (
+          <>
             {actions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
             {secondaryActions && <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>}
-          </Fragment>
-        ) : dock ? (
-          <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
-            {hasActions && <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />}
-            <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
-            <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
-          </div>
+          </>
         ) : (
-          <Fragment key="kid-actions">
+          <>
             {hasActions && <div data-testid="kid-primary-slot" className={classes.primary}>{actions}</div>}
             <div data-testid="kid-secondary-slot" className={classes.secondary}>{secondaryActions}</div>
-          </Fragment>
-        )}
+          </>
+        ))}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {dock ? (flowFeedback ? <div key="kid-dock" ref={overlayRef} className={classes.flowDock}>{dock}</div> : (
+            <div key="kid-dock" ref={anchorRef} className={classes.dockAnchor}>
+              {hasActions && <div data-testid="kid-primary-slot" className={classes.primary} aria-hidden="true" />}
+              <div data-testid="kid-secondary-slot" className={classes.secondary} aria-hidden="true" />
+              <div ref={overlayRef} className={`kid-feedback-overlay ${classes.dockOverlay}`}>{dock}</div>
+            </div>
+          )) : null}
         </AnimatePresence>
       </div>
     </div>

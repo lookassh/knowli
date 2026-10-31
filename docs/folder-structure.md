@@ -72,6 +72,7 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/theme/KidThemeProvider.tsx | Scoped Mantine theme dla dziecięcego UI |
 | packages/kid-ui/src/layout/KidPage.tsx | Pomiar viewportu, skala dużego okna (CSS zoom) i hostowy podział flow/session |
 | packages/kid-ui/src/layout/css-zoom.ts | Przeliczanie pikseli ekranu na wewnętrzne pod zoomem `KidPage` (`cssZoomOf`, `toLayoutPx`) |
+| packages/kid-ui/src/layout/isomorphic-layout-effect.ts | `useIsomorphicLayoutEffect`: pomiar przed malowaniem w przeglądarce, zwykły efekt na serwerze (pomiar okna, rezerwa pod panelem wyniku) |
 | packages/kid-ui/src/layout/KidScreen.tsx | Wspólny ekran Mantine z nagłówkiem, treścią i akcjami |
 | packages/kid-ui/src/components/ | Wspólne przyciski, postęp, ikony i feedback dostępny dotykowo |
 | packages/kid-ui/src/screens/ | Ekrany profilu, talii, podsumowań, próbnych testów i przebiegu lekcji |
