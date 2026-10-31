@@ -28,6 +28,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
   if (task.prompt.kind !== "lesson_order") return null;
   const complete = isComplete(state);
   const disabled = busy;
+  const contentLocale = task.prompt.contentLocale;
 
   return (
     <ExerciseFrame
@@ -49,6 +50,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
                 role="listitem"
                 className="kid-lesson-block kid-lesson-block--placed"
                 data-testid="kid-lesson-order-placed"
+                lang={contentLocale}
                 disabled={disabled}
                 aria-label={format(messages.kid.lessonOrderRemoveBlock, { word: item.text })}
                 onClick={() => { setState((current) => removeAt(current, index)); handlers.onEdit(); }}
@@ -70,6 +72,7 @@ export function LessonOrderView({ task, busy, dock, handlers }: ExerciseProps) {
                 role="listitem"
                 className="kid-lesson-block"
                 data-testid="kid-lesson-order-block"
+                lang={contentLocale}
                 disabled={disabled}
                 aria-label={format(messages.kid.lessonOrderAddBlock, { word: item.text })}
                 onClick={() => { setState((current) => addBlock(current, item.id)); handlers.onEdit(); }}

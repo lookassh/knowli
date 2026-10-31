@@ -353,3 +353,37 @@ describe("uzupełnij tekst (design szkoły §13.2)", () => {
     expect(TaskPromptSchema.safeParse({ ...cloze, segments: threeGaps, words: [...cloze.words, word(6, "azot")] }).success).toBe(true);
   });
 });
+
+describe("język treści zadań lekcji (angielski — rozdział)", () => {
+  const ids = Array.from({ length: 8 }, (_, i) => `${String(i + 1).repeat(8)}-3333-4333-8333-333333333333`);
+  const item = (i: number, text: string) => ({ id: ids[i]!, text });
+  const prompts = {
+    lesson_choice: { kind: "lesson_choice", instructionPl: "Wybierz", stem: "He ___ football.", options: [option] },
+    lesson_order: { kind: "lesson_order", instructionPl: "Ułóż", items: [item(0, "He"), item(1, "plays")] },
+    lesson_gap: { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "He ___ (play)." },
+    lesson_match: { kind: "lesson_match", instructionPl: "Połącz", left: [item(0, "a"), item(1, "b"), item(2, "c")], right: [item(3, "x"), item(4, "y"), item(5, "z")] },
+    lesson_group: { kind: "lesson_group", instructionPl: "Pogrupuj", groups: [item(0, "g1"), item(1, "g2")], items: [item(2, "a"), item(3, "b"), item(4, "c"), item(5, "d")] },
+    lesson_cloze: {
+      kind: "lesson_cloze", instructionPl: "Uzupełnij tekst",
+      segments: [{ text: "A " }, { gapId: ids[0]! }, { text: " b " }, { gapId: ids[1]! }],
+      words: [item(2, "x"), item(3, "y"), item(4, "z")],
+    },
+  } as const;
+
+  it.each(Object.entries(prompts))("%s przyjmuje contentLocale pl-PL i en-GB, a bez niego nadal się parsuje", (_kind, prompt) => {
+    expect(TaskPromptSchema.safeParse(prompt).success).toBe(true);
+    expect(TaskPromptSchema.safeParse({ ...prompt, contentLocale: "en-GB" }).success).toBe(true);
+    expect(TaskPromptSchema.safeParse({ ...prompt, contentLocale: "pl-PL" }).success).toBe(true);
+  });
+
+  it.each(Object.entries(prompts))("%s odrzuca nieznany język treści", (_kind, prompt) => {
+    expect(TaskPromptSchema.safeParse({ ...prompt, contentLocale: "de-DE" }).success).toBe(false);
+  });
+
+  it("odpowiedź otwarta przyjmuje answerLocale obok promptLocale, a nieznany język odrzuca", () => {
+    const open = { kind: "lesson_open_answer", instructionPl: "Przetłumacz.", prompt: "Ona gra w piłkę." };
+    expect(TaskPromptSchema.safeParse({ ...open, promptLocale: "pl-PL", answerLocale: "en-GB" }).success).toBe(true);
+    expect(TaskPromptSchema.safeParse({ ...open, answerLocale: "pl-PL" }).success).toBe(true);
+    expect(TaskPromptSchema.safeParse({ ...open, answerLocale: "de-DE" }).success).toBe(false);
+  });
+});

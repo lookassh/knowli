@@ -332,3 +332,132 @@ describe("lesson exercise views", () => {
     expect(busyProps.handlers.onSubmitText).not.toHaveBeenCalled();
   });
 });
+
+describe("lesson content language (lang attributes)", () => {
+  const langOf = (element: Element) => element.getAttribute("lang");
+  const en = "en-GB" as const;
+
+  it("choice marks the stem and every option with the content locale", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_choice", instructionPl: "Wybierz", stem: "He ___ football.", contentLocale: en,
+      options: [{ id: id(3), text: "plays" }, { id: id(4), text: "play" }],
+    }));
+    renderKid(<LessonChoiceView {...props} />);
+    expect(langOf(screen.getByTestId("kid-lesson-stem"))).toBe(en);
+    expect(screen.getAllByTestId("kid-option").map(langOf)).toEqual([en, en]);
+  });
+
+  it("order marks pool and placed blocks", () => {
+    const props = makeExerciseProps(task({ kind: "lesson_order", instructionPl: "Ułóż", contentLocale: en, items: [{ id: id(3), text: "He" }, { id: id(4), text: "plays" }] }));
+    renderKid(<LessonOrderView {...props} />);
+    expect(screen.getAllByTestId("kid-lesson-order-block").map(langOf)).toEqual([en, en]);
+    fireEvent.click(screen.getAllByTestId("kid-lesson-order-block")[0]!);
+    expect(screen.getAllByTestId("kid-lesson-order-placed").map(langOf)).toEqual([en]);
+    expect(screen.getAllByTestId("kid-lesson-order-block").map(langOf)).toEqual([en]);
+  });
+
+  it("match marks the left column only; the right column (meaning or answer) stays unmarked", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_match", instructionPl: "Połącz", contentLocale: en,
+      left: [{ id: id(3), text: "dog" }, { id: id(4), text: "cat" }, { id: id(5), text: "fish" }],
+      right: [{ id: id(6), text: "pies" }, { id: id(7), text: "kot" }, { id: id(8), text: "ryba" }],
+    }));
+    renderKid(<LessonMatchView {...props} />);
+    expect(screen.getAllByTestId("kid-lesson-match-left").map(langOf)).toEqual([en, en, en]);
+    for (const option of screen.getAllByTestId("kid-lesson-match-option")) expect(option.hasAttribute("lang")).toBe(false);
+    fireEvent.click(screen.getByText("pies"));
+    for (const slot of screen.getAllByTestId("kid-lesson-match-slot")) expect(slot.hasAttribute("lang")).toBe(false);
+  });
+
+  it("group marks pool and placed items; group labels stay unmarked", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_group", instructionPl: "Pogrupuj", contentLocale: en,
+      groups: [{ id: id(3), text: "zwierzęta" }, { id: id(4), text: "jedzenie" }],
+      items: [{ id: id(5), text: "dog" }, { id: id(6), text: "cat" }, { id: id(7), text: "bread" }, { id: id(8), text: "milk" }],
+    }));
+    renderKid(<LessonGroupView {...props} />);
+    expect(screen.getAllByTestId("kid-lesson-group-item").map(langOf)).toEqual([en, en, en, en]);
+    fireEvent.click(screen.getByText("dog"));
+    expect(screen.getAllByTestId("kid-lesson-group-member").map(langOf)).toEqual([en]);
+    for (const target of screen.getAllByTestId("kid-lesson-group-target")) expect(target.hasAttribute("lang")).toBe(false);
+    for (const bin of screen.getAllByTestId("kid-lesson-group-bin")) expect(bin.hasAttribute("lang")).toBe(false);
+  });
+
+  it("cloze marks text segments, filled gaps, filled slots and the word bank", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_cloze", instructionPl: "Uzupełnij tekst", contentLocale: en,
+      segments: [{ text: "I " }, { gapId: id(3) }, { text: " a dog and " }, { gapId: id(4) }, { text: " a cat." }],
+      words: [{ id: id(5), text: "have" }, { id: id(6), text: "like" }, { id: id(7), text: "has" }],
+    }));
+    renderKid(<LessonClozeView {...props} />);
+    expect(screen.getAllByTestId("kid-lesson-cloze-segment").map(langOf)).toEqual([en, en, en]);
+    expect(screen.getAllByTestId("kid-lesson-cloze-option").map(langOf)).toEqual([en, en, en]);
+    fireEvent.click(screen.getByText("have"));
+    const [firstGap] = screen.getAllByTestId("kid-lesson-cloze-gap");
+    const visibleGap = firstGap!.querySelector("[aria-hidden='true']")!;
+    expect(visibleGap.textContent).toContain("have");
+    expect(langOf(visibleGap)).toBe(en);
+    expect(langOf(screen.getAllByTestId("kid-lesson-cloze-slot")[0]!)).toBe(en);
+    expect(screen.getAllByTestId("kid-lesson-cloze-slot")[1]!.hasAttribute("lang")).toBe(false);
+  });
+
+  it("gap marks the sentence parts around the field and the field itself (answer language)", () => {
+    const props = makeExerciseProps(task({ kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "He ___ (play) football.", contentLocale: en }));
+    renderKid(<LessonGapView {...props} />);
+    expect(langOf(screen.getByTestId("kid-lesson-gap-before"))).toBe(en);
+    expect(langOf(screen.getByTestId("kid-lesson-gap-after"))).toBe(en);
+    const input = screen.getByTestId("kid-lesson-gap-input");
+    expect(input.tagName).toBe("INPUT");
+    expect(langOf(input)).toBe(en);
+  });
+
+  it("a pl-PL content locale marks the content with pl-PL", () => {
+    const props = makeExerciseProps(task({
+      kind: "lesson_choice", instructionPl: "Wybierz", stem: "Ile nóg ma pająk?", contentLocale: "pl-PL",
+      options: [{ id: id(3), text: "osiem" }, { id: id(4), text: "sześć" }],
+    }));
+    renderKid(<LessonChoiceView {...props} />);
+    expect(langOf(screen.getByTestId("kid-lesson-stem"))).toBe("pl-PL");
+    expect(screen.getAllByTestId("kid-option").map(langOf)).toEqual(["pl-PL", "pl-PL"]);
+  });
+
+  it("without contentLocale no lang attribute appears on the content (older servers)", () => {
+    const views = [
+      <LessonChoiceView key="c" {...makeExerciseProps(task({ kind: "lesson_choice", instructionPl: "Wybierz", stem: "He ___.", options: [{ id: id(3), text: "plays" }, { id: id(4), text: "play" }] }))} />,
+      <LessonOrderView key="o" {...makeExerciseProps(task({ kind: "lesson_order", instructionPl: "Ułóż", items: [{ id: id(3), text: "He" }, { id: id(4), text: "plays" }] }))} />,
+      <LessonGapView key="g" {...makeExerciseProps(task({ kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "He ___ (play)." }))} />,
+      <LessonMatchView key="m" {...makeExerciseProps(task({
+        kind: "lesson_match", instructionPl: "Połącz",
+        left: [{ id: id(3), text: "a" }, { id: id(4), text: "b" }, { id: id(5), text: "c" }],
+        right: [{ id: id(6), text: "x" }, { id: id(7), text: "y" }, { id: id(8), text: "z" }],
+      }))} />,
+      <LessonGroupView key="r" {...makeExerciseProps(task({
+        kind: "lesson_group", instructionPl: "Pogrupuj",
+        groups: [{ id: id(3), text: "g1" }, { id: id(4), text: "g2" }],
+        items: [{ id: id(5), text: "a" }, { id: id(6), text: "b" }, { id: id(7), text: "c" }, { id: id(8), text: "d" }],
+      }))} />,
+      <LessonClozeView key="z" {...makeExerciseProps(task({
+        kind: "lesson_cloze", instructionPl: "Uzupełnij tekst",
+        segments: [{ text: "A " }, { gapId: id(3) }, { text: " b " }, { gapId: id(4) }],
+        words: [{ id: id(5), text: "x" }, { id: id(6), text: "y" }, { id: id(7), text: "z" }],
+      }))} />,
+    ];
+    for (const view of views) {
+      const { container, unmount } = renderKid(view);
+      expect(container.querySelectorAll("[lang]")).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it("open answer: the source follows promptLocale and the answer field follows answerLocale", () => {
+    renderKid(<LessonSentenceView {...makeExerciseProps(task({ kind: "lesson_open_answer", instructionPl: "Przetłumacz.", prompt: "Ona gra w piłkę.", promptLocale: "pl-PL", answerLocale: en }))} />);
+    expect(langOf(screen.getByTestId("kid-lesson-source"))).toBe("pl-PL");
+    expect(langOf(screen.getByTestId("kid-lesson-input"))).toBe(en);
+  });
+
+  it("open answer: answerLocale alone marks the field and keeps the default en-GB source", () => {
+    renderKid(<LessonSentenceView {...makeExerciseProps(task({ kind: "lesson_open_answer", instructionPl: "Napisz.", prompt: "Write about your day.", answerLocale: en }))} />);
+    expect(langOf(screen.getByTestId("kid-lesson-source"))).toBe(en);
+    expect(langOf(screen.getByTestId("kid-lesson-input"))).toBe(en);
+  });
+});

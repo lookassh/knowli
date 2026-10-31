@@ -39,7 +39,7 @@ export function LessonMatchView({ task, busy, dock, handlers }: ExerciseProps) {
               const active = state.active === item.id;
               return (
                 <li key={item.id} className="kid-lesson-match__row" data-testid="kid-lesson-match-row">
-                  <span className="kid-lesson-match__left" data-testid="kid-lesson-match-left">{item.text}</span>
+                  <span className="kid-lesson-match__left" data-testid="kid-lesson-match-left" lang={prompt.contentLocale}>{item.text}</span>
                   <AssignmentSlot
                     filled={right !== null}
                     active={active}

@@ -50,4 +50,19 @@ export const schoolPrompts: SubjectPromptProfile = {
     "Rachunki mieszczą się w zamówionej liczbie ćwiczeń (globalnie maks. 160), uzupełniają pulę, ale nie zastępują minimów 3 prowadzonych, 2 produktywnych i 2 różnych otwartych. " +
     "Minima publikacji dotyczą całej puli, łącznie z istniejącymi ćwiczeniami; przy dogenerowaniu nie przekraczaj zamówionej liczby ćwiczeń w tej partii, aby uzupełnić minima. " +
     "Jeśli materiał nie uczy metody rachunkowej, nie twórz rachunków.",
+  // Semantyka typów z własną gałęzią schematu (przeniesiona z adaptera LLM bez zmian treści;
+  // pola i limity opisuje adapter).
+  typeRules: {
+    lesson_match:
+      "left is a concept, place or cause, right is its definition, feature or effect, both taken from the parent material. " +
+      "The extraRight texts come from the material. Use it when the material pairs concepts with definitions, places " +
+      "with features or causes with effects. Skip it when the material has no such pairs.",
+    lesson_group:
+      "Use it when the material classifies things (e.g. mammals/birds, lowlands/uplands). " +
+      "Skip it when the material has no such classification.",
+    lesson_cloze:
+      "Keep the sentences close to the parent material (vocabulary for a child of about 8). " +
+      "Gap words are concepts, names or numbers from the material, never conjunctions, prepositions or words guessable " +
+      "from grammar alone. Distractors come from the same material and category.",
+  },
 };

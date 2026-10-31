@@ -10,6 +10,7 @@ import {
   createDraftFromPublished,
   createEmptyDeck,
   createLesson,
+  createLessonFromMaterial,
   createSchoolLesson,
   createLessonDraftFromPublished,
   decideLessonVerdict,
@@ -90,6 +91,7 @@ vi.mock("@learning/server", async (importActual) => {
     getMockTestReportForSession: vi.fn(),
     listMockTestReportsForDeck: vi.fn(),
     createLesson: vi.fn(),
+    createLessonFromMaterial: vi.fn(),
     createSchoolLesson: vi.fn(),
     createLessonDraftFromPublished: vi.fn(),
     deckIdOfLessonVersion: vi.fn(),
@@ -982,6 +984,14 @@ describe("parent oRPC router — lesson-catalog i lessons", () => {
     poolSize: 60,
     clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   };
+  const materialCommand = {
+    deckId,
+    subjectId: "english_chapter",
+    topicTitlePl: "Unit 1",
+    material: "I like pizza. What do you like?",
+    poolSize: 60,
+    clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  };
 
   it("lesson-catalog zwraca katalog przedmiotów (200)", async () => {
     vi.mocked(lessonCatalog).mockReturnValueOnce(catalog);
@@ -1018,6 +1028,25 @@ describe("parent oRPC router — lesson-catalog i lessons", () => {
 
     expect(response.status).toBe(400);
     expect(createSchoolLesson).not.toHaveBeenCalled();
+  });
+
+  it("createFromMaterial przyjmuje zestaw z materiału i zwraca 202 {runId, deckId}", async () => {
+    vi.mocked(createLessonFromMaterial).mockResolvedValueOnce({ runId, deckId });
+
+    const response = await call("/lessons/material", jsonInit(materialCommand));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ runId, deckId });
+    expect(createLessonFromMaterial).toHaveBeenCalledWith(services, materialCommand);
+    expect(createSchoolLesson).not.toHaveBeenCalled();
+  });
+
+  it("createFromMaterial z pustym tytułem rozdziału albo nazwą przedmiotu kończy się validation/400 bez wywołania usługi", async () => {
+    for (const body of [{ ...materialCommand, topicTitlePl: "  " }, { ...materialCommand, subjectTitlePl: "Angielski" }]) {
+      const response = await call("/lessons/material", jsonInit(body));
+      expect(response.status).toBe(400);
+    }
+    expect(createLessonFromMaterial).not.toHaveBeenCalled();
   });
 
   it("get zwraca widok zestawu lekcji (200)", async () => {
@@ -1314,6 +1343,18 @@ describe("parent oRPC router — CSRF (Origin)", () => {
           clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         }, evil),
         vi.mocked(createSchoolLesson),
+      ],
+      [
+        "/lessons/material",
+        jsonInit({
+          deckId,
+          subjectId: "english_chapter",
+          topicTitlePl: "Unit 1",
+          material: "I like pizza.",
+          poolSize: 60,
+          clientRequestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        }, evil),
+        vi.mocked(createLessonFromMaterial),
       ],
       [`/lessons/${deckId}/draft`, { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(createLessonDraftFromPublished)],
       [`/lesson-verdicts/${verdictId}/decision`, jsonInit({ decision: "confirmed" }, evil), vi.mocked(decideLessonVerdict)],

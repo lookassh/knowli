@@ -1,31 +1,41 @@
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
-import NewLessonForm, { canSubmitLesson, defaultPoolSize, initialLessonValues, type NewLessonValues } from "./NewLessonForm";
+import NewLessonForm, { buildCommand, canSubmitLesson, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues } from "./NewLessonForm";
+import { orpc } from "../query-client";
 import { renderParentMarkup } from "../test-render";
 
-const catalog = {
-  subjects: [
-    {
-      id: "english_grammar",
-      titlePl: "Gramatyka angielska",
-      topics: [{
-        id: "present_simple",
-        titlePl: "Present Simple",
-        objectives: [
-          { id: "third_person_s", titlePl: "-s w 3. osobie" },
-          { id: "negation", titlePl: "Przeczenia" },
-        ],
-      }],
-    },
-    { id: "school", titlePl: "Przedmiot szkolny", topics: [] },
-  ],
-} as unknown as SubjectCatalogDto;
+const grammar = {
+  id: "english_grammar",
+  titlePl: "Gramatyka angielska",
+  creation: "catalog",
+  subjectTitleRequired: false,
+  topics: [{
+    id: "present_simple",
+    titlePl: "Present Simple",
+    objectives: [
+      { id: "third_person_s", titlePl: "-s w 3. osobie" },
+      { id: "negation", titlePl: "Przeczenia" },
+    ],
+  }],
+};
+const school = { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] };
+const chapter = { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, topics: [] };
+
+const catalog = { subjects: [grammar, school, chapter] } as unknown as SubjectCatalogDto;
 
 const values = (overrides: Partial<NewLessonValues> = {}): NewLessonValues => ({
   ...initialLessonValues(catalog),
   material: "He plays football.",
   ...overrides,
 });
+
+/** Formularz z wczytanym katalogiem, w którym pierwszym przedmiotem jest podany (renderowanie statyczne nie wykonuje zapytań). */
+function renderWithCatalog(first: unknown): string {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, { subjects: [first] } as unknown as SubjectCatalogDto);
+  return renderParentMarkup(<NewLessonForm onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />, queryClient);
+}
 
 describe("NewLessonForm", () => {
   it("domyślna pula: większa z 60 i 12 × liczba reguł, w granicach 20–120", () => {
@@ -45,6 +55,14 @@ describe("NewLessonForm", () => {
     expect(initialLessonValues(undefined).subjectId).toBe("");
   });
 
+  it("ścieżka tworzenia wynika z creation i subjectTitleRequired, nie z pustej listy tematów", () => {
+    expect(lessonPathOf(catalog, "english_grammar")).toBe("catalog");
+    expect(lessonPathOf(catalog, "school")).toBe("school");
+    expect(lessonPathOf(catalog, "english_chapter")).toBe("material");
+    expect(lessonPathOf(catalog, "unknown")).toBe("catalog");
+    expect(lessonPathOf(undefined, "school")).toBe("catalog");
+  });
+
   it("lekcja z katalogu wymaga reguły, materiału i puli 20–120", () => {
     expect(canSubmitLesson(values(), catalog)).toBe(true);
     expect(canSubmitLesson(values({ objectiveIds: [] }), catalog)).toBe(false);
@@ -55,12 +73,68 @@ describe("NewLessonForm", () => {
   });
 
   it("przedmiot szkolny wymaga nazw przedmiotu i tematu, pula do 160", () => {
-    const school = values({ subjectId: "school", topicId: "", objectiveIds: [] });
-    expect(canSubmitLesson(school, catalog)).toBe(false);
-    const named = { ...school, schoolSubjectName: "Geografia", schoolTopicName: "Mapa" };
+    const schoolValues = values({ subjectId: "school", topicId: "", objectiveIds: [] });
+    expect(canSubmitLesson(schoolValues, catalog)).toBe(false);
+    const named = { ...schoolValues, schoolSubjectName: "Geografia", topicTitle: "Mapa" };
     expect(canSubmitLesson(named, catalog)).toBe(true);
     expect(canSubmitLesson({ ...named, poolSize: 160 }, catalog)).toBe(true);
     expect(canSubmitLesson({ ...named, poolSize: 161 }, catalog)).toBe(false);
+  });
+
+  it("rozdział wymaga tylko tytułu i materiału do 16000 znaków, bez nazwy przedmiotu; pula do 160", () => {
+    const chapterValues = values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], schoolSubjectName: "" });
+    expect(canSubmitLesson(chapterValues, catalog)).toBe(false);
+    const titled = { ...chapterValues, topicTitle: "Unit 1" };
+    expect(canSubmitLesson(titled, catalog)).toBe(true);
+    expect(canSubmitLesson({ ...titled, material: "x".repeat(16000) }, catalog)).toBe(true);
+    expect(canSubmitLesson({ ...titled, material: "x".repeat(16001) }, catalog)).toBe(false);
+    expect(canSubmitLesson({ ...titled, material: "   " }, catalog)).toBe(false);
+    expect(canSubmitLesson({ ...titled, topicTitle: "x".repeat(121) }, catalog)).toBe(false);
+    expect(canSubmitLesson({ ...titled, poolSize: 160 }, catalog)).toBe(true);
+    expect(canSubmitLesson({ ...titled, poolSize: 161 }, catalog)).toBe(false);
+  });
+
+  describe("buildCommand", () => {
+    it("rozdział: polecenie z materiału z identyfikatorem przedmiotu i bez nazwy przedmiotu", () => {
+      const chapterValues = values({
+        subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "  Unit 1  ", material: "  I like pizza.  ",
+        instruction: "  tylko jedzenie  ", poolSize: 80,
+      });
+      const pending = buildCommand(chapterValues, lessonPathOf(catalog, "english_chapter"));
+      expect(pending.kind).toBe("material");
+      expect(pending.command).toMatchObject({
+        subjectId: "english_chapter",
+        topicTitlePl: "Unit 1",
+        material: "I like pizza.",
+        instruction: "tylko jedzenie",
+        poolSize: 80,
+        deckId: expect.any(String),
+        clientRequestId: expect.any(String),
+      });
+      expect(pending.command).not.toHaveProperty("subjectTitlePl");
+      expect(pending.command).not.toHaveProperty("topicId");
+      expect(pending.command).not.toHaveProperty("objectiveIds");
+    });
+
+    it("szkoła: polecenie szkolne z nazwą przedmiotu i tematu jak dotąd", () => {
+      const pending = buildCommand(
+        values({ subjectId: "school", topicId: "", objectiveIds: [], schoolSubjectName: " Geografia ", topicTitle: " Mapa ", material: "Skala mapy." }),
+        lessonPathOf(catalog, "school"),
+      );
+      expect(pending.kind).toBe("school");
+      expect(pending.command).toMatchObject({ subjectTitlePl: "Geografia", topicTitlePl: "Mapa", material: "Skala mapy." });
+      expect(pending.command).not.toHaveProperty("subjectId");
+    });
+
+    it("gramatyka: polecenie katalogowe z tematem i regułami", () => {
+      const pending = buildCommand(values(), lessonPathOf(catalog, "english_grammar"));
+      expect(pending.kind).toBe("catalog");
+      expect(pending.command).toMatchObject({
+        subjectId: "english_grammar",
+        topicId: "present_simple",
+        objectiveIds: ["third_person_s", "negation"],
+      });
+    });
   });
 
   it("renderuje powrót do listy i tytuł przed wczytaniem katalogu", () => {
@@ -68,5 +142,43 @@ describe("NewLessonForm", () => {
     expect(markup).toContain('data-testid="new-lesson-form"');
     expect(markup).toContain('data-testid="new-lesson-cancel"');
     expect(markup).toContain(messages.lessons.newLessonTitle);
+  });
+
+  it("rozdział: pole tytułu rozdziału i licznik do 16000, bez nazwy przedmiotu, wyboru reguł i podpowiedzi szkolnej", () => {
+    const markup = renderWithCatalog(chapter);
+    expect(markup).not.toContain('data-testid="school-subject-name"');
+    expect(markup).not.toContain('data-testid="lesson-topic"');
+    expect(markup).not.toContain('data-testid="school-material-hint"');
+    expect(markup).toContain('data-testid="material-topic-name"');
+    expect(markup).toContain("Rozdział (np. Unit 1)");
+    expect(markup).toContain(messages.lessons.chapterTopicLabel);
+    expect(markup).toContain(messages.lessons.chapterMaterialHint);
+    expect(markup).toContain("0/16000 znaków");
+    expect(markup).toContain(messages.lessons.schoolObjectivesAuto);
+    // Podpowiedź puli zgodna z limitami ścieżki z materiału (20–160), bez wzoru z liczbą reguł.
+    expect(messages.lessons.chapterPoolSizeHint).toBe("Od 20 do 160 ćwiczeń. Domyślnie 60.");
+    expect(markup).toContain(messages.lessons.chapterPoolSizeHint);
+    expect(markup).not.toContain(messages.lessons.poolSizeHint);
+    expect(markup).not.toContain("liczba reguł");
+  });
+
+  it("szkoła: nadal nazwa przedmiotu i temat, podpowiedź szkolna i licznik do 16000", () => {
+    const markup = renderWithCatalog(school);
+    expect(markup).toContain('data-testid="school-subject-name"');
+    expect(markup).toContain('data-testid="school-topic-name"');
+    expect(markup).toContain('data-testid="school-material-hint"');
+    expect(markup).not.toContain(messages.lessons.chapterTopicLabel);
+    expect(markup).toContain("0/16000 znaków");
+  });
+
+  it("gramatyka: wybór tematu i reguł, licznik do 8000", () => {
+    const markup = renderWithCatalog(grammar);
+    expect(markup).toContain('data-testid="lesson-topic"');
+    expect(markup).toContain('data-testid="lesson-objective-third_person_s"');
+    expect(markup).not.toContain('data-testid="school-subject-name"');
+    expect(markup).not.toContain('data-testid="material-topic-name"');
+    expect(markup).toContain("0/8000 znaków");
+    expect(markup).toContain(messages.lessons.poolSizeHint);
+    expect(markup).not.toContain(messages.lessons.chapterPoolSizeHint);
   });
 });

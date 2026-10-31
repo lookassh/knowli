@@ -57,6 +57,9 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
   // jednoznaczny (szkoła) — wtedy dziecko odpowiada w tym samym języku.
   const knownLocale = calculation ? "pl-PL" : task.prompt.kind === "lesson_open_answer" ? task.prompt.promptLocale : undefined;
   const sourceLang = knownLocale ?? "en-GB";
+  // Pole odpowiedzi: język odpowiedzi z serwera (np. polskie źródło, angielska odpowiedź);
+  // bez niego dziedziczy język pytania, jak dotąd.
+  const fieldLocale = (task.prompt.kind === "lesson_open_answer" ? task.prompt.answerLocale : undefined) ?? knownLocale;
   const showMic = speech && micAvailable && !mockTest;
   const disabled = busy || (showMic && recordingPhase !== "idle");
   const formId = `kid-lesson-sentence-${task.taskId}`;
@@ -68,7 +71,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
   const fieldProps = {
     "data-testid": "kid-lesson-input",
     value: text,
-    ...(knownLocale ? { lang: knownLocale } : {}),
+    ...(fieldLocale ? { lang: fieldLocale } : {}),
     // Same cap as the server contract, so a long answer is never rejected after typing.
     maxLength: MAX_TEXT_ATTEMPT_LENGTH,
     autoComplete: "off",

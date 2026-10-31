@@ -439,6 +439,144 @@ describe("createOpenAiLlmProvider.generateLessonPool — składanie promptu", ()
   });
 });
 
+describe("createOpenAiLlmProvider.generateLessonPool — bloki pary/grupy/luki składane z profilu przedmiotu", () => {
+  const PAIRING_TYPES = ["lesson_choice", "lesson_match", "lesson_group", "lesson_cloze"];
+  const pairingInput = (overrides: Partial<LessonPoolInput>): LessonPoolInput => ({
+    ...INPUT,
+    exerciseTypes: PAIRING_TYPES,
+    objectives: [{ id: "chapter.d1.clothes", descriptionEn: "Clothes words.", exerciseTypes: PAIRING_TYPES, errorCategories: [] }],
+    ...overrides,
+  });
+  const systemPromptOf = async (input: LessonPoolInput): Promise<string> => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(input);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    return body.messages.find((message) => message.role === "system")!.content;
+  };
+
+  it("przedmiot szkolny zachowuje semantykę par, grup i luk z materiału rodzica oraz wymóg cytatów", async () => {
+    const system = await systemPromptOf(pairingInput({
+      subjectId: schoolSubject.id,
+      promptProfile: schoolSubject.prompts,
+      groundingRequired: true,
+    }));
+    // Część strukturalna (adapter).
+    expect(system).toContain("lesson_match and lesson_group are guided types with their own strict branches");
+    expect(system).toContain("code computes the answer");
+    expect(system).toContain("pairs (3 to 5 objects {left, right}");
+    expect(system).toContain("groupItems (4 to 8 objects {text of at most 40 characters, groupId}, at least 2 per group)");
+    expect(system).toContain("gapAnswers: the word for each gap in text order (1 to 3 words, at most 30 characters)");
+    // Cytaty tylko przy groundingRequired.
+    expect(system).toContain("and their fields below plus sourceRefs;");
+    expect(system).toContain("extraWords and sourceRefs;");
+    expect(system).toContain("sourceRefs is REQUIRED for EVERY exercise");
+    // Semantyka szkoły (profil przedmiotu, przeniesiona z adaptera).
+    expect(system).toContain("both taken from the parent material");
+    expect(system).toContain("Use it when the material pairs concepts with definitions, places with features or causes with effects.");
+    expect(system).toContain("Use it when the material classifies things (e.g. mammals/birds, lowlands/uplands).");
+    expect(system).toContain("Keep the sentences close to the parent material (vocabulary for a child of about 8)");
+    expect(system).toContain("concepts, names or numbers from the material, never conjunctions, prepositions or words guessable from grammar alone");
+    expect(system).toContain("Distractors come from the same material and category");
+    expect(system).toContain("Skip it when the material has no such pairs.");
+    expect(system).toContain("Skip it when the material has no such classification.");
+  });
+
+  it("bez uziemienia nie wspomina o sourceRefs w blokach, a semantykę bierze z typeRules przedmiotu", async () => {
+    const system = await systemPromptOf(pairingInput({
+      groundingRequired: false,
+      promptProfile: {
+        ...INPUT.promptProfile,
+        typeRules: {
+          lesson_match: "RULE-MATCH: left is an English chapter word, right its Polish meaning.",
+          lesson_group: "RULE-GROUP: only when the words split into 2 or 3 categories.",
+          lesson_cloze: "RULE-CLOZE: gaps are chapter words.",
+        },
+      },
+    }));
+    expect(system).toContain("RULE-MATCH: left is an English chapter word, right its Polish meaning.");
+    expect(system).toContain("RULE-GROUP: only when the words split into 2 or 3 categories.");
+    expect(system).toContain("RULE-CLOZE: gaps are chapter words.");
+    // Struktura zostaje po stronie adaptera.
+    expect(system).toContain("code computes the answer");
+    expect(system).toContain("pairs (3 to 5 objects {left, right}");
+    expect(system).toContain("clozeText: 2 to 4 short sentences");
+    // Żadnych wymagań cytatów ani szkolnej semantyki.
+    expect(system).not.toContain("plus sourceRefs");
+    expect(system).not.toContain("extraWords and sourceRefs");
+    expect(system).not.toContain("sourceRefs is REQUIRED");
+    expect(system).not.toContain("taken from the parent material");
+    expect(system).not.toContain("close to the parent material");
+    expect(system).not.toContain("mammals/birds");
+  });
+
+  it("bez reguły typu składa wyłącznie część strukturalną bloku", async () => {
+    const system = await systemPromptOf(pairingInput({ groundingRequired: false }));
+    expect(system).toContain("pairs (3 to 5 objects {left, right}");
+    expect(system).toContain("groups (2 or 3 objects");
+    expect(system).toContain("gapAnswers: the word for each gap in text order");
+    expect(system).not.toContain("taken from the parent material");
+    expect(system).not.toContain("close to the parent material");
+    expect(system).not.toContain("mammals/birds");
+    expect(system).not.toContain("undefined");
+  });
+
+  it("opisuje tylko typy dozwolone w przedmiocie", async () => {
+    const system = await systemPromptOf(pairingInput({
+      exerciseTypes: ["lesson_choice", "lesson_match"],
+      objectives: [{ id: "chapter.d1.clothes", descriptionEn: "Clothes words.", exerciseTypes: ["lesson_choice", "lesson_match"], errorCategories: [] }],
+      groundingRequired: false,
+      promptProfile: { ...INPUT.promptProfile, typeRules: { lesson_match: "RULE-MATCH.", lesson_group: "RULE-GROUP." } },
+    }));
+    expect(system).toContain("RULE-MATCH.");
+    expect(system).not.toContain("RULE-GROUP.");
+    expect(system).not.toContain("lesson_group");
+    expect(system).not.toContain("lesson_cloze");
+  });
+});
+
+describe("createOpenAiLlmProvider.generateLessonObjectives — reguły przedmiotu i rodzaj zagadnienia", () => {
+  const OBJECTIVES_INPUT = {
+    subjectTitle: "Angielski — rozdział",
+    topicTitle: "Unit 1",
+    material: "coat — płaszcz",
+    generationRole: "You are an author.",
+  };
+  const callObjectives = async (extra: { objectivesRules?: string }) => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ objectives: [{ slug: "a" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonObjectives({ ...OBJECTIVES_INPUT, ...extra });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+      response_format: { json_schema: { name: string; strict: boolean; schema: any } };
+    };
+    return { result, body, system: body.messages.find((message) => message.role === "system")!.content };
+  };
+
+  it("dokleja objectivesRules do promptu zagadnień jako reguły przedmiotu", async () => {
+    const { result, system } = await callObjectives({ objectivesRules: "Split into 3 to 5 objectives." });
+    expect(system).toContain("Subject rules for objectives: Split into 3 to 5 objectives.");
+    expect(system.trimEnd().endsWith("Return strict JSON only.")).toBe(true);
+    expect(result.objectives).toHaveLength(1);
+  });
+
+  it("bez objectivesRules prompt zagadnień nie ma bloku reguł", async () => {
+    const { system } = await callObjectives({});
+    expect(system).not.toContain("Subject rules for objectives");
+    expect(system).toContain("kind");
+  });
+
+  it("schemat zagadnień ma wymagane, nullowalne pole kind z enumem words/frame", async () => {
+    const { body } = await callObjectives({});
+    expect(body.response_format.json_schema).toMatchObject({ name: "lesson_objectives", strict: true });
+    const item = body.response_format.json_schema.schema.properties.objectives.items;
+    expect(item.properties.kind).toEqual({ type: ["string", "null"], enum: ["words", "frame", null] });
+    expect(item.required).toContain("kind");
+    expect([...item.required].sort()).toEqual(Object.keys(item.properties).sort());
+    expect(item.additionalProperties).toBe(false);
+  });
+});
+
 describe("createOpenAiLlmProvider.generateDeck — tryb zestawu", () => {
   it("w trybie obrazkowym wymaga konkretnych znaczeń bez zależności od tekstu", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ items: [] }));

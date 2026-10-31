@@ -14,7 +14,7 @@ export type { WorkerLimits } from "./generation-worker";
 export { enqueueDeckGeneration, executeGeneration, readGeneration, retryGeneration } from "./generation";
 export { buildPayload, payloadToItem, validateItems } from "./item-payload";
 export { createLessonDraftFromPublished, deckIdOfLessonVersion, editLessonDraft, lessonCatalog, publishLessonDraft, readLessonDeck } from "./lessons/lesson-api";
-export { applyLessonExercises, createLesson, createSchoolLesson, executeLessonGeneration, regenerateObjective, splitStages } from "./lessons/lesson-drafts";
+export { applyLessonExercises, createLesson, createLessonFromMaterial, createSchoolLesson, executeLessonGeneration, regenerateObjective, splitStages } from "./lessons/lesson-drafts";
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
 export { executeMediaAsset } from "./media-generation";
 export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";

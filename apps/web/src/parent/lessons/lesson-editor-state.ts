@@ -458,6 +458,43 @@ export function groupExercisesByObjectiveAndStage(
   }));
 }
 
+/** Liczba powodów odrzuceń pokazywanych rodzicowi pod licznikiem odrzuconych ćwiczeń. */
+export const MAX_REJECTED_REASONS_SHOWN = 5;
+
+/**
+ * Najczęstsze powody odrzucenia ćwiczeń przy generowaniu (`rejectedReasons`
+ * szkicu): malejąco po liczbie, przy remisie alfabetycznie (kolejność stabilna
+ * między odświeżeniami), do `limit`. Zliczenia nie niosą danych dziecka.
+ */
+export function topRejectedReasons(
+  reasons: Readonly<Record<string, number>> | undefined,
+  limit: number = MAX_REJECTED_REASONS_SHOWN,
+): { reason: string; count: number }[] {
+  return Object.entries(reasons ?? {})
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "pl"))
+    .slice(0, limit);
+}
+
+/**
+ * Odrzucenia, których nie wyjaśniają wypisane powody: `rejectedCount` liczy
+ * wszystkie odrzucenia generowania (kształt, walidacja puli, duplikaty), a
+ * `rejectedReasons` tylko sprawdzanie słów z materiału — do tego lista pokazuje
+ * najwyżej kilka powodów. Nigdy ujemna.
+ */
+export function otherRejectedCount(rejectedCount: number, listed: readonly { count: number }[]): number {
+  return Math.max(0, rejectedCount - listed.reduce((sum, { count }) => sum + count, 0));
+}
+
+/**
+ * Wiersz raportu odrzuceń z szablonu komunikatu (`{reason}`, `{n}`). Jedno
+ * przejście z funkcją podstawiającą: powód pochodzi z wyjścia modelu, więc
+ * `$&`, `$$` ani `{n}` w jego treści nie mogą zmienić wyniku (podstawiany tekst
+ * nie jest ponownie skanowany).
+ */
+export function formatRejectedReason(template: string, reason: string, count: number): string {
+  return template.replace(/\{(reason|n)\}/gu, (_placeholder, name: string) => (name === "reason" ? reason : String(count)));
+}
 
 /** Applies an API preview only while it still describes this variant. No arithmetic in the client. */
 export function applyCalculationPreview(exercise: EditableLessonExercise, requested: CalculationSpec, preview: { prompt: string; answer: string }): EditableLessonExercise {

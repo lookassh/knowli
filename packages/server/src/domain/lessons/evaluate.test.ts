@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { englishNormalizer } from "./subjects/english-grammar/normalizer";
+import { englishNormalizer } from "./subjects/english/normalizer";
 import { historyLikeSubject } from "./testing/history-like-subject";
 import {
   TYPO_TOLERANCE,
