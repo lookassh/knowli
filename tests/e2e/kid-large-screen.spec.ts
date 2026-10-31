@@ -5,7 +5,7 @@ import {
   makeDeck, openDeckScreen, overflowingRecallFixture, recallFixture, sessionId, taskFor,
 } from "./helpers/kid-fixtures";
 import {
-  boxes, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, nextFrames,
+  boxes, emulatePinchZoom, expectFrameFillsViewport, expectInteractiveTargets, expectRectsUnchanged, installDockOverlapProbe, lineLengths, nextFrames,
   pictureTileLimit, pictureTiles, readDockOverlapProbe, settledDockReserve, VISUAL_CHOICE_MAX, waitForKidScale,
 } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
@@ -769,6 +769,14 @@ test("result panel never covers the material in a painted frame", async ({ page 
   }
 });
 
+const CLOZE_IDS = { childId: clozeUid(1), deckId: clozeUid(2), sessionId: clozeTask.sessionId, versionId: clozeUid(4) };
+const CLOZE_DECK = { title: "Fotosynteza", subjectTitle: "Przyroda" };
+
+/** "Uzupełnij tekst" with no attempt yet: the text with four empty gaps. */
+function clozeFixture(): KidUiFixture {
+  return lessonTaskFixture(CLOZE_IDS, CLOZE_DECK, [clozeTask]);
+}
+
 /** "Uzupełnij tekst" answered with the first bank word in every gap: a lesson hint with the child's text, the hint, the solution and its recording. */
 function clozeHintFixture(): KidUiFixture {
   const { prompt } = clozeTask;
@@ -787,10 +795,61 @@ function clozeHintFixture(): KidUiFixture {
     correctText: filled(solution).map(({ text }) => text).join(""),
     correctAudioAssetId: clozeUid(60),
   };
-  const ids = { childId: clozeUid(1), deckId: clozeUid(2), sessionId: clozeTask.sessionId, versionId: clozeUid(4) };
-  return lessonTaskFixture(ids, { title: "Fotosynteza", subjectTitle: "Przyroda" }, [clozeTask],
-    [assignmentAttempt(clozeUid(90), clozeTask.taskId, feedback)]);
+  return lessonTaskFixture(CLOZE_IDS, CLOZE_DECK, [clozeTask], [assignmentAttempt(clozeUid(90), clozeTask.taskId, feedback)]);
 }
+
+/** How far the first matching element sits from the left and right edge of its parent's content box (screen px). */
+async function insetsInParent(page: Page, selector: string): Promise<{ left: number; right: number }> {
+  return page.locator(selector).first().evaluate((element) => {
+    const parent = element.parentElement!;
+    const style = getComputedStyle(parent);
+    const rect = element.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+    // Border and padding come from the style in inner pixels.
+    const inset = (side: "Left" | "Right") =>
+      (Number.parseFloat(style[`border${side}Width`]) + Number.parseFloat(style[`padding${side}`])) * parent.currentCSSZoom;
+    return { left: rect.left - parentRect.left - inset("Left"), right: parentRect.right - rect.right - inset("Right") };
+  });
+}
+
+// Reading measure (spec 2026-10-31 §3.6): in the 720 px column the longest line of the card body and of the cloze text
+// is about 60 characters, and the narrower block sits in the middle of the column. The text is the long card body
+// (1200 characters) and the four-gap cloze text (about 225 characters, gap numbers not counted).
+const READING_MEASURE_CASES = [
+  {
+    name: "lesson card", text: ".kid-lesson-card__body", exclude: undefined, blocks: [".kid-lesson-card__body", ".kid-lesson-card__examples"],
+    open: async (page: Page) => {
+      await page.setViewportSize(LAPTOP);
+      await openSession(page, longLessonCardFixture());
+      await expect(page.getByTestId("kid-lesson-card")).toBeVisible();
+    },
+  },
+  {
+    name: "cloze text", text: ".kid-lesson-cloze__text", exclude: ".kid-lesson-cloze__gap-number", blocks: [".kid-lesson-cloze__text"],
+    open: async (page: Page) => {
+      await installKidUiFixture(page, clozeFixture());
+      await openLessonTask(page, LAPTOP, "kid-lesson-cloze");
+    },
+  },
+];
+
+test("lesson text keeps about 60 characters per line in the 720 px column", async ({ page }) => {
+  for (const { name, text, exclude, blocks, open } of READING_MEASURE_CASES) {
+    await open(page);
+    await waitForKidScale(page, 1);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const lines = await lineLengths(page, text, exclude);
+    const longest = Math.max(...lines);
+    const details = `${name}: characters per line ${JSON.stringify(lines)}`;
+    expect(longest, `the longest line is at least 45 characters: ${details}`).toBeGreaterThanOrEqual(45);
+    expect(longest, `the longest line is at most 65 characters: ${details}`).toBeLessThanOrEqual(65);
+    for (const block of blocks) {
+      const insets = await insetsInParent(page, block);
+      expect(Math.abs(insets.left - insets.right), `${name}: ${block} sits in the middle of the column: ${JSON.stringify(insets)}`)
+        .toBeLessThanOrEqual(2);
+    }
+  }
+});
 
 /** A material that already scrolls before the verdict: the written answer with a long prompt and the cloze text. */
 const SCROLLING_MATERIAL_CASES = [

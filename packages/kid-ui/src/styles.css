@@ -174,6 +174,12 @@
      razem z resztą (3440×1440: 144 px ekranu). Ustępuje pierwszy, zanim materiał
      zacznie się przewijać (ExerciseFrame.module.css). */
   --kid-compact-frame-offset: 90px;
+  /* Długość wiersza tekstu lekcji (karta, tekst z lukami; spec 2026-10-31 §3.6),
+     w `ch` elementu, który z niej korzysta, więc rośnie razem z jego czcionką.
+     `ch` to szerokość cyfry „0” (w Nunito 0,6 em), a średni znak polskiego tekstu
+     z odstępami ma ok. 0,45 em, więc 45ch (27 em) mieści ok. 60 znaków. Samo 60ch
+     dawało ok. 80 znaków i w kolumnie 720 px nie ograniczało wiersza. */
+  --kid-reading-measure: 45ch;
   /* Window units. KidPage scales a large window with CSS zoom (inline
      --kid-zoom), and zoom multiplies vh/dvh/svh/vw by the scale, so every
      window-relative length is written calc(N * var(--kid-dvh)) etc. Each token
@@ -2312,17 +2318,29 @@
   justify-content: center;
 }
 
-/* Running text of a card: a line stays near 60 characters in the 720px column. */
-.kid-lesson-card__body {
-  margin: 0;
-  max-inline-size: 60ch;
+/* Tekst biegnący karty: wiersz ma ok. 60 znaków (`--kid-reading-measure`). Węższy
+   blok stoi na środku kolumny (auto po bokach), wiersze są wyrównane do początku;
+   `inline-size: 100%` zostawia krótkiemu tekstowi szerokość bloku (w kolumnie flex
+   auto po bokach wyłącza rozciąganie), więc lewa krawędź nie zależy od długości
+   tekstu i treść oraz przykłady zaczynają się w jednej linii. Na telefonie kolumna
+   jest węższa niż limit i nic się nie zmienia. Treść to `<p>`, a `.kid-theme p`
+   (theme/kid-theme.css) zeruje marginesy ze specyficznością (0,1,1), więc selektor
+   z `.kid-ui` (0,2,0) jest potrzebny, żeby auto po bokach zadziałało. */
+.kid-ui .kid-lesson-card__body {
+  margin-block: 0;
+  margin-inline: auto;
+  inline-size: 100%;
+  max-inline-size: var(--kid-reading-measure);
   font-size: var(--kid-type-title-md-size);
   line-height: 1.5;
 }
 
 .kid-lesson-card__examples {
-  margin: 0;
-  max-inline-size: 60ch;
+  box-sizing: border-box;
+  margin-block: 0;
+  margin-inline: auto;
+  inline-size: 100%;
+  max-inline-size: var(--kid-reading-measure);
   padding-inline-start: 1.1em;
   display: flex;
   flex-direction: column;
@@ -2660,8 +2678,14 @@
   min-width: 0;
 }
 
-.kid-lesson-cloze__text {
-  margin: 0;
+/* Wiersz ok. 60 znaków jak na karcie (`--kid-reading-measure`); węższy blok stoi na
+   środku kolumny nad miejscami luk i bankiem słów, wiersze od początku. Selektor
+   z `.kid-ui`, bo `.kid-theme p { margin: 0 }` ma wyższą specyficzność niż sama klasa. */
+.kid-ui .kid-lesson-cloze__text {
+  margin-block: 0;
+  margin-inline: auto;
+  inline-size: 100%;
+  max-inline-size: var(--kid-reading-measure);
   font-size: var(--kid-type-title-size);
   line-height: 1.6;
   overflow-wrap: anywhere;

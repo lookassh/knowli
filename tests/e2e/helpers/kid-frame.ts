@@ -260,3 +260,37 @@ export async function readDockOverlapProbe(page: Page): Promise<{ samples: numbe
   if (state.error !== null || state.settled === null) throw new Error(`dock overlap probe: ${state.error ?? "no settled value"}`);
   return { samples: state.samples, settled: state.settled, scale: state.scale };
 }
+
+/**
+ * Characters per rendered line of the first element matching `selector`, top line first (spec 2026-10-31 §3.6).
+ * Every character of its text nodes gets a rectangle from a `Range`; characters without one (collapsed white space) are
+ * skipped, and a character joins the current line while its vertical centre stays within half a line height of the
+ * line's first character (a `vertical-align: super` gap number sits about 2 px higher, so grouping by `top` would
+ * break its line). Text inside `exclude` (a selector list, e.g. `.kid-lesson-cloze__gap-number`) and screen-reader-only
+ * text (`.kid-visually-hidden`, laid out in a 1 px box) is not counted.
+ */
+export async function lineLengths(page: Page, selector: string, exclude?: string): Promise<number[]> {
+  return page.locator(selector).first().evaluate((root, skipped) => {
+    // Rectangles are screen pixels; the line height from the style is in inner pixels.
+    const lineHeight = Number.parseFloat(getComputedStyle(root).lineHeight) * root.currentCSSZoom;
+    if (!Number.isFinite(lineHeight)) throw new Error("lineLengths: the element needs a line height in px");
+    const hidden = [".kid-visually-hidden", skipped].filter(Boolean).join(", ");
+    const range = document.createRange();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const lines: { center: number; characters: number }[] = [];
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (node.parentElement?.closest(hidden)) continue;
+      for (let index = 0; index < node.textContent!.length; index += 1) {
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        const [rect] = range.getClientRects();
+        if (!rect) continue;
+        const center = (rect.top + rect.bottom) / 2;
+        const line = lines.at(-1);
+        if (line && Math.abs(center - line.center) <= lineHeight / 2) line.characters += 1;
+        else lines.push({ center, characters: 1 });
+      }
+    }
+    return lines.map((line) => line.characters);
+  }, exclude);
+}
