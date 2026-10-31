@@ -306,11 +306,13 @@ export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 /**
  * Stan nagrania pytania lub karty w panelu rodzica (spec tonu TTS §4.5): stan
  * najnowszej generacji o oczekiwanym fingerprincie; `assetId` tylko dla gotowej
- * (odsłuch przez `/api/v1/media/:id`).
+ * (odsłuch przez `/api/v1/media/:id`). `previousAssetId` tylko przy `pending`:
+ * poprzednie gotowe ujęcie tego samego tekstu, które gra, dopóki nowe się nagrywa.
  */
 export const LessonPromptAudioDtoSchema = z.object({
   state: z.enum(["pending", "ready", "failed"]),
   assetId: UuidSchema.optional(),
+  previousAssetId: UuidSchema.optional(),
 }).strict();
 export type LessonPromptAudioDto = z.infer<typeof LessonPromptAudioDtoSchema>;
 

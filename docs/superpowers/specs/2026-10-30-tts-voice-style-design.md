@@ -297,11 +297,14 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   (karta: „Ton działa, gdy karta ma nagranie.”). Panel nie liczy
   `questionReadText`/`cardReadText` — to funkcje serwera.
 - **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
-  `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid }`,
+  `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid, previousAssetId?: uuid }`,
   a szkic opcjonalną listę `cardAudio: [{ objectiveId, cardIndex, audio }]`
   (`audio` ma ten sam kształt). To stan najnowszej generacji o oczekiwanym
   fingerprincie (`revision_assets.prompt_audio` / `lesson_card_assets`),
   `assetId` tylko dla gotowej; brak wpisu = brak nagrania dla tego tekstu.
+  `previousAssetId` tylko przy `pending`: najnowsza gotowa generacja tego samego
+  fingerprintu, czyli ujęcie, które gra, dopóki nowe się nagrywa — panel
+  pokazuje wtedy „Posłuchaj poprzedniego”.
   Pola są tylko do odczytu i nie wracają w patchu edycji.
 - **Odsłuch i „Nagraj ponownie”:** „Posłuchaj” odtwarza istniejącym
   `/api/v1/media/:id`. „Nagraj ponownie” (dla `ready` i `failed`, tylko w szkicu
@@ -312,13 +315,17 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   (POST `/lesson-drafts/{lessonDraftId}/card-audio/regenerate`); obie
   odpowiadają 202 z `{ assetId }`. Przypadki użycia w `materials/lessons/` wg §2.4,
   w transakcji z blokadą wersji; opublikowana wersja → `immutable`.
-- **Zmiana konfiguracji TTS:** nowa generacja kopiuje provider i model
-  najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne z bieżącą
-  konfiguracją. Dlatego gdy provider/model najnowszego zasobu różnią się od
-  bieżących ustawień, procedury zwracają `conflict` (`tts_config_changed`) przed
-  zapisem czegokolwiek, a panel pokazuje: „Ustawienia lektora się zmieniły.
-  Zapisz szkic, aby nagrać w nowej konfiguracji.” (zapis szkicu uzgadnia media
-  z nową konfiguracją). Brak ustawień mediów → `internal`.
+- **Zmiana konfiguracji TTS:** nowa generacja kopiuje żądanie (provider, model,
+  metadane) najnowszego zasobu, a worker wykonuje tylko zlecenia zgodne z
+  bieżącą konfiguracją. Dlatego procedury najpierw, w tej samej transakcji,
+  uzgadniają media szkicu jak zapis (`reconcileDraftAssetsTx`). Gdy od
+  ostatniego zapisu zmieniła się konfiguracja (provider, model, głos, styl),
+  wiersz dostaje fingerprint bieżącej konfiguracji i jej nagranie — to już jest
+  nowe ujęcie, więc kolejnej generacji nie zlecamy. Rodzic nie musi niczego
+  zapisywać (zapis czystego szkicu i tak nic nie wysyła). Brak ustawień
+  mediów → `internal`.
+- **Błąd „Nagraj ponownie”** znika, gdy zmieni się stan nagrania (zapis
+  szkicu, odpytywanie), zamiast wisieć obok nowego stanu.
 - **Odświeżanie:** dopóki jakieś nagranie pytania lub karty jest `pending`,
   edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…” znika samo,
   gdy nagranie będzie gotowe albo nieudane.

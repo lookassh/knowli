@@ -4,9 +4,9 @@ import { messages } from "@learning/contracts";
 /**
  * Ton lektora i nagrania pytań i kart w edytorze lekcji szkolnej (spec tonu
  * TTS §4.5, §8): „Ton lektora” trafia do patcha (bez stanu nagrań), „Nagraj
- * ponownie” woła nową procedurę, sterowanie zależy od stanu nagrania,
- * zmiana konfiguracji lektora daje polski komunikat, a przy 320 px nic nie
- * wychodzi poza ekran. API rodzica zaślepione w przeglądarce.
+ * ponownie” woła nową procedurę, sterowanie zależy od stanu nagrania (w trakcie
+ * nagrywania można odsłuchać poprzednie ujęcie), błąd znika po zmianie stanu
+ * nagrania, a przy 320 px nic nie wychodzi poza ekran. API rodzica zaślepione w przeglądarce.
  */
 
 const deckId = "00000000-0000-4000-8000-0000000000f1";
@@ -14,7 +14,7 @@ const draftId = "00000000-0000-4000-8000-0000000000f2";
 const OBJ = "school.map.scale";
 const uuid = (n: number) => `00000000-0000-4000-8000-0000000003${String(n).padStart(2, "0")}`;
 
-const openAnswer = (n: number, audio: { state: "ready" | "pending" | "failed"; assetId?: string }, voiceTone?: string) => ({
+const openAnswer = (n: number, audio: { state: "ready" | "pending" | "failed"; assetId?: string; previousAssetId?: string }, voiceTone?: string) => ({
   id: uuid(n), revisionId: uuid(n + 50), exerciseType: "lesson_open_answer", objectiveId: OBJ,
   instructionPl: "Odpowiedz jednym zdaniem.", prompt: `Czym jest skala mapy (${n})?`, answer: "Stosunek odległości na mapie do odległości w terenie.",
   acceptedAnswers: [], focus: [], questionType: "definition", expectedForm: "one_sentence",
@@ -34,7 +34,7 @@ const draft = {
   ] }] },
   exercises: [
     openAnswer(10, { state: "ready", assetId: uuid(90) }, "cheerful"),
-    openAnswer(11, { state: "pending" }),
+    openAnswer(11, { state: "pending", previousAssetId: uuid(92) }),
     openAnswer(12, { state: "failed" }),
   ],
   cardAudio: [
@@ -52,9 +52,9 @@ const lesson = {
 
 interface Calls { requests: Array<{ method: string; path: string; body: unknown }> }
 
-async function openLesson(page: Page, options: { cardRegenerateConflict?: boolean } = {}): Promise<Calls> {
+async function openLesson(page: Page, options: { cardRegenerateFails?: boolean } = {}): Promise<Calls> {
   const calls: Calls = { requests: [] };
-  let current = draft;
+  let current: typeof draft = draft;
   await page.route("**/api/v1/parent/**", (route) => {
     const request = route.request();
     const method = request.method();
@@ -81,9 +81,13 @@ async function openLesson(page: Page, options: { cardRegenerateConflict?: boolea
       return route.fulfill({ status: 202, json: { assetId: uuid(95) } });
     }
     if (method === "POST" && path.endsWith(`/lesson-drafts/${draftId}/card-audio/regenerate`)) {
-      return options.cardRegenerateConflict
-        ? route.fulfill({ status: 409, json: { code: "conflict", message: "Konflikt.", retryable: false, requestId: "r" } })
-        : route.fulfill({ status: 202, json: { assetId: uuid(96) } });
+      if (options.cardRegenerateFails) {
+        // Nagranie karty rusza mimo błędu odpowiedzi (np. z innej karty przeglądarki):
+        // kolejne odpytanie lekcji widzi je jako trwające.
+        current = { ...current, cardAudio: [current.cardAudio[0]!, { objectiveId: OBJ, cardIndex: 1, audio: { state: "pending" } }] };
+        return route.fulfill({ status: 500, json: { code: "internal", message: "Błąd serwera.", retryable: true, requestId: "r" } });
+      }
+      return route.fulfill({ status: 202, json: { assetId: uuid(96) } });
     }
     return route.fulfill({ json: [] });
   });
@@ -137,6 +141,7 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   await expect(page.getByTestId("exercise-prompt-audio-1-pending")).toHaveText(messages.lessons.promptAudioPending);
   await expect(page.getByTestId("exercise-prompt-audio-1-regenerate")).toHaveCount(0);
   await expect(page.getByTestId("exercise-prompt-audio-1-listen")).toHaveCount(0);
+  await expect(page.getByTestId("exercise-prompt-audio-1-listen-previous")).toHaveText(messages.lessons.promptAudioListenPrevious);
 
   await expect(page.getByTestId("exercise-prompt-audio-2")).toHaveAttribute("data-audio-state", "failed");
   await expect(page.getByTestId("exercise-prompt-audio-2-failed")).toHaveText(messages.lessons.promptAudioFailed);
@@ -155,13 +160,33 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   await expect(page.getByTestId("exercise-0")).toContainText(messages.lessons.voiceToneHint);
 });
 
-test("zmiana konfiguracji lektora przy „Nagraj ponownie” karty daje polski komunikat", async ({ page }) => {
+test("„Posłuchaj poprzedniego” odtwarza poprzednie ujęcie, gdy nowe się nagrywa", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  const calls = await openLesson(page, { cardRegenerateConflict: true });
+  await page.addInitScript(() => {
+    const played: string[] = [];
+    (window as unknown as { __played: string[] }).__played = played;
+    HTMLMediaElement.prototype.play = function play(this: HTMLMediaElement) {
+      played.push(this.src);
+      return Promise.resolve();
+    };
+  });
+  await openLesson(page);
+  await page.getByTestId("exercise-prompt-audio-1-listen-previous").click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __played: string[] }).__played))
+    .toEqual([expect.stringContaining(`/api/v1/media/${uuid(92)}`)]);
+});
+
+test("błąd „Nagraj ponownie” karty znika, gdy zmieni się stan nagrania", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const calls = await openLesson(page, { cardRegenerateFails: true });
   await page.getByTestId(`lesson-card-audio-${OBJ}-1-regenerate`).click();
-  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toHaveText(messages.lessons.promptAudioConfigChanged);
+  await expect.poll(() => calls.requests.some((request) => request.path.endsWith("/card-audio/regenerate"))).toBe(true);
   const call = calls.requests.find((request) => request.path.endsWith("/card-audio/regenerate"))!;
   expect(call.body).toMatchObject({ objectiveId: OBJ, cardIndex: 1 });
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toBeVisible();
+  // Odpytywanie (trwa przez nagrywające się pytanie) przynosi nowy stan karty i czyści błąd.
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-pending`)).toBeVisible();
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toHaveCount(0);
 });
 
 test("telefon 320 px: ton i sterowanie nagraniami bez przepełnienia poziomego", async ({ page }) => {

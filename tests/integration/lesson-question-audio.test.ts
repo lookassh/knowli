@@ -339,8 +339,8 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     const original = await mediaAsset(row!.assetId);
     const itemRevisionId = (await readLessonDeck(active, deckId)).draft!.exercises[0]!.revisionId;
 
-    // Fingerprint i metadane pochodzą z wiersza i zasobu, nie z bieżącej konfiguracji (inny styl w env).
-    const first = await regenerateLessonPromptAudio(audioServices(styledMedia()), { lessonDraftId: versionId, itemRevisionId });
+    // Fingerprint i metadane pochodzą z wiersza i zasobu (konfiguracja bez zmian od zapisu).
+    const first = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
     expect(first.assetId).not.toBe(row!.assetId);
     expect(await mediaAsset(first.assetId)).toMatchObject({
       fingerprint: original.fingerprint, generationNumber: original.generationNumber + 1, state: "pending",
@@ -348,7 +348,9 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     });
     expect((await pool.query("select state from learning_app.generation_runs where asset_id = $1", [first.assetId])).rows).toEqual([{ state: "queued" }]);
     expect(await mediaAsset(row!.assetId)).toEqual(original);
-    expect((await readLessonDeck(active, deckId)).draft!.exercises[0]!.promptAudio).toEqual({ state: "pending" });
+    // Do gotowości nowego ujęcia panel może odtworzyć poprzednie.
+    expect((await readLessonDeck(active, deckId)).draft!.exercises[0]!.promptAudio)
+      .toEqual({ state: "pending", previousAssetId: row!.assetId });
 
     const again = await regenerateLessonPromptAudio(active, { lessonDraftId: versionId, itemRevisionId });
     expect(again.assetId).toBe(first.assetId);
@@ -361,22 +363,37 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     });
   });
 
-  it("zmiana konfiguracji TTS od ostatniej edycji → konflikt tts_config_changed bez nowego wiersza; brak ustawień mediów → internal", async () => {
+  it("zmiana konfiguracji TTS od ostatniego zapisu → uzgodnienie mediów: nagranie w bieżącej konfiguracji bez dodatkowej generacji starej; brak ustawień mediów → internal", async () => {
     const { deckId, versionId } = await seedDraft();
     await editLessonDraft(services(), versionId, { expectedEditNumber: 1, exercises: exercises() });
     const [row] = await promptAudio(versionId);
     await markReady(row!.assetId);
     const itemRevisionId = (await readLessonDeck(services(), deckId)).draft!.exercises[0]!.revisionId;
     const original = await mediaAsset(row!.assetId);
+    const switchedMedia = { ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } };
+    const switched = audioServices(switchedMedia);
 
-    const switched = audioServices({ ...MEDIA, tts: { ...MEDIA.tts, provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15" } });
-    await expect(regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId }))
-      .rejects.toMatchObject({ code: "conflict", message: "tts_config_changed" });
+    const result = await regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId });
+    const fresh = await mediaAsset(result.assetId);
+    expect(fresh).toMatchObject({ state: "pending", provider: "openrouter", model: "openai/gpt-4o-mini-tts-2025-12-15", generationNumber: 1 });
+    expect(fresh.fingerprint).not.toBe(original.fingerprint);
+    const [moved] = await promptAudio(versionId);
+    expect(moved!.assetId).toBe(result.assetId);
     expect(await generationsOf(original.fingerprint)).toHaveLength(1);
+    expect(await mediaAsset(row!.assetId)).toEqual(original);
+
+    // Kolejne kliknięcie w tej samej konfiguracji: trwające nagranie, bez nowego wiersza.
+    expect((await regenerateLessonPromptAudio(switched, { lessonDraftId: versionId, itemRevisionId })).assetId).toBe(result.assetId);
+    expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
+
+    // Zmiana samego stylu (provider i model te same) też uzgadnia nagranie.
+    await markReady(result.assetId);
+    const styled = await regenerateLessonPromptAudio(audioServices({ ...switchedMedia, tts: { ...switchedMedia.tts, style: "instructions" } }), { lessonDraftId: versionId, itemRevisionId });
+    expect((await mediaAsset(styled.assetId)).fingerprint).not.toBe(fresh.fingerprint);
+    expect(await generationsOf(fresh.fingerprint)).toHaveLength(1);
 
     await expect(regenerateLessonPromptAudio(createServices({ db, clock: new ManualClock() }), { lessonDraftId: versionId, itemRevisionId }))
       .rejects.toMatchObject({ code: "internal" });
-    expect(await generationsOf(original.fingerprint)).toHaveLength(1);
   });
 
   it("nieznana rewizja albo szkic → not_found; rewizja bez nagrania pytania → not_found", async () => {

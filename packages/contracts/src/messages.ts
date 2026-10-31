@@ -902,7 +902,7 @@ export const messages = {
     promptAudioRegenerate: "Nagraj ponownie",
     promptAudioPending: "Nagrywanie…",
     promptAudioFailed: "Nie udało się nagrać.",
-    promptAudioConfigChanged: "Ustawienia lektora się zmieniły. Zapisz szkic, aby nagrać w nowej konfiguracji.",
+    promptAudioListenPrevious: "Posłuchaj poprzedniego",
     addRequiredElement: "Dodaj element",
     removeRequiredElement: "Usuń element",
     supplementaryLabel: "Elementy uzupełniające (każdy w osobnym wierszu)",

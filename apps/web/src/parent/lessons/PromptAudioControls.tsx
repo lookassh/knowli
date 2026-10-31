@@ -1,10 +1,10 @@
 "use client";
 
 import { Button, Group, NativeSelect, Text } from "@mantine/core";
+import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LessonVoiceToneSchema, messages, type LessonPromptAudioDto, type LessonVoiceTone } from "@learning/contracts";
-import { ORPCError } from "@orpc/client";
-import { ApiCallError, errorMessage } from "../api";
+import { errorMessage } from "../api";
 import { ParentIcon } from "../ParentIcon";
 import { orpc } from "../query-client";
 
@@ -42,15 +42,6 @@ export function VoiceToneSelect({ value, disabled, testId, hint = messages.lesso
   );
 }
 
-/**
- * „Nagraj ponownie” odrzucone konfliktem: od ostatniego zapisu szkicu zmieniła
- * się konfiguracja TTS (`tts_config_changed`) — to jedyny konflikt tej operacji.
- */
-export function isTtsConfigChangedError(error: unknown): boolean {
-  return (error instanceof ORPCError && error.code === "conflict")
-    || (error instanceof ApiCallError && error.code === "conflict");
-}
-
 /** Nagranie, którego dotyczą przyciski: pytanie ćwiczenia albo karta zagadnienia. */
 export type PromptAudioTarget =
   | { kind: "prompt"; itemRevisionId: string }
@@ -59,7 +50,8 @@ export type PromptAudioTarget =
 /**
  * Odsłuch i „Nagraj ponownie” nagrania pytania lub karty (spec tonu TTS §4.5).
  * `ready` → „Posłuchaj” + „Nagraj ponownie”; `failed` → komunikat + „Nagraj
- * ponownie”; `pending` → „Nagrywanie…”. Nowe nagranie tylko w szkicu i bez
+ * ponownie”; `pending` → „Nagrywanie…” i „Posłuchaj poprzedniego”, gdy jest
+ * poprzednie gotowe ujęcie (gra ono, dopóki nowe się nagrywa). Nowe nagranie tylko w szkicu i bez
  * niezapisanych zmian (`locked`) — serwer generuje je z zapisanego tekstu
  * i tonu. Po sukcesie odświeżamy odczyt lekcji; dopóki nagranie jest
  * `pending`, edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…”
@@ -81,6 +73,14 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
   const promptMutation = useMutation(orpc.lessonDrafts.regeneratePromptAudio.mutationOptions({ onSuccess: refresh }));
   const cardMutation = useMutation(orpc.lessonDrafts.regenerateCardAudio.mutationOptions({ onSuccess: refresh }));
   const mutation = target.kind === "prompt" ? promptMutation : cardMutation;
+  // Błąd dotyczy nagrania sprzed zmiany: gdy stan nagrania się zmieni (zapis szkicu,
+  // odpytywanie), komunikat znika zamiast wisieć obok nowego stanu.
+  const { reset: resetPrompt } = promptMutation;
+  const { reset: resetCard } = cardMutation;
+  useEffect(() => {
+    resetPrompt();
+    resetCard();
+  }, [audio.state, audio.assetId, resetPrompt, resetCard]);
 
   const regenerate = () => {
     if (target.kind === "prompt") promptMutation.mutate({ lessonDraftId, itemRevisionId: target.itemRevisionId });
@@ -91,6 +91,12 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
     <Group gap="xs" align="center" data-testid={testId} data-audio-state={audio.state}>
       {audio.state === "pending" && (
         <Text size="sm" className="pp-editor-muted" role="status" data-testid={`${testId}-pending`}>{messages.lessons.promptAudioPending}</Text>
+      )}
+      {audio.state === "pending" && audio.previousAssetId && (
+        <Button size="md" variant="light" leftSection={<ParentIcon name="volume" />} data-testid={`${testId}-listen-previous`}
+          onClick={() => onPlay(audio.previousAssetId!)}>
+          {messages.lessons.promptAudioListenPrevious}
+        </Button>
       )}
       {audio.state === "failed" && (
         <Text size="sm" c="red" role="status" data-testid={`${testId}-failed`}>{messages.lessons.promptAudioFailed}</Text>
@@ -109,7 +115,7 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
       )}
       {mutation.isError && (
         <Text size="sm" c="red" role="alert" data-testid={`${testId}-error`}>
-          {isTtsConfigChangedError(mutation.error) ? messages.lessons.promptAudioConfigChanged : errorMessage(mutation.error)}
+          {errorMessage(mutation.error)}
         </Text>
       )}
     </Group>
