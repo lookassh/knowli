@@ -336,9 +336,9 @@ describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", 
     const { deckId, versionId } = await seedDraft();
     await editLessonDraft(active, versionId, { expectedEditNumber: 1, exercises: exercises() });
     const [row] = await promptAudio(versionId);
-    await markReady(row!.assetId);
-    // Długość dopisuje worker po nagraniu — nie może przejść na nowe ujęcie.
+    // Długość dopisuje worker przy nagraniu (gotowy zasób jest niezmienny) — nie może przejść na nowe ujęcie.
     await pool.query(`update learning_app.media_assets set metadata = metadata || '{"durationMs": 1234}' where id = $1`, [row!.assetId]);
+    await markReady(row!.assetId);
     const original = await mediaAsset(row!.assetId);
     const itemRevisionId = (await readLessonDeck(active, deckId)).draft!.exercises[0]!.revisionId;
 
