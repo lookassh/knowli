@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createChild, createServices, editLessonDraft, publishLessonDraft, type SubjectRegistry } from "@learning/server";
-import type { LessonExerciseInput } from "@learning/contracts";
+import type { LessonExerciseInput, LessonVoiceTone } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 
 /**
@@ -40,7 +40,7 @@ export interface SeedObjective {
   id: string;
   titlePl: string;
   descriptionEn: string;
-  cards: { title: string; body: string }[];
+  cards: { title: string; body: string; voiceTone?: LessonVoiceTone }[];
 }
 
 const shared = { objectiveId: SPIDER_OBJECTIVE, acceptedAnswers: [], sourceRefs: [{ quote: "Pająk ma osiem nóg i nie jest owadem." }] };
@@ -108,6 +108,41 @@ export async function publishAssignedSpiderLesson(
   await publishLessonDraft(active, draft.versionId, edited.editNumber);
   await pool.query("insert into learning_app.assignments (id,child_id,deck_id,test_date,test_goals) values ($1,$2,$3,CURRENT_DATE + 7,ARRAY['lesson'])", [randomUUID(), child.id, draft.deckId]);
   return { active, child, ...draft };
+}
+
+/** Wiersz zasobu do sprawdzeń niezmienności i kolejnych generacji. */
+export interface MediaAssetRow {
+  id: string; fingerprint: string; generationNumber: number; state: string; storageKey: string | null;
+  provider: string; model: string; metadata: Record<string, unknown>;
+}
+
+export async function mediaAsset(assetId: string): Promise<MediaAssetRow> {
+  return (await pool.query<MediaAssetRow>(
+    `select id, fingerprint, generation_number as "generationNumber", state, storage_key as "storageKey", provider, model, metadata
+       from learning_app.media_assets where id = $1`,
+    [assetId],
+  )).rows[0]!;
+}
+
+export async function generationsOf(fingerprint: string): Promise<MediaAssetRow[]> {
+  return (await pool.query<MediaAssetRow>(
+    `select id, fingerprint, generation_number as "generationNumber", state, storage_key as "storageKey", provider, model, metadata
+       from learning_app.media_assets where fingerprint = $1 order by generation_number`,
+    [fingerprint],
+  )).rows;
+}
+
+/** Dokłada kolejną generację fingerprintu zasobu w podanym stanie (jak worker po ponownym nagraniu). */
+export async function addGeneration(assetId: string, state: "pending" | "failed"): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `insert into learning_app.media_assets (id, kind, fingerprint, generation_number, state, provider, model, metadata)
+     select $2, kind, fingerprint, (select max(generation_number) + 1 from learning_app.media_assets m where m.fingerprint = a.fingerprint),
+            $3, provider, model, metadata
+       from learning_app.media_assets a where id = $1`,
+    [assetId, id, state],
+  );
+  return id;
 }
 
 /** Zastępuje workera: gotowy, niezmienny zasób (bajty nieistotne dla wydania zadania). */

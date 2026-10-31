@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LessonVoiceToneSchema, type LessonVoiceTone } from "@learning/contracts";
 import { ttsInstructionsFor } from "../config";
 import type { TtsRoleStyle } from "../domain/tts-style";
 import { fakeMediaSettings } from "./fake";
@@ -51,7 +52,9 @@ describe("ttsRequestInstructions", () => {
   });
 
   it("składa tekst dla każdego stylu roli", () => {
-    const roles = Object.keys(STYLE_SENTENCES_PL) as TtsRoleStyle[];
+    const roles: TtsRoleStyle[] = [
+      "ui_praise", "ui_gentle", "ui_guidance", "ui_closing", "lesson_question", "lesson_card",
+    ];
     expect(Object.fromEntries(roles.map((role) => [role, ttsRequestInstructions(styled, "pl-PL", role)]))).toMatchInlineSnapshot(`
       {
         "lesson_card": "Mów po polsku, z polską wymową. Przeczytaj jak ciepły nauczyciel, który opowiada, spokojnym tempem.",
@@ -60,6 +63,32 @@ describe("ttsRequestInstructions", () => {
         "ui_gentle": "Mów po polsku, z polską wymową. Powiedz ciepło i spokojnie, bez rozczarowania w głosie.",
         "ui_guidance": "Mów po polsku, z polską wymową. Powiedz przyjaźnie i zachęcająco, wyraźnie.",
         "ui_praise": "Mów po polsku, z polską wymową. Powiedz radośnie, z uśmiechem w głosie, jak do ośmiolatka.",
+      }
+    `);
+  });
+
+  it("kończy instrukcję zdaniem tonu ze specyfikacji dla każdego tonu lekcji", () => {
+    const expected: Record<LessonVoiceTone, string> = {
+      cheerful: "Przeczytaj radośnie, z entuzjazmem i uśmiechem w głosie, wyraźnie.",
+      curious: "Przeczytaj z wyraźną ciekawością, pytająco, jakbyś zapraszał do zgadywania.",
+      gentle: "Przeczytaj bardzo łagodnie i wolniej, ciepłym, kojącym głosem.",
+      mysterious: "Pierwsze zdanie powiedz szeptem, jak sekret; resztę tajemniczo, ale wyraźnie i spokojnie.",
+    };
+    for (const tone of Object.keys(expected) as LessonVoiceTone[]) {
+      const instructions = ttsRequestInstructions(styled, "pl-PL", tone);
+      expect(instructions).toBe(`${LANGUAGE} ${expected[tone]}`);
+      expect(instructions?.endsWith(expected[tone])).toBe(true);
+    }
+  });
+
+  it("składa tekst dla każdego tonu lekcji", () => {
+    const tones = LessonVoiceToneSchema.options;
+    expect(Object.fromEntries(tones.map((tone) => [tone, ttsRequestInstructions(styled, "pl-PL", tone)]))).toMatchInlineSnapshot(`
+      {
+        "cheerful": "Mów po polsku, z polską wymową. Przeczytaj radośnie, z entuzjazmem i uśmiechem w głosie, wyraźnie.",
+        "curious": "Mów po polsku, z polską wymową. Przeczytaj z wyraźną ciekawością, pytająco, jakbyś zapraszał do zgadywania.",
+        "gentle": "Mów po polsku, z polską wymową. Przeczytaj bardzo łagodnie i wolniej, ciepłym, kojącym głosem.",
+        "mysterious": "Mów po polsku, z polską wymową. Pierwsze zdanie powiedz szeptem, jak sekret; resztę tajemniczo, ale wyraźnie i spokojnie.",
       }
     `);
   });

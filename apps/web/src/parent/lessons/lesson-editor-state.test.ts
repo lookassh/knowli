@@ -12,6 +12,7 @@ import {
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
+  lessonSubjectHasVoiceTones,
   nextGroupId,
   nextRequiredElementId,
   stageOfExerciseType,
@@ -463,6 +464,74 @@ describe("calculation editor", () => {
     const variants = [ex, { ...ex, clientKey: "variant-2" }, { ...ex, clientKey: "other-objective", objectiveId: "other" }];
     expect(groupCalculationFamilies(variants).map(g => g.exercises.length)).toEqual([2, 1]);
     expect(groupCalculationFamilies(variants.filter(e => e.clientKey !== ex.clientKey)).map(g => g.exercises.length)).toEqual([1, 1]);
+  });
+});
+
+describe("ton lektora (voiceTone)", () => {
+  const withTone = () => {
+    const base = draft();
+    base.exercises[0]!.voiceTone = "curious";
+    base.exercises[0]!.promptAudio = { state: "ready", assetId: "00000000-0000-4000-8000-0000000000aa" };
+    return base;
+  };
+
+  it("carries the exercise tone through the form into the patch and never sends promptAudio", () => {
+    const snapshot = createLessonSnapshot(withTone(), () => "unused");
+    expect(snapshot.form.exercises[0]!.voiceTone).toBe("curious");
+    const patch = toLessonDraftPatch(snapshot);
+    expect(patch.exercises![0]!.voiceTone).toBe("curious");
+    expect(patch.exercises![1]).not.toHaveProperty("voiceTone");
+    expect(JSON.stringify(patch)).not.toContain("promptAudio");
+  });
+
+  it("drops the tone from the patch when the parent picks the default", () => {
+    const snapshot = createLessonSnapshot(withTone(), () => "unused");
+    snapshot.form.exercises[0]!.voiceTone = undefined;
+    expect(toLessonDraftPatch(snapshot).exercises![0]).not.toHaveProperty("voiceTone");
+  });
+
+  it("treats a tone-only edit as a change of the exercise", () => {
+    const base = createLessonSnapshot(draft(), () => "unused").form.exercises[0]!;
+    const edited = { ...base, voiceTone: "gentle" as const };
+    expect(lessonExerciseChanged(edited, base)).toBe(true);
+    expect(lessonExerciseChanged(base, base)).toBe(false);
+  });
+
+  const dynamicDraft = () => draft({
+    dynamicTopic: {
+      titlePl: "Rzeki",
+      objectives: [{
+        id: "o1",
+        titlePl: "Rzeki Polski",
+        cards: [
+          { title: "Wisła", body: "Najdłuższa rzeka.", voiceTone: "mysterious" },
+          { title: "Odra", body: "Druga rzeka." },
+        ],
+      }],
+    },
+    cardAudio: [{ objectiveId: "o1", cardIndex: 0, audio: { state: "ready", assetId: "00000000-0000-4000-8000-0000000000bb" } }],
+  });
+
+  it("carries card tones through the form into the patch without card audio", () => {
+    const snapshot = createLessonSnapshot(dynamicDraft(), () => "unused");
+    expect(snapshot.form.dynamicObjectives![0]!.cards[0]!.voiceTone).toBe("mysterious");
+    const cards = toLessonDraftPatch(snapshot).dynamicTopic!.objectives[0]!.cards;
+    expect(cards[0]).toEqual({ title: "Wisła", body: "Najdłuższa rzeka.", voiceTone: "mysterious" });
+    expect(cards[1]).toEqual({ title: "Odra", body: "Druga rzeka." });
+    expect(JSON.stringify(cards)).not.toContain("audio");
+  });
+
+  it("removes a card tone from the patch when the parent picks the default", () => {
+    const snapshot = createLessonSnapshot(dynamicDraft(), () => "unused");
+    const card = snapshot.form.dynamicObjectives![0]!.cards[0]!;
+    snapshot.form.dynamicObjectives![0]!.cards[0] = { title: card.title, body: card.body };
+    expect(toLessonDraftPatch(snapshot).dynamicTopic!.objectives[0]!.cards[0]).not.toHaveProperty("voiceTone");
+  });
+
+  it("knows which subjects record questions", () => {
+    expect(lessonSubjectHasVoiceTones("school")).toBe(true);
+    expect(lessonSubjectHasVoiceTones("english_grammar")).toBe(false);
+    expect(lessonSubjectHasVoiceTones(undefined)).toBe(false);
   });
 });
 

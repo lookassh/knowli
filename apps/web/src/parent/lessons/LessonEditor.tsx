@@ -22,6 +22,7 @@ import { orpc } from "../query-client";
 import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import LessonExerciseCard, { type CalculationControls } from "./LessonExerciseCard";
 import ArchiveLessonDialog from "./ArchiveLessonDialog";
+import PromptAudioControls, { VoiceToneSelect } from "./PromptAudioControls";
 import { EditorActionBar, EditorAssignments, EditorErrorText } from "../EditorAssignments";
 import { ParentIcon } from "../ParentIcon";
 import { runOnce } from "../run-once";
@@ -37,9 +38,11 @@ import {
   groupExercisesByObjectiveAndStage,
   keywordsAnswerOf,
   lessonExerciseChanged,
+  lessonSubjectHasVoiceTones,
   nextRequiredElementId,
   toLessonDraftPatch,
   topRejectedReasons,
+  type EditableDynamicCard,
   type EditableLessonExercise,
   type EditableLessonForm,
   type LessonEditorSnapshot,
@@ -57,13 +60,21 @@ export function regenCountValid(count: number): boolean {
   return Number.isInteger(count) && count >= 1 && count <= 60;
 }
 
-/** Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają. */
+/**
+ * Odstęp odpytywania lekcji: co 1 s, gdy trwa generowanie albo media pokazanej wersji czekają;
+ * co 3 s, gdy czekają tylko nagrania pytań i kart (trwają kilka sekund, a zlecenie, którego worker
+ * nie wykona, nie powinno obciążać serwera odpytywaniem co sekundę).
+ */
 export function lessonPollInterval(deck: LessonDeckDto | undefined): number | false {
   if (!deck) return false;
   const generating = deck.generation?.state === "queued" || deck.generation?.state === "running";
   const visible = deck.draft ?? deck.published;
   const assetsPending = visible?.assets.some((asset) => asset.state === "pending") ?? false;
-  return generating || assetsPending ? 1000 : false;
+  // nagrania pytań i kart nie są w `assets` (serwer je pomija) — ich stan niosą ćwiczenia i `cardAudio`
+  const promptAudioPending = visible?.exercises.some((exercise) => exercise.promptAudio?.state === "pending") ?? false;
+  const cardAudioPending = visible?.cardAudio?.some((card) => card.audio.state === "pending") ?? false;
+  if (generating || assetsPending) return 1000;
+  return promptAudioPending || cardAudioPending ? 3000 : false;
 }
 
 /**
@@ -339,7 +350,7 @@ export default function LessonEditor({
     );
   };
 
-  const mutateDynamicObjective = (objectiveId: string, patch: Partial<{ titlePl: string; cards: { title: string; body: string }[] }>) => {
+  const mutateDynamicObjective = (objectiveId: string, patch: Partial<{ titlePl: string; cards: EditableDynamicCard[] }>) => {
     markDirty();
     setForm((current) =>
       current?.dynamicObjectives
@@ -558,8 +569,13 @@ export default function LessonEditor({
     }
   };
 
+  // jedno odtwarzanie naraz (target_audio, nagrania pytań i kart); odmontowanie edytora je zatrzymuje
+  const playing = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => { playing.current?.pause(); }, []);
   const playAsset = (assetId: string) => {
+    playing.current?.pause();
     const audio = new Audio(`/api/v1/media/${assetId}`);
+    playing.current = audio;
     void audio.play().catch(() => undefined);
   };
 
@@ -700,6 +716,8 @@ export default function LessonEditor({
     const baseRevisionId = active?.exercises.find((e) => e.id === ex.id)?.revisionId ?? "";
     const savedAudio = active?.assets.find((a) => a.itemRevisionId === baseRevisionId && a.role === "target_audio") ?? null;
     const asset = unchanged ? savedAudio : null;
+    // nagranie pytania: tak samo tylko dla ćwiczenia bez zmian od zapisu (zmiana tekstu lub tonu unieważnia nagranie)
+    const promptAudio = unchanged ? active?.exercises.find((e) => e.id === ex.id)?.promptAudio ?? null : null;
     return (
       <LessonExerciseCard
         key={ex.clientKey}
@@ -712,10 +730,33 @@ export default function LessonEditor({
         hadAudio={savedAudio !== null}
         errors={errors}
         audio={asset ? { state: asset.state, assetId: asset.assetId ?? null } : null}
+        voiceToneEnabled={lessonSubjectHasVoiceTones(active?.subjectId)}
+        promptAudio={promptAudio}
+        lessonDraftId={active?.id ?? ""}
+        deckId={deckId}
+        itemRevisionId={baseRevisionId}
+        audioLocked={promptAudio !== null && isDirty}
         calculation={calculationControls(ex)}
         {...cardActions}
       />
     );
+  };
+
+  /**
+   * Nagranie karty zagadnienia: tylko dla karty bez zmian od zapisu (tytuł, treść, ton i przykłady
+   * zagadnienia — czytany tekst karty je obejmuje) i tylko gdy zapis ma dla niej wpis.
+   */
+  const cardAudio = (objectiveId: string, cardIndex: number) => {
+    const entry = active?.cardAudio?.find((candidate) => candidate.objectiveId === objectiveId && candidate.cardIndex === cardIndex);
+    if (!entry) return null;
+    if (editable) {
+      const saved = baseSnapshot.current?.form.dynamicObjectives?.find((o) => o.id === objectiveId)?.cards[cardIndex];
+      const current = form?.dynamicObjectives?.find((o) => o.id === objectiveId)?.cards[cardIndex];
+      const same = (a: EditableDynamicCard) => JSON.stringify([a.title, a.body, a.voiceTone ?? null]);
+      if (!saved || !current || same(saved) !== same(current)) return null;
+      if (JSON.stringify(examplesForm?.[objectiveId] ?? draft?.examples?.[objectiveId] ?? []) !== JSON.stringify(draft?.examples?.[objectiveId] ?? [])) return null;
+    }
+    return entry.audio;
   };
 
   /** Karta wyjaśnienia reguły z edytowalnymi przykładami (wym. 3.3) — na początku grupy reguły. */
@@ -737,8 +778,16 @@ export default function LessonEditor({
               </Button>
             </Group>
           )}
-          {objectiveMeta(objectiveId)?.cards.map((card, cardIndex) => (
+          {objectiveMeta(objectiveId)?.cards.map((card, cardIndex) => {
+            const audio = cardAudio(objectiveId, cardIndex);
+            return (
             <article key={cardIndex} className="pp-lesson-card" data-testid={`lesson-card-preview-${objectiveId}`}>
+              {audio && (
+                <div className="pp-lesson-prompt-audio">
+                  <PromptAudioControls audio={audio} target={{ kind: "card", objectiveId, cardIndex }} lessonDraftId={active?.id ?? ""} deckId={deckId}
+                    canRegenerate={editable} locked={busy || isDirty} testId={`lesson-card-audio-${objectiveId}-${cardIndex}`} onPlay={playAsset} />
+                </div>
+              )}
               {dynamic ? (
                 <Stack gap="xs">
                   <TextInput size="md" data-testid={`dynamic-card-title-${objectiveId}-${cardIndex}`} value={card.title} disabled={busy}
@@ -753,6 +802,12 @@ export default function LessonEditor({
                       const body = e.currentTarget.value;
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, body } : c)) });
                     }} />
+                  {lessonSubjectHasVoiceTones(active?.subjectId) && (
+                    <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} whisper testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
+                      onChange={(voiceTone) => {
+                        mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { title: c.title, body: c.body, ...(voiceTone ? { voiceTone } : {}) } : c)) });
+                      }} />
+                  )}
                 </Stack>
               ) : (
                 <>
@@ -762,7 +817,8 @@ export default function LessonEditor({
               )}
               <ul className="pp-lesson-examples">{lines.map((line, i) => line.trim() && <li key={i}>{line.trim()}</li>)}</ul>
             </article>
-          ))}
+            );
+          })}
           {!dynamic && <Text size="sm" className="pp-editor-muted">{messages.lessons.exampleHint}</Text>}
           {editable ? (
             <Stack gap="xs">

@@ -51,6 +51,7 @@ export const MOCKED_SPECS: readonly string[] = [
   "parent-children.spec.ts",
   "parent-deck-editor-layout.spec.ts",
   "parent-lesson-editor-layout.spec.ts",
+  "parent-lesson-voice-tone.spec.ts",
   "parent-lessons-layout.spec.ts",
   "parent-progress-layout.spec.ts",
   "parent-shell-layout.spec.ts",
