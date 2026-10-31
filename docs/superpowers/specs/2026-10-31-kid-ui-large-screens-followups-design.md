@@ -132,4 +132,5 @@ Istniejące testy, które zmieniają oczekiwania (każda zmiana uzasadniona w ra
 - **Odstęp może ustąpić w chwili werdyktu** w prawie pełnej ramie — odpowiedzi przesuwają się wtedy w górę (najwyżej o 90 px wewnętrznych) zamiast chować koniec materiału.
 - **Zwarty układ jako kolumna flex** zastępuje siatkę z #200 (równoważne rozmieszczenie bez odstępu) — pokrywają go istniejące testy zwartego układu (#200: brak pustego pasa, odpowiedzi bez przesunięcia, rezerwa `overlay`, długa karta lekcji) i nowe testy odstępu.
 - **Tablet dotykowy 960+ × 480–780** dostaje zwarty układ bez klawiatury (§3.5).
+- **Pierwsza zakładka 1–8 px bez korekty** (sprzed tej zmiany): gdy panel w zwykłym układzie od razu zachodzi na treść o 1–8 px, rezerwa się włącza, ale przewinięcie korygujące działa dopiero od progu 8 px — do 8 px treści może zostać pod panelem. Kryterium „≤ 1 px po ustaleniu” z §1 dotyczy przypadków z korektą; zmiana progu wymaga osobnej decyzji.
 - **`flushSync` w `ResizeObserver`** wymusza synchroniczny commit przy zmianie rozmiaru z panelem — raz na zmianę, koszt pomijalny.
