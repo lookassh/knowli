@@ -12,7 +12,7 @@ import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
 import { assignmentAttempt, lessonTaskFixture, openLessonTask } from "./helpers/lesson-assignment-task";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
-import { fourPictureTilesFixture, openPictureChoice } from "./helpers/picture-fixtures";
+import { fourPictureTilesFixture, openPictureChoice, wrongThenCorrectAttempts } from "./helpers/picture-fixtures";
 
 // The screenshot tests at the end (describe "screenshots") are skipped unless UMIEM_E2E_SCREENSHOTS is set. They attach
 // PNGs as test attachments (body, not a file path). The list and github reporters do not save body attachments; to
@@ -288,8 +288,11 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
     // --visual-choice-size: the cap, half the material width, or the material height shared by two rows (never below 112).
     const { limit } = pictureTileLimit(before.container);
     if (width === ULTRAWIDE.width) {
-      // The material is tall and wide enough here, so only the cap can decide: 300 x 1.6 = 480, not 260 x 1.6 = 416.
-      expect(limit, `material allows the full cap: ${JSON.stringify(before.container)}`).toBe(VISUAL_CHOICE_MAX);
+      // The material is wide here, but the footer reserve for the result panel (spec 2026-10-31 §3.1) makes its height
+      // decide: about 295 px, a few px under the 300 cap, because tiles that keep their size at the verdict win over the
+      // cap. They stay well above the old 260 px cap: 290 x 1.6 = 464, not 260 x 1.6 = 416.
+      expect(limit, `material allows nearly the full cap: ${JSON.stringify(before.container)}`).toBeGreaterThanOrEqual(290);
+      expect(limit, `tiles stay under the cap: ${JSON.stringify(before.container)}`).toBeLessThanOrEqual(VISUAL_CHOICE_MAX);
     }
     for (const [index, tile] of before.tiles.entries()) {
       expect(Math.abs(tile.width - limit * scale), `tile ${index} width: ${JSON.stringify({ tile, limit, scale })}`).toBeLessThanOrEqual(2);
@@ -303,6 +306,82 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
 
     const after = await pictureTiles(page);
     expectRectsUnchanged(before.tiles, after.tiles, "picture tile after the verdict");
+  });
+}
+
+// Picture choice reserves the height of the result panel in its footer from the start (spec 2026-10-31 §3.1), so a verdict
+// does not shorten the material row and the tiles keep their size and place through a wrong verdict, a retry and a
+// right verdict. `bound`: the material height limits the tiles after the wrong verdict (otherwise the width or the cap
+// decides, and a panel cannot shrink them); that is where the panel used to shrink them. The audio notice takes ~87 inner px
+// of the material. 3440x1440 without the notice keeps constant tiles over the 300 cap (`minTile`: but not under 290 px).
+// 844x390 is a very short window: no reserve, the empty footer is hidden.
+interface PictureVerdictWindow {
+  viewport: Viewport; scale: number; bound: boolean; notice?: boolean; minTile?: number; rootFont?: string; veryShort?: boolean;
+}
+const PICTURE_VERDICT_WINDOWS: PictureVerdictWindow[] = [
+  { viewport: LAPTOP, scale: 1, bound: true },
+  { viewport: SMALL_LAPTOP, scale: 1, bound: true },
+  { viewport: ULTRAWIDE, scale: 1.6, bound: true, notice: true },
+  { viewport: ULTRAWIDE, scale: 1.6, bound: true, minTile: 290 },
+  { viewport: PHONE, scale: 1, bound: false },
+  { viewport: LAPTOP, scale: 1, bound: true, rootFont: "125%" },
+  { viewport: { width: 844, height: 390 }, scale: 1, bound: false, veryShort: true },
+];
+
+for (const { viewport, scale, bound, notice = false, minTile = 0, rootFont, veryShort = false } of PICTURE_VERDICT_WINDOWS) {
+  const label = `${viewport.width}x${viewport.height}${notice ? " with the audio notice" : ""}${rootFont ? ` at ${rootFont} root font` : ""}`;
+
+  test(`picture tiles keep their size and place through every verdict at ${label}`, async ({ page }) => {
+    const fixture = fourPictureTilesFixture();
+    fixture.attempts = wrongThenCorrectAttempts(fixture, "Kolor 1");
+    await page.setViewportSize(viewport);
+    // No `uiAudio` in the fixture: the media stub answers the instruction recording with an SVG, which cannot be decoded,
+    // so it fails and the notice appears (the silent WAV stub of `openPictureChoice` keeps it away).
+    await openPictureChoice(page, fixture, { stubInstructionAudio: !notice });
+    if (rootFont) await page.addStyleTag({ content: `html { font-size: ${rootFont}; }` });
+    await expect(page.getByTestId("kid-option")).toHaveCount(4);
+    await waitForKidScale(page, scale);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await expect(page.getByTestId("kid-task-audio-error")).toHaveCount(notice ? 1 : 0);
+    await nextFrames(page);
+
+    if (veryShort) {
+      const footer = await page.getByTestId("kid-exercise-actions").evaluate((element) =>
+        ({ height: element.getBoundingClientRect().height, display: getComputedStyle(element).display }));
+      expect(footer.height === 0 || footer.display === "none", `the empty footer takes no room: ${JSON.stringify(footer)}`).toBe(true);
+      expect((await documentOverflow(page)).width, "no horizontal overflow").toBeLessThanOrEqual(0);
+      return;
+    }
+
+    const dock = page.getByTestId("kid-feedback-dock");
+    const before = await pictureTiles(page);
+    await page.getByTestId("kid-option").first().click();
+    // Every panel has the voice hint button (48 px), which is part of what the footer reserve is made of.
+    await expect(dock.getByTestId("kid-guidance-play")).toBeVisible();
+    await nextFrames(page);
+    const afterIncorrect = await pictureTiles(page);
+    if (bound) {
+      // Without this the equality below proves nothing: tiles that the width decides cannot be shrunk by the panel.
+      expect(pictureTileLimit(afterIncorrect.container).heightBound, `tiles bound by the height: ${JSON.stringify(afterIncorrect.container)}`).toBe(true);
+    }
+
+    await dock.getByTestId("kid-next").click();
+    await expect(dock).toHaveCount(0);
+    await nextFrames(page);
+    const afterRetry = await pictureTiles(page);
+
+    await page.getByTestId("kid-option").first().click();
+    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+    await expect(dock.getByTestId("kid-next")).toBeVisible();
+    await nextFrames(page);
+    const afterCorrect = await pictureTiles(page);
+
+    expectRectsUnchanged(before.tiles, afterIncorrect.tiles, `${label}: tile after the wrong verdict`);
+    expectRectsUnchanged(before.tiles, afterRetry.tiles, `${label}: tile after the retry`);
+    expectRectsUnchanged(before.tiles, afterCorrect.tiles, `${label}: tile after the right verdict`);
+    for (const [index, tile] of before.tiles.entries()) {
+      expect(tile.width / scale, `tile ${index} inner width: ${JSON.stringify({ tile, scale })}`).toBeGreaterThanOrEqual(minTile);
+    }
   });
 }
 

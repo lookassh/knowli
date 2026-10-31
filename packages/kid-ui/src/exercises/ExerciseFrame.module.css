@@ -106,6 +106,21 @@
   grid-template-rows: auto minmax(var(--kid-visual-choice-min-size), 1fr) auto;
 }
 
+/* Wybór obrazków od 600 px: stopka od początku ma wysokość panelu wyniku
+   (spec 2026-10-31 §3.1), więc werdykt nie skraca wiersza materiału, a kafelki
+   (`100cqh`) zachowują rozmiar i miejsce przed werdyktem, po błędnym, po ponownej
+   próbie i po poprawnym. Pusta stopka stoi jako pas w kolorze tła; panel wyższy
+   niż token zmniejsza kafelki tylko o nadwyżkę. 12px to padding stopki (8 + 4).
+   Specyficzność 0,7,0 wygrywa z `.actions:empty` (0,4,0). Bez rezerwy zostają
+   powiększenie gestem i bardzo niskie okno (przewijana strona) oraz telefon
+   (< 600 px, spec §2): tam pusta stopka nadal jest ukryta. */
+@media (min-width: 600px) {
+  :global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"])) .root[data-feedback-layout="flow"][data-prompt-kind="picture_listening"] .actions {
+    display: flex;
+    min-height: calc(var(--kid-picture-dock-height) + 12px);
+  }
+}
+
 .flowDock {
   min-width: 0;
 }

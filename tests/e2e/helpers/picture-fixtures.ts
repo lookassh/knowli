@@ -86,6 +86,16 @@ export function fourPictureTilesFixture(): KidUiFixture {
   return fixture;
 }
 
+/** A wrong first answer that keeps the task open for a retry (`correctText` names the right tile), then a right second one. */
+export function wrongThenCorrectAttempts(fixture: KidUiFixture, correctText: string): NonNullable<KidUiFixture["attempts"]> {
+  const template = fixture.attempts?.[0];
+  if (!template) throw new Error("picture fixture has no attempt to copy");
+  return [
+    { ...template, feedback: { kind: "incorrect", correctText }, taskState: "issued" },
+    { ...template, attemptId: "10000000-0000-4000-8000-000000000017", feedback: { kind: "great" }, taskState: "completed" },
+  ];
+}
+
 /**
  * Installs the fixture and walks profile -> deck -> "Gotowe" to the picture listening task. It does not set the window:
  * the caller sets the viewport first. The instruction recording `…0012` is stubbed with a silent WAV unless

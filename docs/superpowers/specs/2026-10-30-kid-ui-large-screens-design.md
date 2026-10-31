@@ -19,7 +19,7 @@ Kryteria sukcesu:
 
 Wyłącznie `packages/kid-ui` (plus testy i dokumentacja). Bez zmian Kid API, DTO, kontraktów, bazy, serwera, panelu rodzica, manifestu PWA, MCP i `SKILL.md` (brak zmian API — uzasadnienie w opisie PR). Jeden PR.
 
-Poza zakresem: osobne układy desktopowe (np. 4 obrazki w rzędzie), więcej kolumn na ekranach profili i zestawów, osobne układy dla tabletów, przełącznik rozmiaru w UI, Safari. Istniejące kurczenie kafelków obrazków na laptopie w chwili pojawienia się panelu wyniku (np. 258 → 220 px przy 125%) to zachowanie sprzed tej zmiany — osobne zadanie.
+Poza zakresem: osobne układy desktopowe (np. 4 obrazki w rzędzie), więcej kolumn na ekranach profili i zestawów, osobne układy dla tabletów, przełącznik rozmiaru w UI, Safari. Istniejące kurczenie kafelków obrazków na laptopie w chwili pojawienia się panelu wyniku (np. 258 → 220 px przy 125%) to zachowanie sprzed tej zmiany — osobne zadanie. *Adnotacja 2026-10-31: rozwiązane w `2026-10-31-kid-ui-large-screens-followups-design.md` §3.1 dla szerokości od 600 px — stopka wyboru obrazków rezerwuje wysokość panelu wyniku (`--kid-picture-dock-height`), więc kafelki mają rozmiar „po werdykcie” już przed odpowiedzią i go nie zmieniają; na 3440×1440 są stałe przy obu werdyktach i mają co najmniej 290 px wewnętrznych zamiast limitu 300 px. Telefony (< 600 px) i „Co to jest?” bez zmian.*
 
 ## 3. Zachowanie
 
@@ -27,7 +27,7 @@ Poza zakresem: osobne układy desktopowe (np. 4 obrazki w rzędzie), więcej kol
 
 - Token `--kid-column-max-width`: 560 px; przy `@media (min-width: 840px) and (min-height: 480px), (min-width: 960px)` 720 px. Warunek wysokości zostawia telefony w poziomie (np. 844×390, 915×412; telefony w poziomie mają ≤ 932 px szerokości) bez zmian. Druga gałąź (szerokość ≥ 960 przy każdej wysokości) obejmuje tablet w poziomie (≥ 1024 px szerokości): otwarta klawiatura ekranowa (`interactiveWidget: "resizes-content"`) obniża jego okno poniżej 480 px i bez tej gałęzi kolumna i kafelki kurczyłyby się przy każdym wpisywaniu (2026-10-31, po review gałęzi).
 - Używają go `.kid-learning` (sesja), `.root` w `KidScreen.module.css` (ekrany profili, zestawów, podsumowań — wspólna szerokość, bez skoku przy wejściu w sesję) i arkusz `EndSessionConfirm` (dziś `min(560px, 100%)`).
-- Token `--kid-visual-choice-max-size`: 260 px; przy tym samym warunku 300 px (zamiast literału `260px` w `--visual-choice-size`). Przy 320 px kafelki kurczyłyby się w chwili pojawienia się panelu wyniku (np. 512 → 488 px na 3440×1440); przy 300 px rozmiar jest stały.
+- Token `--kid-visual-choice-max-size`: 260 px; przy tym samym warunku 300 px (zamiast literału `260px` w `--visual-choice-size`). Przy 320 px kafelki kurczyłyby się w chwili pojawienia się panelu wyniku (np. 512 → 488 px na 3440×1440); przy 300 px rozmiar jest stały. *(Adnotacja 2026-10-31: stały tylko przy werdykcie poprawnym; panel błędnego werdyktu jest wyższy — spec 2026-10-31 §3.1 ustala stały rozmiar ≥ 290 px.)*
 - Tekst kart lekcji (`.kid-lesson-card__body` i pokrewne bloki ciągłego tekstu) dostaje `max-inline-size: 60ch`, żeby wiersz przy 720 px nie przekraczał ok. 60 znaków.
 - Ekrany pozostają jednokolumnowe. Przyjęte skutki szerszej kolumny: siatki `auto-fit` dostają kolumnę więcej (np. `.kid-lesson-group__bins` 2 → 3, `.kid-summary-stats`); tablet w poziomie (≥ 840 × ≥ 480, a od 960 px szerokości także z otwartą klawiaturą) dostaje kolumnę 720 px.
 

@@ -118,6 +118,14 @@
   .compact .actions {
     width: min(44%, 260px);
   }
+
+  /* Wybór obrazków: stopka rezerwuje `--kid-picture-dock-height` (ExerciseFrame,
+     spec 2026-10-31 §3.1), więc panel poprawnego werdyktu, niższy od błędnego,
+     dorównuje mu wysokością (treść w wierszu zostaje na środku). Bez rezerwy
+     w powiększeniu gestem i w bardzo niskim oknie — tak jak stopka. */
+  :global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"]) .kid-exercise-frame[data-prompt-kind="picture_listening"]) .compact {
+    min-height: var(--kid-picture-dock-height);
+  }
 }
 
 .compact .secondary {
