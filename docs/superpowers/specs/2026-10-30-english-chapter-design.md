@@ -1,6 +1,6 @@
 # Źródła i lekcja „Angielski — rozdział” — projekt
 
-Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; Etapy 1–3 zaimplementowane — Etap 1 (przedmiot z wklejonym materiałem) scalony jako #192, Etap 2 (źródła) na gałęzi `claude/english-chapter-2-sources`, Etap 3 (lektor po odpowiedzi) na gałęzi `claude/english-chapter-3-readback`; stan, wynik próby i odstępstwa w sekcji 10; Etap 4 czeka na osobny plan.
+Data: 2026-10-30 (wersja 2 po przeglądzie trzech krytyków — dziennik w sekcji 12). Podstawa: zestawienie typów zadań z zeszytu ćwiczeń 2. klasy (Starter, Unit 1–2) z typami ćwiczeń Umiem! oraz decyzje właściciela podjęte w rozmowie (wariant A zadań, wariant A lektora, przedmiot jako osobny `SubjectModule`, „źródło” jako osobny byt). Status: projekt zaakceptowany przez właściciela 2026-10-30; Etapy 1–4 zaimplementowane — Etap 1 (przedmiot z wklejonym materiałem) scalony jako #192, Etap 2 (źródła) na gałęzi `claude/english-chapter-2-sources`, Etap 3 (lektor po odpowiedzi) na gałęzi `claude/english-chapter-3-readback`, Etap 4 (słówka ze źródła) na gałęzi `claude/english-chapter-4-source-vocab` (plan: `docs/superpowers/plans/2026-10-31-english-chapter-stage4-source-vocabulary.md`); stan, wynik próby i odstępstwa w sekcji 10.
 
 ## 1. Cel
 
@@ -328,7 +328,7 @@ Stan: zaimplementowane w Etapie 4 (2026-10-31); ustalenia i odstępstwa od tej s
 
 - małe litery, interpunkcja i apostrofy jak w 4.4;
 - pominięte wiodące `a`/`an`/`the`/`to`;
-- skróty przez normalizator angielski;
+- skróty z zamkniętej tabeli przez normalizator angielski (`subjects/english/contractions.ts`; skrótów spoza tabeli, np. „what's”, nie rozwija);
 - prosta odmiana jak w 4.4.
 
 **Bez zmian:** ilustracje i wizualizacje deterministyczne, TTS słów, przegląd, publikacja, scheduler, umiejętności.
@@ -339,7 +339,8 @@ Stan: zaimplementowane w Etapie 4 (2026-10-31); ustalenia i odstępstwa od tej s
 - formularz: „Najwięcej słówek” 1–100, domyślnie 20 (serwer bez wartości w poleceniu nadal przyjmuje 50); nazwa domyślnie tytuł źródła, a pusta albo z samych białych znaków daje tytuł źródła także po stronie serwera;
 - słówko z tekstu: `target` jest frazą z tekstu (normalizacja wyżej) i nie jest ramą z luką (`…`, `...`, `__`, nawias). Słowa funkcyjne i zwroty stojące w tekście są dozwolone („today”, „yes”, „How are you?”) — w odróżnieniu od lekcji (4.4) nie jest wymagane słowo treści. Element złożony tylko z wiodącego `a`/`an`/`the`/`to` nie jest słówkiem. Sprawdzany jest wyłącznie `target`; `acceptedAnswers` i `example` nie są porównywane z tekstem;
 - elementy są sprawdzane w kolejności modelu, a po przyjęciu `maxItems` sprawdzanie się kończy: dalsze elementy nie są ani przyjęte, ani liczone jako odrzucone; lista modelu dłuższa niż 3 × `MAX_DECK_ITEMS` (300) albo o złym kształcie to błąd walidacji całego runu (`validation`);
-- zero przyjętych = porażka z kodem `no_source_items` (szkic bez zmian, liczba odrzuceń zapisana); w edytorze „Pominięto pozycji spoza tekstu lub niepoprawnych: {n}”;
+- zero przyjętych = porażka z kodem `no_source_items` (szkic bez zmian, liczba odrzuceń zapisana); w edytorze „Pominięto pozycji spoza tekstu lub niepoprawnych: {n}”, a przy porażce „Nie znaleziono w tekście źródła słówek do zestawu. Ponów generowanie albo utwórz nowy zestaw ze źródła z innym zawężeniem lub w rodzaju standardowym.” i odnośnik „Przejdź do źródła”, gdy zestaw ma źródło;
+- przyjęte `target` i `acceptedAnswers` są zapisywane w ujednoliconej postaci (typograficzne apostrofy → `'`, zwinięte białe znaki, bez końcowej interpunkcji zdania `.!?…,;:`), a powtórzenie rozpoznaje też klucz dopasowania (tokeny po pominięciu wiodących `a`/`an`/`the`/`to`, bez interpunkcji) i liczy je jako odrzucone;
 - liczba odrzuceń w nowej kolumnie `generation_runs.rejected_count` (migracja `0031`): input runu jest niezmiennym żądaniem, a wersja słówek nie ma `lesson_context`.
 
 ## 7. Kontrakty, API, MCP
@@ -545,11 +546,11 @@ Opis architektury: `docs/architecture.md` §19.9, produktu: SPEC §37 („Etap 3
 **Zaimplementowane** (gałąź `claude/english-chapter-4-source-vocab`, na bazie Etapu 3; plan `docs/superpowers/plans/2026-10-31-english-chapter-stage4-source-vocabulary.md`):
 
 - kontrakty: `GenerationCommandSchema` z trybem źródła (`sourceMaterialId` + `expectedSourceRevision` + `instruction` ≤ 500, wzajemnie wykluczający z `prompt`, bez `locales`; `superRefine`), `DeckSourceDtoSchema` w `decks.ts` (alias `LessonDeckSourceDtoSchema`), `DeckDto.source`, `GenerationDto.rejectedCount`, `MAX_GENERATION_INSTRUCTION_LENGTH`, teksty panelu w `messages.ts`;
-- domena (`subjects/english/`): `material-phrase.ts` (`materialPhraseIndex`, `phraseInMaterial`, `isSentenceFrame`, `isMaterialVocabularyTarget`), `inflection.ts` (`stemsOf`/`formsOf` przeniesione z `english-chapter/lexicon.ts` bez zmiany zachowania) i `function-words.ts` (`FUNCTION_WORDS`, `withoutLeading`);
+- domena (`subjects/english/`): `material-phrase.ts` (`materialPhraseIndex`, `phraseInMaterial`, `isSentenceFrame`, `isMaterialVocabularyTarget`), `inflection.ts` (`stemsOf` przeniesione z `english-chapter/lexicon.ts` bez zmiany zachowania; `formsOf` jest nowe — wydzielone z dotychczasowego `inLexicon`) i `function-words.ts` (`FUNCTION_WORDS`, `withoutLeading`);
 - dane: kolumna `generation_runs.rejected_count` z CHECK `>= 0`, migracja `0031_generation_rejected_count.sql`, `docs/schema.sql`;
-- serwer (obszar `materials/`): `enqueueDeckGeneration` w trybie źródła (kopia tekstu przez `lockSourceMaterialForCopy` — teraz z tytułem — w transakcji tworzenia, odnośnik `decks.source_material_id/revision`, input runu `mode: "material"`), wspólny `committedRetryAfterSourceChange` w `source-materials.ts` dla lekcji i słówek, `deckStateOf` w pliku-liściu `deck-state.ts`, `markRunSucceeded` i `markRunWithoutSourceItems` w `generation-runs.ts`; worker: walidacja per element (`selectMaterialItems`), `no_source_items`, `rejected_count`;
-- providerzy: prompt trybu materiału w adapterze OpenAI (tekst i notatka rodzica ogrodzone jak w lekcjach, tryb opisu bez zmian), fałszywy LLM z domyślnymi słowami z tekstu;
-- panel rodzica: „Utwórz zestaw słówek” na stronie źródła, trasa `/parent/vocabulary/new?source=<uuid>`, formularz `NewVocabularyFromSource.tsx` (409 z odświeżeniem podglądu, 404, niepewny zapis z ponowieniem tym samym poleceniem), wspólne `sources/source-refresh.ts` dla formularzy lekcji i słówek, notka „Ze źródła” w edytorze zestawu słówek, liczba pominiętych pozycji i komunikat `no_source_items`.
+- serwer (obszar `materials/`): `enqueueDeckGeneration` w trybie źródła (kopia tekstu przez `lockSourceMaterialForCopy` — teraz z tytułem — w transakcji tworzenia, odnośnik `decks.source_material_id/revision`, input runu `mode: "material"`), wspólny `committedRetryAfterSourceChange` w `source-materials.ts` dla lekcji i słówek, `deckStateOf` w pliku-liściu `deck-state.ts`, `markRunSucceeded` i `markRunWithoutSourceItems` w `generation-runs.ts`; worker: walidacja per element (`selectMaterialItems`: schemat, ramy z lukami, fraza z tekstu przez przejście po grafie zbiorem pozycji frontowych o ograniczonym koszcie, format zestawu, duplikaty także po kluczu dopasowania), zapis przyjętych elementów w ujednoliconej postaci, `no_source_items`, `rejected_count`;
+- providerzy: prompt trybu materiału w adapterze OpenAI (tekst ogrodzony jak w lekcjach, notatka rodzica poza ogrodzeniem „treat as material” i tylko zawęża; model ma pomijać końcową interpunkcję; tryb opisu bez zmian), fałszywy LLM z domyślnymi słowami z tekstu;
+- panel rodzica: „Utwórz zestaw słówek” na stronie źródła, trasa `/parent/vocabulary/new?source=<uuid>`, formularz `NewVocabularyFromSource.tsx` (409 z odświeżeniem podglądu, 404, niepewny zapis z ponowieniem tym samym poleceniem), wspólne `sources/source-refresh.ts` dla formularzy lekcji i słówek, notka „Ze źródła” w edytorze zestawu słówek, liczba pominiętych pozycji i komunikat `no_source_items` z odnośnikiem „Przejdź do źródła”.
 
 Opis architektury: `docs/architecture.md` §19.10 („Słówka ze źródła”), produktu: SPEC §37 („Etap 4: słówka ze źródła”).
 
@@ -562,16 +563,24 @@ Opis architektury: `docs/architecture.md` §19.10 („Słówka ze źródła”),
 - `DeckSummaryDto` (lista zestawów) bez odnośnika do źródła — strona źródła wymienia swoje zestawy, więc bez zbiorczego `readDeckSource` (uwaga z końcowego przeglądu Etapu 2 przestała być potrzebna);
 - reguła „słówko z tekstu” bez wymogu słowa treści: słowa funkcyjne i zwroty stojące w tekście („today”, „yes”, „How are you?”) są przyjmowane, odpada tylko element z samych wiodących `a`/`an`/`the`/`to` i rama z luką (pierwsza wersja implementacji wymagała słowa treści jak lekcja w 4.4 i odrzucała prawdziwe słówka rozdziału);
 - sprawdzanie kończy się po przyjęciu `maxItems` elementów, więc elementy dalej w odpowiedzi modelu nie są liczone jako odrzucone;
-- tytuł z samych białych znaków daje tytuł źródła także po stronie serwera, a zawężenie z samych białych znaków jest pomijane.
+- tytuł z samych białych znaków daje tytuł źródła także po stronie serwera, a zawężenie z samych białych znaków jest pomijane;
+- przyjęte `target` i `acceptedAnswers` są zapisywane w ujednoliconej postaci: typograficzne apostrofy zamienione na `'`, białe znaki zwinięte, końcowa interpunkcja zdania (`.!?…,;:`) usunięta; prompt każe modelowi pomijać końcową interpunkcję (projekt zapisu nie określał; poprawka z końcowej fali Etapu 4);
+- duplikat rozpoznaje także klucz dopasowania (tokeny po pominięciu wiodących `a`/`an`/`the`/`to`, bez interpunkcji): „the coat” po „coat” jest odrzucone i liczone w `rejectedCount`;
+- dopasowanie frazy przechodzi graf tekstu zbiorem pozycji frontowych zamiast rekurencji po wszystkich ścieżkach, więc praca jest ograniczona długością elementu i liczbą węzłów, także przy wieloznacznych skrótach;
+- w trybie materiału zawężenie rodzica (PARENT NOTE) stoi poza ogrodzeniem „treat as material” — jest poleceniem rodzica, które tylko zawęża wybór, a nie materiałem;
+- komunikat `no_source_items` brzmi „Nie znaleziono w tekście źródła słówek do zestawu. Ponów generowanie albo utwórz nowy zestaw ze źródła z innym zawężeniem lub w rodzaju standardowym.” i ma odnośnik „Przejdź do źródła”, gdy zestaw ma źródło — ponowienie powtarza zamrożone polecenie (to samo zawężenie i rodzaj), więc inne zawężenie wymaga nowego zestawu ze źródła (pierwsza wersja brzmiała „… Zmień zawężenie albo spróbuj ponownie.”).
 
 **Znane ograniczenia:**
 
 - kolizje rdzeni prostej odmiany odziedziczone po `stemsOf` (4.4): „seed” pasuje do „see”, „hated” do „hat”;
 - fraza może przekraczać interpunkcję (dopasowanie po tokenach): „red apples” pasuje do „I like red. Apples are sweet.”;
 - zawężenia pilnuje tylko model — serwer sprawdza obecność w tekście, nie zgodność z zawężeniem;
-- `acceptedAnswers` i `example` nie są porównywane z tekstem.
+- `acceptedAnswers` i `example` nie są porównywane z tekstem;
+- rozwijane są tylko skróty z zamkniętej tabeli `packages/server/src/domain/lessons/subjects/english/contractions.ts` (m.in. „it's”, „that's”, „I'm”, „don't”); „what's”, „there's”, „let's” w niej nie ma, więc „what” nie zostanie znalezione w „What's the weather like?” i taka pozycja zostanie odrzucona, choć słowo stoi w tekście (błąd w stronę pominięcia, nie wpuszczenia słowa spoza tekstu);
+- skoro słowa funkcyjne są dozwolone, przechodzą też sztuczne kombinacje obecne w tekście, np. „in on” z „Put it in on the shelf.”;
+- dziecko wpisujące typograficzny apostrof („It’s”) przy celu ze zwykłym („It's”) dostaje błąd — `normalizeTargetText` (`domain/target-key.ts`) nie ujednolica apostrofów; to wcześniejsze ograniczenie oceny słówek, nie zmiana Etapu 4. Tak samo ścisła jest końcowa interpunkcja: cel zapisany bez kropki (Etap 4 usuwa ją przy zapisie) nie przyjmie odpowiedzi „it's raining.” wpisanej z kropką — jak każde słówko bez interpunkcji w trybie z opisu.
 
-Rodzic sprawdza szkic przed publikacją, więc te przypadki widzi i może poprawić.
+Dla pierwszych sześciu rodzic sprawdza szkic przed publikacją, więc te przypadki widzi i może poprawić.
 
 Bez zmian w Etapie 4 zostaje asymetria wspólnych kluczy ekspozycji lekcji i słówek (4.5): zestaw słówek i lekcja rozdziału z tego samego źródła częściej mają ten sam tekst (zwrot „It's raining” jako słówko i odpowiedź tłumaczenia), więc ekspozycja słówka może trwale odebrać samodzielność takiemu tłumaczeniu. Etap nie dodał tu osobnej reguły; skutek w nauce nie był mierzony.
 
@@ -581,7 +590,8 @@ Bez zmian w Etapie 4 zostaje asymetria wspólnych kluczy ekspozycji lekcji i sł
 
 - prawdziwy model na prawdziwym rozdziale (dobór słów i zwrotów, liczba pominiętych pozycji, posłuszeństwo zawężeniu, format obrazkowy) — testy używają fałszywego LLM, który wypisuje słowa z tekstu, oraz kolejki zachowań;
 - pilotaż z rodzicem i dzieckiem (czy formularz, zawężenie i liczba pominiętych pozycji są zrozumiałe);
-- fizyczne urządzenia: układ formularza i edytora sprawdzono wyłącznie w emulacji okna przeglądarki.
+- fizyczne urządzenia: układ formularza i edytora sprawdzono wyłącznie w emulacji okna przeglądarki;
+- kolejność wdrożenia (migracja `0031` w kroku `migrate` Compose, potem web i worker) nie była ćwiczona na prawdziwym wdrożeniu, a stary worker nie rozpozna runu `mode: "material"` (architektura §14 i §19.10).
 
 **Wdrożenie:** migracja `0031` przed nowym webem i workerem (addytywna kolumna `NULL`; stary kod działa na nowym schemacie, nowy na starym — nie); worker razem z webem albo przed nim, bo stary worker nie rozpozna runu `mode: "material"`; otwartą kartę panelu trzeba odświeżyć. API → MCP → skill bez zmian: `learning-overview` filtruje do `kind = 'vocabulary'`, więc zestaw ze źródła trafia do raportu jak każdy zestaw słówek, ze znaczeniem danych bez zmian, a raport nie używa `GenerationCommand`, `GenerationDto` ani DTO zestawu.
 

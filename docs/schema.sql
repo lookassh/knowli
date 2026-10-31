@@ -206,8 +206,9 @@ CREATE TABLE generation_runs (
   created_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz,
   -- słówka ze źródła (design 2026-10-30 §6.2, migracja 0031): elementy odrzucone przy
-  -- walidacji per element, zapisywane przy sukcesie; NULL — run bez takiej walidacji
-  -- (zestaw z opisu, lekcja, media) albo niezakończony
+  -- walidacji per element, zapisywane przy sukcesie i przy porażce `no_source_items`;
+  -- NULL — run bez takiej walidacji (zestaw z opisu, lekcja, media), niezakończony
+  -- albo ponowiony ręcznie
   rejected_count integer CHECK (rejected_count IS NULL OR rejected_count >= 0),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
   CHECK ((kind = 'deck' AND deck_version_id IS NOT NULL AND expected_edit_number IS NOT NULL AND asset_id IS NULL)
