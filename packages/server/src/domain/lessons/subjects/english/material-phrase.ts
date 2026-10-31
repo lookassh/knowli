@@ -1,4 +1,4 @@
-import { normalizeTokens } from "../../normalize";
+import { APOSTROPHE_VARIANTS, normalizeTokens } from "../../normalize";
 import { withoutLeading } from "./function-words";
 import { formsOf } from "./inflection";
 import { englishNormalizer } from "./normalizer";
@@ -32,6 +32,13 @@ export interface MaterialPhraseIndex {
   readonly next: readonly (readonly number[])[];
   /** Węzły według formy porównania — początki dopasowania. */
   readonly nodesByForm: ReadonlyMap<string, readonly number[]>;
+  /** Pary form sąsiednich węzłów (`formPair`) — szybkie odrzucenie elementu przed przejściem grafu. */
+  readonly formPairs: ReadonlySet<string>;
+}
+
+/** Klucz pary form sąsiednich tokenów. */
+function formPair(from: string, to: string): string {
+  return `${from}\u0000${to}`;
 }
 
 /**
@@ -87,35 +94,28 @@ export function materialPhraseIndex(material: string): MaterialPhraseIndex {
     previousLasts = lasts;
   }
 
-  return { nodeForms, next, nodesByForm };
+  const formPairs = new Set<string>();
+  next.forEach((successors, node) => {
+    for (const successor of successors) {
+      for (const from of nodeForms[node]!) for (const to of nodeForms[successor]!) formPairs.add(formPair(from, to));
+    }
+  });
+
+  return { nodeForms, next, nodesByForm, formPairs };
 }
 
-/** Czy token węzła ma wspólną formę z tokenem elementu (równy albo ten sam rdzeń). */
-function sharesForm(nodeForms: readonly string[], targetForms: ReadonlySet<string>): boolean {
-  return nodeForms.some((form) => targetForms.has(form));
-}
-
-/** Czy dalsze tokeny elementu (od `position`) idą po kolejnych węzłach grafu od `node`. */
-function continuesFrom(index: MaterialPhraseIndex, node: number, target: readonly ReadonlySet<string>[], position: number): boolean {
-  if (position === target.length) return true;
-  const forms = target[position]!;
-  return index.next[node]!.some(
-    (successor) => sharesForm(index.nodeForms[successor]!, forms) && continuesFrom(index, successor, target, position + 1),
-  );
-}
-
-/** Czy niepusta sekwencja tokenów (bez wiodących słów) idzie po kolejnych tokenach tekstu. */
-function tokensInMaterial(tokens: readonly string[], index: MaterialPhraseIndex): boolean {
-  if (tokens.length === 0) return false;
-  const forms = tokens.map((token) => new Set(formsOf(token)));
-  const starts = new Set<number>();
-  for (const form of forms[0]!) {
-    for (const node of index.nodesByForm.get(form) ?? []) starts.add(node);
+/** Warianty normalizacji elementu bez wiodących słów: niepuste, bez powtórzeń, w kolejności normalizatora. */
+function targetVariants(target: string): readonly (readonly string[])[] {
+  const seen = new Set<string>();
+  const variants: (readonly string[])[] = [];
+  for (const variant of englishNormalizer.normalize(target)) {
+    const tokens = withoutLeading(variant);
+    const key = tokens.join(" ");
+    if (tokens.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    variants.push(tokens);
   }
-  for (const start of starts) {
-    if (continuesFrom(index, start, forms, 1)) return true;
-  }
-  return false;
+  return variants;
 }
 
 /**
@@ -124,9 +124,88 @@ function tokensInMaterial(tokens: readonly string[], index: MaterialPhraseIndex)
  * `a`/`an`/`the`/`to` idą po kolejnych tokenach tekstu, a każda para tokenów jest
  * równa albo ma wspólny rdzeń. Element z samych wiodących słów albo pusty nie
  * pasuje. Ram z lukami nie odrzuca — to `isSentenceFrame`.
+ *
+ * Przejście frontem (przegląd Etapu 4): dla każdej pozycji wariantu zbiór węzłów,
+ * w których może się kończyć dopasowany prefiks — każdy węzeł raz na pozycję,
+ * więc praca to O(warianty × pozycje × węzły) zamiast rekurencji wykładniczej
+ * w tekście z samych dwuznacznych skrótów. Warianty w kolejności normalizatora
+ * dzielą długie prefiksy, więc fronty wspólnego prefiksu z poprzednim wariantem
+ * są używane ponownie. Wariant z tokenem bez węzła w tekście albo z parą
+ * sąsiednich tokenów, która w tekście nigdzie nie stoi obok siebie, odpada bez
+ * przejścia grafu.
  */
 export function phraseInMaterial(target: string, index: MaterialPhraseIndex): boolean {
-  return englishNormalizer.normalize(target).some((variant) => tokensInMaterial(withoutLeading(variant), index));
+  const variants = targetVariants(target);
+  if (variants.length === 0) return false;
+
+  const tokenCache = new Map<string, { forms: readonly string[]; nodeLists: readonly (readonly number[])[] }>();
+  /** Formy tokenu elementu i listy węzłów tekstu z tymi formami. */
+  const lookup = (token: string) => {
+    let entry = tokenCache.get(token);
+    if (entry === undefined) {
+      const forms = formsOf(token);
+      entry = {
+        forms,
+        nodeLists: forms.flatMap((form) => {
+          const nodes = index.nodesByForm.get(form);
+          return nodes === undefined ? [] : [nodes];
+        }),
+      };
+      tokenCache.set(token, entry);
+    }
+    return entry;
+  };
+  /** Warunek konieczny dopasowania: każdy token i każda para sąsiednich tokenów stoi w tekście. */
+  const possible = (tokens: readonly string[]): boolean =>
+    tokens.every((token, position) => {
+      if (lookup(token).nodeLists.length === 0) return false;
+      if (position === 0) return true;
+      const before = lookup(tokens[position - 1]!).forms;
+      return lookup(token).forms.some((to) => before.some((from) => index.formPairs.has(formPair(from, to))));
+    });
+
+  // `mark[node] === stamp` — węzeł pasuje do bieżącej pozycji i nie trafił jeszcze do frontu,
+  // więc każdy węzeł wchodzi do frontu pozycji co najwyżej raz.
+  const mark = new Int32Array(index.nodeForms.length);
+  let stamp = 0;
+  const frontierFor = (token: string, previous: readonly number[] | undefined): number[] => {
+    stamp += 1;
+    const { nodeLists } = lookup(token);
+    for (const nodes of nodeLists) {
+      for (const node of nodes) mark[node] = stamp;
+    }
+    const frontier: number[] = [];
+    const take = (node: number) => {
+      if (mark[node] !== stamp) return;
+      mark[node] = 0;
+      frontier.push(node);
+    };
+    if (previous === undefined) {
+      for (const nodes of nodeLists) for (const node of nodes) take(node);
+    } else {
+      for (const node of previous) for (const successor of index.next[node]!) take(successor);
+    }
+    return frontier;
+  };
+
+  // fronts[p] — węzły końca dopasowania pozycji 0..p bieżącego wariantu
+  const fronts: number[][] = [];
+  let previousTokens: readonly string[] = [];
+  for (const tokens of variants) {
+    if (!possible(tokens)) continue;
+    let shared = 0;
+    while (shared < fronts.length && shared < tokens.length && tokens[shared] === previousTokens[shared]) shared += 1;
+    fronts.length = shared;
+    previousTokens = tokens;
+    if (shared > 0 && fronts[shared - 1]!.length === 0) continue;
+    for (let position = shared; position < tokens.length; position += 1) {
+      const frontier = frontierFor(tokens[position]!, fronts[position - 1]);
+      fronts.push(frontier);
+      if (frontier.length === 0) break;
+    }
+    if (fronts.length === tokens.length && fronts[tokens.length - 1]!.length > 0) return true;
+  }
+  return false;
 }
 
 /**
@@ -140,6 +219,32 @@ export function phraseInMaterial(target: string, index: MaterialPhraseIndex): bo
  */
 export function isMaterialVocabularyTarget(target: string, index: MaterialPhraseIndex): boolean {
   return !isSentenceFrame(target) && phraseInMaterial(target, index);
+}
+
+/** Końcowa interpunkcja zdania (i białe znaki między nią) zdejmowana z zapisu słówka. */
+const TRAILING_PUNCTUATION = /[\s.!?…,;:]+$/u;
+
+/**
+ * Zapis słówka zestawu ze źródła (przegląd Etapu 4): NFC, apostrofy typograficzne
+ * jako `'`, zwinięte białe znaki i bez końcowej interpunkcji (`.`, `!`, `?`, `…`,
+ * `,`, `;`, `:`); wewnętrzna interpunkcja zostaje („Mr. Smith's hat”, „yes, please”).
+ * Ocena pisemna słówek porównuje tekst co do znaku poza wielkością liter
+ * (`matchWrittenAnswer`), więc cel „It's raining.” wzięty ze zdania tekstu
+ * odrzucałby poprawne „it's raining” dziecka. Sprawdzenie ramy (`isSentenceFrame`)
+ * idzie po surowym celu — zdjęty wielokropek ukryłby lukę.
+ */
+export function materialTargetText(text: string): string {
+  return text.normalize("NFC").replace(APOSTROPHE_VARIANTS, "'").replace(/\s+/gu, " ").trim().replace(TRAILING_PUNCTUATION, "");
+}
+
+/**
+ * Klucz duplikatu słówka ze źródła (przegląd Etapu 4): tokeny bez wiodących
+ * `a`/`an`/`the`/`to` i bez interpunkcji, więc „coat” ≡ „a coat” i „It's raining”
+ * ≡ „It's raining.”. Tokeny dokładne — odmiana („coat”/„coats”) i rozwinięcia
+ * skrótów („it's”/„it is”) to osobne pozycje do decyzji rodzica.
+ */
+export function materialTargetMatchKey(target: string): string {
+  return withoutLeading(normalizeTokens(target)).join(" ");
 }
 
 /** Luka ramy zdaniowej: wielokropek, trzy kropki, co najmniej dwa podkreślenia albo nawias. */

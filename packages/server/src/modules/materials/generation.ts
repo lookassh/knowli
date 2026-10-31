@@ -30,7 +30,10 @@ import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
 import {
   isMaterialVocabularyTarget,
   materialPhraseIndex,
+  materialTargetMatchKey,
+  materialTargetText,
 } from "../../domain/lessons/subjects/english/material-phrase";
+import { normalizeTargetText } from "../../domain/target-key";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeMediaAsset } from "./media-generation";
 import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "./generation-runtime";
@@ -481,16 +484,39 @@ function passesValidation(check: () => void): boolean {
 }
 
 /**
+ * Element zestawu ze źródła w zapisie do oceny (przegląd Etapu 4): cel i warianty
+ * przez `materialTargetText` (bez końcowej interpunkcji, prosty apostrof); puste
+ * warianty i powtórzenia celu albo wcześniejszego wariantu znikają. Przykład
+ * i znaczenie zostają bez zmian.
+ */
+function toMaterialVocabularyItem(item: GeneratedItem, locales: { source: string; target: string }): VocabularyItemInput {
+  const target = materialTargetText(item.target);
+  const seen = new Set([normalizeTargetText(target)]);
+  const acceptedAnswers: string[] = [];
+  for (const answer of item.acceptedAnswers.map(materialTargetText)) {
+    const key = normalizeTargetText(answer);
+    if (answer === "" || seen.has(key)) continue;
+    seen.add(key);
+    acceptedAnswers.push(answer);
+  }
+  return toVocabularyItem({ ...item, target, acceptedAnswers }, locales);
+}
+
+/**
  * Walidacja per element zestawu ze źródła (design 2026-10-30 §6.2): każdy
- * element wyniku modelu osobno — schemat elementu, reguły formatu
- * (`validateVocabularyFormatItems`), słówko z tekstu (`isMaterialVocabularyTarget`:
- * nie rama z luką, fraza z tekstu; słowa funkcyjne stojące w tekście są
- * dozwolone) i brak duplikatu celu wśród już przyjętych (`validateItems`;
- * pierwszy wygrywa, odrzucony element celu nie zajmuje). Niepoprawny element
- * jest odrzucany, reszta zostaje. Po przyjęciu `maxItems` pozycji sprawdzanie
- * się kończy: dalsze elementy nie są ani przyjęte, ani liczone jako odrzucone.
- * Gwarancja „tylko słowa z tekstu” należy do tej walidacji, nie do promptu —
- * zawężenie rodzica nie może dodać słów.
+ * element wyniku modelu osobno — schemat elementu, brak duplikatu po
+ * dopasowaniu wśród już przyjętych (`materialTargetMatchKey`: „a coat” po
+ * „coat”, „It's raining.” po „It's raining”; pierwszy wygrywa, odrzucony
+ * element celu nie zajmuje), słówko z tekstu (`isMaterialVocabularyTarget` na
+ * surowym celu: nie rama z luką, fraza z tekstu; słowa funkcyjne stojące
+ * w tekście są dozwolone), reguły formatu i wizualizacji na zapisanym celu
+ * (`validateVocabularyFormatItems`, `isVisualDataValid`) oraz reguły zestawu
+ * (`validateItems`). Zapisany cel nie ma końcowej interpunkcji
+ * (`toMaterialVocabularyItem`). Niepoprawny element jest odrzucany, reszta
+ * zostaje. Po przyjęciu `maxItems` pozycji sprawdzanie się kończy: dalsze
+ * elementy nie są ani przyjęte, ani liczone jako odrzucone. Gwarancja „tylko
+ * słowa z tekstu” należy do tej walidacji, nie do promptu — zawężenie rodzica
+ * nie może dodać słów.
  */
 function selectMaterialItems(
   raw: readonly unknown[],
@@ -498,20 +524,28 @@ function selectMaterialItems(
 ): { items: VocabularyItemInput[]; rejectedCount: number } {
   const index = materialPhraseIndex(options.material);
   const accepted: VocabularyItemInput[] = [];
+  const acceptedKeys = new Set<string>();
   let rejectedCount = 0;
   for (const candidate of raw) {
     if (accepted.length >= options.maxItems) break;
     const parsed = GeneratedItemSchema.safeParse(candidate);
-    const item = parsed.success ? toVocabularyItem(parsed.data, options.locales) : undefined;
+    if (!parsed.success) {
+      rejectedCount += 1;
+      continue;
+    }
+    const item = toMaterialVocabularyItem(parsed.data, options.locales);
+    const key = materialTargetMatchKey(item.target);
     if (
-      item === undefined
-      || !isMaterialVocabularyTarget(item.target, index)
+      acceptedKeys.has(key)
+      || !isMaterialVocabularyTarget(parsed.data.target, index)
+      || !isVisualDataValid(item.visualType, item.visualData, item.target)
       || !passesValidation(() => validateVocabularyFormatItems(options.vocabularyFormat, [item]))
       || !passesValidation(() => validateItems([...accepted, item]))
     ) {
       rejectedCount += 1;
       continue;
     }
+    acceptedKeys.add(key);
     accepted.push(item);
   }
   return { items: accepted, rejectedCount };

@@ -1,7 +1,7 @@
 import type { AnswerNormalizer } from "./types";
 
-/** Apostrofy typograficzne ujednolicane do zwykłego `'`. */
-const APOSTROPHE_VARIANTS = /[\u2019\u2018\u02bc\u00b4]/g;
+/** Apostrofy typograficzne ujednolicane do zwykłego `'` (także w zapisie słówek ze źródła). */
+export const APOSTROPHE_VARIANTS = /[\u2019\u2018\u02bc\u00b4]/g;
 
 /**
  * Znak dozwolony w tokenie: litera (z diakrytykami), cyfra lub apostrof.

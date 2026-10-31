@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { MAX_NORMALIZER_VARIANTS } from "./normalizer";
-import { isMaterialVocabularyTarget, isSentenceFrame, materialPhraseIndex, phraseInMaterial } from "./material-phrase";
+import {
+  isMaterialVocabularyTarget,
+  isSentenceFrame,
+  materialPhraseIndex,
+  materialTargetMatchKey,
+  materialTargetText,
+  phraseInMaterial,
+} from "./material-phrase";
 
 function inMaterial(target: string, material: string): boolean {
   return phraseInMaterial(target, materialPhraseIndex(material));
@@ -131,6 +138,101 @@ describe("phraseInMaterial — długi tekst ze skrótami", () => {
 
     expect(results).toEqual(targets.map((target) => hits.includes(target)));
     expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe("phraseInMaterial — najgorszy przypadek (przegląd Etapu 4)", () => {
+  // Tekst z samych dwuznacznych skrótów: każdy węzeł „it” ma dwa następniki, a element
+  // z tych samych skrótów idzie po grafie przez całą długość, zanim zawiedzie na końcu —
+  // rekurencja z każdego początku w każdym z 32 wariantów trwała ~30 s dla 300 elementów.
+  const run = (count: number) => Array.from({ length: count }, () => "it's").join(" ");
+
+  it("16 000 znaków „it's” i 300 złośliwych elementów: < 1 s łącznie, wszystkie odrzucone", () => {
+    const material = "it's ".repeat(3_200).trim();
+    // ≤ 120 znaków jak cel z modelu; 300 = trzykrotny limit zestawu (koperta trybu ze źródła)
+    const adversarial = Array.from({ length: 300 }, (_, i) => {
+      const count = 18 + (i % 4);
+      switch (i % 3) {
+        case 0: return `${run(count)} zz${i}`; // słowo spoza tekstu na końcu
+        case 1: return `${run(count)} is is`; // każde słowo w tekście, ale „is is” nigdy obok siebie
+        default: return `the ${run(count)} has has`;
+      }
+    });
+    expect(material.length).toBeGreaterThanOrEqual(15_999);
+    expect(adversarial.every((target) => target.length <= 120)).toBe(true);
+
+    const started = performance.now();
+    const index = materialPhraseIndex(material);
+    const results = adversarial.map((target) => phraseInMaterial(target, index));
+    const elapsed = performance.now() - started;
+
+    expect(results.every((result) => !result)).toBe(true);
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  it("odcinki po 20 „it's”: każde słowo i każda para w tekście, 100 elementów (połowa trafień) < 1 s", () => {
+    // Elementy dłuższe od odcinka przechodzą oba szybkie odrzucenia i giną dopiero w grafie.
+    const material = Array.from({ length: 160 }, () => `${run(20)} coat.`).join(" ");
+    const targets = Array.from({ length: 100 }, (_, i) => (i % 2 === 0 ? run(18 + (i % 3)) : run(21 + (i % 3))));
+    expect(material.length).toBeGreaterThanOrEqual(16_000);
+    expect(targets.every((target) => target.length <= 120)).toBe(true);
+
+    const started = performance.now();
+    const index = materialPhraseIndex(material);
+    const results = targets.map((target) => phraseInMaterial(target, index));
+    const elapsed = performance.now() - started;
+
+    expect(results).toEqual(targets.map((_, i) => i % 2 === 0));
+    expect(elapsed).toBeLessThan(1_000);
+  });
+});
+
+describe("materialTargetText — zapis celu bez końcowej interpunkcji (przegląd Etapu 4)", () => {
+  it.each([
+    ["It's raining.", "It's raining"],
+    ["It’s sunny!", "It's sunny"],
+    ["What's the weather like?", "What's the weather like"],
+    ["Wait…", "Wait"],
+    ["boots,", "boots"],
+    ["coat;", "coat"],
+    ["Put it on:", "Put it on"],
+    ["Really?!", "Really"],
+    ["It's raining . ", "It's raining"],
+    ["  a  red\t\nhat  ", "a red hat"],
+    ["T-shirt", "T-shirt"],
+    ["Mr. Smith's hat", "Mr. Smith's hat"],
+    ["yes, please", "yes, please"],
+    ["don‘t ʼforget´", "don't 'forget'"],
+    ["?!", ""],
+  ])("„%s” → „%s”", (raw, stored) => {
+    expect(materialTargetText(raw)).toBe(stored);
+  });
+
+  it("zostawia NFC", () => {
+    expect(materialTargetText("café.")).toBe("café");
+  });
+});
+
+describe("materialTargetMatchKey — duplikat po dopasowaniu (przegląd Etapu 4)", () => {
+  it.each([
+    ["coat", "a coat"],
+    ["coat", "the Coat"],
+    ["swim", "to swim"],
+    ["It's raining", "It's raining."],
+    ["it's raining", "It’s  raining!"],
+    ["T-shirt", "t shirt"],
+  ])("„%s” ≡ „%s”", (first, second) => {
+    expect(materialTargetMatchKey(first)).toBe(materialTargetMatchKey(second));
+  });
+
+  it.each([
+    ["coat", "coats", "odmiana się nie scala"],
+    ["wear", "wearing", "odmiana się nie scala"],
+    ["it's sunny", "it is sunny", "skróty się nie rozwijają"],
+    ["red hat", "hat red", "kolejność słów"],
+    ["coat", "a coat on", "inne słowa"],
+  ])("„%s” ≠ „%s” (%s)", (first, second) => {
+    expect(materialTargetMatchKey(first)).not.toBe(materialTargetMatchKey(second));
   });
 });
 

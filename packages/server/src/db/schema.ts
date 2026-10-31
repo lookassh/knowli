@@ -458,8 +458,9 @@ export const generationRuns = app.table(
     finishedAt: timestamps("finished_at"),
     // Słówka ze źródła (design 2026-10-30 §6.2): elementy odrzucone przy walidacji
     // per element (spoza tekstu, niepoprawne, duplikaty), zapisywane przy sukcesie
-    // (`markRunSucceeded`). NULL — run bez walidacji per element (opis, lekcje,
-    // media) albo niezakończony. Lekcje liczą odrzucenia w `lesson_context`.
+    // (`markRunSucceeded`) i przy porażce `no_source_items`, gdy nic nie przeszło
+    // (`markRunWithoutSourceItems`). NULL — run bez walidacji per element (opis,
+    // lekcje, media) albo niezakończony. Lekcje liczą odrzucenia w `lesson_context`.
     rejectedCount: integer("rejected_count"),
   },
   (t) => [

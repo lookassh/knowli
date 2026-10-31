@@ -15,6 +15,8 @@ import {
 } from "@learning/server";
 import type { GenerationCommand } from "@learning/contracts";
 import { markRunSucceeded } from "../../packages/server/src/modules/materials/generation-runs";
+import { matchWrittenAnswer } from "../../packages/server/src/domain/evaluate";
+import type { AnswerKey } from "../../packages/server/src/domain/types";
 import { fakeGeneration, type FakeGeneration, type LlmBehavior } from "./fakes";
 import { buildTestServices, ManualClock, testDatabase } from "./helpers";
 
@@ -546,6 +548,63 @@ describe("słówka ze źródła — generowanie wyłącznie z tekstu (integracja
     expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 2 });
     expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source])).toEqual([
       ["boots", "buty"], ["it is", "to jest"], ["pink", "różowy"],
+    ]);
+  });
+
+  it("cel i warianty bez końcowej interpunkcji, z prostym apostrofem; odpowiedź dziecka bez kropki zaliczona", async () => {
+    // model bierze zdanie z tekstu razem z kropką, a ocena pisemna porównuje interpunkcję co do znaku
+    fakes.llm.queue({
+      items: [
+        item("It's raining.", "pada deszcz", { acceptedAnswers: ["It is raining.", "It's  raining", "?!"], example: "It's raining." }),
+        item("It’s sunny!", "jest słonecznie", { acceptedAnswers: ["It’s sunny"] }),
+        item("What's the weather like?", "jaka jest pogoda?"),
+        // wizualizacja sprawdzana na zapisanym celu: „pink” z kolorem czerwonym odpada
+        item("Pink.", "różowy", { visualType: "color", visualData: { color: "#ff0000" } }),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 1 });
+    const payloads = await draftItems(deckId);
+    // wewnętrzna interpunkcja, przykład i polskie znaczenie bez zmian; puste i powtórzone warianty znikają
+    expect(payloads.map((payload) => [payload.target, payload.acceptedAnswers, payload.source, payload.example])).toEqual([
+      ["It's raining", ["It is raining"], "pada deszcz", "It's raining."],
+      ["It's sunny", [], "jest słonecznie", undefined],
+      ["What's the weather like", [], "jaka jest pogoda?", undefined],
+    ]);
+
+    const keyOf = (payload: Record<string, unknown>): AnswerKey => ({
+      exerciseType: "recall",
+      target: payload.target as string,
+      acceptedAnswers: payload.acceptedAnswers as string[],
+    });
+    const [raining, sunny, weather] = payloads.map(keyOf);
+    expect(matchWrittenAnswer("it's raining", raining!)).toMatchObject({ ci: true, matchedVariant: "It's raining" });
+    expect(matchWrittenAnswer("it is raining", raining!)).toMatchObject({ ci: true, matchedVariant: "It is raining" });
+    expect(matchWrittenAnswer("it's sunny", sunny!)).toMatchObject({ ci: true, matchedVariant: "It's sunny" });
+    expect(matchWrittenAnswer("What's the weather like", weather!)).toMatchObject({ exact: true, ci: true });
+  });
+
+  it("duplikat po dopasowaniu: „a coat” po „coat” i „It's raining.” po „It's raining” odrzucone; odmiana zostaje", async () => {
+    fakes.llm.queue({
+      items: [
+        item("coat", "płaszcz"),
+        item("a coat", "płaszczyk"),
+        item("It's raining", "pada"),
+        item("It's raining.", "pada deszcz"),
+        item("It’s raining!", "leje"),
+        item("boots", "buty"),
+        item("boot", "but"), // inna forma odmiany — osobna pozycja
+        item("the Coat.", "ten płaszcz"),
+      ],
+    });
+
+    const { runId, deckId } = await generateFromSource();
+
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "succeeded", rejectedCount: 4 });
+    expect((await draftItems(deckId)).map((payload) => [payload.target, payload.source])).toEqual([
+      ["coat", "płaszcz"], ["It's raining", "pada"], ["boots", "buty"], ["boot", "but"],
     ]);
   });
 
