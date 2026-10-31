@@ -605,6 +605,40 @@ test.describe("przypadki brzegowe (telefon 390×844)", () => {
     await expect(page.getByTestId("leave-editor-dialog")).toHaveCount(0);
   });
 
+  test("lekcja ze źródła zmienionego w innym oknie: nieudane odświeżenie podglądu blokuje tworzenie do udanego ponowienia", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto(`/parent/lessons/new?source=${SOURCE_ID}&subject=english_chapter`);
+    await expect(page.getByTestId("lesson-source-preview")).toHaveValue(BODY);
+    const stored = api.sources.get(SOURCE_ID)!;
+    api.sources.set(SOURCE_ID, { ...stored, body: `${BODY}\nWe like bananas.`, revision: stored.revision + 1, bodyRevision: stored.bodyRevision + 1 });
+    // ponowny odczyt źródła po konflikcie kończy się błędem serwera
+    api.getStatus = 503;
+
+    await page.getByTestId("lesson-create-submit").click();
+    // odczyt jest ponawiany po 5xx — komunikat po wyczerpaniu ponowień
+    await expect(page.getByTestId("api-error")).toContainText(messages.sources.refreshFailed, { timeout: 15_000 });
+    await expect(page.getByTestId("lesson-source-preview")).toHaveValue(BODY);
+    await expect(page.getByTestId("lesson-create-submit")).toBeDisabled();
+    await expect(page.getByTestId("lesson-source-refresh-retry")).toHaveText(messages.parentShell.retry);
+    expect(api.lessonCreates).toHaveLength(1);
+    await expectNoHorizontalOverflow(page);
+    await expectTargets(page, ["lesson-source-refresh-retry"], 390);
+
+    // udane ponowienie odświeża podgląd i rewizję — dopiero wtedy tworzenie wraca
+    api.getStatus = 200;
+    await page.getByTestId("lesson-source-refresh-retry").click();
+    await expect(page.getByTestId("lesson-source-preview")).toHaveValue(/We like bananas\./);
+    await expect(page.getByTestId("lesson-source-refresh-retry")).toHaveCount(0);
+    await expect(page.getByTestId("api-error")).toContainText(messages.sources.changedBeforeCreate);
+    await expect(page.getByTestId("lesson-create-submit")).toBeEnabled();
+    expect(api.lessonCreates).toHaveLength(1);
+
+    await page.getByTestId("lesson-create-submit").click();
+    await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+    expect(api.lessonCreates).toHaveLength(2);
+    expect(api.lessonCreates[1]!.body).toMatchObject({ sourceMaterialId: SOURCE_ID, expectedSourceRevision: 3 });
+  });
+
   test("zapis źródła usuniętego w innym oknie: komunikat o braku źródła", async ({ page }) => {
     const api = await mockApi(page);
     await page.goto(`/parent/sources/${SOURCE_ID}`);
