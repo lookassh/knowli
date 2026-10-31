@@ -177,9 +177,11 @@
   /* Długość wiersza tekstu lekcji (karta, tekst z lukami; spec 2026-10-31 §3.6),
      w `ch` elementu, który z niej korzysta, więc rośnie razem z jego czcionką.
      `ch` to szerokość cyfry „0” (w Nunito 0,6 em), a średni znak polskiego tekstu
-     z odstępami ma ok. 0,45 em, więc 45ch (27 em) mieści ok. 60 znaków. Samo 60ch
-     dawało ok. 80 znaków i w kolumnie 720 px nie ograniczało wiersza. */
-  --kid-reading-measure: 45ch;
+     z odstępami ma ok. 0,45 em, więc 44ch (26,4 em) mieści ok. 58 znaków; 44, nie
+     45, żeby najdłuższy wiersz (pomiar: karta 60, tekst z lukami 54 znaki) miał
+     zapas pod 65 także przy innym silniku tekstu. Samo 60ch dawało ok. 80 znaków
+     i w kolumnie 720 px nie ograniczało wiersza. */
+  --kid-reading-measure: 44ch;
   /* Window units. KidPage scales a large window with CSS zoom (inline
      --kid-zoom), and zoom multiplies vh/dvh/svh/vw by the scale, so every
      window-relative length is written calc(N * var(--kid-dvh)) etc. Each token
@@ -2322,8 +2324,9 @@
    blok stoi na środku kolumny (auto po bokach), wiersze są wyrównane do początku;
    `inline-size: 100%` zostawia krótkiemu tekstowi szerokość bloku (w kolumnie flex
    auto po bokach wyłącza rozciąganie), więc lewa krawędź nie zależy od długości
-   tekstu i treść oraz przykłady zaczynają się w jednej linii. Na telefonie kolumna
-   jest węższa niż limit i nic się nie zmienia. Treść to `<p>`, a `.kid-theme p`
+   tekstu i treść oraz przykłady zaczynają się w jednej linii. Na telefonie w pionie
+   kolumna jest węższa niż limit i nic się nie zmienia (w poziomie, przy kolumnie
+   560 px, blok zwęża się nieco). Treść to `<p>`, a `.kid-theme p`
    (theme/kid-theme.css) zeruje marginesy ze specyficznością (0,1,1), więc selektor
    z `.kid-ui` (0,2,0) jest potrzebny, żeby auto po bokach zadziałało. */
 .kid-ui .kid-lesson-card__body {

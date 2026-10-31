@@ -75,8 +75,8 @@ Skutki uboczne (przyjęte): dotykowy tablet ≥ 960 × 480–780 dostaje zwarty 
 
 ### 3.6 Długość wiersza tekstu
 
-- Nowy token `--kid-reading-measure` (w `ch`, np. ok. 45ch), dobrany pomiarem tak, żeby typowy polski tekst lekcji miał ok. 60 znaków w wierszu przy czcionce Nunito niezależnie od jej rozmiaru (`ch` skaluje się z czcionką elementu).
-- Używają go `.kid-lesson-card__body`, `.kid-lesson-card__examples` (zamiast `60ch`) i `.kid-lesson-cloze__text`. Na telefonie kolumna jest węższa niż limit — bez zmian.
+- Nowy token `--kid-reading-measure` (w `ch`, wybrane 44ch), dobrany pomiarem tak, żeby typowy polski tekst lekcji miał ok. 60 znaków w wierszu przy czcionce Nunito niezależnie od jej rozmiaru (`ch` skaluje się z czcionką elementu).
+- Używają go `.kid-lesson-card__body`, `.kid-lesson-card__examples` (zamiast `60ch`) i `.kid-lesson-cloze__text`. Na telefonie w pionie kolumna jest węższa niż limit — bez zmian (w poziomie, przy kolumnie 560 px, blok zwęża się nieco).
 - Węższy blok tekstu stoi na środku kolumny (`margin-inline: auto`), a wiersze są wyrównane do początku — tak blok jest symetryczny względem tytułu karty, miejsc luk i banku słów pod tekstem.
 
 ## 4. Pliki
