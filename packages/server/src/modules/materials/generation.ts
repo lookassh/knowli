@@ -41,12 +41,17 @@ export async function enqueueDeckGeneration(
   input: GenerationCommand,
 ): Promise<{ runId: string; deckId: string }> {
   const cmd = GenerationCommandSchema.parse(input);
+  const prompt = cmd.prompt;
+  if (prompt === undefined) {
+    // Tryb ze źródła (`sourceMaterialId`) dochodzi w Etapie 4, Task 2; do tego czasu kontrakt go przyjmuje, a serwer odmawia.
+    throw new AppError("validation", { message: "generating a deck from a source is not supported yet" });
+  }
   const locales = cmd.locales ?? { source: "pl-PL", target: "en-GB" };
 
   return enqueueGenerationRun(services.db, `deck:${cmd.idempotencyKey}`, async (tx) => {
     const deckId = randomUUID();
     const versionId = randomUUID();
-    const title = cmd.title ?? cmd.prompt.slice(0, 60);
+    const title = cmd.title ?? prompt.slice(0, 60);
     const runId = randomUUID();
     await tx.insert(decks).values({ id: deckId, title });
     await tx.insert(deckVersions).values({
@@ -59,7 +64,7 @@ export async function enqueueDeckGeneration(
       sourceLocale: locales.source,
       targetLocale: locales.target,
       vocabularyFormat: cmd.vocabularyFormat,
-      generationPrompt: cmd.prompt,
+      generationPrompt: prompt,
     });
     await tx.insert(generationRuns).values({
       id: runId,
@@ -69,7 +74,7 @@ export async function enqueueDeckGeneration(
       dedupeKey: `deck:${cmd.idempotencyKey}`,
       state: "queued",
       input: {
-        prompt: cmd.prompt,
+        prompt,
         deckId,
         deckVersionId: versionId,
         locales,
