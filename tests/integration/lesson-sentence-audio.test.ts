@@ -312,6 +312,25 @@ describe("feedback lekcji bez nagrania zdania", () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  it("model_other (zadanie zostaje issued) — incorrect z correctText bez nagrania; ponowienie bez wsparcia model_audio", async () => {
+    const { services, attempt, task } = await play({
+      type: "lesson_transform", withPriorSuccess: true, answer: text("she play"),
+      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic" } })),
+    }, "ready");
+    expect(attempt.feedback?.kind).toBe("incorrect");
+    expect(attempt.feedback?.correctText).toBeTruthy();
+    expect(attempt.feedback?.correctAudioAssetId).toBeUndefined();
+    expect(attempt.taskState).toBe("issued");
+    expect(await audioEvents(task.taskId)).toEqual([]);
+
+    const retry = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she plays" });
+    expect(retry.taskState).toBe("answered");
+    const context = (await pool.query<{ context: { assistance: string[] } }>(
+      "select context from learning_app.attempts where id = $1", [retry.attemptId],
+    )).rows[0]!.context;
+    expect(context.assistance).not.toContain("model_audio");
+  });
+
   it("nagranie pending przy wydaniu, ready przy odpowiedzi — feedback bez nagrania", async () => {
     const services = plain();
     const child = await createChild(services, { displayName: "Później", avatarKey: "owl" });
