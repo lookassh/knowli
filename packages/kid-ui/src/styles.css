@@ -1113,6 +1113,16 @@
   font-size: var(--kid-type-display-size);
 }
 
+/* Wiersz łamie się tylko między słowami; samo słowo łamie się wewnątrz dopiero, gdy nie mieści się w wierszu. */
+.kid-letter-word {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
 .kid-letter-fixed {
   white-space: pre;
 }

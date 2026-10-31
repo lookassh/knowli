@@ -314,7 +314,8 @@ describe("Keyboard Navigation & Focus Management", () => {
       );
 
       const form = (result as any).props.content.props.children[1];
-      const children = form.props.children.props.children;
+      const [word] = form.props.children.props.children; // "_a_er" is a single word
+      const children = word.props.children;
       const secondGap = children[2]; // index 2 is '_'
 
       // Attach refs
@@ -347,7 +348,8 @@ describe("Keyboard Navigation & Focus Management", () => {
       );
 
       const form = (result as any).props.content.props.children[1];
-      const children = form.props.children.props.children;
+      const [word] = form.props.children.props.children; // "_a_er" is a single word
+      const children = word.props.children;
       const attachRef = (el: any, mock: any) => (el.props.ref ?? el.ref)(mock);
       attachRef(children[0], mockGaps[0]);
       attachRef(children[2], mockGaps[2]);

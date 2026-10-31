@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
-import { completedRecallFixture, completedTextChoiceFixture, longLessonCardFixture, makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
+import { completedRecallFixture, completedTextChoiceFixture, letterTask, longLessonCardFixture, makeDeck, openDeckScreen, recallFixture, sessionId } from "./helpers/kid-fixtures";
 import { expectFrameFillsViewport, expectInteractiveTargets, waitForKidScale } from "./helpers/kid-frame";
 import { measure, resizeAndSettle, type Viewport } from "./helpers/kid-layout";
 import { lessonAudioFixture } from "./helpers/lesson-audio";
@@ -572,4 +572,114 @@ test("keyboard focus stays visible", async ({ page }) => {
       && layout.field.bottom <= layout.actions.top + 1;
     return visible ? "ok" : JSON.stringify(layout);
   }, { message: "focused field is inside the material and above the actions" }).toBe("ok");
+});
+
+// Missing letters wrap between words only (spec §3.3). A leaf is one letter field or one fixed character (a space is a
+// leaf too); the checks read leaf rectangles, not the word grouping, so they hold for any markup that lays words out right.
+const LETTER_GAP = 4;
+const LETTER_ROW_TOLERANCE = 4;
+
+interface LetterLeaf { text: string; input: boolean; left: number; right: number; width: number; height: number; centerY: number }
+
+async function openLetters(page: Page, viewport: Viewport, fragment: string) {
+  await page.setViewportSize(viewport);
+  await openSession(page, { ...recallFixture(), tasks: [letterTask("Uzupełnij słowo", fragment)] });
+  await expect(page.getByTestId("kid-fragment")).toBeVisible();
+  await waitForKidScale(page, 1);
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await nextFrames(page);
+}
+
+async function letterLeaves(page: Page): Promise<LetterLeaf[]> {
+  return page.getByTestId("kid-fragment").evaluate((fragment) =>
+    [...fragment.querySelectorAll<HTMLElement>(".kid-letter-input, .kid-letter-fixed")].map((element) => {
+      const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+      return { text: element.textContent ?? "", input: element.classList.contains("kid-letter-input"),
+        left, right, width, height, centerY: (top + bottom) / 2 };
+    }));
+}
+
+/** Rows (leaves whose vertical centres are within 4 px share a row), words (runs of leaves between spaces) and the width of the phrase on one row. */
+function analyseLetters(leaves: LetterLeaf[]) {
+  const rowCentres: number[] = [];
+  const rowOf = leaves.map((leaf) => {
+    const row = rowCentres.findIndex((centre) => Math.abs(centre - leaf.centerY) <= LETTER_ROW_TOLERANCE);
+    return row >= 0 ? row : rowCentres.push(leaf.centerY) - 1;
+  });
+  const words: number[][] = [[]];
+  leaves.forEach((leaf, index) => {
+    if (!leaf.input && leaf.text === " ") words.push([]);
+    else words[words.length - 1]!.push(index);
+  });
+  const widthOf = (indices: number[]) => indices.reduce((sum, index) => sum + leaves[index]!.width, 0) + LETTER_GAP * (indices.length - 1);
+  const letterWords = words.filter((word) => word.length > 0);
+  const naturalWidth = widthOf(leaves.map((_, index) => index));
+  const describe = () => JSON.stringify({ naturalWidth, words: letterWords.map((word) =>
+    ({ word: word.map((index) => leaves[index]!.input ? "_" : leaves[index]!.text).join(""), rows: [...new Set(word.map((index) => rowOf[index]))] })) });
+  return { rows: rowCentres.length, rowOf, words: letterWords, naturalWidth, widthOf, describe };
+}
+
+/** Words that sit on more than one row, i.e. the ones broken in the middle. */
+const brokenWords = (analysis: ReturnType<typeof analyseLetters>) =>
+  analysis.words.filter((word) => new Set(word.map((index) => analysis.rowOf[index])).size > 1);
+
+// The phrase is sized for the two columns of the large-screen spec: it fits the 720 px column on one row and not the
+// 560 px one. A different monospace font moves the width, so this precondition fails with a font message, not a layout one.
+const LETTER_PHRASE = "My s_ster r_ads b__ks";
+const LETTER_PHRASE_WIDTH = { min: 540, max: 680 };
+
+function expectPhraseSized(analysis: ReturnType<typeof analyseLetters>) {
+  expect(analysis.words.length, `the phrase has at least three words: ${analysis.describe()}`).toBeGreaterThanOrEqual(3);
+  const width = analysis.naturalWidth;
+  expect(width > LETTER_PHRASE_WIDTH.min && width < LETTER_PHRASE_WIDTH.max,
+    `natural width of the phrase is ${width} px, outside (${LETTER_PHRASE_WIDTH.min}; ${LETTER_PHRASE_WIDTH.max}): the monospace font differs from the one the phrase was sized for`).toBe(true);
+}
+
+test("missing letters fit one row in the 720 px column", async ({ page }) => {
+  await openLetters(page, { width: 1536, height: 730 }, LETTER_PHRASE);
+  const analysis = analyseLetters(await letterLeaves(page));
+  expectPhraseSized(analysis);
+  expect(analysis.rows, `the phrase fits one row in the wide column: ${analysis.describe()}`).toBe(1);
+});
+
+test("missing letters wrap only between words in the 560 px column", async ({ page }) => {
+  await openLetters(page, { width: 768, height: 1024 }, LETTER_PHRASE);
+  const analysis = analyseLetters(await letterLeaves(page));
+  expectPhraseSized(analysis);
+  expect(analysis.rows, `the phrase needs more than one row in the narrow column: ${analysis.describe()}`).toBeGreaterThanOrEqual(2);
+  expect(brokenWords(analysis).length, `no word is broken across rows: ${analysis.describe()}`).toBe(0);
+});
+
+const PHONE = { width: 390, height: 750 };
+
+test("a long word stays on one row on a phone", async ({ page }) => {
+  // A short word, then a nine-letter word with five gaps that fits the 358 px row on its own but not after the short word.
+  await openLetters(page, PHONE, "a _a_g_r_u_");
+  const leaves = await letterLeaves(page);
+  const analysis = analyseLetters(leaves);
+  const { fragment } = await measure(page, { fragment: "[data-testid='kid-fragment']" });
+  const word = analysis.words[1]!;
+  const wordWidth = analysis.widthOf(word);
+  const details = JSON.stringify({ wordWidth, fragmentWidth: fragment.width, phrase: analysis.describe() });
+  expect(wordWidth, `the word fits the row on its own: ${details}`).toBeLessThanOrEqual(fragment.width);
+  expect(analysis.naturalWidth, `the short word and the long one do not fit one row: ${details}`).toBeGreaterThan(fragment.width);
+  expect(analysis.rows, `the phrase wraps: ${details}`).toBeGreaterThanOrEqual(2);
+  expect(brokenWords(analysis).length, `the long word is not broken across rows: ${details}`).toBe(0);
+});
+
+test("a word wider than the screen wraps inside the material on a phone", async ({ page }) => {
+  await openLetters(page, PHONE, "unch_r_ct_r_stic_lly");
+  const leaves = await letterLeaves(page);
+  const { material, scrollWidth, innerWidth } = await measure(page, { material: "[data-testid='kid-material']" });
+  const details = JSON.stringify({ material, leaves: leaves.length });
+  expect(leaves.filter((leaf) => leaf.input), `the word keeps its five letter fields: ${details}`).toHaveLength(5);
+  for (const [index, leaf] of leaves.entries()) {
+    expect(leaf.left, `leaf ${index} inside the material (left): ${details}`).toBeGreaterThanOrEqual(material.left - 1);
+    expect(leaf.right, `leaf ${index} inside the material (right): ${details}`).toBeLessThanOrEqual(material.right + 1);
+  }
+  expect(scrollWidth, "no horizontal scroll").toBeLessThanOrEqual(innerWidth);
+  for (const [index, leaf] of leaves.filter((item) => item.input).entries()) {
+    expect(leaf.width, `letter field ${index} width`).toBeGreaterThanOrEqual(48);
+    expect(leaf.height, `letter field ${index} height`).toBeGreaterThanOrEqual(48);
+  }
 });

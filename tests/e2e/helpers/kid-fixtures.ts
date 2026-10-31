@@ -10,6 +10,8 @@ export const deckId = "10000000-0000-4000-8000-000000000002";
 export const sessionId = "10000000-0000-4000-8000-000000000003";
 export const taskId = "10000000-0000-4000-8000-000000000004";
 export const attemptId = "10000000-0000-4000-8000-000000000010";
+const assetId = "10000000-0000-4000-8000-000000000006";
+const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
 
 export function baseFixture() {
   return {
@@ -20,6 +22,46 @@ export function baseFixture() {
       policyId: "default", microphoneEnabled: false, state: "active" as const, taskBudget: 1, tasksIssued: 1,
       assessedTasksIssued: 1, startedAt: "2026-10-11T10:00:00.000Z", resumed: false },
   };
+}
+
+/** The base session with one written recall task (nothing answered yet); `recordingMode` is the profile's. */
+export function recallFixture(recordingMode: "hold" | "toggle" = "hold") {
+  const base = baseFixture();
+  return {
+    ...base,
+    profiles: [{ ...base.profiles[0]!, recordingMode }],
+    tasks: [{ taskId, sessionId, ordinal: 0, exerciseType: "recall" as const, direction: "source_to_target" as const,
+      state: "issued" as const, prompt: { kind: "recall" as const, prompt: "kot" }, remainingAssessed: 1 }],
+  };
+}
+
+/** A letter-completion task: `fragment` is the word or phrase in which "_" marks a missing letter. */
+export function letterTask(prompt: string, fragment: string): TaskDto {
+  return { taskId, sessionId, ordinal: 0, state: "issued", remainingAssessed: 1, exerciseType: "letter_completion",
+    direction: "source_to_target", prompt: { kind: "letter_completion", prompt, fragment } };
+}
+
+/** One issued task of the given prompt kind with fixed texts (the layout specs only need its shape). */
+export function taskFor(kind: TaskDto["prompt"]["kind"]): TaskDto {
+  const common = { taskId, sessionId, ordinal: 0, state: "issued" as const, remainingAssessed: 1 };
+  if (kind === "exposure") return { ...common, exerciseType: "exposure" as const, direction: null, prompt: {
+    kind: "exposure" as const, source: "kot", target: "cat", example: "The cat is sleeping.", audioAssetId: assetId,
+    exampleAudioAssetId: assetId, imageAssetId: assetId, visualType: "image" as const,
+  } };
+  if (kind === "listening") return { ...common, exerciseType: "listening" as const, direction: "target_to_source" as const, prompt: {
+    kind: "listening" as const, audioAssetId: assetId,
+    options: ["marzec", "kwiecień", "październik"].map((text, index) => ({ id: optionIds[index]!, text })),
+  } };
+  if (kind === "reading") return { ...common, exerciseType: kind, direction: "target_to_source", prompt: {
+    kind, text: "cat", options: ["kot", "pies", "ptak"].map((text, index) => ({ id: optionIds[index]!, text })),
+  } };
+  if (kind === "reverse_recognition") return { ...common, exerciseType: kind, direction: "target_to_source", prompt: {
+    kind, prompt: "kot", options: ["cat", "dog", "bird"].map((text, index) => ({ id: optionIds[index]!, text })),
+  } };
+  if (kind === "spelling") return { ...common, exerciseType: "spelling" as const, direction: "source_to_target" as const, prompt: { kind, prompt: "kot" } };
+  if (kind === "letter_completion") return letterTask("kot", "c_t");
+  if (kind === "speech") return { ...common, exerciseType: "speech" as const, direction: "source_to_target" as const, prompt: { kind, text: "cat", audioAssetId: assetId, imageAssetId: null, visualType: "none" as const } };
+  return { ...common, exerciseType: "recall" as const, direction: "source_to_target" as const, prompt: { kind: "recall" as const, prompt: "kot" } };
 }
 
 /** A written recall task answered by one completed attempt; `feedback` is what the dock shows. */
