@@ -1,5 +1,6 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
+import { clozeTask, clozeUid as uid } from "./helpers/kid-fixtures";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { assignmentAttempt, lessonTaskFixture, openLessonTask, recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
 import { expectButtonsNotClipped, expectTargetsReachable } from "./helpers/lesson-reach";
@@ -17,10 +18,9 @@ import { expectButtonsNotClipped, expectTargetsReachable } from "./helpers/lesso
 
 const childId = "10000000-0000-4000-8000-000000000801";
 const deckId = "10000000-0000-4000-8000-000000000802";
-const sessionId = "10000000-0000-4000-8000-000000000803";
 const versionId = "10000000-0000-4000-8000-000000000804";
-const clozeTaskId = "10000000-0000-4000-8000-000000000811";
-const uid = (n: number) => `10000000-0000-4000-8000-0000000008${String(n).padStart(2, "0")}`;
+// `clozeTask` (helpers/kid-fixtures.ts) carries session ...803 and task id ...811 of this 0008xx id range.
+const { sessionId, taskId: clozeTaskId } = clozeTask;
 
 const ids = { childId, deckId, sessionId, versionId };
 const deck = { title: "Fotosynteza", subjectTitle: "Przyroda" };
@@ -32,33 +32,6 @@ const VIEWPORTS = [
   { width: 768, height: 1024 },
   { width: 1280, height: 800 },
 ];
-
-const clozeTask: TaskDto = {
-  taskId: clozeTaskId, sessionId, ordinal: 0, exerciseType: "lesson_cloze", direction: null, state: "issued", remainingAssessed: 2,
-  prompt: {
-    kind: "lesson_cloze",
-    instructionPl: "Uzupełnij tekst. Wybierz słowo do każdej luki.",
-    segments: [
-      { text: "Roślina pobiera z powietrza " },
-      { gapId: uid(20) },
-      { text: ", a korzeniami czerpie z gleby wodę i rozpuszczone w niej sole mineralne. W zielonych liściach, dzięki energii " },
-      { gapId: uid(21) },
-      { text: ", powstają " },
-      { gapId: uid(22) },
-      { text: ". Do powietrza roślina oddaje przy tym " },
-      { gapId: uid(23) },
-      { text: ", którym oddychają zwierzęta i ludzie." },
-    ],
-    words: [
-      { id: uid(30), text: "światła słonecznego" },
-      { id: uid(31), text: "tlen" },
-      { id: uid(32), text: "dwutlenek węgla" },
-      { id: uid(33), text: "azot" },
-      { id: uid(34), text: "cukry" },
-      { id: uid(35), text: "chlorofil" },
-    ],
-  },
-};
 
 /**
  * Tekst z lukami rozdziału angielskiego: `contentLocale` „en-GB” — każdy

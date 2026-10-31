@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { TaskDto } from "@learning/contracts";
+import { LONG_LESSON_CARD } from "./helpers/kid-fixtures";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { expectReachableOnSmallPhone, LESSON_AUDIO_VIEWPORTS, lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
 import { expectFrameFillsViewport } from "./helpers/kid-frame";
@@ -23,23 +24,13 @@ const questionAudioAssetId = "10000000-0000-4000-8000-000000000921";
 
 const VIEWPORTS = LESSON_AUDIO_VIEWPORTS;
 
-/** Treść na granicy schematu karty (1200 znaków), z wypunktowaniem. */
-const LONG_BODY = (
-  "Pająki nie są owadami, chociaż wiele osób tak myśli. • Pająk ma osiem nóg, a owad sześć. " +
-  "• Ciało pająka składa się z dwóch części: głowotułowia i odwłoka. • Pająki nie mają czułków ani skrzydeł. " +
-  "Większość pająków tka sieci z cienkich, mocnych nici, które wytwarzają kądziołki na końcu odwłoka. "
-).repeat(5).slice(0, 1200).trim();
-
+/** A card at the schema limit: `LONG_LESSON_CARD` (long title, 1200-character bulleted body, three examples). */
 function cardTask(withAudio: boolean): TaskDto {
   return {
     taskId, sessionId, ordinal: 0, exerciseType: "lesson_card", direction: null, state: "issued", remainingAssessed: 2,
     prompt: {
       kind: "lesson_card",
-      card: {
-        title: "Czym różnią się pająki od owadów żyjących w ogrodzie za domem?",
-        body: LONG_BODY,
-        examples: ["Pająk krzyżak tka okrągłą sieć.", "Mucha ma sześć nóg i skrzydła.", "Kosarz ma bardzo długie nogi."],
-      },
+      card: { ...LONG_LESSON_CARD, examples: [...LONG_LESSON_CARD.examples] },
       ...(withAudio ? { questionAudioAssetId } : {}),
     },
   };

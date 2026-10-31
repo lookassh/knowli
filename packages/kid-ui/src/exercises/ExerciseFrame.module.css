@@ -34,6 +34,16 @@
   padding-block: 4px;
 }
 
+/* Z rezerwą pod panelem wyniku (ExerciseFrame ustawia atrybut razem z nią)
+   treść rośnie razem z dziećmi: padding rezerwy leży pod ostatnim z nich, więc
+   wydłuża przewijanie materiału, który przewija się już przed werdyktem
+   (spec 2026-10-31-kid-ui-large-screens-followups §3.3). Bez rezerwy zostaje
+   `flex: 1` (karta słowa na telefonie). Specyficzność 0,2,0 jest niższa niż
+   `flex: none` zwartego układu (0,3,0), który wygrywa. */
+.materialContent[data-dock-reserve] {
+  flex: 1 0 auto;
+}
+
 .actions {
   box-sizing: border-box;
   display: flex;
@@ -96,26 +106,85 @@
   grid-template-rows: auto minmax(var(--kid-visual-choice-min-size), 1fr) auto;
 }
 
+/* Wybór obrazków od 600 px: stopka od początku ma wysokość panelu wyniku
+   (spec 2026-10-31 §3.1), więc werdykt nie skraca wiersza materiału, a kafelki
+   (`100cqh`) zachowują rozmiar i miejsce przed werdyktem, po błędnym, po ponownej
+   próbie i po poprawnym. Pusta stopka stoi jako pas w kolorze tła; panel wyższy
+   niż token zmniejsza kafelki tylko o nadwyżkę. 12px to padding stopki (8 + 4).
+   Specyficzność 0,7,0 wygrywa z `.actions:empty` (0,4,0). Bez rezerwy zostają
+   powiększenie gestem i bardzo niskie okno (przewijana strona) oraz telefon
+   (< 600 px, spec §2): tam pusta stopka nadal jest ukryta. */
+@media (min-width: 600px) {
+  :global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"])) .root[data-feedback-layout="flow"][data-prompt-kind="picture_listening"] .actions {
+    display: flex;
+    min-height: calc(var(--kid-picture-dock-height) + 12px);
+  }
+}
+
 .flowDock {
   min-width: 0;
 }
 
-/* Zwarty układ na wysokim oknie (spec 2026-10-30-kid-ui-large-screens §3.2):
-   materiał nie rozciąga się na całą wysokość ramy, więc instrukcja, odpowiedzi
-   i stopka (akcja albo panel wyniku) stoją razem u góry, a wolne miejsce zostaje
-   pod nimi. Panel wyniku pojawia się pod odpowiedziami, które się nie
-   przesuwają. Ścieżka materiału ma minimum 0: długa treść nadal przewija się
-   w materiale. Próg 781 px wyłącza regułę na laptopach z regułami niskiego
-   okna. Wybór obrazków bez zmian: kafelki i tak wypełniają materiał (cqh). */
-@media (min-width: 840px) and (min-height: 781px) {
+/* Zwarty układ (spec 2026-10-30-kid-ui-large-screens §3.2, zmieniony przez spec
+   2026-10-31-kid-ui-large-screens-followups §3.4–3.5): materiał nie rozciąga się
+   na całą wysokość ramy, więc instrukcja, odpowiedzi i stopka (akcja albo panel
+   wyniku) stoją razem u góry, a wolne miejsce zostaje pod nimi. Panel wyniku
+   pojawia się pod odpowiedziami, które się nie przesuwają. Rama jest kolumną
+   flex równoważną siatce `auto minmax(0, max-content) auto`: instrukcja i stopka
+   mają wysokość własną, a materiał podstawę równą wysokości treści; kurczy się
+   do 0 i wtedy długa treść przewija się w materiale.
+   Warunek: wysokie okno (próg 781 px wyłącza regułę na laptopach z regułami
+   niskiego okna) albo dotykowy tablet w poziomie od 960 × 480 — klawiatura
+   ekranowa (interactiveWidget: resizes-content) obniża jego okno poniżej 781 px,
+   a pole odpowiedzi nie może przeskoczyć w trakcie pisania. Telefony w poziomie
+   (≤ 932 px) gałęzi dotykowej nie spełniają, a próg 480 trzyma ją z dala od
+   bardzo niskiego okna (przewijana strona). Ten sam warunek ma zaokrąglony panel
+   wyniku (ExerciseFeedbackDock.module.css). Wybór obrazków bez zmian: kafelki
+   i tak wypełniają materiał (cqh). */
+@media (min-width: 840px) and (min-height: 781px), (min-width: 960px) and (min-height: 480px) and (pointer: coarse) {
   .root:not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) {
-    grid-template-rows: auto minmax(0, max-content) auto;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .root:not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) > * {
+    flex: none;
+  }
+
+  /* Specyficzność 0,4,0 wygrywa z `> *` (0,3,0): podstawa materiału to wysokość
+     treści (także z rezerwą pod panelem), a minimum 0 pozwala mu się kurczyć. */
+  .root:not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) > .material {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  /* Odstęp od góry: element kolumny przed instrukcją o podstawie `--frame-offset`
+     (domyślnie 0). Ustępuje pierwszy — przy współczynniku 1000000 materiał nie
+     traci nawet ułamka piksela, zanim odstęp spadnie do 0 (przy 1000 gubił ok.
+     1 px i pokazywał pasek przewijania). Ujemny margines znosi `gap` ramy, więc
+     bez odstępu instrukcja stoi przy górnej krawędzi jak dotąd. */
+  .root:not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"])::before {
+    content: "";
+    flex: 0 1000000 var(--frame-offset, 0px);
+    margin-block-end: -8px;
+  }
+
+  /* Odstęp dostaje tylko mysz lub touchpad (duży monitor ze skalą), poza
+     powiększeniem gestem i zadaniami z dużą ilustracją lub kartą: zajmują one
+     większość wysokości, więc odstęp byłby częściowy i znikałby przy werdykcie
+     (wyższy panel mowy), przesuwając słowo i przycisk nagrywania. Tablet
+     dotykowy ma 0: otwarta klawiatura nie może go zmienić, a na krótszym oknie
+     odstęp kosztowałby 16–25% ramy. */
+  @media (hover: hover) and (pointer: fine) {
+    :global(.kid-page:not([data-zoomed="true"])) .root:not([data-prompt-kind="exposure"]):not([data-prompt-kind="picture_exposure"]):not([data-prompt-kind="picture_recall"]):not([data-prompt-kind="picture_speech"]):not([data-prompt-kind="lesson_card"]) {
+      --frame-offset: var(--kid-compact-frame-offset);
+    }
   }
 
   /* Treść ma wysokość własną, nie 100% materiału: rezerwa pod panelem
-     (padding-bottom) powiększa wiersz materiału zamiast nachodzić na treść,
-     a przy materiale u limitu wydłuża zakres przewijania. */
+     (padding-bottom) powiększa materiał (najpierw kosztem odstępu od góry)
+     zamiast nachodzić na treść, a przy materiale u limitu wydłuża zakres
+     przewijania. */
   .root[data-feedback-layout="overlay"] .materialContent {
     flex: none;
     min-height: 0;
@@ -190,6 +259,14 @@
   inset-inline: 0;
   bottom: 0;
   z-index: 3;
+}
+
+/* Wychodzący panel (po „Spróbuj jeszcze raz”) AnimatePresence wypycha z układu
+   (`data-motion-pop-id`) i animuje nad akcjami, które już wróciły. `inert`
+   i `pointer-events: none` ma tylko wnętrze panelu; kotwica z pustymi slotami
+   i nakładka przechwytywałyby kliknięcia akcji, dopóki trwa animacja. */
+.actions > [data-motion-pop-id] {
+  pointer-events: none;
 }
 
 .root[data-action-layout="inline"] .actions,

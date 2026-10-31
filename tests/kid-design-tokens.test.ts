@@ -34,6 +34,24 @@ function declarations(css: string, property: string): string[] {
   return [...css.matchAll(new RegExp(`(?:^|[;{\\s])${property}\\s*:\\s*([^;}]+)`, "g"))].map((match) => match[1]!.trim());
 }
 
+const withoutBlockComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "");
+/** TypeScript without comments; `//` after a colon is kept so URLs in strings survive. */
+const withoutTsComments = (source: string) => withoutBlockComments(source).replace(/(?<!:)\/\/.*$/gm, "");
+
+/** Raw window-unit lengths (`100vh`, `50DVW`, a template literal's `${n}vh`). `css` is expected without comments already. */
+function rawViewportUnits(source: string, kind: "css" | "ts"): string[] {
+  const code = kind === "ts" ? withoutTsComments(source) : source;
+  return [...code.matchAll(/(?:\d+(?:\.\d+)?|\})(?:[sld])?v(?:h|w|i|b|min|max)\b/gi)].map((match) => match[0]);
+}
+
+/** Typed registrations (`@property`, `CSS.registerProperty`) that would break the zoom-aware tokens. `css` is raw, token block included. */
+function typedTokenRegistrations(css: string, ts: string): string[] {
+  return [
+    ...withoutBlockComments(css).matchAll(/@property\s+--kid-(?:vh|dvh|svh|vw|zoom)\b/g),
+    ...withoutTsComments(ts).matchAll(/\bCSS\.registerProperty\b/g),
+  ].map((match) => match[0]);
+}
+
 const withoutVars = (value: string) => value.replace(/var\([^()]*\)/g, "");
 const LENGTH = /\d(?:px|rem|em)\b/;
 
@@ -81,17 +99,48 @@ describe("kid-ui design tokens", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("catches raw window units in CSS and in TypeScript, template-literal interpolations and uppercase included", () => {
+    expect(rawViewportUnits("height: 100VH", "css")).toEqual(["100VH"]);
+    expect(rawViewportUnits("min-height: 12.5dvh; width: 50vw", "css")).toEqual(["12.5dvh", "50vw"]);
+    expect(rawViewportUnits("`${n}vh`", "ts")).toEqual(["}vh"]);
+    expect(rawViewportUnits("const h = `${Math.round(n)}dvh`;", "ts")).toEqual(["}dvh"]);
+    // Comments never count, and a token reference is not a raw unit.
+    expect(rawViewportUnits("/* 100vh */ // 80vh\nconst a = 1;", "ts")).toEqual([]);
+    expect(rawViewportUnits("height: calc(100 * var(--kid-vh));", "css")).toEqual([]);
+  });
+
   it("uses zoom-aware viewport tokens instead of raw viewport units", () => {
     /* KidPage scales the whole page with CSS zoom on large windows, which
        multiplies viewport units by the scale. Only --kid-vh/-dvh/-svh/-vw
        (they divide by --kid-zoom) may carry a window-relative length. */
-    const RAW_VIEWPORT_UNIT = /\d+(?:\.\d+)?(?:[sld])?v(?:h|w|i|b|min|max)\b/g;
-    const fromCss = cssFiles.flatMap((url) => [...styleRules(url).matchAll(RAW_VIEWPORT_UNIT)]
-      .map((match) => `${relative(url)}: ${match[0]}`));
-    const fromTsx = files(SRC, /\.tsx$/)
-      .filter((url) => !/\.test\.tsx$/.test(url.pathname))
-      .flatMap((url) => [...readFileSync(url, "utf8").matchAll(RAW_VIEWPORT_UNIT)].map((match) => `${relative(url)}: ${match[0]}`));
-    expect([...fromCss, ...fromTsx]).toEqual([]);
+    const fromCss = cssFiles.flatMap((url) => rawViewportUnits(styleRules(url), "css").map((hit) => `${relative(url)}: ${hit}`));
+    const fromTs = files(SRC, /\.tsx?$/)
+      .filter((url) => !/\.test\.tsx?$/.test(url.pathname))
+      .flatMap((url) => rawViewportUnits(readFileSync(url, "utf8"), "ts").map((hit) => `${relative(url)}: ${hit}`));
+    expect([...fromCss, ...fromTs]).toEqual([]);
+  });
+
+  it("catches typed registrations of the window-unit tokens and --kid-zoom", () => {
+    expect(typedTokenRegistrations("@property --kid-vh { syntax: '<length>'; }", "")).toEqual(["@property --kid-vh"]);
+    expect(typedTokenRegistrations("@property  --kid-zoom{inherits:true}", "")).toEqual(["@property  --kid-zoom"]);
+    expect(typedTokenRegistrations("", "CSS.registerProperty({ name: '--kid-dvh' });")).toEqual(["CSS.registerProperty"]);
+    expect(typedTokenRegistrations("", "window.CSS.registerProperty({ name: '--kid-zoom' });")).toEqual(["CSS.registerProperty"]);
+    // Other properties and comments about the rule are not registrations.
+    expect(typedTokenRegistrations("@property --other { syntax: '*'; }", "")).toEqual([]);
+    expect(typedTokenRegistrations("/* Not registered with @property --kid-zoom */", "// CSS.registerProperty is not used")).toEqual([]);
+  });
+
+  it("never registers the window-unit tokens or --kid-zoom as typed properties", () => {
+    /* A registered --kid-zoom (or a token that reads it) would substitute at
+       the :root rule instead of the element that declares the token, so the
+       tokens would stop dividing by the page's own zoom. The token block is
+       kept: it is raw CSS, not styleRules. */
+    const css = cssFiles.map((url) => readFileSync(url, "utf8")).join("\n");
+    const ts = files(SRC, /\.tsx?$/)
+      .filter((url) => !/\.test\.tsx?$/.test(url.pathname))
+      .map((url) => readFileSync(url, "utf8"))
+      .join("\n");
+    expect(typedTokenRegistrations(css, ts)).toEqual([]);
   });
 
   it("defines the window-unit tokens by dividing through --kid-zoom, keeping each unit kind", () => {

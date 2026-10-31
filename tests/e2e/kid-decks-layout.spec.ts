@@ -249,6 +249,8 @@ test("microphone settings stay inside portrait, landscape, tablet and desktop vi
     });
     await openDeckScreen(page, [makeDeck(0), makeDeck(1)]);
     const button = page.getByTestId("kid-mic-settings");
+    // The screen enters from 0.98 scale (kidScreenInitial, uniform): measure once it is full size, not at 48 x 0.98.
+    await expect.poll(async () => (await button.boundingBox())?.width ?? 0, { message: JSON.stringify(viewport) }).toBeGreaterThanOrEqual(48);
     const buttonBox = await button.boundingBox();
     expect(buttonBox?.width ?? 0, JSON.stringify(viewport)).toBeGreaterThanOrEqual(48);
     expect(buttonBox?.height ?? 0, JSON.stringify(viewport)).toBeGreaterThanOrEqual(48);
