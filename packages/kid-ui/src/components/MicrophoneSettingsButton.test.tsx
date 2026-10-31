@@ -4,7 +4,15 @@ import { cleanup, fireEvent, renderKid, screen } from "../test/render-kid";
 import { KidViewportProvider } from "../layout/viewport";
 import { MicrophoneSettingsButton } from "./MicrophoneSettingsButton";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(Element.prototype, "currentCSSZoom");
+});
+
+const rect = (left: number, top: number, width: number, height: number): DOMRect => ({
+  left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+});
 
 describe("MicrophoneSettingsButton", () => {
   it("opens settings without changing the microphone choice", async () => {
@@ -89,5 +97,32 @@ describe("MicrophoneSettingsButton", () => {
     expect(removeViewportListener).toHaveBeenCalledWith("scroll", expect.any(Function));
     if (originalVisualViewport) Object.defineProperty(window, "visualViewport", originalVisualViewport);
     else Reflect.deleteProperty(window, "visualViewport");
+  });
+
+  it("places the panel in inner pixels under a 1.6 zoom", async () => {
+    // jsdom has no CSS zoom: report 1.6 for every element, as a large window under KidPage does.
+    Object.defineProperty(Element.prototype, "currentCSSZoom", { configurable: true, get: () => 1.6 });
+    // Rectangles are screen pixels: a button at the right edge of a narrow window and a panel wider than the room left of it.
+    const screenSize = { width: 600, height: 800 };
+    const buttonRect = rect(540, 20, 48, 48);
+    const panelRect = rect(0, 0, 400, 200);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const testId = this.getAttribute("data-testid");
+      return testId === "kid-mic-settings" ? buttonRect : testId === "kid-mic-settings-panel" ? panelRect : rect(0, 0, 0, 0);
+    });
+    // --kid-safe-* are not set in jsdom, so the component's 16 px floor applies on every side.
+    renderKid(
+      <KidViewportProvider viewport={{ ...screenSize, offsetTop: 0, zoomed: false, scale: 1.6 }}>
+        <MicrophoneSettingsButton microphone={false} micDenied={false} onToggleMicrophone={vi.fn()} />
+      </KidViewportProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("kid-mic-settings"));
+    const panel = await screen.findByTestId("kid-mic-settings-panel");
+
+    // The 8 px gap and the 16 px margin are inner pixels, so they grow with the zoom; the result is divided back,
+    // because the zoom multiplies the left/top of a fixed element once more when painting.
+    expect(Number.parseFloat(panel.style.top)).toBeCloseTo((buttonRect.bottom + 8 * 1.6) / 1.6, 5);
+    expect(Number.parseFloat(panel.style.left)).toBeCloseTo((screenSize.width - panelRect.width - 16 * 1.6) / 1.6, 5);
   });
 });

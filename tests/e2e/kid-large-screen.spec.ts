@@ -10,9 +10,11 @@ import { lessonAudioFixture } from "./helpers/lesson-audio";
 import { installKidUiFixture, type KidUiFixture } from "./helpers/kid-ui-fixture";
 import { fourPictureTilesFixture, openPictureChoice } from "./helpers/picture-fixtures";
 
-// The screenshot tests at the end attach PNGs as test attachments (body, not a file path). The list and github
-// reporters do not save body attachments; to get the PNGs run
-// `corepack pnpm exec playwright test tests/e2e/kid-large-screen.spec.ts --reporter=html` (or `--reporter=json`).
+// The screenshot tests at the end (describe "screenshots") are skipped unless UMIEM_E2E_SCREENSHOTS is set. They attach
+// PNGs as test attachments (body, not a file path). The list and github reporters do not save body attachments; to
+// get the PNGs run
+// `UMIEM_E2E_SCREENSHOTS=1 corepack pnpm exec playwright test tests/e2e/kid-large-screen.spec.ts --reporter=html`
+// (or `--reporter=json`).
 
 // A stuck click or navigation fails fast instead of waiting for the whole test timeout.
 test.use({ actionTimeout: 15_000, navigationTimeout: 30_000 });
@@ -81,6 +83,16 @@ test("rescales on resize", async ({ page }) => {
   await resizeAndSettle(page, fullHd);
   await waitForKidScale(page, 1.2);
   await expectSessionFitsWindow(page, fullHd);
+
+  // Back to scale 1: KidPage drops the inline zoom and --kid-zoom instead of leaving a stale 1.2.
+  const laptop = { width: 1280, height: 800 };
+  await resizeAndSettle(page, laptop);
+  await waitForKidScale(page, 1);
+  await expect.poll(() => page.locator(".kid-page").evaluate((element) => ({
+    zoom: (element as HTMLElement).style.zoom,
+    kidZoom: (element as HTMLElement).style.getPropertyValue("--kid-zoom"),
+  })), { message: "inline zoom and --kid-zoom are gone at scale 1" }).toEqual({ zoom: "", kidZoom: "" });
+  await expectFrameFillsViewport(page, laptop);
 });
 
 test("short flow screens do not scroll", async ({ page }) => {
@@ -701,54 +713,58 @@ async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, { body: await page.screenshot(), contentType: "image/png" });
 }
 
-for (const { width, height, scale } of SCREENSHOT_WINDOWS) {
-  const size = `${width}x${height}`;
+test.describe("screenshots", () => {
+  test.skip(!process.env.UMIEM_E2E_SCREENSHOTS, "set UMIEM_E2E_SCREENSHOTS=1 to attach review screenshots");
 
-  test(`screenshot: picture choice at ${size}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await openPictureChoice(page, fourPictureTilesFixture());
-    await expect(page.getByTestId("kid-option")).toHaveCount(4);
-    await waitForKidScale(page, scale);
-    await page.getByTestId("kid-option").first().click();
-    await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
-    await expect(page.getByTestId("kid-next")).toBeVisible();
-    await attachScreenshot(page, testInfo, `picture-choice-${size}`);
-  });
+  for (const { width, height, scale } of SCREENSHOT_WINDOWS) {
+    const size = `${width}x${height}`;
 
-  test(`screenshot: text choice at ${size}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await openSession(page, completedTextChoiceFixture());
-    await expect(page.getByTestId("kid-option")).toHaveCount(4);
-    await waitForKidScale(page, scale);
-    await page.getByTestId("kid-option").first().click();
-    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
-    await attachScreenshot(page, testInfo, `text-choice-${size}`);
-  });
+    test(`screenshot: picture choice at ${size}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await openPictureChoice(page, fourPictureTilesFixture());
+      await expect(page.getByTestId("kid-option")).toHaveCount(4);
+      await waitForKidScale(page, scale);
+      await page.getByTestId("kid-option").first().click();
+      await expect(page.getByTestId("kid-outcome-correct")).toBeVisible();
+      await expect(page.getByTestId("kid-next")).toBeVisible();
+      await attachScreenshot(page, testInfo, `picture-choice-${size}`);
+    });
 
-  test(`screenshot: written answer at ${size}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await openWrittenRecall(page);
-    await waitForKidScale(page, scale);
-    await page.getByTestId("kid-input").fill("cat");
-    await page.getByTestId("kid-submit").click();
-    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
-    await settledDockReserve(page);
-    await attachScreenshot(page, testInfo, `written-answer-${size}`);
-  });
+    test(`screenshot: text choice at ${size}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await openSession(page, completedTextChoiceFixture());
+      await expect(page.getByTestId("kid-option")).toHaveCount(4);
+      await waitForKidScale(page, scale);
+      await page.getByTestId("kid-option").first().click();
+      await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+      await attachScreenshot(page, testInfo, `text-choice-${size}`);
+    });
 
-  test(`screenshot: missing letters at ${size}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await openSession(page, { ...recallFixture(), tasks: [letterTask("Uzupełnij słowo", LETTER_PHRASE)] });
-    await expect(page.getByTestId("kid-fragment")).toBeVisible();
-    await waitForKidScale(page, scale);
-    await attachScreenshot(page, testInfo, `missing-letters-${size}`);
-  });
+    test(`screenshot: written answer at ${size}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await openWrittenRecall(page);
+      await waitForKidScale(page, scale);
+      await page.getByTestId("kid-input").fill("cat");
+      await page.getByTestId("kid-submit").click();
+      await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+      await settledDockReserve(page);
+      await attachScreenshot(page, testInfo, `written-answer-${size}`);
+    });
 
-  test(`screenshot: deck screen at ${size}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await openDeckScreen(page, [makeDeck(0), makeDeck(1), makeDeck(2)]);
-    await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
-    await waitForKidScale(page, scale);
-    await attachScreenshot(page, testInfo, `deck-screen-${size}`);
-  });
-}
+    test(`screenshot: missing letters at ${size}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await openSession(page, { ...recallFixture(), tasks: [letterTask("Uzupełnij słowo", LETTER_PHRASE)] });
+      await expect(page.getByTestId("kid-fragment")).toBeVisible();
+      await waitForKidScale(page, scale);
+      await attachScreenshot(page, testInfo, `missing-letters-${size}`);
+    });
+
+    test(`screenshot: deck screen at ${size}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await openDeckScreen(page, [makeDeck(0), makeDeck(1), makeDeck(2)]);
+      await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
+      await waitForKidScale(page, scale);
+      await attachScreenshot(page, testInfo, `deck-screen-${size}`);
+    });
+  }
+});

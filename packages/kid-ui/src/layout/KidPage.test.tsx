@@ -113,5 +113,11 @@ describe("KidPage zoom", () => {
     expect(frame.getAttribute("data-kid-scale")).toBe("1.6");
     expect(kidZoom(frame)).toBe("1.6");
     expect(frame.style.height).toBe("900px");
+
+    // Back to a coarse pointer: the zoom goes away and the frame is the whole window again.
+    act(() => pointer.setFine(false));
+    expect(frame.getAttribute("data-kid-scale")).toBe("1");
+    expect(kidZoom(frame)).toBe("");
+    expect(frame.style.height).toBe(`${window.innerHeight}px`);
   });
 });
