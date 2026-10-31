@@ -22,6 +22,9 @@ import type {
 import type { MediaStore } from "../ports/media";
 import { letterGroups } from "../domain/pronunciation-fragments";
 import { checkElement, materialLexicon } from "../domain/lessons/subjects/english-chapter/lexicon";
+import { FUNCTION_WORDS } from "../domain/lessons/subjects/english/function-words";
+import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
+import { normalizeTokens } from "../domain/lessons/normalize";
 import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
 import { materializeGeneratedCalculations } from "./lesson-calculations";
 
@@ -70,6 +73,39 @@ export const DEFAULT_FAKE_PICTURE_DECK_ITEMS: Array<Record<string, unknown>> = [
   { source: "jeden", target: "one", acceptedAnswers: [], visualType: "number", visualData: { count: 1 } },
   { source: "dwa", target: "two", acceptedAnswers: [], visualType: "number", visualData: { count: 2 } },
 ];
+
+/** Słowo tekstu źródła kandydujące na domyślny element fake'a: same litery, co najmniej 3. */
+const FAKE_SOURCE_WORD = /^\p{L}{3,}$/u;
+
+/**
+ * Domyślny wynik fake'a w trybie ze źródła (design 2026-10-30 §6.2): do
+ * `maxItems` różnych słów tekstu w kolejności występowania — tokeny z samych
+ * liter (≥ 3), spoza `FUNCTION_WORDS`, przechodzące walidację serwera
+ * (`isMaterialVocabularyTarget`), więc żaden element nie jest odrzucany.
+ * `source` = `„<słowo>” po polsku`, `example` = pierwsze zdanie tekstu z tym
+ * słowem. Format obrazkowy dostaje `visualType: "image"` (ilustracja fake'a),
+ * standardowy — `none`.
+ */
+function fakeSourceDeckItems(input: { material: string; maxItems: number; vocabularyFormat?: "standard" | "picture" }): LlmGeneratedItem[] {
+  const index = materialPhraseIndex(input.material);
+  const sentences = input.material.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter(Boolean);
+  const words: string[] = [];
+  for (const token of normalizeTokens(input.material)) {
+    if (words.length >= input.maxItems) break;
+    if (words.includes(token) || !FAKE_SOURCE_WORD.test(token) || FUNCTION_WORDS.has(token)) continue;
+    if (isMaterialVocabularyTarget(token, index)) words.push(token);
+  }
+  return words.map((word) => {
+    const example = sentences.find((sentence) => normalizeTokens(sentence).includes(word));
+    return {
+      source: `„${word}” po polsku`,
+      target: word,
+      acceptedAnswers: [],
+      ...(example === undefined ? {} : { example: example.slice(0, 300) }),
+      visualType: input.vocabularyFormat === "picture" ? "image" : "none",
+    };
+  });
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -456,6 +492,7 @@ export class FakeLlmProvider implements LlmProvider {
     const behavior =
       this.#behaviors.length > 1 ? this.#behaviors.shift()! : this.#behaviors[0] ?? null;
     if (!behavior) {
+      if ("material" in input) return { items: fakeSourceDeckItems(input) };
       const defaults = input.vocabularyFormat === "picture" ? DEFAULT_FAKE_PICTURE_DECK_ITEMS : DEFAULT_FAKE_DECK_ITEMS;
       return { items: defaults as unknown as LlmGeneratedItem[] };
     }

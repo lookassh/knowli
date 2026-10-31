@@ -8,14 +8,17 @@ export const PARENT_SECTIONS = ["decks", "sources", "children", "progress", "wor
 export type ParentSection = (typeof PARENT_SECTIONS)[number];
 
 /**
- * Widok panelu: sekcja, a w niej opcjonalnie otwarty zestaw albo nowa lekcja
- * (Zestawy) lub otwarte źródło (Źródła). Nowa lekcja ze źródła niesie
- * `sourceId` i wskazany przedmiot `subjectId` w parametrach adresu.
+ * Widok panelu: sekcja, a w niej opcjonalnie otwarty zestaw, nowa lekcja albo
+ * nowy zestaw słówek ze źródła (Zestawy) lub otwarte źródło (Źródła). Nowa
+ * lekcja ze źródła niesie `sourceId` i wskazany przedmiot `subjectId`
+ * w parametrach adresu; nowy zestaw słówek — zawsze `sourceId` (bez źródła
+ * nie ma tego formularza).
  */
 export interface ParentRoute {
   section: ParentSection;
   deckId?: string;
   newLesson?: true;
+  newVocabulary?: true;
   sourceId?: string;
   subjectId?: string;
 }
@@ -41,6 +44,10 @@ export function routePath(route: ParentRoute): string {
     const query = params.toString();
     return `${PARENT_ROOT}/lessons/new${query ? `?${query}` : ""}`;
   }
+  if (route.newVocabulary) {
+    const query = route.sourceId !== undefined ? `?${new URLSearchParams({ source: route.sourceId }).toString()}` : "";
+    return `${PARENT_ROOT}/vocabulary/new${query}`;
+  }
   if (route.section === "sources" && route.sourceId !== undefined) return `${sectionPath("sources")}/${route.sourceId}`;
   return sectionPath(route.section);
 }
@@ -56,6 +63,16 @@ function newLessonRoute(query: string): ParentRoute {
     ...(source !== null && UUID.test(source) ? { sourceId: source.toLowerCase() } : {}),
     ...(subject !== null && SUBJECT_ID.test(subject) ? { subjectId: subject } : {}),
   };
+}
+
+/**
+ * Nowy zestaw słówek ze źródła: bez prawidłowego `source` formularz nie ma
+ * z czego tworzyć, więc adres nie ma widoku (panel przejdzie do domyślnej sekcji).
+ */
+function newVocabularyRoute(query: string): ParentRoute | null {
+  const source = new URLSearchParams(query).get("source");
+  if (source === null || !UUID.test(source)) return null;
+  return { section: "decks", newVocabulary: true, sourceId: source.toLowerCase() };
 }
 
 /**
@@ -81,6 +98,9 @@ export function routeFromPath(location: string): ParentRoute | null {
   }
   if (segments.length === 3 && first === "lessons" && second === "new") {
     return newLessonRoute(query);
+  }
+  if (segments.length === 3 && first === "vocabulary" && second === "new") {
+    return newVocabularyRoute(query);
   }
   return null;
 }

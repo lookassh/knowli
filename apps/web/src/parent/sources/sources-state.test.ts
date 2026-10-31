@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
+import { routePath } from "../parent-routes";
 import {
   CHAPTER_SUBJECT_ID,
   SCHOOL_SUBJECT_ID,
@@ -9,6 +10,7 @@ import {
   isUncertainFailure,
   newLessonFromSource,
   newSourceCommand,
+  newVocabularyFromSource,
   sourceBodyAtLimit,
   sourceCounter,
   sourceDraftTyped,
@@ -130,6 +132,11 @@ describe("sources state", () => {
       .toEqual({ section: "decks", newLesson: true, sourceId: SOURCE_ID, subjectId: SCHOOL_SUBJECT_ID });
     expect(CHAPTER_SUBJECT_ID).toBe("english_chapter");
     expect(SCHOOL_SUBJECT_ID).toBe("school");
+  });
+
+  it("przycisk zestawu słówek prowadzi do formularza zestawu ze źródłem", () => {
+    expect(newVocabularyFromSource(SOURCE_ID)).toEqual({ section: "decks", newVocabulary: true, sourceId: SOURCE_ID });
+    expect(routePath(newVocabularyFromSource(SOURCE_ID))).toBe(`/parent/vocabulary/new?source=${SOURCE_ID}`);
   });
 
   it("niepewny wynik polecenia: brak odpowiedzi albo błąd serwera; 4xx jest ostateczne", () => {

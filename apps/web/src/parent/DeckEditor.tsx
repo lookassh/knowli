@@ -5,6 +5,7 @@ import {
   Accordion,
   ActionIcon,
   Alert,
+  Anchor,
   Button,
   Checkbox,
   Group,
@@ -25,7 +26,9 @@ import {
   messages,
   type ChildDto,
   type DeckDto,
+  type DeckSourceDto,
   type DraftDto,
+  type GenerationDto,
   type VisualType,
 } from "@learning/contracts";
 import {
@@ -44,11 +47,15 @@ import type { EditorLeaveState } from "./useParentLeaveGuard";
 import DeckConflictPanel, { type EditorConflict } from "./DeckConflictPanel";
 import { DeckCoverSettings } from "./DeckCoverSettings";
 import { ParentIcon } from "./ParentIcon";
+import LessonSourceNote from "./lessons/LessonSourceNote";
+import { routePath } from "./parent-routes";
+import { plainClick } from "./plain-click";
 import { runOnce } from "./run-once";
 import { polishPlural } from "./deck-list-grouping";
 import { formatFamilyDate } from "./family-date";
 import { EditorActionBar, EditorAssignments, EditorErrorText } from "./EditorAssignments";
 import "./deck-editor.css";
+import "./lessons/lesson-panels.css";
 
 const VISUAL_TYPES: VisualType[] = ["image", "color", "number", "sequence", "none"];
 
@@ -69,6 +76,69 @@ function mediaTone(state: string): "success" | "info" | "danger" | "neutral" {
   return "neutral";
 }
 
+
+/** Komunikat nieudanego runu generacji według kodu błędu (zestaw obrazkowy, zestaw ze źródła, reszta). */
+export function generationFailureText(errorCode: string | null): string {
+  if (errorCode === "no_picture_material") return messages.decks.noPictureMaterial;
+  if (errorCode === "no_source_items") return messages.decks.noSourceItems;
+  return messages.decks.generationFailed;
+}
+
+/**
+ * Wynik ostatniego runu generacji pod nagłówkiem edytora: porażka z ponowieniem
+ * i — w zestawie ze źródła (design 2026-10-30 §6.2) — liczba pozycji
+ * odrzuconych, bo nie było ich w tekście źródła albo były niepoprawne
+ * (`rejectedCount`; brak/`null` w trybie „z opisu”, 0 — nic nie odrzucono).
+ * Ponowienie powtarza zamrożone polecenie, więc przy `no_source_items` zestaw
+ * z istniejącym źródłem dostaje też link do strony źródła (stamtąd nowy zestaw
+ * z innym zawężeniem albo rodzajem).
+ */
+export function DeckGenerationOutcome({ generation, onRetry, source, onOpenSource }: {
+  generation: GenerationDto;
+  onRetry: () => void;
+  /** Źródło zestawu słówek (brak — opis, ręczny zestaw albo źródło usunięto). */
+  source?: DeckSourceDto | undefined;
+  onOpenSource?: ((sourceId: string) => void) | undefined;
+}) {
+  const rejected = generation.rejectedCount ?? 0;
+  const linkedSource = generation.errorCode === "no_source_items" ? source : undefined;
+  return (
+    <>
+      {generation.state === "failed" && (
+        <Alert color="red" variant="light" data-testid="generation-failed">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">{generationFailureText(generation.errorCode)}</Text>
+            <Group gap="md" wrap="wrap">
+              <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />} onClick={onRetry}>
+                {messages.decks.retryGeneration}
+              </Button>
+              {linkedSource && (
+                <Anchor
+                  href={routePath({ section: "sources", sourceId: linkedSource.id })}
+                  size="sm"
+                  className="pp-lesson-source-change"
+                  data-testid="generation-source-link"
+                  onClick={(event) => {
+                    if (!onOpenSource || !plainClick(event)) return;
+                    event.preventDefault();
+                    onOpenSource(linkedSource.id);
+                  }}
+                >
+                  {messages.decks.goToSource}
+                </Anchor>
+              )}
+            </Group>
+          </Stack>
+        </Alert>
+      )}
+      {rejected > 0 && (
+        <Text size="sm" className="pp-editor-muted" data-testid="vocabulary-rejected-count">
+          {messages.decks.rejectedFromSource.replace("{n}", String(rejected))}
+        </Text>
+      )}
+    </>
+  );
+}
 
 /** DTO używa "approved", katalog komunikatów kluczem "ready". */
 function mediaStateText(catalogue: Record<string, string>, state: string): string {
@@ -92,11 +162,14 @@ export default function DeckEditor({
   childrenList,
   onBack,
   onEditorStateChange,
+  onOpenSource,
 }: {
   deckId: string;
   childrenList: ChildDto[];
   onBack: () => void;
   onEditorStateChange: (state: EditorLeaveState) => void;
+  /** Strona źródła, z którego powstał zestaw słówek (link w notce pochodzenia). */
+  onOpenSource: (sourceId: string) => void;
 }) {
   const [deck, setDeck] = useState<DeckDto | null>(null);
   const [form, setForm] = useState<EditableDeckForm | null>(null);
@@ -768,7 +841,7 @@ export default function DeckEditor({
           </Menu>
         )}
       </Group>
-      <Group gap="xs" mt={6} mb="md" className="pp-editor-meta">
+      <Group gap="xs" mt={6} mb={deck?.source ? 4 : "md"} className="pp-editor-meta">
         {deck?.state === "published" && (
           <span className="pp-status-badge" data-tone="success" data-testid="publish-status">{messages.decks.published}</span>
         )}
@@ -783,6 +856,8 @@ export default function DeckEditor({
           </Text>
         )}
       </Group>
+      {/* zestaw słówek ze źródła: skąd pochodzą słowa i czy tekst źródła zmieniono od utworzenia */}
+      {deck?.source && <LessonSourceNote source={deck.source} onOpen={onOpenSource} />}
 
       <Stack gap="md">
         {generating && (
@@ -790,15 +865,8 @@ export default function DeckEditor({
             {messages.decks.generating}
           </Alert>
         )}
-        {deck?.generation?.state === "failed" && (
-          <Alert color="red" variant="light" data-testid="generation-failed">
-            <Stack gap="xs" align="flex-start">
-              <Text size="sm">{deck.generation.errorCode === "no_picture_material" ? messages.decks.noPictureMaterial : messages.decks.generationFailed}</Text>
-              <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />} onClick={retry}>
-                {messages.decks.retryGeneration}
-              </Button>
-            </Stack>
-          </Alert>
+        {deck?.generation && (
+          <DeckGenerationOutcome generation={deck.generation} onRetry={() => void retry()} source={deck.source} onOpenSource={onOpenSource} />
         )}
         {error && !showActionBar && errorAlert}
 

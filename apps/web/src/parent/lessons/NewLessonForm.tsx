@@ -5,12 +5,13 @@ import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInp
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
-import { callParent, errorMessage, isSourceChangedError, parentClient } from "../api";
-import { isDefinitiveGenerationRejection, readLessonAcceptance } from "../generation-request";
+import { callParent, errorMessage, parentClient } from "../api";
+import { readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
 import { plainClick } from "../plain-click";
 import { httpStatusOf, orpc } from "../query-client";
+import { classifyCreateFailure, isFreshSourceRefresh, type SourceRefreshOutcome } from "../sources/source-refresh";
 import type { EditorLeaveState } from "../useParentLeaveGuard";
 import "./lesson-panels.css";
 import "../sources/sources-panel.css";
@@ -176,46 +177,6 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, source?:
 }
 
 /**
- * Wynik polecenia utworzenia lekcji, które nie skończyło się przyjęciem:
- * `source-missing` — źródło usunięto w innym oknie (404), `source-changed` —
- * tekst źródła zmieniono po wyświetleniu podglądu (409 z
- * `LessonSourceChangedDetails`), `rejected` — inne ostateczne odrzucenie,
- * `uncertain` — wynik nieznany (ponowienie tym samym poleceniem). Pierwsze dwa
- * są rozpoznawane tylko w trybie źródła; w żadnym z trzech ostatecznych zestaw
- * nie powstał, bo serwer sprawdza wcześniejsze polecenie z tym kluczem przed
- * odczytem źródła.
- */
-export type CreateFailure = "source-missing" | "source-changed" | "rejected" | "uncertain";
-
-export function classifyCreateFailure(cause: unknown, fromSource: boolean): CreateFailure {
-  if (fromSource && httpStatusOf(cause) === 404) return "source-missing";
-  if (fromSource && isSourceChangedError(cause)) return "source-changed";
-  if (isDefinitiveGenerationRejection(cause)) return "rejected";
-  return "uncertain";
-}
-
-/**
- * Wynik ponownego odczytu źródła po konflikcie rewizji (`onSourceChanged`):
- * `refreshed` — bieżące źródło z jego rewizją treści, `missing` — źródło
- * usunięto w innym oknie (404), `failed` — odczyt się nie udał, podgląd
- * pozostaje nieaktualny.
- */
-export type SourceRefreshOutcome =
-  | { status: "refreshed"; bodyRevision: number }
-  | { status: "missing" }
-  | { status: "failed" };
-
-/**
- * Wynik `refetch()` odczytu źródła jako `SourceRefreshOutcome`. `refetch()` nie
- * odrzuca obietnicy przy błędzie, a dane poprzedniego odczytu zostają — o
- * wyniku decyduje błąd tego odczytu, nie obecność danych.
- */
-export function sourceRefreshOutcome(result: { isError: boolean; error: unknown; data: { bodyRevision: number } | undefined }): SourceRefreshOutcome {
-  if (result.isError) return httpStatusOf(result.error) === 404 ? { status: "missing" } : { status: "failed" };
-  return result.data !== undefined ? { status: "refreshed", bodyRevision: result.data.bodyRevision } : { status: "failed" };
-}
-
-/**
  * Formularz nowej lekcji: przedmiot → temat (z katalogu) → reguły (domyślnie
  * wszystkie) → materiał (licznik, limit 8000) → instrukcja → wielkość puli;
  * przedmiot szkolny zamiast tematu i reguł ma nazwy wpisane przez rodzica,
@@ -377,7 +338,7 @@ export default function NewLessonForm({
       setSourceRefreshFailed(false);
       setSourceMissing(true);
       form.setFieldError("submit", messages.sources.notFound);
-    } else if (outcome.status === "refreshed" && outcome.bodyRevision !== stale) {
+    } else if (isFreshSourceRefresh(outcome, stale)) {
       setSourceRefreshFailed(false);
       form.setFieldError("submit", messages.sources.changedBeforeCreate);
     } else {
@@ -549,7 +510,7 @@ export default function NewLessonForm({
               <div data-testid="lesson-source" className="pp-lesson-source">
                 <Group justify="space-between" align="center" gap="xs" wrap="wrap">
                   <Text fw={600} size="sm" id="lesson-source-title" className="pp-lesson-source-title">
-                    {messages.sources.fromSource.replace("{title}", source.title)}
+                    {messages.sources.fromSource.replace("{title}", () => source.title)}
                   </Text>
                   <Anchor
                     href={changeSourceHref}

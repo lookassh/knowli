@@ -56,6 +56,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     manual-decks.test.ts
     parent-work-card.test.ts
     reporting.test.ts
+    source-vocabulary.test.ts
   `),
   bucket(`
     assignments-api.test.ts
