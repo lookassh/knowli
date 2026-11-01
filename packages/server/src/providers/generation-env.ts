@@ -69,6 +69,11 @@ function openAiCompatibleEndpointFromEnv(
   // Własny klucz albo wspólny OPENROUTER_API_KEY (tylko https OpenRouter).
   const ownKey = endpointKeyFromEnv(env, prefix, baseUrl, { allowShared: true });
   const towardOpenAi = baseUrl === undefined || isOpenAiEndpoint(baseUrl);
+  // Jawny powrót TTS na OpenAI przy domyślnym BASE_URL OpenRouter poszedłby po
+  // cichu do OpenRouter z fingerprintem „openai” — wymagamy kompletu nadpisań.
+  if (prefix === "UMIEM_TTS" && nonEmpty(env.UMIEM_TTS_PROVIDER) === "openai" && !towardOpenAi) {
+    throw new Error("UMIEM_TTS_PROVIDER=openai requires UMIEM_TTS_BASE_URL=https://api.openai.com/v1 (and an OpenAI UMIEM_TTS_MODEL/VOICE/FORMAT, see .env.example)");
+  }
   if (!towardOpenAi && ownKey === undefined) {
     throw new Error(`${prefix}_BASE_URL requires ${prefix}_API_KEY or OPENROUTER_API_KEY (OPENAI_API_KEY is never sent to another endpoint)`);
   }
@@ -119,7 +124,8 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
         lessonDelayMs: Number.isFinite(lessonDelayMs) ? lessonDelayMs : 0,
       }),
       lessonExecution,
-      graderAvailable: graderConfigured(env),
+      // tryb fake nie wymaga konfiguracji gradera (web bierze wtedy fake gradera)
+      graderAvailable: false,
     };
   }
   const apiKey = openAiKeyFromEnv(env);

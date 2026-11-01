@@ -48,6 +48,9 @@ describe("withConfigDefaults", () => {
     expect(() => chatRequestExtrasFromEnv(openAi, "UMIEM_LLM")).not.toThrow();
     expect(() => chatRequestExtrasFromEnv(openAi, "UMIEM_GRADER")).not.toThrow();
     expect(withConfigDefaults({ UMIEM_LLM_REASONING: "medium" }).UMIEM_LLM_REASONING).toBe("medium");
+    // inny model na OpenRouter może nie obsługiwać rozumowania — bez domyślnej opcji
+    expect(withConfigDefaults({ UMIEM_LLM_MODEL: "openai/gpt-4o-mini" }).UMIEM_LLM_REASONING).toBeUndefined();
+    expect(withConfigDefaults({ UMIEM_GRADER_MODEL: "openai/gpt-4o-mini" }).UMIEM_GRADER_REASONING).toBeUndefined();
   });
 });
 
@@ -78,6 +81,17 @@ describe("złożenie produkcyjne: domyślne + .env z samymi kluczami", () => {
     expect(JSON.parse(String(calls[0]![1].body)).reasoning).toEqual({ effort: "low" });
   });
 
+  it("samo UMIEM_TTS_PROVIDER=openai przy domyślnym BASE_URL OpenRouter → jawny błąd zamiast cichego routingu", () => {
+    expect(() => createGenerationDepsFromEnv(withConfigDefaults({ ...KEYS, UMIEM_TTS_PROVIDER: "openai" })))
+      .toThrow("UMIEM_TTS_PROVIDER=openai requires UMIEM_TTS_BASE_URL=https://api.openai.com/v1");
+    const openAi = withConfigDefaults({
+      ...KEYS,
+      UMIEM_TTS_PROVIDER: "openai", UMIEM_TTS_MODEL: "gpt-4o-mini-tts", UMIEM_TTS_VOICE: "alloy", UMIEM_TTS_FORMAT: "mp3",
+      UMIEM_TTS_BASE_URL: "https://api.openai.com/v1",
+    });
+    expect(createGenerationDepsFromEnv(openAi)!.tts.model).toBe("gpt-4o-mini-tts");
+  });
+
   it("samo OPENAI_API_KEY: worker nie startuje, a błąd wskazuje OPENROUTER_API_KEY bez wartości klucza", () => {
     let message = "";
     try {
@@ -104,7 +118,8 @@ describe("złożenie produkcyjne: domyślne + .env z samymi kluczami", () => {
   it("worker przekazuje dostępność gradera tą samą regułą co web", () => {
     expect(createGenerationDepsFromEnv(withConfigDefaults(KEYS))!.graderAvailable).toBe(false);
     expect(createGenerationDepsFromEnv(withConfigDefaults({ ...KEYS, UMIEM_GRADER_ENABLED: "1" }))!.graderAvailable).toBe(true);
-    expect(createGenerationDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_GRADER_ENABLED: "false" })!.graderAvailable).toBe(false);
+    // tryb fake nie ocenia prawdziwej konfiguracji gradera (zgoda bez klucza nie zatrzymuje startu)
+    expect(createGenerationDepsFromEnv(withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_GRADER_ENABLED: "true" }))!.graderAvailable).toBe(false);
   });
 });
 

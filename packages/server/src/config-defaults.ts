@@ -60,11 +60,21 @@ export const CONFIG_DEFAULTS = {
 /**
  * Domyślne zależne od efektywnej konfiguracji: opcje pośrednika OpenRouter
  * tylko przy endpoincie OpenRouter (przy innym `chatRequestExtrasFromEnv`
- * odrzuca je błędem startu). Warunek widzi env po nadpisaniach i domyślnych.
+ * odrzuca je błędem startu) i domyślnym modelu (inny model może nie obsługiwać
+ * rozumowania, a opcje wymuszają dostawców z tym parametrem). Warunek widzi env
+ * po nadpisaniach i domyślnych.
  */
 const CONDITIONAL_DEFAULTS: readonly { name: string; value: string; when: (env: Record<string, string | undefined>) => boolean }[] = [
-  { name: "UMIEM_LLM_REASONING", value: "low", when: (env) => isOpenRouterEndpoint(env.UMIEM_LLM_BASE_URL) },
-  { name: "UMIEM_GRADER_REASONING", value: "low", when: (env) => isOpenRouterEndpoint(env.UMIEM_GRADER_BASE_URL) },
+  {
+    name: "UMIEM_LLM_REASONING",
+    value: "low",
+    when: (env) => isOpenRouterEndpoint(env.UMIEM_LLM_BASE_URL) && env.UMIEM_LLM_MODEL === CONFIG_DEFAULTS.UMIEM_LLM_MODEL,
+  },
+  {
+    name: "UMIEM_GRADER_REASONING",
+    value: "low",
+    when: (env) => isOpenRouterEndpoint(env.UMIEM_GRADER_BASE_URL) && env.UMIEM_GRADER_MODEL === CONFIG_DEFAULTS.UMIEM_GRADER_MODEL,
+  },
 ];
 
 /**

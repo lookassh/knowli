@@ -125,8 +125,11 @@ i AGENTS.md (nowa zmienna z wartością domyślną → plik domyślnych).
 
 - Pełny `.env` jak dziś (własne klucze LLM/TTS/gradera) — działa bez zmian;
   zmienia się tylko to, czego `.env` nie ustawia. U właściciela lokalnie:
-  `UMIEM_TTS_STYLE` nieustawione → ton lektora włącza się (nowe nagrania przy
-  zapisie, płatne).
+  `UMIEM_TTS_STYLE` nieustawione → ton lektora włącza się: worker przy starcie
+  od razu nagrywa na nowo katalog komunikatów Kid UI (`prepareUiAudio`), a
+  pytania i karty lekcji — przy następnym zapisie materiału (płatne).
+- Samo `UMIEM_TTS_PROVIDER=openai` przy domyślnym BASE_URL OpenRouter — błąd
+  startu workera wskazujący komplet nadpisań (§2.4), nie cichy routing.
 - Instancja z samym `OPENAI_API_KEY` (na starych domyślnych OpenAI) po
   aktualizacji nie wystartuje workera, dopóki nie dostanie
   `OPENROUTER_API_KEY` albo nadpisań powrotu do OpenAI (§2.4). Generator

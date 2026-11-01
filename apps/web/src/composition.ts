@@ -36,16 +36,16 @@ function initialize(): { services: Services; pool: Pool } {
     throw new Error("DATABASE_URL is not configured");
   }
   const { db, pool } = createDatabase(databaseUrl);
-  // tryb fake (E2E/smoke bez kluczy): odpowiedzi ustne przechodzą pełny cykl
-  // na deterministycznych providerach zamiast kończyć się wynikiem technicznym
-  const speech = speechFromEnv(env) ?? (env.UMIEM_FAKE_PROVIDERS === "1" ? fakeSpeechDeps() : undefined);
-  // dyktowanie odpowiedzi lekcji (Etap 3 szkoły): osobny STT bez oceny wymowy
-  const lessonSpeech = lessonSpeechFromEnv(env) ?? (env.UMIEM_FAKE_PROVIDERS === "1" ? fakeLessonSpeechDeps() : undefined);
-  // model oceniający: z env (produkcja) albo fake w trybie E2E (routing po słowach
-  // kluczowych w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
-  // Tryb fake ma pierwszeństwo: E2E i smoke nie wysyłają odpowiedzi do sieci,
-  // nawet gdy w środowisku jest klucz.
+  // Tryb fake (E2E/smoke bez kluczy) ma pierwszeństwo: nagrania i odpowiedzi
+  // nie wychodzą do sieci, nawet gdy w środowisku jest klucz.
   const fake = env.UMIEM_FAKE_PROVIDERS === "1";
+  // odpowiedzi ustne przechodzą w trybie fake pełny cykl na deterministycznych
+  // providerach zamiast kończyć się wynikiem technicznym
+  const speech = fake ? fakeSpeechDeps() : speechFromEnv(env);
+  // dyktowanie odpowiedzi lekcji (Etap 3 szkoły): osobny STT bez oceny wymowy
+  const lessonSpeech = fake ? fakeLessonSpeechDeps() : lessonSpeechFromEnv(env);
+  // model oceniający: z env (produkcja) albo fake (routing po słowach kluczowych
+  // w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
   const grader = fake
     ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
     : graderFromEnv(env);

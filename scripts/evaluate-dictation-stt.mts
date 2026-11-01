@@ -279,7 +279,7 @@ async function engineFast(wav: Uint8Array, phrases?: string[]): Promise<EngineRe
 }
 
 // ---------- OpenRouter /audio/transcriptions (klucz gradera; ZDR, bez zbierania danych) ----------
-const OR_KEY = process.env.UMIEM_GRADER_API_KEY || process.env.OPENROUTER_API_KEY;
+const OR_KEY = process.env.UMIEM_GRADER_API_KEY;
 /** Zestaw silników: `--engines=openrouter` (Azure A + modele OpenRouter) albo domyślnie warianty Azure. */
 const ENGINE_SET = process.argv.find((a) => a.startsWith("--engines="))?.slice(10) ?? process.env.SPIKE_SET;
 const OR_MODELS = (process.env.SPIKE_OR_MODELS ??

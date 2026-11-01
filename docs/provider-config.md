@@ -36,7 +36,11 @@ Wyłączniki i powroty to nadpisania: `UMIEM_TTS_STYLE=none`; TTS na OpenAI —
 `UMIEM_TTS_VOICE=alloy`, `UMIEM_TTS_FORMAT=mp3`,
 `UMIEM_TTS_BASE_URL=https://api.openai.com/v1`; LLM na OpenAI —
 `UMIEM_LLM_BASE_URL=https://api.openai.com/v1`, `UMIEM_LLM_MODEL=gpt-4o-mini`.
-Web i worker wdraża się z tego samego commitu.
+Samo `UMIEM_TTS_PROVIDER=openai` bez `UMIEM_TTS_BASE_URL` na api.openai.com
+to błąd startu workera. Web i worker wdraża się z tego samego commitu. Zmiana
+ustawień TTS (także włączenie tonu przez domyślne `instructions`, gdy `.env`
+go nie ustawiał) każe workerowi przy starcie od razu nagrać na nowo katalog
+komunikatów Kid UI (płatne); pytania i karty lekcji — przy następnym zapisie.
 
 ## Ścieżka mowy (web)
 
