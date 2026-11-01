@@ -97,8 +97,10 @@ Poza zakresem:
   bez pochwał i oceniania dziecka, bez imion, bez znaczników; angielskie przykłady wyłącznie
   z tego ćwiczenia (odpowiedź, zdanie, opcje); ≤ 120 znaków.
 - **Wyjaśnienie z generatora niespełniające reguł §3.1 jest po cichu usuwane** (ćwiczenie
-  zostaje), a powód trafia do `rejectedReasons` jak inne odrzucenia — wzorem
-  `withoutVoiceToneUnlessAllowed`. Brak wyjaśnienia nie odrzuca ćwiczenia ani puli.
+  zostaje), a liczba porzuconych wyjaśnień trafia do logu przebiegu jak porzucone warianty
+  odpowiedzi (`rejectedReasons` liczy odrzucone ćwiczenia, więc go nie zawyżamy) — wzorem
+  `withoutVoiceToneUnlessAllowed`. Sprawdzenie odpowiedzi innych ćwiczeń obejmuje też
+  ćwiczenia już obecne w szkicu (dogenerowanie). Brak wyjaśnienia nie odrzuca ćwiczenia ani puli.
 - Fake provider generuje przewidywalne, poprawne wyjaśnienia dla testów.
 
 ### 3.4 Panel rodzica
