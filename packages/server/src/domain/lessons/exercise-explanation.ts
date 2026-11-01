@@ -66,7 +66,8 @@ function wordBounded(text: string, flags: string): RegExp {
  * występuje w wyjaśnieniu (spec §4.4): wyjaśnienie, które cytuje cudzą odpowiedź, ujawnia ją
  * dziecku, więc musi zostać zapisane jako ekspozycja. Obie strony przechodzą normalizację
  * ekspozycji przedmiotu i `normalizeTargetText`; z wyjaśnienia usuwamy wcześniej własny tekst
- * ćwiczenia (jego ujawnia sam feedback), a dopasowanie wymaga granic słów. Własny klucz jest
+ * ćwiczenia (jego ujawnia sam feedback; cel zawierający własny tekst jest szukany w pełnym
+ * wyjaśnieniu), a dopasowanie wymaga granic słów. Własny klucz jest
  * pomijany. Wynik bez duplikatów, w kolejności `others`. Fałszywe trafienie kosztuje najwyżej
  * dodatkową ekspozycję — nic nie jest blokowane.
  */
@@ -76,14 +77,18 @@ export function explanationExposureKeys(
   others: readonly ExposureTarget[],
   subject: Pick<SubjectModule, "normalizeExposureText">,
 ): string[] {
-  let remaining = normalizedExposure(subject, explanation);
+  const quoted = normalizedExposure(subject, explanation);
   const ownText = normalizedExposure(subject, own.exposureText);
-  if (ownText !== "") remaining = remaining.replace(wordBounded(ownText, "gu"), " ");
+  const remaining = ownText === "" ? quoted : quoted.replace(wordBounded(ownText, "gu"), " ");
   const keys: string[] = [];
   for (const other of others) {
     if (other.targetKey === own.targetKey || keys.includes(other.targetKey)) continue;
     const text = normalizedExposure(subject, other.exposureText);
-    if (text !== "" && wordBounded(text, "u").test(remaining)) keys.push(other.targetKey);
+    if (text === "") continue;
+    // Dłuższy cel zawierający własny tekst sprawdzamy w pełnym wyjaśnieniu: po usunięciu
+    // własnego tekstu jego cytat zostałby okaleczony i ujawnienie umknęłoby ekspozycji.
+    const haystack = ownText !== "" && text.includes(ownText) ? quoted : remaining;
+    if (wordBounded(text, "u").test(haystack)) keys.push(other.targetKey);
   }
   return keys;
 }

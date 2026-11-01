@@ -71,8 +71,17 @@ describe("explanationExposureKeys", () => {
   });
 
   it("pomija inny cel z tym samym kluczem co własny", () => {
-    const twin = { exposureText: "He plays", targetKey: own.targetKey };
-    expect(explanationExposureKeys("Zapamiętaj he plays oraz plays.", own, [twin], subject)).toEqual([]);
+    // Tekst bliźniaka nie znika razem z własnym, więc pomija go dopiero sprawdzenie klucza.
+    const twin = { exposureText: "plays", targetKey: own.targetKey };
+    expect(explanationExposureKeys("Zapamiętaj plays.", own, [twin], subject)).toEqual([]);
+  });
+
+  it("cytat dłuższego celu zawierającego własny tekst też daje ekspozycję", () => {
+    const snowing = target("It's snowing");
+    const longer = target("It's snowing today");
+    expect(explanationExposureKeys("Zapamiętaj It's snowing today.", snowing, [longer], subject)).toEqual([longer.targetKey]);
+    // Samo własne zdanie w wyjaśnieniu nie ujawnia dłuższego celu.
+    expect(explanationExposureKeys("Zapamiętaj It's snowing.", snowing, [longer], subject)).toEqual([]);
   });
 
   it("nie powtarza kluczy i zachowuje kolejność innych ćwiczeń", () => {
