@@ -168,9 +168,11 @@ Gdy `sentenceAudioError` nie jest `null`:
   - Zwarta rama dużego okna (stopka tuż pod odpowiedziami, wolne miejsce niżej) i przewijana
     strona (powiększenie gestem, bardzo niskie okno) rosną w dół: region zostaje pod górnym
     wierszem, przyciski zdania stoją, w dół przesuwa się tylko „Dalej”.
-  - Zwarta rama z przewijanym materiałem (treść wyższa od okna, np. dotykowy tablet z długim
-    tekstem) nie ma wolnego miejsca pod stopką, więc dok rośnie w górę: `ExerciseFrame` oznacza
-    nakładkę `data-material-full`, a region wraca nad wiersz (uzupełnienie 2026-11-01, #199).
+  - Zwarta rama bez wolnego miejsca pod stopką — materiał się przewija (treść wyższa od okna,
+    np. dotykowy tablet z długim tekstem) albo rezerwa zużyła już część odstępu od góry —
+    przypina stopkę do dolnej krawędzi, więc dok rośnie w górę: `ExerciseFrame` oznacza wtedy
+    nakładkę `data-frame-full` (dolna krawędź stopki przy dolnej krawędzi ramy), a region wraca
+    nad wiersz (uzupełnienie 2026-11-01, #199).
     Gdy dopiero sam tekst błędu zapełnia ramę, wiersz może przesunąć się o mniej niż wysokość
     tekstu (o wolne miejsce, które było pod stopką).
   - Tekst stoi w elemencie kluczowanym `seq`: każdy błąd montuje go od nowa, więc czytnik
@@ -218,7 +220,7 @@ ujawnione i zapieczętowane razem z oceną. Trafiają tylko do lokalnego raportu
     czekające w kolejce po `stop()` nie wywoła więc `onStarted`.
 - **Brak obsługi zmiany tempa:** odtwarzanie w tempie, które element faktycznie przyjął, bez
   błędu.
-- **Ponowny odsłuch bez sieci:** `/api/v1/media/:id` odpowiada `cache-control: public,
+- **Ponowny odsłuch z cache przeglądarki:** `/api/v1/media/:id` odpowiada `cache-control: public,
   max-age=31536000, immutable`, a `fetch` odtwarzacza używa domyślnego trybu cache, więc kolejne
   „Posłuchaj zdania” i żółw biorą plik z pamięci przeglądarki. Własny cache bloba w odtwarzaczu
   nie jest potrzebny (decyzja 2026-11-01, #199).

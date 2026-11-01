@@ -63,7 +63,8 @@ export function ExerciseFeedbackDock({
   /** Przycisk odsłuchu komunikatu o wyniku, za treścią w górnym wierszu (po odznace tonu). */
   guidance?: ReactNode;
   /** Powtórka nagrania pełnego zdania w feedbacku lekcji: „Posłuchaj zdania”
-   * i „Posłuchaj wolniej” w grupie, nad górnym wierszem region błędu. */
+   * i „Posłuchaj wolniej” w grupie, za górnym wierszem region błędu
+   * (położenie wizualne ustala CSS `order`). */
   sentenceAudio?: FeedbackDockSentenceAudio | null;
 }): ReactElement {
   const isPresent = useIsPresent();

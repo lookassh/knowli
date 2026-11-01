@@ -88,6 +88,9 @@ export function ExerciseFrame({
 
     const revealIfNeeded = () => {
       if (!active) return;
+      // Także panel w przepływie (`flow`) i przełączenie trybu strony — pomiar
+      // nakładki (efekt niżej) działa tylko w układzie `overlay`.
+      syncFrameFull(overlay);
       const frameOverflows = flowFeedback && frameRoot !== null && frameRoot !== undefined
         && frameRoot.scrollHeight > frameRoot.clientHeight + 1;
       const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true" || frameOverflows;
@@ -168,7 +171,7 @@ export function ExerciseFrame({
       // Najpierw limit karty z wolnego miejsca: zmienia wysokość panelu, więc
       // nadwyżka i zakładka niżej liczą się już na nowym układzie.
       cardSpaceRef.current = syncCardSpace(cardSpaceRef.current, overlay, material);
-      syncMaterialFull(overlay, material);
+      syncFrameFull(overlay);
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
@@ -344,16 +347,22 @@ function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, mater
 }
 
 /**
- * `data-material-full` na nakładce: materiał się przewija, więc w zwartej ramie
- * stopka stoi przy dolnej krawędzi i panel rośnie w górę, a nie w wolne miejsce
- * pod stopką. Dok czyta atrybut w CSS (region błędu odsłuchu nad górnym
- * wierszem, spec 2026-11-01-sentence-readback-followups §4.4). Na przewijanej
- * stronie panel jest w przepływie i zawsze rośnie w dół — atrybutu nie ma.
+ * `data-frame-full` na panelu (nakładka albo panel w przepływie): pod stopką
+ * nie ma wolnego miejsca (stopka stoi przy dolnej krawędzi ramy — materiał się
+ * przewija albo zwarta rama zużyła już część odstępu od góry), więc panel rośnie
+ * w górę, a nie w wolne miejsce pod stopką. Dok czyta atrybut w CSS (region błędu odsłuchu nad górnym wierszem,
+ * spec 2026-11-01-sentence-readback-followups §4.4). Oba prostokąty są w px
+ * ekranu, więc zoom dużego okna nie zmienia porównania. Na przewijanej stronie
+ * panel jest w przepływie i zawsze rośnie w dół — atrybutu nie ma.
  */
-function syncMaterialFull(overlay: HTMLElement, material: HTMLElement): void {
+function syncFrameFull(overlay: HTMLElement): void {
   const page = overlay.closest<HTMLElement>(".kid-page");
   const pageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
-  overlay.toggleAttribute("data-material-full", !pageScroll && material.scrollHeight > material.clientHeight + 1);
+  const frame = overlay.closest<HTMLElement>(".kid-exercise-frame");
+  const footer = overlay.closest<HTMLElement>(".kid-exercise-actions");
+  const full = !pageScroll && frame !== null && footer !== null
+    && frame.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom < 1;
+  overlay.toggleAttribute("data-frame-full", full);
 }
 
 /**

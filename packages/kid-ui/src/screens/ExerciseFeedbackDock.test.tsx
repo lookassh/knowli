@@ -94,6 +94,8 @@ it("marks the failed button and fills the polite error region", () => {
   expect(region.textContent).toBe(messages.kid.sentenceAudioFailed);
   // W DOM region stoi za górnym wierszem i przed „Dalej” (czytnik czyta wynik,
   // potem błąd), nie w grupie przycisków; położenie wizualne ustala CSS `order`.
+  // `order` działa tylko na dziecku doku (kolumny flex), więc region nie może zejść niżej.
+  expect(region.parentElement).toBe(screen.getByTestId("kid-feedback-dock"));
   expect(screen.getByTestId("kid-sentence-audio-group").contains(region)).toBe(false);
   expect(region.compareDocumentPosition(screen.getByTestId("kid-feedback-tone-icon")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   expect(region.compareDocumentPosition(screen.getByText("Dalej")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
