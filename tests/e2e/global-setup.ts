@@ -233,6 +233,8 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       ...process.env,
       DATABASE_URL: databaseUrl,
       MEDIA_ROOT: mediaRoot,
+      // next.config.ts: przy `next dev` bez wskaźnika deweloperskiego i trwałej pamięci podręcznej Turbopacka
+      UMIEM_E2E: "1",
       UMIEM_E2E_READY_TOKEN: readyToken,
       UMIEM_FAKE_PROVIDERS: "1",
       UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",

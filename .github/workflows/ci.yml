@@ -103,16 +103,31 @@ jobs:
     name: tests
     # Bramka pod nazwą wymaganego checka `tests`: sama niczego nie testuje,
     # tylko agreguje wyniki jobów check i integration, żeby podział na
-    # równoległe joby nie wymagał zmian w regułach ochrony brancha.
+    # równoległe joby nie wymagał zmian w regułach ochrony brancha. Jak bramka
+    # `e2e (mocked)` sprawdza też przez API ostatnią próbę każdego kosza
+    # `integration (N)`: po ponowieniu tylko części koszy łączny wynik matrixa
+    # nie może przepuścić kosza, który nadal ma porażkę.
     needs: [check, integration]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
     steps:
       - name: Verify check and integration jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
         run: |
-          echo "check=${{ needs.check.result }} integration=${{ needs.integration.result }}"
-          if [ "${{ needs.check.result }}" != "success" ] || [ "${{ needs.integration.result }}" != "success" ]; then
+          echo "check=$CHECK_RESULT integration=$INTEGRATION_RESULT"
+          if [ "$CHECK_RESULT" != "success" ] || [ "$INTEGRATION_RESULT" != "success" ]; then
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("integration (")) | "\(.name)=\(.conclusion)"' > buckets.txt
+          cat buckets.txt
+          if [ ! -s buckets.txt ] || grep -v '=success$' buckets.txt; then
             exit 1
           fi
 
