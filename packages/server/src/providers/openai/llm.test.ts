@@ -490,6 +490,21 @@ describe("createOpenAiLlmProvider.generateLessonPool — wybór ze słuchu (less
   it("przedmiot bez typu nie dostaje opisu pól typu", async () => {
     expect(await systemPromptOf(INPUT)).not.toContain("lesson_listen_choice");
   });
+
+  it("bez przyznanego dodatku (pole brak/0) prompt nie opisuje pól typu ani nie wymienia go wśród dozwolonych", async () => {
+    for (const input of [LISTEN_INPUT, { ...LISTEN_INPUT, listenChoicePerObjective: 0 }]) {
+      const system = await systemPromptOf(input);
+      expect(system).not.toContain("lesson_listen_choice requires stem");
+      expect(system).not.toContain("lesson_listen_choice");
+    }
+  });
+
+  it("przycina dodatek do 0–2", async () => {
+    const system = await systemPromptOf({ ...LISTEN_INPUT, listenChoicePerObjective: 5 });
+    expect(system).toContain(`at most ${LISTEN_INPUT.countPerObjective + 2} exercises per objective in this batch`);
+    expect(system).toContain("up to 2 extra lesson_listen_choice exercises per objective");
+    expect(await systemPromptOf({ ...LISTEN_INPUT, listenChoicePerObjective: -3 })).toBe(await systemPromptOf(LISTEN_INPUT));
+  });
 });
 
 describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {

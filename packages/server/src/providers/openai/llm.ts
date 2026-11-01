@@ -129,10 +129,29 @@ const VOICE_TONE_RULE =
  * dla przedmiotu, który wspiera typ; reguły dziedzinowe (które różnice są słyszalne) niesie `fieldRules`.
  */
 function listenChoiceFieldRule(input: LessonPoolInput): string {
-  if (!input.exerciseTypes.includes("lesson_listen_choice")) return "";
+  if (listenChoiceExtra(input) === 0) return "";
   return "lesson_listen_choice requires stem with exactly one ___ (the sentence the narrator reads aloud with the correct option in the gap), " +
     "2 to 3 options with distinct texts, correctOption (the id of the option that fills the gap), answer (the text of the correct option) and focus (its tokens); " +
     "instructionPl, hint and visualSubject must be null for lesson_listen_choice. ";
+}
+
+/** Najwięcej dodatkowych ćwiczeń słuchowych na cel partii (decyzja #198). */
+const MAX_LISTEN_CHOICE_EXTRA = 2;
+
+/**
+ * Przyznany dodatek `lesson_listen_choice` przycięty do 0–2. Bez dodatku (brak pola, 0 albo szkic
+ * ma już komplet) prompt w ogóle nie wymienia typu — także na listach dozwolonych typów.
+ */
+function listenChoiceExtra(input: LessonPoolInput): number {
+  const raw = input.listenChoicePerObjective;
+  if (raw === undefined || !Number.isFinite(raw)) return 0;
+  return Math.min(MAX_LISTEN_CHOICE_EXTRA, Math.max(0, Math.floor(raw)));
+}
+
+/** Typy wymieniane w prompcie: bez `lesson_listen_choice`, gdy dodatek nie został przyznany. */
+function promptExerciseTypes(input: LessonPoolInput, types: readonly string[]): string[] {
+  const listed = poolExerciseTypes(types);
+  return listenChoiceExtra(input) > 0 ? listed : listed.filter((type) => type !== "lesson_listen_choice");
 }
 
 /**
@@ -174,7 +193,7 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
   for (const objective of input.objectives) {
     parts.push(
       `- objectiveId "${objective.id}": ${objective.descriptionEn} ` +
-        `Allowed exerciseType values: ${poolExerciseTypes(objective.exerciseTypes).join(", ")}. ` +
+        `Allowed exerciseType values: ${promptExerciseTypes(input, objective.exerciseTypes).join(", ")}. ` +
         `Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
     );
   }
@@ -186,10 +205,10 @@ function lessonSystemPrompt(input: LessonPoolInput): string {
     );
   }
   parts.push(
-    `Supported exercise types for this subject: ${poolExerciseTypes(input.exerciseTypes).join(", ")}.`,
+    `Supported exercise types for this subject: ${promptExerciseTypes(input, input.exerciseTypes).join(", ")}.`,
   );
   // Wybór ze słuchu leży poza podziałem etapów (jego menu go nie wymienia): limit partii rośnie o dodatek.
-  const listenExtra = input.listenChoicePerObjective !== undefined && input.listenChoicePerObjective > 0 ? input.listenChoicePerObjective : 0;
+  const listenExtra = listenChoiceExtra(input);
   const stageMenu = (types: readonly string[]) =>
     types.filter((type) => input.exerciseTypes.includes(type)).join(", ") || "none available";
   parts.push(

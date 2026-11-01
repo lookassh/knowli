@@ -1058,6 +1058,56 @@ describe("lesson_listen_choice — walidacja", () => {
     expect(ok.valid).toContain(listenEx);
   });
 
+  it("dogenerowanie: nowe ćwiczenie słuchowe zderza się z odpowiedzią tekstową już w szkicu", () => {
+    const listenEx = listen({
+      objectiveId: OBJ.negative,
+      stem: `She ${GAP_MARKER} like milk.`,
+      options: [{ id: "a", text: "doesn't" }, { id: "b", text: "isn't" }],
+      correctOption: "a",
+      answer: "doesn't",
+      focus: ["doesn't"],
+    });
+    const existingOpen = draft({
+      objectiveId: OBJ.negative,
+      exerciseType: "lesson_open_answer",
+      prompt: "Napisz przeczenie.",
+      answer: "She does not like milk",
+      focus: ["does", "not"],
+      stem: undefined,
+      hint: undefined,
+    });
+    const result = validatePool([listenEx], listenSubject, listenTopic, { existingExercises: [existingOpen] });
+    expect(result.valid).toEqual([]);
+    expect(result.rejected[0]!.exercise).toBe(listenEx);
+    expect(result.rejected[0]!.errors.some((e) => e.includes("słuchow"))).toBe(true);
+    // Bez kontekstu szkicu to samo ćwiczenie przechodzi.
+    expect(validatePool([listenEx], listenSubject, listenTopic).valid).toEqual([listenEx]);
+  });
+
+  it("dogenerowanie: nowe ćwiczenie tekstowe z odpowiedzią równą zdaniu słuchowemu szkicu jest odrzucane", () => {
+    const existingListen = listen({
+      objectiveId: OBJ.negative,
+      stem: `She ${GAP_MARKER} like milk.`,
+      options: [{ id: "a", text: "doesn't" }, { id: "b", text: "isn't" }],
+      correctOption: "a",
+      answer: "doesn't",
+      focus: ["doesn't"],
+    });
+    const open = draft({
+      objectiveId: OBJ.negative,
+      exerciseType: "lesson_open_answer",
+      prompt: "Napisz przeczenie.",
+      answer: "She does not like milk",
+      focus: ["does", "not"],
+      stem: undefined,
+      hint: undefined,
+    });
+    const result = validatePool([open], listenSubject, listenTopic, { existingExercises: [existingListen] });
+    expect(result.valid).toEqual([]);
+    expect(result.rejected[0]!.exercise).toBe(open);
+    expect(result.rejected[0]!.errors.some((e) => e.includes("słuchow"))).toBe(true);
+  });
+
   it("poolCoverage: ćwiczenia słuchowe nie pokrywają etapu guided", () => {
     const minimums = { guided: 1, productive: 0, independent: 0 };
     const exercises = [listen(), listen({ stem: `He ${GAP_MARKER} tennis.` }), listen({ stem: `He ${GAP_MARKER} golf.` })];

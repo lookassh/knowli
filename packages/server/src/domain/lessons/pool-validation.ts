@@ -29,7 +29,7 @@ import {
   MIN_MATCH_PAIRS,
 } from "@learning/contracts";
 import { clozeAnswer, clozeGapCount, clozeParts } from "./cloze";
-import { FEEDBACK_SENTENCE_MAX_LENGTH, feedbackSentenceText } from "./feedback-sentence-text";
+import { FEEDBACK_SENTENCE_MAX_LENGTH, feedbackSentenceText, fillGap } from "./feedback-sentence-text";
 import { ASSESSED_STAGES, outsideStagePath, stageOf } from "./stages";
 import type {
   AnswerNormalizer,
@@ -386,14 +386,6 @@ function validateByType(
   void objective;
 }
 
-/** Wstawia `text` w jedyną lukę (2+ podkreśleń) zdania; `null`, gdy luka nie jest jedna. */
-function fillListenGap(stem: string, text: string): string | null {
-  if ((stem.match(LISTEN_GAP_PATTERN) ?? []).length !== 1) {
-    return null;
-  }
-  return stem.replace(/_{2,}/, () => text.trim());
-}
-
 /** Pełne zdanie `lesson_listen_choice` (poprawna opcja w luce) albo `null` — to, co czyta lektor. */
 function listenSentenceOf(ex: LessonExerciseDraft): string | null {
   return feedbackSentenceText({
@@ -432,9 +424,9 @@ function validateListenChoice(
   }
   for (let i = 0; i < options.length; i++) {
     for (let j = i + 1; j < options.length; j++) {
-      const a = fillListenGap(stem, options[i]!.text);
-      const b = fillListenGap(stem, options[j]!.text);
-      if (a !== null && b !== null && answersEquivalent(a, b, normalizer)) {
+      const a = fillGap(stem, options[i]!.text);
+      const b = fillGap(stem, options[j]!.text);
+      if (a !== undefined && b !== undefined && answersEquivalent(a, b, normalizer)) {
         errors.push(`options: zdania z opcjami „${options[i]!.text}” i „${options[j]!.text}” są równoważne po normalizacji`);
       }
     }
@@ -917,6 +909,14 @@ export function findDuplicateAnswers(
   );
 }
 
+/**
+ * Kontekst walidacji dopisywanej puli (dogenerowanie): ćwiczenia już zapisane w szkicu. Nie są
+ * walidowane ani zwracane — służą tylko regule krzyżowej ćwiczeń słuchowych.
+ */
+export interface PoolValidationContext {
+  readonly existingExercises?: readonly LessonExerciseDraft[];
+}
+
 /** Wynik walidacji puli: ćwiczenia poprawne i odrzucone z powodami. */
 export interface PoolValidationResult {
   readonly valid: LessonExerciseDraft[];
@@ -934,6 +934,7 @@ export function validatePool(
   exercises: readonly LessonExerciseDraft[],
   subject: SubjectModule,
   topic: LessonTopic,
+  context: PoolValidationContext = {},
 ): PoolValidationResult {
   const rejected: { exercise: LessonExerciseDraft; errors: string[] }[] = [];
 
@@ -952,12 +953,30 @@ export function validatePool(
   // Ćwiczenie słuchowe, którego pełne zdanie jest odpowiedzią ćwiczenia tekstowego tej
   // samej puli, ujawniłoby je przed samodzielnym sprawdzeniem. Klucz ekspozycji łapie
   // tylko identyczny tekst, więc tu porównujemy normalizatorem przedmiotu.
-  const textAnswers = singleValid
-    .map((entry) => entry.exercise)
+  // Przy dogenerowaniu reguła obejmuje też szkic: nowe ćwiczenie słuchowe nie może czytać odpowiedzi
+  // tekstowej szkicu, a nowe ćwiczenie tekstowe nie może mieć odpowiedzi równej zdaniu słuchowemu szkicu.
+  const existing = context.existingExercises ?? [];
+  const textAnswers = [...existing, ...singleValid.map((entry) => entry.exercise)]
     .filter((ex) => LISTEN_CROSS_CHECK_TYPES.has(ex.exerciseType))
     .flatMap((ex) => [ex.answer, ...ex.acceptedAnswers]);
+  const existingListenSentences = existing
+    .filter((ex) => ex.exerciseType === "lesson_listen_choice")
+    .map(listenSentenceOf)
+    .filter((sentence): sentence is string => sentence !== null);
   const eligible = singleValid.filter(({ exercise }) => {
     if (exercise.exerciseType !== "lesson_listen_choice") {
+      if (
+        existingListenSentences.length > 0 &&
+        LISTEN_CROSS_CHECK_TYPES.has(exercise.exerciseType) &&
+        [exercise.answer, ...exercise.acceptedAnswers].some((answer) =>
+          existingListenSentences.some((sentence) => answersEquivalent(sentence, answer, subject.normalizer)))
+      ) {
+        rejected.push({
+          exercise,
+          errors: ["answer: odpowiedź jest zdaniem ćwiczenia słuchowego w tej lekcji (ćwiczenie słuchowe by ją ujawniło)"],
+        });
+        return false;
+      }
       return true;
     }
     const sentence = listenSentenceOf(exercise);

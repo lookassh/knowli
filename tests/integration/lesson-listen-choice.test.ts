@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   authorizeDisclosure, completePresentation, createChild, createLesson, createServices, endSession, executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps,
-  nextTask, publishLessonDraft, readLessonDeck, startSession, submitAttempt,
+  nextTask, publishLessonDraft, readLessonDeck, regenerateObjective, startSession, submitAttempt,
 } from "@learning/server";
+import type { LessonPoolInput } from "@learning/server";
 import type { LessonDraftDto, TaskDto } from "@learning/contracts";
 import { lessonWorld, type LessonWorldOptions } from "../fixtures/lesson-world";
 import { buildTestServices, ManualClock, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
@@ -52,6 +53,65 @@ async function sentenceAssetId(revisionId: string): Promise<string> {
     [revisionId],
   )).rows[0]!.asset_id;
 }
+
+/** Fake LLM z podmienionym wejściem partii (np. „model” ignoruje limit) i zapisem wejść. */
+async function generationWith(rewrite: (input: LessonPoolInput) => LessonPoolInput) {
+  const fakes = await fakeGeneration();
+  cleanup.push(fakes.dispose);
+  const inputs: LessonPoolInput[] = [];
+  const llm = Object.create(fakes.llm) as typeof fakes.llm;
+  llm.generateLessonPool = (input: LessonPoolInput) => {
+    inputs.push(input);
+    return fakes.llm.generateLessonPool(rewrite(input));
+  };
+  const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: { ...fakes.deps, llm } });
+  return { services, inputs };
+}
+
+const GRAMMAR_MATERIAL = "He plays football. She reads books. She watches TV.";
+
+describe("generowanie — limit ćwiczeń słuchowych na regułę", () => {
+  it("model zwracający 5 ćwiczeń słuchowych i nadmiar etapów: zostają najwyżej 2 słuchowe i zamówiona liczba pozostałych", async () => {
+    const { services, inputs } = await generationWith((input) => ({
+      ...input,
+      listenChoicePerObjective: 5,
+      stageCounts: { ...input.stageCounts, guided: input.stageCounts.guided + 2 },
+    }));
+    const run = await createLesson(services, {
+      subjectId: "english_grammar", topicId: "present_simple", objectiveIds: [OBJECTIVE],
+      material: GRAMMAR_MATERIAL, poolSize: 20, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, run.runId);
+    const draft = (await readLessonDeck(services, run.deckId)).draft!;
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.listenChoicePerObjective).toBe(2);
+    const ofObjective = draft.exercises.filter((exercise) => exercise.objectiveId === OBJECTIVE);
+    expect(listenOf(draft)).toHaveLength(2);
+    expect(ofObjective.filter((exercise) => exercise.exerciseType !== "lesson_listen_choice")).toHaveLength(inputs[0]!.countPerObjective);
+    // 3 nadmiarowe słuchowe + 2 nadmiarowe ćwiczenia etapów są odrzuceniami szkicu.
+    expect(draft.rejectedCount).toBeGreaterThanOrEqual(5);
+  });
+
+  it("dogenerowanie reguły, która ma już 2 ćwiczenia słuchowe, nie dodaje kolejnych (prompt bez dodatku, nadmiar odrzucony)", async () => {
+    const { services, inputs } = await generationWith((input) => (inputs.length > 1 ? { ...input, listenChoicePerObjective: 2 } : input));
+    const run = await createLesson(services, {
+      subjectId: "english_grammar", topicId: "present_simple", objectiveIds: [OBJECTIVE],
+      material: GRAMMAR_MATERIAL, poolSize: 20, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, run.runId);
+    const before = (await readLessonDeck(services, run.deckId)).draft!;
+    expect(listenOf(before)).toHaveLength(2);
+    const topUp = await regenerateObjective(services, {
+      deckId: run.deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: before.editNumber, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, topUp.runId);
+    const after = (await readLessonDeck(services, run.deckId)).draft!;
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).not.toHaveProperty("listenChoicePerObjective");
+    expect(after.exercises.length).toBeGreaterThan(before.exercises.length);
+    expect(listenOf(after)).toHaveLength(2);
+  });
+});
 
 describe("lekcja gramatyki — stan nagrania zdania ćwiczenia słuchowego w DTO rodzica", () => {
   it("ćwiczenie słuchowe ma sentenceAudio, a inne ćwiczenia nie mają pola", async () => {
@@ -531,6 +591,15 @@ describe("autoryzacja odsłuchu zadania słuchowego", () => {
     await updateIgnoringTriggers("update learning_app.session_tasks set answer_key = answer_key - 'feedbackAudioAssetId' where id = $1", [task.taskId]);
     await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
     expect(await sealedAudio(task.taskId)).toHaveLength(0);
+  });
+
+  it("podpowiedź (hint) dla zadania słuchowego → 409 bez zdarzenia (ujawniłaby odpowiedź)", async () => {
+    const { services, task } = await issuedListenTask();
+    await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "hint" })).rejects.toMatchObject({ code: "conflict" });
+    const events = await pool.query("select id from learning_app.learning_events where task_id = $1 and kind in ('hint_issued', 'audio_issued')", [task.taskId]);
+    expect(events.rows).toHaveLength(0);
+    // Po odmowie odsłuch nadal działa i dostaje pierwszy krok.
+    expect((await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).stepId).toBe(`${task.taskId}:d1`);
   });
 
   it("zadanie wyboru (lesson_choice) nadal nie oferuje odsłuchu", async () => {

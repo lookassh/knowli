@@ -159,10 +159,14 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     fakes.deps.llm.generateLessonPool = async (input) => {
       const objectiveId = input.objectives[0]!.id;
       const regular = await new FakeLlmProvider().generateLessonPool(input);
+      // Zamówiona liczba ćwiczeń etapów obowiązuje także przy dodatku słuchowym (nadmiar byłby odrzucony),
+      // więc dwa wadliwe ćwiczenia, które zostają, zajmują miejsca dwóch zwykłych.
+      const isListen = (exercise: unknown) => (exercise as { exerciseType?: string }).exerciseType === "lesson_listen_choice";
       return {
         ...regular,
         exercises: [
-          ...regular.exercises,
+          ...regular.exercises.filter((exercise) => !isListen(exercise)).slice(0, input.countPerObjective - 2),
+          ...regular.exercises.filter(isListen),
           // opcja spoza materiału → odrzucenie całego ćwiczenia
           {
             exerciseType: "lesson_choice", objectiveId, instructionPl: "Pada deszcz. Wybierz słowo.", stem: "I have a ___.",

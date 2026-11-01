@@ -248,6 +248,15 @@ export async function recordEvent(services: Services, input: EventInput): Promis
   });
 }
 
+/** Kolejny krok ujawnienia zadania (`<taskId>:dN`): liczy wcześniejsze `audio_issued` i `hint_issued`. */
+async function nextDisclosureStepId(tx: Tx, taskId: string): Promise<string> {
+  const prior = await tx
+    .select({ id: learningEvents.id })
+    .from(learningEvents)
+    .where(and(eq(learningEvents.taskId, taskId), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
+  return `${taskId}:d${prior.length + 1}`;
+}
+
 /**
  * Wydaje podpowiedź albo autoryzuje odtworzenie wzorca (arch §9.2). Serwer
  * określa stepId i zapisuje ekspozycję celu przed zwroceniem zgody; przeglądarka
@@ -276,6 +285,10 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     // Wyjątek: „Posłuchaj i wybierz” (`lesson_listen_choice`) ma własną gałąź niżej —
     // odsłuch zdania jest tam bodźcem, a nie wsparciem zdradzającym odpowiedź.
     const isListenChoice = task.exerciseType === "lesson_listen_choice";
+    // Podpowiedź zadania słuchowego ujawniłaby brakujące słowo (`reveal.target` = odpowiedź).
+    if (isListenChoice && valid.kind === "hint") {
+      throw new AppError("conflict", { message: "zadanie słuchowe nie oferuje podpowiedzi" });
+    }
     if (
       valid.kind === "audio" &&
       (task.exerciseType as string).startsWith("lesson_") &&
@@ -311,11 +324,7 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
         throw new AppError("conflict", { message: "zadanie nie ma nagrania zdania" });
       }
       const listenTargetKey = key.targetKey ?? revision.dbTargetKey;
-      const priorListen = await tx
-        .select({ id: learningEvents.id })
-        .from(learningEvents)
-        .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
-      const listenStepId = `${task.id}:d${priorListen.length + 1}`;
+      const listenStepId = await nextDisclosureStepId(tx, task.id);
       await writeSealedEvent(tx, {
         childId: task.childId,
         taskId: task.id,
@@ -354,16 +363,7 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
       throw new AppError("validation", { details: { reason: "picture_audio_unavailable" } });
     }
 
-    const prior = await tx
-      .select({ id: learningEvents.id })
-      .from(learningEvents)
-      .where(
-        and(
-          eq(learningEvents.taskId, task.id),
-          inArray(learningEvents.kind, ["audio_issued", "hint_issued"]),
-        ),
-      );
-    const stepId = `${task.id}:d${prior.length + 1}`;
+    const stepId = await nextDisclosureStepId(tx, task.id);
     const now = services.clock.now();
 
     await writeSealedEvent(tx, {
