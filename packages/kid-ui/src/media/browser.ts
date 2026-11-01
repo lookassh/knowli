@@ -1,4 +1,4 @@
-import type { AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import type { AudioPlaybackOptions, AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
 import { LevelMonitorUnavailableError } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
@@ -560,6 +560,18 @@ export class BrowserRecorder implements SpeechRecorder {
   }
 }
 
+/** Właściwości wysokości głosu; starsze silniki mają tylko prefiks, więc wszystkie opcjonalne. */
+type PitchAudio = { preservesPitch?: boolean; webkitPreservesPitch?: boolean; mozPreservesPitch?: boolean };
+
+/** Zachowana wysokość głosu przy zmianie tempa: standardowa właściwość, a gdy
+ * jej brak — prefiks WebKit albo Gecko (spec 2026-11-01-sentence-readback-followups §5). */
+function setPreservesPitch(audio: PitchAudio): void {
+  if ("preservesPitch" in audio) audio.preservesPitch = true;
+  else if ("webkitPreservesPitch" in audio) audio.webkitPreservesPitch = true;
+  else if ("mozPreservesPitch" in audio) audio.mozPreservesPitch = true;
+  else audio.preservesPitch = true;
+}
+
 /**
  * Odtwarzacz na elemencie Audio: plik wzorca pobierany fetchem sięga w
  * immutable cache media, więc ponowny odsłuch nie wywołuje TTS (SPEC A19).
@@ -573,7 +585,7 @@ export class BrowserAudioPlayer implements AudioPlayer {
   #abort: AbortController | null = null;
   #settle: (() => void) | null = null;
 
-  async play(url: string, onStarted?: (durationMs: number | null) => void): Promise<void> {
+  async play(url: string, onStarted?: (durationMs: number | null) => void, options?: AudioPlaybackOptions): Promise<void> {
     this.stop();
     const generation = ++this.#generation;
     const abort = new AbortController();
@@ -595,6 +607,12 @@ export class BrowserAudioPlayer implements AudioPlayer {
         return;
       }
       const audio = new AudioCtor(objectUrl);
+      // Tempo bez zmiany wysokości głosu; przeglądarka może zapis zignorować —
+      // wtedy faktyczne tempo odczytujemy z elementu w `onplaying`.
+      const rate = options?.rate ?? 1;
+      audio.defaultPlaybackRate = rate;
+      audio.playbackRate = rate;
+      setPreservesPitch(audio);
       this.#audio = { element: audio, objectUrl };
       await new Promise<void>((resolve, reject) => {
         let settled = false;
@@ -606,8 +624,16 @@ export class BrowserAudioPlayer implements AudioPlayer {
           else resolve();
         };
         this.#settle = () => finish();
+        // `playing` przychodzi ponownie po każdym wznowieniu z buforowania —
+        // jeden przebieg zgłasza start odsłuchu tylko raz.
+        let reported = false;
         audio.onplaying = () => {
-          const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration * 1000) : null;
+          // Spóźnione zdarzenie po stop()/nowym play() nie może zgłosić odsłuchu.
+          if (generation !== this.#generation || reported) return;
+          reported = true;
+          const duration = Number.isFinite(audio.duration) && audio.duration > 0
+            ? Math.round((audio.duration * 1000) / (audio.playbackRate || 1))
+            : null;
           onStarted?.(duration);
         };
         audio.onended = () => finish();
@@ -635,6 +661,10 @@ export class BrowserAudioPlayer implements AudioPlayer {
 
   #releaseAudio(): void {
     if (this.#audio !== null) {
+      // Zdarzenia zwolnionego elementu nie mogą już dotrzeć do wołającego.
+      this.#audio.element.onplaying = null;
+      this.#audio.element.onended = null;
+      this.#audio.element.onerror = null;
       this.#audio.element.pause();
       URL.revokeObjectURL(this.#audio.objectUrl);
       this.#audio = null;
