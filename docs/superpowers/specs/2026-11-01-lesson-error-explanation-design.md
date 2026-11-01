@@ -322,7 +322,7 @@ dla rodzica.
     przy `not_assessed` i innych rodzajach;
   - walidacja: limit 120, nowa linia, znaczniki, więcej niż jedno zdanie, wyłączona flaga;
   - `explanationExposureKeys`: cytat innego celu, własny tekst usuwany przed dopasowaniem,
-    granice słów („display” ≠ „plays”), wielkość liter, polski homograf daje ekspozycję; generator usuwa złe wyjaśnienie i zostawia ćwiczenie;
+    granice słów („display” ≠ „plays”), wielkość liter, jednowyrazowy polski homograf („do”, „a”, „to”) jest pomijany, a cel wielowyrazowy i inne cytowane słowa dają ekspozycję; generator usuwa złe wyjaśnienie i zostawia ćwiczenie;
     tożsamość ćwiczenia nie zależy od wyjaśnienia;
   - schemat (required + nullable) i prompt generatora przy fladze i bez niej; fake provider;
   - uzgadnianie mediów: rola, locale, styl, fingerprint zależny od tekstu, szkoła bez nagrania,
