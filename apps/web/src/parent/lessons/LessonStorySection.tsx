@@ -110,7 +110,8 @@ export default function LessonStorySection({
         )}
 
         {!story && <Text size="sm" data-testid="lesson-story-empty">{t.empty}</Text>}
-        {story && (editable ? <StoryFields story={story} busy={busy} onChange={onChange} /> : <StoryPreview story={story} />)}
+        {/* w trakcie runu historyjki pola są zablokowane: zapis starej edycji nadpisałby świeżo wygenerowaną historyjkę */}
+        {story && (editable ? <StoryFields story={story} busy={busy || running} onChange={onChange} /> : <StoryPreview story={story} />)}
 
         {editable ? (
           <Group gap="sm">
@@ -119,7 +120,7 @@ export default function LessonStorySection({
               {story ? t.regenerate : t.generate}
             </Button>
             {story ? (
-              <Button size="md" variant="subtle" color="red" data-testid="lesson-story-remove" disabled={busy} onClick={() => onChange(null)}>
+              <Button size="md" variant="subtle" color="red" data-testid="lesson-story-remove" disabled={busy || running} onClick={() => onChange(null)}>
                 {t.remove}
               </Button>
             ) : (
@@ -176,16 +177,20 @@ function StoryFields({ story, busy, onChange }: { story: LessonStoryDto; busy: b
             <Radio.Group value={question.correctOption} label={t.correctOption}
               onChange={(optionId) => onChange(setCorrectOption(story, question.id, optionId))}>
               <Stack gap="xs" mt={4}>
-                {question.options.map((option, oi) => (
+                {question.options.map((option, oi) => {
+                  // nazwa dostępna z numerem pytania: „Pytanie 2, Odpowiedź 1”
+                  const optionName = `${numbered(t.questionLabel, qi + 1)}, ${numbered(t.optionLabel, oi + 1)}`;
+                  return (
                   <Group key={option.id} gap="sm" wrap="nowrap">
-                    <Radio value={option.id} disabled={busy} aria-label={`${t.correctOption}: ${numbered(t.optionLabel, oi + 1)}`}
+                    <Radio value={option.id} disabled={busy} aria-label={`${t.correctOption}: ${optionName}`}
                       data-testid={`lesson-story-correct-${question.id}-${option.id}`} />
-                    <TextInput size="md" className="pp-lesson-grow" aria-label={numbered(t.optionLabel, oi + 1)}
+                    <TextInput size="md" className="pp-lesson-grow" aria-label={optionName}
                       placeholder={numbered(t.optionLabel, oi + 1)} value={option.text} disabled={busy}
                       data-testid={`lesson-story-option-${question.id}-${option.id}`}
                       onChange={(e) => onChange(setOptionText(story, question.id, option.id, e.currentTarget.value))} />
                   </Group>
-                ))}
+                  );
+                })}
               </Stack>
             </Radio.Group>
           </Stack>

@@ -513,7 +513,10 @@ export default function LessonEditor({
       // 409 pokrycia: odśwież, by pokazać aktualną listę braków z DTO;
       // zlecone przy publikacji audio odczyt pokaże jako generowane.
       setError(isMediaPendingError(cause) ? messages.decks.publishMediaPending : errorMessage(cause));
-      setStoryErrors(storyErrorsOf(cause));
+      const errors = storyErrorsOf(cause);
+      setStoryErrors(errors);
+      // sekcja historyjki jest w zakładce ćwiczeń
+      if (errors.length > 0) setTab("exercises");
       await load();
     } finally {
       setBusyState(false);
@@ -598,6 +601,7 @@ export default function LessonEditor({
     if (!runId || busyRef.current || dirty.current || conflictActive.current) return;
     setBusyState(true);
     setError(null);
+    setStoryErrors([]);
     try {
       await run(() => parentClient.generation.retry({ runId }));
       await load();

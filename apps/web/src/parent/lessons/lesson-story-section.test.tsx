@@ -119,6 +119,31 @@ describe("LessonStorySection", () => {
     expect((screen.getByTestId("lesson-story-question-q1") as HTMLInputElement).value).toBe("Jaki rower ma Sam?");
   });
 
+  it("locks story fields and remove while the story run is queued or running", () => {
+    for (const state of ["queued", "running"] as const) {
+      renderSection({ generation: run(state) });
+      const section = screen.getByTestId("lesson-story-section");
+      const controls = [...section.querySelectorAll("input, button")] as (HTMLInputElement | HTMLButtonElement)[];
+      expect(controls.length).toBeGreaterThan(10);
+      for (const control of controls) expect(control.disabled, control.getAttribute("data-testid") ?? control.outerHTML).toBe(true);
+      cleanup();
+    }
+    // po zakończeniu runu pola wracają
+    renderSection({ generation: run("succeeded") });
+    expect((screen.getByTestId("lesson-story-sentence-0") as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByTestId("lesson-story-remove") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("lesson-story-add-sentence") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("option inputs and correct-answer radios name the question number", () => {
+    renderSection({ story: { ...story(), questions: [...story().questions, { ...story().questions[0]!, id: "q2" }] } });
+    const q2 = `${t.questionLabel.replace("{n}", "2")}, ${t.optionLabel.replace("{n}", "1")}`;
+    expect(q2).toBe("Pytanie 2, Odpowiedź 1");
+    expect(screen.getByTestId("lesson-story-option-q2-a").getAttribute("aria-label")).toBe(q2);
+    expect(screen.getByTestId("lesson-story-correct-q2-a").getAttribute("aria-label")).toBe(`${t.correctOption}: ${q2}`);
+    expect(screen.getByTestId("lesson-story-option-q1-c").getAttribute("aria-label")).toBe("Pytanie 1, Odpowiedź 3");
+  });
+
   it("remove story calls onChange(null)", () => {
     const props = renderSection();
     fireEvent.click(screen.getByTestId("lesson-story-remove"));
