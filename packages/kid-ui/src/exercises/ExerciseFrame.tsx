@@ -4,6 +4,7 @@ import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import { cssZoomOf, toLayoutPx } from "../layout/css-zoom";
+import { KID_FINE_POINTER_QUERY } from "../layout/viewport";
 import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
@@ -106,6 +107,10 @@ export function ExerciseFrame({
     };
 
     revealIfNeeded();
+    // Zmiana myszy na dotyk (i odwrotnie) zmienia odstęp od góry zwartej ramy
+    // (`--frame-offset`), a rama i panel mogą zachować rozmiar.
+    const finePointerQuery = typeof window.matchMedia === "function" ? window.matchMedia(KID_FINE_POINTER_QUERY) : null;
+    finePointerQuery?.addEventListener("change", revealIfNeeded);
     const observer = new MutationObserver(revealIfNeeded);
     observer.observe(page, { attributes: true, attributeFilter: ["data-zoomed", "data-viewport-very-short"] });
     const resizeObserver = flowFeedback && typeof ResizeObserver !== "undefined"
@@ -119,6 +124,7 @@ export function ExerciseFrame({
     }
     return () => {
       active = false;
+      finePointerQuery?.removeEventListener("change", revealIfNeeded);
       observer.disconnect();
       resizeObserver?.disconnect();
       revealCleanupRef.current?.();
