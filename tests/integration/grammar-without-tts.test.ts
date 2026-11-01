@@ -115,12 +115,12 @@ describe("gramatyka bez TTS", () => {
     }
     expect(fakes.tts.requests).toHaveLength(0);
     const runs = (await pool.query("select state from learning_app.generation_runs where kind='tts'")).rows;
-    // Jedno uruchomienie na każdy odrębny zasób target_audio/feedback_audio szkicu.
+    // Jedno uruchomienie na każdy odrębny zasób target_audio/feedback_audio/explanation_audio szkicu.
     const distinct = (await pool.query<{ count: number }>(
       `select count(distinct ra.asset_id)::int as count
          from learning_app.revision_assets ra
          join learning_app.item_revisions ir on ir.id = ra.item_revision_id
-        where ir.deck_version_id = $1 and ra.role in ('target_audio','feedback_audio')`,
+        where ir.deck_version_id = $1 and ra.role in ('target_audio','feedback_audio','explanation_audio')`,
       [draft.id],
     )).rows[0]!.count;
     expect(runs.length).toBe(distinct);
