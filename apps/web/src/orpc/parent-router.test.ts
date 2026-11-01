@@ -148,6 +148,7 @@ const childDto = {
   avatarKey: "fox",
   recordingMode: "hold" as const,
   canRead: true,
+  interests: [] as string[],
 };
 const pronunciationSettings = {
   pronunciationAvailable: true,

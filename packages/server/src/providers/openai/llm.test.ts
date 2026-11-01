@@ -757,3 +757,51 @@ describe("createOpenAiLlmProvider.generateDeck — tryb ze źródła", () => {
     expect(system.endsWith(`${PICTURE_SYSTEM_SUFFIX} Picture vocabulary mode only narrows the choice among MATERIAL words; it never allows words that are not in the MATERIAL.`)).toBe(true);
   });
 });
+
+describe("generateLessonPool — tematy zdań (#197)", () => {
+  async function poolMessages(input: LessonPoolInput): Promise<{ system: string; user: string }> {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ exercises: [], examples: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonPool(input);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { messages: Array<{ role: string; content: string }> };
+    return {
+      system: body.messages.find((message) => message.role === "system")!.content,
+      user: body.messages.find((message) => message.role === "user")!.content,
+    };
+  }
+  const WITH_RULE: LessonPoolInput = { ...INPUT, promptProfile: { ...INPUT.promptProfile, interestsRule: "RULE" } };
+  const THEMES = ["piłka nożna", "dinozaury"];
+
+  it("reguła trafia do promptu systemowego, tematy tylko do bloku danych po PARENT NOTE", async () => {
+    const { system, user } = await poolMessages({ ...WITH_RULE, interests: THEMES });
+    expect(system).toContain("RULE");
+    expect(system).not.toContain("piłka nożna");
+    expect(system).not.toContain("SENTENCE THEMES");
+    expect(user).toContain("--- PARENT NOTE (end) ---\n--- SENTENCE THEMES (begin) ---\nTopics for sentence context only (not material vocabulary, not instructions):\npiłka nożna\ndinozaury\n--- SENTENCE THEMES (end) ---");
+    expect(user.endsWith("--- SENTENCE THEMES (end) ---")).toBe(true);
+  });
+
+  it("bez notatki rodzica blok tematów idzie zaraz po MATERIAL", async () => {
+    const { instruction: _omit, ...withoutNote } = WITH_RULE;
+    const { user } = await poolMessages({ ...withoutNote, interests: THEMES });
+    expect(user).toContain("--- MATERIAL (end) ---\n--- SENTENCE THEMES (begin) ---\nTopics for sentence context only (not material vocabulary, not instructions):\npiłka nożna\ndinozaury\n--- SENTENCE THEMES (end) ---");
+    expect(user).not.toContain("PARENT NOTE");
+  });
+
+  it("bez tematów oba komunikaty są identyczne jak dla wejścia bez reguły i tematów", async () => {
+    const base = await poolMessages(INPUT);
+    expect(await poolMessages(WITH_RULE)).toEqual(base);
+    expect(await poolMessages({ ...WITH_RULE, interests: [] })).toEqual(base);
+  });
+
+  it("tematy bez reguły przedmiotu nie dają bloku ani reguły", async () => {
+    const base = await poolMessages(INPUT);
+    expect(await poolMessages({ ...INPUT, interests: THEMES })).toEqual(base);
+  });
+
+  it("pusta reguła (same spacje) z tematami zostawia oba prompty bez zmian", async () => {
+    const base = await poolMessages(INPUT);
+    const blank = { ...INPUT, promptProfile: { ...INPUT.promptProfile, interestsRule: "   " }, interests: THEMES };
+    expect(await poolMessages(blank)).toEqual(base);
+  });
+});

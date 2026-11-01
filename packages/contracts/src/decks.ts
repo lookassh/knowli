@@ -2,6 +2,7 @@ import { z } from "zod";
 import { UuidSchema, VocabularyFormatSchema } from "./common";
 import { GenerationDtoSchema } from "./generation";
 import { TestGoalsSchema, MockTestTaskCountSchema } from "./mock-tests";
+import { ChildInterestsSchema } from "./child-interests";
 import { MAX_DECK_ITEMS } from "./limits";
 
 export const RecordingModeSchema = z.enum(["hold", "toggle"]);
@@ -25,7 +26,8 @@ export const ChildPatchSchema = z.object({
   avatarKey: z.string().min(1).max(40).optional(),
   recordingMode: RecordingModeSchema.optional(),
   canRead: z.boolean().optional(),
-}).strict().refine((input) => input.recordingMode !== undefined || input.displayName !== undefined || input.avatarKey !== undefined || input.canRead !== undefined, {
+  interests: ChildInterestsSchema.optional(),
+}).strict().refine((input) => input.recordingMode !== undefined || input.displayName !== undefined || input.avatarKey !== undefined || input.canRead !== undefined || input.interests !== undefined, {
   message: "At least one profile field is required",
 });
 export type ChildPatch = z.infer<typeof ChildPatchSchema>;
@@ -34,6 +36,8 @@ export const ChildDtoSchema = ChildInputSchema.extend({
   id: UuidSchema,
   recordingMode: RecordingModeSchema,
   canRead: z.boolean(),
+  /** Zainteresowania zapisane w profilu; DTO nie normalizuje (robi to wejście `ChildPatch`). */
+  interests: z.array(z.string()),
 });
 export type ChildDto = z.infer<typeof ChildDtoSchema>;
 
@@ -67,6 +71,7 @@ export function toChildDto(row: {
   birthYear: number | null;
   recordingMode: RecordingModeDto;
   canRead: boolean;
+  interests: string[];
 }): ChildDto {
   return {
     id: row.id,
@@ -74,6 +79,7 @@ export function toChildDto(row: {
     avatarKey: row.avatarKey,
     recordingMode: row.recordingMode,
     canRead: row.canRead,
+    interests: row.interests,
     ...(row.birthYear === null ? {} : { birthYear: row.birthYear }),
   };
 }

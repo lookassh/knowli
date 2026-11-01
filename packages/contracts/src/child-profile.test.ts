@@ -40,7 +40,7 @@ describe("child profile patch", () => {
     expect(RecordingModeSchema.parse("hold")).toBe("hold");
     expect(RecordingModeSchema.parse("toggle")).toBe("toggle");
     expect(RecordingModeSchema.safeParse("tap").success).toBe(false);
-    expect(ChildDtoSchema.parse({ ...child, recordingMode: "hold", canRead: true }).recordingMode).toBe("hold");
+    expect(ChildDtoSchema.parse({ ...child, recordingMode: "hold", canRead: true, interests: [] }).recordingMode).toBe("hold");
     expect(ChildDtoSchema.safeParse(child).success).toBe(false);
     expect(KidProfileDtoSchema.parse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey, recordingMode: "toggle", canRead: true }).recordingMode).toBe("toggle");
     expect(KidProfileDtoSchema.safeParse({ childId: child.id, displayName: child.displayName, avatarKey: child.avatarKey }).success).toBe(false);
@@ -53,7 +53,7 @@ describe("child profile patch", () => {
     expect(ChildInputSchema.parse({ displayName: "Ala", avatarKey: "fox", canRead: false })).toMatchObject({ canRead: false });
     expect(ChildPatchSchema.safeParse({ canRead: "false" }).success).toBe(false);
     expect(ChildPatchSchema.parse({ canRead: false })).toEqual({ canRead: false });
-    expect(toChildDto({ ...child, birthYear: null, recordingMode: "hold", canRead: false } as Parameters<typeof toChildDto>[0]))
+    expect(toChildDto({ ...child, birthYear: null, recordingMode: "hold", canRead: false, interests: [] }))
       .toMatchObject({ canRead: false });
   });
 
@@ -66,5 +66,28 @@ describe("child profile patch", () => {
     expect(KidProfileDtoSchema.safeParse({
       childId: child.id, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", rewardPoints: -1,
     }).success).toBe(false);
+  });
+});
+
+describe("child profile interests", () => {
+  it("accepts an interests-only patch, including clearing the list", () => {
+    expect(ChildPatchSchema.parse({ interests: [] })).toEqual({ interests: [] });
+    expect(ChildPatchSchema.parse({ interests: ["  piłka   nożna ", "Minecraft"] }))
+      .toEqual({ interests: ["piłka nożna", "Minecraft"] });
+  });
+
+  it.each([
+    { interests: ["a", "b", "c", "d", "e", "f"] }, { interests: ["Dino", "dino"] },
+    { interests: ["<b>"] }, { interests: "dino" }, { interests: null },
+  ])("rejects invalid interests %j", (input) => {
+    expect(ChildPatchSchema.safeParse(input).success).toBe(false);
+  });
+
+  it("does not normalize stored interests in the DTO and carries them through toChildDto", () => {
+    expect(ChildDtoSchema.parse({ ...child, recordingMode: "hold", canRead: true, interests: ["  a  "] }).interests)
+      .toEqual(["  a  "]);
+    expect(ChildDtoSchema.safeParse({ ...child, recordingMode: "hold", canRead: true }).success).toBe(false);
+    expect(toChildDto({ ...child, birthYear: null, recordingMode: "hold", canRead: true, interests: ["Minecraft"] }).interests)
+      .toEqual(["Minecraft"]);
   });
 });

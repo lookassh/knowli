@@ -54,6 +54,8 @@ export interface LlmPromptProfileInput {
   readonly fieldRules?: string;
   /** Semantyka typów par, grup i luk (opcjonalna, od przedmiotu); adapter dokłada ją do części strukturalnej bloku. */
   readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
+  /** Reguła użycia tematów zdań (opcjonalna, od przedmiotu); adapter dokłada ją do promptu systemowego tylko razem z `interests`. */
+  readonly interestsRule?: string;
 }
 
 /** Ile ćwiczeń danego etapu wygenerować dla jednego celu (partia per cel). */
@@ -77,6 +79,8 @@ export interface LessonPoolInput {
   readonly objectives: readonly LlmLessonObjectiveInput[];
   readonly material: string;
   readonly instruction?: string;
+  /** Tematy zdań z zainteresowań dziecka (dane od rodzica); adapter wstawia je do wiadomości użytkownika tylko przy `promptProfile.interestsRule`. */
+  readonly interests?: readonly string[];
   /** Łączna liczba ćwiczeń per cel i jej rozkład na etapy. */
   readonly countPerObjective: number;
   readonly stageCounts: LlmLessonStageCounts;

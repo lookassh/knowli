@@ -13,7 +13,7 @@ function render(element: ReactElement): string {
 
 describe("WorkCardPanel", () => {
   it("shows the child and date filters and a neutral no-children state", () => {
-    const child = { id: "00000000-0000-4000-8000-000000000001", displayName: "Ola", avatarKey: "fox", birthYear: 2018,
+    const child = { id: "00000000-0000-4000-8000-000000000001", displayName: "Ola", avatarKey: "fox", birthYear: 2018, interests: [],
       canRead: true, recordingMode: "hold" as const, pronunciation: null };
     const markup = render(createElement(WorkCardPanel, { childrenList: [child] }));
     expect(markup).toContain("Ola");

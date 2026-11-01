@@ -224,6 +224,11 @@ export interface Services {
    */
   sessionActivity?: SessionActivityDeps;
   /**
+   * Nazwa usługi generującej materiał (`host · model`) dla panelu rodzica.
+   * Web nie ma instancji LLM (generuje worker), więc opisuje wspólną konfigurację.
+   */
+  generationService?: string;
+  /**
    * Rejestr przedmiotów lekcji (zadanie 9). Wstrzykiwany jako wartość, nie
    * importowany globalnie w modułach — `createServices` nadaje mu produkcyjną
    * domyślkę `createProductionSubjectRegistry()`, więc żaden wywołujący nie
@@ -245,6 +250,7 @@ export function createServices(
     lessonSpeech?: LessonSpeechDeps;
     grader?: GraderDeps;
     sessionActivity?: SessionActivityDeps;
+    generationService?: string;
     subjects?: SubjectRegistry;
   },
 ): Services {
@@ -260,6 +266,7 @@ export function createServices(
     ...(input.lessonSpeech ? { lessonSpeech: input.lessonSpeech } : {}),
     ...(input.grader ? { grader: input.grader } : {}),
     ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
+    ...(input.generationService ? { generationService: input.generationService } : {}),
   };
 }
 
