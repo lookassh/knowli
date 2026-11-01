@@ -16,6 +16,7 @@ import { createOpenAiCompatibleGrader } from "./providers/openai-compatible/grad
 import { createOpenAiCompatibleSttProvider } from "./providers/openai-compatible/stt";
 import { createOpenAiCompatibleSessionActivityReviewer } from "./providers/openai-compatible/session-activity";
 import { chatRequestExtrasFromEnv } from "./providers/chat-request-options";
+import { endpointKeyFromEnv } from "./providers/openrouter-key";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
 import type { LessonGenerationPolicy } from "./modules/materials/lessons/lesson-generation-policy";
@@ -138,6 +139,11 @@ export interface GenerationDeps {
   image: ImageProvider;
   mediaStore: MediaStore;
   lessonExecution?: LessonGenerationPolicy;
+  /**
+   * Czy w procesie web będzie model oceniający ({@link graderConfigured} na tym
+   * samym env). Steruje tylko preferencją typów ćwiczeń przy generacji puli.
+   */
+  graderAvailable?: boolean;
 }
 
 /**
@@ -323,30 +329,68 @@ function positiveIntEnv(name: string, raw: string | undefined, fallback: number)
   return value;
 }
 
+/** `UMIEM_GRADER_ENABLED`: `true/false/1/0` (bez względu na wielkość liter), brak = nieustawione. */
+function graderEnabledFlag(env: Record<string, string | undefined>): boolean | undefined {
+  const raw = env.UMIEM_GRADER_ENABLED?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return undefined;
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  throw new Error("UMIEM_GRADER_ENABLED must be true or false");
+}
+
 /**
- * Model oceniający ze zmiennych środowiskowych (proces web, design „Model
- * oceniający”). Walidacja: wszystkie trzy pierwsze (`BASE_URL`, `API_KEY`,
- * `MODEL`) albo żadna — częściowa konfiguracja to błąd konfiguracji, nie cichy
- * brak. `https://` wymagane poza `NODE_ENV` test/development. Liczby dodatnie.
- * Brak konfiguracji → undefined (model wyłączony to stan poprawny). Sekret
- * żyje tylko w adapterze; tu wyłącznie go przekazujemy.
+ * Połączenie modelu oceniającego (grader lekcji i ocena aktywności sesji),
+ * design `2026-11-01-config-defaults-design.md` §2.3. Włączone, gdy jest
+ * własny `UMIEM_GRADER_API_KEY`, albo przy `UMIEM_GRADER_ENABLED=true` ze
+ * wspólnym `OPENROUTER_API_KEY` (tylko https OpenRouter): odpowiedzi dzieci nie
+ * wychodzą z domu bez decyzji operatora. `UMIEM_GRADER_ENABLED=false` wyłącza
+ * zawsze. Bez klucza — wyłączone; klucz bez `BASE_URL`/`MODEL` (wywołania bez
+ * domyślnej konfiguracji) i `ENABLED=true` bez klucza to błędy konfiguracji.
+ * `https://` wymagane poza `NODE_ENV` test/development.
  */
-export function graderFromEnv(env: Record<string, string | undefined>): GraderDeps | undefined {
-  const baseUrl = env.UMIEM_GRADER_BASE_URL;
-  const apiKey = env.UMIEM_GRADER_API_KEY;
-  const model = env.UMIEM_GRADER_MODEL;
-  const present = [baseUrl, apiKey, model].filter((v) => v !== undefined && v !== "").length;
-  if (present === 0) {
+function graderConnectionFromEnv(env: Record<string, string | undefined>): { baseUrl: string; apiKey: string; model: string } | undefined {
+  const enabled = graderEnabledFlag(env);
+  if (enabled === false) return undefined;
+  const baseUrl = env.UMIEM_GRADER_BASE_URL || undefined;
+  const model = env.UMIEM_GRADER_MODEL || undefined;
+  const apiKey = endpointKeyFromEnv(env, "UMIEM_GRADER", baseUrl, { allowShared: enabled === true });
+  if (apiKey === undefined) {
+    if (enabled === true) {
+      throw new Error("UMIEM_GRADER_ENABLED=true requires UMIEM_GRADER_API_KEY, or OPENROUTER_API_KEY with an https OpenRouter UMIEM_GRADER_BASE_URL");
+    }
     return undefined;
   }
-  if (present < 3) {
+  if (baseUrl === undefined || model === undefined) {
     throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
   }
   const nodeEnv = env.NODE_ENV ?? "production";
   const insecureAllowed = nodeEnv === "test" || nodeEnv === "development";
-  if (!baseUrl!.startsWith("https://") && !(insecureAllowed && baseUrl!.startsWith("http://"))) {
+  if (!baseUrl.startsWith("https://") && !(insecureAllowed && baseUrl.startsWith("http://"))) {
     throw new Error("UMIEM_GRADER_BASE_URL must use https:// outside test/development");
   }
+  return { baseUrl, apiKey, model };
+}
+
+/**
+ * Czy proces web będzie miał model oceniający — ta sama reguła co
+ * {@link graderFromEnv}; worker używa jej do preferencji typów przy generacji.
+ */
+export function graderConfigured(env: Record<string, string | undefined>): boolean {
+  return graderConnectionFromEnv(env) !== undefined;
+}
+
+/**
+ * Model oceniający ze zmiennych środowiskowych (proces web, design „Model
+ * oceniający”). Reguły połączenia: {@link graderConnectionFromEnv}. Liczby
+ * dodatnie. Brak konfiguracji → undefined (model wyłączony to stan poprawny).
+ * Sekret żyje tylko w adapterze; tu wyłącznie go przekazujemy.
+ */
+export function graderFromEnv(env: Record<string, string | undefined>): GraderDeps | undefined {
+  const connection = graderConnectionFromEnv(env);
+  if (connection === undefined) {
+    return undefined;
+  }
+  const { baseUrl, apiKey, model } = connection;
   const timeoutMs = positiveIntEnv("UMIEM_GRADER_TIMEOUT_MS", env.UMIEM_GRADER_TIMEOUT_MS, DEFAULT_GRADER_TIMEOUT_MS);
   const maxCallsPerSession = positiveIntEnv(
     "UMIEM_GRADER_MAX_CALLS_PER_SESSION",
@@ -355,7 +399,7 @@ export function graderFromEnv(env: Record<string, string | undefined>): GraderDe
   );
   return {
     provider: createOpenAiCompatibleGrader({
-      baseUrl: baseUrl!, apiKey: apiKey!, model: model!, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
+      baseUrl, apiKey, model, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
     }),
     maxCallsPerSession,
     timeoutMs,
@@ -369,22 +413,12 @@ export function graderFromEnv(env: Record<string, string | undefined>): GraderDe
  * deadline `UMIEM_SESSION_ACTIVITY_TIMEOUT_MS` (domyślnie 60 s).
  */
 export function sessionActivityFromEnv(env: Record<string, string | undefined>): SessionActivityDeps | undefined {
-  const baseUrl = env.UMIEM_GRADER_BASE_URL;
-  const apiKey = env.UMIEM_GRADER_API_KEY;
-  const model = env.UMIEM_GRADER_MODEL;
-  const present = [baseUrl, apiKey, model].filter((v) => v !== undefined && v !== "").length;
-  if (present === 0) {
+  // to samo połączenie co graderFromEnv — nie polegamy na tym, że kompozycja wywoła go wcześniej
+  const connection = graderConnectionFromEnv(env);
+  if (connection === undefined) {
     return undefined;
   }
-  if (present < 3) {
-    throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
-  }
-  // jak graderFromEnv — nie polegamy na tym, że kompozycja wywoła go wcześniej
-  const nodeEnv = env.NODE_ENV ?? "production";
-  const insecureAllowed = nodeEnv === "test" || nodeEnv === "development";
-  if (!baseUrl!.startsWith("https://") && !(insecureAllowed && baseUrl!.startsWith("http://"))) {
-    throw new Error("UMIEM_GRADER_BASE_URL must use https:// outside test/development");
-  }
+  const { baseUrl, apiKey, model } = connection;
   const timeoutMs = positiveIntEnv(
     "UMIEM_SESSION_ACTIVITY_TIMEOUT_MS",
     env.UMIEM_SESSION_ACTIVITY_TIMEOUT_MS,
@@ -392,9 +426,9 @@ export function sessionActivityFromEnv(env: Record<string, string | undefined>):
   );
   return {
     provider: createOpenAiCompatibleSessionActivityReviewer({
-      baseUrl: baseUrl!, apiKey: apiKey!, model: model!, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
+      baseUrl, apiKey, model, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
     }),
     timeoutMs,
-    publicService: `${new URL(baseUrl!).host} · ${model}`,
+    publicService: `${new URL(baseUrl).host} · ${model}`,
   };
 }

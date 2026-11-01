@@ -18,6 +18,11 @@ services:
       UMIEM_IMAGE_PROVIDER: fake-image
       UMIEM_IMAGE_MODEL: fake-image-1
       UMIEM_IMAGE_SIZE: 512x512
+      # Nadpisują domyślną konfigurację (config-defaults.ts): bez stylu i WAV,
+      # grader nigdy prawdziwy — odpowiedzi testowe nie wychodzą do sieci.
+      UMIEM_TTS_FORMAT: mp3
+      UMIEM_TTS_STYLE: none
+      UMIEM_GRADER_ENABLED: "false"
 
   worker:
     environment:
@@ -29,3 +34,8 @@ services:
       UMIEM_IMAGE_PROVIDER: fake-image
       UMIEM_IMAGE_MODEL: fake-image-1
       UMIEM_IMAGE_SIZE: 512x512
+      # Nadpisują domyślną konfigurację (config-defaults.ts): bez stylu i WAV,
+      # grader nigdy prawdziwy — odpowiedzi testowe nie wychodzą do sieci.
+      UMIEM_TTS_FORMAT: mp3
+      UMIEM_TTS_STYLE: none
+      UMIEM_GRADER_ENABLED: "false"

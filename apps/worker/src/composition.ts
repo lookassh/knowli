@@ -4,6 +4,7 @@ import {
   createServices,
   mediaSettingsFromEnv,
   type Services,
+  withConfigDefaults,
 } from "@learning/server";
 
 type WorkerPool = ReturnType<typeof createDatabase>["pool"];
@@ -13,18 +14,20 @@ type WorkerPool = ReturnType<typeof createDatabase>["pool"];
  * (UMIEM_FAKE_PROVIDERS=1 dla środowisk bez kluczy) i lokalny wolumen mediów.
  */
 export function buildWorkerServices(): { services: Services; pool: WorkerPool } {
-  const databaseUrl = process.env.DATABASE_URL;
+  // domyślna konfiguracja z repo pod spodem, .env nadpisuje (config-defaults.ts)
+  const env = withConfigDefaults(process.env);
+  const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
-  const generation = createGenerationDepsFromEnv(process.env);
+  const generation = createGenerationDepsFromEnv(env);
   if (!generation) {
-    throw new Error("OPENAI_API_KEY is not configured (albo ustaw UMIEM_FAKE_PROVIDERS=1)");
+    throw new Error("OPENAI_API_KEY is not configured (obrazy; LLM i TTS biorą OPENROUTER_API_KEY) — albo ustaw UMIEM_FAKE_PROVIDERS=1");
   }
   const { db, pool } = createDatabase(databaseUrl);
   const services = createServices({
     db,
-    media: mediaSettingsFromEnv(process.env),
+    media: mediaSettingsFromEnv(env),
     generation,
   });
   return { services, pool };

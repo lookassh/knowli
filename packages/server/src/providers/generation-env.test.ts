@@ -155,7 +155,7 @@ describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", (
       "https://evil.example/api.openai.com/v1",
     ]) {
       expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: baseUrl }))
-        .toBe("UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+        .toBe("UMIEM_LLM_BASE_URL requires UMIEM_LLM_API_KEY or OPENROUTER_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
     }
     // także lokalny endpoint w development: klucz OpenAI nie idzie na http://localhost
     expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_LLM_BASE_URL: "http://localhost:9999/v1", NODE_ENV: "development" }))
@@ -288,7 +288,7 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
     const deps = createGenerationDepsFromEnv({
       OPENAI_API_KEY: "sk-main",
       UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1",
-      UMIEM_TTS_API_KEY: "sk-or",
+      UMIEM_TTS_API_KEY: "sk-or-v1-test",
       UMIEM_TTS_MODEL: "openai/gpt-4o-mini-tts-2025-12-15",
     });
 
@@ -296,7 +296,7 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
     await deps!.tts.synthesize(SPEECH_INPUT);
     const [url, init] = lastCall(fetchMock);
     expect(url).toBe("https://openrouter.ai/api/v1/audio/speech");
-    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-or");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer sk-or-v1-test");
     expect(JSON.parse(String(init.body)).model).toBe("openai/gpt-4o-mini-tts-2025-12-15");
   });
 
@@ -319,7 +319,7 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
 
   it("własny UMIEM_TTS_BASE_URL bez UMIEM_TTS_API_KEY to błąd konfiguracji — klucz OpenAI nie trafia do innego hosta", () => {
     expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_BASE_URL: "https://openrouter.ai/api/v1" }))
-      .toBe("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
+      .toBe("UMIEM_TTS_BASE_URL requires UMIEM_TTS_API_KEY or OPENROUTER_API_KEY (OPENAI_API_KEY is never sent to another endpoint)");
   });
 
   it("jawny UMIEM_TTS_BASE_URL na api.openai.com bez własnego klucza używa OPENAI_API_KEY", async () => {

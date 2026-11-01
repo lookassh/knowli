@@ -15,6 +15,7 @@
  */
 import { readFileSync } from "node:fs";
 import { graderFromEnv } from "../packages/server/src/config";
+import { withConfigDefaults } from "../packages/server/src/config-defaults";
 import {
   countSentences,
   validateSchoolVerdict,
@@ -91,9 +92,10 @@ if (useFake) {
   provider = new FakeAnswerGrader();
   console.log("arm=fake (heurystyka — wynik NIE jest bramką jakości)");
 } else {
-  const deps = graderFromEnv(process.env);
+  // Domyślna konfiguracja z repo pod .env (jak web), po wczytaniu .env.
+  const deps = graderFromEnv(withConfigDefaults(process.env));
   if (!deps) {
-    console.error("Brak konfiguracji gradera (UMIEM_GRADER_BASE_URL/API_KEY/MODEL w .env). Użyj --fake do sanity checku.");
+    console.error("Brak konfiguracji gradera (UMIEM_GRADER_API_KEY albo UMIEM_GRADER_ENABLED=true z OPENROUTER_API_KEY w .env). Użyj --fake do sanity checku.");
     process.exit(2);
   }
   provider = deps.provider;

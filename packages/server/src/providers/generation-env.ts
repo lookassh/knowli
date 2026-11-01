@@ -5,6 +5,8 @@ import { createOpenAiImageProvider } from "./images/openai";
 import { createOpenAiLlmProvider } from "./openai/llm";
 import { chatRequestExtrasFromEnv } from "./chat-request-options";
 import { createOpenAiTtsProvider } from "./openai/tts";
+import { endpointKeyFromEnv, isOpenRouterKey } from "./openrouter-key";
+import { graderConfigured } from "../config";
 import { lessonGenerationPolicyFromEnv } from "../modules/materials/lessons/lesson-generation-policy";
 
 function nonEmpty(value: string | undefined): string | undefined {
@@ -24,13 +26,6 @@ function secureBaseUrl(env: Record<string, string | undefined>, name: "UMIEM_LLM
 }
 
 const OPENAI_HOST = "api.openai.com";
-
-/** Prefiks kluczy OpenRouter — taki klucz nigdy nie powinien trafić do api.openai.com. */
-const OPENROUTER_KEY_PREFIX = "sk-or-";
-
-function isOpenRouterKey(key: string): boolean {
-  return key.trim().toLowerCase().startsWith(OPENROUTER_KEY_PREFIX);
-}
 
 /**
  * `OPENAI_API_KEY` trafia zawsze do api.openai.com (obrazy; zapas LLM i TTS),
@@ -71,10 +66,11 @@ function openAiCompatibleEndpointFromEnv(
   openAiKey: string,
 ): { apiKey: string; baseUrl?: string } {
   const baseUrl = secureBaseUrl(env, `${prefix}_BASE_URL`);
-  const ownKey = nonEmpty(env[`${prefix}_API_KEY`]);
+  // Własny klucz albo wspólny OPENROUTER_API_KEY (tylko https OpenRouter).
+  const ownKey = endpointKeyFromEnv(env, prefix, baseUrl, { allowShared: true });
   const towardOpenAi = baseUrl === undefined || isOpenAiEndpoint(baseUrl);
   if (!towardOpenAi && ownKey === undefined) {
-    throw new Error(`${prefix}_BASE_URL requires ${prefix}_API_KEY (OPENAI_API_KEY is never sent to another endpoint)`);
+    throw new Error(`${prefix}_BASE_URL requires ${prefix}_API_KEY or OPENROUTER_API_KEY (OPENAI_API_KEY is never sent to another endpoint)`);
   }
   // Klucz innego dostawcy (np. OpenRouter) bez jego BASE_URL poszedłby do api.openai.com.
   const declaredProvider = prefix === "UMIEM_TTS" ? (nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai") : "openai";
@@ -123,6 +119,7 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
         lessonDelayMs: Number.isFinite(lessonDelayMs) ? lessonDelayMs : 0,
       }),
       lessonExecution,
+      graderAvailable: graderConfigured(env),
     };
   }
   const apiKey = openAiKeyFromEnv(env);
@@ -142,5 +139,6 @@ export function createGenerationDepsFromEnv(env: Record<string, string | undefin
     image: createOpenAiImageProvider({ apiKey }),
     mediaStore,
     lessonExecution,
+    graderAvailable: graderConfigured(env),
   };
 }
