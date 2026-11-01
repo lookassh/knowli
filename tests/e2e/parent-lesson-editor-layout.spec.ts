@@ -69,7 +69,7 @@ async function openLesson(page: Page, options: { data?: typeof lesson } = {}): P
     calls.requests.push({ method, path, body: method === "GET" ? null : request.postDataJSON() });
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path.endsWith("/lesson-catalog")) return route.fulfill({ json: catalog });
-    if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true }] });
+    if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true, interests: [] }] });
     if (path.endsWith("/decks")) return route.fulfill({ json: [{ deckId, title: lesson.title, state: "published", kind: "lesson", editableVersionId: draftId, publishedVersionId: publishedId }] });
     if (path.endsWith(`/lessons/${deckId}`)) return route.fulfill({ json: data });
     if (method === "POST" && path.endsWith(`/decks/${deckId}/archive`)) return route.fulfill({ status: 204, body: "" });
