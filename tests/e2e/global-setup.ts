@@ -240,6 +240,11 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       UMIEM_TTS_PROVIDER: "fake-tts",
       UMIEM_TTS_MODEL: "fake-tts-1",
       UMIEM_TTS_VOICE: "fake-voice",
+      // Nadpisują domyślną konfigurację (config-defaults.ts): przebieg jak przed
+      // nią — mp3 bez stylu. Grader jest fake'iem (UMIEM_FAKE_PROVIDERS=1 ma
+      // pierwszeństwo w web), nawet z kluczem w powłoce.
+      UMIEM_TTS_FORMAT: "mp3",
+      UMIEM_TTS_STYLE: "none",
       UMIEM_IMAGE_PROVIDER: "fake-image",
       UMIEM_IMAGE_MODEL: "fake-image-1",
       UMIEM_IMAGE_SIZE: "512x512",

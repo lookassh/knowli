@@ -1,5 +1,5 @@
 import { UiAudioKeySchema, type UiAudioKey } from "@learning/contracts";
-import { createDatabase, createServices, mediaSettingsFromEnv, regenerateUiAudio } from "@learning/server";
+import { createDatabase, createServices, mediaSettingsFromEnv, regenerateUiAudio, withConfigDefaults } from "@learning/server";
 
 /** Argumenty to klucze komunikatów Kid UI; nieznany klucz lub brak argumentów = błąd użycia. */
 function parseKeys(args: readonly string[]): UiAudioKey[] {
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   const { db, pool } = createDatabase(databaseUrl);
   try {
     // Tylko zleca nową generację w kolejce media_assets; syntezę wykonuje worker.
-    const result = await regenerateUiAudio(createServices({ db, media: mediaSettingsFromEnv(process.env) }), keys);
+    const result = await regenerateUiAudio(createServices({ db, media: mediaSettingsFromEnv(withConfigDefaults(process.env)) }), keys);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     await pool.end();

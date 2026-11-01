@@ -115,8 +115,22 @@ describe("graderFromEnv", () => {
     expect(grader!.maxCallsPerSession).toBe(5);
   });
 
-  it("częściowa konfiguracja (brak klucza) → błąd", () => {
-    expect(() => graderFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: base.UMIEM_GRADER_MODEL })).toThrow();
+  it("wspólny OPENROUTER_API_KEY włącza gradera tylko na https OpenRouter", () => {
+    const shared = { UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_GRADER_MODEL: "cheap-1", OPENROUTER_API_KEY: "sk-or-v1-shared" };
+    expect(graderFromEnv(shared)).toBeDefined();
+    expect(sessionActivityFromEnv(shared)).toBeDefined();
+    // innego hosta wspólny klucz nie dostaje — grader wyłączony
+    expect(graderFromEnv({ ...shared, UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL })).toBeUndefined();
+    expect(graderFromEnv({ ...shared, UMIEM_GRADER_BASE_URL: "http://openrouter.ai/api/v1" })).toBeUndefined();
+  });
+
+  it("klucz bez BASE_URL albo MODEL → błąd (częściowa konfiguracja)", () => {
+    expect(() => graderFromEnv({ UMIEM_GRADER_API_KEY: "secret", UMIEM_GRADER_MODEL: "cheap-1" })).toThrow(/all of BASE_URL, API_KEY and MODEL/);
+    expect(() => graderFromEnv({ UMIEM_GRADER_API_KEY: "secret", UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL })).toThrow(/all of BASE_URL, API_KEY and MODEL/);
+  });
+
+  it("BASE_URL i MODEL bez klucza → wyłączony (domyślna konfiguracja zawsze je uzupełnia)", () => {
+    expect(graderFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: base.UMIEM_GRADER_MODEL })).toBeUndefined();
   });
 
   it("http:// odrzucone w produkcji", () => {

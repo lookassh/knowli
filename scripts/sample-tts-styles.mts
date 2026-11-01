@@ -19,6 +19,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mediaSettingsFromEnv, ttsVoiceFor } from "../packages/server/src/config";
+import { withConfigDefaults } from "../packages/server/src/config-defaults";
 import { LessonVoiceToneSchema, type LessonVoiceTone } from "@learning/contracts";
 import { UI_AUDIO_STYLES, UI_AUDIO_TEXTS } from "../packages/server/src/domain/ui-audio-catalog";
 import { lessonPromptStyle, type TtsStyle } from "../packages/server/src/domain/tts-style";
@@ -96,7 +97,9 @@ if (fromRepo === "" || (!fromRepo.startsWith("..") && !isAbsolute(fromRepo))) {
   process.exit(2);
 }
 
-const settings = mediaSettingsFromEnv(process.env);
+// Domyślna konfiguracja z repo pod .env (jak web i worker), po wczytaniu .env.
+const env = withConfigDefaults(process.env);
+const settings = mediaSettingsFromEnv(env);
 if (settings.tts.style !== "instructions" && !process.argv.includes("--allow-none")) {
   console.error(
     "Odmowa: UMIEM_TTS_STYLE nie jest ustawione na instructions, więc próbki byłyby bez stylu. " +
@@ -104,7 +107,7 @@ if (settings.tts.style !== "instructions" && !process.argv.includes("--allow-non
   );
   process.exit(2);
 }
-const deps = createGenerationDepsFromEnv(process.env);
+const deps = createGenerationDepsFromEnv(env);
 if (!deps) {
   console.error("Brak konfiguracji TTS (klucz w .env). Użyj UMIEM_FAKE_PROVIDERS=1 do sanity checku.");
   process.exit(2);

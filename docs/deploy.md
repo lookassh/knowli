@@ -23,15 +23,14 @@ każdym deploju.
 
 1. Przygotuj `.env` z korzenia repo na podstawie `.env.example`:
    - `POSTGRES_PASSWORD` — wymagane (baza w kontenerze),
-   - `OPENAI_API_KEY` (worker: obrazy; domyślnie też LLM), `UMIEM_TTS_API_KEY`
-     (worker: klucz OpenRouter dla nagrań lektora — `.env.example` ma już
-     wybraną konfigurację TTS), `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION`
-     (web: próby ustne dziecka),
-   - LLM materiału przez OpenRouter: `UMIEM_LLM_BASE_URL` **razem z**
-     `UMIEM_LLM_API_KEY` — `OPENAI_API_KEY` trafia wyłącznie do
-     `https://api.openai.com`, więc sam BASE_URL innego hosta (albo klucz
-     OpenRouter bez BASE_URL) kończy start workera błędem z nazwą brakującej
-     zmiennej; ta sama reguła dotyczy `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`,
+   - `OPENAI_API_KEY` (worker i web: obrazy), `OPENROUTER_API_KEY` (worker:
+     generator materiału i nagrania lektora, web: grader odpowiedzi lekcji —
+     modele, głos i ton są w domyślnej konfiguracji
+     `packages/server/src/config-defaults.ts`),
+     `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (web: próby ustne dziecka),
+   - `OPENAI_API_KEY` trafia wyłącznie do `https://api.openai.com`, a wspólny
+     klucz wyłącznie po https na openrouter.ai; klucz w złym miejscu kończy start
+     błędem z nazwą zmiennej (szczegóły: `docs/provider-config.md`),
    - opcjonalnie `WEB_PORT`.
 2. Zbuduj i uruchom stack:
 
@@ -77,7 +76,7 @@ repozytorium (`deploy/compose.yaml`; `build.context` wskazuje korzeń repo).
 ## Bezpieczeństwo wdrożenia
 
 - Tylko `web` ma port hosta; `db` i `worker` są w prywatnej sieci compose.
-- Sekrety (`OPENAI_API_KEY`, `UMIEM_TTS_API_KEY`, `AZURE_SPEECH_*`, `POSTGRES_PASSWORD`) żyją
+- Sekrety (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, ewentualne `UMIEM_*_API_KEY`, `AZURE_SPEECH_*`, `POSTGRES_PASSWORD`) żyją
   wyłącznie w środowisku kontenerów (Coolify secrets / `.env` poza repo);
   web i worker dostają je z jednego pliku, żeby ustawienia medialne
   (fingerprinty) zawsze były identyczne — patrz `docs/provider-config.md`.

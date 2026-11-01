@@ -1207,12 +1207,11 @@ export async function executeLessonGeneration(services: Services, runId: string,
     await markCurrentRun(services.db, "failed", "validation");
     return;
   }
-  // Czy model oceniający będzie dostępny przy odpowiedzi (proces web)? Worker nie
-  // ma klucza gradera i nie potrzebuje go — wnioskuje o konfiguracji po obecności
-  // `UMIEM_GRADER_BASE_URL` we WSPÓLNYM .env (web i worker czytają ten sam plik:
-  // Compose przekazuje te zmienne obu procesom). To steruje tylko PREFERENCJĄ
+  // Czy model oceniający będzie dostępny przy odpowiedzi (proces web)? Worker
+  // liczy to z tego samego env co web (`graderConfigured`, wspólny .env w
+  // Compose) i wstrzykuje w GenerationDeps. To steruje tylko PREFERENCJĄ
   // typów przy generacji (closed/gap, gdy brak modelu), nie oceną.
-  const graderAvailable = Boolean(process.env.UMIEM_GRADER_BASE_URL);
+  const graderAvailable = services.generation?.graderAvailable === true;
 
   // Runy dogenerowania utworzone przed wprowadzeniem polityki exercise mają
   // tylko existingAnswers. Dla gramatyki odbudowujemy bodźce z bieżącego szkicu.

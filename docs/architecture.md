@@ -479,13 +479,13 @@ Model działa WYŁĄCZNIE w procesie web (worker go nie potrzebuje) i tylko dla 
 
 | Zmienna | Domyślnie | Znaczenie |
 | --- | --- | --- |
-| `UMIEM_GRADER_BASE_URL` | brak = model wyłączony | `https://` wymagane poza NODE_ENV test/development |
-| `UMIEM_GRADER_API_KEY` | — | tylko w adapterze; nigdy w logach, DTO, promptach |
-| `UMIEM_GRADER_MODEL` | — | tani model wystarcza (ocena jednej reguły) |
+| `UMIEM_GRADER_BASE_URL` | OpenRouter (`config-defaults.ts`) | `https://` wymagane poza NODE_ENV test/development |
+| `UMIEM_GRADER_API_KEY` | — (zapas: `OPENROUTER_API_KEY`) | tylko w adapterze; nigdy w logach, DTO, promptach |
+| `UMIEM_GRADER_MODEL` | `google/gemini-3.8-flash` (`config-defaults.ts`) | tani model wystarcza (ocena jednej reguły) |
 | `UMIEM_GRADER_TIMEOUT_MS` | 8000 | przerwanie = „nieocenione" |
 | `UMIEM_GRADER_MAX_CALLS_PER_SESSION` | 20 | księgowane w `learning_sessions.context.graderCalls` |
 
-Trzy pierwsze zmienne razem albo żadna (częściowa konfiguracja = błąd startu). Brak konfiguracji to stan poprawny: niedopasowana odpowiedź → „nieocenione", a generowanie puli preferuje typy zamknięte i luki. Pełny katalog i uzasadnienia: `docs/provider-config.md` i `.env.example`.
+Od 2026-11-01 BASE_URL i MODEL pochodzą z domyślnej konfiguracji, więc model włącza klucz: własny albo wspólny po jawnej zgodzie (`ENABLED=true` bez klucza = błąd startu; bez domyślnych, w testach, nadal trzy zmienne razem albo żadna). Wyłączony model to stan poprawny: niedopasowana odpowiedź → „nieocenione", a generowanie puli preferuje typy zamknięte i luki. Pełny katalog i uzasadnienia: `docs/provider-config.md` i `.env.example`.
 
 ### 19.6. Nowe tabele, kolumny i triggery (migracja 0007)
 

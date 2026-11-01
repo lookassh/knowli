@@ -17,6 +17,7 @@ import {
   speechFromEnv,
   systemClock,
   type Services,
+  withConfigDefaults,
 } from "@learning/server";
 
 let current: { services: Services; pool: Pool } | undefined;
@@ -28,39 +29,40 @@ export function getServerServices(): Services {
 }
 
 function initialize(): { services: Services; pool: Pool } {
-  const databaseUrl = process.env.DATABASE_URL;
+  // domyślna konfiguracja z repo pod spodem, .env nadpisuje (config-defaults.ts)
+  const env = withConfigDefaults(process.env);
+  const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
   const { db, pool } = createDatabase(databaseUrl);
-  // tryb fake (E2E/smoke bez kluczy): odpowiedzi ustne przechodzą pełny cykl
-  // na deterministycznych providerach zamiast kończyć się wynikiem technicznym
-  const speech = speechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeSpeechDeps() : undefined);
+  // Tryb fake (E2E/smoke bez kluczy) ma pierwszeństwo: nagrania i odpowiedzi
+  // nie wychodzą do sieci, nawet gdy w środowisku jest klucz.
+  const fake = env.UMIEM_FAKE_PROVIDERS === "1";
+  // odpowiedzi ustne przechodzą w trybie fake pełny cykl na deterministycznych
+  // providerach zamiast kończyć się wynikiem technicznym
+  const speech = fake ? fakeSpeechDeps() : speechFromEnv(env);
   // dyktowanie odpowiedzi lekcji (Etap 3 szkoły): osobny STT bez oceny wymowy
-  const lessonSpeech = lessonSpeechFromEnv(process.env) ?? (process.env.UMIEM_FAKE_PROVIDERS === "1" ? fakeLessonSpeechDeps() : undefined);
-  // model oceniający: z env (produkcja) albo fake w trybie E2E (routing po słowach
-  // kluczowych w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
-  const grader =
-    graderFromEnv(process.env) ??
-    (process.env.UMIEM_FAKE_PROVIDERS === "1"
-      ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
-      : undefined);
+  const lessonSpeech = fake ? fakeLessonSpeechDeps() : lessonSpeechFromEnv(env);
+  // model oceniający: z env (produkcja) albo fake (routing po słowach kluczowych
+  // w odpowiedzi: „almost” → almost, „wrong” → incorrect, inaczej correct)
+  const grader = fake
+    ? fakeGraderDeps({ provider: new FakeAnswerGrader({ keywordRouting: true }) })
+    : graderFromEnv(env);
   // Ocena aktywności sesji współdzieli połączenie UMIEM_GRADER_*; w trybie fake
   // deterministiczny reviewer (heurystyka „aaa” → wykluczenie zadania).
-  const sessionActivity =
-    sessionActivityFromEnv(process.env) ??
-    (process.env.UMIEM_FAKE_PROVIDERS === "1"
-      ? fakeSessionActivityDeps({ provider: new FakeSessionActivityReviewer() })
-      : undefined);
-  const imageProvider = imageProviderFromEnv(process.env);
+  const sessionActivity = fake
+    ? fakeSessionActivityDeps({ provider: new FakeSessionActivityReviewer() })
+    : sessionActivityFromEnv(env);
+  const imageProvider = imageProviderFromEnv(env);
   return {
     services: createServices({
       db,
       clock: systemClock,
-      media: mediaSettingsFromEnv(process.env),
+      media: mediaSettingsFromEnv(env),
       ...(imageProvider ? { imageProvider } : {}),
       // web generuje wyłącznie jawne propozycje okładek rodzica; generację mediów kart wykonuje worker
-      mediaStore: createLocalMediaStore(process.env.MEDIA_ROOT ?? "./data/media"),
+      mediaStore: createLocalMediaStore(env.MEDIA_ROOT ?? "./data/media"),
       // ścieżka mowy to krótkie żądanie web → provider, bez kolejki (arch §11)
       ...(speech ? { speech } : {}),
       ...(lessonSpeech ? { lessonSpeech } : {}),
