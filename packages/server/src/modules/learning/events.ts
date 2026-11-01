@@ -273,9 +273,13 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     // deterministyczną ocenę po identyfikatorach — odmawiamy, nawet gdyby klient
     // zażądał odsłuchu dla takiego zadania.
     const LESSON_AUDIO_TEXT_TYPES = new Set(["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
+    // Wyjątek: „Posłuchaj i wybierz” (`lesson_listen_choice`) ma własną gałąź niżej —
+    // odsłuch zdania jest tam bodźcem, a nie wsparciem zdradzającym odpowiedź.
+    const isListenChoice = task.exerciseType === "lesson_listen_choice";
     if (
       valid.kind === "audio" &&
       (task.exerciseType as string).startsWith("lesson_") &&
+      !isListenChoice &&
       !LESSON_AUDIO_TEXT_TYPES.has(task.exerciseType)
     ) {
       throw new AppError("conflict", { message: "to zadanie lekcji nie oferuje odsłuchu" });
@@ -294,6 +298,35 @@ export async function authorizeDisclosure(services: Services, input: DisclosureI
     // odpowiedź kanoniczna, a klucz ekspozycji to `target_key` ćwiczenia.
     const payload = revision.payload as { target?: string; answer?: string };
     const isLesson = (task.exerciseType as string).startsWith("lesson_");
+    if (isListenChoice && valid.kind === "audio") {
+      // Bodziec zadania słuchowego (spec §7.3): zapieczętowane `audio_issued` z
+      // ekspozycją celu i pełnego zdania PRZED zwróceniem id nagrania. Bez
+      // `ttsForAnswers`, rezerwacji i `spoilsCheck` — odsłuch jest istotą zadania.
+      const subjectId = (revision.lessonContext as { subjectId?: string } | null)?.subjectId;
+      if (!subjectId || services.subjects.getSubject(subjectId)?.ttsForFeedbackSentence !== true) {
+        throw new AppError("conflict", { message: "ten przedmiot nie oferuje odsłuchu zdania" });
+      }
+      const key = task.answerKey as { targetKey?: string; sentenceTargetKey?: string; feedbackAudioAssetId?: string };
+      if (!key.feedbackAudioAssetId) {
+        throw new AppError("conflict", { message: "zadanie nie ma nagrania zdania" });
+      }
+      const listenTargetKey = key.targetKey ?? revision.dbTargetKey;
+      const priorListen = await tx
+        .select({ id: learningEvents.id })
+        .from(learningEvents)
+        .where(and(eq(learningEvents.taskId, task.id), inArray(learningEvents.kind, ["audio_issued", "hint_issued"])));
+      const listenStepId = `${task.id}:d${priorListen.length + 1}`;
+      await writeSealedEvent(tx, {
+        childId: task.childId,
+        taskId: task.id,
+        itemId,
+        kind: "audio_issued",
+        stepId: listenStepId,
+        occurredAt: services.clock.now(),
+        exposures: [...new Set([listenTargetKey, ...(key.sentenceTargetKey ? [key.sentenceTargetKey] : [])])],
+      });
+      return { taskId: task.id, stepId: listenStepId, kind: "audio", reveal: null, audioAssetId: key.feedbackAudioAssetId };
+    }
     if (isLesson && valid.kind === "audio") {
       const subjectId = (revision.lessonContext as { subjectId?: string } | null)?.subjectId;
       if (!subjectId || services.subjects.getSubject(subjectId)?.ttsForAnswers !== true) {

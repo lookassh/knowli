@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createLesson, createServices, endSession, executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps,
+  authorizeDisclosure, completePresentation, createChild, createLesson, createServices, endSession, executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps,
   nextTask, publishLessonDraft, readLessonDeck, startSession, submitAttempt,
 } from "@learning/server";
 import type { LessonDraftDto, TaskDto } from "@learning/contracts";
-import { writeSealedEvent } from "../../packages/server/src/modules/learning/events";
-import { lessonWorld, type LessonWorldListen, type LessonWorldOptions } from "../fixtures/lesson-world";
+import { lessonWorld, type LessonWorldOptions } from "../fixtures/lesson-world";
 import { buildTestServices, ManualClock, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { markTtsReady } from "./school-lesson-audio-helpers";
@@ -166,13 +165,9 @@ async function skipUntil(services: Services, sessionId: string, stopAt: string, 
   throw new Error(`nie doczekano ${stopAt}`);
 }
 
-/** Autoryzacja odsłuchu (Task 9) zastąpiona zapisem zapieczętowanego `audio_issued` jak w serwerze. */
-async function sealListenAudio(services: Services, childId: string, task: TaskDto, listen: LessonWorldListen): Promise<void> {
-  await db.transaction((tx) => writeSealedEvent(tx, {
-    childId, taskId: task.taskId, itemId: listen.itemId, kind: "audio_issued",
-    stepId: `${task.taskId}:listen:${randomUUID()}`, occurredAt: services.clock.now(),
-    exposures: [listen.targetKey, listen.sentenceTargetKey],
-  }));
+/** Odsłuch zdania przez prawdziwą autoryzację (zapieczętowane `audio_issued`), po czym zegar idzie naprzód. */
+async function listenToSentence(services: Services, task: TaskDto): Promise<void> {
+  await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
   (services.clock as ManualClock).advanceMs(1000);
 }
 
@@ -294,7 +289,7 @@ describe("sesja — wydanie i ocena zadania słuchowego", () => {
     const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const task = (await skipUntil(services, session.sessionId, "lesson_listen_choice"))!;
     const key = await answerKeyOf(task.taskId);
-    await sealListenAudio(services, child.id, task, listen);
+    await listenToSentence(services, task);
 
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
     expect(attempt.feedback).toEqual({ kind: "great", correctAudioAssetId: listen.assetId });
@@ -310,7 +305,7 @@ describe("sesja — wydanie i ocena zadania słuchowego", () => {
     const session = await startLegacyTrainingSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const task = (await skipUntil(services, session.sessionId, "lesson_listen_choice"))!;
     const key = await answerKeyOf(task.taskId);
-    await sealListenAudio(services, child.id, task, listen);
+    await listenToSentence(services, task);
 
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: wrongOptionOf(task, key) });
     expect(attempt.feedback).toMatchObject({ kind: "incorrect", correctText: "plays", correctAudioAssetId: listen.assetId });
@@ -330,7 +325,7 @@ describe("sesja — wydanie i ocena zadania słuchowego", () => {
   it("poprawna odpowiedź słuchowa po prawdziwym błędzie luki nie kasuje wsparcia celu", async () => {
     const services = buildTestServices().services;
     // Wcześniejszy sukces celu: luka (etap produktywny) jest w planie pierwszej sesji.
-    const { child, lesson, listen } = await listenWorld(services, { audio: "ready" }, { withObjectiveAssessment: true });
+    const { child, lesson } = await listenWorld(services, { audio: "ready" }, { withObjectiveAssessment: true });
     const first = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     const gap = (await skipUntil(services, first.sessionId, "lesson_gap"))!;
     await submitAttempt(services, { taskId: gap.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
@@ -340,7 +335,7 @@ describe("sesja — wydanie i ocena zadania słuchowego", () => {
     const second = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
     expect(await sessionSupportObjectives(second.sessionId)).toEqual([lesson.objectiveId]);
     const task = (await skipUntil(services, second.sessionId, "lesson_listen_choice"))!;
-    await sealListenAudio(services, child.id, task, listen);
+    await listenToSentence(services, task);
     const key = await answerKeyOf(task.taskId);
     const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
     expect(attempt.feedback?.kind).toBe("great");
@@ -419,5 +414,131 @@ describe("ekspozycja pełnego zdania zadania słuchowego", () => {
 
   it("bez zadania słuchowego ta sama odpowiedź nie była ujawniona", async () => {
     expect(await firstTransformAttemptExposed("pending")).toEqual({ exposed: false, listenIssued: false });
+  });
+});
+
+describe("autoryzacja odsłuchu zadania słuchowego", () => {
+  interface SealedAudio { stepId: string; occurredAt: Date; exposures: string[] }
+
+  async function sealedAudio(taskId: string): Promise<SealedAudio[]> {
+    return (await pool.query<SealedAudio>(
+      `select le.step_id as "stepId", le.occurred_at as "occurredAt",
+              coalesce(array_agg(ee.target_key order by ee.target_key) filter (where ee.target_key is not null), '{}') as exposures
+         from learning_app.learning_events le
+         left join learning_app.event_exposures ee on ee.event_id = le.id
+        where le.task_id = $1 and le.kind = 'audio_issued' and le.sealed
+        group by le.id order by le.occurred_at, le.step_id`, [taskId],
+    )).rows;
+  }
+
+  /** Zmiana niezmiennych danych w teście: bez wyzwalaczy (`session_replication_role = replica`). */
+  async function updateIgnoringTriggers(sql: string, params: unknown[]): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local session_replication_role = replica");
+      await client.query(sql, params);
+      await client.query("commit");
+    } finally { client.release(); }
+  }
+
+  async function issuedListenTask() {
+    const services = buildTestServices().services;
+    const world = await listenWorld(services, { audio: "ready" });
+    const session = await startSession(services, { childId: world.child.id, deckId: world.lesson.deckId, microphoneEnabled: false });
+    const task = (await skipUntil(services, session.sessionId, "lesson_listen_choice"))!;
+    return { services, ...world, session, task, key: await answerKeyOf(task.taskId) };
+  }
+
+  it("zwraca id nagrania zdania i zapisuje zapieczętowane audio_issued z ekspozycjami celu i zdania", async () => {
+    const { services, listen, task } = await issuedListenTask();
+    const now = services.clock.now();
+    const disclosure = await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    expect(disclosure).toEqual({ taskId: task.taskId, stepId: `${task.taskId}:d1`, kind: "audio", reveal: null, audioAssetId: listen.assetId });
+    const events = await sealedAudio(task.taskId);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.exposures).toEqual([listen.targetKey, listen.sentenceTargetKey].sort());
+    expect(events[0]!.occurredAt.getTime()).toBe(now.getTime());
+  });
+
+  it("odpowiedź po autoryzacji jest wspomagana (model_audio), a occurredAt poprzedza receivedAt", async () => {
+    const { services, task, key } = await issuedListenTask();
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    (services.clock as ManualClock).advanceMs(500);
+    const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
+    expect(attempt.feedback?.kind).toBe("great");
+    expect(attempt.taskState).toBe("answered");
+    expect((await attemptContextOf(attempt.attemptId)).assistance).toEqual(expect.arrayContaining(["options", "model_audio"]));
+    const received = (await pool.query<{ receivedAt: Date }>(`select received_at as "receivedAt" from learning_app.attempts where id = $1`, [attempt.attemptId])).rows[0]!.receivedAt;
+    expect((await sealedAudio(task.taskId))[0]!.occurredAt.getTime()).toBeLessThanOrEqual(received.getTime());
+  });
+
+  it("każda kolejna autoryzacja to nowe zdarzenie (stepId :d2)", async () => {
+    const { services, task } = await issuedListenTask();
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    (services.clock as ManualClock).advanceMs(1000);
+    const second = await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    expect(second.stepId).toBe(`${task.taskId}:d2`);
+    expect((await sealedAudio(task.taskId)).map((event) => event.stepId)).toEqual([`${task.taskId}:d1`, `${task.taskId}:d2`]);
+  });
+
+  it("odpowiedź po no_stimulus: po autoryzacji kolejna odpowiedź jest oceniana, a zadanie się zamyka", async () => {
+    const { services, task, key } = await issuedListenTask();
+    const first = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
+    expect(first.feedback).toEqual({ kind: "not_assessed" });
+    expect(first.taskState).toBe("issued");
+
+    (services.clock as ManualClock).advanceMs(1000);
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    (services.clock as ManualClock).advanceMs(1000);
+    const second = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
+    expect(second.feedback?.kind).toBe("great");
+    expect(second.taskState).toBe("answered");
+    expect((await taskRow(task.taskId)).state).toBe("answered");
+    expect((await attemptContextOf(second.attemptId)).assistance).toContain("model_audio");
+  });
+
+  it("zadanie po odpowiedzi (nie issued) → 409 i brak nowego zdarzenia", async () => {
+    const { services, task, key } = await issuedListenTask();
+    await authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" });
+    (services.clock as ManualClock).advanceMs(500);
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: key.correctOptionId as string });
+    // Po odpowiedzi serwer pieczętuje własne audio feedbacku — odmowa nie dokłada kolejnych zdarzeń.
+    const before = (await sealedAudio(task.taskId)).length;
+    await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await sealedAudio(task.taskId)).toHaveLength(before);
+  });
+
+  it("tryb mock_test → 409 bez zdarzenia", async () => {
+    const { services, session, task } = await issuedListenTask();
+    await updateIgnoringTriggers("update learning_app.learning_sessions set mode = 'mock_test', training_plan = null, mock_test_plan = '{}'::jsonb where id = $1", [session.sessionId]);
+    await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await sealedAudio(task.taskId)).toHaveLength(0);
+  });
+
+  it("przedmiot bez ttsForFeedbackSentence → 409 bez zdarzenia", async () => {
+    const { services, lesson, task } = await issuedListenTask();
+    // `lesson_context` opublikowanej wersji jest niezmienny.
+    await updateIgnoringTriggers(
+      `update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, '{subjectId}', '"school"') where deck_id = $1`, [lesson.deckId],
+    );
+    await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await sealedAudio(task.taskId)).toHaveLength(0);
+  });
+
+  it("klucz bez feedbackAudioAssetId → 409 bez zdarzenia", async () => {
+    const { services, task } = await issuedListenTask();
+    await updateIgnoringTriggers("update learning_app.session_tasks set answer_key = answer_key - 'feedbackAudioAssetId' where id = $1", [task.taskId]);
+    await expect(authorizeDisclosure(services, { taskId: task.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await sealedAudio(task.taskId)).toHaveLength(0);
+  });
+
+  it("zadanie wyboru (lesson_choice) nadal nie oferuje odsłuchu", async () => {
+    const services = buildTestServices().services;
+    const { child, lesson } = await listenWorld(services, { audio: "ready" });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const choice = (await skipUntil(services, session.sessionId, "lesson_choice"))!;
+    await expect(authorizeDisclosure(services, { taskId: choice.taskId, kind: "audio" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await sealedAudio(choice.taskId)).toHaveLength(0);
   });
 });
