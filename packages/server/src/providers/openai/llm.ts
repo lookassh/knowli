@@ -1,11 +1,13 @@
 import type {
   LessonObjectivesInput,
   LessonPoolInput,
+  LessonStoryInput,
   LlmGenerateDeckInput,
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
 import { GenerationProviderError } from "../../ports/generation-error";
+import { LESSON_STORY_LIMITS } from "../../domain/lessons/story";
 import { lessonPoolJsonSchema, poolExerciseTypes, voiceToneProperty } from "./lesson-pool-schema";
 import { materializeGeneratedCalculations } from "../lesson-calculations";
 import { materializeGeneratedKeywords } from "../lesson-keywords";
@@ -482,6 +484,65 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
     "Return strict JSON only."
   );
 }
+/** Schema historyjki lekcji (strict): zdania w języku odpowiedzi i pytania z indeksem poprawnej opcji. */
+function lessonStoryJsonSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["sentences", "questions"],
+    properties: {
+      sentences: { type: "array", items: { type: "string" } },
+      questions: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["question", "options", "correctOptionIndex"],
+          properties: {
+            question: { type: "string" },
+            options: { type: "array", items: { type: "string" } },
+            correctOptionIndex: { type: "integer" },
+          },
+        },
+      },
+    },
+  };
+}
+
+function lessonStorySystemPrompt(input: LessonStoryInput): string {
+  const limits = LESSON_STORY_LIMITS;
+  const parts: string[] = [
+    `${input.generationRole} ` +
+      `Subject: ${input.subjectTitle}. Topic: ${input.topicTitle}.`,
+  ];
+  if (input.objectives.length > 0) {
+    parts.push(
+      "Objectives covered by this lesson:",
+      ...input.objectives.map((objective) => `- ${objective.id}: ${objective.descriptionEn}`),
+    );
+  }
+  parts.push(
+    `Write a short story for a child of about 8 to read after the lesson, based only on the vocabulary and facts of the parent material. ` +
+      `The story is ${limits.minSentences} to ${limits.maxSentences} sentences in the answer language (${input.answerLocale}); ` +
+      `each sentence has at most ${limits.sentenceMaxLength} characters and the whole story at most ${limits.textMaxLength} characters. ` +
+      "Use simple, positive, age-appropriate language and never add facts that contradict the material. " +
+      `Then write ${limits.minQuestions} or ${limits.maxQuestions} questions about the story content in the prompt language (${input.promptLocale}); ` +
+      `each question has at most ${limits.questionMaxLength} characters and exactly ${limits.optionCount} options in the prompt language, ` +
+      `each option at most ${limits.optionMaxLength} characters. ` +
+      "Exactly one option is correct and the story alone must be enough to answer; " +
+      "correctOptionIndex is the zero-based index of the correct option in options. " +
+      "The options must be distinct and the wrong ones plausible but clearly wrong given the story.",
+  );
+  const rules = input.storyRules.trim();
+  if (rules !== "") parts.push(`Subject rules for the story: ${rules}`);
+  const avoid = input.avoidSentences.slice(0, limits.avoidSentencesMax);
+  if (avoid.length > 0) {
+    parts.push("Do not repeat any of these sentences:", ...avoid.map((sentence) => `- ${sentence}`));
+  }
+  parts.push("Return strict JSON only.");
+  return parts.join("\n");
+}
+
 /**
  * Adapter LLM: zestawy słówek w trybie `json_object`, pula lekcji w trybie
  * `json_schema` strict (structured outputs) — walidacja semantyczna wyniku
@@ -581,6 +642,66 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
           throw new GenerationProviderError("output", { status: response.status });
         }
         return { objectives: (parsed as { objectives: unknown[] }).objectives };
+      } catch (error) {
+        throw asLessonTransportError(error);
+      }
+    },
+    async generateLessonStory(input: LessonStoryInput, signal?: AbortSignal) {
+      const schema = lessonStoryJsonSchema();
+      const system = lessonStorySystemPrompt(input);
+      const user = lessonUserMaterial({
+        material: input.material,
+        ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
+      });
+      try {
+        const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
+        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
+            model,
+            response_format: {
+              type: "json_schema",
+              json_schema: { name: "lesson_story", strict: true, schema },
+            },
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+          })),
+          signal: requestSignal,
+        });
+        if (!response.ok) throw await lessonHttpError(response);
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choices = (payload as { choices?: unknown } | null)?.choices;
+        if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
+        if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
+        if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
+        const content = choice?.message?.content;
+        if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new GenerationProviderError("output", { status: response.status });
+        }
+        return { story: parsed };
       } catch (error) {
         throw asLessonTransportError(error);
       }
