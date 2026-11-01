@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   LessonDynamicTopicPatchSchema,
@@ -19,7 +19,6 @@ import {
   childProfiles,
   deckVersions,
   decks,
-  generationRuns,
   itemRevisionSkills,
   itemRevisions,
   learningItems,
@@ -45,6 +44,7 @@ import {
   lockVersion,
 } from "../version-ops";
 import { buildLessonPayload, buildObjectiveCriteria, lessonPayloadVersion, splitByPoolExtra, toExerciseDraft } from "./lesson-drafts";
+import { latestLessonRunOfPurpose } from "./lesson-story-generation";
 import { readLessonAudioStates } from "./lesson-prompt-audio";
 
 /**
@@ -326,32 +326,9 @@ async function readLessonDraftDto(
   };
 }
 
-/** Najnowszy run `lesson` wskazanej wersji (polling panelu rodzica). */
+/** Najnowszy run puli lekcji wskazanej wersji (polling panelu rodzica; bez runów historyjki). */
 async function latestLessonRun(db: Executor, deckVersionId: string): Promise<GenerationDto | null> {
-  const run = (
-    await db
-      .select()
-      .from(generationRuns)
-      .where(and(eq(generationRuns.deckVersionId, deckVersionId), eq(generationRuns.kind, "lesson")))
-      .orderBy(desc(generationRuns.createdAt))
-      .limit(1)
-  )[0];
-  if (!run) {
-    return null;
-  }
-  const deckId = (
-    await db.select({ deckId: deckVersions.deckId }).from(deckVersions).where(eq(deckVersions.id, deckVersionId))
-  )[0]?.deckId ?? null;
-  return {
-    id: run.id,
-    deckId,
-    deckVersionId: run.deckVersionId ?? null,
-    state: run.state as GenerationDto["state"],
-    attempts: run.attempts,
-    errorCode: run.errorCode ?? null,
-    // Lekcje liczą odrzucenia w `LessonDraftDto.rejectedCount` (z `lesson_context`), nie w runie.
-    rejectedCount: null,
-  };
+  return latestLessonRunOfPurpose(db, deckVersionId, "pool");
 }
 
 async function lessonAssignments(db: Executor, deckId: string): Promise<AssignmentDto[]> {

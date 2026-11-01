@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Clock } from "../../config";
 import type { Database, Executor, Tx } from "../../db/client";
 import { generationRuns } from "../../db/schema";
@@ -137,15 +137,41 @@ export async function markRunWithoutSourceItems(
 }
 
 /**
+ * Cel runu `lesson` zapisany w `generation_runs.input.purpose`: `"story"` to
+ * run historyjki lekcji (`lessons/lesson-story-generation.ts`); brak pola
+ * oznacza generowanie puli ćwiczeń (pełne albo dogenerowanie celu).
+ */
+export const LESSON_STORY_PURPOSE = "story";
+
+/** Czy wejście runu `lesson` należy do runu historyjki. */
+export function isStoryRunInput(input: unknown): boolean {
+  return typeof input === "object" && input !== null && (input as { purpose?: unknown }).purpose === LESSON_STORY_PURPOSE;
+}
+
+/** Warunek SQL: run `lesson` jest runem historyjki. */
+export function lessonStoryRunFilter(): SQL {
+  return sql`coalesce(${generationRuns.input}->>'purpose', 'lesson') = ${LESSON_STORY_PURPOSE}`;
+}
+
+/** Warunek SQL: run `lesson` generuje pulę ćwiczeń (nie historyjkę). */
+export function lessonPoolRunFilter(): SQL {
+  return sql`coalesce(${generationRuns.input}->>'purpose', 'lesson') <> ${LESSON_STORY_PURPOSE}`;
+}
+
+/**
  * Called only while the owning deck version is locked. A parent edit or a
  * successful generation makes outstanding runs for that edit stale before
- * they can publish their result.
+ * they can publish their result. Domyślnie anuluje tylko runy puli ćwiczeń:
+ * run historyjki nie zależy od numeru edycji i przeżywa zwykłą edycję oraz
+ * dogenerowanie celu. `includeStoryRuns` (nowy pełny run lekcji, patch
+ * historyjki) anuluje także runy historyjki.
  */
 export async function supersedeLessonRuns(
   db: Executor,
   deckVersionId: string,
   finishedAt: Date,
   exceptRunId?: string,
+  options: { includeStoryRuns?: boolean } = {},
 ): Promise<void> {
   await db.update(generationRuns)
     .set({ state: "superseded", errorCode: null, finishedAt })
@@ -154,6 +180,7 @@ export async function supersedeLessonRuns(
       eq(generationRuns.deckVersionId, deckVersionId),
       inArray(generationRuns.state, ["queued", "running"]),
       exceptRunId ? ne(generationRuns.id, exceptRunId) : undefined,
+      options.includeStoryRuns === true ? undefined : lessonPoolRunFilter(),
     ));
 }
 

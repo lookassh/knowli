@@ -16,6 +16,7 @@ import type { LlmGenerateDeckInput } from "../../ports/ai";
 import {
   claimQueuedRun,
   enqueueGenerationRun,
+  isStoryRunInput,
   markRun,
   markRunSucceeded,
   markRunWithoutSourceItems,
@@ -291,6 +292,19 @@ export async function retryGeneration(services: Services, runId: string): Promis
       const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
       const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
+      if (isStoryRunInput(current.input)) {
+        // Run historyjki nie zależy od numeru edycji (spec §6.2): ponawiamy porażkę
+        // albo odroczone queued z bieżącym numerem, bez podbijania go i bez
+        // anulowania innych runów. `running` → conflict: zerowanie prób
+        // pozwoliłoby spóźnionemu workerowi dopasować swój znacznik prób.
+        const deferred = current.state === "queued" && current.nextAttemptAt !== null && current.nextAttemptAt > services.clock.now();
+        if (current.state === "queued" && !deferred) return;
+        if (current.state !== "failed" && !deferred) throw new AppError("conflict");
+        await tx.update(generationRuns)
+          .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: version.editNumber })
+          .where(eq(generationRuns.id, runId));
+        return;
+      }
       if (current.state === "queued") {
         if (current.nextAttemptAt && current.nextAttemptAt > services.clock.now()) {
           await tx.update(generationRuns).set({ attempts: 0, errorCode: null, nextAttemptAt: null })
