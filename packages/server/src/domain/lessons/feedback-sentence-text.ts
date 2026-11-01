@@ -31,6 +31,7 @@ export function feedbackSentenceText(source: FeedbackSentenceSource): string | n
       raw = fillGap(source.stem, source.answer);
       break;
     case "lesson_choice":
+    case "lesson_listen_choice":
       raw = fillGap(source.stem, source.options?.find((option) => option.id === source.correctOption)?.text);
       break;
     case "lesson_order":
