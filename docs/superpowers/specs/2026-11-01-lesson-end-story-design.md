@@ -224,28 +224,89 @@ z gałęzi batchy, celów dynamicznych ani `uniqueValid`. Kroki:
    - Odrzucenie kończy run jako `failed` z kodem `story_invalid`.
    - Błąd providera kończy run kodem z istniejącej taksonomii.
 4. Finalizacja pod blokadą wersji:
-   - kontrola `expectedEditNumber` (rozjazd daje `superseded`, bez zapisu);
+   - kontrola `expectedEditNumber` (rozjazd daje `superseded`, bez zapisu) —
+     **zastąpione**, patrz „Uzupełnienie z planowania 2026-11-01” niżej;
    - ponowna walidacja z aktualną pulą;
    - zapis `lesson_context.story`;
-   - **podbicie `editNumber`**;
-   - `reconcileDraftAssetsTx`, które kolejkuje nagranie.
+   - **podbicie `editNumber`** — **zastąpione**: run historyjki nie podbija
+     numeru edycji (uzupełnienie niżej);
+   - `reconcileDraftAssetsTx`, które kolejkuje nagranie (etap 2).
    Stan wersji (`review`) się nie zmienia.
 5. Przy błędzie poprzednia historyjka zostaje bez zmian.
 
 **Wpływ na inne operacje:**
 - Edycja rodzica oznacza oczekujący lub trwający run jako `superseded`, jak każdy
-  run lekcji. Rodzic może wtedy wygenerować historyjkę ponownie.
+  run lekcji. Rodzic może wtedy wygenerować historyjkę ponownie. **Zawężone**
+  w uzupełnieniu niżej: anuluje tylko edycja z polem `story`.
 - Publikacja z trwającym runem historyjki działa tak, jak dziś publikacja przy
   aktywnym runie lekcji. Weryfikacja w implementacji: jeśli publikacja jest
   blokowana, run historyjki nie może jej blokować. Publikacja oznacza go wtedy
   jako `superseded`.
 
 **Stan dla panelu:**
-- `GenerationDto` dostaje `purpose: "lesson" | "story"`.
+- `GenerationDto` dostaje `purpose: "lesson" | "story"` — **zastąpione** polem
+  `LessonDeckDto.storyGeneration` (uzupełnienie niżej).
 - Panel pokazuje run historyjki w sekcji historyjki, nie jako generowanie lekcji.
 - „Spróbuj ponownie” zachowuje `purpose`.
 - Nie ma pola `storyError` w `lesson_context`. Stan błędu wynika z ostatniego
   runu historyjki wersji, więc nie kopiuje się do nowej wersji.
+
+### 6.2a. Uzupełnienie z planowania 2026-11-01
+
+Ustalone przy planowaniu etapu 1
+(`docs/superpowers/plans/2026-11-01-lesson-end-story-stage1.md`) i wdrożone
+w kodzie etapu 1. Tam, gdzie §6.2 mówi inaczej, obowiązuje to uzupełnienie.
+
+**Run historyjki a numer edycji:**
+- Run historyjki **nie podbija** `editNumber` i nie sprawdza go przy
+  finalizacji. Inaczej rodzic, który zaczął poprawiać lekcję zaraz po
+  generowaniu, dostałby konflikt zapisu, gdy po ok. 20 s dojdzie historyjka.
+- Finalizacja wymaga tylko trzech warunków: run nadal `running` z tą samą
+  liczbą prób, wersja nieopublikowana, historyjka poprawna wobec **bieżącej**
+  puli. Zapis to scalenie klucza `story` w `lesson_context` pod blokadą wersji.
+
+**Co anuluje (`superseded`) run historyjki:**
+- edycja z polem `story` w patchu (wybór rodzica wygrywa);
+- publikacja: run sprawdza `state === published` przy finalizacji i kończy się
+  jako `superseded` bez zapisu. Publikacja nie czeka na run historyjki i nie
+  jest przez niego blokowana;
+- nowy pełny run lekcji, także ręczne ponowienie pełnego runu
+  (`retryGeneration`): nowa pula unieważnia walidację historyjki w toku.
+
+**Czego run historyjki nie blokuje i co go nie anuluje:**
+- zwykła edycja ćwiczeń, tytułu i przykładów go nie anuluje;
+- dogenerowanie reguły (także jego ponowienie) go nie anuluje, a aktywny run
+  historyjki nie blokuje dogenerowania.
+
+**Panel:**
+- `LessonDeckDto.generation` nadal pokazuje tylko runy lekcji
+  (`purpose !== 'story'`);
+- nowe pole `LessonDeckDto.storyGeneration` (opcjonalne, `GenerationDto | null`)
+  niesie najnowszy run historyjki edytowalnej wersji. **Zastępuje ono pole
+  `GenerationDto.purpose` ze specu** (§6.2 „Stan dla panelu”, §11, §14):
+  `GenerationDto` się nie zmienia, a „Spróbuj ponownie” w sekcji historyjki
+  ponawia run wskazany przez `storyGeneration.id`.
+- `LessonDraftDto.story` jest polem opcjonalnym (brak pola = brak historyjki)
+  zamiast `LessonStoryDto | null`, zgodnie z zasadą wstecznej zgodności DTO.
+- PATCH z edytora wysyła `story` tylko wtedy, gdy historyjka różni się od
+  zapisanej. Zwykły zapis ćwiczeń nie anuluje więc trwającego runu historyjki.
+- Gdy run historyjki czeka albo trwa, pola sekcji historyjki, dodawanie
+  i usuwanie zdań i pytań oraz „Usuń historyjkę” są zablokowane. Rodzic nie
+  napisze zmiany, którą za chwilę zastąpi wynik runu. Reszta edytora działa.
+
+**Ponowienie runu historyjki (`retryGeneration`):**
+- ponownie kolejkuje run z `expectedEditNumber` = bieżący numer, bez
+  podbijania numeru i bez anulowania innych runów;
+- run `failed` i odroczony `queued` dostają nowy budżet prób (`attempts = 0`);
+- run `running` (np. po awarii workera) wraca do kolejki **bez** zerowania
+  prób: kolejny claim podbije `attempts`, więc spóźniony worker nie dopasuje
+  znacznika prób przy finalizacji;
+- `queued` bez odroczenia nie zmienia się;
+- inny aktywny run historyjki tej wersji daje `conflict`.
+
+**Przycisk „Wygeneruj historyjkę”** (`regenerateLessonStory`) odrzuca też
+wersję bez ćwiczeń (`validation`): bez puli bariera ekspozycji nie ma czego
+chronić.
 
 ### 6.3. Edycja
 
@@ -565,7 +626,7 @@ zwykłe podsumowanie.
   - przycisk jest wyłączony przy niezapisanych zmianach, zajętości i trwającym
     runie (wzorzec `regenDisabled`);
 - stan runu historyjki: „Przygotowuję historyjkę…” i błąd z „Spróbuj ponownie”,
-  który zachowuje `purpose`;
+  który ponawia run historyjki (`storyGeneration`, §6.2a);
 - „Usuń historyjkę”;
 - odsłuch i „Nagraj ponownie” wzorem kart, tylko przy treści niezmienionej od
   zapisu.
@@ -628,7 +689,8 @@ budżetu.
 ## 14. API → MCP → `SKILL.md`
 
 - Zmienia się Kid API (gałęzie promptu, `remainingAssessed ≥ 0`,
-  `closingStory`) oraz parent oRPC (patch, DTO szkicu, `GenerationDto.purpose`,
+  `closingStory`) oraz parent oRPC (patch, DTO szkicu,
+  `LessonDeckDto.storyGeneration` zamiast `GenerationDto.purpose` — §6.2a,
   dwie procedury).
 - MCP udostępnia wyłącznie `learning-overview`, który świadomie nie obejmuje
   lekcji (`SKILL.md`: „grammar lessons are not covered”). Adapter, schemat i skill
