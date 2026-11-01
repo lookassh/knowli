@@ -43,9 +43,10 @@ export const LESSON_STORY_LIMITS = {
 
 /**
  * Rozwiązane zdania puli ćwiczeń: pełne zdanie z `feedbackSentenceText` (luka,
- * wybór, układanka, cloze…) oraz dla typów produktywnych `answer` i każda
- * zaakceptowana odpowiedź. Po `trim`, bez pustych i duplikatów, w kolejności
- * wystąpienia.
+ * wybór, układanka, cloze…), luka wypełniona każdym zaakceptowanym wariantem,
+ * tekst poprawnej opcji wyboru bez luki w treści oraz dla typów produktywnych
+ * `answer` i każda zaakceptowana odpowiedź. Po `trim`, bez pustych
+ * i duplikatów, w kolejności wystąpienia.
  */
 export function solvedSentencesOf(drafts: readonly LessonExerciseDraft[]): string[] {
   const seen = new Set<string>();
@@ -58,6 +59,14 @@ export function solvedSentencesOf(drafts: readonly LessonExerciseDraft[]): strin
   };
   for (const draft of drafts) {
     add(feedbackSentenceText(draft));
+    // Luka: każdy zaakceptowany wariant wstawiony w zdanie też je rozwiązuje.
+    if (draft.exerciseType === "lesson_gap") {
+      for (const accepted of draft.acceptedAnswers) add(feedbackSentenceText({ ...draft, answer: accepted }));
+    }
+    // Wybór bez luki w treści (np. „Które zdanie jest poprawne?”): poprawna opcja sama jest rozwiązaniem.
+    if (draft.exerciseType === "lesson_choice" && !/_{2,}/.test(draft.stem ?? "")) {
+      add(draft.options?.find((option) => option.id === draft.correctOption)?.text);
+    }
     if (
       draft.exerciseType === "lesson_error_fix" ||
       draft.exerciseType === "lesson_transform" ||

@@ -238,6 +238,28 @@ describe("solvedSentencesOf", () => {
     expect(sentences).toEqual(["He drinks tea."]);
   });
 
+  it("adds the correct option of a choice whose stem has no gap", () => {
+    const sentences = solvedSentencesOf([
+      draft({
+        exerciseType: "lesson_choice",
+        stem: "Które zdanie jest poprawne?",
+        options: [
+          { id: "a", text: "He play football." },
+          { id: "b", text: " He plays football. " },
+        ],
+        correctOption: "b",
+      }),
+    ]);
+    expect(sentences).toEqual(["He plays football."]);
+  });
+
+  it("fills a gap with every accepted answer variant", () => {
+    const sentences = solvedSentencesOf([
+      draft({ stem: "She ___ to school.", answer: "goes", acceptedAnswers: ["walks", "  "] }),
+    ]);
+    expect(sentences).toEqual(["She goes to school.", "She walks to school."]);
+  });
+
   it("adds answer and acceptedAnswers of a transform", () => {
     expect(
       solvedSentencesOf([draft({ exerciseType: "lesson_transform", answer: "She plays.", acceptedAnswers: ["x"] })]),
