@@ -5,7 +5,23 @@ import { kidDockAnimate, kidDockExit, kidDockExitTransition, kidDockInitial, kid
 import { BurstParticles } from "../components/CelebrationBurst";
 import { KidIcon, type KidIconName } from "../components/KidIcon";
 import { ListenButton } from "../components/ListenButton";
+import { SoundRing } from "../motion/SoundRing";
+import type { SentenceRate } from "../session/session-controller";
 import classes from "./ExerciseFeedbackDock.module.css";
+
+/** Odczyt pełnego zdania w doku lekcji: tempo, które gra, ostatni nieudany
+ * ręczny odsłuch i blokada, gdy kontroler i tak zignorowałby dotknięcie. */
+export interface FeedbackDockSentenceAudio {
+  playing: SentenceRate | null;
+  error: { rate: SentenceRate; seq: number } | null;
+  disabled: boolean;
+  onPlay: (rate: SentenceRate) => void;
+}
+
+const SENTENCE_BUTTONS = [
+  { rate: "normal", icon: "volume", testId: "kid-sentence-audio", label: messages.kid.listenExample },
+  { rate: "slow", icon: "turtle", testId: "kid-sentence-audio-slow", label: messages.kid.listenSlower },
+] as const;
 
 export type FeedbackDockTone = "correct" | "incorrect" | "partial" | "technical" | "neutral";
 
@@ -47,8 +63,9 @@ export function ExerciseFeedbackDock({
   celebrate?: boolean;
   /** Przycisk odsłuchu komunikatu o wyniku, za treścią w górnym wierszu (po odznace tonu). */
   guidance?: ReactNode;
-  /** Powtórka nagrania pełnego zdania w feedbacku lekcji („Posłuchaj zdania”). */
-  sentenceAudio?: { onPlay: () => void } | null;
+  /** Powtórka nagrania pełnego zdania w feedbacku lekcji: „Posłuchaj zdania”
+   * i „Posłuchaj wolniej” w grupie, nad górnym wierszem region błędu. */
+  sentenceAudio?: FeedbackDockSentenceAudio | null;
   /**
    * Wyjaśnienie ćwiczenia po błędzie w lekcji: osobny wiersz na całą szerokość
    * pod górnym wierszem; „Posłuchaj wyjaśnienia” na początku, gdy jest nagranie.
@@ -70,15 +87,33 @@ export function ExerciseFeedbackDock({
       data-compact={compact || undefined}
       className={`${classes.dock} ${compact ? classes.compact : ""} ${classes[tone]}`}
     >
+      {/* Stały region nad górnym wierszem: dok w nakładce stoi przy dolnej krawędzi
+          i rośnie w górę, więc pojawiający się tekst nie przesuwa przycisków zdania
+          ani „Dalej” pod palcem. Pusty nie zajmuje miejsca; tekst w elemencie
+          kluczowanym `seq` montuje się od nowa, więc czytnik ogłasza każdy błąd. */}
+      {sentenceAudio && (
+        <div className={classes.sentenceError} aria-live="polite" data-testid="kid-sentence-audio-error">
+          {sentenceAudio.error !== null ? <span key={sentenceAudio.error.seq}>{messages.kid.sentenceAudioFailed}</span> : null}
+        </div>
+      )}
       <div className={`${classes.scroll} ${explanation ? `${classes.withExplanation} kid-feedback-scroll-limited` : ""}`}>
         <span className={classes.badge} data-testid="kid-feedback-tone-icon" data-icon={FEEDBACK_TONE_ICONS[tone]} aria-hidden="true">
           <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
         </span>
         <div className={classes.content}>{children}</div>
         {sentenceAudio && (
-          <div className={classes.guidance}>
-            <ListenButton data-testid="kid-sentence-audio" aria-label={messages.kid.listenExample}
-              title={messages.kid.listenExample} onClick={sentenceAudio.onPlay} />
+          <div className={classes.sentenceGroup} data-testid="kid-sentence-audio-group">
+            {SENTENCE_BUTTONS.map(({ rate, icon, testId, label }) => {
+              const playing = sentenceAudio.playing === rate;
+              const failKey = sentenceAudio.error?.rate === rate ? sentenceAudio.error.seq : undefined;
+              return (
+                <ListenButton key={rate} data-testid={testId} icon={icon} aria-label={label} title={label}
+                  disabled={sentenceAudio.disabled} data-sound-active={playing || undefined}
+                  {...(failKey !== undefined ? { failKey } : {})} onClick={() => sentenceAudio.onPlay(rate)}>
+                  {playing && <SoundRing />}
+                </ListenButton>
+              );
+            })}
           </div>
         )}
         {guidance && <div className={classes.guidance}>{guidance}</div>}

@@ -31,6 +31,26 @@ describe("feedbackSentenceText", () => {
     expect(feedbackSentenceText({ exerciseType, answer: "  She  plays football every day. " })).toBe("She plays football every day.");
   });
 
+  it.each([
+    { exerciseType: "lesson_gap", stem: "He ___ to school." },
+    { exerciseType: "lesson_error_fix" },
+    { exerciseType: "lesson_transform" },
+    { exerciseType: "lesson_open_answer" },
+  ])("$exerciseType z pustą odpowiedzią daje null", (source) => {
+    expect(feedbackSentenceText({ ...source, answer: "" })).toBeNull();
+    expect(feedbackSentenceText({ ...source, answer: "   " })).toBeNull();
+  });
+
+  it("lesson_choice z pustym tekstem poprawnej opcji daje null", () => {
+    const options = [{ id: "a", text: "  " }, { id: "b", text: "She" }];
+    expect(feedbackSentenceText({ exerciseType: "lesson_choice", stem: "___ is happy.", options, correctOption: "a" })).toBeNull();
+  });
+
+  it("lesson_order bez klocków albo z pustym klockiem daje null", () => {
+    expect(feedbackSentenceText({ exerciseType: "lesson_order", items: [] })).toBeNull();
+    expect(feedbackSentenceText({ exerciseType: "lesson_order", items: [{ id: "a", text: "I" }, { id: "b", text: "" }, { id: "c", text: "go" }] })).toBeNull();
+  });
+
   it("lesson_cloze wstawia słowa luk w kolejności — tekst jak w omówieniu (`fillCloze`)", () => {
     const clozeText = "It's ___ today. I'm wearing my ___.";
     const gapAnswers = ["sunny", "T-shirt"];

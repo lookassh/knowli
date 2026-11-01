@@ -19,7 +19,7 @@ describe("withFeedbackSentenceAudio", () => {
     { kind: "lesson_almost", correctText: "goes" },
     { kind: "lesson_hint", hintPl: "Dodaj -s.", correctText: "goes" },
   ])("feedback ujawniający rozwiązanie ($kind) dostaje nagranie z klucza", (feedback) => {
-    expect(withFeedbackSentenceAudio(feedback, key(ASSET))).toEqual({ ...feedback, correctAudioAssetId: ASSET });
+    expect(withFeedbackSentenceAudio(feedback, key(ASSET), "answered")).toEqual({ ...feedback, correctAudioAssetId: ASSET });
   });
 
   it.each<FeedbackDto | null>([
@@ -28,11 +28,15 @@ describe("withFeedbackSentenceAudio", () => {
     { kind: "lesson_hint", hintPl: "Dodaj -s." },
     { kind: "lesson_precision_hint", hintPl: "Skróć odpowiedź." },
   ])("bez ujawnienia rozwiązania albo przy ofercie trenera — bez nagrania (%o)", (feedback) => {
-    expect(withFeedbackSentenceAudio(feedback, key(ASSET))).toEqual(feedback);
+    expect(withFeedbackSentenceAudio(feedback, key(ASSET), "answered")).toEqual(feedback);
+  });
+
+  it("zadanie zostaje otwarte (issued) — bez nagrania", () => {
+    expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "goes" }, key(ASSET), "issued")).toEqual({ kind: "incorrect", correctText: "goes" });
   });
 
   it("klucz bez nagrania (kartkówka, nagranie niegotowe przy wydaniu) zostawia feedback", () => {
-    expect(withFeedbackSentenceAudio({ kind: "great" }, key())).toEqual({ kind: "great" });
+    expect(withFeedbackSentenceAudio({ kind: "great" }, key(), "answered")).toEqual({ kind: "great" });
   });
 
   describe("bramka wariantu: dziecko nie słyszy innego zdania, niż pokazuje omówienie", () => {
@@ -46,13 +50,13 @@ describe("withFeedbackSentenceAudio", () => {
       { kind: "lesson_hint", hintPl: "Sprawdź słowo.", correctText: "Today I'm wearing a coat." },
       { kind: "incorrect", correctText: "Today I'm wearing a coat." },
     ])("$kind z innym zatwierdzonym wariantem niż kanoniczny — bez nagrania", (feedback) => {
-      expect(withFeedbackSentenceAudio(feedback, translation)).toEqual(feedback);
+      expect(withFeedbackSentenceAudio(feedback, translation, "answered")).toEqual(feedback);
     });
 
     it("pokazany wariant równy kanonicznemu — z nagraniem; `great` bez correctText — z nagraniem", () => {
       const almost: FeedbackDto = { kind: "lesson_almost", correctText: "I'm wearing a coat today." };
-      expect(withFeedbackSentenceAudio(almost, translation)).toEqual({ ...almost, correctAudioAssetId: ASSET });
-      expect(withFeedbackSentenceAudio({ kind: "great" }, translation)).toEqual({ kind: "great", correctAudioAssetId: ASSET });
+      expect(withFeedbackSentenceAudio(almost, translation, "answered")).toEqual({ ...almost, correctAudioAssetId: ASSET });
+      expect(withFeedbackSentenceAudio({ kind: "great" }, translation, "answered")).toEqual({ kind: "great", correctAudioAssetId: ASSET });
     });
 
     it.each([
@@ -61,22 +65,22 @@ describe("withFeedbackSentenceAudio", () => {
     ])("gramatyka ($exerciseType): „prawie” z innym zatwierdzonym wariantem — bez nagrania; z kanoniczną odpowiedzią — z nagraniem", ({ exerciseType, answer, variant }) => {
       const grammar = key(ASSET, { exerciseType, answer, acceptedAnswers: [variant], subjectId: "english_grammar" } as Partial<Key>);
       const shownVariant: FeedbackDto = { kind: "lesson_almost", correctText: variant };
-      expect(withFeedbackSentenceAudio(shownVariant, grammar)).toEqual(shownVariant);
+      expect(withFeedbackSentenceAudio(shownVariant, grammar, "answered")).toEqual(shownVariant);
       const shownCanonical: FeedbackDto = { kind: "lesson_almost", correctText: answer };
-      expect(withFeedbackSentenceAudio(shownCanonical, grammar)).toEqual({ ...shownCanonical, correctAudioAssetId: ASSET });
+      expect(withFeedbackSentenceAudio(shownCanonical, grammar, "answered")).toEqual({ ...shownCanonical, correctAudioAssetId: ASSET });
     });
 
     it("tekst kanoniczny typu zamkniętego to pokazany tekst rozwiązania (opcja, luki z bankiem, klocki)", () => {
       const choice = key(ASSET, { exerciseType: "lesson_choice", answer: "coat", correctOptionId: "o1", optionValues: { o1: "coat", o2: "dress" } });
-      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "coat" }, choice)?.correctAudioAssetId).toBe(ASSET);
-      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "dress" }, choice)?.correctAudioAssetId).toBeUndefined();
+      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "coat" }, choice, "answered")?.correctAudioAssetId).toBe(ASSET);
+      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "dress" }, choice, "answered")?.correctAudioAssetId).toBeUndefined();
 
       const cloze = key(ASSET, { exerciseType: "lesson_cloze", answer: "coat, boots", filledText: "I'm wearing a coat and boots." });
-      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "I'm wearing a coat and boots." }, cloze)?.correctAudioAssetId).toBe(ASSET);
-      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "coat, boots" }, cloze)?.correctAudioAssetId).toBeUndefined();
+      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "I'm wearing a coat and boots." }, cloze, "answered")?.correctAudioAssetId).toBe(ASSET);
+      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "coat, boots" }, cloze, "answered")?.correctAudioAssetId).toBeUndefined();
 
       const order = key(ASSET, { exerciseType: "lesson_order", answer: "I'm wearing a coat", itemIds: ["a", "b", "c"], itemValues: { a: "I'm", b: "wearing", c: "a coat" } });
-      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "I'm wearing a coat" }, order)?.correctAudioAssetId).toBe(ASSET);
+      expect(withFeedbackSentenceAudio({ kind: "incorrect", correctText: "I'm wearing a coat" }, order, "answered")?.correctAudioAssetId).toBe(ASSET);
     });
   });
 });

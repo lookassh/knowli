@@ -41,6 +41,11 @@ używa tego samego nagrania, klucza zadania, pieczęci i Kid UI; dochodzą dwa d
 generyczne: `lesson_cloze` w §4 i bramka wariantu w §6. Zapis „tylko `english_grammar`”
 powyżej opisuje zakres #194.
 
+**Uzupełnienie (#199, 2026-11-01).** Wskaźnik odtwarzania na „Posłuchaj zdania” i wolniejsze
+odtwarzanie (przycisk „Posłuchaj wolniej”) zrobiono w kolejnym etapie, razem z sygnałem nieudanego
+ręcznego odsłuchu; projekt: `docs/superpowers/specs/2026-11-01-sentence-readback-followups-design.md`.
+„Powtórz za lektorem” zostaje poza zakresem.
+
 ## 3. Zmiana uzgodnionych wymagań
 
 Wymaganie 2.13 specyfikacji gramatyki zakazywało nagrań w gramatyce, bo głośnik
@@ -223,5 +228,8 @@ dziecka, nie nagrania.
 ## 11. Kolejne etapy
 
 Na tym nagraniu budują: (1) „Powtórz za lektorem”, (2) „Posłuchaj i uzupełnij”,
-(3) wolniejsze odtwarzanie. Niezależne od niego: (4) historyjka na koniec lekcji,
-(5) wyjaśnienie błędu dla dziecka — zrealizowane 2026-11-01 w issue #196 (design `2026-11-01-lesson-error-explanation-design.md`), (6) zdania o zainteresowaniach dziecka.
+(3) wolniejsze odtwarzanie (zrobione w #199, 2026-11-01:
+`docs/superpowers/specs/2026-11-01-sentence-readback-followups-design.md`). Niezależne od niego:
+(4) historyjka na koniec lekcji, (5) wyjaśnienie błędu dla dziecka — zrealizowane 2026-11-01
+w issue #196 (design `2026-11-01-lesson-error-explanation-design.md`), (6) zdania o zainteresowaniach
+dziecka.

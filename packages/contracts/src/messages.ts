@@ -512,6 +512,8 @@ export const messages = {
     listen: "Posłuchaj",
     listenExample: "Posłuchaj zdania",
     listenExplanation: "Posłuchaj wyjaśnienia",
+    listenSlower: "Posłuchaj wolniej",
+    sentenceAudioFailed: "Nagranie się nie włączyło. Dotknij jeszcze raz.",
     listenInstruction: "Posłuchaj polecenia",
     listenLessonQuestion: "Posłuchaj pytania",
     listenLessonCard: "Posłuchaj karty",

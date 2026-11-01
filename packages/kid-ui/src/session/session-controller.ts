@@ -21,7 +21,7 @@ import {
 import { format } from "../format";
 import type { KidApi } from "../api/KidApi";
 import { isNetworkError, KidApiError } from "../api/client";
-import { LevelMonitorUnavailableError, type MicrophonePermission, type PlatformMedia, type RecorderOptions, type SpeechRecorder } from "../media/platform";
+import { LevelMonitorUnavailableError, SLOW_PLAYBACK_RATE, type MicrophonePermission, type PlatformMedia, type RecorderOptions, type SpeechRecorder } from "../media/platform";
 import { createSpeechVad, type SpeechVad } from "../media/vad";
 import { MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { randomUUID } from "./uuid";
@@ -57,6 +57,9 @@ export interface DictationState {
   failures: number;
 }
 
+/** Tempo odczytu zdania w feedbacku lekcji: autoodczyt i „Posłuchaj zdania” = normal, żółw = slow. */
+export type SentenceRate = "normal" | "slow";
+
 /** Sposób wprowadzenia odpowiedzi tekstowej zgłaszany serwerowi. */
 export type TextInputMethod = "keyboard" | "speech";
 
@@ -73,8 +76,21 @@ export interface LearningScreen {
    * Feedback po próbie; retry=true, gdy zadanie ma drugie podejście.
    * `chosenOptionId` różni próbę wyboru od pozostałych i zasila
    * podświetlenie opcji w siatce odpowiedzi (design 2026-10-09).
+   * `sentencePlaying` — tempo odczytu zdania, które faktycznie gra (od startu
+   * odtwarzacza do końca/przerwania); `sentenceAudioError` — ostatni nieudany
+   * RĘCZNY odsłuch zdania, `seq` rośnie z każdym błędem (klucz animacji).
+   * Autoodczyt nigdy nie ustawia błędu; znika przy udanym starcie albo z feedbackiem.
    */
-  feedback: { dto: FeedbackDto | null; retry: boolean; attemptId: string; modality: AttemptDto["modality"]; chosenOptionId?: string; audioError?: boolean } | null;
+  feedback: {
+    dto: FeedbackDto | null;
+    retry: boolean;
+    attemptId: string;
+    modality: AttemptDto["modality"];
+    chosenOptionId?: string;
+    audioError?: boolean;
+    sentencePlaying?: SentenceRate | null;
+    sentenceAudioError?: { rate: SentenceRate; seq: number } | null;
+  } | null;
   /** Ujawniona podpowiedź czekająca na potwierdzenie dziecka. */
   reveal: { target: string; visual?: import("@learning/contracts").MeaningVisual; audioAssetId?: string } | null;
   offline: boolean;
@@ -275,6 +291,15 @@ export class LearningSessionController {
   /** Odliczanie ostatnich sekund nagrania dyktowania; null poza nim. */
   #countdownHandle: ReturnType<typeof setInterval> | null = null;
   #playbackGeneration = 0;
+  /**
+   * Numer ostatniego przebiegu odczytu zdania. Licznik jest niezależny od
+   * `#playbackGeneration`, bo `#stopPlayback` podbija tę generację przy każdym
+   * innym odtwarzaniu; numer przebiegu odróżnia od siebie kolejne odczyty
+   * zdania (np. przełączenie tempa w trakcie).
+   */
+  #sentenceRun = 0;
+  /** Rośnie z każdym błędem ręcznego odsłuchu zdania (`sentenceAudioError.seq`). */
+  #sentenceErrorSeq = 0;
   #uiAudio: UiAudioCatalogDto = { ready: false, assets: {} };
   #guidance: ReturnType<typeof createGuidanceAudio> | null = null;
   /** Lokalny pomiar aktywności bieżącej sesji; powstaje przy pierwszym zadaniu. */
@@ -345,14 +370,29 @@ export class LearningSessionController {
     this.#playbackGeneration += 1;
     if (this.#guidance) this.#guidance.stop();
     else this.#media.player.stop();
+    // Wskaźnik odczytu zdania gaśnie synchronicznie przy każdym innym
+    // odtwarzaniu, „Dalej”, nowym zadaniu, pauzie i offline — bez czekania na
+    // rozstrzygnięcie play(). Błąd ręcznego odsłuchu zostaje (design §4.1 pkt 3, 5).
+    // Po teardown widok już odszedł — bez emisji stanu do słuchaczy.
+    const feedback = this.#learning()?.feedback;
+    if (!this.#disposed && feedback && (feedback.sentencePlaying ?? null) !== null) {
+      this.#setLearning({ feedback: { ...feedback, sentencePlaying: null } });
+    }
   }
 
-  /** Odtwarza plik audio rejestrując rzeczywisty odsłuch w lokalnym raporcie. */
-  async #playCountedAudio(url: string, assetId: string): Promise<void> {
+  /**
+   * Odtwarza plik audio rejestrując rzeczywisty odsłuch w lokalnym raporcie.
+   * `options.onStarted` wołany w tym samym start-callbacku odtwarzacza co pomiar
+   * aktywności; `options.rate` trafia do odtwarzacza (brak = tempo 1, bez opcji).
+   */
+  async #playCountedAudio(url: string, assetId: string, options: { rate?: number; onStarted?: () => void } = {}): Promise<void> {
+    const onStarted = (durationMs: number | null): void => {
+      this.#activity?.playbackStarted(assetId, durationMs);
+      options.onStarted?.();
+    };
     try {
-      await this.#media.player.play(url, (durationMs) => {
-        this.#activity?.playbackStarted(assetId, durationMs);
-      });
+      if (options.rate === undefined) await this.#media.player.play(url, onStarted);
+      else await this.#media.player.play(url, onStarted, { rate: options.rate });
     } finally {
       // Odrzucenie po uruchomieniu start-callbacku też domyka odsłuch —
       // wiszący playback tłumiłby domknięcie bezczynności.
@@ -1279,7 +1319,7 @@ export class LearningSessionController {
     // raz od razu (design odczytu zdania §7). Zablokowane autoodtwarzanie i błąd
     // pliku są ciche; zostaje przycisk „Posłuchaj zdania” w doku.
     if (sentenceReadback) {
-      void this.playSentenceAudio();
+      void this.#playSentence("normal", { manual: false });
     }
   }
 
@@ -1289,21 +1329,62 @@ export class LearningSessionController {
    * (`audio_issued`) przed odpowiedzią HTTP — odtwarzamy plik bezpośrednio.
    * `picture_recognition` ma własny, ręczny odsłuch słowa (`playCorrectOptionAudio`).
    */
-  async playSentenceAudio(): Promise<void> {
+  async playSentenceAudio(rate: SentenceRate = "normal"): Promise<void> {
+    await this.#playSentence(rate, { manual: true });
+  }
+
+  /**
+   * Jeden przebieg odczytu zdania (design kontynuacji odczytu §4.1). Wskaźnik
+   * i błąd zapisujemy tylko, gdy przebieg jest nadal ostatni, niezakończony,
+   * nieprzerwany przez `#stopPlayback` i dotyczy tego samego wyniku (`attemptId`)
+   * — spóźniony start lub koniec nie dotknie nowego odczytu ani następnego
+   * zadania. Każdy zapis robi spread z BIEŻĄCEGO feedbacku w chwili zapisu.
+   * Strażnik sprawdza oprócz `#sentenceRun` także `#playbackGeneration` i epokę:
+   * każde zatrzymanie podbija generację, więc spóźnione `onStarted` po przerwaniu
+   * przez „?” albo odsłuch pytania (ten sam wynik, ten sam numer przebiegu) nie
+   * zapali zgaszonego już wskaźnika — nie upraszczaj go do samego numeru przebiegu.
+   * Autoodczyt (`manual: false`) nigdy nie ustawia błędu: zablokowane
+   * autoodtwarzanie jest ciche, zostaje przycisk w doku.
+   */
+  async #playSentence(rate: SentenceRate, { manual }: { manual: boolean }): Promise<void> {
     const screen = this.#learning();
     const feedback = screen?.feedback;
     const assetId = feedback?.dto?.correctAudioAssetId;
     if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
         assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
-    // Poprzednie odtwarzanie (np. pytanie) ustępuje; „Dalej”, nowe zadanie
-    // i każde inne odtwarzanie przerywają odczyt przez #stopPlayback.
-    this.#beginPlayback();
+    const run = ++this.#sentenceRun;
+    const attemptId = feedback.attemptId;
+    const epoch = this.#epoch;
+    // Poprzednie odtwarzanie (np. pytanie, odczyt w innym tempie) ustępuje;
+    // „Dalej”, nowe zadanie i każde inne odtwarzanie przerywają odczyt przez #stopPlayback.
+    const playbackGeneration = this.#beginPlayback();
+    let finished = false;
+    const currentFeedback = (): NonNullable<LearningScreen["feedback"]> | null => {
+      if (finished || run !== this.#sentenceRun || playbackGeneration !== this.#playbackGeneration || epoch !== this.#epoch) return null;
+      const now = this.#learning()?.feedback;
+      return now && now.attemptId === attemptId ? now : null;
+    };
+    let failed = false;
     try {
-      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId, {
+        ...(rate === "slow" ? { rate: SLOW_PLAYBACK_RATE } : {}),
+        onStarted: () => {
+          const now = currentFeedback();
+          if (now) this.#setLearning({ feedback: { ...now, sentencePlaying: rate, sentenceAudioError: null } });
+        },
+      });
     } catch {
-      // Celowo bez stanu błędu: odczyt jest dodatkiem, a przycisk powtórki
-      // zostaje widoczny. Po zakończeniu nie zapisujemy stanu, więc spóźnione
-      // zakończenie nie może dotknąć następnego zadania.
+      // Błąd sieci traktujemy jak każdy inny błąd odsłuchu: bez trybu offline —
+      // utratę połączenia wykrywają inne ścieżki kontrolera (§4.1 pkt 5).
+      failed = true;
+    }
+    const now = currentFeedback();
+    finished = true;
+    if (!now) return;
+    if (failed && manual) {
+      this.#setLearning({ feedback: { ...now, sentencePlaying: null, sentenceAudioError: { rate, seq: ++this.#sentenceErrorSeq } } });
+    } else if ((now.sentencePlaying ?? null) !== null) {
+      this.#setLearning({ feedback: { ...now, sentencePlaying: null } });
     }
   }
 
@@ -1337,7 +1418,8 @@ export class LearningSessionController {
     const taskId = screen.task.taskId;
     const attemptId = feedback.attemptId;
     const playbackGeneration = this.#beginPlayback();
-    this.#setLearning({ feedback: { ...feedback, audioError: false } });
+    // Spread z bieżącego feedbacku: #beginPlayback mógł właśnie zgasić wskaźnik odczytu zdania.
+    this.#setLearning({ feedback: { ...(this.#learning()?.feedback ?? feedback), audioError: false } });
     try {
       const authorization = await this.#api.authorizeFeedbackAudio(attemptId);
       const current = this.#learning();

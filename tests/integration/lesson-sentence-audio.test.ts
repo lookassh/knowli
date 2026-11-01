@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createChild, createLesson, createLessonDraftFromPublished, createServices, createSubjectRegistry, englishGrammarSubject,
-  executeLessonGeneration, FakeAnswerGrader, runDueGenerationWork, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt, readLessonDeck, startSession, submitAttempt,
+  endSession, executeLessonGeneration, FakeAnswerGrader, runDueGenerationWork, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt, readLessonDeck, startSession, submitAttempt,
 } from "@learning/server";
 import type { AttemptDto, AttemptInput, TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
@@ -216,7 +216,7 @@ interface Scenario {
 }
 
 /** Jedno dziecko, jedna lekcja (z nagraniem albo bez), odpowiedź na pierwsze zadanie typu. */
-async function play(scenario: Scenario, feedbackAudio: "ready" | "pending" | null) {
+async function play(scenario: Scenario, feedbackAudio: "ready" | "ready-approved" | "pending" | null) {
   const services = scenario.services();
   const now = services.clock.now();
   const child = await createChild(services, { displayName: "Zdanie", avatarKey: "owl" });
@@ -265,10 +265,13 @@ const WITH_AUDIO: Array<{ name: string; kind: string; scenario: Scenario }> = [
   },
 ];
 
+/** Wiersz opublikowanej rewizji zwykle zostaje `pending` (publikacja nie czeka na media); `approved` to drugi możliwy stan. */
+const ROW_STATES = ["ready", "ready-approved"] as const;
+
 describe("feedback lekcji gramatyki ujawnia nagranie zdania", () => {
-  for (const { name, kind, scenario } of WITH_AUDIO) {
-    it(`${name} → ${kind} z correctAudioAssetId i jednym zapieczętowanym audio_issued po odpowiedzi`, async () => {
-      const played = await play(scenario, "ready");
+  for (const rowState of ROW_STATES) for (const { name, kind, scenario } of WITH_AUDIO) {
+    it(`${name} [${rowState}] → ${kind} z correctAudioAssetId i jednym zapieczętowanym audio_issued po odpowiedzi`, async () => {
+      const played = await play(scenario, rowState);
       const { attempt, task, key } = played;
       expect(attempt.feedback?.kind).toBe(kind);
       expect(attempt.feedback?.correctAudioAssetId).toBe(await feedbackAssetOf(task.taskId));
@@ -360,6 +363,51 @@ describe("feedback lekcji bez nagrania zdania", () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  it("kartkówka nie odpytuje feedback_audio; trening tak (kontrola)", async () => {
+    const services = plain();
+    const queries: string[] = [];
+    const originalQuery = pool.query;
+    const originalConnect = pool.connect;
+    let recording = true;
+    const record = (args: unknown[]) => {
+      const text = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string })?.text ?? "";
+      queries.push(`${text} ${JSON.stringify(Array.isArray(args[1]) ? args[1] : [])}`);
+    };
+    // Zachowujemy prawdziwy PostgreSQL; zbieramy teksty zapytań i parametry z puli oraz z klientów transakcji.
+    pool.query = (async (...args: unknown[]) => {
+      record(args);
+      return (originalQuery as (...values: unknown[]) => Promise<unknown>).apply(pool, args);
+    }) as typeof pool.query;
+    pool.connect = ((...args: unknown[]) => {
+      // Wywołania z callbackiem (wewnętrzne `pool.query`) przechodzą bez zmian; transakcje Drizzle używają wersji z obietnicą.
+      if (typeof args[0] === "function") return (originalConnect as (...values: unknown[]) => unknown).apply(pool, args);
+      return (originalConnect as (...values: unknown[]) => Promise<{ query: (...values: unknown[]) => Promise<unknown> }>).apply(pool, args).then((client) => {
+        const clientQuery = client.query;
+        // Klient wraca do puli: po teście zapis się wyłącza, a nie zdejmuje opakowania.
+        client.query = (...values: unknown[]) => { if (recording) record(values); return clientQuery.apply(client, values); };
+        return client;
+      });
+    }) as unknown as typeof pool.connect;
+    try {
+      const childA = await createChild(services, { displayName: "Kartkówka", avatarKey: "owl" });
+      const mock = await lessonWorld(pool, { childId: childA.id, richPool: true, now: services.clock.now(), testDate: "2026-10-20", withFeedbackAudio: "ready" });
+      queries.length = 0;
+      await startSession(services, { childId: childA.id, deckId: mock.deckId, microphoneEnabled: false, mode: "mock_test" });
+      expect(queries.length).toBeGreaterThan(0);
+      expect(queries.filter((query) => query.includes("feedback_audio"))).toEqual([]);
+
+      const childB = await createChild(services, { displayName: "Trening", avatarKey: "owl" });
+      const training = await lessonWorld(pool, { childId: childB.id, richPool: true, now: services.clock.now(), withFeedbackAudio: "ready" });
+      queries.length = 0;
+      await startSession(services, { childId: childB.id, deckId: training.deckId, microphoneEnabled: false });
+      expect(queries.filter((query) => query.includes("feedback_audio")).length).toBeGreaterThan(0);
+    } finally {
+      recording = false;
+      pool.query = originalQuery;
+      pool.connect = originalConnect;
+    }
+  });
+
   it("model_other (zadanie zostaje issued) — incorrect z correctText bez nagrania; ponowienie bez wsparcia model_audio", async () => {
     const { services, attempt, task } = await play({
       type: "lesson_transform", withPriorSuccess: true, answer: text("she play"),
@@ -396,5 +444,54 @@ describe("feedback lekcji bez nagrania zdania", () => {
     expect(attempt.feedback?.kind).toBe("great");
     expect(attempt.feedback?.correctAudioAssetId).toBeUndefined();
     expect(await audioEvents(task.taskId)).toEqual([]);
+  });
+});
+
+describe("stara lekcja po wdrożeniu odczytu zdania", () => {
+  it("nowa wersja starej lekcji: po workerze odczyt działa w sesji", async () => {
+    const { services: old, run, draft, fakes } = await generatedGrammarLesson(false);
+    await publishLessonDraft(old, draft.id, draft.editNumber);
+
+    const clock = new ManualClock();
+    const current = createServices({ db, clock, media: fakes.settings, generation: fakes.deps });
+    const copy = await createLessonDraftFromPublished(current, run.deckId);
+    await publishLessonDraft(current, copy.id, copy.editNumber);
+    for (let pass = 0; pass < 20; pass += 1) {
+      const result = await runDueGenerationWork(current, { lesson: 0, deck: 0, tts: 50, images: 0 });
+      if (result.processed === 0) break;
+    }
+    // Worker opróżnił kolejkę: bez tego brak nagrania w feedbacku wyglądałby jak błąd sesji.
+    const synthesized = await feedbackRows(copy.id);
+    expect(synthesized.length).toBeGreaterThan(0);
+    expect(synthesized.filter((row) => row.state !== "ready")).toEqual([]);
+
+    const child = await createChild(current, { displayName: "Stara lekcja", avatarKey: "owl" });
+    await pool.query(
+      "insert into learning_app.assignments (id, child_id, deck_id, test_date, test_goals) values ($1, $2, $3, null, null)",
+      [randomUUID(), child.id, run.deckId],
+    );
+    // W wygenerowanej lekcji zdanie do odczytu mają tylko luki i odpowiedzi otwarte (wybory nie mają jednej luki w treści),
+    // a typy produktywne pojawiają się po sukcesach z kolejnych sesji: gramy poprawnie do pierwszego takiego zadania.
+    let task: TaskDto | null = null;
+    for (let round = 0; round < 8 && !task; round += 1) {
+      const session = await startSession(current, { childId: child.id, deckId: run.deckId, microphoneEnabled: false });
+      for (let step = 0; step < 40 && !task; step += 1) {
+        const next = await nextTask(current, session.sessionId);
+        if (next === null) break;
+        if (next.exerciseType === "lesson_card") { await completePresentation(current, { taskId: next.taskId }); continue; }
+        if (PRODUCTIVE.has(next.exerciseType)) task = next;
+        else await answerCorrectly(current, next);
+      }
+      if (!task) { await endSession(current, session.sessionId); clock.advanceHours(1); }
+    }
+    expect(task).not.toBeNull();
+    const issued = task!;
+    const key = await answerKeyOf(issued.taskId);
+    const attempt = await submitAttempt(current, { taskId: issued.taskId, clientAttemptId: randomUUID(), modality: "text", text: key.answer as string });
+
+    expect(attempt.feedback?.correctAudioAssetId).toBe(await feedbackAssetOf(issued.taskId));
+    const events = await audioEvents(issued.taskId);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.occurredAt.getTime()).toBeGreaterThan(new Date(attempt.receivedAt).getTime());
   });
 });

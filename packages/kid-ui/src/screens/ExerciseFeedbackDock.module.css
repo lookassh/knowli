@@ -14,6 +14,9 @@
   background: var(--dock-bg);
   color: var(--dock-fg);
   position: relative;
+  /* Układ przycisków zdania zależy od szerokości doku, nie okna: od 600 px
+     dok ma najwyżej 560 px (spec 2026-11-01-sentence-readback-followups §4.3). */
+  container-type: inline-size;
 }
 
 /* Zwarta rama zadania (ExerciseFrame, spec 2026-10-30-kid-ui-large-screens §3.2;
@@ -225,6 +228,50 @@
   display: flex;
 }
 
+/* „Posłuchaj zdania” i „Posłuchaj wolniej”: w wierszu obok treści. */
+.sentenceGroup {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+/* Wąski dok (telefon): zdanie nad żółwiem — kolumna 48 + 8 + 48 px,
+   zwykle niższa od karty wyniku, więc dok nie rośnie; „?” zostaje przy górnym. */
+@container (width < 480px) {
+  .sentenceGroup {
+    flex-direction: column;
+  }
+}
+
+/* Błąd ręcznego odsłuchu zdania: nad górnym wierszem na całą szerokość,
+   wyśrodkowany. Dok w nakładce rośnie w górę, więc górny wiersz i „Dalej”
+   zostają na miejscu (spec 2026-11-01-sentence-readback-followups §4.4). */
+.sentenceError {
+  text-align: center;
+  font-size: var(--kid-type-body-size);
+  font-weight: var(--kid-type-body-weight);
+  line-height: var(--kid-type-body-line-height);
+}
+
+.sentenceError:empty {
+  display: none;
+}
+
+/* Tam, gdzie dok rośnie w dół — zwarta rama dużego okna (stopka tuż pod
+   odpowiedziami, wolne miejsce niżej) i przewijana strona (powiększenie
+   gestem, bardzo niskie okno) — górny wiersz idzie przed region błędu, więc
+   przyciski zdania zostają pod palcem, a w dół przesuwa się tylko „Dalej”. */
+@media (min-width: 840px) and (min-height: 781px), (min-width: 960px) and (min-height: 480px) and (pointer: coarse) {
+  :global(.kid-exercise-frame):not([data-prompt-kind="picture_listening"]):not([data-prompt-kind="picture_recognition"]) .scroll {
+    order: -1;
+  }
+}
+
+:global(.kid-page[data-zoomed="true"]) .scroll,
+:global(.kid-page[data-viewport-very-short="true"]) .scroll {
+  order: -1;
+}
+
 .content {
   min-width: 0;
   min-height: 40px;
@@ -279,7 +326,8 @@
 .dock .content :global(.kid-speech-feedback__reference h3),
 .dock .content :global(.kid-speech-feedback__legend),
 .dock .content :global(.kid-speech-feedback__legend li),
-.dock .content :global(.kid-lesson-feedback__hint) {
+.dock .content :global(.kid-lesson-feedback__hint),
+.dock .sentenceError {
   color: inherit;
 }
 

@@ -55,7 +55,7 @@ export interface LessonWorldOptions {
    * przed publikacją: `ready` = gotowe przed wydaniem zadania, `pending` =
    * jeszcze w przygotowaniu (test może je potem oznaczyć jako gotowe).
    */
-  withFeedbackAudio?: "ready" | "pending";
+  withFeedbackAudio?: "ready" | "ready-approved" | "pending";
   /**
    * Dodatkowe zatwierdzone warianty ćwiczenia `lesson_transform` bogatej puli,
    * obok kanonicznego „she plays” (np. wariant ≠ odpowiedź kanoniczna do testu
@@ -547,11 +547,16 @@ export async function attachLessonTargetAudio(
  * przy przygotowaniu lekcji gramatyki. Zasób `ready` ma
  * komplet pól gotowego blobu; `pending` czeka na worker. Zwraca mapę
  * `revisionId -> assetId`.
+ *
+ * Wiersz `revision_assets` ma stan `pending` także przy gotowym zasobie
+ * (`"ready"`): to najczęstszy stan produkcji — publikacja nie czeka na media,
+ * a wiersz opublikowanej rewizji jest niezmienny, więc worker go nie podnosi.
+ * `"ready-approved"` to ten sam gotowy zasób z wierszem `approved`.
  */
 export async function attachLessonFeedbackAudio(
   pool: Pool,
   versionId: string,
-  state: "ready" | "pending",
+  state: "ready" | "ready-approved" | "pending",
   role: "feedback_audio" | "explanation_audio" = "feedback_audio",
 ): Promise<Map<string, string>> {
   const rows = await pool.query<{ id: string }>(
@@ -561,7 +566,7 @@ export async function attachLessonFeedbackAudio(
   const byRevision = new Map<string, string>();
   for (const row of rows.rows) {
     const assetId = randomUUID();
-    if (state === "ready") {
+    if (state !== "pending") {
       await pool.query(
         `insert into learning_app.media_assets
            (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model, metadata)
@@ -577,8 +582,8 @@ export async function attachLessonFeedbackAudio(
     }
     await pool.query(
       `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
-       values ($1, $4, $2, $3, 'pending')`,
-      [row.id, assetId, `fp-feedback-${assetId}`, role],
+       values ($1, $5, $2, $3, $4)`,
+      [row.id, assetId, `fp-feedback-${assetId}`, state === "ready-approved" ? "approved" : "pending", role],
     );
     byRevision.set(row.id, assetId);
   }
