@@ -3,8 +3,9 @@
 # się automatycznie z main, więc scalony kod musi przejść ten sam cykl.
 # Testy są samowystarczalne: integration i e2e stawiają własne kontenery
 # postgres:17-alpine w global-setup, e2e działa na fake providerach (bez kluczy).
-# E2e biegnie w 5 równoległych jobach (osobne runnery, każdy z własnym światem):
-# projekt mocked osobno, a real w koszach czasowych REAL_BUCKETS (spec-projects.ts).
+# E2e biegnie w 7 równoległych jobach (osobne runnery, każdy z własnym światem):
+# projekt mocked w 3 shardach Playwrighta, a real w koszach czasowych REAL_BUCKETS
+# (spec-projects.ts); `e2e (mocked)` to bramka pod nazwą wymaganego checka.
 # Integracja biegnie w koszach czasowych INTEGRATION_BUCKETS
 # (tests/integration-buckets.ts) jako równoległe joby z własnym kontenerem,
 # a `tests` jest bramką pod nazwą wymaganego checka: agreguje job `check`
@@ -127,11 +128,29 @@ jobs:
       # realnych (podział Playwrighta po liczbie testów zostawiał 98/58/105 s).
       # Zmiana liczby koszy: zaktualizuj REAL_BUCKETS, ten matrix i DEFAULT_REAL_BUCKETS
       # w runnerze shardów; kompletności pilnuje test jednostkowy spec-projects.
+      # Kosze real są osobnymi wymaganymi checkami `e2e (real-N)` w regułach brancha
+      # main: nowy kosz trzeba tam dopisać, a usunięty usunąć, inaczej PR-y utkną.
+      # Projekt mocked (bezstanowy) dzielą shardy Playwrighta: jako jeden job na
+      # 4 workerach trwał 5,5 min (4,8 min testów) i wyznaczał czas całego runu
+      # (joby real 2,6–3,2 min). Liczbę shardów zmienia sam matrix — wymagany check
+      # raportuje bramka `e2e-mocked`. Shardy dzielą jeden cache Next.js (`cache`).
       matrix:
         include:
-          - name: mocked
+          - name: mocked-1
             project: mocked
             bucket: ""
+            shard: "1/3"
+            cache: mocked
+          - name: mocked-2
+            project: mocked
+            bucket: ""
+            shard: "2/3"
+            cache: mocked
+          - name: mocked-3
+            project: mocked
+            bucket: ""
+            shard: "3/3"
+            cache: mocked
           - name: real-1
             project: real
             bucket: "1"
@@ -159,10 +178,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/web/.next/cache
-          key: next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/next.config.ts', 'apps/web/src/**', 'packages/**/src/**') }}
+          key: next-e2e-${{ runner.os }}-node22-${{ matrix.cache || matrix.name }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/next.config.ts', 'apps/web/src/**', 'packages/**/src/**') }}
           restore-keys: |
-            next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-
-      # Przeglądarka jest cache'owana między runami (klucz = lockfile, więc zmiana wersji Playwrighta unieważnia cache). Bez tego każdy z 5 jobów e2e pobierał Chromium od zera, a `--with-deps` dokładał `apt-get update` i instalację pakietów z lustra Ubuntu — krok trwał 20 s do ~5 min zależnie od lustra i wyznaczał czas całego runu.
+            next-e2e-${{ runner.os }}-node22-${{ matrix.cache || matrix.name }}-
+      # Przeglądarka jest cache'owana między runami (klucz = lockfile, więc zmiana wersji Playwrighta unieważnia cache). Bez tego każdy job e2e pobierał Chromium od zera, a `--with-deps` dokładał `apt-get update` i instalację pakietów z lustra Ubuntu — krok trwał 20 s do ~5 min zależnie od lustra i wyznaczał czas całego runu.
       - name: Cache Playwright chromium
         id: playwright-cache
         uses: actions/cache@v4
@@ -182,7 +201,9 @@ jobs:
       - name: E2E tests
         env:
           UMIEM_E2E_BUCKET: ${{ matrix.bucket }}
-        run: pnpm exec playwright test --project=${{ matrix.project }}
+          E2E_PROJECT: ${{ matrix.project }}
+          E2E_SHARD: ${{ matrix.shard }}
+        run: pnpm exec playwright test --project="$E2E_PROJECT" ${E2E_SHARD:+--shard="$E2E_SHARD"}
       - name: Upload test artifacts unless green
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -191,3 +212,35 @@ jobs:
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  e2e-mocked:
+    # Bramka pod nazwą wymaganego checka `e2e (mocked)` (reguły brancha main):
+    # sama niczego nie testuje, a podział projektu mocked na shardy nie wymaga
+    # zmian w regułach. Wymaga łącznego sukcesu matrixa e2e (shardy mocked
+    # i kosze real — każdy kosz real i tak jest osobnym wymaganym checkiem)
+    # i dodatkowo sprawdza ostatnią próbę każdego sharda `e2e (mocked-N)` przez
+    # API: po ponowieniu tylko części jobów łączny wynik matrixa nie może przepuścić
+    # sharda, który nadal ma porażkę.
+    name: e2e (mocked)
+    needs: [e2e]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Verify e2e jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_RESULT: ${{ needs.e2e.result }}
+        run: |
+          echo "e2e=$NEEDS_RESULT"
+          if [ "$NEEDS_RESULT" != "success" ]; then
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("e2e (mocked-")) | "\(.name)=\(.conclusion)"' > shards.txt
+          cat shards.txt
+          if [ ! -s shards.txt ] || grep -v '=success$' shards.txt; then
+            exit 1
+          fi

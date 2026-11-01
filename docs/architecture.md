@@ -383,7 +383,7 @@ Health: liveness procesu i readiness bazy; worker ma heartbeat. Błąd zewnętrz
 
 Kopie zapasowe: codzienny pg_dump + kopia /data/media. Spójny backup na małej instancji można wykonać po zatrzymaniu workera i chwilowym zablokowaniu publikacji, pozostawiając bezpieczny snapshot bazy. Procedura odtworzenia obejmuje bazę, zasoby, migracje i konfigurację. Retencja proponowana: 7 kopii dziennych i 4 tygodniowe. Surowe nagrania nie występują w backupie.
 
-CI: GitHub Actions (`.github/workflows/ci.yml`) wykonuje pełny cykl — typecheck, testy unit, testy integracyjne (własny kontener postgres), build web oraz e2e na fake providerach — na każdym Pull Requeście i pushu do main. Branch protection wymaga zielonych checków `tests` i `e2e` oraz aktualnej gałęzi przed scaleniem, także dla administratora; produkcja deployuje się automatycznie z main, więc scalony kod przechodzi ten sam cykl.
+CI: GitHub Actions (`.github/workflows/ci.yml`) wykonuje pełny cykl — typecheck, testy unit, testy integracyjne (własny kontener postgres), build web oraz e2e na fake providerach — na każdym Pull Requeście i pushu do main. Reguły gałęzi main wymagają zielonych checków `tests` (bramka nad typecheck, unit, build i koszami integracji), `e2e (mocked)` (bramka nad shardami projektu mocked), `e2e (real-1…4)` i CodeQL oraz aktualnej gałęzi przed scaleniem, także dla administratora; produkcja deployuje się automatycznie z main, więc scalony kod przechodzi ten sam cykl.
 
 ## 15. Rozbudowa bez implementowania przyszłości
 

@@ -15,10 +15,14 @@
  * dzieli `--shard` po liczbie testów, a nie po czasie, więc ciężkie pliki
  * potrafiły wylądować w jednym shardzie (lokalnie 98/58/105 s). Kosze są
  * ułożone zachłannie (LPT) wg zmierzonych sum czasów testów per plik
- * z pełnego lokalnego przebiegu 2026-10-25 (po ok. 65 s każdy) i wybierane
- * przez `UMIEM_E2E_BUCKET` (1..N) w playwright.config.ts. Gdy czasy plików
- * mocno urosną, przelicz sumy z loga przebiegu i ułóż kosze od nowa;
- * kompletności podziału pilnuje `spec-projects.test.ts`.
+ * z przebiegu CI (szczegóły przy REAL_BUCKETS) i wybierane przez
+ * `UMIEM_E2E_BUCKET` (1..N) w playwright.config.ts. Gdy czasy plików
+ * mocno urosną, przelicz sumy z logów jobów `e2e (real-N)` i ułóż kosze od
+ * nowa; kompletności podziału pilnuje `spec-projects.test.ts`.
+ *
+ * Projekt `mocked` jest bezstanowy, więc w CI dzieli go zwykły `--shard`
+ * Playwrighta (po liczbie testów — przy `fullyParallel` wystarczająco równo);
+ * lokalnie biegnie w jednym procesie na wielu workerach.
  *
  * Nowy spec trzeba dopisać do jednej z list (real: do wybranego kosza) —
  * pilnuje tego `spec-projects.test.ts`. Spec mieszany (część testów
@@ -65,39 +69,53 @@ export const MOCKED_SPECS: readonly string[] = [
   "progress-panel.spec.ts",
 ];
 
-/** Kosze czasowe speców `real` (po ok. 65 s sum czasów testów, lokalny pomiar 2026-10-25). */
+/**
+ * Kosze czasowe speców `real`, ułożone LPT z sum czasów testów per plik w CI
+ * (run PR #206, 2026-10-31: łącznie 490 s; kosze po ok. 122–124 s zamiast
+ * 111/144/115/121 s). Najdłuższy plik, `kid-flow.spec.ts` (104 s), wyznacza
+ * dolną granicę swojego kosza. Komentarz przy koszu to jego suma czasów testów
+ * w CI — zmierzonych na pozycjach ze starego układu, a pierwszy plik świata płaci
+ * jego rozgrzewkę, więc po zmianie przelicz kosze z kolejnego logu CI.
+ * Pliki w koszu biegną alfabetycznie w jednym świecie, którego dane narastają.
+ * Dwa przeglądy całego świata (`learning-mcp-http`, `learning-overview-api`)
+ * stoją na początku swojego kosza, a `lesson-mock-test` (limit asercji 2 s przy
+ * pierwszym kontakcie z backendem) nie jest pierwszy — pilnuje tego spec-projects.test.
+ */
 export const REAL_BUCKETS: readonly (readonly string[])[] = [
+  // ok. 122 s
   [
-    "learning-mcp-http.spec.ts",
-    "learning-overview-api.spec.ts",
-    "lesson-archive.spec.ts",
-    "lesson-parent-supervision.spec.ts",
-    "parent-edit-protection.spec.ts",
-    "speech-recording-ux.spec.ts",
-  ],
-  [
-    "generation-request-retry.spec.ts",
-    "lesson-calculation.spec.ts",
     "kid-flow.spec.ts",
-    "navigation.spec.ts",
+    "lesson-archive.spec.ts",
     "privacy.spec.ts",
     "spelling-diff-feedback.spec.ts",
   ],
+  // ok. 124 s
   [
-    "learning-algorithm.spec.ts",
-    "lesson-parent.spec.ts",
+    "manual-deck-flow.spec.ts",
     "mock-test-parent.spec.ts",
-    "mock-test.spec.ts",
+    "navigation.spec.ts",
+    "parent-edit-protection.spec.ts",
+    "speech-recording-ux.spec.ts",
+  ],
+  // ok. 123 s
+  [
+    "learning-mcp-http.spec.ts",
+    "learning-overview-api.spec.ts",
+    "lesson-calculation.spec.ts",
+    "lesson-parent-supervision.spec.ts",
+    "lesson-parent.spec.ts",
+    "parent-flow.spec.ts",
+    "parent-sources.spec.ts",
     "test-preparation.spec.ts",
   ],
+  // ok. 122 s
   [
     "deck-cover-image.spec.ts",
+    "generation-request-retry.spec.ts",
+    "learning-algorithm.spec.ts",
     "lesson-mock-test.spec.ts",
     "lesson-real-flow.spec.ts",
-    "manual-deck-flow.spec.ts",
-    "parent-flow.spec.ts",
-    // ok. 15 s; dodany do najlżejszego kosza w przebiegu 2026-10-31 (kosz 4: 1,8 min wobec 2,2/2,5/2,9 min)
-    "parent-sources.spec.ts",
+    "mock-test.spec.ts",
   ],
 ];
 
