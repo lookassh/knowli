@@ -142,10 +142,12 @@ neutralny materiał, tematy „piłka nożna, dinozaury, Minecraft”): pierwotn
 sentences — at most half”, zakaz „quote or retell games”) dawała tematy w ok. 15% zadań, a nazwy
 gry nie używał żaden model. Reguła celuje teraz w co trzecie zadanie, rotuje wszystkie tematy
 i pozwala na nazwę gry, filmu, książki lub postaci jako zwykły rzeczownik, bez cytowania treści.
-Pierwsza wersja wzmocnionej reguły dała u Gemini tematy w roli podmiotu („The dinosaur ___
-apples.”, „Minecraft ___ fun.”), więc zakaz dostał jawne przykłady. Wynik końcowy (jedna generacja
-na wariant): Present Simple 6/27 (Gemini) i 9/26 (DeepSeek) zadań z tematem, „to be” 4/20 i 6/20,
-„Minecraft” u obu modeli, żaden temat nie jest podmiotem, odrzuceń tyle co bez tematów (0–1).
+Pierwsza wersja wzmocnionej reguły dała u Gemini tematy w roli podmiotu (`The dinosaur ___
+apples.`, `Minecraft ___ fun.`), więc zakaz dostał jawne przykłady. Wynik z jawnymi przykładami
+(jedna generacja na wariant): Present Simple 6/27 (Gemini) i 9/26 (DeepSeek) zadań z tematem,
+„to be” 4/20 i 6/20, „Minecraft” u obu modeli, żaden temat nie jest podmiotem, odrzuceń tyle co bez
+tematów (0–1). Zmierzono go przed doprecyzowaniem „of all exercises” (dodanym po review, żeby
+udział liczył się tak jak w pomiarze); wersji z tym doprecyzowaniem nie mierzono osobno.
 
 ### 5.2 Polecenie i zapis
 
