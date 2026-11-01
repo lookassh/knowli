@@ -93,11 +93,19 @@ function openAiCompatibleEndpointFromEnv(
  * (`host · model`), dla panelu rodzica. Host i model liczone tak samo jak w
  * {@link createGenerationDepsFromEnv}: puste `UMIEM_LLM_*` to domyślne adaptera,
  * tryb fake nie wychodzi do sieci. Bez ścieżki adresu, kluczy i parametrów.
+ *
+ * To tylko opis: zły adres (http poza test/development, adres uszkodzony) nie
+ * może wywrócić składania procesu web, więc zwraca `undefined` (panel pomija
+ * informację). Błąd konfiguracji zgłasza i tak worker przy starcie generacji.
  */
-export function generationPublicServiceFromEnv(env: Record<string, string | undefined>): string {
+export function generationPublicServiceFromEnv(env: Record<string, string | undefined>): string | undefined {
   if (env.UMIEM_FAKE_PROVIDERS === "1") return "fake-llm-1";
-  const baseUrl = secureBaseUrl(env, "UMIEM_LLM_BASE_URL") ?? LLM_DEFAULT_BASE_URL;
-  return `${new URL(baseUrl).host} \u00b7 ${nonEmpty(env.UMIEM_LLM_MODEL) ?? LLM_DEFAULT_MODEL}`;
+  try {
+    const baseUrl = secureBaseUrl(env, "UMIEM_LLM_BASE_URL") ?? LLM_DEFAULT_BASE_URL;
+    return `${new URL(baseUrl).host} · ${nonEmpty(env.UMIEM_LLM_MODEL) ?? LLM_DEFAULT_MODEL}`;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */

@@ -117,8 +117,9 @@ export const SubjectCatalogDtoSchema = z.object({
     }).strict()),
   }).strict()),
   /**
-   * Nazwa usługi, do której trafia generowanie lekcji (np. host dostawcy); parent-facing,
-   * do informacji o tematach zdań. Brak = generator nieskonfigurowany.
+   * Skonfigurowana etykieta usługi generującej lekcje (host · model, z env procesu web);
+   * parent-facing, do informacji o tematach zdań. To opis konfiguracji, nie dowód, że
+   * generowanie jest dostępne; brak = etykiety nie da się ustalić.
    */
   generationService: z.string().min(1).optional(),
 }).strict();

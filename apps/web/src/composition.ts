@@ -56,6 +56,8 @@ function initialize(): { services: Services; pool: Pool } {
     ? fakeSessionActivityDeps({ provider: new FakeSessionActivityReviewer() })
     : sessionActivityFromEnv(env);
   const imageProvider = imageProviderFromEnv(env);
+  // zły adres LLM nie wywraca web (etykieta to tylko opis): wtedy bez informacji o usłudze
+  const generationService = generationPublicServiceFromEnv(env);
   return {
     services: createServices({
       db,
@@ -70,7 +72,7 @@ function initialize(): { services: Services; pool: Pool } {
       ...(grader ? { grader } : {}),
       ...(sessionActivity ? { sessionActivity } : {}),
       // web nie ma LLM (generuje worker): opisuje konfigurację wspólną z workerem
-      generationService: generationPublicServiceFromEnv(env),
+      ...(generationService ? { generationService } : {}),
     }),
     pool,
   };

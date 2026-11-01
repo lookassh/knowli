@@ -365,4 +365,13 @@ describe("generationPublicServiceFromEnv — nazwa usługi generującej dla rodz
     expect(generationPublicServiceFromEnv({})).toBe("api.openai.com · gpt-4o-mini");
     expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "", UMIEM_LLM_MODEL: "" })).toBe("api.openai.com · gpt-4o-mini");
   });
+
+  it("zły adres nie rzuca (etykieta jest tylko opisem): http poza test/development i adres uszkodzony dają undefined", () => {
+    expect(generationPublicServiceFromEnv({ NODE_ENV: "production", UMIEM_LLM_BASE_URL: "http://llm.example.test/v1" })).toBeUndefined();
+    expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "https://" })).toBeUndefined();
+    expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "not a url" })).toBeUndefined();
+    // http w test/development nadal jest opisywany
+    expect(generationPublicServiceFromEnv({ NODE_ENV: "development", UMIEM_LLM_BASE_URL: "http://localhost:9000/v1", UMIEM_LLM_MODEL: "m" }))
+      .toBe("localhost:9000 · m");
+  });
 });
