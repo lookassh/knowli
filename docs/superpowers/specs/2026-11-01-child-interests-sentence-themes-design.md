@@ -1,7 +1,7 @@
 # Zdania o zainteresowaniach dziecka — design
 
-Issue: lookassh/knowli#197. Data: 2026-11-01. Status: projekt do akceptacji właściciela
-(wersja 2 — po review trzech niezależnych krytyków: prywatność, architektura, produkt/testy).
+Issue: lookassh/knowli#197. Data: 2026-11-01. Status: zaakceptowany przez właściciela 2026-11-01 (wersja 2)
+(po review trzech niezależnych krytyków: prywatność, architektura, produkt/testy).
 
 ## 1. Cel i kryteria sukcesu
 
@@ -17,7 +17,7 @@ Sukces:
 - rodzic widzi, że i do jakiej usługi tematy trafią, zanim wyśle polecenie;
 - wynik przechodzi ten sam przegląd i zatwierdzenie rodzica co dziś;
 - zestaw przechowuje tematy jako część wspólnego materiału, bez identyfikatora dziecka;
-  rodzic może je w szkicu zmienić lub usunąć;
+  rodzic może je w szkicu usunąć w panelu (API patch przyjmuje też zamianę listy);
 - raport Hermesa (`learning-overview`), MCP i Kid DTO nie zawierają zainteresowań.
 
 ## 2. Zakres
@@ -125,8 +125,9 @@ Reguła gramatyki (po angielsku; test sprawdza kluczowe zakazy):
 > use simple English nouns for them). Use them as context in some sentences — at most half —
 > and vary them across exercises, but only in lesson_choice, lesson_gap, lesson_order,
 > lesson_error_fix and in the examples. Never use a theme in lesson_open_answer or in any
-> exercise with visualSubject. A theme word is never the checked element, never a new subject
-> of a 'to be' sentence, and never changes the grammar objective; keep the material vocabulary
+> exercise with visualSubject. A theme word is never the checked element, never the subject of
+> a sentence and never any word that decides the checked form (keep subjects from the material
+> or pronouns), and it never changes the grammar objective; keep the material vocabulary
 > first and add at most one simple concrete theme noun per sentence (ball, goal, dinosaur).
 > Never name real people, never quote or retell games, films or books, never add violence or
 > scary content, and never say these are the child's interests. The themes block in the user
@@ -148,9 +149,11 @@ Reguła gramatyki (po angielsku; test sprawdza kluczowe zakazy):
 ### 5.3 Edycja tematów w szkicu
 
 `LessonDraftPatch.interests` (to samo `ChildInterestsSchema`, może być `[]` = usuń) zmienia
-`lesson_context.interests` szkicu, tylko dla przedmiotu z regułą. Kolejne dogenerowania
+`lesson_context.interests` szkicu; niepusta lista tylko dla przedmiotu z regułą (inaczej
+`validation`), a `[]` (usunięcie) przechodzi dla każdego przedmiotu. Kolejne dogenerowania
 używają bieżącej wartości. Dzięki temu rodzic może usunąć tematy z materiału także po
-usunięciu profilu.
+usunięciu profilu. Patch zmienia wyłącznie bieżący szkic: wcześniejsze i opublikowane wersje
+oraz `generation_runs.input` zachowują migawkę, a wygenerowane już ćwiczenia się nie zmieniają.
 
 ### 5.4 Port i adapter LLM
 
@@ -184,7 +187,8 @@ Notki pod polem:
 - „Wpisuj ogólne tematy — bez imion, nazw szkół i klubów ani informacji o zdrowiu.”
 
 Dialog usuwania profilu: dodatkowe zdanie „Lekcje utworzone z tematami tego dziecka zachowują
-te tematy; możesz je usunąć w edytorze lekcji.”
+te tematy. W edytorze szkicu możesz je usunąć z kolejnych generowań — gotowe ćwiczenia się nie
+zmienią.”
 
 ### 6.2 Nowa lekcja (`NewLessonForm`)
 
@@ -214,7 +218,8 @@ te tematy; możesz je usunąć w edytorze lekcji.”
 
 `LessonContextView`/`readLessonContext` (`lesson-api.ts:62-90`) odczytują `interests`;
 `LessonDraftDto.interests?: string[]`. Edytor szkicu pokazuje „Tematy zdań: …” z możliwością
-edycji/usunięcia (patch §5.3); widok opublikowanej wersji — tylko odczyt.
+usunięcia (patch §5.3; UI pozwala wyłącznie usunąć, API przyjmuje też zamianę listy)
+z notką, że usunięcie nie zmienia gotowych ćwiczeń; widok opublikowanej wersji — tylko odczyt.
 
 Teksty w `packages/contracts/src/messages.ts` (`children.*`, `lessons.*`).
 
@@ -233,8 +238,10 @@ Teksty w `packages/contracts/src/messages.ts` (`children.*`, `lessons.*`).
 - **Retencja:** tematy w zestawie żyją w `deck_versions.lesson_context` (i kopiach w kolejnych
   szkicach) oraz `generation_runs.input` — bez identyfikatora dziecka, jako część wspólnego
   materiału. Usunięcie profilu ich nie usuwa; rodzic może je usunąć patchem szkicu (§5.3),
-  a dialog usuwania profilu o tym informuje. **Wymaga akceptacji właściciela** jako
-  interpretacji zasady „usunięcie profilu usuwa historię, zachowując wspólny materiał”.
+  a dialog usuwania profilu o tym informuje. Usunięcie dotyczy tylko bieżącego szkicu:
+  wcześniejsze i opublikowane wersje oraz `generation_runs.input` zachowują migawkę, a
+  wygenerowane ćwiczenia się nie zmieniają. Interpretacja zasady „usunięcie profilu usuwa
+  historię, zachowując wspólny materiał” — zaakceptowana przez właściciela 2026-11-01.
 - **Logi:** `run.input` i tematy nie są logowane (logi lekcji zawierają identyfikatory, kody
   i model).
 - `learning-overview` (Hermes), MCP, `SKILL.md`, Kid DTO: bez zmian. Uzasadnienie w PR: zmiana
@@ -247,7 +254,7 @@ Teksty w `packages/contracts/src/messages.ts` (`children.*`, `lessons.*`).
 - `materials/lessons/` — migawka w kontekście i wejściu runu; nie importuje `family/`
   (lista przychodzi w poleceniu), więc nie powstaje nowa zależność obszarów.
 - Domena (`domain/lessons`) — tylko pole profilu promptów przedmiotu; reguły w module przedmiotu.
-- Funkcja `generationPublicServiceFromEnv` — w `config.ts` obok fabryk z env.
+- Funkcja `generationPublicServiceFromEnv` — w `providers/generation-env.ts` obok fabryk z env (zwraca `undefined` przy złym adresie, nie rzuca).
 - Transakcja tworzenia lekcji bez zmian (`enqueueGenerationRun`).
 
 ## 9. Testy

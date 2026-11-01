@@ -1124,14 +1124,17 @@ export default function LessonEditor({
       </Group>
       {deck?.source && <LessonSourceNote source={deck.source} onOpen={onOpenSource} />}
       {themes.length > 0 && (
-        <Group gap="xs" mb="md" align="center" data-testid="lesson-themes-line">
-          <Text size="sm" className="pp-editor-muted">{messages.lessons.themesLine.replace("{themes}", () => themes.join(", "))}</Text>
-          {editable && (
-            <Button size="compact-md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
-              {messages.lessons.themesRemove}
-            </Button>
-          )}
-        </Group>
+        <>
+          <Group gap="xs" mb={editable ? 2 : "md"} align="center" data-testid="lesson-themes-line">
+            <Text size="sm" className="pp-editor-muted">{messages.lessons.themesLine.replace("{themes}", () => themes.join(", "))}</Text>
+            {editable && (
+              <Button size="compact-md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
+                {messages.lessons.themesRemove}
+              </Button>
+            )}
+          </Group>
+          {editable && <Text size="xs" mb="md" className="pp-editor-muted" data-testid="lesson-themes-remove-hint">{messages.lessons.themesRemoveHint}</Text>}
+        </>
       )}
 
       <Stack gap="md">
