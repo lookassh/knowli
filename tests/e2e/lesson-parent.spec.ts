@@ -437,8 +437,9 @@ test("story validation error is shown", async ({ page }) => {
   await page.getByTestId("save-lesson").click();
   expect((await saved).status()).toBe(400);
   await expect(page.getByTestId("lesson-story-errors")).toContainText("Historyjka ma mieć od 4 do 6 zdań.");
-  // formularz zostaje z niezapisaną zmianą
+  // formularz zostaje z niezapisaną zmianą: 3 zdania, usunięte nie wraca
   await expect(page.getByTestId("lesson-story-sentence-2")).toBeVisible();
+  await expect(page.getByTestId("lesson-story-sentence-3")).toHaveCount(0);
 });
 
 test("sentence themes: inserted from the child profile into a new lesson, shown in the editor and removable with a draft patch (#197)", async ({ page }) => {
