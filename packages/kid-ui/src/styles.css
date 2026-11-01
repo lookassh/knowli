@@ -2960,10 +2960,9 @@
   vertical-align: baseline;
 }
 
-/* Status bodźca: jedna linia zawsze w układzie (pusta poza blokadą), więc zmiana stanu nie przesuwa zdania. */
+/* Status bodźca pod opcjami: zawsze zamontowany, pusty bez marginesów nie zabiera wysokości. */
 .kid-ui .kid-listen-status {
-  line-height: var(--kid-type-title-sm-line-height);
-  min-block-size: calc(var(--kid-type-title-sm-size) * var(--kid-type-title-sm-line-height));
+  margin: 0;
 }
 
 /* Głośnik polecenia wyróżniony wypełnieniem (wariant filled, nie obrys jak fokus), gdy przeglądarka

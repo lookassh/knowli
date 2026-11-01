@@ -55,10 +55,6 @@ export function LessonListenChoiceView({ task, busy, optionOutcomes, dock, feedb
       }}
       content={(
         <>
-          {/* Jedna linia statusu zawsze w układzie (zarezerwowana wysokość): zmiana stanu nie przesuwa zdania i opcji. */}
-          <p className="kid-hint kid-listen-status" role="status" data-testid="kid-listen-status">
-            {state === "blocked" ? messages.kid.listenStimulusBlocked : ""}
-          </p>
           <p className="kid-lesson-stem" data-testid="kid-lesson-stem" lang={task.prompt.contentLocale}>
             {before}
             {hasGap && (
@@ -75,6 +71,12 @@ export function LessonListenChoiceView({ task, busy, optionOutcomes, dock, feedb
             optionLang={task.prompt.contentLocale}
             onChoose={handlers.onAnswerChoice}
           />
+          {/* Status zawsze zamontowany (żywy region istnieje przed treścią), pusty poza blokadą. Stoi pod
+              opcjami: pojawienie się tekstu nie przesuwa zdania ani opcji, a pusty nie zabiera wysokości,
+              więc dok wyniku nie zabiera ramie odstępu od góry. */}
+          <p className="kid-hint kid-listen-status" role="status" data-testid="kid-listen-status">
+            {state === "blocked" ? messages.kid.listenStimulusBlocked : ""}
+          </p>
         </>
       )}
       dock={dock}
