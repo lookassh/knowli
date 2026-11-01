@@ -13,7 +13,6 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  TagsInput,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -21,8 +20,9 @@ import { useForm } from "@mantine/form";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation } from "@tanstack/react-query";
-import { MAX_CHILD_INTERESTS, messages, type ChildDto, type ChildPatch } from "@learning/contracts";
-import { childPatch, interestsError, parseInterestsInput, type EditValues } from "./children-forms";
+import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
+import { childPatch, interestsError, type EditValues } from "./children-forms";
+import { InterestsTagsInput, useInterestNotice } from "./InterestsTagsInput";
 import { runOnce } from "./run-once";
 import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
@@ -84,7 +84,7 @@ function ChildEditForm({
     },
   });
   // komunikat po próbie dodania powtórzenia lub szóstego tematu (znika przy dalszym pisaniu)
-  const [interestNotice, setInterestNotice] = useState<"duplicate" | "limit" | null>(null);
+  const [interestNotice, setInterestNotice] = useInterestNotice();
   const update = useMutation({
     mutationFn: (patch: ChildPatch) => callParent(() => parentClient.children.update({ childId: child.id, ...patch })),
   });
@@ -93,11 +93,6 @@ function ChildEditForm({
   const changed = Object.keys(patch).length > 0;
   const busy = update.isPending;
   const interestsInvalid = interestsError(form.values.interests);
-  const interestsMessage = interestsInvalid
-    ?? (interestNotice === "duplicate" ? messages.children.interestsDuplicate : null)
-    ?? (interestNotice === "limit"
-      ? messages.children.interestsLimit.replace("{max}", String(MAX_CHILD_INTERESTS))
-      : null);
   const canSave = !busy && form.values.displayName.trim().length > 0 && changed && interestsInvalid === null;
 
   useEffect(() => {
@@ -161,29 +156,21 @@ function ChildEditForm({
           onChange={(event) => form.setFieldValue("canRead", !event.currentTarget.checked)}
         />
         <div>
-          <TagsInput
-            size="md"
+          <InterestsTagsInput
             label={messages.children.interests}
             data-testid="child-edit-interests"
             disabled={busy}
-            maxTags={MAX_CHILD_INTERESTS}
-            splitChars={[","]}
-            error={interestsMessage}
             value={form.values.interests}
-            onChange={(next) => {
-              const parsed = parseInterestsInput(next);
-              // powtórzenie widoczne dopiero po normalizacji (np. podwójna spacja)
-              setInterestNotice(next.length > form.values.interests.length && parsed.length < next.length ? "duplicate" : null);
-              form.setFieldValue("interests", parsed);
-            }}
-            // dalsze pisanie zdejmuje komunikat; czyszczenie pola po dodaniu tematu go nie rusza
-            onSearchChange={(text) => { if (text.length > 0) setInterestNotice(null); }}
-            onDuplicate={() => setInterestNotice("duplicate")}
-            // zdarzenie przy zwykłym opuszczeniu pustego pola nie jest próbą dodania tematu
-            onMaxTags={(value) => { if (value.trim().length > 0) setInterestNotice("limit"); }}
+            onChange={(next) => form.setFieldValue("interests", next)}
+            notice={interestNotice}
+            onNoticeChange={setInterestNotice}
+            description={(
+              <>
+                <Text component="span" size="sm" display="block" className="pp-children-muted">{messages.children.interestsHint}</Text>
+                <Text component="span" size="sm" display="block" mt={4} className="pp-children-muted">{messages.children.interestsPrivacy}</Text>
+              </>
+            )}
           />
-          <Text size="sm" mt={4} className="pp-children-muted">{messages.children.interestsHint}</Text>
-          <Text size="sm" mt={4} className="pp-children-muted">{messages.children.interestsPrivacy}</Text>
         </div>
         {update.isError && <Alert color="red" variant="light" role="alert">{errorMessage(update.error)}</Alert>}
         <Group gap="sm" grow>

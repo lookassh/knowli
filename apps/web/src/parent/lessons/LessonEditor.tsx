@@ -1128,7 +1128,7 @@ export default function LessonEditor({
           <Group gap="xs" mb={editable ? 2 : "md"} align="center" data-testid="lesson-themes-line">
             <Text size="sm" className="pp-editor-muted">{messages.lessons.themesLine.replace("{themes}", () => themes.join(", "))}</Text>
             {editable && (
-              <Button size="compact-md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
+              <Button size="md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
                 {messages.lessons.themesRemove}
               </Button>
             )}

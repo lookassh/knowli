@@ -475,11 +475,20 @@ describe("NewLessonForm", () => {
         vi.unstubAllGlobals();
       });
 
-      function renderInteractive(children: unknown[] = [ola, adam]) {
+      function renderInteractive(children: unknown[] | "error" = [ola, adam]) {
         const registerEditorState = vi.fn();
-        const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+        const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false, retryOnMount: false } } });
         queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
-        queryClient.setQueryData(orpc.children.list.queryOptions().queryKey, children as never);
+        if (children === "error") {
+          // błąd odczytu listy dzieci: bez danych i bez ponownego pobrania przy montowaniu
+          queryClient.getQueryCache().build(queryClient, orpc.children.list.queryOptions()).setState({
+            status: "error", error: new Error("boom"), fetchStatus: "idle", data: undefined, dataUpdateCount: 0, dataUpdatedAt: 0,
+            errorUpdateCount: 1, errorUpdatedAt: Date.now(), fetchFailureCount: 1, fetchFailureReason: null, fetchMeta: null,
+            isInvalidated: false,
+          } as never);
+        } else {
+          queryClient.setQueryData(orpc.children.list.queryOptions().queryKey, children as never);
+        }
         render(
           <QueryClientProvider client={queryClient}>
             <MantineProvider theme={parentTheme}>
@@ -501,6 +510,34 @@ describe("NewLessonForm", () => {
         expect(insertButton("c1").disabled).toBe(true);
         // wstawione tematy wlicza się do „brudnego” stanu formularza
         await waitFor(() => expect(registerEditorState).toHaveBeenLastCalledWith({ dirty: true, busy: false }));
+      });
+
+      it("limit 5 uciął tematy dziecka: wstawienie pokazuje komunikat o limicie, a pełne dołączenie go nie ma", async () => {
+        renderInteractive([
+          { id: "c1", displayName: "Ola", interests: ["a1", "a2", "a3", "a4"] },
+          { id: "c2", displayName: "Adam", interests: ["b1", "b2"] },
+          { id: "c3", displayName: "Ewa", interests: ["a1"] },
+        ]);
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toHaveLength(4));
+        expect(screen.queryByText(messages.children.interestsLimit.replace("{max}", "5"))).toBeNull();
+        fireEvent.click(insertButton("c2"));
+        await waitFor(() => expect(pills()).toEqual(["a1", "a2", "a3", "a4", "b1"]));
+        expect(screen.getByText(messages.children.interestsLimit.replace("{max}", "5"))).toBeTruthy();
+      });
+
+      it("notka o usłudze jest powiązana z polem przez aria-describedby", () => {
+        renderInteractive();
+        const input = screen.getByTestId("lesson-themes-input");
+        const note = screen.getByTestId("lesson-themes-note");
+        const describedBy = input.getAttribute("aria-describedby") ?? "";
+        expect(describedBy.split(" ")).toContain(note.parentElement!.id);
+      });
+
+      it("błąd odczytu dzieci nie pokazuje podpowiedzi o braku zainteresowań w profilach", async () => {
+        renderInteractive("error");
+        await waitFor(() => expect(screen.getByTestId("lesson-themes")).toBeTruthy());
+        expect(screen.queryByTestId("lesson-themes-empty")).toBeNull();
       });
 
       it("porównanie bez wielkości liter i po normalizacji: pozostałe tematy dołączają się", async () => {

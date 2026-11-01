@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, TagsInput, Text, TextInput, Textarea, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { messages, mergeChildInterests, normalizeChildInterest, MAX_CHILD_INTERESTS, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
 import { interestsError, parseInterestsInput } from "../children-forms";
+import { InterestsTagsInput, useInterestNotice } from "../InterestsTagsInput";
 import { readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
@@ -258,7 +259,7 @@ export default function NewLessonForm({
   const catalog = catalogQuery.data;
   // wspólna pamięć podręczna z ParentApp; zainteresowania dzieci tylko do przycisków „Wstaw…”
   const childrenQuery = useQuery(orpc.children.list.queryOptions());
-  const [interestNotice, setInterestNotice] = useState<"duplicate" | "limit" | null>(null);
+  const [interestNotice, setInterestNotice] = useInterestNotice();
   const sourceTitle = source?.title;
   const form = useForm<NewLessonValues>({
     mode: "controlled",
@@ -438,16 +439,15 @@ export default function NewLessonForm({
   const showThemes = acceptsInterests(catalog, values.subjectId);
   // ponowienie wysyła to samo polecenie, więc pole tematów blokuje się jak pozostałe pola
   const themesLocked = creating || hasPending;
-  const themesInvalid = lessonInterestsError(values, catalog);
-  const themesMessage = themesInvalid
-    ?? (interestNotice === "duplicate" ? messages.children.interestsDuplicate : null)
-    ?? (interestNotice === "limit" ? messages.children.interestsLimit.replace("{max}", String(MAX_CHILD_INTERESTS)) : null);
   const themesPresent = new Set(values.interests.map((entry) => normalizeChildInterest(entry).toLowerCase()));
   const themesFull = values.interests.length >= MAX_CHILD_INTERESTS;
   const childrenWithInterests = (childrenQuery.data ?? []).filter((child) => child.interests.length > 0);
   const insertThemes = (interests: string[]) => {
-    setInterestNotice(null);
-    form.setFieldValue("interests", mergeChildInterests(form.getValues().interests, interests));
+    const merged = mergeChildInterests(form.getValues().interests, interests);
+    const kept = new Set(merged.map((entry) => entry.toLowerCase()));
+    // limit 5 uciął część tematów dziecka: rodzic ma to zobaczyć, a nie tylko mniej tagów
+    setInterestNotice(interests.some((entry) => !kept.has(normalizeChildInterest(entry).toLowerCase())) ? "limit" : null);
+    form.setFieldValue("interests", merged);
   };
   const generationService = catalog?.generationService;
   const themesService = generationService
@@ -610,24 +610,15 @@ export default function NewLessonForm({
 
             {showThemes && (
               <div data-testid="lesson-themes">
-                <TagsInput
-                  size="md"
+                <InterestsTagsInput
                   label={messages.lessons.themesTitle}
                   data-testid="lesson-themes-input"
                   disabled={themesLocked}
-                  maxTags={MAX_CHILD_INTERESTS}
-                  splitChars={[","]}
-                  error={themesMessage}
                   value={values.interests}
-                  onChange={(next) => {
-                    const parsed = parseInterestsInput(next);
-                    // powtórzenie widoczne dopiero po normalizacji (np. podwójna spacja)
-                    setInterestNotice(next.length > values.interests.length && parsed.length < next.length ? "duplicate" : null);
-                    form.setFieldValue("interests", parsed);
-                  }}
-                  onSearchChange={(text) => { if (text.length > 0) setInterestNotice(null); }}
-                  onDuplicate={() => setInterestNotice("duplicate")}
-                  onMaxTags={(value) => { if (value.trim().length > 0) setInterestNotice("limit"); }}
+                  onChange={(next) => form.setFieldValue("interests", next)}
+                  notice={interestNotice}
+                  onNoticeChange={setInterestNotice}
+                  description={<span data-testid="lesson-themes-note">{themesService}</span>}
                 />
                 {childrenWithInterests.length > 0 ? (
                   <Group gap="xs" mt="xs">
@@ -645,9 +636,8 @@ export default function NewLessonForm({
                     ))}
                   </Group>
                 ) : (
-                  !childrenQuery.isPending && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="lesson-themes-empty">{messages.lessons.themesEmpty}</Text>
+                  childrenQuery.isSuccess && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="lesson-themes-empty">{messages.lessons.themesEmpty}</Text>
                 )}
-                <Text size="sm" mt={6} className="pp-editor-muted" data-testid="lesson-themes-note">{themesService}</Text>
               </div>
             )}
 
