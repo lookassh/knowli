@@ -113,8 +113,9 @@ describe("partycja speców E2E (spec-projects)", () => {
     const gate = readCiJobText("e2e-mocked");
     expect(gate).toMatch(/^\s+needs: \[e2e\]\s*$/m);
     expect(gate).toMatch(/^\s+if: \$\{\{ always\(\) \}\}\s*$/m);
-    expect(gate).toContain("NEEDS_RESULT: ${{ needs.e2e.result }}");
-    expect(gate).toContain('if [ "$NEEDS_RESULT" != "success" ]; then');
+    // Łączny wynik matrixa obejmuje kosze real (każdy z własnym wymaganym
+    // checkiem): bramka mocked nie może od niego zależeć.
+    expect(gate).not.toContain("needs.e2e.result");
     // Ostatnia próba każdego sharda osobno: ponowienie części jobów nie przepuści porażki.
     expect(gate).toMatch(/^\s+permissions:\s*\n\s+actions: read\s*$/m);
     expect(gate).toContain("GH_TOKEN: ${{ github.token }}");

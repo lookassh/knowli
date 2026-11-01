@@ -96,8 +96,13 @@ test("lost 202 response retries the same command and opens its single deck", asy
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
+  // Serwer przyjął pierwsze polecenie, a worker E2E sprawdza kolejkę co 100 ms,
+  // więc zestaw bywa gotowy, zanim test (z trzema zrzutami) ponowi żądanie.
+  // Wtedy edytor otwiera się od razu bez banera „Generuję zestaw…” — test czeka
+  // na odpowiedź ponowionego żądania i sprawdza stan końcowy, nie przejściowy.
+  const retried = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/parent/decks/generate");
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
+  expect((await retried).status()).toBe(202);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
   expect(bodies[0]).toMatchObject({ vocabularyFormat: "picture" });
