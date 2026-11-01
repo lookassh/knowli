@@ -93,9 +93,9 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     return { runId, deckId, draft: deck.draft! };
   }
 
-  /** Ćwiczenie szkicu jako wejście edycji (bez identyfikatora rewizji). */
+  /** Ćwiczenie szkicu jako wejście edycji (bez identyfikatora rewizji i nagrania wyjaśnienia). */
   function editInputs(exercises: LessonDraftDto["exercises"]) {
-    return exercises.map(({ revisionId: _revisionId, ...input }) => LessonExerciseInputSchema.parse(input));
+    return exercises.map(({ revisionId: _revisionId, explanationAudio: _explanationAudio, ...input }) => LessonExerciseInputSchema.parse(input));
   }
 
   function stageCounts(draft: LessonDraftDto, objectiveId: string) {

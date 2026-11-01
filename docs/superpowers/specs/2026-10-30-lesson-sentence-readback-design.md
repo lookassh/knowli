@@ -230,5 +230,6 @@ dziecka, nie nagrania.
 Na tym nagraniu budują: (1) „Powtórz za lektorem”, (2) „Posłuchaj i uzupełnij”,
 (3) wolniejsze odtwarzanie (zrobione w #199, 2026-11-01:
 `docs/superpowers/specs/2026-11-01-sentence-readback-followups-design.md`). Niezależne od niego:
-(4) historyjka na koniec lekcji, (5) wyjaśnienie błędu dla dziecka, (6) zdania o zainteresowaniach
+(4) historyjka na koniec lekcji, (5) wyjaśnienie błędu dla dziecka — zrealizowane 2026-11-01
+w issue #196 (design `2026-11-01-lesson-error-explanation-design.md`), (6) zdania o zainteresowaniach
 dziecka.

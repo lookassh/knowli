@@ -11,6 +11,8 @@ import { clozeWordsOf, filledClozeOf, keywordsAnswerOf, nextRequiredElementId, t
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
 const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_gap"]);
+/** Najdłuższe wyjaśnienie (jak `MAX_TEXT_LENGTH` serwera). */
+const EXPLANATION_MAX_LENGTH = 120;
 const UNITS = ["cm", "m", "km"].map((unit) => ({ value: unit, label: unit }));
 
 /** Treść i odpowiedź karty w podglądzie (bez pól edycji). */
@@ -59,6 +61,10 @@ interface LessonExerciseCardProps {
   voiceTones: LessonDraftDto["voiceTones"];
   /** Nagranie pytania zapisanej wersji; null, gdy brak albo ćwiczenie zmieniono od zapisu. */
   promptAudio: LessonPromptAudioDto | null;
+  /** Szkic przedmiotu z wyjaśnieniem błędu: karta pokazuje pole `explanationPl`. */
+  explanations: boolean;
+  /** Nagranie wyjaśnienia zapisanej wersji; null, gdy brak albo ćwiczenie zmieniono od zapisu. */
+  explanationAudio: LessonPromptAudioDto | null;
   /** Wersja szkicu i zestaw potrzebne do „Nagraj ponownie”. */
   lessonDraftId: string;
   deckId: string;
@@ -85,8 +91,10 @@ function sameCardProps(prev: LessonExerciseCardProps, next: LessonExerciseCardPr
   if (prev.audio?.state !== next.audio?.state || prev.audio?.assetId !== next.audio?.assetId) return false;
   if (prev.promptAudio?.state !== next.promptAudio?.state || prev.promptAudio?.assetId !== next.promptAudio?.assetId
     || prev.promptAudio?.previousAssetId !== next.promptAudio?.previousAssetId) return false;
+  if (prev.explanationAudio?.state !== next.explanationAudio?.state || prev.explanationAudio?.assetId !== next.explanationAudio?.assetId
+    || prev.explanationAudio?.previousAssetId !== next.explanationAudio?.previousAssetId) return false;
   return (Object.keys(next) as (keyof LessonExerciseCardProps)[])
-    .every((key) => key === "audio" || key === "promptAudio" || key === "calculation" || Object.is(prev[key], next[key]));
+    .every((key) => key === "audio" || key === "promptAudio" || key === "explanationAudio" || key === "calculation" || Object.is(prev[key], next[key]));
 }
 
 function LessonExerciseCard({
@@ -101,6 +109,8 @@ function LessonExerciseCard({
   audio,
   voiceTones,
   promptAudio,
+  explanations,
+  explanationAudio,
   lessonDraftId,
   deckId,
   itemRevisionId,
@@ -134,6 +144,18 @@ function LessonExerciseCard({
   const described = errors ? { "aria-describedby": errId } : {};
   const forcedOpen = changed || errors !== undefined;
   const preview = exercisePreview(ex);
+  const explanationText = explanations ? ex.explanationPl?.trim() ?? "" : "";
+  // Nagranie wyjaśnienia z widoczną etykietą — przy podglądzie wyjaśnienia (zwinięta karta)
+  // albo pod jego polem (rozwinięta), nie na górze karty, gdzie wyglądałoby na nagranie pytania.
+  const explanationAudioLabelId = `exercise-explanation-audio-label-${index}`;
+  const explanationAudioBlock = explanationAudio ? (
+    <div className="pp-lesson-explanation-audio" role="group" aria-labelledby={explanationAudioLabelId} data-testid={`exercise-explanation-audio-${index}`}>
+      <Text size="sm" fw={600} id={explanationAudioLabelId}>{messages.lessons.explanationAudioLabel}</Text>
+      <PromptAudioControls audio={explanationAudio} target={{ kind: "prompt", itemRevisionId }} role="explanation_audio" lessonDraftId={lessonDraftId} deckId={deckId}
+        canRegenerate={editable} locked={busy || audioLocked} testId="lesson-explanation-audio" onPlay={onPlay}
+        targetLabel={messages.lessons.explanationAudioTarget.replace("{exercise}", messages.lessons.exerciseNumber.replace("{n}", number))} />
+    </div>
+  ) : null;
   const audioReady = audio?.state === "approved" && audio.assetId !== null;
   const audioText = audio ? messages.decks.audioState[audio.state === "approved" ? "ready" : audio.state] ?? "" : "";
 
@@ -194,6 +216,12 @@ function LessonExerciseCard({
           <div className="pp-lesson-ex-preview">
             <Text size="sm">{preview.text}</Text>
             {preview.answer && <Text size="sm" fw={600} className="pp-lesson-ex-answer">✓ {preview.answer}</Text>}
+            {explanationText && (
+              <Text size="sm" className="pp-editor-muted" data-testid={`exercise-explanation-preview-${index}`}>
+                {messages.lessons.explanationPreview.replace("{text}", () => explanationText)}
+              </Text>
+            )}
+            {explanationAudioBlock}
           </div>
           <Button size="md" variant="subtle" data-testid={`exercise-edit-${index}`} data-edit-toggle aria-expanded="false" onClick={() => toggle("open")}
             aria-label={(editable ? messages.lessons.editExerciseLabel : messages.lessons.showExerciseLabel).replace("{n}", number)}>
@@ -453,6 +481,20 @@ function LessonExerciseCard({
                 <Textarea size="md" autosize minRows={2} label={messages.lessons.commonErrorsLabel} data-testid={`exercise-common-errors-${index}`}
                   value={ex.commonErrors.join("\n")} disabled={disabled}
                   onChange={(e) => onMutate({ commonErrors: e.currentTarget.value.split(/\r?\n/) })} />
+              </Field>
+            )}
+            {explanations && (
+              <Field wide>
+                <Textarea size="md" autosize minRows={2} maxLength={EXPLANATION_MAX_LENGTH} label={messages.lessons.explanationLabel}
+                  description={<>
+                    {messages.lessons.explanationHint}{" "}
+                    <span data-testid={`exercise-explanation-count-${index}`}>
+                      {messages.lessons.explanationCounter.replace("{n}", String((ex.explanationPl ?? "").length))}
+                    </span>
+                  </>}
+                  data-testid={`exercise-explanation-${index}`} value={ex.explanationPl ?? ""} disabled={disabled} {...described}
+                  onChange={(e) => onMutate({ explanationPl: e.currentTarget.value })} />
+                {explanationAudioBlock}
               </Field>
             )}
             {ex.sourceRefs && (
