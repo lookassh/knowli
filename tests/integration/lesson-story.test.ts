@@ -122,6 +122,23 @@ const SHE_PLAYS_GAP: LessonExerciseInput = {
   focus: ["plays"],
 };
 
+/**
+ * Patch jak z edytora rodzica przy zapisie samych ćwiczeń: tytuł, wszystkie
+ * ćwiczenia (pierwsze zmienione) i przykłady — bez pola `story`.
+ */
+function editorExercisePatch(
+  draft: { editNumber: number; title: string; exercises: unknown[]; examples: Record<string, string[]> },
+  extra: LessonExerciseInput[] = [],
+) {
+  const [first, ...rest] = draft.exercises.map((ex) => stripToInput(ex as Record<string, unknown>));
+  return {
+    expectedEditNumber: draft.editNumber,
+    title: draft.title,
+    exercises: [{ ...first!, instructionPl: "Poprawione polecenie rodzica." }, ...rest, ...extra],
+    examples: draft.examples,
+  };
+}
+
 const SCHOOL_MATERIAL = [
   "Zagadnienie 1: Fotosynteza",
   "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
@@ -250,10 +267,12 @@ describe("run historyjki lekcji (integracja)", () => {
   });
 
   it("story run survives exercise edit", async () => {
-    const { services, versionId, storyRunId } = await generatedGrammarLesson();
+    const { services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    const draft = (await readLessonDeck(services, deckId)).draft!;
 
-    const edited = await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Nowy tytuł rodzica" });
+    const edited = await editLessonDraft(services, versionId, editorExercisePatch(draft));
     expect(edited.editNumber).toBe(3);
+    expect(edited.exercises[0]!.instructionPl).toBe("Poprawione polecenie rodzica.");
     expect((await readGeneration(services, storyRunId!)).state).toBe("queued");
 
     await executeLessonGeneration(services, storyRunId!);
@@ -274,6 +293,53 @@ describe("run historyjki lekcji (integracja)", () => {
     // Spóźniony worker nie nadpisze wyboru rodzica.
     await executeLessonGeneration(services, storyRunId!);
     expect((await versionRow(versionId)).lesson_context.story).toEqual(PARENT_STORY);
+  });
+
+  it("story run whose version gets published during the model call ends superseded", async () => {
+    const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    const original = fakes.llm.generateLessonStory.bind(fakes.llm);
+    fakes.llm.generateLessonStory = async (input) => {
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      await publishLessonDraft(services, versionId, draft.editNumber);
+      return original(input);
+    };
+
+    await executeLessonGeneration(services, storyRunId!);
+
+    expect((await readGeneration(services, storyRunId!)).state).toBe("superseded");
+    expect((await versionRow(versionId)).lesson_context.story).toBeUndefined();
+  });
+
+  it("exercise edit during the model call that solves a story sentence fails the run and keeps the previous story", async () => {
+    const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    await executeLessonGeneration(services, storyRunId!);
+    const previous = (await versionRow(versionId)).lesson_context.story;
+    expect(previous).toBeDefined();
+    const payloads = await query<{ payload: unknown }>("select payload from learning_app.item_revisions where deck_version_id = $1", [versionId]);
+    // Przed edycją historyjka z „She plays football.” byłaby poprawna.
+    expect(solvedSentencesOf(payloads.map((row) => toExerciseDraft(row.payload)))).not.toContain("She plays football.");
+
+    const { runId } = await regenerateLessonStory(services, { deckVersionId: versionId, expectedEditNumber: 2, clientRequestId: randomUUID() });
+    fakes.llm.generateLessonStory = async () => {
+      // Rodzic zapisuje ćwiczenia, gdy model jeszcze pisze historyjkę.
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      await editLessonDraft(services, versionId, editorExercisePatch(draft, [SHE_PLAYS_GAP]));
+      return {
+        story: {
+          sentences: ["She plays football.", "Tom rides a green bike.", "The park is big.", "They are happy."],
+          questions: [{ question: "Co robi Tom?", options: ["jeździ na rowerze", "pływa", "śpi"], correctOptionIndex: 0 }],
+        },
+      };
+    };
+
+    await executeLessonGeneration(services, runId);
+
+    const run = await readGeneration(services, runId);
+    expect(run.state).toBe("failed");
+    expect(run.errorCode).toBe("story_invalid");
+    const version = await versionRow(versionId);
+    expect(version.edit_number).toBe(3);
+    expect(version.lesson_context.story).toEqual(previous);
   });
 
   it("story run becomes superseded when version is published", async () => {
@@ -527,30 +593,77 @@ describe("run historyjki lekcji (integracja)", () => {
     expect(await storyRuns(versionId)).toEqual([]);
   });
 
-  it("retry of a running story run requeues without resetting attempts; the stale attempt cannot finalize", async () => {
+  it("retry of a running story run supersedes it and queues a new run; the stale attempt cannot finalize", async () => {
     const { services, versionId, storyRunId } = await generatedGrammarLesson();
     // Worker przejął run i padł: run utknął w `running` z próbą 1.
     expect(await claimQueuedRun(db, storyRunId!)).toBe(1);
     await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Poprawka rodzica" });
+    const [stuck] = await storyRuns(versionId);
 
-    await retryGeneration(services, storyRunId!);
+    const { runId: newRunId } = await retryGeneration(services, storyRunId!);
 
-    const [requeued] = await storyRuns(versionId);
-    expect(requeued).toMatchObject({ state: "queued", attempts: 1, error_code: null, next_attempt_at: null, expected_edit_number: 3 });
+    expect(newRunId).not.toBe(storyRunId);
+    const [old, fresh] = await storyRuns(versionId);
+    expect(old).toMatchObject({ id: storyRunId, state: "superseded" });
+    expect(fresh).toMatchObject({
+      id: newRunId,
+      kind: "lesson",
+      state: "queued",
+      attempts: 0,
+      error_code: null,
+      next_attempt_at: null,
+      expected_edit_number: 3,
+      dedupe_key: `lesson-story:retry:${newRunId}`,
+    });
+    expect(fresh!.input).toEqual(stuck!.input);
+    expect(fresh!.input.purpose).toBe("story");
+    expect((await latestLessonStoryRun(db, versionId))?.id).toBe(newRunId);
+    expect((await versionRow(versionId)).edit_number).toBe(3);
 
-    // Nowy claim podbija próby, więc CAS spóźnionego workera (próba 1) nic nie dopasuje.
-    expect(await claimQueuedRun(db, storyRunId!)).toBe(2);
+    // CAS spóźnionego workera (próba 1) nic nie dopasuje.
     const stale = await pool.query(
       "update learning_app.generation_runs set state = 'succeeded' where id = $1 and state = 'running' and attempts = 1",
       [storyRunId],
     );
     expect(stale.rowCount).toBe(0);
+    // Ponowienie zastąpionego runu to konflikt.
+    await expect(retryGeneration(services, storyRunId!)).rejects.toMatchObject({ code: "conflict" });
 
-    await retryGeneration(services, storyRunId!);
-    await executeLessonGeneration(services, storyRunId!);
-    const [done] = await storyRuns(versionId);
-    expect(done).toMatchObject({ state: "succeeded", attempts: 3 });
+    await executeLessonGeneration(services, newRunId);
+    expect((await readGeneration(services, newRunId)).state).toBe("succeeded");
     expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
+  });
+
+  it("a story run retried while its model call is in flight cannot write its result", async () => {
+    const { fakes, services, versionId, storyRunId } = await generatedGrammarLesson();
+    const original = fakes.llm.generateLessonStory.bind(fakes.llm);
+    let newRunId: string | undefined;
+    fakes.llm.generateLessonStory = async (input) => {
+      // Rodzic ponawia „zawieszony” run, zanim model odpowie.
+      newRunId = (await retryGeneration(services, storyRunId!)).runId;
+      return original(input);
+    };
+
+    await executeLessonGeneration(services, storyRunId!);
+
+    expect((await readGeneration(services, storyRunId!)).state).toBe("superseded");
+    expect((await versionRow(versionId)).lesson_context.story).toBeUndefined();
+    expect((await readGeneration(services, newRunId!)).state).toBe("queued");
+    fakes.llm.generateLessonStory = original;
+    await executeLessonGeneration(services, newRunId!);
+    expect((await readGeneration(services, newRunId!)).state).toBe("succeeded");
+    expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
+  });
+
+  it("retry of a running story run conflicts while another story run is active", async () => {
+    const { services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    expect(await claimQueuedRun(db, storyRunId!)).toBe(1);
+    const otherId = await insertQueuedStoryRun(versionId, deckId, 2);
+
+    await expect(retryGeneration(services, storyRunId!)).rejects.toMatchObject({ code: "conflict" });
+    expect((await readGeneration(services, storyRunId!)).state).toBe("running");
+    expect((await readGeneration(services, otherId)).state).toBe("queued");
+    expect(await storyRuns(versionId)).toHaveLength(2);
   });
 
   it("retry of a deferred queued story run resets the attempt budget", async () => {
@@ -648,18 +761,51 @@ describe("run historyjki lekcji (integracja)", () => {
     });
 
     it("edit without story field keeps story and does not supersede story run", async () => {
-      const { services, versionId, storyRunId } = await generatedGrammarLesson();
+      const { services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
       await executeLessonGeneration(services, storyRunId!);
       const story = (await versionRow(versionId)).lesson_context.story;
       const { runId: activeRunId } = await regenerateLessonStory(services, {
         deckVersionId: versionId, expectedEditNumber: 2, clientRequestId: randomUUID(),
       });
+      const draft = (await readLessonDeck(services, deckId)).draft!;
 
-      const dto = await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Tylko tytuł" });
+      const dto = await editLessonDraft(services, versionId, editorExercisePatch(draft));
 
       expect(dto.story).toEqual(story);
       expect((await versionRow(versionId)).lesson_context.story).toEqual(story);
       expect((await readGeneration(services, activeRunId)).state).toBe("queued");
+    });
+
+    it("story patch supersedes failed story runs so the failure banner disappears", async () => {
+      const { fakes, services, versionId, storyRunId } = await generatedGrammarLesson();
+      fakes.llm.generateLessonStory = async () => {
+        throw new GenerationProviderError("refusal");
+      };
+      await executeLessonGeneration(services, storyRunId!);
+      expect((await readGeneration(services, storyRunId!)).state).toBe("failed");
+
+      // Zapis bez pola `story` nie rusza porażki.
+      await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Tylko tytuł" });
+      expect((await readGeneration(services, storyRunId!)).state).toBe("failed");
+
+      await editLessonDraft(services, versionId, { expectedEditNumber: 3, story: PARENT_STORY });
+
+      expect((await readGeneration(services, storyRunId!)).state).toBe("superseded");
+      expect((await latestLessonStoryRun(db, versionId))?.state).toBe("superseded");
+      // Zastąpionej porażki nie da się już ponowić (nie nadpisze historyjki rodzica).
+      await expect(retryGeneration(services, storyRunId!)).rejects.toMatchObject({ code: "conflict" });
+      expect((await versionRow(versionId)).lesson_context.story).toEqual(PARENT_STORY);
+    });
+
+    it("story null patch supersedes failed story runs but not failed pool runs", async () => {
+      const { services, deckId, lessonRunId, versionId } = await failedFullLesson();
+      const failedStoryId = await insertQueuedStoryRun(versionId, deckId, 1);
+      await pool.query("update learning_app.generation_runs set state = 'failed', error_code = 'provider_refusal' where id = $1", [failedStoryId]);
+
+      await editLessonDraft(services, versionId, { expectedEditNumber: 1, story: null });
+
+      expect((await readGeneration(services, failedStoryId)).state).toBe("superseded");
+      expect((await readGeneration(services, lessonRunId)).state).toBe("failed");
     });
 
     it("edit with story on subject without lessonStory fails validation", async () => {

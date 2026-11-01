@@ -255,6 +255,9 @@ export async function executeLessonStoryGeneration(
   } catch (error) {
     if (error instanceof LessonGenerationCancelledError) {
       if (error.reason === "shutdown") await markCurrentRun(services.db, "queued", null, null);
+      // Publikacja w trakcie wywołania modelu: run kończy się jako `superseded`.
+      // CAS na `running` + próbie nie rusza runu, który zmienił już ktoś inny.
+      else await markCurrentRun(services.db, "superseded", null);
       return;
     }
     const failure = classifyLessonGenerationFailure(error);

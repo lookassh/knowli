@@ -38,7 +38,7 @@ import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule 
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
-import { supersedeLessonRuns } from "../generation-runs";
+import { supersedeFailedLessonStoryRuns, supersedeLessonRuns } from "../generation-runs";
 import { readDeckSource } from "../source-materials";
 import {
   assertEditable,
@@ -783,6 +783,7 @@ export async function editLessonDraft(
       undefined,
       patch.story === undefined ? {} : { includeStoryRuns: true },
     );
+    if (patch.story !== undefined) await supersedeFailedLessonStoryRuns(tx, versionId);
     await reconcileDraftAssetsTx(tx, services, { id: version.id, state: version.state });
     return readLessonDraftDto(tx, services, versionId);
   });

@@ -189,6 +189,23 @@ export async function supersedeLessonRuns(
 }
 
 /**
+ * Patch historyjki rodzica (obiekt albo `null`) zastępuje porażki runów
+ * historyjki wersji: baner „Historyjka nie powstała.” znika, a ponowienie
+ * starej porażki nie nadpisze wyboru rodzica. Kod błędu i `finishedAt`
+ * zostają jako historia. Wywoływane pod blokadą wersji, w transakcji edycji.
+ */
+export async function supersedeFailedLessonStoryRuns(db: Executor, deckVersionId: string): Promise<void> {
+  await db.update(generationRuns)
+    .set({ state: "superseded" })
+    .where(and(
+      eq(generationRuns.kind, "lesson"),
+      eq(generationRuns.deckVersionId, deckVersionId),
+      eq(generationRuns.state, "failed"),
+      lessonStoryRunFilter(),
+    ));
+}
+
+/**
  * Claim CAS runu generacji szkicu (deck/lesson): `queued → running` + inkrement
  * prób. Zwraca liczbę prób po claimie, albo `null`, gdy run nie był `queued`
  * (inny worker już go zabrał). Współdzielone przez ścieżkę słówek i lekcji —
