@@ -434,6 +434,13 @@ const lessonDraftsRegenerateCardAudio = parentOs.lessonDrafts.regenerateCardAudi
   .use(sameOriginMiddleware)
   .handler(async ({ context, input }) => regenerateLessonCardAudio(context.services, input));
 
+// TYMCZASOWO (Task 5 podmieni na przypadek użycia): kontrakt już zna procedurę.
+const lessonDraftsRegenerateStory = parentOs.lessonDrafts.regenerateStory
+  .use(sameOriginMiddleware)
+  .handler(async () => {
+    throw new AppError("internal", { message: "not implemented" });
+  });
+
 const generationGet = parentOs.generation.get.handler(async ({ context, input }) =>
   readGeneration(context.services, input.runId),
 );
@@ -612,6 +619,7 @@ export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
     regenerate: lessonDraftsRegenerate,
     regeneratePromptAudio: lessonDraftsRegeneratePromptAudio,
     regenerateCardAudio: lessonDraftsRegenerateCardAudio,
+    regenerateStory: lessonDraftsRegenerateStory,
   },
   generation: {
     get: generationGet,
