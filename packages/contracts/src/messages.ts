@@ -926,7 +926,7 @@ export const messages = {
     listenChoiceNote: "Lektor przeczyta zdanie. Dziecko dostanie to zadanie, gdy nagranie będzie gotowe.",
     listenChoiceAudioFailed: "Nagranie się nie udało. Utwórz nową wersję lekcji, aby spróbować ponownie.",
     listenChoiceCreateNote: "Do puli dochodzą do 2 ćwiczeń „Posłuchaj i wybierz” na regułę.",
-    listenChoiceMissingAudioCount: "Ćwiczenia słuchowe bez nagrania: {count}",
+    listenChoiceMissingAudioCount: "Ćwiczenia słuchowe bez nagrania: {n}",
     promptAudioListen: "Posłuchaj",
     promptAudioRegenerate: "Nagraj ponownie",
     promptAudioPending: "Nagrywanie…",

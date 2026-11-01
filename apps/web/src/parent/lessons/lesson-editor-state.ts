@@ -302,7 +302,9 @@ const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice
 
 function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput {
   const type = exercise.exerciseType;
-  const trimmedInstruction = exercise.instructionPl.trim();
+  // „Posłuchaj i wybierz”: polecenie dla dziecka jest stałe (Kid UI), a podpowiedź i piktogram
+  // tego typu nie dotyczą — nawet wpisane w stan edytora nie trafiają do payloadu.
+  const trimmedInstruction = type === "lesson_listen_choice" ? "" : exercise.instructionPl.trim();
   const input: LessonExerciseInput = {
     ...(exercise.id ? { id: exercise.id } : {}),
     exerciseType: type,
@@ -412,6 +414,15 @@ function exerciseToInput(exercise: EditableLessonExercise): LessonExerciseInput 
     input.focus = [];
   }
   return input;
+}
+
+/**
+ * Ile ćwiczeń „Posłuchaj i wybierz” nie ma gotowego nagrania zdania (w tworzeniu, błąd
+ * albo brak wpisu): takie ćwiczenie nie trafia do dziecka, dopóki nagranie nie jest gotowe.
+ * Pole `sentenceAudio` ustawia serwer tylko dla tego typu i tylko do odczytu.
+ */
+export function missingListenAudioCount(exercises: readonly Pick<LessonDraftDto["exercises"][number], "exerciseType" | "sentenceAudio">[]): number {
+  return exercises.filter((exercise) => exercise.exerciseType === "lesson_listen_choice" && exercise.sentenceAudio?.state !== "ready").length;
 }
 
 /**
