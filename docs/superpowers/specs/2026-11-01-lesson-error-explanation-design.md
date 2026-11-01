@@ -221,9 +221,9 @@ kryteriów, kategorii błędu ani komentarza modelu.
 
 ### 5.1 Rola i uzgadnianie
 
-- Nowa rola zasobu rewizji **`explanation_audio`**: migracja o następnym wolnym numerze (dziś
-  `0032_explanation_audio_role.sql`; lokalna gałąź #197 też planuje `0032` — kto scala drugi,
-  przenumerowuje) rozszerza `revision_assets_role_allowed` (wzorem `0029`) z ręcznym wpisem w
+- Nowa rola zasobu rewizji **`explanation_audio`**: migracja
+  `0033_explanation_audio_role.sql` (pierwotnie `0032`; przenumerowana na `0033` przy scaleniu
+  z `main`, gdzie `0032` zajęła migracja #197 `0032_child_interests`) rozszerza `revision_assets_role_allowed` (wzorem `0029`) z ręcznym wpisem w
   `drizzle/meta/_journal.json`; schemat Drizzle, typ `AssetRole` i `docs/schema.sql` (który przy
   okazji uzupełnia brakujące `prompt_audio` i `feedback_audio`).
 - `LessonTtsFlags` dostaje `exerciseExplanations`; `requiredAssetsForLessonExercise` przy fladze
@@ -288,7 +288,9 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
   `SoundRing` i `data-sound-active` w trakcie gry (`explanationPlaying` z tymi samymi
   strażnikami przebiegu, generacji, epoki i `attemptId`), ponowne dotknięcie zaczyna od nowa,
   blokada przy `busy`, offline i nagrywaniu, a nieudany ręczny odsłuch pokazuje ten sam
-  komunikat `aria-live` nad górnym wierszem i porusza ikoną przycisku wyjaśnienia (`failKey`).
+  komunikat `aria-live` (region doku z #216: w DOM za górnym wierszem, przed wierszem
+  wyjaśnienia, położenie wizualne ustala CSS `order`) i porusza ikoną przycisku wyjaśnienia
+  (`failKey`).
   Udany start dowolnego nagrania doku gasi nieaktualny komunikat błędu.
 - **Przycisk komunikatu:** `GuidanceButton` przechodzi na obrysowany „?” (`icon="question"`),
   gdy dok pokazuje **którykolwiek** odsłuch (zdania albo wyjaśnienia), by nie stały obok siebie
@@ -340,7 +342,7 @@ dla rodzica.
   - worker faktycznie tworzy `explanation_audio` dla `english_grammar` (nie zastępuje go);
   - publikacja → nowy szkic z opublikowanej → edycja wyjaśnienia → ta sama `skill_version`, nowe nagranie;
   - akceptacja wariantu w nadzorze zachowuje wyjaśnienie;
-  - ponowne nagranie przez rodzica; migracja `0032` przyjmuje rolę; szkoła bez wyjaśnień.
+  - ponowne nagranie przez rodzica; migracja `0033` przyjmuje rolę; szkoła bez wyjaśnień.
 - **E2E (Playwright):**
   - `mocked`, rozszerzenie `lesson-sentence-audio.spec.ts` (albo nowy spec obok): wyjaśnienie po
     błędnym wyborze i po „Nie pamiętam”; „Posłuchaj wyjaśnienia” gra tylko po kliknięciu

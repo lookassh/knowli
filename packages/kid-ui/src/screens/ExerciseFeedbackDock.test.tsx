@@ -278,3 +278,22 @@ it("keeps the error region with an explanation recording even without the senten
   rerender(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s." }} />);
   expect(screen.queryByTestId("kid-sentence-audio-error")).toBeNull();
 });
+
+it("reads the result, then the replay error, then the explanation row (DOM order)", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span data-testid="dock-primary">Dalej</span>}
+      sentenceAudio={{ ...idleSentence, onPlay: vi.fn() }}
+      explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn(), error: { seq: 2 } }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  const dock = screen.getByTestId("kid-feedback-dock");
+  const topRow = screen.getByTestId("kid-feedback-tone-icon").parentElement!;
+  const error = screen.getByTestId("kid-sentence-audio-error");
+  const row = screen.getByTestId("kid-explanation");
+  // Wynik → błąd odsłuchu (wizualnie przesuwa go CSS `order`) → wyjaśnienie → akcje.
+  expect(error.parentElement).toBe(dock);
+  expect(topRow.compareDocumentPosition(error) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(error.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(row.compareDocumentPosition(screen.getByTestId("dock-primary")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
