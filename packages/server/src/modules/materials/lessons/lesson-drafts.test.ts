@@ -345,6 +345,31 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
     expect(build({ ...schoolSubject, sourceQuotes: false }).groundingRequired).toBe(false);
   });
 
+  it("listenChoicePerObjective = 2 dla przedmiotu z nagraniami zdań i celu z typem; poza tym pole pominięte", () => {
+    const grammarTopic = englishGrammarSubject.topics.find((t) => t.id === "present_simple")!;
+    const withType = grammarTopic.objectives.find((o) => o.exerciseTypes.includes("lesson_listen_choice"))!;
+    const withoutType = grammarTopic.objectives.find((o) => !o.exerciseTypes.includes("lesson_listen_choice"));
+    const input = buildPoolInput(englishGrammarSubject, grammarTopic, withType.id, 9, "material", undefined, true, []);
+    expect(input.listenChoicePerObjective).toBe(2);
+    // Dodatek leży poza podziałem etapów i licznością partii.
+    expect(input.countPerObjective).toBe(9);
+    expect(input.stageCounts).toEqual(poolStageCounts(englishGrammarSubject, withType.exerciseTypes, 9));
+    if (withoutType) {
+      expect(buildPoolInput(englishGrammarSubject, grammarTopic, withoutType.id, 9, "material", undefined, true, [])).not.toHaveProperty("listenChoicePerObjective");
+    }
+    // Cel bez typu na liście (lista zawężona) nie dostaje pola.
+    const narrowed: LessonTopic = {
+      ...grammarTopic,
+      objectives: grammarTopic.objectives.map((o) => ({ ...o, exerciseTypes: o.exerciseTypes.filter((type) => type !== "lesson_listen_choice") })),
+    };
+    expect(buildPoolInput(englishGrammarSubject, narrowed, withType.id, 9, "material", undefined, true, [])).not.toHaveProperty("listenChoicePerObjective");
+    // Przedmiot bez nagrań zdań feedbacku (szkoła) nie dostaje pola.
+    expect(build(schoolSubject)).not.toHaveProperty("listenChoicePerObjective");
+    // Przedmiot bez typu na liście, choć z nagraniami zdań, też nie.
+    const noTypeSubject: SubjectModule = { ...englishGrammarSubject, exerciseTypes: englishGrammarSubject.exerciseTypes.filter((type) => type !== "lesson_listen_choice") };
+    expect(buildPoolInput(noTypeSubject, grammarTopic, withType.id, 9, "material", undefined, true, [])).not.toHaveProperty("listenChoicePerObjective");
+  });
+
   it("przenosi reguły typów z profilu przedmiotu do profilu promptu, a brak reguł pomija pola", () => {
     const withRules = build(schoolSubject).promptProfile;
     expect(withRules.typeRules).toEqual(schoolSubject.prompts.typeRules);

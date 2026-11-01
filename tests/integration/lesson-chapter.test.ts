@@ -130,7 +130,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       expect(revision.payload_version).toBe(2);
       expect(revision.payload).not.toHaveProperty("sourceRefs");
       expect(revision.payload).not.toHaveProperty("hint");
-      expect(["lesson_choice", "lesson_gap", "lesson_open_answer"]).toContain(revision.payload.exerciseType);
+      expect(["lesson_choice", "lesson_listen_choice", "lesson_gap", "lesson_open_answer"]).toContain(revision.payload.exerciseType);
     }
     // Klucz ekspozycji luki to rozwiązane zdanie, a nie samo słowo.
     const gap = draft.exercises.find((exercise) => exercise.exerciseType === "lesson_gap")!;

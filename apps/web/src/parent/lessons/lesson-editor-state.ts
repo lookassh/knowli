@@ -289,14 +289,14 @@ export function createLessonSnapshot(
  * tylko dla jego typów — pusty string nie wycieka do payloadu i nie wywraca
  * `.strict()` kontraktu `LessonExerciseInputSchema`.
  */
-const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer", "lesson_gap"]);
+const STEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_gap"]);
 // `lesson_transform` niesie zdanie do przekształcenia w `statement` (kanoniczne
 // pole: kontrakt `kid.ts` lesson_transform ma `statement`, materialize czyta
 // `payload.statement`). Serializacja musi wysyłać `statement`, nie `prompt`,
 // inaczej PATCH gubi zdanie i materializacja daje pusty `statement`.
 const STATEMENT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_error_fix", "lesson_transform"]);
 const PROMPT_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_open_answer", "lesson_short_answer", "lesson_calculation"]);
-const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_short_answer"]);
+const OPTION_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_choice", "lesson_listen_choice", "lesson_short_answer"]);
 const ITEM_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_order"]);
 const NOTICE_TYPES: ReadonlySet<LessonExerciseTypeDto> = new Set(["lesson_notice"]);
 

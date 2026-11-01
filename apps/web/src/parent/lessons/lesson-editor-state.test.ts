@@ -285,6 +285,28 @@ it("zachowuje pola v3 ćwiczeń szkolnych w obie strony", () => {
     expect(patch.exercises![1]).not.toHaveProperty("visualSubject");
   });
 
+  it("wybór ze słuchu: zdanie z luką, opcje i poprawna opcja przechodzą do patcha, bez polecenia i piktogramu", () => {
+    const base = draft();
+    const listen: LessonDraftDto["exercises"][number] = {
+      id: "00000000-0000-4000-8000-000000000033",
+      revisionId: "00000000-0000-4000-8000-000000000043",
+      exerciseType: "lesson_listen_choice",
+      objectiveId: "english_grammar.present_simple.third_person_s",
+      stem: "He ___ football.",
+      answer: "plays",
+      acceptedAnswers: [],
+      focus: ["plays"],
+      options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
+      correctOption: "a",
+    };
+    const snapshot = createLessonSnapshot({ ...base, exercises: [listen] }, () => "unused");
+    const sent = toLessonDraftPatch(snapshot).exercises![0]!;
+    expect(sent).toMatchObject({ exerciseType: "lesson_listen_choice", stem: "He ___ football.", correctOption: "a" });
+    expect(sent.options).toEqual([{ id: "a", text: "plays" }, { id: "b", text: "play" }]);
+    expect(sent).not.toHaveProperty("instructionPl");
+    expect(sent).not.toHaveProperty("visualSubject");
+  });
+
   it("splits acceptedAnswers into lines and focus into words, dropping empty entries", () => {
     const snapshot = createLessonSnapshot(draft(), () => "unused");
     snapshot.form.exercises[1]!.acceptedText = " watch \n \n watchez ";

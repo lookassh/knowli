@@ -29,7 +29,7 @@ import {
   defaultPoolSize,
   type StageMix,
 } from "../../../domain/lessons/lesson-policy";
-import { materialCreationMode } from "../../../domain/lessons/material-creation";
+import { materialCreationMode, stripListenChoiceExtras } from "../../../domain/lessons/material-creation";
 import { answersEquivalent, keywordsAnswer, MAX_TEXT_LENGTH, validatePool, withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
 import {
   lessonExerciseIdentity,
@@ -483,6 +483,9 @@ function batchesForObjectives(
   return objectiveIds.map((objectiveId, index) => ({ objectiveId, count: counts[index]!, existingAnswers: [], existingExercises: [] }));
 }
 
+/** Ile ćwiczeń `lesson_listen_choice` na cel generator może dodać ponad podział etapów (decyzja #198). */
+const LISTEN_CHOICE_PER_OBJECTIVE = 2;
+
 /** Składa `LessonPoolInput` dla jednego celu z danych rejestru (port nie zna przedmiotu). */
 export function buildPoolInput(
   subject: SubjectModule,
@@ -522,6 +525,11 @@ export function buildPoolInput(
     ...(instruction === undefined ? {} : { instruction }),
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
+    // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą partii: tylko przedmiot z nagraniami zdań
+    // i cel, którego lista zawiera typ (partia zwykle ma jeden cel).
+    ...(subject.ttsForFeedbackSentence && subject.exerciseTypes.includes("lesson_listen_choice") && objective.exerciseTypes.includes("lesson_listen_choice")
+      ? { listenChoicePerObjective: LISTEN_CHOICE_PER_OBJECTIVE }
+      : {}),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
@@ -1380,6 +1388,8 @@ export async function executeLessonGeneration(services: Services, runId: string,
       .map(toExerciseDraft)
       .map((draft) => withoutVoiceToneUnlessAllowed(draft, subject))
       .map(withoutEmptyOptionalArrays)
+      // Ćwiczenie słuchowe nie ma polecenia, podpowiedzi ani piktogramu: dodatek modelu usuwamy, nie odrzucamy ćwiczenia.
+      .map(stripListenChoiceExtras)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {
         const sanitized = withoutRedundantAcceptedVariants(draft, subject.normalizer);
