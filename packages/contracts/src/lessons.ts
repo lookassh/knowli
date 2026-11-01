@@ -390,6 +390,8 @@ export const LessonExerciseInputSchema = z.object({
   extraWords: z.array(z.string().min(1).max(MAX_CLOZE_WORD_LENGTH)).min(MIN_CLOZE_EXTRA).max(MAX_CLOZE_EXTRA).optional(),
   /** Ton lektora nagrania pytania; brak = styl domyślny roli (spec TTS §4.1). */
   voiceTone: LessonVoiceToneSchema.optional(),
+  /** Jedno zdanie po polsku pokazywane po błędzie w treningu (przedmioty z flagą `exerciseExplanations`). */
+  explanationPl: text.optional(),
 }).strict();
 export type LessonExerciseInput = z.infer<typeof LessonExerciseInputSchema>;
 

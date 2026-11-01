@@ -20,6 +20,7 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(englishGrammarSubject.promptLocale).toBe("pl-PL");
     expect(englishGrammarSubject.ttsForAnswers).toBe(false);
     expect(englishGrammarSubject.ttsForFeedbackSentence).toBe(true);
+    expect(englishGrammarSubject.exerciseExplanations).toBe(true);
   });
 
   it("obsługuje wszystkie 9 typów ćwiczeń", () => {

@@ -42,4 +42,5 @@ export const englishGrammarSubject: SubjectModule = {
   ttsForAnswers: false,
   ttsForPrompts: false,
   ttsForFeedbackSentence: true,
+  exerciseExplanations: true,
 };
