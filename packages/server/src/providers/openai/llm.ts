@@ -484,6 +484,10 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
     "Return strict JSON only."
   );
 }
+function isPlainObject(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** Schema historyjki lekcji (strict): zdania w języku odpowiedzi i pytania z indeksem poprawnej opcji. */
 function lessonStoryJsonSchema(): Record<string, unknown> {
   return {
@@ -553,6 +557,70 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
   const model = options.model ?? DEFAULT_MODEL;
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const lessonRequestTimeoutMs = options.lessonRequestTimeoutMs ?? 90_000;
+  /**
+   * Wspólna koperta żądania lekcyjnego (strict json_schema): timeout, fetch,
+   * mapowanie błędów HTTP/odmowy/długości, parsowanie treści. Zwraca sparsowany
+   * JSON; `accept` sprawdza kształt (niezgodny = błąd `output`).
+   */
+  async function postLessonJson(args: {
+    schemaName: string;
+    schema: Record<string, unknown>;
+    system: string;
+    user: string;
+    signal?: AbortSignal;
+    accept: (parsed: unknown) => boolean;
+  }): Promise<unknown> {
+    try {
+      const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
+      const requestSignal = args.signal ? AbortSignal.any([args.signal, timeoutSignal]) : timeoutSignal;
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${options.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
+          model,
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: args.schemaName, strict: true, schema: args.schema },
+          },
+          messages: [
+            { role: "system", content: args.system },
+            { role: "user", content: args.user },
+          ],
+        })),
+        signal: requestSignal,
+      });
+      if (!response.ok) throw await lessonHttpError(response);
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new GenerationProviderError("output", { status: response.status });
+      }
+      const choices = (payload as { choices?: unknown } | null)?.choices;
+      if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
+        throw new GenerationProviderError("output", { status: response.status });
+      }
+      const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
+      if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
+      if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
+      if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
+      const content = choice?.message?.content;
+      if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        throw new GenerationProviderError("output", { status: response.status });
+      }
+      if (!args.accept(parsed)) throw new GenerationProviderError("output", { status: response.status });
+      return parsed;
+    } catch (error) {
+      throw asLessonTransportError(error);
+    }
+  }
   return {
     name: "openai",
     model,
@@ -593,58 +661,15 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         material: input.material,
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
       });
-      try {
-        const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
-        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-        const response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${options.apiKey}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
-            model,
-            response_format: {
-              type: "json_schema",
-              json_schema: { name: "lesson_objectives", strict: true, schema },
-            },
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-          })),
-          signal: requestSignal,
-        });
-        if (!response.ok) throw await lessonHttpError(response);
-        let payload: unknown;
-        try {
-          payload = await response.json();
-        } catch {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        const choices = (payload as { choices?: unknown } | null)?.choices;
-        if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
-        if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
-        if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
-        if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
-        const content = choice?.message?.content;
-        if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray((parsed as { objectives?: unknown }).objectives)) {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        return { objectives: (parsed as { objectives: unknown[] }).objectives };
-      } catch (error) {
-        throw asLessonTransportError(error);
-      }
+      const parsed = await postLessonJson({
+        schemaName: "lesson_objectives",
+        schema,
+        system,
+        user,
+        ...(signal === undefined ? {} : { signal }),
+        accept: (value) => isPlainObject(value) && Array.isArray((value as { objectives?: unknown }).objectives),
+      });
+      return { objectives: (parsed as { objectives: unknown[] }).objectives };
     },
     async generateLessonStory(input: LessonStoryInput, signal?: AbortSignal) {
       const schema = lessonStoryJsonSchema();
@@ -653,58 +678,15 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
         material: input.material,
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
       });
-      try {
-        const timeoutSignal = AbortSignal.timeout(lessonRequestTimeoutMs);
-        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-        const response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${options.apiKey}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(withChatRequestExtras(options.requestExtras, {
-            model,
-            response_format: {
-              type: "json_schema",
-              json_schema: { name: "lesson_story", strict: true, schema },
-            },
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-          })),
-          signal: requestSignal,
-        });
-        if (!response.ok) throw await lessonHttpError(response);
-        let payload: unknown;
-        try {
-          payload = await response.json();
-        } catch {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        const choices = (payload as { choices?: unknown } | null)?.choices;
-        if (!Array.isArray(choices) || choices.length === 0 || choices[0] === null || typeof choices[0] !== "object") {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        const choice = choices[0] as { finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } };
-        if (choice?.message?.refusal) throw new GenerationProviderError("refusal", { status: response.status });
-        if (choice?.finish_reason === "content_filter") throw new GenerationProviderError("refusal", { status: response.status });
-        if (choice?.finish_reason === "length") throw new GenerationProviderError("incomplete", { status: response.status });
-        const content = choice?.message?.content;
-        if (typeof content !== "string" || content.trim() === "") throw new GenerationProviderError("output", { status: response.status });
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new GenerationProviderError("output", { status: response.status });
-        }
-        return { story: parsed };
-      } catch (error) {
-        throw asLessonTransportError(error);
-      }
+      const story = await postLessonJson({
+        schemaName: "lesson_story",
+        schema,
+        system,
+        user,
+        ...(signal === undefined ? {} : { signal }),
+        accept: isPlainObject,
+      });
+      return { story };
     },
     async generateLessonPool(input: LessonPoolInput, signal?: AbortSignal) {
       // Local schema/prompt errors are programming/input errors, not network
