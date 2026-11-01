@@ -207,7 +207,7 @@ zmienią.”
   nieaktywny, gdy wszystkie tematy tego dziecka już są w polu. Brak dzieci z zainteresowaniami
   → krótka podpowiedź „Zainteresowania dodasz w profilu dziecka.”
 - Notka: „Tematy zdań trafią do usługi: {service}. Z profilu wysyłamy tylko tematy — bez
-  imienia i roku urodzenia. Zdania z tymi tematami widzi też usługa oceniająca odpowiedzi.”
+  imienia i roku urodzenia. Zdania z tymi tematami może też zobaczyć usługa oceniająca odpowiedzi.”
   (bez `{service}` — wariant bez nazwy).
 - Polecenie zawiera `interests` tylko przy niepustej liście i przedmiocie z flagą; zmiana
   przedmiotu ukrywa sekcję i nie wysyła listy. Gdy formularz ma polecenie oczekujące na
