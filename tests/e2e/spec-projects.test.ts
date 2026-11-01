@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readCiJobBuckets } from "../ci-matrix";
+import { readCiJobBuckets, readCiJobName, readCiJobShards } from "../ci-matrix";
 import { MOCKED_SPECS, REAL_BUCKETS, REAL_SPECS } from "./spec-projects";
 
 const E2E_DIR = join(process.cwd(), "tests/e2e");
@@ -83,6 +83,16 @@ describe("partycja speców E2E (spec-projects)", () => {
     // Zakres tylko joba e2e: klucz `bucket` występuje też w jobie integration.
     const buckets = readCiJobBuckets("e2e");
     expect(buckets).toEqual(REAL_BUCKETS.map((_, i) => i + 1));
+  });
+
+  it("matrix CI dzieli projekt mocked na komplet shardów pod bramką wymaganego checka", () => {
+    // Shardy 1/N … N/N bez luk: brakujący shard pominąłby część testów mocked.
+    const shards = readCiJobShards("e2e");
+    expect(shards.length).toBeGreaterThan(0);
+    expect(shards).toEqual(shards.map((_, i) => `${i + 1}/${shards.length}`));
+    // Reguły brancha main wymagają checka `e2e (mocked)`; po podziale na shardy
+    // raportuje go job bramki.
+    expect(readCiJobName("e2e-mocked")).toBe("e2e (mocked)");
   });
 
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {
