@@ -560,6 +560,18 @@ export class BrowserRecorder implements SpeechRecorder {
   }
 }
 
+/** Właściwości wysokości głosu; starsze silniki mają tylko prefiks, więc wszystkie opcjonalne. */
+type PitchAudio = { preservesPitch?: boolean; webkitPreservesPitch?: boolean; mozPreservesPitch?: boolean };
+
+/** Zachowana wysokość głosu przy zmianie tempa: standardowa właściwość, a gdy
+ * jej brak — prefiks WebKit albo Gecko (spec 2026-11-01-sentence-readback-followups §5). */
+function setPreservesPitch(audio: PitchAudio): void {
+  if ("preservesPitch" in audio) audio.preservesPitch = true;
+  else if ("webkitPreservesPitch" in audio) audio.webkitPreservesPitch = true;
+  else if ("mozPreservesPitch" in audio) audio.mozPreservesPitch = true;
+  else audio.preservesPitch = true;
+}
+
 /**
  * Odtwarzacz na elemencie Audio: plik wzorca pobierany fetchem sięga w
  * immutable cache media, więc ponowny odsłuch nie wywołuje TTS (SPEC A19).
@@ -600,8 +612,7 @@ export class BrowserAudioPlayer implements AudioPlayer {
       const rate = options?.rate ?? 1;
       audio.defaultPlaybackRate = rate;
       audio.playbackRate = rate;
-      if ("preservesPitch" in audio || !("webkitPreservesPitch" in audio)) audio.preservesPitch = true;
-      else (audio as HTMLAudioElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = true;
+      setPreservesPitch(audio);
       this.#audio = { element: audio, objectUrl };
       await new Promise<void>((resolve, reject) => {
         let settled = false;
@@ -613,9 +624,13 @@ export class BrowserAudioPlayer implements AudioPlayer {
           else resolve();
         };
         this.#settle = () => finish();
+        // `playing` przychodzi ponownie po każdym wznowieniu z buforowania —
+        // jeden przebieg zgłasza start odsłuchu tylko raz.
+        let reported = false;
         audio.onplaying = () => {
           // Spóźnione zdarzenie po stop()/nowym play() nie może zgłosić odsłuchu.
-          if (generation !== this.#generation) return;
+          if (generation !== this.#generation || reported) return;
+          reported = true;
           const duration = Number.isFinite(audio.duration) && audio.duration > 0
             ? Math.round((audio.duration * 1000) / (audio.playbackRate || 1))
             : null;

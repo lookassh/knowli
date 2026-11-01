@@ -735,6 +735,9 @@ function confirmationEligibleFor(outcome: SkillOutcome, qualified: boolean): boo
   return outcome === "unevaluated" ? false : qualified;
 }
 
+/** Stan zadania lekcji po próbie (wynik `nextLessonTaskState`). */
+export type LessonTaskStateAfterAttempt = "issued" | "answered" | "skipped";
+
 /**
  * Przejście stanu zadania lekcji po ocenie (ruling 113): jedna oceniona
  * odpowiedź (poprawna albo błędna) kończy zadanie (`answered`); `skip` →
@@ -742,7 +745,7 @@ function confirmationEligibleFor(outcome: SkillOutcome, qualified: boolean): boo
  * W KARTKÓWCE jedna odpowiedź na slot jest zawsze terminalna: `skip` → `skipped`,
  * każda inna (w tym `unevaluated` bez kary) → `answered` (nigdy retry).
  */
-function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome, mockTest = false): "issued" | "answered" | "skipped" {
+function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome, mockTest = false): LessonTaskStateAfterAttempt {
   if (modality === "skip") return "skipped";
   if (mockTest) return "answered";
   if (outcome === "unevaluated") return "issued";
@@ -993,7 +996,7 @@ export function revealsAnswer(feedback: FeedbackDto): boolean {
 export function withFeedbackSentenceAudio(
   feedback: FeedbackDto | null,
   key: LessonTaskAnswerKey,
-  taskState: "issued" | "answered" | "skipped",
+  taskState: LessonTaskStateAfterAttempt,
 ): FeedbackDto | null {
   if (taskState === "issued") return feedback;
   if (feedback === null || key.feedbackAudioAssetId === undefined) return feedback;

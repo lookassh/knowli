@@ -847,11 +847,12 @@ describe("BrowserAudioPlayer — tempo odtwarzania", () => {
     defaultPlaybackRate: number;
     preservesPitch?: boolean;
     webkitPreservesPitch?: boolean;
+    mozPreservesPitch?: boolean;
   }
 
   /** Instaluje fałszywy Audio; `configure` dostosowuje klasę (np. ignorowanie zapisu tempa). */
-  function installAudio(options: { acceptRate?: boolean; standardPitch?: boolean; autoPlay?: boolean } = {}) {
-    const { acceptRate = true, standardPitch = true, autoPlay = true } = options;
+  function installAudio(options: { acceptRate?: boolean; pitch?: "standard" | "webkit" | "moz"; autoPlay?: boolean } = {}) {
+    const { acceptRate = true, pitch = "standard", autoPlay = true } = options;
     const holder: { audio: TempoAudio | null } = { audio: null };
     class FakeAudio {
       onplaying: (() => void) | null = null;
@@ -862,8 +863,9 @@ describe("BrowserAudioPlayer — tempo odtwarzania", () => {
       defaultPlaybackRate = 1;
       constructor(_url: string) {
         holder.audio = this as unknown as TempoAudio;
-        if (standardPitch) (this as unknown as TempoAudio).preservesPitch = false;
-        else (this as unknown as TempoAudio).webkitPreservesPitch = false;
+        if (pitch === "standard") (this as unknown as TempoAudio).preservesPitch = false;
+        else if (pitch === "webkit") (this as unknown as TempoAudio).webkitPreservesPitch = false;
+        else (this as unknown as TempoAudio).mozPreservesPitch = false;
       }
       get playbackRate() { return this.#rate; }
       set playbackRate(value: number) { if (acceptRate) this.#rate = value; }
@@ -916,10 +918,33 @@ describe("BrowserAudioPlayer — tempo odtwarzania", () => {
   });
 
   it("prefiks webkitPreservesPitch, gdy brak preservesPitch", async () => {
-    const holder = installAudio({ standardPitch: false });
+    const holder = installAudio({ pitch: "webkit" });
     await new BrowserAudioPlayer().play("/media", undefined, { rate: 0.75 });
     expect(holder.audio!.webkitPreservesPitch).toBe(true);
     expect("preservesPitch" in holder.audio!).toBe(false);
+  });
+
+  it("prefiks mozPreservesPitch, gdy brak preservesPitch i webkitPreservesPitch", async () => {
+    const holder = installAudio({ pitch: "moz" });
+    await new BrowserAudioPlayer().play("/media", undefined, { rate: 0.75 });
+    expect(holder.audio!.mozPreservesPitch).toBe(true);
+    expect("preservesPitch" in holder.audio!).toBe(false);
+    expect("webkitPreservesPitch" in holder.audio!).toBe(false);
+  });
+
+  it("ponowne playing po buforowaniu nie zgłasza drugiego startu", async () => {
+    const holder = installAudio({ autoPlay: false });
+    const started = vi.fn();
+    const player = new BrowserAudioPlayer();
+    const pending = player.play("/media", started, { rate: 0.75 });
+    await vi.waitFor(() => expect(holder.audio?.onplaying).toBeTypeOf("function"));
+    const audio = holder.audio!;
+    audio.onplaying?.();
+    audio.onplaying?.();
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(started).toHaveBeenCalledWith(4_000);
+    audio.onended?.();
+    await pending;
   });
 
   it("playing po stop() nie woła onStarted", async () => {

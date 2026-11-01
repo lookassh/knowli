@@ -373,8 +373,9 @@ export class LearningSessionController {
     // Wskaźnik odczytu zdania gaśnie synchronicznie przy każdym innym
     // odtwarzaniu, „Dalej”, nowym zadaniu, pauzie i offline — bez czekania na
     // rozstrzygnięcie play(). Błąd ręcznego odsłuchu zostaje (design §4.1 pkt 3, 5).
+    // Po teardown widok już odszedł — bez emisji stanu do słuchaczy.
     const feedback = this.#learning()?.feedback;
-    if (feedback && (feedback.sentencePlaying ?? null) !== null) {
+    if (!this.#disposed && feedback && (feedback.sentencePlaying ?? null) !== null) {
       this.#setLearning({ feedback: { ...feedback, sentencePlaying: null } });
     }
   }

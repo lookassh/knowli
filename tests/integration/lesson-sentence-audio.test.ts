@@ -460,6 +460,10 @@ describe("stara lekcja po wdrożeniu odczytu zdania", () => {
       const result = await runDueGenerationWork(current, { lesson: 0, deck: 0, tts: 50, images: 0 });
       if (result.processed === 0) break;
     }
+    // Worker opróżnił kolejkę: bez tego brak nagrania w feedbacku wyglądałby jak błąd sesji.
+    const synthesized = await feedbackRows(copy.id);
+    expect(synthesized.length).toBeGreaterThan(0);
+    expect(synthesized.filter((row) => row.state !== "ready")).toEqual([]);
 
     const child = await createChild(current, { displayName: "Stara lekcja", avatarKey: "owl" });
     await pool.query(

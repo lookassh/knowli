@@ -3608,6 +3608,19 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
       expect(playing(harness)).toBeNull();
     });
 
+    it("teardown w trakcie odczytu gasi wskaźnik, a potem nic nie emituje", async () => {
+      const { gate } = gated();
+      const harness = await answered({ playGate: gate });
+      expect(playing(harness)).toBe("normal");
+      harness.controller.teardown();
+      expect(playing(harness)).toBeNull();
+      let emissions = 0;
+      harness.controller.subscribe(() => { emissions += 1; });
+      harness.controller.pauseActivity("blur");
+      await tick();
+      expect(emissions).toBe(0);
+    });
+
     it("Dalej gasi i nie przenosi stanu", async () => {
       const { gate } = gated();
       const harness = await answered({ playGate: gate });
