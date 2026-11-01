@@ -409,6 +409,27 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         expect(within(gapBox, viewportBox), `first gap inside viewport: ${reached}`).toBe(true);
         expect(gapBox.y + gapBox.height, `first gap above the dock: ${reached}`).toBeLessThanOrEqual(dockNow.y + 1);
 
+        // Koniec materiału (bank słów pod tekstem) da się przewinąć nad dok: przewija kontener
+        // materiału, a poniżej 480 px wysokości strona (każdy przodek przewinięty do końca). Liczy
+        // się dolna krawędź najniższego elementu treści, nie rezerwa pod nią.
+        await material.evaluate((element) => {
+          for (let node: Element | null = element; node !== null; node = node.parentElement) node.scrollTop = node.scrollHeight;
+        });
+        const end = await page.evaluate(() => {
+          const content = document.querySelector("[data-testid='kid-material'] .kid-material-content")!;
+          const bottoms = [...content.querySelectorAll("*")].map((element) => element.getBoundingClientRect().bottom);
+          const dockRect = document.querySelector("[data-testid='kid-feedback-dock']")!.getBoundingClientRect();
+          const materialRect = document.querySelector("[data-testid='kid-material']")!.getBoundingClientRect();
+          return { contentBottom: Math.max(...bottoms), dockTop: dockRect.y, materialTop: materialRect.top, materialBottom: materialRect.bottom };
+        });
+        const ended = `${JSON.stringify(end)} at ${label}`;
+        expect(end.contentBottom, `end of material above the dock: ${ended}`).toBeLessThanOrEqual(end.dockTop + 1);
+        expect(end.contentBottom, `end of material in viewport: ${ended}`).toBeLessThanOrEqual(viewport.height + 1);
+        // …i nie uciekł nad widoczny obszar materiału.
+        expect(end.contentBottom, `end of material visible: ${ended}`).toBeGreaterThan(Math.max(0, end.materialTop));
+        // Poniżej 480 px dok stoi w przepływie tuż pod materiałem — bez pustego pasa po ukrytych akcjach.
+        if (pageScrolls) expect(end.dockTop - end.materialBottom, `blank band between material and dock: ${ended}`).toBeLessThanOrEqual(24);
+
         // Autoodtwarzanie nie powtórzyło się samo; „Posłuchaj zdania” gra drugi raz.
         expect((await audioCounters(page)).plays).toBe(1);
         await sentence.click();
