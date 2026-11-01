@@ -46,7 +46,7 @@ import type {
   LessonTopic,
   SubjectModule,
 } from "../../../domain/lessons/types";
-import type { LessonStory } from "../../../domain/lessons/story";
+import { solvedSentencesOf, storyCollisions, type LessonStory } from "../../../domain/lessons/story";
 import type { LessonPoolInput, LlmLessonStageCounts } from "../../../ports/ai";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import {
@@ -1494,22 +1494,48 @@ export async function executeLessonGeneration(services: Services, runId: string,
         await markCurrentRun(tx, "superseded", null);
         return;
       }
+      const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+      const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, refined.rejectedReasons);
+      // Dogenerowanie do lekcji z historyjką: ćwiczenie, którego rozwiązanie
+      // powtarza zdanie historyjki, ujawniłoby odpowiedź (bariera ekspozycji,
+      // spec historyjki §5). Historyjka z tej transakcji — rodzic mógł ją zmienić.
+      const story = input.regenerate ? prevContext.story : undefined;
+      const accepted = story
+        ? uniqueValid.filter((ex) => storyCollisions(story.sentences, solvedSentencesOf([ex]), subject.normalizer).length === 0)
+        : uniqueValid;
+      const storyRejected = uniqueValid.length - accepted.length;
+      if (storyRejected > 0) {
+        console.log(`[lesson] run=${runId} kolizje z historyjką: odrzucone=${storyRejected}`);
+      }
+      if (accepted.length === 0) {
+        await tx
+          .update(deckVersions)
+          .set({
+            lessonContext: {
+              ...prevContext,
+              rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount + storyRejected,
+              ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
+              droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
+            } as unknown as Record<string, unknown>,
+          })
+          .where(eq(deckVersions.id, version.id));
+        await markCurrentRun(tx, "failed", "validation");
+        return;
+      }
       await applyLessonExercises(
         tx,
         { id: version.id, deckId: version.deckId },
         subject,
         input.topicVersion,
-        uniqueValid,
+        accepted,
       );
       // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
       // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
-      const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
-      const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, refined.rejectedReasons);
       const nextContext: LessonContext = {
         ...prevContext,
         ...(dynamicTopicData ? { dynamicTopic: dynamicTopicData, objectiveIds: dynamicTopicData.objectives.map((o) => o.id) } : {}),
         examples: { ...prevContext.examples, ...examples },
-        rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
+        rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount + storyRejected,
         ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
         droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
       };

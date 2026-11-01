@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   claimQueuedRun,
   createLesson,
+  createLessonDraftFromPublished,
   createSchoolLesson,
   createServices,
   createSubjectRegistry,
@@ -18,7 +19,7 @@ import {
   schoolSubject,
   type Services,
 } from "@learning/server";
-import type { LessonCommand } from "@learning/contracts";
+import type { LessonCommand, LessonExerciseInput } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
@@ -86,6 +87,40 @@ async function versionRow(versionId: string): Promise<{ edit_number: number; sta
   );
   return row!;
 }
+
+/** Poprawna historyjka rodzica (zdania spoza puli fake: materiał to „He plays football…”). */
+const PARENT_STORY = {
+  sentences: ["Tom has a small dog.", "The dog is brown and fast.", "Every morning they run in the park.", "Tom loves his dog."],
+  questions: [
+    {
+      id: "q1",
+      question: "Jaki jest pies Toma?",
+      options: [
+        { id: "a", text: "brązowy" },
+        { id: "b", text: "biały" },
+        { id: "c", text: "czarny" },
+      ],
+      correctOption: "a",
+    },
+  ],
+};
+
+/** DTO ćwiczenia → wejście patcha (schemat wejścia jest `strict`). */
+function stripToInput(ex: Record<string, unknown>): LessonExerciseInput {
+  const { revisionId: _r, promptAudio: _a, ...rest } = ex as { revisionId?: string; promptAudio?: unknown } & Record<string, unknown>;
+  return rest as LessonExerciseInput;
+}
+
+/** Luka „She ___ football.” — rozwiązane zdanie „She plays football.”. */
+const SHE_PLAYS_GAP: LessonExerciseInput = {
+  exerciseType: "lesson_gap",
+  objectiveId: OBJECTIVE,
+  instructionPl: "Uzupełnij.",
+  stem: "She ___ football.",
+  answer: "plays",
+  acceptedAnswers: [],
+  focus: ["plays"],
+};
 
 const SCHOOL_MATERIAL = [
   "Zagadnienie 1: Fotosynteza",
@@ -229,7 +264,17 @@ describe("run historyjki lekcji (integracja)", () => {
     expect((version.lesson_context.story as { sentences: string[] }).sentences).toHaveLength(4);
   });
 
-  it.todo("story patch supersedes active story run");
+  it("story patch supersedes active story run", async () => {
+    const { services, versionId, storyRunId } = await generatedGrammarLesson();
+    expect((await readGeneration(services, storyRunId!)).state).toBe("queued");
+
+    await editLessonDraft(services, versionId, { expectedEditNumber: 2, story: PARENT_STORY });
+
+    expect((await readGeneration(services, storyRunId!)).state).toBe("superseded");
+    // Spóźniony worker nie nadpisze wyboru rodzica.
+    await executeLessonGeneration(services, storyRunId!);
+    expect((await versionRow(versionId)).lesson_context.story).toEqual(PARENT_STORY);
+  });
 
   it("story run becomes superseded when version is published", async () => {
     const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
@@ -540,5 +585,235 @@ describe("run historyjki lekcji (integracja)", () => {
     await expect(retryGeneration(services, storyRunId!)).rejects.toMatchObject({ code: "conflict" });
     expect((await readGeneration(services, storyRunId!)).state).toBe("failed");
     expect((await readGeneration(services, activeRunId)).state).toBe("queued");
+  });
+
+  describe("edycja historyjki (editLessonDraft)", () => {
+    it("edit saves valid story and bumps editNumber", async () => {
+      const { services, versionId } = await generatedGrammarLesson();
+
+      const dto = await editLessonDraft(services, versionId, { expectedEditNumber: 2, story: PARENT_STORY });
+
+      expect(dto.editNumber).toBe(3);
+      expect(dto.story).toEqual(PARENT_STORY);
+      const version = await versionRow(versionId);
+      expect(version.edit_number).toBe(3);
+      expect(version.lesson_context.story).toEqual(PARENT_STORY);
+    });
+
+    it("edit with story null removes story", async () => {
+      const { services, versionId, storyRunId } = await generatedGrammarLesson();
+      await executeLessonGeneration(services, storyRunId!);
+      expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
+
+      const dto = await editLessonDraft(services, versionId, { expectedEditNumber: 2, story: null });
+
+      expect(dto.editNumber).toBe(3);
+      expect(dto.story).toBeUndefined();
+      expect("story" in (await versionRow(versionId)).lesson_context).toBe(false);
+    });
+
+    it("edit with 3 sentences fails validation with details.story", async () => {
+      const { services, versionId } = await generatedGrammarLesson();
+
+      const error = await editLessonDraft(services, versionId, {
+        expectedEditNumber: 2,
+        story: { ...PARENT_STORY, sentences: PARENT_STORY.sentences.slice(0, 3) },
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: "validation" });
+      expect((error as { details: { story: string[] } }).details.story).toContain("Historyjka ma mieć od 4 do 6 zdań.");
+      const version = await versionRow(versionId);
+      expect(version.edit_number).toBe(2);
+      expect(version.lesson_context.story).toBeUndefined();
+    });
+
+    it("edit rejects story sentence equal to an exercise solved in the same patch", async () => {
+      const { services, deckId, versionId } = await generatedGrammarLesson();
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      const exercises = [...draft.exercises.map((ex) => stripToInput(ex)), SHE_PLAYS_GAP];
+
+      const error = await editLessonDraft(services, versionId, {
+        expectedEditNumber: 2,
+        exercises,
+        story: { ...PARENT_STORY, sentences: ["She plays football.", ...PARENT_STORY.sentences.slice(1)] },
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: "validation" });
+      expect((error as { details: { story: string[] } }).details.story).toContain("Zdanie 1 powtarza rozwiązanie ćwiczenia.");
+      // Nic nie zapisano: ani ćwiczeń, ani historyjki.
+      const after = (await readLessonDeck(services, deckId)).draft!;
+      expect(after.editNumber).toBe(2);
+      expect(after.exercises).toHaveLength(draft.exercises.length);
+      expect(after.story).toBeUndefined();
+    });
+
+    it("edit without story field keeps story and does not supersede story run", async () => {
+      const { services, versionId, storyRunId } = await generatedGrammarLesson();
+      await executeLessonGeneration(services, storyRunId!);
+      const story = (await versionRow(versionId)).lesson_context.story;
+      const { runId: activeRunId } = await regenerateLessonStory(services, {
+        deckVersionId: versionId, expectedEditNumber: 2, clientRequestId: randomUUID(),
+      });
+
+      const dto = await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Tylko tytuł" });
+
+      expect(dto.story).toEqual(story);
+      expect((await versionRow(versionId)).lesson_context.story).toEqual(story);
+      expect((await readGeneration(services, activeRunId)).state).toBe("queued");
+    });
+
+    it("edit with story on subject without lessonStory fails validation", async () => {
+      const { services, deckId, versionId } = await generatedSchoolLesson();
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+
+      await expect(editLessonDraft(services, versionId, { expectedEditNumber: draft.editNumber, story: PARENT_STORY }))
+        .rejects.toMatchObject({ code: "validation" });
+      await expect(editLessonDraft(services, versionId, { expectedEditNumber: draft.editNumber, story: null }))
+        .rejects.toMatchObject({ code: "validation" });
+      expect((await versionRow(versionId)).edit_number).toBe(draft.editNumber);
+    });
+  });
+
+  describe("publikacja historyjki (publishLessonDraft)", () => {
+    it("publish rejects story colliding with exercise", async () => {
+      const { services, deckId, versionId } = await generatedGrammarLesson();
+      const payloads = await query<{ payload: unknown }>("select payload from learning_app.item_revisions where deck_version_id = $1", [versionId]);
+      const solved = solvedSentencesOf(payloads.map((row) => toExerciseDraft(row.payload)));
+      // Stare dane: historyjka z kolizją zapisana z pominięciem walidacji edycji.
+      await pool.query(
+        `update learning_app.deck_versions set lesson_context = lesson_context || jsonb_build_object('story', $2::jsonb) where id = $1`,
+        [versionId, JSON.stringify({ ...PARENT_STORY, sentences: [solved[0]!, ...PARENT_STORY.sentences.slice(1)] })],
+      );
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+
+      const error = await publishLessonDraft(services, versionId, draft.editNumber).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: "validation" });
+      expect((error as { details: { story: string[] } }).details.story).toContain("Zdanie 1 powtarza rozwiązanie ćwiczenia.");
+      expect((await versionRow(versionId)).state).toBe("review");
+    });
+
+    it("publish without story succeeds", async () => {
+      const { services, deckId, versionId } = await generatedGrammarLesson();
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      expect(draft.story).toBeUndefined();
+
+      await publishLessonDraft(services, versionId, draft.editNumber);
+
+      expect((await versionRow(versionId)).state).toBe("published");
+    });
+
+    it("publish with story does not wait for audio", async () => {
+      const { services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+      await executeLessonGeneration(services, storyRunId!);
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      expect(draft.story).toBeDefined();
+
+      await publishLessonDraft(services, versionId, draft.editNumber);
+
+      const deck = await readLessonDeck(services, deckId);
+      expect(deck.state).toBe("published");
+      expect(deck.published?.story).toEqual(draft.story);
+    });
+
+    it("copy of published version keeps story and republishes", async () => {
+      const { services, deckId, versionId } = await generatedGrammarLesson();
+      const edited = await editLessonDraft(services, versionId, { expectedEditNumber: 2, story: PARENT_STORY });
+      await publishLessonDraft(services, versionId, edited.editNumber);
+
+      const copy = await createLessonDraftFromPublished(services, deckId);
+
+      expect(copy.id).not.toBe(versionId);
+      expect(copy.story).toEqual(PARENT_STORY);
+      await publishLessonDraft(services, copy.id, copy.editNumber);
+      const deck = await readLessonDeck(services, deckId);
+      expect(deck.published?.id).toBe(copy.id);
+      expect(deck.published?.story).toEqual(PARENT_STORY);
+    });
+  });
+
+  describe("DTO historyjki", () => {
+    it("draft dto exposes story and storyEnabled", async () => {
+      const grammar = await generatedGrammarLesson();
+      await executeLessonGeneration(grammar.services, grammar.storyRunId!);
+      const grammarDraft = (await readLessonDeck(grammar.services, grammar.deckId)).draft!;
+      expect(grammarDraft.storyEnabled).toBe(true);
+      expect(grammarDraft.story?.sentences).toHaveLength(4);
+      expect(grammarDraft.story).toEqual((await versionRow(grammar.versionId)).lesson_context.story);
+
+      const school = await generatedSchoolLesson();
+      const schoolDraft = (await readLessonDeck(school.services, school.deckId)).draft!;
+      expect(schoolDraft.storyEnabled).toBe(false);
+      expect(schoolDraft.story).toBeUndefined();
+    });
+
+    it("deck dto exposes storyGeneration separately from generation", async () => {
+      const { services, deckId, lessonRunId, storyRunId } = await generatedGrammarLesson();
+
+      const deck = await readLessonDeck(services, deckId);
+
+      expect(deck.generation).toMatchObject({ id: lessonRunId, state: "succeeded" });
+      expect(deck.storyGeneration).toMatchObject({ id: storyRunId, state: "queued" });
+    });
+
+    it("deck dto has null storyGeneration without an editable draft", async () => {
+      const { services, deckId, versionId } = await generatedGrammarLesson();
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      await publishLessonDraft(services, versionId, draft.editNumber);
+
+      expect((await readLessonDeck(services, deckId)).storyGeneration).toBeNull();
+    });
+  });
+
+  it("regenerated exercise colliding with story is rejected and counted", async () => {
+    const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    await executeLessonGeneration(services, storyRunId!);
+    const story = (await versionRow(versionId)).lesson_context.story as { sentences: string[] };
+    expect(story.sentences[0]).toBe("Sam has a red bike.");
+    const before = (await readLessonDeck(services, deckId)).draft!;
+    // Pula dogenerowania: zwykłe ćwiczenia fake + luka, której rozwiązanie to zdanie historyjki.
+    const original = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.llm.generateLessonPool = async (input) => {
+      const result = await original(input);
+      return {
+        ...result,
+        exercises: [...result.exercises, { ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }],
+      };
+    };
+
+    const regen = await regenerateObjective(services, {
+      deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, regen.runId);
+
+    expect((await readGeneration(services, regen.runId)).state).toBe("succeeded");
+    const after = (await readLessonDeck(services, deckId)).draft!;
+    expect(after.exercises.length).toBeGreaterThan(before.exercises.length);
+    expect(after.exercises.some((ex) => ex.stem === "Sam ___ a red bike.")).toBe(false);
+    expect(after.rejectedCount).toBe(before.rejectedCount + 1);
+    expect(after.story).toEqual(story);
+  });
+
+  it("top-up whose only exercise collides with story fails validation and counts the rejection", async () => {
+    const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    await executeLessonGeneration(services, storyRunId!);
+    const before = (await readLessonDeck(services, deckId)).draft!;
+    fakes.llm.generateLessonPool = async () => ({
+      exercises: [{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }],
+      examples: {},
+    });
+
+    const regen = await regenerateObjective(services, {
+      deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, regen.runId);
+
+    const run = await readGeneration(services, regen.runId);
+    expect(run).toMatchObject({ state: "failed", errorCode: "validation" });
+    const after = (await readLessonDeck(services, deckId)).draft!;
+    expect(after.editNumber).toBe(2);
+    expect(after.exercises).toHaveLength(before.exercises.length);
+    expect(after.rejectedCount).toBe(before.rejectedCount + 1);
+    expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
   });
 });

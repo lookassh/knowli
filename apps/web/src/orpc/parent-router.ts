@@ -45,6 +45,7 @@ import {
   readParentWorkCard,
   regenerateLessonCardAudio,
   regenerateLessonPromptAudio,
+  regenerateLessonStory,
   regenerateObjective,
   regenerateRevisionAsset,
   removeAssignment,
@@ -434,11 +435,11 @@ const lessonDraftsRegenerateCardAudio = parentOs.lessonDrafts.regenerateCardAudi
   .use(sameOriginMiddleware)
   .handler(async ({ context, input }) => regenerateLessonCardAudio(context.services, input));
 
-// TYMCZASOWO (Task 5 podmieni na przypadek użycia): kontrakt już zna procedurę.
 const lessonDraftsRegenerateStory = parentOs.lessonDrafts.regenerateStory
   .use(sameOriginMiddleware)
-  .handler(async () => {
-    throw new AppError("internal", { message: "not implemented" });
+  .handler(async ({ context, input }) => {
+    const { lessonDraftId, ...command } = input;
+    return regenerateLessonStory(context.services, { deckVersionId: lessonDraftId, ...command });
   });
 
 const generationGet = parentOs.generation.get.handler(async ({ context, input }) =>
