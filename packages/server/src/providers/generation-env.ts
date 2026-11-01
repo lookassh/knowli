@@ -5,7 +5,7 @@ import { createOpenAiImageProvider } from "./images/openai";
 import { createOpenAiLlmProvider } from "./openai/llm";
 import { chatRequestExtrasFromEnv } from "./chat-request-options";
 import { createOpenAiTtsProvider } from "./openai/tts";
-import { endpointKeyFromEnv, isOpenRouterKey } from "./openrouter-key";
+import { endpointKeyFromEnv, isOpenRouterKey, isSecureOpenRouterEndpoint } from "./openrouter-key";
 import { graderConfigured } from "../config";
 import { lessonGenerationPolicyFromEnv } from "../modules/materials/lessons/lesson-generation-policy";
 
@@ -75,7 +75,9 @@ function openAiCompatibleEndpointFromEnv(
     throw new Error("UMIEM_TTS_PROVIDER=openai requires UMIEM_TTS_BASE_URL=https://api.openai.com/v1 (and an OpenAI UMIEM_TTS_MODEL/VOICE/FORMAT, see .env.example)");
   }
   if (!towardOpenAi && ownKey === undefined) {
-    throw new Error(`${prefix}_BASE_URL requires ${prefix}_API_KEY or OPENROUTER_API_KEY (OPENAI_API_KEY is never sent to another endpoint)`);
+    // wspólny klucz podpowiadamy tylko tam, gdzie zostałby użyty
+    const keys = isSecureOpenRouterEndpoint(baseUrl) ? `${prefix}_API_KEY or OPENROUTER_API_KEY` : `${prefix}_API_KEY`;
+    throw new Error(`${prefix}_BASE_URL requires ${keys} (OPENAI_API_KEY is never sent to another endpoint)`);
   }
   // Klucz innego dostawcy (np. OpenRouter) bez jego BASE_URL poszedłby do api.openai.com.
   const declaredProvider = prefix === "UMIEM_TTS" ? (nonEmpty(env.UMIEM_TTS_PROVIDER) ?? "openai") : "openai";

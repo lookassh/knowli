@@ -40,4 +40,15 @@ describe("endpointKeyFromEnv — wspólny OPENROUTER_API_KEY", () => {
     // ten sam klucz na api.openai.com jest poprawny
     expect(endpointKeyFromEnv({ UMIEM_TTS_API_KEY: "sk-proj-secret" }, "UMIEM_TTS", "https://api.openai.com/v1")).toBe("sk-proj-secret");
   });
+
+  it("własny klucz OpenRouter tylko na https OpenRouter — nie trafia do obcego hosta", () => {
+    for (const url of ["https://grader.example/v1", "https://api.openai.com/v1", "http://openrouter.ai/api/v1", "https://user:pass@openrouter.ai/api/v1"]) {
+      const call = () => endpointKeyFromEnv({ UMIEM_GRADER_API_KEY: "sk-or-v1-own" }, "UMIEM_GRADER", url);
+      expect(call, url).toThrow("UMIEM_GRADER_API_KEY looks like an OpenRouter key but UMIEM_GRADER_BASE_URL is not an https OpenRouter endpoint");
+      expect(call, url).not.toThrow(/sk-or-v1-own/);
+    }
+    expect(endpointKeyFromEnv({ UMIEM_GRADER_API_KEY: "sk-or-v1-own" }, "UMIEM_GRADER", OR)).toBe("sk-or-v1-own");
+    // inny klucz na własnym endpoincie bez zmian
+    expect(endpointKeyFromEnv({ UMIEM_GRADER_API_KEY: "gsk-own" }, "UMIEM_GRADER", "https://grader.example/v1")).toBe("gsk-own");
+  });
 });

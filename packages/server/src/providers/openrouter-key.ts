@@ -24,7 +24,9 @@ export function isSecureOpenRouterEndpoint(baseUrl: string | undefined): boolean
  * Klucz dla endpointu `<prefix>_BASE_URL`: własny `<prefix>_API_KEY`, a gdy go
  * brak — wspólny `OPENROUTER_API_KEY`, wyłącznie dla
  * bezpiecznego endpointu OpenRouter. Klucz w kształcie OpenAI skierowany na
- * OpenRouter to błąd startu (domyślny BASE_URL wysłałby go do OpenRouter).
+ * OpenRouter to błąd startu (domyślny BASE_URL wysłałby go do OpenRouter), a
+ * własny klucz OpenRouter (`sk-or-…`) przy BASE_URL innym niż https OpenRouter
+ * — też (nie trafia do obcego hosta). Bez BASE_URL decyduje wywołujący.
  * Komunikaty podają wyłącznie nazwy zmiennych, nigdy wartości.
  */
 export function endpointKeyFromEnv(
@@ -37,6 +39,9 @@ export function endpointKeyFromEnv(
   if (ownKey !== undefined) {
     if (towardOpenRouter && looksLikeOpenAiKey(ownKey)) {
       throw new Error(`${prefix}_API_KEY looks like an OpenAI key but ${prefix}_BASE_URL points to OpenRouter`);
+    }
+    if (baseUrl !== undefined && isOpenRouterKey(ownKey) && !isSecureOpenRouterEndpoint(baseUrl)) {
+      throw new Error(`${prefix}_API_KEY looks like an OpenRouter key but ${prefix}_BASE_URL is not an https OpenRouter endpoint`);
     }
     return ownKey;
   }

@@ -23,7 +23,9 @@ dyktowanie. Wspólny klucz
 trafia wyłącznie po `https` na `openrouter.ai` (`eu.`/`us.`), bez userinfo w
 URL; własny `UMIEM_LLM_API_KEY`/`UMIEM_TTS_API_KEY`/`UMIEM_GRADER_API_KEY` ma
 pierwszeństwo. Klucz w kształcie OpenAI (`sk-…`, nie `sk-or-…`) skierowany na
-OpenRouter — także w `OPENROUTER_API_KEY` — to błąd startu. Grader i ocena
+OpenRouter — także w `OPENROUTER_API_KEY` — to błąd startu, podobnie jak
+własny klucz OpenRouter (`sk-or-…`) przy `BASE_URL` innym niż https OpenRouter
+(nie trafia do obcego hosta). Grader i ocena
 aktywności są domyślnie włączone: biorą własny `UMIEM_GRADER_API_KEY` albo
 wspólny klucz (decyzja właściciela 2026-11-01 — prywatność odpowiedzi dzieci
 ustawia się w koncie OpenRouter albo przez
