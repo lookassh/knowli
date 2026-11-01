@@ -670,7 +670,7 @@ test("listen choice slot follows the first assessed task with autoplay, readback
 
     // Kid DTO bez id nagrania; polecenie z katalogu i przycisk odsłuchu w poleceniu.
     expect(listenTask.prompt).not.toHaveProperty("audioAssetId");
-    await expect(kid.getByTestId("kid-exercise")).toContainText("Posłuchaj i wybierz brakujące słowo.");
+    await expect(kid.getByTestId("kid-exercise")).toContainText("Posłuchaj i wybierz, czego brakuje.");
     await expect(kid.getByTestId("kid-play")).toHaveAccessibleName("Posłuchaj zdania");
     await expect(kid.getByTestId("kid-lesson-stem")).toHaveAttribute("lang", "en-GB");
 

@@ -30,6 +30,8 @@ export function LessonListenChoiceView({ task, busy, optionOutcomes, dock, feedb
     playBusy: playDisabled,
     onChoice: handlers.onAnswerChoice,
     onPlay,
+    // Spacja na innym przycisku („Pomiń”, „Dalej”) zostaje temu przyciskowi.
+    playRef,
   });
 
   useEffect(() => {
@@ -53,13 +55,14 @@ export function LessonListenChoiceView({ task, busy, optionOutcomes, dock, feedb
       }}
       content={(
         <>
-          {state === "blocked" && (
-            <p className="kid-hint" role="status" data-testid="kid-listen-status">{messages.kid.listenStimulusBlocked}</p>
-          )}
+          {/* Jedna linia statusu zawsze w układzie (zarezerwowana wysokość): zmiana stanu nie przesuwa zdania i opcji. */}
+          <p className="kid-hint kid-listen-status" role="status" data-testid="kid-listen-status">
+            {state === "blocked" ? messages.kid.listenStimulusBlocked : ""}
+          </p>
           <p className="kid-lesson-stem" data-testid="kid-lesson-stem" lang={task.prompt.contentLocale}>
             {before}
             {hasGap && (
-              <span className="kid-listen-gap" role="img" aria-label={messages.kid.lessonListenGap} data-testid="kid-listen-gap" />
+              <span className="kid-listen-gap" role="img" lang="pl-PL" aria-label={messages.kid.lessonListenGap} data-testid="kid-listen-gap" />
             )}
             {after}
           </p>

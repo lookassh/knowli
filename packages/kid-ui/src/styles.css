@@ -2960,8 +2960,16 @@
   vertical-align: baseline;
 }
 
-/* Przycisk odsłuchu wyróżniony, gdy przeglądarka zablokowała autoodtwarzanie. */
-.kid-ui [data-attention="true"] {
-  outline: 3px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
+/* Status bodźca: jedna linia zawsze w układzie (pusta poza blokadą), więc zmiana stanu nie przesuwa zdania. */
+.kid-ui .kid-listen-status {
+  line-height: var(--kid-type-title-sm-line-height);
+  min-block-size: calc(var(--kid-type-title-sm-size) * var(--kid-type-title-sm-line-height));
+}
+
+/* Głośnik polecenia wyróżniony wypełnieniem (wariant filled, nie obrys jak fokus), gdy przeglądarka
+   zablokowała autoodtwarzanie; warstwy hover/pressed przycisku liczą się od tych zmiennych. */
+.kid-ui .kid-exercise-instruction [data-attention="true"] {
+  --action-bg: var(--md-sys-color-primary);
+  --action-fg: var(--md-sys-color-on-primary);
+  --action-border: var(--md-sys-color-primary);
 }

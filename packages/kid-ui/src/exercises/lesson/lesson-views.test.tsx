@@ -485,6 +485,7 @@ describe("listen-choice view (lesson_listen_choice)", () => {
     expect(play.disabled).toBe(false);
     expect(document.activeElement).toBe(play);
     expect(play.getAttribute("aria-label")).toBe("Posłuchaj zdania");
+    expect(screen.getByTestId("kid-instruction").textContent).toContain("Posłuchaj i wybierz, czego brakuje.");
   });
 
   it("fails closed without a stimulus state", () => {
@@ -497,13 +498,23 @@ describe("listen-choice view (lesson_listen_choice)", () => {
     fireEvent.click(screen.getAllByTestId("kid-option")[0]!);
     expect(props.handlers.onAnswerChoice).toHaveBeenCalledWith(id(3));
     expect(screen.queryByTestId("kid-lesson-check")).toBeNull();
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByTestId("kid-listen-status").textContent).toBe("");
   });
 
   it("explains a blocked autoplay politely and keeps the options locked", () => {
     render("blocked");
-    expect(screen.getByRole("status").textContent).toBe("Naciśnij głośnik, aby posłuchać.");
+    expect(screen.getByRole("status").textContent).toBe("Dotknij głośnika, aby posłuchać.");
     for (const option of screen.getAllByTestId("kid-option")) expect((option as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps one status line mounted in every state, filled only when autoplay is blocked", () => {
+    for (const state of ["pending", "open", "unavailable", "blocked"] as const) {
+      const { unmount } = renderKid(<LessonListenChoiceView {...makeExerciseProps(listenTask(), { listenStimulus: { state, playing: false } })} />);
+      const status = screen.getByTestId("kid-listen-status");
+      expect(status.getAttribute("role")).toBe("status");
+      expect(status.textContent).toBe(state === "blocked" ? "Dotknij głośnika, aby posłuchać." : "");
+      unmount();
+    }
   });
 
   it("offers „Pomiń” when the recording is unavailable", () => {
@@ -515,8 +526,27 @@ describe("listen-choice view (lesson_listen_choice)", () => {
   });
 
   it("does not show „Pomiń” in the other states", () => {
-    render("pending");
-    expect(screen.queryByTestId("kid-listen-skip")).toBeNull();
+    for (const state of ["pending", "blocked", "open"] as const) {
+      const { unmount } = renderKid(<LessonListenChoiceView {...makeExerciseProps(listenTask(), { listenStimulus: { state, playing: false } })} />);
+      expect(screen.queryByTestId("kid-listen-skip")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("Space on a focused „Pomiń” is left to the button; on an option or the play button it replays", () => {
+    const props = render("unavailable");
+    const skip = screen.getByTestId("kid-listen-skip");
+    skip.focus();
+    const onSkipButton = new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true });
+    skip.dispatchEvent(onSkipButton);
+    expect(onSkipButton.defaultPrevented).toBe(false);
+    expect(props.handlers.onPlay).not.toHaveBeenCalled();
+    screen.getByTestId("kid-play").focus();
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(props.handlers.onPlay).toHaveBeenCalledTimes(1);
+    (screen.getAllByTestId("kid-option")[0] as HTMLButtonElement).focus();
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(props.handlers.onPlay).toHaveBeenCalledTimes(2);
   });
 
   it("renders the gap as a named blank, not as raw underscores", () => {
@@ -524,7 +554,8 @@ describe("listen-choice view (lesson_listen_choice)", () => {
     const stem = screen.getByTestId("kid-lesson-stem");
     expect(stem.textContent).not.toContain("___");
     const gap = screen.getByTestId("kid-listen-gap");
-    expect(gap.getAttribute("aria-label")).toBe("brakujące słowo");
+    expect(gap.getAttribute("aria-label")).toBe("luka");
+    expect(gap.getAttribute("lang")).toBe("pl-PL");
     expect(stem.contains(gap)).toBe(true);
     expect(stem.textContent).toBe("He  football.");
   });

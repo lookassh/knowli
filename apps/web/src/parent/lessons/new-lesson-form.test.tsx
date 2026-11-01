@@ -396,7 +396,7 @@ describe("NewLessonForm", () => {
   });
 
   it("dopisek o ćwiczeniach „Posłuchaj i wybierz” przy polu puli: gramatyka i rozdział tak, szkoła nie", () => {
-    expect(messages.lessons.listenChoiceCreateNote).toBe("Do puli dochodzą do 2 ćwiczeń „Posłuchaj i wybierz” na regułę.");
+    expect(messages.lessons.listenChoiceCreateNote).toBe("Do puli dodamy najwyżej 2 ćwiczenia „Posłuchaj i wybierz” na regułę.");
     for (const subject of [grammar, chapter]) {
       const markup = renderWithCatalog(subject);
       expect(markup).toContain('data-testid="lesson-listen-choice-note"');

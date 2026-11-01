@@ -981,9 +981,9 @@ export class LearningSessionController {
       // (także zadanie z prefetchu; nie w kartkówce i nie przy pendingAttemptId).
       if (task.prompt.kind === "lesson_listen_choice" && this.#screen.session.mode !== "mock_test") {
         void this.playListenStimulus({ auto: true }).catch(() => undefined);
-        // Po powrocie z offline (`markOffline` → `retry`) zadanie zostaje z bieżącym
-        // stanem bodźca — bez ponownego pobrania i autoodtwarzania (spec §8).
-        this.#setResume(async () => undefined, true);
+        // Po powrocie z offline (`markOffline` → `retry`) zadanie zostaje — bez ponownego
+        // pobrania i autoodtwarzania (spec §8); nieotwarty bodziec przechodzi w `blocked`.
+        this.#setResume(this.#listenResume(task.taskId), true);
       }
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -1251,7 +1251,7 @@ export class LearningSessionController {
     if (!screen?.task || screen.busy || screen.offline) return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false,
+    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false, taskAudioError: null,
       pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");
@@ -1535,6 +1535,26 @@ export class LearningSessionController {
    * ścieżka offline, a ponowienie niczego samo nie odtwarza. Po odpowiedzi nic nie
    * robi — odczyt zdania z feedbacku gra `playSentenceAudio`.
    */
+  /**
+   * Wznowienie zadania słuchowego po powrocie z offline: bez autoodtwarzania. Bodziec, który
+   * nie był otwarty (`pending`), przechodzi w `blocked` — status i wyróżniony głośnik — a po
+   * 6 s bez naciśnięcia w `unavailable` („Pomiń”), jak przy zablokowanym autoodtwarzaniu.
+   */
+  #listenResume(taskId: string): () => Promise<void> {
+    return async () => {
+      const stimulus = this.#learning()?.listenStimulus;
+      if (stimulus?.taskId !== taskId || stimulus.state !== "pending") return;
+      this.#patchListenStimulus(taskId, { state: "blocked", playing: false });
+      const epoch = this.#epoch;
+      this.#listenTimers.push(setTimeout(() => {
+        const current = this.#learning();
+        if (epoch !== this.#epoch || !current || current.offline || current.feedback !== null ||
+            current.listenStimulus?.taskId !== taskId || current.listenStimulus.state !== "blocked") return;
+        this.#patchListenStimulus(taskId, { state: "unavailable" });
+      }, LISTEN_NO_START_MS));
+    };
+  }
+
   async playListenStimulus(options: { auto?: boolean } = {}): Promise<void> {
     const auto = options.auto === true;
     const screen = this.#learning();
@@ -1563,19 +1583,24 @@ export class LearningSessionController {
       if (!stale()) this.#patchListenStimulus(taskId, { state: "unavailable" });
     }, LISTEN_NO_START_MS));
     const fail = (error: unknown): void => {
-      this.#clearListenTimers();
       if (isNetworkError(error)) {
+        this.#clearListenTimers();
         // Ponowienie po powrocie sieci zostawia zadanie i przycisk — bez autoodtwarzania.
-        this.#setResume(async () => undefined, true);
+        this.#setResume(this.#listenResume(taskId), true);
         this.#handleFailure(error);
         return;
       }
-      if ((error as { name?: unknown } | null)?.name === "NotAllowedError") {
+      const blocked = (error as { name?: unknown } | null)?.name === "NotAllowedError";
+      if (blocked && auto) {
+        // Zablokowane autoodtwarzanie: status i wyróżniony głośnik. Licznik 6 s biegnie dalej,
+        // więc bez naciśnięcia pojawia się „Pomiń”.
         this.#patchListenStimulus(taskId, { state: "blocked", playing: false });
         return;
       }
+      // Ręczne naciśnięcie zablokowane albo błąd: „Pomiń” od razu, a przy ręcznym widoczny komunikat.
+      this.#clearListenTimers();
       this.#patchListenStimulus(taskId, { state: "unavailable", playing: false });
-      if (!auto) this.#setLearning({ taskAudioError: "failed" });
+      if (!auto) this.#setLearning({ taskAudioError: blocked ? "blocked" : "failed" });
     };
     let assetId: string;
     try {

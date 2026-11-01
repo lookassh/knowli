@@ -3641,8 +3641,6 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
       expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "blocked", playing: false });
       expect(screenOf(harness).taskAudioError ?? null).toBeNull();
       expect(screenOf(harness).error).toBeNull();
-      await vi.advanceTimersByTimeAsync(10_000);
-      expect(stimulusOf(harness)?.state).toBe("blocked");
       void harness.controller.playTaskAudio();
       await flush();
       expect(stimulusOf(harness)?.state).toBe("pending");
@@ -3650,6 +3648,53 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
       harness.plays[1]!.resolve();
       await flush();
       expect(stimulusOf(harness)?.state).toBe("open");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("„blocked” bez naciśnięcia: po 6 s od żądania „unavailable” (Pomiń), przycisk nadal działa", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await startListen(baseState(), listen());
+      harness.plays[0]!.reject(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+      await flush();
+      await vi.advanceTimersByTimeAsync(5_900);
+      expect(stimulusOf(harness)?.state).toBe("blocked");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "unavailable", playing: false });
+      expect(screenOf(harness).taskAudioError ?? null).toBeNull();
+      void harness.controller.playListenStimulus();
+      await flush();
+      harness.plays[1]!.onStarted?.(2_000);
+      harness.plays[1]!.resolve();
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("open");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ręczne naciśnięcie zablokowane przez przeglądarkę: „unavailable” (Pomiń) i widoczny komunikat, bez pętli „blocked”", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const harness = await startListen(state, listen());
+      harness.plays[0]!.reject(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("blocked");
+      void harness.controller.playListenStimulus();
+      await flush();
+      harness.plays[1]!.reject(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+      await flush();
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "unavailable", playing: false });
+      expect(screenOf(harness)).toMatchObject({ error: null, offline: false, taskAudioError: "blocked" });
+      // „Pomiń” wysyła pominięcie i gasi komunikat o nagraniu (feedback nie niesie starego błędu).
+      state.attempts = [attemptDto({ taskId: "tl", modality: "skip", taskState: "answered", feedback: { kind: "not_assessed" } })];
+      await harness.controller.skip();
+      await flush();
+      expect(state.submissions).toMatchObject([{ taskId: "tl", modality: "skip" }]);
+      expect(screenOf(harness).taskAudioError ?? null).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -3709,7 +3754,8 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
       expect(state.disclosures).toHaveLength(1);
       expect(state.nextTaskCalls).toBe(nextTaskCalls);
       expect(harness.plays).toEqual([]);
-      expect(stimulusOf(harness)?.state).toBe("pending");
+      // Bez odsłuchu po powrocie: status i wyróżniony głośnik zamiast cichego „pending”.
+      expect(stimulusOf(harness)?.state).toBe("blocked");
     } finally {
       vi.useRealTimers();
     }
@@ -3726,9 +3772,14 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
       harness.controller.markOffline();
       harness.plays[0]!.resolve();
       await harness.controller.retry();
-      await vi.advanceTimersByTimeAsync(10_000);
+      await flush();
       expect(screenOf(harness)).toMatchObject({ offline: false, busy: false, task: { taskId: "tl" } });
-      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "pending", playing: false });
+      // Bodziec nieotwarty: „blocked” (status + wyróżniony głośnik), po 6 s „Pomiń”.
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "blocked", playing: false });
+      await vi.advanceTimersByTimeAsync(5_900);
+      expect(stimulusOf(harness)?.state).toBe("blocked");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "unavailable", playing: false });
       expect(state.disclosures).toHaveLength(1);
       expect(state.nextTaskCalls).toBe(nextTaskCalls);
       expect(harness.plays).toHaveLength(1);

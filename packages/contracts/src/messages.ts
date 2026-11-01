@@ -512,9 +512,9 @@ export const messages = {
     listen: "Posłuchaj",
     listenExample: "Posłuchaj zdania",
     // „Posłuchaj i wybierz” (#198): polecenie, status blokady i błąd ręcznego odsłuchu.
-    lessonListenChoiceInstruction: "Posłuchaj i wybierz brakujące słowo.",
-    lessonListenGap: "brakujące słowo",
-    listenStimulusBlocked: "Naciśnij głośnik, aby posłuchać.",
+    lessonListenChoiceInstruction: "Posłuchaj i wybierz, czego brakuje.",
+    lessonListenGap: "luka",
+    listenStimulusBlocked: "Dotknij głośnika, aby posłuchać.",
     listenStimulusFailed: "Nie udało się odtworzyć nagrania.",
     listenInstruction: "Posłuchaj polecenia",
     listenLessonQuestion: "Posłuchaj pytania",
@@ -926,7 +926,7 @@ export const messages = {
     // „Posłuchaj i wybierz” (#198): informacja w karcie ćwiczenia, błąd nagrania i adnotacja w tworzeniu lekcji.
     listenChoiceNote: "Lektor przeczyta zdanie. Dziecko dostanie to zadanie, gdy nagranie będzie gotowe.",
     listenChoiceAudioFailed: "Nagranie się nie udało. Utwórz nową wersję lekcji, aby spróbować ponownie.",
-    listenChoiceCreateNote: "Do puli dochodzą do 2 ćwiczeń „Posłuchaj i wybierz” na regułę.",
+    listenChoiceCreateNote: "Do puli dodamy najwyżej 2 ćwiczenia „Posłuchaj i wybierz” na regułę.",
     listenChoiceMissingAudioCount: "Ćwiczenia słuchowe bez nagrania: {n}",
     promptAudioListen: "Posłuchaj",
     promptAudioRegenerate: "Nagraj ponownie",

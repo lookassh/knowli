@@ -115,7 +115,8 @@ export function LearnScreen({
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
   // Odczyt pełnego zdania w doku lekcji; obok niego komunikat dostaje „?”,
-  // nie drugi głośnik.
+  // nie drugi głośnik — tak samo zawsze przy głośniku polecenia „Posłuchaj i wybierz”
+  // (także po „Pomiń”, gdy feedback nie ma odczytu).
   const sentenceReadback = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined;
   // „Posłuchaj i wybierz”: odczyt zdania odtwarza przycisk w poleceniu (bez drugiego głośnika w doku).
   const listenChoice = task?.prompt.kind === "lesson_listen_choice";
@@ -124,7 +125,7 @@ export function LearnScreen({
     : null;
   const guidanceButton = instructionAudioKey
     ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false}
-        {...(sentenceReadback ? { icon: "question" as const } : {})} />
+        {...(sentenceReadback || listenChoice ? { icon: "question" as const } : {})} />
     : null;
   // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
   const instructionGuidanceButton = instructionAudioKey
@@ -315,7 +316,9 @@ export function LearnScreen({
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
         {questionAudioError && <div className="kid-notice" role="alert" data-testid="kid-question-audio-error"><p>{cardAudio ? messages.kid.cardAudioUnavailable : messages.kid.questionAudioUnavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-question-audio-retry" onClick={() => void controller.playQuestionAudio()}>{cardAudio ? messages.kid.cardAudioRetry : messages.kid.questionAudioRetry}</ActionButton></div>}
-        {screen.taskAudioError && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{listenChoice ? messages.kid.listenStimulusFailed : screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
+        {/* „Posłuchaj i wybierz”: sam komunikat — ponawia głośnik w poleceniu, a „Pomiń” jest w zadaniu. */}
+        {screen.taskAudioError && listenChoice && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{messages.kid.listenStimulusFailed}</p></div>}
+        {screen.taskAudioError && !listenChoice && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
       </div>
 
       {offline ? (

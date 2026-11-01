@@ -109,7 +109,7 @@ test.describe("behaviour", () => {
     const play = page.getByTestId("kid-play");
     await expect(play).toHaveAttribute("aria-label", "Posłuchaj zdania");
     await expect(play).toBeFocused();
-    await expect(page.getByTestId("kid-instruction")).toContainText("Posłuchaj i wybierz brakujące słowo.");
+    await expect(page.getByTestId("kid-instruction")).toContainText("Posłuchaj i wybierz, czego brakuje.");
     const stem = page.getByTestId("kid-lesson-stem");
     await expect(stem).toHaveAttribute("lang", "en-GB");
     await expect(stem).not.toContainText("___");
@@ -197,11 +197,13 @@ test.describe("behaviour", () => {
   test("blocked autoplay shows a polite status and a press on the highlighted button plays the sentence", async ({ page }) => {
     const log = await open(page, { mode: "reject" });
     const status = page.getByTestId("kid-listen-status");
-    await expect(status).toHaveText("Naciśnij głośnik, aby posłuchać.");
+    await expect(status).toHaveText("Dotknij głośnika, aby posłuchać.");
     await expect(status).toHaveAttribute("role", "status");
     const play = page.getByTestId("kid-play");
     await expect(play).toHaveAttribute("data-attention", "true");
     await expect(play).toBeEnabled();
+    // Wyróżnienie to wypełnienie przycisku, nie obrys identyczny z fokusem.
+    const highlighted = await play.evaluate((element) => getComputedStyle(element).backgroundColor);
     await expectOptionsLocked(page, true);
     await expectNoAlert(page);
     await expect(page.getByTestId("kid-listen-skip")).toHaveCount(0);
@@ -209,9 +211,48 @@ test.describe("behaviour", () => {
     await setListenAudioMode(page, "end");
     await play.click();
     await expectOptionsLocked(page, false);
-    await expect(status).toHaveCount(0);
+    // Linia statusu zostaje w układzie, pusta.
+    await expect(status).toHaveText("");
     await expect(play).not.toHaveAttribute("data-attention", "true");
+    await page.mouse.move(0, 0);
+    expect(await play.evaluate((element) => getComputedStyle(element).backgroundColor), "the highlight is a distinct fill").not.toBe(highlighted);
     expect(count(log, "auth")).toBe(2);
+  });
+
+  test("blocked autoplay without a press offers „Pomiń” after about 6 s", async ({ page }) => {
+    await open(page, { mode: "reject" });
+    await expect(page.getByTestId("kid-listen-status")).toHaveText("Dotknij głośnika, aby posłuchać.");
+    const skip = page.getByTestId("kid-listen-skip");
+    await expect(skip).toHaveCount(0);
+    await expect(skip).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("kid-play")).toBeEnabled();
+    await expectOptionsLocked(page, true);
+    await expectNoAlert(page);
+  });
+
+  test("a manual press blocked by the browser offers „Pomiń” with a message only, and „Pomiń” clears it", async ({ page }) => {
+    const log = await open(page, { mode: "reject" });
+    const status = page.getByTestId("kid-listen-status");
+    await expect(status).toHaveText("Dotknij głośnika, aby posłuchać.");
+    await page.getByTestId("kid-play").click();
+    await expect.poll(() => count(log, "auth")).toBe(2);
+
+    const skip = page.getByTestId("kid-listen-skip");
+    await expect(skip).toBeVisible();
+    const notice = page.getByTestId("kid-task-audio-error");
+    await expect(notice).toHaveText("Nie udało się odtworzyć nagrania.");
+    // Sam komunikat: bez martwego „Odtwórz ponownie” i bez „Koniec” — ponawia głośnik, a „Pomiń” jest w zadaniu.
+    await expect(notice.getByRole("button")).toHaveCount(0);
+    await expect(status).toHaveText("");
+    await expect(page.getByTestId("kid-play")).not.toHaveAttribute("data-attention", "true");
+    await expectOptionsLocked(page, true);
+
+    await skip.click();
+    const dock = page.getByTestId("kid-feedback-dock");
+    await expect(dock).toBeVisible();
+    await expect(notice).toHaveCount(0);
+    // Głośnik polecenia jest obok: komunikat w doku to „?”, nawet bez odczytu zdania.
+    await expect(dock.getByTestId("kid-guidance-play")).toHaveAttribute("data-guidance-icon", "question");
   });
 
   test("a refused authorization (409) offers „Pomiń” with locked options, and a successful replay opens them", async ({ page }) => {
@@ -277,6 +318,9 @@ test.describe("behaviour", () => {
     offline = false;
     await page.getByTestId("kid-retry").click();
     await expect(page.getByTestId("kid-lesson-stem")).toBeVisible();
+    // Bodziec nie był otwarty: status i wyróżniony głośnik, jak przy zablokowanym autoodtwarzaniu.
+    await expect(page.getByTestId("kid-listen-status")).toHaveText("Dotknij głośnika, aby posłuchać.");
+    await expect(page.getByTestId("kid-play")).toHaveAttribute("data-attention", "true");
     await page.waitForTimeout(500);
     expect(count(log, "auth"), "no second autoplay after the retry").toBe(1);
     expect(await listenAudioPlays(page)).toBe(0);
@@ -286,6 +330,74 @@ test.describe("behaviour", () => {
     await expectOptionsLocked(page, false);
     expect(count(log, "auth")).toBe(2);
   });
+});
+
+// --- stabilność układu ----------------------------------------------------------
+
+/** Prostokąty zdania i opcji (piksele ekranu) — zmiana stanu bodźca nie może ich przesunąć. */
+async function contentBoxes(page: Page): Promise<Box[]> {
+  return page.evaluate(() => [...document.querySelectorAll("[data-testid='kid-lesson-stem'], [data-testid='kid-option']")].map((element) => {
+    const r = element.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }));
+}
+
+function expectSameBoxes(actual: Box[], expected: Box[], label: string): void {
+  expect(actual.length, label).toBe(expected.length);
+  actual.forEach((box, index) => {
+    const before = expected[index]!;
+    for (const key of ["x", "y", "width", "height"] as const) {
+      expect(Math.abs(box[key] - before[key]), `${label}: element ${index} ${key} ${JSON.stringify({ before, box })}`).toBeLessThanOrEqual(0.5);
+    }
+  });
+}
+
+test.describe("layout stability", () => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+    test(`the sentence and options keep their place pending → blocked → pending at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      let releaseAuthorization!: () => void;
+      const held = new Promise<void>((resolve) => { releaseAuthorization = resolve; });
+      await open(page, { mode: "reject", authorization: (route) => held.then(() => route.fallback()) });
+      await page.setViewportSize(viewport);
+      await page.evaluate(async () => { await document.fonts.ready; });
+      await nextFrames(page);
+      const status = page.getByTestId("kid-listen-status");
+      await expect(status).toHaveText("");
+      const pending = await contentBoxes(page);
+
+      releaseAuthorization();
+      await expect(status).toHaveText("Dotknij głośnika, aby posłuchać.");
+      await nextFrames(page);
+      expectSameBoxes(await contentBoxes(page), pending, "blocked");
+
+      await setListenAudioMode(page, "hold");
+      await page.getByTestId("kid-play").click();
+      await expect(page.getByTestId("kid-play")).toHaveAttribute("data-sound-active", "true");
+      await expect(status).toHaveText("");
+      await nextFrames(page);
+      expectSameBoxes(await contentBoxes(page), pending, "pending again");
+    });
+
+    test(`the sentence and options keep their place pending → unavailable at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      let refuse!: () => void;
+      const refused = new Promise<void>((resolve) => { refuse = resolve; });
+      await open(page, {
+        mode: "end",
+        authorization: (route) => refused.then(() => route.fulfill({
+          status: 409, contentType: "application/json", body: JSON.stringify({ code: "conflict", message: "x", retryable: false }),
+        })),
+      });
+      await page.setViewportSize(viewport);
+      await page.evaluate(async () => { await document.fonts.ready; });
+      await nextFrames(page);
+      const pending = await contentBoxes(page);
+
+      refuse();
+      await expect(page.getByTestId("kid-listen-skip")).toBeVisible();
+      await nextFrames(page);
+      expectSameBoxes(await contentBoxes(page), pending, "unavailable");
+    });
+  }
 });
 
 // --- geometria --------------------------------------------------------------
@@ -391,6 +503,8 @@ async function expectListenGeometry(page: Page, viewport: Viewport, scale: numbe
     };
   });
   expect(overflow, `horizontal overflow, ${label}`).toEqual({ page: false, frame: false, material: false, stem: false });
+  // Pomiar musiał objąć stan, który opisuje (blokada mija po 6 s bez naciśnięcia).
+  if (state === "blocked") await expect(page.getByTestId("kid-listen-status"), `still blocked, ${label}`).toHaveText(/.+/, { timeout: 0 });
   await page.screenshot({ path: testInfo.outputPath(`listen-choice-${state}-${viewport.width}x${viewport.height}.png`) });
 }
 
@@ -404,13 +518,38 @@ const POINTER_WINDOWS = [
   { width: 1920, height: 1080, scale: 1.2 },
 ] as const;
 
+/**
+ * Okna jednego testu. „blocked” po 6 s bez naciśnięcia przechodzi w „unavailable” („Pomiń”),
+ * więc każde okno tego stanu ma świeże zadanie.
+ */
+function windowGroups<T>(state: GeometryState, windows: readonly T[]): T[][] {
+  return state === "blocked" ? windows.map((window) => [window]) : [[...windows]];
+}
+
+const windowsLabel = (windows: readonly { width: number; height: number }[]) => windows.map(({ width, height }) => `${width}x${height}`).join(", ");
+
 test.describe("geometry with a fine pointer", () => {
   for (const state of STATES) {
-    test(`worst-case sentence and four options fit every window (${state})`, async ({ page }, testInfo) => {
+    for (const windows of windowGroups(state, POINTER_WINDOWS)) {
+      test(`worst-case sentence and four options fit ${windowsLabel(windows)} (${state})`, async ({ page }, testInfo) => {
+        await openInState(page, state);
+        for (const { width, height, scale } of windows) {
+          await expectListenGeometry(page, { width, height }, scale, state, testInfo);
+        }
+      });
+    }
+  }
+});
+
+test.describe("geometry on a touch tablet in portrait (medium width)", () => {
+  // Klasa medium (600–839) przy dotyku: tablet w pionie, bez skali.
+  test.use({ viewport: { width: 768, height: 1024 }, isMobile: true, hasTouch: true });
+
+  for (const state of STATES) {
+    test(`worst-case sentence and four options fit 768x1024 (${state})`, async ({ page }, testInfo) => {
       await openInState(page, state);
-      for (const { width, height, scale } of POINTER_WINDOWS) {
-        await expectListenGeometry(page, { width, height }, scale, state, testInfo);
-      }
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+      await expectListenGeometry(page, { width: 768, height: 1024 }, 1, state, testInfo);
     });
   }
 });
@@ -420,12 +559,14 @@ test.describe("geometry on a touch tablet", () => {
   test.use({ viewport: { width: 1280, height: 800 }, isMobile: true, hasTouch: true });
 
   for (const state of STATES) {
-    test(`worst-case sentence and four options fit 1024x768 and 1280x800 (${state})`, async ({ page }, testInfo) => {
-      await openInState(page, state);
-      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
-      for (const viewport of [{ width: 1024, height: 768 }, { width: 1280, height: 800 }]) {
-        await expectListenGeometry(page, viewport, 1, state, testInfo);
-      }
-    });
+    for (const windows of windowGroups(state, [{ width: 1024, height: 768 }, { width: 1280, height: 800 }])) {
+      test(`worst-case sentence and four options fit ${windowsLabel(windows)} (${state})`, async ({ page }, testInfo) => {
+        await openInState(page, state);
+        expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+        for (const viewport of windows) {
+          await expectListenGeometry(page, viewport, 1, state, testInfo);
+        }
+      });
+    }
   }
 });
