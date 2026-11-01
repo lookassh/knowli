@@ -657,8 +657,9 @@ export async function editLessonDraft(
     assertEditable(version, patch.expectedEditNumber);
     const context = readLessonContext(version.lessonContext);
     const subject = requireSubject(services, context.subjectId);
-    // Tematy zdań mają sens tylko tam, gdzie przedmiot ma regułę w prompcie (jak przy tworzeniu lekcji).
-    if (patch.interests !== undefined && subject.prompts.interestsRule === undefined) {
+    // Niepuste tematy zdań mają sens tylko tam, gdzie przedmiot ma regułę w prompcie (jak przy
+    // tworzeniu lekcji); pusta lista (usunięcie) jest zawsze dozwolona.
+    if (patch.interests?.length && subject.prompts.interestsRule === undefined) {
       throw new AppError("validation", { message: `subject does not support interests: ${subject.id}` });
     }
 
@@ -743,9 +744,10 @@ export async function editLessonDraft(
     }
     if (nextDynamicTopic !== undefined || patch.examples !== undefined || patch.interests !== undefined) {
       // Pusta lista tematów usuwa klucz (brak klucza = lekcja bez tematów, jak przy tworzeniu).
-      const { interests: _previousInterests, ...contextWithoutInterests } = (version.lessonContext ?? {}) as Record<string, unknown>;
+      const currentContext = (version.lessonContext ?? {}) as Record<string, unknown>;
+      const contextWithoutInterests = Object.fromEntries(Object.entries(currentContext).filter(([key]) => key !== "interests"));
       const nextContext = {
-        ...(patch.interests === undefined ? (version.lessonContext ?? {}) : contextWithoutInterests),
+        ...(patch.interests === undefined ? currentContext : contextWithoutInterests),
         ...(patch.interests?.length ? { interests: patch.interests } : {}),
         ...(nextDynamicTopic
           ? { dynamicTopic: nextDynamicTopic, objectiveIds: nextDynamicTopic.objectives.map((o) => o.id) }

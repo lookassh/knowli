@@ -278,7 +278,7 @@ describe("lekcja — API rodzica (szkic i patch tematów)", () => {
     for (const request of fakes.llm.lessonRequests.slice(before)) expect(request).not.toHaveProperty("interests");
   });
 
-  it("patch przedmiotu bez reguły tematów kończy się validation i nic nie zapisuje", async () => {
+  it("patch niepustej listy dla przedmiotu bez reguły tematów kończy się validation i nic nie zapisuje", async () => {
     const { services } = await world();
     const { deckId } = await createLesson(services, {
       subjectId: historyLikeSubject.id,
@@ -292,6 +292,11 @@ describe("lekcja — API rodzica (szkic i patch tematów)", () => {
     await expect(editLessonDraft(services, draft.id, { expectedEditNumber: draft.editNumber, interests: ["piłka nożna"] }))
       .rejects.toMatchObject({ code: "validation" });
     expect((await readLessonDeck(services, deckId)).draft).toEqual(draft);
+
+    // usunięcie (pusta lista) jest dozwolone także tam, gdzie przedmiot nie przyjmuje tematów
+    const cleared = await editLessonDraft(services, draft.id, { expectedEditNumber: draft.editNumber, interests: [] });
+    expect(cleared).not.toHaveProperty("interests");
+    expect(cleared.editNumber).toBe(draft.editNumber + 1);
   });
 
   it("nowy szkic z opublikowanej lekcji zachowuje tematy", async () => {
