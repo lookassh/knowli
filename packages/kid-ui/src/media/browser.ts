@@ -1,4 +1,4 @@
-import type { AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
+import type { AudioPlaybackOptions, AudioPlayer, BeepKind, MicrophonePermission, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./platform";
 import { LevelMonitorUnavailableError } from "./platform";
 
 /** Limit nagrania po stronie klienta — odpowiada limitowi serwera (arch §11). */
@@ -573,7 +573,7 @@ export class BrowserAudioPlayer implements AudioPlayer {
   #abort: AbortController | null = null;
   #settle: (() => void) | null = null;
 
-  async play(url: string, onStarted?: (durationMs: number | null) => void): Promise<void> {
+  async play(url: string, onStarted?: (durationMs: number | null) => void, options?: AudioPlaybackOptions): Promise<void> {
     this.stop();
     const generation = ++this.#generation;
     const abort = new AbortController();
@@ -595,6 +595,13 @@ export class BrowserAudioPlayer implements AudioPlayer {
         return;
       }
       const audio = new AudioCtor(objectUrl);
+      // Tempo bez zmiany wysokości głosu; przeglądarka może zapis zignorować —
+      // wtedy faktyczne tempo odczytujemy z elementu w `onplaying`.
+      const rate = options?.rate ?? 1;
+      audio.defaultPlaybackRate = rate;
+      audio.playbackRate = rate;
+      if ("preservesPitch" in audio || !("webkitPreservesPitch" in audio)) audio.preservesPitch = true;
+      else (audio as HTMLAudioElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = true;
       this.#audio = { element: audio, objectUrl };
       await new Promise<void>((resolve, reject) => {
         let settled = false;
@@ -607,7 +614,11 @@ export class BrowserAudioPlayer implements AudioPlayer {
         };
         this.#settle = () => finish();
         audio.onplaying = () => {
-          const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration * 1000) : null;
+          // Spóźnione zdarzenie po stop()/nowym play() nie może zgłosić odsłuchu.
+          if (generation !== this.#generation) return;
+          const duration = Number.isFinite(audio.duration) && audio.duration > 0
+            ? Math.round((audio.duration * 1000) / (audio.playbackRate || 1))
+            : null;
           onStarted?.(duration);
         };
         audio.onended = () => finish();
@@ -635,6 +646,10 @@ export class BrowserAudioPlayer implements AudioPlayer {
 
   #releaseAudio(): void {
     if (this.#audio !== null) {
+      // Zdarzenia zwolnionego elementu nie mogą już dotrzeć do wołającego.
+      this.#audio.element.onplaying = null;
+      this.#audio.element.onended = null;
+      this.#audio.element.onerror = null;
       this.#audio.element.pause();
       URL.revokeObjectURL(this.#audio.objectUrl);
       this.#audio = null;

@@ -68,10 +68,22 @@ export class LevelMonitorUnavailableError extends Error {
   }
 }
 
+/** Opcje odtwarzania; brak opcji = tempo 1. */
+export interface AudioPlaybackOptions {
+  /** Tempo odtwarzania (1 = normalne); wysokość głosu pozostaje zachowana. */
+  rate?: number;
+}
+
+/** Tempo wolnego odsłuchu zdania. */
+export const SLOW_PLAYBACK_RATE = 0.75;
+
 /** Odtwarzacz wzorca z cache media; stop zwalnia zasoby audio. */
 export interface AudioPlayer {
-  /** Odtwarza do końca; rzuca przy błędzie odtwarzania/sieci. */
-  play(url: string, onStarted?: (durationMs: number | null) => void): Promise<void>;
+  /**
+   * Odtwarza do końca; rzuca przy błędzie odtwarzania/sieci. `onStarted`
+   * dostaje rzeczywisty czas trwania odsłuchu (z uwzględnieniem tempa).
+   */
+  play(url: string, onStarted?: (durationMs: number | null) => void, options?: AudioPlaybackOptions): Promise<void>;
   stop(): void;
 }
 

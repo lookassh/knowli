@@ -837,6 +837,109 @@ describe("BrowserAudioPlayer — anulowanie także oczekującego pobrania", () =
   });
 });
 
+describe("BrowserAudioPlayer — tempo odtwarzania", () => {
+  interface TempoAudio {
+    onplaying: (() => void) | null;
+    onended: (() => void) | null;
+    onerror: (() => void) | null;
+    duration: number;
+    playbackRate: number;
+    defaultPlaybackRate: number;
+    preservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  }
+
+  /** Instaluje fałszywy Audio; `configure` dostosowuje klasę (np. ignorowanie zapisu tempa). */
+  function installAudio(options: { acceptRate?: boolean; standardPitch?: boolean; autoPlay?: boolean } = {}) {
+    const { acceptRate = true, standardPitch = true, autoPlay = true } = options;
+    const holder: { audio: TempoAudio | null } = { audio: null };
+    class FakeAudio {
+      onplaying: (() => void) | null = null;
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      duration = 3;
+      #rate = 1;
+      defaultPlaybackRate = 1;
+      constructor(_url: string) {
+        holder.audio = this as unknown as TempoAudio;
+        if (standardPitch) (this as unknown as TempoAudio).preservesPitch = false;
+        else (this as unknown as TempoAudio).webkitPreservesPitch = false;
+      }
+      get playbackRate() { return this.#rate; }
+      set playbackRate(value: number) { if (acceptRate) this.#rate = value; }
+      async play() {
+        if (!autoPlay) return new Promise<void>(() => undefined);
+        this.onplaying?.();
+        this.onended?.();
+      }
+      pause() {}
+    }
+    vi.stubGlobal("Audio", FakeAudio);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["audio"]) })));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:tempo");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    return holder;
+  }
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("tempo 0.75: ustawia playbackRate, defaultPlaybackRate i preservesPitch", async () => {
+    const holder = installAudio();
+    await new BrowserAudioPlayer().play("/media", undefined, { rate: 0.75 });
+    expect(holder.audio!.playbackRate).toBe(0.75);
+    expect(holder.audio!.defaultPlaybackRate).toBe(0.75);
+    expect(holder.audio!.preservesPitch).toBe(true);
+  });
+
+  it("bez opcji tempo 1", async () => {
+    const holder = installAudio();
+    await new BrowserAudioPlayer().play("/media");
+    expect(holder.audio!.playbackRate).toBe(1);
+    expect(holder.audio!.defaultPlaybackRate).toBe(1);
+  });
+
+  it("durationMs dzieli przez faktyczne tempo elementu", async () => {
+    installAudio();
+    const started = vi.fn();
+    await new BrowserAudioPlayer().play("/media", started, { rate: 0.75 });
+    expect(started).toHaveBeenCalledWith(4_000);
+  });
+
+  it("tempo nieprzyjęte: durationMs z tempa 1, bez błędu", async () => {
+    installAudio({ acceptRate: false });
+    const started = vi.fn();
+    await expect(new BrowserAudioPlayer().play("/media", started, { rate: 0.75 })).resolves.toBeUndefined();
+    expect(started).toHaveBeenCalledWith(3_000);
+  });
+
+  it("prefiks webkitPreservesPitch, gdy brak preservesPitch", async () => {
+    const holder = installAudio({ standardPitch: false });
+    await new BrowserAudioPlayer().play("/media", undefined, { rate: 0.75 });
+    expect(holder.audio!.webkitPreservesPitch).toBe(true);
+    expect("preservesPitch" in holder.audio!).toBe(false);
+  });
+
+  it("playing po stop() nie woła onStarted", async () => {
+    const holder = installAudio({ autoPlay: false });
+    const started = vi.fn();
+    const player = new BrowserAudioPlayer();
+    const pending = player.play("/media", started);
+    await vi.waitFor(() => expect(holder.audio).not.toBeNull());
+    const audio = holder.audio!;
+    const lateHandler = audio.onplaying;
+    expect(lateHandler).not.toBeNull();
+    player.stop();
+    await pending;
+    lateHandler?.();
+    audio.onplaying?.();
+    expect(started).not.toHaveBeenCalled();
+    expect(audio.onplaying).toBeNull();
+  });
+});
+
 describe("preloadImage — ogrzanie cache obrazu następnego zadania", () => {
   it("ustawia src i rozstrzyga się przy błędzie pobrania bez odrzucenia", async () => {
     let image!: { onload: (() => void) | null; onerror: (() => void) | null; src: string; decode?: () => Promise<void> };

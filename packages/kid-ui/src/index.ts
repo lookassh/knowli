@@ -2,7 +2,8 @@ export { KidApp } from "./KidApp";
 export { createKidApiClient, isNetworkError, KidApiError, type KidClientOptions } from "./api/client";
 export type { KidApi } from "./api/KidApi";
 export { BrowserRecorder, BrowserAudioPlayer, createBrowserMedia, MAX_RECORDING_MS } from "./media/browser";
-export type { AudioPlayer, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./media/platform";
+export { SLOW_PLAYBACK_RATE } from "./media/platform";
+export type { AudioPlaybackOptions, AudioPlayer, PlatformMedia, RecordedAudio, RecorderOptions, SpeechRecorder } from "./media/platform";
 export {
   createBrowserPreferences,
   createMemoryPreferences,
