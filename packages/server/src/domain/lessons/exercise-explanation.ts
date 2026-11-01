@@ -62,14 +62,65 @@ function wordBounded(text: string, flags: string): RegExp {
 }
 
 /**
+ * Jednowyrazowe cele, które są też zwykłymi polskimi słowami (spójniki, przyimki, zaimki):
+ * „I”, „a”, „do”, „to”, „on”, „no”, „we”, „go”… Polskie wyjaśnienie zawiera je niemal zawsze,
+ * a ekspozycja cytatu jest trwała jak każda inna, więc dopasowanie oznaczałoby te cele jako
+ * ujawnione na zawsze. Takie cele pomijamy (spec §4.4) — świadome ryzyko: wyjaśnienie, które
+ * naprawdę cytuje „do” innego ćwiczenia, nie zapisze ekspozycji.
+ */
+const POLISH_HOMOGRAPHS: ReadonlySet<string> = new Set([
+  "a", "i", "o", "u", "w", "z", "do", "to", "on", "no", "na", "my", "we", "go", "ja", "ze", "po", "od",
+]);
+
+/** Cel jednowyrazowy z `POLISH_HOMOGRAPHS` (po normalizacji ekspozycji). */
+function isPolishHomograph(normalized: string): boolean {
+  return !/\s/u.test(normalized) && POLISH_HOMOGRAPHS.has(normalized);
+}
+
+/** Cel przygotowany do dopasowań: znormalizowany tekst i jego wyrażenie (budowane raz). */
+interface PreparedTarget {
+  readonly targetKey: string;
+  readonly text: string;
+  readonly pattern: RegExp | null;
+}
+
+function prepareTarget(target: ExposureTarget, subject: Pick<SubjectModule, "normalizeExposureText">): PreparedTarget {
+  const text = normalizedExposure(subject, target.exposureText);
+  const matchable = text !== "" && !isPolishHomograph(text);
+  return { targetKey: target.targetKey, text, pattern: matchable ? wordBounded(text, "u") : null };
+}
+
+function quotedKeys(
+  explanation: string,
+  own: PreparedTarget,
+  others: readonly PreparedTarget[],
+  subject: Pick<SubjectModule, "normalizeExposureText">,
+): string[] {
+  const quoted = normalizedExposure(subject, explanation);
+  const ownText = own.text;
+  const remaining = ownText === "" ? quoted : quoted.replace(wordBounded(ownText, "gu"), " ");
+  const keys: string[] = [];
+  for (const other of others) {
+    if (other.pattern === null) continue;
+    if (other.targetKey === own.targetKey || keys.includes(other.targetKey)) continue;
+    // Dłuższy cel zawierający własny tekst sprawdzamy w pełnym wyjaśnieniu: po usunięciu
+    // własnego tekstu jego cytat zostałby okaleczony i ujawnienie umknęłoby ekspozycji.
+    const haystack = ownText !== "" && other.text.includes(ownText) ? quoted : remaining;
+    if (other.pattern.test(haystack)) keys.push(other.targetKey);
+  }
+  return keys;
+}
+
+/**
  * Klucze `target_key` innych ćwiczeń tej samej wersji lekcji, których tekst ekspozycji
  * występuje w wyjaśnieniu (spec §4.4): wyjaśnienie, które cytuje cudzą odpowiedź, ujawnia ją
  * dziecku, więc musi zostać zapisane jako ekspozycja. Obie strony przechodzą normalizację
  * ekspozycji przedmiotu i `normalizeTargetText`; z wyjaśnienia usuwamy wcześniej własny tekst
  * ćwiczenia (jego ujawnia sam feedback; cel zawierający własny tekst jest szukany w pełnym
- * wyjaśnieniu), a dopasowanie wymaga granic słów. Własny klucz jest
- * pomijany. Wynik bez duplikatów, w kolejności `others`. Fałszywe trafienie kosztuje najwyżej
- * dodatkową ekspozycję — nic nie jest blokowane.
+ * wyjaśnieniu), a dopasowanie wymaga granic słów. Własny klucz i jednowyrazowe cele będące
+ * polskimi słowami (`POLISH_HOMOGRAPHS`) są pomijane. Wynik bez duplikatów, w kolejności
+ * `others`. Fałszywe trafienie kosztuje najwyżej dodatkową (trwałą) ekspozycję — nic nie jest
+ * blokowane.
  */
 export function explanationExposureKeys(
   explanation: string,
@@ -77,18 +128,24 @@ export function explanationExposureKeys(
   others: readonly ExposureTarget[],
   subject: Pick<SubjectModule, "normalizeExposureText">,
 ): string[] {
-  const quoted = normalizedExposure(subject, explanation);
-  const ownText = normalizedExposure(subject, own.exposureText);
-  const remaining = ownText === "" ? quoted : quoted.replace(wordBounded(ownText, "gu"), " ");
-  const keys: string[] = [];
-  for (const other of others) {
-    if (other.targetKey === own.targetKey || keys.includes(other.targetKey)) continue;
-    const text = normalizedExposure(subject, other.exposureText);
-    if (text === "") continue;
-    // Dłuższy cel zawierający własny tekst sprawdzamy w pełnym wyjaśnieniu: po usunięciu
-    // własnego tekstu jego cytat zostałby okaleczony i ujawnienie umknęłoby ekspozycji.
-    const haystack = ownText !== "" && text.includes(ownText) ? quoted : remaining;
-    if (wordBounded(text, "u").test(haystack)) keys.push(other.targetKey);
-  }
-  return keys;
+  return quotedKeys(
+    explanation,
+    prepareTarget(own, subject),
+    others.map((other) => prepareTarget(other, subject)),
+    subject,
+  );
+}
+
+/**
+ * Jak `explanationExposureKeys` dla wszystkich ćwiczeń wersji naraz: każdy cel jest
+ * normalizowany, a jego wyrażenie budowane raz na wywołanie (nie raz na parę ćwiczeń).
+ * Zwraca klucze dla pozycji `index` (inne ćwiczenia = wszystkie pozostałe pozycje).
+ */
+export function explanationExposureKeyFinder(
+  targets: readonly ExposureTarget[],
+  subject: Pick<SubjectModule, "normalizeExposureText">,
+): (explanation: string, index: number) => string[] {
+  const prepared = targets.map((target) => prepareTarget(target, subject));
+  return (explanation, index) =>
+    quotedKeys(explanation, prepared[index]!, prepared.filter((_, other) => other !== index), subject);
 }

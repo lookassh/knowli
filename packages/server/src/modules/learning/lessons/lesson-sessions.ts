@@ -19,7 +19,7 @@ import {
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import type { DynamicTopicData, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
-import { explanationExposureKeys } from "../../../domain/lessons/exercise-explanation";
+import { explanationExposureKeyFinder } from "../../../domain/lessons/exercise-explanation";
 import { exerciseExposureText } from "../../../domain/lessons/exposure-key";
 import { resolveLessonTopic } from "../../../domain/lessons/topic-resolution";
 import {
@@ -374,17 +374,18 @@ export async function loadExercises(
     explanationAudioAssetId: explanationAudioByRevision.get(r.id) ?? null,
   }));
   const subject = options.subject;
-  if (!subject?.exerciseExplanations) return loaded;
+  if (!subject?.exerciseExplanations || !loaded.some((exercise) => exercise.payload.explanationPl)) return loaded;
   // Ekspozycje cytatów (spec §4.4): tekst ekspozycji każdego ćwiczenia tej wersji.
   const targets = loaded.map((exercise) => ({
     exposureText: exerciseExposureText(subject, exercise.payload as unknown as LessonExerciseDraft),
     targetKey: exercise.targetKey,
   }));
+  // Wyrażenie każdego celu budowane raz na wywołanie (blokada sesji, spec §4.4).
+  const keysFor = explanationExposureKeyFinder(targets, subject);
   return loaded.map((exercise, index) => {
     const explanation = exercise.payload.explanationPl;
     if (!explanation) return exercise;
-    const others = targets.filter((_, other) => other !== index);
-    return { ...exercise, explanationExposureKeys: explanationExposureKeys(explanation, targets[index]!, others, subject) };
+    return { ...exercise, explanationExposureKeys: keysFor(explanation, index) };
   });
 }
 

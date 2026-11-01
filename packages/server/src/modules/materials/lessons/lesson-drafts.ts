@@ -828,7 +828,8 @@ const rawExerciseShapeSchema = z
     statement: z.string().nullish(),
     prompt: z.string().nullish(),
     hint: z.string().nullish(),
-    explanationPl: z.string().nullish(),
+    // `explanationPl` celowo poza strażnikiem: zły typ znaczy „brak wyjaśnienia”
+    // (`sanitizedExplanation`), nie odrzucenie całego ćwiczenia.
     transformId: z.string().nullish(),
     correctOption: z.string().nullish(),
     options: z.array(optionShapeSchema).nullish(),

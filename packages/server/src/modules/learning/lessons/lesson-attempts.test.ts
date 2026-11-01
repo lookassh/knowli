@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FeedbackDtoSchema, type FeedbackDto } from "@learning/contracts";
-import { withExerciseExplanation, withFeedbackSentenceAudio } from "./lesson-attempts";
+import { carriesExerciseExplanation, repairedLessonFeedback, withExerciseExplanation, withFeedbackSentenceAudio } from "./lesson-attempts";
 
 type Key = Parameters<typeof withFeedbackSentenceAudio>[1];
 
@@ -152,5 +152,48 @@ describe("withExerciseExplanation (spec 2026-11-01 §4.2)", () => {
   it("klucz bez wyjaśnienia — bez zmian", () => {
     const feedback: FeedbackDto = { kind: "incorrect", correctText: "goes" };
     expect(withExerciseExplanation(feedback, key(), "incorrect", true)).toEqual(feedback);
+  });
+});
+
+describe("carriesExerciseExplanation (spec 2026-11-01 §4.4)", () => {
+  const EXPLANATION = "Po he, she, it dodajemy -s do czasownika.";
+  const snapshot = (hints: Record<string, string>) => ({
+    descriptionEn: "Third person -s.", errorCategories: Object.keys(hints), hints, topicTitlePl: "Present Simple", extraErrorCategories: [],
+  });
+
+  it("hintPl równe wyjaśnieniu z klucza niesie wyjaśnienie", () => {
+    const k = key(undefined, { explanationPl: EXPLANATION, objectiveSnapshot: snapshot({ missing_s: "Pamiętaj o -s." }) } as Partial<Key>);
+    expect(carriesExerciseExplanation({ kind: "lesson_hint", hintPl: EXPLANATION, correctText: "goes" }, k)).toBe(true);
+  });
+
+  it("tekst identyczny z szablonem kategorii: wygrywa szablon, bez ekspozycji cytatów", () => {
+    const k = key(undefined, { explanationPl: EXPLANATION, objectiveSnapshot: snapshot({ missing_s: EXPLANATION }) } as Partial<Key>);
+    expect(carriesExerciseExplanation({ kind: "lesson_hint", hintPl: EXPLANATION, correctText: "goes" }, k)).toBe(false);
+  });
+
+  it("inny hintPl albo klucz bez wyjaśnienia — nie", () => {
+    const k = key(undefined, { explanationPl: EXPLANATION } as Partial<Key>);
+    expect(carriesExerciseExplanation({ kind: "lesson_hint", hintPl: "Pamiętaj o -s.", correctText: "goes" }, k)).toBe(false);
+    expect(carriesExerciseExplanation({ kind: "incorrect", correctText: "goes" }, key())).toBe(false);
+  });
+});
+
+describe("repairedLessonFeedback — zapisane próby sprzed reguły (odczyt i powtórka)", () => {
+  it("lesson_hint bez hintPl staje się incorrect z correctText i przechodzi schemat Kid DTO", () => {
+    const stored = { kind: "lesson_hint", correctText: "goes", answerSegments: [{ text: "go", state: "pill" }] } as unknown as FeedbackDto;
+    const repaired = repairedLessonFeedback(stored);
+    expect(repaired).toEqual({ kind: "incorrect", correctText: "goes" });
+    expect(FeedbackDtoSchema.safeParse(stored).success).toBe(false);
+    expect(FeedbackDtoSchema.safeParse(repaired).success).toBe(true);
+  });
+
+  it("lesson_hint bez hintPl i bez correctText staje się samym incorrect", () => {
+    expect(repairedLessonFeedback({ kind: "lesson_hint" } as unknown as FeedbackDto)).toEqual({ kind: "incorrect" });
+  });
+
+  it("poprawny feedback i null bez zmian", () => {
+    const hint: FeedbackDto = { kind: "lesson_hint", hintPl: "Pamiętaj o -s.", correctText: "goes" };
+    expect(repairedLessonFeedback(hint)).toBe(hint);
+    expect(repairedLessonFeedback(null)).toBeNull();
   });
 });

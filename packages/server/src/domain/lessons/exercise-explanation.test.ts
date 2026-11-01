@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { computeTargetKey } from "../target-key";
-import { MAX_EXPLANATION_LENGTH, explanationExposureKeys, explanationTextErrors } from "./exercise-explanation";
+import {
+  MAX_EXPLANATION_LENGTH,
+  explanationExposureKeyFinder,
+  explanationExposureKeys,
+  explanationTextErrors,
+} from "./exercise-explanation";
 import { MAX_TEXT_LENGTH } from "./pool-validation";
 import { englishChapterSubject } from "./subjects/english-chapter/module";
 
@@ -56,9 +61,36 @@ describe("explanationExposureKeys", () => {
   const target = (text: string) => ({ exposureText: text, targetKey: computeTargetKey(text, "en-GB") });
   const own = target("he plays");
 
-  it("usuwa własny tekst i zwraca tylko klucze cytowanych celów", () => {
+  it("usuwa własny tekst; „Do” jest polskim słowem, więc nie daje ekspozycji", () => {
     const others = [target("Do"), target("he"), target("plays")];
-    expect(explanationExposureKeys("Do nie łączy się z he plays.", own, others, subject)).toEqual([others[0]!.targetKey]);
+    expect(explanationExposureKeys("Do nie łączy się z he plays.", own, others, subject)).toEqual([]);
+  });
+
+  it("pomija jednowyrazowy homograf „Do”, a cytowane „plays” nadal liczy", () => {
+    const does = target("he does");
+    const doTarget = target("Do");
+    const plays = target("plays");
+    expect(explanationExposureKeys("Do nie dodajemy -s, a plays tak.", does, [doTarget, plays], subject)).toEqual([plays.targetKey]);
+  });
+
+  it("pomija wszystkie jednowyrazowe homografy, ale nie wielowyrazowe cele z nimi", () => {
+    const homographs = ["a", "i", "o", "u", "w", "z", "do", "to", "on", "no", "na", "my", "we", "go", "ja", "ze", "po", "od"];
+    const explanation = `Słowa ${homographs.join(" ")} i I go home są w zdaniu.`;
+    const targets = [...homographs.map(target), target("I")];
+    expect(explanationExposureKeys(explanation, own, targets, subject)).toEqual([]);
+    const sentence = target("I go home");
+    expect(explanationExposureKeys(explanation, own, [sentence], subject)).toEqual([sentence.targetKey]);
+  });
+
+  it("wariant wsadowy daje te same klucze co pojedyncze wywołania", () => {
+    const targets = [own, target("Do"), target("plays"), target("she plays")];
+    const keysFor = explanationExposureKeyFinder(targets, subject);
+    const explanation = "Zapamiętaj she plays i he plays.";
+    targets.forEach((ownTarget, index) => {
+      const others = targets.filter((_, other) => other !== index);
+      expect(keysFor(explanation, index)).toEqual(explanationExposureKeys(explanation, ownTarget, others, subject));
+    });
+    expect(keysFor(explanation, 0)).toEqual([targets[2]!.targetKey, targets[3]!.targetKey]);
   });
 
   it("dopasowuje na granicach słów: „display” nie zawiera „plays”", () => {
@@ -85,14 +117,14 @@ describe("explanationExposureKeys", () => {
   });
 
   it("nie powtarza kluczy i zachowuje kolejność innych ćwiczeń", () => {
-    const a = target("do");
+    const a = target("are");
     const b = target("is");
-    const result = explanationExposureKeys("Po is i po do używamy is.", own, [a, b, { ...b }], subject);
+    const result = explanationExposureKeys("Po is i po are używamy is.", own, [a, b, { ...b }], subject);
     expect(result).toEqual([a.targetKey, b.targetKey]);
   });
 
   it("zwraca pustą listę bez trafień", () => {
-    expect(explanationExposureKeys("Dodajemy końcówkę -s.", own, [target("Do")], subject)).toEqual([]);
+    expect(explanationExposureKeys("Dodajemy końcówkę -s.", own, [target("does")], subject)).toEqual([]);
   });
 
   it("stosuje normalizację ekspozycji przedmiotu po obu stronach", () => {

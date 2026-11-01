@@ -287,6 +287,14 @@ describe("wyjaśnienie błędu (explanationPl) z wyjścia modelu", () => {
     expect(toExerciseDraft({ ...rawExercise, explanationPl: "  Tekst.  " }).explanationPl).toBe("Tekst.");
   });
 
+  it("wyjaśnienie złego typu nie odrzuca ćwiczenia — ćwiczenie zostaje bez pola", () => {
+    const raw = { ...rawExercise, explanationPl: 5 };
+    expect(isWellShapedRawExercise(raw)).toBe(true);
+    const draft = toExerciseDraft(raw);
+    expect("explanationPl" in draft).toBe(false);
+    expect(draft.answer).toBe("plays");
+  });
+
   it("buildLessonPayload przenosi pole, a toExerciseDraft odczytuje je z payloadu", () => {
     const payload = buildLessonPayload(toExerciseDraft({ ...rawExercise, explanationPl: "Po she dodajemy s." }), englishGrammarSubject);
     expect(payload.explanationPl).toBe("Po she dodajemy s.");

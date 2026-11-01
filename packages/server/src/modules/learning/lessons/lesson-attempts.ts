@@ -967,7 +967,7 @@ function dtoOf(attempt: AttemptRow, taskState: string, stepId: string | null = n
     taskId: attempt.taskId,
     state: attempt.state as "processing" | "completed",
     modality: attempt.modality as AttemptDto["modality"],
-    feedback: (attempt.feedback as FeedbackDto | null) ?? null,
+    feedback: repairedLessonFeedback((attempt.feedback as FeedbackDto | null) ?? null),
     taskState: taskState as AttemptDto["taskState"],
     stepId,
     receivedAt: attempt.receivedAt.toISOString(),
@@ -1011,9 +1011,26 @@ export function withFeedbackSentenceAudio(
   return { ...feedback, correctAudioAssetId: key.feedbackAudioAssetId };
 }
 
-/** Czy `hintPl` feedbacku pochodzi z wyjaśnienia ćwiczenia (a nie z szablonu kategorii). */
-function carriesExerciseExplanation(feedback: FeedbackDto, key: LessonTaskAnswerKey): boolean {
-  return key.explanationPl !== undefined && feedback.hintPl === key.explanationPl;
+/**
+ * Czy `hintPl` feedbacku pochodzi z wyjaśnienia ćwiczenia (a nie z szablonu kategorii).
+ * Gdy tekst wyjaśnienia jest identyczny z szablonem kategorii celu, wygrywa szablon:
+ * brak ekspozycji cytatów (spec §4.4).
+ */
+export function carriesExerciseExplanation(feedback: FeedbackDto, key: LessonTaskAnswerKey): boolean {
+  if (key.explanationPl === undefined || feedback.hintPl !== key.explanationPl) return false;
+  const templates = Object.values(key.objectiveSnapshot?.hints ?? {});
+  return !templates.includes(feedback.hintPl);
+}
+
+/**
+ * Naprawa feedbacku lekcji łamiącego kontrakt Kid DTO: `lesson_hint` bez `hintPl`
+ * (np. model_incorrect bez szablonu i bez wyjaśnienia, także zapisany przed tą regułą)
+ * staje się `{ kind: "incorrect", correctText }` bez pozostałych pól. Stosowana przy
+ * wydaniu feedbacku i przy każdym odczycie zapisanej próby (odczyt, idempotentna powtórka).
+ */
+export function repairedLessonFeedback(feedback: FeedbackDto | null): FeedbackDto | null {
+  if (feedback === null || feedback.kind !== "lesson_hint" || feedback.hintPl !== undefined) return feedback;
+  return { kind: "incorrect", ...(feedback.correctText !== undefined ? { correctText: feedback.correctText } : {}) };
 }
 
 /**
@@ -1049,10 +1066,7 @@ export function withExerciseExplanation(
       ...(key.explanationAudioAssetId !== undefined ? { explanationAudioAssetId: key.explanationAudioAssetId } : {}),
     };
   }
-  if (out.kind === "lesson_hint" && out.hintPl === undefined) {
-    return { kind: "incorrect", ...(out.correctText !== undefined ? { correctText: out.correctText } : {}) };
-  }
-  return out;
+  return repairedLessonFeedback(out);
 }
 
 /**
