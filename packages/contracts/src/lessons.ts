@@ -2,6 +2,7 @@ import { z } from "zod";
 import { InstantSchema, UuidSchema } from "./common";
 import { AssignmentDtoSchema, DeckSourceDtoSchema, DeckStateSchema, RevisionAssetDtoSchema, SessionTaskBudgetSchema } from "./decks";
 import { GenerationDtoSchema } from "./generation";
+import { ChildInterestsSchema } from "./child-interests";
 import { CalculationSpecSchema } from "./lesson-calculation";
 
 /**
@@ -102,6 +103,8 @@ export const SubjectCatalogDtoSchema = z.object({
     creation: z.enum(["catalog", "material"]),
     /** Czy rodzic nazywa przedmiot własnym tytułem (zestawy szkolne); `false` = stały tytuł przedmiotu. */
     subjectTitleRequired: z.boolean(),
+    /** Czy przedmiot przyjmuje tematy zdań z zainteresowań dziecka (pole w formularzu rodzica). */
+    acceptsInterests: z.boolean().optional(),
     topics: z.array(z.object({
       id: z.string().min(1),
       version: z.number().int().positive(),
@@ -113,6 +116,12 @@ export const SubjectCatalogDtoSchema = z.object({
       }).strict()),
     }).strict()),
   }).strict()),
+  /**
+   * Skonfigurowana etykieta usługi generującej lekcje (host · model, z env procesu web);
+   * parent-facing, do informacji o tematach zdań. To opis konfiguracji, nie dowód, że
+   * generowanie jest dostępne; brak = etykiety nie da się ustalić.
+   */
+  generationService: z.string().min(1).optional(),
 }).strict();
 export type SubjectCatalogDto = z.infer<typeof SubjectCatalogDtoSchema>;
 
@@ -134,6 +143,8 @@ export const LessonCommandSchema = z.object({
   material: z.string().trim().min(1).max(8000),
   instruction: z.string().max(500).optional(),
   poolSize: z.number().int().min(20).max(120).optional(),
+  /** Tematy zdań z zainteresowań dziecka; brak pola = bez tematów (pusta lista nie jest dozwolona). */
+  interests: ChildInterestsSchema.min(1).optional(),
   clientRequestId: UuidSchema,
 }).strict();
 export type LessonCommand = z.infer<typeof LessonCommandSchema>;
@@ -451,6 +462,8 @@ export const LessonDraftDtoSchema = z.object({
   objectiveIds: z.array(z.string().min(1)),
   /** Nazwa przedmiotu nadana przez rodzica (tylko zestawy szkolne). */
   subjectTitlePl: z.string().min(1).optional(),
+  /** Tematy zdań z zainteresowań dziecka (tylko przedmioty, które je przyjmują); brak pola = bez tematów. */
+  interests: z.array(z.string()).optional(),
   /** Temat dynamiczny z materiału (tylko zestawy szkolne, po generacji). */
   dynamicTopic: DynamicTopicDtoSchema.optional(),
   examples: z.record(z.string(), z.array(z.string())),

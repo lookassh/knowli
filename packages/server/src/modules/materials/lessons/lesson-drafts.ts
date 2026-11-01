@@ -80,6 +80,8 @@ interface LessonContext {
   poolSize: number;
   material: string;
   instruction?: string;
+  /** Migawka tematów zdań z zainteresowań dziecka z chwili tworzenia (bez danych dziecka). */
+  interests?: string[];
   examples: Record<string, string[]>;
   /** Nazwa przedmiotu od rodzica (zestawy szkolne). */
   subjectTitlePl?: string;
@@ -104,6 +106,8 @@ interface LessonRunInput {
   poolSize: number;
   material: string;
   instruction?: string;
+  /** Migawka tematów zdań; dogenerowanie kopiuje ją z kontekstu, nie z profilu. */
+  interests?: string[];
   subjectTitlePl?: string;
   topicTitlePl?: string;
   /** Migawka tematu dynamicznego (dogenerowanie zestawu szkolnego). */
@@ -153,6 +157,10 @@ export async function createLesson(
   const subject = requireSubject(services, valid.subjectId);
   const topic = requireLatestTopic(services, valid.subjectId, valid.topicId);
   assertObjectivesInTopic(topic, valid.objectiveIds);
+  // Tematy zdań mają sens tylko tam, gdzie przedmiot ma regułę ich użycia; odrzucenie przed kolejką.
+  if (valid.interests !== undefined && subject.prompts.interestsRule === undefined) {
+    throw new AppError("validation", { message: `subject does not support interests: ${subject.id}` });
+  }
 
   const poolSize = valid.poolSize ?? defaultPoolSize(valid.objectiveIds.length);
   const title = lessonTitle(subject, topic, valid.instruction);
@@ -169,6 +177,7 @@ export async function createLesson(
         poolSize,
         material: valid.material,
         ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
+        ...(valid.interests === undefined ? {} : { interests: [...valid.interests] }),
         examples: {},
         rejectedCount: 0,
       };
@@ -194,6 +203,7 @@ export async function createLesson(
         poolSize,
         material: valid.material,
         ...(valid.instruction === undefined ? {} : { instruction: valid.instruction }),
+        ...(valid.interests === undefined ? {} : { interests: [...valid.interests] }),
       };
       await tx.insert(generationRuns).values({
         id: runId,
@@ -495,7 +505,11 @@ export function buildPoolInput(
   graderAvailable: boolean,
   existingAnswers: readonly string[],
   existingExercises: readonly LessonExerciseStimulus[] = [],
+  interests?: readonly string[],
 ): LessonPoolInput {
+  // Tematy i reguła ich użycia idą do modelu razem albo wcale (reguła należy do przedmiotu).
+  const interestsRule = subject.prompts.interestsRule;
+  const withInterests = interestsRule !== undefined && interests !== undefined && interests.length > 0;
   const objective = topic.objectives.find((o) => o.id === objectiveId)!;
   return {
     subjectId: subject.id,
@@ -508,6 +522,7 @@ export function buildPoolInput(
       almostDefinition: subject.prompts.almostDefinition,
       ...(subject.prompts.fieldRules === undefined ? {} : { fieldRules: subject.prompts.fieldRules }),
       ...(subject.prompts.typeRules === undefined ? {} : { typeRules: subject.prompts.typeRules }),
+      ...(withInterests ? { interestsRule } : {}),
     },
     exerciseTypes: [...subject.exerciseTypes],
     transforms: topic.transforms.map((t) => ({ id: t.id, instructionPl: t.instructionPl })),
@@ -521,6 +536,7 @@ export function buildPoolInput(
     ],
     material,
     ...(instruction === undefined ? {} : { instruction }),
+    ...(withInterests ? { interests: [...interests] } : {}),
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
@@ -1351,6 +1367,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
         subject.poolDeduplication === "exercise"
           ? [...batch.existingExercises, ...earlierExercises]
           : [],
+        input.interests,
       );
       const result = await control.call((signal) => deps.llm.generateLessonPool(poolInput, signal));
       await control.assertCurrent();
@@ -1634,6 +1651,7 @@ export async function regenerateObjective(
         poolSize: context.poolSize,
         material: context.material,
         ...(context.instruction === undefined ? {} : { instruction: context.instruction }),
+        ...(context.interests === undefined ? {} : { interests: context.interests }),
         ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
         ...(context.dynamicTopic === undefined ? {} : { dynamicTopic: context.dynamicTopic }),
         regenerate: { objectiveId: args.objectiveId, count: args.count, existingAnswers, existingExercises },

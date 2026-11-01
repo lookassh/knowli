@@ -39,7 +39,7 @@ const version = (id: string, status: "draft" | "published", editNumber: number) 
 
 const lesson = {
   id: deckId, title: "Present Simple", state: "published", sessionTaskBudget: 20,
-  draft: version(draftId, "draft", 2), published: version(publishedId, "published", 1), generation: null,
+  draft: { ...version(draftId, "draft", 2), interests: ["dinozaury", "Minecraft"] }, published: version(publishedId, "published", 1), generation: null,
   assignments: [{ childId, displayName: "Ala", testDate: "2026-11-12", testGoals: null, mockTestTaskCount: 10, active: true }],
   grading: { available: true, model: "test-grader" },
 };
@@ -69,7 +69,7 @@ async function openLesson(page: Page, options: { data?: typeof lesson } = {}): P
     calls.requests.push({ method, path, body: method === "GET" ? null : request.postDataJSON() });
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path.endsWith("/lesson-catalog")) return route.fulfill({ json: catalog });
-    if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true }] });
+    if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true, interests: [] }] });
     if (path.endsWith("/decks")) return route.fulfill({ json: [{ deckId, title: lesson.title, state: "published", kind: "lesson", editableVersionId: draftId, publishedVersionId: publishedId }] });
     if (path.endsWith(`/lessons/${deckId}`)) return route.fulfill({ json: data });
     if (method === "POST" && path.endsWith(`/decks/${deckId}/archive`)) return route.fulfill({ status: 204, body: "" });
@@ -113,11 +113,14 @@ test("telefon: pierwsza reguła rozwinięta, etapy zwinięte, pasek nad nawigacj
     const bar = (await page.getByTestId("editor-action-bar").boundingBox())!;
     const nav = (await page.getByTestId("tab-decks").boundingBox())!;
     expect(bar.y + bar.height).toBeLessThanOrEqual(nav.y + 1);
-    for (const id of ["editor-back", "lesson-menu", "lesson-tab-children", `objective-menu-${OBJ_A}`, "exercise-menu-0", "exercise-edit-0", "save-lesson", "publish-lesson"]) {
+    for (const id of ["editor-back", "lesson-menu", "lesson-tab-children", `objective-menu-${OBJ_A}`, "exercise-menu-0", "exercise-edit-0", "save-lesson", "publish-lesson", "lesson-themes-remove"]) {
       const box = (await page.getByTestId(id).boundingBox())!;
       expect(box.height, id).toBeGreaterThanOrEqual(44);
       expect(box.x + box.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
     }
+    // tematy zdań w szkicu: wiersz z przyciskiem usunięcia i notką o gotowych ćwiczeniach
+    await expect(page.getByTestId("lesson-themes-line")).toContainText("dinozaury, Minecraft");
+    await expect(page.getByTestId("lesson-themes-remove-hint")).toHaveText(messages.lessons.themesRemoveHint);
     await page.getByTestId("exercise-edit-0").click();
     await expect(page.getByTestId("exercise-option-0-1")).toBeVisible();
     await expectNoHorizontalOverflow(page);

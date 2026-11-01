@@ -143,6 +143,12 @@ export interface SubjectPromptProfile {
    * treść kart) doklejane do promptu podziału materiału. Brak = ogólny opis.
    */
   readonly objectivesRules?: string;
+  /**
+   * Reguła użycia tematów zdań z zainteresowań dziecka (#197), dokładana do promptu
+   * systemowego. Obecność pola = przedmiot przyjmuje tematy; same tematy to dane
+   * rodzica i idą do wiadomości użytkownika, nigdy do tej reguły.
+   */
+  readonly interestsRule?: string;
 }
 
 /**

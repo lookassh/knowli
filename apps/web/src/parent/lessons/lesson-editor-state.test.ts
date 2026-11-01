@@ -11,6 +11,7 @@ import {
   applyCalculationPreview,
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
+  lessonThemesPatch,
   lessonExerciseChanged,
   nextGroupId,
   nextRequiredElementId,
@@ -612,5 +613,18 @@ describe("formatRejectedReason (wiersz raportu odrzuceń)", () => {
     expect(formatRejectedReason(TEMPLATE, "cena $$ i $` i $'", 1)).toBe("cena $$ i $` i $' ×1");
     expect(formatRejectedReason(TEMPLATE, "tylko słowa pomocnicze: {n}", 5)).toBe("tylko słowa pomocnicze: {n} ×5");
     expect(formatRejectedReason(TEMPLATE, "{reason}", 4)).toBe("{reason} ×4");
+  });
+});
+
+describe("lessonThemesPatch (usuwanie tematów zdań)", () => {
+  it("nie dokłada interests przy zwykłym zapisie ćwiczeń", () => {
+    expect(lessonThemesPatch(["dinozaury", "Minecraft"], ["dinozaury", "Minecraft"])).toBeUndefined();
+    expect(lessonThemesPatch(undefined, [])).toBeUndefined();
+    expect(lessonThemesPatch(undefined, undefined)).toBeUndefined();
+    expect(lessonThemesPatch(["dinozaury"], null)).toBeUndefined();
+  });
+
+  it("po usunięciu tematów zwraca pustą listę", () => {
+    expect(lessonThemesPatch(["dinozaury", "Minecraft"], [])).toEqual([]);
   });
 });

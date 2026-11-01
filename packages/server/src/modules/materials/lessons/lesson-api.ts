@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
+  ChildInterestsSchema,
   LessonDynamicTopicPatchSchema,
   LessonExerciseInputSchema,
   type AssignmentDto,
@@ -71,6 +72,8 @@ interface LessonContextView {
   material: string;
   subjectTitlePl?: string;
   dynamicTopic?: DynamicTopicData;
+  /** Migawka tematów zdań (przedmioty z `interestsRule`); brak klucza = bez tematów. */
+  interests?: string[];
 }
 
 function readLessonContext(raw: Record<string, unknown> | null): LessonContextView {
@@ -87,6 +90,7 @@ function readLessonContext(raw: Record<string, unknown> | null): LessonContextVi
     material: ctx.material ?? "",
     ...(ctx.subjectTitlePl ? { subjectTitlePl: ctx.subjectTitlePl } : {}),
     ...(ctx.dynamicTopic ? { dynamicTopic: ctx.dynamicTopic } : {}),
+    ...(ctx.interests?.length ? { interests: [...ctx.interests] } : {}),
   };
 }
 
@@ -115,6 +119,7 @@ function requireTopic(services: Services, context: LessonContextView): LessonTop
  */
 export function lessonCatalog(services: Services): SubjectCatalogDto {
   return {
+    ...(services.generationService ? { generationService: services.generationService } : {}),
     subjects: services.subjects.listSubjects().map((subject) => {
       const latestByTopic = new Map<string, LessonTopic>();
       for (const topic of subject.topics) {
@@ -130,6 +135,8 @@ export function lessonCatalog(services: Services): SubjectCatalogDto {
         // Te same reguły stosują polecenia tworzenia (`material-creation`), więc formularz nie obiecuje ścieżki odrzucanej przez serwer.
         creation: materialCreationMode(subject) === undefined ? "catalog" as const : "material" as const,
         subjectTitleRequired: requiresParentSubjectTitle(subject),
+        // Formularz pokazuje tematy zdań tylko tam, gdzie przedmiot ma regułę w prompcie.
+        acceptsInterests: subject.prompts.interestsRule !== undefined,
         topics: [...latestByTopic.values()].map((topic) => ({
           id: topic.id,
           version: topic.version,
@@ -288,6 +295,7 @@ async function readLessonDraftDto(
     ...(draftSubject?.ttsForPrompts === true ? { voiceTones: { styleEnabled: services.media?.tts.style === "instructions" } } : {}),
     ...(draftSubject?.exerciseExplanations === true ? { exerciseExplanations: true as const } : {}),
     ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
+    ...(context.interests?.length ? { interests: [...context.interests] } : {}),
     ...(context.dynamicTopic === undefined
       ? {}
       : {
@@ -454,9 +462,10 @@ const LessonDraftPatchSchema = z.object({
   exercises: z.array(LessonExerciseInputSchema).optional(),
   examples: z.record(z.string(), z.array(z.string())).optional(),
   dynamicTopic: LessonDynamicTopicPatchSchema.optional(),
+  interests: ChildInterestsSchema.optional(),
 }).refine(
-  (p) => p.title !== undefined || p.exercises !== undefined || p.examples !== undefined || p.dynamicTopic !== undefined,
-  { message: "patch must change title, exercises, examples or dynamicTopic" },
+  (p) => p.title !== undefined || p.exercises !== undefined || p.examples !== undefined || p.dynamicTopic !== undefined || p.interests !== undefined,
+  { message: "patch must change title, exercises, examples, dynamicTopic or interests" },
 );
 export type LessonDraftPatch = z.infer<typeof LessonDraftPatchSchema>;
 
@@ -651,6 +660,11 @@ export async function editLessonDraft(
     assertEditable(version, patch.expectedEditNumber);
     const context = readLessonContext(version.lessonContext);
     const subject = requireSubject(services, context.subjectId);
+    // Niepuste tematy zdań mają sens tylko tam, gdzie przedmiot ma regułę w prompcie (jak przy
+    // tworzeniu lekcji); pusta lista (usunięcie) jest zawsze dozwolona.
+    if (patch.interests?.length && subject.prompts.interestsRule === undefined) {
+      throw new AppError("validation", { message: `subject does not support interests: ${subject.id}` });
+    }
 
     // Patch tematu dynamicznego (zagadnienia z materiału): edycja tytułów/kart
     // istniejących celów i usuwanie celów przez pominięcie. `descriptionEn`
@@ -731,9 +745,13 @@ export async function editLessonDraft(
         await tx.delete(itemRevisions).where(eq(itemRevisions.id, revision.id));
       }
     }
-    if (nextDynamicTopic !== undefined || patch.examples !== undefined) {
+    if (nextDynamicTopic !== undefined || patch.examples !== undefined || patch.interests !== undefined) {
+      // Pusta lista tematów usuwa klucz (brak klucza = lekcja bez tematów, jak przy tworzeniu).
+      const currentContext = (version.lessonContext ?? {}) as Record<string, unknown>;
+      const contextWithoutInterests = Object.fromEntries(Object.entries(currentContext).filter(([key]) => key !== "interests"));
       const nextContext = {
-        ...(version.lessonContext ?? {}),
+        ...(patch.interests === undefined ? currentContext : contextWithoutInterests),
+        ...(patch.interests?.length ? { interests: patch.interests } : {}),
         ...(nextDynamicTopic
           ? { dynamicTopic: nextDynamicTopic, objectiveIds: nextDynamicTopic.objectives.map((o) => o.id) }
           : {}),

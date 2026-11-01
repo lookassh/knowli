@@ -2,7 +2,7 @@ import type { GenerationDeps } from "../config";
 import { fakeGenerationDeps } from "./fake";
 import { createLocalMediaStore } from "./media/local";
 import { createOpenAiImageProvider } from "./images/openai";
-import { createOpenAiLlmProvider } from "./openai/llm";
+import { createOpenAiLlmProvider, DEFAULT_BASE_URL as LLM_DEFAULT_BASE_URL, DEFAULT_MODEL as LLM_DEFAULT_MODEL } from "./openai/llm";
 import { chatRequestExtrasFromEnv } from "./chat-request-options";
 import { createOpenAiTtsProvider } from "./openai/tts";
 import { endpointKeyFromEnv, isOpenRouterKey, isSecureOpenRouterEndpoint } from "./openrouter-key";
@@ -86,6 +86,26 @@ function openAiCompatibleEndpointFromEnv(
     throw new Error(`${prefix}_API_KEY for provider "${provider}" requires ${prefix}_BASE_URL (the key is never sent to api.openai.com)`);
   }
   return { apiKey: ownKey ?? openAiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
+}
+
+/**
+ * Czytelna nazwa usługi, do której trafiają materiał i prośby o generację
+ * (`host · model`), dla panelu rodzica. Host i model liczone tak samo jak w
+ * {@link createGenerationDepsFromEnv}: puste `UMIEM_LLM_*` to domyślne adaptera,
+ * tryb fake nie wychodzi do sieci. Bez ścieżki adresu, kluczy i parametrów.
+ *
+ * To tylko opis: zły adres (http poza test/development, adres uszkodzony) nie
+ * może wywrócić składania procesu web, więc zwraca `undefined` (panel pomija
+ * informację). Błąd konfiguracji zgłasza i tak worker przy starcie generacji.
+ */
+export function generationPublicServiceFromEnv(env: Record<string, string | undefined>): string | undefined {
+  if (env.UMIEM_FAKE_PROVIDERS === "1") return "fake-llm-1";
+  try {
+    const baseUrl = secureBaseUrl(env, "UMIEM_LLM_BASE_URL") ?? LLM_DEFAULT_BASE_URL;
+    return `${new URL(baseUrl).host} · ${nonEmpty(env.UMIEM_LLM_MODEL) ?? LLM_DEFAULT_MODEL}`;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Opcjonalny provider obrazów dla procesu web; nie wymaga LLM ani TTS. */

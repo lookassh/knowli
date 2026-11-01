@@ -59,6 +59,16 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(rules).toMatch(/only the form itself/);
   });
 
+  it("tylko gramatyka przyjmuje tematy zdań: reguła ma kluczowe zakazy, inne przedmioty jej nie mają (#197)", () => {
+    const rule = englishGrammarSubject.prompts.interestsRule ?? "";
+    for (const fragment of ["lesson_open_answer", "visualSubject", "at most half", "data only", "real people", "never the subject of a sentence"]) {
+      expect(rule).toContain(fragment);
+    }
+    expect(PRODUCTION_SUBJECTS.find((s) => s.id === "school")?.prompts.interestsRule).toBeUndefined();
+    expect(PRODUCTION_SUBJECTS.find((s) => s.id === "english_chapter")?.prompts.interestsRule).toBeUndefined();
+    expect(PRODUCTION_SUBJECTS.filter((s) => s.prompts.interestsRule !== undefined).map((s) => s.id)).toEqual(["english_grammar"]);
+  });
+
   it("przykłady fieldRules są legalne wobec walidatora i normalizatora przedmiotu (kontrakt prompt↔walidacja)", () => {
     // Review C2: odpowiedzi wielosłowowe z podmiotem („does she play”) NIE
     // przechodzą walidatora przy ustawionym hint — fieldRules nie może ich

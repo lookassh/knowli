@@ -400,6 +400,33 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
     expect(bare).not.toHaveProperty("typeRules");
     expect(build(englishGrammarSubject).promptProfile).not.toHaveProperty("typeRules");
   });
+
+  describe("tematy zdań z zainteresowań dziecka", () => {
+    const buildWith = (subject: SubjectModule, interests?: readonly string[]) => {
+      const resolved = topic(subject);
+      return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, true, [], [], interests);
+    };
+
+    it("przedmiot z regułą i niepusta lista: lista oraz reguła trafiają do wejścia", () => {
+      const input = buildWith(englishGrammarSubject, ["dinozaury"]);
+      expect(input.interests).toEqual(["dinozaury"]);
+      expect(input.promptProfile.interestsRule).toBe(englishGrammarSubject.prompts.interestsRule);
+    });
+
+    it("bez listy albo z pustą listą nie ma żadnego z pól", () => {
+      for (const interests of [undefined, []]) {
+        const input = buildWith(englishGrammarSubject, interests);
+        expect(input).not.toHaveProperty("interests");
+        expect(input.promptProfile).not.toHaveProperty("interestsRule");
+      }
+    });
+
+    it("przedmiot bez reguły ignoruje listę", () => {
+      const input = buildWith(schoolSubject, ["dinozaury"]);
+      expect(input).not.toHaveProperty("interests");
+      expect(input.promptProfile).not.toHaveProperty("interestsRule");
+    });
+  });
 });
 
 describe("buildDynamicTopicData (wadliwe zagadnienie nie przerywa generacji)", () => {

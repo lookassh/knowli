@@ -92,6 +92,8 @@ export const childProfiles = app.table(
     birthYear: smallint("birth_year"),
     canRead: boolean("can_read").notNull().default(true),
     recordingMode: text("recording_mode").$type<RecordingModeDto>().notNull().default("hold"),
+    // Zainteresowania dziecka (tematy zdań w lekcjach, do 5); format elementów pilnuje kontrakt.
+    interests: text("interests").array().notNull().default(sql`ARRAY[]::text[]`),
     // własna wersja polityki dziecka (design 2026-10-09); null = bieżąca globalna
     policyId: text("policy_id").references((): AnyPgColumn => learningPolicies.id),
     // NULL oznacza legacy dane wymagające jawnej odbudowy; nowe profile są gotowe.
@@ -106,6 +108,7 @@ export const childProfiles = app.table(
     check("child_profiles_display_name_length", sql`length(${t.displayName}) between 1 and 80`),
     check("child_profiles_birth_year_range", sql`${t.birthYear} is null or ${t.birthYear} between 1900 and 2200`),
     check("child_profiles_recording_mode", sql`${t.recordingMode} in ('hold', 'toggle')`),
+    check("child_profiles_interests_valid", sql`cardinality(${t.interests}) <= 5 and array_position(${t.interests}, null) is null`),
     check("child_profiles_reward_nonnegative", sql`${t.rewardPoints} >= 0 and ${t.rewardRemainderMs} >= 0 and ${t.rewardRemainderMs} < 60000`),
   ],
 );

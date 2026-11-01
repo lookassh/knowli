@@ -3693,7 +3693,7 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
       const gate = new Promise<void>((resolve) => { release = resolve; });
       return { gate, release };
     };
-    const answered = async (opts: { playGate?: Promise<void> } = {}, before?: (harness: Awaited<ReturnType<typeof startAtTask>>) => void) => {
+    const answered = async (opts: { playGate?: Promise<void>; playbackDurationMs?: number | null; activityClock?: import("./activity-report").ActivityClock } = {}, before?: (harness: Awaited<ReturnType<typeof startAtTask>>) => void) => {
       const state = baseState();
       state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE } })];
       const harness = await startAtTask(state, gap(), opts);
@@ -3731,6 +3731,37 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
       expect(failure(harness)).toBeNull();
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.every((entry) => entry.playing === null && entry.failure === null)).toBe(true);
+    });
+
+    it("po teardown odczyt zdania nie woła odtwarzacza", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      const urls = harness.media.playUrls.length;
+      harness.controller.teardown();
+      await harness.controller.playSentenceAudio("slow");
+      expect(harness.media.playUrls).toHaveLength(urls);
+      release();
+    });
+
+    it("przełączenie tempa nie ucina nowego odsłuchu w raporcie aktywności", async () => {
+      // Nowy przebieg startuje (onStarted) przed `finally` przerwanego — koniec
+      // starego odsłuchu tego samego nagrania nie może zamknąć nowego.
+      let now = 0;
+      const { gate, release } = gated();
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE } })];
+      const harness = await startAtTask(state, gap(), { playGate: gate, playbackDurationMs: 3_000, activityClock: { now: () => now } });
+      await harness.controller.answerText("goes");
+      await tick();
+      expect(playing(harness)).toBe("normal");
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      now = 2_000;
+      release();
+      await tick();
+      await harness.controller.endNow();
+      const playbacks = state.endReports[0]?.tasks.flatMap((task) => task.playbacks) ?? [];
+      expect(playbacks).toEqual([expect.objectContaining({ assetId: SENTENCE, toMs: 2_000 })]);
     });
 
     it("wolno: rate 0.75 i wskaźnik slow", async () => {

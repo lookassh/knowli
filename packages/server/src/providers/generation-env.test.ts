@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createGenerationDepsFromEnv, imageProviderFromEnv } from "./generation-env";
+import { withConfigDefaults } from "../config-defaults";
+import { createGenerationDepsFromEnv, generationPublicServiceFromEnv, imageProviderFromEnv } from "./generation-env";
 
 /**
  * Kontrakt konfiguracji LLM generującego materiał (zestawy + pule lekcji):
@@ -340,5 +341,37 @@ describe("createGenerationDepsFromEnv — TTS przez UMIEM_TTS_* (np. OpenRouter)
       .toBe('UMIEM_TTS_API_KEY for provider "openrouter" requires UMIEM_TTS_BASE_URL (the key is never sent to api.openai.com)');
     expect(configError({ OPENAI_API_KEY: "sk-main", UMIEM_TTS_API_KEY: "sk-or-v1-secret", UMIEM_TTS_BASE_URL: "https://api.openai.com/v1" }))
       .toBe("UMIEM_TTS_API_KEY looks like an OpenRouter key but UMIEM_TTS_BASE_URL is not an https OpenRouter endpoint");
+  });
+});
+
+describe("generationPublicServiceFromEnv — nazwa usługi generującej dla rodzica", () => {
+  it("domyślna konfiguracja repo daje host i model OpenRouter", () => {
+    expect(generationPublicServiceFromEnv(withConfigDefaults({}))).toBe("openrouter.ai · google/gemini-3.8-flash");
+  });
+
+  it("tryb fake nie pokazuje prawdziwej usługi", () => {
+    expect(generationPublicServiceFromEnv(withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1" }))).toBe("fake-llm-1");
+  });
+
+  it("własny adres i model są pokazane jako host · model, bez ścieżki i klucza", () => {
+    expect(generationPublicServiceFromEnv({
+      UMIEM_LLM_BASE_URL: "https://llm.example.test:8443/v1",
+      UMIEM_LLM_MODEL: "model-x",
+      UMIEM_LLM_API_KEY: "sk-secret",
+    })).toBe("llm.example.test:8443 · model-x");
+  });
+
+  it("puste wartości oznaczają domyślne adaptera", () => {
+    expect(generationPublicServiceFromEnv({})).toBe("api.openai.com · gpt-4o-mini");
+    expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "", UMIEM_LLM_MODEL: "" })).toBe("api.openai.com · gpt-4o-mini");
+  });
+
+  it("zły adres nie rzuca (etykieta jest tylko opisem): http poza test/development i adres uszkodzony dają undefined", () => {
+    expect(generationPublicServiceFromEnv({ NODE_ENV: "production", UMIEM_LLM_BASE_URL: "http://llm.example.test/v1" })).toBeUndefined();
+    expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "https://" })).toBeUndefined();
+    expect(generationPublicServiceFromEnv({ UMIEM_LLM_BASE_URL: "not a url" })).toBeUndefined();
+    // http w test/development nadal jest opisywany
+    expect(generationPublicServiceFromEnv({ NODE_ENV: "development", UMIEM_LLM_BASE_URL: "http://localhost:9000/v1", UMIEM_LLM_MODEL: "m" }))
+      .toBe("localhost:9000 · m");
   });
 });
