@@ -3447,7 +3447,10 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     expect(harness.media.playUrls).toEqual([SENTENCE_URL, SENTENCE_URL]);
   });
 
-  it("„Dalej” w trakcie odczytu zatrzymuje go, a spóźnione zakończenie nie zmienia nowego zadania", async () => {
+  // stop() fake'a rozstrzyga play() od razu, więc koniec odczytu ściga się tu z #loadNext
+  // (release() niczego już nie kończy); spóźniony start po „Dalej” pokrywa
+  // „Dalej gasi i nie przenosi stanu” w bloku „odczyt zdania: stan, wolne tempo, błąd”.
+  it("„Dalej” w trakcie odczytu zatrzymuje go, a koniec przerwanego odczytu nie zmienia nowego zadania", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const state = baseState();
@@ -3528,12 +3531,12 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
       const gate = new Promise<void>((resolve) => { release = resolve; });
       return { gate, release };
     };
-    const answered = async (opts: { playGate?: Promise<void> } = {}, before?: (media: ReturnType<typeof makeMedia>) => void) => {
+    const answered = async (opts: { playGate?: Promise<void> } = {}, before?: (harness: Awaited<ReturnType<typeof startAtTask>>) => void) => {
       const state = baseState();
       state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE } })];
       const harness = await startAtTask(state, gap(), opts);
       state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
-      before?.(harness.media);
+      before?.(harness);
       await harness.controller.answerText("goes");
       await tick();
       return harness;
@@ -3551,14 +3554,21 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     });
 
     it("zablokowany autoodczyt nie zapala wskaźnika i nie ustawia błędu", async () => {
-      const seen: unknown[] = [];
-      const harness = await answered({}, (media) => { media.rejectNextPlays = 1; });
-      harness.controller.subscribe(() => seen.push(playing(harness)));
+      // Subskrypcja przed odpowiedzią: widzimy każdą emisję ekranu wyniku,
+      // także tę między kliknięciem a odrzuceniem play().
+      const seen: { playing: unknown; failure: unknown }[] = [];
+      const harness = await answered({}, (h) => {
+        h.media.rejectNextPlays = 1;
+        h.controller.subscribe(() => {
+          if (feedbackOf(h) !== null) seen.push({ playing: playing(h), failure: failure(h) });
+        });
+      });
       await tick();
       expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
       expect(playing(harness)).toBeNull();
       expect(failure(harness)).toBeNull();
-      expect(seen.every((value) => value === null)).toBe(true);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((entry) => entry.playing === null && entry.failure === null)).toBe(true);
     });
 
     it("wolno: rate 0.75 i wskaźnik slow", async () => {

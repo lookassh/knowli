@@ -1336,6 +1336,10 @@ export class LearningSessionController {
    * nieprzerwany przez `#stopPlayback` i dotyczy tego samego wyniku (`attemptId`)
    * — spóźniony start lub koniec nie dotknie nowego odczytu ani następnego
    * zadania. Każdy zapis robi spread z BIEŻĄCEGO feedbacku w chwili zapisu.
+   * Strażnik sprawdza oprócz `#sentenceRun` także `#playbackGeneration` i epokę:
+   * każde zatrzymanie podbija generację, więc spóźnione `onStarted` po przerwaniu
+   * przez „?” albo odsłuch pytania (ten sam wynik, ten sam numer przebiegu) nie
+   * zapali zgaszonego już wskaźnika — nie upraszczaj go do samego numeru przebiegu.
    * Autoodczyt (`manual: false`) nigdy nie ustawia błędu: zablokowane
    * autoodtwarzanie jest ciche, zostaje przycisk w doku.
    */
