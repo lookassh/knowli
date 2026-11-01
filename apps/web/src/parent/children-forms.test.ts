@@ -8,6 +8,7 @@ const child: ChildDto = {
   avatarKey: "fox",
   recordingMode: "hold",
   canRead: true,
+  interests: [],
 };
 const unchanged = { displayName: child.displayName, avatarKey: "fox", recordingMode: "hold" as const, canRead: true };
 

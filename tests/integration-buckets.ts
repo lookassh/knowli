@@ -39,6 +39,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
   bucket(`
     attempts.test.ts
     auth-profiles.test.ts
+    child-interests.test.ts
     db-history-indexes.test.ts
     deck-cover.test.ts
     feedback-audio.test.ts
