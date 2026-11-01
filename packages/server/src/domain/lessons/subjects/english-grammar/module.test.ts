@@ -25,6 +25,9 @@ describe("englishGrammarSubject — spójność katalogu", () => {
   it("english grammar enables end-of-session story with rules", () => {
     expect(englishGrammarSubject.lessonStory).toBe(true);
     expect(englishGrammarSubject.prompts.storyRules?.trim()).toBeTruthy();
+    // Tylko formy celów z żądania, nie wszystkich reguł tematu.
+    expect(englishGrammarSubject.prompts.storyRules).toContain("Use only the grammar forms of the objectives listed above");
+    expect(englishGrammarSubject.prompts.storyRules).not.toContain("several rules of the topic");
   });
 
   it("obsługuje wszystkie 9 typów ćwiczeń", () => {

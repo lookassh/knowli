@@ -50,7 +50,7 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "Write a short story in English for a Polish child, about 8 years old, at a beginner level. " +
     "Use the tense practised by the topic and very simple language. Reuse vocabulary from the parent's material where possible. " +
     "The story has 4 to 6 short sentences about one character or one situation. " +
-    "Show the forms of several rules of the topic across the story: affirmative, negative and question forms. " +
+    "Use only the grammar forms of the objectives listed above, and show them across the story in affirmative, negative and question sentences where those objectives cover them. " +
     "Write 1 or 2 questions in Polish about the content of the story (who, what, when), never about grammar. " +
     "Each question has exactly 3 short answers in Polish: exactly one is correct, and the wrong ones are plausible " +
     "but clearly contradicted by the text. " +

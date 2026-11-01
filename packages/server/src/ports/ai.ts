@@ -115,8 +115,8 @@ export interface LessonObjectivesInput {
 /**
  * Wejście generacji historyjki na koniec sesji lekcji (design „Historyjka
  * lekcji”): temat, cele, materiał rodzica i zasady przedmiotu. Bez danych
- * dziecka. `avoidSentences` to rozwiązane zdania puli i poprzednich historyjek,
- * których model ma nie powtarzać.
+ * dziecka. `avoidSentences` to rozwiązane zdania puli ćwiczeń wersji (bariera
+ * ekspozycji), których model ma nie powtarzać.
  */
 export interface LessonStoryInput {
   readonly subjectTitle: string;
