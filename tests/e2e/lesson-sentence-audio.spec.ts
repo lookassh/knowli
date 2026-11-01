@@ -693,3 +693,61 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
     }
   }
 });
+
+/**
+ * Dotykowy tablet w poziomie (`pointer: coarse`, zwarta rama od 960 × 480) z
+ * długim tekstem z lukami: treść wyższa niż okno, więc materiał się przewija,
+ * stopka stoi przy dolnej krawędzi ramy i panel rośnie w górę. Tekst błędu
+ * ręcznego odsłuchu staje wtedy nad górnym wierszem (`data-material-full`)
+ * i nie przesuwa przycisków zdania, w które dziecko właśnie stuknęło.
+ */
+const TABLET_TOUCH_VIEWPORTS = [
+  { width: 1024, height: 600 },
+  { width: 1280, height: 800 },
+];
+
+for (const viewport of TABLET_TOUCH_VIEWPORTS) {
+  const label = `${viewport.width}x${viewport.height}`;
+  test.describe(`touch tablet ${label} with overflowing cloze`, () => {
+    test.use({ isMobile: true, hasTouch: true });
+    test(`the replay error keeps the sentence buttons still at ${label}`, async ({ page }) => {
+      const posted = recordAttemptPosts(page);
+      await spyAudio(page, "reject");
+      await installKidUiFixture(page, {
+        ...lessonAudioFixture(ids, [clozeTask]),
+        attempts: [clozeAttempt({ kind: "incorrect", correctText: clozeFilledText, correctAudioAssetId: sentenceAssetId })],
+      });
+      // `openLessonTask` otwiera zadanie w oknie telefonu; rozmiar tabletu dopiero potem.
+      await openLessonTask(page, "kid-lesson-cloze");
+      await page.setViewportSize(viewport);
+      await expectFrameFillsViewport(page, viewport);
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+      await tapPoolAndCheck(page, "kid-lesson-cloze-option", 3, posted);
+      const dock = page.getByTestId("kid-feedback-dock");
+      await expect(dock).toBeVisible();
+      const material = page.getByTestId("kid-material");
+      // Scenariusz wymaga przewijanego materiału — bez niego test niczego nie sprawdza.
+      expect(await material.evaluate((element) => element.scrollHeight > element.clientHeight + 1), `material scrolls at ${label}`).toBe(true);
+      const error = page.getByTestId("kid-sentence-audio-error");
+      await expect(error).toHaveText("");
+      const sentence = dock.getByTestId("kid-sentence-audio");
+      const slow = dock.getByTestId("kid-sentence-audio-slow");
+      const before = { sentence: await boxOf(sentence), slow: await boxOf(slow) };
+
+      await slow.tap();
+      await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const after = { sentence: await boxOf(sentence), slow: await boxOf(slow) };
+      for (const name of ["sentence", "slow"] as const) {
+        const moved = `${name} before ${JSON.stringify(before[name])}, after ${JSON.stringify(after[name])} at ${label}`;
+        expect(Math.abs(after[name].x - before[name].x), `x: ${moved}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(after[name].y - before[name].y), `y: ${moved}`).toBeLessThanOrEqual(1);
+      }
+      const errorBox = await boxOf(error);
+      expect(within(errorBox, await boxOf(dock)), `error inside dock at ${label}`).toBe(true);
+      expect(overlaps(errorBox, after.sentence) || overlaps(errorBox, after.slow), `error overlaps a sentence button at ${label}`).toBe(false);
+      expect(errorBox.y + errorBox.height, `error above the sentence row at ${label}`).toBeLessThanOrEqual(Math.min(after.sentence.y, after.slow.y) + 1);
+      expect(within(await boxOf(dock.getByTestId("kid-next")), { x: 0, y: 0, ...viewport }), `„Dalej” in viewport at ${label}`).toBe(true);
+    });
+  });
+}

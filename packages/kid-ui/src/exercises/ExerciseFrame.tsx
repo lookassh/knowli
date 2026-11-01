@@ -168,6 +168,7 @@ export function ExerciseFrame({
       // Najpierw limit karty z wolnego miejsca: zmienia wysokość panelu, więc
       // nadwyżka i zakładka niżej liczą się już na nowym układzie.
       cardSpaceRef.current = syncCardSpace(cardSpaceRef.current, overlay, material);
+      syncMaterialFull(overlay, material);
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
@@ -340,6 +341,19 @@ function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, mater
   if (cardMax === null) overlay.style.removeProperty(CARD_MAX_PROPERTY);
   else overlay.style.setProperty(CARD_MAX_PROPERTY, `${cardMax}px`);
   return { overlay, key };
+}
+
+/**
+ * `data-material-full` na nakładce: materiał się przewija, więc w zwartej ramie
+ * stopka stoi przy dolnej krawędzi i panel rośnie w górę, a nie w wolne miejsce
+ * pod stopką. Dok czyta atrybut w CSS (region błędu odsłuchu nad górnym
+ * wierszem, spec 2026-11-01-sentence-readback-followups §4.4). Na przewijanej
+ * stronie panel jest w przepływie i zawsze rośnie w dół — atrybutu nie ma.
+ */
+function syncMaterialFull(overlay: HTMLElement, material: HTMLElement): void {
+  const page = overlay.closest<HTMLElement>(".kid-page");
+  const pageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
+  overlay.toggleAttribute("data-material-full", !pageScroll && material.scrollHeight > material.clientHeight + 1);
 }
 
 /**
