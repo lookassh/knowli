@@ -207,6 +207,8 @@ const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "luc
 function looksPlural(token: string): boolean {
   if (BE_S_ENDING_NAMES.has(token)) return false;
   if (BE_IRREGULAR_PLURALS.has(token)) return true;
+  // Rzeczowniki niepoliczalne na -s (gymnastics, athletics, maths) łączą się z „is”: tematy zdań z zainteresowań (#197).
+  if (token.endsWith("ics") || token === "maths") return false;
   return token.length > 1 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is") && token !== "news";
 }
 

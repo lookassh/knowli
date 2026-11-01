@@ -72,6 +72,42 @@ describe("validateEnglishGrammarExercise — lesson_gap, forma czasownika w Pres
   });
 });
 
+describe("validateEnglishGrammarExercise — zdania z tematów zainteresowań dziecka (#197)", () => {
+  const AFF = "english_grammar.to_be.affirmative_forms";
+  const themed = (exerciseType: "lesson_gap" | "lesson_choice", objectiveId: string, stem: string, answer: string): LessonExerciseDraft => ({
+    exerciseType,
+    objectiveId,
+    stem,
+    answer,
+    acceptedAnswers: [],
+    focus: answer.split(" "),
+    ...(exerciseType === "lesson_choice"
+      ? { options: [{ id: "a", text: answer }, { id: "b", text: "x" }], correctOption: "a" }
+      : {}),
+  });
+
+  it("lesson_gap z tematem w Present Simple przechodzi (Tom ___ football every day.)", () => {
+    const ex = { ...themed("lesson_gap", "english_grammar.present_simple.third_person_s", "Tom ___ football every day.", "plays"), hint: "play" };
+    expect(validateEnglishGrammarExercise(ex, presentSimpleV1)).toEqual([]);
+  });
+
+  it("lesson_choice z tematem w to_be przechodzi (Dinosaurs ___ big.)", () => {
+    expect(validateEnglishGrammarExercise(themed("lesson_choice", AFF, "Dinosaurs ___ big.", "are"), toBeV1)).toEqual([]);
+  });
+
+  it.each([
+    ["Gymnastics ___ fun.", "is"],
+    ["Maths ___ fun.", "is"],
+    ["Athletics ___ fun.", "is"],
+  ])("rzeczownik na -ics/maths jest l.poj. w to_be: %s → %s", (stem, answer) => {
+    expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, stem, answer), toBeV1)).toEqual([]);
+  });
+
+  it("rzeczownik na -ics/maths z are nadal jest odrzucany", () => {
+    expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, "Gymnastics ___ fun.", "are"), toBeV1)).not.toEqual([]);
+  });
+});
+
 describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
   const beGap = (objectiveId: string, stem: string, answer: string, hint?: string): LessonExerciseDraft => ({
     exerciseType: "lesson_gap",
