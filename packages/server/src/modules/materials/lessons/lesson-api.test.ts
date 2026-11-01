@@ -19,6 +19,19 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
     expect(byId("english_grammar")!.topics.length).toBeGreaterThan(0);
   });
 
+  it("acceptsInterests tylko dla przedmiotu z regułą tematów zdań (gramatyka)", () => {
+    expect(byId("english_grammar")!.acceptsInterests).toBe(true);
+    expect(byId("school")!.acceptsInterests).toBe(false);
+    expect(byId("english_chapter")!.acceptsInterests).toBe(false);
+  });
+
+  it("generationService tylko gdy jest skonfigurowane w usługach", () => {
+    expect(catalog).not.toHaveProperty("generationService");
+    const configured = lessonCatalog(createServices({ db: {} as never, generationService: "openrouter.ai · google/gemini-3.8-flash" }));
+    expect(configured.generationService).toBe("openrouter.ai · google/gemini-3.8-flash");
+    expect(SubjectCatalogDtoSchema.safeParse(configured).success).toBe(true);
+  });
+
   it("szkoła: z materiału, rodzic nazywa przedmiot", () => {
     expect(byId("school")).toMatchObject({ creation: "material", subjectTitleRequired: true, topics: [] });
   });

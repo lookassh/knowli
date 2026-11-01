@@ -9,6 +9,7 @@ import {
   FakeSessionActivityReviewer,
   fakeLessonSpeechDeps,
   fakeSpeechDeps,
+  generationPublicServiceFromEnv,
   graderFromEnv,
   imageProviderFromEnv,
   lessonSpeechFromEnv,
@@ -68,6 +69,8 @@ function initialize(): { services: Services; pool: Pool } {
       ...(lessonSpeech ? { lessonSpeech } : {}),
       ...(grader ? { grader } : {}),
       ...(sessionActivity ? { sessionActivity } : {}),
+      // web nie ma LLM (generuje worker): opisuje konfigurację wspólną z workerem
+      generationService: generationPublicServiceFromEnv(env),
     }),
     pool,
   };

@@ -21,8 +21,9 @@ export interface OpenAiLlmOptions {
   requestExtras?: ChatRequestExtras;
 }
 
-const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+/** Domyślny model i adres adaptera (puste `UMIEM_LLM_*`); nazwę usługi dla rodzica liczy `generationPublicServiceFromEnv`. */
+export const DEFAULT_MODEL = "gpt-4o-mini";
+export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 function retryAfterMs(response: Response): number | undefined {
   const raw = response.headers.get("retry-after");

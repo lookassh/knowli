@@ -4,12 +4,15 @@ import {
   createChild,
   createLesson,
   createServices,
+  createLessonDraftFromPublished,
   createSubjectRegistry,
   deleteChild,
+  editLessonDraft,
   englishGrammarSubject,
   executeLessonGeneration,
   historyLikeSubject,
   listChildren,
+  publishLessonDraft,
   readGeneration,
   readLessonDeck,
   regenerateObjective,
@@ -211,6 +214,98 @@ describe("lekcja — migawka tematów", () => {
     expect(serialized).not.toContain("Testowa-Fikcyjna");
     expect(serialized).not.toContain("2017");
     expect(serialized).not.toContain(child.id);
+  });
+});
+
+describe("lekcja — API rodzica (szkic i patch tematów)", () => {
+  const disposers: Array<() => Promise<void>> = [];
+
+  beforeEach(async () => {
+    await truncateCoreTables();
+    const { pool } = testDatabase();
+    await pool.query(
+      `truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets,
+              learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
+              learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade`,
+    );
+  });
+
+  afterEach(async () => {
+    for (const dispose of disposers.splice(0)) await dispose();
+  });
+
+  async function world(): Promise<{ fakes: FakeGeneration; services: Services }> {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    return { fakes, services: lessonServices(fakes) };
+  }
+
+  it("DTO szkicu niesie migawkę tematów, a bez nich nie ma pola", async () => {
+    const { services } = await world();
+    const themes = ["piłka nożna", "dinozaury"];
+
+    const withThemes = await createLesson(services, grammarCommand({ interests: themes }));
+    expect((await readLessonDeck(services, withThemes.deckId)).draft!.interests).toEqual(themes);
+
+    const without = await createLesson(services, grammarCommand());
+    expect((await readLessonDeck(services, without.deckId)).draft).not.toHaveProperty("interests");
+  });
+
+  it("patch podmienia tematy, a pusta lista usuwa klucz; kolejne dogenerowanie idzie bez tematów", async () => {
+    const { fakes, services } = await world();
+    const { runId, deckId } = await createLesson(services, grammarCommand({ interests: ["piłka nożna"] }));
+    await executeLessonGeneration(services, runId);
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+
+    const replaced = await editLessonDraft(services, draft.id, { expectedEditNumber: draft.editNumber, interests: ["Minecraft", "dinozaury"] });
+    expect(replaced.interests).toEqual(["Minecraft", "dinozaury"]);
+    expect(replaced.editNumber).toBe(draft.editNumber + 1);
+
+    const cleared = await editLessonDraft(services, draft.id, { expectedEditNumber: replaced.editNumber, interests: [] });
+    expect(cleared).not.toHaveProperty("interests");
+    const { pool } = testDatabase();
+    const stored = await pool.query(
+      "select lesson_context ? 'interests' as has from learning_app.deck_versions where id = $1", [draft.id],
+    );
+    expect(stored.rows[0]).toEqual({ has: false });
+
+    const before = fakes.llm.lessonRequests.length;
+    const topUp = await regenerateObjective(services, {
+      deckId, objectiveId: OBJECTIVE_ID, count: 2, expectedEditNumber: cleared.editNumber, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, topUp.runId);
+    expect(fakes.llm.lessonRequests.length).toBeGreaterThan(before);
+    for (const request of fakes.llm.lessonRequests.slice(before)) expect(request).not.toHaveProperty("interests");
+  });
+
+  it("patch przedmiotu bez reguły tematów kończy się validation i nic nie zapisuje", async () => {
+    const { services } = await world();
+    const { deckId } = await createLesson(services, {
+      subjectId: historyLikeSubject.id,
+      topicId: historyLikeSubject.topics[0]!.id,
+      objectiveIds: [historyLikeSubject.topics[0]!.objectives[0]!.id],
+      material: "Tekst.",
+      clientRequestId: randomUUID(),
+    });
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+
+    await expect(editLessonDraft(services, draft.id, { expectedEditNumber: draft.editNumber, interests: ["piłka nożna"] }))
+      .rejects.toMatchObject({ code: "validation" });
+    expect((await readLessonDeck(services, deckId)).draft).toEqual(draft);
+  });
+
+  it("nowy szkic z opublikowanej lekcji zachowuje tematy", async () => {
+    const { services } = await world();
+    const themes = ["piłka nożna", "dinozaury"];
+    const { runId, deckId } = await createLesson(services, grammarCommand({ interests: themes }));
+    await executeLessonGeneration(services, runId);
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+    await publishLessonDraft(services, draft.id, draft.editNumber);
+
+    const fork = await createLessonDraftFromPublished(services, deckId);
+
+    expect(fork.id).not.toBe(draft.id);
+    expect(fork.interests).toEqual(themes);
   });
 });
 
