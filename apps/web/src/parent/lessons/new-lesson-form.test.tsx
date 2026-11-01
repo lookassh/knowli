@@ -6,7 +6,7 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { messages, type SubjectCatalogDto } from "@learning/contracts";
 import NewLessonForm, {
-  buildCommand, canSubmitLesson, defaultPoolSize, initialLessonValues, lessonPathOf, type NewLessonValues,
+  buildCommand, canSubmitLesson, defaultPoolSize, initialLessonValues, lessonInterestsOf, lessonPathOf, type NewLessonValues,
 } from "./NewLessonForm";
 import { ApiCallError } from "../api";
 import type { SourceRefreshOutcome } from "../sources/source-refresh";
@@ -29,6 +29,7 @@ const grammar = {
   titlePl: "Gramatyka angielska",
   creation: "catalog",
   subjectTitleRequired: false,
+  acceptsInterests: true,
   topics: [{
     id: "present_simple",
     titlePl: "Present Simple",
@@ -50,9 +51,13 @@ const values = (overrides: Partial<NewLessonValues> = {}): NewLessonValues => ({
 });
 
 /** Formularz z wczytanym katalogiem, w którym pierwszym przedmiotem jest podany (renderowanie statyczne nie wykonuje zapytań). */
-function renderWithCatalog(first: unknown): string {
+function renderWithCatalog(first: unknown, extras: { children?: unknown[]; generationService?: string } = {}): string {
   const queryClient = new QueryClient();
-  queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, { subjects: [first] } as unknown as SubjectCatalogDto);
+  queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, {
+    subjects: [first],
+    ...(extras.generationService ? { generationService: extras.generationService } : {}),
+  } as unknown as SubjectCatalogDto);
+  if (extras.children) queryClient.setQueryData(orpc.children.list.queryOptions().queryKey, extras.children as never);
   return renderParentMarkup(<NewLessonForm onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />, queryClient);
 }
 
@@ -381,6 +386,161 @@ describe("NewLessonForm", () => {
       expect(screen.queryByTestId("lesson-source-refresh-retry")).toBeNull();
       expect(screen.getByTestId("lesson-source-missing-change").getAttribute("href")).toBe("/parent/sources");
       expect(screen.getByTestId("new-lesson-cancel").textContent).toContain(messages.sources.backToList);
+    });
+  });
+
+  describe("tematy zdań", () => {
+    const ola = { id: "c1", displayName: "Ola", interests: ["dinozaury", "Minecraft"] };
+    const adam = { id: "c2", displayName: "Adam", interests: [] };
+    const SERVICE = "openrouter.ai · google/gemini-3.8-flash";
+
+    it("lessonInterestsOf: lista tylko dla przedmiotu z flagą i niepustej listy", () => {
+      expect(lessonInterestsOf(values(), catalog)).toBeUndefined();
+      expect(lessonInterestsOf(values({ interests: ["dinozaury", "  Minecraft "] }), catalog)).toEqual(["dinozaury", "Minecraft"]);
+      expect(lessonInterestsOf(values({ interests: ["", "  "] }), catalog)).toBeUndefined();
+      // zmiana przedmiotu na rozdział lub szkołę (bez flagi) nie wysyła listy
+      expect(lessonInterestsOf(values({ subjectId: "english_chapter", topicId: "", interests: ["dinozaury"] }), catalog)).toBeUndefined();
+      expect(lessonInterestsOf(values({ subjectId: "school", interests: ["dinozaury"] }), catalog)).toBeUndefined();
+      expect(lessonInterestsOf(values({ interests: ["dinozaury"] }), undefined)).toBeUndefined();
+    });
+
+    it("wartości startowe: pusta lista tematów (formularz nie wypełnia jej sam)", () => {
+      expect(initialLessonValues(catalog).interests).toEqual([]);
+    });
+
+    it("niepoprawny temat blokuje wysyłkę gramatyki, ale nie innych przedmiotów", () => {
+      expect(canSubmitLesson(values({ interests: ["dinozaury"] }), catalog)).toBe(true);
+      expect(canSubmitLesson(values({ interests: ["<b>"] }), catalog)).toBe(false);
+      const chapterValues = values({ subjectId: "english_chapter", topicId: "", objectiveIds: [], topicTitle: "Unit 1", interests: ["<b>"] });
+      expect(canSubmitLesson(chapterValues, catalog)).toBe(true);
+    });
+
+    it("buildCommand: polecenie katalogowe niesie interests tylko przy podanej liście", () => {
+      const path = lessonPathOf(catalog, "english_grammar");
+      expect(buildCommand(values(), path).command).not.toHaveProperty("interests");
+      expect(buildCommand(values(), path, undefined, undefined).command).not.toHaveProperty("interests");
+      expect(buildCommand(values(), path, undefined, ["dinozaury"]).command).toMatchObject({ interests: ["dinozaury"] });
+    });
+
+    it("sekcja dla gramatyki: pole, przyciski tylko dla dzieci z listą, notka z nazwą usługi", () => {
+      const markup = renderWithCatalog(grammar, { children: [ola, adam], generationService: SERVICE });
+      expect(markup).toContain('data-testid="lesson-themes"');
+      expect(markup).toContain('data-testid="lesson-themes-input"');
+      expect(markup).toContain(messages.lessons.themesTitle);
+      expect(markup).toContain('data-testid="lesson-themes-insert-c1"');
+      expect(markup).toContain(messages.lessons.themesInsert.replace("{name}", "Ola"));
+      expect(markup).not.toContain('data-testid="lesson-themes-insert-c2"');
+      expect(markup).not.toContain(messages.lessons.themesEmpty);
+      expect(markup).toContain(messages.lessons.themesService.replace("{service}", SERVICE));
+      // formularz nie wypełnia tematów sam
+      expect(markup).not.toContain("dinozaury");
+    });
+
+    it("bez dzieci z zainteresowaniami: podpowiedź o profilu; bez nazwy usługi: wariant notki", () => {
+      const markup = renderWithCatalog(grammar, { children: [adam] });
+      expect(markup).toContain(messages.lessons.themesEmpty);
+      expect(markup).not.toContain('data-testid="lesson-themes-insert-c2"');
+      expect(markup).toContain(messages.lessons.themesServiceUnknown);
+      expect(markup).not.toContain("{service}");
+    });
+
+    it("sekcja ukryta dla rozdziału, szkoły i przedmiotu bez flagi", () => {
+      for (const subject of [chapter, school, { ...grammar, acceptsInterests: false }]) {
+        const markup = renderWithCatalog(subject, { children: [ola] });
+        expect(markup, subject.id).not.toContain('data-testid="lesson-themes"');
+        expect(markup, subject.id).not.toContain(messages.lessons.themesTitle);
+      }
+    });
+
+    describe("interakcja", () => {
+      const RUN_ID = "00000000-0000-4000-8000-0000000000aa";
+      beforeEach(() => {
+        if (typeof window.matchMedia !== "function") {
+          window.matchMedia = ((query: string) => ({
+            matches: false, media: query, onchange: null,
+            addEventListener: () => undefined, removeEventListener: () => undefined,
+            addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+          })) as typeof window.matchMedia;
+        }
+        if (!("fonts" in document)) {
+          Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
+        }
+        if (typeof ResizeObserver === "undefined") {
+          vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+        }
+        lessonsApi.create.mockReset();
+      });
+      afterEach(() => {
+        cleanup();
+        vi.unstubAllGlobals();
+      });
+
+      function renderInteractive(children: unknown[] = [ola, adam]) {
+        const registerEditorState = vi.fn();
+        const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+        queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+        queryClient.setQueryData(orpc.children.list.queryOptions().queryKey, children as never);
+        render(
+          <QueryClientProvider client={queryClient}>
+            <MantineProvider theme={parentTheme}>
+              <NewLessonForm onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={registerEditorState} />
+            </MantineProvider>
+          </QueryClientProvider>,
+        );
+        return { registerEditorState };
+      }
+      const pills = () => Array.from(document.querySelectorAll("[data-testid='lesson-themes'] .mantine-Pill-root")).map((el) => el.textContent?.trim());
+      const insertButton = (id: string) => screen.getByTestId(`lesson-themes-insert-${id}`) as HTMLButtonElement;
+
+      it("wstawienie dołącza tematy dziecka bez duplikatów, a przycisk gaśnie, gdy wszystkie już są", async () => {
+        const { registerEditorState } = renderInteractive();
+        expect(pills()).toEqual([]);
+        expect(insertButton("c1").disabled).toBe(false);
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toEqual(["dinozaury", "Minecraft"]));
+        expect(insertButton("c1").disabled).toBe(true);
+        // wstawione tematy wlicza się do „brudnego” stanu formularza
+        await waitFor(() => expect(registerEditorState).toHaveBeenLastCalledWith({ dirty: true, busy: false }));
+      });
+
+      it("porównanie bez wielkości liter i po normalizacji: pozostałe tematy dołączają się", async () => {
+        renderInteractive([{ id: "c1", displayName: "Ola", interests: ["DINOZAURY", "  Minecraft  ", "rowery"] }]);
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toEqual(["DINOZAURY", "Minecraft", "rowery"]));
+        expect(insertButton("c1").disabled).toBe(true);
+      });
+
+      it("pełne pole (5 tematów) wyłącza przyciski wstawiania", async () => {
+        renderInteractive([{ id: "c1", displayName: "Ola", interests: ["a1", "a2", "a3", "a4", "a5"] }, { id: "c2", displayName: "Adam", interests: ["b1"] }]);
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toHaveLength(5));
+        expect(insertButton("c2").disabled).toBe(true);
+      });
+
+      it("polecenie niesie wstawione tematy; ponowienie (hasPending) blokuje pole i przyciski", async () => {
+        // brak potwierdzenia przyjęcia = niepewny wynik, polecenie czeka na ponowienie
+        lessonsApi.create.mockResolvedValueOnce({}).mockImplementationOnce(async (command: { deckId: string }) => ({ runId: RUN_ID, deckId: command.deckId }));
+        renderInteractive();
+        fireEvent.change(screen.getByTestId("lesson-material"), { target: { value: "He plays football." } });
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toEqual(["dinozaury", "Minecraft"]));
+        fireEvent.click(screen.getByTestId("lesson-create-submit"));
+        await waitFor(() => expect(screen.getByTestId("api-error").textContent).toContain(messages.lessons.createUncertain));
+        expect(lessonsApi.create.mock.calls[0]![0]).toMatchObject({ interests: ["dinozaury", "Minecraft"] });
+        expect((screen.getByTestId("lesson-themes-input") as HTMLInputElement).disabled).toBe(true);
+        expect(insertButton("c1").disabled).toBe(true);
+        fireEvent.click(screen.getByTestId("lesson-create-submit"));
+        await waitFor(() => expect(lessonsApi.create).toHaveBeenCalledTimes(2));
+        expect(lessonsApi.create.mock.calls[1]![0]).toMatchObject({ deckId: lessonsApi.create.mock.calls[0]![0].deckId, interests: ["dinozaury", "Minecraft"] });
+      });
+
+      it("zmiana przedmiotu na rozdział ukrywa sekcję", async () => {
+        renderInteractive();
+        fireEvent.click(insertButton("c1"));
+        await waitFor(() => expect(pills()).toHaveLength(2));
+        fireEvent.change(screen.getByTestId("lesson-subject"), { target: { value: "english_chapter" } });
+        await waitFor(() => expect(screen.queryByTestId("lesson-themes")).toBeNull());
+      });
     });
   });
 
