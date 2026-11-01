@@ -156,18 +156,26 @@ Gdy `sentenceAudioError` nie jest `null`:
   - `MotionConfig reducedMotion="user"` wyłącza ruch.
   - `kidOutcomeShake` zostaje dla pigułek pisowni.
   - Przycisk dostaje `data-audio-failed={seq}`, żeby test ruchu mógł go znaleźć.
-- **Tekst.** Nad górnym wierszem doku (pierwszy element doku, przed `.scroll`), na całą
-  szerokość i wyśrodkowany, stoi stały region `aria-live="polite"`
-  (`data-testid="kid-sentence-audio-error"`). Region jest zawsze w DOM, gdy dok ma przyciski
-  zdania, a przy błędzie dostaje treść.
-  - **Położenie.** Dok w nakładce stoi przy dolnej krawędzi ramy i rośnie w górę, więc tekst
-    nad górnym wierszem nie przesuwa przycisków zdania ani „Dalej” pod palcem dziecka; drugie
-    dotknięcie w to samo miejsce trafia w przycisk, nie w tekst.
-  - Tam, gdzie dok rośnie w dół — zwarta rama dużego okna (stopka tuż pod odpowiedziami,
-    wolne miejsce niżej) i przewijana strona (powiększenie gestem, bardzo niskie okno) —
-    górny wiersz idzie przed region (`order`), więc przyciski zdania zostają na miejscu,
-    a w dół przesuwa się tylko „Dalej”. Zwarta rama z treścią wyższą od okna przypina dok
-    do dołu; wtedy górny wiersz przesuwa się o wysokość tekstu (przypadek rzadki, przyjęty).
+- **Tekst.** Stały region `aria-live="polite"` (`data-testid="kid-sentence-audio-error"`), na
+  całą szerokość i wyśrodkowany. W DOM stoi za górnym wierszem (`.scroll`) i przed akcjami,
+  więc czytnik ekranu czyta najpierw wynik, potem komunikat (uzupełnienie 2026-11-01, #199).
+  Region jest zawsze w DOM, gdy dok ma przyciski zdania, a przy błędzie dostaje treść.
+  - **Położenie wizualne** (CSS `order`) zależy od tego, w którą stronę rośnie dok — tekst nie
+    może przesunąć przycisków zdania pod palcem dziecka; drugie dotknięcie w to samo miejsce
+    trafia w przycisk, nie w tekst.
+  - Dok w nakładce przy dolnej krawędzi ramy rośnie w górę: region stoi nad górnym wierszem
+    (`order: -1`), więc przyciski zdania i „Dalej” zostają na miejscu.
+  - Zwarta rama dużego okna (stopka tuż pod odpowiedziami, wolne miejsce niżej) i przewijana
+    strona (powiększenie gestem, bardzo niskie okno) rosną w dół: region zostaje pod górnym
+    wierszem, przyciski zdania stoją, w dół przesuwa się tylko „Dalej”.
+  - Zwarta rama bez wolnego miejsca pod stopką — materiał się przewija (treść wyższa od okna,
+    np. dotykowy tablet z długim tekstem) albo rezerwa zużyła już część odstępu od góry —
+    przypina stopkę do dolnej krawędzi, więc dok rośnie w górę: `ExerciseFrame` oznacza wtedy
+    nakładkę albo panel w przepływie (`feedbackLayout="flow"`, np. wybór) atrybutem
+    `data-frame-full` (dolna krawędź stopki przy dolnej krawędzi ramy), a region wraca nad
+    wiersz (uzupełnienie 2026-11-01, #199).
+    Gdy dopiero sam tekst błędu zapełnia ramę, wiersz może przesunąć się o mniej niż wysokość
+    tekstu (o wolne miejsce, które było pod stopką).
   - Tekst stoi w elemencie kluczowanym `seq`: każdy błąd montuje go od nowa, więc czytnik
     ogłasza także powtórzony, identyczny komunikat.
   - Treść z katalogu (`messages.kid.sentenceAudioFailed`): „Nagranie się nie włączyło. Dotknij
@@ -213,6 +221,14 @@ ujawnione i zapieczętowane razem z oceną. Trafiają tylko do lokalnego raportu
     czekające w kolejce po `stop()` nie wywoła więc `onStarted`.
 - **Brak obsługi zmiany tempa:** odtwarzanie w tempie, które element faktycznie przyjął, bez
   błędu.
+- **Ponowny odsłuch z cache przeglądarki:** `/api/v1/media/:id` odpowiada `cache-control: public,
+  max-age=31536000, immutable`, a `fetch` odtwarzacza używa domyślnego trybu cache, więc kolejne
+  „Posłuchaj zdania” i żółw biorą plik z pamięci przeglądarki. Własny cache bloba w odtwarzaczu
+  nie jest potrzebny (decyzja 2026-11-01, #199).
+- **Raport aktywności:** koniec odsłuchu zamyka w raporcie tylko przebieg, który go otworzył
+  (`#playCountedAudio` w kontrolerze). Przerwany odsłuch tego samego nagrania — np. zmiana
+  tempa — nie skraca nowego, który zdążył już wystartować. Po `teardown` kontroler nie startuje
+  już odczytu zdania.
 
 ## 6. Serwer i testy techniczne
 
