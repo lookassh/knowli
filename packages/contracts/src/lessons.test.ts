@@ -675,3 +675,53 @@ describe("SchoolLessonCommandSchema i pola v3", () => {
     }).success).toBe(false);
   });
 });
+
+describe("tematy zdań z zainteresowań dziecka (#197)", () => {
+  const command = {
+    subjectId: "english_grammar",
+    topicId: "present_simple",
+    objectiveIds: ["english_grammar.present_simple.third_person_s"],
+    material: "He plays football every day.",
+    clientRequestId: UUID,
+  };
+
+  it("LessonCommandSchema przyjmuje niepustą listę tematów i normalizuje elementy", () => {
+    expect(LessonCommandSchema.parse({ ...command, interests: ["dinozaury"] }).interests).toEqual(["dinozaury"]);
+    expect(LessonCommandSchema.parse({ ...command, interests: ["  piłka   nożna "] }).interests).toEqual(["piłka nożna"]);
+    expect(LessonCommandSchema.parse(command).interests).toBeUndefined();
+  });
+
+  it("LessonCommandSchema odrzuca pustą listę, duplikaty i więcej niż 5 tematów", () => {
+    expect(LessonCommandSchema.safeParse({ ...command, interests: [] }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...command, interests: ["a", "A"] }).success).toBe(false);
+    expect(LessonCommandSchema.safeParse({ ...command, interests: ["a", "b", "c", "d", "e", "f"] }).success).toBe(false);
+  });
+
+  it("polecenia zestawów szkolnych i z materiału nie przyjmują tematów (strict)", () => {
+    expect(SchoolLessonCommandSchema.safeParse({
+      subjectTitlePl: "Historia", topicTitlePl: "Rzym", material: "Tekst.", clientRequestId: UUID, interests: ["dinozaury"],
+    }).success).toBe(false);
+    expect(MaterialLessonCommandSchema.safeParse({
+      subjectId: "english_chapter", topicTitlePl: "Unit 1", material: "I like pizza.", clientRequestId: UUID, interests: ["dinozaury"],
+    }).success).toBe(false);
+  });
+
+  it("SubjectCatalogDtoSchema przyjmuje katalog z nowymi polami i bez nich", () => {
+    const subject = { id: "english_grammar", titlePl: "Angielski — gramatyka", creation: "catalog", subjectTitleRequired: false, topics: [] };
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [subject] }).success).toBe(true);
+    expect(SubjectCatalogDtoSchema.safeParse({
+      subjects: [{ ...subject, acceptsInterests: true }], generationService: "openrouter.ai",
+    }).success).toBe(true);
+    expect(SubjectCatalogDtoSchema.safeParse({ subjects: [{ ...subject, acceptsInterests: "yes" }] }).success).toBe(false);
+  });
+
+  it("LessonDraftDtoSchema przyjmuje tematy szkicu", () => {
+    const draft = {
+      id: UUID, deckId: UUID2, editNumber: 1, status: "draft", title: "Present Simple",
+      subjectId: "english_grammar", topicId: "present_simple", topicVersion: 1,
+      objectiveIds: ["o1"], examples: {}, exercises: [], assets: [], rejectedCount: 0, coverage: [],
+    };
+    expect(LessonDraftDtoSchema.parse({ ...draft, interests: ["dinozaury"] }).interests).toEqual(["dinozaury"]);
+    expect(LessonDraftDtoSchema.parse(draft).interests).toBeUndefined();
+  });
+});
