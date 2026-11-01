@@ -96,13 +96,17 @@ export async function nextFrames(page: Page): Promise<void> {
 }
 
 /**
- * Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are),
- * read once they stop changing. The first layout passes after the task opens (fonts, container queries, the measured
- * footer reserve) can still move the grid for a frame or two; a single read there was the flake of
- * `kid-large-screen.spec.ts` "picture tiles … keep their size after the verdict" (tile 0 left 56 inner px off at 3440x1440).
+ * Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are).
+ * `settle: true` reads them once they stop changing — only for the reference read when the task opens: the first layout
+ * passes (fonts, container queries, the measured footer reserve) can still move the grid for a frame or two, and a single
+ * read there was the flake of `kid-large-screen.spec.ts` "picture tiles … keep their size after the verdict" (tile 0 left
+ * 56 inner px off at 3440x1440). Reads after a verdict stay single: settling there would hide a jump that comes back.
  */
-export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
-  return page.evaluate(async () => {
+export async function pictureTiles(
+  page: Page,
+  options: { settle?: boolean } = {},
+): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
+  return page.evaluate(async (settle) => {
     const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
     const read = () => {
       const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
@@ -115,6 +119,7 @@ export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; c
       return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
     };
     let previous = read();
+    if (!settle) return previous;
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await frame();
       await frame();
@@ -123,7 +128,7 @@ export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; c
       previous = next;
     }
     throw new Error(`the picture tiles did not settle in 60 frames: ${JSON.stringify(previous)}`);
-  });
+  }, options.settle === true);
 }
 
 /** `--kid-visual-choice-max-size` from expanded width on (spec 2026-10-30-kid-ui-large-screens §3.1), in inner pixels. */
