@@ -45,6 +45,7 @@ export async function updateChild(services: Services, childId: string, input: Ch
     ...(valid.avatarKey !== undefined ? { avatarKey: valid.avatarKey } : {}),
     ...(valid.recordingMode !== undefined ? { recordingMode: valid.recordingMode } : {}),
     ...(valid.canRead !== undefined ? { canRead: valid.canRead } : {}),
+    ...(valid.interests !== undefined ? { interests: valid.interests } : {}),
   }).where(eq(childProfiles.id, id)).returning();
   if (!row) throw new AppError("not_found");
   return toChildDto(row);

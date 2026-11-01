@@ -5,6 +5,7 @@ import {
   AssignmentPutSchema,
   CalculationSpecSchema,
   ChildDtoSchema,
+  ChildInterestsSchema,
   ChildInputSchema,
   ChildPatchSchema,
   CreateEmptyDeckCommandSchema,
@@ -200,9 +201,12 @@ const LessonDraftPatchContractSchema = z.object({
   dynamicTopic: LessonDynamicTopicPatchSchema.optional(),
   /** Historyjka: obiekt zastępuje, null usuwa, brak pola nie zmienia. */
   story: LessonStorySchema.nullable().optional(),
+  interests: ChildInterestsSchema.optional(),
 }).refine(
-  (patch) => patch.title !== undefined || patch.exercises !== undefined || patch.examples !== undefined || patch.dynamicTopic !== undefined || patch.story !== undefined,
-  { message: "patch must change title, exercises, examples, dynamicTopic or story" },
+  (patch) =>
+    patch.title !== undefined || patch.exercises !== undefined || patch.examples !== undefined ||
+    patch.dynamicTopic !== undefined || patch.story !== undefined || patch.interests !== undefined,
+  { message: "patch must change title, exercises, examples, dynamicTopic, story or interests" },
 );
 
 /** Wejście PATCH /lesson-drafts/{lessonDraftId}: ścieżka + patch edycji. */

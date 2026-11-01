@@ -319,6 +319,9 @@ export class LearningSessionController {
   #activityResultPolling = new Map<string, number>();
   #activityResultRetryAttempts = new Map<string, number>();
   #disposed = false;
+  /** Numer ostatniego wywołania `#playCountedAudio` i przebiegu, którego odsłuch jest otwarty w raporcie. */
+  #countedPlaybackSeq = 0;
+  #openCountedPlayback: number | null = null;
 
   constructor(deps: LearningSessionDeps) {
     this.#api = deps.api;
@@ -386,7 +389,9 @@ export class LearningSessionController {
    * aktywności; `options.rate` trafia do odtwarzacza (brak = tempo 1, bez opcji).
    */
   async #playCountedAudio(url: string, assetId: string, options: { rate?: number; onStarted?: () => void } = {}): Promise<void> {
+    const playback = ++this.#countedPlaybackSeq;
     const onStarted = (durationMs: number | null): void => {
+      this.#openCountedPlayback = playback;
       this.#activity?.playbackStarted(assetId, durationMs);
       options.onStarted?.();
     };
@@ -395,8 +400,14 @@ export class LearningSessionController {
       else await this.#media.player.play(url, onStarted, { rate: options.rate });
     } finally {
       // Odrzucenie po uruchomieniu start-callbacku też domyka odsłuch —
-      // wiszący playback tłumiłby domknięcie bezczynności.
-      this.#activity?.playbackEnded(assetId);
+      // wiszący playback tłumiłby domknięcie bezczynności. Tylko własny:
+      // raport dopasowuje koniec po samym `assetId`, więc przerwany przebieg
+      // tego samego nagrania (np. zmiana tempa) nie może zamknąć nowego,
+      // który zdążył już wystartować.
+      if (this.#openCountedPlayback === playback) {
+        this.#openCountedPlayback = null;
+        this.#activity?.playbackEnded(assetId);
+      }
     }
   }
 
@@ -1348,7 +1359,7 @@ export class LearningSessionController {
     const screen = this.#learning();
     const feedback = screen?.feedback;
     const assetId = feedback?.dto?.correctAudioAssetId;
-    if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
+    if (this.#disposed || !screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
         assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
     const run = ++this.#sentenceRun;
     const attemptId = feedback.attemptId;

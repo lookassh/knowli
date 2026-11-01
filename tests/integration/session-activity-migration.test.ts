@@ -58,6 +58,8 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
     // dokładnie jak w produkcji.
     await pool.query("alter table learning_app.child_profiles add column reward_points integer not null default 0");
     await pool.query("alter table learning_app.child_profiles add column reward_remainder_ms integer not null default 0");
+    // Zainteresowania profilu (0032) dodaje późniejsza migracja; insert z TS ją wymienia.
+    await pool.query("alter table learning_app.child_profiles add column interests text[] not null default ARRAY[]::text[]");
     await ensureLearningPolicy(db);
     const child = await createChild(services, { displayName: "Ola", avatarKey: "fox" });
     const draft = await createDraft(services, { title: "Migration 0021", items: [{
@@ -112,6 +114,7 @@ async function seedLegacyRewardState(databaseUrl: string): Promise<{ childId: st
     await pool.query("alter table learning_app.decks drop column source_material_revision");
     await pool.query("alter table learning_app.child_profiles drop column reward_points");
     await pool.query("alter table learning_app.child_profiles drop column reward_remainder_ms");
+    await pool.query("alter table learning_app.child_profiles drop column interests");
     return { childId: child.id };
   } finally {
     await pool.end();

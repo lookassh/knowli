@@ -30,7 +30,20 @@ CREATE TABLE child_profiles (
   display_name text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 80),
   avatar_key text NOT NULL,
   birth_year smallint CHECK (birth_year BETWEEN 1900 AND 2200),
-  created_at timestamptz NOT NULL DEFAULT now()
+  can_read boolean NOT NULL DEFAULT true,
+  recording_mode text NOT NULL DEFAULT 'hold' CHECK (recording_mode IN ('hold','toggle')),
+  -- własna wersja polityki dziecka; NULL = bieżąca globalna (FK poniżej, po learning_policies)
+  policy_id text,
+  -- NULL oznacza legacy dane wymagające jawnej odbudowy; nowe profile są gotowe
+  learning_projection_version text DEFAULT 'proj-3',
+  -- ogólny dorobek punktowy (1 pkt / pełna zatwierdzona minuta) i reszta subminuty
+  reward_points integer NOT NULL DEFAULT 0,
+  reward_remainder_ms integer NOT NULL DEFAULT 0,
+  -- zainteresowania dziecka: tematy zdań w lekcjach (do 5); format elementów pilnuje kontrakt
+  interests text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT child_profiles_reward_nonnegative CHECK (reward_points >= 0 AND reward_remainder_ms >= 0 AND reward_remainder_ms < 60000),
+  CONSTRAINT child_profiles_interests_valid CHECK (cardinality(interests) <= 5 AND array_position(interests, NULL) IS NULL)
 );
 
 CREATE TABLE learning_policies (
@@ -38,6 +51,7 @@ CREATE TABLE learning_policies (
   config jsonb NOT NULL CHECK (jsonb_typeof(config) = 'object'),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE child_profiles ADD FOREIGN KEY (policy_id) REFERENCES learning_policies(id);
 -- Wstawienie zweryfikowanej learning-v1 nastąpi w migracji/seed implementacji.
 
 -- Źródła (materiał źródłowy rodzica, design 2026-10-30 §3): wklejony tekst rozdziału.

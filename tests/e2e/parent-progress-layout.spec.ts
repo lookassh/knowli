@@ -10,7 +10,7 @@ import { messages } from "@learning/contracts";
 
 const deckId = "00000000-0000-4000-8000-000000000003";
 const children = ["Ala", "Bartłomiej", "Cecylia", "Dominika", "Eustachy"].map((displayName, index) => ({
-  id: `00000000-0000-4000-8000-00000000001${index}`, displayName, avatarKey: "fox", recordingMode: "hold", canRead: true,
+  id: `00000000-0000-4000-8000-00000000001${index}`, displayName, avatarKey: "fox", recordingMode: "hold", canRead: true, interests: [],
 }));
 const skills = { listening: "mastered", reading: "practicing", recall: "needs_confirmation", pronunciation: "not_assessed", spelling: "practicing" };
 

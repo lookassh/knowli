@@ -8,8 +8,8 @@ import { messages } from "@learning/contracts";
  * i walidacja progów wymowy. API rodzica zaślepione w przeglądarce.
  */
 
-const ALA = { id: "3f2c1a9e-5b7d-4c8e-9a1b-2c3d4e5f6a7b", displayName: "Ala", avatarKey: "fox", birthYear: 2018, recordingMode: "hold", canRead: true };
-const BARTEK = { id: "8a9b0c1d-2e3f-4a5b-8c7d-9e0f1a2b3c4d", displayName: "Bartłomiej Długonazwiskowy", avatarKey: "owl", recordingMode: "toggle", canRead: false };
+const ALA = { id: "3f2c1a9e-5b7d-4c8e-9a1b-2c3d4e5f6a7b", displayName: "Ala", avatarKey: "fox", birthYear: 2018, recordingMode: "hold", canRead: true, interests: [] };
+const BARTEK = { id: "8a9b0c1d-2e3f-4a5b-8c7d-9e0f1a2b3c4d", displayName: "Bartłomiej Długonazwiskowy", avatarKey: "owl", recordingMode: "toggle", canRead: false, interests: [] };
 
 interface MockApi {
   requests: Request[];
@@ -165,6 +165,7 @@ test("usunięcie profilu wymaga potwierdzenia w oknie; anulowanie niczego nie us
   const dialog = page.getByTestId("child-remove-dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(messages.children.removeConfirm);
+  await expect(dialog).toContainText(messages.children.removeKeepsLessonThemes);
   await expect(page.getByTestId("child-remove-cancel")).toBeFocused();
   await page.getByTestId("child-remove-cancel").click();
   await expect(dialog).toHaveCount(0);
@@ -176,6 +177,57 @@ test("usunięcie profilu wymaga potwierdzenia w oknie; anulowanie niczego nie us
   await expect(page.getByTestId("child-row-0")).toContainText(BARTEK.displayName);
   expect(mutations(api, "DELETE")).toHaveLength(1);
   expect(new URL(mutations(api, "DELETE")[0]!.url()).pathname).toBe(`/api/v1/parent/children/${ALA.id}`);
+});
+
+test("zainteresowania: dodanie tematów Enterem trafia do PATCH, notki są widoczne, szósty temat nie wchodzi", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const api = await openChildren(page);
+  const row = page.getByTestId("child-row-0");
+  await row.getByTestId("child-edit").click();
+  await expect(row.getByText(messages.children.interestsHint)).toBeVisible();
+  await expect(row.getByText(messages.children.interestsPrivacy)).toBeVisible();
+
+  const field = row.getByTestId("child-edit-interests");
+  await field.fill("piłka nożna");
+  await field.press("Enter");
+  await field.fill("Minecraft");
+  await field.press("Enter");
+  await field.fill("PIŁKA NOŻNA");
+  await field.press("Enter");
+  await expect(row.getByText(messages.children.interestsDuplicate)).toBeVisible();
+  for (const topic of ["lego", "dinozaury", "koty"]) {
+    await field.fill(topic);
+    await field.press("Enter");
+  }
+  await field.fill("szósty");
+  await field.press("Enter");
+  await expect(row.getByText(messages.children.interestsLimit.replace("{max}", "5"))).toBeVisible();
+  await expect(row.locator(".mantine-Pill-root")).toHaveCount(5);
+  await expect(row.getByText("szósty", { exact: true })).toHaveCount(0);
+
+  // usunięcie trzech ostatnich zostawia dwa tematy z wpisu
+  for (let i = 0; i < 3; i += 1) await row.locator(".mantine-Pill-remove").last().click();
+  await field.fill("");
+  await row.getByTestId("child-edit-save").click();
+  await expect(page.getByText(messages.children.saved)).toBeVisible();
+  const patches = mutations(api, "PATCH");
+  expect(patches).toHaveLength(1);
+  expect(patches[0]!.postDataJSON()).toEqual({ interests: ["piłka nożna", "Minecraft"] });
+});
+
+test("zainteresowania: niepoprawny temat daje błąd pola i blokuje zapis", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const api = await openChildren(page);
+  const row = page.getByTestId("child-row-0");
+  await row.getByTestId("child-edit").click();
+  const field = row.getByTestId("child-edit-interests");
+  await field.fill("<script>");
+  await field.press("Enter");
+  await expect(row.getByText(messages.children.interestsInvalid.replace("{max}", "40"))).toBeVisible();
+  await expect(row.getByTestId("child-edit-save")).toBeDisabled();
+  await row.locator(".mantine-Pill-remove").last().click();
+  await expect(row.getByTestId("child-edit-save")).toBeDisabled(); // brak zmian względem profilu
+  expect(mutations(api, "PATCH")).toHaveLength(0);
 });
 
 test("progi wymowy: błędna kolejność progów nie trafia do API", async ({ page }) => {

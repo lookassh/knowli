@@ -10,12 +10,14 @@ import { messages } from "@learning/contracts";
  */
 
 const catalog = {
+  generationService: "openrouter.ai · google/gemini-3.8-flash",
   subjects: [
     {
       id: "english_grammar",
       titlePl: "Gramatyka angielska",
       creation: "catalog",
       subjectTitleRequired: false,
+      acceptsInterests: true,
       topics: [{
         id: "present_simple",
         titlePl: "Present Simple",
@@ -34,15 +36,21 @@ const catalog = {
   ],
 };
 
+const children = [
+  { id: "00000000-0000-4000-8000-0000000000c1", displayName: "Ola", avatarKey: "fox", recordingMode: "hold", canRead: true, interests: ["dinozaury", "Minecraft"] },
+  { id: "00000000-0000-4000-8000-0000000000c2", displayName: "Adam", avatarKey: "owl", recordingMode: "hold", canRead: true, interests: [] },
+];
+
 interface Api { creates: Array<{ path: string; body: Record<string, unknown> }> }
 
-async function openNewLesson(page: Page, createStatus: () => number = () => 202, hold: Promise<void> = Promise.resolve()): Promise<Api> {
+async function openNewLesson(page: Page, createStatus: () => number = () => 202, hold: Promise<void> = Promise.resolve(), childList: unknown[] = []): Promise<Api> {
   const api: Api = { creates: [] };
   await page.route("**/api/v1/parent/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/login")) return route.fulfill({ json: { authenticated: true, setupRequired: false } });
     if (path.endsWith("/lesson-catalog")) return route.fulfill({ json: catalog });
+    if (path.endsWith("/children")) return route.fulfill({ json: childList });
     if (request.method() === "POST" && /\/lessons(\/school|\/material)?$/.test(path)) {
       const body = request.postDataJSON() as Record<string, unknown>;
       api.creates.push({ path, body });
@@ -82,6 +90,83 @@ test("telefon: formularz bez przewijania w poziomie, cele ≥ 44 px, pula podą�
     await expect(page.getByTestId("lesson-create-submit")).toBeEnabled();
     await expectNoHorizontalOverflow(page);
   }
+});
+
+test("tematy zdań: wstawienie zainteresowań dziecka trafia do polecenia, sekcja ukryta dla rozdziału i szkoły", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const api = await openNewLesson(page, () => 202, Promise.resolve(), children);
+  const themes = page.getByTestId("lesson-themes");
+  await expect(themes).toBeVisible();
+  await expect(themes).toContainText(messages.lessons.themesTitle);
+  await expect(themes).toContainText(messages.lessons.themesService.replace("{service}", catalog.generationService));
+  // przycisk tylko dla dziecka z zainteresowaniami; formularz nie wypełnia pola sam
+  const insert = page.getByTestId(`lesson-themes-insert-${children[0]!.id}`);
+  await expect(insert).toHaveText(messages.lessons.themesInsert.replace("{name}", "Ola"));
+  await expect(page.getByTestId(`lesson-themes-insert-${children[1]!.id}`)).toHaveCount(0);
+  await expect(themes.locator(".mantine-Pill-root")).toHaveCount(0);
+  const box = (await insert.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await expectNoHorizontalOverflow(page);
+
+  await insert.click();
+  await expect(themes.locator(".mantine-Pill-root")).toHaveText(["dinozaury", "Minecraft"]);
+  await expect(insert).toBeDisabled();
+  await expectNoHorizontalOverflow(page);
+  // dopisanie własnego tematu (Enter dodaje wpis)
+  await page.getByTestId("lesson-themes-input").fill("rowery");
+  await page.getByTestId("lesson-themes-input").press("Enter");
+  await expect(themes.locator(".mantine-Pill-root")).toHaveText(["dinozaury", "Minecraft", "rowery"]);
+
+  await page.getByTestId("lesson-material").fill("He plays football every day.");
+  await page.getByTestId("lesson-create-submit").click();
+  await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+  expect(api.creates).toHaveLength(1);
+  expect(api.creates[0]!.path).toMatch(/\/lessons$/);
+  expect(api.creates[0]!.body.interests).toEqual(["dinozaury", "Minecraft", "rowery"]);
+});
+
+test("tematy zdań: bez wpisanych tematów polecenie ich nie niesie; rozdział i szkoła nie pokazują sekcji", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const api = await openNewLesson(page, () => 202, Promise.resolve(), children);
+  await page.getByTestId("lesson-material").fill("He plays football every day.");
+  await page.getByTestId("lesson-create-submit").click();
+  await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+  expect(api.creates[0]!.body).not.toHaveProperty("interests");
+
+  await openNewLesson(page, () => 202, Promise.resolve(), children);
+  await page.getByTestId(`lesson-themes-insert-${children[0]!.id}`).click();
+  for (const subject of ["english_chapter", "school"]) {
+    await page.getByTestId("lesson-subject").selectOption(subject);
+    await expect(page.getByTestId("lesson-themes")).toHaveCount(0);
+  }
+  // powrót do gramatyki: wstawione tematy wracają, ale po zmianie przedmiotu nie były wysyłane
+  await page.getByTestId("lesson-subject").selectOption("english_grammar");
+  await expect(page.getByTestId("lesson-themes").locator(".mantine-Pill-root")).toHaveCount(2);
+});
+
+test("tematy zdań: bez dzieci z zainteresowaniami podpowiedź o profilu", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openNewLesson(page, () => 202, Promise.resolve(), [children[1]]);
+  await expect(page.getByTestId("lesson-themes")).toContainText(messages.lessons.themesEmpty);
+  await expect(page.locator("[data-testid^='lesson-themes-insert-']")).toHaveCount(0);
+});
+
+test("tematy zdań: po niepewnej odpowiedzi pole i przyciski są zablokowane, ponowienie wysyła te same tematy", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let status = 500;
+  const api = await openNewLesson(page, () => status, Promise.resolve(), children);
+  await page.getByTestId("lesson-material").fill("He plays football every day.");
+  await page.getByTestId(`lesson-themes-insert-${children[0]!.id}`).click();
+  await page.getByTestId("lesson-create-submit").click();
+  await expect(page.getByTestId("api-error")).toContainText(messages.lessons.createUncertain);
+  await expect(page.getByTestId("lesson-themes-input")).toBeDisabled();
+  await expect(page.getByTestId(`lesson-themes-insert-${children[0]!.id}`)).toBeDisabled();
+  status = 202;
+  await page.getByTestId("lesson-create-submit").click();
+  await expect(page).toHaveURL(/\/parent\/decks\/[0-9a-f-]+$/);
+  expect(api.creates).toHaveLength(2);
+  expect(api.creates[1]!.body.interests).toEqual(["dinozaury", "Minecraft"]);
+  expect(api.creates[1]!.body.deckId).toBe(api.creates[0]!.body.deckId);
 });
 
 test("przedmiot szkolny: nazwy zamiast tematu i reguł, wysyłka na /lessons/school", async ({ page }) => {

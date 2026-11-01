@@ -149,6 +149,12 @@ export interface SubjectPromptProfile {
    * `SubjectModule.lessonStory` jest włączone (pilnuje `validateSubject`).
    */
   readonly storyRules?: string;
+  /**
+   * Reguła użycia tematów zdań z zainteresowań dziecka (#197), dokładana do promptu
+   * systemowego. Obecność pola = przedmiot przyjmuje tematy; same tematy to dane
+   * rodzica i idą do wiadomości użytkownika, nigdy do tej reguły.
+   */
+  readonly interestsRule?: string;
 }
 
 /**
