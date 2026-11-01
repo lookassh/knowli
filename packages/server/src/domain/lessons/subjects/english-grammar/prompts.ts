@@ -46,6 +46,15 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "Picture choice (only for objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set visualSubject to who is pictured (boy or man = he, girl or woman = she, group = they, dog = it); " +
     "then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture. " +
     "In such exercises the be form in the stem must match the pictured subject, and never set visualSubject on other exercise types.",
+  storyRules:
+    "Write a short story in English for a Polish child, about 8 years old, at a beginner level. " +
+    "Use the tense practised by the topic and very simple language. Reuse vocabulary from the parent's material where possible. " +
+    "The story has 4 to 6 short sentences about one character or one situation. " +
+    "Use only the grammar forms of the objectives listed above, and show them across the story in affirmative, negative and question sentences where those objectives cover them. " +
+    "Write 1 or 2 questions in Polish about the content of the story (who, what, when), never about grammar. " +
+    "Each question has exactly 3 short answers in Polish: exactly one is correct, and the wrong ones are plausible " +
+    "but clearly contradicted by the text. " +
+    "Never repeat any sentence from the 'do not repeat' list.",
   // Tematy zdań z zainteresowań dziecka (#197, spec §5.1); same tematy idą w wiadomości użytkownika jako dane.
   interestsRule:
     "Sentence themes: the parent listed a few topics the child enjoys (they may be in Polish — " +

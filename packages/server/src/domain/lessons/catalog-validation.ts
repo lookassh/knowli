@@ -51,6 +51,12 @@ export function validateSubject(module: SubjectModule): string[] {
     );
   }
 
+  // Historyjka na koniec sesji jest generowana z reguł przedmiotu — bez nich
+  // prompt nie ma czego doklejić.
+  if (module.lessonStory === true && !module.prompts.storyRules?.trim()) {
+    errors.push("Przedmiot: lessonStory wymaga niepustego prompts.storyRules");
+  }
+
   for (const topic of module.topics) {
     validateTopic(topic, module, subjectTypes, errors);
   }
