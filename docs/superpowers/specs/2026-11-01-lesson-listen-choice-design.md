@@ -114,8 +114,9 @@ Okno sprawdzianu i należne sprawdzenia mają pierwszeństwo przed slotem słuch
   tej samej lekcji.
 - Ochrona należnych samodzielnych sprawdzeń działa jak dla wyboru: `targetKey` zadania wchodzi
   do zbioru celów wydanych w sesji.
-- **Kartkówka:** typ jest wykluczony z planu kartkówki (`mock-test-plan.ts`, lista guided
-  w `lesson-mock-tests.ts`); autoryzacja odsłuchu tego typu w `mock_test` jest odrzucana.
+- **Kartkówka:** typ jest wykluczony z planu kartkówki wyłącznie w `domain/lessons/mock-test-plan.ts`
+  (`outsideStagePath`); `lesson-mock-tests.ts` obsługuje typ tylko w `promptText` omówienia.
+  Autoryzacja odsłuchu tego typu w `mock_test` jest odrzucana.
 
 ## 4. Payload i walidacja
 
@@ -278,16 +279,20 @@ nagrania. Opcje tasowane jak w wyborze. Klucz prywatny: jak `lesson_choice` plus
 
 ### 7.5 Wdrożenie
 
-Web i Kid UI wdrażają się razem (nowa gałąź promptu w ścisłej unii). Wycofanie wdrożenia po
-wydaniu zadań słuchowych wymaga zamknięcia trwających sesji (zapisany plan sesji ma nowy
-`kind`); stary klient PWA w pamięci podręcznej nie zna nowego promptu — opis w PR.
+Web, worker i Kid UI wdrażają się razem; worker nigdy nie wyprzedza webu (to on generuje nowy
+typ). Otwarte karty i zainstalowana PWA muszą się odświeżyć — stary klient nie zna nowego promptu
+w ścisłej unii. Wycofanie jest praktycznie jednokierunkowe, gdy sesja zaplanowała slot słuchowy
+(stary kod rzuca `invalid_training_session_plan` dla zapisanego planu z nowym `kind`) albo
+powstało ćwiczenie słuchowe (stary kod nie obsłuży takiej rewizji). Preferujemy poprawkę
+w przód; wycofanie wymaga zamknięcia aktywnych sesji lekcji oraz edycji lub ponownego
+wygenerowania lekcji z ćwiczeniami słuchowymi — opis w PR.
 
 ## 8. Kid UI
 
 Wzorzec: słuchanie słówek (`ListeningView`/`PictureListeningView`).
 
 - **Widok** `LessonListenChoiceView` (dispatcher `ExerciseView`, `exercise-presentation.ts` —
-  ikona polecenia `ear`, polecenie z katalogu: „Posłuchaj i wybierz brakujące słowo.”),
+  ikona polecenia `ear`, polecenie z katalogu: „Posłuchaj i wybierz, czego brakuje.”),
   wyłącznie ze wspólnych komponentów:
   - przycisk odsłuchu w slocie `instructionAudio` `ExerciseFrame` (`ListenButton` `md`, 48 px,
     etykieta istniejąca `messages.kid.listenExample` „Posłuchaj zdania”), fokus na przycisku
@@ -309,7 +314,7 @@ Wzorzec: słuchanie słówek (`ListeningView`/`PictureListeningView`).
   - **utknięcie bez startu:** licznik startuje przy żądaniu autoryzacji; gdy po 6 s odtwarzanie
     nadal się nie zaczęło (wiszące żądanie autoryzacji albo pobierania pliku), pojawia się
     „Pomiń”, a przycisk odsłuchu pozostaje do ponowienia;
-  - **autoodtwarzanie zablokowane:** nowy krótki komunikat z katalogu „Naciśnij głośnik, aby
+  - **autoodtwarzanie zablokowane:** nowy krótki komunikat z katalogu „Dotknij głośnika, aby
     posłuchać.” jako uprzejmy status (`role="status"`) pod poleceniem — bez alertu i bez
     „Zakończ” (to nie jest istniejący komunikat blokady obrazka); przycisk wyróżniony; opcje
     czekają na odsłuch;
@@ -338,10 +343,10 @@ Wzorzec: słuchanie słówek (`ListeningView`/`PictureListeningView`).
 - Edytor: typ w `STAGE_BY_TYPE` (web), `STEM_TYPES`, `OPTION_TYPES`, `STEM_LABEL_TYPES`, odznaka
   typu („Posłuchaj i wybierz”), pola jak `lesson_choice` bez piktogramu, polecenia i podpowiedzi;
   zmiana typu ćwiczenia na słuchowe czyści te pola. Podgląd karty ćwiczenia jak wybór.
-- Stan i odsłuch nagrania ćwiczenia słuchowego oraz licznik na karcie lekcji — §6. Krótka
+- Stan i odsłuch nagrania ćwiczenia słuchowego oraz licznik w edytorze lekcji — §6. Krótka
   informacja pod ćwiczeniem: „Lektor przeczyta zdanie. Dziecko dostanie to zadanie, gdy nagranie
   będzie gotowe.”
-- Tworzenie lekcji: dopisek, że do puli dochodzą do 2 ćwiczeń słuchowych na regułę (§5).
+- Tworzenie lekcji: dopisek „Do puli dodamy najwyżej 2 ćwiczenia „Posłuchaj i wybierz” na regułę.” (§5).
 - Nadzór i postęp: typ jak inne kroki (`stepType`).
 
 ## 10. Dokumentacja i integracje
@@ -409,7 +414,7 @@ identyfikatora nagrania przed autoryzacją.
     próba bez odsłuchu: nieoceniona (`no_stimulus`), zadanie zostaje `issued`; błąd nie otwiera
     wsparcia; `historicalSupportObjectives` pomija zadania słuchowe (poprawna odpowiedź słuchowa
     po prawdziwym błędzie reguły nie kasuje karty wsparcia w następnej sesji);
-  - DTO rodzica: `sentenceAudio` tylko dla typu słuchowego, licznik na karcie lekcji;
+  - DTO rodzica: `sentenceAudio` tylko dla typu słuchowego, licznik w edytorze lekcji;
   - klucz zdania blokuje „niewidziane” dla ćwiczenia z tym samym zdaniem;
   - kartkówka nie wydaje typu; publikacja nie czeka na nagranie;
   - edycja rodzica (odrzucenie zakazanych pól), nowa wersja, generacja z fake providerem;
@@ -454,5 +459,11 @@ Decyzje podjęte podczas implementacji (2026-11-01); tam, gdzie różnią się o
 - **Nagranie bodźca (§6, §7.3).** Bodźcem jest istniejące nagranie `feedback_audio` (bez nowej roli i migracji). Gałąź `authorizeDisclosure` pieczętuje `audio_issued` z ekspozycjami `[targetKey, klucz zdania]`; odpowiedź bez wcześniejszej autoryzacji jest nieoceniona (`no_stimulus`), a zadanie zostaje `issued`.
 - **Generowanie (§5).** Do 2 ćwiczeń słuchowych na cel dochodzi ponad wielkość puli rodzica (pole portu `listenChoicePerObjective`); świeże wyjście modelu jest czyszczone z `instructionPl`, `hint` i `visualSubject`.
 - **Panel rodzica (§6, §9).** Pole `sentenceAudio` tylko dla ćwiczeń słuchowych: odznaka i pozycja „Posłuchaj” w menu, tekst naprawy przy nieudanym nagraniu oraz licznik ćwiczeń bez gotowego nagrania w edytorze.
-- **Kid UI (§8).** Autoodtwarzanie raz po wyświetleniu; opcje zablokowane do końca pierwszego nieprzerwanego odsłuchu (zapas `durationMs` + 1 s, 8 s przy nieznanej długości); „Pomiń” po 6 s bez startu odtwarzania albo po odmowie lub błędzie pliku; zablokowane autoodtwarzanie daje status „Naciśnij głośnik, aby posłuchać.”; brak ponownego autoodtwarzania po powrocie z offline. Dok feedbacku bez własnego „Posłuchaj zdania”, a przycisk komunikatu głosowego ma ikonę „?”.
+- **Kid UI (§8).** Autoodtwarzanie raz po wyświetleniu; opcje zablokowane do końca pierwszego nieprzerwanego odsłuchu (zapas `durationMs` + 1 s, 8 s przy nieznanej długości); „Pomiń” po 6 s bez startu odtwarzania albo po odmowie lub błędzie pliku; zablokowane autoodtwarzanie daje status „Dotknij głośnika, aby posłuchać.”; brak ponownego autoodtwarzania po powrocie z offline. Dok feedbacku bez własnego „Posłuchaj zdania”, a przycisk komunikatu głosowego ma ikonę „?”.
+- **Poprawki po przeglądzie całej gałęzi (2026-11-01).**
+  - *Limit generowania (§5).* Najwyżej 2 ćwiczenia słuchowe na regułę **łącznie w szkicu**: `listenChoicePerObjective = 2 − ćwiczenia słuchowe celu już w szkicu i we wcześniejszych partiach runu` (0 → pole pominięte, prompt nie wymienia typu ani jego pól; adapter przycina do 0–2). Po walidacji run zachowuje najwyżej przyznaną liczbę ćwiczeń słuchowych na cel, a gdy dodatek przyznano — najwyżej `countPerObjective` pozostałych; nadmiar jest odrzucany i liczony w `rejectedCount` (reguła `exerciseType` w logu). Dogenerowanie reguły z kompletem 2 ćwiczeń słuchowych nie dodaje kolejnych.
+  - *Reguła krzyżowa przy dogenerowaniu (§3.4).* Walidacja dopisywanej puli uwzględnia ćwiczenia szkicu w obie strony (nowe słuchowe vs odpowiedzi tekstowe szkicu, nowe tekstowe vs zdania słuchowe szkicu), więc konflikt nie wychodzi dopiero przy publikacji.
+  - *Podpowiedź (§7.3).* `authorizeDisclosure` z `kind: "hint"` dla zadania słuchowego → 409 bez zdarzenia (podpowiedź ujawniłaby brakujące słowo).
+  - *Kid UI (§8).* Zablokowane autoodtwarzanie zachowuje licznik 6 s, więc bez naciśnięcia pojawia się „Pomiń”; ręczne naciśnięcie zablokowane przez przeglądarkę daje od razu „Pomiń” i komunikat (bez pętli w stanie blokady); po powrocie z offline nieotwarty bodziec przechodzi w stan blokady (status + wyróżniony głośnik, potem licznik 6 s), bez autoodtwarzania. Linia statusu jest zawsze w układzie (zarezerwowana wysokość). Komunikat błędu ręcznego odsłuchu jest samym tekstem, bez „Odtwórz ponownie” i „Koniec”, a wysłanie odpowiedzi go gasi. Wyróżnienie głośnika to wypełnienie (nie obrys fokusu); Spacja na „Pomiń”/„Dalej” nie odtwarza zdania; ikona „?” w doku zawsze przy tym typie.
+  - *Teksty (rozstrzygnięcie właściciela, zastępuje Global Constraints).* Polecenie „Posłuchaj i wybierz, czego brakuje.”, dostępna nazwa luki „luka” (`lang="pl-PL"`), status blokady „Dotknij głośnika, aby posłuchać.”, dopisek tworzenia lekcji „Do puli dodamy najwyżej 2 ćwiczenia „Posłuchaj i wybierz” na regułę.”.
 - **Niezweryfikowane (§12):** autoodtwarzanie na fizycznym iPhonie/iPadzie (Safari) i słyszalność różnic form w głosie lektora.
