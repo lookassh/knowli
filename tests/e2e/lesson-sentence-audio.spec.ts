@@ -784,3 +784,27 @@ for (const viewport of TABLET_TOUCH_VIEWPORTS) {
     }
   });
 }
+
+test.describe("touch tablet 1280x800: flow dock follows content height", () => {
+  test.use({ isMobile: true, hasTouch: true });
+  test("data-frame-full drops when the content above the flow dock shrinks", async ({ page }) => {
+    await spyAudio(page, "reject");
+    await installKidUiFixture(page, { ...lessonAudioFixture(ids, [longChoiceTask]), attempts: [longChoiceAttempt] });
+    await openLessonTask(page, "kid-lesson-stem");
+    const viewport = { width: 1280, height: 800 };
+    await page.setViewportSize(viewport);
+    await expectFrameFillsViewport(page, viewport);
+    await page.getByTestId("kid-option").nth(1).tap();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await expect(page.locator("[data-frame-full]")).toHaveCount(1);
+    // Sama treść maleje (rama i panel bez zmian) — stopka podjeżdża, pod nią
+    // pojawia się wolne miejsce i atrybut musi zniknąć.
+    await page.evaluate(() => {
+      for (const id of ["kid-instruction", "kid-lesson-stem"]) {
+        const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+        if (element) element.style.display = "none";
+      }
+    });
+    await expect(page.locator("[data-frame-full]")).toHaveCount(0);
+  });
+});

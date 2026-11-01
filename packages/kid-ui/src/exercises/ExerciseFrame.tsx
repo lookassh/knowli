@@ -113,6 +113,9 @@ export function ExerciseFrame({
     if (resizeObserver && frameRoot) {
       resizeObserver.observe(frameRoot);
       resizeObserver.observe(overlay);
+      // Instrukcja i materiał: zmiana samej treści przesuwa stopkę w zwartej
+      // ramie bez zmiany rozmiaru ramy i panelu (`data-frame-full`).
+      for (const child of frameRoot.children) resizeObserver.observe(child);
     }
     return () => {
       active = false;
