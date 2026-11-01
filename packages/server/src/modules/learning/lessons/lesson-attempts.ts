@@ -101,6 +101,12 @@ interface LessonTaskAnswerKey extends LessonAnswerKey {
   reason?: string;
   /** Zamrożone przy wydaniu zadania nagranie pełnego zdania (feedback po odpowiedzi); tylko trening. */
   feedbackAudioAssetId?: string;
+  /** Wyjaśnienie ćwiczenia zamrożone przy wydaniu (spec 2026-11-01 §4.1); tylko trening. */
+  explanationPl?: string;
+  /** Gotowe nagranie wyjaśnienia w chwili wydania zadania; brak = wyjaśnienie bez odsłuchu. */
+  explanationAudioAssetId?: string;
+  /** Klucze ekspozycji celów cytowanych w wyjaśnieniu (bez własnego `targetKey`). */
+  explanationExposureKeys?: string[];
   optionValues?: Record<string, string>;
   itemValues?: Record<string, string>;
   segmentValues?: Record<string, string>;
@@ -996,7 +1002,54 @@ export function withFeedbackSentenceAudio(feedback: FeedbackDto | null, key: Les
   return { ...feedback, correctAudioAssetId: key.feedbackAudioAssetId };
 }
 
-/** Pieczęć odsłuchu zdania, gdy feedback niesie nagranie (po `discloseLessonFeedback`). */
+/** Czy `hintPl` feedbacku pochodzi z wyjaśnienia ćwiczenia (a nie z szablonu kategorii). */
+function carriesExerciseExplanation(feedback: FeedbackDto, key: LessonTaskAnswerKey): boolean {
+  return key.explanationPl !== undefined && feedback.hintPl === key.explanationPl;
+}
+
+/**
+ * Reguła wyjaśnienia ćwiczenia w feedbacku (spec 2026-11-01 §4.2–4.3). Czysta.
+ * (1) Wyjaśnienie z klucza zadania trafia do `hintPl`, gdy: feedback istnieje
+ * (nie kartkówka, nie „Pomiń”), wynik oceny to `incorrect`, rodzaj to `incorrect`
+ * albo `lesson_hint`, feedback ujawnia rozwiązanie (`revealsAnswer`), odpowiedź
+ * kończy zadanie, klucz ma wyjaśnienie, a `lesson_hint` nie ma szablonu kategorii
+ * (szablon ma pierwszeństwo). Nagranie wyjaśnienia z klucza idzie razem z nim.
+ * (2) Zawsze na końcu: `lesson_hint` bez `hintPl` (model_incorrect bez szablonu
+ * i bez wyjaśnienia) łamie kontrakt Kid DTO — staje się `{ kind: "incorrect",
+ * correctText }` bez pozostałych pól (`answerSegments` nie są dozwolone przy
+ * `incorrect`).
+ */
+export function withExerciseExplanation(
+  feedback: FeedbackDto | null,
+  key: LessonTaskAnswerKey,
+  outcome: ObjectiveGrade["outcome"],
+  taskEnds: boolean,
+): FeedbackDto | null {
+  if (feedback === null) return null;
+  let out = feedback;
+  const eligible =
+    taskEnds &&
+    outcome === "incorrect" &&
+    key.explanationPl !== undefined &&
+    (feedback.kind === "incorrect" || (feedback.kind === "lesson_hint" && feedback.hintPl === undefined)) &&
+    revealsAnswer(feedback);
+  if (eligible) {
+    out = {
+      ...feedback,
+      hintPl: key.explanationPl!,
+      ...(key.explanationAudioAssetId !== undefined ? { explanationAudioAssetId: key.explanationAudioAssetId } : {}),
+    };
+  }
+  if (out.kind === "lesson_hint" && out.hintPl === undefined) {
+    return { kind: "incorrect", ...(out.correctText !== undefined ? { correctText: out.correctText } : {}) };
+  }
+  return out;
+}
+
+/**
+ * Pieczęć odsłuchu po odpowiedzi (po `discloseLessonFeedback`): jedno `audio_issued`
+ * na próbę, gdy feedback niesie nagranie zdania albo nagranie wyjaśnienia.
+ */
 async function sealFeedbackSentenceAudio(
   tx: Tx,
   task: TaskRow,
@@ -1005,7 +1058,7 @@ async function sealFeedbackSentenceAudio(
   receivedAt: Date,
   now: Date,
 ): Promise<void> {
-  if (feedback?.correctAudioAssetId === undefined) return;
+  if ((feedback?.correctAudioAssetId ?? feedback?.explanationAudioAssetId) === undefined) return;
   await sealPostAnswerAudio(tx, { childId: task.childId, taskId: task.id, itemId, targetKey: keyOf(task).targetKey, receivedAt, now });
 }
 
@@ -1024,6 +1077,13 @@ async function discloseLessonFeedback(
   // własnej odpowiedzi dziecka — też bez ujawnienia. W pozostałych pokazujemy
   // rozwiązanie własnego zadania (target_key celu) oraz, przy minor_typo, wariant correctText.
   const exposures = revealsAnswer(feedback) ? [key.targetKey] : [];
+  // Wyjaśnienie ćwiczenia może cytować rozwiązania innych celów (spec §4.4):
+  // ich ekspozycje zapisujemy razem z feedbackiem, przed odpowiedzią HTTP.
+  if (exposures.length > 0 && carriesExerciseExplanation(feedback, key)) {
+    for (const quoted of key.explanationExposureKeys ?? []) {
+      if (!exposures.includes(quoted)) exposures.push(quoted);
+    }
+  }
   return discloseFeedbackEvent(tx, {
     task, childId: task.childId, itemId, exposures, now,
     ...(knownFeedbackCount === undefined ? {} : { knownPriorCount: knownFeedbackCount }),
@@ -1132,7 +1192,9 @@ async function finalizeLessonAttempt(
   // identyfikator. Tylko odpowiedź kończąca zadanie: przy zadaniu `issued`
   // (np. model_other) odsłuch przed ponowieniem byłby wsparciem tej próby.
   const visibleFeedback = mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback;
-  const feedback = taskState === "issued" ? visibleFeedback : withFeedbackSentenceAudio(visibleFeedback, key);
+  // Wyjaśnienie ćwiczenia (spec 2026-11-01 §4.2) przed nagraniem zdania i przed zapisem.
+  const explained = withExerciseExplanation(visibleFeedback, key, result.grade.outcome, taskState !== "issued");
+  const feedback = taskState === "issued" ? explained : withFeedbackSentenceAudio(explained, key);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -1613,7 +1675,8 @@ async function finalizeGradedAttempt(
     : null;
   // Nagranie zdania tylko przy odpowiedzi kończącej zadanie (jak wyżej).
   const visibleFeedback = mockTest ? null : shortenOffer ?? result.feedback;
-  const feedback = taskState === "issued" ? visibleFeedback : withFeedbackSentenceAudio(visibleFeedback, key);
+  const explained = withExerciseExplanation(visibleFeedback, key, result.grade.outcome, taskState !== "issued");
+  const feedback = taskState === "issued" ? explained : withFeedbackSentenceAudio(explained, key);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })

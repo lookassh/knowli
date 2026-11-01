@@ -62,6 +62,12 @@ export interface LessonWorldOptions {
    * bramki odczytu zdania). Wymaga `richPool`; domyślnie brak.
    */
   transformVariants?: readonly string[];
+  /**
+   * Wyjaśnienie błędu (`explanationPl`, spec 2026-11-01) w payloadzie KAŻDEJ rewizji
+   * wersji przed publikacją: `text` domyślnie, `textByType` per typ ćwiczenia;
+   * `audio` dosiewa nagranie `explanation_audio` (`ready`/`pending`) jak `withFeedbackAudio`.
+   */
+  withExplanations?: { text: string; textByType?: Readonly<Record<string, string>>; audio?: "ready" | "pending" };
   /** Seed one issued contact while omitting all schedulable objectives. */
   unschedulableDailyRound?: boolean;
 }
@@ -150,6 +156,16 @@ export async function lessonWorld(sourcePool: Pool, options: LessonWorldOptions 
     }
     if (options.withFeedbackAudio) {
       await attachLessonFeedbackAudio(pool, versionId, options.withFeedbackAudio);
+    }
+    if (options.withExplanations) {
+      const { text, textByType = {}, audio } = options.withExplanations;
+      await pool.query(
+        `update learning_app.item_revisions
+            set payload = payload || jsonb_build_object('explanationPl', coalesce(($2::jsonb)->>(payload->>'exerciseType'), $3::text))
+          where deck_version_id = $1`,
+        [versionId, JSON.stringify(textByType), text],
+      );
+      if (audio) await attachLessonFeedbackAudio(pool, versionId, audio, "explanation_audio");
     }
     if (options.publish !== false) {
       await pool.query(
@@ -526,8 +542,9 @@ export async function attachLessonTargetAudio(
 }
 
 /**
- * Dołącza nagranie zdania feedbacku (`feedback_audio`) do każdej rewizji wersji —
- * jak planowanie mediów przy przygotowaniu lekcji gramatyki. Zasób `ready` ma
+ * Dołącza nagranie zdania feedbacku (`feedback_audio`, albo wskazanej roli —
+ * np. `explanation_audio`) do każdej rewizji wersji — jak planowanie mediów
+ * przy przygotowaniu lekcji gramatyki. Zasób `ready` ma
  * komplet pól gotowego blobu; `pending` czeka na worker. Zwraca mapę
  * `revisionId -> assetId`.
  */
@@ -535,6 +552,7 @@ export async function attachLessonFeedbackAudio(
   pool: Pool,
   versionId: string,
   state: "ready" | "pending",
+  role: "feedback_audio" | "explanation_audio" = "feedback_audio",
 ): Promise<Map<string, string>> {
   const rows = await pool.query<{ id: string }>(
     "select id from learning_app.item_revisions where deck_version_id = $1 order by position",
@@ -559,8 +577,8 @@ export async function attachLessonFeedbackAudio(
     }
     await pool.query(
       `insert into learning_app.revision_assets (item_revision_id, role, asset_id, expected_fingerprint, state)
-       values ($1, 'feedback_audio', $2, $3, 'pending')`,
-      [row.id, assetId, `fp-feedback-${assetId}`],
+       values ($1, $4, $2, $3, 'pending')`,
+      [row.id, assetId, `fp-feedback-${assetId}`, role],
     );
     byRevision.set(row.id, assetId);
   }

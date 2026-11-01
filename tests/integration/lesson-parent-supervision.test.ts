@@ -305,7 +305,9 @@ describe("Parent supervision API (integracja HTTP)", () => {
 
   it.each([
     { initial: "incorrect", decision: "overridden_correct", feedback: "great", outcome: "correct" },
-    { initial: "correct", decision: "overridden_incorrect", feedback: "lesson_hint", outcome: "incorrect" },
+    // Nadpisanie bez kategorii i bez wyjaśnienia ćwiczenia: `incorrect` z correctText
+    // (wcześniej `lesson_hint` bez `hintPl`, który łamał kontrakt Kid DTO; spec 2026-11-01 §4.2).
+    { initial: "correct", decision: "overridden_incorrect", feedback: "incorrect", outcome: "incorrect" },
   ])("decyzja $decision działa dla przyszłej identycznej odpowiedzi bez ponownego modelu", async ({ initial, decision, feedback, outcome }) => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: initial, errorCategory: initial === "correct" ? null : "missing_ending", fragments: initial === "correct" ? [] : ["play"], note: "x" } });
     const services = graderServices(grader);
