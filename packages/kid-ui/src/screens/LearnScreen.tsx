@@ -116,12 +116,15 @@ export function LearnScreen({
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
   // Odczyt pełnego zdania w doku lekcji; obok niego komunikat dostaje „?”,
   // nie drugi głośnik.
-  const sentenceAudio = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined
+  const sentenceReadback = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined;
+  // „Posłuchaj i wybierz”: odczyt zdania odtwarza przycisk w poleceniu (bez drugiego głośnika w doku).
+  const listenChoice = task?.prompt.kind === "lesson_listen_choice";
+  const sentenceAudio = sentenceReadback && !listenChoice
     ? { onPlay: () => void controller.playSentenceAudio() }
     : null;
   const guidanceButton = instructionAudioKey
     ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false}
-        {...(sentenceAudio !== null ? { icon: "question" as const } : {})} />
+        {...(sentenceReadback ? { icon: "question" as const } : {})} />
     : null;
   // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
   const instructionGuidanceButton = instructionAudioKey
@@ -363,9 +366,12 @@ export function LearnScreen({
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}
                 optionOutcomes={outcomes}
                 dock={screen.reveal === null ? dock : undefined}
-                feedbackAudio={hasFeedback && feedback !== null && feedback.chosenOptionId !== undefined && feedback.dto?.correctAudioAssetId !== undefined
-                  ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playCorrectOptionAudio() }
-                  : null}
+                listenStimulus={screen.listenStimulus?.taskId === task.taskId ? screen.listenStimulus : null}
+                feedbackAudio={hasFeedback && feedback !== null && listenChoice && feedback.dto?.correctAudioAssetId !== undefined
+                  ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playSentenceAudio() }
+                  : hasFeedback && feedback !== null && feedback.chosenOptionId !== undefined && feedback.dto?.correctAudioAssetId !== undefined
+                    ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playCorrectOptionAudio() }
+                    : null}
                 handlers={handlers}
               />
             )}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, renderKid, screen } from "../../test/render-kid";
 import type { TaskDto, TaskPrompt } from "@learning/contracts";
 import { makeExerciseProps } from "../../test/exercise-fixtures";
@@ -9,6 +9,7 @@ import { LessonChoiceView } from "./LessonChoiceView";
 import { LessonClozeView } from "./LessonClozeView";
 import { LessonGapView } from "./LessonGapView";
 import { LessonGroupView } from "./LessonGroupView";
+import { LessonListenChoiceView } from "./LessonListenChoiceView";
 import { LessonMatchView } from "./LessonMatchView";
 import { LessonNoticeView } from "./LessonNoticeView";
 import { LessonOrderView } from "./LessonOrderView";
@@ -459,5 +460,118 @@ describe("lesson content language (lang attributes)", () => {
     renderKid(<LessonSentenceView {...makeExerciseProps(task({ kind: "lesson_open_answer", instructionPl: "Napisz.", prompt: "Write about your day.", answerLocale: en }))} />);
     expect(langOf(screen.getByTestId("kid-lesson-source"))).toBe(en);
     expect(langOf(screen.getByTestId("kid-lesson-input"))).toBe(en);
+  });
+});
+
+describe("listen-choice view (lesson_listen_choice)", () => {
+  const en = "en-GB" as const;
+  const listenTask = () => task({
+    kind: "lesson_listen_choice", stem: "He ___ football.", contentLocale: en,
+    options: [{ id: id(3), text: "plays" }, { id: id(4), text: "play" }],
+  });
+  const render = (state: "pending" | "blocked" | "unavailable" | "open" | null, overrides: Partial<ReturnType<typeof makeExerciseProps>> = {}) => {
+    const props = makeExerciseProps(listenTask(), {
+      listenStimulus: state === null ? null : { state, playing: false },
+      ...overrides,
+    });
+    renderKid(<LessonListenChoiceView {...props} />);
+    return props;
+  };
+
+  it("locks the options until the first listen finishes, while the play button stays active and focused", () => {
+    render("pending");
+    for (const option of screen.getAllByTestId("kid-option")) expect((option as HTMLButtonElement).disabled).toBe(true);
+    const play = screen.getByTestId("kid-play") as HTMLButtonElement;
+    expect(play.disabled).toBe(false);
+    expect(document.activeElement).toBe(play);
+    expect(play.getAttribute("aria-label")).toBe("Posłuchaj zdania");
+  });
+
+  it("fails closed without a stimulus state", () => {
+    render(null);
+    for (const option of screen.getAllByTestId("kid-option")) expect((option as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("answers immediately by option id once the stimulus is open", () => {
+    const props = render("open");
+    fireEvent.click(screen.getAllByTestId("kid-option")[0]!);
+    expect(props.handlers.onAnswerChoice).toHaveBeenCalledWith(id(3));
+    expect(screen.queryByTestId("kid-lesson-check")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("explains a blocked autoplay politely and keeps the options locked", () => {
+    render("blocked");
+    expect(screen.getByRole("status").textContent).toBe("Naciśnij głośnik, aby posłuchać.");
+    for (const option of screen.getAllByTestId("kid-option")) expect((option as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("offers „Pomiń” when the recording is unavailable", () => {
+    const props = render("unavailable");
+    for (const option of screen.getAllByTestId("kid-option")) expect((option as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("kid-listen-skip"));
+    expect(screen.getByTestId("kid-listen-skip").textContent).toBe("Pomiń");
+    expect(props.handlers.onSkip).toHaveBeenCalledOnce();
+  });
+
+  it("does not show „Pomiń” in the other states", () => {
+    render("pending");
+    expect(screen.queryByTestId("kid-listen-skip")).toBeNull();
+  });
+
+  it("renders the gap as a named blank, not as raw underscores", () => {
+    render("open");
+    const stem = screen.getByTestId("kid-lesson-stem");
+    expect(stem.textContent).not.toContain("___");
+    const gap = screen.getByTestId("kid-listen-gap");
+    expect(gap.getAttribute("aria-label")).toBe("brakujące słowo");
+    expect(stem.contains(gap)).toBe(true);
+    expect(stem.textContent).toBe("He  football.");
+  });
+
+  it("marks the stem and every option with the content locale", () => {
+    render("open");
+    expect(screen.getByTestId("kid-lesson-stem").getAttribute("lang")).toBe(en);
+    expect(screen.getAllByTestId("kid-option").map((option) => option.getAttribute("lang"))).toEqual([en, en]);
+  });
+
+  it("replays the stimulus with the play button and with Space, also while the options are locked", () => {
+    const props = render("pending");
+    fireEvent.click(screen.getByTestId("kid-play"));
+    expect(props.handlers.onPlay).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(props.handlers.onPlay).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
+    expect(props.handlers.onAnswerChoice).not.toHaveBeenCalled();
+  });
+
+  it("shows the playing state on the play button", () => {
+    const props = makeExerciseProps(listenTask(), { listenStimulus: { state: "pending", playing: true } });
+    renderKid(<LessonListenChoiceView {...props} />);
+    expect(screen.getByTestId("kid-play").getAttribute("data-sound-active")).toBe("true");
+    expect(screen.getByTestId("kid-sound-ring")).toBeTruthy();
+  });
+
+  it("after the answer the button replays the feedback recording; without one it is inactive", () => {
+    const onFeedbackPlay = vi.fn();
+    const withAudio = makeExerciseProps(listenTask(), {
+      busy: true, listenStimulus: { state: "open", playing: false },
+      feedbackAudio: { assetId: id(9), onPlay: onFeedbackPlay },
+    });
+    const { unmount } = renderKid(<LessonListenChoiceView {...withAudio} />);
+    const play = screen.getByTestId("kid-play") as HTMLButtonElement;
+    expect(play.disabled).toBe(false);
+    fireEvent.click(play);
+    expect(onFeedbackPlay).toHaveBeenCalledOnce();
+    expect(withAudio.handlers.onPlay).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(onFeedbackPlay).toHaveBeenCalledTimes(2);
+    unmount();
+
+    const without = makeExerciseProps(listenTask(), { busy: true, listenStimulus: { state: "open", playing: false } });
+    renderKid(<LessonListenChoiceView {...without} />);
+    expect((screen.getByTestId("kid-play") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(without.handlers.onPlay).not.toHaveBeenCalled();
   });
 });

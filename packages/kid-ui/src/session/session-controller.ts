@@ -95,6 +95,12 @@ export interface LearningScreen {
   error: string | null;
   guidanceError?: boolean;
   taskAudioError?: "blocked" | "failed" | null;
+  /**
+   * Bodziec „Posłuchaj i wybierz” (`lesson_listen_choice`) wydanego zadania: `pending` — czeka na
+   * pierwszy odsłuch, `blocked` — autoodtwarzanie zablokowane, `unavailable` — nagranie niedostępne
+   * (dziecko może pominąć), `open` — odsłuchano, opcje aktywne. Brak = zadanie bez bodźca.
+   */
+  listenStimulus?: { taskId: string; state: "pending" | "blocked" | "unavailable" | "open"; playing: boolean } | null;
   /** „Posłuchaj pytania” nie odtworzyło nagrania (komunikat w pasku statusu, nie w wierszu instrukcji). */
   questionAudioError?: boolean;
   /** Dyktowanie odpowiedzi lekcji; brak = zadanie bez dyktowania. */

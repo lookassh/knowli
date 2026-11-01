@@ -5,6 +5,8 @@ export interface UseChoiceKeyboardOptions {
   busy: boolean;
   onChoice: (optionId: string) => void;
   onPlay?: () => void;
+  /** Spacja nie odtwarza (domyślnie jak `busy`); pozwala odsłuchać przy zablokowanych opcjach. */
+  playBusy?: boolean;
 }
 
 export function shouldIgnoreKeyboardShortcut(event: KeyboardEvent): boolean {
@@ -22,7 +24,7 @@ export function shouldIgnoreKeyboardShortcut(event: KeyboardEvent): boolean {
  * Obsługa klawiszy cyfr 1..4, strzałek góra/dół oraz Spacji w zadaniach wyboru.
  * W zadaniach słuchowych Spacja ponawia odsłuch bez aktywacji opcji.
  */
-export function useChoiceKeyboard({ options, busy, onChoice, onPlay }: UseChoiceKeyboardOptions) {
+export function useChoiceKeyboard({ options, busy, onChoice, onPlay, playBusy = busy }: UseChoiceKeyboardOptions) {
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function useChoiceKeyboard({ options, busy, onChoice, onPlay }: UseChoice
       if (onPlay && (event.key === " " || event.code === "Space")) {
         if (event.repeat) return;
         event.preventDefault();
-        if (!busy) {
+        if (!playBusy) {
           onPlay();
         }
         return;
@@ -87,7 +89,7 @@ export function useChoiceKeyboard({ options, busy, onChoice, onPlay }: UseChoice
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [options, busy, onChoice, onPlay]);
+  }, [options, busy, playBusy, onChoice, onPlay]);
 
   return optionRefs;
 }

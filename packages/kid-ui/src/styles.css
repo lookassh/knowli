@@ -2950,3 +2950,18 @@
 .kid-page[data-viewport-very-short="true"] .kid-exercise-frame .kid-material-content {
   overflow: visible;
 }
+
+/* „Posłuchaj i wybierz”: luka w zdaniu to puste miejsce z kreską, nie surowe podkreślenia. */
+.kid-ui .kid-listen-gap {
+  display: inline-block;
+  inline-size: 2.5em;
+  margin-inline: 0.2em;
+  border-block-end: 0.1em solid var(--md-sys-color-outline);
+  vertical-align: baseline;
+}
+
+/* Przycisk odsłuchu wyróżniony, gdy przeglądarka zablokowała autoodtwarzanie. */
+.kid-ui [data-attention="true"] {
+  outline: 3px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}

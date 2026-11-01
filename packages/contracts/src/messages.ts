@@ -513,6 +513,7 @@ export const messages = {
     listenExample: "Posłuchaj zdania",
     // „Posłuchaj i wybierz” (#198): polecenie, status blokady i błąd ręcznego odsłuchu.
     lessonListenChoiceInstruction: "Posłuchaj i wybierz brakujące słowo.",
+    lessonListenGap: "brakujące słowo",
     listenStimulusBlocked: "Naciśnij głośnik, aby posłuchać.",
     listenStimulusFailed: "Nie udało się odtworzyć nagrania.",
     listenInstruction: "Posłuchaj polecenia",
