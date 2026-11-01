@@ -893,17 +893,12 @@ describe("poolCoverage", () => {
 });
 
 describe("lesson_listen_choice — walidacja", () => {
-  // Gramatyka dostaje typ dopiero w kolejnym zadaniu; tu fixture, który go dopuszcza.
-  const listenSubject: SubjectModule = {
+  // Gramatyka ma typ w celu third_person_s (Task 4); fixture bez niego sprawdza odrzucenie.
+  const listenSubject: SubjectModule = englishGrammarSubject;
+  const listenTopic: LessonTopic = englishTopic;
+  const subjectWithoutListen: SubjectModule = {
     ...englishGrammarSubject,
-    exerciseTypes: [...englishGrammarSubject.exerciseTypes, "lesson_listen_choice"],
-  };
-  const listenTopic: LessonTopic = {
-    ...englishTopic,
-    objectives: englishTopic.objectives.map((objective) => ({
-      ...objective,
-      exerciseTypes: [...objective.exerciseTypes, "lesson_listen_choice"],
-    })),
+    exerciseTypes: englishGrammarSubject.exerciseTypes.filter((type) => type !== "lesson_listen_choice"),
   };
 
   function listen(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
@@ -926,7 +921,7 @@ describe("lesson_listen_choice — walidacja", () => {
   });
 
   it("odrzuca typ, gdy przedmiot go nie wspiera", () => {
-    const errors = validateLessonExercise(listen(), englishGrammarSubject, englishTopic);
+    const errors = validateLessonExercise(listen(), subjectWithoutListen, listenTopic);
     expect(errors.some((e) => e.includes("exerciseType"))).toBe(true);
   });
 

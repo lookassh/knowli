@@ -3,6 +3,7 @@ import { englishGrammarSubject } from "./module";
 import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
+import { toBeV1 } from "./topics/to-be";
 import { answersEquivalent } from "../../pool-validation";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
@@ -22,13 +23,14 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(englishGrammarSubject.ttsForFeedbackSentence).toBe(true);
   });
 
-  it("obsługuje wszystkie 9 typów ćwiczeń", () => {
+  it("obsługuje wszystkie 10 typów ćwiczeń", () => {
     expect([...englishGrammarSubject.exerciseTypes].sort()).toEqual(
       [
         "lesson_card",
         "lesson_choice",
         "lesson_error_fix",
         "lesson_gap",
+        "lesson_listen_choice",
         "lesson_notice",
         "lesson_open_answer",
         "lesson_order",
@@ -168,3 +170,42 @@ for (const topicCase of TOPIC_CASES) {
     });
   });
 }
+
+describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
+  const typesOf = (topic: { objectives: readonly { id: string; exerciseTypes: readonly string[] }[] }, suffix: string) =>
+    topic.objectives.find((objective) => objective.id.endsWith(suffix))?.exerciseTypes ?? [];
+
+  it("cele ze słyszalną różnicą formy dostają lesson_listen_choice", () => {
+    for (const suffix of [".affirmative_base", ".third_person_s", ".negative", ".question"]) {
+      expect(typesOf(presentSimpleV1, suffix), suffix).toContain("lesson_listen_choice");
+    }
+    for (const suffix of [".affirmative_forms", ".negative_forms"]) {
+      expect(typesOf(toBeV1, suffix), suffix).toContain("lesson_listen_choice");
+    }
+  });
+
+  it("cele pisowni, krótkich odpowiedzi i formy po does nie dostają typu", () => {
+    for (const suffix of [".spelling_es_ies", ".short_answers", ".base_form_after_does"]) {
+      expect(typesOf(presentSimpleV1, suffix), suffix).not.toContain("lesson_listen_choice");
+    }
+    for (const suffix of [".contractions", ".short_answers"]) {
+      expect(typesOf(toBeV1, suffix), suffix).not.toContain("lesson_listen_choice");
+    }
+  });
+
+  it("wersje tematów bez zmian", () => {
+    expect(presentSimpleV1.version).toBe(1);
+    expect(toBeV1.version).toBe(1);
+  });
+
+  it("fieldRules opisują regułę typu: jedna luka, słyszalna różnica, bez równoważnych opcji i bez instructionPl", () => {
+    const rules = englishGrammarPrompts.fieldRules ?? "";
+    expect(rules).toContain("lesson_listen_choice");
+    expect(rules).toMatch(/at most 12 words/);
+    expect(rules).toMatch(/exactly one gap/);
+    expect(rules).toMatch(/audibly/i);
+    expect(rules).toMatch(/never offer an equivalent/i);
+    expect(rules).toMatch(/apostrophe/);
+    expect(rules).toMatch(/instructionPl.*hint.*visualSubject/s);
+  });
+});
