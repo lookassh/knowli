@@ -1,15 +1,15 @@
-# „Posłuchaj i uzupełnij” — wybór brakującej formy ze słuchu (`lesson_listen_choice`) — design
+# „Posłuchaj i wybierz” — brakująca forma ze słuchu (`lesson_listen_choice`) — design
 
-Data: 2026-11-01. Status: do recenzji właściciela.
+Data: 2026-11-01. Status: do recenzji właściciela (wersja 3 — po dwóch rundach recenzji trzech krytyków).
 Issue: lookassh/knowli#198. Powiązane: `docs/superpowers/specs/2026-10-30-lesson-sentence-readback-design.md`
-(#194, nagranie `feedback_audio`), `.kiro/specs/grammar-module/requirements.md` (wym. 2.13, 4.1, 4.6, 5.2, 7.2),
-`docs/superpowers/specs/2026-10-30-english-chapter-design.md`, `docs/SPEC.md` §22.
+(#194, nagranie `feedback_audio`), `.kiro/specs/grammar-module/requirements.md` (wym. 2.13, 4.1, 4.3, 4.6,
+5.2–5.6, 7.2–7.5), `docs/superpowers/specs/2026-10-30-english-chapter-design.md`, `docs/SPEC.md` §22.
 
 ## 1. Cel
 
 Dziecko **słyszy** pełne zdanie po angielsku (lektor en-GB), widzi to samo zdanie z luką
 i **wybiera** brakującą formę z 2–4 opcji. Ćwiczy słyszenie końcówek i skrótów
-(`-s`, `doesn't`, `'re`), czego samo czytanie nie daje.
+(`-s`, `doesn't`, `isn't`), czego samo czytanie nie daje.
 
 Ustalenia z właścicielem (2026-11-01):
 
@@ -22,197 +22,358 @@ Ustalenia z właścicielem (2026-11-01):
 
 ## 2. Zakres
 
-W zakresie: kontrakty, domena (etap, walidacja, tożsamość, ekspozycja, selektor), generator
-(prompty i fake provider), media (to samo nagranie co #194), sesja (wydanie, autoryzacja
-odsłuchu, kwalifikacja, feedback), edytor rodzica, widok Kid UI, dokumentacja.
+W zakresie: kontrakty, domena (walidacja, tożsamość, ekspozycja, selektor), generator
+(port, prompty, fake provider), media (to samo nagranie co #194), sesja (wydanie, autoryzacja
+odsłuchu, ocena, feedback), edytor rodzica (z odsłuchem i stanem nagrania ćwiczenia
+słuchowego), widok Kid UI, dokumentacja.
 
 Poza zakresem:
 
 - wariant z wpisywaniem formy (możliwy później jako osobny typ);
 - ukrywanie tekstu zdania (czyste dyktando);
-- odsłuch nagrania w podglądzie lekcji rodzica i status nagrania per ćwiczenie w panelu;
 - wolniejsze odtwarzanie;
 - automatyczne dogenerowanie ćwiczeń słuchowych do już opublikowanych lekcji (rodzic
-  dogenerowuje regułę i publikuje nową wersję, jak przy #174/#194).
+  dogenerowuje regułę i publikuje nową wersję, jak przy #174/#194);
+- nagranie przy odpowiedzi rodzica w kartkówce (typ nie występuje w kartkówce).
 
-## 3. Model zadania i kwalifikacja (decyzja wobec wym. 4.6)
+## 3. Model zadania (decyzje wobec wym. 4.6, 5.x i 7.x)
 
-- **Nagranie jest bodźcem, ale nadal jest audio zdania przed odpowiedzią.** Zdanie zawiera
-  rozwiązanie, więc stosujemy wym. 4.6 bez zmian: serwer zapisuje i pieczętuje ekspozycję
-  (`audio_issued`, ekspozycja `target_key` ćwiczenia) **przed** wydaniem nagrania, a próba
-  jest wspomagana (`model_audio`).
-- **Typ jest zawsze wspomagany** także bez odsłuchu: to typ zamknięty z opcjami
-  (`assistance: options`, jak `lesson_choice`). Nigdy nie jest samodzielnym sprawdzeniem
-  (`independentCheck = false`) i nie liczy się do opanowania reguły (wym. 7.2–7.3).
-- **Etap: `guided`** (`STAGE_BY_TYPE`). Dwie kolejne poprawne odpowiedzi etapu nadal
-  awansują etap (wym. 5.3), tak jak `lesson_choice`.
-- **Ekspozycja przy wydaniu:** jak `lesson_choice` — zadanie zapisuje `exposures: [targetKey]`
-  przy wydaniu (opcje zawierają rozwiązanie). Ochrona należnych samodzielnych sprawdzeń
-  w selektorze działa tak samo jak dla wyboru.
-- **Kartkówka:** typ jest wykluczony z planu kartkówki (`mock-test-plan.ts`) — audio przed
-  odpowiedzią zdradzałoby rozwiązanie.
-- Brzmienie wym. 4.6 bez zmian. Nowe brzmienie 2.13 (§10) dopuszcza nagranie zdania przed
-  odpowiedzią wyłącznie w tym typie, jako bodziec przez autoryzację odsłuchu.
+### 3.1 Nagranie jako bodziec
+
+- Nagranie jest bodźcem, ale zawiera rozwiązanie, więc obowiązuje zasada wym. 4.6 (zmienionej
+  w §10, by objęła ten typ zamknięty): serwer zapisuje i pieczętuje ekspozycję (`audio_issued`)
+  **przed** wydaniem nagrania, a próba jest wspomagana (`model_audio`).
+- Typ jest **zawsze wspomagany** także bez odsłuchu (opcje → `assistance: options`, jak
+  `lesson_choice`), **nigdy** nie jest samodzielnym sprawdzeniem (`independentCheck = false`)
+  i nie liczy się do opanowania reguły (wym. 7.2–7.3; projekcja pomija próby wspomagane).
+- **Bez odsłuchu nie ma oceny.** Odpowiedź, przed której `receivedAt` nie ma zapieczętowanego
+  `audio_issued` w tym zadaniu, serwer zapisuje jako nieocenioną (`unevaluated`, werdykt
+  `no_stimulus`, feedback `not_assessed`) — bez kary, bez wsparcia i bez historii trudności.
+  Jak każda nieoceniona odpowiedź zostawia zadanie `issued` (można ponowić); Kid UI przy
+  ponowieniu nadal trzyma opcje zablokowane do odsłuchu. Kid UI i tak nie pozwala odpowiedzieć
+  przed odsłuchem (§8); reguła serwera jest zabezpieczeniem. Werdykt `no_stimulus` jest
+  wewnętrzny (szczegóły próby), nie trafia do kontraktów.
+
+### 3.2 Miejsce w sesji: dodatkowy slot ćwiczenia słuchowego, poza ścieżką etapów
+
+Typ **nie** należy do pul etapów selektora (jak `lesson_keywords`): `pickExercise` go nie wybiera,
+więc nie zajmuje rzadkich slotów guided, nie wprowadza reguły (priorytet 5, `introduce`) i nie
+jest ćwiczeniem cyklu wsparcia (wym. 5.5 — „łatwiejsze ćwiczenie reguły” pozostaje zwykłym guided).
+`STAGE_BY_TYPE` mapuje go na `guided` wyłącznie dla kompletności mapy i etykiet. Każde miejsce,
+które rozgałęzia się po `stageOf()` (pule `pickExercise`, limit planowanych zadań etapu,
+`hasAssessedThisSession`, `buildSessionState`, `initialStatus` z pierwszego zadania, plan
+kartkówki, `poolCoverage`, pokrycie katalogu, grupowanie w edytorze), korzysta z **jednego
+wspólnego predykatu** `outsideStagePath(type)` (`lesson_listen_choice` i `lesson_keywords`),
+zamiast powielać listy typów; predykat ma własny test.
+
+Nowy priorytet selektora `listenPracticePlan` (wzorem `precisionPracticePlan`), przed
+„kontynuacją celu” (priorytet 4):
+
+- cel ma w tej sesji co najmniej jedno **zwykłe** (nie słuchowe) ocenione zadanie wydane lub
+  zaplanowane (`hasAssessedThisSession` bez typów spoza ścieżki etapów) — dotyczy też celów
+  kontynuowanych i opanowanych: same z siebie nie dostają slotu na początku sesji, więc sesja
+  nie zaczyna się serią zadań słuchowych;
+- w tej sesji cel nie miał jeszcze zadania słuchowego (**najwyżej 1 na cel na sesję**) i sesja
+  ma ich mniej niż **2** (limit sesji — zadania słuchowe nie wypierają ćwiczeń produktywnych);
+- cel nie czeka na ćwiczenie cyklu wsparcia (`pendingSupportExercise` ma pierwszeństwo);
+- jest kandydat `lesson_listen_choice` tego celu z **gotowym nagraniem** (§7.1), wybierany jak
+  inne: niewidziany albo widziany najdawniej;
+- zostaje budżet ocenianych zadań (zadanie słuchowe jest oceniane i liczy się do budżetu 12;
+  zasada „Jeszcze 3” bez zmian — nie dokładamy ponad obiecany budżet);
+- powód zadania: nowy `LessonTaskReason` `listen_practice`.
+
+Okno sprawdzianu i należne sprawdzenia mają pierwszeństwo przed slotem słuchowym (priorytety
+1–3 bez zmian).
+
+### 3.3 Skutki odpowiedzi
+
+- **Ścieżka etapów:** wynik zadania słuchowego jest **neutralny** dla `stage`/`stageStreak`
+  (`buildSessionState` pomija typ jak `lesson_notice`); limit planowanych zadań etapu go nie liczy.
+- **Wsparcie:** błędna odpowiedź **nie** otwiera cyklu wsparcia (pomyłka słuchu nie jest
+  trudnością reguły w sensie wym. 5.5). Zapytanie `historicalSupportObjectives` (ostatnia
+  zakończona próba celu) **pomija zadania słuchowe całkowicie**, niezależnie od wyniku — także
+  poprawna odpowiedź słuchowa nie „przykrywa” wcześniejszego prawdziwego błędu reguły.
+- **Stare sesje dynamiczne** (bez `initialObjectiveProgress`): `initialStatus` z pierwszego zadania
+  celu pomija typy spoza ścieżki etapów, więc zadanie słuchowe nie oznacza celu jako nowego.
+- **Historia i rodzic:** próba zostaje w historii z rzeczywistym wynikiem (`correct`/`incorrect`),
+  widoczna w nadzorze rodzica; projekcja opanowania jej nie liczy (wspomagana).
+- **Feedback dziecka:** jak dla wyboru — „Świetnie!” albo poprawna odpowiedź; po odpowiedzi
+  odczyt zdania (#194).
+
+### 3.4 Ekspozycja
+
+- Przy wydaniu zadania (jak `lesson_choice`) i przy każdej autoryzacji odsłuchu zadanie
+  ujawnia **dwa klucze**: `target_key` ćwiczenia oraz klucz pełnego zdania
+  `lessonTextTargetKey(subject, feedbackSentenceText(...))` (bez duplikatu, gdy są równe — np.
+  w rozdziale). Dzięki temu ćwiczenie samodzielne, którego odpowiedzią jest to samo zdanie
+  (np. tłumaczenie w gramatyce), nie zakwalifikuje się już jako „niewidziane”. Klucz liczy
+  `computeTargetKey` (NFC, przycięcie, małe litery), więc nie łapie wariantów różniących się
+  interpunkcją albo rozwinięciem skrótu — dlatego dodatkowo **walidacja puli** odrzuca ćwiczenie
+  słuchowe, którego zdanie jest równoważne (`answersEquivalent` po normalizatorze przedmiotu)
+  odpowiedzi któregokolwiek `lesson_open_answer`, `lesson_transform` albo `lesson_error_fix`
+  tej samej lekcji.
+- Ochrona należnych samodzielnych sprawdzeń działa jak dla wyboru: `targetKey` zadania wchodzi
+  do zbioru celów wydanych w sesji.
+- **Kartkówka:** typ jest wykluczony z planu kartkówki (`mock-test-plan.ts`, lista guided
+  w `lesson-mock-tests.ts`); autoryzacja odsłuchu tego typu w `mock_test` jest odrzucana.
 
 ## 4. Payload i walidacja
 
-Payload rewizji (`item_revisions.payload`, `LessonExerciseInputSchema`) jak `lesson_choice`
-bez piktogramu:
+Payload rewizji (`LessonExerciseInputSchema`) jak `lesson_choice` bez piktogramu:
 
 | Pole | Reguła |
 | --- | --- |
-| `stem` | zdanie w języku odpowiedzi z dokładnie jedną luką (2+ podkreśleń) |
-| `options` | 2–4 opcje `{id, text}`, niepuste |
+| `stem` | zdanie w języku odpowiedzi z dokładnie jedną luką — ciągiem **2+ podkreśleń** (ta sama definicja co `feedbackSentenceText` i Kid UI `splitGap`) |
+| `options` | 2–4 opcje `{id, text}`, niepuste, **żadna nie zaczyna się od apostrofu** (skróty tylko jako całe tokeny, np. `isn't`, `doesn't`, `she's` z podmiotem w luce) |
 | `correctOption` | id jednej z opcji |
-| `answer` | tekst poprawnej opcji (jak w `lesson_choice`) |
-| `acceptedAnswers`, `focus` | jak w `lesson_choice` |
-| `instructionPl` | **niedozwolone** — polecenie dla dziecka jest stałe z katalogu komunikatów („Posłuchaj i uzupełnij zdanie.”); bodźcem znaczenia jest nagranie, nie polskie zdanie |
-| `visualSubject`, `hint` | niedozwolone |
+| `answer` | tekst poprawnej opcji (jak `lesson_choice`) |
+| `acceptedAnswers`, `focus` | jak `lesson_choice` |
+| `instructionPl`, `visualSubject`, `hint` | **niedozwolone** w edycji rodzica i publikacji; polecenie dla dziecka jest stałe z katalogu komunikatów |
 
-Walidacja puli (`pool-validation.ts`, wspólna dla generacji, edycji i publikacji):
+Walidacja puli (`pool-validation.ts`, obowiązuje przy generacji, edycji i publikacji):
 
-- dokładnie jedna luka w `stem`; zdanie z wstawioną poprawną opcją (`feedbackSentenceText`)
-  musi istnieć i mieć ≤ 200 znaków — inaczej nagranie nigdy nie powstanie;
-- opcje parami różne **po normalizatorze przedmiotu** (np. `doesn't` i `does not` to ta sama
-  opcja — brzmią różnie, ale obie są poprawne, więc zadanie byłoby dwuznaczne);
-- typ musi być na liście przedmiotu i celu; przedmiot z tym typem musi mieć
-  `ttsForFeedbackSentence = true` (`catalog-validation.ts` — bez nagrania typ nie ma sensu).
+- dokładnie jedna luka; zdanie z wstawioną poprawną opcją (`feedbackSentenceText`) istnieje
+  i ma ≤ 200 znaków — inaczej nagranie nigdy nie powstanie;
+- **opcje nierównoważne na poziomie zdania**: dla każdej pary opcji zdania z wstawionymi
+  opcjami nie mogą być równoważne po normalizatorze przedmiotu (`answersEquivalent`) — np.
+  `doesn't`/`does not`, `they're`/`they are` to ta sama odpowiedź, więc zadanie byłoby dwuznaczne;
+- typ musi być na liście przedmiotu i celu.
 
-Walidatory przedmiotów: gramatyka stosuje do zdania z wstawioną opcją te same kontrole
-formy co dla `lesson_choice`; rozdział — kontrolę jednej luki i elementu sprawdzanego jak
-dla `lesson_choice`, bez wymogu bodźca w poleceniu (`STIMULUS_IN_INSTRUCTION` nie obejmuje
-typu).
+Walidacja katalogu i przedmiotu (`catalog-validation.ts`):
 
-**Tożsamość** (`exercise-identity.ts`): `[objectiveId, "lesson_listen_choice", stem]` — jawny
-`case`, typ nie należy do `INSTRUCTION_STIMULUS_TYPES`. Ten sam stem jako `lesson_choice`
-i `lesson_listen_choice` to dwa różne ćwiczenia.
+- przedmiot, którego `exerciseTypes` zawiera typ, musi mieć `ttsForFeedbackSentence = true`
+  (sprawdzane w `validateSubject` na liście przedmiotu — działa też dla tematów dynamicznych
+  rozdziału);
+- pokrycie etapu guided celu wymaga typu guided **innego** niż `lesson_listen_choice`
+  (analogicznie do wykluczenia `lesson_keywords` w `poolCoverage`).
 
-**Ekspozycja** (`target_key`): gramatyka — `answer` (jak dziś dla wyboru); rozdział —
-`chapterExposureText` wypełnia stem poprawną opcją jak dla `lesson_choice`.
+Walidatory przedmiotów (zakres faktyczny):
 
-**Minima publikacji:** ćwiczenia słuchowe **nie liczą się** do minimów etapów
-(`poolMinimums`/`DEFAULT_LESSON_POLICY`, `poolStageCounts`): mogą być niewydawalne bez
-nagrania, więc nie mogą zastępować zwykłych ćwiczeń prowadzonych. Lekcja bez nich publikuje
-się jak dziś.
+- gramatyka: istniejące kontrole odpowiedzi wyboru (dziś: forma odpowiedzi dla „to be”) obejmują
+  też ten typ; brak nowej kontroli dystraktorów — błędne przy czytaniu nie muszą być, bo dziecko
+  odpowiada po odsłuchu;
+- rozdział: kontrola jednej luki i elementów sprawdzanych z materiału (`checkedElements`) jak dla
+  `lesson_choice`; typ **nie** należy do `STIMULUS_IN_INSTRUCTION` ani `VARIANT_TYPES`;
+  `refineChapterPool` obejmuje typ.
+
+**Tożsamość** (`exercise-identity.ts`): `[objectiveId, "lesson_listen_choice", [znormalizowany stem,
+znormalizowane pełne zdanie]]` (to, co dziecko widzi i słyszy). Typ nie należy do
+`INSTRUCTION_STIMULUS_TYPES`. Ta sama rama z różnymi słowami („I can see a cat/dog.”) to dwa
+ćwiczenia; to samo zdanie z luką w innym miejscu też; ten sam stem jako `lesson_choice` i jako
+`lesson_listen_choice` też.
+
+**`target_key`:** gramatyka — `answer` (jak wybór); rozdział — `chapterExposureText` wypełnia
+stem poprawną opcją (jak wybór). Dodatkowy klucz zdania — §3.4.
+
+**Minima publikacji** (`poolCoverage`): typ się **nie liczy** (jak `lesson_keywords`) — ćwiczenia
+słuchowe mogą być niewydawalne bez nagrania i nie zastępują zwykłych ćwiczeń. Lekcja bez nich
+publikuje się jak dziś.
 
 ## 5. Generacja
 
-- Generator (`providers/openai/llm.ts`): typ **nie** wchodzi do menu podziału etapów
-  (`guided/productive/independent`). Osobne zdanie promptu: „dodatkowo do 2
-  `lesson_listen_choice` na cel, gdy typ jest dozwolony dla celu; nie liczą się do podziału”.
-  Schemat puli (`lesson-pool-schema.ts`) dostaje typ w zwykłej gałęzi.
+- **Port** (`LessonPoolInput`, `ports/ai.ts`): nowe pole `listenChoicePerObjective` (0–2). Serwer
+  ustawia 2 dla celów, którym typ jest dozwolony i gdy przedmiot ma `ttsForFeedbackSentence`,
+  inaczej 0. Limit w prompcie: „at most `countPerObjective + listenChoicePerObjective`
+  exercises per objective”; zdanie promptu wyjaśnia, że ćwiczenia słuchowe są **dodatkiem** poza
+  podziałem etapów. **Wielkość puli wybrana przez rodzica (wym. 2.1) dotyczy ćwiczeń etapów;
+  ćwiczenia słuchowe są dodatkiem ≤ 2 na cel** — opis w panelu tworzenia lekcji.
+- Typ **nie** wchodzi do menu etapów (`guided/productive/independent`). Opis pól typu w
+  `llm.ts` (lista reguł pól per typ): `stem` z jedną luką `___`, `options` 2–3, `correctOption`,
+  `answer`, `focus`; bez `instructionPl`, `hint`, `visualSubject`. Schemat puli
+  (`lesson-pool-schema.ts`) dostaje typ w zwykłej gałęzi.
+- **Czyszczenie świeżego wyjścia modelu** (generyczne dla typu, przed walidacją): z ćwiczenia
+  `lesson_listen_choice` usuwamy `instructionPl`, `hint` i `visualSubject` zamiast odrzucać
+  całe ćwiczenie. Edycja rodzica i publikacja nadal odrzucają te pola.
 - Reguły typu w profilach promptów (`english-grammar/prompts.ts`, `english-chapter/prompts.ts`):
-  krótkie naturalne zdanie (≤ 12 słów), jedna luka `___` na elemencie sprawdzanym reguły,
-  2–3 opcje różniące się **słyszalnie** w elemencie sprawdzanym (np. `play`/`plays`,
-  `don't`/`doesn't`, `is`/`are`/`'re`), bez opcji równoważnych (pełna forma i skrót tej samej
-  formy), bez `instructionPl`.
-- Katalog: typ dochodzi do `ALL_EXERCISE_TYPES` gramatyki i do `exerciseTypes` celów, w których
-  forma jest słyszalna: Present Simple — forma podstawowa, `-s` w 3. os., przeczenie
-  `don't/doesn't`, pytanie `Do/Does`; „to be” — formy i skróty `am/is/are`, przeczenie.
-  Cele z samą pisownią (`-es/-ies`) i krótkimi odpowiedziami — bez typu (decyzja przy
-  implementacji, opisana w katalogu). Wersja tematów **nie** rośnie: lista typów nie zmienia
-  znaczenia reguł (wym. 1.6); stare lekcje mają typ w katalogu, ale bez ćwiczeń.
-- Rozdział: typ w `CHAPTER_EXERCISE_TYPES` i w obu rodzajach zagadnień (`words`, `frame`).
-- Fake provider (`providers/fake.ts`) generuje ćwiczenie słuchowe dla testów i trybu dev.
+  krótkie naturalne zdanie (≤ 12 słów), jedna luka na elemencie sprawdzanym reguły, 2–3 opcje
+  różniące się **słyszalnie** w elemencie sprawdzanym (np. `play`/`plays`, `don't`/`doesn't`,
+  `is`/`are`, `isn't`/`aren't`), bez opcji równoważnych (pełna forma i skrót tej samej formy),
+  bez opcji zaczynających się od apostrofu.
+- **Katalog gramatyki:** typ dochodzi do `ALL_EXERCISE_TYPES` i do `exerciseTypes` celów
+  z formą słyszalną: Present Simple — forma podstawowa, `-s` w 3. os., przeczenie
+  `don't/doesn't`, pytanie `Do/Does`; „to be” — formy `am/is/are`, przeczenie. Cele pisowni
+  (`-es/-ies`) i krótkich odpowiedzi — bez typu (dokładna lista w planie, opisana w katalogu).
+  Wersja tematów **nie** rośnie: lista typów nie zmienia znaczenia reguł (wym. 1.6), a
+  `topicVersion` wchodzi do skrótu kryteriów oceny, więc podbicie podzieliłoby wersje umiejętności.
+- **Rozdział:** typ w `CHAPTER_EXERCISE_TYPES` i w obu rodzajach zagadnień (`words`, `frame`).
+- **Fake provider** (`providers/fake.ts`) honoruje `listenChoicePerObjective` i generuje ćwiczenie
+  słuchowe dla testów i trybu dev.
 
 ## 6. Media
 
 - **Bez nowej roli i migracji.** `feedbackSentenceText` dostaje `case "lesson_listen_choice"`
-  identyczny jak `lesson_choice` (stem z wstawioną poprawną opcją). Uzgadnianie mediów planuje
-  więc to samo nagranie `feedback_audio` (en-GB, bez stylu), które #194 tworzy dla zdań. To
-  jedno nagranie jest bodźcem przed odpowiedzią i odczytem po niej.
-- Zasoby TTS są współdzielone po fingerprincie: jeśli identyczne zdanie ma już nagranie (np.
-  z `lesson_choice`), zostaje użyte ponownie.
-- Publikacja **nie czeka** na nagranie (jak #194). Brak gotowego nagrania = zadanie słuchowe
-  nie jest wydawane (§7). Nagranie nieudane ponawia się przy kolejnym uzgadnianiu (edycja,
-  nowa wersja), bez `keepFailed` — bez zmian względem #194.
-- Rola `feedback_audio` pozostaje ukryta w DTO zasobów szkicu rodzica.
+  jak `lesson_choice` (stem z wstawioną poprawną opcją). Uzgadnianie mediów planuje więc to samo
+  nagranie `feedback_audio` (en-GB, bez stylu). Jedno nagranie jest bodźcem przed odpowiedzią
+  i odczytem po niej. Zasoby są współdzielone po fingerprincie i niezmienne po `ready`.
+- Publikacja **nie czeka** na nagranie (jak #194). Brak gotowego nagrania = zadanie słuchowe nie
+  jest wydawane (§7.1).
+- **Trwała awaria po publikacji:** opublikowana wersja nie jest uzgadniana ponownie, a zasób po
+  wyczerpaniu automatycznych prób zostaje `failed`. Naprawa: rodzic tworzy nową wersję
+  (szkic uzgadnia media i ponawia nieudane `feedback_audio`, jak w #194) i ją publikuje.
+  Gotowe nagranie o tym samym fingerprincie (np. z innego szkicu) „ożywia” też opublikowane
+  ćwiczenie — `loadExercises` bierze najnowszy gotowy zasób o oczekiwanym fingerprincie.
+- **Widoczność dla rodzica:** dla ćwiczeń `lesson_listen_choice` (i tylko dla nich) DTO ćwiczenia
+  szkicu i wersji dostaje **nowe pole** `sentenceAudio` (`{ state: pending | ready | failed,
+  assetId? }`) — nie przeciążamy `promptAudio` („Nagranie pytania”). Edytor pokazuje je
+  w istniejącej odznace audio karty ćwiczenia (`LessonExerciseCard`) i pozycji „Posłuchaj”
+  w menu ćwiczenia; **bez** `PromptAudioControls` (jego regeneracja i ton dotyczą `prompt_audio`)
+  i bez przycisku regeneracji. Przy stanie `failed` obok odznaki dalszy krok: „Nagranie się
+  nie udało. Utwórz nową wersję lekcji, aby spróbować ponownie.” (w szkicu edycja ćwiczenia
+  ponawia nagranie). Na karcie lekcji: liczba ćwiczeń słuchowych bez gotowego nagrania. Dla
+  pozostałych typów `feedback_audio` pozostaje ukryte (bez zmian). Pole i licznik to zmiana
+  kontraktu panelu rodzica (bez wpływu na MCP) — opis w PR.
 
 ## 7. Sesja (serwer)
 
 Właściciel reguł: `learning/lessons` (selektor, materializacja, próby), `learning/events.ts`
-(autoryzacja odsłuchu). Media: `materials`. Granice transakcji: bez zmian — wydanie zadania,
+(autoryzacja odsłuchu); media: `materials`. Granice transakcji bez zmian — wydanie zadania,
 autoryzacja odsłuchu i finalizacja próby mają własne istniejące transakcje.
 
-- **Selektor (rdzeń funkcyjny):** `LessonExerciseCandidate` dostaje `stimulusAudioReady?: boolean`.
-  Czysta reguła w `scheduler.ts`: kandydat `lesson_listen_choice` bez gotowego nagrania jest
-  pomijany przy wyborze ćwiczenia (jak gdyby nie istniał w puli). Etap guided bierze wtedy
-  inne ćwiczenie. Powłoka (`lesson-sessions.ts`) ustawia flagę z rozwiązanego
-  `feedbackAudioAssetId` (gotowy zasób TTS o oczekiwanym fingerprincie) i flagi przedmiotu.
-- **Materializacja** (`lesson-materialize.ts`): prompt dziecka
-  `{ kind: "lesson_listen_choice", instructionPl, stemWithGap, options, contentLocale }` —
-  `instructionPl` z katalogu komunikatów; opcje tasowane jak w wyborze; **bez** identyfikatora
-  nagrania. Klucz prywatny: jak `lesson_choice` plus `feedbackAudioAssetId` (wymagany: zadanie
-  bez nagrania nie jest materializowane — błąd programisty, bo selektor je odfiltrował).
-- **Autoryzacja odsłuchu** (`authorizeDisclosure`, `kind: "audio"`): nowa gałąź dla
-  `lesson_listen_choice` — dozwolona w treningu (kartkówka i tak nie wydaje typu; dla pewności
-  odmowa w `mock_test`), gdy zadanie jest `issued`, przedmiot ma `ttsForFeedbackSentence`, a klucz
-  ma `feedbackAudioAssetId` gotowego zasobu. Zapis `audio_issued` z ekspozycją `targetKey`
-  przed odpowiedzią (istniejący `writeSealedEvent`), odpowiedź z `audioAssetId` (pole
-  `DisclosureDto` już istnieje dla `picture_recall`). Ten typ nie wymaga `ttsForAnswers`.
-  Każde odtworzenie (także powtórka) to nowa autoryzacja i nowe zdarzenie — jak dziś.
-  Podpowiedź (`kind: "hint"`) dla typu — bez zmian (lekcje jej nie używają).
-- **Próba:** modalność `choice`, ocena po id opcji (`evaluateChoice`), `assistanceFor` dodaje
-  `options` (lista typów zamkniętych) i `model_audio` (zdarzenie przed `receivedAt`).
-  `correctTextFor` jak dla wyboru. Feedback po odpowiedzi czyta to samo zdanie (#194:
-  `withFeedbackSentenceAudio` + `sealPostAnswerAudio`, bez zmian reguł).
-- **Ocena aktywności sesji** (`session-activity.ts`): typ jak wybór (polecenie, zdanie z luką,
-  opcje, wybrana opcja). Do modelu nie trafia nagranie.
+### 7.1 Gotowość nagrania — jedna reguła, domyślnie „niegotowe”
+
+- Jeden helper `listenStimulusAssetId(exercise, subject, mode)` (moduł `learning/lessons`) zwraca
+  id gotowego nagrania bodźca albo `null`: wymaga `subject.ttsForFeedbackSentence`, trybu treningu
+  (nie kartkówki) i rozwiązanego `feedbackAudioAssetId`. Używają go **i** powłoka selektora,
+  **i** materializacja.
+- Kandydat selektora: `stimulusAudioReady?: boolean`; **brak wartości = niegotowe** (fail closed).
+  Reguła w czystym `scheduler.ts`: `listenPracticePlan` bierze wyłącznie kandydatów z
+  `stimulusAudioReady === true`.
+- Gotowość jest oceniana przy budowie planu sesji treningowej (`createLessonTrainingSessionPlan`)
+  i przy wydawaniu kolejnych zadań. Gotowy zasób nie przestaje być gotowy (niezmienność), więc
+  zaplanowany slot pozostaje ważny. Materializacja bez nagrania to naruszenie niezmiennika:
+  `AppError("internal")` jako asercja (nie zwykła ścieżka).
+
+### 7.2 Materializacja
+
+Prompt dziecka (`TaskPromptSchema`, gałąź `.strict()`):
+`{ kind: "lesson_listen_choice", stem, options, contentLocale }` — nazwy pól jak `lesson_choice`;
+**bez** `instructionPl` (polecenie z katalogu komunikatów w Kid UI) i **bez** identyfikatora
+nagrania. Opcje tasowane jak w wyborze. Klucz prywatny: jak `lesson_choice` plus
+`feedbackAudioAssetId` (wymagany) i `sentenceTargetKey` (§3.4).
+
+### 7.3 Autoryzacja odsłuchu
+
+`authorizeDisclosure` (`kind: "audio"`) dostaje gałąź dla `lesson_listen_choice`, umieszczoną
+**przed** obecną odmową dla typów nietekstowych i bramką `ttsForAnswers`:
+
+- odmowa (409), gdy sesja nie jest aktywna, zadanie nie jest `issued`, tryb to `mock_test`,
+  przedmiot nie ma `ttsForFeedbackSentence` albo klucz nie ma `feedbackAudioAssetId`;
+- zapis zapieczętowanego `audio_issued` z ekspozycjami `[targetKey, sentenceTargetKey]` przed
+  odpowiedzią (istniejący `writeSealedEvent`), odpowiedź z `audioAssetId` (pole `DisclosureDto`
+  istnieje — `picture_recall`). Ten typ nie wymaga `ttsForAnswers`.
+- Każde odtworzenie (powtórka, przeładowanie strony) to nowa autoryzacja i nowe zdarzenie, jak
+  dziś. Przeładowanie bez gestu może zapisać zdarzenie bez usłyszanego dźwięku — nieszkodliwe:
+  próba i tak jest wspomagana, a ekspozycja zapisana już przy wydaniu.
+
+### 7.4 Próba i feedback
+
+- Modalność `choice` (dopisanie typu do `assertModalityMatchesExercise`), ocena po id opcji.
+  `assistanceFor` dodaje `options` i `model_audio`; brak `audio_issued` przed `receivedAt` →
+  §3.1 (nieocenione). „Pomiń” (`skip`) jak dziś: nieocenione, bez kary.
+- `correctTextFor` jak dla wyboru. Feedback po odpowiedzi czyta to samo zdanie (#194:
+  `withFeedbackSentenceAudio` + `sealPostAnswerAudio`, reguły bez zmian).
+- Skutki dla etapów i wsparcia — §3.3 (reguły w `scheduler.ts` i `lesson-sessions.ts`).
+- **Ocena aktywności sesji** (`session-activity.ts`, w tym `lessonAnswerValues`): typ jak wybór
+  (polecenie z katalogu, zdanie z luką, opcje, wybrana opcja). Do modelu nie trafia nagranie.
+
+### 7.5 Wdrożenie
+
+Web i Kid UI wdrażają się razem (nowa gałąź promptu w ścisłej unii). Wycofanie wdrożenia po
+wydaniu zadań słuchowych wymaga zamknięcia trwających sesji (zapisany plan sesji ma nowy
+`kind`); stary klient PWA w pamięci podręcznej nie zna nowego promptu — opis w PR.
 
 ## 8. Kid UI
 
-- Nowy widok `LessonListenChoiceView` (dispatcher `ExerciseView`, `exercise-presentation.ts`),
-  zbudowany ze wspólnych komponentów: `ExerciseFrame`, duży przycisk „Posłuchaj zdania”
-  (`ListenButton`, cel ≥ 54 px — główna akcja bodźca), zdanie z luką (`lang` = `contentLocale`),
-  opcje w `AnswerGrid` (wybór wysyła odpowiedź natychmiast). Bez surowych `<button>`.
-- **Kontroler sesji:** po wyświetleniu zadania automatycznie autoryzuje i odtwarza nagranie
-  raz (`authorizeDisclosure` → `mediaUrl` → istniejący kanał odtwarzania). Przycisk powtarza
-  odsłuch (nowa autoryzacja). Nowe zadanie, odpowiedź i inne odtwarzanie przerywają nagranie.
-- **Ścieżka bez dźwięku:** zablokowane autoodtwarzanie albo błąd pliku/sieci nie pokazują
-  komunikatu — zostaje przycisk. Opcje są aktywne od początku (nie blokujemy odpowiedzi do
-  odsłuchu): gdy dźwięk nie działa, zadanie da się rozwiązać czytaniem, a próba i tak jest
-  wspomagana. Serwer nie wydaje typu bez gotowego nagrania (§7). Nie ma lokalnego „sukcesu”
-  bez odpowiedzi serwera.
-- Po odpowiedzi: dok feedbacku jak dla wyboru i automatyczny odczyt zdania z #194. Żeby
-  dziecko nie widziało dwóch identycznych głośników i żeby układ nie skakał, dla tego typu
-  dok **nie** dodaje własnego „Posłuchaj zdania”; przycisk w treści zostaje na miejscu i po
-  odpowiedzi odtwarza nagranie z feedbacku (`correctAudioAssetId`, bez nowej autoryzacji —
-  zadanie nie jest już `issued`). Gdy feedback nie niesie nagrania (np. „Pomiń”), przycisk
-  jest nieaktywny.
-- Teksty w katalogu komunikatów: polecenie, etykieta przycisku, etykiety typu
-  (`stepType`, `lessons.exerciseTypes`: „Posłuchaj i uzupełnij”).
-- **Responsywność:** przycisk, zdanie i opcje mieszczą się w compact/medium/expanded, niskiej
-  wysokości (landscape telefonu), tablecie i desktopie ze skalą; testy geometrii Playwright.
+Wzorzec: słuchanie słówek (`ListeningView`/`PictureListeningView`).
+
+- **Widok** `LessonListenChoiceView` (dispatcher `ExerciseView`, `exercise-presentation.ts` —
+  ikona polecenia `ear`, polecenie z katalogu: „Posłuchaj i wybierz brakujące słowo.”),
+  wyłącznie ze wspólnych komponentów:
+  - przycisk odsłuchu w slocie `instructionAudio` `ExerciseFrame` (`ListenButton` `md`, 48 px,
+    etykieta istniejąca `messages.kid.listenExample` „Posłuchaj zdania”), fokus na przycisku
+    po wyświetleniu zadania, Spacja powtarza (`useChoiceKeyboard({ onPlay })`);
+  - zdanie z luką przez `splitGap` (luka jako wizualny odstęp z dostępną nazwą, nie surowe `___`),
+    `lang = contentLocale`;
+  - opcje w `AnswerGrid` z `optionLang = contentLocale`; wybór wysyła odpowiedź natychmiast;
+  - stan odtwarzania na przycisku (`data-sound-active`, pierścień dźwięku z poszanowaniem
+    reduced-motion), jak `GuidanceButton`.
+- **Kontroler sesji** — dedykowana metoda (nie `playTaskAudio`), z kontrolą generacji zadania:
+  - po wyświetleniu zadania (także zadania pobranego z wyprzedzeniem) automatycznie autoryzuje
+    i odtwarza nagranie raz; bez autoodtwarzania, gdy zadanie wraca z `pendingAttemptId`;
+  - opcje są **nieaktywne do końca pierwszego odsłuchu**. „Koniec” = obietnica `play()`
+    rozstrzygnięta przy **niezmienionej** generacji odtwarzania kontrolera (`#playbackGeneration`)
+    — `BrowserAudioPlayer.play()` rozstrzyga się tak samo przy `ended`, `stop()` i wyparciu, więc
+    przerwanie (np. powtórka w połowie zdania) nie odblokowuje; odblokowuje dopiero koniec
+    odtwarzania, które nie zostało przerwane. Zapas, gdyby `ended` nie nadeszło: od startu
+    odtwarzania `durationMs` z `onStarted` + 1 s (8 s, gdy długość nieznana);
+  - **utknięcie bez startu:** licznik startuje przy żądaniu autoryzacji; gdy po 6 s odtwarzanie
+    nadal się nie zaczęło (wiszące żądanie autoryzacji albo pobierania pliku), pojawia się
+    „Pomiń”, a przycisk odsłuchu pozostaje do ponowienia;
+  - **autoodtwarzanie zablokowane:** nowy krótki komunikat z katalogu „Naciśnij głośnik, aby
+    posłuchać.” jako uprzejmy status (`role="status"`) pod poleceniem — bez alertu i bez
+    „Zakończ” (to nie jest istniejący komunikat blokady obrazka); przycisk wyróżniony; opcje
+    czekają na odsłuch;
+  - **odmowa autoryzacji (4xx) albo błąd pliku/dekodowania:** cicho w autoodtwarzaniu; opcje
+    **pozostają nieaktywne** (bez `audio_issued` odpowiedź byłaby nieoceniona), pojawia się
+    „Pomiń” (odpowiedź `skip` → nieocenione, bez kary — awaria techniczna nie jest błędem
+    dziecka), a udana ręczna powtórka odblokowuje opcje po odsłuchu; ręczne naciśnięcie, które
+    się nie powiedzie, daje widoczny komunikat, nigdy „nic się nie dzieje”;
+  - **błąd sieci:** istniejąca ścieżka offline (bez lokalnego sukcesu); po powrocie z offline
+    autoodtwarzanie nie jest ponawiane, zostaje przycisk;
+  - nieaktualna autoryzacja (po odpowiedzi lub zmianie zadania) jest ignorowana; nowe zadanie,
+    odpowiedź i inne odtwarzanie przerywają nagranie.
+- **Po odpowiedzi:** dok feedbacku jak dla wyboru, automatyczny odczyt zdania (#194). Dok **nie**
+  dodaje własnego „Posłuchaj zdania” dla tego typu; przycisk w poleceniu zostaje na miejscu
+  (bez skoku układu) i odtwarza nagranie z feedbacku przez istniejący prop `feedbackAudio`
+  (wzorzec `PictureRecognitionView`): `onPlay = feedbackAudio?.onPlay ?? handlers.onPlay`,
+  aktywny po odpowiedzi tylko z nagraniem w feedbacku. Przycisk komunikatu głosowego w doku
+  używa ikony „?” (`GuidanceButton icon="question"`), gdy przycisk w poleceniu może odtworzyć
+  odczyt — warunek w `LearnScreen` rozszerzony o ten typ, by nie było dwóch głośników.
+- **Responsywność:** compact/medium/expanded, niska wysokość (landscape telefonu, tryb przewijanej
+  strony), tablet dotykowy (zwarta rama), desktop ze skalą; cele ≥ 48 px; najgorszy przypadek —
+  zdanie 200 znaków i 4 opcje.
 
 ## 9. Panel rodzica
 
-- Edytor: typ w `STAGE_BY_TYPE` (web), `STEM_TYPES`, `OPTION_TYPES`, etykieta-odznaka, pola jak
-  w `lesson_choice` bez piktogramu i polecenia. Krótka informacja pod ćwiczeniem: „Lektor
-  przeczyta zdanie. Zadanie pojawi się dziecku, gdy nagranie będzie gotowe.”
-- Podgląd, akceptacja, usuwanie i dogenerowanie reguły — bez nowych mechanizmów.
-- Panel postępu: typ pokazuje się w nadzorze jak inne kroki (`stepType`).
+- Edytor: typ w `STAGE_BY_TYPE` (web), `STEM_TYPES`, `OPTION_TYPES`, `STEM_LABEL_TYPES`, odznaka
+  typu („Posłuchaj i wybierz”), pola jak `lesson_choice` bez piktogramu, polecenia i podpowiedzi;
+  zmiana typu ćwiczenia na słuchowe czyści te pola. Podgląd karty ćwiczenia jak wybór.
+- Stan i odsłuch nagrania ćwiczenia słuchowego oraz licznik na karcie lekcji — §6. Krótka
+  informacja pod ćwiczeniem: „Lektor przeczyta zdanie. Dziecko dostanie to zadanie, gdy nagranie
+  będzie gotowe.”
+- Tworzenie lekcji: dopisek, że do puli dochodzą do 2 ćwiczeń słuchowych na regułę (§5).
+- Nadzór i postęp: typ jak inne kroki (`stepType`).
 
 ## 10. Dokumentacja i integracje
 
-- `.kiro/specs/grammar-module/requirements.md`: 4.1 (lista typów), 5.2 (etap prowadzony:
-  „wybór, wybór ze słuchu, klocki, krótka odpowiedź”), 2.13 — nowe brzmienie:
+- `.kiro/specs/grammar-module/requirements.md`:
+  - 4.1 i 4.3 — typ „wybór formy ze słuchu” na liście typów i typów zamkniętych;
+  - 4.6 — nowe brzmienie: „WHEN dziecko odtworzy audio zdania przed odpowiedzią — w ćwiczeniu
+    tekstowym albo w wyborze formy ze słuchu — THE system SHALL zapisać ekspozycję przed
+    wydaniem audio i zakwalifikować próbę jako wspomaganą; odpowiedź w wyborze ze słuchu bez
+    wcześniejszego odsłuchu SHALL być nieoceniona.”;
+  - 5.2 — dopisek: wybór ze słuchu to dodatkowe ćwiczenie poza etapami (§3.2–3.3);
+  - 2.1 — dopisek: wielkość puli dotyczy ćwiczeń etapów; generowanie dodaje do 2 ćwiczeń wyboru
+    ze słuchu na regułę ponad nią;
+  - 2.13 — nowe brzmienie:
 
-  > THE lesson-generation flow SHALL NOT generate or require answer-audio (`target_audio`) for
-  > grammar exercises. THE flow SHALL prepare a feedback-sentence recording (`feedback_audio`)
-  > for exercise types with a full sentence; it never blocks publication. Child lesson tasks
-  > SHALL NOT expose a sentence recording before the answer, except in the listen-and-choose
-  > type (`lesson_listen_choice`), where the recording is the stimulus: it is disclosed only
-  > through the server's disclosure authorization (requirement 4.6 — sealed exposure, assisted
-  > attempt), and the type is never issued without a ready recording.
-
+    > THE lesson-generation flow SHALL NOT generate or require answer-audio (`target_audio`) for
+    > grammar exercises. THE flow SHALL prepare a feedback-sentence recording (`feedback_audio`)
+    > for exercise types with a full sentence; it never blocks publication. Child lesson tasks
+    > SHALL NOT expose a sentence recording before the answer, except in the listen-and-choose
+    > type (`lesson_listen_choice`), where the recording is the stimulus: it is disclosed only
+    > through the server's disclosure authorization (requirement 4.6 — sealed exposure, assisted
+    > attempt), and the type is never issued without a ready recording.
 - `docs/SPEC.md` §22 (dopowiedzenie o wyborze ze słuchu) i lista typów lekcji;
-  `docs/architecture.md` sekcja 19 (typ, etap, nagranie jako bodziec, filtr selektora);
-  spec rozdziału (typ w rodzajach zagadnień); spec #194 §11 (punkt 2 zrealizowany tym
-  projektem).
-- **API → MCP → `SKILL.md`: brak zmian.** Nowa wartość `exerciseType` i nowy prompt zadania są
-  w Kid API, a autoryzacja odsłuchu rozszerza istniejący endpoint bez zmiany schematu. MCP
-  i raport Hermesa (`learning-overview`) nie obejmują lekcji ani typów ćwiczeń; implementacja
-  potwierdza to wyszukaniem użyć i opisuje w PR.
+  `docs/architecture.md` sekcja 19 (typ, slot ćwiczenia słuchowego, nagranie jako bodziec,
+  gotowość fail-closed); spec rozdziału (typ w rodzajach zagadnień); spec #194 §11 (punkt 2
+  zrealizowany tym projektem).
+- **API → MCP → `SKILL.md`: brak zmian.** Nowa wartość `exerciseType`, nowy prompt zadania
+  i nowy powód `listen_practice` są w Kid API; autoryzacja odsłuchu rozszerza istniejący
+  endpoint bez zmiany schematu (`DisclosureDto.audioAssetId` istnieje). MCP obejmuje wyłącznie
+  `learning-overview`, a `SKILL.md` jawnie wyklucza lekcje; implementacja potwierdza to
+  wyszukaniem użyć i opisuje w PR. DTO rodzica (stan nagrania ćwiczenia słuchowego) nie jest
+  częścią MCP.
 
 ## 11. Prywatność
 
@@ -222,27 +383,64 @@ identyfikatora nagrania przed autoryzacją.
 
 ## 12. Testy
 
-- **Domena (unit):** etap i `isAssessed`; walidacja puli (luka, opcje równoważne po
-  normalizatorze, limit zdania, zakazane pola, typ przedmiotu/celu, wymóg flagi w katalogu);
-  tożsamość; `feedbackSentenceText`; ekspozycja rozdziału; selektor pomija typ bez nagrania
-  i bierze inne ćwiczenie guided; minima publikacji nie liczą typu; plan kartkówki go wyklucza.
-- **Generator (unit):** prompt i schemat puli zawierają typ poza podziałem etapów; fake provider.
-- **Media (unit):** typ planuje `feedback_audio` z pełnym zdaniem; zmiana opcji poprawnej
-  zmienia fingerprint.
+- **Domena (unit):**
+  - walidacja puli: luka 2+ podkreśleń, opcje równoważne na poziomie zdania (w tym skróty),
+    opcja z apostrofem na początku, limit zdania, zakazane pola, typ przedmiotu/celu;
+  - katalog: wymóg `ttsForFeedbackSentence`, pokrycie guided innym typem;
+  - tożsamość z pełnego zdania; `feedbackSentenceText`; ekspozycja rozdziału;
+  - selektor: `listenPracticePlan` (po pierwszym zwykłym ocenionym zadaniu celu w sesji, także
+    dla celów kontynuowanych — sesja nie zaczyna się od zadań słuchowych; ≤ 1 na cel i ≤ 2 na
+    sesję; nie w `introduce`, nie jako ćwiczenie wsparcia, nie ponad budżet; kandydat bez
+    `stimulusAudioReady` pomijany, brak wartości = niegotowe), neutralność dla `stageStreak`,
+    brak cyklu wsparcia po błędzie, `initialStatus` pomija typ; plan sesji treningowej
+    (`planningMode`) zawiera slot; predykat `outsideStagePath`;
+  - walidacja puli: zdanie słuchowe równoważne odpowiedzi ćwiczenia tekstowego lekcji odrzucone;
+  - `poolCoverage` nie liczy typu; plan kartkówki go wyklucza.
+- **Generator (unit):** prompt (limit `count + extra`, reguły pól typu, typ poza menu etapów),
+  schemat puli, czyszczenie świeżego wyjścia, fake provider.
+- **Media (unit):** typ planuje `feedback_audio` z pełnym zdaniem; zmiana poprawnej opcji zmienia
+  fingerprint; DTO rodzica pokazuje stan nagrania tylko dla typu słuchowego.
 - **Integracja (PostgreSQL):**
-  - zadanie słuchowe wydawane tylko z gotowym nagraniem; bez nagrania selektor bierze inne
-    ćwiczenie;
-  - autoryzacja odsłuchu zapisuje zapieczętowane `audio_issued` z ekspozycją przed
-    odpowiedzią i zwraca `audioAssetId`; próba jest wspomagana (`options`, `model_audio`);
-  - odmowa autoryzacji dla zadania nie-`issued`, w kartkówce i bez nagrania;
-  - feedback niesie `correctAudioAssetId` (odczyt po odpowiedzi);
+  - plan sesji przez `createLessonTrainingSessionPlan` i wydawanie zadań: slot tylko z gotowym
+    nagraniem, bez nagrania selektor go pomija;
+  - autoryzacja odsłuchu: zapieczętowane `audio_issued` z dwoma kluczami ekspozycji przed
+    odpowiedzią, `audioAssetId` w odpowiedzi; odmowy (nie-`issued`, kartkówka, brak nagrania);
+  - próba po odsłuchu: wspomagana (`options`, `model_audio`), feedback z `correctAudioAssetId`;
+    próba bez odsłuchu: nieoceniona (`no_stimulus`), zadanie zostaje `issued`; błąd nie otwiera
+    wsparcia; `historicalSupportObjectives` pomija zadania słuchowe (poprawna odpowiedź słuchowa
+    po prawdziwym błędzie reguły nie kasuje karty wsparcia w następnej sesji);
+  - DTO rodzica: `sentenceAudio` tylko dla typu słuchowego, licznik na karcie lekcji;
+  - klucz zdania blokuje „niewidziane” dla ćwiczenia z tym samym zdaniem;
   - kartkówka nie wydaje typu; publikacja nie czeka na nagranie;
-  - edycja rodzica i publikacja nowej wersji z ćwiczeniem słuchowym.
-- **Kid UI (unit):** widok, kontroler (autoodtwarzanie, powtórka, przerwanie, błąd).
-- **E2E:** `mocked` — autoodtwarzanie po wyświetleniu, przycisk powtórki, zablokowane
-  autoodtwarzanie zostawia przycisk, wybór opcji wysyła odpowiedź, odczyt po odpowiedzi;
-  geometria widoku (portrait, landscape, tablet, desktop, skala) w specyfikacjach layoutu;
-  edytor rodzica (layout). `real` — przepływ lekcji z ćwiczeniem słuchowym (gotowe nagranie
-  z fake TTS).
+  - edycja rodzica (odrzucenie zakazanych pól), nowa wersja, generacja z fake providerem;
+  - gotowe nagranie z innego szkicu ożywia opublikowane ćwiczenie.
+- **Kid UI (unit):** widok, `exercise-presentation` (kompletność), tokeny (`kid-design-tokens`);
+  kontroler — autoodtwarzanie tylko dla typu i nie w kartkówce; blokada opcji do końca
+  nieprzerwanego odsłuchu (powtórka w połowie zdania utrzymuje blokadę; zapas `durationMs` + 1 s);
+  wiszące żądanie autoryzacji/pliku → „Pomiń” po 6 s; blokada autoodtwarzania → status; odmowa
+  → „Pomiń” przy zablokowanych opcjach; nieaktualna autoryzacja ignorowana; brak
+  autoodtwarzania przy `pendingAttemptId`.
+- **E2E `mocked`** — nowy spec `tests/e2e/lesson-listen-choice.spec.ts` dopisany do `MOCKED_SPECS`
+  w `tests/e2e/spec-projects.ts`:
+  - liczba żądań autoryzacji (autoodtwarzanie = 1, powtórka = 2, powtórka po odpowiedzi = 0
+    nowych) i brak pobrania nagrania przed autoryzacją;
+  - opcje nieaktywne do końca odsłuchu; zablokowane autoodtwarzanie → status i przycisk;
+    odmowa → „Pomiń”; opóźnione nagranie (wiszące pobranie) → „Pomiń” po 6 s; offline → ekran
+    offline; Spacja powtarza; fokus na przycisku; geometria i stabilność także w stanach
+    „status blokady” i „Pomiń”;
+  - po odpowiedzi: odczyt zdania, przycisk w poleceniu odtwarza nagranie feedbacku, ikona „?”
+    w doku;
+  - geometria: prostokąty przycisku, zdania i opcji względem okna i kontenera materiału, brak
+    przepełnienia poziomego, cele ≥ 48 px — portrait, landscape < 480 px (812×375), tablet
+    dotykowy ≥ 960×480, desktop i skala > 1 (`waitForKidScale`, `expectFrameFillsViewport`);
+    najgorszy przypadek 200 znaków + 4 opcje;
+  - stabilność układu (`kid-layout-stability.spec.ts`): prostokąty przycisku, zdania i opcji nie
+    przesuwają się między zadaniem a dokiem.
+  - Edytor rodzica: `parent-lesson-editor-layout.spec.ts` z ćwiczeniem słuchowym.
+- **E2E `real`** — rozszerzenie `lesson-real-flow.spec.ts` (jego kosz w `REAL_BUCKETS`):
+  lekcja z ćwiczeniem słuchowym z fake providera; test czeka, aż `feedback_audio` jest gotowe,
+  zanim rozpocznie sesję, a przebieg prowadzi do slotu słuchowego deterministycznie (po pierwszym
+  ocenionym zadaniu celu).
 - **Niezweryfikowane symulacją:** autoodtwarzanie na fizycznym iPhonie/iPadzie (Safari) i
-  słyszalność różnic form w głosie lektora — raport jako brak dowodu.
+  słyszalność różnic form w głosie lektora — raport jako brak dowodu (rodzic może odsłuchać
+  nagranie w edytorze).
