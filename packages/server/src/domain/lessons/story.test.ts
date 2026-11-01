@@ -223,6 +223,12 @@ describe("solvedSentencesOf", () => {
     expect(solvedSentencesOf([draft({ stem: "She ___ football.", answer: "plays" })])).toEqual(["She plays football."]);
   });
 
+  it("keeps solved sentences longer than the readback limit", () => {
+    // Odczyt TTS pomija zdania > 200 znaków, bariera ekspozycji nie może.
+    const stem = `She ___ football${"!".repeat(200)}`;
+    expect(solvedSentencesOf([draft({ stem, answer: "plays" })])).toEqual([`She plays football${"!".repeat(200)}`]);
+  });
+
   it("fills a choice stem with the correct option", () => {
     const sentences = solvedSentencesOf([
       draft({

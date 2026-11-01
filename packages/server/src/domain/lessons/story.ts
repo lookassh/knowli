@@ -57,11 +57,13 @@ export function solvedSentencesOf(drafts: readonly LessonExerciseDraft[]): strin
     seen.add(sentence);
     sentences.push(sentence);
   };
+  // Bez limitu długości nagrania: zdanie za długie do odczytu nadal jest rozwiązaniem.
+  const unlimited = Number.POSITIVE_INFINITY;
   for (const draft of drafts) {
-    add(feedbackSentenceText(draft));
+    add(feedbackSentenceText(draft, unlimited));
     // Luka: każdy zaakceptowany wariant wstawiony w zdanie też je rozwiązuje.
     if (draft.exerciseType === "lesson_gap") {
-      for (const accepted of draft.acceptedAnswers) add(feedbackSentenceText({ ...draft, answer: accepted }));
+      for (const accepted of draft.acceptedAnswers) add(feedbackSentenceText({ ...draft, answer: accepted }, unlimited));
     }
     // Wybór bez luki w treści (np. „Które zdanie jest poprawne?”): poprawna opcja sama jest rozwiązaniem.
     if (draft.exerciseType === "lesson_choice" && !/_{2,}/.test(draft.stem ?? "")) {
