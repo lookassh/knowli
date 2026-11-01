@@ -132,6 +132,8 @@ export interface LessonDraftPatch {
   exercises?: LessonExerciseInput[];
   examples?: Record<string, string[]>;
   dynamicTopic?: { objectives: EditableDynamicObjective[] };
+  /** Tylko `[]` (usunięcie tematów zdań); patrz `lessonThemesPatch`. */
+  interests?: string[];
 }
 
 /** Następny wolny identyfikator elementu wymaganego (`e<n>`) — bez kolizji po usunięciach (W11). */
@@ -440,6 +442,21 @@ export function toLessonDraftPatch(snapshot: LessonEditorSnapshot): LessonDraftP
       ? { dynamicTopic: { objectives: snapshot.form.dynamicObjectives.map((o) => ({ id: o.id, titlePl: o.titlePl, cards: o.cards.filter((c) => c.title.trim().length > 0 || c.body.trim().length > 0).map(editableCard) })) } }
       : {}),
   };
+}
+
+/**
+ * Tematy zdań (migawka z tworzenia lekcji) można w szkicu tylko usunąć. Pole
+ * `interests` trafia do PATCH wyłącznie wtedy, gdy lokalny stan różni się od
+ * tematów szkicu (po „Usuń tematy” → `[]`); zwykły zapis ćwiczeń go nie wysyła.
+ */
+export function lessonThemesPatch(
+  draftInterests: readonly string[] | undefined,
+  local: readonly string[] | null | undefined,
+): string[] | undefined {
+  if (!local) return undefined;
+  const saved = draftInterests ?? [];
+  if (local.length === saved.length && local.every((entry, index) => entry === saved[index])) return undefined;
+  return [...local];
 }
 
 /** Czy edytowalne ćwiczenie różni się od swojej wersji bazowej (dowolne pole). */

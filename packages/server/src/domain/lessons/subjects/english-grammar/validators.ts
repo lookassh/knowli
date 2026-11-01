@@ -203,10 +203,17 @@ const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "w
 /** Imiona własne kończące się na „s”, które heurystyka liczby wzięłaby za liczbę mnogą. */
 const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);
 
+/** Rzeczowniki niepoliczalne na „s” łączące się z „is” (tematy zdań z zainteresowań, #197); jawna lista, bo comics/picnics/topics to liczba mnoga. */
+const BE_UNCOUNTABLE_S_NOUNS: ReadonlySet<string> = new Set([
+  "gymnastics", "athletics", "mathematics", "maths", "physics", "politics", "economics", "electronics",
+  "robotics", "aerobics", "acrobatics",
+]);
+
 /** Czy rzeczownik przy luce wygląda na liczbę mnogą (prosta heurystyka dla materiału dziecięcego). */
 function looksPlural(token: string): boolean {
   if (BE_S_ENDING_NAMES.has(token)) return false;
   if (BE_IRREGULAR_PLURALS.has(token)) return true;
+  if (BE_UNCOUNTABLE_S_NOUNS.has(token)) return false;
   return token.length > 1 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is") && token !== "news";
 }
 

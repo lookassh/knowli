@@ -912,6 +912,13 @@
   height: 32px;
 }
 
+/* Opakowanie ikony odsłuchu (`failKey`): obraca się samo, bez przycisku, i nie
+   zmienia układu — ma rozmiar ikony. */
+.kid-ui .kid-listen__icon {
+  display: inline-flex;
+  flex: none;
+}
+
 .kid-fragment {
   font-size: var(--kid-type-display-size);
   letter-spacing: 0.2em;

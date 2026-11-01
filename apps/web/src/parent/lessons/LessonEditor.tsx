@@ -40,6 +40,7 @@ import {
   keywordsAnswerOf,
   lessonExerciseChanged,
   missingListenAudioCount,
+  lessonThemesPatch,
   nextRequiredElementId,
   toLessonDraftPatch,
   topRejectedReasons,
@@ -125,6 +126,9 @@ export default function LessonEditor({
   // PATCH-a ćwiczeń żyje w `lesson-editor-state.ts` (poza zakresem tej edycji);
   // przykłady dokładamy do ciała PATCH w `save()`. `null` = jeszcze nie zasiane.
   const [examplesForm, setExamplesForm] = useState<Record<string, string[]> | null>(null);
+  // Tematy zdań (migawka z tworzenia lekcji) w szkicu można tylko usunąć: `[]` po
+  // „Usuń tematy”. Do PATCH trafiają wyłącznie po zmianie (`lessonThemesPatch`).
+  const [interestsForm, setInterestsForm] = useState<string[] | null>(null);
   // Układ (szkic 6b): zakładka, otwarte karty ćwiczeń i grupy (null = domyślne dla szerokości ekranu).
   const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false });
   const [tab, setTab] = useState("exercises");
@@ -323,6 +327,7 @@ export default function LessonEditor({
     setForm(snapshot.form);
     setCalculationInputs({});
     setExamplesForm(structuredClone(active.examples ?? {}));
+    setInterestsForm([...(active.interests ?? [])]);
   }, [active, draft, newKey]);
 
   useEffect(() => {
@@ -410,6 +415,8 @@ export default function LessonEditor({
       // Przykłady serwer nadpisuje całością per cel; dokładamy aktualny stan,
       // bo serializacja ćwiczeń (lesson-editor-state) ich nie obejmuje.
       if (examplesForm) patch.examples = examplesForm;
+      const interestsPatch = lessonThemesPatch(draft.interests, interestsForm);
+      if (interestsPatch) patch.interests = interestsPatch;
       const saved = await run(() => parentClient.lessonDrafts.edit({
         lessonDraftId: snapshot.versionId,
         ...patch,
@@ -417,6 +424,7 @@ export default function LessonEditor({
       baseSnapshot.current = createLessonSnapshot(saved, newKey);
       setForm(baseSnapshot.current.form);
       setExamplesForm(structuredClone(saved.examples ?? {}));
+      setInterestsForm([...(saved.interests ?? [])]);
       dirty.current = false;
       setIsDirty(false);
       onEditorStateChange({ dirty: false, busy: true });
@@ -458,6 +466,7 @@ export default function LessonEditor({
         if (result.draft) baseSnapshot.current = snapshot;
         setForm(snapshot.form);
         setExamplesForm(structuredClone(next.examples ?? {}));
+        setInterestsForm([...(next.interests ?? [])]);
       }
       setError(null);
     } catch (cause) {
@@ -587,6 +596,11 @@ export default function LessonEditor({
   // Źródło przykładów do wyświetlenia: edytowalny stan lokalny gdy jest szkic,
   // inaczej wartości z DTO (opublikowana wersja — podgląd tylko do odczytu).
   const examples = editable ? (examplesForm ?? draft?.examples ?? {}) : (deck?.published?.examples ?? {});
+  const themes = editable ? (interestsForm ?? draft?.interests ?? []) : (deck?.published?.interests ?? []);
+  const removeThemes = () => {
+    markDirty();
+    setInterestsForm([]);
+  };
   const topic = catalog?.subjects.find((subject) => subject.id === active?.subjectId)?.topics
     .find((candidate) => candidate.id === active?.topicId && candidate.version === active?.topicVersion);
   // Cele i karty zestawów szkolnych pochodzą z DTO (temat dynamiczny), nie z katalogu.
@@ -1120,6 +1134,19 @@ export default function LessonEditor({
         {subjectLine && <Text size="sm" className="pp-editor-muted">{subjectLine}</Text>}
       </Group>
       {deck?.source && <LessonSourceNote source={deck.source} onOpen={onOpenSource} />}
+      {themes.length > 0 && (
+        <>
+          <Group gap="xs" mb={editable ? 2 : "md"} align="center" data-testid="lesson-themes-line">
+            <Text size="sm" className="pp-editor-muted">{messages.lessons.themesLine.replace("{themes}", () => themes.join(", "))}</Text>
+            {editable && (
+              <Button size="md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
+                {messages.lessons.themesRemove}
+              </Button>
+            )}
+          </Group>
+          {editable && <Text size="xs" mb="md" className="pp-editor-muted" data-testid="lesson-themes-remove-hint">{messages.lessons.themesRemoveHint}</Text>}
+        </>
+      )}
 
       <Stack gap="md">
         {generating && (

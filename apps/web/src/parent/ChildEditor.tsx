@@ -21,7 +21,8 @@ import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation } from "@tanstack/react-query";
 import { messages, type ChildDto, type ChildPatch } from "@learning/contracts";
-import { childPatch, type EditValues } from "./children-forms";
+import { childPatch, interestsError, type EditValues } from "./children-forms";
+import { InterestsTagsInput, useInterestNotice } from "./InterestsTagsInput";
 import { runOnce } from "./run-once";
 import { callParent, errorMessage, parentClient } from "./api";
 import { ParentIcon } from "./ParentIcon";
@@ -79,8 +80,11 @@ function ChildEditForm({
       avatarKey: child.avatarKey,
       recordingMode: child.recordingMode,
       canRead: child.canRead,
+      interests: child.interests,
     },
   });
+  // komunikat po próbie dodania powtórzenia lub szóstego tematu (znika przy dalszym pisaniu)
+  const [interestNotice, setInterestNotice] = useInterestNotice();
   const update = useMutation({
     mutationFn: (patch: ChildPatch) => callParent(() => parentClient.children.update({ childId: child.id, ...patch })),
   });
@@ -88,7 +92,8 @@ function ChildEditForm({
   const patch = childPatch(child, form.values);
   const changed = Object.keys(patch).length > 0;
   const busy = update.isPending;
-  const canSave = !busy && form.values.displayName.trim().length > 0 && changed;
+  const interestsInvalid = interestsError(form.values.interests);
+  const canSave = !busy && form.values.displayName.trim().length > 0 && changed && interestsInvalid === null;
 
   useEffect(() => {
     nameField.current?.focus();
@@ -150,6 +155,23 @@ function ChildEditForm({
           checked={!form.values.canRead}
           onChange={(event) => form.setFieldValue("canRead", !event.currentTarget.checked)}
         />
+        <div>
+          <InterestsTagsInput
+            label={messages.children.interests}
+            data-testid="child-edit-interests"
+            disabled={busy}
+            value={form.values.interests}
+            onChange={(next) => form.setFieldValue("interests", next)}
+            notice={interestNotice}
+            onNoticeChange={setInterestNotice}
+            description={(
+              <>
+                <Text component="span" size="sm" display="block" className="pp-children-muted">{messages.children.interestsHint}</Text>
+                <Text component="span" size="sm" display="block" mt={4} className="pp-children-muted">{messages.children.interestsPrivacy}</Text>
+              </>
+            )}
+          />
+        </div>
         {update.isError && <Alert color="red" variant="light" role="alert">{errorMessage(update.error)}</Alert>}
         <Group gap="sm" grow>
           <Button type="button" variant="default" size="md" data-testid="child-edit-cancel" disabled={busy} onClick={onCancel}>
@@ -368,7 +390,12 @@ export default function ChildEditor({
       title: messages.children.removeTitle.replace("{name}", child.displayName),
       centered: true,
       radius: "lg",
-      children: <Text size="sm">{messages.children.removeConfirm}</Text>,
+      children: (
+        <Stack gap="xs">
+          <Text size="sm">{messages.children.removeConfirm}</Text>
+          <Text size="sm">{messages.children.removeKeepsLessonThemes}</Text>
+        </Stack>
+      ),
       labels: { confirm: messages.children.remove, cancel: messages.children.cancel },
       confirmProps: { color: "red", size: "md", "data-testid": "child-remove-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "child-remove-cancel" } as Record<string, unknown>,

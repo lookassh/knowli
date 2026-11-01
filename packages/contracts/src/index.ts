@@ -1,5 +1,6 @@
 export * from "./common";
 export * from "./limits";
+export * from "./child-interests";
 export * from "./decks";
 export * from "./generation";
 export * from "./kid";

@@ -151,6 +151,18 @@ describe("SessionActivityReporter", () => {
     expect(report.activeMs).toBeLessThanOrEqual(63_000);
   });
 
+  it("wolny odsłuch: limit z wydłużonego durationMs", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "listening");
+    // Nagranie 3 s przy tempie 0.75 trwa 4 s — odtwarzacz zgłasza 4000.
+    reporter.playbackStarted(ASSET_A, 4_000);
+    clock.advanceMs(3_900);
+    reporter.playbackEnded(ASSET_A);
+    const report = reporter.freeze();
+    expect(report.tasks[0]!.playbacks).toEqual([{ assetId: ASSET_A, fromMs: 0, toMs: 3_900 }]);
+  });
+
   it("does not treat a delayed audio callback as activity after the child's edit", () => {
     const clock = new ManualClock();
     const reporter = new SessionActivityReporter(clock);

@@ -5,7 +5,7 @@ import type { ExerciseHandlers } from "../exercises/types";
 import { optionOutcomes, type OptionOutcome } from "../exercises/option-outcome";
 import { format } from "../format";
 import { AnswerFeedbackActions, AnswerFeedbackContent, AnswerFeedbackSecondaryActions, feedbackTone } from "./AnswerFeedback";
-import { ExerciseFeedbackDock, type FeedbackDockTone } from "./ExerciseFeedbackDock";
+import { ExerciseFeedbackDock, type FeedbackDockSentenceAudio, type FeedbackDockTone } from "./ExerciseFeedbackDock";
 import { ExerciseFrame } from "../exercises/ExerciseFrame";
 import { ExerciseGuidanceProvider } from "../exercises/exercise-guidance";
 import { KidIcon } from "../components/KidIcon";
@@ -114,14 +114,21 @@ export function LearnScreen({
           : feedback.dto?.kind === "almost" || feedback.dto?.kind === "spelling_hint" || feedback.dto?.kind === "lesson_almost" || feedback.dto?.kind === "lesson_hint" ? "partial"
             : feedback.dto?.kind === "incorrect" ? "incorrect" : "unevaluated";
   const instructionAudioKey = feedbackGuidanceKey ?? taskGuidanceKey;
-  // Odczyt pełnego zdania w doku lekcji; obok niego komunikat dostaje „?”,
-  // nie drugi głośnik — tak samo zawsze przy głośniku polecenia „Posłuchaj i wybierz”
-  // (także po „Pomiń”, gdy feedback nie ma odczytu).
+  // Odczyt pełnego zdania w doku lekcji (zwykłe tempo i żółw); obok niego
+  // komunikat dostaje „?”, nie drugi głośnik — tak samo zawsze przy głośniku
+  // polecenia „Posłuchaj i wybierz” (także po „Pomiń”, gdy feedback nie ma odczytu).
+  // Stan odtwarzania i błędu trzyma kontroler, bo autoodczyt startuje bez kliknięcia.
   const sentenceReadback = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined;
   // „Posłuchaj i wybierz”: odczyt zdania odtwarza przycisk w poleceniu (bez drugiego głośnika w doku).
   const listenChoice = task?.prompt.kind === "lesson_listen_choice";
-  const sentenceAudio = sentenceReadback && !listenChoice
-    ? { onPlay: () => void controller.playSentenceAudio() }
+  const sentenceAudio: FeedbackDockSentenceAudio | null = sentenceReadback && !listenChoice && feedback !== null
+    ? {
+        playing: feedback.sentencePlaying ?? null,
+        error: feedback.sentenceAudioError ?? null,
+        // Te same warunki co strażnik kontrolera (`#playSentence`) i odsłuch pytania.
+        disabled: busy || offline || screen.recordingPhase !== "idle",
+        onPlay: (rate) => void controller.playSentenceAudio(rate),
+      }
     : null;
   const guidanceButton = instructionAudioKey
     ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false}

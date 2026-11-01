@@ -14,7 +14,7 @@ import type {
   TaskDto,
 } from "@learning/contracts";
 import type { KidApi } from "../api/KidApi";
-import type { AudioPlayer, MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
+import type { AudioPlaybackOptions, AudioPlayer, MicrophonePermission, PlatformMedia, RecorderOptions, SpeechRecorder } from "../media/platform";
 import { LevelMonitorUnavailableError } from "../media/platform";
 import { createMemoryPreferences, MIC_DENIED_KEY, type LocalPreferences } from "../storage";
 import { createMemoryActivityDraftStore } from "./activity-draft-store";
@@ -140,9 +140,17 @@ function makeRecorder(opts: { failStartWith?: unknown; startGate?: Promise<void>
   };
 }
 
-function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; stops: number; failPlayback: boolean; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
+function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise<void>, onStopPlayback?: () => void, failPlaybackBeforeStart = false, playbackDurationMs: number | null = null, sharedLog?: string[], microphonePermission: MicrophonePermission = "granted"): PlatformMedia & { playUrls: string[]; playOptions: (AudioPlaybackOptions | undefined)[]; rejectNextPlays: number; deferStart: boolean; pendingStarts: ((durationMs: number | null) => void)[]; stops: number; failPlayback: boolean; beeps: string[]; preloadedImages: string[]; lastRecorderOptions?: RecorderOptions; permissionQueries: number; setMicrophonePermission(next: MicrophonePermission): void } {
+  // Każde wywołanie play() czeka na bramkę albo na stop() — jak `#settle` adaptera.
+  const interruptions = new Set<() => void>();
   const media = {
     playUrls: [] as string[],
+    playOptions: [] as (AudioPlaybackOptions | undefined)[],
+    /** Tyle kolejnych wywołań play() rzuci błąd przed `onStarted`. */
+    rejectNextPlays: 0,
+    /** Start (`onStarted`) odkładany do `pendingStarts` — test woła go sam, także spóźniony. */
+    deferStart: false,
+    pendingStarts: [] as ((durationMs: number | null) => void)[],
     stops: 0,
     failPlayback: failPlaybackBeforeStart,
     beeps: [] as string[],
@@ -176,14 +184,32 @@ function makeMedia(recorder: ReturnType<typeof makeRecorder>, playGate?: Promise
       return recorder;
     },
     player: {
-      async play(url: string, onStarted?: (durationMs: number | null) => void) {
+      async play(url: string, onStarted?: (durationMs: number | null) => void, options?: AudioPlaybackOptions) {
         media.playUrls.push(url);
+        media.playOptions.push(options);
         if (media.failPlayback) throw new Error("autoplay blocked");
-        onStarted?.(playbackDurationMs);
-        await playGate;
+        if (media.rejectNextPlays > 0) {
+          media.rejectNextPlays -= 1;
+          throw new Error("autoplay blocked");
+        }
+        let interrupt!: () => void;
+        const interrupted = new Promise<void>((resolve) => { interrupt = resolve; });
+        interruptions.add(interrupt);
+        if (media.deferStart) {
+          if (onStarted) media.pendingStarts.push(onStarted);
+        } else {
+          onStarted?.(playbackDurationMs);
+        }
+        try {
+          await Promise.race([playGate, interrupted]);
+        } finally {
+          interruptions.delete(interrupt);
+        }
       },
       stop() {
         media.stops += 1;
+        for (const interrupt of interruptions) interrupt();
+        interruptions.clear();
         if (media.playUrls.length > 0) onStopPlayback?.();
       },
     } satisfies AudioPlayer,
@@ -3441,7 +3467,10 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     expect(harness.media.playUrls).toEqual([SENTENCE_URL, SENTENCE_URL]);
   });
 
-  it("„Dalej” w trakcie odczytu zatrzymuje go, a spóźnione zakończenie nie zmienia nowego zadania", async () => {
+  // stop() fake'a rozstrzyga play() od razu, więc koniec odczytu ściga się tu z #loadNext
+  // (release() niczego już nie kończy); spóźniony start po „Dalej” pokrywa
+  // „Dalej gasi i nie przenosi stanu” w bloku „odczyt zdania: stan, wolne tempo, błąd”.
+  it("„Dalej” w trakcie odczytu zatrzymuje go, a koniec przerwanego odczytu nie zmienia nowego zadania", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const state = baseState();
@@ -3509,6 +3538,222 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     // ręczna powtórka zdania nie dotyczy słownictwa
     await harness.controller.playSentenceAudio();
     expect(harness.media.playUrls).toEqual([]);
+  });
+
+  describe("odczyt zdania: stan, wolne tempo, błąd", () => {
+    type SentenceFeedback = { attemptId: string; sentencePlaying?: "normal" | "slow" | null; sentenceAudioError?: { rate: "normal" | "slow"; seq: number } | null };
+    const feedbackOf = (harness: { controller: { getScreen(): unknown } }) =>
+      (harness.controller.getScreen() as { feedback: SentenceFeedback | null }).feedback;
+    const playing = (harness: { controller: { getScreen(): unknown } }) => feedbackOf(harness)?.sentencePlaying ?? null;
+    const failure = (harness: { controller: { getScreen(): unknown } }) => feedbackOf(harness)?.sentenceAudioError ?? null;
+    const gated = () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      return { gate, release };
+    };
+    const answered = async (opts: { playGate?: Promise<void>; playbackDurationMs?: number | null; activityClock?: import("./activity-report").ActivityClock } = {}, before?: (harness: Awaited<ReturnType<typeof startAtTask>>) => void) => {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE } })];
+      const harness = await startAtTask(state, gap(), opts);
+      state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
+      before?.(harness);
+      await harness.controller.answerText("goes");
+      await tick();
+      return harness;
+    };
+
+    it("wskaźnik od startu do końca", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      expect(playing(harness)).toBe("normal");
+      expect(harness.media.playOptions).toEqual([undefined]);
+      release();
+      await tick();
+      expect(playing(harness)).toBeNull();
+      expect(failure(harness)).toBeNull();
+    });
+
+    it("zablokowany autoodczyt nie zapala wskaźnika i nie ustawia błędu", async () => {
+      // Subskrypcja przed odpowiedzią: widzimy każdą emisję ekranu wyniku,
+      // także tę między kliknięciem a odrzuceniem play().
+      const seen: { playing: unknown; failure: unknown }[] = [];
+      const harness = await answered({}, (h) => {
+        h.media.rejectNextPlays = 1;
+        h.controller.subscribe(() => {
+          if (feedbackOf(h) !== null) seen.push({ playing: playing(h), failure: failure(h) });
+        });
+      });
+      await tick();
+      expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
+      expect(playing(harness)).toBeNull();
+      expect(failure(harness)).toBeNull();
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((entry) => entry.playing === null && entry.failure === null)).toBe(true);
+    });
+
+    it("po teardown odczyt zdania nie woła odtwarzacza", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      const urls = harness.media.playUrls.length;
+      harness.controller.teardown();
+      await harness.controller.playSentenceAudio("slow");
+      expect(harness.media.playUrls).toHaveLength(urls);
+      release();
+    });
+
+    it("przełączenie tempa nie ucina nowego odsłuchu w raporcie aktywności", async () => {
+      // Nowy przebieg startuje (onStarted) przed `finally` przerwanego — koniec
+      // starego odsłuchu tego samego nagrania nie może zamknąć nowego.
+      let now = 0;
+      const { gate, release } = gated();
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE } })];
+      const harness = await startAtTask(state, gap(), { playGate: gate, playbackDurationMs: 3_000, activityClock: { now: () => now } });
+      await harness.controller.answerText("goes");
+      await tick();
+      expect(playing(harness)).toBe("normal");
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      now = 2_000;
+      release();
+      await tick();
+      await harness.controller.endNow();
+      const playbacks = state.endReports[0]?.tasks.flatMap((task) => task.playbacks) ?? [];
+      expect(playbacks).toEqual([expect.objectContaining({ assetId: SENTENCE, toMs: 2_000 })]);
+    });
+
+    it("wolno: rate 0.75 i wskaźnik slow", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      expect(harness.media.playOptions.at(-1)).toEqual({ rate: 0.75 });
+      expect(playing(harness)).toBe("slow");
+      release();
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("przełączenie tempa w trakcie", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      expect(playing(harness)).toBe("normal");
+      void harness.controller.playSentenceAudio("slow");
+      expect(playing(harness)).toBe("slow");
+      // spóźnione zakończenie pierwszego przebiegu (przerwanego przez stop) nie gasi wolnego
+      await tick();
+      expect(playing(harness)).toBe("slow");
+      release();
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("przerwanie przez komunikat gasi synchronicznie", async () => {
+      const { gate } = gated();
+      const harness = await answered({ playGate: gate });
+      expect(playing(harness)).toBe("normal");
+      const guidance = harness.controller.playGuidance("recall");
+      expect(playing(harness)).toBeNull();
+      await guidance.catch(() => undefined);
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("teardown w trakcie odczytu gasi wskaźnik, a potem nic nie emituje", async () => {
+      const { gate } = gated();
+      const harness = await answered({ playGate: gate });
+      expect(playing(harness)).toBe("normal");
+      harness.controller.teardown();
+      expect(playing(harness)).toBeNull();
+      let emissions = 0;
+      harness.controller.subscribe(() => { emissions += 1; });
+      harness.controller.pauseActivity("blur");
+      await tick();
+      expect(emissions).toBe(0);
+    });
+
+    it("Dalej gasi i nie przenosi stanu", async () => {
+      const { gate } = gated();
+      const harness = await answered({ playGate: gate });
+      harness.media.deferStart = true;
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      expect(harness.media.pendingStarts).toHaveLength(1);
+      harness.media.pendingStarts[0]!(null);
+      expect(playing(harness)).toBe("slow");
+      await harness.controller.continueLearning();
+      const next = harness.controller.getScreen();
+      expect(next).toMatchObject({ kind: "learning", task: { taskId: "tn" }, feedback: null });
+      // spóźnione zdarzenie startu poprzedniego przebiegu niczego nie ustawia
+      harness.media.pendingStarts[0]!(null);
+      await tick();
+      expect(harness.controller.getScreen()).toBe(next);
+    });
+
+    it("spóźniony start po przerwaniu nie zapala wskaźnika na tym samym wyniku", async () => {
+      const { gate } = gated();
+      const harness = await answered({ playGate: gate });
+      harness.media.deferStart = true;
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      const guidance = harness.controller.playGuidance("recall");
+      await guidance.catch(() => undefined);
+      harness.media.pendingStarts[0]!(null);
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("ręczny błąd: tempo i rosnący seq", async () => {
+      const harness = await answered();
+      harness.media.rejectNextPlays = 2;
+      await harness.controller.playSentenceAudio("slow");
+      expect(failure(harness)).toEqual({ rate: "slow", seq: 1 });
+      expect(playing(harness)).toBeNull();
+      await harness.controller.playSentenceAudio("slow");
+      expect(failure(harness)).toEqual({ rate: "slow", seq: 2 });
+    });
+
+    it("błąd znika przy udanym starcie, nie przy próbie", async () => {
+      const { gate, release } = gated();
+      const harness = await answered({ playGate: gate });
+      harness.media.rejectNextPlays = 1;
+      await harness.controller.playSentenceAudio("slow");
+      expect(failure(harness)).toEqual({ rate: "slow", seq: 1 });
+      harness.media.deferStart = true;
+      void harness.controller.playSentenceAudio("normal");
+      await tick();
+      expect(failure(harness)).toEqual({ rate: "slow", seq: 1 });
+      harness.media.pendingStarts.at(-1)!(null);
+      expect(failure(harness)).toBeNull();
+      expect(playing(harness)).toBe("normal");
+      release();
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("inne odtwarzanie na tym samym wyniku nie przywraca zgaszonego wskaźnika", async () => {
+      const { gate } = gated();
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "great", correctAudioAssetId: SENTENCE, referenceAudioAvailable: true } })];
+      const harness = await startAtTask(state, gap(), { playGate: gate });
+      await harness.controller.answerText("goes");
+      await tick();
+      expect(playing(harness)).toBe("normal");
+      harness.media.deferStart = true;
+      void harness.controller.playFeedbackAudio();
+      expect(playing(harness)).toBeNull();
+      await tick();
+      expect(playing(harness)).toBeNull();
+    });
+
+    it("komunikat „?” nie zmienia błędu", async () => {
+      const harness = await answered();
+      harness.media.rejectNextPlays = 1;
+      await harness.controller.playSentenceAudio("normal");
+      expect(failure(harness)).toEqual({ rate: "normal", seq: 1 });
+      await harness.controller.playGuidance("recall").catch(() => undefined);
+      expect(failure(harness)).toEqual({ rate: "normal", seq: 1 });
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { AttemptDto, FeedbackDto, TaskDto } from "@learning/contracts";
+import { messages, type AttemptDto, type FeedbackDto, type TaskDto } from "@learning/contracts";
 import { expectFrameFillsViewport } from "./helpers/kid-frame";
 import { installKidUiFixture } from "./helpers/kid-ui-fixture";
 import { recordAttemptPosts, tapPoolAndCheck } from "./helpers/lesson-assignment-task";
@@ -9,9 +9,13 @@ import { lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
  * Odczyt pełnego zdania po odpowiedzi w lekcji (design odczytu zdania §7, API
  * zaślepione w przeglądarce): feedback z `correctAudioAssetId` odtwarza nagranie
  * raz bez akcji dziecka, dok ma „Posłuchaj zdania”, „Dalej” przerywa odczyt,
- * a zablokowane autoodtwarzanie nie pokazuje błędu. `HTMLMediaElement.play`
- * i `pause` są podmienione — test liczy wywołania, nie słyszy dźwięku, więc
- * nie zastępuje odbioru na fizycznym urządzeniu (głośność, polityka autoplay).
+ * a zablokowane autoodtwarzanie nie pokazuje błędu. Dalsze prace (design
+ * 2026-11-01-sentence-readback-followups §4.2–§4.4, §7): pierścień odtwarzania,
+ * „Posłuchaj wolniej” (tempo 0,75, zachowana wysokość głosu), tekst nieudanego
+ * ręcznego odsłuchu i geometria grupy obu przycisków. `HTMLMediaElement.play`
+ * i `pause` są podmienione — test liczy wywołania i czyta ustawienia elementu,
+ * nie słyszy dźwięku, więc nie zastępuje odbioru na fizycznym urządzeniu
+ * (głośność, polityka autoplay, słyszalna jakość wolnego tempa).
  */
 
 const ids = {
@@ -38,29 +42,68 @@ const attempt = (feedback: FeedbackDto): AttemptDto => ({
 });
 const withSentence = attempt({ kind: "great", correctAudioAssetId: sentenceAssetId });
 
-type AudioMode = "hold" | "reject";
+type AudioMode = "hold" | "reject" | "reject-after-first";
+
+/**
+ * Tempo i zachowanie wysokości głosu odczytane z elementu w chwili `play()`.
+ * `pitch` to sam odczyt właściwości — w Chromium domyślnie `true`, więc nie
+ * odróżnia jawnego ustawienia; `pitchSet` to wartość, którą kod zapisał przez
+ * setter `preservesPitch` tego elementu przed `play()` (`null` — nie zapisał).
+ */
+interface PlayCall { rate: number; pitch: boolean; pitchSet: boolean | null }
+interface AudioSpy { plays: number; pauses: number; calls: PlayCall[] }
 
 /**
  * `hold` — odtwarzanie trwa do `pause()` (bez zdarzenia `ended`), żeby „Dalej”
- * trafiło w trwający odczyt; `reject` — przeglądarka blokuje autoodtwarzanie.
+ * trafiło w trwający odczyt; `reject` — przeglądarka odrzuca każde `play()`
+ * (zablokowane autoodtwarzanie i nieudany ręczny odsłuch); `reject-after-first`
+ * — autoodczyt gra jak w `hold`, a każde kolejne `play()` jest odrzucane.
+ * Każde wywołanie zapisuje w `calls` tempo i `preservesPitch` elementu.
  */
 async function spyAudio(page: Page, mode: AudioMode = "hold"): Promise<void> {
   await page.addInitScript((audioMode: AudioMode) => {
-    const counters = { plays: 0, pauses: 0 };
-    (window as unknown as { __audio: typeof counters }).__audio = counters;
+    const spy: AudioSpy = { plays: 0, pauses: 0, calls: [] };
+    (window as unknown as { __audio: AudioSpy }).__audio = spy;
+    // Setter `preservesPitch` zapamiętuje zapis kodu per element (getter bez zmian).
+    const pitchWrites = new WeakMap<HTMLMediaElement, boolean>();
+    const pitch = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "preservesPitch");
+    if (pitch?.get && pitch.set) {
+      const { get, set } = pitch;
+      Object.defineProperty(HTMLMediaElement.prototype, "preservesPitch", {
+        ...pitch,
+        get() { return get.call(this); },
+        set(value: boolean) { pitchWrites.set(this as HTMLMediaElement, value); set.call(this, value); },
+      });
+    }
     HTMLMediaElement.prototype.play = function play() {
-      counters.plays += 1;
-      if (audioMode === "reject") return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      spy.plays += 1;
+      spy.calls.push({ rate: this.playbackRate, pitch: this.preservesPitch, pitchSet: pitchWrites.get(this) ?? null });
+      if (audioMode === "reject" || (audioMode === "reject-after-first" && spy.plays > 1)) {
+        return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      }
       this.dispatchEvent(new Event("playing"));
       return Promise.resolve();
     };
     HTMLMediaElement.prototype.pause = function pause() {
-      counters.pauses += 1;
+      spy.pauses += 1;
     };
   }, mode);
 }
 
-const audioCounters = (page: Page) => page.evaluate(() => (window as unknown as { __audio: { plays: number; pauses: number } }).__audio);
+const audioCounters = (page: Page) => page.evaluate(() => (window as unknown as { __audio: AudioSpy }).__audio);
+
+interface Box { x: number; y: number; width: number; height: number }
+
+const within = (inner: Box, outer: Box): boolean => inner.x >= outer.x - 1 && inner.y >= outer.y - 1
+  && inner.x + inner.width <= outer.x + outer.width + 1 && inner.y + inner.height <= outer.y + outer.height + 1;
+const overlaps = (a: Box, b: Box): boolean => a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1
+  && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
+
+async function boxOf(locator: Locator): Promise<Box> {
+  const bounds = await locator.boundingBox();
+  if (bounds === null) throw new Error("element has no layout box");
+  return bounds;
+}
 
 function trackMedia(page: Page): string[] {
   const paths: string[] = [];
@@ -171,15 +214,151 @@ test("feedback without the sentence recording has no button and plays nothing", 
   expect((await audioCounters(page)).plays).toBe(0);
 });
 
+test("the sentence button shows the playing ring during readback", async ({ page }) => {
+  await open(page, [withSentence]);
+  await answer(page);
+  const dock = page.getByTestId("kid-feedback-dock");
+  const sentence = dock.getByTestId("kid-sentence-audio");
+  // Pierścień zapala zdarzenie `playing` autoodczytu; ma go tylko przycisk tempa, które gra.
+  await expect(sentence).toHaveAttribute("data-sound-active", "true");
+  await expect(dock.getByTestId("kid-sentence-audio-slow")).not.toHaveAttribute("data-sound-active");
+  const ring = sentence.getByTestId("kid-sound-ring");
+  await expect(ring).toHaveCount(1);
+  const ringBox = await boxOf(ring);
+  const dockBox = await boxOf(dock);
+  expect(within(ringBox, dockBox), `ring inside dock: ${JSON.stringify({ ringBox, dockBox })}`).toBe(true);
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
+  await expect(page.getByTestId("kid-sentence-audio-group")).toHaveCount(0);
+  await expect(page.locator("[data-sound-active]")).toHaveCount(0);
+});
+
+test("„Posłuchaj wolniej” replays the same file at 0.75 with preserved pitch", async ({ page }) => {
+  const media = await open(page, [withSentence]);
+  await answer(page);
+  await expect.poll(() => media).toEqual([sentencePath]);
+  // Autoodczyt gra w normalnym tempie.
+  await expect.poll(() => audioCounters(page).then((spy) => spy.calls)).toEqual([{ rate: 1, pitch: true, pitchSet: true }]);
+  const slow = page.getByTestId("kid-feedback-dock").getByTestId("kid-sentence-audio-slow");
+  await expect(slow).toHaveAttribute("aria-label", "Posłuchaj wolniej");
+  await slow.click();
+  await expect.poll(() => audioCounters(page).then((spy) => spy.calls.at(-1))).toEqual({ rate: 0.75, pitch: true, pitchSet: true });
+  expect((await audioCounters(page)).calls).toHaveLength(2);
+  await expect.poll(() => media).toEqual([sentencePath, sentencePath]);
+  await expect(slow).toHaveAttribute("data-sound-active", "true");
+  await expect(page.getByTestId("kid-sentence-audio")).not.toHaveAttribute("data-sound-active");
+});
+
+test("a failed manual replay shows the message, a blocked autoplay does not", async ({ page }) => {
+  await open(page, [withSentence], "reject");
+  await answer(page);
+  await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(1);
+  const error = page.getByTestId("kid-sentence-audio-error");
+  const slow = page.getByTestId("kid-sentence-audio-slow");
+  // Region stoi w doku od początku, ale zablokowany autoodczyt go nie wypełnia.
+  await expect(error).toHaveAttribute("aria-live", "polite");
+  await expect(error).toHaveText("");
+  await expect(slow).not.toHaveAttribute("data-audio-failed");
+
+  await slow.click();
+  await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(2);
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+  await expect(slow).toHaveAttribute("data-audio-failed", "1");
+  // Fokus zostaje na przycisku, który zawiódł (spec §4.4).
+  await expect(slow).toBeFocused();
+  await expect(page.getByTestId("kid-sentence-audio")).not.toHaveAttribute("data-audio-failed");
+  await expect(slow).not.toHaveAttribute("data-sound-active");
+
+  // Kolejne nieudane dotknięcie: ten sam tekst (dok nie skacze), nowy klucz poruszenia ikony.
+  await slow.click();
+  await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(3);
+  await expect(slow).toHaveAttribute("data-audio-failed", "2");
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+
+  // „Dalej” zabiera błąd razem z feedbackiem.
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
+  await expect(page.getByTestId("kid-sentence-audio-error")).toHaveCount(0);
+});
+
+test("a failed manual replay during readback stops the ring and shows the message", async ({ page }) => {
+  await open(page, [withSentence], "reject-after-first");
+  await answer(page);
+  const sentence = page.getByTestId("kid-sentence-audio");
+  await expect(sentence).toHaveAttribute("data-sound-active", "true");
+  await expect(page.getByTestId("kid-sentence-audio-error")).toHaveText("");
+  await sentence.click();
+  await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(2);
+  await expect(page.getByTestId("kid-sentence-audio-error")).toHaveText(messages.kid.sentenceAudioFailed);
+  await expect(sentence).toHaveAttribute("data-audio-failed", "1");
+  await expect(page.locator("[data-sound-active]")).toHaveCount(0);
+});
+
+/**
+ * Układ grupy przycisków zdania z container query doku (spec §4.3): gdy treść
+ * doku ma mniej niż 480 px szerokości (px wewnętrzne, jak w `@container`),
+ * żółw stoi pod „Posłuchaj zdania” (odstęp 8 px, ta sama lewa krawędź), a „?”
+ * komunikatu zaczyna się na wysokości górnego przycisku; szerszy dok ma oba
+ * w jednym wierszu, żółw po prawej. Próg z pomiaru doku, nie z okna.
+ */
+async function expectSentenceGroupLayout(page: Page, label: string): Promise<void> {
+  const dock = page.getByTestId("kid-feedback-dock");
+  const { contentWidth, zoom } = await dock.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const width = element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return { contentWidth: width, zoom: element.getBoundingClientRect().width / (element as HTMLElement).offsetWidth };
+  });
+  const sentence = await boxOf(dock.getByTestId("kid-sentence-audio"));
+  const slow = await boxOf(dock.getByTestId("kid-sentence-audio-slow"));
+  const guidance = await boxOf(dock.getByTestId("kid-guidance-play"));
+  const details = `dock content ${contentWidth}px, sentence ${JSON.stringify(sentence)}, slow ${JSON.stringify(slow)}, guidance ${JSON.stringify(guidance)} at ${label}`;
+  if (contentWidth < 480) {
+    expect(slow.y, `column: slow under sentence: ${details}`).toBeGreaterThanOrEqual(sentence.y + sentence.height + 8 * zoom - 1);
+    expect(Math.abs(slow.x - sentence.x), `column: same left edge: ${details}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(guidance.y - sentence.y), `column: guidance at the top button: ${details}`).toBeLessThanOrEqual(1);
+  } else {
+    expect(Math.abs(slow.y - sentence.y), `row: same top: ${details}`).toBeLessThanOrEqual(1);
+    expect(slow.x, `row: slow right of sentence: ${details}`).toBeGreaterThanOrEqual(sentence.x + sentence.width - 1);
+  }
+}
+
+/** Oba przyciski zdania: cel ≥ 48 px, w doku i bez nakładania na „?” komunikatu. */
+async function expectSentenceButtonsInDock(page: Page, label: string): Promise<void> {
+  const dock = page.getByTestId("kid-feedback-dock");
+  const dockBox = await boxOf(dock);
+  const guidance = await boxOf(dock.getByTestId("kid-guidance-play"));
+  for (const testId of ["kid-sentence-audio", "kid-sentence-audio-slow"]) {
+    const bounds = await boxOf(dock.getByTestId(testId));
+    const details = `${testId} ${JSON.stringify(bounds)}, dock ${JSON.stringify(dockBox)}, guidance ${JSON.stringify(guidance)} at ${label}`;
+    expect(bounds.width, `width: ${details}`).toBeGreaterThanOrEqual(48);
+    expect(bounds.height, `height: ${details}`).toBeGreaterThanOrEqual(48);
+    expect(within(bounds, dockBox), `inside dock: ${details}`).toBe(true);
+    expect(overlaps(bounds, guidance), `overlaps guidance: ${details}`).toBe(false);
+  }
+  await expectSentenceGroupLayout(page, label);
+}
+
+/** Bez poziomego przewijania strony, a „Dalej” w całości w oknie. */
+async function expectNextReachable(page: Page, viewport: { width: number; height: number }, label: string): Promise<void> {
+  const next = page.getByTestId("kid-next");
+  await next.scrollIntoViewIfNeeded();
+  const nextBox = await boxOf(next);
+  expect(within(nextBox, { x: 0, y: 0, ...viewport }), `next in viewport at ${label}: ${JSON.stringify(nextBox)}`).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `page overflow at ${label}`).toBe(true);
+}
+
+const SENTENCE_VIEWPORTS = [
+  { width: 320, height: 640 },
+  { width: 375, height: 812 },
+  { width: 812, height: 375 },
+  { width: 768, height: 1024 },
+  { width: 1280, height: 800 },
+];
+
 test("sentence button fits the feedback dock on every form factor", async ({ page }, testInfo) => {
   await open(page, [attempt({ kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: sentenceAssetId })]);
   await answer(page);
-  for (const viewport of [
-    { width: 375, height: 812 },
-    { width: 812, height: 375 },
-    { width: 768, height: 1024 },
-    { width: 1280, height: 800 },
-  ]) {
+  for (const viewport of SENTENCE_VIEWPORTS) {
     await page.setViewportSize(viewport);
     const label = `${viewport.width}x${viewport.height}`;
     await expectFrameFillsViewport(page, viewport);
@@ -202,14 +381,96 @@ test("sentence button fits the feedback dock on every form factor", async ({ pag
     expect(guidance.width, `guidance width at ${label}`).toBeGreaterThanOrEqual(48);
     expect(guidance.height, `guidance height at ${label}`).toBeGreaterThanOrEqual(48);
     expect(guidance.x + guidance.width, `guidance inside dock at ${label}`).toBeLessThanOrEqual(dock.x + dock.width + 1);
-    // „Dalej” pozostaje osiągalne obok przycisku odczytu.
+    // „Posłuchaj zdania” i „Posłuchaj wolniej”: oba cele w doku, obok „?”, nie na nim.
+    await expectSentenceButtonsInDock(page, label);
+    // „Dalej” pozostaje osiągalne obok przycisków odczytu.
     const next = (await page.getByTestId("kid-next").boundingBox())!;
     expect(next.y + next.height, `next in viewport at ${label}`).toBeLessThanOrEqual(viewport.height + 1);
+    await expectNextReachable(page, viewport, label);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `page overflow at ${label}`).toBe(false);
     expect(await page.getByTestId("kid-feedback-dock").evaluate((element) => element.scrollWidth > element.clientWidth + 1), `dock overflow at ${label}`).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`sentence-audio-${label}.png`) });
   }
 });
+
+test("the replay error stays inside the dock on every form factor", async ({ page }, testInfo) => {
+  await open(page, [attempt({ kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: sentenceAssetId })], "reject");
+  await answer(page);
+  await page.getByTestId("kid-sentence-audio-slow").click();
+  const error = page.getByTestId("kid-sentence-audio-error");
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+  for (const viewport of SENTENCE_VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    const label = `${viewport.width}x${viewport.height}`;
+    await expectFrameFillsViewport(page, viewport);
+    await error.scrollIntoViewIfNeeded();
+    await expect(error).toBeVisible();
+    const errorBox = await boxOf(error);
+    const dockBox = await boxOf(page.getByTestId("kid-feedback-dock"));
+    expect(within(errorBox, dockBox), `error inside dock at ${label}: ${JSON.stringify({ errorBox, dockBox })}`).toBe(true);
+    await expectSentenceButtonsInDock(page, `${label} with the error`);
+    await expectNextReachable(page, viewport, `${label} with the error`);
+    expect(await page.getByTestId("kid-feedback-dock").evaluate((element) => element.scrollWidth > element.clientWidth + 1), `dock overflow at ${label}`).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`sentence-audio-error-${label}.png`) });
+  }
+});
+
+/**
+ * Nieudane dotknięcie nie przesuwa przycisków zdania pod palcem (spec §4.4).
+ * `up` — dok w nakładce stoi przy dolnej krawędzi ramy i rośnie w górę: tekst
+ * stoi nad górnym wierszem, a przyciski zdania i „Dalej” zostają na miejscu.
+ * `down` — zwarta rama dużego okna (stopka tuż pod odpowiedziami, wolne miejsce
+ * niżej) i przewijana strona: dok rośnie w dół, więc tekst stoi pod górnym
+ * wierszem, przyciski zdania zostają, a w dół przesuwa się tylko „Dalej”.
+ */
+const ERROR_SHIFT_VIEWPORTS: { viewport: { width: number; height: number }; grows: "up" | "down" }[] = [
+  { viewport: { width: 375, height: 812 }, grows: "up" },
+  { viewport: { width: 1280, height: 800 }, grows: "down" },
+  { viewport: { width: 812, height: 375 }, grows: "down" },
+];
+
+for (const { viewport, grows } of ERROR_SHIFT_VIEWPORTS) {
+  const label = `${viewport.width}x${viewport.height}`;
+  test(`the replay error does not move the sentence buttons at ${label}`, async ({ page }) => {
+    await open(page, [attempt({ kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: sentenceAssetId })], "reject");
+    await answer(page);
+    await page.setViewportSize(viewport);
+    await expectFrameFillsViewport(page, viewport);
+    const dock = page.getByTestId("kid-feedback-dock");
+    const error = page.getByTestId("kid-sentence-audio-error");
+    await expect(error).toHaveText("");
+    const targets = { sentence: dock.getByTestId("kid-sentence-audio"), slow: dock.getByTestId("kid-sentence-audio-slow"), next: dock.getByTestId("kid-next") };
+    await targets.slow.scrollIntoViewIfNeeded();
+    const measure = async () => ({ sentence: await boxOf(targets.sentence), slow: await boxOf(targets.slow), next: await boxOf(targets.next) });
+    const before = await measure();
+
+    await targets.slow.click();
+    await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+    // Dwie klatki na przeliczenie rezerwy i limitu karty po zmianie wysokości doku.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const after = await measure();
+    const fixed: (keyof typeof targets)[] = grows === "up" ? ["sentence", "slow", "next"] : ["sentence", "slow"];
+    for (const name of fixed) {
+      const moved = `${name} before ${JSON.stringify(before[name])}, after ${JSON.stringify(after[name])} at ${label}`;
+      expect(Math.abs(after[name].x - before[name].x), `x: ${moved}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[name].y - before[name].y), `y: ${moved}`).toBeLessThanOrEqual(1);
+    }
+    const errorBox = await boxOf(error);
+    expect(within(errorBox, await boxOf(dock)), `error inside dock at ${label}`).toBe(true);
+    // Tekst nie wchodzi na przyciski zdania ani na „Dalej”.
+    for (const name of Object.keys(targets) as (keyof typeof targets)[]) {
+      expect(overlaps(errorBox, after[name]), `error overlaps ${name} at ${label}: ${JSON.stringify({ errorBox, target: after[name] })}`).toBe(false);
+    }
+    const rowTop = Math.min(after.sentence.y, after.slow.y);
+    const rowBottom = Math.max(after.sentence.y + after.sentence.height, after.slow.y + after.slow.height);
+    if (grows === "up") {
+      expect(errorBox.y + errorBox.height, `error above the sentence row at ${label}`).toBeLessThanOrEqual(rowTop + 1);
+    } else {
+      expect(errorBox.y, `error under the sentence row at ${label}`).toBeGreaterThanOrEqual(rowBottom - 1);
+      expect(errorBox.y + errorBox.height, `error above „Dalej” at ${label}`).toBeLessThanOrEqual(after.next.y + 1);
+    }
+  });
+}
 
 /**
  * Tekst z lukami i bankiem słów („Angielski — rozdział”, `lesson_cloze` z
@@ -283,19 +544,6 @@ const CLOZE_FEEDBACKS: { kind: string; feedback: FeedbackDto }[] = [
  */
 const MIN_VISIBLE_MATERIAL = 96;
 
-interface Box { x: number; y: number; width: number; height: number }
-
-const within = (inner: Box, outer: Box): boolean => inner.x >= outer.x - 1 && inner.y >= outer.y - 1
-  && inner.x + inner.width <= outer.x + outer.width + 1 && inner.y + inner.height <= outer.y + outer.height + 1;
-const overlaps = (a: Box, b: Box): boolean => a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1
-  && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
-
-async function boxOf(locator: Locator): Promise<Box> {
-  const bounds = await locator.boundingBox();
-  if (bounds === null) throw new Error("element has no layout box");
-  return bounds;
-}
-
 test.describe("cloze with a word bank: sentence readback dock geometry", () => {
   for (const viewport of CLOZE_VIEWPORTS) {
     for (const { kind, feedback } of CLOZE_FEEDBACKS) {
@@ -330,7 +578,9 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         const guidance = dock.getByTestId("kid-guidance-play");
         const next = dock.getByTestId("kid-next");
         await expect(sentence).toHaveAttribute("aria-label", "Posłuchaj zdania");
-        const boxes = { sentence: await boxOf(sentence), guidance: await boxOf(guidance), next: await boxOf(next) };
+        const slow = dock.getByTestId("kid-sentence-audio-slow");
+        await expect(slow).toHaveAttribute("aria-label", "Posłuchaj wolniej");
+        const boxes = { sentence: await boxOf(sentence), slow: await boxOf(slow), guidance: await boxOf(guidance), next: await boxOf(next) };
         for (const [name, bounds] of Object.entries(boxes)) {
           expect(within(bounds, dockBox), `${name} inside dock at ${label}: ${JSON.stringify(bounds)}`).toBe(true);
           expect(within(bounds, viewportBox), `${name} inside viewport at ${label}: ${JSON.stringify(bounds)}`).toBe(true);
@@ -342,6 +592,10 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         expect(overlaps(boxes.sentence, boxes.guidance), `sentence/guidance overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.sentence, boxes.next), `sentence/next overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.guidance, boxes.next), `guidance/next overlap at ${label}`).toBe(false);
+        expect(overlaps(boxes.sentence, boxes.slow), `sentence/slow overlap at ${label}`).toBe(false);
+        expect(overlaps(boxes.slow, boxes.guidance), `slow/guidance overlap at ${label}`).toBe(false);
+        expect(overlaps(boxes.slow, boxes.next), `slow/next overlap at ${label}`).toBe(false);
+        await expectSentenceGroupLayout(page, label);
 
         // Kontener materiału obok doku. Poniżej 480 px wysokości przewija się strona, a dok stoi
         // w przepływie pod materiałem; wyżej dok jest nakładką na dolną krawędź materiału
@@ -438,4 +692,119 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
       });
     }
   }
+});
+
+/**
+ * Dotykowy tablet w poziomie (`pointer: coarse`, zwarta rama od 960 × 480) z
+ * długą treścią — tekst z lukami (panel w nakładce) i wybór z długim poleceniem
+ * (panel w przepływie): pod stopką nie ma wolnego miejsca, więc panel rośnie
+ * w górę. Tekst błędu ręcznego odsłuchu staje wtedy nad górnym wierszem
+ * (`data-frame-full`) i nie przesuwa przycisków zdania ani „Dalej”.
+ */
+const TABLET_TOUCH_VIEWPORTS = [
+  { width: 1024, height: 600 },
+  { width: 1280, height: 800 },
+];
+
+/** Wybór z długim poleceniem i zdaniem: panel w przepływie (`feedbackLayout="flow"`). */
+const longChoiceTask: TaskDto = {
+  taskId: clozeUid(71), sessionId: ids.sessionId, ordinal: 1, exerciseType: "lesson_choice", direction: null, state: "issued", remainingAssessed: 2,
+  prompt: {
+    kind: "lesson_choice",
+    instructionPl: "Przeczytaj uważnie całe zdanie o wakacjach nad morzem i wybierz słowo, które pasuje do luki. ".repeat(9).trim(),
+    stem: "Every summer my whole family travels to the seaside, and every morning my little brother ___ a big sandcastle near the water.",
+    contentLocale: "en-GB",
+    options: [
+      { id: clozeUid(72), text: "builds" },
+      { id: clozeUid(73), text: "build" },
+      { id: clozeUid(74), text: "building" },
+      { id: clozeUid(75), text: "is build" },
+    ],
+  },
+};
+const longChoiceAttempt: AttemptDto = {
+  ...clozeAttempt({ kind: "incorrect", correctText: "builds", correctAudioAssetId: sentenceAssetId }),
+  taskId: longChoiceTask.taskId, modality: "choice",
+};
+
+const TABLET_SCENARIOS: { name: string; task: TaskDto; attempt: AttemptDto; ready: string; answer: (page: Page, posted: unknown[]) => Promise<void> }[] = [
+  {
+    name: "overflowing cloze (overlay dock)", task: clozeTask, ready: "kid-lesson-cloze",
+    attempt: clozeAttempt({ kind: "incorrect", correctText: clozeFilledText, correctAudioAssetId: sentenceAssetId }),
+    answer: async (page, posted) => { await tapPoolAndCheck(page, "kid-lesson-cloze-option", 3, posted); },
+  },
+  {
+    name: "long choice (flow dock)", task: longChoiceTask, ready: "kid-lesson-stem", attempt: longChoiceAttempt,
+    answer: (page) => page.getByTestId("kid-option").nth(1).tap(),
+  },
+];
+
+for (const viewport of TABLET_TOUCH_VIEWPORTS) {
+  const label = `${viewport.width}x${viewport.height}`;
+  test.describe(`touch tablet ${label}`, () => {
+    test.use({ isMobile: true, hasTouch: true });
+    for (const scenario of TABLET_SCENARIOS) {
+      test(`${scenario.name}: the replay error keeps the sentence buttons and „Dalej” still at ${label}`, async ({ page }) => {
+        const posted = recordAttemptPosts(page);
+        await spyAudio(page, "reject");
+        await installKidUiFixture(page, { ...lessonAudioFixture(ids, [scenario.task]), attempts: [scenario.attempt] });
+        // `openLessonTask` otwiera zadanie w oknie telefonu; rozmiar tabletu dopiero potem.
+        await openLessonTask(page, scenario.ready);
+        await page.setViewportSize(viewport);
+        await expectFrameFillsViewport(page, viewport);
+        expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+        await scenario.answer(page, posted);
+        const dock = page.getByTestId("kid-feedback-dock");
+        await expect(dock).toBeVisible();
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        // Scenariusz wymaga ramy bez wolnego miejsca pod stopką — bez niego test niczego nie sprawdza.
+        await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "false");
+        await expect(page.locator("[data-frame-full]"), `frame full at ${label}`).toHaveCount(1);
+        const error = page.getByTestId("kid-sentence-audio-error");
+        await expect(error).toHaveText("");
+        const targets = { sentence: dock.getByTestId("kid-sentence-audio"), slow: dock.getByTestId("kid-sentence-audio-slow"), next: dock.getByTestId("kid-next") };
+        const measure = async () => ({ sentence: await boxOf(targets.sentence), slow: await boxOf(targets.slow), next: await boxOf(targets.next) });
+        const before = await measure();
+
+        await targets.slow.tap();
+        await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const after = await measure();
+        for (const name of Object.keys(targets) as (keyof typeof targets)[]) {
+          const moved = `${name} before ${JSON.stringify(before[name])}, after ${JSON.stringify(after[name])} at ${label}`;
+          expect(Math.abs(after[name].x - before[name].x), `x: ${moved}`).toBeLessThanOrEqual(1);
+          expect(Math.abs(after[name].y - before[name].y), `y: ${moved}`).toBeLessThanOrEqual(1);
+        }
+        const errorBox = await boxOf(error);
+        expect(within(errorBox, await boxOf(dock)), `error inside dock at ${label}`).toBe(true);
+        expect(overlaps(errorBox, after.sentence) || overlaps(errorBox, after.slow), `error overlaps a sentence button at ${label}`).toBe(false);
+        expect(errorBox.y + errorBox.height, `error above the sentence row at ${label}`).toBeLessThanOrEqual(Math.min(after.sentence.y, after.slow.y) + 1);
+        expect(within(after.next, { x: 0, y: 0, ...viewport }), `„Dalej” in viewport at ${label}`).toBe(true);
+      });
+    }
+  });
+}
+
+test.describe("touch tablet 1280x800: flow dock follows content height", () => {
+  test.use({ isMobile: true, hasTouch: true });
+  test("data-frame-full drops when the content above the flow dock shrinks", async ({ page }) => {
+    await spyAudio(page, "reject");
+    await installKidUiFixture(page, { ...lessonAudioFixture(ids, [longChoiceTask]), attempts: [longChoiceAttempt] });
+    await openLessonTask(page, "kid-lesson-stem");
+    const viewport = { width: 1280, height: 800 };
+    await page.setViewportSize(viewport);
+    await expectFrameFillsViewport(page, viewport);
+    await page.getByTestId("kid-option").nth(1).tap();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await expect(page.locator("[data-frame-full]")).toHaveCount(1);
+    // Sama treść maleje (rama i panel bez zmian) — stopka podjeżdża, pod nią
+    // pojawia się wolne miejsce i atrybut musi zniknąć.
+    await page.evaluate(() => {
+      for (const id of ["kid-instruction", "kid-lesson-stem"]) {
+        const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+        if (element) element.style.display = "none";
+      }
+    });
+    await expect(page.locator("[data-frame-full]")).toHaveCount(0);
+  });
 });

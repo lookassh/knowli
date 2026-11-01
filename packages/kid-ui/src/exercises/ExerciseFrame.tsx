@@ -4,6 +4,7 @@ import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
 import { cssZoomOf, toLayoutPx } from "../layout/css-zoom";
+import { KID_FINE_POINTER_QUERY } from "../layout/viewport";
 import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
@@ -88,6 +89,9 @@ export function ExerciseFrame({
 
     const revealIfNeeded = () => {
       if (!active) return;
+      // Także panel w przepływie (`flow`) i przełączenie trybu strony — pomiar
+      // nakładki (efekt niżej) działa tylko w układzie `overlay`.
+      syncFrameFull(overlay);
       const frameOverflows = flowFeedback && frameRoot !== null && frameRoot !== undefined
         && frameRoot.scrollHeight > frameRoot.clientHeight + 1;
       const required = page.dataset.zoomed === "true" || page.dataset.viewportVeryShort === "true" || frameOverflows;
@@ -103,6 +107,10 @@ export function ExerciseFrame({
     };
 
     revealIfNeeded();
+    // Zmiana myszy na dotyk (i odwrotnie) zmienia odstęp od góry zwartej ramy
+    // (`--frame-offset`), a rama i panel mogą zachować rozmiar.
+    const finePointerQuery = typeof window.matchMedia === "function" ? window.matchMedia(KID_FINE_POINTER_QUERY) : null;
+    finePointerQuery?.addEventListener("change", revealIfNeeded);
     const observer = new MutationObserver(revealIfNeeded);
     observer.observe(page, { attributes: true, attributeFilter: ["data-zoomed", "data-viewport-very-short"] });
     const resizeObserver = flowFeedback && typeof ResizeObserver !== "undefined"
@@ -110,9 +118,13 @@ export function ExerciseFrame({
     if (resizeObserver && frameRoot) {
       resizeObserver.observe(frameRoot);
       resizeObserver.observe(overlay);
+      // Instrukcja i materiał: zmiana samej treści przesuwa stopkę w zwartej
+      // ramie bez zmiany rozmiaru ramy i panelu (`data-frame-full`).
+      for (const child of frameRoot.children) resizeObserver.observe(child);
     }
     return () => {
       active = false;
+      finePointerQuery?.removeEventListener("change", revealIfNeeded);
       observer.disconnect();
       resizeObserver?.disconnect();
       revealCleanupRef.current?.();
@@ -168,6 +180,7 @@ export function ExerciseFrame({
       // Najpierw limit karty z wolnego miejsca: zmienia wysokość panelu, więc
       // nadwyżka i zakładka niżej liczą się już na nowym układzie.
       cardSpaceRef.current = syncCardSpace(cardSpaceRef.current, overlay, material);
+      syncFrameFull(overlay);
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
@@ -340,6 +353,25 @@ function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, mater
   if (cardMax === null) overlay.style.removeProperty(CARD_MAX_PROPERTY);
   else overlay.style.setProperty(CARD_MAX_PROPERTY, `${cardMax}px`);
   return { overlay, key };
+}
+
+/**
+ * `data-frame-full` na panelu (nakładka albo panel w przepływie): pod stopką
+ * nie ma wolnego miejsca (stopka stoi przy dolnej krawędzi ramy — materiał się
+ * przewija albo zwarta rama zużyła już część odstępu od góry), więc panel rośnie
+ * w górę, a nie w wolne miejsce pod stopką. Dok czyta atrybut w CSS (region błędu odsłuchu nad górnym wierszem,
+ * spec 2026-11-01-sentence-readback-followups §4.4). Oba prostokąty są w px
+ * ekranu, więc zoom dużego okna nie zmienia porównania. Na przewijanej stronie
+ * panel jest w przepływie i zawsze rośnie w dół — atrybutu nie ma.
+ */
+function syncFrameFull(overlay: HTMLElement): void {
+  const page = overlay.closest<HTMLElement>(".kid-page");
+  const pageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
+  const frame = overlay.closest<HTMLElement>(".kid-exercise-frame");
+  const footer = overlay.closest<HTMLElement>(".kid-exercise-actions");
+  const full = !pageScroll && frame !== null && footer !== null
+    && frame.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom < 1;
+  overlay.toggleAttribute("data-frame-full", full);
 }
 
 /**

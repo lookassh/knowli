@@ -4,8 +4,10 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Alert, Anchor, Button, Checkbox, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { messages, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
+import { messages, mergeChildInterests, normalizeChildInterest, MAX_CHILD_INTERESTS, MAX_SCHOOL_MATERIAL_LENGTH, MAX_SCHOOL_SUBJECT_TITLE_LENGTH, MAX_SCHOOL_TOPIC_TITLE_LENGTH, type LessonCommand, type MaterialLessonCommand, type SchoolLessonCommand, type SubjectCatalogDto } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
+import { interestsError, parseInterestsInput } from "../children-forms";
+import { InterestsTagsInput, useInterestNotice } from "../InterestsTagsInput";
 import { readLessonAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
@@ -46,6 +48,8 @@ export interface NewLessonValues {
   schoolSubjectName: string;
   /** Tytuł tematu (szkoła) albo rozdziału (przedmiot o stałym tytule) wpisany przez rodzica. */
   topicTitle: string;
+  /** Tematy zdań (gramatyka) — wpisane albo wstawione przez rodzica; formularz nie wypełnia ich sam. */
+  interests: string[];
 }
 
 /**
@@ -84,7 +88,28 @@ export function initialLessonValues(catalog: SubjectCatalogDto | undefined, pres
     poolSizeTouched: false,
     schoolSubjectName: "",
     topicTitle: (preset.topicTitle ?? "").trim().slice(0, MAX_SCHOOL_TOPIC_TITLE_LENGTH),
+    interests: [],
   };
+}
+
+function acceptsInterests(catalog: SubjectCatalogDto | undefined, subjectId: string): boolean {
+  // tematy przyjmuje tylko polecenie katalogowe (polecenia szkolne i z materiału są `strict`)
+  return lessonPathOf(catalog, subjectId) === "catalog" && catalog?.subjects.find((s) => s.id === subjectId)?.acceptsInterests === true;
+}
+
+/**
+ * Tematy zdań do polecenia: tylko dla przedmiotu, który je przyjmuje (`acceptsInterests`),
+ * i tylko gdy lista nie jest pusta. Po zmianie przedmiotu na inny lista nie jest wysyłana.
+ */
+export function lessonInterestsOf(values: NewLessonValues, catalog: SubjectCatalogDto | undefined): string[] | undefined {
+  if (!acceptsInterests(catalog, values.subjectId)) return undefined;
+  const interests = parseInterestsInput(values.interests);
+  return interests.length > 0 ? interests : undefined;
+}
+
+/** Komunikat błędu listy tematów (niepoprawny wpis) dla przedmiotu, który je przyjmuje; inaczej `null`. */
+function lessonInterestsError(values: NewLessonValues, catalog: SubjectCatalogDto | undefined): string | null {
+  return acceptsInterests(catalog, values.subjectId) ? interestsError(parseInterestsInput(values.interests)) : null;
 }
 
 export type PendingLesson =
@@ -115,7 +140,7 @@ export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalog
   const pool = values.poolSize;
   const poolValid = typeof pool === "number" && Number.isInteger(pool) && pool >= POOL_MIN && pool <= (path === "catalog" ? POOL_MAX : MATERIAL_POOL_MAX);
   const material = values.material.trim().length;
-  if (!poolValid) return false;
+  if (!poolValid || lessonInterestsError(values, catalog) !== null) return false;
   if (path !== "catalog") {
     const subjectName = values.schoolSubjectName.trim().length;
     const topicName = values.topicTitle.trim().length;
@@ -130,8 +155,10 @@ export function canSubmitLesson(values: NewLessonValues, catalog: SubjectCatalog
   return topic !== undefined && values.objectiveIds.length > 0 && material > 0 && material <= MATERIAL_MAX;
 }
 
-function validationError(values: NewLessonValues, path: LessonPath, fromSource: boolean): string | null {
+function validationError(values: NewLessonValues, path: LessonPath, fromSource: boolean, catalog: SubjectCatalogDto | undefined): string | null {
   const material = values.material.trim().length;
+  const interests = lessonInterestsError(values, catalog);
+  if (interests) return interests;
   if (path !== "catalog") {
     if ((path === "school" && values.schoolSubjectName.trim().length === 0) || values.topicTitle.trim().length === 0) return messages.lessons.schoolMaterialRequired;
     if (!fromSource && (material === 0 || material > MAX_SCHOOL_MATERIAL_LENGTH)) return messages.lessons.schoolMaterialRequired;
@@ -155,7 +182,7 @@ export interface CommandSource {
  * źródła tylko wtedy, gdy to wciąż ten, który rodzic widział (kontrakt:
  * dokładnie jedno z `material` / `sourceMaterialId`).
  */
-export function buildCommand(values: NewLessonValues, path: LessonPath, source?: CommandSource): PendingLesson {
+export function buildCommand(values: NewLessonValues, path: LessonPath, source?: CommandSource, interests?: string[]): PendingLesson {
   const instruction = values.instruction.trim();
   const shared = {
     deckId: crypto.randomUUID(),
@@ -172,7 +199,7 @@ export function buildCommand(values: NewLessonValues, path: LessonPath, source?:
     case "material":
       return { kind: "material", command: { ...shared, ...text, subjectId: values.subjectId, topicTitlePl: values.topicTitle.trim() } };
     case "catalog":
-      return { kind: "catalog", command: { ...shared, material: values.material.trim(), subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds] } };
+      return { kind: "catalog", command: { ...shared, material: values.material.trim(), subjectId: values.subjectId, topicId: values.topicId, objectiveIds: [...values.objectiveIds], ...(interests && interests.length > 0 ? { interests: [...interests] } : {}) } };
   }
 }
 
@@ -230,6 +257,9 @@ export default function NewLessonForm({
   const fromSource = source !== undefined;
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
   const catalog = catalogQuery.data;
+  // wspólna pamięć podręczna z ParentApp; zainteresowania dzieci tylko do przycisków „Wstaw…”
+  const childrenQuery = useQuery(orpc.children.list.queryOptions());
+  const [interestNotice, setInterestNotice] = useInterestNotice();
   const sourceTitle = source?.title;
   const form = useForm<NewLessonValues>({
     mode: "controlled",
@@ -351,12 +381,12 @@ export default function NewLessonForm({
     if (creatingRef.current) return;
     let lesson = pending.current;
     if (!lesson) {
-      const invalid = validationError(values, path, fromSource);
+      const invalid = validationError(values, path, fromSource, catalog);
       if (invalid) {
         form.setFieldError("submit", invalid);
         return;
       }
-      lesson = buildCommand(values, path, source);
+      lesson = buildCommand(values, path, source, lessonInterestsOf(values, catalog));
       pending.current = lesson;
     }
     creatingRef.current = true;
@@ -405,6 +435,24 @@ export default function NewLessonForm({
       creatingRef.current = false;
     }
   };
+
+  const showThemes = acceptsInterests(catalog, values.subjectId);
+  // ponowienie wysyła to samo polecenie, więc pole tematów blokuje się jak pozostałe pola
+  const themesLocked = creating || hasPending;
+  const themesPresent = new Set(values.interests.map((entry) => normalizeChildInterest(entry).toLowerCase()));
+  const themesFull = values.interests.length >= MAX_CHILD_INTERESTS;
+  const childrenWithInterests = (childrenQuery.data ?? []).filter((child) => child.interests.length > 0);
+  const insertThemes = (interests: string[]) => {
+    const merged = mergeChildInterests(form.getValues().interests, interests);
+    const kept = new Set(merged.map((entry) => entry.toLowerCase()));
+    // limit 5 uciął część tematów dziecka: rodzic ma to zobaczyć, a nie tylko mniej tagów
+    setInterestNotice(interests.some((entry) => !kept.has(normalizeChildInterest(entry).toLowerCase())) ? "limit" : null);
+    form.setFieldValue("interests", merged);
+  };
+  const generationService = catalog?.generationService;
+  const themesService = generationService
+    ? messages.lessons.themesService.replace("{service}", () => generationService)
+    : messages.lessons.themesServiceUnknown;
 
   const submitError = form.errors.submit;
   const counterTemplate = fromMaterial ? messages.lessons.schoolMaterialCounter : messages.lessons.materialCounter;
@@ -559,6 +607,39 @@ export default function NewLessonForm({
 
             <TextInput size="md" label={messages.lessons.instructionLabel} data-testid="lesson-instruction" maxLength={500} disabled={creating}
               {...form.getInputProps("instruction")} />
+
+            {showThemes && (
+              <div data-testid="lesson-themes">
+                <InterestsTagsInput
+                  label={messages.lessons.themesTitle}
+                  data-testid="lesson-themes-input"
+                  disabled={themesLocked}
+                  value={values.interests}
+                  onChange={(next) => form.setFieldValue("interests", next)}
+                  notice={interestNotice}
+                  onNoticeChange={setInterestNotice}
+                  description={<span data-testid="lesson-themes-note">{themesService}</span>}
+                />
+                {childrenWithInterests.length > 0 ? (
+                  <Group gap="xs" mt="xs">
+                    {childrenWithInterests.map((child) => (
+                      <Button
+                        key={child.id}
+                        size="md"
+                        variant="light"
+                        data-testid={`lesson-themes-insert-${child.id}`}
+                        disabled={themesLocked || themesFull || child.interests.every((entry) => themesPresent.has(normalizeChildInterest(entry).toLowerCase()))}
+                        onClick={() => insertThemes(child.interests)}
+                      >
+                        {messages.lessons.themesInsert.replace("{name}", () => child.displayName)}
+                      </Button>
+                    ))}
+                  </Group>
+                ) : (
+                  childrenQuery.isSuccess && <Text size="sm" mt={6} className="pp-editor-muted" data-testid="lesson-themes-empty">{messages.lessons.themesEmpty}</Text>
+                )}
+              </div>
+            )}
 
             <NumberInput
               size="md"

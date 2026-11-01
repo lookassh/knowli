@@ -41,6 +41,7 @@ async function createLesson(
   title: string,
   waitForGeneration = true,
   selectedObjectiveIds?: readonly string[],
+  insertThemesOfChildId?: string,
 ): Promise<string> {
   await openNewMaterial(page, "lesson");
   await expect(page.getByTestId("new-lesson-form")).toBeVisible();
@@ -64,6 +65,7 @@ async function createLesson(
   // Pula 20 na jedną regułę → guided 7 / productive 9 / independent 4 (spełnia minima),
   // a przegląd/usuwanie są lekkie.
   await page.getByTestId("lesson-pool-size").fill(selectedObjectiveIds && selectedObjectiveIds.length > 1 ? "60" : "20");
+  if (insertThemesOfChildId) await page.getByTestId(`lesson-themes-insert-${insertThemesOfChildId}`).click();
   const created = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/parent/lessons"),
   );
@@ -346,4 +348,59 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   await page.locator(`[data-deck-id="${deckId}"]`).click();
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId(`example-line-${objectiveId}-0`)).toHaveValue(corrected);
+});
+
+test("sentence themes: inserted from the child profile into a new lesson, shown in the editor and removable with a draft patch (#197)", async ({ page }) => {
+  const suffix = randomUUID().slice(0, 8);
+  const lessonTitle = `Tematy zdan ${suffix}`;
+  const themes = ["piłka nożna", "Minecraft"];
+  await enterParent(page);
+  // Profil z zainteresowaniami (UI profilu pokrywa spec parent-children; tu zasiew przez API).
+  const childResponse = await page.request.post("/api/v1/parent/children", {
+    data: { displayName: `Tematy ${suffix}`, avatarKey: "fox", birthYear: 2018, canRead: false },
+  });
+  expect(childResponse.status(), await childResponse.text()).toBe(201);
+  const childId = (await childResponse.json() as { id: string }).id;
+  const profile = await page.request.patch(`/api/v1/parent/children/${childId}`, { data: { interests: themes } });
+  expect(profile.status(), await profile.text()).toBe(200);
+  await page.reload();
+  await page.getByTestId("tab-decks").click();
+
+  const patchBodies: Array<Record<string, unknown>> = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(request.url())) {
+      patchBodies.push(request.postDataJSON() as Record<string, unknown>);
+    }
+  });
+  const deckId = await createLesson(page, lessonTitle, true, undefined, childId);
+
+  // Wiersz tematów w edytorze po wygenerowaniu; zwykły zapis (tytuł) nie wysłał interests.
+  const line = page.getByTestId("lesson-themes-line");
+  await expect(line).toContainText(`Tematy zdań: ${themes.join(", ")}`);
+  expect(patchBodies.length).toBeGreaterThan(0);
+  expect(patchBodies.every((body) => !("interests" in body))).toBe(true);
+  const stored = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
+  expect(stored.draft?.interests).toEqual(themes);
+
+  // „Usuń tematy” oznacza edytor jako zmieniony; zapis wysyła interests: [].
+  await page.getByTestId("lesson-themes-remove").click();
+  await expect(line).toHaveCount(0);
+  const patchResponse = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && response.url().includes("/api/v1/parent/lesson-drafts/"),
+  );
+  await page.getByTestId("save-lesson").click();
+  const patch = await patchResponse;
+  expect(patch.status(), await patch.text()).toBe(200);
+  expect(patch.request().postDataJSON()).toMatchObject({ interests: [] });
+  await expect(page.getByTestId("save-lesson")).toBeEnabled();
+
+  // Po przeładowaniu wiersza nie ma, a szkic w API nie ma tematów.
+  await page.goto("/parent");
+  await page.getByTestId("tab-decks").click();
+  await page.locator(`[data-deck-id="${deckId}"]`).click();
+  await expect(page.getByTestId("lesson-editor")).toBeVisible();
+  await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
+  await expect(page.getByTestId("lesson-themes-line")).toHaveCount(0);
+  const after = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
+  expect(after.draft?.interests).toBeUndefined();
 });
