@@ -919,7 +919,8 @@ describe("selectLessonTask — slot ćwiczenia słuchowego (#198, spec §3.2–3
       task({ objectiveId: O1, itemId: `item:${O1}:listen:a`, exerciseType: "lesson_listen_choice", outcome: "correct" }),
       task({ objectiveId: O1, itemId: `item:${O1}:listen:b`, exerciseType: "lesson_listen_choice", outcome: "correct" }),
     ];
-    // Bez neutralności: choice + 2× listen = kolejne sukcesy guided → awans na productive (lesson_gap).
+    // Bez neutralności już choice + pierwszy sukces słuchowy (2 kolejne sukcesy guided,
+    // advanceAfterCorrect = 2) dałyby awans na productive (lesson_gap); żaden z nich go nie daje.
     const afterCorrect = selectLessonTask(input({ exercises, objectiveOrder: [O1], sessionHistory: twoCorrect }));
     expect(afterCorrect).toMatchObject({ exerciseType: "lesson_choice", reason: "continue" });
   });
@@ -933,6 +934,32 @@ describe("selectLessonTask — slot ćwiczenia słuchowego (#198, spec §3.2–3
       exercises: [listen(O1), ...poolFor(O1)], objectiveOrder: [O1], planningMode: true, initialProgress: {}, sessionHistory,
     }));
     expect(plan).toMatchObject({ itemId: `item:${O1}:guided:b`, reason: "continue" });
+  });
+
+  it("plan z należnymi sprawdzeniami dwóch celów nie ma dwóch zadań słuchowych z rzędu", () => {
+    const ids = [O1, O2];
+    const due = Object.fromEntries(ids.map((id) => [id, prog("learning", "2026-10-11T00:00:00.000Z")]));
+    const exercises = ids.flatMap((id) => [
+      listen(id), ex(id, "independent", "a"), ex(id, "productive", "a"), ex(id, "productive", "b"),
+    ]);
+    const history: LessonSessionTask[] = [];
+    const reasons: string[] = [];
+    for (let remaining = 12; remaining > 0; remaining -= 1) {
+      const plan = selectLessonTask(input({
+        exercises, objectiveOrder: ids, progress: due, initialProgress: due, planningMode: true,
+        sessionHistory: history, assessedRemaining: remaining,
+        reservedDueCheckObjectives: new Set(history.filter((_, i) => reasons[i] === "due_check").map((t) => t.objectiveId)),
+      }));
+      if (plan === null || plan.kind !== "exercise") break;
+      reasons.push(plan.reason);
+      history.push(task({ objectiveId: plan.objectiveId, itemId: plan.itemId, exerciseType: plan.exerciseType }));
+    }
+    expect(reasons.slice(0, 2)).toEqual(["due_check", "due_check"]);
+    const types = history.map((t) => t.exerciseType);
+    for (let i = 1; i < types.length; i += 1) {
+      expect(types[i - 1] === "lesson_listen_choice" && types[i] === "lesson_listen_choice").toBe(false);
+    }
+    expect(history.filter((t) => t.exerciseType === "lesson_listen_choice").map((t) => t.objectiveId)).toEqual([O1, O2]);
   });
 
   it("bez budżetu ocenianych (assessedRemaining = 0) brak slotu", () => {

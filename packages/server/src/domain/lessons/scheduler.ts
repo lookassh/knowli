@@ -518,7 +518,8 @@ const MAX_LISTEN_TASKS_PER_SESSION = 2;
  * słuchu, poza ścieżką etapów. Cel dostaje je najwyżej raz w sesji i dopiero
  * po swoim pierwszym zwykłym ocenianym zadaniu (wydanym lub zaplanowanym), więc
  * sesja nie zaczyna się serią zadań słuchowych — także dla celów kontynuowanych
- * i opanowanych. Sesja ma ich najwyżej `MAX_LISTEN_TASKS_PER_SESSION`. Cel
+ * i opanowanych. Sesja ma ich najwyżej `MAX_LISTEN_TASKS_PER_SESSION` i nigdy dwóch
+ * z rzędu (ostatnie zadanie sesji nie może być słuchowe). Cel
  * czekający na cykl wsparcia nie dostaje slotu (wsparcie ma pierwszeństwo).
  * Kandydat wymaga gotowego nagrania (`stimulusAudioReady === true`). Działa
  * dynamicznie i w planie sesji (`planningMode`).
@@ -527,6 +528,10 @@ function listenPracticePlan(input: LessonScheduleInput): LessonTaskPlan | null {
   if (input.assessedRemaining <= 0) return null;
   const isListen = (task: LessonSessionTask) => task.kind === "exercise" && task.exerciseType === "lesson_listen_choice";
   if (input.sessionHistory.filter(isListen).length >= MAX_LISTEN_TASKS_PER_SESSION) return null;
+  // Bez dwóch zadań słuchowych z rzędu (np. po dwóch należnych sprawdzeniach na starcie planu).
+  const last = input.sessionHistory.reduce<LessonSessionTask | undefined>(
+    (latest, task) => (latest === undefined || task.ordinal > latest.ordinal ? task : latest), undefined);
+  if (last !== undefined && isListen(last)) return null;
   for (const objectiveId of input.objectiveOrder) {
     if (!hasAssessedThisSession(objectiveId, input)) continue;
     if (input.sessionHistory.some((task) => task.objectiveId === objectiveId && isListen(task))) continue;
