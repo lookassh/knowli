@@ -8,10 +8,11 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks"],
     // tylko `next dev` pod E2E: bez trwałej pamięci podręcznej Turbopacka
-    // (.next/dev). Jej uszkodzony stan po wcześniejszych przebiegach dawał pętlę
-    // „Compiled” → przeładowanie strony przy każdym wejściu i testy padały na
-    // nawigacji; po usunięciu katalogu znikała. Kompilacja tras na żądanie i tak
-    // trwa w E2E chwilę.
+    // (.next/dev). Zaobserwowane (2026-11-01): po wcześniejszych przebiegach
+    // serwer wpadał w pętlę „Compiled” → przeładowanie strony przy każdym wejściu
+    // i testy padały na nawigacji; usunięcie katalogu .next/dev ją usuwało.
+    // Wyzwalacza nie odtworzono (hipoteza: twarde zabicie serwera przez teardown
+    // w trakcie zapisu pamięci). Trasy kompilują się przy każdym przebiegu od zera.
     ...(e2e ? { turbopackFileSystemCacheForDev: false } : {}),
   },
   serverExternalPackages: ["pg"],

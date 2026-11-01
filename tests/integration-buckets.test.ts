@@ -33,11 +33,16 @@ describe("kosze testów integracyjnych (integration-buckets)", () => {
     const gate = readCiJobText("tests");
     expect(gate).toMatch(/^\s+needs: \[check, integration\]\s*$/m);
     expect(gate).toMatch(/^\s+if: \$\{\{ always\(\) \}\}\s*$/m);
+    expect(gate).toContain('if [ "$CHECK_RESULT" != "success" ] || [ "$INTEGRATION_RESULT" != "success" ]; then');
     expect(gate).toContain("CHECK_RESULT: ${{ needs.check.result }}");
     expect(gate).toContain("INTEGRATION_RESULT: ${{ needs.integration.result }}");
+    // Odczyt jobów runu wymaga uprawnienia i tokenu; filtr musi pasować do nazw koszy.
+    expect(gate).toMatch(/^\s+permissions:\s*\n\s+actions: read\s*$/m);
+    expect(gate).toContain("GH_TOKEN: ${{ github.token }}");
     expect(gate).toContain("jobs?filter=latest");
+    expect(readCiJobName("integration")?.startsWith("integration (")).toBe(true);
     expect(gate).toContain('startswith("integration (")');
-    expect(gate).toContain("grep -v '=success$' buckets.txt");
-    expect(gate).toContain("exit 1");
+    // Pusta lista koszy albo którykolwiek kosz bez sukcesu kończy bramkę porażką.
+    expect(gate).toContain("if [ ! -s buckets.txt ] || grep -v '=success$' buckets.txt; then");
   });
 });
