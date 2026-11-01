@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { buildWorkerServices } from "./composition";
-import { countForeignPendingTts, prepareUiAudio } from "@learning/server";
+import { countForeignPendingTts, prepareUiAudio, withConfigDefaults } from "@learning/server";
 import { createWorkerLoop, workerLoopSettingsFromEnv } from "./loop";
 import { processDueWork } from "./tasks";
 
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   if (foreignTts > 0) {
     console.warn(`[worker] ${foreignTts} oczekujących nagrań TTS zleconych przy innym providerze/modelu niż UMIEM_TTS_PROVIDER/UMIEM_TTS_MODEL tego workera — nie zostaną wykonane; sprawdź, czy web i worker mają te same ustawienia TTS`);
   }
-  const settings = workerLoopSettingsFromEnv(process.env);
+  const settings = workerLoopSettingsFromEnv(withConfigDefaults(process.env));
   const loop = createWorkerLoop({
     ...settings,
     now: Date.now,

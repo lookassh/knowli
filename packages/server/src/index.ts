@@ -1,5 +1,6 @@
 export { computeCalculationAnswer, renderCalculationPrompt } from "./domain/lessons/calculation";
 export * from "./config";
+export { CONFIG_DEFAULTS, withConfigDefaults } from "./config-defaults";
 export { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 export { createSubjectRegistry, type SubjectRegistry } from "./domain/lessons/registry";
 export { englishGrammarSubject } from "./domain/lessons/subjects/english-grammar/module";
