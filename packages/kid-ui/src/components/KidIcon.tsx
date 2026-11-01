@@ -28,11 +28,11 @@ const paths: Record<KidIconName, ReactElement> = {
   question: <><path d="M8 8a4 4 0 1 1 6.1 3.4c-1.25.75-2.1 1.6-2.1 3.1v.5" strokeWidth="2.4"/><circle cx="12" cy="19.5" r="1.5" fill="currentColor" stroke="none"/></>,
   almost: <path d="M4 13c2.5-3 5-3 8 0s5.5 3 8 0"/>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></>,
-  // Żółw z profilu („Posłuchaj wolniej”): skorupa jako półkole domknięte linią brzucha,
-  // jedna płytka deseniu, głowa jako koło dotykające skorupy, dwie nóżki i ogonek.
-  // Mało kresek i grubość 2 jak fale głośnika, żeby w przycisku 48 px desień
-  // nie zlał się z obrysem, a żółw nie wyglądał lżej od głośnika obok.
-  turtle: <><path d="M2.5 15a8 8 0 0 1 16 0z" strokeWidth="2"/><path d="M6.7 15 8.6 10.9h3.8l1.9 4.1M6 15v3m9-3v3m-12.5-3-1 1" strokeWidth="2"/><circle cx="20.6" cy="12.4" r="2.2" strokeWidth="2"/></>,
+  // Żółw z profilu („Posłuchaj wolniej”): wysoka skorupa (y 5→16) z wypełnionym
+  // pasem przy brzegu zamiast deseniu, który w 24 px czytał się jak litera; dwie
+  // nóżki do y 20 i pełna głowa r 2,5. Wypełnienia w currentColor dają wagę
+  // pełnego głośnika obok, grubość 2 jak jego fale.
+  turtle: <><path d="M1.5 16C1.5 10 5.1 5 9.5 5S17.5 10 17.5 16z" strokeWidth="2"/><path d="M2.4 11h14.2l.9 5H1.5z" fill="currentColor" strokeWidth="2"/><path d="M5.5 16v4m8-4v4" strokeWidth="2"/><circle cx="20.5" cy="13" r="2.5" fill="currentColor" strokeWidth="2"/></>,
 };
 
 export function KidIcon({ name, className }: { name: KidIconName; className?: string }): ReactElement {

@@ -179,7 +179,7 @@
 
 /* Wąski dok (telefon): zdanie nad żółwiem — kolumna 48 + 8 + 48 px,
    zwykle niższa od karty wyniku, więc dok nie rośnie; „?” zostaje przy górnym. */
-@container (max-width: 479px) {
+@container (width < 480px) {
   .sentenceGroup {
     flex-direction: column;
   }
