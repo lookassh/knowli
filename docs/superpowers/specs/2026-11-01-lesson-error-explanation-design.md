@@ -66,11 +66,11 @@ Poza zakresem:
 - Reguły treści (walidacja w `pool-validation.ts`, wspólna dla generatora i zapisu rodzica):
   - zwykły tekst bez znaczników: bez nowej linii, bez `*` i `_`;
   - po przycięciu niepuste, **≤ 120 znaków** (`MAX_TEXT_LENGTH`, jak `hint`);
-  - **dokładnie jedno zdanie** według istniejącego `sentenceCount` (`domain/tts-style.ts`);
-  - **nie zawiera odpowiedzi innego ćwiczenia tej samej puli**: znormalizowany tekst wyjaśnienia
-    nie może zawierać (na granicy słów) klucza ekspozycji `target_key` innego ćwiczenia, chyba
-    że jest on równy kluczowi tego ćwiczenia. Chroni to należne samodzielne sprawdzenia przed
-    ujawnieniem bez zapisanej ekspozycji (§4.4).
+  - **dokładnie jedno zdanie** według istniejącego `sentenceCount` (`domain/tts-style.ts`).
+- Cytat odpowiedzi innego ćwiczenia **nie jest błędem walidacji** (review planu: dopasowanie
+  słów polskiego tekstu do angielskich odpowiedzi daje fałszywe trafienia „do”, „a”, „to”,
+  a reguła puli blokowałaby publikację przez ćwiczenie, którego rodzic nie dotykał). Zamiast
+  tego ujawnienie jest zapisywane jako ekspozycja (§4.4), jak przykłady na kartach.
 - Niedozwolone, gdy przedmiot ma wyłączoną flagę; `lesson_card` odrzuca je już istniejąca
   reguła pól karty.
 - **Nie wpływa na tożsamość** ćwiczenia (`exercise-identity.ts`), `target_key` ani kryteria celu
@@ -96,11 +96,10 @@ Poza zakresem:
   (reguła), bez zakładania, jaki błąd dziecko popełniło — tak, by pasowało też po „Nie pamiętam”;
   bez pochwał i oceniania dziecka, bez imion, bez znaczników; angielskie przykłady wyłącznie
   z tego ćwiczenia (odpowiedź, zdanie, opcje); ≤ 120 znaków.
-- **Wyjaśnienie z generatora niespełniające reguł §3.1 jest po cichu usuwane** (ćwiczenie
+- **Wyjaśnienie z generatora niespełniające reguł treści §3.1 jest po cichu usuwane** (ćwiczenie
   zostaje), a liczba porzuconych wyjaśnień trafia do logu przebiegu jak porzucone warianty
   odpowiedzi (`rejectedReasons` liczy odrzucone ćwiczenia, więc go nie zawyżamy) — wzorem
-  `withoutVoiceToneUnlessAllowed`. Sprawdzenie odpowiedzi innych ćwiczeń obejmuje też
-  ćwiczenia już obecne w szkicu (dogenerowanie). Brak wyjaśnienia nie odrzuca ćwiczenia ani puli.
+  `withoutVoiceToneUnlessAllowed`. Brak wyjaśnienia nie odrzuca ćwiczenia ani puli.
 - Fake provider generuje przewidywalne, poprawne wyjaśnienia dla testów.
 
 ### 3.4 Panel rodzica
@@ -126,6 +125,7 @@ Materializacja w **treningu** (nie kartkówka), gdy przedmiot ma flagę i payloa
 wyjaśnienie, zapisuje w prywatnym kluczu zadania (`LessonTaskAnswerKey`):
 
 - `explanationPl` — tekst;
+- `explanationExposureKeys` — klucze ekspozycji cytowanych celów (§4.4), bez własnego;
 - `explanationAudioAssetId` — gotowe nagranie o oczekiwanym fingerprincie, jeśli było gotowe
   w chwili wydania (§5.2).
 
@@ -171,8 +171,17 @@ Gdy `hintPl` feedbacku pochodzi z wyjaśnienia ćwiczenia (nie z szablonu katego
 
 - Wyjaśnienie jest częścią feedbacku, który już ujawnia rozwiązanie (warunek 4), więc obejmuje
   je ta sama ekspozycja `targetKey` zapisywana w `discloseLessonFeedback` przed odpowiedzią HTTP.
-  Reguła §3.1 (brak odpowiedzi innych ćwiczeń puli) i reguła promptu (przykłady tylko z tego
-  ćwiczenia) sprawiają, że wyjaśnienie nie ujawnia celu innego zadania.
+- **Ekspozycje cytatów:** wyjaśnienie może zacytować tekst ekspozycji innego ćwiczenia tej samej
+  wersji lekcji (reguła promptu tego zabrania, ale rodzic może wpisać dowolny tekst). Przy
+  wydaniu zadania serwer wylicza czystą funkcją `explanationExposureKeys` klucze `target_key`
+  ćwiczeń, których tekst ekspozycji (`exposureText` przedmiotu albo odpowiedź) występuje
+  w wyjaśnieniu na granicy słów, po normalizacji ekspozycji przedmiotu i po usunięciu
+  z wyjaśnienia własnego tekstu ekspozycji ćwiczenia; własny klucz jest pomijany. Klucze
+  trafiają do prywatnego klucza zadania (`explanationExposureKeys`), a `discloseLessonFeedback`
+  zapisuje je razem z `targetKey`, gdy feedback niesie wyjaśnienie ćwiczenia. Fałszywe
+  trafienie (np. polskie „do” i angielska odpowiedź „Do”) skutkuje tylko dodatkową ekspozycją —
+  późniejsza próba tamtego celu w oknie ekspozycji jest liczona jako wsparta, a nie samodzielna.
+  Nic nie jest blokowane.
 - **Pieczęć nagrania:** `audio_issued` jest zapisywane **raz** na próbę, gdy feedback niesie
   którekolwiek nagranie po odpowiedzi (`correctAudioAssetId` albo `explanationAudioAssetId`),
   z tym samym `occurredAt = max(now, receivedAt + 1 ms)` co dziś. Zmienia się wyłącznie warunek
@@ -204,8 +213,9 @@ kryteriów, kategorii błędu ani komentarza modelu.
 
 ### 5.1 Rola i uzgadnianie
 
-- Nowa rola zasobu rewizji **`explanation_audio`**: migracja `0032_explanation_audio_role.sql`
-  rozszerza `revision_assets_role_allowed` (wzorem `0029`) z ręcznym wpisem idx 32 w
+- Nowa rola zasobu rewizji **`explanation_audio`**: migracja o następnym wolnym numerze (dziś
+  `0032_explanation_audio_role.sql`; lokalna gałąź #197 też planuje `0032` — kto scala drugi,
+  przenumerowuje) rozszerza `revision_assets_role_allowed` (wzorem `0029`) z ręcznym wpisem w
   `drizzle/meta/_journal.json`; schemat Drizzle, typ `AssetRole` i `docs/schema.sql` (który przy
   okazji uzupełnia brakujące `prompt_audio` i `feedback_audio`).
 - `LessonTtsFlags` dostaje `exerciseExplanations`; `requiredAssetsForLessonExercise` przy fladze
@@ -247,16 +257,17 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
 
 ## 6. Kid UI
 
-- **Widok:** `lessonFeedbackView` (`lesson-feedback-view.ts`) obsługuje także `incorrect`
-  z `hintPl` w zadaniu lekcji; `AnswerFeedback` renderuje wyjaśnienie w tym samym bloku
-  i klasie co podpowiedź `lesson_hint` (`.kid-lesson-feedback__hint`, akapit poza nagłówkiem,
-  kolor dziedziczony z kontenera doku — kontrast jak dziś). Kolejność: tytuł
-  „Poprawna odpowiedź: …”, pod nim wyjaśnienie. `lesson_hint` zachowuje dzisiejszy układ.
-  `incorrect` bez `hintPl` (słówka, stare lekcje) renderuje się bez zmian.
+- **Tekst:** kolor dziedziczony z kontenera doku (kontrast jak tytuł), typografia tokenów M3,
+  bez kursywy. `incorrect` bez `hintPl` (słówka, stare lekcje) renderuje się bez zmian.
+- **Miejsce:** wyjaśnienie zajmuje **osobny wiersz doku na całą szerokość, pod górnym wierszem**
+  (odznaka, tytuł, odsłuch zdania, komunikat), w przewijanym obszarze treści, wyrównany do
+  początku. W górnym wierszu na telefonie zostaje za mało miejsca na tekst (ok. 85–115 px).
+  Wiersz pokazuje się dla `incorrect` z `hintPl` oraz dla każdego feedbacku z
+  `explanationAudioAssetId` (wtedy `lesson_hint` nie powtarza tekstu w treści); `lesson_hint`
+  bez nagrania wyjaśnienia pokazuje `hintPl` w treści jak dziś.
 - **Odsłuch:** gdy feedback niesie `explanationAudioAssetId`, przycisk głośnika (`ListenButton`,
   cel ≥ 48 px, nazwa dostępności „Posłuchaj wyjaśnienia” z katalogu komunikatów) stoi **na
-  początku wiersza wyjaśnienia**, nie w górnym wierszu doku — położenie wiąże go z czytanym
-  tekstem i nie zabiera szerokości tytułowi. Odtwarzanie tylko po kliknięciu: kontroler
+  początku wiersza wyjaśnienia** — położenie wiąże go z czytanym tekstem. Odtwarzanie tylko po kliknięciu: kontroler
   `playExplanationAudio()` przez `#beginPlayback` i `mediaUrl`; przerywa odczyt zdania
   i odwrotnie; „Dalej” przerywa. Błąd pliku jest cichy.
 - **Przycisk komunikatu:** `GuidanceButton` przechodzi na obrysowany „?” (`icon="question"`),
@@ -269,7 +280,7 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
   (`option-outcome.ts`), postęp sesji.
 - **Responsywność:** najdłuższe wyjaśnienie (120 znaków) z tytułem, odsłuchem zdania i wyjaśnienia
   mieści się w doku w portrait (375×812), landscape telefonu (812×375), tablecie i desktopie:
-  tekst ma użyteczną szerokość (min. ok. 200 px w portrait), zawija się, jest w całości osiągalny
+  wiersz wyjaśnienia ma użyteczną szerokość tekstu (≥ 220 px w 375×812), zawija się, jest w całości osiągalny
   (w razie potrzeby przewijaniem w karcie), a akcje pozostają osiągalne. Najgorszy przypadek:
   luki rozdziału (`lesson_cloze`) z pełnym tekstem jako `correctText`.
 
@@ -288,8 +299,9 @@ dla rodzica.
     `not_assessed`, trener precyzji, brak wyjaśnienia, nagranie tylko przy wyjaśnieniu ćwiczenia);
   - kontrakt: `hintPl` przy `incorrect`, odrzucenie `explanationAudioAssetId` bez `hintPl`,
     przy `not_assessed` i innych rodzajach;
-  - walidacja: limit 120, nowa linia, znaczniki, więcej niż jedno zdanie, odpowiedź innego
-    ćwiczenia puli, wyłączona flaga; generator usuwa złe wyjaśnienie i zostawia ćwiczenie;
+  - walidacja: limit 120, nowa linia, znaczniki, więcej niż jedno zdanie, wyłączona flaga;
+  - `explanationExposureKeys`: cytat innego celu, własny tekst usuwany przed dopasowaniem,
+    granice słów („display” ≠ „plays”), wielkość liter, polski homograf daje ekspozycję; generator usuwa złe wyjaśnienie i zostawia ćwiczenie;
     tożsamość ćwiczenia nie zależy od wyjaśnienia;
   - schemat (required + nullable) i prompt generatora przy fladze i bez niej; fake provider;
   - uzgadnianie mediów: rola, locale, styl, fingerprint zależny od tekstu, szkoła bez nagrania,
@@ -302,6 +314,8 @@ dla rodzica.
     bez szablonu; szablon przy `model_incorrect` z kategorią;
   - brak dla dobrej odpowiedzi, „prawie”, `model_other`, `not_assessed`, „Pomiń”, kartkówki;
   - jedna pieczęć `audio_issued` przy dwóch nagraniach; próba samodzielna; ponowny odczyt próby;
+  - wyjaśnienie cytujące odpowiedź innego ćwiczenia → ekspozycja tamtego celu zapisana razem
+    z feedbackiem;
   - worker faktycznie tworzy `explanation_audio` dla `english_grammar` (nie zastępuje go);
   - publikacja → nowy szkic z opublikowanej → edycja wyjaśnienia → ta sama `skill_version`, nowe nagranie;
   - akceptacja wariantu w nadzorze zachowuje wyjaśnienie;
