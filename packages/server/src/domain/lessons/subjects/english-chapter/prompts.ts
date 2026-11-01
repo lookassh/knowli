@@ -47,7 +47,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "lesson_listen_choice (listening choice): a narrator reads the full English sentence aloud and the child picks the word that fills the gap. " +
     "The meaning stimulus is the recording, so instructionPl, hint and visualSubject are always null here. " +
     "stem is one short natural sentence of at most 12 words with exactly one gap written as ___ (two or more underscores) on a word or frame element of the material; " +
-    "2 or 3 options, all words of the chapter (same checkedElements vocabulary rule as lesson_choice), exactly one correct, and the options sound clearly different when spoken " +
+    "2 or 3 options, each option is a word or phrase from the chapter material, as in lesson_choice, exactly one correct, and the options sound clearly different when spoken " +
     "(not two spellings or an apostrophe contraction beside its full form of the same word). Never start an option with an apostrophe. " +
     "Distractors are plausible: the same category as the correct option, taken from the material. " +
     "lesson_gap: stem is a short English sentence with exactly one gap ___; answer is the missing chapter word or phrase " +

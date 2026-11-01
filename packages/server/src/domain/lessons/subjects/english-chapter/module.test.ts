@@ -139,6 +139,9 @@ describe("przedmiot english_chapter", () => {
     expect(rules).toMatch(/at most 12 words/);
     expect(rules).toMatch(/exactly one gap/);
     expect(rules).toMatch(/recording/);
+    expect(rules).toMatch(/never start an option with an apostrophe/i);
+    expect(rules).toContain("each option is a word or phrase from the chapter material, as in lesson_choice");
+    expect(rules).not.toContain("checkedElements");
     expect(rules).toMatch(/instructionPl.*hint.*visualSubject/s);
   });
 

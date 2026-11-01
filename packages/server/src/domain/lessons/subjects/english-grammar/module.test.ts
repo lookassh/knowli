@@ -4,7 +4,7 @@ import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
-import { answersEquivalent } from "../../pool-validation";
+import { answersEquivalent, validateLessonExercise } from "../../pool-validation";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
 import type { LessonExerciseDraft } from "../../types";
@@ -179,7 +179,7 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     for (const suffix of [".affirmative_base", ".third_person_s", ".negative", ".question"]) {
       expect(typesOf(presentSimpleV1, suffix), suffix).toContain("lesson_listen_choice");
     }
-    for (const suffix of [".affirmative_forms", ".negative_forms"]) {
+    for (const suffix of [".affirmative_forms", ".negative_forms", ".questions"]) {
       expect(typesOf(toBeV1, suffix), suffix).toContain("lesson_listen_choice");
     }
   });
@@ -191,6 +191,20 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     for (const suffix of [".contractions", ".short_answers"]) {
       expect(typesOf(toBeV1, suffix), suffix).not.toContain("lesson_listen_choice");
     }
+  });
+
+  it("poprawne ćwiczenie ze słuchu dla to_be.questions przechodzi walidację (Is/Are otwierające pytanie)", () => {
+    const draft: LessonExerciseDraft = {
+      exerciseType: "lesson_listen_choice",
+      objectiveId: "english_grammar.to_be.questions",
+      stem: "___ she happy?",
+      options: [{ id: "a", text: "Is" }, { id: "b", text: "Are" }],
+      correctOption: "a",
+      answer: "Is",
+      acceptedAnswers: [],
+      focus: ["Is"],
+    };
+    expect(validateLessonExercise(draft, englishGrammarSubject, toBeV1)).toEqual([]);
   });
 
   it("wersje tematów bez zmian", () => {
