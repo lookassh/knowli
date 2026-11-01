@@ -1,5 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import type { TaskDto } from "@learning/contracts";
 import { installKidUiFixture, silentWavBuffer } from "./helpers/kid-ui-fixture";
+import { lessonAudioFixture, openLessonTask } from "./helpers/lesson-audio";
 import { pictureChoiceLayoutFixture } from "./helpers/picture-fixtures";
 
 // Motion runs for real here (no reduced-motion emulation): the animated
@@ -151,4 +153,72 @@ test("text choice answer animates without a transient scroll range anywhere", as
   await page.getByTestId("kid-option").nth(1).click();
   await expect(page.getByTestId("kid-feedback-correct-answer")).toHaveText("zmniejszaniem skali");
   expect(await samples, "no transient scroll range while the answer animates").toEqual([]);
+});
+
+/**
+ * Computed transforms of the turtle icon with the given fail key, one per animation frame for `windowMs` after the
+ * icon appears. Start it before the click: the wobble begins at rest and moves within the next frames.
+ */
+function sampleFailedIcon(page: Page, failKey: number, windowMs: number): Promise<string[]> {
+  return page.evaluate(({ key, span }) => new Promise<string[]>((resolve, reject) => {
+    const selector = `[data-testid='kid-sentence-audio-slow'] [data-fail-key='${key}']`;
+    const started = performance.now();
+    let seen: number | null = null;
+    const transforms: string[] = [];
+    const frame = () => {
+      const icon = document.querySelector<HTMLElement>(selector);
+      const now = performance.now();
+      if (icon !== null) {
+        seen ??= now;
+        transforms.push(getComputedStyle(icon).transform);
+      }
+      if (seen === null && now - started > 10_000) reject(new Error(`${selector} never appeared`));
+      else if (seen === null || now - seen < span) requestAnimationFrame(frame);
+      else resolve(transforms);
+    };
+    requestAnimationFrame(frame);
+  }), { key: failKey, span: windowMs });
+}
+
+// A failed manual replay (spec 2026-11-01-sentence-readback-followups §4.4) wobbles the icon of the button that failed,
+// not the button: `kidListenFailWobble` rotates the icon wrapper once per fail key. Under reduced motion it stays still.
+test("a failed sentence replay wobbles the turtle icon", async ({ page }) => {
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => Promise.reject(new DOMException("blocked", "NotAllowedError"));
+  });
+  const ids = { childId: "20000000-0000-4000-8000-000000000101", deckId: "20000000-0000-4000-8000-000000000102",
+    sessionId: "20000000-0000-4000-8000-000000000103", deckVersionId: "20000000-0000-4000-8000-000000000104" };
+  const task: TaskDto = {
+    taskId: "20000000-0000-4000-8000-000000000111", sessionId: ids.sessionId, ordinal: 1, exerciseType: "lesson_gap",
+    direction: null, state: "issued", remainingAssessed: 2,
+    prompt: { kind: "lesson_gap", instructionPl: "Uzupełnij lukę", stemWithGap: "He ___ to school.", hint: "(go)" },
+  };
+  await installKidUiFixture(page, {
+    ...lessonAudioFixture(ids, [task]),
+    attempts: [{ attemptId: "20000000-0000-4000-8000-000000000131", taskId: task.taskId, state: "completed", modality: "text",
+      taskState: "answered", stepId: "s1", receivedAt: "2026-10-31T10:00:01.000Z", completedAt: "2026-10-31T10:00:01.000Z",
+      feedback: { kind: "great", correctAudioAssetId: "20000000-0000-4000-8000-000000000121" } }],
+  }, { reducedMotion: false });
+  await openLessonTask(page, "kid-lesson-gap");
+  await page.getByTestId("kid-lesson-gap-input").fill("goes");
+  await page.getByTestId("kid-lesson-check").click();
+  const slow = page.getByTestId("kid-sentence-audio-slow");
+  await expect(slow).toBeVisible();
+  // The blocked autoplay wobbles nothing.
+  await expect(page.locator("[data-audio-failed]")).toHaveCount(0);
+
+  const moving = sampleFailedIcon(page, 1, 200);
+  await slow.click();
+  const transforms = await moving;
+  await expect(slow).toHaveAttribute("data-audio-failed", "1");
+  expect(transforms.some((transform) => transform !== "none"), `icon transforms within 200 ms: ${JSON.stringify(transforms)}`).toBe(true);
+
+  // Reduced motion: the next failure (a new key, a fresh icon) does not move for the whole wobble length (550 ms).
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const still = sampleFailedIcon(page, 2, 700);
+  await slow.click();
+  const stillTransforms = await still;
+  await expect(slow).toHaveAttribute("data-audio-failed", "2");
+  expect(stillTransforms.length).toBeGreaterThan(0);
+  expect(stillTransforms.every((transform) => transform === "none"), `icon transforms under reduced motion: ${JSON.stringify(stillTransforms)}`).toBe(true);
 });

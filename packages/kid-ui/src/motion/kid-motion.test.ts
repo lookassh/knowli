@@ -19,6 +19,9 @@ import {
   kidTaskExitTarget,
   kidTaskInitial,
   kidWrongIconAnimate,
+  kidWrongIconTransition,
+  kidListenFailWobble,
+  kidListenFailWobbleTransition,
   kidDockExit,
   kidEntranceAnimate,
   kidEntranceInitial,
@@ -49,6 +52,7 @@ const ANIMATED_VALUES = [
   kidDockExit,
   kidLoadingDotAnimate,
   kidWrongIconAnimate,
+  kidListenFailWobble,
   kidStreakJump,
   kidStreakHop,
   kidTaskInitial,
@@ -109,5 +113,14 @@ describe("kid motion tokens", () => {
     expect(kidLoadingDotTransition(1).repeat).toBe(Infinity);
     expect(kidCelebrationTransition(0).delay).toBeCloseTo(0.15);
     expect(kidCelebrationTransition(3).delay).toBeCloseTo(0.24);
+  });
+
+  it("wobbles a failed listen icon with the wrong-answer \"no\" and returns it to rest", () => {
+    expect(Object.keys(kidListenFailWobble)).toEqual(["rotate"]);
+    expect(kidListenFailWobble.rotate[0]).toBe(0);
+    expect(kidListenFailWobble.rotate.at(-1)).toBe(0);
+    expect(kidListenFailWobble.rotate).toHaveLength(kidWrongIconAnimate.rotate.length);
+    expect(kidListenFailWobbleTransition.duration).toBe(kidWrongIconTransition.duration);
+    expect(kidListenFailWobbleTransition.times).toEqual(kidWrongIconTransition.times);
   });
 });

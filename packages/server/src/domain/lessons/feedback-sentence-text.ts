@@ -34,7 +34,7 @@ export function feedbackSentenceText(source: FeedbackSentenceSource): string | n
       raw = fillGap(source.stem, source.options?.find((option) => option.id === source.correctOption)?.text);
       break;
     case "lesson_order":
-      raw = source.items?.map((item) => item.text).join(" ");
+      raw = joinOrderItems(source.items);
       break;
     case "lesson_cloze":
       raw = fillClozeText(source.clozeText, source.gapAnswers);
@@ -50,6 +50,12 @@ export function feedbackSentenceText(source: FeedbackSentenceSource): string | n
   const sentence = raw?.trim().replace(/\s+/g, " ").replace(/ ([.,!?])/g, "$1");
   if (!sentence || sentence.length > FEEDBACK_SENTENCE_MAX_LENGTH) return null;
   return sentence;
+}
+
+/** Klocki w kolejności kanonicznej; pusta lista albo pusty klocek → `undefined` (jak `lesson_cloze`). */
+function joinOrderItems(items: FeedbackSentenceSource["items"]): string | undefined {
+  if (!items || items.length === 0 || items.some((item) => !item.text.trim())) return undefined;
+  return items.map((item) => item.text).join(" ");
 }
 
 /** Wstawia tekst w jedyną lukę (2+ podkreśleń); inaczej `undefined`. */

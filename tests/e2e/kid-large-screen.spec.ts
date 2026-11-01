@@ -1517,6 +1517,74 @@ test("keyboard focus stays visible", async ({ page }) => {
   }, { message: "focused field is inside the material and above the actions" }).toBe("ok");
 });
 
+// „Posłuchaj zdania” and „Posłuchaj wolniej” in the result panel of a lesson gap (spec 2026-11-01-sentence-readback-followups
+// §4.3): the dock is at most 560 inner pixels wide, so the container query keeps the two buttons in one row at every scale.
+// Rectangles are screen pixels, so a 48 px target is 48 x scale on screen.
+const SENTENCE_AUDIO_WINDOWS = [
+  { width: 1920, height: 1080, scale: 1.2 },
+  { width: 3440, height: 1440, scale: 1.6 },
+] as const;
+
+function sentenceAudioFixture(): KidUiFixture {
+  const ids = {
+    childId: "10000000-0000-4000-8000-000000000b01",
+    deckId: "10000000-0000-4000-8000-000000000b02",
+    sessionId: "10000000-0000-4000-8000-000000000b03",
+    deckVersionId: "10000000-0000-4000-8000-000000000b04",
+  };
+  const task: TaskDto = {
+    taskId: "10000000-0000-4000-8000-000000000b11", sessionId: ids.sessionId, ordinal: 1, exerciseType: "lesson_gap",
+    direction: null, state: "issued", remainingAssessed: 2,
+    prompt: { kind: "lesson_gap", instructionPl: "Uzupełnij lukę", stemWithGap: "He ___ to school.", hint: "(go)" },
+  };
+  return {
+    ...lessonAudioFixture(ids, [task]),
+    attempts: [{
+      attemptId: "10000000-0000-4000-8000-000000000b31", taskId: task.taskId, state: "completed", modality: "text",
+      taskState: "answered", stepId: "s1", receivedAt: "2026-10-31T10:00:01.000Z", completedAt: "2026-10-31T10:00:01.000Z",
+      feedback: { kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: "10000000-0000-4000-8000-000000000b21" },
+    }],
+  };
+}
+
+for (const { width, height, scale } of SENTENCE_AUDIO_WINDOWS) {
+  test(`sentence audio group in the dock at scale ${scale}`, async ({ page }) => {
+    const viewport = { width, height };
+    await installKidUiFixture(page, sentenceAudioFixture());
+    await openLessonTask(page, viewport, "kid-lesson-gap");
+    await waitForKidScale(page, scale);
+    await page.getByTestId("kid-lesson-gap-input").fill("goes");
+    await page.getByTestId("kid-lesson-check").click();
+    const dock = page.getByTestId("kid-feedback-dock");
+    await expect(dock.getByTestId("kid-sentence-audio-group")).toBeVisible();
+    await expect(dock.getByTestId("kid-sentence-audio-slow")).toBeVisible();
+    await nextFrames(page);
+
+    const dockBox = (await dock.boundingBox())!;
+    const guidance = (await dock.getByTestId("kid-guidance-play").boundingBox())!;
+    type ScreenBox = { x: number; y: number; width: number; height: number };
+    const buttons: ScreenBox[] = [];
+    for (const testId of ["kid-sentence-audio", "kid-sentence-audio-slow"]) {
+      const box = (await dock.getByTestId(testId).boundingBox())!;
+      const details = `${testId} ${JSON.stringify(box)}, dock ${JSON.stringify(dockBox)} at ${width}x${height}`;
+      expect(box.width, `width: ${details}`).toBeGreaterThanOrEqual(48 * scale - 0.5);
+      expect(box.height, `height: ${details}`).toBeGreaterThanOrEqual(48 * scale - 0.5);
+      expect(box.x, `inside dock: ${details}`).toBeGreaterThanOrEqual(dockBox.x - 1);
+      expect(box.y, `inside dock: ${details}`).toBeGreaterThanOrEqual(dockBox.y - 1);
+      expect(box.x + box.width, `inside dock: ${details}`).toBeLessThanOrEqual(dockBox.x + dockBox.width + 1);
+      expect(box.y + box.height, `inside dock: ${details}`).toBeLessThanOrEqual(dockBox.y + dockBox.height + 1);
+      buttons.push(box);
+    }
+    const [sentence, slow] = buttons as [ScreenBox, ScreenBox];
+    const row = JSON.stringify({ sentence, slow, guidance });
+    // One row: the sentence button, then the slow one, then the message „?”.
+    expect(Math.abs(sentence.y - slow.y), `buttons in one row: ${row}`).toBeLessThanOrEqual(1);
+    expect(slow.x, `slow button right of the sentence button: ${row}`).toBeGreaterThanOrEqual(sentence.x + sentence.width - 1);
+    expect(guidance.x, `„?” right of the slow button: ${row}`).toBeGreaterThanOrEqual(slow.x + slow.width - 1);
+    expect((await documentOverflow(page)).width, `horizontal overflow at ${width}x${height}`).toBeLessThanOrEqual(0);
+  });
+}
+
 // Missing letters wrap between words only (spec §3.3). A leaf is one letter field or one fixed character (a space is a
 // leaf too); the checks read leaf rectangles, not the word grouping, so they hold for any markup that lays words out right.
 const LETTER_GAP = 4;
