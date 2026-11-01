@@ -1069,6 +1069,7 @@ export const messages = {
       addQuestion: "Dodaj pytanie",
       removeQuestion: "Usuń pytanie",
       generate: "Wygeneruj historyjkę",
+      write: "Napisz historyjkę",
       regenerate: "Wygeneruj od nowa",
       regenerateConfirm: "Nowa historyjka zastąpi obecną. Kontynuować?",
       generating: "Przygotowuję historyjkę…",

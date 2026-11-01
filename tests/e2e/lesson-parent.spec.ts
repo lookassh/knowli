@@ -346,3 +346,56 @@ test("parent edits an AI example before publishing: change is sent in PATCH.exam
   await expect(page.getByTestId("lesson-editor")).toBeVisible();
   await expect(page.getByTestId(`example-line-${objectiveId}-0`)).toHaveValue(corrected);
 });
+
+/** Historyjka z fake'a powstaje w osobnym runie po puli — czeka na nią sekcja w edytorze. */
+async function waitForGeneratedStory(page: Page): Promise<void> {
+  await expect(page.getByTestId("lesson-story-section")).toBeVisible();
+  await expect(page.getByTestId("lesson-story-sentence-0")).toHaveValue("Sam has a red bike.", { timeout: 120_000 });
+  await expect(page.getByTestId("lesson-story-question-q1")).toHaveValue("Jaki rower ma Sam?");
+}
+
+test("parent edits generated story and publishes", async ({ page }) => {
+  await enterParent(page);
+  const deckId = await createLesson(page, `Historyjka ${randomUUID().slice(0, 8)}`);
+  await waitForGeneratedStory(page);
+
+  const edited = "Sam has a big red bike.";
+  await page.getByTestId("lesson-story-sentence-0").fill(edited);
+  // niezapisana zmiana blokuje generowanie od nowa
+  await expect(page.getByTestId("lesson-story-generate")).toBeDisabled();
+  const saved = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url()));
+  await page.getByTestId("save-lesson").click();
+  const patch = await saved;
+  expect(patch.status(), await patch.text()).toBe(200);
+  expect((patch.request().postDataJSON() as { story?: { sentences: string[] } }).story?.sentences[0]).toBe(edited);
+  await expect(page.getByTestId("lesson-story-sentence-0")).toHaveValue(edited);
+
+  await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
+  await page.getByTestId("publish-lesson").click();
+  await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
+  // wersja opublikowana: historyjka tylko do odczytu
+  await expect(page.getByTestId("lesson-story-published-hint")).toBeVisible();
+  await expect(page.getByTestId("lesson-story-section")).toContainText(edited);
+  await expect(page.getByTestId("lesson-story-sentence-0")).toHaveCount(0);
+
+  const response = await page.request.get(`/api/v1/parent/lessons/${deckId}`);
+  expect(response.ok()).toBeTruthy();
+  const deck = LessonDeckDtoSchema.parse(await response.json());
+  expect(deck.published?.story?.sentences[0]).toBe(edited);
+});
+
+test("story validation error is shown", async ({ page }) => {
+  await enterParent(page);
+  await createLesson(page, `Historyjka blad ${randomUUID().slice(0, 8)}`);
+  await waitForGeneratedStory(page);
+
+  // fake ma 4 zdania — po usunięciu ostatniego zostają 3
+  await page.getByTestId("lesson-story-sentence-remove-3").click();
+  await expect(page.getByTestId("lesson-story-sentence-3")).toHaveCount(0);
+  const saved = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url()));
+  await page.getByTestId("save-lesson").click();
+  expect((await saved).status()).toBe(400);
+  await expect(page.getByTestId("lesson-story-errors")).toContainText("Historyjka ma mieć od 4 do 6 zdań.");
+  // formularz zostaje z niezapisaną zmianą
+  await expect(page.getByTestId("lesson-story-sentence-2")).toBeVisible();
+});
