@@ -24,8 +24,8 @@ describe("PromptAudioControls — nazwy dostępności", () => {
   });
 
   it("„Posłuchaj poprzedniego” przy trwającym nagraniu też ma cel w nazwie", () => {
-    const markup = controls({ state: "pending", previousAssetId: PREVIOUS_ID }, "karta 2 — Sowy");
-    expect(markup).toContain('aria-label="Posłuchaj poprzedniego: karta 2 — Sowy"');
+    const markup = controls({ state: "pending", previousAssetId: PREVIOUS_ID }, "Ptaki, karta 2 — Sowy");
+    expect(markup).toContain('aria-label="Posłuchaj poprzedniego: Ptaki, karta 2 — Sowy"');
     expect(markup).not.toContain('aria-label="Posłuchaj: ');
   });
 
@@ -35,10 +35,15 @@ describe("PromptAudioControls — nazwy dostępności", () => {
 });
 
 describe("cardAudioTargetLabel", () => {
-  it("numer karty od 1 i jej tytuł; bez tytułu karty — tytuł zagadnienia; bez obu — sam numer", () => {
-    expect(cardAudioTargetLabel(1, " Sowy ", "Ptaki")).toBe("karta 2 — Sowy");
-    expect(cardAudioTargetLabel(0, "  ", "Ptaki")).toBe("karta 1 — Ptaki");
-    expect(cardAudioTargetLabel(0, "", undefined)).toBe("karta 1");
+  it("zagadnienie, numer karty od 1 i jej tytuł — dwie karty 1 o tym samym tytule w różnych zagadnieniach się różnią", () => {
+    expect(cardAudioTargetLabel(1, " Sowy ", " Ptaki ")).toBe("Ptaki, karta 2 — Sowy");
+    expect(cardAudioTargetLabel(0, "Wprowadzenie", "Ptaki")).not.toBe(cardAudioTargetLabel(0, "Wprowadzenie", "Ssaki"));
+  });
+
+  it("pusty tytuł karty albo brak zagadnienia pomija część razem z separatorem", () => {
+    expect(cardAudioTargetLabel(0, "  ", "Ptaki")).toBe("Ptaki, karta 1");
+    expect(cardAudioTargetLabel(0, "Sowy", undefined)).toBe("karta 1 — Sowy");
+    expect(cardAudioTargetLabel(0, "", "")).toBe("karta 1");
   });
 });
 

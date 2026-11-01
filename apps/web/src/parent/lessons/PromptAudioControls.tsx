@@ -68,13 +68,17 @@ export type PromptAudioTarget =
  * znika samo, gdy nagranie będzie gotowe albo nieudane.
  */
 /**
- * Czego dotyczy nagranie karty w nazwie dostępności: numer karty i jej tytuł
- * (albo tytuł zagadnienia, gdy rodzic wyczyścił tytuł karty w edycji).
+ * Czego dotyczy nagranie karty w nazwie dostępności: zagadnienie, numer karty
+ * i jej tytuł — karty różnych zagadnień mogą mieć ten sam numer i tytuł.
+ * Pusty tytuł (rodzic wyczyścił go w edycji) albo brak tytułu zagadnienia
+ * pomija tę część razem z jej separatorem.
  */
 export function cardAudioTargetLabel(cardIndex: number, cardTitle: string, objectiveTitle: string | undefined): string {
-  const title = cardTitle.trim() || objectiveTitle?.trim() || "";
-  const numbered = messages.lessons.cardAudioTarget.replace("{n}", String(cardIndex + 1));
-  return title ? numbered.replace("{title}", () => title) : numbered.replace(" — {title}", "");
+  const title = cardTitle.trim();
+  const objective = objectiveTitle?.trim() ?? "";
+  let label = messages.lessons.cardAudioTarget.replace("{n}", String(cardIndex + 1));
+  label = title ? label.replace("{title}", () => title) : label.replace(" — {title}", "");
+  return objective ? label.replace("{objective}", () => objective) : label.replace("{objective}, ", "");
 }
 
 export default function PromptAudioControls({ audio, target, targetLabel, lessonDraftId, deckId, canRegenerate, locked, testId, onPlay }: {

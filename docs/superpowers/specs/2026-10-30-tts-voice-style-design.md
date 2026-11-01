@@ -311,10 +311,10 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   `voiceTones?: { styleEnabled: boolean }` z serwera (obecne tylko dla
   przedmiotu z `ttsForPrompts`), nie porównanie `subjectId` w panelu.
   `styleEnabled = false` (`UMIEM_TTS_STYLE=none`): pole zostaje, a opis mówi,
-  że wybór się zapisze, ale nagrania brzmią domyślnie.
+  że wybór się zapisze, ale nowe nagrania brzmią domyślnie (gotowe zostają).
 - **Nazwy dostępności:** „Posłuchaj”, „Nagraj ponownie” i „Posłuchaj
   poprzedniego” mają `aria-label` z widocznym tekstem i celem („Posłuchaj:
-  Ćwiczenie 3”, „Nagraj ponownie: karta 2 — Skala”), bo na stronie jest ich wiele.
+  Ćwiczenie 3”, „Nagraj ponownie: Skala mapy, karta 2 — Skala”), bo na stronie jest ich wiele.
 - **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
   `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid, previousAssetId?: uuid }`,
   a szkic opcjonalną listę `cardAudio: [{ objectiveId, cardIndex, audio }]`

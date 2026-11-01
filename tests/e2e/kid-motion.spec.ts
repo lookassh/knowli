@@ -49,38 +49,44 @@ test("animated task switch and feedback dock keep the session flow working", asy
 
   // The answer pop and the dock entrance must never give any scroller a
   // transient range: a scrollbar flashing for a few frames reads as a glitch.
-  const answerSamples = page.evaluate(() => new Promise<string[]>((resolve) => {
+  // The same loop records the answer burst: it is transient (about 1.2 s, `kidBurstSeconds("sm")`), so a check after
+  // the sampling window could come too late on a slow runner (CI flake 2026-11-01: burst already removed).
+  const answerSamples = page.evaluate(() => new Promise<{ hits: string[]; burstAriaHidden: string[] }>((resolve) => {
     const hits = new Set<string>();
+    const burstAriaHidden = new Set<string>();
     // Keep sampling until the dock has been on screen for a full second,
     // so a slow answer cannot end the window before its entrance.
     const started = performance.now();
     let dockSeen: number | null = null;
     const frame = () => {
       if (dockSeen === null && document.querySelector("[data-testid='kid-feedback-dock']")) dockSeen = performance.now();
+      for (const burst of document.querySelectorAll("[data-testid='kid-answer-burst']")) burstAriaHidden.add(String(burst.getAttribute("aria-hidden")));
       for (const scroller of document.querySelectorAll<HTMLElement>("[data-testid='kid-exercise'], [data-testid='kid-material'], .kid-page--session")) {
         const style = getComputedStyle(scroller);
         if (/auto|scroll/.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} Y`);
         if (/auto|scroll/.test(style.overflowX) && scroller.scrollWidth > scroller.clientWidth + 1) hits.add(`${scroller.dataset.testid ?? scroller.className} X`);
       }
       const now = performance.now();
-      if (dockSeen === null && now - started > 10_000) resolve(["dock never appeared"]);
+      if (dockSeen === null && now - started > 10_000) resolve({ hits: ["dock never appeared"], burstAriaHidden: [...burstAriaHidden] });
       else if (dockSeen === null || now - dockSeen < 1000) requestAnimationFrame(frame);
-      else resolve([...hits]);
+      else resolve({ hits: [...hits], burstAriaHidden: [...burstAriaHidden] });
     };
     requestAnimationFrame(frame);
   }));
   await page.getByTestId("kid-option").first().click();
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
-  expect(await answerSamples, "no transient scroll range while the answer animates").toEqual([]);
+  const answer = await answerSamples;
+  expect(answer.hits, "no transient scroll range while the answer animates").toEqual([]);
   // The chosen option reports its server outcome (pop/shake icon appears).
   await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
   // Only a tile the child chose correctly bursts (decoratively, then it is
   // removed); a wrong choice never celebrates the revealed answer.
   const choseWrong = await page.getByTestId("kid-outcome-wrong").count() > 0;
   if (choseWrong) {
+    expect(answer.burstAriaHidden, "a wrong choice never bursts").toEqual([]);
     await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0);
   } else {
-    await expect(page.getByTestId("kid-answer-burst")).toHaveAttribute("aria-hidden", "true");
+    expect(answer.burstAriaHidden, "the right choice bursts, hidden from assistive tech").toEqual(["true"]);
     await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0, { timeout: 3000 });
   }
   // The session header shows progress as pebbles: one per assessed task, one of them current.

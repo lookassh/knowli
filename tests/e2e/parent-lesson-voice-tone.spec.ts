@@ -177,8 +177,8 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   // Wiele przycisków „Posłuchaj” na stronie: nazwa dostępności mówi, czego dotyczy.
   await expect(page.getByTestId("exercise-prompt-audio-0-listen")).toHaveAccessibleName("Posłuchaj: Ćwiczenie 1");
   await expect(page.getByTestId("exercise-prompt-audio-2-listen-previous")).toHaveAccessibleName("Posłuchaj poprzedniego: Ćwiczenie 3");
-  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-listen`)).toHaveAccessibleName("Posłuchaj: karta 1 — Skala");
-  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-regenerate`)).toHaveAccessibleName("Nagraj ponownie: karta 2 — Przykład");
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-listen`)).toHaveAccessibleName("Posłuchaj: Skala mapy, karta 1 — Skala");
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-regenerate`)).toHaveAccessibleName("Nagraj ponownie: Skala mapy, karta 2 — Przykład");
   // Pytania nie są szeptane: „Tajemniczo” tylko przy karcie.
   await expect(page.getByTestId("exercise-voice-tone-0").locator('option[value="mysterious"]')).toHaveCount(0);
   await expect(page.getByTestId(`dynamic-card-voice-tone-${OBJ}-0`).locator('option[value="mysterious"]')).toHaveCount(1);
