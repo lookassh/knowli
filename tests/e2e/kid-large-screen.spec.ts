@@ -336,7 +336,7 @@ for (const { width, height, scale } of [{ width: 1920, height: 1080, scale: 1.2 
     // Let the grid settle (fonts, first layout pass) before reading the tile size.
     await page.evaluate(async () => { await document.fonts.ready; });
 
-    const before = await pictureTiles(page);
+    const before = await pictureTiles(page, { settle: true });
     // --visual-choice-size: the cap, half the material width, or the material height shared by two rows (never below 112).
     const { limit } = pictureTileLimit(before.container);
     if (width === ULTRAWIDE.width) {
@@ -408,7 +408,7 @@ for (const { viewport, scale, bound, notice = false, minTile = 0, rootFont, very
     }
 
     const dock = page.getByTestId("kid-feedback-dock");
-    const before = await pictureTiles(page);
+    const before = await pictureTiles(page, { settle: true });
     await page.getByTestId("kid-option").first().click();
     // Every panel has the voice hint button (48 px), which is part of what the footer reserve is made of.
     await expect(dock.getByTestId("kid-guidance-play")).toBeVisible();

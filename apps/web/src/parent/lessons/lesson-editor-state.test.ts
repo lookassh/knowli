@@ -12,7 +12,6 @@ import {
   groupCalculationFamilies,
   groupExercisesByObjectiveAndStage,
   lessonExerciseChanged,
-  lessonSubjectHasVoiceTones,
   nextGroupId,
   nextRequiredElementId,
   stageOfExerciseType,
@@ -526,12 +525,6 @@ describe("ton lektora (voiceTone)", () => {
     const card = snapshot.form.dynamicObjectives![0]!.cards[0]!;
     snapshot.form.dynamicObjectives![0]!.cards[0] = { title: card.title, body: card.body };
     expect(toLessonDraftPatch(snapshot).dynamicTopic!.objectives[0]!.cards[0]).not.toHaveProperty("voiceTone");
-  });
-
-  it("knows which subjects record questions", () => {
-    expect(lessonSubjectHasVoiceTones("school")).toBe(true);
-    expect(lessonSubjectHasVoiceTones("english_grammar")).toBe(false);
-    expect(lessonSubjectHasVoiceTones(undefined)).toBe(false);
   });
 });
 

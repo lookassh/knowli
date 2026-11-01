@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import { ActionIcon, Alert, Button, Checkbox, Group, Menu, NativeSelect, Paper, Radio, Stack, Text, TextInput, Textarea } from "@mantine/core";
-import { messages, type CalculationSpec, type LessonPromptAudioDto } from "@learning/contracts";
+import { messages, type CalculationSpec, type LessonDraftDto, type LessonPromptAudioDto } from "@learning/contracts";
 import { ParentIcon } from "../ParentIcon";
 import AssignmentFields from "./AssignmentFields";
 import ClozeFields from "./ClozeFields";
@@ -55,8 +55,8 @@ interface LessonExerciseCardProps {
   hadAudio: boolean;
   errors: string[] | undefined;
   audio: { state: string; assetId: string | null } | null;
-  /** Przedmiot nagrywa pytania — pokazujemy „Ton lektora” (poza `lesson_calculation`). */
-  voiceToneEnabled: boolean;
+  /** Ton lektora z odczytu lekcji: przedmiot nagrywa pytania — pokazujemy „Ton lektora” (poza `lesson_calculation`). */
+  voiceTones: LessonDraftDto["voiceTones"];
   /** Nagranie pytania zapisanej wersji; null, gdy brak albo ćwiczenie zmieniono od zapisu. */
   promptAudio: LessonPromptAudioDto | null;
   /** Wersja szkicu i zestaw potrzebne do „Nagraj ponownie”. */
@@ -99,7 +99,7 @@ function LessonExerciseCard({
   hadAudio,
   errors,
   audio,
-  voiceToneEnabled,
+  voiceTones,
   promptAudio,
   lessonDraftId,
   deckId,
@@ -184,7 +184,8 @@ function LessonExerciseCard({
       {promptAudio && (
         <div className="pp-lesson-prompt-audio">
           <PromptAudioControls audio={promptAudio} target={{ kind: "prompt", itemRevisionId }} lessonDraftId={lessonDraftId} deckId={deckId}
-            canRegenerate={editable} locked={busy || audioLocked} testId={`exercise-prompt-audio-${index}`} onPlay={onPlay} />
+            canRegenerate={editable} locked={busy || audioLocked} testId={`exercise-prompt-audio-${index}`} onPlay={onPlay}
+            targetLabel={messages.lessons.exerciseNumber.replace("{n}", number)} />
         </div>
       )}
 
@@ -208,9 +209,9 @@ function LessonExerciseCard({
                 onChange={(e) => onMutate({ instructionPl: e.currentTarget.value })} />
             </Field>
 
-            {voiceToneEnabled && ex.exerciseType !== "lesson_calculation" && (
+            {voiceTones && ex.exerciseType !== "lesson_calculation" && (
               <Field>
-                <VoiceToneSelect value={ex.voiceTone} disabled={disabled} testId={`exercise-voice-tone-${index}`}
+                <VoiceToneSelect value={ex.voiceTone} disabled={disabled} styleEnabled={voiceTones.styleEnabled} testId={`exercise-voice-tone-${index}`}
                   onChange={(voiceTone) => onMutate({ voiceTone })} />
               </Field>
             )}

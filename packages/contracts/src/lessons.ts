@@ -454,6 +454,12 @@ export const LessonDraftDtoSchema = z.object({
   assets: z.array(RevisionAssetDtoSchema),
   /** Nagrania kart zagadnień (tylko karty z wierszem nagrania); brak pola = brak nagrań kart. */
   cardAudio: z.array(LessonCardAudioDtoSchema).optional(),
+  /**
+   * Ton lektora (spec tonu TTS §4): pole tylko dla przedmiotu z nagraniami pytań i kart.
+   * `styleEnabled` — serwer nagrywa z tonem (`UMIEM_TTS_STYLE=instructions`); przy `none`
+   * ton się zapisuje, ale nagrania brzmią domyślnie.
+   */
+  voiceTones: z.object({ styleEnabled: z.boolean() }).strict().optional(),
   rejectedCount: z.number().int().nonnegative(),
   /**
    * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z

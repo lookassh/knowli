@@ -340,6 +340,15 @@ describe("„Posłuchaj pytania” — stan nagrania w szkicu rodzica (spec tonu
   });
 });
 
+describe("„Posłuchaj pytania” — ton lektora w szkicu rodzica", () => {
+  it("szkoła niesie voiceTones; styleEnabled tylko przy UMIEM_TTS_STYLE=instructions w ustawieniach mediów", async () => {
+    const { deckId } = await seedDraft();
+    expect((await readLessonDeck(services(), deckId)).draft!.voiceTones).toEqual({ styleEnabled: false });
+    const styled = audioServices({ ...MEDIA, tts: { ...MEDIA.tts, style: "instructions" } });
+    expect((await readLessonDeck(styled, deckId)).draft!.voiceTones).toEqual({ styleEnabled: true });
+  });
+});
+
 describe("„Posłuchaj pytania” — ponowne nagranie (spec tonu TTS §2.4)", () => {
   it("gotowe albo nieudane → nowa generacja pending tego samego fingerprintu z metadanymi zasobu; przy pending zwraca istniejącą", async () => {
     const active = services();
