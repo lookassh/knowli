@@ -420,11 +420,13 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
           const bottoms = [...content.querySelectorAll("*")].map((element) => element.getBoundingClientRect().bottom);
           const dockRect = document.querySelector("[data-testid='kid-feedback-dock']")!.getBoundingClientRect();
           const materialRect = document.querySelector("[data-testid='kid-material']")!.getBoundingClientRect();
-          return { contentBottom: Math.max(...bottoms), dockTop: dockRect.y, materialBottom: materialRect.bottom };
+          return { contentBottom: Math.max(...bottoms), dockTop: dockRect.y, materialTop: materialRect.top, materialBottom: materialRect.bottom };
         });
         const ended = `${JSON.stringify(end)} at ${label}`;
         expect(end.contentBottom, `end of material above the dock: ${ended}`).toBeLessThanOrEqual(end.dockTop + 1);
         expect(end.contentBottom, `end of material in viewport: ${ended}`).toBeLessThanOrEqual(viewport.height + 1);
+        // …i nie uciekł nad widoczny obszar materiału.
+        expect(end.contentBottom, `end of material visible: ${ended}`).toBeGreaterThan(Math.max(0, end.materialTop));
         // Poniżej 480 px dok stoi w przepływie tuż pod materiałem — bez pustego pasa po ukrytych akcjach.
         if (pageScrolls) expect(end.dockTop - end.materialBottom, `blank band between material and dock: ${ended}`).toBeLessThanOrEqual(24);
 
