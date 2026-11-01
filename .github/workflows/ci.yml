@@ -247,10 +247,13 @@ jobs:
       - name: Verify mocked shards
         env:
           GH_TOKEN: ${{ github.token }}
+          # Liczba shardów mocked w matrixie joba e2e (zgodność pilnuje
+          # spec-projects.test.ts): brakujący shard na liście też jest porażką.
+          MOCKED_SHARDS: 3
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
             --jq '.jobs[] | select(.name | startswith("e2e (mocked-")) | "\(.name)=\(.conclusion)"' > shards.txt
           cat shards.txt
-          if [ ! -s shards.txt ] || grep -v '=success$' shards.txt; then
+          if [ "$(grep -c '=success$' shards.txt)" != "$MOCKED_SHARDS" ] || grep -v '=success$' shards.txt; then
             exit 1
           fi

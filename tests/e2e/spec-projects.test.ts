@@ -121,8 +121,10 @@ describe("partycja speców E2E (spec-projects)", () => {
     expect(gate).toContain("GH_TOKEN: ${{ github.token }}");
     expect(gate).toContain("jobs?filter=latest");
     expect(gate).toContain('startswith("e2e (mocked-")');
-    // Pusta lista shardów albo którykolwiek shard bez sukcesu kończy bramkę porażką.
-    expect(gate).toContain("if [ ! -s shards.txt ] || grep -v '=success$' shards.txt; then");
+    // Shard bez sukcesu albo brak któregoś shardu na liście (np. pusta lista)
+    // kończy bramkę porażką; liczba oczekiwanych shardów zgadza się z matrixem.
+    expect(gate).toMatch(new RegExp(`^\\s+MOCKED_SHARDS: ${shards.length}\\s*$`, "m"));
+    expect(gate).toContain(`if [ "$(grep -c '=success$' shards.txt)" != "$MOCKED_SHARDS" ] || grep -v '=success$' shards.txt; then`);
   });
 
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {
