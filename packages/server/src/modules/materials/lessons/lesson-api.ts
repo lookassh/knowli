@@ -265,7 +265,8 @@ async function readLessonDraftDto(
   const exercises = revisions.map((r) => {
     const dto = exerciseDtoFromPayload(r.itemId, r.id, r.payload);
     const promptAudio = audio.prompts.get(r.id);
-    return promptAudio ? { ...dto, promptAudio } : dto;
+    const explanationAudio = audio.explanations.get(r.id);
+    return { ...dto, ...(promptAudio ? { promptAudio } : {}), ...(explanationAudio ? { explanationAudio } : {}) };
   });
   const drafts: LessonExerciseDraft[] = revisions.map((r) => toExerciseDraft(r.payload));
   const draftSubject = services.subjects.getSubject(context.subjectId);
@@ -285,6 +286,7 @@ async function readLessonDraftDto(
     topicVersion: context.topicVersion,
     objectiveIds: [...context.objectiveIds],
     ...(draftSubject?.ttsForPrompts === true ? { voiceTones: { styleEnabled: services.media?.tts.style === "instructions" } } : {}),
+    ...(draftSubject?.exerciseExplanations === true ? { exerciseExplanations: true as const } : {}),
     ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
     ...(context.dynamicTopic === undefined
       ? {}
@@ -305,8 +307,8 @@ async function readLessonDraftDto(
         }),
     examples: context.examples,
     exercises,
-    // Nagranie pytania i zdania feedbacku nie jest zasobem do decyzji rodzica (design szkoły §11.2).
-    assets: assetRows.flatMap((a) => a.role === "prompt_audio" || a.role === "feedback_audio" ? [] : [{
+    // Nagranie pytania, zdania feedbacku i wyjaśnienia błędu nie jest zasobem do decyzji rodzica (design szkoły §11.2).
+    assets: assetRows.flatMap((a) => a.role === "prompt_audio" || a.role === "feedback_audio" || a.role === "explanation_audio" ? [] : [{
       itemRevisionId: a.itemRevisionId,
       role: a.role,
       state:

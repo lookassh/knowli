@@ -59,11 +59,11 @@ async function legacyLessonTask(services: Services): Promise<{ childId: string; 
 }
 
 describe("gramatyka bez TTS", () => {
-  it("generacja zapisuje ćwiczenia bez zasobów audio odpowiedzi; zlecone są tylko nagrania zdań feedbacku", async () => {
+  it("generacja zapisuje ćwiczenia bez zasobów audio odpowiedzi; zlecone są tylko nagrania zdań feedbacku i wyjaśnień", async () => {
     const { draft } = await generatedLesson();
     expect(draft.exercises).toHaveLength(20);
     expect(draft.assets).toEqual([]);
-    expect((await pool.query("select count(*)::int as count from learning_app.revision_assets where role <> 'feedback_audio'")).rows[0].count).toBe(0);
+    expect((await pool.query("select count(*)::int as count from learning_app.revision_assets where role not in ('feedback_audio', 'explanation_audio')")).rows[0].count).toBe(0);
     expect((await pool.query("select count(*)::int as count from learning_app.media_assets")).rows[0].count).toBeGreaterThan(0);
     expect((await pool.query("select distinct kind from learning_app.generation_runs order by kind")).rows).toEqual([{ kind: "lesson" }, { kind: "tts" }]);
   });
@@ -108,7 +108,7 @@ describe("gramatyka bez TTS", () => {
     expect(draft.assets).toHaveLength(20);
     // Przedmiot z wyłączonym audio odpowiedzi i zdania feedbacku (jak po wyłączeniu obu flag).
     const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
-      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) });
+      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false, exerciseExplanations: false }]) });
     for (let pass = 0; pass < 10; pass += 1) {
       const result = await runDueGenerationWork(services, { lesson: 0, deck: 0, tts: 50, images: 0 });
       if (result.processed === 0) break;
@@ -139,7 +139,7 @@ describe("gramatyka bez TTS", () => {
     // Bez odczytu zdania: w popraw/przekształć zdanie równa się odpowiedzi, więc
     // `target_audio` i `feedback_audio` dzielą zasób, którego włączona rola nie anuluje.
     const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
-      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false }]) });
+      subjects: createSubjectRegistry([{ ...englishGrammarSubject, ttsForFeedbackSentence: false, exerciseExplanations: false }]) });
     const assetId = draft.assets[0]!.assetId!;
     const originalQuery = pool.query;
     let release!: () => void;

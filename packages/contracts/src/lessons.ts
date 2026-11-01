@@ -413,6 +413,8 @@ const LessonExerciseDraftDtoSchema = LessonExerciseInputSchema.extend({
   revisionId: UuidSchema,
   /** Nagranie pytania; brak = ćwiczenie nie ma nagrania dla tego tekstu. Tylko do odczytu. */
   promptAudio: LessonPromptAudioDtoSchema.optional(),
+  /** Nagranie wyjaśnienia błędu (`explanationPl`); brak = ćwiczenie nie ma wyjaśnienia z nagraniem. Tylko do odczytu. */
+  explanationAudio: LessonPromptAudioDtoSchema.optional(),
 });
 
 /** Nagranie karty zagadnienia w szkicu (miejsce karty w temacie + stan). */
@@ -462,6 +464,8 @@ export const LessonDraftDtoSchema = z.object({
    * ton się zapisuje, ale nagrania brzmią domyślnie.
    */
   voiceTones: z.object({ styleEnabled: z.boolean() }).strict().optional(),
+  /** Przedmiot ma wyjaśnienie błędu dla dziecka: panel pokazuje pole `explanationPl`. Brak pola = przedmiot go nie ma. */
+  exerciseExplanations: z.literal(true).optional(),
   rejectedCount: z.number().int().nonnegative(),
   /**
    * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z

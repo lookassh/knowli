@@ -225,6 +225,13 @@
       "when": 1793590000000,
       "tag": "0031_generation_rejected_count",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793690000000,
+      "tag": "0032_explanation_audio_role",
+      "breakpoints": true
     }
   ]
 }
