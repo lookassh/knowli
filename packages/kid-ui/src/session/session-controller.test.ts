@@ -3715,6 +3715,70 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
     }
   });
 
+  it("po powrocie z offline (markOffline → retry) bez ponownego autoodtwarzania; stan bodźca zostaje", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      const harness = await startListen(state, listen());
+      const nextTaskCalls = state.nextTaskCalls;
+      // offline w trakcie autoodtwarzania: przerwane odtwarzanie nie otwiera opcji
+      harness.plays[0]!.onStarted?.(3_000);
+      harness.controller.markOffline();
+      harness.plays[0]!.resolve();
+      await harness.controller.retry();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(screenOf(harness)).toMatchObject({ offline: false, busy: false, task: { taskId: "tl" } });
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "pending", playing: false });
+      expect(state.disclosures).toHaveLength(1);
+      expect(state.nextTaskCalls).toBe(nextTaskCalls);
+      expect(harness.plays).toHaveLength(1);
+      // ręczne odsłuchanie otwiera opcje; kolejne offline → retry ich nie resetuje
+      void harness.controller.playListenStimulus();
+      await flush();
+      harness.plays[1]!.onStarted?.(2_000);
+      harness.plays[1]!.resolve();
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("open");
+      harness.controller.markOffline();
+      await harness.controller.retry();
+      await flush();
+      expect(screenOf(harness)).toMatchObject({ offline: false, task: { taskId: "tl" } });
+      expect(stimulusOf(harness)).toEqual({ taskId: "tl", state: "open", playing: false });
+      expect(state.disclosures).toHaveLength(2);
+      expect(state.nextTaskCalls).toBe(nextTaskCalls);
+      expect(harness.plays).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("zadanie listen z prefetchu po „Dalej” dostaje dokładnie jedną autoryzację", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tl", modality: "choice", taskState: "answered", feedback: { kind: "great" } })];
+      const harness = await startListen(state, listen("tl"));
+      harness.plays[0]!.onStarted?.(2_000);
+      harness.plays[0]!.resolve();
+      await flush();
+      state.tasks = [listen("tl2")];
+      await harness.controller.answerChoice("o1");
+      await flush();
+      // następne zadanie pobrane w tle przy feedbacku — jeszcze bez autoryzacji
+      expect(state.tasks).toEqual([]);
+      expect(state.disclosures).toEqual([{ taskId: "tl", kind: "audio" }]);
+      const nextTaskCalls = state.nextTaskCalls;
+      await harness.controller.continueLearning();
+      await flush();
+      expect(state.nextTaskCalls).toBe(nextTaskCalls);
+      expect(screenOf(harness)).toMatchObject({ task: { taskId: "tl2" }, listenStimulus: { taskId: "tl2", state: "pending" } });
+      expect(state.disclosures).toEqual([{ taskId: "tl", kind: "audio" }, { taskId: "tl2", kind: "audio" }]);
+      expect(harness.plays).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("w trakcie autoryzacji nie da się odpowiedzieć, a spóźniona autoryzacja po zmianie zadania nic nie odtwarza", async () => {
     vi.useFakeTimers();
     try {

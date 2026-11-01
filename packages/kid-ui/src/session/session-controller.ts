@@ -981,6 +981,9 @@ export class LearningSessionController {
       // (także zadanie z prefetchu; nie w kartkówce i nie przy pendingAttemptId).
       if (task.prompt.kind === "lesson_listen_choice" && this.#screen.session.mode !== "mock_test") {
         void this.playListenStimulus({ auto: true }).catch(() => undefined);
+        // Po powrocie z offline (`markOffline` → `retry`) zadanie zostaje z bieżącym
+        // stanem bodźca — bez ponownego pobrania i autoodtwarzania (spec §8).
+        this.#setResume(async () => undefined, true);
       }
     } catch (error) {
       if (epoch !== this.#epoch || this.#screen.kind !== "learning") return;
@@ -1160,6 +1163,7 @@ export class LearningSessionController {
 
   async answerChoice(optionId: string): Promise<void> {
     // „Posłuchaj i wybierz”: bez odsłuchu odpowiedź byłaby nieoceniona — opcje czekają na `open`.
+    // Kartkówka nigdy nie dostaje tego typu (serwer go wyklucza), więc strażnik jej nie blokuje.
     const screen = this.#learning();
     if (screen?.task?.prompt.kind === "lesson_listen_choice" &&
         (screen.listenStimulus?.taskId !== screen.task.taskId || screen.listenStimulus.state !== "open")) return;
