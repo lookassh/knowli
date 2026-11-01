@@ -216,18 +216,31 @@ jobs:
   e2e-mocked:
     # Bramka pod nazwą wymaganego checka `e2e (mocked)` (reguły brancha main):
     # sama niczego nie testuje, a podział projektu mocked na shardy nie wymaga
-    # zmian w regułach. GitHub podaje tylko łączny wynik matrixa, więc bramka
-    # przechodzi, gdy przeszły wszystkie joby e2e (shardy mocked i kosze real —
-    # każdy kosz real i tak jest osobnym wymaganym checkiem).
+    # zmian w regułach. Wymaga łącznego sukcesu matrixa e2e (shardy mocked
+    # i kosze real — każdy kosz real i tak jest osobnym wymaganym checkiem)
+    # i dodatkowo sprawdza ostatnią próbę każdego sharda `e2e (mocked-N)` przez
+    # API: po ponowieniu tylko części jobów łączny wynik matrixa nie może przepuścić
+    # sharda, który nadal ma porażkę.
     name: e2e (mocked)
     needs: [e2e]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
     steps:
       - name: Verify e2e jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_RESULT: ${{ needs.e2e.result }}
         run: |
-          echo "e2e=${{ needs.e2e.result }}"
-          if [ "${{ needs.e2e.result }}" != "success" ]; then
+          echo "e2e=$NEEDS_RESULT"
+          if [ "$NEEDS_RESULT" != "success" ]; then
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("e2e (mocked-")) | "\(.name)=\(.conclusion)"' > shards.txt
+          cat shards.txt
+          if [ ! -s shards.txt ] || grep -v '=success$' shards.txt; then
             exit 1
           fi

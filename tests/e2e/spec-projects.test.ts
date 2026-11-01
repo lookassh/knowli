@@ -113,7 +113,12 @@ describe("partycja speców E2E (spec-projects)", () => {
     const gate = readCiJobText("e2e-mocked");
     expect(gate).toMatch(/^\s+needs: \[e2e\]\s*$/m);
     expect(gate).toMatch(/^\s+if: \$\{\{ always\(\) \}\}\s*$/m);
-    expect(gate).toContain('if [ "${{ needs.e2e.result }}" != "success" ]; then');
+    expect(gate).toContain("NEEDS_RESULT: ${{ needs.e2e.result }}");
+    expect(gate).toContain('if [ "$NEEDS_RESULT" != "success" ]; then');
+    // Ostatnia próba każdego sharda osobno: ponowienie części jobów nie przepuści porażki.
+    expect(gate).toContain("jobs?filter=latest");
+    expect(gate).toContain('startswith("e2e (mocked-")');
+    expect(gate).toContain("grep -v '=success$' shards.txt");
     expect(gate).toContain("exit 1");
   });
 
