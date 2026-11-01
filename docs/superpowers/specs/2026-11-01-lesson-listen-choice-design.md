@@ -1,6 +1,6 @@
 # „Posłuchaj i wybierz” — brakująca forma ze słuchu (`lesson_listen_choice`) — design
 
-Data: 2026-11-01. Status: do recenzji właściciela (wersja 3 — po dwóch rundach recenzji trzech krytyków).
+Data: 2026-11-01. Status: zaimplementowany (wersja 3 — po dwóch rundach recenzji trzech krytyków; ustalenia z implementacji w sekcji „Ustalenia z implementacji” na końcu).
 Issue: lookassh/knowli#198. Powiązane: `docs/superpowers/specs/2026-10-30-lesson-sentence-readback-design.md`
 (#194, nagranie `feedback_audio`), `.kiro/specs/grammar-module/requirements.md` (wym. 2.13, 4.1, 4.3, 4.6,
 5.2–5.6, 7.2–7.5), `docs/superpowers/specs/2026-10-30-english-chapter-design.md`, `docs/SPEC.md` §22.
@@ -444,3 +444,15 @@ identyfikatora nagrania przed autoryzacją.
 - **Niezweryfikowane symulacją:** autoodtwarzanie na fizycznym iPhonie/iPadzie (Safari) i
   słyszalność różnic form w głosie lektora — raport jako brak dowodu (rodzic może odsłuchać
   nagranie w edytorze).
+
+## Ustalenia z implementacji
+
+Decyzje podjęte podczas implementacji (2026-11-01); tam, gdzie różnią się od sekcji powyżej, obowiązuje ten dodatek.
+
+- **Cele gramatyki z typem (§5).** Present Simple: `affirmative_base`, `third_person_s`, `negative`, `question`; „to be”: `affirmative_forms`, `negative_forms`, `questions`. Bez typu: `spelling_es_ies`, `short_answers` (oba tematy), `base_form_after_does` oraz `to_be.contractions` — sprawdzanym elementem jest skrót, a pełna forma i skrót są odpowiedziami równoważnymi, więc zadanie słuchowe nie miałoby jednej słyszalnej poprawnej formy. Wersje tematów bez zmian.
+- **Selektor (§3.2).** Slot `listenPracticePlan` (powód `listen_practice`) następuje po pierwszym zwykłym ocenianym zadaniu celu w sesji (wydanym lub zaplanowanym), najwyżej 1 na cel i 2 na sesję, nigdy dwa zadania słuchowe z rzędu i tylko z gotowym nagraniem. Wspólny predykat `outsideStagePath` (słuchowe i słowa kluczowe) steruje logiką etapów; wyniki słuchowe są neutralne dla etapów i wsparcia, a `historicalSupportObjectives` pomija zadania słuchowe.
+- **Nagranie bodźca (§6, §7.3).** Bodźcem jest istniejące nagranie `feedback_audio` (bez nowej roli i migracji). Gałąź `authorizeDisclosure` pieczętuje `audio_issued` z ekspozycjami `[targetKey, klucz zdania]`; odpowiedź bez wcześniejszej autoryzacji jest nieoceniona (`no_stimulus`), a zadanie zostaje `issued`.
+- **Generowanie (§5).** Do 2 ćwiczeń słuchowych na cel dochodzi ponad wielkość puli rodzica (pole portu `listenChoicePerObjective`); świeże wyjście modelu jest czyszczone z `instructionPl`, `hint` i `visualSubject`.
+- **Panel rodzica (§6, §9).** Pole `sentenceAudio` tylko dla ćwiczeń słuchowych: odznaka i pozycja „Posłuchaj” w menu, tekst naprawy przy nieudanym nagraniu oraz licznik ćwiczeń bez gotowego nagrania w edytorze.
+- **Kid UI (§8).** Autoodtwarzanie raz po wyświetleniu; opcje zablokowane do końca pierwszego nieprzerwanego odsłuchu (zapas `durationMs` + 1 s, 8 s przy nieznanej długości); „Pomiń” po 6 s bez startu odtwarzania albo po odmowie lub błędzie pliku; zablokowane autoodtwarzanie daje status „Naciśnij głośnik, aby posłuchać.”; brak ponownego autoodtwarzania po powrocie z offline. Dok feedbacku bez własnego „Posłuchaj zdania”, a przycisk komunikatu głosowego ma ikonę „?”.
+- **Niezweryfikowane (§12):** autoodtwarzanie na fizycznym iPhonie/iPadzie (Safari) i słyszalność różnic form w głosie lektora.
