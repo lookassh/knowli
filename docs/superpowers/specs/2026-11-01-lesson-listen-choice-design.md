@@ -215,7 +215,8 @@ publikuje się jak dziś.
   ćwiczenie — `loadExercises` bierze najnowszy gotowy zasób o oczekiwanym fingerprincie.
 - **Widoczność dla rodzica:** dla ćwiczeń `lesson_listen_choice` (i tylko dla nich) DTO ćwiczenia
   szkicu i wersji dostaje **nowe pole** `sentenceAudio` (`{ state: pending | ready | failed,
-  assetId? }`) — nie przeciążamy `promptAudio` („Nagranie pytania”). Edytor pokazuje je
+  assetId?, previousAssetId? }` jak nagranie pytania: `assetId` przy `ready`, `previousAssetId` —
+  najnowsze gotowe ujęcie — przy `pending` i `failed`) — nie przeciążamy `promptAudio` („Nagranie pytania”). Edytor pokazuje je
   w istniejącej odznace audio karty ćwiczenia (`LessonExerciseCard`) i pozycji „Posłuchaj”
   w menu ćwiczenia; **bez** `PromptAudioControls` (jego regeneracja i ton dotyczą `prompt_audio`)
   i bez przycisku regeneracji. Przy stanie `failed` obok odznaki dalszy krok: „Nagranie się

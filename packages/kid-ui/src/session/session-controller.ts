@@ -1707,8 +1707,10 @@ export class LearningSessionController {
       const blocked = (error as { name?: unknown } | null)?.name === "NotAllowedError";
       if (blocked && auto) {
         // Zablokowane autoodtwarzanie: status i wyróżniony głośnik. Licznik 6 s biegnie dalej,
-        // więc bez naciśnięcia pojawia się „Pomiń”.
-        this.#patchListenStimulus(taskId, { state: "blocked", playing: false });
+        // więc bez naciśnięcia pojawia się „Pomiń”. Gdy licznik już wygasł (spóźniona autoryzacja),
+        // „Pomiń” zostaje — powrót do `blocked` nie miałby już licznika.
+        const expired = this.#learning()?.listenStimulus?.state === "unavailable";
+        this.#patchListenStimulus(taskId, { state: expired ? "unavailable" : "blocked", playing: false });
         return;
       }
       // Ręczne naciśnięcie zablokowane albo błąd: „Pomiń” od razu, a przy ręcznym widoczny komunikat.

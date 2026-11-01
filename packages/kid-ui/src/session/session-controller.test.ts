@@ -3897,6 +3897,38 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
     }
   });
 
+  it("spóźniona autoryzacja po „Pomiń”: zablokowane autoodtwarzanie nie cofa do „blocked”, udane otwiera opcje", async () => {
+    for (const outcome of ["blocked", "played"] as const) {
+      vi.useFakeTimers();
+      try {
+        const state = baseState();
+        let release!: () => void;
+        state.disclosureGate = new Promise<void>((resolve) => { release = resolve; });
+        const harness = await startListen(state, listen());
+        await vi.advanceTimersByTimeAsync(6_000);
+        expect(stimulusOf(harness)?.state, outcome).toBe("unavailable");
+        release();
+        await flush();
+        expect(harness.plays, outcome).toHaveLength(1);
+        if (outcome === "blocked") {
+          harness.plays[0]!.reject(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+          await flush();
+          // „Pomiń” zostaje — licznik już wygasł, więc powrót do „blocked” nie miałby wyjścia.
+          expect(stimulusOf(harness), outcome).toEqual({ taskId: "tl", state: "unavailable", playing: false });
+          await vi.advanceTimersByTimeAsync(10_000);
+          expect(stimulusOf(harness)?.state, outcome).toBe("unavailable");
+        } else {
+          harness.plays[0]!.onStarted?.(2_000);
+          harness.plays[0]!.resolve();
+          await flush();
+          expect(stimulusOf(harness)?.state, outcome).toBe("open");
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
   it("NotAllowedError daje „blocked”; ręczne naciśnięcie odtwarza i otwiera opcje", async () => {
     vi.useFakeTimers();
     try {
