@@ -91,7 +91,7 @@ describe("validateEnglishGrammarExercise — zdania z tematów zainteresowań dz
     expect(validateEnglishGrammarExercise(ex, presentSimpleV1)).toEqual([]);
   });
 
-  it("lesson_choice z tematem w to_be przechodzi (Dinosaurs ___ big.)", () => {
+  it("przypadek defensywny: temat jako podmiot to_be (wzorzec zakazany regułą) nadal przechodzi walidator (Dinosaurs ___ big.)", () => {
     expect(validateEnglishGrammarExercise(themed("lesson_choice", AFF, "Dinosaurs ___ big.", "are"), toBeV1)).toEqual([]);
   });
 
@@ -99,6 +99,9 @@ describe("validateEnglishGrammarExercise — zdania z tematów zainteresowań dz
     ["Gymnastics ___ fun.", "is"],
     ["Maths ___ fun.", "is"],
     ["Athletics ___ fun.", "is"],
+    ["Robotics ___ fun.", "is"],
+    ["Aerobics ___ fun.", "is"],
+    ["Acrobatics ___ fun.", "is"],
   ])("rzeczownik na -ics/maths jest l.poj. w to_be: %s → %s", (stem, answer) => {
     expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, stem, answer), toBeV1)).toEqual([]);
   });

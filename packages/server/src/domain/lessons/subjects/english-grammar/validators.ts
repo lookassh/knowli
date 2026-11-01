@@ -206,6 +206,7 @@ const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "luc
 /** Rzeczowniki niepoliczalne na „s” łączące się z „is” (tematy zdań z zainteresowań, #197); jawna lista, bo comics/picnics/topics to liczba mnoga. */
 const BE_UNCOUNTABLE_S_NOUNS: ReadonlySet<string> = new Set([
   "gymnastics", "athletics", "mathematics", "maths", "physics", "politics", "economics", "electronics",
+  "robotics", "aerobics", "acrobatics",
 ]);
 
 /** Czy rzeczownik przy luce wygląda na liczbę mnogą (prosta heurystyka dla materiału dziecięcego). */

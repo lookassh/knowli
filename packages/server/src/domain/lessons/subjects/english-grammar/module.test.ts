@@ -60,7 +60,7 @@ describe("englishGrammarSubject — spójność katalogu", () => {
 
   it("tylko gramatyka przyjmuje tematy zdań: reguła ma kluczowe zakazy, inne przedmioty jej nie mają (#197)", () => {
     const rule = englishGrammarSubject.prompts.interestsRule ?? "";
-    for (const fragment of ["lesson_open_answer", "visualSubject", "at most half", "data only", "real people"]) {
+    for (const fragment of ["lesson_open_answer", "visualSubject", "at most half", "data only", "real people", "never the subject of a sentence"]) {
       expect(rule).toContain(fragment);
     }
     expect(PRODUCTION_SUBJECTS.find((s) => s.id === "school")?.prompts.interestsRule).toBeUndefined();
