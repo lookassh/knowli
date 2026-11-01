@@ -873,6 +873,8 @@ export const messages = {
     instructionLabel: "Instrukcja dla modelu (opcjonalnie)",
     themesTitle: "Tematy zdań (opcjonalnie)",
     themesInsert: "Wstaw zainteresowania: {name}",
+    themesLine: "Tematy zdań: {themes}",
+    themesRemove: "Usuń tematy",
     themesEmpty: "Zainteresowania dodasz w profilu dziecka.",
     themesService: "Tematy zdań trafią do usługi: {service}. Z profilu wysyłamy tylko tematy — bez imienia i roku urodzenia. Zdania z tymi tematami widzi też usługa oceniająca odpowiedzi.",
     themesServiceUnknown: "Tematy zdań trafią do usługi generującej. Z profilu wysyłamy tylko tematy — bez imienia i roku urodzenia. Zdania z tymi tematami widzi też usługa oceniająca odpowiedzi.",
