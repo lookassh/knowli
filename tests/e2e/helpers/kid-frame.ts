@@ -95,17 +95,34 @@ export async function nextFrames(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 }
 
-/** Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are). */
+/**
+ * Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are),
+ * read once they stop changing. The first layout passes after the task opens (fonts, container queries, the measured
+ * footer reserve) can still move the grid for a frame or two; a single read there was the flake of
+ * `kid-large-screen.spec.ts` "picture tiles … keep their size after the verdict" (tile 0 left 56 inner px off at 3440x1440).
+ */
 export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
-  return page.evaluate(() => {
-    const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
-      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
-      return { left, top, right, bottom, width, height };
-    });
-    // 100cqw / 100cqh come from the nearest size container above the tile grid.
-    let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
-    while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
-    return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
+  return page.evaluate(async () => {
+    const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+    const read = () => {
+      const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      });
+      // 100cqw / 100cqh come from the nearest size container above the tile grid.
+      let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
+      while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
+      return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
+    };
+    let previous = read();
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await frame();
+      await frame();
+      const next = read();
+      if (JSON.stringify(next) === JSON.stringify(previous)) return next;
+      previous = next;
+    }
+    throw new Error(`the picture tiles did not settle in 60 frames: ${JSON.stringify(previous)}`);
   });
 }
 
