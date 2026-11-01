@@ -4077,6 +4077,53 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
     }
   });
 
+  it("przerwany odsłuch (potwierdzenie końca, tło, blur) przechodzi w „blocked”, a po 6 s w „Pomiń”", async () => {
+    for (const interrupt of ["endConfirm", "background", "blur"] as const) {
+      vi.useFakeTimers();
+      try {
+        const harness = await startListen(baseState(), listen());
+        harness.plays[0]!.onStarted?.(3_000);
+        if (interrupt === "endConfirm") harness.controller.holdForEndConfirm();
+        else harness.controller.pauseActivity(interrupt);
+        harness.plays[0]!.resolve();
+        await flush();
+        // Przerwanie nie otwiera opcji i nie zostawia cichego „pending” bez wyjścia.
+        expect(stimulusOf(harness), interrupt).toEqual({ taskId: "tl", state: "blocked", playing: false });
+        if (interrupt === "endConfirm") harness.controller.releaseEndConfirm();
+        await vi.advanceTimersByTimeAsync(5_900);
+        expect(stimulusOf(harness)?.state, interrupt).toBe("blocked");
+        await vi.advanceTimersByTimeAsync(100);
+        expect(stimulusOf(harness)?.state, interrupt).toBe("unavailable");
+        expect(harness.plays, interrupt).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
+  it("przerwanie nie rusza bodźca otwartego ani pauzy offline", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await startListen(baseState(), listen());
+      // pauza offline ma własne wznowienie (#listenResume po „Spróbuj ponownie”)
+      harness.controller.pauseActivity("offline");
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("pending");
+      void harness.controller.playListenStimulus();
+      await flush();
+      harness.plays[1]!.onStarted?.(2_000);
+      harness.plays[1]!.resolve();
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("open");
+      harness.controller.holdForEndConfirm();
+      harness.controller.pauseActivity("blur");
+      await flush();
+      expect(stimulusOf(harness)?.state).toBe("open");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("zadanie listen z prefetchu po „Dalej” dostaje dokładnie jedną autoryzację", async () => {
     vi.useFakeTimers();
     try {

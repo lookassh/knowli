@@ -955,7 +955,7 @@ describe("lesson_listen_choice — walidacja", () => {
       answer: "doesn't",
       focus: ["doesn't"],
     }));
-    expect(equivalent.length).toBeGreaterThan(0);
+    expect(equivalent.some((e) => e.includes("zdania z opcjami"))).toBe(true);
     const distinct = errorsOf(listen({
       stem: `She ${GAP_MARKER} happy.`,
       options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
@@ -974,7 +974,7 @@ describe("lesson_listen_choice — walidacja", () => {
       answer: "are",
       focus: ["are"],
     }));
-    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((e) => e.includes("zdania z opcjami"))).toBe(true);
   });
 
   it("wymaga dokładnie jednej luki", () => {

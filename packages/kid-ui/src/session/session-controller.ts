@@ -1180,6 +1180,7 @@ export class LearningSessionController {
       this.cancelRecording();
     }
     this.#stopPlayback();
+    this.#interruptListenStimulus();
   }
 
   /** Zamknięcie potwierdzenia „Koniec”: znosi blokadę auto-startu, niczego nie uruchamia. */
@@ -1631,6 +1632,21 @@ export class LearningSessionController {
    * ścieżka offline, a ponowienie niczego samo nie odtwarza. Po odpowiedzi nic nie
    * robi — odczyt zdania z feedbacku gra `playSentenceAudio`.
    */
+  /**
+   * Przerwany bodziec „Posłuchaj i wybierz” (potwierdzenie końca, tło, utrata fokusu):
+   * `#stopPlayback` kasuje stoper braku startu, a nieotwarty bodziec zostałby w cichym
+   * `pending` z zablokowanymi opcjami. Przechodzi więc ścieżką wznowienia z offline:
+   * `blocked` (status i wyróżniony głośnik), a po 6 s „Pomiń”. Bodziec otwarty i zadanie
+   * z wynikiem zostają bez zmian.
+   */
+  #interruptListenStimulus(): void {
+    const screen = this.#learning();
+    const stimulus = screen?.listenStimulus;
+    if (!screen?.task || screen.offline || screen.feedback !== null || stimulus?.taskId !== screen.task.taskId ||
+        stimulus.state !== "pending") return;
+    void this.#listenResume(stimulus.taskId)();
+  }
+
   /**
    * Wznowienie zadania słuchowego po powrocie z offline: bez autoodtwarzania. Bodziec, który
    * nie był otwarty (`pending`), przechodzi w `blocked` — status i wyróżniony głośnik — a po
@@ -2340,6 +2356,8 @@ export class LearningSessionController {
    */
   pauseActivity(reason: "background" | "blur" | "offline" = "background"): void {
     this.#stopPlayback();
+    // Offline wznawia bodziec po „Spróbuj ponownie” (#listenResume).
+    if (reason !== "offline") this.#interruptListenStimulus();
     this.#activity?.pause(reason);
     this.#saveActivityDraft();
   }
