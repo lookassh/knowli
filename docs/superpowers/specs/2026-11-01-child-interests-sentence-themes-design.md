@@ -122,7 +122,7 @@ modułów pilnuje, że `school` i `english_chapter` jej nie mają.
 Reguła gramatyki (po angielsku; test sprawdza kluczowe zakazy):
 
 > Sentence themes: the parent listed a few topics the child enjoys (they may be in Polish —
-> use simple English nouns for them). Set about one in three exercises in these topics — never
+> use simple English nouns for them). Set about one in three of all exercises in these topics — never
 > more than half — and rotate through all the listed topics, but only in lesson_choice,
 > lesson_gap, lesson_order, lesson_error_fix and in the examples. Never use a theme in
 > lesson_open_answer or in any exercise with visualSubject. A theme word is never the checked
