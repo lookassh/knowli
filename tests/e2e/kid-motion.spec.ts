@@ -77,18 +77,13 @@ test("animated task switch and feedback dock keep the session flow working", asy
   await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
   const answer = await answerSamples;
   expect(answer.hits, "no transient scroll range while the answer animates").toEqual([]);
-  // The chosen option reports its server outcome (pop/shake icon appears).
-  await expect(page.locator("[data-testid='kid-outcome-correct'], [data-testid='kid-outcome-wrong']")).toHaveCount(1);
-  // Only a tile the child chose correctly bursts (decoratively, then it is
-  // removed); a wrong choice never celebrates the revealed answer.
-  const choseWrong = await page.getByTestId("kid-outcome-wrong").count() > 0;
-  if (choseWrong) {
-    expect(answer.burstAriaHidden, "a wrong choice never bursts").toEqual([]);
-    await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0);
-  } else {
-    expect(answer.burstAriaHidden, "the right choice bursts, hidden from assistive tech").toEqual(["true"]);
-    await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0, { timeout: 3000 });
-  }
+  // The first tile of the fixture is the right answer: it reports its outcome (pop icon) and bursts
+  // decoratively, hidden from assistive tech, then the burst is removed. That a wrong choice never
+  // celebrates the revealed answer is covered by `answer-controls.test.tsx` (AnswerGrid).
+  await expect(page.getByTestId("kid-outcome-correct")).toHaveCount(1);
+  await expect(page.getByTestId("kid-outcome-wrong")).toHaveCount(0);
+  expect(answer.burstAriaHidden, "the right choice bursts, hidden from assistive tech").toEqual(["true"]);
+  await expect(page.getByTestId("kid-answer-burst")).toHaveCount(0, { timeout: 3000 });
   // The session header shows progress as pebbles: one per assessed task, one of them current.
   await expect(page.getByTestId("kid-progress-pebbles")).toHaveCount(1);
   await expect(page.getByTestId("kid-progress-pebble").first()).toBeVisible();
