@@ -224,4 +224,4 @@ dziecka, nie nagrania.
 
 Na tym nagraniu budują: (1) „Powtórz za lektorem”, (2) „Posłuchaj i uzupełnij”,
 (3) wolniejsze odtwarzanie. Niezależne od niego: (4) historyjka na koniec lekcji,
-(5) wyjaśnienie błędu dla dziecka, (6) zdania o zainteresowaniach dziecka.
+(5) wyjaśnienie błędu dla dziecka — zrealizowane 2026-11-01 w issue #196 (design `2026-11-01-lesson-error-explanation-design.md`), (6) zdania o zainteresowaniach dziecka.
