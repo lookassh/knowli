@@ -143,6 +143,12 @@ export interface SubjectPromptProfile {
    * treść kart) doklejane do promptu podziału materiału. Brak = ogólny opis.
    */
   readonly objectivesRules?: string;
+  /**
+   * Reguły generacji historyjki na koniec sesji (język, długość, formy reguł
+   * tematu, pytania o treść) doklejane do promptu historyjki. Wymagane, gdy
+   * `SubjectModule.lessonStory` jest włączone (pilnuje `validateSubject`).
+   */
+  readonly storyRules?: string;
 }
 
 /**
@@ -245,6 +251,12 @@ export interface SubjectModule {
    * `titlePl` przedmiotu. Brak = przedmiot nie tworzy zestawów z materiału.
    */
   readonly materialSubjectTitle?: "parent" | "fixed";
+  /**
+   * Czy sesje lekcji tego przedmiotu kończą się historyjką (krótki tekst w
+   * języku odpowiedzi z pytaniami o treść). Włączenie wymaga niepustego
+   * `prompts.storyRules`. Brak = `false`.
+   */
+  readonly lessonStory?: boolean;
   /**
    * Czy polecenie (`instructionPl`) niesie bodziec znaczenia: tożsamość ćwiczeń
    * `lesson_choice`, `lesson_gap` i `lesson_order` uwzględnia wtedy znormalizowane

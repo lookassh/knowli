@@ -22,6 +22,11 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect(englishGrammarSubject.ttsForFeedbackSentence).toBe(true);
   });
 
+  it("english grammar enables end-of-session story with rules", () => {
+    expect(englishGrammarSubject.lessonStory).toBe(true);
+    expect(englishGrammarSubject.prompts.storyRules?.trim()).toBeTruthy();
+  });
+
   it("obsługuje wszystkie 9 typów ćwiczeń", () => {
     expect([...englishGrammarSubject.exerciseTypes].sort()).toEqual(
       [
