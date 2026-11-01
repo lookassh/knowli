@@ -116,7 +116,9 @@ Kształt:
   i ma ≤ 160 znaków. Całość ≤ 700 znaków.
 - 1–2 pytania o unikalnych `id`. Treść pytania jest niepusta i ma ≤ 160 znaków.
 - Dokładnie 3 opcje o unikalnych `id`, niepuste, ≤ 80 znaków, różne po
-  normalizacji (`trim`, `toLocaleLowerCase("pl-PL")`).
+  normalizacji (`trim`, scalenie białych znaków, `toLocaleLowerCase("pl-PL")`).
+  Opcje różniące się tylko liczbą spacji („A  B” i „A B”) dziecko widzi jako
+  identyczne, więc są duplikatem.
 - `correctOption` wskazuje jedną z opcji.
 
 **Bariera ekspozycji** chroni ćwiczenia przed ujawnieniem rozwiązania.
