@@ -95,7 +95,7 @@ if (useFake) {
   // Domyślna konfiguracja z repo pod .env (jak web), po wczytaniu .env.
   const deps = graderFromEnv(withConfigDefaults(process.env));
   if (!deps) {
-    console.error("Brak konfiguracji gradera (UMIEM_GRADER_API_KEY albo UMIEM_GRADER_ENABLED=true z OPENROUTER_API_KEY w .env). Użyj --fake do sanity checku.");
+    console.error("Brak konfiguracji gradera (OPENROUTER_API_KEY albo UMIEM_GRADER_API_KEY w .env). Użyj --fake do sanity checku.");
     process.exit(2);
   }
   provider = deps.provider;

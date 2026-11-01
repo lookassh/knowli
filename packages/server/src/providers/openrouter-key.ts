@@ -22,7 +22,7 @@ export function isSecureOpenRouterEndpoint(baseUrl: string | undefined): boolean
 
 /**
  * Klucz dla endpointu `<prefix>_BASE_URL`: własny `<prefix>_API_KEY`, a gdy go
- * brak i `allowShared` — wspólny `OPENROUTER_API_KEY`, wyłącznie dla
+ * brak — wspólny `OPENROUTER_API_KEY`, wyłącznie dla
  * bezpiecznego endpointu OpenRouter. Klucz w kształcie OpenAI skierowany na
  * OpenRouter to błąd startu (domyślny BASE_URL wysłałby go do OpenRouter).
  * Komunikaty podają wyłącznie nazwy zmiennych, nigdy wartości.
@@ -31,7 +31,6 @@ export function endpointKeyFromEnv(
   env: Record<string, string | undefined>,
   prefix: "UMIEM_LLM" | "UMIEM_TTS" | "UMIEM_GRADER",
   baseUrl: string | undefined,
-  options: { allowShared: boolean },
 ): string | undefined {
   const towardOpenRouter = isOpenRouterEndpoint(baseUrl);
   const ownKey = nonEmpty(env[`${prefix}_API_KEY`]);
@@ -42,7 +41,7 @@ export function endpointKeyFromEnv(
     return ownKey;
   }
   const shared = nonEmpty(env.OPENROUTER_API_KEY);
-  if (!options.allowShared || shared === undefined || !isSecureOpenRouterEndpoint(baseUrl)) return undefined;
+  if (shared === undefined || !isSecureOpenRouterEndpoint(baseUrl)) return undefined;
   if (looksLikeOpenAiKey(shared)) {
     throw new Error("OPENROUTER_API_KEY looks like an OpenAI key; put it in OPENAI_API_KEY");
   }

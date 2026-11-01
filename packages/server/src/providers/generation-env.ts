@@ -67,7 +67,7 @@ function openAiCompatibleEndpointFromEnv(
 ): { apiKey: string; baseUrl?: string } {
   const baseUrl = secureBaseUrl(env, `${prefix}_BASE_URL`);
   // Własny klucz albo wspólny OPENROUTER_API_KEY (tylko https OpenRouter).
-  const ownKey = endpointKeyFromEnv(env, prefix, baseUrl, { allowShared: true });
+  const ownKey = endpointKeyFromEnv(env, prefix, baseUrl);
   const towardOpenAi = baseUrl === undefined || isOpenAiEndpoint(baseUrl);
   // Jawny powrót TTS na OpenAI przy domyślnym BASE_URL OpenRouter poszedłby po
   // cichu do OpenRouter z fingerprintem „openai” — wymagamy kompletu nadpisań.

@@ -172,7 +172,7 @@ Te zasady określają kierunek nowych zmian. Nie są poleceniem natychmiastowej 
 
 ## Generowanie, media i prywatność
 
-- Domyślna konfiguracja zmiennych środowiskowych (providerzy, modele, głos, ton, limity) żyje w `packages/server/src/config-defaults.ts`; `.env` tylko ją nadpisuje (od 2026-11-01). Nową zmienną z wartością domyślną dopisz tam, a nowe miejsce składania zależności z env buduj na `withConfigDefaults(process.env)`. Sekretów do pliku domyślnych nie wpisuj. Wspólny `OPENROUTER_API_KEY` trafia wyłącznie po https na host OpenRouter; grader bierze go tylko przy jawnym `UMIEM_GRADER_ENABLED=true`, a dyktowanie nigdy.
+- Domyślna konfiguracja zmiennych środowiskowych (providerzy, modele, głos, ton, limity) żyje w `packages/server/src/config-defaults.ts`; `.env` tylko ją nadpisuje (od 2026-11-01). Nową zmienną z wartością domyślną dopisz tam, a nowe miejsce składania zależności z env buduj na `withConfigDefaults(process.env)`. Sekretów do pliku domyślnych nie wpisuj. Wspólny `OPENROUTER_API_KEY` trafia wyłącznie po https na host OpenRouter; grader i ocena aktywności biorą go domyślnie (decyzja właściciela 2026-11-01), a dyktowanie nigdy.
 - Waliduj structured output AI po stronie serwera. Materiał dostępny dziecku wymaga zatwierdzenia rodzica.
 - TTS generuj i cache'uj podczas przygotowania materiału. Gotowy rekord zasobu i jego bajty są niezmienne; ręczna regeneracja tworzy nowy zasób/generację.
 - Media job jest związany z `asset_id`, a nie numerem edycji całego szkicu. Lease należy do współdzielonego zasobu. Każda edycja uzgadnia fingerprinty, zachowuje zgodne media i zleca brakujące w tej samej transakcji.

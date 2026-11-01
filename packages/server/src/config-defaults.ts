@@ -32,8 +32,9 @@ export const CONFIG_DEFAULTS = {
   UMIEM_LLM_BASE_URL: "https://openrouter.ai/api/v1",
 
   // ── Grader i ocena aktywności sesji (web) ──
-  // Połączenie i limity; włączenie wymaga UMIEM_GRADER_API_KEY albo
-  // UMIEM_GRADER_ENABLED=true ze wspólnym kluczem (odpowiedzi dzieci).
+  // Połączenie i limity; włączony z UMIEM_GRADER_API_KEY albo wspólnym
+  // OPENROUTER_API_KEY. Prywatność odpowiedzi dzieci ustawia się w OpenRouter
+  // albo przez UMIEM_GRADER_PROVIDER_DATA_COLLECTION=deny.
   UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1",
   UMIEM_GRADER_MODEL: "google/gemini-3.8-flash",
   UMIEM_GRADER_TIMEOUT_MS: "8000",

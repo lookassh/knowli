@@ -480,9 +480,8 @@ Model działa WYŁĄCZNIE w procesie web (worker go nie potrzebuje) i tylko dla 
 | Zmienna | Domyślnie | Znaczenie |
 | --- | --- | --- |
 | `UMIEM_GRADER_BASE_URL` | OpenRouter (`config-defaults.ts`) | `https://` wymagane poza NODE_ENV test/development |
-| `UMIEM_GRADER_API_KEY` | — (zapas: `OPENROUTER_API_KEY` przy `UMIEM_GRADER_ENABLED=true`) | tylko w adapterze; nigdy w logach, DTO, promptach |
+| `UMIEM_GRADER_API_KEY` | — (zapas: `OPENROUTER_API_KEY`) | tylko w adapterze; nigdy w logach, DTO, promptach |
 | `UMIEM_GRADER_MODEL` | `google/gemini-3.8-flash` (`config-defaults.ts`) | tani model wystarcza (ocena jednej reguły) |
-| `UMIEM_GRADER_ENABLED` | brak | `true` — zgoda na wspólny klucz; `false` — wyłączony zawsze |
 | `UMIEM_GRADER_TIMEOUT_MS` | 8000 | przerwanie = „nieocenione" |
 | `UMIEM_GRADER_MAX_CALLS_PER_SESSION` | 20 | księgowane w `learning_sessions.context.graderCalls` |
 

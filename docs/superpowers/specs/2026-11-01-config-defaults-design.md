@@ -44,8 +44,7 @@ Zawartość (z `.env.example` i obecnego `.env` właściciela):
 
 Poza plikiem: sekrety, `DATABASE_URL`, `MEDIA_ROOT`, Azure, dyktowanie
 (`UMIEM_LESSON_STT_*` — domyślnie wyłączone, wymaga własnego klucza, bez
-wspólnego), `UMIEM_GRADER_ENABLED` (brak = nie używaj wspólnego klucza),
-`*_PROVIDER_DATA_COLLECTION` (nie sprawdzono, czy `deny` + ścisły
+wspólnego), `*_PROVIDER_DATA_COLLECTION` (nie sprawdzono, czy `deny` + ścisły
 `json_schema` zostawia endpoint Gemini — zostaje zalecanym nadpisaniem),
 `UMIEM_MCP_ALLOWED_ORIGINS`, tryb fake.
 
@@ -72,18 +71,14 @@ błąd. Błędy podają wyłącznie nazwy zmiennych.
 Komunikat workera bez klucza wymienia `OPENAI_API_KEY` (obrazy) i
 `OPENROUTER_API_KEY` (LLM, TTS).
 
-### 2.3 Grader: zgoda na wysyłanie odpowiedzi dzieci
+### 2.3 Grader: domyślnie włączony
 
-Grader (i ocena aktywności sesji) jest włączony, gdy:
-
-- `UMIEM_GRADER_API_KEY` jest ustawiony (jak dziś: świadoma konfiguracja), albo
-- `UMIEM_GRADER_ENABLED=true` i jest wspólny `OPENROUTER_API_KEY`.
-
-`UMIEM_GRADER_ENABLED=false` wyłącza go zawsze. Brak flagi i brak własnego
-klucza = wyłączony, nawet przy wspólnym kluczu: odpowiedzi dzieci nie wychodzą
-z domu bez decyzji operatora. `ENABLED=true` bez żadnego klucza — błąd startu.
-Flaga przyjmuje `true/false/1/0` bez względu na wielkość liter, inna wartość
-— błąd startu. BASE_URL i MODEL zawsze uzupełniają domyślne, więc stary błąd
+Grader (i ocena aktywności sesji) jest włączony, gdy jest własny
+`UMIEM_GRADER_API_KEY` albo wspólny `OPENROUTER_API_KEY` (ten tylko dla https
+OpenRouter). Bez żadnego z nich — wyłączony, bez błędu startu. Nie ma osobnej
+flagi włączenia: decyzja właściciela 2026-11-01 (§5) — prywatność odpowiedzi
+dzieci operator ustawia w koncie OpenRouter albo przez
+`UMIEM_GRADER_PROVIDER_DATA_COLLECTION=deny`. BASE_URL i MODEL zawsze uzupełniają domyślne, więc stary błąd
 „all of BASE_URL, API_KEY and MODEL” dotyczy już tylko wywołań bez domyślnych
 (testy, skrypty) i tam zostaje bez zmian.
 
@@ -94,7 +89,9 @@ przestaje czytać `process.env`.
 
 W trybie `UMIEM_FAKE_PROVIDERS=1` fake grader ma pierwszeństwo przed
 prawdziwym (dziś odwrotnie) — E2E i smoke nigdy nie wysyłają danych do sieci,
-nawet z kluczem w powłoce.
+nawet z kluczem w powłoce. Smoke uruchamia web bez trybu fake, więc
+`compose.smoke.yaml` czyści w nim `OPENROUTER_API_KEY` i `UMIEM_GRADER_API_KEY`
+(pusta wartość = nieustawione), bo Compose czyta rodzinny `.env`.
 
 ### 2.4 Gdzie stosowane
 
@@ -106,7 +103,7 @@ własnym loaderze `.env`). Web i worker liczą te same wartości z tego samego
 kodu, więc fingerprinty mediów się zgadzają.
 
 Wyłączniki i powroty (nadpisania w `.env`): ton — `UMIEM_TTS_STYLE=none`;
-grader — `UMIEM_GRADER_ENABLED=false`; TTS z powrotem na OpenAI —
+TTS z powrotem na OpenAI —
 `UMIEM_TTS_PROVIDER=openai`, `UMIEM_TTS_MODEL=gpt-4o-mini-tts`,
 `UMIEM_TTS_VOICE=alloy`, `UMIEM_TTS_FORMAT=mp3`,
 `UMIEM_TTS_BASE_URL=https://api.openai.com/v1`; LLM — analogicznie
@@ -116,8 +113,7 @@ Pusta wartość przywraca domyślną, nie wyłącza.
 ### 2.5 `.env.example` i dokumentacja
 
 `.env.example`: na górze to, co trzeba uzupełnić (`POSTGRES_PASSWORD`,
-`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, opcjonalnie Azure i
-`UMIEM_GRADER_ENABLED=true`), niżej „Nadpisania (opcjonalne)” z odwołaniem do
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, opcjonalnie Azure), niżej „Nadpisania (opcjonalne)” z odwołaniem do
 `config-defaults.ts`, jako zakomentowane przykłady. `docs/provider-config.md`
 i AGENTS.md (nowa zmienna z wartością domyślną → plik domyślnych).
 
@@ -150,24 +146,26 @@ Jednostkowe:
 - Złożenie produkcyjne: `withConfigDefaults({OPENAI_API_KEY, OPENROUTER_API_KEY})`
   przez `createGenerationDepsFromEnv`, `mediaSettingsFromEnv`, `graderFromEnv`
   — provider/model/format/styl jak w pliku, LLM i TTS z wspólnym kluczem na
-  OpenRouter, grader wyłączony; z `UMIEM_GRADER_ENABLED=true` włączony.
+  OpenRouter, grader włączony na OpenRouter ze wspólnym kluczem.
 - Klucze: wspólny tylko dla https OpenRouter (odrzuca `http://`,
   `openrouter.ai.evil.example`, `https://openrouter.ai@evil.example`), własny
   wygrywa, klucz `sk-proj-…` na OpenRouter → błąd, samo `OPENAI_API_KEY` z
   domyślnymi → czytelny błąd z `OPENROUTER_API_KEY`.
-- Grader: flaga true/false/1/0/zła wartość, `ENABLED=true` bez klucza → błąd,
+- Grader: wspólny klucz tylko na https OpenRouter, brak klucza → wyłączony,
   `graderConfigured` zgodne z `graderFromEnv`.
 - Zgodność stałych liczbowych i obrazowych z parserami.
 
 E2E i smoke: global setup i `compose.smoke.yaml` ustawiają jawnie
-`UMIEM_TTS_FORMAT=mp3`, `UMIEM_TTS_STYLE=none`, `UMIEM_GRADER_ENABLED=false`
-(zachowanie przebiegu jak dziś); kompozycja web w trybie fake bierze fake
+`UMIEM_TTS_FORMAT=mp3`, `UMIEM_TTS_STYLE=none` (zachowanie przebiegu jak
+dziś), smoke czyści też klucze OpenRouter w web; kompozycja web w trybie fake bierze fake
 gradera. Pełny `pnpm test:e2e:shards`, `pnpm test:integration`, typecheck, unit.
 
 ## 5. Rozstrzygnięcia po review
 
 - Grader opt-in dla wspólnego klucza (dwóch krytyków: zmiana polityki
-  prywatności z opt-in na opt-out) — §2.3.
+  prywatności z opt-in na opt-out) — wdrożone, a potem **uchylone przez
+  właściciela 2026-11-01**: grader ma być domyślnie włączony, bez flagi
+  `UMIEM_GRADER_ENABLED`; prywatność ustawia się w OpenRouter — §2.3.
 - Bez mutacji `process.env`; jawne `withConfigDefaults` w kompozycjach (pułapki
   kolejności importów i loadera `.env` w skryptach) — §2.4.
 - `graderAvailable` wstrzykiwane przez `GenerationDeps` zamiast `process.env`.

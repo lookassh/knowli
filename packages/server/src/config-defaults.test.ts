@@ -103,23 +103,19 @@ describe("złożenie produkcyjne: domyślne + .env z samymi kluczami", () => {
     expect(message).not.toContain("sk-main");
   });
 
-  it("grader: wspólny klucz bez zgody → wyłączony; UMIEM_GRADER_ENABLED=true → włączony na OpenRouter", () => {
-    const off = withConfigDefaults(KEYS);
-    expect(graderFromEnv(off)).toBeUndefined();
-    expect(sessionActivityFromEnv(off)).toBeUndefined();
-    expect(graderConfigured(off)).toBe(false);
-
-    const on = withConfigDefaults({ ...KEYS, UMIEM_GRADER_ENABLED: "true" });
-    expect(graderFromEnv(on)?.provider.model).toBe("google/gemini-3.8-flash");
-    expect(sessionActivityFromEnv(on)?.publicService).toBe("openrouter.ai · google/gemini-3.8-flash");
-    expect(graderConfigured(on)).toBe(true);
+  it("grader: wspólny klucz włącza go domyślnie na OpenRouter", () => {
+    const env = withConfigDefaults(KEYS);
+    expect(graderFromEnv(env)?.provider.model).toBe("google/gemini-3.8-flash");
+    expect(sessionActivityFromEnv(env)?.publicService).toBe("openrouter.ai · google/gemini-3.8-flash");
+    expect(graderConfigured(env)).toBe(true);
+    // bez żadnego klucza OpenRouter — wyłączony, bez błędu startu
+    expect(graderConfigured(withConfigDefaults({ OPENAI_API_KEY: KEYS.OPENAI_API_KEY }))).toBe(false);
   });
 
   it("worker przekazuje dostępność gradera tą samą regułą co web", () => {
-    expect(createGenerationDepsFromEnv(withConfigDefaults(KEYS))!.graderAvailable).toBe(false);
-    expect(createGenerationDepsFromEnv(withConfigDefaults({ ...KEYS, UMIEM_GRADER_ENABLED: "1" }))!.graderAvailable).toBe(true);
-    // tryb fake nie ocenia prawdziwej konfiguracji gradera (zgoda bez klucza nie zatrzymuje startu)
-    expect(createGenerationDepsFromEnv(withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_GRADER_ENABLED: "true" }))!.graderAvailable).toBe(false);
+    expect(createGenerationDepsFromEnv(withConfigDefaults(KEYS))!.graderAvailable).toBe(true);
+    // tryb fake nie ocenia prawdziwej konfiguracji gradera
+    expect(createGenerationDepsFromEnv(withConfigDefaults({ ...KEYS, UMIEM_FAKE_PROVIDERS: "1" }))!.graderAvailable).toBe(false);
   });
 });
 

@@ -24,11 +24,10 @@ każdym deploju.
 1. Przygotuj `.env` z korzenia repo na podstawie `.env.example`:
    - `POSTGRES_PASSWORD` — wymagane (baza w kontenerze),
    - `OPENAI_API_KEY` (worker i web: obrazy), `OPENROUTER_API_KEY` (worker:
-     generator materiału i nagrania lektora — modele, głos i ton są w
-     domyślnej konfiguracji `packages/server/src/config-defaults.ts`),
+     generator materiału i nagrania lektora, web: grader odpowiedzi lekcji —
+     modele, głos i ton są w domyślnej konfiguracji
+     `packages/server/src/config-defaults.ts`),
      `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (web: próby ustne dziecka),
-   - grader (web, odpowiedzi dzieci do OpenRouter): `UMIEM_GRADER_ENABLED=true`
-     ze wspólnym kluczem albo własny `UMIEM_GRADER_API_KEY`; bez tego wyłączony,
    - `OPENAI_API_KEY` trafia wyłącznie do `https://api.openai.com`, a wspólny
      klucz wyłącznie po https na openrouter.ai; klucz w złym miejscu kończy start
      błędem z nazwą zmiennej (szczegóły: `docs/provider-config.md`),

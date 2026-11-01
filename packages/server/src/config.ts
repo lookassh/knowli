@@ -329,37 +329,19 @@ function positiveIntEnv(name: string, raw: string | undefined, fallback: number)
   return value;
 }
 
-/** `UMIEM_GRADER_ENABLED`: `true/false/1/0` (bez względu na wielkość liter), brak = nieustawione. */
-function graderEnabledFlag(env: Record<string, string | undefined>): boolean | undefined {
-  const raw = env.UMIEM_GRADER_ENABLED?.trim().toLowerCase();
-  if (raw === undefined || raw === "") return undefined;
-  if (raw === "true" || raw === "1") return true;
-  if (raw === "false" || raw === "0") return false;
-  throw new Error("UMIEM_GRADER_ENABLED must be true or false");
-}
-
 /**
  * Połączenie modelu oceniającego (grader lekcji i ocena aktywności sesji),
  * design `2026-11-01-config-defaults-design.md` §2.3. Włączone, gdy jest
- * własny `UMIEM_GRADER_API_KEY`, albo przy `UMIEM_GRADER_ENABLED=true` ze
- * wspólnym `OPENROUTER_API_KEY` (tylko https OpenRouter): odpowiedzi dzieci nie
- * wychodzą z domu bez decyzji operatora. `UMIEM_GRADER_ENABLED=false` wyłącza
- * zawsze. Bez klucza — wyłączone; klucz bez `BASE_URL`/`MODEL` (wywołania bez
- * domyślnej konfiguracji) i `ENABLED=true` bez klucza to błędy konfiguracji.
- * `https://` wymagane poza `NODE_ENV` test/development.
+ * własny `UMIEM_GRADER_API_KEY` albo wspólny `OPENROUTER_API_KEY` (ten tylko
+ * dla https OpenRouter). Bez klucza — wyłączone; klucz bez `BASE_URL`/`MODEL`
+ * (wywołania bez domyślnej konfiguracji) to błąd konfiguracji. `https://`
+ * wymagane poza `NODE_ENV` test/development.
  */
 function graderConnectionFromEnv(env: Record<string, string | undefined>): { baseUrl: string; apiKey: string; model: string } | undefined {
-  const enabled = graderEnabledFlag(env);
-  if (enabled === false) return undefined;
   const baseUrl = env.UMIEM_GRADER_BASE_URL || undefined;
   const model = env.UMIEM_GRADER_MODEL || undefined;
-  const apiKey = endpointKeyFromEnv(env, "UMIEM_GRADER", baseUrl, { allowShared: enabled === true });
-  if (apiKey === undefined) {
-    if (enabled === true) {
-      throw new Error("UMIEM_GRADER_ENABLED=true requires UMIEM_GRADER_API_KEY, or OPENROUTER_API_KEY with an https OpenRouter UMIEM_GRADER_BASE_URL");
-    }
-    return undefined;
-  }
+  const apiKey = endpointKeyFromEnv(env, "UMIEM_GRADER", baseUrl);
+  if (apiKey === undefined) return undefined;
   if (baseUrl === undefined || model === undefined) {
     throw new Error("UMIEM_GRADER_* requires all of BASE_URL, API_KEY and MODEL, or none");
   }
