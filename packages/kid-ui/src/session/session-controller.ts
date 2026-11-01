@@ -1251,7 +1251,11 @@ export class LearningSessionController {
     if (!screen?.task || screen.busy || screen.offline) return;
     const epoch = this.#epoch;
     const taskId = screen.task.taskId;
-    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false, taskAudioError: null,
+    // Komunikat o audio zadania gaśnie przy odpowiedzi tylko w „Posłuchaj i wybierz” (nie wisi nad
+    // feedbackiem pominięcia); w pozostałych typach zostaje, żeby układ był stabilny do werdyktu.
+    const clearTaskAudioError = screen.task.prompt.kind === "lesson_listen_choice";
+    this.#setLearning({ busy: true, transitioning: true, questionAudioError: false,
+      ...(clearTaskAudioError ? { taskAudioError: null } : {}),
       pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");

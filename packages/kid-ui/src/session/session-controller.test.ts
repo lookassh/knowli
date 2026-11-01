@@ -676,6 +676,26 @@ describe("LearningSessionController", () => {
     expect(harness.controller.getScreen()).toMatchObject({ taskAudioError: "failed" });
   });
 
+  it("komunikat o audio zadania obrazkowego zostaje po wysłaniu odpowiedzi (stabilny układ do werdyktu)", async () => {
+    const state = baseState();
+    const speech = taskDto("picture-speech-audio-error-keep", {
+      kind: "picture_speech", audioAssetId: "asset-pattern", visual: { kind: "color", color: "#ff0000" },
+    });
+    state.attempts = [attemptDto({ taskId: speech.taskId, modality: "skip", taskState: "answered", feedback: { kind: "not_assessed" } })];
+    const harness = await startAtTask(state, speech);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(harness.api, "submitAnswer").mockImplementation(async (input) => { await gate; return makeApi(harness.state).submitAnswer(input); });
+    harness.media.player.play = async () => { throw new Error("decode failed"); };
+    await harness.controller.playTaskAudio();
+    expect(harness.controller.getScreen()).toMatchObject({ taskAudioError: "failed" });
+    const pending = harness.controller.skip();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.controller.getScreen()).toMatchObject({ busy: true, taskAudioError: "failed" });
+    release();
+    await pending;
+  });
+
   it("nie odtwarza autoryzacji, która wróciła już po zmianie karty", async () => {
     const state = baseState();
     const first = taskDto("77777777-7777-7777-7777-777777777777", { kind: "recall", prompt: "czwartek" });
@@ -3691,7 +3711,16 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
       expect(screenOf(harness)).toMatchObject({ error: null, offline: false, taskAudioError: "blocked" });
       // „Pomiń” wysyła pominięcie i gasi komunikat o nagraniu (feedback nie niesie starego błędu).
       state.attempts = [attemptDto({ taskId: "tl", modality: "skip", taskState: "answered", feedback: { kind: "not_assessed" } })];
-      await harness.controller.skip();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      vi.spyOn(harness.api, "submitAnswer").mockImplementation(async (input) => { await gate; return makeApi(harness.state).submitAnswer(input); });
+      const pending = harness.controller.skip();
+      await flush();
+      // komunikat gaśnie już przy wysłaniu (tylko w „Posłuchaj i wybierz”), przed werdyktem
+      expect(screenOf(harness)).toMatchObject({ busy: true });
+      expect(screenOf(harness).taskAudioError ?? null).toBeNull();
+      release();
+      await pending;
       await flush();
       expect(state.submissions).toMatchObject([{ taskId: "tl", modality: "skip" }]);
       expect(screenOf(harness).taskAudioError ?? null).toBeNull();
