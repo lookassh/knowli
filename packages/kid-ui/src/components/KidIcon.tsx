@@ -4,7 +4,7 @@ export type KidIconName =
   | "volume" | "microphone" | "microphone-off" | "book" | "ear" | "pencil"
   | "letters" | "check" | "close" | "calendar" | "chevron-left" | "chevron-right"
   | "arrow-right" | "lock" | "sparkles" | "retry" | "question"
-  | "almost" | "info";
+  | "almost" | "info" | "turtle";
 
 const paths: Record<KidIconName, ReactElement> = {
   // Pełny korpus głośnika z zaokrąglonymi rogami i dwie fale: czytelny także w 48 px.
@@ -28,6 +28,11 @@ const paths: Record<KidIconName, ReactElement> = {
   question: <><path d="M8 8a4 4 0 1 1 6.1 3.4c-1.25.75-2.1 1.6-2.1 3.1v.5" strokeWidth="2.4"/><circle cx="12" cy="19.5" r="1.5" fill="currentColor" stroke="none"/></>,
   almost: <path d="M4 13c2.5-3 5-3 8 0s5.5 3 8 0"/>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></>,
+  // Żółw z profilu („Posłuchaj wolniej”): skorupa jako półkole domknięte linią brzucha,
+  // jedna płytka deseniu, głowa jako koło dotykające skorupy, dwie nóżki i ogonek.
+  // Mało kresek i grubość 2 jak fale głośnika, żeby w przycisku 48 px desień
+  // nie zlał się z obrysem, a żółw nie wyglądał lżej od głośnika obok.
+  turtle: <><path d="M2.5 15a8 8 0 0 1 16 0z" strokeWidth="2"/><path d="M6.7 15 8.6 10.9h3.8l1.9 4.1M6 15v3m9-3v3m-12.5-3-1 1" strokeWidth="2"/><circle cx="20.6" cy="12.4" r="2.2" strokeWidth="2"/></>,
 };
 
 export function KidIcon({ name, className }: { name: KidIconName; className?: string }): ReactElement {
@@ -35,6 +40,7 @@ export function KidIcon({ name, className }: { name: KidIconName; className?: st
     <svg
       aria-hidden="true"
       className={["kid-icon", className].filter(Boolean).join(" ")}
+      data-icon={name}
       focusable="false"
       viewBox="0 0 24 24"
       fill="none"

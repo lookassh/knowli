@@ -14,6 +14,9 @@
   background: var(--dock-bg);
   color: var(--dock-fg);
   position: relative;
+  /* Układ przycisków zdania zależy od szerokości doku, nie okna: od 600 px
+     dok ma najwyżej 560 px (spec 2026-11-01-sentence-readback-followups §4.3). */
+  container-type: inline-size;
 }
 
 /* Zwarta rama zadania (ExerciseFrame, spec 2026-10-30-kid-ui-large-screens §3.2;
@@ -167,6 +170,32 @@
   display: flex;
 }
 
+/* „Posłuchaj zdania” i „Posłuchaj wolniej”: w wierszu obok treści. */
+.sentenceGroup {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+/* Wąski dok (telefon): zdanie nad żółwiem — kolumna 48 + 8 + 48 px,
+   zwykle niższa od karty wyniku, więc dok nie rośnie; „?” zostaje przy górnym. */
+@container (max-width: 479px) {
+  .sentenceGroup {
+    flex-direction: column;
+  }
+}
+
+/* Błąd ręcznego odsłuchu zdania: pod górnym wierszem na całą szerokość. */
+.sentenceError {
+  font-size: var(--kid-type-body-size);
+  font-weight: var(--kid-type-body-weight);
+  line-height: var(--kid-type-body-line-height);
+}
+
+.sentenceError:empty {
+  display: none;
+}
+
 .content {
   min-width: 0;
   min-height: 40px;
@@ -221,7 +250,8 @@
 .dock .content :global(.kid-speech-feedback__reference h3),
 .dock .content :global(.kid-speech-feedback__legend),
 .dock .content :global(.kid-speech-feedback__legend li),
-.dock .content :global(.kid-lesson-feedback__hint) {
+.dock .content :global(.kid-lesson-feedback__hint),
+.dock .sentenceError {
   color: inherit;
 }
 

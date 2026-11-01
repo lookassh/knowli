@@ -51,6 +51,11 @@ export const kidOutcomeIconAnimate = { opacity: 1, scale: 1, rotate: 0 } as cons
 /** Wrong-choice icon: pops in, then gives one gentle "no" wobble. */
 export const kidWrongIconAnimate = { opacity: 1, scale: 1, rotate: [-30, 16, -12, 6, 0] };
 export const kidWrongIconTransition: Transition = { duration: 0.55, ease: "easeOut", times: [0, 0.35, 0.6, 0.8, 1] };
+/** Failed manual listen (ListenButton `failKey`): the icon says the same "no"
+ * as the wrong-answer badge — same timing and swings — but starts at rest,
+ * without the −30° entrance, because the icon was already on screen. */
+export const kidListenFailWobble = { rotate: [0, -16, 12, -6, 0] };
+export const kidListenFailWobbleTransition: Transition = { ...kidWrongIconTransition };
 /** Feedback heading inside the dock's scrolling card: it only fades and
  * grows towards its resting size (no rotation, no overshoot), so its box
  * never exceeds the card and never opens a transient scroll range. */
