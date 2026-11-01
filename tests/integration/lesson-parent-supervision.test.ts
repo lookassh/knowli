@@ -269,6 +269,40 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(row!.payload.acceptedAnswers).toEqual(["she is very late"]);
   });
 
+  it("acceptVerdictAsVariant zachowuje explanationPl w przebudowanym payloadzie rewizji", async () => {
+    const services = graderServices(null);
+    const lesson = await lessonWorld(pool, { now: new Date(), publish: false });
+    await pool.query(
+      `update learning_app.item_revisions set payload = $2::jsonb where id = $1`,
+      [
+        lesson.revisionId,
+        JSON.stringify({
+          exerciseType: "lesson_open_answer",
+          objectiveId: lesson.objectiveId,
+          instructionPl: "Przetłumacz zdanie na angielski.",
+          prompt: "Ona jest spóźniona.",
+          answer: "She is late.",
+          acceptedAnswers: [],
+          focus: ["late"],
+          explanationPl: "Po she używamy is, bo to trzecia osoba.",
+        }),
+      ],
+    );
+    const verdictId = randomUUID();
+    await pool.query(
+      `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
+       values ($1, $2, 'she is very late', 'pv-test', 'fake-grader', 'correct')`,
+      [verdictId, lesson.revisionId],
+    );
+    expect((await acceptVerdictAsVariant(services, verdictId)).added).toBe(true);
+    const [row] = (await pool.query<{ payload: { acceptedAnswers: string[]; explanationPl?: string } }>(
+      "select payload from learning_app.item_revisions where id = $1",
+      [lesson.revisionId],
+    )).rows;
+    expect(row!.payload.acceptedAnswers).toEqual(["she is very late"]);
+    expect(row!.payload.explanationPl).toBe("Po she używamy is, bo to trzecia osoba.");
+  });
+
   it.each([
     { initial: "incorrect", decision: "overridden_correct", feedback: "great", outcome: "correct" },
     { initial: "correct", decision: "overridden_incorrect", feedback: "lesson_hint", outcome: "incorrect" },

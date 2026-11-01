@@ -23,6 +23,7 @@ import {
   skillVersions,
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
+import { explanationTextErrors } from "../../../domain/lessons/exercise-explanation";
 import { lessonExerciseTargetKey } from "../../../domain/lessons/exposure-key";
 import {
   DEFAULT_LESSON_POLICY,
@@ -527,6 +528,7 @@ export function buildPoolInput(
     groundingRequired: subject.sourceQuotes === true,
     deduplication: subject.poolDeduplication ?? "answer",
     voiceTones: subject.ttsForPrompts === true,
+    exerciseExplanations: subject.exerciseExplanations,
     ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
     ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
   };
@@ -553,6 +555,31 @@ export function withoutVoiceToneUnlessAllowed(draft: LessonExerciseDraft, subjec
   // spec tonu TTS §4.3) — edytor nie pokaże „Tajemniczo” przy nagraniu brzmiącym „z ciekawością”.
   if (subject.ttsForPrompts === true) return draft.voiceTone === "mysterious" ? { ...draft, voiceTone: "curious" } : draft;
   const { voiceTone: _dropped, ...rest } = draft;
+  return rest;
+}
+
+/**
+ * Wyjaśnienie błędu z niezaufanego wyjścia modelu: wyłącznie niepusty tekst (przycięty);
+ * `null`, pusty tekst i inne typy znaczą „brak wyjaśnienia”, nigdy błąd ćwiczenia.
+ */
+function sanitizedExplanation(raw: unknown): { explanationPl?: string } {
+  if (typeof raw !== "string") return {};
+  const trimmed = raw.trim();
+  return trimmed === "" ? {} : { explanationPl: trimmed };
+}
+
+/**
+ * Wyjaśnienie z generatora łamiące reguły treści albo wyłączone flagą przedmiotu jest po cichu
+ * usuwane — ćwiczenie zostaje (walidacja puli odrzuciłaby je w całości). Tylko wyjście modelu:
+ * zapis rodzica z niepoprawnym wyjaśnieniem kończy się błędem walidacji.
+ */
+export function withoutInvalidExplanation(
+  draft: LessonExerciseDraft,
+  subject: Pick<SubjectModule, "exerciseExplanations">,
+): LessonExerciseDraft {
+  if (draft.explanationPl === undefined) return draft;
+  if (subject.exerciseExplanations && explanationTextErrors(draft.explanationPl).length === 0) return draft;
+  const { explanationPl: _dropped, ...rest } = draft;
   return rest;
 }
 
@@ -801,6 +828,7 @@ const rawExerciseShapeSchema = z
     statement: z.string().nullish(),
     prompt: z.string().nullish(),
     hint: z.string().nullish(),
+    explanationPl: z.string().nullish(),
     transformId: z.string().nullish(),
     correctOption: z.string().nullish(),
     options: z.array(optionShapeSchema).nullish(),
@@ -961,6 +989,7 @@ export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
     ...(typeof r.statement === "string" ? { statement: r.statement } : {}),
     ...(typeof r.prompt === "string" ? { prompt: r.prompt } : {}),
     ...(typeof r.hint === "string" ? { hint: r.hint } : {}),
+    ...sanitizedExplanation(r.explanationPl),
     ...(typeof r.transformId === "string" ? { transformId: r.transformId } : {}),
     ...(Array.isArray(r.noticeSegments)
       ? { noticeSegments: r.noticeSegments as readonly (readonly string[])[] }
@@ -993,6 +1022,7 @@ export function buildLessonPayload(
     ...(ex.statement === undefined ? {} : { statement: ex.statement }),
     ...(ex.prompt === undefined ? {} : { prompt: ex.prompt }),
     ...(ex.hint === undefined ? {} : { hint: ex.hint }),
+    ...(ex.explanationPl === undefined ? {} : { explanationPl: ex.explanationPl }),
     ...(ex.transformId === undefined ? {} : { transformId: ex.transformId }),
     ...(ex.noticeSegments === undefined ? {} : { noticeSegments: ex.noticeSegments }),
     ...(ex.visualSubject === undefined ? {} : { visualSubject: ex.visualSubject }),
@@ -1376,9 +1406,15 @@ export async function executeLessonGeneration(services: Services, runId: string,
     // puli — bez tego walidacja fazy 1 odrzucałaby całe ćwiczenie za wpis
     // nieznoszący informacji (odpowiedź kanoniczna jest akceptowana automatycznie).
     let droppedAcceptedVariants = 0;
+    let droppedExplanations = 0;
     const drafts = wellShaped
       .map(toExerciseDraft)
       .map((draft) => withoutVoiceToneUnlessAllowed(draft, subject))
+      .map((draft) => {
+        const sanitized = withoutInvalidExplanation(draft, subject);
+        if (sanitized !== draft) droppedExplanations += 1;
+        return sanitized;
+      })
       .map(withoutEmptyOptionalArrays)
       .map((draft) => (input.regenerate ? scopeFamiliesToRun(draft, runId) : draft))
       .map((draft) => {
@@ -1438,6 +1474,9 @@ export async function executeLessonGeneration(services: Services, runId: string,
     // wariantów, żeby incydenty tej klasy były widoczne w logach workera.
     if (droppedAcceptedVariants > 0) {
       console.log(`[lesson] run=${runId} sanityzacja wariantów: porzucone=${droppedAcceptedVariants}`);
+    }
+    if (droppedExplanations > 0) {
+      console.log(`[lesson] run=${runId} porzucone wyjaśnienia=${droppedExplanations}`);
     }
 
     if (uniqueValid.length === 0) {

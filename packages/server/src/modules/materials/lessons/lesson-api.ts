@@ -162,6 +162,7 @@ function exerciseDtoFromPayload(
     ...(draft.statement === undefined ? {} : { statement: draft.statement }),
     ...(draft.prompt === undefined ? {} : { prompt: draft.prompt }),
     ...(draft.hint === undefined ? {} : { hint: draft.hint }),
+    ...(draft.explanationPl === undefined ? {} : { explanationPl: draft.explanationPl }),
     ...(draft.transformId === undefined ? {} : { transformId: draft.transformId }),
     ...(draft.noticeSegments === undefined
       ? {}
