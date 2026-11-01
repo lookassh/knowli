@@ -1,506 +1,771 @@
 # Historyjka na koniec sesji lekcji gramatyki — design
 
-Data: 2026-11-01. Status: do recenzji właściciela.
+Data: 2026-11-01. Wersja 2 po recenzji trzech niezależnych krytyków: architektura
+i dane; reguły nauki i sesja; Kid UI, kontrakty i testy. Status: do recenzji
+właściciela.
 Issue: lookassh/knowli#195.
-Powiązane: `.kiro/specs/grammar-module/requirements.md` (2.13, 5.4, 9, 10),
-`docs/SPEC.md` §22, `docs/architecture.md` §19,
-`docs/superpowers/specs/2026-10-30-lesson-sentence-readback-design.md` (#194 — nagranie
-zdania po odpowiedzi, wzorzec dla nagrania en-GB),
-`docs/superpowers/specs/2026-10-30-tts-voice-style-design.md`.
 
-## 1. Cel
+Powiązane dokumenty:
+- `.kiro/specs/grammar-module/requirements.md` — wymagania 2.13, 5.4, 9, 10;
+- `docs/SPEC.md` §22;
+- `docs/architecture.md` §19;
+- `docs/superpowers/specs/2026-10-30-lesson-sentence-readback-design.md` (#194):
+  nagranie en-GB i ciche autoodtwarzanie;
+- `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md`.
+
+## 1. Cel i ustalenia
 
 Na koniec każdej sesji treningowej lekcji gramatyki angielskiej dziecko dostaje
-krótką historyjkę: 4–6 zdań po angielsku (en-GB) w ćwiczonym czasie, z odczytem
-lektora. Potem odpowiada na 1–2 pytania sprawdzające zrozumienie. Celem jest
-osłuchanie się z formą w spójnym kontekście, a nie sprawdzenie reguły.
+krótką historyjkę:
+- 4–6 zdań po angielsku (en-GB) w ćwiczonym czasie;
+- odczyt lektora;
+- potem 1–2 pytania sprawdzające zrozumienie.
+
+Celem jest osłuchanie się z formą w spójnym kontekście, a nie sprawdzenie reguły.
 
 Ustalenia z właścicielem (2026-11-01):
 
-- historyjka zamyka **każdą** sesję treningową lekcji (nie kartkówkę). To ta sama
-  historyjka wersji lekcji przy każdej sesji, bo ponowny odsłuch to cel;
-- pytania i odpowiedzi są **po polsku** (3 opcje), bo sprawdzają zrozumienie
-  angielskiego tekstu, a nie czytanie pytań;
-- pytania są **oceniane** jak zadania zamknięte: od razu jest wynik i poprawna
-  odpowiedź, a próba zostaje zapisana. Są jednak **poza budżetem** ocenianych zadań,
-  **poza postępem reguł** i bez cyklu wsparcia;
-- opublikowane lekcje bez historyjki dostają przycisk **„Wygeneruj historyjkę”**
-  w edytorze szkicu, także w nowej wersji opublikowanej lekcji.
+1. **Każda sesja.** Historyjka zamyka każdą sesję treningową lekcji, ale nie
+   kartkówkę. Zawsze jest to ta sama historyjka wersji lekcji, bo ponowny
+   odsłuch to cel.
+2. **Pytania po polsku.** Pytania i odpowiedzi są po polsku: 3 opcje, sprawdzanie
+   zrozumienia angielskiego tekstu.
+3. **Ocena poza postępem.** Pytania są oceniane jak zadania zamknięte: od razu
+   wynik i poprawna odpowiedź, zapis próby. Są poza budżetem ocenianych zadań,
+   postępem reguł i cyklem wsparcia.
+4. **Stare lekcje.** Mają przycisk **„Wygeneruj historyjkę”** w edytorze szkicu,
+   także w nowej wersji opublikowanej lekcji.
+5. **Obietnica budżetu.** Gdy sesja kończy się historyjką, baner mówi
+   **„Jeszcze N i historyjka!”**. Historyjka wychodzi także po limicie czasu.
+   Wyjątek od reguły „nie dokładaj zadań po obietnicy” trafia do AGENTS.md, SPEC
+   i wymagania 5.4. Historyjka nie jest zadaniem budżetu, tylko zapowiedzianym
+   zamknięciem.
+6. **Etapy.** Trzy etapy, każdy kończy się PR do scalenia przez właściciela (§16).
 
 ## 2. Zakres
 
-W zakresie:
-
+**W zakresie:**
 - dane historyjki w wersji lekcji;
-- generowanie: krok w runie lekcji i osobny run samej historyjki;
+- osobny run generowania historyjki: automatycznie po generowaniu lekcji
+  i ręcznie przyciskiem;
 - walidacja, edycja i zatwierdzenie przez rodzica;
 - nagranie TTS w workerze;
-- dwa nowe rodzaje zadań sesji (`lesson_story`, `lesson_story_question`) z widokami
-  Kid UI;
+- dwa nowe rodzaje zadań sesji z widokami Kid UI;
 - dokumentacja i testy.
 
-Poza zakresem:
-
-- historyjka w kartkówce i w omówieniu kartkówki;
-- wiele historyjek na lekcję lub rotacja;
+**Poza zakresem:**
+- historyjka w kartkówce;
+- wiele historyjek i rotacja;
 - historyjka w innych przedmiotach. Mechanizm jest generyczny i sterowany flagą,
-  ale dziś flagę ma tylko `english_grammar`;
-- ton lektora historyjki. Styl wypowiedzi nie działa dla en-GB, więc nagranie
-  dostaje instrukcję wymowy języka jak `feedback_audio`;
-- raport rodzica z wynikami pytań do historyjki. Próby są zapisane, ale osobnego
-  widoku nie ma;
-- wolniejsze odtwarzanie i podświetlanie zdań w czasie odczytu.
+  ale flagę ma tylko `english_grammar`;
+- ton lektora historyjki. Style działają dla `pl-PL`; nagranie dostaje instrukcję
+  wymowy en-GB jak `feedback_audio`;
+- raport rodzica z wynikami pytań. Próby są zapisane, ale nie ma widoku;
+- wolniejsze odtwarzanie i podświetlanie zdań.
 
 ## 3. Rozważone podejścia
 
-**A. Historyjka w `lesson_context` wersji; zadania sesji kotwiczone jak karty —
-wybrane.**
-- Historyjka jest danymi wersji, tak jak `examples` kart: jest zatwierdzana i
-  niezmienna razem z wersją, kopiowana do nowego szkicu i edytowana tą samą
-  operacją `edit`.
-- Nagranie ma własną tabelę wzorem `lesson_card_assets`.
-- Zadania sesji kotwiczą `item_revision_id` w ćwiczeniu lekcji, tak jak karty.
-  Konsumenci odróżniają je po `exercise_type`.
-- Plusy: pula ćwiczeń, pokrycie, selektor, deduplikacja i edytor ćwiczeń nie
-  widzą historyjki.
-- Minusy: próby pytań wiszą na rewizji kotwicy, więc czytelnicy prób muszą filtrować
-  typ zadania (§7.5).
+**A. Historyjka w `lesson_context` wersji, zadania sesji kotwiczone jak karty.
+To podejście wybieramy.**
+- Historyjka jest danymi wersji, jak `examples` kart: zatwierdzana i niezmienna
+  razem z wersją, kopiowana do nowego szkicu.
+- Nagranie ma własną tabelę, wzorem `lesson_card_assets`.
+- `session_tasks.item_revision_id` jest `NOT NULL` z FK, więc zadania kotwiczą
+  w rewizji ćwiczenia, jak karty.
+- Brak wierszy `assessments` chroni nadzór, przebudowę postępu
+  i `historicalSupportObjectives`. Pozostałe koszty kotwicy usuwa §8.5.
 
-**B. Historyjka jako element puli (`learning_item` z własną rewizją).**
-- Plusy: próby mają czystą rewizję, a media idą przez `revision_assets` (nowa rola).
-- Minusy: historyjka nie ma celu (reguły), a pula zakłada „jedno ćwiczenie = jeden
-  cel”. Wyjątki musiałyby trafić do walidacji puli, pokrycia publikacji, selektora,
-  tożsamości ćwiczeń, edytora grupującego po regułach i kartkówki.
-- Odrzucone: więcej punktów styku i ryzyko przecieku do selektora.
+**B. Historyjka jako element puli** (`learning_item` z rewizją). Odrzucone.
+Historyjka nie ma celu, a wyjątki musiałyby wejść do:
+- walidacji puli;
+- pokrycia publikacji;
+- selektora;
+- tożsamości ćwiczeń;
+- edytora grupującego po regułach;
+- kartkówki.
 
-**C. Historyjka i pytania tylko w podsumowaniu sesji, sprawdzane po stronie
-klienta.**
-- Odrzucone: klucz odpowiedzi trafiłby do Kid DTO, a to łamie zasadę „Kid DTO nie
-  zawiera klucza odpowiedzi”. Do tego nie ma zapisu prób ani ekspozycji.
+**C. Historyjka i pytania tylko w podsumowaniu, sprawdzane w kliencie.**
+Odrzucone: klucz odpowiedzi trafiłby do Kid DTO, a sesja nie miałaby ani prób,
+ani ekspozycji.
 
-## 4. Model danych historyjki (domena)
+## 4. Model danych i walidacja (domena)
 
-Nowy plik `packages/server/src/domain/lessons/story.ts`. Zawiera czyste funkcje
-bez bazy, SDK ani zegara.
+Nowy plik `packages/server/src/domain/lessons/story.ts` z czystymi funkcjami.
+Nie importuje bazy, SDK ani zegara.
 
 ```ts
 interface LessonStory {
-  readonly sentences: readonly string[];            // 4–6 zdań, answerLocale przedmiotu
-  readonly questions: readonly LessonStoryQuestion[]; // 1–2 pytania
+  readonly sentences: readonly string[];               // 4–6, answerLocale przedmiotu
+  readonly questions: readonly LessonStoryQuestion[];  // 1–2
 }
 interface LessonStoryQuestion {
-  readonly id: string;                               // "q1", "q2" — stabilne w wersji
-  readonly question: string;                         // promptLocale (pl-PL)
+  readonly id: string;                                 // stabilny w wersji ("q1")
+  readonly question: string;                           // promptLocale (pl-PL)
   readonly options: readonly { readonly id: string; readonly text: string }[]; // dokładnie 3
-  readonly correctOption: string;                    // id jednej z opcji
+  readonly correctOption: string;                      // id jednej z opcji
 }
 ```
 
-**`validateLessonStory(story, ctx)`** zwraca listę błędów (pusta oznacza, że
-historyjka jest poprawna).
+Identyfikatory opcji w danych wersji służą tylko rodzicowi. Dziecko dostaje
+identyfikatory nadane przy wydaniu zadania (§8.3).
 
-Reguły kształtu i treści:
-- 4–6 zdań. Każde po przycięciu i scaleniu białych znaków jest niepuste i ma ≤ 160
-  znaków. Całość ≤ 700 znaków.
+**`validateLessonStory(story, ctx)`** zwraca listę błędów po polsku dla rodzica.
+
+Kształt:
+- 4–6 zdań. Każde zdanie po przycięciu i scaleniu białych znaków jest niepuste
+  i ma ≤ 160 znaków. Całość ≤ 700 znaków.
 - 1–2 pytania o unikalnych `id`. Treść pytania jest niepusta i ma ≤ 160 znaków.
-- Dokładnie 3 opcje o unikalnych `id` i różnej treści po normalizacji
-  (`trim` + `toLocaleLowerCase("pl-PL")`). Każda opcja jest niepusta i ma ≤ 80
-  znaków. `correctOption` wskazuje jedną z opcji.
+- Dokładnie 3 opcje o unikalnych `id`, niepuste, ≤ 80 znaków, różne po
+  normalizacji (`trim`, `toLocaleLowerCase("pl-PL")`).
+- `correctOption` wskazuje jedną z opcji.
 
-**Bariera ekspozycji:**
-- Żadne zdanie historyjki nie może mieć klucza `lessonTextTargetKey(subject,
-  sentence)` równego `target_key` któregokolwiek ćwiczenia wersji. `ctx` niesie
-  zbiór kluczy ćwiczeń.
-- Uzasadnienie: zdanie historyjki identyczne z odpowiedzią ćwiczenia ujawniłoby
-  rozwiązanie. Ćwiczenie straciłoby wtedy status „niewidziane” w samodzielnych
-  sprawdzeniach (wymaganie 5.7).
-- Zbieżność z przykładami kart jest dopuszczalna, bo przykłady są i tak jawną
-  ekspozycją.
+**Bariera ekspozycji** chroni ćwiczenia przed ujawnieniem rozwiązania.
+- `ctx` niesie **rozwiązane zdania** ćwiczeń wersji:
+  - `feedbackSentenceText` (#194) dla każdego ćwiczenia, czyli luka wypełniona
+    i `stem` z poprawną opcją;
+  - `answer` i `acceptedAnswers` typów pełnozdaniowych (`lesson_error_fix`,
+    `lesson_transform`, `lesson_open_answer`).
+- Zdanie historyjki jest odrzucane, gdy po normalizatorze przedmiotu
+  (`subject.normalizer.normalize`) dowolny jego wariant tokenów równa się
+  dowolnemu wariantowi któregoś rozwiązanego zdania. Normalizator usuwa
+  interpunkcję i wielkość liter oraz rozwija skróty.
 
-**`storyReadText(story)`** zwraca tekst nagrania: zdania złączone spacją. Pytań
-nie czyta.
+Tego bariera **świadomie nie** robi:
+- nie blokuje częściowej zbieżności (ta sama forma w innym zdaniu, np. „plays”).
+  Pokazanie formy w kontekście jest celem historyjki;
+- nie blokuje zbieżności z przykładami kart, które i tak są jawną ekspozycją.
 
-**`storyFingerprintText(story)`** to wejście fingerprintu nagrania, równe
-`storyReadText`. Zmiana pytań nie zmienia nagrania.
+Ekspozycje historyjki (§8.2) mają klucze całych zdań, więc nie oznaczają kluczy
+ćwiczeń, np. `"plays"` dla luki. Ćwiczenia zachowują status „niewidziane”.
+
+**`storyReadText(story)`** zwraca tekst nagrania: zdania złączone spacją, bez
+pytań. Ten sam tekst jest wejściem fingerprintu, więc zmiana pytań nie zmienia
+nagrania.
+
+**`solvedSentencesOf(drafts)`** to pomocnik zbierający rozwiązane zdania puli.
+Korzystają z niego walidacja, prompt (§6.1) i dogenerowanie (§6.5).
 
 ## 5. Przedmiot (`SubjectModule`)
 
-Silnik nie zna gramatyki. Zachowanie włącza się nowymi opcjami interfejsu.
-
-- `readonly lessonStory?: boolean`. Brak oznacza `false`. Przedmiot przygotowuje
-  i pokazuje historyjkę na koniec sesji treningowej.
-  - `english_grammar: true`
-  - `english_chapter`, `school` i przedmiot testowy: brak pola
-- `SubjectPromptProfile.storyRules?: string` to reguły treści historyjki doklejane
-  do promptu generacji (§6.1). Dla gramatyki:
-  - ćwiczony czas tematu, prosty język dla początkującego 8-latka, słownictwo
-    z materiału rodzica tam, gdzie to możliwe;
+- `readonly lessonStory?: boolean`. Brak oznacza `false`.
+  - `english_grammar: true`.
+  - Pozostałe przedmioty nie mają pola.
+- `SubjectPromptProfile.storyRules?: string`. Reguły dla gramatyki:
+  - ćwiczony czas tematu;
+  - prosty język dla początkującego ~8-latka;
+  - słownictwo z materiału rodzica tam, gdzie to możliwe;
   - 4–6 krótkich zdań o jednej postaci lub sytuacji;
-  - formy z kilku reguł tematu (np. twierdzenie, przeczenie, pytanie);
-  - pytania o treść (kto, co, kiedy), a nie o gramatykę;
+  - formy z kilku reguł tematu: twierdzenie, przeczenie, pytanie;
+  - pytania o treść (kto, co, kiedy), nie o gramatykę;
   - błędne opcje wiarygodne, ale jednoznacznie sprzeczne z tekstem;
-  - żadnego zdania z puli ćwiczeń.
-- Walidacja katalogu (`validateSubject`): przy `lessonStory: true` wymagane jest
-  niepuste `prompts.storyRules`.
-- Test architektury (`architecture.test.ts`) pilnuje dalej, że kod silnika,
-  `materials/lessons` i `learning/lessons` nie zawiera identyfikatora przedmiotu.
+  - żadnego zdania z listy rozwiązanych zdań ćwiczeń.
+- `validateSubject`: gdy `lessonStory` jest `true`, wymagane jest niepuste
+  `storyRules`.
+- `architecture.test.ts` pilnuje braku identyfikatorów przedmiotów w silniku,
+  `materials/lessons` i `learning/lessons`. Zachowanie włącza tylko flaga.
 
 ## 6. Generowanie (materials)
 
-Właściciel: `materials/lessons`. Port LLM: nowa metoda
-`generateLessonStory(input): Promise<unknown>` w `ports/ai.ts`. Adapter OpenAI
-używa strict `json_schema` `lesson_story`. Fake provider zwraca deterministyczną,
-poprawną historyjkę.
+Właściciel: `materials/lessons`.
 
-### 6.1. Wejście promptu (bez danych dziecka)
+Port LLM: `generateLessonStory(input, { signal }): Promise<unknown>`
+w `ports/ai.ts`.
+- Adapter OpenAI używa strict `json_schema` `lesson_story`.
+- Fake provider zwraca deterministyczną, poprawną historyjkę bez kolizji z pulą
+  fake'a.
 
+### 6.1. Wejście promptu
+
+Do promptu trafiają wyłącznie dane bez informacji o dziecku:
 - tytuł tematu;
 - `descriptionEn` wybranych celów;
-- materiał rodzica (ten sam blok co przy puli);
-- opcjonalna instrukcja rodzica;
-- `storyRules` przedmiotu;
-- odpowiedzi kanoniczne ćwiczeń wersji jako lista „nie używaj tych zdań”
-  (≤ 120 pozycji, przycięte jak `existingAnswers`).
+- materiał rodzica, w tym samym bloku co przy puli;
+- opcjonalna instrukcja;
+- `storyRules`;
+- rozwiązane zdania ćwiczeń (≤ 120, przycięte), opisane jako „nie powtarzaj
+  tych zdań”. Nie przekazujemy gołych odpowiedzi typu „plays”, żeby model nie
+  unikał form, które ma pokazać.
 
-Nie trafiają tam imię, wiek ani identyfikatory dziecka.
+### 6.2. Run historyjki (osobny od runu lekcji)
 
-### 6.2. Krok w runie lekcji
+Historyjka nie jest krokiem runu lekcji. Wywołanie LLM zużywałoby wspólny limit
+runu: przy przekroczeniu poprawna pula przepada, a wyjątek oznacza cały run jako
+`failed`. Zamiast tego jest osobny run.
 
-- Po zapisaniu ćwiczeń, w tym samym runie, worker woła `generateLessonStory`, gdy
-  `subject.lessonStory` jest `true`. Wynik parsuje Zod, potem waliduje
-  `validateLessonStory` względem kluczy zapisanej puli.
-- Wynik poprawny trafia do `lesson_context.story` w transakcji finalizacji runu,
-  pod blokadą wersji i z kontrolą numeru edycji, razem z `examples`.
-- Błąd providera, odmowa, zły format albo odrzucenie walidacją **nie** kończą runu
-  błędem. Lekcja przechodzi do `review` bez historyjki, a
-  `lesson_context.storyError = "generation_failed" | "invalid"` pozwala panelowi
-  pokazać „Historyjka nie powstała”. Lekcja bez historyjki jest poprawna.
-- Przejściowy błąd providera nie dostaje osobnych retry. Ponowienie to przycisk
-  z §6.3.
-- Dogenerowanie ćwiczeń jednej reguły (`regenerateObjective`) nie zmienia
-  historyjki.
+**Rodzaj runu:**
+- `generation_runs.kind = 'lesson'` z `input.purpose = 'story'`;
+- dane `input` takie jak w runie lekcji;
+- CHECK `generation_runs_kind_shape` pozostaje bez zmian.
 
-### 6.3. Run samej historyjki („Wygeneruj historyjkę”)
+**Kolejkowanie automatyczne:**
+- Finalizacja udanego runu lekcji (pełne generowanie, nie dogenerowanie reguły)
+  kolejkuje run historyjki w **tej samej transakcji**, gdy:
+  - przedmiot ma `lessonStory`;
+  - wersja nie ma historyjki.
+- Dedupe: `lesson-story:<runId lekcji>`.
+- `expectedEditNumber` = numer edycji po finalizacji.
 
-- Nowa operacja `regenerateLessonStory({ deckId, expectedEditNumber,
-  clientRequestId })` wzorem `regenerateObjective`:
-  - run `kind = 'lesson'`, `runInput.story = { only: true }`;
-  - ta sama deduplikacja `lesson:<clientRequestId>`;
-  - te same warunki: szkic nie opublikowany, zgodny numer edycji, brak aktywnego
-    runu lekcji;
-  - przedmiot z flagą `lessonStory`.
-- Worker w trybie `story.only`:
-  - pomija batch ćwiczeń i woła tylko `generateLessonStory`;
-  - przy sukcesie zastępuje `lesson_context.story` i czyści `storyError`;
-  - przy błędzie zapisuje `storyError` i **zachowuje** poprzednią historyjkę;
-  - stan wersji wraca do tego sprzed runu, tak jak przy dogenerowaniu.
-- Procedura parent oRPC: `lessonDrafts.regenerateStory`.
+**Kolejkowanie ręczne** — `regenerateLessonStory({ deckId, expectedEditNumber,
+clientRequestId })`, procedura parent oRPC `lessonDrafts.regenerateStory`:
+- dedupe `lesson-story:<clientRequestId>`, osobna przestrzeń od
+  `regenerateObjective`;
+- wersja nie może być opublikowana (inaczej `immutable`);
+- numer edycji musi się zgadzać (inaczej `conflict`);
+- nie może trwać inny run lekcji tej wersji (inaczej `conflict`);
+- przedmiot musi mieć flagę (inaczej `validation`).
 
-### 6.4. Edycja i publikacja
+**Wykonawca `executeLessonStoryGeneration`** to osobna funkcja. Nie korzysta
+z gałęzi batchy, celów dynamicznych ani `uniqueValid`. Kroki:
+1. Odczyt wersji i puli. Zbudowanie rozwiązanych zdań w pamięci.
+2. Wywołanie LLM z własnym terminem runu. Retry przy błędach przejściowych
+   działa jak w runach lekcji (wymaganie 2.11). Brak retry przy błędach
+   konfiguracji, odmowie i złym formacie (2.10).
+3. Parsowanie Zod `LessonStorySchema`, potem `validateLessonStory`.
+   - Odrzucenie kończy run jako `failed` z kodem `story_invalid`.
+   - Błąd providera kończy run kodem z istniejącej taksonomii.
+4. Finalizacja pod blokadą wersji:
+   - kontrola `expectedEditNumber` (rozjazd daje `superseded`, bez zapisu);
+   - ponowna walidacja z aktualną pulą;
+   - zapis `lesson_context.story`;
+   - **podbicie `editNumber`**;
+   - `reconcileDraftAssetsTx`, które kolejkuje nagranie.
+   Stan wersji (`review`) się nie zmienia.
+5. Przy błędzie poprzednia historyjka zostaje bez zmian.
 
-- Patch `lessonDrafts.edit` dostaje pole `story: LessonStory | null`:
-  - `null` usuwa historyjkę;
-  - brak pola oznacza bez zmian;
-  - wartość zastępuje historyjkę w całości, jak `examples`.
-- Edycja waliduje `validateLessonStory` i zwraca `validation` z listą błędów.
-  Kontrola nakładania się na ćwiczenia działa na kluczach puli **po** zmianach
-  z tego samego patcha.
-- Publikacja (`publishLessonDraft`): gdy wersja ma historyjkę, walidacja (z
-  kluczami finalnej puli) jest warunkiem publikacji. Chroni to przed edycją
-  ćwiczenia, której odpowiedź zrównała się ze zdaniem historyjki. Błąd ma kod
-  `validation` z `details.story`. **Publikacja nie czeka na nagranie** i nie
-  wymaga historyjki.
-- Kopia opublikowanej wersji do nowego szkicu (`version-ops`) kopiuje cały
-  `lesson_context`, więc historyjkę też.
-- DTO rodzica `LessonDraftDto` dostaje:
-  - `story: LessonStoryDto | null`;
-  - `storyError?`;
-  - `storyAudio?: { state: "pending" | "ready" | "failed" | "none"; assetId? }`
-    wzorem `cardAudio`.
-- Kontrakt `LessonStorySchema` (Zod) trafia do `packages/contracts/src/lessons.ts`.
+**Wpływ na inne operacje:**
+- Edycja rodzica oznacza oczekujący lub trwający run jako `superseded`, jak każdy
+  run lekcji. Rodzic może wtedy wygenerować historyjkę ponownie.
+- Publikacja z trwającym runem historyjki działa tak, jak dziś publikacja przy
+  aktywnym runie lekcji. Weryfikacja w implementacji: jeśli publikacja jest
+  blokowana, run historyjki nie może jej blokować. Publikacja oznacza go wtedy
+  jako `superseded`.
+
+**Stan dla panelu:**
+- `GenerationDto` dostaje `purpose: "lesson" | "story"`.
+- Panel pokazuje run historyjki w sekcji historyjki, nie jako generowanie lekcji.
+- „Spróbuj ponownie” zachowuje `purpose`.
+- Nie ma pola `storyError` w `lesson_context`. Stan błędu wynika z ostatniego
+  runu historyjki wersji, więc nie kopiuje się do nowej wersji.
+
+### 6.3. Edycja
+
+Patch `lessonDrafts.edit` dostaje pole `story`:
+- `story: LessonStory | null`;
+- `null` usuwa historyjkę;
+- brak pola oznacza bez zmian;
+- wartość zastępuje historyjkę w całości.
+
+Walidacja przy edycji:
+- `validateLessonStory` liczy rozwiązane zdania z puli **po** zmianach z tego
+  samego patcha;
+- błąd zwraca `validation` z `details.story: string[]`.
+
+### 6.4. Publikacja
+
+- Gdy wersja ma historyjkę, publikacja waliduje ją z finalną pulą. Błąd zwraca
+  `validation` z `details.story`.
+- Publikacja **nie czeka** na nagranie.
+- Publikacja **nie wymaga** historyjki.
+
+### 6.5. Dogenerowanie reguły
+
+`regenerateObjective` traktuje zdania historyjki jak istniejące rozwiązania.
+Wygenerowane ćwiczenie, którego rozwiązane zdanie koliduje z historyjką, jest
+odrzucane z powodem zliczanym dla rodzica, jak duplikaty. Publikacja nie blokuje
+się wtedy niespodziewanie.
+
+### 6.6. Kopia wersji i DTO rodzica
+
+**Kopia:** `createVersionFromPublished` kopiuje `lesson_context`, więc historyjkę
+też. Kopia i publikacja bez edycji uzgadniają nagranie: `reconcileBeforePublish`
+tworzy wiersz z §7.
+
+**DTO rodzica** (`LessonDraftDto`):
+- `story: LessonStoryDto | null`;
+- `storyEnabled: boolean`, zgodnie z precedensem `voiceTones`: flaga przedmiotu
+  wyliczona przez serwer;
+- `storyAudio?: LessonPromptAudioDto`, ten sam schemat co nagrania pytań.
+  Brak pola oznacza brak nagrania.
+
+**Kontrakt:** `LessonStorySchema` (Zod) w `packages/contracts/src/lessons.ts`.
 
 ## 7. Media (materials)
 
-- Nowa tabela `lesson_story_assets` (migracja `0032`):
-  - `deck_version_id` (PK, FK `deck_versions` z kaskadą), `asset_id` (FK
-    `media_assets`), `expected_fingerprint`;
-  - trigger niezmienności wierszy opublikowanej wersji skopiowany z
-    `0028_lesson_card_assets.sql`;
-  - schemat Drizzle w tym samym PR.
-- Uzgadnianie: nowe `reconcileLessonStoryAssetTx` wołane z `reconcileDraftAssetsTx`
-  obok kart.
-  - Gdy przedmiot ma `lessonStory` i wersja ma historyjkę:
-    `ttsAsset(storyReadText, subject.answerLocale, settings)` bez stylu (instrukcja
-    wymowy en-GB jak `feedback_audio`) przez `findOrCreateAsset`.
-  - Brak historyjki usuwa wiersz.
-  - Fingerprint obejmuje tekst, głos i locale, więc zmiana zdań daje nowe
-    nagranie, a zmiana pytań nie.
-- Worker: oczekujące nagranie historyjki przedmiotu bez flagi `lessonStory` kończy
-  się jako zastąpione. To rozszerzenie reguły w `media-generation.ts` dla wierszy
-  kart.
-- Rodzic: `readLessonAudioStates` dostaje stan nagrania historyjki. Nowa operacja
-  `regenerateLessonStoryAudio` działa wzorem `regenerateLessonCardAudio`
-  (procedura `lessonDrafts.regenerateStoryAudio`).
+**Tabela `lesson_story_assets`** (migracja `0032` albo kolejny wolny numer):
+- dosłowna kopia `0028_lesson_card_assets.sql`;
+- kolumny: `deck_version_id` (PK, FK bez kaskady), `asset_id` (FK
+  `media_assets`), `expected_fingerprint`;
+- indeks `asset_id`;
+- trigger niezmienności wierszy opublikowanej wersji;
+- schemat Drizzle w tym samym PR.
+
+**Uzgadnianie:** `reconcileLessonStoryAssetTx` z `reconcileDraftAssetsTx`, obok
+kart.
+- Gdy przedmiot ma `lessonStory` i wersja ma historyjkę:
+  `ttsAsset("feedback_audio", storyReadText, subject.answerLocale, settings)`,
+  bez stylu, przez `findOrCreateAsset`.
+- Brak historyjki usuwa wiersz.
+- Nieudane nagranie jest ponawiane przy uzgadnianiu, także przy publikacji, jak
+  karty (bez `keepFailed`). Opublikowana wersja z nagraniem `failed` zostaje bez
+  odczytu do następnej wersji.
+
+**Worker:** `supersedeDisabledLessonTts` w `media-generation.ts` dziś oznacza
+jako `failed` każdy zasób bez znanego odwołania.
+- Musi dołączyć `lesson_story_assets` i zastępować tylko nagrania wersji, których
+  przedmiot nie ma `lessonStory`.
+- Test integracyjny: nagranie historyjki dochodzi do `ready`.
+
+**Rodzic:**
+- `readLessonAudioStates` zwraca stan nagrania historyjki;
+- `regenerateLessonStoryAudio` działa wzorem `regenerateLessonCardAudio`;
+- procedura `lessonDrafts.regenerateStoryAudio`.
 
 ## 8. Sesja (learning)
 
-Właściciel: `learning/lessons`. Granice transakcji są te same co dziś: plan
-sesji przy `startSession`, wydanie zadania w `nextTask`, finalizacja próby
-w transakcji próby.
+Właściciel: `learning/lessons`. Granice transakcji się nie zmieniają: plan przy
+`startSession`, wydanie w `nextTask`, finalizacja w transakcji próby.
 
-### 8.1. Plan
+### 8.1. Typy
 
-- `createLessonTrainingSessionPlan` po pętli ocenianych slotów dokleja sloty
-  historyjki, gdy jednocześnie:
-  - przedmiot ma `lessonStory`;
-  - `lesson_context.story` przechodzi `validateLessonStory`, z kluczami puli wersji
-    jako obroną przed starymi danymi;
-  - plan ma ≥ 1 oceniany slot.
-- Sloty historyjki to:
-  1. `lesson_story` — prezentacja;
-  2. `lesson_story_question`, po jednym na pytanie, w kolejności historyjki.
-- Wszystkie sloty historyjki mają `assessed: false` i nie zmieniają `taskBudget`.
-- Kotwica `item_revision_id`: rewizja pierwszego ćwiczenia pierwszego celu, ta sama
-  reguła co karty.
-- Nagranie jest rozwiązywane przy budowie planu, tak jak karty: gotowy zasób
-  o oczekiwanym fingerprincie, najnowsza generacja. Brak gotowego nagrania oznacza
-  brak odczytu w tej sesji, bo plan jest zamrożony.
-- Ścieżka bez planu (`issueNextLessonTask`, stare sesje) **nie** dostaje historyjki.
-- Kartkówka nie dostaje historyjki.
+- Nowe typy zadań sesji `lesson_story` i `lesson_story_question`. Trafiają do
+  `EXERCISE_TYPES` w kontrakcie i do osobnego typu serwera
+  `LessonSessionTaskType = LessonExerciseType | LessonStoryTaskType`.
+- **Nie** trafiają do `LessonExerciseType` ani `LESSON_EXERCISE_TYPES`: puli,
+  schematu LLM, `STAGE_BY_TYPE` i edytora ćwiczeń.
+- Jeden predykat `isNonAssessedLessonTaskType(type)` (`lesson_card`,
+  `lesson_story`, `lesson_story_question`) i jego odpowiednik SQL (`not in (…)`)
+  zastępują literały `lesson_card` w licznikach.
+- Plan sesji (`training-session-plan.ts`) dostaje `taskKind: "story" |
+  "story_question"`. Wersja snapshotu zostaje 1, bo nowe wartości enumu nie
+  psują odczytu starych planów.
 
-### 8.2. Wydanie
+### 8.2. Plan i wydanie
 
-- `nextTask` dziś kończy sesję, gdy `remaining <= 0` albo minął miękki limit
-  czasu. Zmiana: zanim zwróci `null` z tych dwóch powodów, wydaje następny
-  niewydany slot z `assessed: false` **po** ostatnim ocenianym slocie planu, czyli
-  slot historyjki. Dopiero gdy takich slotów nie ma, zwraca `null`.
-- Limit czasu nie ucina więc historyjki. Zakończenie oknem wznowienia (30 min)
-  i `endSession` ją pomijają.
-- Liczniki: `lessonTaskCounts.assessed` i `remainingAssessed` pomijają typy
-  historyjki. Baner „Jeszcze 3” się nie zmienia: obietnica dotyczy zadań, a
-  historyjka jest zamknięciem.
-- Ekspozycja `lesson_story`: przy wydaniu, w tej samej transakcji i przed
-  odpowiedzią, serwer pieczętuje `prompt_issued` z ekspozycjami
-  `lessonTextTargetKey` każdego zdania, tak jak przykłady kart. Dzięki barierze
-  z §4 te klucze nie należą do żadnego ćwiczenia.
-- Ekspozycja `lesson_story_question`: `prompt_issued` bez kluczy ćwiczeń. Pytanie
-  i opcje są jawne, a rozwiązanie wychodzi w feedbacku (§8.3).
+**Plan.** `createLessonTrainingSessionPlan` po pętli ocenianych slotów dokleja
+sloty historyjki, gdy jednocześnie:
+- przedmiot ma `lessonStory`;
+- wersja ma historyjkę;
+- plan ma ≥ 1 oceniany slot.
 
-### 8.3. Odpowiedź na pytanie
+Sloty to `lesson_story`, a po nim po jednym `lesson_story_question` na pytanie.
+Wszystkie mają `assessed: false` i nie zmieniają `taskBudget`.
 
-- Ocena deterministyczna po `optionId` z prywatnego klucza zadania
-  (`answerKey.correctOption`), modalność `choice`. Do modelu oceniającego nic nie
-  trafia.
-- Wynik `correct` albo `incorrect`. Feedback: „Świetnie!” albo poprawna opcja
-  (`correctText` = tekst poprawnej opcji). Jedna próba kończy zadanie, bez retry.
-- Ujawnienie feedbacku idzie przez istniejące `discloseLessonFeedback`. Ekspozycja
-  ma klucz `computeTargetKey("story:" + questionId + ":" + correctOptionText,
-  promptLocale)`, w przestrzeni nazw, która nie koliduje z kluczami ćwiczeń en-GB.
-- **Brak** zapisu w `assessments` i brak zmian `child_objective_progress`,
-  streaków, cyklu wsparcia i licznika wywołań modelu.
-- „Nie pamiętam” nie jest dostępne w pytaniu historyjki. Akcja sesji „Pomiń”
-  (jeśli widoczna) daje `skip` bez kary, jak w innych zadaniach.
-- Próba ma `context.storyQuestion = true` dla czytelników prób.
+Szczegóły slotów:
+- **Kotwica:** rewizja pierwszego ćwiczenia pierwszego celu, jak karty.
+- **Nagranie:** rozwiązywane przy budowie planu jak karty, czyli gotowy zasób
+  o oczekiwanym fingerprincie z najnowszej generacji. Brak gotowego nagrania
+  oznacza brak odczytu w tej sesji.
+- **Wyłączenia:** historyjki nie dostają ścieżka bez planu (stare sesje) ani
+  kartkówka.
 
-### 8.4. Czytelnicy zadań i prób
+**Wybór slotu.** Dziś slot wybiera indeks `counts.planned`. Od teraz
+`issueNextLessonPlanTask` wybiera **pierwszy slot planu, którego `taskId` nie ma
+w `session_tasks`**, z dwiema regułami:
+- Zwykły przebieg wydaje sloty po kolei.
+- Gdy `nextTask` kończyłby sesję (`remaining <= 0` albo miękki limit czasu),
+  zamiast `null` wydaje pierwszy niewydany slot historyjki. Pominięte sloty
+  oceniane nigdy już nie wychodzą.
 
-Typy historyjki są wykluczane albo obsługiwane jawnie (wyczerpujące `switch`):
+To samo założenie indeksu w `lesson-shorten.ts` („Skróć”) zostaje poprawione.
+Skrócenie usuwa niewydane sloty oceniane, a sloty historyjki zostają na końcu.
+Okno wznowienia (30 min) i `endSession` pomijają historyjkę.
 
-- selektor: historia sesji, `lastSeenAt` i `exposedTargetKeys` liczą tylko
-  ćwiczenia; sloty historyjki są ostatnie i nie wpływają na planowanie;
-- `lesson-supervision` (werdykty rodzica): pomija;
-- `parent-work-card` i raport aktywności;
-- `session-activity` (ocena aktywności sesji): historyjka i pytania trafiają do
-  modelu jako zwykłe zadania. To praca dziecka (bodziec, opcje, wysłana odpowiedź),
-  bez kluczy i danych dziecka;
-- `buildLessonSummaryObjectives`: pomija;
-- `lesson-mock-tests`: pomija (nigdy nie wydaje).
+**Liczniki:**
+- Wszystkie liczniki „ocenianych” używają predykatu z §8.1:
+  - `lessonTaskCounts`;
+  - `sessionActivityAndCounts` w `sessions.ts`;
+  - `assessedBefore` przy ponownym odczycie wydanego zadania;
+  - `parent-work-card`;
+  - podsumowanie.
+- Historyjka nie zużywa `remaining`, więc ścieżka limitu czasu nie uwalnia
+  ocenianych slotów.
 
-### 8.5. Baza
+**Kontrakt licznika:**
+- `TaskDto.remainingAssessed` zmienia się z `positive()` na `nonnegative()`.
+- Zadania historyjki mają `0`, a Kid UI przy `0` ukrywa baner.
+- Nowe opcjonalne pole `TaskDto.closingStory?: true` jest ustawiane na zadaniach
+  ocenianych, gdy plan sesji ma sloty historyjki.
+- Kid UI pokazuje wtedy baner **„Jeszcze N i historyjka!”** zamiast
+  „Jeszcze N i koniec!”.
 
-Migracja `0032`:
-- `session_tasks_completed_only_exposure` dopuszcza `lesson_story`;
-- `lesson_story_question` przechodzi zwykłą ścieżką `answered`.
+**Ekspozycje:**
+- Wydanie `lesson_story` i każdego `lesson_story_question` (którego prompt znowu
+  pokazuje zdania) pieczętuje `prompt_issued` z ekspozycjami
+  `lessonTextTargetKey` każdego zdania.
+- Zapis odbywa się w tej samej transakcji, przed wysłaniem treści.
+- Bariera z §4 gwarantuje, że te klucze nie są rozwiązaniami ćwiczeń.
+
+### 8.3. Pytanie: materializacja i odpowiedź
+
+**Materializacja** (wzorem `lesson_choice`):
+- każda opcja dostaje UUID nadany przy wydaniu;
+- kolejność to `seededShuffle(taskId)`, żeby dziecko nie uczyło się pozycji
+  poprawnej odpowiedzi przy tej samej historyjce;
+- prywatny klucz zadania zawiera `correctOptionId`, `optionValues` (dla oceny
+  aktywności) i `storyQuestionId`. Klucz nie ma `targetKey` ćwiczenia.
+
+**Odpowiedź.** Osobna funkcja `answerStoryQuestion` w `learning/lessons`. Używa
+istniejącej blokady sesji, idempotencji `clientAttemptId` i zamrożenia
+`received_at`, ale nie wchodzi do `finalizeLessonAttempt`.
+- Akceptowana jest tylko modalność `choice`.
+  - `dont_remember`, `text` i inne dają `validation` (400). Serwer odrzuca je
+    jawnie, bo `dont_remember` byłby dziś liczony jako trudność celu kotwicy.
+  - Kid UI nie pokazuje „Nie pamiętam” ani „Pomiń” (widoki lekcji ich nie mają).
+- Ocena jest deterministyczna: `correct` albo `incorrect`. Feedback to „Świetnie!”
+  albo „Poprawna odpowiedź: …” (`correctText` = tekst poprawnej opcji).
+  - Jedna próba kończy zadanie.
+  - Nie ma nagrania zdania (`feedback_audio`) ani modelu oceniającego.
+- Feedback jest pieczętowany `feedback_issued` bez kluczy ćwiczeń
+  (`exposures: []`), bo nie ujawnia rozwiązania żadnego ćwiczenia.
+- Odpowiedź **nie** tworzy wiersza `assessments`. Nie zmienia projekcji, streaków,
+  cyklu wsparcia ani licznika wywołań modelu. Próba ma
+  `context.storyQuestion = true`.
+- Kid UI: odpowiedzi na pytania nie zmieniają serii ani świętowania
+  (`session-progress-state`). Pasek postępu sesji ich nie liczy.
+
+### 8.4. Ujawnienia na żądanie
+
+`authorizeDisclosure` (`events.ts`) dziś blokuje dla `lesson_*` tylko `audio`.
+`hint` na zadaniu kotwiczonym zwróciłby `answer` ćwiczenia-kotwicy.
+- Zmiana: serwer odrzuca **każde** ujawnienie (`hint`, `audio`, `distractors`,
+  …) dla `lesson_story`, `lesson_story_question` i `lesson_card`.
+- Dla karty to ta sama latentna luka, naprawiana przy okazji, bo dotyczy tej
+  samej kotwicy.
+- Test integracyjny pokrywa odrzucenie.
+
+### 8.5. Czytelnicy zadań i prób (pełna lista)
+
+**Serwer — typy historyjki wykluczone albo obsłużone jawnie:**
+- `lesson-sessions.ts`:
+  - `previousObjectiveContactSnapshot` — filtr po typie, bo inaczej każda sesja
+    dawałaby fałszywy kontakt z pierwszym celem i psuła regułę „inny dzień po
+    ≥ 12 h”;
+  - historia sesji;
+  - `lastSeenAt`;
+  - `historicalSupportObjectives`;
+  - budowa planu: liczniki i `assessed`;
+  - `buildLessonSummaryObjectives`.
+- `sessions.ts`:
+  - `sessionActivityAndCounts`;
+  - `assessedBefore`;
+  - strażnik `completePresentation`, który dopuszcza `lesson_story`.
+- `lesson-shorten.ts`.
+- `lesson-mock-tests.ts` (`switch`) — nigdy nie wydaje historyjki.
+- `parent-work-card.ts`.
+- `session-activity.ts` (`switch`) — historyjka i pytania trafiają do oceny
+  aktywności jako zwykła praca dziecka: bodziec, opcje, warianty poprawne
+  i wysłana odpowiedź, bez danych dziecka (zgodnie z AGENTS.md).
+- Nadzór werdyktów rodzica i przebudowa postępu opierają się na `assessments`,
+  więc nie wymagają zmian. Test integracyjny to potwierdza.
+
+**Kid UI:**
+- `session-controller.ts`:
+  - strażnik `completePresentation`;
+  - `remainingFor`;
+  - baner.
+- `ExerciseView.tsx` (`switch` z `never`).
+- `exercise-presentation.ts`.
+- `LearnScreen.tsx` — etykiety odsłuchu i komunikaty błędu.
+
+**Kontrakty:** `messages.ts` (`switch`).
+
+### 8.6. Baza
+
+Migracja razem z tabelą z §7:
+- `session_tasks_completed_only_exposure` dopuszcza `lesson_story` (SQL
+  i `schema.ts`);
+- `attempts_modality_allowed`, `learning_events_kind_allowed`
+  i `generation_runs_*` — bez zmian.
 
 ## 9. Kontrakt Kid API
 
-`TaskPromptSchema` (`packages/contracts/src/kid.ts`) dostaje dwie gałęzie `.strict()`:
+`TaskPromptSchema` dostaje dwie gałęzie `.strict()`:
 
 ```ts
 { kind: "lesson_story",
-  story: { sentences: string[] },        // 4–6, lang = answerLocale
-  storyAudioAssetId?: Uuid }
+  story: { sentences: string[] /* 4–6, min(1) */ }.strict(),
+  contentLocale: string,                // answerLocale przedmiotu (lang tekstu)
+  questionAudioAssetId?: Uuid }         // nagranie historyjki
 { kind: "lesson_story_question",
-  question: string,                      // pl-PL
-  options: { id: string; text: string }[], // 3
-  story: { sentences: string[] },        // do ponownego przeczytania
-  storyAudioAssetId?: Uuid }
+  question: string,                     // pl-PL
+  options: { id: Uuid; text: string }[] /* length(3) */,
+  story: { sentences: string[] }.strict(),
+  contentLocale: string,
+  questionAudioAssetId?: Uuid }
 ```
 
-- Brak `correctOption` i jakiegokolwiek klucza. Test kontraktu sprawdza, że gałęzie
-  odrzucają nadmiarowe pola.
-- `EXERCISE_TYPES` dostaje oba typy.
-- Teksty UI trafiają do katalogu komunikatów (`messages.ts`).
+- Nazwa `questionAudioAssetId` pozwala ponownie użyć `questionAudioOf()`
+  i `QuestionAudioButton`. To pole „Posłuchaj” zadania; dla historyjki znaczy
+  „nagranie historyjki”.
+- Kontrakt nie ma `correctOption` ani żadnego klucza. Testy sprawdzają, że
+  gałęzie odrzucają nadmiarowe pola i przyjmują `remainingAssessed = 0`.
+- `EXERCISE_TYPES` dostaje oba typy. `TaskDto` dostaje `closingStory?`.
 
 ## 10. Kid UI
 
-Ekrany zbudowane wyłącznie ze wspólnych komponentów, bez surowych kontrolek
-i literałów stylu poza tokenami.
+Ekrany są budowane wyłącznie ze wspólnych komponentów. Bez surowych kontrolek
+i bez literałów stylu.
 
-**`LessonStoryView`** (`packages/kid-ui/src/exercises/lesson/`):
-- `ExerciseFrame` z nagłówkiem „Historyjka”;
-- zdania jako blok czytania (`lang="en-GB"`, `max-inline-size:
-  var(--kid-reading-measure)`);
-- przycisk „Posłuchaj historyjki” (`GuidanceButton`/`ListenButton` przez
-  `useExerciseGuidance`, cel ≥ 48 px), gdy jest `storyAudioAssetId`;
-- akcja „Dalej” wywołuje `completePresentation`.
-- Autoodtwarzanie raz po pokazaniu ekranu przez istniejący kanał odtwarzania,
-  wzorem odczytu zdania z #194:
-  - zablokowane autoodtwarzanie i błąd pliku nie pokazują komunikatu, zostaje
-    przycisk;
-  - „Dalej” przerywa odczyt.
+**`LessonStoryView`**, na układzie `LessonCardView`:
+- nagłówek „Historyjka”;
+- blok czytania zdań (`lang={contentLocale}`,
+  `max-inline-size: var(--kid-reading-measure)`);
+- odsłuch `QuestionAudioButton` z etykietą `listenLessonStory`, gdy jest
+  nagranie;
+- „Dalej” wywołuje `completePresentation`.
 
-**`LessonStoryQuestionView`**:
-- pytanie po polsku;
-- pod nim zwarty blok zdań historyjki (do ponownego przeczytania, bo bez nagrania
-  to jedyna droga powrotu);
-- przycisk „Posłuchaj historyjki” bez autoodtwarzania;
-- opcje w `AnswerGrid`; wybór od razu wysyła odpowiedź;
-- wynik w `AnswerFeedback*` z „Dalej”;
-- bez „Nie pamiętam”.
+**Autoodtwarzanie historyjki:**
+- raz, **po zamontowaniu panelu** (`AnimatePresence mode="wait"`, wzorzec
+  `TaskPane`);
+- **ciche jak `playSentenceAudio` (#194)**: zablokowany autoplay i błąd pliku
+  nie pokazują komunikatu, zostaje przycisk;
+- „Dalej” i nowe zadanie przerywają odczyt.
 
-Responsywność:
+Błąd ręcznego odsłuchu pokazuje nowe komunikaty `storyAudioUnavailable`
+i `storyAudioRetry`.
+
+**`LessonStoryQuestionView`**, w kolejności od góry:
+1. pytanie po polsku;
+2. opcje w `AnswerGrid` — wybór od razu wysyła odpowiedź;
+3. blok zdań historyjki (do ponownego przeczytania; bez nagrania to jedyna droga
+   powrotu) i odsłuch bez autoodtwarzania.
+
+Ta kolejność trzyma opcje w widoku w poziomie telefonu. Wynik pokazuje
+`AnswerFeedback*` z „Dalej”.
+
+**Feedback:** przy wyniku `guidanceInDock` zeruje odsłuch pytania, jak w #194,
+więc nie pojawiają się dwa głośniki.
+
+**Podsumowanie:** po ostatnim pytaniu `nextTask` zwraca `null`, a klient pokazuje
+zwykłe podsumowanie.
+
+**Responsywność:**
 - treść rośnie albo przewija się w ramie;
-- akcje pozostają osiągalne w portrait, landscape telefonu (niska wysokość),
-  tablecie i desktopie ze skalą > 1.
+- pierwsza opcja jest widoczna bez przewijania w portrait i landscape telefonu;
+- akcje pozostają osiągalne na tablecie i na desktopie ze skalą > 1.
 
 ## 11. Panel rodzica
 
-`LessonEditor` dostaje sekcję „Historyjka na koniec sesji”, widoczną dla
-przedmiotu z flagą. O flagę pyta DTO szkicu przez `storyEnabled: boolean`, bo UI
-nie zna przedmiotów. Sekcja zawiera:
+`LessonEditor` dostaje sekcję „Historyjka na koniec sesji”, widoczną przy
+`storyEnabled`.
 
-- pola zdań (4–6, dodaj/usuń) i 1–2 pytania z trzema opcjami oraz wyborem
-  poprawnej (`Radio`). Komponenty Mantine;
-- komunikaty walidacji z serwera przy zapisie;
-- odsłuch i „Nagraj ponownie” wzorem kart, dostępne tylko przy treści niezmienionej
-  od zapisu;
-- „Wygeneruj historyjkę” (albo „Wygeneruj od nowa”, z potwierdzeniem, gdy
-  historyjka istnieje) oraz stan runu;
-- informację, gdy historyjka nie powstała (`storyError`);
-- „Usuń historyjkę”.
+**Formularz (Mantine):**
+- 4–6 pól zdań z dodawaniem i usuwaniem;
+- 1–2 pytania, każde z trzema opcjami i `Radio` poprawnej odpowiedzi.
 
-Tekst informacyjny: „Dziecko przeczyta i posłucha historyjki na koniec każdej
-sesji, a potem odpowie na pytania. Pytania nie liczą się do postępu.”
+**Stan:**
+- `storyForm` bierze udział w `isDirty`, w obsłudze konfliktu i w strażniku
+  nawigacji;
+- zapis wysyła `patch.story`;
+- `details.story` z edycji i publikacji wyświetla się przy sekcji.
 
-## 12. Zmiana uzgodnionych wymagań
+**Akcje:**
+- „Wygeneruj historyjkę” albo „Wygeneruj od nowa”, z potwierdzeniem, gdy
+  historyjka istnieje;
+  - przycisk jest wyłączony przy niezapisanych zmianach, zajętości i trwającym
+    runie (wzorzec `regenDisabled`);
+- stan runu historyjki: „Przygotowuję historyjkę…” i błąd z „Spróbuj ponownie”,
+  który zachowuje `purpose`;
+- „Usuń historyjkę”;
+- odsłuch i „Nagraj ponownie” wzorem kart, tylko przy treści niezmienionej od
+  zapisu.
 
-**2.13** (nowe brzmienie, dopisane zdanie):
+**Wersja opublikowana:** sekcja w trybie odczytu, ze wskazówką „Utwórz nową
+wersję, aby dodać lub zmienić historyjkę”.
 
-> … THE flow MAY prepare one end-of-session story recording (`lesson_story_assets`)
-> in the answer locale. It is presented only after all graded tasks of a training
-> session, never before a grammar exercise's answer, and never blocks
-> publication. Story sentences SHALL NOT repeat the answer (target key) of any
-> exercise of the lesson version.
+**Tekst informacyjny:** „Dziecko przeczyta i posłucha historyjki na koniec
+każdej sesji, a potem odpowie na pytania. Pytania nie liczą się do postępu.”
 
-**Nowe wymaganie 12 — Historyjka na koniec sesji** w
-`.kiro/specs/grammar-module/requirements.md`. Zawiera kryteria akceptacji z §1,
-§4, §6 i §8:
-- liczby zdań i pytań;
-- pytania PL;
+## 12. Zmiana uzgodnionych wymagań i zasad
+
+**Wymaganie 2.13 — dopisane zdanie:**
+
+> THE flow MAY prepare one end-of-session story recording in the answer locale.
+> Story sentences SHALL NOT equal (after the subject normalizer) the solved
+> sentence or accepted answer of any exercise of the lesson version. The story is
+> presented only after the graded tasks of a training session and never blocks
+> publication.
+
+**Nowe wymaganie 12 — Historyjka na koniec sesji.** Kryteria z §1, §4, §6
+i §8:
+- liczby zdań i pytań, pytania PL;
 - poza budżetem i postępem;
 - bez kartkówki;
-- bariera ekspozycji;
+- bariera;
 - publikacja nie czeka na nagranie;
-- run samej historyjki.
+- run historyjki i przycisk;
+- baner „Jeszcze N i historyjka!”.
 
-**5.4:** dopowiedzenie, że historyjka i jej pytania nie należą do budżetu 12
-ocenianych zadań.
+**Wymaganie 5.4 — dopowiedzenie:** historyjka i jej pytania nie należą do
+budżetu 12 ocenianych zadań ani do limitu czasu. Wychodzą po zadaniach sesji,
+także gdy sesję zakończył limit czasu, i są zapowiedziane banerem.
 
-`docs/SPEC.md` §22: zdanie o historyjce. `docs/architecture.md` §19: nowa opcja
-`SubjectModule.lessonStory`, tabela `lesson_story_assets`, typy zadań historyjki.
+**AGENTS.md (UX):** zasada „Po «Jeszcze 3 i koniec!» nie dokładaj zadań” dostaje
+wyjątek: zapowiedziana historyjka lekcji jest zamknięciem sesji, nie zadaniem
+budżetu.
+
+**`docs/SPEC.md` §22** — zdanie o historyjce.
+
+**`docs/architecture.md` §19:**
+- `SubjectModule.lessonStory`;
+- run historyjki;
+- `lesson_story_assets`;
+- typy zadań historyjki;
+- predykat typów nieocenianych.
+
+**Spec stylu TTS** — nota: nagranie historyjki bez stylu, w en-GB.
 
 ## 13. Prywatność i bezpieczeństwo
 
-- Do LLM trafia materiał rodzica, opisy reguł, reguły przedmiotu i odpowiedzi
-  ćwiczeń. Do TTS trafiają wyłącznie zatwierdzone zdania. Bez danych dziecka.
-- Kid DTO nie zawiera klucza odpowiedzi pytań. Próba przechowuje tylko id opcji.
-- Usunięcie profilu usuwa zadania, próby i zdarzenia dziecka (kaskady jak dziś).
-  Nagranie historyjki jest wspólnym materiałem.
+- Do LLM trafiają materiał rodzica, opisy reguł, reguły przedmiotu i rozwiązane
+  zdania ćwiczeń. Do TTS trafiają wyłącznie zatwierdzone zdania. Ani tu, ani tu
+  nie ma danych dziecka.
+- Kid DTO nie ma klucza. Opcje dostają UUID przy wydaniu. Ujawnienia na żądanie
+  są zablokowane (§8.4).
+- Usunięcie profilu usuwa zadania, próby i zdarzenia dziecka. Nagranie zostaje
+  jako wspólny materiał.
 
 ## 14. API → MCP → `SKILL.md`
 
-- Zmiany API dotyczą Kid API (nowe gałęzie promptu) i parent oRPC (patch, DTO
-  szkicu, dwie procedury).
-- MCP udostępnia wyłącznie raport `learning-overview`, który świadomie nie obejmuje
-  lekcji (`SKILL.md`: „grammar lessons are not covered”). Zmiana nie wymaga więc
-  zmian adaptera MCP, schematu ani skilla.
-- Implementacja potwierdza to wyszukaniem użyć nowych typów i DTO w
-  `apps/web/src/integrations` i `integrations/umiem-mcp`, a PR to opisuje.
+- Zmienia się Kid API (gałęzie promptu, `remainingAssessed ≥ 0`,
+  `closingStory`) oraz parent oRPC (patch, DTO szkicu, `GenerationDto.purpose`,
+  dwie procedury).
+- MCP udostępnia wyłącznie `learning-overview`, który świadomie nie obejmuje
+  lekcji (`SKILL.md`: „grammar lessons are not covered”). Adapter, schemat i skill
+  nie wymagają więc zmian.
+- Każdy etap potwierdza to wyszukaniem użyć w `apps/web/src/integrations`
+  i `integrations/umiem-mcp` i opisuje w PR.
 
 ## 15. Testy
 
-**Unit (domena i kontrakty):**
-- `validateLessonStory`: granice liczb i długości, duplikaty opcji i id, zły
-  `correctOption`, białe znaki, nakładanie na klucz ćwiczenia (także po
-  normalizacji ekspozycji przedmiotu);
-- `storyReadText`;
-- walidacja katalogu (flaga bez `storyRules`);
-- `TaskPromptSchema`: gałęzie strict;
-- `LessonStorySchema`;
-- test architektury bez wyjątków.
+### Unit
 
-**Unit (Kid UI):**
-- widoki: rendering, `lang`, brak przycisku bez nagrania;
-- wybór wysyła odpowiedź;
-- brak „Nie pamiętam”;
-- kontroler: autoodtwarzanie raz, „Dalej” przerywa.
+- `validateLessonStory` (granice, duplikaty, `correctOption`, białe znaki).
+- Bariera:
+  - luka wypełniona;
+  - `stem` + opcja;
+  - wariant `acceptedAnswers`;
+  - interpunkcja, wielkość liter i skróty;
+  - częściowa zbieżność dozwolona.
+- `storyReadText`, `solvedSentencesOf`, walidacja katalogu.
+- Kontrakty: gałęzie strict, `remainingAssessed = 0`, `closingStory`,
+  `LessonStorySchema`.
+- Predykat typów nieocenianych.
+- Test architektury bez nowych wyjątków.
 
-**Integracja (PostgreSQL):**
-- run lekcji z fake providerem zapisuje historyjkę;
-- błąd lub odrzucenie historyjki daje `review` + `storyError`, a lekcja jest
-  poprawna;
-- run `story.only`: sukces, błąd zachowujący starą historyjkę, konflikt numeru
-  edycji, opublikowana wersja → `immutable`, idempotencja `clientRequestId`;
-- edycja: walidacja, `null` usuwa, nakładanie na ćwiczenie z tego samego patcha;
-- publikacja odrzuca nakładanie i nie czeka na nagranie;
-- uzgadnianie: wiersz `lesson_story_assets`, zmiana zdań daje nowe nagranie,
-  zmiana pytań nie, usunięcie kasuje wiersz, trigger niezmienności;
-- sesja:
-  - plan kończy się slotami historyjki;
-  - budżet i `remainingAssessed` bez zmian;
-  - historyjka wychodzi po wyczerpaniu budżetu i po limicie czasu;
-  - brak historyjki w kartkówce i bez flagi;
-  - zapieczętowane ekspozycje zdań;
-  - pytanie: poprawna, błędna, idempotentny ponowny odczyt, brak `assessments`
-    i zmian postępu, „Pomiń”;
-  - nowy wiersz w koszu `INTEGRATION_BUCKETS`;
-- migracja `0032`.
+### Kid UI (Vitest)
 
-**E2E (Playwright):**
-- `mocked`, `lesson-story.spec.ts`:
-  - historyjka po ostatnim zadaniu, autoodtwarzanie i powtórka;
-  - pytanie: dobra i zła odpowiedź z poprawną opcją;
-  - brak przycisku bez nagrania;
-  - geometria w portrait, landscape telefonu, tablecie i desktopie ze skalą > 1:
-    brak przepełnienia poziomego, cele ≥ 48 px, akcje osiągalne, blok zdań w ramie
-    albo przewijalny;
-  - wpis do partycji `mocked` w `spec-projects.ts`;
-- `real`, rozszerzenie `lesson-real-flow.spec.ts` albo nowy spec w najlżejszym
-  koszu:
-  - rodzic edytuje historyjkę;
-  - publikacja;
-  - dziecko kończy sesję historyjką i odpowiada na pytanie;
-- panel rodzica: test komponentu sekcji (walidacja, generowanie, usuwanie) oraz
-  przypadek w istniejącym specu edytora.
+- Widoki:
+  - `lang`;
+  - brak odsłuchu bez nagrania;
+  - kolejność pytanie → opcje → historyjka;
+  - wybór wysyła odpowiedź;
+  - brak „Nie pamiętam”.
+- Kontroler:
+  - ciche autoodtwarzanie raz, po zamontowaniu;
+  - „Dalej” przerywa;
+  - `completePresentation` dla `lesson_story`;
+  - baner „Jeszcze N i historyjka!” i jego brak przy `0`;
+  - seria nie liczy pytań.
+
+### Integracja (PostgreSQL)
+
+**Generowanie:**
+- run lekcji kolejkuje run historyjki w tej samej transakcji;
+- sukces zapisuje historyjkę, podbija `editNumber` i uzgadnia nagranie;
+- `story_invalid` i błąd providera zachowują poprzednią historyjkę;
+- edycja w trakcie daje `superseded`;
+- przycisk: opublikowana wersja zwraca `immutable`, konflikt numeru edycji,
+  idempotencja;
+- dogenerowanie reguły odrzuca kolizję.
+
+**Edycja i publikacja:**
+- walidacja;
+- `null` usuwa historyjkę;
+- kolizja z ćwiczeniem z tego samego patcha;
+- publikacja odrzuca kolizję i nie czeka na nagranie.
+
+**Media:**
+- wiersz `lesson_story_assets`;
+- zmiana zdań daje nowe nagranie, zmiana pytań nie;
+- usunięcie historyjki kasuje wiersz;
+- trigger niezmienności;
+- worker doprowadza nagranie do `ready` i zastępuje je przy przedmiocie bez
+  flagi;
+- kopia i publikacja bez edycji tworzą wiersz.
+
+**Sesja:**
+- plan kończy się slotami historyjki; budżet i `remainingAssessed` bez zmian;
+- historyjka po budżecie;
+- historyjka po limicie czasu przy `remaining > 3`, bez wydania pominiętego
+  ćwiczenia;
+- ponowny odczyt wydanej historyjki ma ten sam licznik;
+- „Skróć” zachowuje historyjkę;
+- brak historyjki w kartkówce, bez flagi i w starej sesji;
+- ekspozycje zdań przy historyjce i pytaniu;
+- `previousObjectiveContactSnapshot` ignoruje historyjkę;
+- ujawnienia na żądanie odrzucone;
+- pytanie:
+  - odpowiedź poprawna i błędna;
+  - idempotentna ponowna wysyłka;
+  - `dont_remember` zwraca 400;
+  - brak `assessments` i brak zmian postępu;
+- usunięcie profilu.
+
+**Migracja i kosze:**
+- testy migracji;
+- nowe pliki w najlżejszym koszu `INTEGRATION_BUCKETS`.
+
+**Przegląd skutków ubocznych.** Fake provider zacznie dawać historyjki, więc
+testy, które oczekują `nextTask → null` po budżecie lekcji gramatyki (integracja
+i `lesson-real-flow.spec.ts`), trzeba przejrzeć i dopasować. Lista powstaje
+w planie.
+
+### E2E (Playwright)
+
+**`mocked`, `lesson-story.spec.ts`:**
+- historyjka po ostatnim zadaniu;
+- baner „Jeszcze N i historyjka!”;
+- autoodtwarzanie i powtórka;
+- pytanie z dobrą i złą odpowiedzią;
+- brak odsłuchu bez nagrania;
+- geometria w portrait, landscape telefonu (<480 px), na tablecie i desktopie ze
+  skalą > 1, w przypadku najgorszym (700 znaków historyjki, opcje po 80 znaków):
+  - brak przepełnienia poziomego;
+  - cele ≥ 48 px;
+  - pierwsza opcja w viewporcie bez przewijania;
+  - akcje osiągalne;
+- wpis do partycji `mocked`.
+
+**`real`:**
+- rodzic edytuje historyjkę, publikuje;
+- dziecko w sesji z budżetem 1–2 kończy historyjką i odpowiada;
+- najlżejszy kosz `REAL_BUCKETS`.
+
+**Panel:** przypadek w istniejącym specu edytora (sekcja, walidacja, usuwanie).
 
 **Niezweryfikowane symulacją:** autoodtwarzanie na fizycznym iPhonie/iPadzie
-(polityka autoplay Safari). Trafia do raportu jako brak dowodu.
+(polityka autoplay Safari) trafia do raportu jako brak dowodu.
 
-## 16. Dokumentacja
+## 16. Etapy (3 PR-y)
 
-- `.kiro/specs/grammar-module/requirements.md`: 2.13, 5.4, nowe wymaganie 12.
-- `docs/SPEC.md` §22.
-- `docs/architecture.md` §19.
-- Krótka nota w specu stylu TTS: nagranie historyjki bez stylu, en-GB.
-- `AGENTS.md` bez zmian, chyba że implementacja wprowadzi nową regułę pracy.
+Każdy etap ma własny plan zadań i review po każdym zadaniu, a kończy się trzema
+krytykami i PR. Etapy budują jeden na drugim.
+
+**Etap 1 — dane, generowanie, edycja.** Dziecko jeszcze nic nie widzi.
+- §4, §5 i §6 (bez nagrania);
+- kontrakt `LessonStorySchema` i DTO;
+- sekcja w edytorze bez odsłuchu;
+- wymaganie 12 (część rodzica);
+- docs.
+
+**Etap 2 — nagranie.**
+- §7: tabela, uzgadnianie, worker;
+- odsłuch i „Nagraj ponownie” w panelu.
+
+**Etap 3 — sesja i Kid UI.**
+- §8, §9 i §10;
+- migracja constraintu zadań;
+- poprawki liczników i ujawnień;
+- E2E geometrii;
+- zmiany 2.13, 5.4, AGENTS.md i SPEC §22.
