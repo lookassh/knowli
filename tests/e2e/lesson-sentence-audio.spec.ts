@@ -693,3 +693,118 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
     }
   }
 });
+
+/**
+ * Dotykowy tablet w poziomie (`pointer: coarse`, zwarta rama od 960 × 480) z
+ * długą treścią — tekst z lukami (panel w nakładce) i wybór z długim poleceniem
+ * (panel w przepływie): pod stopką nie ma wolnego miejsca, więc panel rośnie
+ * w górę. Tekst błędu ręcznego odsłuchu staje wtedy nad górnym wierszem
+ * (`data-frame-full`) i nie przesuwa przycisków zdania ani „Dalej”.
+ */
+const TABLET_TOUCH_VIEWPORTS = [
+  { width: 1024, height: 600 },
+  { width: 1280, height: 800 },
+];
+
+/** Wybór z długim poleceniem i zdaniem: panel w przepływie (`feedbackLayout="flow"`). */
+const longChoiceTask: TaskDto = {
+  taskId: clozeUid(71), sessionId: ids.sessionId, ordinal: 1, exerciseType: "lesson_choice", direction: null, state: "issued", remainingAssessed: 2,
+  prompt: {
+    kind: "lesson_choice",
+    instructionPl: "Przeczytaj uważnie całe zdanie o wakacjach nad morzem i wybierz słowo, które pasuje do luki. ".repeat(9).trim(),
+    stem: "Every summer my whole family travels to the seaside, and every morning my little brother ___ a big sandcastle near the water.",
+    contentLocale: "en-GB",
+    options: [
+      { id: clozeUid(72), text: "builds" },
+      { id: clozeUid(73), text: "build" },
+      { id: clozeUid(74), text: "building" },
+      { id: clozeUid(75), text: "is build" },
+    ],
+  },
+};
+const longChoiceAttempt: AttemptDto = {
+  ...clozeAttempt({ kind: "incorrect", correctText: "builds", correctAudioAssetId: sentenceAssetId }),
+  taskId: longChoiceTask.taskId, modality: "choice",
+};
+
+const TABLET_SCENARIOS: { name: string; task: TaskDto; attempt: AttemptDto; ready: string; answer: (page: Page, posted: unknown[]) => Promise<void> }[] = [
+  {
+    name: "overflowing cloze (overlay dock)", task: clozeTask, ready: "kid-lesson-cloze",
+    attempt: clozeAttempt({ kind: "incorrect", correctText: clozeFilledText, correctAudioAssetId: sentenceAssetId }),
+    answer: async (page, posted) => { await tapPoolAndCheck(page, "kid-lesson-cloze-option", 3, posted); },
+  },
+  {
+    name: "long choice (flow dock)", task: longChoiceTask, ready: "kid-lesson-stem", attempt: longChoiceAttempt,
+    answer: (page) => page.getByTestId("kid-option").nth(1).tap(),
+  },
+];
+
+for (const viewport of TABLET_TOUCH_VIEWPORTS) {
+  const label = `${viewport.width}x${viewport.height}`;
+  test.describe(`touch tablet ${label}`, () => {
+    test.use({ isMobile: true, hasTouch: true });
+    for (const scenario of TABLET_SCENARIOS) {
+      test(`${scenario.name}: the replay error keeps the sentence buttons and „Dalej” still at ${label}`, async ({ page }) => {
+        const posted = recordAttemptPosts(page);
+        await spyAudio(page, "reject");
+        await installKidUiFixture(page, { ...lessonAudioFixture(ids, [scenario.task]), attempts: [scenario.attempt] });
+        // `openLessonTask` otwiera zadanie w oknie telefonu; rozmiar tabletu dopiero potem.
+        await openLessonTask(page, scenario.ready);
+        await page.setViewportSize(viewport);
+        await expectFrameFillsViewport(page, viewport);
+        expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a touch screen").toBe(true);
+        await scenario.answer(page, posted);
+        const dock = page.getByTestId("kid-feedback-dock");
+        await expect(dock).toBeVisible();
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        // Scenariusz wymaga ramy bez wolnego miejsca pod stopką — bez niego test niczego nie sprawdza.
+        await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "false");
+        await expect(page.locator("[data-frame-full]"), `frame full at ${label}`).toHaveCount(1);
+        const error = page.getByTestId("kid-sentence-audio-error");
+        await expect(error).toHaveText("");
+        const targets = { sentence: dock.getByTestId("kid-sentence-audio"), slow: dock.getByTestId("kid-sentence-audio-slow"), next: dock.getByTestId("kid-next") };
+        const measure = async () => ({ sentence: await boxOf(targets.sentence), slow: await boxOf(targets.slow), next: await boxOf(targets.next) });
+        const before = await measure();
+
+        await targets.slow.tap();
+        await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const after = await measure();
+        for (const name of Object.keys(targets) as (keyof typeof targets)[]) {
+          const moved = `${name} before ${JSON.stringify(before[name])}, after ${JSON.stringify(after[name])} at ${label}`;
+          expect(Math.abs(after[name].x - before[name].x), `x: ${moved}`).toBeLessThanOrEqual(1);
+          expect(Math.abs(after[name].y - before[name].y), `y: ${moved}`).toBeLessThanOrEqual(1);
+        }
+        const errorBox = await boxOf(error);
+        expect(within(errorBox, await boxOf(dock)), `error inside dock at ${label}`).toBe(true);
+        expect(overlaps(errorBox, after.sentence) || overlaps(errorBox, after.slow), `error overlaps a sentence button at ${label}`).toBe(false);
+        expect(errorBox.y + errorBox.height, `error above the sentence row at ${label}`).toBeLessThanOrEqual(Math.min(after.sentence.y, after.slow.y) + 1);
+        expect(within(after.next, { x: 0, y: 0, ...viewport }), `„Dalej” in viewport at ${label}`).toBe(true);
+      });
+    }
+  });
+}
+
+test.describe("touch tablet 1280x800: flow dock follows content height", () => {
+  test.use({ isMobile: true, hasTouch: true });
+  test("data-frame-full drops when the content above the flow dock shrinks", async ({ page }) => {
+    await spyAudio(page, "reject");
+    await installKidUiFixture(page, { ...lessonAudioFixture(ids, [longChoiceTask]), attempts: [longChoiceAttempt] });
+    await openLessonTask(page, "kid-lesson-stem");
+    const viewport = { width: 1280, height: 800 };
+    await page.setViewportSize(viewport);
+    await expectFrameFillsViewport(page, viewport);
+    await page.getByTestId("kid-option").nth(1).tap();
+    await expect(page.getByTestId("kid-feedback-dock")).toBeVisible();
+    await expect(page.locator("[data-frame-full]")).toHaveCount(1);
+    // Sama treść maleje (rama i panel bez zmian) — stopka podjeżdża, pod nią
+    // pojawia się wolne miejsce i atrybut musi zniknąć.
+    await page.evaluate(() => {
+      for (const id of ["kid-instruction", "kid-lesson-stem"]) {
+        const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+        if (element) element.style.display = "none";
+      }
+    });
+    await expect(page.locator("[data-frame-full]")).toHaveCount(0);
+  });
+});
