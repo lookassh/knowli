@@ -3565,20 +3565,84 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
       expect(harness.controller.getScreen()).toBe(next);
     });
 
-    it("odrzucone play() nie pokazuje błędu", async () => {
+    type ExplanationFeedback = { attemptId: string; sentencePlaying?: string | null; explanationPlaying?: boolean; sentenceAudioError?: { rate: string; seq: number } | null; audioError?: boolean };
+    const feedbackOf = (harness: { controller: { getScreen(): unknown } }) =>
+      (harness.controller.getScreen() as { feedback: ExplanationFeedback | null }).feedback;
+    const answeredWithBoth = async (opts: { playGate?: Promise<void> } = {}) => {
       const state = baseState();
-      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, explanationAudioAssetId: EXPLANATION } })];
-      const harness = await startAtTask(state, gap());
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, correctAudioAssetId: SENTENCE, explanationAudioAssetId: EXPLANATION } })];
+      const harness = await startAtTask(state, gap(), opts);
+      state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
       await harness.controller.answerText("go");
       await tick();
+      return harness;
+    };
+
+    it("ręczny błąd wyjaśnienia: ten sam komunikat co przy zdaniu, z rosnącym seq", async () => {
+      const harness = await answeredWithBoth();
       const play = vi.spyOn(harness.media.player, "play").mockRejectedValue(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
       await harness.controller.playExplanationAudio();
       expect(play).toHaveBeenCalledWith(EXPLANATION_URL, expect.any(Function));
-      const screen = harness.controller.getScreen() as { feedback: { audioError?: boolean } | null; error: unknown; taskAudioError?: unknown };
-      expect(screen.feedback).not.toBeNull();
+      expect(feedbackOf(harness)?.sentenceAudioError).toEqual({ rate: "explanation", seq: 1 });
+      expect(feedbackOf(harness)?.explanationPlaying).toBe(false);
+      await harness.controller.playExplanationAudio();
+      expect(feedbackOf(harness)?.sentenceAudioError).toEqual({ rate: "explanation", seq: 2 });
+      const screen = harness.controller.getScreen() as { feedback: { audioError?: boolean } | null; error: unknown };
       expect(screen.feedback?.audioError).not.toBe(true);
       expect(screen.error).toBeNull();
-      expect(screen.taskAudioError ?? null).toBeNull();
+    });
+
+    it("wskaźnik wyjaśnienia od startu do końca, bez wskaźnika zdania", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const harness = await answeredWithBoth({ playGate: gate });
+      expect(feedbackOf(harness)?.sentencePlaying).toBe("normal");
+      void harness.controller.playExplanationAudio();
+      await tick();
+      expect(feedbackOf(harness)).toMatchObject({ explanationPlaying: true, sentencePlaying: null });
+      release();
+      await tick();
+      expect(feedbackOf(harness)?.explanationPlaying).toBe(false);
+      expect(feedbackOf(harness)?.sentenceAudioError ?? null).toBeNull();
+    });
+
+    it("ponowne dotknięcie w trakcie zaczyna wyjaśnienie od nowa, a spóźnione zakończenie nie gasi nowego przebiegu", async () => {
+      const gate = new Promise<void>(() => undefined);
+      const harness = await answeredWithBoth({ playGate: gate });
+      void harness.controller.playExplanationAudio();
+      await tick();
+      const stopsBefore = harness.media.stops;
+      void harness.controller.playExplanationAudio();
+      await tick();
+      expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+      expect(harness.media.playUrls).toEqual([SENTENCE_URL, EXPLANATION_URL, EXPLANATION_URL]);
+      expect(feedbackOf(harness)?.explanationPlaying).toBe(true);
+    });
+
+    it("zdanie przerywa wyjaśnienie i gasi jego wskaźnik", async () => {
+      const gate = new Promise<void>(() => undefined);
+      const harness = await answeredWithBoth({ playGate: gate });
+      void harness.controller.playExplanationAudio();
+      await tick();
+      expect(feedbackOf(harness)?.explanationPlaying).toBe(true);
+      void harness.controller.playSentenceAudio("slow");
+      await tick();
+      expect(feedbackOf(harness)).toMatchObject({ explanationPlaying: false, sentencePlaying: "slow" });
+    });
+
+    it("udany start wyjaśnienia gasi nieaktualny błąd zdania", async () => {
+      const harness = await answeredWithBoth({ playGate: new Promise<void>(() => undefined) });
+      harness.media.rejectNextPlays = 1;
+      await harness.controller.playSentenceAudio("normal");
+      expect(feedbackOf(harness)?.sentenceAudioError).toEqual({ rate: "normal", seq: 1 });
+      harness.media.deferStart = true;
+      void harness.controller.playExplanationAudio();
+      await tick();
+      // jeszcze przed startem odtwarzacza błąd zostaje (jak przy zdaniu)
+      expect(feedbackOf(harness)?.sentenceAudioError).toEqual({ rate: "normal", seq: 1 });
+      harness.media.pendingStarts.at(-1)!(null);
+      expect(feedbackOf(harness)?.sentenceAudioError ?? null).toBeNull();
+      expect(feedbackOf(harness)?.explanationPlaying).toBe(true);
     });
 
     it("„Nie pamiętam” z wyjaśnieniem bez nagrania zdania zostaje na wyniku do „Dalej”", async () => {

@@ -18,6 +18,21 @@ export interface FeedbackDockSentenceAudio {
   onPlay: (rate: SentenceRate) => void;
 }
 
+/**
+ * Wyjaśnienie ćwiczenia po błędzie w lekcji (spec 2026-11-01-lesson-error-explanation §6).
+ * Odsłuch nagrania (gdy jest) zachowuje się jak „Posłuchaj zdania”: wskaźnik gry,
+ * ta sama blokada i błąd ręcznego odsłuchu (komunikat w regionie nad górnym wierszem
+ * i poruszenie ikoną przycisku).
+ */
+export interface FeedbackDockExplanation {
+  text: string;
+  onPlay?: () => void;
+  playing?: boolean;
+  disabled?: boolean;
+  /** Ostatni nieudany ręczny odsłuch wyjaśnienia (`seq` jak w błędzie zdania). */
+  error?: { seq: number } | null;
+}
+
 const SENTENCE_BUTTONS = [
   { rate: "normal", icon: "volume", testId: "kid-sentence-audio", label: messages.kid.listenExample },
   { rate: "slow", icon: "turtle", testId: "kid-sentence-audio-slow", label: messages.kid.listenSlower },
@@ -68,11 +83,16 @@ export function ExerciseFeedbackDock({
   sentenceAudio?: FeedbackDockSentenceAudio | null;
   /**
    * Wyjaśnienie ćwiczenia po błędzie w lekcji: osobny wiersz na całą szerokość
-   * pod górnym wierszem; „Posłuchaj wyjaśnienia” na początku, gdy jest nagranie.
+   * między górnym wierszem a akcjami, poza przewijaną kartą wyniku — zawsze
+   * widoczny; „Posłuchaj wyjaśnienia” na początku, gdy jest nagranie.
    */
-  explanation?: { text: string; onPlay?: () => void } | null;
+  explanation?: FeedbackDockExplanation | null;
 }): ReactElement {
   const isPresent = useIsPresent();
+  // Region błędu ręcznego odsłuchu: przy nagraniu zdania albo wyjaśnienia.
+  const hasRecording = sentenceAudio !== null || explanation?.onPlay !== undefined;
+  const audioError = sentenceAudio?.error ?? explanation?.error ?? null;
+  const explanationFailKey = explanation?.error?.seq;
   return (
     <m.div
       initial={kidDockInitial}
@@ -91,12 +111,12 @@ export function ExerciseFeedbackDock({
           i rośnie w górę, więc pojawiający się tekst nie przesuwa przycisków zdania
           ani „Dalej” pod palcem. Pusty nie zajmuje miejsca; tekst w elemencie
           kluczowanym `seq` montuje się od nowa, więc czytnik ogłasza każdy błąd. */}
-      {sentenceAudio && (
+      {hasRecording && (
         <div className={classes.sentenceError} aria-live="polite" data-testid="kid-sentence-audio-error">
-          {sentenceAudio.error !== null ? <span key={sentenceAudio.error.seq}>{messages.kid.sentenceAudioFailed}</span> : null}
+          {audioError !== null ? <span key={audioError.seq}>{messages.kid.sentenceAudioFailed}</span> : null}
         </div>
       )}
-      <div className={`${classes.scroll} ${explanation ? `${classes.withExplanation} kid-feedback-scroll-limited` : ""}`}>
+      <div className={classes.scroll}>
         <span className={classes.badge} data-testid="kid-feedback-tone-icon" data-icon={FEEDBACK_TONE_ICONS[tone]} aria-hidden="true">
           <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
         </span>
@@ -117,16 +137,23 @@ export function ExerciseFeedbackDock({
           </div>
         )}
         {guidance && <div className={classes.guidance}>{guidance}</div>}
-        {explanation && (
-          <div className={classes.explanation} data-testid="kid-explanation">
-            {explanation.onPlay && (
-              <ListenButton data-testid="kid-explanation-audio" aria-label={messages.kid.listenExplanation}
-                title={messages.kid.listenExplanation} onClick={explanation.onPlay} />
-            )}
-            <p className={classes.explanationText} data-testid="kid-explanation-text">{explanation.text}</p>
-          </div>
-        )}
       </div>
+      {/* Wiersz wyjaśnienia poza przewijaną kartą: dziecko widzi go bez przewijania, a karta
+          wyniku dostaje mniejszy limit (`--kid-feedback-pinned-height`, ExerciseFrame). Tekst
+          w regionie `aria-live` — karta wyniku ma własny region statusu. */}
+      {explanation && (
+        <div className={`${classes.explanation} kid-feedback-pinned`} data-testid="kid-explanation">
+          {explanation.onPlay && (
+            <ListenButton data-testid="kid-explanation-audio" aria-label={messages.kid.listenExplanation}
+              title={messages.kid.listenExplanation} disabled={explanation.disabled === true}
+              data-sound-active={explanation.playing === true || undefined}
+              {...(explanationFailKey !== undefined ? { failKey: explanationFailKey } : {})} onClick={explanation.onPlay}>
+              {explanation.playing === true && <SoundRing />}
+            </ListenButton>
+          )}
+          <p className={classes.explanationText} data-testid="kid-explanation-text" aria-live="polite">{explanation.text}</p>
+        </div>
+      )}
       <div className={classes.actions}>
         {primary}
       </div>

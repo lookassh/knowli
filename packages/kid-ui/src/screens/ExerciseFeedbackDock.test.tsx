@@ -194,3 +194,84 @@ it("renders no explanation row without the prop", () => {
   expect(screen.queryByTestId("kid-explanation-text")).toBeNull();
   expect(screen.queryByTestId("kid-explanation")).toBeNull();
 });
+
+it("pins the explanation row outside the top row, between it and the actions", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span data-testid="dock-primary">Dalej</span>}
+      explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn() }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  const dock = screen.getByTestId("kid-feedback-dock");
+  const row = screen.getByTestId("kid-explanation");
+  const badge = screen.getByTestId("kid-feedback-tone-icon");
+  // Wiersz jest dzieckiem doku (nie przewijanego górnego wiersza z kartą wyniku).
+  expect(row.parentElement).toBe(dock);
+  expect(row.classList.contains("kid-feedback-pinned")).toBe(true);
+  expect(row.contains(badge)).toBe(false);
+  expect(badge.parentElement!.contains(row)).toBe(false);
+  expect(badge.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(row.compareDocumentPosition(screen.getByTestId("dock-primary")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(dock.querySelector(".kid-feedback-scroll-limited")).toBeNull();
+});
+
+it("announces the explanation text through a polite live region", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>} explanation={{ text: "Po he dodajemy -s." }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  expect(screen.getByTestId("kid-explanation-text").getAttribute("aria-live")).toBe("polite");
+});
+
+it("shows the playing ring on the explanation button like the sentence buttons", () => {
+  const props = { tone: "incorrect" as const, primary: <span>Dalej</span>, children: <p>Spróbuj jeszcze raz</p> };
+  const { rerender } = renderKid(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn(), playing: false }} />);
+  const button = screen.getByTestId("kid-explanation-audio");
+  expect(button.hasAttribute("data-sound-active")).toBe(false);
+  expect(button.querySelector("[data-testid='kid-sound-ring']")).toBeNull();
+  rerender(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn(), playing: true }} />);
+  const playing = screen.getByTestId("kid-explanation-audio");
+  expect(playing.getAttribute("data-sound-active")).toBe("true");
+  expect(playing.querySelector("[data-testid='kid-sound-ring']")).not.toBeNull();
+});
+
+it("disables the explanation button when the controller would ignore the tap", () => {
+  const onPlay = vi.fn();
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>} explanation={{ text: "Po he dodajemy -s.", onPlay, disabled: true }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  const button = screen.getByTestId("kid-explanation-audio") as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(onPlay).not.toHaveBeenCalled();
+});
+
+it("a failed explanation replay shows the shared message and wobbles only the explanation button", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>}
+      sentenceAudio={{ ...idleSentence, onPlay: vi.fn() }}
+      explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn(), error: { seq: 3 } }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  const region = screen.getByTestId("kid-sentence-audio-error");
+  expect(region.getAttribute("aria-live")).toBe("polite");
+  expect(region.textContent).toBe(messages.kid.sentenceAudioFailed);
+  expect(screen.getByTestId("kid-explanation-audio").getAttribute("data-audio-failed")).toBe("3");
+  expect(screen.getByTestId("kid-sentence-audio").hasAttribute("data-audio-failed")).toBe(false);
+  expect(screen.getByTestId("kid-sentence-audio-slow").hasAttribute("data-audio-failed")).toBe(false);
+});
+
+it("keeps the error region with an explanation recording even without the sentence recording", () => {
+  const props = { tone: "incorrect" as const, primary: <span>Dalej</span>, children: <p>Spróbuj jeszcze raz</p> };
+  const { rerender } = renderKid(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn() }} />);
+  expect(screen.getByTestId("kid-sentence-audio-error").textContent).toBe("");
+  rerender(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s.", onPlay: vi.fn(), error: { seq: 1 } }} />);
+  expect(screen.getByTestId("kid-sentence-audio-error").textContent).toBe(messages.kid.sentenceAudioFailed);
+  // Bez nagrania (sam tekst) region nie powstaje.
+  rerender(<ExerciseFeedbackDock {...props} explanation={{ text: "Po he dodajemy -s." }} />);
+  expect(screen.queryByTestId("kid-sentence-audio-error")).toBeNull();
+});

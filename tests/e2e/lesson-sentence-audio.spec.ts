@@ -316,6 +316,106 @@ test("a lesson_hint with an explanation recording shows the hint in the dock row
   await expect(dock.getByTestId("kid-explanation-audio")).toBeVisible();
 });
 
+const withBothRecordings = attempt({ kind: "incorrect", correctText: "He goes to school.", hintPl: EXPLANATION,
+  correctAudioAssetId: sentenceAssetId, explanationAudioAssetId: explanationAssetId });
+
+test("„Posłuchaj wyjaśnienia” shows the playing ring and clears a stale sentence failure", async ({ page }) => {
+  const media = await open(page, [withBothRecordings]);
+  await answer(page);
+  const dock = page.getByTestId("kid-feedback-dock");
+  await expect.poll(() => media).toEqual([sentencePath]);
+  // Ręczna powtórka zdania zawodzi (plik niedostępny) — komunikat i poruszenie żółwia.
+  await page.route(`**${sentencePath}`, (route) => route.fulfill({ status: 500, body: "" }));
+  const slow = dock.getByTestId("kid-sentence-audio-slow");
+  await slow.click();
+  const error = dock.getByTestId("kid-sentence-audio-error");
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+  await expect(slow).toHaveAttribute("data-audio-failed", "1");
+  // Udany start wyjaśnienia gasi nieaktualny błąd i zapala pierścień tylko na wyjaśnieniu.
+  const listen = dock.getByTestId("kid-explanation-audio");
+  await listen.click();
+  await expect.poll(() => media.at(-1)).toBe(explanationPath);
+  await expect(listen).toHaveAttribute("data-sound-active", "true");
+  await expect(listen.getByTestId("kid-sound-ring")).toHaveCount(1);
+  await expect(error).toHaveText("");
+  await expect(slow).not.toHaveAttribute("data-audio-failed");
+  await expect(dock.locator("[data-sound-active]")).toHaveCount(1);
+  // Ponowne dotknięcie zaczyna wyjaśnienie od nowa, pierścień zostaje.
+  const plays = (await audioCounters(page)).plays;
+  await listen.click();
+  await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(plays + 1);
+  await expect(listen).toHaveAttribute("data-sound-active", "true");
+  // „Dalej” gasi pierścień razem z feedbackiem.
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
+  await expect(page.locator("[data-sound-active]")).toHaveCount(0);
+});
+
+test("a failed manual explanation replay shows the shared message and wobbles the explanation button", async ({ page }) => {
+  await open(page, [withBothRecordings]);
+  await page.route(`**${explanationPath}`, (route) => route.fulfill({ status: 500, body: "" }));
+  await answer(page);
+  const dock = page.getByTestId("kid-feedback-dock");
+  const listen = dock.getByTestId("kid-explanation-audio");
+  const error = dock.getByTestId("kid-sentence-audio-error");
+  await expect(error).toHaveAttribute("aria-live", "polite");
+  await expect(error).toHaveText("");
+  await listen.click();
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+  await expect(listen).toHaveAttribute("data-audio-failed", "1");
+  await expect(listen).toBeFocused();
+  await expect(listen).not.toHaveAttribute("data-sound-active");
+  await expect(dock.getByTestId("kid-sentence-audio")).not.toHaveAttribute("data-audio-failed");
+  await expect(dock.getByTestId("kid-sentence-audio-slow")).not.toHaveAttribute("data-audio-failed");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-audio-failed", "2");
+  await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+  // Tekst wyjaśnienia ma własny region `aria-live`.
+  await expect(dock.getByTestId("kid-explanation-text")).toHaveAttribute("aria-live", "polite");
+});
+
+test("the explanation button is disabled while the next step loads and gone offline", async ({ page }) => {
+  const media = await open(page, [withBothRecordings]);
+  // Następne zadanie czeka na bramce (także ewentualne wcześniejsze pobranie po odpowiedzi).
+  let releaseNext!: () => void;
+  const nextGate = new Promise<void>((resolve) => { releaseNext = resolve; });
+  let nextRequested = false;
+  await page.route(`**/api/v1/kid/sessions/${ids.sessionId}/next`, async (route) => {
+    nextRequested = true;
+    await nextGate;
+    await route.fallback();
+  });
+  await answer(page);
+  await expect.poll(() => media).toEqual([sentencePath]);
+  const dock = page.getByTestId("kid-feedback-dock");
+  const listen = dock.getByTestId("kid-explanation-audio");
+  await expect(listen).toBeEnabled();
+  // „Dalej” czeka na następne zadanie (busy) — odsłuchy w doku są zablokowane jak przyciski zdania.
+  await page.getByTestId("kid-next").click();
+  await expect.poll(() => nextRequested).toBe(true);
+  await expect(listen).toBeDisabled();
+  await expect(dock.getByTestId("kid-sentence-audio")).toBeDisabled();
+  await expect(dock.getByTestId("kid-sentence-audio-slow")).toBeDisabled();
+  const plays = (await audioCounters(page)).plays;
+  await listen.click({ force: true });
+  expect((await audioCounters(page)).plays).toBe(plays);
+  expect(media).toEqual([sentencePath]);
+  releaseNext();
+  await expect(page.getByTestId("kid-lesson-gap")).toContainText("She");
+});
+
+test("going offline replaces the dock, so the explanation cannot be played", async ({ page, context }) => {
+  const media = await open(page, [withBothRecordings]);
+  await answer(page);
+  await expect.poll(() => media).toEqual([sentencePath]);
+  await expect(page.getByTestId("kid-explanation-audio")).toBeEnabled();
+  await context.setOffline(true);
+  await expect(page.getByTestId("kid-offline")).toBeVisible();
+  await expect(page.getByTestId("kid-explanation-audio")).toHaveCount(0);
+  expect(media).toEqual([sentencePath]);
+  await context.setOffline(false);
+});
+
 test("the explanation row fits the feedback dock on every form factor", async ({ page }, testInfo) => {
   await open(page, [attempt({ kind: "incorrect", correctText: "He goes to school.", hintPl: EXPLANATION,
     correctAudioAssetId: sentenceAssetId, explanationAudioAssetId: explanationAssetId })]);
@@ -337,11 +437,13 @@ test("the explanation row fits the feedback dock on every form factor", async ({
     await listen.scrollIntoViewIfNeeded();
     const [dockBox, listenBox, textBox, result] = await Promise.all([boxOf(dock), boxOf(listen), boxOf(text), boxOf(dock.getByTestId("kid-feedback"))]);
     measured[label] = { dock: dockBox, listen: listenBox, text: textBox, result };
-    expect(listenBox.width, `listen width at ${label}`).toBeGreaterThanOrEqual(48);
-    expect(listenBox.height, `listen height at ${label}`).toBeGreaterThanOrEqual(48);
-    expect(within(listenBox, dockBox), `listen inside dock at ${label}`).toBe(true);
-    expect(within(listenBox, viewportBox), `listen inside viewport at ${label}`).toBe(true);
+    const details = JSON.stringify(measured[label]);
+    expect(listenBox.width, `listen width at ${label}: ${details}`).toBeGreaterThanOrEqual(48);
+    expect(listenBox.height, `listen height at ${label}: ${details}`).toBeGreaterThanOrEqual(48);
+    expect(within(listenBox, dockBox), `listen inside dock at ${label}: ${details}`).toBe(true);
+    expect(within(listenBox, viewportBox), `listen inside viewport at ${label}: ${details}`).toBe(true);
     expect(within(textBox, dockBox), `text inside dock at ${label}: ${JSON.stringify(textBox)}`).toBe(true);
+    expect(within(textBox, viewportBox), `text inside viewport at ${label}: ${JSON.stringify(measured[label])}`).toBe(true);
     // Wiersz wyjaśnienia stoi pod wynikiem, a przycisk na jego początku.
     expect(textBox.y, `text below the result at ${label}`).toBeGreaterThanOrEqual(result.y + result.height - 1);
     expect(listenBox.x + listenBox.width, `listen before the text at ${label}`).toBeLessThanOrEqual(textBox.x + 1);
@@ -356,7 +458,6 @@ test("the explanation row fits the feedback dock on every form factor", async ({
     expect(await dock.evaluate((element) => element.scrollWidth > element.clientWidth + 1), `dock overflow at ${label}`).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`explanation-${label}.png`) });
   }
-  console.log(`explanation geometry ${JSON.stringify(measured)}`);
 });
 
 test("the sentence button shows the playing ring during readback", async ({ page }) => {
@@ -798,28 +899,26 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
           expect(answerBox.y + answerBox.height, `last line in viewport at ${label}`).toBeLessThanOrEqual(viewport.height + 1);
           await content.evaluate((element) => { element.scrollTop = 0; });
         }
-        // Wyjaśnienie pod długim wynikiem (Review Focus 5): po przewinięciu treści doku do końca
-        // tekst i „Posłuchaj wyjaśnienia” stoją w polu treści doku i w viewporcie.
+        // Wyjaśnienie pod długim wynikiem (spec 2026-11-01-lesson-error-explanation §6, K1):
+        // wiersz stoi poza przewijaną kartą wyniku, więc tekst i „Posłuchaj wyjaśnienia” są
+        // w doku i w viewporcie od razu — bez przewijania karty ani strony.
         if (kind === "incorrect-explanation") {
-          const row = dock.getByTestId("kid-explanation");
-          const field = await row.evaluate((element) => {
-            for (let node: Element | null = element.parentElement; node !== null && node.getAttribute("data-testid") !== "kid-feedback-dock"; node = node.parentElement) {
-              node.scrollTop = node.scrollHeight;
-            }
-            const scroll = element.parentElement!.getBoundingClientRect();
-            return { x: scroll.x, y: scroll.y, width: scroll.width, height: scroll.height };
-          });
           const explanationBoxes = { text: await boxOf(dock.getByTestId("kid-explanation-text")), listen: await boxOf(dock.getByTestId("kid-explanation-audio")) };
+          const scrolled = await page.evaluate(() => ({
+            page: document.scrollingElement?.scrollTop ?? 0,
+            card: document.querySelector("[data-testid='kid-feedback-dock'] .kid-feedback-content")?.scrollTop ?? 0,
+          }));
+          const pinned = `${JSON.stringify({ ...explanationBoxes, dock: dockBox, next: boxes.next, scrolled })} at ${label}`;
+          expect(scrolled.card, `result card not scrolled: ${pinned}`).toBe(0);
           for (const [name, bounds] of Object.entries(explanationBoxes)) {
-            expect(within(bounds, field), `explanation ${name} in dock content at ${label}: ${JSON.stringify({ bounds, field })}`).toBe(true);
-            expect(within(bounds, viewportBox), `explanation ${name} in viewport at ${label}: ${JSON.stringify(bounds)}`).toBe(true);
+            expect(within(bounds, dockBox), `explanation ${name} in dock: ${pinned}`).toBe(true);
+            expect(within(bounds, viewportBox), `explanation ${name} in viewport without scrolling: ${pinned}`).toBe(true);
+            expect(overlaps(bounds, boxes.next), `explanation ${name} overlaps „Dalej”: ${pinned}`).toBe(false);
           }
-          expect(explanationBoxes.listen.width, `explanation listen width at ${label}`).toBeGreaterThanOrEqual(48);
-          expect(explanationBoxes.listen.height, `explanation listen height at ${label}`).toBeGreaterThanOrEqual(48);
-          console.log(`cloze explanation ${label}: ${JSON.stringify({ field, ...explanationBoxes, dock: await boxOf(dock) })}`);
-          await row.evaluate((element) => {
-            for (let node: Element | null = element.parentElement; node !== null && node.getAttribute("data-testid") !== "kid-feedback-dock"; node = node.parentElement) node.scrollTop = 0;
-          });
+          // Wiersz stoi pod wynikiem i nad „Dalej”.
+          expect(explanationBoxes.text.y + explanationBoxes.text.height, `explanation above „Dalej”: ${pinned}`).toBeLessThanOrEqual(boxes.next.y + 1);
+          expect(explanationBoxes.listen.width, `explanation listen width: ${pinned}`).toBeGreaterThanOrEqual(48);
+          expect(explanationBoxes.listen.height, `explanation listen height: ${pinned}`).toBeGreaterThanOrEqual(48);
         }
 
         // Pierwszą lukę tekstu da się przewinąć do kontenera materiału: w nim, w viewporcie i nad dokiem.

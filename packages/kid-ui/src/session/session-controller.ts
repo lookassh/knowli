@@ -60,6 +60,13 @@ export interface DictationState {
 /** Tempo odczytu zdania w feedbacku lekcji: autoodczyt i „Posłuchaj zdania” = normal, żółw = slow. */
 export type SentenceRate = "normal" | "slow";
 
+/**
+ * Nagranie odtwarzane z doku lekcji: zdanie w jednym z temp albo wyjaśnienie
+ * ćwiczenia (spec 2026-11-01-lesson-error-explanation §6). Wspólny przebieg,
+ * strażniki i błąd ręcznego odsłuchu.
+ */
+export type FeedbackRecording = SentenceRate | "explanation";
+
 /** Sposób wprowadzenia odpowiedzi tekstowej zgłaszany serwerowi. */
 export type TextInputMethod = "keyboard" | "speech";
 
@@ -77,9 +84,11 @@ export interface LearningScreen {
    * `chosenOptionId` różni próbę wyboru od pozostałych i zasila
    * podświetlenie opcji w siatce odpowiedzi (design 2026-10-09).
    * `sentencePlaying` — tempo odczytu zdania, które faktycznie gra (od startu
-   * odtwarzacza do końca/przerwania); `sentenceAudioError` — ostatni nieudany
-   * RĘCZNY odsłuch zdania, `seq` rośnie z każdym błędem (klucz animacji).
-   * Autoodczyt nigdy nie ustawia błędu; znika przy udanym starcie albo z feedbackiem.
+   * odtwarzacza do końca/przerwania); `explanationPlaying` — to samo dla nagrania
+   * wyjaśnienia ćwiczenia; `sentenceAudioError` — ostatni nieudany RĘCZNY odsłuch
+   * zdania albo wyjaśnienia (`rate: "explanation"`), `seq` rośnie z każdym błędem
+   * (klucz animacji). Autoodczyt nigdy nie ustawia błędu; znika przy udanym starcie
+   * dowolnego z tych nagrań albo z feedbackiem.
    */
   feedback: {
     dto: FeedbackDto | null;
@@ -89,7 +98,8 @@ export interface LearningScreen {
     chosenOptionId?: string;
     audioError?: boolean;
     sentencePlaying?: SentenceRate | null;
-    sentenceAudioError?: { rate: SentenceRate; seq: number } | null;
+    explanationPlaying?: boolean;
+    sentenceAudioError?: { rate: FeedbackRecording; seq: number } | null;
   } | null;
   /** Ujawniona podpowiedź czekająca na potwierdzenie dziecka. */
   reveal: { target: string; visual?: import("@learning/contracts").MeaningVisual; audioAssetId?: string } | null;
@@ -375,8 +385,8 @@ export class LearningSessionController {
     // rozstrzygnięcie play(). Błąd ręcznego odsłuchu zostaje (design §4.1 pkt 3, 5).
     // Po teardown widok już odszedł — bez emisji stanu do słuchaczy.
     const feedback = this.#learning()?.feedback;
-    if (!this.#disposed && feedback && (feedback.sentencePlaying ?? null) !== null) {
-      this.#setLearning({ feedback: { ...feedback, sentencePlaying: null } });
+    if (!this.#disposed && feedback && ((feedback.sentencePlaying ?? null) !== null || feedback.explanationPlaying === true)) {
+      this.#setLearning({ feedback: { ...feedback, sentencePlaying: null, explanationPlaying: false } });
     }
   }
 
@@ -1347,9 +1357,18 @@ export class LearningSessionController {
    * autoodtwarzanie jest ciche, zostaje przycisk w doku.
    */
   async #playSentence(rate: SentenceRate, { manual }: { manual: boolean }): Promise<void> {
+    await this.#playFeedbackRecording(rate, { manual });
+  }
+
+  /**
+   * Wspólny przebieg nagrań doku lekcji (zdanie w obu tempach i wyjaśnienie): ten
+   * sam numer przebiegu, generacja, epoka i `attemptId` (patrz `#playSentence`).
+   * Start dowolnego nagrania gasi błąd poprzedniego ręcznego odsłuchu.
+   */
+  async #playFeedbackRecording(recording: FeedbackRecording, { manual }: { manual: boolean }): Promise<void> {
     const screen = this.#learning();
     const feedback = screen?.feedback;
-    const assetId = feedback?.dto?.correctAudioAssetId;
+    const assetId = recording === "explanation" ? feedback?.dto?.explanationAudioAssetId : feedback?.dto?.correctAudioAssetId;
     if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
         assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
     const run = ++this.#sentenceRun;
@@ -1367,10 +1386,14 @@ export class LearningSessionController {
     let failed = false;
     try {
       await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId, {
-        ...(rate === "slow" ? { rate: SLOW_PLAYBACK_RATE } : {}),
+        ...(recording === "slow" ? { rate: SLOW_PLAYBACK_RATE } : {}),
         onStarted: () => {
           const now = currentFeedback();
-          if (now) this.#setLearning({ feedback: { ...now, sentencePlaying: rate, sentenceAudioError: null } });
+          if (!now) return;
+          const playing = recording === "explanation"
+            ? { sentencePlaying: null, explanationPlaying: true }
+            : { sentencePlaying: recording, explanationPlaying: false };
+          this.#setLearning({ feedback: { ...now, ...playing, sentenceAudioError: null } });
         },
       });
     } catch {
@@ -1382,9 +1405,11 @@ export class LearningSessionController {
     finished = true;
     if (!now) return;
     if (failed && manual) {
-      this.#setLearning({ feedback: { ...now, sentencePlaying: null, sentenceAudioError: { rate, seq: ++this.#sentenceErrorSeq } } });
-    } else if ((now.sentencePlaying ?? null) !== null) {
-      this.#setLearning({ feedback: { ...now, sentencePlaying: null } });
+      this.#setLearning({ feedback: {
+        ...now, sentencePlaying: null, explanationPlaying: false, sentenceAudioError: { rate: recording, seq: ++this.#sentenceErrorSeq },
+      } });
+    } else if ((now.sentencePlaying ?? null) !== null || now.explanationPlaying === true) {
+      this.#setLearning({ feedback: { ...now, sentencePlaying: null, explanationPlaying: false } });
     }
   }
 
@@ -1393,19 +1418,11 @@ export class LearningSessionController {
    * autoodtwarzania. Serwer zapieczętował ujawnienie (`audio_issued`) przy
    * ocenie, więc odtwarzamy plik bezpośrednio; odczyt zdania i każde inne
    * odtwarzanie ustępują (#beginPlayback), a „Dalej” przerywa wyjaśnienie.
+   * Wskaźnik (`explanationPlaying`), ponowne dotknięcie i błąd ręcznego odsłuchu
+   * działają jak przy „Posłuchaj zdania” (wspólny `#playFeedbackRecording`).
    */
   async playExplanationAudio(): Promise<void> {
-    const screen = this.#learning();
-    const feedback = screen?.feedback;
-    const assetId = feedback?.dto?.explanationAudioAssetId;
-    if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
-        assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
-    this.#beginPlayback();
-    try {
-      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
-    } catch {
-      // Celowo bez stanu błędu: przycisk zostaje i można spróbować ponownie.
-    }
+    await this.#playFeedbackRecording("explanation", { manual: true });
   }
 
   /** Odtwarza wzorzec wskazany przez serwer dla nadal widocznej karty wyniku. */

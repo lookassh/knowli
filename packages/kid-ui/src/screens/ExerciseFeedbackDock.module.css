@@ -147,42 +147,13 @@
   gap: 10px;
 }
 
-/* Z wyjaśnieniem ćwiczenia górny wiersz się zawija: wiersz wyjaśnienia zajmuje
-   całą szerokość pod nim. Treść ma podstawę 0, żeby długi wynik nie zawinął się
-   pod odznakę — geometria górnego wiersza zostaje taka jak bez wyjaśnienia. */
-.withExplanation {
-  flex-wrap: wrap;
-}
-
-.withExplanation .content {
-  flex-basis: 0;
-}
-
-/* Panel-nakładka (bez przewijanej strony): wynik i wyjaśnienie dzielą jeden
-   limit wysokości karty i przewijają się razem, więc panel nie rośnie o wiersz
-   wyjaśnienia ponad dotychczasową kartę i nie zasłania materiału. ExerciseFrame
-   mierzy wtedy ten obszar (`.kid-feedback-scroll-limited`) zamiast karty. W trybie
-   przewijanej strony (powiększenie gestem, bardzo niskie okno) przewija strona,
-   a karta zostaje z własnym limitem. */
-:global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"])) .withExplanation {
-  max-height: max(min(calc(36 * var(--kid-vh)), 300px), var(--kid-feedback-card-max, 0px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-:global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"])) .withExplanation .content :global(.kid-answer-feedback) {
-  max-height: none;
-}
-
-:global(.kid-page:not([data-zoomed="true"]):not([data-viewport-very-short="true"])) .withExplanation .content :global(.kid-feedback-content) {
-  flex: none;
-  overflow: visible;
-}
-
 /* Wiersz wyjaśnienia: „Posłuchaj wyjaśnienia” na początku, tekst w kolorze
-   panelu (ten sam kontrast co tytuł wyniku), wyrównany do początku. */
+   panelu (ten sam kontrast co tytuł wyniku), wyrównany do początku. Stoi poza
+   przewijaną kartą wyniku, między górnym wierszem a akcjami, więc jest zawsze
+   widoczny; w panelu-nakładce karta wyniku traci jego wysokość z limitu
+   (`--kid-feedback-pinned-height`), więc panel nie rośnie ponad dotychczasowy. */
 .explanation {
-  flex: 1 0 100%;
+  flex: none;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -283,9 +254,12 @@
 
 /* Limit karty: 36vh, najwyżej 300 px — chyba że pod odpowiedzią jest więcej
    wolnego miejsca. `--kid-feedback-card-max` ustawia na nakładce ExerciseFrame
-   (spec 2026-10-31-kid-ui-dock-followups §3.1); bez niej zostaje dotychczasowy limit. */
+   (spec 2026-10-31-kid-ui-dock-followups §3.1); bez niej zostaje dotychczasowy limit.
+   Przypięty wiersz wyjaśnienia (`--kid-feedback-pinned-height`, też z ExerciseFrame,
+   tylko w panelu-nakładce) zmniejsza dotychczasowy limit o swoją wysokość, a limit
+   z wolnego miejsca liczy go już jako resztę panelu. */
 .content :global(.kid-answer-feedback) {
-  max-height: max(min(calc(36 * var(--kid-vh)), 300px), var(--kid-feedback-card-max, 0px));
+  max-height: max(calc(min(calc(36 * var(--kid-vh)), 300px) - var(--kid-feedback-pinned-height, 0px)), var(--kid-feedback-card-max, 0px));
 }
 
 .content :global(.kid-feedback-content) {
