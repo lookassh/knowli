@@ -23,7 +23,7 @@ import LessonSupervisionPanel from "./LessonSupervisionPanel";
 import LessonExerciseCard, { type CalculationControls } from "./LessonExerciseCard";
 import ArchiveLessonDialog from "./ArchiveLessonDialog";
 import LessonSourceNote from "./LessonSourceNote";
-import PromptAudioControls, { VoiceToneSelect } from "./PromptAudioControls";
+import PromptAudioControls, { cardAudioTargetLabel, VoiceToneSelect } from "./PromptAudioControls";
 import { EditorActionBar, EditorAssignments, EditorErrorText } from "../EditorAssignments";
 import { ParentIcon } from "../ParentIcon";
 import { runOnce } from "../run-once";
@@ -39,7 +39,6 @@ import {
   groupExercisesByObjectiveAndStage,
   keywordsAnswerOf,
   lessonExerciseChanged,
-  lessonSubjectHasVoiceTones,
   nextRequiredElementId,
   toLessonDraftPatch,
   topRejectedReasons,
@@ -734,7 +733,7 @@ export default function LessonEditor({
         hadAudio={savedAudio !== null}
         errors={errors}
         audio={asset ? { state: asset.state, assetId: asset.assetId ?? null } : null}
-        voiceToneEnabled={lessonSubjectHasVoiceTones(active?.subjectId)}
+        voiceTones={active?.voiceTones}
         promptAudio={promptAudio}
         lessonDraftId={active?.id ?? ""}
         deckId={deckId}
@@ -789,7 +788,8 @@ export default function LessonEditor({
               {audio && (
                 <div className="pp-lesson-prompt-audio">
                   <PromptAudioControls audio={audio} target={{ kind: "card", objectiveId, cardIndex }} lessonDraftId={active?.id ?? ""} deckId={deckId}
-                    canRegenerate={editable} locked={busy || isDirty} testId={`lesson-card-audio-${objectiveId}-${cardIndex}`} onPlay={playAsset} />
+                    canRegenerate={editable} locked={busy || isDirty} testId={`lesson-card-audio-${objectiveId}-${cardIndex}`} onPlay={playAsset}
+                    targetLabel={cardAudioTargetLabel(cardIndex, card.title, objectiveMeta(objectiveId)?.titlePl)} />
                 </div>
               )}
               {dynamic ? (
@@ -806,8 +806,9 @@ export default function LessonEditor({
                       const body = e.currentTarget.value;
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, body } : c)) });
                     }} />
-                  {lessonSubjectHasVoiceTones(active?.subjectId) && (
-                    <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} whisper testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
+                  {active?.voiceTones && (
+                    <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} whisper
+                      styleEnabled={active.voiceTones.styleEnabled} testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
                       onChange={(voiceTone) => {
                         mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { title: c.title, body: c.body, ...(voiceTone ? { voiceTone } : {}) } : c)) });
                       }} />

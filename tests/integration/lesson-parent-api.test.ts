@@ -441,6 +441,8 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
       const fresh = await readLessonDeck(services, deckId);
       expect(fresh.generation?.state).toBe("succeeded");
       expect(fresh.draft?.exercises.length).toBeGreaterThan(0);
+      // gramatyka nie nagrywa pytań ani kart — edytor nie pokazuje tonu lektora
+      expect(fresh.draft).not.toHaveProperty("voiceTones");
     } finally { release(); await reading; await isolated.pool.end(); }
   });
 

@@ -258,7 +258,7 @@ test("zagadnienie szkolne przy 320 px: pola z przyciskami bez przepełnienia, us
   const OBJ = "school.map.scale";
   const school = {
     ...version(draftId, "draft", 2),
-    subjectId: "school", topicId: "map", subjectTitlePl: "Geografia",
+    subjectId: "school", topicId: "map", subjectTitlePl: "Geografia", voiceTones: { styleEnabled: true },
     objectiveIds: [OBJ],
     examples: {},
     dynamicTopic: { titlePl: "Posługuję się mapą", objectives: [{ id: OBJ, titlePl: "Skala mapy", cards: [
