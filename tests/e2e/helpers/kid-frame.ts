@@ -95,9 +95,18 @@ export async function nextFrames(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 }
 
-/** Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are). */
-export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
-  return page.evaluate(() => {
+/**
+ * Tile rectangles (screen pixels) and the material rectangle that bounds them (inner pixels, as container units are).
+ * `settle: true` reads them once they stop changing — only for the reference read when the task opens: the first layout
+ * passes (fonts, container queries, the measured footer reserve) can still move the grid for a frame or two, and a single
+ * read there was the flake of `kid-large-screen.spec.ts` "picture tiles … keep their size after the verdict" (tile 0 left
+ * 56 inner px off at 3440x1440). Reads after a verdict stay single: settling there would hide a jump that comes back.
+ */
+export async function pictureTiles(
+  page: Page,
+  options: { settle?: boolean } = {},
+): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
+  const read = () => page.evaluate(() => {
     const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
       const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
       return { left, top, right, bottom, width, height };
@@ -107,6 +116,19 @@ export async function pictureTiles(page: Page): Promise<{ tiles: ScreenRect[]; c
     while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
     return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
   });
+  return options.settle === true ? readUntilStable(page, read, "the picture tiles") : read();
+}
+
+/** Repeats `read` two frames apart until two reads are equal (at most 60 frames), then returns the last one. */
+async function readUntilStable<T>(page: Page, read: () => Promise<T>, what: string): Promise<T> {
+  let previous = await read();
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await nextFrames(page);
+    const next = await read();
+    if (JSON.stringify(next) === JSON.stringify(previous)) return next;
+    previous = next;
+  }
+  throw new Error(`${what} did not settle in 60 frames: ${JSON.stringify(previous)}`);
 }
 
 /** `--kid-visual-choice-max-size` from expanded width on (spec 2026-10-30-kid-ui-large-screens §3.1), in inner pixels. */
