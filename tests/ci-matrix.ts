@@ -33,11 +33,39 @@ export function readCiJobBuckets(job: string): number[] {
   return buckets.sort((a, b) => a - b);
 }
 
-/** Shardy Playwrighta (`shard: "k/N"`) zadeklarowane w matrixie wskazanego joba CI, w kolejności z pliku. */
-export function readCiJobShards(job: string): string[] {
-  return readCiJobLines(job)
-    .map((line) => /^\s+(?:-\s*)?shard:\s*"(\d+\/\d+)"\s*$/.exec(line)?.[1])
-    .filter((shard): shard is string => shard !== undefined);
+/**
+ * Pozycje listy `include` matrixa wskazanego joba jako słowniki klucz → wartość
+ * (bez cudzysłowów), w kolejności z pliku. Pozycja zaczyna się od `- klucz:`,
+ * kolejne klucze są wcięte jak pierwszy klucz pozycji.
+ */
+export function readCiJobMatrixItems(job: string): Record<string, string>[] {
+  const items: Record<string, string>[] = [];
+  let inInclude = false;
+  for (const line of readCiJobLines(job)) {
+    if (/^\s+include:\s*$/.test(line)) {
+      inInclude = true;
+      continue;
+    }
+    if (!inInclude) continue;
+    const first = /^(\s+)-\s+([a-z]+):\s*"?([^"#]*?)"?\s*$/.exec(line);
+    if (first) {
+      items.push({ [first[2]!]: first[3]! });
+      continue;
+    }
+    const field = /^\s+([a-z]+):\s*"?([^"#]*?)"?\s*$/.exec(line);
+    // Klucz pozycji jest wcięty głębiej niż `include:`; `steps:` joba kończy listę.
+    if (field && items.length > 0 && line.search(/\S/) > 8) {
+      items[items.length - 1]![field[1]!] = field[2]!;
+      continue;
+    }
+    if (!/^\s*(#.*)?$/.test(line)) break;
+  }
+  return items;
+}
+
+/** Tekst sekcji wskazanego joba — do sprawdzeń kroków i warunków bramek. */
+export function readCiJobText(job: string): string {
+  return readCiJobLines(job).join("\n");
 }
 
 /** Nazwa wyświetlana joba (`name:` na poziomie joba) — pod nią GitHub raportuje check. */

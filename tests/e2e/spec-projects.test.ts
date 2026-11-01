@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readCiJobBuckets, readCiJobName, readCiJobShards } from "../ci-matrix";
+import { readCiJobBuckets, readCiJobMatrixItems, readCiJobName, readCiJobText } from "../ci-matrix";
 import { MOCKED_SPECS, REAL_BUCKETS, REAL_SPECS } from "./spec-projects";
 
 const E2E_DIR = join(process.cwd(), "tests/e2e");
@@ -72,6 +72,15 @@ describe("partycja speców E2E (spec-projects)", () => {
     }
   });
 
+  it("kolejność w świecie kosza: przeglądy świata na początku, lesson-mock-test nie pierwszy", () => {
+    // Pliki kosza biegną alfabetycznie w jednym świecie, którego dane narastają.
+    const ordered = REAL_BUCKETS.map((bucket) => [...bucket].sort((a, b) => a.localeCompare(b)));
+    const overviews = ["learning-mcp-http.spec.ts", "learning-overview-api.spec.ts"];
+    const withOverviews = ordered.find((bucket) => bucket.includes(overviews[0]!));
+    expect(withOverviews?.slice(0, 2)).toEqual(overviews);
+    for (const bucket of ordered) expect(bucket[0]).not.toBe("lesson-mock-test.spec.ts");
+  });
+
   it("domyślna liczba koszy w runnerze shardów zgadza się z REAL_BUCKETS", () => {
     const runner = readFileSync(join(process.cwd(), "scripts/run-e2e-shards.cjs"), "utf8");
     const match = /const DEFAULT_REAL_BUCKETS = (\d+)/.exec(runner);
@@ -86,13 +95,26 @@ describe("partycja speców E2E (spec-projects)", () => {
   });
 
   it("matrix CI dzieli projekt mocked na komplet shardów pod bramką wymaganego checka", () => {
-    // Shardy 1/N … N/N bez luk: brakujący shard pominąłby część testów mocked.
-    const shards = readCiJobShards("e2e");
+    const items = readCiJobMatrixItems("e2e");
+    // Shardy 1/N … N/N bez luk: brakujący shard pominąłby część testów mocked,
+    // a shard w koszu real odciąłby część jego plików.
+    const shards = items.filter((item) => item.project === "mocked").map((item) => item.shard);
     expect(shards.length).toBeGreaterThan(0);
     expect(shards).toEqual(shards.map((_, i) => `${i + 1}/${shards.length}`));
+    expect(items.filter((item) => item.project !== "mocked" && item.shard)).toEqual([]);
+    // Krok testów przekazuje shard Playwrightowi — bez tego każdy shard puściłby cały projekt.
+    const e2e = readCiJobText("e2e");
+    expect(e2e).toContain("E2E_SHARD: ${{ matrix.shard }}");
+    expect(e2e).toContain('--shard="$E2E_SHARD"');
     // Reguły brancha main wymagają checka `e2e (mocked)`; po podziale na shardy
-    // raportuje go job bramki.
+    // raportuje go bramka. Pominięty wymagany job liczy się jako zielony, więc
+    // bramka musi czekać na wszystkie joby e2e i działać także po ich porażce.
     expect(readCiJobName("e2e-mocked")).toBe("e2e (mocked)");
+    const gate = readCiJobText("e2e-mocked");
+    expect(gate).toMatch(/^\s+needs: \[e2e\]\s*$/m);
+    expect(gate).toMatch(/^\s+if: \$\{\{ always\(\) \}\}\s*$/m);
+    expect(gate).toContain('if [ "${{ needs.e2e.result }}" != "success" ]; then');
+    expect(gate).toContain("exit 1");
   });
 
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {

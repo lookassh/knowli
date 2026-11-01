@@ -128,22 +128,29 @@ jobs:
       # realnych (podział Playwrighta po liczbie testów zostawiał 98/58/105 s).
       # Zmiana liczby koszy: zaktualizuj REAL_BUCKETS, ten matrix i DEFAULT_REAL_BUCKETS
       # w runnerze shardów; kompletności pilnuje test jednostkowy spec-projects.
-      # Projekt mocked (bezstanowy) dzielą shardy Playwrighta: w jednym jobie na
-      # 4 workerach trwał 4,5 min i wyznaczał czas całego runu (kosze real ok. 2,5).
+      # Kosze real są osobnymi wymaganymi checkami `e2e (real-N)` w regułach brancha
+      # main: nowy kosz trzeba tam dopisać, a usunięty usunąć, inaczej PR-y utkną.
+      # Projekt mocked (bezstanowy) dzielą shardy Playwrighta: jako jeden job na
+      # 4 workerach trwał 5,5 min (4,8 min testów) i wyznaczał czas całego runu
+      # (joby real 2,6–3,2 min). Liczbę shardów zmienia sam matrix — wymagany check
+      # raportuje bramka `e2e-mocked`. Shardy dzielą jeden cache Next.js (`cache`).
       matrix:
         include:
           - name: mocked-1
             project: mocked
             bucket: ""
             shard: "1/3"
+            cache: mocked
           - name: mocked-2
             project: mocked
             bucket: ""
             shard: "2/3"
+            cache: mocked
           - name: mocked-3
             project: mocked
             bucket: ""
             shard: "3/3"
+            cache: mocked
           - name: real-1
             project: real
             bucket: "1"
@@ -171,10 +178,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/web/.next/cache
-          key: next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/next.config.ts', 'apps/web/src/**', 'packages/**/src/**') }}
+          key: next-e2e-${{ runner.os }}-node22-${{ matrix.cache || matrix.name }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/next.config.ts', 'apps/web/src/**', 'packages/**/src/**') }}
           restore-keys: |
-            next-e2e-${{ runner.os }}-node22-${{ matrix.name }}-
-      # Przeglądarka jest cache'owana między runami (klucz = lockfile, więc zmiana wersji Playwrighta unieważnia cache). Bez tego każdy z 5 jobów e2e pobierał Chromium od zera, a `--with-deps` dokładał `apt-get update` i instalację pakietów z lustra Ubuntu — krok trwał 20 s do ~5 min zależnie od lustra i wyznaczał czas całego runu.
+            next-e2e-${{ runner.os }}-node22-${{ matrix.cache || matrix.name }}-
+      # Przeglądarka jest cache'owana między runami (klucz = lockfile, więc zmiana wersji Playwrighta unieważnia cache). Bez tego każdy job e2e pobierał Chromium od zera, a `--with-deps` dokładał `apt-get update` i instalację pakietów z lustra Ubuntu — krok trwał 20 s do ~5 min zależnie od lustra i wyznaczał czas całego runu.
       - name: Cache Playwright chromium
         id: playwright-cache
         uses: actions/cache@v4
