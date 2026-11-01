@@ -28,6 +28,8 @@ const numbered = (template: string, n: number) => template.replace("{n}", String
  * (szkic), generowanie i ponowienie runu historyjki, usunięcie (`onChange(null)`)
  * oraz podgląd tylko do odczytu w wersji opublikowanej. Stan formularza i zapis
  * należą do edytora; `locked` = niezapisane zmiany albo konflikt wersji.
+ * Generowanie, ponowienie porażki i ponowienie zawieszonego runu (`running`)
+ * zastępują istniejącą historyjkę, więc wtedy pytają o potwierdzenie.
  */
 export default function LessonStorySection({
   story,
@@ -36,6 +38,7 @@ export default function LessonStorySection({
   generation,
   busy,
   locked,
+  hasExercises,
   onChange,
   onGenerate,
   onRetry,
@@ -46,13 +49,16 @@ export default function LessonStorySection({
   generation: GenerationDto | null;
   busy: boolean;
   locked: boolean;
+  /** Szkic ma zapisane ćwiczenia — bez nich serwer odrzuca generowanie (`validation`). */
+  hasExercises: boolean;
   onChange(story: LessonStoryDto | null): void;
   onGenerate(): void;
   onRetry(): void;
 }) {
   const running = generation?.state === "queued" || generation?.state === "running";
+  const stalled = generation?.state === "running";
   const failed = generation?.state === "failed";
-  const generateDisabled = busy || locked || running;
+  const generateDisabled = busy || locked || running || !hasExercises;
 
   // okno potwierdzenia nie przeżywa sekcji (powrót do listy, inna lekcja)
   const confirmIds = useRef<string[]>([]);
@@ -60,22 +66,25 @@ export default function LessonStorySection({
     for (const id of confirmIds.current) modals.close(id);
   }, []);
 
-  const generate = () => {
+  // Wynik runu zastąpi obecną historyjkę (także napisaną ręcznie) — z historyjką najpierw potwierdzenie.
+  const confirmReplace = (action: () => void, confirmLabel: string) => {
     if (!story) {
-      onGenerate();
+      action();
       return;
     }
     confirmIds.current.push(modals.openConfirmModal({
-      title: t.regenerate,
+      title: confirmLabel,
       centered: true,
       radius: "lg",
       children: <Text size="sm">{t.regenerateConfirm}</Text>,
-      labels: { confirm: t.regenerate, cancel: messages.lessons.regenerateCancel },
+      labels: { confirm: confirmLabel, cancel: messages.lessons.regenerateCancel },
       confirmProps: { size: "md", "data-testid": "lesson-story-regenerate-confirm" } as Record<string, unknown>,
       cancelProps: { size: "md", variant: "default", "data-autofocus": true } as Record<string, unknown>,
-      onConfirm: runOnce(onGenerate),
+      onConfirm: runOnce(action),
     }));
   };
+  const generate = () => confirmReplace(onGenerate, t.regenerate);
+  const retry = () => confirmReplace(onRetry, t.retry);
 
   return (
     <Paper component="section" withBorder radius="lg" p="md" data-testid="lesson-story-section" aria-labelledby="lesson-story-title">
@@ -85,7 +94,19 @@ export default function LessonStorySection({
 
         {running && (
           <Alert color="blue" variant="light" icon={<Loader size="xs" />} data-testid="lesson-story-generating">
-            <Text size="sm">{t.generating}</Text>
+            <Stack gap="xs" align="flex-start">
+              <Text size="sm">{t.generating}</Text>
+              {/* run w `running` mógł utknąć po awarii workera — ponowienie zastępuje go nowym runem */}
+              {stalled && editable && (
+                <>
+                  <Text size="sm">{messages.lessons.stalledGenerationHint}</Text>
+                  <Button size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="lesson-story-retry-stalled"
+                    disabled={busy || locked} onClick={retry}>
+                    {t.retry}
+                  </Button>
+                </>
+              )}
+            </Stack>
           </Alert>
         )}
         {failed && (
@@ -94,7 +115,7 @@ export default function LessonStorySection({
               <Text size="sm">{t.failed}</Text>
               {editable && (
                 <Button size="md" variant="default" leftSection={<ParentIcon name="refresh" />} data-testid="lesson-story-retry"
-                  disabled={busy || locked} onClick={onRetry}>
+                  disabled={busy || locked} onClick={retry}>
                   {t.retry}
                 </Button>
               )}

@@ -34,6 +34,7 @@ function renderSection(overrides: Partial<Props> = {}) {
     generation: null,
     busy: false,
     locked: false,
+    hasExercises: true,
     onChange: vi.fn(),
     onGenerate: vi.fn(),
     onRetry: vi.fn(),
@@ -123,7 +124,9 @@ describe("LessonStorySection", () => {
     for (const state of ["queued", "running"] as const) {
       renderSection({ generation: run(state) });
       const section = screen.getByTestId("lesson-story-section");
-      const controls = [...section.querySelectorAll("input, button")] as (HTMLInputElement | HTMLButtonElement)[];
+      // Wyjątek: ponowienie zawieszonego runu (`running`) zostaje dostępne.
+      const controls = ([...section.querySelectorAll("input, button")] as (HTMLInputElement | HTMLButtonElement)[])
+        .filter((control) => control.getAttribute("data-testid") !== "lesson-story-retry-stalled");
       expect(controls.length).toBeGreaterThan(10);
       for (const control of controls) expect(control.disabled, control.getAttribute("data-testid") ?? control.outerHTML).toBe(true);
       cleanup();
@@ -172,6 +175,52 @@ describe("LessonStorySection", () => {
     expect(retry.textContent).toContain(t.retry);
     fireEvent.click(retry);
     expect(props.onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("retry of a failed run asks for confirmation when a story exists", async () => {
+    const props = renderSection({ generation: run("failed") });
+    fireEvent.click(screen.getByTestId("lesson-story-retry"));
+    expect(props.onRetry).not.toHaveBeenCalled();
+    expect(await screen.findByText(t.regenerateConfirm)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("lesson-story-regenerate-confirm"));
+    await waitFor(() => expect(props.onRetry).toHaveBeenCalledTimes(1));
+    expect(props.onGenerate).not.toHaveBeenCalled();
+  });
+
+  it("running run offers a stalled-run retry with hint, guarded like other actions", async () => {
+    const props = renderSection({ story: null, generation: run("running") });
+    const section = screen.getByTestId("lesson-story-generating");
+    expect(section.textContent).toContain(messages.lessons.stalledGenerationHint);
+    const stalled = screen.getByTestId("lesson-story-retry-stalled") as HTMLButtonElement;
+    expect(stalled.textContent).toContain(t.retry);
+    expect(stalled.disabled).toBe(false);
+    fireEvent.click(stalled);
+    expect(props.onRetry).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    // queued: run czeka na workera, nie ma czego odblokowywać
+    renderSection({ story: null, generation: run("queued") });
+    expect(screen.queryByTestId("lesson-story-retry-stalled")).toBeNull();
+    cleanup();
+
+    for (const guard of [{ locked: true }, { busy: true }]) {
+      renderSection({ story: null, generation: run("running"), ...guard });
+      expect((screen.getByTestId("lesson-story-retry-stalled") as HTMLButtonElement).disabled).toBe(true);
+      cleanup();
+    }
+
+    // z historyjką ponowienie ją zastąpi — najpierw potwierdzenie
+    const withStory = renderSection({ generation: run("running") });
+    fireEvent.click(screen.getByTestId("lesson-story-retry-stalled"));
+    expect(withStory.onRetry).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId("lesson-story-regenerate-confirm"));
+    await waitFor(() => expect(withStory.onRetry).toHaveBeenCalledTimes(1));
+  });
+
+  it("generate is disabled while the draft has no exercises; writing stays available", () => {
+    renderSection({ story: null, hasExercises: false });
+    expect(generateButton().disabled).toBe(true);
+    expect((screen.getByTestId("lesson-story-write") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("read-only with publishedHint when not editable", () => {

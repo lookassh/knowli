@@ -578,7 +578,7 @@ export default function LessonEditor({
   // Run historyjki: osobny od puli, nie ustawia `generating` edytora (spec §6.2).
   const storyGenerating = deck?.storyGeneration?.state === "queued" || deck?.storyGeneration?.state === "running";
   const generateStory = async () => {
-    if (!draft || busyRef.current || dirty.current || conflictActive.current || generating || storyGenerating) return;
+    if (!draft || busyRef.current || dirty.current || conflictActive.current || generating || storyGenerating || draft.exercises.length === 0) return;
     setBusyState(true);
     setError(null);
     setStoryErrors([]);
@@ -1112,6 +1112,7 @@ export default function LessonEditor({
       generation={editable ? deck?.storyGeneration ?? null : null}
       busy={busy || generating}
       locked={isDirty || conflict}
+      hasExercises={(draft?.exercises.length ?? 0) > 0}
       onChange={changeStory}
       onGenerate={() => void generateStory()}
       onRetry={() => void retryStory()}
