@@ -4101,6 +4101,37 @@ describe("LearningSessionController — „Posłuchaj i wybierz” (lesson_liste
     }
   });
 
+  it("kolejne przerwanie bodźca już zablokowanego uzbraja „Pomiń” od nowa", async () => {
+    for (const second of ["blur", "endConfirm", "offlineRetry"] as const) {
+      vi.useFakeTimers();
+      try {
+        const harness = await startListen(baseState(), listen());
+        // zablokowane autoodtwarzanie → „blocked” z licznikiem 6 s
+        harness.plays[0]!.reject(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+        await flush();
+        expect(stimulusOf(harness)?.state, second).toBe("blocked");
+        await vi.advanceTimersByTimeAsync(3_000);
+        if (second === "blur") harness.controller.pauseActivity("blur");
+        else if (second === "endConfirm") {
+          harness.controller.holdForEndConfirm();
+          harness.controller.releaseEndConfirm();
+        } else {
+          harness.controller.markOffline();
+          await harness.controller.retry();
+        }
+        await flush();
+        expect(stimulusOf(harness)?.state, second).toBe("blocked");
+        // licznik liczy od przerwania, nie zostaje skasowany
+        await vi.advanceTimersByTimeAsync(5_900);
+        expect(stimulusOf(harness)?.state, second).toBe("blocked");
+        await vi.advanceTimersByTimeAsync(100);
+        expect(stimulusOf(harness)?.state, second).toBe("unavailable");
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
   it("przerwanie nie rusza bodźca otwartego ani pauzy offline", async () => {
     vi.useFakeTimers();
     try {

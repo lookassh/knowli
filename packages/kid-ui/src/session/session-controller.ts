@@ -1621,41 +1621,30 @@ export class LearningSessionController {
   }
 
   /**
-   * Bodziec „Posłuchaj i wybierz” (`lesson_listen_choice`, spec §8): autoryzacja
-   * nagrania (`audio_issued` przed wydaniem id), potem odtworzenie. Opcje otwiera
-   * (`open`) dopiero koniec odtwarzania przy niezmienionej generacji — przerwanie
-   * rozstrzyga `play()` tak samo jak koniec, więc go nie odblokowuje — albo zapas
-   * `durationMs + 1 s` (8 s bez długości) od startu. Bez startu po 6 s od żądania
-   * autoryzacji: `unavailable` („Pomiń”, przycisk nadal działa). `NotAllowedError`:
-   * `blocked`. Odmowa autoryzacji i błąd pliku: `unavailable` — cicho przy
-   * autoodtwarzaniu, z komunikatem przy ręcznym naciśnięciu. Błąd sieci: zwykła
-   * ścieżka offline, a ponowienie niczego samo nie odtwarza. Po odpowiedzi nic nie
-   * robi — odczyt zdania z feedbacku gra `playSentenceAudio`.
-   */
-  /**
    * Przerwany bodziec „Posłuchaj i wybierz” (potwierdzenie końca, tło, utrata fokusu):
    * `#stopPlayback` kasuje stoper braku startu, a nieotwarty bodziec zostałby w cichym
-   * `pending` z zablokowanymi opcjami. Przechodzi więc ścieżką wznowienia z offline:
-   * `blocked` (status i wyróżniony głośnik), a po 6 s „Pomiń”. Bodziec otwarty i zadanie
-   * z wynikiem zostają bez zmian.
+   * `pending` z zablokowanymi opcjami, a bodziec już `blocked` — bez licznika „Pomiń”.
+   * Przechodzi więc ścieżką wznowienia z offline: `blocked` (status i wyróżniony głośnik),
+   * a po 6 s „Pomiń”. Bodziec otwarty i zadanie z wynikiem zostają bez zmian.
    */
   #interruptListenStimulus(): void {
     const screen = this.#learning();
     const stimulus = screen?.listenStimulus;
     if (!screen?.task || screen.offline || screen.feedback !== null || stimulus?.taskId !== screen.task.taskId ||
-        stimulus.state !== "pending") return;
+        (stimulus.state !== "pending" && stimulus.state !== "blocked")) return;
     void this.#listenResume(stimulus.taskId)();
   }
 
   /**
    * Wznowienie zadania słuchowego po powrocie z offline: bez autoodtwarzania. Bodziec, który
-   * nie był otwarty (`pending`), przechodzi w `blocked` — status i wyróżniony głośnik — a po
+   * nie był otwarty (`pending` albo już `blocked`), przechodzi w `blocked` — status i wyróżniony głośnik — a po
    * 6 s bez naciśnięcia w `unavailable` („Pomiń”), jak przy zablokowanym autoodtwarzaniu.
    */
   #listenResume(taskId: string): () => Promise<void> {
     return async () => {
       const stimulus = this.#learning()?.listenStimulus;
-      if (stimulus?.taskId !== taskId || stimulus.state !== "pending") return;
+      if (stimulus?.taskId !== taskId || (stimulus.state !== "pending" && stimulus.state !== "blocked")) return;
+      // Także już zablokowany bodziec: #stopPlayback skasował jego licznik, więc uzbrajamy go od nowa.
       this.#patchListenStimulus(taskId, { state: "blocked", playing: false });
       const epoch = this.#epoch;
       this.#listenTimers.push(setTimeout(() => {
@@ -1667,6 +1656,19 @@ export class LearningSessionController {
     };
   }
 
+  /**
+   * Bodziec „Posłuchaj i wybierz” (`lesson_listen_choice`, spec §8): autoryzacja
+   * nagrania (`audio_issued` przed wydaniem id), potem odtworzenie. Opcje otwiera
+   * (`open`) dopiero koniec odtwarzania przy niezmienionej generacji — przerwanie
+   * rozstrzyga `play()` tak samo jak koniec, więc go nie odblokowuje — albo zapas
+   * `durationMs + 1 s` (8 s bez długości) od startu. Bez startu po 6 s od żądania
+   * autoryzacji: `unavailable` („Pomiń”, przycisk nadal działa). `NotAllowedError`:
+   * `blocked` przy autoodtwarzaniu (status, po 6 s „Pomiń”), `unavailable`
+   * z komunikatem przy ręcznym naciśnięciu. Odmowa autoryzacji i błąd pliku:
+   * `unavailable` — cicho przy autoodtwarzaniu, z komunikatem przy ręcznym naciśnięciu. Błąd sieci: zwykła
+   * ścieżka offline, a ponowienie niczego samo nie odtwarza. Po odpowiedzi nic nie
+   * robi — odczyt zdania z feedbacku gra `playSentenceAudio`.
+   */
   async playListenStimulus(options: { auto?: boolean } = {}): Promise<void> {
     const auto = options.auto === true;
     const screen = this.#learning();
