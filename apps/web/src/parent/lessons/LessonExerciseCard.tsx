@@ -145,6 +145,17 @@ function LessonExerciseCard({
   const forcedOpen = changed || errors !== undefined;
   const preview = exercisePreview(ex);
   const explanationText = explanations ? ex.explanationPl?.trim() ?? "" : "";
+  // Nagranie wyjaśnienia z widoczną etykietą — przy podglądzie wyjaśnienia (zwinięta karta)
+  // albo pod jego polem (rozwinięta), nie na górze karty, gdzie wyglądałoby na nagranie pytania.
+  const explanationAudioLabelId = `exercise-explanation-audio-label-${index}`;
+  const explanationAudioBlock = explanationAudio ? (
+    <div className="pp-lesson-explanation-audio" role="group" aria-labelledby={explanationAudioLabelId} data-testid={`exercise-explanation-audio-${index}`}>
+      <Text size="sm" fw={600} id={explanationAudioLabelId}>{messages.lessons.explanationAudioLabel}</Text>
+      <PromptAudioControls audio={explanationAudio} target={{ kind: "prompt", itemRevisionId }} role="explanation_audio" lessonDraftId={lessonDraftId} deckId={deckId}
+        canRegenerate={editable} locked={busy || audioLocked} testId="lesson-explanation-audio" onPlay={onPlay}
+        targetLabel={messages.lessons.explanationAudioTarget.replace("{exercise}", messages.lessons.exerciseNumber.replace("{n}", number))} />
+    </div>
+  ) : null;
   const audioReady = audio?.state === "approved" && audio.assetId !== null;
   const audioText = audio ? messages.decks.audioState[audio.state === "approved" ? "ready" : audio.state] ?? "" : "";
 
@@ -200,14 +211,6 @@ function LessonExerciseCard({
         </div>
       )}
 
-      {explanationAudio && (
-        <div className="pp-lesson-prompt-audio">
-          <PromptAudioControls audio={explanationAudio} target={{ kind: "prompt", itemRevisionId }} role="explanation_audio" lessonDraftId={lessonDraftId} deckId={deckId}
-            canRegenerate={editable} locked={busy || audioLocked} testId="lesson-explanation-audio" onPlay={onPlay}
-            targetLabel={messages.lessons.explanationAudioTarget.replace("{exercise}", messages.lessons.exerciseNumber.replace("{n}", number))} />
-        </div>
-      )}
-
       {!open ? (
         <Group justify="space-between" align="flex-end" gap="xs" wrap="nowrap">
           <div className="pp-lesson-ex-preview">
@@ -218,6 +221,7 @@ function LessonExerciseCard({
                 {messages.lessons.explanationPreview.replace("{text}", () => explanationText)}
               </Text>
             )}
+            {explanationAudioBlock}
           </div>
           <Button size="md" variant="subtle" data-testid={`exercise-edit-${index}`} data-edit-toggle aria-expanded="false" onClick={() => toggle("open")}
             aria-label={(editable ? messages.lessons.editExerciseLabel : messages.lessons.showExerciseLabel).replace("{n}", number)}>
@@ -490,6 +494,7 @@ function LessonExerciseCard({
                   </>}
                   data-testid={`exercise-explanation-${index}`} value={ex.explanationPl ?? ""} disabled={disabled} {...described}
                   onChange={(e) => onMutate({ explanationPl: e.currentTarget.value })} />
+                {explanationAudioBlock}
               </Field>
             )}
             {ex.sourceRefs && (

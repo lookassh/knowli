@@ -42,8 +42,8 @@ describe("PromptAudioControls — nagranie wyjaśnienia", () => {
         lessonDraftId={DRAFT_ID} deckId={DRAFT_ID} canRegenerate locked={false} testId="lesson-explanation-audio" onPlay={vi.fn()} />,
     );
     expect(markup).toContain('data-testid="lesson-explanation-audio"');
-    expect(markup).toContain('aria-label="Posłuchaj: wyjaśnienia, Ćwiczenie 3"');
-    expect(markup).toContain('aria-label="Nagraj ponownie: wyjaśnienia, Ćwiczenie 3"');
+    expect(markup).toContain('aria-label="Posłuchaj: wyjaśnienie — Ćwiczenie 3"');
+    expect(markup).toContain('aria-label="Nagraj ponownie: wyjaśnienie — Ćwiczenie 3"');
     expect(markup).not.toContain('aria-label="Posłuchaj: Ćwiczenie 3"');
   });
 

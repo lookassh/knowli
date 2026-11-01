@@ -426,13 +426,27 @@ test("szkic gramatyki: pole wyjaśnienia z licznikiem, kontrolki nagrania i patc
   await page.setViewportSize({ width: 1280, height: 800 });
   const calls = await openLesson(page, { data: withExplanations() });
   const card = page.getByTestId("exercise-0");
-  // nagranie wyjaśnienia jest w karcie także zwiniętej, z nazwą odrębną od nagrania pytania
+  // nagranie wyjaśnienia jest w karcie także zwiniętej, z nazwą odrębną od nagrania pytania,
+  // z widoczną etykietą i pod podglądem wyjaśnienia (nie na górze karty)
   await expect(card.getByTestId("lesson-explanation-audio")).toHaveAttribute("data-audio-state", "ready");
-  await expect(card.getByTestId("lesson-explanation-audio-listen")).toHaveAccessibleName("Posłuchaj: wyjaśnienia, Ćwiczenie 1");
-  await expect(card.getByTestId("lesson-explanation-audio-regenerate")).toHaveAccessibleName("Nagraj ponownie: wyjaśnienia, Ćwiczenie 1");
+  await expect(card.getByTestId("lesson-explanation-audio-listen")).toHaveAccessibleName("Posłuchaj: wyjaśnienie — Ćwiczenie 1");
+  await expect(card.getByTestId("lesson-explanation-audio-regenerate")).toHaveAccessibleName("Nagraj ponownie: wyjaśnienie — Ćwiczenie 1");
+  const collapsedBlock = card.getByTestId("exercise-explanation-audio-0");
+  await expect(collapsedBlock).toContainText(messages.lessons.explanationAudioLabel);
+  await expect(card.getByRole("group", { name: messages.lessons.explanationAudioLabel })).toBeVisible();
+  const previewBox = (await page.getByTestId("exercise-explanation-preview-0").boundingBox())!;
+  const collapsedBox = (await collapsedBlock.boundingBox())!;
+  expect(collapsedBox.y, `controls under the explanation preview: ${JSON.stringify({ previewBox, collapsedBox })}`).toBeGreaterThanOrEqual(previewBox.y + previewBox.height - 1);
 
   await page.getByTestId("exercise-edit-0").click();
   const field = page.getByTestId("exercise-explanation-0");
+  // rozwinięta karta: etykieta i kontrolki pod polem wyjaśnienia
+  const expandedBlock = card.getByTestId("exercise-explanation-audio-0");
+  await expect(expandedBlock).toContainText(messages.lessons.explanationAudioLabel);
+  const fieldBox = (await field.boundingBox())!;
+  const expandedBox = (await expandedBlock.boundingBox())!;
+  expect(expandedBox.y, `controls under the explanation field: ${JSON.stringify({ fieldBox, expandedBox })}`).toBeGreaterThanOrEqual(fieldBox.y + fieldBox.height - 1);
+  await expect(card.getByTestId("lesson-explanation-audio")).toHaveCount(1);
   await expect(card.getByText(messages.lessons.explanationLabel)).toBeVisible();
   await expect(field).toHaveValue(EXPLANATION);
   await expect(field).toHaveAttribute("maxlength", "120");
@@ -472,6 +486,7 @@ test("opublikowana lekcja: zwinięty podgląd pokazuje wyjaśnienie i odsłuch",
   const card = page.getByTestId("exercise-0");
   await expect(page.getByTestId("exercise-explanation-preview-0")).toHaveText(messages.lessons.explanationPreview.replace("{text}", EXPLANATION));
   await expect(card.getByTestId("lesson-explanation-audio-listen")).toBeVisible();
+  await expect(card.getByTestId("exercise-explanation-audio-0")).toContainText(messages.lessons.explanationAudioLabel);
   // wersja tylko do odczytu: bez „Nagraj ponownie”
   await expect(card.getByTestId("lesson-explanation-audio-regenerate")).toHaveCount(0);
   await expect(page.getByTestId("exercise-explanation-preview-1")).toHaveCount(0);
