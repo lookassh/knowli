@@ -384,6 +384,45 @@ test("parent edits generated story and publishes", async ({ page }) => {
   expect(deck.published?.story?.sentences[0]).toBe(edited);
 });
 
+test("exercise-only save does not send the story; removing the story sends null", async ({ page }) => {
+  await enterParent(page);
+  const deckId = await createLesson(page, `Historyjka zapis ${randomUUID().slice(0, 8)}`);
+  await waitForGeneratedStory(page);
+  const isPatch = (r: { request(): { method(): string }; url(): string }) =>
+    r.request().method() === "PATCH" && /\/api\/v1\/parent\/lesson-drafts\//.test(r.url());
+
+  // Zmiana samego ćwiczenia: PATCH bez pola `story` (nie anuluje runu historyjki).
+  const editButton = page.locator('[data-testid^="exercise-edit-"]').first();
+  const idx = (await editButton.getAttribute("data-testid"))!.replace("exercise-edit-", "");
+  await editButton.click();
+  await page.getByTestId(`exercise-instruction-${idx}`).fill("Uzupełnij zdanie poprawną formą.");
+  const exerciseSave = page.waitForResponse(isPatch);
+  await page.getByTestId("save-lesson").click();
+  const exercisePatch = await exerciseSave;
+  expect(exercisePatch.status(), await exercisePatch.text()).toBe(200);
+  const exerciseBody = exercisePatch.request().postDataJSON() as { story?: unknown; exercises?: unknown[] };
+  expect(exerciseBody.exercises?.length).toBeGreaterThan(0);
+  expect(exerciseBody.story).toBeUndefined();
+  await expect(page.getByTestId("lesson-story-sentence-0")).toHaveValue("Sam has a red bike.");
+
+  // „Usuń historyjkę” + zapis: PATCH ze `story: null`, sekcja w stanie pustym.
+  await page.getByTestId("lesson-story-remove").click();
+  await expect(page.getByTestId("lesson-story-empty")).toBeVisible();
+  const removeSave = page.waitForResponse(isPatch);
+  await page.getByTestId("save-lesson").click();
+  const removePatch = await removeSave;
+  expect(removePatch.status(), await removePatch.text()).toBe(200);
+  const removeBody = removePatch.request().postDataJSON() as { story?: unknown };
+  expect("story" in removeBody).toBe(true);
+  expect(removeBody.story).toBeNull();
+  await expect(page.getByTestId("lesson-story-empty")).toBeVisible();
+  await expect(page.getByTestId("lesson-story-sentence-0")).toHaveCount(0);
+
+  const response = await page.request.get(`/api/v1/parent/lessons/${deckId}`);
+  expect(response.ok()).toBeTruthy();
+  expect(LessonDeckDtoSchema.parse(await response.json()).draft?.story).toBeUndefined();
+});
+
 test("story validation error is shown", async ({ page }) => {
   await enterParent(page);
   await createLesson(page, `Historyjka blad ${randomUUID().slice(0, 8)}`);
