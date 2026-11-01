@@ -103,8 +103,13 @@ describe("validateEnglishGrammarExercise — zdania z tematów zainteresowań dz
     expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, stem, answer), toBeV1)).toEqual([]);
   });
 
-  it("rzeczownik na -ics/maths z are nadal jest odrzucany", () => {
+  it("niepoliczalny rzeczownik z are nadal jest odrzucany", () => {
     expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, "Gymnastics ___ fun.", "are"), toBeV1)).not.toEqual([]);
+  });
+
+  it.each(["Comics", "Picnics", "Topics"])("prawdziwa liczba mnoga na -ics zostaje mnoga: %s ___ fun. → are", (noun) => {
+    expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, `${noun} ___ fun.`, "are"), toBeV1)).toEqual([]);
+    expect(validateEnglishGrammarExercise(themed("lesson_gap", AFF, `${noun} ___ fun.`, "is"), toBeV1)).not.toEqual([]);
   });
 });
 

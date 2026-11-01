@@ -798,4 +798,10 @@ describe("generateLessonPool — tematy zdań (#197)", () => {
     const base = await poolMessages(INPUT);
     expect(await poolMessages({ ...INPUT, interests: THEMES })).toEqual(base);
   });
+
+  it("pusta reguła (same spacje) z tematami zostawia oba prompty bez zmian", async () => {
+    const base = await poolMessages(INPUT);
+    const blank = { ...INPUT, promptProfile: { ...INPUT.promptProfile, interestsRule: "   " }, interests: THEMES };
+    expect(await poolMessages(blank)).toEqual(base);
+  });
 });
