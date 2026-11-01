@@ -873,6 +873,9 @@ export async function publishLessonDraft(
     }
 
     const now = services.clock.now();
+    // Publikacja kończy szkic: oczekujące runy (także historyjki, §6.2a) od razu
+    // jako zastąpione, zamiast czekać, aż worker je przejmie i odrzuci.
+    await supersedeLessonRuns(tx, versionId, now, undefined, { includeStoryRuns: true });
     await tx
       .update(deckVersions)
       .set({ state: "published", publishedAt: now })

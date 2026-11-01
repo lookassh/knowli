@@ -346,6 +346,8 @@ describe("run historyjki lekcji (integracja)", () => {
     const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
     const draft = (await readLessonDeck(services, deckId)).draft!;
     await publishLessonDraft(services, versionId, draft.editNumber);
+    // Publikacja unieważnia run od razu, zanim worker go przejmie (bez zużycia kolejki).
+    expect((await readGeneration(services, storyRunId!)).state).toBe("superseded");
 
     await executeLessonGeneration(services, storyRunId!);
 
