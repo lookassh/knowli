@@ -987,9 +987,15 @@ export function revealsAnswer(feedback: FeedbackDto): boolean {
  * zatwierdzony wariant (`correctText` najbliższego wariantu ≠ `correctTextFor`)
  * też go nie dostaje: dziecko nie słyszy innego zdania, niż widzi. Bez pola
  * nagrania nie ma też pieczęci `audio_issued`.
- * Wywołujący stosuje ją tylko, gdy odpowiedź kończy zadanie (stan ≠ `issued`).
+ * Zadanie otwarte do ponowienia (`taskState === "issued"`, np. model_other)
+ * nie dostaje nagrania: odsłuch przed ponowieniem byłby wsparciem tej próby.
  */
-export function withFeedbackSentenceAudio(feedback: FeedbackDto | null, key: LessonTaskAnswerKey): FeedbackDto | null {
+export function withFeedbackSentenceAudio(
+  feedback: FeedbackDto | null,
+  key: LessonTaskAnswerKey,
+  taskState: "issued" | "answered" | "skipped",
+): FeedbackDto | null {
+  if (taskState === "issued") return feedback;
   if (feedback === null || key.feedbackAudioAssetId === undefined) return feedback;
   if (feedback.kind === "lesson_precision_hint" || !revealsAnswer(feedback)) return feedback;
   if (feedback.correctText !== undefined && feedback.correctText !== correctTextFor(key)) return feedback;
@@ -1128,11 +1134,9 @@ async function finalizeLessonAttempt(
   const shortenOffer = !mockTest && valid.modality === "text" && taskState !== "issued"
     ? await offerShortenFollowUp(tx, services, { task, session, itemId, attemptId, childAnswer: valid.text, result, now: receivedAt })
     : null;
-  // Nagranie zdania doklejone PRZED zapisem — ponowny odczyt zwraca ten sam
-  // identyfikator. Tylko odpowiedź kończąca zadanie: przy zadaniu `issued`
-  // (np. model_other) odsłuch przed ponowieniem byłby wsparciem tej próby.
+  // Nagranie zdania doklejone PRZED zapisem — ponowny odczyt zwraca ten sam identyfikator.
   const visibleFeedback = mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback;
-  const feedback = taskState === "issued" ? visibleFeedback : withFeedbackSentenceAudio(visibleFeedback, key);
+  const feedback = withFeedbackSentenceAudio(visibleFeedback, key, taskState);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
@@ -1611,9 +1615,9 @@ async function finalizeGradedAttempt(
   const shortenOffer = !mockTest && taskState !== "issued"
     ? await offerShortenFollowUp(tx, services, { task, session: freshSession, itemId, attemptId, childAnswer: args.childAnswer, result, now: receivedAt })
     : null;
-  // Nagranie zdania tylko przy odpowiedzi kończącej zadanie (jak wyżej).
+  // Nagranie zdania doklejone przed zapisem (jak wyżej).
   const visibleFeedback = mockTest ? null : shortenOffer ?? result.feedback;
-  const feedback = taskState === "issued" ? visibleFeedback : withFeedbackSentenceAudio(visibleFeedback, key);
+  const feedback = withFeedbackSentenceAudio(visibleFeedback, key, taskState);
   const completed = await tx
     .update(attempts)
     .set({ state: "completed", completedAt: receivedAt, feedback: feedback as unknown as Record<string, unknown> })
