@@ -210,7 +210,7 @@ describe("requiredAssetsForLessonExercise — wyjaśnienie błędu (explanation_
     });
   });
 
-  it("przy innym trybie stylu instrukcja jest równa instrukcji języka pl-PL, a styl poza fingerprintem", () => {
+  it("fingerprint zależy od instrukcji, nie od samego trybu stylu: bez stylu instrukcja to sama instrukcja pl-PL", () => {
     const plain = { ...styled, tts: { ...styled.tts, style: "none" as const } };
     const [asset] = requiredAssetsForLessonExercise(gap, plain, on);
     expect(asset!.metadata).toMatchObject({ locale: "pl-PL", instructions: "Mów po polsku." });

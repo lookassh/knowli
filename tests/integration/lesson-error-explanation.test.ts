@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  completePresentation, createChild, createLesson, createLessonDraftFromPublished, createServices, createSubjectRegistry, decideLessonVerdict,
+  completePresentation, createChild, createLesson, createLessonDraftFromPublished, createLessonFromMaterial, createServices, createSubjectRegistry, decideLessonVerdict,
   editLessonDraft, englishGrammarSubject, executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt,
   readLessonDeck, regenerateLessonPromptAudio, runDueGenerationWork, startSession, submitAttempt,
 } from "@learning/server";
@@ -426,6 +426,9 @@ describe("sesja — wyjaśnienie w feedbacku po błędzie", () => {
 
     const baseline = await play({ ...scenario, explanations: null });
     expect(baseline.attempt.feedback).not.toHaveProperty("hintPl");
+    // Obie oceny istnieją (null = brak oceny celu), a wyjaśnienie nie zmienia samodzielności.
+    expect(played.independent).not.toBeNull();
+    expect(baseline.independent).not.toBeNull();
     expect(played.independent).toBe(baseline.independent);
   });
 
@@ -437,6 +440,32 @@ describe("sesja — wyjaśnienie w feedbacku po błędzie", () => {
     expect(audio).toHaveLength(1);
     expect(audio[0]!.sealed).toBe(true);
     expect(audio[0]!.occurredAt.getTime()).toBeGreaterThan(new Date(attempt.receivedAt).getTime());
+  });
+
+  it("Angielski — rozdział: błędny wybór → incorrect z wyjaśnieniem i jego nagraniem", async () => {
+    const fakes = await fakeGeneration();
+    cleanup.push(fakes.dispose);
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const run = await createLessonFromMaterial(services, {
+      subjectId: "english_chapter", topicTitlePl: "Ubrania", material: "I'm wearing a coat. I'm wearing boots. She is wearing a dress.",
+      poolSize: 40, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, run.runId);
+    const draft = (await readLessonDeck(services, run.deckId)).draft!;
+    await drainWorker(services);
+    await publishLessonDraft(services, draft.id, draft.editNumber);
+    const child = await createChild(services, { displayName: "Rozdział", avatarKey: "owl" });
+    await pool.query("insert into learning_app.assignments (id, child_id, deck_id) values ($1, $2, $3)", [randomUUID(), child.id, run.deckId]);
+    const session = await startSession(services, { childId: child.id, deckId: run.deckId, microphoneEnabled: false });
+    const task = await issueUntil(services, session.sessionId, "lesson_choice");
+    const key = await answerKeyOf(task.taskId);
+    expect(key).toMatchObject({ explanationPl: FAKE_EXPLANATION, explanationAudioAssetId: expect.any(String) });
+    const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), ...choiceWrong(task, key) } as AttemptInput);
+    expect(attempt.feedback).toMatchObject({
+      kind: "incorrect", hintPl: FAKE_EXPLANATION, explanationAudioAssetId: key.explanationAudioAssetId, correctText: expect.any(String),
+    });
+    expect(FeedbackDtoSchema.safeParse(attempt.feedback).success).toBe(true);
+    expect(JSON.stringify(task)).not.toContain(FAKE_EXPLANATION);
   });
 
   it("„Nie pamiętam” → incorrect z wyjaśnieniem", async () => {

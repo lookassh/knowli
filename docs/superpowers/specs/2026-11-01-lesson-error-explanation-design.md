@@ -1,6 +1,6 @@
 # Wyjaśnienie błędu dla dziecka w lekcjach — design
 
-Data: 2026-11-01. Status: do recenzji właściciela (po review trzech krytyków).
+Data: 2026-11-01. Status: zaakceptowany przez właściciela 2026-11-01 (po review trzech krytyków).
 Issue: #196. Powiązane: `docs/superpowers/specs/2026-10-30-lesson-sentence-readback-design.md`
 (odczyt zdania, #194), `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md` (styl TTS),
 `.kiro/specs/grammar-module/requirements.md`, `docs/architecture.md` §19, `docs/SPEC.md` §22.
@@ -23,7 +23,7 @@ Ustalenia z właścicielem (2026-11-01):
   (bez autoodtwarzania), nie blokuje publikacji; rodzic może odsłuchać i nagrać ponownie;
 - podejście **A′**: rodzaj feedbacku się nie zmienia — `incorrect` dostaje opcjonalne `hintPl`.
 
-Świadome odstępstwa i doprecyzowania (wynik review, do potwierdzenia przez właściciela):
+Świadome odstępstwa i doprecyzowania (wynik review, potwierdzone przez właściciela 2026-11-01):
 
 - **„prawie” bez wyjaśnienia** — issue dopuszcza wyjaśnienie także po „prawie”; właściciel
   wybrał tylko błąd i „Nie pamiętam”. W gramatyce „prawie” oznacza poprawnie zastosowaną regułę
@@ -178,10 +178,18 @@ Gdy `hintPl` feedbacku pochodzi z wyjaśnienia ćwiczenia (nie z szablonu katego
   w wyjaśnieniu na granicy słów, po normalizacji ekspozycji przedmiotu i po usunięciu
   z wyjaśnienia własnego tekstu ekspozycji ćwiczenia; własny klucz jest pomijany. Klucze
   trafiają do prywatnego klucza zadania (`explanationExposureKeys`), a `discloseLessonFeedback`
-  zapisuje je razem z `targetKey`, gdy feedback niesie wyjaśnienie ćwiczenia. Fałszywe
-  trafienie (np. polskie „do” i angielska odpowiedź „Do”) skutkuje tylko dodatkową ekspozycją —
-  późniejsza próba tamtego celu w oknie ekspozycji jest liczona jako wsparta, a nie samodzielna.
-  Nic nie jest blokowane.
+  zapisuje je razem z `targetKey`, gdy feedback niesie wyjaśnienie ćwiczenia (nie szablon
+  kategorii — także wtedy, gdy tekst szablonu jest identyczny z wyjaśnieniem).
+- **Ekspozycje cytatów są trwałe**, jak każda inna ekspozycja lekcji: nie mają okna czasowego,
+  więc liczą się dla późniejszych prób tamtego celu (samodzielne sprawdzenie, selektor
+  i wyczerpanie puli w nadzorze rodzica). Dlatego jednowyrazowe cele, które są też zwykłymi
+  polskimi słowami (stały zbiór `a, i, o, u, w, z, do, to, on, no, na, my, we, go, ja, ze, po, od`
+  po normalizacji), są pomijane — inaczej niemal każde polskie wyjaśnienie oznaczałoby
+  angielskie „I”, „a”, „do”, „to”, „on”, „no” jako ujawnione na zawsze. Cele wielowyrazowe
+  i pozostałe pojedyncze słowa dopasowują się jak wyżej. **Ryzyko szczątkowe:** wyjaśnienie,
+  które naprawdę cytuje taki jednowyrazowy cel innego ćwiczenia („Wybierz do.”), nie zapisze
+  jego ekspozycji; inne fałszywe trafienia dają tylko dodatkową trwałą ekspozycję. Nic nie jest
+  blokowane.
 - **Pieczęć nagrania:** `audio_issued` jest zapisywane **raz** na próbę, gdy feedback niesie
   którekolwiek nagranie po odpowiedzi (`correctAudioAssetId` albo `explanationAudioAssetId`),
   z tym samym `occurredAt = max(now, receivedAt + 1 ms)` co dziś. Zmienia się wyłącznie warunek
@@ -259,9 +267,16 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
 
 - **Tekst:** kolor dziedziczony z kontenera doku (kontrast jak tytuł), typografia tokenów M3,
   bez kursywy. `incorrect` bez `hintPl` (słówka, stare lekcje) renderuje się bez zmian.
-- **Miejsce:** wyjaśnienie zajmuje **osobny wiersz doku na całą szerokość, pod górnym wierszem**
-  (odznaka, tytuł, odsłuch zdania, komunikat), w przewijanym obszarze treści, wyrównany do
-  początku. W górnym wierszu na telefonie zostaje za mało miejsca na tekst (ok. 85–115 px).
+- **Miejsce:** wyjaśnienie zajmuje **osobny wiersz doku na całą szerokość, między górnym
+  wierszem** (odznaka, tytuł, odsłuch zdania, komunikat) **a akcjami**, wyrównany do początku.
+  Wiersz jest **przypięty poza przewijaną kartą wyniku** (`.kid-feedback-pinned`): przy długim
+  wyniku (pełny tekst luk) przewija się tylko karta, a wyjaśnienie i jego odsłuch są widoczne
+  bez przewijania (telefony ukrywają paski przewijania, więc wiersz pod zgięciem byłby
+  niewidoczny). W panelu-nakładce `ExerciseFrame` liczy wiersz jako resztę panelu przy limicie
+  z wolnego miejsca i ustawia `--kid-feedback-pinned-height`, o które maleje dotychczasowy limit
+  karty — panel z wyjaśnieniem nie zasłania więcej materiału niż bez niego. W górnym wierszu na
+  telefonie zostaje za mało miejsca na tekst (ok. 85–115 px). Tekst wiersza jest w regionie
+  `aria-live="polite"`.
   Wiersz pokazuje się dla `incorrect` z `hintPl` oraz dla każdego feedbacku z
   `explanationAudioAssetId` (wtedy `lesson_hint` nie powtarza tekstu w treści); `lesson_hint`
   bez nagrania wyjaśnienia pokazuje `hintPl` w treści jak dziś.
@@ -269,7 +284,12 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
   cel ≥ 48 px, nazwa dostępności „Posłuchaj wyjaśnienia” z katalogu komunikatów) stoi **na
   początku wiersza wyjaśnienia** — położenie wiąże go z czytanym tekstem. Odtwarzanie tylko po kliknięciu: kontroler
   `playExplanationAudio()` przez `#beginPlayback` i `mediaUrl`; przerywa odczyt zdania
-  i odwrotnie; „Dalej” przerywa. Błąd pliku jest cichy.
+  i odwrotnie; „Dalej” przerywa. Przycisk zachowuje się jak „Posłuchaj zdania” (#214): pierścień
+  `SoundRing` i `data-sound-active` w trakcie gry (`explanationPlaying` z tymi samymi
+  strażnikami przebiegu, generacji, epoki i `attemptId`), ponowne dotknięcie zaczyna od nowa,
+  blokada przy `busy`, offline i nagrywaniu, a nieudany ręczny odsłuch pokazuje ten sam
+  komunikat `aria-live` nad górnym wierszem i porusza ikoną przycisku wyjaśnienia (`failKey`).
+  Udany start dowolnego nagrania doku gasi nieaktualny komunikat błędu.
 - **Przycisk komunikatu:** `GuidanceButton` przechodzi na obrysowany „?” (`icon="question"`),
   gdy dok pokazuje **którykolwiek** odsłuch (zdania albo wyjaśnienia), by nie stały obok siebie
   dwa jednakowe głośniki.
@@ -280,9 +300,10 @@ dowolny gotowy zasób TTS o oczekiwanym fingerprincie, najnowsza generacja. Kart
   (`option-outcome.ts`), postęp sesji.
 - **Responsywność:** najdłuższe wyjaśnienie (120 znaków) z tytułem, odsłuchem zdania i wyjaśnienia
   mieści się w doku w portrait (375×812), landscape telefonu (812×375), tablecie i desktopie:
-  wiersz wyjaśnienia ma użyteczną szerokość tekstu (≥ 220 px w 375×812), zawija się, jest w całości osiągalny
-  (w razie potrzeby przewijaniem w karcie), a akcje pozostają osiągalne. Najgorszy przypadek:
-  luki rozdziału (`lesson_cloze`) z pełnym tekstem jako `correctText`.
+  wiersz wyjaśnienia ma użyteczną szerokość tekstu (≥ 220 px w 375×812), zawija się, jest w całości
+  widoczny bez przewijania, a akcje pozostają osiągalne. Najgorszy przypadek: luki rozdziału
+  (`lesson_cloze`) z pełnym tekstem jako `correctText` — w 360×800 dok ma tę samą wysokość co bez
+  wyjaśnienia (karta wyniku przewija się w środku), a widoczny materiał się nie zmienia.
 
 ## 7. Prywatność
 
