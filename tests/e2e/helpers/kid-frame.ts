@@ -31,6 +31,27 @@ export async function emulatePinchZoom(page: Page): Promise<void> {
   await expect(page.getByTestId("kid-session-frame")).toHaveAttribute("data-zoomed", "true");
 }
 
+/**
+ * Counts the reveals of the result panel: calls of `scrollIntoView` on `.kid-feedback-overlay`
+ * (`scheduleFeedbackDockReveal`). Install before the page loads; read with `dockRevealCalls`.
+ */
+export async function installDockRevealSpy(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const browserWindow = window as typeof window & { dockRevealCalls?: number };
+    browserWindow.dockRevealCalls = 0;
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
+      original?.call(this, options);
+    };
+  });
+}
+
+/** How many times the result panel was revealed since the page loaded (`installDockRevealSpy`). */
+export async function dockRevealCalls(page: Page): Promise<number | undefined> {
+  return page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls);
+}
+
 /** The session frame covers the whole window (± 1 px) on screen, whatever the scale. */
 export async function expectFrameFillsViewport(page: Page, viewport: Viewport): Promise<void> {
   const frame = page.getByTestId("kid-session-frame");
@@ -154,7 +175,10 @@ export async function settledDockReserve(page: Page): Promise<{
 }
 
 /** Browser-side state of the overlap probe (`installDockOverlapProbe`), kept on `window`. */
-type DockOverlapProbeState = { samples: number[]; settled: number | null; window: string | null; scale: number; error: string | null };
+type DockOverlapProbeState = {
+  samples: number[]; settled: number | null; window: string | null; scale: number; error: string | null;
+  firstCardHeight: number | null;
+};
 
 /**
  * Records, frame by frame, how far the result panel covers the material content (spec 2026-10-31 §3.2, §5.1).
@@ -173,10 +197,15 @@ type DockOverlapProbeState = { samples: number[]; settled: number | null; window
  * With `until` (a resize step), after-paint samples count towards settling only once the window has that size: the
  * resize lands in a later round trip, and a probe started at once could settle on the old layout first and prove
  * nothing about the resize. The window size at settling is reported as `window` either way.
+ * With `cardHeight`, the first sample also records the `offsetHeight` of the result card in that panel (inner px,
+ * unlike the overlap samples) as `firstCardHeight`: the card a painted frame can first show (spec
+ * 2026-10-31-kid-ui-dock-followups §3.1).
  */
-export async function installDockOverlapProbe(page: Page, options: { startNow?: boolean; until?: Viewport } = {}): Promise<void> {
-  await page.evaluate(({ startNow, until }) => {
-    const state: DockOverlapProbeState = { samples: [], settled: null, window: null, scale: 1, error: null };
+export async function installDockOverlapProbe(
+  page: Page, options: { startNow?: boolean; until?: Viewport; cardHeight?: boolean } = {},
+): Promise<void> {
+  await page.evaluate(({ startNow, until, cardHeight }) => {
+    const state: DockOverlapProbeState = { samples: [], settled: null, window: null, scale: 1, error: null, firstCardHeight: null };
     (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe = state;
     const overlap = (): number | null => {
       const content = document.querySelector(".kid-material-content");
@@ -191,6 +220,10 @@ export async function installDockOverlapProbe(page: Page, options: { startNow?: 
     };
     const start = () => {
       record();
+      if (cardHeight) {
+        state.firstCardHeight = document.querySelector<HTMLElement>(
+          ".kid-feedback-overlay :is(.kid-answer-feedback, .kid-speech-feedback)")?.offsetHeight ?? null;
+      }
       // What the probe saw inside the current frame: DOM mutation count and window size.
       let mutations = 0;
       const mutationCounter = new MutationObserver((records) => { mutations += records.length; });
@@ -255,14 +288,16 @@ export async function installDockOverlapProbe(page: Page, options: { startNow?: 
       start();
     });
     watcher.observe(document.body, { childList: true, subtree: true });
-  }, { startNow: options.startNow ?? false, until: options.until ?? null });
+  }, { startNow: options.startNow ?? false, until: options.until ?? null, cardHeight: options.cardHeight ?? false });
 }
 
 /**
  * Waits for the probe to settle and returns its samples, the settled overlap (screen px), the window size it settled
- * in (`1280x600`) and the Kid UI scale.
+ * in (`1280x600`), the Kid UI scale and, with `cardHeight`, the first card height (inner px).
  */
-export async function readDockOverlapProbe(page: Page): Promise<{ samples: number[]; settled: number; window: string; scale: number }> {
+export async function readDockOverlapProbe(page: Page): Promise<{
+  samples: number[]; settled: number; window: string; scale: number; firstCardHeight: number | null;
+}> {
   const handle = await page.waitForFunction(() => {
     const state = (window as unknown as { __kidDockOverlapProbe?: DockOverlapProbeState }).__kidDockOverlapProbe;
     return state !== undefined && (state.settled !== null || state.error !== null) ? state : null;
@@ -272,7 +307,7 @@ export async function readDockOverlapProbe(page: Page): Promise<{ samples: numbe
   if (state.error !== null || state.settled === null || state.window === null) {
     throw new Error(`dock overlap probe: ${state.error ?? "no settled value"}`);
   }
-  return { samples: state.samples, settled: state.settled, window: state.window, scale: state.scale };
+  return { samples: state.samples, settled: state.settled, window: state.window, scale: state.scale, firstCardHeight: state.firstCardHeight };
 }
 
 /**

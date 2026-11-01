@@ -3,11 +3,12 @@ import { flushSync } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import type { TaskDto } from "@learning/contracts";
 import { ExerciseInstruction, type ExerciseInstructionAudio } from "../components/ExerciseInstruction";
-import { toLayoutPx } from "../layout/css-zoom";
+import { cssZoomOf, toLayoutPx } from "../layout/css-zoom";
 import { useIsomorphicLayoutEffect } from "../layout/isomorphic-layout-effect";
 import classes from "./ExerciseFrame.module.css";
 import { useExerciseGuidance } from "./exercise-guidance";
 import { getExercisePresentation } from "./exercise-presentation";
+import { feedbackCardMax, type FeedbackCardGeometry } from "./feedback-card-space";
 import {
   scheduleFeedbackDockReveal,
   shouldRevealFeedbackDock,
@@ -52,6 +53,7 @@ export function ExerciseFrame({
   const overlayRef = useRef<HTMLDivElement>(null);
   const gatedDockRef = useRef<{ overlay: HTMLElement; enabled: boolean } | null>(null);
   const scrolledKeyRef = useRef<{ overlay: HTMLElement; key: string } | null>(null);
+  const cardSpaceRef = useRef<CardSpaceLatch | null>(null);
   const measureRef = useRef<((mode: "layout" | "observer") => void) | null>(null);
   // Ostatnia rezerwa zlecona przez pomiar: pomiar z obserwatora porównuje z nią
   // nową wartość, bo stan z domknięcia efektu byłby nieaktualny.
@@ -126,9 +128,9 @@ export function ExerciseFrame({
   // wchodzi pod panel; inaczej nie powstaje zbędny ogon scrolla. Rezerwa
   // jest wyliczana od zera przy każdej zmianie rozmiaru (materiał, panel,
   // okno/klawiatura), więc nie rośnie monotonicznie. Przewinięcie
-  // korygujące następuje tylko, gdy zakładka przekracza próg — po
-  // korekcie znika, więc pomiary nie dokładają scrolla w pętli, a po
-  // otwarciu klawiatury ekranowej albo rotacji liczy się jeszcze raz.
+  // korygujące następuje od zakładki 1 px ekranu — po korekcie znika, więc
+  // pomiary nie dokładają scrolla w pętli, a po otwarciu klawiatury
+  // ekranowej albo rotacji liczy się jeszcze raz.
   //
   // Rezerwa jest gotowa przed malowaniem (spec 2026-10-31 §3.2): efekt layoutu
   // mierzy w commicie, w którym pojawia się panel, a `setDockPad` z efektu
@@ -141,6 +143,9 @@ export function ExerciseFrame({
     if (!hasDock || flowFeedback) {
       gatedDockRef.current = null;
       scrolledKeyRef.current = null;
+      // Zmienna limitu karty zostaje na wychodzącym panelu do końca animacji;
+      // nowy panel (także ożywiony ten sam węzeł) liczy ją od nowa.
+      cardSpaceRef.current = null;
       requestedPadRef.current = 0;
       setDockPad(0);
       return;
@@ -153,13 +158,16 @@ export function ExerciseFrame({
     // `[dockPad]` na świeżym układzie, jeszcze przed malowaniem. Liczona tutaj
     // byłaby na układzie sprzed rezerwy — przy materiale, który już się
     // przewija, zatrzymałaby się na starym końcu zakresu i zostawiła pod
-    // panelem kilka px, poniżej progu kolejnej korekty. `layout` — wywołanie
+    // panelem kilka px. `layout` — wywołanie
     // z efektu layoutu (tutaj albo po zmianie `dockPad`): zwykły `setDockPad`,
     // który React renderuje synchronicznie. `observer` — callback
     // `ResizeObserver` albo `requestAnimationFrame`, czyli poza Reactem, ale
     // też przed malowaniem: rezerwa wchodzi przez `flushSync`. `flushSync`
     // nigdy nie jest wołany w efekcie layoutu — React by ostrzegał.
     const measure = (mode: "layout" | "observer") => {
+      // Najpierw limit karty z wolnego miejsca: zmienia wysokość panelu, więc
+      // nadwyżka i zakładka niżej liczą się już na nowym układzie.
+      cardSpaceRef.current = syncCardSpace(cardSpaceRef.current, overlay, material);
       const excess = Math.max(0, Math.ceil(overlay.offsetHeight - anchor.offsetHeight));
       const content = material.querySelector<HTMLElement>(".kid-material-content");
       // Prostokąty są w px ekranu, a offsetHeight i scrollTop w px wewnętrznych
@@ -167,15 +175,21 @@ export function ExerciseFrame({
       const contentBottom = content && content.children.length > 0
         ? toLayoutPx(Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom)), material)
         : null;
-      // Górna krawędź panelu bez transformacji animacji wejścia.
-      const dockTop = toLayoutPx(anchor.getBoundingClientRect().bottom, material) - overlay.offsetHeight;
+      // Górna krawędź panelu z prostokąta nakładki — ułamkowa, bez zaokrąglenia
+      // offsetHeight. Nakładka nie ma transformacji: animacja wejścia działa na
+      // panelu w jej wnętrzu.
+      const dockTop = toLayoutPx(overlay.getBoundingClientRect().top, material);
       const overlap = contentBottom === null ? 0 : contentBottom - dockTop;
+      // Próg 1 px ekranu (spec 2026-10-31-kid-ui-dock-followups §3.3): od niego
+      // włącza się bramka rezerwy i działa korekta przewinięcia. Mniejsza
+      // zakładka to zaokrąglenia — nie dokłada zakresu przewijania ani nie przewija.
+      const covers = overlap * cssZoomOf(material) >= 1;
       // Bramka rezerwy zatrzaskuje się na cały panel: późniejsze pomiary
       // (rAF, ResizeObserver) nie włączają jej wbrew pierwszemu pomiarowi,
       // a włącza ją dopiero realna zakładka po zmianie rozmiaru.
       if (gatedDockRef.current?.overlay !== overlay) {
-        gatedDockRef.current = { overlay, enabled: overlap > 0 };
-      } else if (overlap > 0) {
+        gatedDockRef.current = { overlay, enabled: covers };
+      } else if (covers) {
         gatedDockRef.current.enabled = true;
       }
       const targetPad = gatedDockRef.current.enabled ? excess : 0;
@@ -189,13 +203,13 @@ export function ExerciseFrame({
         else setDockPad(targetPad);
         return;
       }
-      // Po korekcie zakładka znika (treść kończy się nad panelem), więc
+      // Po korekcie zakładka znika (treść kończy się 8 px nad panelem), więc
       // kolejne pomiary nie dokładają scrolla; następna korekta następuje
-      // dopiero, gdy zakładka znów przekroczy próg (klawiatura, rotacja,
+      // dopiero, gdy zakładka znów osiągnie próg (klawiatura, rotacja,
       // wzrost treści albo panelu). Klucz korekty pomija ręczne
       // przewinięcie dziecka: sam re-render z tym samym panelem,
       // rozmiarem materiału i treścią nie przewija ponownie.
-      if (overlap > 8) {
+      if (covers) {
         const scrollKey = `${material.clientWidth}x${material.clientHeight}:${material.scrollHeight}`;
         if (scrolledKeyRef.current?.overlay !== overlay || scrolledKeyRef.current.key !== scrollKey) {
           scrolledKeyRef.current = { overlay, key: scrollKey };
@@ -216,6 +230,11 @@ export function ExerciseFrame({
       // Zmiana wysokości stopki przesuwa panel także wtedy, gdy materiał nie
       // zmienia rozmiaru (zwarty układ, spec 2026-10-30 §3.2).
       if (anchor.parentElement) observer.observe(anchor.parentElement);
+      // Rama: w zwartym układzie zmiana jej wysokości (okno, klawiatura,
+      // komunikat) zmienia tylko odstęp od góry albo wolne miejsce pod stopką —
+      // żaden z elementów wyżej — a limit karty trzeba wtedy policzyć od nowa.
+      const frameRoot = overlay.closest(".kid-exercise-frame");
+      if (frameRoot) observer.observe(frameRoot);
     }
     return () => {
       measureRef.current = null;
@@ -282,4 +301,66 @@ export function ExerciseFrame({
       </div>
     </div>
   );
+}
+
+const CARD_MAX_PROPERTY = "--kid-feedback-card-max";
+
+/** Panel i klucz, dla którego policzono limit jego karty. */
+type CardSpaceLatch = { overlay: HTMLElement; key: string };
+
+/**
+ * Limit karty wyniku z wolnego miejsca pod odpowiedzią (spec 2026-10-31-kid-ui-dock-followups
+ * §3.1) jako `--kid-feedback-card-max` na nakładce — styl inline ustawiany poza Reactem; CSS
+ * panelu bierze większy z niego i z dotychczasowego limitu. Liczony od nowa tylko przy zmianie
+ * klucza: panel, rozmiar ramy, dolna krawędź treści bez wpływu panelu (bez rezerwy, przewinięcia
+ * korygującego i ustępującego odstępu) i reszta panelu poza kartą. Klucz zmienia się z oknem,
+ * klawiaturą, komunikatem, treścią i strukturą panelu, a nie z wzrostem samej karty, więc
+ * ponowne liczenie nie powiększa karty w pętli. W trybie przewijanej strony (powiększenie gestem,
+ * bardzo niskie okno) limitu nie ma.
+ */
+function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, material: HTMLElement): CardSpaceLatch | null {
+  const frame = overlay.closest<HTMLElement>(".kid-exercise-frame");
+  const card = overlay.querySelector<HTMLElement>(".kid-answer-feedback, .kid-speech-feedback");
+  if (!frame || !card) {
+    overlay.style.removeProperty(CARD_MAX_PROPERTY);
+    return null;
+  }
+  const page = overlay.closest<HTMLElement>(".kid-page");
+  const pageScroll = page?.dataset.zoomed === "true" || page?.dataset.viewportVeryShort === "true";
+  const geometry = pageScroll ? null : cardGeometry(frame, card, overlay, material);
+  const key = geometry === null
+    ? `none:${pageScroll}`
+    : [
+      `${frame.offsetWidth}x${geometry.frameHeight}`,
+      Math.round(geometry.contentBottom + geometry.scrollTop + geometry.offsetGiven),
+      overlay.offsetHeight - card.offsetHeight,
+    ].join(":");
+  if (latch?.overlay === overlay && latch.key === key) return latch;
+  const cardMax = geometry === null ? null : feedbackCardMax(geometry);
+  if (cardMax === null) overlay.style.removeProperty(CARD_MAX_PROPERTY);
+  else overlay.style.setProperty(CARD_MAX_PROPERTY, `${cardMax}px`);
+  return { overlay, key };
+}
+
+/**
+ * Geometria ramy dla `feedbackCardMax`: prostokąty względem górnej krawędzi ramy, w px
+ * wewnętrznych; `null`, gdy brak treści albo rama się przepełnia (komunikat z przewijaną ramą
+ * nie ma wiarygodnej dolnej krawędzi).
+ */
+function cardGeometry(frame: HTMLElement, card: HTMLElement, overlay: HTMLElement, material: HTMLElement): FeedbackCardGeometry | null {
+  const content = material.querySelector<HTMLElement>(".kid-material-content");
+  const first = frame.firstElementChild;
+  if (!content || content.children.length === 0 || !first || frame.scrollHeight > frame.clientHeight + 1) return null;
+  // Pełny odstęp to podstawa elementu-odstępu zwartej ramy; gdzie go nie ma — `auto`, czyli 0.
+  const fullOffset = Number.parseFloat(getComputedStyle(frame, "::before").flexBasis) || 0;
+  const frameTop = frame.getBoundingClientRect().top;
+  const contentBottom = Math.max(...[...content.children].map((child) => child.getBoundingClientRect().bottom));
+  return {
+    frameHeight: frame.offsetHeight,
+    contentBottom: toLayoutPx(contentBottom - frameTop, material),
+    scrollTop: material.scrollTop,
+    offsetGiven: Math.max(0, fullOffset - toLayoutPx(first.getBoundingClientRect().top - frameTop, material)),
+    overlayHeight: toLayoutPx(overlay.getBoundingClientRect().height, material),
+    cardHeight: card.offsetHeight,
+  };
 }

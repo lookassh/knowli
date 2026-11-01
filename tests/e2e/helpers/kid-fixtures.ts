@@ -87,13 +87,42 @@ const HINT_START = "The children walked along the old wooden bridge near the riv
 const HINT_FIX = "counting the little boats";
 const HINT_END = " that sailed slowly towards the harbour before the sun went down behind the hills and the lights came on.";
 
-/** A spelling hint with a long sentence and one wrong fragment: its dock (about 382 inner px over a 54 px footer) covers the answer form. */
+/**
+ * A spelling hint with a long sentence and one wrong fragment: about 600 inner px of card. Under a short prompt the card
+ * grows into the free space (spec 2026-10-31-kid-ui-dock-followups §3.1); under the long prompt of
+ * `kid-large-screen.spec.ts` there is none, the card keeps the 300 px limit and its dock (about 382 inner px over a
+ * 54 px footer) covers the answer form.
+ */
 export const longSpellingHintFeedback: FeedbackDto = {
   kind: "spelling_hint",
   correctText: HINT_START + HINT_FIX + HINT_END,
   spellingDiff: {
     given: [{ text: HINT_START, state: "plain" }, { text: "cownting the litle bots", state: "pill" }, { text: HINT_END, state: "plain" }],
     expected: [{ text: HINT_START, state: "plain" }, { text: HINT_FIX, state: "pill" }, { text: HINT_END, state: "plain" }],
+  },
+};
+
+const MEDIUM_HINT_START = "The children walked ";
+const MEDIUM_HINT_END = " near the old bridge.";
+
+/**
+ * A spelling hint of medium length (spec 2026-10-31-kid-ui-dock-followups §5): each row is three segments of 20–25
+ * characters, so in the 720 px column every segment takes a line of its own and each row has exactly three lines.
+ * Measured (Windows, 2026-10-31): the row is 552 inner px wide, a segment 278–356 px, two neighbours with the gap at
+ * least 572 px. The card is 363 inner px, taller than the 300 px card limit, and fits the free space under the answer
+ * of a short prompt at 3440x1440 (card limit there 393 px).
+ */
+export const mediumSpellingHintFeedback: FeedbackDto = {
+  kind: "spelling_hint",
+  correctText: MEDIUM_HINT_START + HINT_FIX + MEDIUM_HINT_END,
+  spellingDiff: {
+    given: [
+      { text: MEDIUM_HINT_START, state: "plain" }, { text: "cownting the litle bots", state: "pill" },
+      { text: MEDIUM_HINT_END, state: "plain" },
+    ],
+    expected: [
+      { text: MEDIUM_HINT_START, state: "plain" }, { text: HINT_FIX, state: "pill" }, { text: MEDIUM_HINT_END, state: "plain" },
+    ],
   },
 };
 

@@ -261,6 +261,21 @@
   z-index: 3;
 }
 
+/* Przewijana strona (powiększenie gestem, bardzo niskie okno): nakładka jest
+   w przepływie (`position: static`, styles.css), więc panel zastępuje akcje — puste
+   sloty kotwicy nie zajmują miejsca, a w układzie `inline` panel obejmuje obie
+   kolumny siatki zamiast pierwszej, pod wierszem pustych slotów (spec
+   2026-10-31-kid-ui-dock-followups §3.2). */
+:global(.kid-page[data-zoomed="true"]) .dockAnchor > :not(.dockOverlay),
+:global(.kid-page[data-viewport-very-short="true"]) .dockAnchor > :not(.dockOverlay) {
+  display: none;
+}
+
+:global(.kid-page[data-zoomed="true"]) .dockOverlay,
+:global(.kid-page[data-viewport-very-short="true"]) .dockOverlay {
+  grid-column: 1 / -1;
+}
+
 /* Wychodzący panel (po „Spróbuj jeszcze raz”) AnimatePresence wypycha z układu
    (`data-motion-pop-id`) i animuje nad akcjami, które już wróciły. `inert`
    i `pointer-events: none` ma tylko wnętrze panelu; kotwica z pustymi slotami

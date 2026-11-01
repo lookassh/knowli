@@ -4,7 +4,7 @@ import { kidTokenColor } from "./helpers/contrast";
 import { measure, resizeAndSettle } from "./helpers/kid-layout";
 import { pictureVocabularyFixture } from "./helpers/picture-fixtures";
 import { attemptId, baseFixture, completedRecallFixture, sessionId, taskId } from "./helpers/kid-fixtures";
-import { waitForKidScale } from "./helpers/kid-frame";
+import { dockRevealCalls, installDockRevealSpy, waitForKidScale } from "./helpers/kid-frame";
 
 const optionIds = ["10000000-0000-4000-8000-000000000007", "10000000-0000-4000-8000-000000000008", "10000000-0000-4000-8000-000000000009"];
 
@@ -230,15 +230,7 @@ test("feedback dock stays reachable on a short landscape screen with reduced mot
 
 test("dock reveals after viewport mode changes and does not jump again on repeated updates", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(() => {
-    const browserWindow = window as typeof window & { dockRevealCalls?: number };
-    browserWindow.dockRevealCalls = 0;
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
-      if (this.classList.contains("kid-feedback-overlay")) browserWindow.dockRevealCalls = (browserWindow.dockRevealCalls ?? 0) + 1;
-      original?.call(this, options);
-    };
-  });
+  await installDockRevealSpy(page);
   await installKidUiFixture(page, completedRecallFixture());
   await openTask(page);
   await page.getByTestId("kid-input").fill("cat");
@@ -248,11 +240,11 @@ test("dock reveals after viewport mode changes and does not jump again on repeat
 
   await page.locator(".kid-page").evaluate((element) => element.setAttribute("data-zoomed", "true"));
   await expect(page.locator(".kid-page")).toHaveAttribute("data-zoomed", "true");
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+  await expect.poll(() => dockRevealCalls(page)).toBe(1);
 
   const pageScroll = await page.locator(".kid-page").evaluate((element) => element.scrollTop);
   await page.locator(".kid-page").evaluate((element) => element.setAttribute("data-zoomed", "true"));
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { dockRevealCalls?: number }).dockRevealCalls)).toBe(1);
+  await expect.poll(() => dockRevealCalls(page)).toBe(1);
   expect(await page.locator(".kid-page").evaluate((element) => element.scrollTop)).toBe(pageScroll);
 });
 
