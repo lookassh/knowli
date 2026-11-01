@@ -206,7 +206,8 @@
    gestem, bardzo niskie okno) — region zostaje w kolejności DOM, pod górnym
    wierszem: przyciski zdania stoją pod palcem, w dół przesuwa się tylko „Dalej”.
    Wyjątek: zwarta rama bez wolnego miejsca pod stopką (`data-frame-full` na
-   nakładce, ExerciseFrame — przewijany materiał albo zużyty odstęp od góry)
+   nakładce albo panelu w przepływie, ExerciseFrame — przewijany materiał albo
+   zużyty odstęp od góry)
    — panel rośnie w górę, więc region wraca nad wiersz (np. tablet dotykowy
    z długim tekstem). Przewijana strona ma własną regułę niżej i jest wyłączona
    także w selektorze, gdyby atrybut nie zdążył zniknąć po przełączeniu trybu. */

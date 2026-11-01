@@ -171,8 +171,9 @@ Gdy `sentenceAudioError` nie jest `null`:
   - Zwarta rama bez wolnego miejsca pod stopką — materiał się przewija (treść wyższa od okna,
     np. dotykowy tablet z długim tekstem) albo rezerwa zużyła już część odstępu od góry —
     przypina stopkę do dolnej krawędzi, więc dok rośnie w górę: `ExerciseFrame` oznacza wtedy
-    nakładkę `data-frame-full` (dolna krawędź stopki przy dolnej krawędzi ramy), a region wraca
-    nad wiersz (uzupełnienie 2026-11-01, #199).
+    nakładkę albo panel w przepływie (`feedbackLayout="flow"`, np. wybór) atrybutem
+    `data-frame-full` (dolna krawędź stopki przy dolnej krawędzi ramy), a region wraca nad
+    wiersz (uzupełnienie 2026-11-01, #199).
     Gdy dopiero sam tekst błędu zapełnia ramę, wiersz może przesunąć się o mniej niż wysokość
     tekstu (o wolne miejsce, które było pod stopką).
   - Tekst stoi w elemencie kluczowanym `seq`: każdy błąd montuje go od nowa, więc czytnik
