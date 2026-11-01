@@ -35,6 +35,7 @@ import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
+import { writeSealedEvent } from "../../packages/server/src/modules/learning/events";
 import { createLessonSnapshot, toLessonDraftPatch } from "../../apps/web/src/parent/lessons/lesson-editor-state";
 
 const { pool } = testDatabase();
@@ -365,8 +366,15 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
         TaskPromptSchema.parse(task.prompt);
         if (task.exerciseType === "lesson_card") { await completePresentation(sessionServices, { taskId: task.taskId }); continue; }
         const key = (await pool.query("select answer_key from learning_app.session_tasks where id=$1", [task.taskId])).rows[0].answer_key;
+        if (task.exerciseType === "lesson_listen_choice") {
+          // Odsłuch zdania przed odpowiedzią (zapieczętowane `audio_issued`, jak autoryzacja odsłuchu serwera).
+          const itemId = (await pool.query(`select r.item_id from learning_app.session_tasks t
+            join learning_app.item_revisions r on r.id = t.item_revision_id where t.id = $1`, [task.taskId])).rows[0].item_id as string;
+          await services.db.transaction((tx) => writeSealedEvent(tx, { childId: child.id, taskId: task.taskId, itemId, kind: "audio_issued",
+            stepId: `${task.taskId}:listen`, occurredAt: sessionServices.clock.now(), exposures: [key.targetKey, key.sentenceTargetKey] }));
+        }
         const attempt = await submitAttempt(sessionServices, { taskId: task.taskId, clientAttemptId: randomUUID(),
-          ...(["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
+          ...(["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice"].includes(task.exerciseType) ? { modality: "choice" as const, optionId: key.correctOptionId }
             : task.exerciseType === "lesson_order" ? { modality: "sequence" as const, itemIds: key.itemIds }
             : { modality: "text" as const, text: key.answer }),
         });
@@ -827,7 +835,8 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
 // --- helpery testowe (SQL i mapowanie DTO→Input) ---
 
 function stripToInput(ex: Record<string, unknown>): LessonExerciseInput {
-  const { revisionId: _r, promptAudio: _a, ...rest } = ex as { revisionId?: string; promptAudio?: unknown } & Record<string, unknown>;
+  // Nagrania pytania i zdania (`promptAudio`, `sentenceAudio`) są tylko do odczytu i nie wracają w patchu.
+  const { revisionId: _r, promptAudio: _a, sentenceAudio: _s, ...rest } = ex as { revisionId?: string; promptAudio?: unknown; sentenceAudio?: unknown } & Record<string, unknown>;
   return rest as LessonExerciseInput;
 }
 
