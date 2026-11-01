@@ -1237,9 +1237,11 @@ export class LearningSessionController {
     // „Rozumiem” potwierdziło już pokazany wzorzec. Po zapisaniu trudności
     // przechodzimy do wsparcia, bez drugiego feedbacku na zamkniętym formularzu.
     // Wyjątek: lekcja z nagraniem zdania — pokazujemy wynik z odczytem
-    // i „Posłuchaj zdania” do kliknięcia „Dalej” (design odczytu zdania §1, §7).
+    // i „Posłuchaj zdania” do kliknięcia „Dalej” (design odczytu zdania §1, §7);
+    // tak samo lekcja z wyjaśnieniem ćwiczenia (`hintPl`), żeby dziecko je przeczytało.
     const sentenceReadback = attempt.feedback?.correctAudioAssetId !== undefined && isLessonTask(this.#screen.task);
-    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued" && !sentenceReadback) {
+    const lessonExplanation = attempt.feedback?.hintPl !== undefined && isLessonTask(this.#screen.task);
+    if (attempt.modality === "dont_remember" && this.#screen.reveal !== null && attempt.taskState !== "issued" && !sentenceReadback && !lessonExplanation) {
       // Zachowaj wzorzec do atomowej podmiany zadania w #loadNext:
       // usunięcie reveal wcześniej odsłoniłoby poprzedni formularz na czas sieci.
       this.#setLearning({ feedback: null, processing: false, busy: true });
@@ -1302,6 +1304,26 @@ export class LearningSessionController {
       // Celowo bez stanu błędu: odczyt jest dodatkiem, a przycisk powtórki
       // zostaje widoczny. Po zakończeniu nie zapisujemy stanu, więc spóźnione
       // zakończenie nie może dotknąć następnego zadania.
+    }
+  }
+
+  /**
+   * „Posłuchaj wyjaśnienia” w doku lekcji — wyłącznie ręcznie, bez
+   * autoodtwarzania. Serwer zapieczętował ujawnienie (`audio_issued`) przy
+   * ocenie, więc odtwarzamy plik bezpośrednio; odczyt zdania i każde inne
+   * odtwarzanie ustępują (#beginPlayback), a „Dalej” przerywa wyjaśnienie.
+   */
+  async playExplanationAudio(): Promise<void> {
+    const screen = this.#learning();
+    const feedback = screen?.feedback;
+    const assetId = feedback?.dto?.explanationAudioAssetId;
+    if (!screen || !isLessonTask(screen.task) || feedback === null || feedback === undefined ||
+        assetId === undefined || screen.offline || screen.busy || screen.recordingPhase !== "idle") return;
+    this.#beginPlayback();
+    try {
+      await this.#playCountedAudio(this.#api.mediaUrl(assetId), assetId);
+    } catch {
+      // Celowo bez stanu błędu: przycisk zostaje i można spróbować ponownie.
     }
   }
 

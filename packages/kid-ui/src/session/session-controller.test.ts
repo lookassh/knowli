@@ -3472,6 +3472,104 @@ describe("LearningSessionController — odczyt zdania po odpowiedzi w lekcji", (
     expect(harness.media.playUrls).toEqual([]);
   });
 
+  describe("wyjaśnienie ćwiczenia po błędzie", () => {
+    const EXPLANATION = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd";
+    const EXPLANATION_URL = `https://media.test/${EXPLANATION}`;
+    const HINT = "Po he dodajemy -s do czasownika.";
+
+    it("nie odtwarza wyjaśnienia samo, a nagranie zdania gra raz", async () => {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, correctAudioAssetId: SENTENCE, explanationAudioAssetId: EXPLANATION } })];
+      const harness = await startAtTask(state, gap());
+      await harness.controller.answerText("go");
+      await tick();
+      expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
+    });
+
+    it("„Posłuchaj wyjaśnienia” odtwarza mediaUrl nagrania i przerywa odczyt zdania", async () => {
+      const gate = new Promise<void>(() => undefined);
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, correctAudioAssetId: SENTENCE, explanationAudioAssetId: EXPLANATION } })];
+      const harness = await startAtTask(state, gap(), { playGate: gate });
+      await harness.controller.answerText("go");
+      await tick();
+      expect(harness.media.playUrls).toEqual([SENTENCE_URL]);
+      const stopsBefore = harness.media.stops;
+      void harness.controller.playExplanationAudio();
+      await tick();
+      expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+      expect(harness.media.playUrls).toEqual([SENTENCE_URL, EXPLANATION_URL]);
+      // bez autoryzacji — ujawnienie zapieczętował serwer przy ocenie
+      expect(state.disclosures).toHaveLength(0);
+      expect(state.feedbackAudioCalls).toHaveLength(0);
+    });
+
+    it("bez nagrania wyjaśnienia nic nie odtwarza", async () => {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT } })];
+      const harness = await startAtTask(state, gap());
+      await harness.controller.answerText("go");
+      await tick();
+      await harness.controller.playExplanationAudio();
+      expect(harness.media.playUrls).toEqual([]);
+    });
+
+    it("„Dalej” w trakcie wyjaśnienia zatrzymuje je, a spóźnione zakończenie nie zmienia nowego zadania", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, explanationAudioAssetId: EXPLANATION } })];
+      const harness = await startAtTask(state, gap(), { playGate: gate });
+      state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
+      await harness.controller.answerText("go");
+      await tick();
+      void harness.controller.playExplanationAudio();
+      await tick();
+      expect(harness.media.playUrls).toEqual([EXPLANATION_URL]);
+      const stopsBefore = harness.media.stops;
+      await harness.controller.continueLearning();
+      expect(harness.media.stops).toBeGreaterThan(stopsBefore);
+      const next = harness.controller.getScreen();
+      expect(next).toMatchObject({ kind: "learning", task: { taskId: "tn" }, feedback: null });
+      release();
+      await tick();
+      expect(harness.controller.getScreen()).toBe(next);
+    });
+
+    it("odrzucone play() nie pokazuje błędu", async () => {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT, explanationAudioAssetId: EXPLANATION } })];
+      const harness = await startAtTask(state, gap());
+      await harness.controller.answerText("go");
+      await tick();
+      const play = vi.spyOn(harness.media.player, "play").mockRejectedValue(Object.assign(new Error("blocked"), { name: "NotAllowedError" }));
+      await harness.controller.playExplanationAudio();
+      expect(play).toHaveBeenCalledWith(EXPLANATION_URL, expect.any(Function));
+      const screen = harness.controller.getScreen() as { feedback: { audioError?: boolean } | null; error: unknown; taskAudioError?: unknown };
+      expect(screen.feedback).not.toBeNull();
+      expect(screen.feedback?.audioError).not.toBe(true);
+      expect(screen.error).toBeNull();
+      expect(screen.taskAudioError ?? null).toBeNull();
+    });
+
+    it("„Nie pamiętam” z wyjaśnieniem bez nagrania zdania zostaje na wyniku do „Dalej”", async () => {
+      const state = baseState();
+      state.attempts = [attemptDto({ taskId: "tg", modality: "dont_remember", taskState: "answered", feedback: { kind: "incorrect", correctText: "He goes.", hintPl: HINT } })];
+      const harness = await startAtTask(state, gap());
+      state.tasks = [taskDto("tn", { kind: "lesson_gap", instructionPl: "Uzupełnij", stemWithGap: "She ___ (read).", audioAssetId: "asset-next" })];
+      await harness.controller.notRemember();
+      await harness.controller.confirmReveal();
+      await tick();
+      expect(harness.controller.getScreen()).toMatchObject({
+        task: { taskId: "tg" }, reveal: null, busy: false,
+        feedback: { modality: "dont_remember", retry: false, dto: { kind: "incorrect", hintPl: HINT } },
+      });
+      expect(harness.media.playUrls).toEqual([]);
+      await harness.controller.continueLearning();
+      expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "tn" }, feedback: null });
+    });
+  });
+
   it("picture_recognition nie odtwarza poprawnego słowa samo (odsłuch zostaje ręczny)", async () => {
     const option = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const recognition = taskDto("tr", {

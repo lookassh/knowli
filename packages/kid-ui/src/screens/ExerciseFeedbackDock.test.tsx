@@ -55,3 +55,46 @@ it("renders no sentence replay without the prop", () => {
   expect(screen.queryByRole("button", { name: "Posłuchaj zdania" })).toBeNull();
   expect(screen.queryByTestId("kid-sentence-audio")).toBeNull();
 });
+
+it("renders the explanation row with a listen button that calls onPlay", () => {
+  const onPlay = vi.fn();
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>}
+      explanation={{ text: "Po he dodajemy -s do czasownika.", onPlay }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  const dock = screen.getByTestId("kid-feedback-dock");
+  const text = screen.getByTestId("kid-explanation-text");
+  expect(text.textContent).toBe("Po he dodajemy -s do czasownika.");
+  expect(dock.contains(text)).toBe(true);
+  const button = screen.getByRole("button", { name: "Posłuchaj wyjaśnienia" });
+  expect(button.getAttribute("data-testid")).toBe("kid-explanation-audio");
+  expect(button.getAttribute("title")).toBe("Posłuchaj wyjaśnienia");
+  expect(button.classList.contains("kid-listen")).toBe(true);
+  // przycisk na początku wiersza, przed tekstem
+  expect(button.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(button);
+  expect(onPlay).toHaveBeenCalledOnce();
+});
+
+it("renders the explanation text without a listen button when there is no recording", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>} explanation={{ text: "Po he dodajemy -s." }}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  expect(screen.getByTestId("kid-explanation-text").textContent).toBe("Po he dodajemy -s.");
+  expect(screen.queryByTestId("kid-explanation-audio")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Posłuchaj wyjaśnienia" })).toBeNull();
+});
+
+it("renders no explanation row without the prop", () => {
+  renderKid(
+    <ExerciseFeedbackDock tone="incorrect" primary={<span>Dalej</span>} explanation={null}>
+      <p>Spróbuj jeszcze raz</p>
+    </ExerciseFeedbackDock>,
+  );
+  expect(screen.queryByTestId("kid-explanation-text")).toBeNull();
+  expect(screen.queryByTestId("kid-explanation")).toBeNull();
+});

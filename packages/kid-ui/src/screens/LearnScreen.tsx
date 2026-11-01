@@ -119,9 +119,19 @@ export function LearnScreen({
   const sentenceAudio = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) && feedback.dto?.correctAudioAssetId !== undefined
     ? { onPlay: () => void controller.playSentenceAudio() }
     : null;
+  // Wyjaśnienie ćwiczenia po błędzie w lekcji: tekst przy `incorrect` z `hintPl`;
+  // przy `lesson_hint` dok pokazuje go tylko z nagraniem (bez niego zostaje
+  // w treści karty). Nagranie gra wyłącznie po kliknięciu.
+  const explanationDto = feedback !== null && feedback.modality !== "audio" && isLessonTask(task) ? feedback.dto : null;
+  const explanation = explanationDto?.hintPl !== undefined && (explanationDto.kind === "incorrect" || explanationDto.explanationAudioAssetId !== undefined)
+    ? {
+        text: explanationDto.hintPl,
+        ...(explanationDto.explanationAudioAssetId !== undefined ? { onPlay: () => void controller.playExplanationAudio() } : {}),
+      }
+    : null;
   const guidanceButton = instructionAudioKey
     ? <GuidanceButton audioKey={instructionAudioKey} onPlay={(key) => controller.playGuidance(key)} testId="kid-guidance-play" showError={false}
-        {...(sentenceAudio !== null ? { icon: "question" as const } : {})} />
+        {...((sentenceAudio ?? explanation?.onPlay) ? { icon: "question" as const } : {})} />
     : null;
   // W wierszu instrukcji obok odsłuchu słowa: obrysowany „?”, nie drugi głośnik.
   const instructionGuidanceButton = instructionAudioKey
@@ -275,6 +285,7 @@ export function LearnScreen({
         celebrate={celebrateInDock}
         guidance={guidanceButton}
         sentenceAudio={sentenceAudio}
+        explanation={explanation}
         primary={<AnswerFeedbackActions dto={feedback.dto} retry={feedback.retry} busy={busy}
           onNext={() => void controller.continueLearning()} />}
         secondary={lessonFeedbackView(feedback.dto)?.technical === true && feedback.retry ? (

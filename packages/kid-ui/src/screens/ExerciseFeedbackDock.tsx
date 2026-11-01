@@ -36,6 +36,7 @@ export function ExerciseFeedbackDock({
   celebrate = false,
   guidance,
   sentenceAudio = null,
+  explanation = null,
 }: {
   tone: FeedbackDockTone;
   kind?: "answer" | "speech";
@@ -48,6 +49,11 @@ export function ExerciseFeedbackDock({
   guidance?: ReactNode;
   /** Powtórka nagrania pełnego zdania w feedbacku lekcji („Posłuchaj zdania”). */
   sentenceAudio?: { onPlay: () => void } | null;
+  /**
+   * Wyjaśnienie ćwiczenia po błędzie w lekcji: osobny wiersz na całą szerokość
+   * pod górnym wierszem; „Posłuchaj wyjaśnienia” na początku, gdy jest nagranie.
+   */
+  explanation?: { text: string; onPlay?: () => void } | null;
 }): ReactElement {
   const isPresent = useIsPresent();
   return (
@@ -64,7 +70,7 @@ export function ExerciseFeedbackDock({
       data-compact={compact || undefined}
       className={`${classes.dock} ${compact ? classes.compact : ""} ${classes[tone]}`}
     >
-      <div className={classes.scroll}>
+      <div className={`${classes.scroll} ${explanation ? `${classes.withExplanation} kid-feedback-scroll-limited` : ""}`}>
         <span className={classes.badge} data-testid="kid-feedback-tone-icon" data-icon={FEEDBACK_TONE_ICONS[tone]} aria-hidden="true">
           <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
         </span>
@@ -76,6 +82,15 @@ export function ExerciseFeedbackDock({
           </div>
         )}
         {guidance && <div className={classes.guidance}>{guidance}</div>}
+        {explanation && (
+          <div className={classes.explanation} data-testid="kid-explanation">
+            {explanation.onPlay && (
+              <ListenButton data-testid="kid-explanation-audio" aria-label={messages.kid.listenExplanation}
+                title={messages.kid.listenExplanation} onClick={explanation.onPlay} />
+            )}
+            <p className={classes.explanationText} data-testid="kid-explanation-text">{explanation.text}</p>
+          </div>
+        )}
       </div>
       <div className={classes.actions}>
         {primary}

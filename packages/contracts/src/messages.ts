@@ -511,6 +511,7 @@ export const messages = {
     microphoneSettingsOff: "Odpowiedzi głosowe wyłączone",
     listen: "Posłuchaj",
     listenExample: "Posłuchaj zdania",
+    listenExplanation: "Posłuchaj wyjaśnienia",
     listenInstruction: "Posłuchaj polecenia",
     listenLessonQuestion: "Posłuchaj pytania",
     listenLessonCard: "Posłuchaj karty",

@@ -320,7 +320,9 @@ type CardSpaceLatch = { overlay: HTMLElement; key: string };
  */
 function syncCardSpace(latch: CardSpaceLatch | null, overlay: HTMLElement, material: HTMLElement): CardSpaceLatch | null {
   const frame = overlay.closest<HTMLElement>(".kid-exercise-frame");
-  const card = overlay.querySelector<HTMLElement>(".kid-answer-feedback, .kid-speech-feedback");
+  // Z wyjaśnieniem ćwiczenia limit karty dotyczy całego przewijanego obszaru doku
+  // (wynik + wiersz wyjaśnienia) — przodek karty, więc pierwszy w kolejności dokumentu.
+  const card = overlay.querySelector<HTMLElement>(".kid-feedback-scroll-limited, .kid-answer-feedback, .kid-speech-feedback");
   if (!frame || !card) {
     overlay.style.removeProperty(CARD_MAX_PROPERTY);
     return null;
