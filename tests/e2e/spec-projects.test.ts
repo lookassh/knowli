@@ -113,15 +113,18 @@ describe("partycja speców E2E (spec-projects)", () => {
     const gate = readCiJobText("e2e-mocked");
     expect(gate).toMatch(/^\s+needs: \[e2e\]\s*$/m);
     expect(gate).toMatch(/^\s+if: \$\{\{ always\(\) \}\}\s*$/m);
-    expect(gate).toContain("NEEDS_RESULT: ${{ needs.e2e.result }}");
-    expect(gate).toContain('if [ "$NEEDS_RESULT" != "success" ]; then');
+    // Łączny wynik matrixa obejmuje kosze real (każdy z własnym wymaganym
+    // checkiem): bramka mocked nie może od niego zależeć.
+    expect(gate).not.toContain("needs.e2e.result");
     // Ostatnia próba każdego sharda osobno: ponowienie części jobów nie przepuści porażki.
     expect(gate).toMatch(/^\s+permissions:\s*\n\s+actions: read\s*$/m);
     expect(gate).toContain("GH_TOKEN: ${{ github.token }}");
     expect(gate).toContain("jobs?filter=latest");
     expect(gate).toContain('startswith("e2e (mocked-")');
-    // Pusta lista shardów albo którykolwiek shard bez sukcesu kończy bramkę porażką.
-    expect(gate).toContain("if [ ! -s shards.txt ] || grep -v '=success$' shards.txt; then");
+    // Shard bez sukcesu albo brak któregoś shardu na liście (np. pusta lista)
+    // kończy bramkę porażką; liczba oczekiwanych shardów zgadza się z matrixem.
+    expect(gate).toMatch(new RegExp(`^\\s+MOCKED_SHARDS: ${shards.length}\\s*$`, "m"));
+    expect(gate).toContain(`if [ "$(grep -c '=success$' shards.txt)" != "$MOCKED_SHARDS" ] || grep -v '=success$' shards.txt; then`);
   });
 
   it.each(MOCKED_SPECS)("mocked/%s zaślepia API i nie dotyka realnego świata", (file) => {
