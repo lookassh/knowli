@@ -20,6 +20,15 @@ async function pool(): Promise<WorldPool> {
   return worldPool;
 }
 
+/**
+ * Edytor zaakceptowanego generowania: baner „Generuję zestaw…” (queued/running) albo, gdy fake
+ * (`UMIEM_FAKE_DELAY_MS`, ok. 750 ms) skończył przed tym odczytem, gotowe słówka. Sam baner bywał
+ * już zniknięty na wolnym CI (2026-11-01: „lost 202…”, „a failed list refresh…”).
+ */
+async function expectGenerationEditor(page: Page): Promise<void> {
+  await expect(page.getByTestId("generation-banner").or(page.getByTestId("item-card-0")).first()).toBeVisible();
+}
+
 async function enterParent(page: Page): Promise<void> {
   await page.goto("/parent");
   await page.getByTestId("auth-secret").fill("1234");
@@ -97,7 +106,7 @@ test("lost 202 response retries the same command and opens its single deck", asy
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toContainText(messages.decks.generating);
+  await expectGenerationEditor(page);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
   expect(bodies[0]).toMatchObject({ vocabularyFormat: "picture" });
@@ -113,62 +122,47 @@ test("lost 202 response retries the same command and opens its single deck", asy
     .resolves.toEqual(["image", "color", "number"]);
 });
 
-test("malformed 202 response stays uncertain and retries the original command", async ({ page }) => {
+type Acceptance = { generationRunId: string; deckId: string };
+
+/**
+ * Pierwsza odpowiedź 202 ma zepsutą treść (`malformedBody`): panel zostaje w stanie niepewnym bez
+ * otwierania edytora, a ponowienie wysyła to samo polecenie i otwiera jedyny utworzony zestaw.
+ */
+async function expectMalformedAcceptanceRetried(page: Page, prompt: string, malformedBody: (accepted: Acceptance) => string) {
   const bodies: Record<string, unknown>[] = [];
-  let acceptance: { generationRunId: string; deckId: string } | null = null;
   let malformed = true;
+  let acceptance: Acceptance | null = null;
   await page.route("**/api/v1/parent/decks/generate", async (route) => {
     bodies.push(route.request().postDataJSON() as Record<string, unknown>);
     const response = await route.fetch();
     if (malformed) {
       malformed = false;
-      await route.fulfill({ status: 202, contentType: "application/json", body: "{" });
+      await route.fulfill({ status: 202, contentType: "application/json", body: malformedBody(await response.json() as Acceptance) });
       return;
     }
-    acceptance = await response.json() as { generationRunId: string; deckId: string };
+    acceptance = await response.json() as Acceptance;
     await route.fulfill({ response });
   });
 
   await enterParent(page);
   await openNewMaterial(page, "generate");
-  await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
+  await page.getByTestId("deck-prompt").fill(prompt);
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
   await expect(page.getByTestId("editor-title")).toHaveCount(0);
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
   await expectSingleGeneration(bodies[0]!, acceptance!);
+}
+
+test("malformed 202 response stays uncertain and retries the original command", async ({ page }) => {
+  await expectMalformedAcceptanceRetried(page, "angielskie kolory dla dziecka", () => "{");
 });
 
 test("a 202 with a malformed deck ID is not opened before retry", async ({ page }) => {
-  const bodies: Record<string, unknown>[] = [];
-  let malformed = true;
-  let acceptance: { generationRunId: string; deckId: string } | null = null;
-  await page.route("**/api/v1/parent/decks/generate", async (route) => {
-    bodies.push(route.request().postDataJSON() as Record<string, unknown>);
-    const response = await route.fetch();
-    if (malformed) {
-      malformed = false;
-      const json = await response.json() as { generationRunId: string; deckId: string };
-      await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ...json, deckId: "bad-id" }) });
-      return;
-    }
-    acceptance = await response.json() as { generationRunId: string; deckId: string };
-    await route.fulfill({ response });
-  });
-
-  await enterParent(page);
-  await openNewMaterial(page, "generate");
-  await page.getByTestId("deck-prompt").fill("angielskie zwierzęta dla dziecka");
-  await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
-  await expect(page.getByTestId("editor-title")).toHaveCount(0);
-  await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
-  expect(bodies[1]).toEqual(bodies[0]);
-  await expectSingleGeneration(bodies[0]!, acceptance!);
+  await expectMalformedAcceptanceRetried(page, "angielskie zwierzęta dla dziecka", (accepted) => JSON.stringify({ ...accepted, deckId: "bad-id" }));
 });
 
 test("a 500 after acceptance can be retried with one logical generation", async ({ page }) => {
@@ -193,7 +187,7 @@ test("a 500 after acceptance can be retried with one logical generation", async 
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
   await expectSingleGeneration(bodies[0]!, acceptance!);
@@ -212,7 +206,7 @@ test("two synchronous clicks issue only one generation request", async ({ page }
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(requestCount).toBe(1);
 });
 
@@ -236,7 +230,7 @@ test("validation unlocks correction while authorization failure sends the parent
   await expect(page.getByTestId("deck-prompt")).toBeEnabled();
   await page.getByTestId("deck-prompt").fill("angielskie owoce dla dziecka");
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(bodies[0]?.idempotencyKey).not.toBe(bodies[1]?.idempotencyKey);
   expect(bodies[1]?.prompt).toBe("angielskie owoce dla dziecka");
 });
@@ -303,7 +297,7 @@ test("a failed list refresh after acceptance keeps the created editor open", asy
   await page.getByTestId("deck-title").fill("Lista może się odświeżyć później");
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("editor-title")).toHaveValue("Lista może się odświeżyć później");
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(postCount).toBe(1);
   await expectSingleGeneration(command!, acceptance!);
 });
@@ -318,12 +312,12 @@ test("a new conscious generation after success uses a new idempotency key", asyn
   await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   await page.getByTestId("editor-back").click();
   await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie owoce dla dziecka");
   await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expectGenerationEditor(page);
   expect(bodies).toHaveLength(2);
   expect(bodies[1]?.idempotencyKey).not.toBe(bodies[0]?.idempotencyKey);
 });
