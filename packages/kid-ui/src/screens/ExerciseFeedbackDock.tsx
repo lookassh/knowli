@@ -63,7 +63,7 @@ export function ExerciseFeedbackDock({
   /** Przycisk odsłuchu komunikatu o wyniku, za treścią w górnym wierszu (po odznace tonu). */
   guidance?: ReactNode;
   /** Powtórka nagrania pełnego zdania w feedbacku lekcji: „Posłuchaj zdania”
-   * i „Posłuchaj wolniej” w grupie, pod górnym wierszem region błędu. */
+   * i „Posłuchaj wolniej” w grupie, nad górnym wierszem region błędu. */
   sentenceAudio?: FeedbackDockSentenceAudio | null;
 }): ReactElement {
   const isPresent = useIsPresent();
@@ -81,6 +81,15 @@ export function ExerciseFeedbackDock({
       data-compact={compact || undefined}
       className={`${classes.dock} ${compact ? classes.compact : ""} ${classes[tone]}`}
     >
+      {/* Stały region nad górnym wierszem: dok w nakładce stoi przy dolnej krawędzi
+          i rośnie w górę, więc pojawiający się tekst nie przesuwa przycisków zdania
+          ani „Dalej” pod palcem. Pusty nie zajmuje miejsca; tekst w elemencie
+          kluczowanym `seq` montuje się od nowa, więc czytnik ogłasza każdy błąd. */}
+      {sentenceAudio && (
+        <div className={classes.sentenceError} aria-live="polite" data-testid="kid-sentence-audio-error">
+          {sentenceAudio.error !== null ? <span key={sentenceAudio.error.seq}>{messages.kid.sentenceAudioFailed}</span> : null}
+        </div>
+      )}
       <div className={classes.scroll}>
         <span className={classes.badge} data-testid="kid-feedback-tone-icon" data-icon={FEEDBACK_TONE_ICONS[tone]} aria-hidden="true">
           <KidIcon name={FEEDBACK_TONE_ICONS[tone]} />
@@ -103,12 +112,6 @@ export function ExerciseFeedbackDock({
         )}
         {guidance && <div className={classes.guidance}>{guidance}</div>}
       </div>
-      {/* Stały region: czytnik ogłasza tekst, gdy się pojawi; pusty nie zajmuje miejsca. */}
-      {sentenceAudio && (
-        <div className={classes.sentenceError} aria-live="polite" data-testid="kid-sentence-audio-error">
-          {sentenceAudio.error !== null ? messages.kid.sentenceAudioFailed : null}
-        </div>
-      )}
       <div className={classes.actions}>
         {primary}
       </div>

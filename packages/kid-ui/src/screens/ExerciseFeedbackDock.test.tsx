@@ -92,8 +92,23 @@ it("marks the failed button and fills the polite error region", () => {
   expect(region.getAttribute("aria-live")).toBe("polite");
   expect(region.hasAttribute("role")).toBe(false);
   expect(region.textContent).toBe(messages.kid.sentenceAudioFailed);
-  // Region stoi pod górnym wierszem, przed akcjami: nie w grupie przycisków.
+  // Region stoi nad górnym wierszem (pierwsze dziecko doku), nie w grupie przycisków.
   expect(screen.getByTestId("kid-sentence-audio-group").contains(region)).toBe(false);
+  expect(screen.getByTestId("kid-feedback-dock").firstElementChild).toBe(region);
+  expect(region.compareDocumentPosition(screen.getByTestId("kid-feedback-tone-icon")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("re-mounts the error text for every failure so the live region announces a repeat", () => {
+  const props = { tone: "incorrect" as const, primary: <span>Dalej</span>, children: <p>Spróbuj jeszcze raz</p> };
+  const { rerender } = renderKid(<ExerciseFeedbackDock {...props} sentenceAudio={{ ...idleSentence, error: { rate: "slow", seq: 1 }, onPlay: vi.fn() }} />);
+  const region = screen.getByTestId("kid-sentence-audio-error");
+  const firstText = region.firstElementChild;
+  expect(firstText?.textContent).toBe(messages.kid.sentenceAudioFailed);
+  rerender(<ExerciseFeedbackDock {...props} sentenceAudio={{ ...idleSentence, error: { rate: "slow", seq: 2 }, onPlay: vi.fn() }} />);
+  const secondText = screen.getByTestId("kid-sentence-audio-error").firstElementChild;
+  expect(secondText?.textContent).toBe(messages.kid.sentenceAudioFailed);
+  expect(secondText).not.toBe(firstText);
+  expect(firstText?.isConnected).toBe(false);
 });
 
 it("keeps an empty error region in the dock while the sentence buttons are shown", () => {

@@ -131,7 +131,8 @@ Reguły:
   - pojawia się zawsze razem z „Posłuchaj zdania” i tylko wtedy;
   - wolny odsłuch jest tylko ręczny, autoodczyt gra w normalnym tempie.
 - **Wyłączenie.** Oba przyciski zdania są `disabled`, gdy kontroler i tak zignorowałby
-  dotknięcie (`busy` albo `offline`), jak `QuestionAudioButton`.
+  dotknięcie (`busy`, `offline` albo nagrywanie: `recordingPhase !== "idle"`), jak
+  `QuestionAudioButton`.
 - **Grupa `kid-sentence-audio-group`.** Kontener w górnym wierszu doku, w którym stoją przyciski
   zdania. Układ zależy od **szerokości doku**: container query na doku
   (`container-type: inline-size`), nie media query okna, bo od 600 px dok ma najwyżej 560 px.
@@ -155,9 +156,20 @@ Gdy `sentenceAudioError` nie jest `null`:
   - `MotionConfig reducedMotion="user"` wyłącza ruch.
   - `kidOutcomeShake` zostaje dla pigułek pisowni.
   - Przycisk dostaje `data-audio-failed={seq}`, żeby test ruchu mógł go znaleźć.
-- **Tekst.** Pod górnym wierszem doku, na całą szerokość, między `.scroll` a `.actions`, stoi
-  stały region `aria-live="polite"` (`data-testid="kid-sentence-audio-error"`). Region jest
-  zawsze w DOM, gdy dok ma przyciski zdania, a przy błędzie dostaje treść.
+- **Tekst.** Nad górnym wierszem doku (pierwszy element doku, przed `.scroll`), na całą
+  szerokość i wyśrodkowany, stoi stały region `aria-live="polite"`
+  (`data-testid="kid-sentence-audio-error"`). Region jest zawsze w DOM, gdy dok ma przyciski
+  zdania, a przy błędzie dostaje treść.
+  - **Położenie.** Dok w nakładce stoi przy dolnej krawędzi ramy i rośnie w górę, więc tekst
+    nad górnym wierszem nie przesuwa przycisków zdania ani „Dalej” pod palcem dziecka; drugie
+    dotknięcie w to samo miejsce trafia w przycisk, nie w tekst.
+  - Tam, gdzie dok rośnie w dół — zwarta rama dużego okna (stopka tuż pod odpowiedziami,
+    wolne miejsce niżej) i przewijana strona (powiększenie gestem, bardzo niskie okno) —
+    górny wiersz idzie przed region (`order`), więc przyciski zdania zostają na miejscu,
+    a w dół przesuwa się tylko „Dalej”. Zwarta rama z treścią wyższą od okna przypina dok
+    do dołu; wtedy górny wiersz przesuwa się o wysokość tekstu (przypadek rzadki, przyjęty).
+  - Tekst stoi w elemencie kluczowanym `seq`: każdy błąd montuje go od nowa, więc czytnik
+    ogłasza także powtórzony, identyczny komunikat.
   - Treść z katalogu (`messages.kid.sentenceAudioFailed`): „Nagranie się nie włączyło. Dotknij
     jeszcze raz.” Celowo nie „Spróbuj jeszcze raz”, bo w doku złej odpowiedzi to brzmi jak
     polecenie ponownej odpowiedzi.
@@ -194,6 +206,8 @@ ujawnione i zapieczętowane razem z oceną. Trafiają tylko do lokalnego raportu
   - **Czas:** `onStarted(durationMs)` raportuje rzeczywisty czas odtwarzania,
     `duration / audio.playbackRate`. To tempo odczytane z elementu w `onplaying`, a nie
     żądane, więc przeglądarka, która go nie przyjęła, nie zawyża limitu.
+  - **Jeden start na przebieg:** `playing` przychodzi ponownie po wznowieniu z buforowania;
+    `onStarted` jest zgłaszany najwyżej raz na wywołanie `play()`.
   - **Spóźnione zdarzenia:** `onplaying` sprawdza generację (`generation !== this.#generation`
     → nic). `#releaseAudio` zeruje `onplaying`, `onended` i `onerror`. Zdarzenie `playing`
     czekające w kolejce po `stop()` nie wywoła więc `onStarted`.
@@ -286,9 +300,9 @@ Nowy test (albo przedłużenie istniejącego) po publikacji kopii:
   - **`ListenButton`:** `icon="turtle"`, `failKey` porusza ikoną.
   - **Dok:** grupa przycisków, `data-sound-active`, region błędu z treścią.
   - **`BrowserAudioPlayer`:**
-    - tempo i `preservesPitch`;
+    - tempo i `preservesPitch` (także prefiksy `webkit`/`moz`);
     - `durationMs` z rzeczywistego `playbackRate`;
-    - brak `onStarted` po `stop()`.
+    - brak `onStarted` po `stop()` i jeden `onStarted` przy ponownym `playing`.
   - **Raport aktywności:** limit odsłuchu dla wolnego tempa (`durationMs` wydłużony) nie ucina
     odsłuchu.
   - **Tokeny:** nowa ikona i token Motion przechodzą `kid-design-tokens.test.ts`.
@@ -302,8 +316,15 @@ Nowy test (albo przedłużenie istniejącego) po publikacji kopii:
     - `data-sound-active` na „Posłuchaj zdania” w trakcie autoodczytu i jego brak po
       zatrzymaniu;
     - „Posłuchaj wolniej” odtwarza ten sam plik z `playbackRate` 0,75 i `preservesPitch`,
-      odczytanymi w podmienionym `play`;
+      odczytanymi w podmienionym `play`; zapis `preservesPitch` przez kod rejestruje
+      podsłuch settera (sam odczyt w Chromium jest domyślnie `true`);
     - ręczny odsłuch przy zablokowanym `play()` wypełnia region błędu, a autoodczyt nie;
+      fokus zostaje na przycisku;
+    - tekst błędu nie przesuwa przycisków zdania (375×812, 1280×800 i 812×375: prostokąty
+      przed i po błędzie ±1 px; w nakładce przy dolnej krawędzi także „Dalej”);
+    - układ grupy z container query: przy treści doku < 480 px (pomiar doku) kolumna —
+      żółw pod zdaniem z odstępem 8 px, ta sama lewa krawędź, „?” na wysokości górnego;
+      szerszy dok — jeden wiersz;
     - geometria grupy:
       - oba przyciski ≥ 48 px, w doku, bez przepełnienia poziomego, bez nakładania na „?”;
       - `SoundRing` w doku;

@@ -121,7 +121,8 @@ export function LearnScreen({
     ? {
         playing: feedback.sentencePlaying ?? null,
         error: feedback.sentenceAudioError ?? null,
-        disabled: busy || offline,
+        // Te same warunki co strażnik kontrolera (`#playSentence`) i odsłuch pytania.
+        disabled: busy || offline || screen.recordingPhase !== "idle",
         onPlay: (rate) => void controller.playSentenceAudio(rate),
       }
     : null;

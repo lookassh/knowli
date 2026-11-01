@@ -44,8 +44,13 @@ const withSentence = attempt({ kind: "great", correctAudioAssetId: sentenceAsset
 
 type AudioMode = "hold" | "reject" | "reject-after-first";
 
-/** Tempo i zachowanie wysokości głosu odczytane z elementu w chwili `play()`. */
-interface PlayCall { rate: number; pitch: boolean }
+/**
+ * Tempo i zachowanie wysokości głosu odczytane z elementu w chwili `play()`.
+ * `pitch` to sam odczyt właściwości — w Chromium domyślnie `true`, więc nie
+ * odróżnia jawnego ustawienia; `pitchSet` to wartość, którą kod zapisał przez
+ * setter `preservesPitch` tego elementu przed `play()` (`null` — nie zapisał).
+ */
+interface PlayCall { rate: number; pitch: boolean; pitchSet: boolean | null }
 interface AudioSpy { plays: number; pauses: number; calls: PlayCall[] }
 
 /**
@@ -59,9 +64,20 @@ async function spyAudio(page: Page, mode: AudioMode = "hold"): Promise<void> {
   await page.addInitScript((audioMode: AudioMode) => {
     const spy: AudioSpy = { plays: 0, pauses: 0, calls: [] };
     (window as unknown as { __audio: AudioSpy }).__audio = spy;
+    // Setter `preservesPitch` zapamiętuje zapis kodu per element (getter bez zmian).
+    const pitchWrites = new WeakMap<HTMLMediaElement, boolean>();
+    const pitch = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "preservesPitch");
+    if (pitch?.get && pitch.set) {
+      const { get, set } = pitch;
+      Object.defineProperty(HTMLMediaElement.prototype, "preservesPitch", {
+        ...pitch,
+        get() { return get.call(this); },
+        set(value: boolean) { pitchWrites.set(this as HTMLMediaElement, value); set.call(this, value); },
+      });
+    }
     HTMLMediaElement.prototype.play = function play() {
       spy.plays += 1;
-      spy.calls.push({ rate: this.playbackRate, pitch: this.preservesPitch });
+      spy.calls.push({ rate: this.playbackRate, pitch: this.preservesPitch, pitchSet: pitchWrites.get(this) ?? null });
       if (audioMode === "reject" || (audioMode === "reject-after-first" && spy.plays > 1)) {
         return Promise.reject(new DOMException("blocked", "NotAllowedError"));
       }
@@ -222,11 +238,11 @@ test("„Posłuchaj wolniej” replays the same file at 0.75 with preserved pitc
   await answer(page);
   await expect.poll(() => media).toEqual([sentencePath]);
   // Autoodczyt gra w normalnym tempie.
-  await expect.poll(() => audioCounters(page).then((spy) => spy.calls)).toEqual([{ rate: 1, pitch: true }]);
+  await expect.poll(() => audioCounters(page).then((spy) => spy.calls)).toEqual([{ rate: 1, pitch: true, pitchSet: true }]);
   const slow = page.getByTestId("kid-feedback-dock").getByTestId("kid-sentence-audio-slow");
   await expect(slow).toHaveAttribute("aria-label", "Posłuchaj wolniej");
   await slow.click();
-  await expect.poll(() => audioCounters(page).then((spy) => spy.calls.at(-1))).toEqual({ rate: 0.75, pitch: true });
+  await expect.poll(() => audioCounters(page).then((spy) => spy.calls.at(-1))).toEqual({ rate: 0.75, pitch: true, pitchSet: true });
   expect((await audioCounters(page)).calls).toHaveLength(2);
   await expect.poll(() => media).toEqual([sentencePath, sentencePath]);
   await expect(slow).toHaveAttribute("data-sound-active", "true");
@@ -248,6 +264,8 @@ test("a failed manual replay shows the message, a blocked autoplay does not", as
   await expect.poll(() => audioCounters(page).then((spy) => spy.plays)).toBe(2);
   await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
   await expect(slow).toHaveAttribute("data-audio-failed", "1");
+  // Fokus zostaje na przycisku, który zawiódł (spec §4.4).
+  await expect(slow).toBeFocused();
   await expect(page.getByTestId("kid-sentence-audio")).not.toHaveAttribute("data-audio-failed");
   await expect(slow).not.toHaveAttribute("data-sound-active");
 
@@ -276,6 +294,34 @@ test("a failed manual replay during readback stops the ring and shows the messag
   await expect(page.locator("[data-sound-active]")).toHaveCount(0);
 });
 
+/**
+ * Układ grupy przycisków zdania z container query doku (spec §4.3): gdy treść
+ * doku ma mniej niż 480 px szerokości (px wewnętrzne, jak w `@container`),
+ * żółw stoi pod „Posłuchaj zdania” (odstęp 8 px, ta sama lewa krawędź), a „?”
+ * komunikatu zaczyna się na wysokości górnego przycisku; szerszy dok ma oba
+ * w jednym wierszu, żółw po prawej. Próg z pomiaru doku, nie z okna.
+ */
+async function expectSentenceGroupLayout(page: Page, label: string): Promise<void> {
+  const dock = page.getByTestId("kid-feedback-dock");
+  const { contentWidth, zoom } = await dock.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const width = element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return { contentWidth: width, zoom: element.getBoundingClientRect().width / (element as HTMLElement).offsetWidth };
+  });
+  const sentence = await boxOf(dock.getByTestId("kid-sentence-audio"));
+  const slow = await boxOf(dock.getByTestId("kid-sentence-audio-slow"));
+  const guidance = await boxOf(dock.getByTestId("kid-guidance-play"));
+  const details = `dock content ${contentWidth}px, sentence ${JSON.stringify(sentence)}, slow ${JSON.stringify(slow)}, guidance ${JSON.stringify(guidance)} at ${label}`;
+  if (contentWidth < 480) {
+    expect(slow.y, `column: slow under sentence: ${details}`).toBeGreaterThanOrEqual(sentence.y + sentence.height + 8 * zoom - 1);
+    expect(Math.abs(slow.x - sentence.x), `column: same left edge: ${details}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(guidance.y - sentence.y), `column: guidance at the top button: ${details}`).toBeLessThanOrEqual(1);
+  } else {
+    expect(Math.abs(slow.y - sentence.y), `row: same top: ${details}`).toBeLessThanOrEqual(1);
+    expect(slow.x, `row: slow right of sentence: ${details}`).toBeGreaterThanOrEqual(sentence.x + sentence.width - 1);
+  }
+}
+
 /** Oba przyciski zdania: cel ≥ 48 px, w doku i bez nakładania na „?” komunikatu. */
 async function expectSentenceButtonsInDock(page: Page, label: string): Promise<void> {
   const dock = page.getByTestId("kid-feedback-dock");
@@ -289,6 +335,7 @@ async function expectSentenceButtonsInDock(page: Page, label: string): Promise<v
     expect(within(bounds, dockBox), `inside dock: ${details}`).toBe(true);
     expect(overlaps(bounds, guidance), `overlaps guidance: ${details}`).toBe(false);
   }
+  await expectSentenceGroupLayout(page, label);
 }
 
 /** Bez poziomego przewijania strony, a „Dalej” w całości w oknie. */
@@ -367,6 +414,63 @@ test("the replay error stays inside the dock on every form factor", async ({ pag
     await page.screenshot({ path: testInfo.outputPath(`sentence-audio-error-${label}.png`) });
   }
 });
+
+/**
+ * Nieudane dotknięcie nie przesuwa przycisków zdania pod palcem (spec §4.4).
+ * `up` — dok w nakładce stoi przy dolnej krawędzi ramy i rośnie w górę: tekst
+ * stoi nad górnym wierszem, a przyciski zdania i „Dalej” zostają na miejscu.
+ * `down` — zwarta rama dużego okna (stopka tuż pod odpowiedziami, wolne miejsce
+ * niżej) i przewijana strona: dok rośnie w dół, więc tekst stoi pod górnym
+ * wierszem, przyciski zdania zostają, a w dół przesuwa się tylko „Dalej”.
+ */
+const ERROR_SHIFT_VIEWPORTS: { viewport: { width: number; height: number }; grows: "up" | "down" }[] = [
+  { viewport: { width: 375, height: 812 }, grows: "up" },
+  { viewport: { width: 1280, height: 800 }, grows: "down" },
+  { viewport: { width: 812, height: 375 }, grows: "down" },
+];
+
+for (const { viewport, grows } of ERROR_SHIFT_VIEWPORTS) {
+  const label = `${viewport.width}x${viewport.height}`;
+  test(`the replay error does not move the sentence buttons at ${label}`, async ({ page }) => {
+    await open(page, [attempt({ kind: "incorrect", correctText: "He goes to school.", correctAudioAssetId: sentenceAssetId })], "reject");
+    await answer(page);
+    await page.setViewportSize(viewport);
+    await expectFrameFillsViewport(page, viewport);
+    const dock = page.getByTestId("kid-feedback-dock");
+    const error = page.getByTestId("kid-sentence-audio-error");
+    await expect(error).toHaveText("");
+    const targets = { sentence: dock.getByTestId("kid-sentence-audio"), slow: dock.getByTestId("kid-sentence-audio-slow"), next: dock.getByTestId("kid-next") };
+    await targets.slow.scrollIntoViewIfNeeded();
+    const measure = async () => ({ sentence: await boxOf(targets.sentence), slow: await boxOf(targets.slow), next: await boxOf(targets.next) });
+    const before = await measure();
+
+    await targets.slow.click();
+    await expect(error).toHaveText(messages.kid.sentenceAudioFailed);
+    // Dwie klatki na przeliczenie rezerwy i limitu karty po zmianie wysokości doku.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const after = await measure();
+    const fixed: (keyof typeof targets)[] = grows === "up" ? ["sentence", "slow", "next"] : ["sentence", "slow"];
+    for (const name of fixed) {
+      const moved = `${name} before ${JSON.stringify(before[name])}, after ${JSON.stringify(after[name])} at ${label}`;
+      expect(Math.abs(after[name].x - before[name].x), `x: ${moved}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[name].y - before[name].y), `y: ${moved}`).toBeLessThanOrEqual(1);
+    }
+    const errorBox = await boxOf(error);
+    expect(within(errorBox, await boxOf(dock)), `error inside dock at ${label}`).toBe(true);
+    // Tekst nie wchodzi na przyciski zdania ani na „Dalej”.
+    for (const name of Object.keys(targets) as (keyof typeof targets)[]) {
+      expect(overlaps(errorBox, after[name]), `error overlaps ${name} at ${label}: ${JSON.stringify({ errorBox, target: after[name] })}`).toBe(false);
+    }
+    const rowTop = Math.min(after.sentence.y, after.slow.y);
+    const rowBottom = Math.max(after.sentence.y + after.sentence.height, after.slow.y + after.slow.height);
+    if (grows === "up") {
+      expect(errorBox.y + errorBox.height, `error above the sentence row at ${label}`).toBeLessThanOrEqual(rowTop + 1);
+    } else {
+      expect(errorBox.y, `error under the sentence row at ${label}`).toBeGreaterThanOrEqual(rowBottom - 1);
+      expect(errorBox.y + errorBox.height, `error above „Dalej” at ${label}`).toBeLessThanOrEqual(after.next.y + 1);
+    }
+  });
+}
 
 /**
  * Tekst z lukami i bankiem słów („Angielski — rozdział”, `lesson_cloze` z
@@ -491,6 +595,7 @@ test.describe("cloze with a word bank: sentence readback dock geometry", () => {
         expect(overlaps(boxes.sentence, boxes.slow), `sentence/slow overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.slow, boxes.guidance), `slow/guidance overlap at ${label}`).toBe(false);
         expect(overlaps(boxes.slow, boxes.next), `slow/next overlap at ${label}`).toBe(false);
+        await expectSentenceGroupLayout(page, label);
 
         // Kontener materiału obok doku. Poniżej 480 px wysokości przewija się strona, a dok stoi
         // w przepływie pod materiałem; wyżej dok jest nakładką na dolną krawędź materiału
