@@ -70,6 +70,11 @@ export function solvedSentencesOf(drafts: readonly LessonExerciseDraft[]): strin
   return sentences;
 }
 
+/** Tekst do pomiaru długości i porównań: po `trim` i scaleniu białych znaków. */
+function squash(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
 /** Wariant zdania po normalizatorze jako klucz porównania. */
 function normalizedVariants(text: string, normalizer: AnswerNormalizer): string[] {
   return normalizer.normalize(text).map((tokens) => tokens.join(" "));
@@ -109,7 +114,7 @@ export function validateLessonStory(
     errors.push(`Historyjka ma mieć od ${limits.minSentences} do ${limits.maxSentences} zdań.`);
   }
   story.sentences.forEach((sentence, index) => {
-    const text = sentence.trim();
+    const text = squash(sentence);
     if (!text) errors.push(`Zdanie ${index + 1} jest puste.`);
     else if (text.length > limits.sentenceMaxLength) {
       errors.push(`Zdanie ${index + 1} jest dłuższe niż ${limits.sentenceMaxLength} znaków.`);
@@ -135,7 +140,7 @@ export function validateLessonStory(
 
 function validateQuestion(question: LessonStoryQuestion, number: number, errors: string[]): void {
   const limits = LESSON_STORY_LIMITS;
-  const text = question.question.trim();
+  const text = squash(question.question);
   if (!text) errors.push(`Pytanie ${number} jest puste.`);
   else if (text.length > limits.questionMaxLength) {
     errors.push(`Pytanie ${number} jest dłuższe niż ${limits.questionMaxLength} znaków.`);
@@ -146,16 +151,19 @@ function validateQuestion(question: LessonStoryQuestion, number: number, errors:
   }
   const texts: string[] = [];
   question.options.forEach((option, index) => {
-    const optionText = option.text.trim();
+    const optionText = squash(option.text);
     if (!optionText) errors.push(`Pytanie ${number}: odpowiedź ${index + 1} jest pusta.`);
     else {
-      texts.push(optionText.toLowerCase());
+      texts.push(optionText.toLocaleLowerCase("pl-PL"));
       if (optionText.length > limits.optionMaxLength) {
         errors.push(`Pytanie ${number}: odpowiedź ${index + 1} jest dłuższa niż ${limits.optionMaxLength} znaków.`);
       }
     }
   });
   if (new Set(texts).size !== texts.length) errors.push(`Pytanie ${number} ma powtarzające się odpowiedzi.`);
+  if (new Set(question.options.map((option) => option.id)).size !== question.options.length) {
+    errors.push(`Pytanie ${number} ma powtarzające się identyfikatory odpowiedzi.`);
+  }
   if (!question.options.some((option) => option.id === question.correctOption)) {
     errors.push(`Pytanie ${number} nie ma wskazanej poprawnej odpowiedzi.`);
   }
@@ -163,5 +171,5 @@ function validateQuestion(question: LessonStoryQuestion, number: number, errors:
 
 /** Tekst odczytu historyjki: zdania po `trim` i scaleniu białych znaków, złączone spacją. */
 export function storyReadText(story: LessonStory): string {
-  return story.sentences.map((sentence) => sentence.trim().replace(/\s+/g, " ")).join(" ");
+  return story.sentences.map(squash).join(" ");
 }

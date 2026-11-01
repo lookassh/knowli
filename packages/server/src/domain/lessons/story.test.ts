@@ -133,6 +133,43 @@ describe("validateLessonStory", () => {
     );
   });
 
+  it("rejects duplicate option ids", () => {
+    const options = [
+      { id: "a", text: "Tom" },
+      { id: "a", text: "Ania" },
+      { id: "c", text: "Mama" },
+    ];
+    expect(validateLessonStory(withQuestion({ options }), ctx)).toContain(
+      "Pytanie 1 ma powtarzające się identyfikatory odpowiedzi.",
+    );
+  });
+
+  it("dedupes option text with Polish case folding", () => {
+    const options = [
+      { id: "a", text: "Łódź" },
+      { id: "b", text: "ŁÓDŹ" },
+      { id: "c", text: "Pies" },
+    ];
+    expect(validateLessonStory(withQuestion({ options }), ctx)).toContain(
+      "Pytanie 1 ma powtarzające się odpowiedzi.",
+    );
+  });
+
+  it("measures lengths after collapsing inner whitespace", () => {
+    const story = validStory();
+    story.sentences[0] = `${"a".repeat(75)}${" ".repeat(20)}${"b".repeat(75)}`;
+    expect(validateLessonStory(story, ctx)).toEqual([]);
+    const q = withQuestion({
+      question: `${"a".repeat(75)}${" ".repeat(20)}${"b".repeat(75)}`,
+      options: [
+        { id: "a", text: `${"x".repeat(35)}${" ".repeat(20)}${"y".repeat(35)}` },
+        { id: "b", text: "Ania" },
+        { id: "c", text: "Mama" },
+      ],
+    });
+    expect(validateLessonStory(q, ctx)).toEqual([]);
+  });
+
   it("rejects unknown correctOption", () => {
     expect(validateLessonStory(withQuestion({ correctOption: "z" }), ctx)).toContain(
       "Pytanie 1 nie ma wskazanej poprawnej odpowiedzi.",
