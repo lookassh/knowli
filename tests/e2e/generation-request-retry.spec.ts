@@ -122,25 +122,31 @@ test("lost 202 response retries the same command and opens its single deck", asy
     .resolves.toEqual(["image", "color", "number"]);
 });
 
-test("malformed 202 response stays uncertain and retries the original command", async ({ page }) => {
+type Acceptance = { generationRunId: string; deckId: string };
+
+/**
+ * Pierwsza odpowiedź 202 ma zepsutą treść (`malformedBody`): panel zostaje w stanie niepewnym bez
+ * otwierania edytora, a ponowienie wysyła to samo polecenie i otwiera jedyny utworzony zestaw.
+ */
+async function expectMalformedAcceptanceRetried(page: Page, prompt: string, malformedBody: (accepted: Acceptance) => string) {
   const bodies: Record<string, unknown>[] = [];
-  let acceptance: { generationRunId: string; deckId: string } | null = null;
   let malformed = true;
+  let acceptance: Acceptance | null = null;
   await page.route("**/api/v1/parent/decks/generate", async (route) => {
     bodies.push(route.request().postDataJSON() as Record<string, unknown>);
     const response = await route.fetch();
     if (malformed) {
       malformed = false;
-      await route.fulfill({ status: 202, contentType: "application/json", body: "{" });
+      await route.fulfill({ status: 202, contentType: "application/json", body: malformedBody(await response.json() as Acceptance) });
       return;
     }
-    acceptance = await response.json() as { generationRunId: string; deckId: string };
+    acceptance = await response.json() as Acceptance;
     await route.fulfill({ response });
   });
 
   await enterParent(page);
   await openNewMaterial(page, "generate");
-  await page.getByTestId("deck-prompt").fill("angielskie kolory dla dziecka");
+  await page.getByTestId("deck-prompt").fill(prompt);
   await page.getByTestId("generate-submit").click();
   await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
   await expect(page.getByTestId("editor-title")).toHaveCount(0);
@@ -149,35 +155,14 @@ test("malformed 202 response stays uncertain and retries the original command", 
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
   await expectSingleGeneration(bodies[0]!, acceptance!);
+}
+
+test("malformed 202 response stays uncertain and retries the original command", async ({ page }) => {
+  await expectMalformedAcceptanceRetried(page, "angielskie kolory dla dziecka", () => "{");
 });
 
 test("a 202 with a malformed deck ID is not opened before retry", async ({ page }) => {
-  const bodies: Record<string, unknown>[] = [];
-  let malformed = true;
-  let acceptance: { generationRunId: string; deckId: string } | null = null;
-  await page.route("**/api/v1/parent/decks/generate", async (route) => {
-    bodies.push(route.request().postDataJSON() as Record<string, unknown>);
-    const response = await route.fetch();
-    if (malformed) {
-      malformed = false;
-      const json = await response.json() as { generationRunId: string; deckId: string };
-      await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ...json, deckId: "bad-id" }) });
-      return;
-    }
-    acceptance = await response.json() as { generationRunId: string; deckId: string };
-    await route.fulfill({ response });
-  });
-
-  await enterParent(page);
-  await openNewMaterial(page, "generate");
-  await page.getByTestId("deck-prompt").fill("angielskie zwierzęta dla dziecka");
-  await page.getByTestId("generate-submit").click();
-  await expect(page.getByTestId("api-error")).toHaveText(messages.decks.generationUncertain);
-  await expect(page.getByTestId("editor-title")).toHaveCount(0);
-  await page.getByTestId("generate-submit").click();
-  await expectGenerationEditor(page);
-  expect(bodies[1]).toEqual(bodies[0]);
-  await expectSingleGeneration(bodies[0]!, acceptance!);
+  await expectMalformedAcceptanceRetried(page, "angielskie zwierzęta dla dziecka", (accepted) => JSON.stringify({ ...accepted, deckId: "bad-id" }));
 });
 
 test("a 500 after acceptance can be retried with one logical generation", async ({ page }) => {
