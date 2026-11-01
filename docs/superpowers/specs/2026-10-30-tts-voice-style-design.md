@@ -304,8 +304,17 @@ Zdania stylu tonów (pl-PL, wyraźnie różne od stylu ról):
   odrzuca ton karty jak ton ćwiczenia). „Tajemniczo” tylko przy karcie — w
   pytaniu, gdy ton jest już zapisany, pole go pokazuje, ale nagranie brzmi
   `curious`; opis pod polem: „Ton działa, gdy pytanie ma nagranie.”
-  (karta: „Ton działa, gdy karta ma nagranie.”). Panel nie liczy
+  (karta: „Ton działa, gdy karta ma nagranie.” z regułą szeptu: „Tajemniczo”
+  szepcze tekst od dwóch zdań, jedno zdanie brzmi „Z ciekawością”). Panel nie liczy
   `questionReadText`/`cardReadText` — to funkcje serwera.
+- **Flaga w DTO szkicu (od 2026-11-01):** o widoczności pola decyduje
+  `voiceTones?: { styleEnabled: boolean }` z serwera (obecne tylko dla
+  przedmiotu z `ttsForPrompts`), nie porównanie `subjectId` w panelu.
+  `styleEnabled = false` (`UMIEM_TTS_STYLE=none`): pole zostaje, a opis mówi,
+  że wybór się zapisze, ale nagrania brzmią domyślnie.
+- **Nazwy dostępności:** „Posłuchaj”, „Nagraj ponownie” i „Posłuchaj
+  poprzedniego” mają `aria-label` z widocznym tekstem i celem („Posłuchaj:
+  Ćwiczenie 3”, „Nagraj ponownie: karta 2 — Skala”), bo na stronie jest ich wiele.
 - **Stan nagrań w DTO szkicu:** ćwiczenie dostaje opcjonalne
   `promptAudio?: { state: "pending" | "ready" | "failed", assetId?: uuid, previousAssetId?: uuid }`,
   a szkic opcjonalną listę `cardAudio: [{ objectiveId, cardIndex, audio }]`

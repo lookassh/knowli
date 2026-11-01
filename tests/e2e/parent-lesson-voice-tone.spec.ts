@@ -28,6 +28,7 @@ const openAnswer = (n: number, audio: { state: "ready" | "pending" | "failed"; a
 const draft = {
   id: draftId, deckId, editNumber: 2, status: "draft", title: "Mapa", subjectId: "school", topicId: "map", topicVersion: 1,
   subjectTitlePl: "Geografia", objectiveIds: [OBJ], examples: {},
+  voiceTones: { styleEnabled: true } as { styleEnabled: boolean } | undefined,
   dynamicTopic: { titlePl: "Posługuję się mapą", objectives: [{ id: OBJ, titlePl: "Skala mapy", cards: [
     { title: "Skala", body: "Skala mówi, ile razy odległość na mapie jest mniejsza niż w terenie.", voiceTone: "mysterious" },
     { title: "Przykład", body: "1:25 000 — 1 cm to 250 m." },
@@ -56,8 +57,10 @@ interface Calls {
   markCardPending: () => void;
 }
 
-async function openLesson(page: Page, options: { cardRegenerateFails?: boolean; subjectId?: string } = {}): Promise<Calls> {
-  let current: typeof draft = options.subjectId ? { ...draft, subjectId: options.subjectId } : draft;
+async function openLesson(page: Page, options: { cardRegenerateFails?: boolean; subjectId?: string; styleEnabled?: boolean } = {}): Promise<Calls> {
+  // Przedmiot bez nagrań pytań i kart nie dostaje `voiceTones` (jak z serwera).
+  let current: typeof draft = options.subjectId ? { ...draft, subjectId: options.subjectId, voiceTones: undefined }
+    : options.styleEnabled === false ? { ...draft, voiceTones: { styleEnabled: false } } : draft;
   const calls: Calls = {
     requests: [],
     markCardPending: () => {
@@ -171,6 +174,11 @@ test("sterowanie nagraniami zależy od stanu: gotowe, trwające i nieudane, tak�
   await expect(page.getByTestId(`examples-${OBJ}`)).toContainText(messages.lessons.voiceToneCardHint);
   await page.getByTestId("exercise-edit-0").click();
   await expect(page.getByTestId("exercise-0")).toContainText(messages.lessons.voiceToneHint);
+  // Wiele przycisków „Posłuchaj” na stronie: nazwa dostępności mówi, czego dotyczy.
+  await expect(page.getByTestId("exercise-prompt-audio-0-listen")).toHaveAccessibleName("Posłuchaj: Ćwiczenie 1");
+  await expect(page.getByTestId("exercise-prompt-audio-2-listen-previous")).toHaveAccessibleName("Posłuchaj poprzedniego: Ćwiczenie 3");
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-0-listen`)).toHaveAccessibleName("Posłuchaj: karta 1 — Skala");
+  await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-regenerate`)).toHaveAccessibleName("Nagraj ponownie: karta 2 — Przykład");
   // Pytania nie są szeptane: „Tajemniczo” tylko przy karcie.
   await expect(page.getByTestId("exercise-voice-tone-0").locator('option[value="mysterious"]')).toHaveCount(0);
   await expect(page.getByTestId(`dynamic-card-voice-tone-${OBJ}-0`).locator('option[value="mysterious"]')).toHaveCount(1);
@@ -205,6 +213,14 @@ test("błąd „Nagraj ponownie” karty znika, gdy zmieni się stan nagrania", 
   calls.markCardPending();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-pending`)).toBeVisible();
   await expect(page.getByTestId(`lesson-card-audio-${OBJ}-1-error`)).toHaveCount(0);
+});
+
+test("ton wyłączony na serwerze (UMIEM_TTS_STYLE=none): pola tonu zostają, podpowiedź mówi, że nagrania brzmią domyślnie", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLesson(page, { styleEnabled: false });
+  await expect(page.getByTestId(`dynamic-card-voice-tone-${OBJ}-0`)).toHaveValue("mysterious");
+  await expect(page.getByTestId(`examples-${OBJ}`)).toContainText(messages.lessons.voiceToneStyleOff);
+  await expect(page.getByTestId(`examples-${OBJ}`)).not.toContainText(messages.lessons.voiceToneCardHint);
 });
 
 test("przedmiot bez nagrań (rozdział angielskiego): karty bez pola „Ton lektora”", async ({ page }) => {

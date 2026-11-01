@@ -105,15 +105,6 @@ export interface EditableDynamicCard {
   voiceTone?: LessonVoiceTone;
 }
 
-/**
- * Czy przedmiot nagrywa pytania i karty (flaga `ttsForPrompts` po stronie
- * serwera, tu powtórzona jak mapa typ→etap: katalog nie niesie flagi, a serwer
- * odrzuca ton dla pozostałych przedmiotów).
- */
-export function lessonSubjectHasVoiceTones(subjectId: string | undefined): boolean {
-  return subjectId === "school";
-}
-
 export interface EditableDynamicObjective {
   id: string;
   titlePl: string;

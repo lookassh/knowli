@@ -283,6 +283,7 @@ async function readLessonDraftDto(
     topicId: context.topicId,
     topicVersion: context.topicVersion,
     objectiveIds: [...context.objectiveIds],
+    ...(draftSubject?.ttsForPrompts === true ? { voiceTones: { styleEnabled: services.media?.tts.style === "instructions" } } : {}),
     ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
     ...(context.dynamicTopic === undefined
       ? {}

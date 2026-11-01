@@ -21,9 +21,11 @@ const TONE_LABELS: Record<LessonVoiceTone, string> = {
  * jest szeptane (spec tonu TTS §4.3), więc bez `whisper` nie ma „Tajemniczo” —
  * chyba że ten ton jest już zapisany, żeby pole pokazywało stan.
  */
-export function VoiceToneSelect({ value, disabled, testId, hint = messages.lessons.voiceToneHint, whisper = false, onChange }: {
+export function VoiceToneSelect({ value, disabled, styleEnabled, testId, hint = messages.lessons.voiceToneHint, whisper = false, onChange }: {
   value: LessonVoiceTone | undefined;
   disabled: boolean;
+  /** Serwer nagrywa z tonem (`UMIEM_TTS_STYLE=instructions`); inaczej podpowiedź mówi, że ton nie ma skutku. */
+  styleEnabled: boolean;
   testId: string;
   /** Podpowiedź pod polem: pytanie (domyślnie) albo karta. */
   hint?: string;
@@ -38,7 +40,7 @@ export function VoiceToneSelect({ value, disabled, testId, hint = messages.lesso
       .map((tone) => ({ value: tone, label: TONE_LABELS[tone] })),
   ];
   return (
-    <NativeSelect size="md" label={messages.lessons.voiceToneLabel} description={hint}
+    <NativeSelect size="md" label={messages.lessons.voiceToneLabel} description={styleEnabled ? hint : messages.lessons.voiceToneStyleOff}
       data-testid={testId} value={value ?? ""} disabled={disabled} data={options}
       onChange={(e) => {
         const parsed = LessonVoiceToneSchema.safeParse(e.currentTarget.value);
@@ -65,9 +67,21 @@ export type PromptAudioTarget =
  * `pending`, edytor odpytuje lekcję (`lessonPollInterval`), więc „Nagrywanie…”
  * znika samo, gdy nagranie będzie gotowe albo nieudane.
  */
-export default function PromptAudioControls({ audio, target, lessonDraftId, deckId, canRegenerate, locked, testId, onPlay }: {
+/**
+ * Czego dotyczy nagranie karty w nazwie dostępności: numer karty i jej tytuł
+ * (albo tytuł zagadnienia, gdy rodzic wyczyścił tytuł karty w edycji).
+ */
+export function cardAudioTargetLabel(cardIndex: number, cardTitle: string, objectiveTitle: string | undefined): string {
+  const title = cardTitle.trim() || objectiveTitle?.trim() || "";
+  const numbered = messages.lessons.cardAudioTarget.replace("{n}", String(cardIndex + 1));
+  return title ? numbered.replace("{title}", () => title) : numbered.replace(" — {title}", "");
+}
+
+export default function PromptAudioControls({ audio, target, targetLabel, lessonDraftId, deckId, canRegenerate, locked, testId, onPlay }: {
   audio: LessonPromptAudioDto;
   target: PromptAudioTarget;
+  /** Czego dotyczą przyciski („Ćwiczenie 3”, „karta 2 — …”) — w nazwie dostępności, bo takich przycisków jest na stronie wiele. */
+  targetLabel: string;
   lessonDraftId: string;
   deckId: string;
   canRegenerate: boolean;
@@ -95,6 +109,8 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
     else cardMutation.mutate({ lessonDraftId, objectiveId: target.objectiveId, cardIndex: target.cardIndex });
   };
 
+  const named = (template: string) => template.replace("{target}", () => targetLabel);
+
   return (
     <Group gap="xs" align="center" data-testid={testId} data-audio-state={audio.state}>
       {audio.state === "pending" && (
@@ -105,19 +121,19 @@ export default function PromptAudioControls({ audio, target, lessonDraftId, deck
       )}
       {audio.state !== "ready" && audio.previousAssetId && (
         <Button size="md" variant="light" leftSection={<ParentIcon name="volume" />} data-testid={`${testId}-listen-previous`}
-          onClick={() => onPlay(audio.previousAssetId!)}>
+          aria-label={named(messages.lessons.promptAudioListenPreviousFor)} onClick={() => onPlay(audio.previousAssetId!)}>
           {messages.lessons.promptAudioListenPrevious}
         </Button>
       )}
       {audio.state === "ready" && audio.assetId && (
         <Button size="md" variant="light" leftSection={<ParentIcon name="volume" />} data-testid={`${testId}-listen`}
-          onClick={() => onPlay(audio.assetId!)}>
+          aria-label={named(messages.lessons.promptAudioListenFor)} onClick={() => onPlay(audio.assetId!)}>
           {messages.lessons.promptAudioListen}
         </Button>
       )}
       {canRegenerate && (
         <Button size="md" variant="subtle" leftSection={<ParentIcon name="refresh" />} data-testid={`${testId}-regenerate`}
-          disabled={locked || mutation.isPending} loading={mutation.isPending} onClick={regenerate}>
+          aria-label={named(messages.lessons.promptAudioRegenerateFor)} disabled={locked || mutation.isPending} loading={mutation.isPending} onClick={regenerate}>
           {messages.lessons.promptAudioRegenerate}
         </Button>
       )}
