@@ -325,6 +325,8 @@ describe("NewLessonForm", () => {
       }
       const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
       queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, catalog);
+      // formularz zawsze czyta listę dzieci (przyciski tematów) — bez danych w cache sięgnąłby do API
+      queryClient.setQueryData(orpc.children.list.queryOptions().queryKey, []);
       render(
         <QueryClientProvider client={queryClient}>
           <MantineProvider theme={parentTheme}><Harness /></MantineProvider>
