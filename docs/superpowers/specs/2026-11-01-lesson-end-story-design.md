@@ -1,8 +1,8 @@
 # Historyjka na koniec sesji lekcji gramatyki — design
 
 Data: 2026-11-01. Wersja 2 po recenzji trzech niezależnych krytyków: architektura
-i dane; reguły nauki i sesja; Kid UI, kontrakty i testy. Status: do recenzji
-właściciela.
+i dane; reguły nauki i sesja; Kid UI, kontrakty i testy. Status: zatwierdzony
+przez właściciela 2026-11-01; etap 1 zaimplementowany.
 Issue: lookassh/knowli#195.
 
 Powiązane dokumenty:
@@ -123,6 +123,9 @@ Kształt:
 - `ctx` niesie **rozwiązane zdania** ćwiczeń wersji:
   - `feedbackSentenceText` (#194) dla każdego ćwiczenia, czyli luka wypełniona
     i `stem` z poprawną opcją;
+  - luka (`lesson_gap`) wypełniona także każdym wariantem `acceptedAnswers`;
+  - tekst poprawnej opcji `lesson_choice`, którego `stem` nie ma luki
+    (np. „Które zdanie jest poprawne?”);
   - `answer` i `acceptedAnswers` typów pełnozdaniowych (`lesson_error_fix`,
     `lesson_transform`, `lesson_open_answer`).
 - Zdanie historyjki jest odrzucane, gdy po normalizatorze przedmiotu
@@ -247,7 +250,9 @@ z gałęzi batchy, celów dynamicznych ani `uniqueValid`. Kroki:
 - `GenerationDto` dostaje `purpose: "lesson" | "story"` — **zastąpione** polem
   `LessonDeckDto.storyGeneration` (uzupełnienie niżej).
 - Panel pokazuje run historyjki w sekcji historyjki, nie jako generowanie lekcji.
-- „Spróbuj ponownie” zachowuje `purpose`.
+- „Spróbuj ponownie” ponawia run historyjki: porażkę w miejscu, a run
+  zawieszony w `running` zastępuje nowym runem z tym samym wejściem, także
+  `purpose` (§6.2a).
 - Nie ma pola `storyError` w `lesson_context`. Stan błędu wynika z ostatniego
   runu historyjki wersji, więc nie kopiuje się do nowej wersji.
 
@@ -266,15 +271,23 @@ w kodzie etapu 1. Tam, gdzie §6.2 mówi inaczej, obowiązuje to uzupełnienie.
   puli. Zapis to scalenie klucza `story` w `lesson_context` pod blokadą wersji.
 
 **Co anuluje (`superseded`) run historyjki:**
-- edycja z polem `story` w patchu (wybór rodzica wygrywa);
+- edycja z polem `story` w patchu (wybór rodzica wygrywa). Ta sama edycja
+  oznacza jako `superseded` także **porażki** (`failed`) runów historyjki tej
+  wersji — tylko runy historyjki i tylko w stanie `failed`, w tej samej
+  transakcji. Baner „Historyjka nie powstała.” znika, a ponowienie starej
+  porażki nie nadpisze historyjki napisanej przez rodzica (`conflict`);
 - publikacja: run sprawdza `state === published` przy finalizacji i kończy się
-  jako `superseded` bez zapisu. Publikacja nie czeka na run historyjki i nie
-  jest przez niego blokowana;
+  jako `superseded` bez zapisu, także gdy publikacja nastąpi w trakcie
+  wywołania modelu. Publikacja nie czeka na run historyjki i nie jest przez
+  niego blokowana;
 - nowy pełny run lekcji, także ręczne ponowienie pełnego runu
   (`retryGeneration`): nowa pula unieważnia walidację historyjki w toku.
 
 **Czego run historyjki nie blokuje i co go nie anuluje:**
-- zwykła edycja ćwiczeń, tytułu i przykładów go nie anuluje;
+- zwykła edycja ćwiczeń, tytułu i przykładów go nie anuluje. Gdy taka edycja
+  w trakcie runu sprawi, że zdanie historyjki powtarza rozwiązanie ćwiczenia,
+  finalizacja (walidacja wobec bieżącej puli) kończy run jako
+  `failed`/`story_invalid`, a poprzednia historyjka zostaje;
 - dogenerowanie reguły (także jego ponowienie) go nie anuluje, a aktywny run
   historyjki nie blokuje dogenerowania.
 
@@ -298,11 +311,21 @@ w kodzie etapu 1. Tam, gdzie §6.2 mówi inaczej, obowiązuje to uzupełnienie.
 - ponownie kolejkuje run z `expectedEditNumber` = bieżący numer, bez
   podbijania numeru i bez anulowania innych runów;
 - run `failed` i odroczony `queued` dostają nowy budżet prób (`attempts = 0`);
-- run `running` (np. po awarii workera) wraca do kolejki **bez** zerowania
-  prób: kolejny claim podbije `attempts`, więc spóźniony worker nie dopasuje
-  znacznika prób przy finalizacji;
+- run `running` (np. po awarii workera) zostaje oznaczony jako `superseded`,
+  a w tej samej transakcji powstaje **nowy** run historyjki: nowe id,
+  `attempts = 0`, to samo wejście (z `purpose: 'story'`), `expectedEditNumber`
+  = bieżący numer, klucz `lesson-story:retry:<id nowego runu>`.
+  `retryGeneration` zwraca id nowego runu. Spóźniony worker starego runu nie
+  przejdzie CAS finalizacji (`running` + liczba prób), więc nie zapisze wyniku;
 - `queued` bez odroczenia nie zmienia się;
-- inny aktywny run historyjki tej wersji daje `conflict`.
+- inny aktywny run historyjki tej wersji (nie ponawiany) daje `conflict`.
+
+**Panel przy zawieszonym runie:** gdy run historyjki jest w `running`, sekcja
+pokazuje podpowiedź jak przy zawieszonym generowaniu puli i przycisk „Spróbuj
+ponownie”. Jest wyłączony przy niezapisanych zmianach, zajętości i konflikcie.
+„Spróbuj ponownie” (po porażce i przy zawieszonym runie) pyta o potwierdzenie,
+gdy historyjka istnieje — jak „Wygeneruj od nowa”, bo wynik runu ją zastąpi.
+„Wygeneruj historyjkę” jest wyłączone, gdy szkic nie ma ćwiczeń.
 
 **Przycisk „Wygeneruj historyjkę”** (`regenerateLessonStory`) odrzuca też
 wersję bez ćwiczeń (`validation`): bez puli bariera ekspozycji nie ma czego
@@ -342,7 +365,8 @@ też. Kopia i publikacja bez edycji uzgadniają nagranie: `reconcileBeforePublis
 tworzy wiersz z §7.
 
 **DTO rodzica** (`LessonDraftDto`):
-- `story: LessonStoryDto | null`;
+- `story?: LessonStoryDto` — pole opcjonalne, brak pola oznacza brak
+  historyjki (§6.2a);
 - `storyEnabled: boolean`, zgodnie z precedensem `voiceTones`: flaga przedmiotu
   wyliczona przez serwer;
 - `storyAudio?: LessonPromptAudioDto`, ten sam schemat co nagrania pytań.
@@ -734,9 +758,11 @@ budżetu.
 
 **Generowanie:**
 - run lekcji kolejkuje run historyjki w tej samej transakcji;
-- sukces zapisuje historyjkę, podbija `editNumber` i uzgadnia nagranie;
+- sukces scala historyjkę w `lesson_context` **bez** podbijania `editNumber`
+  (§6.2a) i uzgadnia nagranie;
 - `story_invalid` i błąd providera zachowują poprzednią historyjkę;
-- edycja w trakcie daje `superseded`;
+- edycja z polem `story` w trakcie daje `superseded` (zwykła edycja ćwiczeń
+  nie anuluje runu; kolizja z pulą po takiej edycji daje `story_invalid`);
 - przycisk: opublikowana wersja zwraca `immutable`, konflikt numeru edycji,
   idempotencja;
 - dogenerowanie reguły odrzuca kolizję.
