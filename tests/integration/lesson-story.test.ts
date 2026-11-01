@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  claimQueuedRun,
   createLesson,
   createSchoolLesson,
   createServices,
@@ -409,5 +410,135 @@ describe("run historyjki lekcji (integracja)", () => {
     // Dogenerowanie nie anuluje runu historyjki.
     expect((await readGeneration(services, storyRunId!)).state).toBe("queued");
     expect((await versionRow(versionId)).edit_number).toBe(3);
+  });
+  /** Pełny run lekcji kończy się porażką (błąd konfiguracji providera): wersja bez ćwiczeń. */
+  async function failedFullLesson() {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const original = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.llm.generateLessonPool = async () => {
+      throw new GenerationProviderError("configuration", { status: 400 });
+    };
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("failed");
+    fakes.llm.generateLessonPool = original;
+    const versionId = (await readGeneration(services, runId)).deckVersionId!;
+    return { fakes, services, lessonRunId: runId, deckId, versionId };
+  }
+
+  /** Run historyjki wstawiony wprost (stan, którego nie da się dziś osiągnąć przyciskiem bez puli). */
+  async function insertQueuedStoryRun(versionId: string, deckId: string, editNumber: number): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      `insert into learning_app.generation_runs (id, deck_version_id, expected_edit_number, kind, dedupe_key, state, input)
+       values ($1, $2, $3, 'lesson', $4, 'queued', $5::jsonb)`,
+      [id, versionId, editNumber, `lesson-story:${randomUUID()}`, JSON.stringify({
+        deckId, deckVersionId: versionId, subjectId: "english_grammar", topicId: "present_simple", topicVersion: 1,
+        objectiveIds: [OBJECTIVE], poolSize: 20, material: "He plays football.", purpose: "story",
+      })],
+    );
+    return id;
+  }
+
+  it("retrying a full run supersedes an active story run", async () => {
+    const { services, lessonRunId, deckId, versionId } = await failedFullLesson();
+    const staleStoryRunId = await insertQueuedStoryRun(versionId, deckId, 1);
+
+    await retryGeneration(services, lessonRunId);
+
+    expect((await readGeneration(services, staleStoryRunId)).state).toBe("superseded");
+    await executeLessonGeneration(services, lessonRunId);
+    expect((await readGeneration(services, lessonRunId)).state).toBe("succeeded");
+    // Pełny run po ponowieniu zleca świeżą historyjkę do nowej puli.
+    const active = (await storyRuns(versionId)).filter((run) => run.state === "queued");
+    expect(active.map((run) => run.dedupe_key)).toEqual([`lesson-story:${lessonRunId}`]);
+  });
+
+  it("retrying a failed top-up run keeps the active story run", async () => {
+    const { fakes, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
+    const original = fakes.llm.generateLessonPool.bind(fakes.llm);
+    fakes.llm.generateLessonPool = async () => {
+      throw new GenerationProviderError("configuration", { status: 400 });
+    };
+    const regen = await regenerateObjective(services, {
+      deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, regen.runId);
+    expect((await readGeneration(services, regen.runId)).state).toBe("failed");
+    fakes.llm.generateLessonPool = original;
+
+    await retryGeneration(services, regen.runId);
+
+    expect((await readGeneration(services, storyRunId!)).state).toBe("queued");
+  });
+
+  it("regenerateLessonStory rejects a version without exercises", async () => {
+    const { services, versionId } = await failedFullLesson();
+    await expect(regenerateLessonStory(services, {
+      deckVersionId: versionId, expectedEditNumber: 1, clientRequestId: randomUUID(),
+    })).rejects.toMatchObject({ code: "validation", message: expect.stringContaining("lesson has no exercises") });
+    expect(await storyRuns(versionId)).toEqual([]);
+  });
+
+  it("retry of a running story run requeues without resetting attempts; the stale attempt cannot finalize", async () => {
+    const { services, versionId, storyRunId } = await generatedGrammarLesson();
+    // Worker przejął run i padł: run utknął w `running` z próbą 1.
+    expect(await claimQueuedRun(db, storyRunId!)).toBe(1);
+    await editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "Poprawka rodzica" });
+
+    await retryGeneration(services, storyRunId!);
+
+    const [requeued] = await storyRuns(versionId);
+    expect(requeued).toMatchObject({ state: "queued", attempts: 1, error_code: null, next_attempt_at: null, expected_edit_number: 3 });
+
+    // Nowy claim podbija próby, więc CAS spóźnionego workera (próba 1) nic nie dopasuje.
+    expect(await claimQueuedRun(db, storyRunId!)).toBe(2);
+    const stale = await pool.query(
+      "update learning_app.generation_runs set state = 'succeeded' where id = $1 and state = 'running' and attempts = 1",
+      [storyRunId],
+    );
+    expect(stale.rowCount).toBe(0);
+
+    await retryGeneration(services, storyRunId!);
+    await executeLessonGeneration(services, storyRunId!);
+    const [done] = await storyRuns(versionId);
+    expect(done).toMatchObject({ state: "succeeded", attempts: 3 });
+    expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
+  });
+
+  it("retry of a deferred queued story run resets the attempt budget", async () => {
+    const { fakes, services, versionId, storyRunId } = await generatedGrammarLesson();
+    fakes.llm.generateLessonStory = async () => {
+      throw new GenerationProviderError("transient");
+    };
+    await executeLessonGeneration(services, storyRunId!);
+    const [deferred] = await storyRuns(versionId);
+    expect(deferred).toMatchObject({ state: "queued", attempts: 1, error_code: "provider" });
+    expect(deferred!.next_attempt_at).not.toBeNull();
+
+    await retryGeneration(services, storyRunId!);
+
+    const [reset] = await storyRuns(versionId);
+    expect(reset).toMatchObject({ state: "queued", attempts: 0, error_code: null, next_attempt_at: null, expected_edit_number: 2 });
+  });
+
+  it("retry of a failed story run conflicts while another story run is active", async () => {
+    const { fakes, services, versionId, storyRunId } = await generatedGrammarLesson();
+    const original = fakes.llm.generateLessonStory.bind(fakes.llm);
+    fakes.llm.generateLessonStory = async () => {
+      throw new GenerationProviderError("refusal");
+    };
+    await executeLessonGeneration(services, storyRunId!);
+    expect((await readGeneration(services, storyRunId!)).state).toBe("failed");
+    fakes.llm.generateLessonStory = original;
+    const { runId: activeRunId } = await regenerateLessonStory(services, {
+      deckVersionId: versionId, expectedEditNumber: 2, clientRequestId: randomUUID(),
+    });
+
+    await expect(retryGeneration(services, storyRunId!)).rejects.toMatchObject({ code: "conflict" });
+    expect((await readGeneration(services, storyRunId!)).state).toBe("failed");
+    expect((await readGeneration(services, activeRunId)).state).toBe("queued");
   });
 });

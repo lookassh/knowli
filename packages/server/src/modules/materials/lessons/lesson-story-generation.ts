@@ -327,7 +327,8 @@ export async function executeLessonStoryGeneration(
  * Przycisk rodzica „Wygeneruj historyjkę ponownie” (struktura jak
  * `regenerateObjective`): idempotentnie po `clientRequestId`. Wersja
  * opublikowana → `immutable`; inny numer edycji albo aktywny run lekcji
- * (puli lub historyjki) → `conflict`; przedmiot bez `lessonStory` → `validation`.
+ * (puli lub historyjki) → `conflict`; wersja bez ćwiczeń albo przedmiot bez
+ * `lessonStory` → `validation`.
  * Nie podbija numeru edycji.
  */
 export async function regenerateLessonStory(
@@ -354,6 +355,12 @@ export async function regenerateLessonStory(
       inArray(generationRuns.state, ["queued", "running"]),
     )).limit(1))[0];
     if (activeRun) throw new AppError("conflict");
+    // Bez puli bariera ekspozycji nie ma czego chronić — historyjka powstaje dopiero do ćwiczeń.
+    const exercise = (await tx.select({ id: itemRevisions.id }).from(itemRevisions)
+      .where(eq(itemRevisions.deckVersionId, version.id)).limit(1))[0];
+    if (!exercise) {
+      throw new AppError("validation", { message: "lesson has no exercises" });
+    }
     const runId = await queueLessonStoryRunTx(tx, services, version, dedupeKey);
     if (runId === null) {
       throw new AppError("validation", { message: "subject has no lesson story" });

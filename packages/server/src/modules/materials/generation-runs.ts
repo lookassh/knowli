@@ -6,7 +6,11 @@ import { generationRuns } from "../../db/schema";
 /**
  * Współdzielony cykl życia wierszy `generationRuns` dla wykonawców słówek,
  * lekcji i mediów: idempotentne zlecanie, atomowe przejęcie (claim CAS),
- * oznaczanie stanu i unieważnianie runów lekcji. Wykonawcy treści zależą od
+ * oznaczanie stanu i unieważnianie runów lekcji oraz cel runu lekcji
+ * (`input.purpose`: pula ćwiczeń albo historyjka — `LESSON_STORY_PURPOSE`,
+ * `isStoryRunInput` i filtry SQL `lessonStoryRunFilter`/`lessonPoolRunFilter`
+ * używane przez unieważnianie, ponowienie, przycisk i polling panelu).
+ * Wykonawcy treści zależą od
  * tego pliku; on nie zna żadnego z nich ani koordynatora workera, więc
  * moduł lekcji nie musi importować wykonawcy słówek (`generation.ts`).
  */

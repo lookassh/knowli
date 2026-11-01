@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
   GenerationCommandSchema,
@@ -17,6 +17,7 @@ import {
   claimQueuedRun,
   enqueueGenerationRun,
   isStoryRunInput,
+  lessonStoryRunFilter,
   markRun,
   markRunSucceeded,
   markRunWithoutSourceItems,
@@ -293,15 +294,32 @@ export async function retryGeneration(services: Services, runId: string): Promis
       const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
       if (isStoryRunInput(current.input)) {
-        // Run historyjki nie zależy od numeru edycji (spec §6.2): ponawiamy porażkę
-        // albo odroczone queued z bieżącym numerem, bez podbijania go i bez
-        // anulowania innych runów. `running` → conflict: zerowanie prób
-        // pozwoliłoby spóźnionemu workerowi dopasować swój znacznik prób.
+        // Run historyjki nie zależy od numeru edycji (spec §6.2): ponawiamy go
+        // z bieżącym numerem, bez podbijania go i bez anulowania innych runów.
         const deferred = current.state === "queued" && current.nextAttemptAt !== null && current.nextAttemptAt > services.clock.now();
         if (current.state === "queued" && !deferred) return;
-        if (current.state !== "failed" && !deferred) throw new AppError("conflict");
+        // Jeden aktywny run historyjki na wersję.
+        const otherActive = (await tx.select({ id: generationRuns.id }).from(generationRuns).where(and(
+          eq(generationRuns.kind, "lesson"),
+          eq(generationRuns.deckVersionId, version.id),
+          inArray(generationRuns.state, ["queued", "running"]),
+          ne(generationRuns.id, runId),
+          lessonStoryRunFilter(),
+        )).limit(1))[0];
+        if (otherActive) throw new AppError("conflict");
+        // `running` (np. po awarii workera) wraca do kolejki BEZ zerowania prób:
+        // kolejny claim podbije `attempts`, więc spóźniony worker nie dopasuje
+        // swojego znacznika prób (CAS w finalizacji). Porażka i odroczone
+        // queued dostają nowy budżet prób.
         await tx.update(generationRuns)
-          .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: version.editNumber })
+          .set({
+            state: "queued",
+            ...(current.state === "running" ? {} : { attempts: 0 }),
+            errorCode: null,
+            finishedAt: null,
+            nextAttemptAt: null,
+            expectedEditNumber: version.editNumber,
+          })
           .where(eq(generationRuns.id, runId));
         return;
       }
@@ -315,7 +333,11 @@ export async function retryGeneration(services: Services, runId: string): Promis
       if (version.editNumber !== current.expectedEditNumber) throw new AppError("conflict");
       const editNumber = version.editNumber + 1;
       await tx.update(deckVersions).set({ editNumber }).where(eq(deckVersions.id, version.id));
-      await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
+      // Ponowiony pełny run lekcji to nowa pula (spec §6.2): run historyjki
+      // w toku byłby walidowany wobec starej puli, więc też go anulujemy.
+      // Ponowione dogenerowanie celu historyjki nie anuluje.
+      const isTopUp = (current.input as { regenerate?: unknown } | null)?.regenerate !== undefined;
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), runId, { includeStoryRuns: !isTopUp });
       await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
       return;
     }
