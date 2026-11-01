@@ -15,6 +15,7 @@ export {
   type KidScreen,
   type LearningScreen,
   type LearningSessionDeps,
+  type SentenceRate,
 } from "./session/session-controller";
 export { useLearningSession } from "./session/useLearningSession";
 export { Visual } from "./visuals/Visual";
