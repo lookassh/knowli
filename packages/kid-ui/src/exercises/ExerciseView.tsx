@@ -64,6 +64,9 @@ export function ExerciseView(props: ExerciseProps) {
       return <LessonNoticeView key={props.task.taskId} {...props} />;
     case "lesson_choice":
       return <LessonChoiceView key={props.task.taskId} {...props} />;
+    // Widok „Posłuchaj i wybierz” powstaje w Task 11 (#198); do tego czasu typ nie jest wydawany dziecku.
+    case "lesson_listen_choice":
+      return null;
     case "lesson_short_answer":
       return <LessonShortAnswerView key={props.task.taskId} {...props} />;
     case "lesson_order":

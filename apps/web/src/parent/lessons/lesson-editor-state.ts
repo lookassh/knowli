@@ -38,6 +38,7 @@ const STAGE_BY_TYPE: Readonly<Record<LessonExerciseTypeDto, LessonStage>> = {
   lesson_match: "guided",
   lesson_group: "guided",
   lesson_cloze: "guided",
+  lesson_listen_choice: "guided",
 };
 
 /** Etap ćwiczenia danego typu (prezentacja przeglądu). */
