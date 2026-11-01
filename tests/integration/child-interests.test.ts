@@ -113,7 +113,8 @@ function grammarCommand(overrides: Partial<LessonCommand> = {}): LessonCommand {
   };
 }
 
-describe("lekcja — migawka tematów", () => {
+/** Czyste tabele lekcji przed każdym testem i świeże fake'i generacji (sprzątane po teście). */
+function useLessonWorld(): () => Promise<{ fakes: FakeGeneration; services: Services }> {
   const disposers: Array<() => Promise<void>> = [];
 
   beforeEach(async () => {
@@ -130,11 +131,15 @@ describe("lekcja — migawka tematów", () => {
     for (const dispose of disposers.splice(0)) await dispose();
   });
 
-  async function world(): Promise<{ fakes: FakeGeneration; services: Services }> {
+  return async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
     return { fakes, services: lessonServices(fakes) };
-  }
+  };
+}
+
+describe("lekcja — migawka tematów", () => {
+  const world = useLessonWorld();
 
   async function snapshots(deckId: string, runId: string) {
     const { pool } = testDatabase();
@@ -218,27 +223,7 @@ describe("lekcja — migawka tematów", () => {
 });
 
 describe("lekcja — API rodzica (szkic i patch tematów)", () => {
-  const disposers: Array<() => Promise<void>> = [];
-
-  beforeEach(async () => {
-    await truncateCoreTables();
-    const { pool } = testDatabase();
-    await pool.query(
-      `truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets,
-              learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
-              learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade`,
-    );
-  });
-
-  afterEach(async () => {
-    for (const dispose of disposers.splice(0)) await dispose();
-  });
-
-  async function world(): Promise<{ fakes: FakeGeneration; services: Services }> {
-    const fakes = await fakeGeneration();
-    disposers.push(fakes.dispose);
-    return { fakes, services: lessonServices(fakes) };
-  }
+  const world = useLessonWorld();
 
   it("DTO szkicu niesie migawkę tematów, a bez nich nie ma pola", async () => {
     const { services } = await world();

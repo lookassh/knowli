@@ -61,6 +61,20 @@ function renderWithCatalog(first: unknown, extras: { children?: unknown[]; gener
   return renderParentMarkup(<NewLessonForm onCreated={vi.fn()} onCancel={vi.fn()} registerEditorState={vi.fn()} />, queryClient);
 }
 
+/** Brakujące w jsdom API, z których korzysta Mantine (media queries i Font Loading API autosize pola tekstowego). */
+function stubMantineDomApis(): void {
+  if (typeof window.matchMedia !== "function") {
+    window.matchMedia = ((query: string) => ({
+      matches: false, media: query, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+  }
+  if (!("fonts" in document)) {
+    Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
+  }
+}
+
 describe("NewLessonForm", () => {
   it("domyślna pula: większa z 60 i 12 × liczba reguł, w granicach 20–120", () => {
     expect(defaultPoolSize(0)).toBe(60);
@@ -291,17 +305,7 @@ describe("NewLessonForm", () => {
     const sourceChanged = () => new ApiCallError("Konflikt.", "conflict", 409, { reason: "source_changed" });
 
     beforeEach(() => {
-      if (typeof window.matchMedia !== "function") {
-        window.matchMedia = ((query: string) => ({
-          matches: false, media: query, onchange: null,
-          addEventListener: () => undefined, removeEventListener: () => undefined,
-          addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
-        })) as typeof window.matchMedia;
-      }
-      // jsdom nie ma Font Loading API, z którego korzysta autosize pola tekstowego Mantine
-      if (!("fonts" in document)) {
-        Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
-      }
+      stubMantineDomApis();
       lessonsApi.createFromMaterial.mockReset();
     });
     afterEach(cleanup);
@@ -455,16 +459,7 @@ describe("NewLessonForm", () => {
     describe("interakcja", () => {
       const RUN_ID = "00000000-0000-4000-8000-0000000000aa";
       beforeEach(() => {
-        if (typeof window.matchMedia !== "function") {
-          window.matchMedia = ((query: string) => ({
-            matches: false, media: query, onchange: null,
-            addEventListener: () => undefined, removeEventListener: () => undefined,
-            addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
-          })) as typeof window.matchMedia;
-        }
-        if (!("fonts" in document)) {
-          Object.defineProperty(document, "fonts", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
-        }
+        stubMantineDomApis();
         if (typeof ResizeObserver === "undefined") {
           vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
         }
