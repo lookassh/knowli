@@ -891,3 +891,182 @@ describe("poolCoverage", () => {
     expect(gaps.filter((g) => g.objectiveId === OBJ.negative).length).toBe(3);
   });
 });
+
+describe("lesson_listen_choice — walidacja", () => {
+  // Gramatyka dostaje typ dopiero w kolejnym zadaniu; tu fixture, który go dopuszcza.
+  const listenSubject: SubjectModule = {
+    ...englishGrammarSubject,
+    exerciseTypes: [...englishGrammarSubject.exerciseTypes, "lesson_listen_choice"],
+  };
+  const listenTopic: LessonTopic = {
+    ...englishTopic,
+    objectives: englishTopic.objectives.map((objective) => ({
+      ...objective,
+      exerciseTypes: [...objective.exerciseTypes, "lesson_listen_choice"],
+    })),
+  };
+
+  function listen(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+    return {
+      exerciseType: "lesson_listen_choice",
+      objectiveId: OBJ.thirdPerson,
+      stem: `He ${GAP_MARKER} football.`,
+      options: [{ id: "a", text: "play" }, { id: "b", text: "plays" }],
+      correctOption: "b",
+      answer: "plays",
+      acceptedAnswers: [],
+      focus: ["plays"],
+      ...overrides,
+    };
+  }
+  const errorsOf = (ex: LessonExerciseDraft) => validateLessonExercise(ex, listenSubject, listenTopic);
+
+  it("przyjmuje poprawne ćwiczenie", () => {
+    expect(errorsOf(listen())).toEqual([]);
+  });
+
+  it("odrzuca typ, gdy przedmiot go nie wspiera", () => {
+    const errors = validateLessonExercise(listen(), englishGrammarSubject, englishTopic);
+    expect(errors.some((e) => e.includes("exerciseType"))).toBe(true);
+  });
+
+  it.each([
+    ["instructionPl", { instructionPl: "Wybierz formę." }],
+    ["hint", { hint: "play" }],
+    ["visualSubject", { visualSubject: "boy" }],
+  ] as const)("odrzuca pole %s", (field, overrides) => {
+    expect(errorsOf(listen(overrides)).some((e) => e.includes(field))).toBe(true);
+  });
+
+  it("odrzuca opcję zaczynającą się od apostrofu", () => {
+    for (const apostrophe of ["'", "’"]) {
+      const text = `${apostrophe}re`;
+      const errors = errorsOf(listen({
+        stem: `They ${GAP_MARKER} happy.`,
+        options: [{ id: "a", text }, { id: "b", text: "is" }],
+        correctOption: "a",
+        answer: text,
+        focus: [text],
+      }));
+      expect(errors.some((e) => e.includes("apostrof"))).toBe(true);
+    }
+  });
+
+  it("odrzuca opcje równoważne na poziomie zdania, dopuszcza różne", () => {
+    const equivalent = errorsOf(listen({
+      stem: `She ${GAP_MARKER} like milk.`,
+      options: [{ id: "a", text: "doesn't" }, { id: "b", text: "does not" }],
+      correctOption: "a",
+      answer: "doesn't",
+      focus: ["doesn't"],
+    }));
+    expect(equivalent.length).toBeGreaterThan(0);
+    const distinct = errorsOf(listen({
+      stem: `She ${GAP_MARKER} happy.`,
+      options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
+      correctOption: "a",
+      answer: "is",
+      focus: ["is"],
+    }));
+    expect(distinct).toEqual([]);
+  });
+
+  it("odrzuca opcje, których zdania są równoważne mimo różnego tekstu opcji", () => {
+    const errors = errorsOf(listen({
+      stem: `They ${GAP_MARKER} happy.`,
+      options: [{ id: "a", text: "are" }, { id: "b", text: "are." }],
+      correctOption: "a",
+      answer: "are",
+      focus: ["are"],
+    }));
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("wymaga dokładnie jednej luki", () => {
+    expect(errorsOf(listen({ stem: `He ${GAP_MARKER} football ${GAP_MARKER}.` })).some((e) => e.includes("luk"))).toBe(true);
+    expect(errorsOf(listen({ stem: "He plays football." })).some((e) => e.includes("luk"))).toBe(true);
+  });
+
+  it("akceptuje lukę z dwóch podkreśleń, a ciąg 2+ liczy jako jedną lukę", () => {
+    expect(errorsOf(listen({ stem: "He __ football." }))).toEqual([]);
+    expect(errorsOf(listen({ stem: "He _____ football." }))).toEqual([]);
+  });
+
+  it("odrzuca zdanie dłuższe niż 200 znaków", () => {
+    const long = "b".repeat(110);
+    const errors = errorsOf(listen({
+      stem: `${"a".repeat(100)} ${GAP_MARKER}.`,
+      options: [{ id: "a", text: "play" }, { id: "b", text: long }],
+      answer: long,
+      focus: [long],
+    }));
+    expect(errors.some((e) => e.includes("200"))).toBe(true);
+  });
+
+  it("pula: zdanie równoważne odpowiedzi ćwiczenia tekstowego odrzuca ćwiczenie słuchowe", () => {
+    const listenEx = listen({
+      objectiveId: OBJ.negative,
+      stem: `She ${GAP_MARKER} like milk.`,
+      options: [{ id: "a", text: "doesn't" }, { id: "b", text: "isn't" }],
+      correctOption: "a",
+      answer: "doesn't",
+      focus: ["doesn't"],
+    });
+    expect(errorsOf(listenEx)).toEqual([]);
+    const open = draft({
+      objectiveId: OBJ.negative,
+      exerciseType: "lesson_open_answer",
+      prompt: "Napisz przeczenie.",
+      answer: "She does not like milk",
+      focus: ["does", "not"],
+      stem: undefined,
+      hint: undefined,
+    });
+    const result = validatePool([open, listenEx], listenSubject, listenTopic);
+    expect(result.valid).toEqual([open]);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]!.exercise).toBe(listenEx);
+    expect(result.rejected[0]!.errors.some((e) => e.includes("słuchow"))).toBe(true);
+  });
+
+  it("pula: wariant odpowiedzi też blokuje, a niepowiązane zdanie nie", () => {
+    const listenEx = listen({
+      objectiveId: OBJ.negative,
+      stem: `She ${GAP_MARKER} like milk.`,
+      options: [{ id: "a", text: "doesn't" }, { id: "b", text: "isn't" }],
+      correctOption: "a",
+      answer: "doesn't",
+      focus: ["doesn't"],
+    });
+    const fix = draft({
+      objectiveId: OBJ.negative,
+      exerciseType: "lesson_open_answer",
+      prompt: "Napisz przeczenie.",
+      answer: "She doesn't enjoy milk",
+      acceptedAnswers: ["She doesn't like milk."],
+      focus: ["doesn't"],
+      stem: undefined,
+      hint: undefined,
+    });
+    const blocked = validatePool([fix, listenEx], listenSubject, listenTopic);
+    expect(blocked.rejected.some((entry) => entry.exercise === listenEx)).toBe(true);
+    const unrelated = draft({
+      objectiveId: OBJ.negative,
+      exerciseType: "lesson_open_answer",
+      prompt: "Napisz zdanie.",
+      answer: "He likes tea",
+      focus: ["likes"],
+      stem: undefined,
+      hint: undefined,
+    });
+    const ok = validatePool([unrelated, listenEx], listenSubject, listenTopic);
+    expect(ok.valid).toContain(listenEx);
+  });
+
+  it("poolCoverage: ćwiczenia słuchowe nie pokrywają etapu guided", () => {
+    const minimums = { guided: 1, productive: 0, independent: 0 };
+    const exercises = [listen(), listen({ stem: `He ${GAP_MARKER} tennis.` }), listen({ stem: `He ${GAP_MARKER} golf.` })];
+    const gaps = poolCoverage(exercises, [OBJ.thirdPerson], minimums);
+    expect(gaps).toEqual([{ objectiveId: OBJ.thirdPerson, stage: "guided", required: 1, actual: 0 }]);
+  });
+});
