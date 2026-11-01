@@ -106,29 +106,29 @@ export async function pictureTiles(
   page: Page,
   options: { settle?: boolean } = {},
 ): Promise<{ tiles: ScreenRect[]; container: { width: number; height: number } }> {
-  return page.evaluate(async (settle) => {
-    const frame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
-    const read = () => {
-      const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
-        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
-        return { left, top, right, bottom, width, height };
-      });
-      // 100cqw / 100cqh come from the nearest size container above the tile grid.
-      let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
-      while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
-      return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
-    };
-    let previous = read();
-    if (!settle) return previous;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await frame();
-      await frame();
-      const next = read();
-      if (JSON.stringify(next) === JSON.stringify(previous)) return next;
-      previous = next;
-    }
-    throw new Error(`the picture tiles did not settle in 60 frames: ${JSON.stringify(previous)}`);
-  }, options.settle === true);
+  const read = () => page.evaluate(() => {
+    const tiles = [...document.querySelectorAll<HTMLElement>("[data-testid='kid-option']")].map((element) => {
+      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+      return { left, top, right, bottom, width, height };
+    });
+    // 100cqw / 100cqh come from the nearest size container above the tile grid.
+    let container: HTMLElement | null = document.querySelector<HTMLElement>(".kid-picture-options")!.parentElement;
+    while (container && !getComputedStyle(container).containerType.includes("size")) container = container.parentElement;
+    return { tiles, container: { width: container!.clientWidth, height: container!.clientHeight } };
+  });
+  return options.settle === true ? readUntilStable(page, read, "the picture tiles") : read();
+}
+
+/** Repeats `read` two frames apart until two reads are equal (at most 60 frames), then returns the last one. */
+async function readUntilStable<T>(page: Page, read: () => Promise<T>, what: string): Promise<T> {
+  let previous = await read();
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await nextFrames(page);
+    const next = await read();
+    if (JSON.stringify(next) === JSON.stringify(previous)) return next;
+    previous = next;
+  }
+  throw new Error(`${what} did not settle in 60 frames: ${JSON.stringify(previous)}`);
 }
 
 /** `--kid-visual-choice-max-size` from expanded width on (spec 2026-10-30-kid-ui-large-screens §3.1), in inner pixels. */
