@@ -1565,6 +1565,8 @@ type LessonPoolWriteOutcome = "succeeded" | "failed_validation" | "superseded" |
 /**
  * Przejście bieżącej próby runu puli (straż: `running`, ta sama próba, ten sam numer edycji).
  * Zegar jawnie, jak w `markRun` — `finishedAt` z zegara usług (testy sterują czasem).
+ * `superseded` zeruje punkt kontrolny agenta (run anulowany nie wraca); porażka go
+ * zostawia do „Ponów” (spec etapu 2a §8.1).
  */
 export async function markLessonRun(
   db: Executor,
@@ -1574,7 +1576,13 @@ export async function markLessonRun(
   errorCode: string | null,
   nextAttemptAt: Date | null = null,
 ): Promise<void> {
-  const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : clock.now() })
+  const result = await db.update(generationRuns).set({
+    state,
+    errorCode,
+    nextAttemptAt,
+    finishedAt: state === "queued" ? null : clock.now(),
+    ...(state === "superseded" ? { agentCheckpoint: null } : {}),
+  })
     .where(and(eq(generationRuns.id, run.runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, run.attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber)));
   // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
   // równoległy retry rodzica podbił expectedEditNumber).

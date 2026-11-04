@@ -94,6 +94,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     integration-tokens.test.ts
     learning-mcp.test.ts
     learning-overview.test.ts
+    lesson-agent-generation.test.ts
     lesson-card-audio.test.ts
     lesson-calculation.test.ts
     lesson-chapter-sentence-audio.test.ts
