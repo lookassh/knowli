@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Services } from "../../../config";
 import { deckVersions, generationRuns } from "../../../db/schema";
@@ -255,14 +256,12 @@ export async function executeLessonAgentGeneration(
       await finalize(progress);
       return;
     }
-    await save(progress);
-    if (outcome.kind === "requeue") {
-      const delay = lessonRetryDelayMs(attempts, outcome.retryAfterMs, Math.random);
-      const nextAttemptAt = new Date(services.clock.now().getTime() + delay);
-      console.log(`[lesson-agent] run=${runId} retryDelayMs=${delay} nextAttemptAt=${nextAttemptAt.toISOString()}`);
-      await markLessonRun(services.db, services.clock, run, "queued", outcome.errorCode, nextAttemptAt);
-    } else if (outcome.errorCode === "validation") {
-      // Jak `failValidation` potoku: liczniki trafiają do kontekstu szkicu (raport krytyka bez zmian).
+    if (outcome.kind === "failed" && outcome.errorCode === "validation") {
+      // Jak `failValidation` potoku: liczniki trafiają do kontekstu szkicu (raport krytyka bez zmian). Postęp
+      // zostaje do „Ponów” z licznikami wyzerowanymi w tej samej transakcji — kolejny zapis do szkicu doliczy
+      // tylko nowe usunięcia, nie te już policzone w kontekście.
+      const counted: LessonAgentProgress = { ...progress, removedAfterAcceptance: 0, droppedObjectiveCount: 0 };
+      latest = counted;
       await failLessonPoolValidation(services, {
         run,
         context: {
@@ -271,7 +270,16 @@ export async function executeLessonAgentGeneration(
           rejectedReasons: {},
           droppedObjectiveCount: progress.droppedObjectiveCount ?? 0,
         },
+        onTransaction: (tx) => saveLessonAgentCheckpoint(tx, run, counted),
       });
+      return;
+    }
+    await save(progress);
+    if (outcome.kind === "requeue") {
+      const delay = lessonRetryDelayMs(attempts, outcome.retryAfterMs, Math.random);
+      const nextAttemptAt = new Date(services.clock.now().getTime() + delay);
+      console.log(`[lesson-agent] run=${runId} retryDelayMs=${delay} nextAttemptAt=${nextAttemptAt.toISOString()}`);
+      await markLessonRun(services.db, services.clock, run, "queued", outcome.errorCode, nextAttemptAt);
     } else {
       await markLessonRun(services.db, services.clock, run, "failed", outcome.errorCode);
     }
@@ -284,6 +292,7 @@ export async function executeLessonAgentGeneration(
       runId,
       attempts,
       expectedEditNumber: run.expectedEditNumber,
+      attemptNonce: randomUUID(),
       subject,
       input,
       graderAvailable: services.generation?.graderAvailable === true,
@@ -322,10 +331,12 @@ export async function executeLessonAgentGeneration(
         maxAttempts: MAX_AUTOMATIC_ATTEMPTS,
       });
     if (remainingMs <= 0) {
-      // Bez czasu na kierownika: wynik z samego postępu; nic do zapisu = termin, nie walidacja.
+      // Bez czasu na kierownika: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
+      // wyczerpany budżet (wiersz 1) i wspólny kod dostawcy z punktu kontrolnego (wiersz 6) zostają.
       console.log(`[lesson-agent] run=${runId} no_time_for_agent remainingMs=${remainingMs}`);
       const outcome = outcomeFor(begin, emptyAttempt);
-      return { progress: begin, outcome: outcome.kind === "failed" ? { kind: "failed", errorCode: "provider_timeout" } : outcome };
+      const timedOut = outcome.kind === "failed" && outcome.errorCode === "validation" && begin.budgetSpentUsd < budgetUsd;
+      return { progress: begin, outcome: timedOut ? { kind: "failed", errorCode: "provider_timeout" } : outcome };
     }
 
     console.log(

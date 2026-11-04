@@ -15,7 +15,7 @@ import {
   outcomeObjectivesOf,
   type LessonAgentRunInputArgs,
 } from "./lesson-agent-outcome";
-import type { LessonRunInput } from "./lesson-drafts";
+import { scopeFamiliesToRun, type LessonRunInput } from "./lesson-drafts";
 import type { LessonPoolAgentResult, SettledObjective } from "./lesson-pool-agent";
 
 /** Przedmioty wg cech, nie identyfikatorów: katalog, dynamiczny z planerem (rozdział), dynamiczny bez (szkoła). */
@@ -54,11 +54,15 @@ function runInput(overrides: Partial<LessonRunInput> = {}): LessonRunInput {
   };
 }
 
+/** Identyfikator próby (w produkcji `randomUUID()` na każdą próbę). */
+const NONCE = "9f3c1a2b-0000-4000-8000-000000000000";
+
 function args(overrides: Partial<LessonAgentRunInputArgs> = {}): LessonAgentRunInputArgs {
   return {
     runId: "run-1",
     attempts: 2,
     expectedEditNumber: 5,
+    attemptNonce: NONCE,
     subject: catalog,
     input: runInput(),
     graderAvailable: true,
@@ -119,7 +123,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       fixed: [],
       draftExamples: {},
       skipObjectives: [],
-      familyScope: "run-1:5:2",
+      familyScope: `${NONCE}:run-1:5:2`,
       initialSpentUsd: 0,
       initialExamples: {},
       examplesFixed: false,
@@ -204,11 +208,16 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
     expect(value.examplesFixed).toBe(false);
   });
 
-  it("familyScope różny po „Ponów” (attempts 1 przy innym expectedEditNumber)", () => {
-    const first = agentInput(lessonAgentRunInputFor(args({ attempts: 1, expectedEditNumber: 5 })));
-    const retried = agentInput(lessonAgentRunInputFor(args({ attempts: 1, expectedEditNumber: 6 })));
-    expect(first.familyScope).toBe("run-1:5:1");
-    expect(retried.familyScope).toBe("run-1:6:1");
+  it("familyScope per próba: ten sam run, edycja i numer próby („Ponów” odroczonego runu) — inne sufiksy rodzin", () => {
+    const runId = "3f2a9c1e-0000-4000-8000-000000000000";
+    const first = agentInput(lessonAgentRunInputFor(args({ runId, attempts: 1, attemptNonce: NONCE })));
+    const retried = agentInput(lessonAgentRunInputFor(args({ runId, attempts: 1, attemptNonce: "c0ffee11-0000-4000-8000-000000000000" })));
+    expect(first.familyScope).toBe(`${NONCE}:${runId}:5:1`);
+    expect(retried.familyScope).not.toBe(first.familyScope);
+    // Sufiks rodziny bierze z zakresu tylko początek — identyfikator próby, nie runu.
+    const family = (scope: string) => scopeFamiliesToRun({ ...choiceA, familyId: "pytanie-1" }, scope).familyId;
+    expect(family(first.familyScope!)).toBe("pytanie-1-r9f3c1a");
+    expect(family(retried.familyScope!)).toBe("pytanie-1-rc0ffee");
   });
 
   describe("pierwszeństwo objectiveSource", () => {
@@ -268,7 +277,7 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
       fixed: draftExercises,
       draftExamples: {},
       skipObjectives: [],
-      familyScope: "run-1:5:2",
+      familyScope: `${NONCE}:run-1:5:2`,
       initialSpentUsd: 0,
       initialExamples: { [A]: ["Szkic A."] },
       examplesFixed: true,

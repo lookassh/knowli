@@ -48,6 +48,8 @@ export type LessonAgentRunInputArgs = {
   readonly runId: string;
   readonly attempts: number;
   readonly expectedEditNumber: number;
+  /** Losowy identyfikator tej próby (UUID) — początek `familyScope`. */
+  readonly attemptNonce: string;
   readonly subject: SubjectModule;
   readonly input: LessonRunInput;
   /** `services.generation.graderAvailable` (nie ma go we wpisie runu). */
@@ -120,8 +122,11 @@ function addSource(args: LessonAgentRunInputArgs): AgentObjectiveSource {
 /**
  * Wejście kierownika dla próby (tabela §7.1, wznowienie §8.3). Pełna generacja: zagadnienia `complete` z
  * punktu kontrolnego są pomijane i stałe (`fixed`), pozostałe startują od zera. Dogenerowanie: `fixed` =
- * szkic + nowe ćwiczenia z punktu kontrolnego, `count` pomniejszony o te nowe. `familyScope` z numerem
- * edycji: „Ponów” po edycji zaczyna `attempts` od 1, a rodziny nie mogą się zderzyć z wcześniejszymi.
+ * szkic + nowe ćwiczenia z punktu kontrolnego, `count` pomniejszony o te nowe. `familyScope` zaczyna się
+ * identyfikatorem próby: `scopeFamiliesToRun` bierze z zakresu tylko 6 pierwszych znaków szesnastkowych
+ * (sam identyfikator runu dałby ten sam sufiks w każdej próbie), a „Ponów” odroczonego runu zeruje
+ * `attempts` bez podbicia numeru edycji — rodziny nowych ćwiczeń nie mogą się zderzyć z rodzinami
+ * wcześniejszych prób (dogenerowanie zachowuje nowe ćwiczenia między próbami).
  */
 export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAgentRunInputResult {
   const { runId, input, progress, subject } = args;
@@ -136,7 +141,7 @@ export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAge
     poolSize: input.poolSize,
     graderAvailable: args.graderAvailable,
     draftExamples: {},
-    familyScope: `${runId}:${args.expectedEditNumber}:${args.attempts}`,
+    familyScope: `${args.attemptNonce}:${runId}:${args.expectedEditNumber}:${args.attempts}`,
     initialSpentUsd: progress?.budgetSpentUsd ?? 0,
   };
 

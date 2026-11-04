@@ -1640,6 +1640,7 @@ async function failedValidationContext(
 /**
  * Porażka walidacji (0 nowych ćwiczeń): nawet wtedy rodzic widzi skalę odrzuceń i usunięcia kontroli
  * jakości — zapisujemy liczniki i raport do kontekstu (ta sama straż wersji co przy finalizacji).
+ * `onTransaction` (ścieżka agenta) działa w tej samej transakcji, przed zmianą stanu runu.
  */
 export async function failLessonPoolValidation(
   services: Services,
@@ -1648,6 +1649,7 @@ export async function failLessonPoolValidation(
     context: LessonPoolWriteContext;
     review?: LessonPoolReview;
     extendContext?: (next: LessonContext) => LessonContext;
+    onTransaction?: (tx: Tx) => Promise<void>;
   },
 ): Promise<void> {
   const { run } = args;
@@ -1664,6 +1666,7 @@ export async function failLessonPoolValidation(
         .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
         .where(eq(deckVersions.id, version.id));
     }
+    await args.onTransaction?.(tx);
     await markLessonRun(tx, services.clock, run, "failed", "validation");
   });
 }
