@@ -229,9 +229,9 @@ klucz, nazwy usług):
 w nowym `providers/lesson-agent-env.ts`, wystawionym jako osobny eksport pakietu
 `@learning/server/lesson-agent` (web importuje `@learning/server` i
 `generation-env.ts`, więc adapter nie może być osiągalny z nich).
-`apps/worker/src/composition.ts` przekazuje wynik do
-`createGenerationDepsFromEnv(env, usage, { lessonAgent })`, który wstawia
-`GenerationDeps.lessonAgent?: LessonAgentDeps`:
+`apps/worker/src/composition.ts` dokłada wynik do zależności generowania
+(`{ ...createGenerationDepsFromEnv(env, usage), lessonAgent }`, nota §16 pkt 2)
+jako `GenerationDeps.lessonAgent?: LessonAgentDeps`:
 
 ```ts
 interface LessonAgentDeps {
@@ -244,7 +244,7 @@ interface LessonAgentDeps {
 
 `UMIEM_FAKE_PROVIDERS=1` → `FakeLessonPoolAgent` w trybie domyślnym „jak
 LLM”: podagent zgłasza w jednym kroku wynik `FakeLlmProvider.generateLessonPool`
-dla swojego zagadnienia (planer — wynik `generateLessonObjectives`), a
+dla swojego zagadnienia (planer — deterministyczny plan z `input.coverage`, nota §16 pkt 3), a
 `FakeExerciseChecker` zwraca `null` (kontrola niedostępna, ćwiczenie
 przechodzi). Dzięki temu ścieżka agenta działa bez sieci w testach
 integracyjnych i E2E.
@@ -322,7 +322,7 @@ W trybie `add`:
   = przyjęto co najmniej `remaining` nowych ćwiczeń **i** zagadnienie nie ma
   braków etapów; `missing` dla modelu zaczyna się od `new exercises: k of N`;
   pozostałe braki (`objectiveGaps`, wymagane typy) to wskazówki;
-- `familyScope` = `${runId}:${attempts}` (rodziny pytań otwartych nie zderzają
+- `familyScope` = `${attemptNonce}:${runId}:${expectedEditNumber}:${attempts}`, nota §16 pkt 1 (rodziny pytań otwartych nie zderzają
   się z rodzinami z wcześniejszych prób ani szkicu);
 - wynik i kontrola końcowa jak w trybie `pool`.
 
@@ -339,7 +339,7 @@ W trybie `add`:
 | `initialExamples` | przykłady z punktu kontrolnego | przykłady szkicu |
 | `examplesFixed` | `true`, gdy przykłady pochodzą z planu (punkt kontrolny ma `planExamples`) albo źródłem jest `planner` | `true` |
 | `draftExamples` | `{}` | `{}` |
-| `familyScope` | `${runId}:${attempts}` | `${runId}:${attempts}` |
+| `familyScope` | `${attemptNonce}:${runId}:${expectedEditNumber}:${attempts}` (nota §16 pkt 1) | tak samo |
 | `initialSpentUsd` | `checkpoint.budgetSpentUsd` | `checkpoint.budgetSpentUsd` |
 | pozostałe (`poolSize`, `material`, `instruction`, `interests`, `graderAvailable`, `topicTitle`) | z `input` runu | z `input` runu |
 
@@ -393,7 +393,7 @@ Migracja `0037_generation_run_agent_checkpoint.sql` (schemat
 "learning_app"."generation_runs" ADD COLUMN "agent_checkpoint" jsonb`
 (nullable). Drizzle: `agentCheckpoint: jsonb("agent_checkpoint")`.
 
-Kształt (wersjonowany, walidowany Zod przy odczycie — niepoprawny = brak
+Kształt (wersjonowany; obwiednia walidowana Zod przy odczycie, ćwiczenia strażnikiem kształtu — nota §16 pkt 4; niepoprawny = brak
 punktu kontrolnego i log `[lesson-agent] run=… checkpoint=invalid`):
 
 ```ts
@@ -476,7 +476,7 @@ Próba z postępem w punkcie kontrolnym:
 
 `retryGeneration` dla runu puli lekcji (wszystkie gałęzie, które wstawiają run
 do kolejki: porażka, `running` po awarii, odroczone `queued`) w tej samej
-transakcji i pod istniejącym `FOR UPDATE` runu czyta postęp (Zod), zeruje
+transakcji i pod istniejącym `FOR UPDATE` runu zeruje (czysty SQL `jsonb_set`, bez Zod — nota §16 pkt 4)
 `budgetSpentUsd` i zapisuje go z powrotem (świeży budżet na świadomą decyzję
 rodzica; `totalSpentUsd` zostaje). Ćwiczenia zostają — szkic między porażką a
 „Ponów” się nie zmienił (edycja anuluje run, a „Ponów” anulowanego kończy się
@@ -753,3 +753,54 @@ właściciela.
 | Zdania historyjki w trybie „dodaj N” (K3) | `extraExposureSources` (§6.4) |
 | „+N” do 60, a agent daje ok. 10–12 (K3) | `add_short` „dodano k z N” w `generationGaps` (§11) |
 | Rozmiar PR (K3) | Zostaje jeden PR (decyzja właściciela); refaktor zapisu jako pierwszy commit (§1) |
+
+## 16. Nota z implementacji (2026-11-05)
+
+Odstępstwa od tekstu specu, ustalone w trakcie implementacji; kod jest źródłem
+prawdy. Opis końcowy: `docs/architecture.md` §19.17 i §23.
+
+1. **`familyScope`** = `${attemptNonce}:${runId}:${expectedEditNumber}:${attempts}`
+   z losowym UUID próby (`randomUUID` w powłoce `executeLessonAgentGeneration`,
+   do czystej `lessonAgentRunInputFor` przekazywany jawnie). `scopeFamiliesToRun`
+   bierze z zakresu tylko 6 pierwszych znaków szesnastkowych, a „Ponów”
+   odroczonego runu zeruje `attempts` bez podbicia numeru edycji — para
+   `${runId}:${attempts}` (§6.4, §7.1, §15) powtarzałaby się między próbami.
+2. **Składanie w workerze:** `base = createGenerationDepsFromEnv(env, usage)`,
+   `lessonAgent = lessonAgentDepsFromEnv(env, subjects, usage, base.llm)`,
+   `generation = lessonAgent ? { ...base, lessonAgent } : base`.
+   `createGenerationDepsFromEnv` nie ma parametru `{ lessonAgent }` (§5).
+3. **Tryb fake:** planista to deterministyczny plan z `input.coverage` (trzy
+   zagadnienia „Część 1/2/3”, słowa dzielone po równo, ramy w trzecim), nie wynik
+   `generateLessonObjectives` (§5). Fake nie zapisuje wierszy kosztów (nie dostaje
+   `usage`) i sprawdza tylko listę przedmiotów, nie modele, wysiłki ani routing.
+4. **Punkt kontrolny:** ćwiczenia sprawdza strażnik kształtu
+   (`isWellShapedRawExercise` / `toExerciseDraft`), obwiednię Zod, temat dynamiczny
+   przy wznowieniu `validateDynamicTopicData`; zamiast pełnego Zod ćwiczeń (§8.1).
+   `resetLessonAgentBudget` to czysty SQL (`jsonb_set`) bez Zod (§8.4). Log
+   `checkpoint=invalid` tylko dla uszkodzonych wartości i innej wersji.
+5. **Rezerwa finalizacji** `AGENT_FINALIZATION_RESERVE_MS = 30 000` ms jest
+   nadpisywalna w `LessonAgentDeps.finalizationReserveMs` (testy).
+6. **DTO:** wpis przedmiotu w katalogu ma dodatkowe pole
+   `checkServiceIncludesMaterial` (polityka `checkerNeedsMaterial`, wybór wariantu
+   komunikatu bez identyfikatora przedmiotu); `generationGaps` jest w
+   `LessonDraftDto` (szkic), nie w DTO wersji opublikowanej (§11).
+7. **Adapter AI SDK:** własny błąd narzędzia kierownika zatrzymuje pętlę i jest
+   rzucany bez zmian (`toolFailureGuard`; SDK przekazałoby go modelowi).
+   `APICallError` ze statusem 2xx (nieczytelne ciało) jest zapisany jako
+   nieczytelna odpowiedź z kosztem `null`, nie jako błąd HTTP o koszcie 0 (§4).
+8. **Porażka walidacji zapisu** (także gdy wszystkie przyjęte odpadły przez
+   kolizje z historyjką lub osierocone słowa kluczowe): w tej samej transakcji
+   liczniki punktu kontrolnego są zerowane, a odrzucone ćwiczenia usuwane, żeby
+   „Ponów” nie liczyło ich dwa razy. W trybie `pool` taka porażka zostawia
+   `generationGaps` bez zmian.
+9. **Brak czasu dla kierownika** (termin − rezerwa ≤ 0), nic nie przyjęto i budżet
+   nie jest wyczerpany → `failed`/`provider_timeout`; wyczerpany budżet i wspólny
+   kod dostawcy z punktu kontrolnego zachowują swoje kody (§9).
+10. **„+N” z historyjką (rozstrzygnięcie R8):** przyjmowanie agenta odrzuca tylko
+    ćwiczenia samodzielne powtarzające zdanie historyjki, a zapis końcowy
+    kolizje każdego typu. Obietnica §6.4, że agent nie traci budżetu na
+    ćwiczenia odrzucane potem przy zapisie, jest spełniona tylko częściowo —
+    znane ograniczenie, do dopracowania w kolejnym etapie.
+11. **Pozostałe doprecyzowania:** `add_short` liczy ćwiczenia faktycznie zapisane
+    (po kolizjach z historyjką); temat katalogowy jest zawężony do `objectiveIds`
+    lekcji przed uruchomieniem kierownika.
