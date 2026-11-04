@@ -1,11 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   LessonAgentToolOutcome,
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
   RunCostSink,
 } from "../ports/ai";
-import { FakeExerciseChecker, FakeLessonPoolAgent } from "./fake-lesson-agent";
+import { asAgentCapable } from "../domain/lessons/agent/capable";
+import { validateAgentPlan } from "../domain/lessons/agent/plan";
+import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
+import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../domain/lessons/subjects/school/module";
+import { validateDynamicTopicData } from "../domain/lessons/topic-resolution";
+import type { SubjectModule } from "../domain/lessons/types";
+import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../modules/materials/lessons/lesson-drafts";
+import { runLessonPoolAgent, type LessonPoolAgentRunInput } from "../modules/materials/lessons/lesson-pool-agent";
+import { FakeLlmProvider } from "./fake";
+import { FakeExerciseChecker, FakeLessonPoolAgent, fakePlanFromCoverage } from "./fake-lesson-agent";
 import { createTestRecorder } from "./usage/test-recorder";
 
 const OUTCOME: LessonAgentToolOutcome = {
@@ -542,5 +552,183 @@ describe("FakeExerciseChecker", () => {
     const listenersRemoved = removed.mock.calls.filter(([type]) => type === "abort").length;
     expect(listenersAdded).toBe(20);
     expect(listenersRemoved).toBe(listenersAdded);
+  });
+  it("checker unavailable → null dla każdej pozycji solve i judgeVariants", async () => {
+    const checker = new FakeExerciseChecker({ unavailable: true });
+    const solved = await checker.solve(
+      { items: [{ view: "a", expectedAnswers: 1 }, { view: "b", expectedAnswers: 2 }] },
+      costSink(),
+      signal(),
+    );
+    const judged = await checker.judgeVariants({ items: [{ view: "c", answer: "x", variants: ["y", "z"] }] }, costSink(), signal());
+    expect(solved.answers).toEqual([null, null]);
+    expect(judged.equivalent).toEqual([null]);
+  });
+});
+
+describe("FakeLessonPoolAgent — fromLlm (prawdziwy kierownik, checker niedostępny)", () => {
+  const never = new AbortController().signal;
+
+  function registryOf(...subjects: SubjectModule[]) {
+    return { getSubject: (id: string) => subjects.find((subject) => subject.id === id) };
+  }
+
+  function runInput(overrides: Partial<LessonPoolAgentRunInput>): LessonPoolAgentRunInput {
+    return {
+      runId: "run-1",
+      subjectId: englishGrammarSubject.id,
+      deckId: "42",
+      objectiveSource: { source: "planner" },
+      topicTitle: "Unit 1",
+      material: "",
+      poolSize: 0,
+      graderAvailable: false,
+      fixed: [],
+      draftExamples: {},
+      skipObjectives: [],
+      familyScope: null,
+      initialSpentUsd: 0,
+      ...overrides,
+    };
+  }
+
+  function setup(subject: SubjectModule) {
+    const llm = new FakeLlmProvider();
+    const agent = new FakeLessonPoolAgent({ fromLlm: llm });
+    const checker = new FakeExerciseChecker({ unavailable: true });
+    return { llm, agent, checker, deps: { agent, checker, subjects: registryOf(subject) } };
+  }
+
+  const accepted = (result: Awaited<ReturnType<typeof runLessonPoolAgent>>) =>
+    result.objectives.reduce((sum, objective) => sum + objective.exercises.length, 0);
+
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fromLlm: rozdział (planer) — plan przechodzi validateAgentPlan i bramkę pokrycia; run daje ≥ 1 przyjęte ćwiczenie", async () => {
+    const material = [
+      "Słowa:",
+      "coat — płaszcz",
+      "boots — buty",
+      "scarf — szalik",
+      "gloves — rękawiczki",
+      "Zwroty:",
+      "I am wearing …",
+      "Put on your …",
+    ].join("\n");
+    const { llm, agent, deps } = setup(englishChapterSubject);
+    const result = await runLessonPoolAgent(deps, runInput({ subjectId: englishChapterSubject.id, material }), never);
+
+    const planCall = agent.planCalls[0]!;
+    expect(planCall.input.coverage).toEqual({ words: ["coat", "boots", "scarf", "gloves"], frames: ["I am wearing …", "Put on your …"] });
+    expect(planCall.proposals).toHaveLength(1);
+    const plan = planCall.proposals[0] as {
+      objectives: { slug: string; titlePl: string; kind: string; cards: { title: string; body: string }[]; examples: string[] }[];
+    };
+    expect(plan.objectives.map((objective) => [objective.slug, objective.titlePl, objective.kind])).toEqual([
+      ["part_1", "Część 1", "words"],
+      ["part_2", "Część 2", "words"],
+      ["part_3", "Część 3", "frame"],
+    ]);
+    expect(plan.objectives.map((objective) => objective.cards[0])).toEqual([
+      { title: "Words", body: "coat, boots" },
+      { title: "Words", body: "scarf, gloves" },
+      { title: "Frames", body: "I am wearing …\nPut on your …" },
+    ]);
+    expect(plan.objectives.map((objective) => objective.examples)).toEqual([["coat"], ["scarf"], ["I am wearing …"]]);
+    const validated = validateAgentPlan(plan, asAgentCapable(englishChapterSubject), material);
+    expect(validated.ok).toBe(true);
+    // Bramka pokrycia przedmiotu (część validateAgentPlan) — sprawdzona też wprost.
+    expect(englishChapterSubject.agentPolicy!.planGate!(validated.ok ? validated.objectives : [], material)).toEqual([]);
+
+    expect(result.planStatus).toBe("accepted");
+    expect(llm.lessonRequests.length).toBeGreaterThan(0);
+    expect(agent.calls.every((call) => call.input.objective.examplesFromPlan)).toBe(true);
+    expect(accepted(result)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fromLlm: rozdział bez ram — trzecie zagadnienie słów", async () => {
+    const material = ["Słowa:", "coat — płaszcz", "boots — buty", "scarf — szalik"].join("\n");
+    const { agent, deps } = setup(englishChapterSubject);
+    const result = await runLessonPoolAgent(deps, runInput({ subjectId: englishChapterSubject.id, material }), never);
+    const plan = agent.planCalls[0]!.proposals[0] as { objectives: { kind: string; cards: { body: string }[] }[] };
+    expect(plan.objectives.map((objective) => [objective.kind, objective.cards[0]!.body])).toEqual([
+      ["words", "coat"],
+      ["words", "boots"],
+      ["words", "scarf"],
+    ]);
+    expect(result.planStatus).toBe("accepted");
+  });
+
+  it("fromLlm: gramatyka (katalog) ≥ 1", async () => {
+    const topic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_simple")!;
+    const { agent, deps } = setup(englishGrammarSubject);
+    const result = await runLessonPoolAgent(
+      deps,
+      runInput({ subjectId: englishGrammarSubject.id, objectiveSource: { source: "catalog", topic }, topicTitle: topic.titlePl }),
+      never,
+    );
+    expect(result.planStatus).toBe("not_needed");
+    expect(agent.calls.length).toBe(topic.objectives.length);
+    expect(accepted(result)).toBeGreaterThanOrEqual(1);
+    // Przykłady kart z wyniku LLM (zagadnienie bez przykładów z planu).
+    expect(result.objectives[0]!.examples.length).toBeGreaterThan(0);
+  });
+
+  it("fromLlm: szkoła (wejście z fake generateLessonObjectives) ≥ 1", async () => {
+    const material = [
+      "Zagadnienie 1: Rzeki Polski",
+      "Wisła jest najdłuższą rzeką Polski. Odra płynie na zachodzie kraju.",
+      "Zagadnienie 2: Góry Polski",
+      "Tatry są najwyższymi górami Polski. Sudety leżą na południowym zachodzie.",
+    ].join("\n");
+    const llm = new FakeLlmProvider();
+    const { objectives } = await llm.generateLessonObjectives({
+      subjectTitle: schoolSubject.titlePl,
+      topicTitle: "Polska",
+      material,
+      generationRole: schoolSubject.prompts.generationRole,
+    });
+    const built = buildDynamicTopicData(objectives, schoolSubject.id, "42", "Polska", (objective) =>
+      validateDynamicTopicData(schoolSubject, { titlePl: "Polska", objectives: [objective] }),
+    );
+    const dynamicTopic = withSubjectObjectiveKinds(schoolSubject, built.data!);
+    const { deps } = setup(schoolSubject);
+    const result = await runLessonPoolAgent(
+      deps,
+      runInput({ subjectId: schoolSubject.id, objectiveSource: { source: "input", dynamicTopic }, topicTitle: "Polska", material }),
+      never,
+    );
+    expect(result.objectives).toHaveLength(2);
+    expect(accepted(result)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("scenariusz sluga ma pierwszeństwo przed fromLlm", async () => {
+    const llm = new FakeLlmProvider();
+    const agent = new FakeLessonPoolAgent({ fromLlm: llm, objectives: { alpha: [] } });
+    const result = await agent.runObjective(agentInput("alpha"), makeTools([]), costSink(), never);
+    expect(result).toEqual({ steps: 0, stopReason: "model_finished" });
+    expect(llm.lessonRequests).toEqual([]);
+  });
+
+  it("plan bez pokrycia przedmiotu bierze nagłówki materiału (trzy zagadnienia słów)", () => {
+    const plan = fakePlanFromCoverage({
+      subjectTitle: "Historia",
+      topicTitle: "Polska",
+      material: "Rzeki:\nWisła płynie.\nGóry:\nTatry są wysokie.\nMiasta:\nKraków.",
+      generationRole: "",
+      objectiveCount: { min: 3, max: 6 },
+      maxSteps: 8,
+    });
+    expect(plan.objectives.map((objective) => [objective.kind, (objective.cards as { body: string }[])[0]!.body, objective.examples])).toEqual([
+      ["words", "Rzeki", ["Rzeki"]],
+      ["words", "Góry", ["Góry"]],
+      ["words", "Miasta", ["Miasta"]],
+    ]);
   });
 });

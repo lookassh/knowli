@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./lesson-agent": "./src/providers/lesson-agent-env.ts"
   },
   "dependencies": {
     "@learning/contracts": "workspace:*",

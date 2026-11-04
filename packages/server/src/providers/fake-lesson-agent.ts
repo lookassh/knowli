@@ -4,6 +4,7 @@ import type {
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
   LessonPoolAgentProvider,
+  LlmProvider,
   RunCostSink,
 } from "../ports/ai";
 import type { UsageRecorder } from "../ports/usage";
@@ -11,8 +12,9 @@ import { recordResponse } from "./usage/record-http";
 
 /**
  * Deterministyczne fake'i agenta puli lekcji i checkera (etap 1 issue #237): sterowane scenariuszem,
- * bez sieci i modeli. Służą testom kierownika agenta; nie są adapterem żadnej usługi. Nie znają
- * identyfikatorów przedmiotów — zagadnienia rozpoznają po slugu z identyfikatora celu.
+ * bez sieci i modeli. Służą testom kierownika agenta i trybowi `UMIEM_FAKE_PROVIDERS=1` (etap 2a §5:
+ * `fromLlm` + checker `unavailable`); nie są adapterem żadnej usługi. Nie znają identyfikatorów
+ * przedmiotów — zagadnienia rozpoznają po slugu z identyfikatora celu.
  */
 
 /** Krok scenariusza podagenta: jedno „wywołanie modelu” z narzędziami albo awarią. */
@@ -29,6 +31,9 @@ export type FakeAgentStep =
    * przerwanie sygnału odrzuca `signal.reason`. Koszt kroku jest zapisany przed czekaniem.
    */
   | { gate: Promise<void>; onReached?: () => void };
+
+/** Krok wewnętrzny trybu `fromLlm`: jedno „wywołanie modelu” z wynikiem `generateLessonPool`. */
+type FakeObjectiveStep = FakeAgentStep | { fromLlm: LlmProvider };
 
 /** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
 export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
@@ -48,6 +53,12 @@ export interface FakeLessonPoolAgentOptions {
    * `"openrouter"`, operacje `agent_objective` i `agent_plan`.
    */
   usage?: UsageRecorder;
+  /**
+   * Tryb „jak LLM” (tryb fake workera): zagadnienie bez scenariusza zgłasza w jednym kroku wynik
+   * `generateLessonPool` dla swojego zagadnienia, a planer bez `plans` — deterministyczny plan z pokrycia
+   * materiału ({@link fakePlanFromCoverage}).
+   */
+  fromLlm?: LlmProvider;
 }
 
 type PlanTools = Parameters<LessonPoolAgentProvider["planObjectives"]>[1];
@@ -77,6 +88,50 @@ function rejectOnAbort(signal: AbortSignal): { promise: Promise<never>; dispose:
 /** Obietnica, która nigdy się nie rozstrzyga (dostawca ignorujący `signal`). */
 function stalled(): Promise<never> {
   return new Promise<never>(() => undefined);
+}
+
+/** Ciągłe kawałki listy po kolei (pierwsze dostają nadmiar); przy krótszej liście część kawałków jest pusta. */
+function chunks<T>(items: readonly T[], count: number): T[][] {
+  const size = Math.ceil(items.length / count);
+  return Array.from({ length: count }, (_unused, index) => items.slice(index * size, (index + 1) * size));
+}
+
+/** Nagłówki materiału (linie kończące się „:”), gdy przedmiot nie ma pokrycia planu; brak → niepuste linie. */
+function materialHeadings(material: string): string[] {
+  const lines = material.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line !== "");
+  const headings = lines.filter((line) => line.endsWith(":")).map((line) => line.slice(0, -1).trim()).filter((line) => line !== "");
+  return headings.length > 0 ? headings : lines;
+}
+
+/**
+ * Deterministyczny plan trybu `fromLlm`: trzy zagadnienia „Część 1/2/3”. Słowa pokrycia (gdy brak —
+ * nagłówki materiału) dzielone po kolei na dwa zagadnienia `words`, ramy w trzecim `frame`; bez ram
+ * trzecie też jest zagadnieniem słów. Karta „Words”/„Frames” z listą pokrywa cały materiał (bramka planu),
+ * druga karta to temat (plan wymaga 2–4 kart), a jedyny przykład to pierwsze słowo albo rama.
+ */
+export function fakePlanFromCoverage(input: LessonAgentPlanInput): { objectives: Record<string, unknown>[] } {
+  const coverage = input.coverage ?? { words: materialHeadings(input.material), frames: [] };
+  const fallback = input.topicTitle.trim() || "Lesson";
+  const groups: { kind: "words" | "frame"; items: readonly string[] }[] =
+    coverage.frames.length > 0
+      ? [...chunks(coverage.words, 2).map((items) => ({ kind: "words" as const, items })), { kind: "frame", items: coverage.frames }]
+      : chunks(coverage.words, 3).map((items) => ({ kind: "words" as const, items }));
+  return {
+    objectives: groups.map((group, index) => ({
+      slug: `part_${index + 1}`,
+      titlePl: `Część ${index + 1}`,
+      descriptionEn: `Part ${index + 1} of ${fallback}.`,
+      kind: group.kind,
+      cards: [
+        {
+          title: group.kind === "words" ? "Words" : "Frames",
+          body: group.items.length > 0 ? group.items.join(group.kind === "words" ? ", " : "\n") : fallback,
+        },
+        { title: "Topic", body: fallback },
+      ],
+      examples: [group.items[0] ?? fallback],
+    })),
+  };
 }
 
 /** Śledzi największą liczbę jednocześnie trwających wywołań. */
@@ -129,7 +184,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     signal: AbortSignal,
   ): Promise<{ steps: number; stopReason: "stopped" | "max_steps" | "model_finished" }> {
     const slug = input.objective.id.split(".").at(-1) ?? input.objective.id;
-    const script = this.scriptFor(slug);
+    const script = this.scriptFor(slug) ?? (this.options.fromLlm ? [{ fromLlm: this.options.fromLlm }] : []);
     const outcomes: unknown[] = [];
     this.calls.push({ objectiveId: input.objective.id, input, tools, outcomes });
     return this.meter.track(async () => {
@@ -142,7 +197,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
         // narzędzi go nie gubi (jak onLanguageModelCallEnd w AI SDK).
         this.recordStep(cost, "agent_objective");
         steps += 1;
-        await this.executeStep(step, tools, outcomes, signal);
+        await this.executeStep(step, tools, outcomes, signal, input);
       }
       return { steps, stopReason: "model_finished" as const };
     });
@@ -157,7 +212,8 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     const proposals: unknown[] = [];
     this.planCalls.push({ input, proposals });
     let steps = 0;
-    for (const plan of this.options.plans ?? []) {
+    const plans = this.options.plans ?? (this.options.fromLlm ? [fakePlanFromCoverage(input)] : []);
+    for (const plan of plans) {
       signal.throwIfAborted();
       if (steps >= input.maxSteps || tools.shouldStop()) break;
       this.recordStep(cost, "agent_plan");
@@ -168,11 +224,12 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     return { steps };
   }
 
-  private scriptFor(slug: string): FakeAgentStep[] {
+  /** Scenariusz wywołania; `undefined` = zagadnienie bez scenariusza (wtedy `fromLlm` albo brak kroków). */
+  private scriptFor(slug: string): FakeObjectiveStep[] | undefined {
     const script = this.options.objectives?.[slug];
     const call = this.callCounts.get(slug) ?? 0;
     this.callCounts.set(slug, call + 1);
-    if (script === undefined) return [];
+    if (script === undefined) return undefined;
     return Array.isArray(script) ? script : (script.calls[call] ?? []);
   }
 
@@ -189,20 +246,29 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
   }
 
   private async executeStep(
-    step: FakeAgentStep,
+    step: FakeObjectiveStep,
     tools: LessonObjectiveAgentTools,
     outcomes: unknown[],
     signal: AbortSignal,
+    input: LessonObjectiveAgentInput,
   ): Promise<void> {
     signal.throwIfAborted();
-    if ("submit" in step) {
+    if ("fromLlm" in step) {
+      // Wynik generatora potoku dla wejścia podagenta, zawężony do jego zagadnienia.
+      const objective = input.objective;
+      const res = await step.fromLlm.generateLessonPool(input.pool, signal);
+      signal.throwIfAborted();
+      const exercises = res.exercises.filter((exercise) => (exercise as { objectiveId?: unknown } | null)?.objectiveId === objective.id);
+      const examples = objective.examplesFromPlan ? undefined : res.examples?.[objective.id];
+      outcomes.push(await tools.submit({ exercises, ...(examples === undefined ? {} : { examples }) }));
+    } else if ("submit" in step) {
       const raw = step.submit as Parameters<LessonObjectiveAgentTools["submit"]>[0];
       outcomes.push(await tools.submit(raw));
     } else if ("remove" in step) {
       outcomes.push(await tools.remove(step.remove));
     } else if ("parallel" in step) {
       // Wywołania startują synchronicznie jedno po drugim i nie czekają na siebie (AI SDK: Promise.all).
-      await Promise.all(step.parallel.map((inner) => this.executeStep(inner, tools, outcomes, signal)));
+      await Promise.all(step.parallel.map((inner) => this.executeStep(inner, tools, outcomes, signal, input)));
     } else if ("throw" in step) {
       throw step.throw;
     } else if ("stall" in step) {
@@ -239,6 +305,8 @@ export interface FakeExerciseCheckerOptions {
   costUsd?: number | null;
   /** Wywołania czekają na tę obietnicę (testy równoległości); przerwanie sygnału przerywa oczekiwanie. */
   gate?: Promise<void>;
+  /** Kontrola niedostępna (tryb fake workera): `solve` i `judgeVariants` dają `null` dla każdej pozycji. */
+  unavailable?: true;
 }
 
 export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
@@ -259,6 +327,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
     this.solveCalls.push(input);
     return this.meter.track(async () => {
       await this.admit(cost, signal);
+      if (this.options.unavailable) return { answers: input.items.map(() => null) };
       const batch = this.options.solveBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: solve failed");
       if (batch === "hang") return rejectOnAbort(signal).promise;
@@ -273,6 +342,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
     this.judgeCalls.push(input);
     return this.meter.track(async () => {
       await this.admit(cost, signal);
+      if (this.options.unavailable) return { equivalent: input.items.map(() => null) };
       const batch = this.options.judgeBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: judgeVariants failed");
       if (batch === "hang") return rejectOnAbort(signal).promise;

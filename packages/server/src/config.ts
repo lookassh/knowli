@@ -677,29 +677,30 @@ function agentProviderRouting(
 }
 
 /**
- * Agent puli lekcji z env (worker). Pusta lista → `undefined`. Błędna
- * konfiguracja (nieznany przedmiot albo bez `agentPolicy`, zła liczba,
- * nieznany wysiłek, generator i checker z tej samej rodziny modeli, zła opcja
- * routingu) to błąd startu z nazwą zmiennej. Niepusta lista bez klucza
- * OpenRouter → `undefined` i jedno ostrzeżenie (lekcje generuje potok). Brakujące
- * wartości biorą {@link CONFIG_DEFAULTS}, więc działa też bez `withConfigDefaults`.
+ * Lista przedmiotów agenta (`UMIEM_LESSON_AGENT_SUBJECTS`) po walidacji: pusta
+ * lista → pusty zbiór; nieznany przedmiot albo przedmiot bez `agentPolicy` to
+ * błąd startu z nazwą zmiennej. Wspólna dla ustawień z kluczem i trybu fake
+ * (`providers/lesson-agent-env.ts`), który klucza nie wymaga.
  */
-export function lessonAgentSettingsFromEnv(
+export function lessonAgentSubjectsFromEnv(
   env: Record<string, string | undefined>,
   subjects: Pick<SubjectRegistry, "getSubject">,
-): LessonAgentSettings | undefined {
+): ReadonlySet<string> {
   const ids = agentSubjectIds(env);
-  if (ids.length === 0) return undefined;
   for (const id of ids) {
     const subject = subjects.getSubject(id);
     if (subject === undefined) throw new Error(`UMIEM_LESSON_AGENT_SUBJECTS: unknown subject „${id}”`);
     if (subject.agentPolicy === undefined) throw new Error(`UMIEM_LESSON_AGENT_SUBJECTS: subject „${id}” has no agent policy`);
   }
+  return new Set(ids);
+}
 
+/** Limity agenta z env (`UMIEM_LESSON_AGENT_MAX_STEPS`, współbieżność, terminy, budżet); zła liczba to błąd startu. */
+export function lessonAgentPolicyFromEnv(env: Record<string, string | undefined>): Partial<LessonAgentPolicy> {
   const int = (name: keyof typeof CONFIG_DEFAULTS & `UMIEM_LESSON_AGENT_${string}`) =>
     positiveIntEnv(name, env[name], Number(CONFIG_DEFAULTS[name]));
   const maxSteps = int("UMIEM_LESSON_AGENT_MAX_STEPS");
-  const policy: Partial<LessonAgentPolicy> = {
+  return {
     maxStepsPerObjective: maxSteps,
     planMaxSteps: maxSteps,
     concurrency: int("UMIEM_LESSON_AGENT_CONCURRENCY"),
@@ -712,6 +713,24 @@ export function lessonAgentSettingsFromEnv(
       Number(CONFIG_DEFAULTS.UMIEM_LESSON_AGENT_RUN_BUDGET_USD),
     ),
   };
+}
+
+/**
+ * Agent puli lekcji z env (worker). Pusta lista → `undefined`. Błędna
+ * konfiguracja (nieznany przedmiot albo bez `agentPolicy`, zła liczba,
+ * nieznany wysiłek, generator i checker z tej samej rodziny modeli, zła opcja
+ * routingu) to błąd startu z nazwą zmiennej. Niepusta lista bez klucza
+ * OpenRouter → `undefined` i jedno ostrzeżenie (lekcje generuje potok). Brakujące
+ * wartości biorą {@link CONFIG_DEFAULTS}, więc działa też bez `withConfigDefaults`.
+ * Tryb fake (`UMIEM_FAKE_PROVIDERS=1`) obsługuje `providers/lesson-agent-env.ts`.
+ */
+export function lessonAgentSettingsFromEnv(
+  env: Record<string, string | undefined>,
+  subjects: Pick<SubjectRegistry, "getSubject">,
+): LessonAgentSettings | undefined {
+  const ids = lessonAgentSubjectsFromEnv(env, subjects);
+  if (ids.size === 0) return undefined;
+  const policy = lessonAgentPolicyFromEnv(env);
 
   const effort = agentEffortEnv(env, "UMIEM_LESSON_AGENT_REASONING");
   const checkerEffort = agentEffortEnv(env, "UMIEM_LESSON_AGENT_CHECKER_REASONING");
@@ -730,7 +749,7 @@ export function lessonAgentSettingsFromEnv(
     return undefined;
   }
   return {
-    subjects: new Set(ids),
+    subjects: ids,
     apiKey,
     model,
     effort,
