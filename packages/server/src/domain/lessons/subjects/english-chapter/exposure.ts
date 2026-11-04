@@ -64,3 +64,33 @@ export function chapterExposureText(draft: LessonExposureSource): string {
       return normalizeChapterExposureText(draft.answer);
   }
 }
+
+/** Podział linii karty na części: „ — ” i „ / ” (słówko — tłumaczenie / przykład). */
+const CARD_PART_SEPARATOR = /\s+[—/]\s+/u;
+/** Zdanie angielskie: litery ASCII, apostrof, spacje i interpunkcja zdania. */
+const CARD_SENTENCE = /^[A-Za-z][A-Za-z' ,.?!]*$/u;
+
+/**
+ * Teksty z treści kart rozdziału, które dziecko widzi jako gotowe rozwiązania
+ * (`SubjectModule.cardExposureTexts`): zdania angielskie z przykładów kart.
+ * Linie dzielą się na części po „ — ” i „ / ”, a część zostaje, gdy jest
+ * zdaniem: bez wielokropka (rama do uzupełnienia), złożona z liter ASCII,
+ * apostrofu, spacji i interpunkcji zdania (polska część odpada na znakach
+ * diakrytycznych, cudzysłów typograficzny też) oraz zakończona `.?!` albo
+ * licząca ≥ 3 słowa (samo słówko nie jest zdaniem). Świadomy koszt: polskie
+ * zdanie bez znaków diakrytycznych przechodzi. Apostrof typograficzny → `'`,
+ * duplikaty usunięte. Używane tylko przy generowaniu.
+ */
+export function chapterCardExposureTexts(cards: readonly { readonly body: string }[]): string[] {
+  const sentences: string[] = [];
+  for (const card of cards) {
+    for (const rawLine of card.body.split(/\r?\n/u)) {
+      for (const part of rawLine.split(CARD_PART_SEPARATOR)) {
+        const text = part.trim().replace(/[’‘]/gu, "'");
+        if (text === "" || /…|\.\.\./u.test(text) || !CARD_SENTENCE.test(text)) continue;
+        if (/[.?!]$/u.test(text) || text.split(/\s+/u).length >= 3) sentences.push(text);
+      }
+    }
+  }
+  return [...new Set(sentences)];
+}

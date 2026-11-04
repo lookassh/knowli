@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { computeTargetKey } from "../../../target-key";
 import { lessonExerciseTargetKey, lessonTextTargetKey } from "../../exposure-key";
 import type { LessonExerciseDraft } from "../../types";
-import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
+import { chapterCardExposureTexts, chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterSubject } from "./module";
 
 const OBJ = "english_chapter.ddeck.weather";
@@ -102,5 +102,43 @@ describe("normalizeChapterExposureText — wspólna normalizacja ekspozycji rozd
     expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
     const gap = draft({ exerciseType: "lesson_gap", stem: "I'm wearing a pink ___.", answer: "coat", focus: ["coat"] });
     expect(lessonTextTargetKey(englishChapterSubject, "I’m wearing a pink coat.")).toBe(lessonExerciseTargetKey(englishChapterSubject, gap));
+  });
+});
+
+describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwiązania", () => {
+  it("zdania z kropką/pytajnikiem albo ≥ 3 słowa", () => {
+    expect(chapterCardExposureTexts([{ body: "There is a bed in my room.\nWhere is the lamp?" }])).toEqual([
+      "There is a bed in my room.",
+      "Where is the lamp?",
+    ]);
+  });
+
+  it("słówka nie; części po „ — ” i „ / ” osobno; polska część odpada", () => {
+    expect(chapterCardExposureTexts([{ body: "living room — salon\nbed — łóżko / I have a big bed.\nPokój — my room is big." }])).toEqual([
+      "I have a big bed.",
+      "my room is big.",
+    ]);
+  });
+
+  it("rama z wielokropkiem i zdanie z polskimi znakami odpadają; cudzysłów typograficzny odpada", () => {
+    expect(chapterCardExposureTexts([{ body: "There's a … in the …\nTo jest mój pokój.\n„There is a bed.”" }])).toEqual([]);
+  });
+
+  it("apostrof typograficzny → ', duplikaty usunięte", () => {
+    expect(chapterCardExposureTexts([{ body: "There’s a bed." }, { body: "There's a bed." }])).toEqual(["There's a bed."]);
+  });
+
+  it("świadomy koszt: polskie zdanie bez znaków diakrytycznych jest uznane za zdanie", () => {
+    expect(chapterCardExposureTexts([{ body: "To jest kot." }])).toEqual(["To jest kot."]);
+  });
+
+  it("prawdziwe karty rozdziału: fixture z fake'a zagadnień", () => {
+    // Karty z `fakeLessonObjectives` (providers/fake.ts) dla CHAPTER_MATERIAL z tests/integration/lesson-chapter.test.ts:
+    // zagadnienie 2 ma karty „It's raining.” i „It's snowing.”
+    expect(chapterCardExposureTexts([{ body: "It's raining." }, { body: "It's snowing." }])).toEqual(["It's raining.", "It's snowing."]);
+  });
+
+  it("przedmiot udostępnia hak", () => {
+    expect(englishChapterSubject.cardExposureTexts).toBe(chapterCardExposureTexts);
   });
 });
