@@ -90,10 +90,23 @@ function stalled(): Promise<never> {
   return new Promise<never>(() => undefined);
 }
 
-/** Ciągłe kawałki listy po kolei (pierwsze dostają nadmiar); przy krótszej liście część kawałków jest pusta. */
+/**
+ * `count` ciągłych, zrównoważonych kawałków listy po kolei (rozmiary różnią się najwyżej o 1, nadmiar
+ * w pierwszych). Lista krótsza niż `count` (ale niepusta) — każdy kawałek dostaje jeden element po kolei
+ * z powtórzeniem, więc żaden nie jest pusty; pusta lista daje puste kawałki.
+ */
 function chunks<T>(items: readonly T[], count: number): T[][] {
-  const size = Math.ceil(items.length / count);
-  return Array.from({ length: count }, (_unused, index) => items.slice(index * size, (index + 1) * size));
+  if (items.length === 0) return Array.from({ length: count }, () => []);
+  if (items.length < count) return Array.from({ length: count }, (_unused, index) => [items[index % items.length]!]);
+  const base = Math.floor(items.length / count);
+  const extra = items.length % count;
+  let start = 0;
+  return Array.from({ length: count }, (_unused, index) => {
+    const size = base + (index < extra ? 1 : 0);
+    const chunk = items.slice(start, start + size);
+    start += size;
+    return chunk;
+  });
 }
 
 /** Nagłówki materiału (linie kończące się „:”), gdy przedmiot nie ma pokrycia planu; brak → niepuste linie. */
@@ -105,8 +118,9 @@ function materialHeadings(material: string): string[] {
 
 /**
  * Deterministyczny plan trybu `fromLlm`: trzy zagadnienia „Część 1/2/3”. Słowa pokrycia (gdy brak —
- * nagłówki materiału) dzielone po kolei na dwa zagadnienia `words`, ramy w trzecim `frame`; bez ram
- * trzecie też jest zagadnieniem słów. Karta „Words”/„Frames” z listą pokrywa cały materiał (bramka planu),
+ * nagłówki materiału) dzielone po kolei i po równo na dwa zagadnienia `words`, ramy w trzecim `frame`; bez
+ * ram trzecie też jest zagadnieniem słów. Przy mniejszej liczbie słów niż zagadnień słowa się powtarzają,
+ * więc każda karta ma słowo materiału. Karta „Words”/„Frames” z listą pokrywa cały materiał (bramka planu),
  * druga karta to temat (plan wymaga 2–4 kart), a jedyny przykład to pierwsze słowo albo rama.
  */
 export function fakePlanFromCoverage(input: LessonAgentPlanInput): { objectives: Record<string, unknown>[] } {

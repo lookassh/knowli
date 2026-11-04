@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withConfigDefaults } from "../config-defaults";
 import { createProductionSubjectRegistry } from "../domain/lessons/subjects";
+import type { LessonAgentToolOutcome, LessonObjectiveAgentInput, LessonPoolInput, RunCostSink } from "../ports/ai";
 import { FakeLlmProvider } from "./fake";
 import { FakeExerciseChecker, FakeLessonPoolAgent } from "./fake-lesson-agent";
 import { lessonAgentDepsFromEnv } from "./lesson-agent-env";
@@ -29,6 +30,61 @@ describe("lessonAgentDepsFromEnv", () => {
     const solved = await deps.checker.solve({ items: [{ view: "v", expectedAnswers: 1 }] }, { record: () => undefined }, new AbortController().signal);
     expect(solved.answers).toEqual([null]);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("tryb fake: fromLlm dociera do fake'a, a recorder kosztów nie dostaje zdarzeń (fake nie woła usług)", async () => {
+    const llm = new FakeLlmProvider();
+    const usage = createTestRecorder();
+    const env = withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_LESSON_AGENT_SUBJECTS: "english_grammar" });
+    const deps = lessonAgentDepsFromEnv(env, subjects, usage, llm)!;
+    const cost: RunCostSink = { record: () => undefined };
+    const signal = new AbortController().signal;
+    const objectiveId = "english_grammar.topic.alpha";
+    const pool = {
+      subjectId: "english_grammar",
+      material: "",
+      transforms: [],
+      objectives: [{ id: objectiveId, exerciseTypes: ["lesson_open_answer"] }],
+      stageCounts: { guided: 0, productive: 0, independent: 1 },
+    } as unknown as LessonPoolInput;
+    const submitted: unknown[] = [];
+    const outcome: LessonAgentToolOutcome = {
+      results: [],
+      counts: { guided: 0, productive: 0, independent: 0, outsideStages: 0, total: 0 },
+      missing: [],
+      complete: false,
+    };
+    const run = await deps.agent.runObjective(
+      { pool, objective: { id: objectiveId, title: "Alpha", cards: [], examplesFromPlan: true }, maxSteps: 8 } as unknown as LessonObjectiveAgentInput,
+      {
+        submit: async (raw) => {
+          submitted.push(raw);
+          return outcome;
+        },
+        remove: async () => ({ ...outcome, removed: [] }),
+        shouldStop: () => false,
+      },
+      cost,
+      signal,
+    );
+    expect(run).toEqual({ steps: 1, stopReason: "model_finished" });
+    expect(llm.lessonRequests).toEqual([pool]);
+    expect(submitted).toHaveLength(1);
+    await deps.agent.planObjectives(
+      {
+        subjectTitle: "Angielski",
+        topicTitle: "Unit 1",
+        material: "",
+        generationRole: "",
+        objectiveCount: { min: 3, max: 6 },
+        coverage: { words: ["coat", "boots", "scarf"], frames: [] },
+        maxSteps: 8,
+      },
+      { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
+      cost,
+      signal,
+    );
+    expect(usage.events).toEqual([]);
   });
 
   it("tryb fake waliduje listę: nieznany przedmiot to błąd startu", () => {

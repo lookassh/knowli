@@ -20,8 +20,7 @@ type WorkerPool = ReturnType<typeof createDatabase>["pool"];
  * (UMIEM_FAKE_PROVIDERS=1 dla środowisk bez kluczy) i lokalny wolumen mediów.
  * Baza powstaje przed adapterami, bo recorder kosztów (spec llm-cost-tracking
  * §4.3) pisze przez tę samą pulę, a fabryki dostają ten jeden recorder; fake'i
- * potoku go nie używają (fake agenta puli zapisuje po jednym zdarzeniu na krok,
- * jak adapter, gdy lista `UMIEM_LESSON_AGENT_SUBJECTS` jest niepusta).
+ * (także fake agenta puli) go nie używają, więc tryb fake nie zapisuje kosztów.
  *
  * Agent puli lekcji (#237) składa się tylko tutaj, z osobnego eksportu
  * `@learning/server/lesson-agent` — proces web nie ładuje adaptera AI SDK. Ten sam

@@ -716,6 +716,25 @@ describe("FakeLessonPoolAgent — fromLlm (prawdziwy kierownik, checker niedost�
     expect(llm.lessonRequests).toEqual([]);
   });
 
+  it.each([
+    { words: ["coat", "boots", "scarf", "gloves"], bodies: ["coat, boots", "scarf", "gloves"] },
+    { words: ["coat"], bodies: ["coat", "coat", "coat"] },
+  ])("plan bez ram z $words.length słowami: podział po równo, żadne zagadnienie bez słowa materiału", ({ words, bodies }) => {
+    const material = ["Słowa:", ...words.map((word) => `${word} — tłumaczenie`)].join("\n");
+    const plan = fakePlanFromCoverage({
+      subjectTitle: "Angielski",
+      topicTitle: "Unit 1",
+      material,
+      generationRole: "",
+      objectiveCount: { min: 3, max: 6 },
+      coverage: { words, frames: [] },
+      maxSteps: 8,
+    });
+    expect(plan.objectives.map((objective) => (objective.cards as { body: string }[])[0]!.body)).toEqual(bodies);
+    expect(plan.objectives.map((objective) => (objective.examples as string[])[0])).toEqual(bodies.map((body) => body.split(", ")[0]));
+    expect(validateAgentPlan(plan, asAgentCapable(englishChapterSubject), material)).toMatchObject({ ok: true });
+  });
+
   it("plan bez pokrycia przedmiotu bierze nagłówki materiału (trzy zagadnienia słów)", () => {
     const plan = fakePlanFromCoverage({
       subjectTitle: "Historia",

@@ -18,7 +18,8 @@ import { AiSdkExerciseChecker, AiSdkLessonPoolAgent } from "./openai/lesson-pool
  * (pilnuje `lesson-agent-imports.architecture.test.ts`).
  *
  * - `UMIEM_FAKE_PROVIDERS=1` i niepusta lista (po walidacji, bez klucza) → fake agenta
- *   „jak LLM” (`fromLlm`) i checker bez wyniku (ćwiczenia przechodzą bez kontroli);
+ *   „jak LLM” (`fromLlm`) i checker bez wyniku (ćwiczenia przechodzą bez kontroli); bez
+ *   `usage` — fake nie woła żadnej usługi, więc tryb fake nie zapisuje kosztów;
  * - inaczej {@link lessonAgentSettingsFromEnv}: `undefined` (pusta lista albo brak klucza)
  *   → `undefined`, czyli lekcje generuje potok; ustawienia → adaptery OpenRouter.
  */
@@ -33,7 +34,7 @@ export function lessonAgentDepsFromEnv(
     if (ids.size === 0) return undefined;
     return {
       subjects: ids,
-      agent: new FakeLessonPoolAgent({ ...(llm ? { fromLlm: llm } : {}), ...(usage ? { usage } : {}) }),
+      agent: new FakeLessonPoolAgent(llm ? { fromLlm: llm } : {}),
       checker: new FakeExerciseChecker({ unavailable: true }),
       policy: lessonAgentPolicyFromEnv(env),
     };
