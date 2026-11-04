@@ -55,7 +55,7 @@ import type {
   SubjectModule,
 } from "../../../domain/lessons/types";
 import { solvedSentencesOf, storyCollisions, type LessonStory } from "../../../domain/lessons/story";
-import type { LessonPoolInput, LlmLessonStageCounts } from "../../../ports/ai";
+import type { LessonPoolInput, LlmLessonStageCounts, LlmProvider } from "../../../ports/ai";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import {
   claimQueuedRun,
@@ -67,7 +67,14 @@ import {
 } from "../generation-runs";
 import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
 import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
-import { assertLessonGenerationFinalizationAllowed, LessonGenerationCancelledError, withLessonGenerationControl } from "./lesson-generation-control";
+import {
+  assertLessonGenerationFinalizationAllowed,
+  LessonGenerationCancelledError,
+  withLessonGenerationControl,
+  type LessonGenerationControl,
+} from "./lesson-generation-control";
+import { executeLessonAgentGeneration } from "./lesson-agent-generation";
+import { lessonGeneratorFor } from "./lesson-agent-outcome";
 import { DEFAULT_LESSON_GENERATION_POLICY, type LessonGenerationPolicy } from "./lesson-generation-policy";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 import { committedRetryAfterSourceChange, lockSourceMaterialForCopy } from "../source-materials";
@@ -1751,8 +1758,11 @@ export async function finalizeLessonPoolWrite(
       : await args.review(tx, version.id, prevContext.review, accepted.map((draft, index) => ({ draft, exerciseId: itemIds[index]! })));
     // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
     // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
+    // Pełna generacja zastępuje pulę: luki poprzedniego generowania agentem są nieaktualne (ścieżka
+    // agenta dopisuje bieżące w `extendContext`); dogenerowanie zostawia luki innych zagadnień.
+    const { generationGaps: _staleGaps, ...prevWithoutGaps } = prevContext;
     const baseContext: LessonContext = {
-      ...prevContext,
+      ...(args.regenerate ? prevContext : prevWithoutGaps),
       ...(context.dynamicTopic ? { dynamicTopic: context.dynamicTopic, objectiveIds: context.dynamicTopic.objectives.map((o) => o.id) } : {}),
       examples: { ...prevContext.examples, ...context.newExamples },
       rejectedCount: (prevContext.rejectedCount ?? 0) + context.rejectedCount + writeRejected,
@@ -1796,6 +1806,60 @@ export async function finalizeLessonPoolWrite(
   });
 }
 
+/**
+ * Tożsamość runu w bazie (partie, runda pod etap, kierownik agenta): edycja rodzica, retry albo
+ * publikacja ją zmieniają — run nadal `running` w tej próbie, a wersja szkicu ma ten numer edycji.
+ */
+export async function lessonRunIsCurrent(db: Executor, run: LessonRunIdentity): Promise<boolean> {
+  const [current] = await db.select({ state: generationRuns.state, attempts: generationRuns.attempts, expectedEditNumber: generationRuns.expectedEditNumber })
+    .from(generationRuns).where(eq(generationRuns.id, run.runId));
+  const [version] = await db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
+    .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId));
+  return current?.state === "running" && current.attempts === run.attempts &&
+    current.expectedEditNumber === run.expectedEditNumber && version?.state !== "published" &&
+    version?.editNumber === run.expectedEditNumber;
+}
+
+/**
+ * Etap zagadnień przedmiotu dynamicznego bez planera (szkoła; potok i ścieżka agenta): jedno żądanie
+ * `generateLessonObjectives`, budowa i walidacja tematu jak przy zapisie. `droppedObjectiveCount` —
+ * zagadnienia odrzucone przy budowie (panel rodzica).
+ */
+export async function generateDynamicObjectives(
+  llm: LlmProvider,
+  control: LessonGenerationControl,
+  subject: SubjectModule,
+  input: LessonRunInput,
+): Promise<{ data: DynamicTopicData; droppedObjectiveCount: number }> {
+  await control.assertCurrent();
+  const objectivesResult = await control.call((signal) =>
+    llm.generateLessonObjectives(
+      {
+        subjectTitle: input.subjectTitlePl ?? subject.titlePl,
+        topicTitle: input.topicTitlePl ?? "",
+        material: input.material,
+        ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
+        generationRole: subject.prompts.generationRole,
+        voiceTones: subject.ttsForPrompts === true,
+        ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
+      },
+      signal,
+    ),
+  );
+  await control.assertCurrent();
+  const topicTitle = input.topicTitlePl ?? "";
+  const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
+    validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
+  if (!built.data) {
+    throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
+  }
+  const topicErrors = validateDynamicTopicData(subject, built.data);
+  if (topicErrors.length > 0) {
+    throw new AppError("validation", { message: `dynamic topic invalid: ${topicErrors.join("; ")}` });
+  }
+  return { data: withSubjectObjectiveKinds(subject, built.data), droppedObjectiveCount: built.errors.length };
+}
+
 export async function executeLessonGeneration(services: Services, runId: string, options: { signal?: AbortSignal } = {}): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
@@ -1820,6 +1884,25 @@ export async function executeLessonGeneration(services: Services, runId: string,
   const lessonRun: LessonRunIdentity = { runId, attempts, expectedEditNumber: run.expectedEditNumber!, deckVersionId: run.deckVersionId! };
   const markCurrentRun = (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) =>
     markLessonRun(db, services.clock, lessonRun, state, errorCode, nextAttemptAt);
+  const input = run.input as unknown as LessonRunInput;
+  const subject = services.subjects.getSubject(input.subjectId);
+  // Wybór ścieżki przy każdej próbie (spec etapu 2a §3), z rejestru bez I/O. Agent sam rozlicza limit
+  // prób (wyczerpane próby z postępem → zapis bez wywołań modelu), więc wybór zapada przed nim.
+  if (subject !== undefined && lessonGeneratorFor(subject, deps.lessonAgent) === "agent") {
+    if (!(await lessonRunIsCurrent(services.db, lessonRun))) {
+      await markCurrentRun(services.db, "superseded", null);
+      return;
+    }
+    await executeLessonAgentGeneration(services, {
+      run,
+      attempts,
+      subject,
+      input,
+      runStartedAtMs,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    return;
+  }
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markCurrentRun(services.db, "failed", "attempts_exhausted");
     return;
@@ -1834,8 +1917,6 @@ export async function executeLessonGeneration(services: Services, runId: string,
     return;
   }
 
-  const input = run.input as unknown as LessonRunInput;
-  const subject = services.subjects.getSubject(input.subjectId);
   // Temat dynamiczny: migawka z kontekstu (dogenerowanie) albo do wygenerowania
   // w etapie zagadnień tego runu (pierwsza generacja zestawu szkolnego).
   let dynamicTopicData: DynamicTopicData | undefined = input.dynamicTopic;
@@ -1904,15 +1985,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   const executionPolicy = deps.lessonExecution ?? DEFAULT_LESSON_GENERATION_POLICY;
   const runDeadlineAtMs = runStartedAtMs + executionPolicy.runTimeoutMs;
   // Tożsamość runu w bazie (partie i runda pod etap): edycja rodzica, retry albo publikacja ją zmieniają.
-  const runIsCurrent = async (): Promise<boolean> => {
-    const [current] = await services.db.select({ state: generationRuns.state, attempts: generationRuns.attempts, expectedEditNumber: generationRuns.expectedEditNumber })
-      .from(generationRuns).where(eq(generationRuns.id, runId));
-    const [version] = await services.db.select({ editNumber: deckVersions.editNumber, state: deckVersions.state })
-      .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!));
-    return current?.state === "running" && current.attempts === attempts &&
-      current.expectedEditNumber === run.expectedEditNumber && version?.state !== "published" &&
-      version?.editNumber === run.expectedEditNumber;
-  };
+  const runIsCurrent = (): Promise<boolean> => lessonRunIsCurrent(services.db, lessonRun);
   console.log(
     `[lesson] generacja run=${runId} deck=${input.deckId} cele=${batches.length} próba=${attempts} pula=${input.poolSize} model=${deps.llm.model}`,
   );
@@ -1923,38 +1996,13 @@ export async function executeLessonGeneration(services: Services, runId: string,
       assertCurrent: runIsCurrent,
     }, async (control) => {
     if (needsDynamicObjectives) {
-      await control.assertCurrent();
-      const objectivesResult = await control.call((signal) =>
-        deps.llm.generateLessonObjectives(
-          {
-            subjectTitle: input.subjectTitlePl ?? subject.titlePl,
-            topicTitle: input.topicTitlePl ?? "",
-            material: input.material,
-            ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
-            generationRole: subject.prompts.generationRole,
-            voiceTones: subject.ttsForPrompts === true,
-            ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
-          },
-          signal,
-        ),
-      );
-      await control.assertCurrent();
-      const topicTitle = input.topicTitlePl ?? "";
-      const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
-        validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
-      if (!built.data) {
-        throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
-      }
-      const topicErrors = validateDynamicTopicData(subject, built.data);
-      if (topicErrors.length > 0) {
-        throw new AppError("validation", { message: `dynamic topic invalid: ${topicErrors.join("; ")}` });
-      }
-      const storedData = withSubjectObjectiveKinds(subject, built.data);
+      const objectivesStage = await generateDynamicObjectives(deps.llm, control, subject, input);
+      const storedData = objectivesStage.data;
       dynamicTopicData = storedData;
       topic = subject.buildDynamicTopic!(storedData);
       batches = batchesForObjectives(storedData.objectives.map((objective) => objective.id), input.poolSize, subject, runId);
       console.log(`[lesson] run=${runId} etap zagadnień: cele=${batches.length}`);
-      droppedObjectiveCount = built.errors.length;
+      droppedObjectiveCount = objectivesStage.droppedObjectiveCount;
       if (droppedObjectiveCount > 0) {
         console.log(`[lesson] run=${runId} etap zagadnień: porzucone=${droppedObjectiveCount}`);
       }

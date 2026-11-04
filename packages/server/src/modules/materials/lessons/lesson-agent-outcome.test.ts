@@ -153,6 +153,40 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
     expect(value.draftExamples).toEqual({});
   });
 
+  it("wznowienie: fixed i skipObjectives w kolejności lekcji, nie w kolejności wpisów punktu kontrolnego", () => {
+    const progress = progressWith({
+      objectives: {
+        [B]: { status: "complete", exercises: [choiceB], examples: ["Przykład B."] },
+        [A]: { status: "complete", exercises: [choiceA], examples: ["Przykład A."] },
+      },
+    });
+    const value = agentInput(lessonAgentRunInputFor(args({ progress })));
+    expect(value.fixed).toEqual([choiceA, choiceB]);
+    expect(value.skipObjectives).toEqual([A, B]);
+    // Temat dynamiczny: kolejność jego zagadnień.
+    const dynamicTopic: DynamicTopicData = {
+      titlePl: "Temat",
+      objectives: [B, A].map((id) => ({ id, titlePl: id, descriptionEn: id, cards: [] })),
+    };
+    const fromTopic = agentInput(lessonAgentRunInputFor(args({ subject: planner, progress: { ...progress, dynamicTopic } })));
+    expect(fromTopic.fixed).toEqual([choiceB, choiceA]);
+    expect(fromTopic.skipObjectives).toEqual([B, A]);
+  });
+
+  it("katalog: temat zawężony do zagadnień lekcji; wpis spoza lekcji pominięty", () => {
+    const progress = progressWith({
+      objectives: {
+        [A]: { status: "complete", exercises: [choiceA], examples: ["Przykład A."] },
+        [B]: { status: "complete", exercises: [choiceB], examples: ["Przykład B."] },
+      },
+    });
+    const value = agentInput(lessonAgentRunInputFor(args({ input: runInput({ objectiveIds: [B] }), progress })));
+    expect(value.objectiveSource).toEqual({ source: "catalog", topic: { ...topic, objectives: topic.objectives.filter((objective) => objective.id === B) } });
+    expect(value.fixed).toEqual([choiceB]);
+    expect(value.skipObjectives).toEqual([B]);
+    expect(() => lessonAgentRunInputFor(args({ input: runInput({ objectiveIds: ["nieznane"] }) }))).toThrow(AppError);
+  });
+
   it("wznowienie z planExamples → examplesFixed: true, przykłady planu dla wszystkich zagadnień", () => {
     const progress = progressWith({
       dynamicTopic: checkpointTopic,
@@ -489,6 +523,12 @@ describe("generationGapsOf", () => {
     expect(generationGapsOf(emptyLessonAgentProgress(), [A], { add: { objectiveId: A, count: 2 } })).toEqual([
       { objectiveId: A, reason: "add_short", added: 0, requested: 2 },
     ]);
+  });
+
+  it("add: dodano co najmniej N przy pozostałych brakach etapów → brak luki (to nie add_short)", () => {
+    const satisfied = progressWith({ objectives: { [A]: { status: "incomplete", exercises: [gapA, choiceA], examples: [] } } });
+    expect(generationGapsOf(satisfied, [A, B], { add: { objectiveId: A, count: 2 } })).toEqual([]);
+    expect(generationGapsOf(satisfied, [A, B], { add: { objectiveId: A, count: 1 } })).toEqual([]);
   });
 });
 

@@ -190,7 +190,8 @@ function resolveSubject(deps: LessonPoolAgentDeps, input: LessonPoolAgentRunInpu
   return asAgentCapable(subject);
 }
 
-function kindsOf(data: DynamicTopicData | undefined): Map<string, DynamicObjectiveKind> {
+/** Rodzaje zagadnień tematu dynamicznego (rozdział) do `agentObjectivesOf`. */
+export function kindsOf(data: DynamicTopicData | undefined): Map<string, DynamicObjectiveKind> {
   const kinds = new Map<string, DynamicObjectiveKind>();
   for (const objective of data?.objectives ?? []) if (objective.kind !== undefined) kinds.set(objective.id, objective.kind);
   return kinds;
@@ -244,6 +245,28 @@ function addModePlan(
     limits: { targetCount: fixedOnStagePath + count, listenAllowance, maxExercises: count + stageGap + listenLeft },
     promptTargets: { stages, listenAllowance: listenLeft },
   };
+}
+
+/**
+ * Limity zagadnień trybu „pula” z liczb partii potoku: `targetCount` z puli rodzica, dodatek słuchowy jako
+ * łączny limit zagadnienia (przyjmowanie samo liczy ćwiczenia słuchowe `fixed`), `limit_full` liczy tylko
+ * pulę. Wspólne z kontrolą końcową ścieżki agenta przed zapisem do szkicu.
+ */
+export function lessonAgentLimits(
+  subject: AgentCapableSubject,
+  topic: LessonTopic,
+  poolSize: number,
+): ReadonlyMap<string, ObjectiveAgentLimits> {
+  const counts = objectiveBatchCounts(poolSize, topic.objectives.length, subject);
+  return new Map(
+    topic.objectives.map((objective, index) => [
+      objective.id,
+      objectiveAgentLimits(
+        { targetCount: counts[index]!, listenAllowance: listenChoiceAllowance(subject, objective, []) },
+        subject.agentPolicy,
+      ),
+    ]),
+  );
 }
 
 export async function runLessonPoolAgent(
@@ -364,18 +387,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   const { deps, input, subject, topic, objectives, policy, cost } = args;
   const examplesFixed = input.examplesFixed ?? input.objectiveSource.source === "planner";
 
-  // Limity z liczb partii potoku: `targetCount` z puli rodzica, dodatek słuchowy jako łączny limit zagadnienia
-  // (przyjmowanie samo liczy ćwiczenia słuchowe `fixed`), `limit_full` liczy tylko pulę.
-  const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
-  const limits = new Map<string, ObjectiveAgentLimits>(
-    topic.objectives.map((objective, index) => [
-      objective.id,
-      objectiveAgentLimits(
-        { targetCount: counts[index]!, listenAllowance: listenChoiceAllowance(subject, objective, []) },
-        subject.agentPolicy,
-      ),
-    ]),
-  );
+  const limits = new Map(lessonAgentLimits(subject, topic, input.poolSize));
   const ctx: AgentCheckContext = { subject, material: input.material, limits };
   const addTarget = input.target?.mode === "add" ? input.target : undefined;
   const addMode = addTarget === undefined ? undefined : { remaining: addTarget.count };

@@ -25,8 +25,19 @@ function stageExerciseCount(drafts: readonly LessonExerciseDraft[]): number {
   return drafts.filter((draft) => !outsideStagePath(draft.exerciseType)).length;
 }
 
-function completeEntries(progress: LessonAgentProgress | undefined): [string, LessonAgentObjectiveProgress][] {
-  return Object.entries(progress?.objectives ?? {}).filter(([, entry]) => entry.status === "complete");
+/** Wpisy `complete` punktu kontrolnego w kolejności lekcji; zagadnienia spoza lekcji pominięte. */
+function completeEntries(progress: LessonAgentProgress | undefined, objectiveOrder: readonly string[]): [string, LessonAgentObjectiveProgress][] {
+  return objectiveOrder.flatMap((objectiveId): [string, LessonAgentObjectiveProgress][] => {
+    const entry = progress?.objectives[objectiveId];
+    return entry?.status === "complete" ? [[objectiveId, entry]] : [];
+  });
+}
+
+/** Zagadnienia źródła w kolejności lekcji; planer jeszcze ich nie zna. */
+function objectiveOrderOf(source: AgentObjectiveSource): string[] {
+  if (source.source === "catalog") return source.topic.objectives.map((objective) => objective.id);
+  if (source.source === "input") return source.dynamicTopic.objectives.map((objective) => objective.id);
+  return [];
 }
 
 function hasPlanExamples(progress: LessonAgentProgress | undefined): boolean {
@@ -65,9 +76,20 @@ export type LessonAgentRunInputResult =
    */
   | { readonly nothingToAdd: true };
 
-function catalogSource(topic: LessonTopic | undefined): AgentObjectiveSource {
+/**
+ * Temat katalogowy zawężony do zagadnień lekcji (`objectiveIds` runu, kolejność tematu): kierownik
+ * uruchamia każde zagadnienie tematu, a limity liczy z ich liczby — jak partie potoku z `objectiveIds`.
+ */
+export function lessonCatalogTopic(topic: LessonTopic, objectiveIds: readonly string[]): LessonTopic {
+  const selected = new Set(objectiveIds);
+  const objectives = topic.objectives.filter((objective) => selected.has(objective.id));
+  if (objectives.length === 0) throw new AppError("validation", { message: "lesson objectives not in topic" });
+  return { ...topic, objectives };
+}
+
+function catalogSource(topic: LessonTopic | undefined, objectiveIds: readonly string[]): AgentObjectiveSource {
   if (topic === undefined) throw new AppError("validation", { message: "lesson topic unresolved" });
-  return { source: "catalog", topic };
+  return { source: "catalog", topic: lessonCatalogTopic(topic, objectiveIds) };
 }
 
 /**
@@ -79,7 +101,7 @@ function poolSource(args: LessonAgentRunInputArgs): AgentObjectiveSource | { rea
   const { progress, input, subject } = args;
   if (progress?.dynamicTopic !== undefined) return { source: "input", dynamicTopic: progress.dynamicTopic };
   if (input.dynamicTopic !== undefined) return { source: "input", dynamicTopic: input.dynamicTopic };
-  if (subject.buildDynamicTopic === undefined) return catalogSource(args.catalogTopic);
+  if (subject.buildDynamicTopic === undefined) return catalogSource(args.catalogTopic, input.objectiveIds);
   if (subject.agentPolicy?.planCoverage !== undefined) return { source: "planner" };
   if (args.schoolTopic !== undefined) return { source: "input", dynamicTopic: args.schoolTopic };
   return { needsObjectives: true };
@@ -92,7 +114,7 @@ function addSource(args: LessonAgentRunInputArgs): AgentObjectiveSource {
   if (args.subject.buildDynamicTopic !== undefined) {
     throw new AppError("validation", { message: "add mode needs the draft's dynamic topic" });
   }
-  return catalogSource(args.catalogTopic);
+  return catalogSource(args.catalogTopic, args.input.objectiveIds);
 }
 
 /**
@@ -138,7 +160,7 @@ export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAge
 
   const objectiveSource = poolSource(args);
   if ("needsObjectives" in objectiveSource) return objectiveSource;
-  const complete = completeEntries(progress);
+  const complete = completeEntries(progress, objectiveOrderOf(objectiveSource));
   // Przykłady planu dla wszystkich zagadnień (ustalone), własne przykłady tylko zagadnień `complete`.
   const initialExamples: Record<string, string[]> = { ...progress?.planExamples };
   for (const [objectiveId, entry] of complete) initialExamples[objectiveId] = [...entry.examples];
@@ -271,7 +293,8 @@ export function acceptedInLessonOrder(progress: LessonAgentProgress, objectiveOr
 /**
  * Luki generowania (§11) z postępu po scaleniu, ze `status` (nie z `missing`: w trybie „dodaj N” komplet
  * ma niepuste `missing`). Pula: zagadnienie `incomplete`/`failed` albo bez wpisu (nieuruchomione) → luka.
- * Dodaj N: zagadnienie nie `complete` → `add_short` z liczbą nowych ćwiczeń na ścieżce etapów.
+ * Dodaj N: zagadnienie nie `complete` i mniej niż N nowych ćwiczeń na ścieżce etapów → `add_short`
+ * (pozostałe braki etapów po spełnionym +N to nie niedobór dodatku).
  */
 export function generationGapsOf(
   progress: LessonAgentProgress,
@@ -281,8 +304,9 @@ export function generationGapsOf(
   if (mode !== "pool") {
     const { objectiveId, count } = mode.add;
     const entry = progress.objectives[objectiveId];
-    if (entry?.status === "complete") return [];
-    return [{ objectiveId, reason: "add_short", added: stageExerciseCount(entry?.exercises ?? []), requested: count }];
+    const added = stageExerciseCount(entry?.exercises ?? []);
+    if (entry?.status === "complete" || added >= count) return [];
+    return [{ objectiveId, reason: "add_short", added, requested: count }];
   }
   return objectiveIds.flatMap((objectiveId): LessonGenerationGap[] => {
     const status = progress.objectives[objectiveId]?.status ?? "incomplete";
