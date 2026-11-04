@@ -575,7 +575,7 @@ etapie 2) i nowy rodzaj w `CandidateChecks`; etap 1 nie definiuje sygnatur.
 
 ```ts
 runLessonPoolAgent(
-  deps: { agent: LessonPoolAgentProvider; checker: LessonExerciseCheckerProvider; policy: LessonAgentPolicy },
+  deps: { agent: LessonPoolAgentProvider; checker: LessonExerciseCheckerProvider; subjects: Pick<SubjectRegistry, "getSubject">; policy?: Partial<LessonAgentPolicy> },   // brak pól = DEFAULT_LESSON_AGENT_POLICY
   input: LessonPoolAgentRunInput,
   signal: AbortSignal,
 ): Promise<LessonPoolAgentResult>

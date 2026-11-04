@@ -173,6 +173,18 @@ describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwi�
     expect(chapterCardExposureTexts([{ body: "It is - cold." }])).toEqual([]);
   });
 
+  it("zdania zakończone cudzysłowem zamykającym dzielą się na granicy zdania", () => {
+    expect(chapterCardExposureTexts([{ body: "„There is a bed.” „I like it.”" }])).toEqual(["There is a bed.", "I like it."]);
+    expect(chapterCardExposureTexts([{ body: "\"Where is it?\" \"It is here.\"" }])).toEqual(["Where is it?", "It is here."]);
+  });
+
+  it("cyfry wewnątrz zdania należą do zdania", () => {
+    expect(chapterCardExposureTexts([{ body: "I have 2 cats.\nThere are 10 books in my room." }])).toEqual([
+      "I have 2 cats.",
+      "There are 10 books in my room.",
+    ]);
+  });
+
   it("długi ciąg spacji i cudzysłowów nie wywołuje nawrotów (czas liniowy)", () => {
     const started = performance.now();
     const result = chapterCardExposureTexts([{ body: `${" ".repeat(50_000)}x${"”".repeat(50_000)}y` }]);

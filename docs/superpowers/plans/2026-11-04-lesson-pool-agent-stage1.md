@@ -297,7 +297,7 @@ interface LessonPoolAgentRunInput {
   readonly runId: string;
   readonly subjectId: string;
   readonly deckId: string;
-  readonly objectives: AgentObjectiveSource;
+  readonly objectiveSource: AgentObjectiveSource;
   readonly topicTitle: string;
   readonly material: string;
   readonly instruction?: string;
@@ -357,7 +357,7 @@ Decyzje:
   - dwa zagadnienia równolegle wysyłają ćwiczenia z tym samym ujawnieniem (checker z `gate`, oba prechecki przed pierwszym przyjęciem) → dokładnie jedno przyjęte, drugie `leak_*`; `invariantViolations === 0`;
   - plan: propozycja z niepokrytym słowem → `errors` zawiera słowo; druga przyjęta; identyfikatory `^.+\.d<deckId>\.[a-z0-9_]{1,40}$`; przykłady z planu w `objectives[i].examples`; brak planu po 8 krokach → `plan_failed`, `agent.calls` bez podagentów; `planObjectives` rzuca → `plan_failed` z kodem;
   - materiał rozdziału bez list → plan przyjęty, zagadnienia `complete` przy pełnych scenariuszach;
-  - `objectives: { source: "input", dynamicTopic }`: przykłady przez `submit.examples` → w wyniku; przedmiot rozwiązany przez `deps.subjects.getSubject(subjectId)` (nieznany → `AppError` `validation` bez wywołań);
+  - `objectiveSource: { source: "input", dynamicTopic }`: przykłady przez `submit.examples` → w wyniku; przedmiot rozwiązany przez `deps.subjects.getSubject(subjectId)` (nieznany → `AppError` `validation` bez wywołań);
   - `skipObjectives` + `fixed`: brak wywołania agenta dla pominiętego, jego `fixed` blokuje duplikat w innym;
   - zdanie karty (`withAgentPolicy(englishChapterSubject)`, karta „There is a bed in my room.”) → samodzielne tłumaczenie z tą odpowiedzią `leak_victim`;
   - `targets.targetCount` = `objectiveBatchCounts(...)` (szkoła z `withAgentPolicy(schoolSubject)` → ≥ 8);

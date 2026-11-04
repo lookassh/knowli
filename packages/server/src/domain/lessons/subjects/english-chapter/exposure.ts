@@ -67,18 +67,19 @@ export function chapterExposureText(draft: LessonExposureSource): string {
 
 /**
  * Kolejne podziały linii karty na części: „ — ” i „ / ” (słówko — tłumaczenie /
- * przykład), etykieta „: ” („Na przykład: …”), „; ” i granica zdań po `.?!`.
+ * przykład), etykieta „: ” („Na przykład: …”), „; ” i granica zdań po `.?!`
+ * (także z cudzysłowem zamykającym za znakiem: „There is a bed.” „I like it.”).
  * Separatory dopasowują sam znak z otoczeniem w lookaroundach (bez `\s+`),
  * więc długi ciąg spacji nie wywołuje nawrotów; spacje części obcina `trim()`.
  */
-const CARD_PART_SEPARATORS: readonly RegExp[] = [/(?<=\s)[—/](?=\s)/u, /:(?=\s)/u, /;(?=\s)/u, /(?<=[.?!])(?=\s)/u];
+const CARD_PART_SEPARATORS: readonly RegExp[] = [/(?<=\s)[—/](?=\s)/u, /:(?=\s)/u, /;(?=\s)/u, /(?<=[.?!][”“"»]?)(?=\s)/u];
 /** Punktor albo numeracja na początku części: „- ”, „• ”, „* ”, „1. ”, „1) ”. */
 const CARD_BULLET = /^(?:[-•*]|\d+[.)])\s+/u;
 /** Cudzysłowy na początku zdania; na końcu obcina je `trimTrailing` (liniowo, bez `[…]+$`). */
 const CARD_LEADING_QUOTES = /^[„“”"«»]+/u;
 const CARD_QUOTE_CHARS: ReadonlySet<string> = new Set(["„", "“", "”", "\"", "«", "»"]);
-/** Zdanie angielskie: litery ASCII, apostrof, spacje, interpunkcja zdania i łącznik wewnątrz słowa („T-shirt”). */
-const CARD_SENTENCE = /^[A-Za-z](?:[A-Za-z' ,.?!]|(?<=[A-Za-z])-(?=[A-Za-z]))*$/u;
+/** Zdanie angielskie: litery ASCII, cyfry („I have 2 cats.”), apostrof, spacje, interpunkcja zdania i łącznik wewnątrz słowa („T-shirt”). */
+const CARD_SENTENCE = /^[A-Za-z](?:[A-Za-z0-9' ,.?!]|(?<=[A-Za-z])-(?=[A-Za-z]))*$/u;
 
 /** Części linii po wszystkich separatorach, w kolejności występowania. */
 function cardLineParts(line: string): string[] {
