@@ -65,7 +65,7 @@ export type AdmitEntry =
   | { readonly rejected: Rejection };
 
 /** Odrzucenia reguł lekcji i ujawnienia — po referencji szkicu (wadliwe `fixed` nie blokuje kandydatów). */
-interface LessonSnapshot {
+export interface LessonSnapshot {
   readonly entries: readonly OrderedLessonEntry[];
   readonly poolRejected: ReadonlyMap<LessonExerciseDraft, readonly string[]>;
   readonly extraRejected: ReadonlyMap<LessonExerciseDraft, readonly string[]>;
@@ -98,7 +98,7 @@ function lessonLeaks(state: LessonAgentState, entries: readonly OrderedLessonEnt
   return new Map(leaks.map((leak) => [entries[leak.index]!.draft, leak] as const));
 }
 
-function snapshotOf(state: LessonAgentState, ctx: AgentCheckContext): LessonSnapshot {
+export function snapshotOf(state: LessonAgentState, ctx: AgentCheckContext): LessonSnapshot {
   const rules = lessonRules(state, ctx);
   return { ...rules, leaked: lessonLeaks(state, rules.entries, ctx) };
 }
