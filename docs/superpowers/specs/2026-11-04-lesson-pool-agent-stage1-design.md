@@ -1,7 +1,8 @@
 # Agent generujący pulę lekcji — etap 1: domena, porty i kierownik — design
 
 Data: 2026-11-04. Issue: [#237](https://github.com/lookassh/knowli/issues/237)
-(cel, wyniki próby z 2026-11-03, etapy 1–4). Ten dokument obejmuje **etap 1**.
+(cel, wyniki próby z 2026-11-03, etapy 1–4). Ten dokument obejmuje **PR
+wstępny** (zdania kart w generowaniu, §5) i **etap 1**.
 
 Decyzje właściciela (czat 2026-11-04):
 
@@ -9,388 +10,475 @@ Decyzje właściciela (czat 2026-11-04):
   **deterministycznej** (liczba ćwiczeń per przedmiot, bramka podpowiedzi,
   ślepe rozwiązanie i sędzia wariantów dla luk szkolnych, teksty odrzuceń per
   przedmiot); kontrole modelem w szkole (sędzia podpowiedzi, sprawdzenie
-  otwartych odpowiedzi graderem) dostają w etapie 1 tylko miejsce w porcie,
-  wywołania od etapu 2;
-- zdania angielskie wpisane w treść kart są źródłem ujawnień **wspólnie** dla
-  agenta i dzisiejszego potoku (issue pkt 5);
+  otwartych odpowiedzi graderem) — etap 2;
+- zdania angielskie wpisane w treść kart są źródłem ujawnień **wyłącznie przy
+  generowaniu** (agent i dzisiejszy potok); pokrycie, publikacja, edytor i
+  sesja dziecka bez zmian (issue pkt 5);
+- ta zmiana potoku idzie **osobnym, małym PR przed etapem 1**;
 - planer rozdziału dopuszcza **3–6** zagadnień (issue pkt 6); reguła promptu
   dzisiejszego potoku (3–5) bez zmian;
-- podejście **A**: „kierownik” (równoległość, limity, budżet, rundy naprawcze,
-  później zapis) i wszystkie reguły żyją w naszym kodzie; AI SDK tylko
-  prowadzi rozmowę z modelem; ślepe rozwiązanie i sędzia wariantów to osobny
-  port.
+- podejście **A**: „kierownik” (równoległość, limity, budżet, później zapis) i
+  wszystkie reguły żyją w naszym kodzie; AI SDK tylko prowadzi rozmowę z
+  modelem; ślepe rozwiązanie i sędzia wariantów to osobny port.
+
+Wersja 2 po review trzech krytyków (zgodność z kodem; architektura,
+prywatność i koszty; cel, testy i zakres). Rozstrzygnięcia w §13.
 
 ## 1. Problem i zakres
 
 Pulę ćwiczeń lekcji ma budować agent: model pisze ćwiczenia, kod sprawdza każde
 przy zapisie i oddaje nazwany powód odrzucenia, model poprawia w tej samej
-pętli. PoC na gałęzi `probe/lesson-pool-agent` pokazał przewagę w rozdziale
-(brak ujawnień, pełne pokrycie materiału) i gramatyce, a w szkole wynik gorszy,
-głównie przez konfigurację próby (issue „Do rozwiązania” pkt 1). Kod PoC żyje
-w jednym pliku testu próby, z regułami ustawionymi na oko i pulą w pamięci.
+pętli. PoC (`probe/lesson-pool-agent`) pokazał przewagę w rozdziale (brak
+ujawnień, pełne pokrycie materiału) i gramatyce, a w szkole wynik gorszy,
+głównie przez konfigurację próby. Kod PoC żyje w jednym pliku testu próby, z
+regułami ustawionymi na oko, pulą w pamięci i kilkoma rozjazdami z regułami
+produkcji (walidacja tylko w obrębie zagadnienia, brak limitu słuchowego, brak
+przykładów kart dla gramatyki i szkoły).
 
-Etap 1 przenosi reguły PoC do domeny, definiuje porty i składa kierownika, tak
-żeby etap 2 dodał już tylko adapter AI SDK i integrację z
-`executeLessonGeneration`.
+Etap 1 przenosi reguły PoC do domeny — **zgodnie z regułami potoku i
+publikacji** — definiuje porty i składa kierownika, tak żeby etap 2 dodał
+adapter AI SDK, zapis per zagadnienie i integrację z `executeLessonGeneration`.
 
-**W zakresie (jeden PR):**
+**PR wstępny (§5):** hak `cardExposureTexts` i zdania kart jako stałe źródła
+ujawnień w generowaniu dzisiejszego potoku.
 
-1. Rdzeń domenowy agenta `packages/server/src/domain/lessons/agent/` (§3).
-2. Polityka agenta per przedmiot: opcjonalne pole `agentPolicy` w
-   `SubjectModule`, ustawione dla `english_chapter`, `english_grammar` i
-   `school` (§4).
-3. Zdania kart jako źródło ujawnień we wszystkich regułach ujawnień potoku
-   (zmiana produkcyjna, §5).
-4. Porty `LessonPoolAgentProvider` i `LessonExerciseCheckerProvider` oraz ich
+**Etap 1 — w zakresie (jeden PR):**
+
+1. Rdzeń domenowy `packages/server/src/domain/lessons/agent/` (§3).
+2. Polityka agenta per przedmiot `SubjectModule.agentPolicy` dla
+   `english_chapter`, `english_grammar` i `school` (§4).
+3. Porty `LessonPoolAgentProvider` i `LessonExerciseCheckerProvider` oraz
    fake'i (§6).
-5. Kierownik `runLessonPoolAgent` w `modules/materials/lessons/` — w pamięci,
-   bez bazy i bez podpięcia do `executeLessonGeneration` (§7).
+4. Kierownik `runLessonPoolAgent` w `modules/materials/lessons/` — w pamięci,
+   bez bazy, bez podpięcia do `executeLessonGeneration`, z hakami pod zapis per
+   zagadnienie z etapu 2 (§7).
+5. Wspólna sanityzacja świeżego ćwiczenia wydzielona z `acceptFreshLessonPool`
+   (§7.2), bez zmiany zachowania potoku.
 6. Próba `pnpm probe:agent` przepięta na rdzeń i kierownika, narzędzia ślepej
-   oceny i rejestr kosztów (§8).
+   oceny, rejestr kosztów, zrzut punktu odniesienia z potoku (§8).
 7. Dokumentacja (§10).
 
 **Poza zakresem:** produkcyjny adapter AI SDK, flaga `UMIEM_LESSON_GENERATOR`,
-konfiguracja env agenta, integracja z `executeLessonGeneration`, zapis per
-zagadnienie i wznawianie, `UsageRecorder` i `PAID_ADAPTERS` (etap 2); pomiar
-odbiorczy (etap 3); usunięcie krytyka (etap 4); `sentenceCount` liczący
-wielokropek ramy (issue pkt 4) i warianty szyku tłumaczeń (pkt 3) — osobne
-zadania; zmiany w krytyku lekcji.
+env agenta, `provider-config.md` i `.env.example`, integracja z
+`executeLessonGeneration`, zapis per zagadnienie i wznawianie w bazie,
+`UsageRecorder`/`PAID_ADAPTERS`, mapowanie statusów na `needs_review`, proces
+grada dla szkoły (etap 2); pomiar odbiorczy (etap 3); usunięcie krytyka (etap
+4); `sentenceCount` liczący wielokropek ramy (pkt 4) i warianty szyku (pkt 3) —
+osobne zadania; zmiany w krytyku lekcji.
 
-**Moduł i zależności.** Wszystko w obszarze `materials` (autorstwo materiału);
-rdzeń w `src/domain/lessons/agent/`, przedmioty w `src/domain/lessons/subjects/`,
-kierownik w `modules/materials/lessons/`. Brak nowych zależności między
-obszarami. Granica transakcji: etap 1 nie zapisuje do bazy poza istniejącymi
-ścieżkami potoku (zmiana reguły ujawnień nie zmienia transakcji).
+**Moduł i zależności.** Obszar `materials`: rdzeń w `src/domain/lessons/agent/`,
+przedmioty w `src/domain/lessons/subjects/`, kierownik w
+`modules/materials/lessons/`. Brak nowych zależności między obszarami. Etap 1
+nie pisze do bazy; PR wstępny nie zmienia granic transakcji.
 
 ## 2. Słownik
 
-- **Zagadnienie** — cel lekcji (`LessonObjective`) z kartami i przykładami.
+- **Zagadnienie** — cel lekcji z kartami i przykładami kart.
 - **Podagent** — pętla modelu dla jednego zagadnienia z narzędziami
   `submit_exercises` i `remove_exercise`.
-- **Kierownik** — przypadek użycia, który uruchamia podagentów, składa ich
-  narzędzia z funkcji domeny i portu checkera, pilnuje limitów i rund
-  naprawczych.
-- **Checker** — drugi model: ślepe rozwiązanie (rozwiązujący) i ocena wariantów
-  odpowiedzi (sędzia). Inna rodzina modeli niż generator.
-- **Ujawnienie twarde** — rozwiązanie ćwiczenia samodzielnego widziane wcześniej
-  (przykład karty, zdanie karty, ćwiczenie niesamodzielne); jak dziś
-  `findExposureLeaks`.
+- **Kierownik** — przypadek użycia: uruchamia planera i podagentów, składa ich
+  narzędzia z funkcji domeny i portu checkera, pilnuje limitów i budżetu.
+- **Checker** — drugi model (inna rodzina niż generator): ślepe rozwiązanie
+  (rozwiązujący) i ocena wariantów odpowiedzi (sędzia).
+- **Ujawnienie** — jak `findExposureLeaks`: twarde (rozwiązanie widziane
+  wcześniej jako przykład karty, zdanie karty przy generowaniu albo ćwiczenie
+  niesamodzielne) i miękkie (ta sama odpowiedź w innym ćwiczeniu
+  samodzielnym). Twarde nie zależą od pozycji w lekcji
+  (`exposure-leaks.ts:98-115`).
 
 ## 3. Rdzeń domenowy (`domain/lessons/agent/`)
 
 Czyste funkcje nad jawnie przekazanymi danymi: bez SDK, bazy, zegara,
-losowości i konfiguracji środowiska. Identyfikatory ćwiczeń w puli nadaje stan
-(`ex1`, `ex2`…), deterministycznie.
+losowości, konfiguracji i importów z `modules/`, `providers/`, `ports/`.
+Identyfikatory ćwiczeń w puli nadaje stan (`ex1`, `ex2`…), deterministycznie.
+Typy współdzielone z przedmiotami (`AgentObjective`, `SubjectAgentPolicy`)
+żyją w `domain/lessons/types.ts`, żeby uniknąć cyklu typów.
 
 ### 3.1. Stan
 
 ```ts
-interface AgentObjective {
+interface AgentObjective {                      // types.ts
   readonly id: string;
   readonly titlePl: string;
   readonly descriptionEn: string;
-  readonly kind?: "words" | "frame";
+  readonly kind?: DynamicObjectiveKind;          // "words" | "frame" (rozdział)
   readonly cards: readonly { readonly title: string; readonly body: string }[];
-  readonly examples: readonly string[];
 }
 interface AgentPoolEntry { readonly id: string; readonly draft: LessonExerciseDraft }
 interface LessonAgentState {
   readonly topic: LessonTopic;
-  readonly objectives: readonly AgentObjective[];       // kolejność lekcji
+  readonly objectives: readonly AgentObjective[];          // kolejność lekcji
   readonly pools: ReadonlyMap<string, readonly AgentPoolEntry[]>;
-  /** Ćwiczenia szkicu (dogenerowanie): nietykalne, liczą się do ujawnień i duplikatów. */
+  /** Przykłady kart per zagadnienie (z planu albo z `submit`); trafiają do lesson_context.examples. */
+  readonly examples: ReadonlyMap<string, readonly string[]>;
+  /** Stałe źródła ujawnień per zagadnienie (przykłady szkicu, zdania kart); nigdy nie zapisywane. */
+  readonly fixedSources: ReadonlyMap<string, readonly string[]>;
+  /** Ćwiczenia szkicu i zagadnień już zapisanych: nietykalne, liczą się do walidacji, ujawnień i statusu. */
   readonly fixed: readonly LessonExerciseDraft[];
   readonly nextId: number;
 }
 ```
 
 `createLessonAgentState(input)` buduje stan; każda operacja zwraca nowy stan
-(wejście nie jest mutowane). Kolejność lekcji: ćwiczenia `fixed`, potem
-zagadnienia w kolejności planu, w zagadnieniu po etapach (`intro`, `guided`,
-`productive`, `independent`; poza ścieżką etapów na końcu zagadnienia), jak
-`LessonState.ordered()` w PoC.
+(wejście nie jest mutowane). Kolejność lekcji (`orderedLesson(state)`):
+zagadnienia w kolejności planu, w zagadnieniu ćwiczenia `fixed` i puli po
+etapach (`intro`, `guided`, `productive`, `independent`, potem typy poza
+ścieżką etapów) — ten sam porządek co sesja i `lessonCoverageGaps`.
 
 ### 3.2. Kontekst kontroli
 
 ```ts
+type AgentCapableSubject = SubjectModule & { readonly agentPolicy: SubjectAgentPolicy };
 interface AgentCheckContext {
-  readonly subject: SubjectModule;          // z agentPolicy
+  readonly subject: AgentCapableSubject;
   readonly material: string;
-  readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>; // per zagadnienie, §3.5
+  readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>;   // §3.5
 }
 ```
 
+`asAgentCapable(subject)` zwraca `AgentCapableSubject` albo błąd walidacji
+(przedmiot bez polityki nie może być generowany agentem).
+
 ### 3.3. Przyjmowanie paczki
 
-`precheckBatch(state, objectiveId, drafts, ctx)` — wyłącznie kontrole
-deterministyczne (kroki 1–2 niżej) na bieżącym stanie; zwraca dla każdego
-indeksu `pass` albo `rejected`. Kierownik woła checker **tylko** dla ćwiczeń z
-`pass`.
+Wejście to szkice już po wspólnej sanityzacji kierownika (§7.2). Dla każdego
+kandydata rdzeń najpierw stosuje `agentPolicy.sanitize` (np. usunięcie `hint`,
+§4.4), potem `subject.refineGeneratedPool` (może odrzucić albo oczyścić, np.
+usunąć warianty). Oczyszczony szkic jest tym, co widzi checker i co trafia do
+puli.
 
-`admitBatch(state, objectiveId, candidates, checks, ctx)` przyjmuje paczkę **po
-kolei** (pula rośnie w trakcie, więc duplikat w tej samej paczce odpada). Dla
-każdego kandydata, w tej kolejności — pierwszy niespełniony krok rozstrzyga:
+**Kontrole (kroki 1–4 deterministyczne, 5–6 z checkera):**
 
-1. **limit**: pula zagadnienia osiągnęła `maxExercises`;
-2. **reguły deterministyczne**:
-   `subject.refineGeneratedPool` → `validateLessonExercise` →
-   `validatePool([...pula zagadnienia, kandydat])` (z `fixed` tego zagadnienia)
-   → `subject.validatePoolExtra` → `agentPolicy.exerciseGate`;
-3. **ujawnienia** (na kolejności lekcji z kandydatem wstawionym na końcu swojego
-   zagadnienia, źródła wg §5): kandydat jest ofiarą twardego ujawnienia, albo
-   staje się źródłem twardego ujawnienia dla ćwiczenia przyjętego wcześniej,
-   które przed wstawieniem ujawnienia nie miało;
-4. **ślepe rozwiązanie**: wynik checkera jest dostępny i `blindMatches` zwraca
-   `false`;
-5. **warianty**: sędzia uznał któryś wariant `acceptedAnswers` za
+1. **limity**: pula zagadnienia osiągnęła `maxExercises`; dla
+   `lesson_listen_choice` — osiągnęła `listenAllowance` zagadnienia
+   (odpowiednik `capListenChoiceOverflow`);
+2. **reguły ćwiczenia**: `validateLessonExercise`, potem
+   `agentPolicy.exerciseGate`;
+3. **reguły lekcji**: `validatePool` na **całej lekcji**
+   (`orderedLesson` z kandydatem, `context.existingExercises` jak w potoku),
+   potem `subject.validatePoolExtra` z materiałem. Kandydat odpada, gdy
+   którakolwiek z nich zgłasza błąd kandydata **albo** nowy błąd dowolnego
+   innego ćwiczenia, który przed wstawieniem nie występował (porównanie
+   zbiorów błędów przed i po, nie liczby ważnych — wadliwe ćwiczenie `fixed`
+   nie blokuje wszystkich kandydatów);
+4. **ujawnienia** w trybie `coverage` (`findExposureLeaks` na
+   `orderedLesson` z kandydatem; źródła: `examples` + `fixedSources`):
+   kandydat odpada, gdy sam staje się ujawniony (twardo albo miękko) **albo**
+   gdy ujawnia ćwiczenie dotąd nieujawnione, w tym `fixed` (jak
+   `resolveGenerationLeaks`: ofiara `fixed` → odpada świeże źródło). Dzięki
+   temu pule nigdy nie zawierają ćwiczeń, których pokrycie publikacji i tak
+   by nie policzyło;
+5. **ślepe rozwiązanie**: wynik dostępny i `blindMatches` zwraca `false`;
+6. **warianty**: sędzia uznał któryś wariant `acceptedAnswers` za
    nierównoważny.
 
-Krok 2 powtarza `precheckBatch`, bo między nimi inne zagadnienie mogło dodać
-ćwiczenie. Typ spoza `blindSolveTypes` / `variantCheckTypes` (albo brak
-wariantów) nie ma odpowiedniej kontroli i przechodzi krok bez znacznika. Brak
-wyniku checkera dla typu z listy (błąd, timeout) = kontrola pominięta;
-ćwiczenie przechodzi kroki 4–5, a wynik niesie znacznik `unchecked` (liczony w
-statystykach jako `checkUnavailable`).
+`precheckBatch(state, objectiveId, drafts, ctx)` wykonuje sanityzację i kroki
+1–4, **dokładając kolejnych kandydatów do roboczego stanu** (duplikat w tej
+samej paczce odpada już tutaj). Zwraca per indeks
+`{ pass: true; draft: LessonExerciseDraft; sanitized: string[] }` albo
+`{ pass: false; rejection }`. Kierownik woła checker wyłącznie dla `pass` i
+wyłącznie z oczyszczonym szkicem.
 
-Wynik `admitBatch`: nowy stan oraz per indeks wejścia
-`{ accepted: id, sanitized?: string[] }` albo
-`{ rejected: { kind: "shape" | "rule" | "leak" | "blind" | "variant" | "limit", reasons: string[] } }`.
-Powody są po angielsku (dla modelu); teksty ujawnień biorą szablony z
-`agentPolicy.rejectionTexts`. `sanitized` opisuje usunięte pola (np. `hint`,
-§4.4). Rodzaj `shape` nadaje kierownik przy parsowaniu (§7.2).
+`admitBatch(state, objectiveId, prechecked, checks, ctx)` przyjmuje kandydatów
+`pass` **po kolei na bieżącym stanie**, powtarzając kroki 1–4 (między
+`precheck` a `admit` inne zagadnienie mogło dodać ćwiczenie), potem 5–6.
+Słowa kluczowe (`lesson_keywords`, szkoła) są przyjmowane na końcu paczki, po
+pytaniach otwartych swojej rodziny, więc wynik nie zależy od kolejności w
+paczce.
+
+```ts
+type CheckResult<T> = { readonly kind: "na" } | { readonly kind: "unavailable" } | { readonly kind: "done"; readonly value: T };
+interface CandidateChecks {
+  readonly solve: CheckResult<readonly string[]>;
+  readonly variants: CheckResult<readonly boolean[]>;
+}
+type Rejection = {
+  readonly kind: "shape" | "rule" | "lesson" | "leak" | "blind" | "variant" | "limit";
+  readonly code: string;              // stały kod reguły, bez treści (logi, trwały zapis)
+  readonly reasons: readonly string[]; // tekst dla modelu (angielski), może zawierać treść
+};
+```
+
+`na` — typ spoza `blindSolveTypes`/`variantCheckTypes` albo brak wariantów;
+krok przechodzi. `unavailable` — błąd lub timeout checkera; krok przechodzi, a
+wynik niesie `unchecked` (statystyka `checkUnavailable`). Wynik `admitBatch`:
+nowy stan oraz per indeks wejścia `{ accepted: id; sanitized; unchecked }`
+albo `{ rejected: Rejection }`. Teksty ujawnień z
+`agentPolicy.rejectionTexts`.
 
 `removeExercise(state, objectiveId, id)` usuwa wyłącznie ćwiczenie z puli tego
-zagadnienia (nie `fixed`, nie cudze); zwraca `{ state, removed: boolean }`.
+zagadnienia, a razem z nim osierocone słowa kluczowe jego rodziny
+(odpowiednik `withoutOrphanKeywords`); zwraca `{ state, removed: string[] }`.
 
-### 3.4. Status zagadnienia
+**Niezmiennik:** po każdym `admitBatch` i `removeExercise` lekcja (`fixed` +
+pule) nie ma nowych ujawnień ani nowych błędów `validatePool`/
+`validatePoolExtra` względem stanu wejściowego. Test własności (§9.1).
+
+### 3.4. Przykłady kart
+
+`submitExamples(state, objectiveId, lines, ctx)` — dla zagadnień bez
+przykładów z planu (`objectiveSource !== "planner"`, §7.1): 1–3 linie,
+przycięte i ograniczone jak dziś w `executeLessonGeneration`
+(`MAX_TEXT_LENGTH`). Linia odpada, gdy ujawnia rozwiązanie ćwiczenia lekcji
+(twardo, `fixed` lub puli). Zastępuje wcześniejsze przykłady zagadnienia
+(jak ostatnia partia w potoku). Przykłady wpływają na kolejne kontrole
+ujawnień.
+
+### 3.5. Status i limity zagadnienia
+
+`objectiveAgentLimits({ targetCount, listenAllowance }, policy)` →
+`{ targetCount, listenAllowance, maxExercises: targetCount + listenAllowance + policy.slack }`.
+`targetCount` i `listenAllowance` liczy kierownik istniejącymi
+`objectiveBatchCounts(poolSize, …)` i `listenChoiceAllowance` — **te same
+liczby co partia dzisiejszego potoku**, zależne od `poolSize` rodzica. To
+zastępuje stałe PoC (10–12, limit 14). Dla szkoły minima 3/2/2 dają co
+najmniej 8 ćwiczeń na zagadnienie (`minimumCountPerObjective`); „ok. 5–6” z
+issue jest niezgodne z minimami publikacji — agent dostaje tyle, ile partia
+potoku.
 
 `objectiveStatus(state, objectiveId, ctx)` →
-`{ counts: { guided, productive, independent, listening, total }, missing: string[], complete: boolean }`:
+`{ counts: { guided, productive, independent, outsideStages, total }, missing: string[], complete: boolean }`:
 
-- **etapy**: liczba ćwiczeń etapu ≥ minimum przedmiotu (`lessonPoolMinimums`),
-  dla etapu samodzielnego + `agentPolicy.independentReserve` (zapas pod
-  końcową kontrolę ujawnień); `lesson_listen_choice` i inne typy poza ścieżką
-  etapów liczą się do `listening`, nie do etapów;
-- **wymagane typy**: każda grupa alternatyw z
-  `agentPolicy.requiredTypes?.(objective)` ma co najmniej jedno ćwiczenie;
+- **pokrycie**: `lessonCoverageGaps` dla tego zagadnienia na całej lekcji
+  (ćwiczenia ujawnione nie liczą się; szkoła — różne pytania otwarte), z
+  minimum etapu samodzielnego podniesionym o `agentPolicy.independentReserve`;
+- **liczba**: `total` (bez `outsideStages`) ≥ `targetCount`;
+- **wymagane typy**: każda grupa z `agentPolicy.requiredTypes?.(objective)`,
+  po odfiltrowaniu przez rdzeń typów spoza `objective.exerciseTypes`, ma co
+  najmniej jedno ćwiczenie;
+- **przykłady kart**: zagadnienie ma 1–3 przykłady;
 - **braki przedmiotu**: `agentPolicy.objectiveGaps?.(pool, objective, ctx)`;
-- `complete` = brak braków. Ćwiczenia `fixed` zagadnienia liczą się do etapów
-  i typów.
+- `complete` = brak braków. `fixed` zagadnienia liczą się wszędzie.
 
-### 3.5. Limity zagadnienia
+### 3.6. Kontrola końcowa
 
-`objectiveAgentLimits(subject, topic, objectiveId, batchCount, listenAllowance)`
-→ `{ targetCount, maxExercises }`: `targetCount` = `batchCount` z
-`objectiveBatchCounts(poolSize, …)` (ta sama liczba co partia dzisiejszego
-potoku, zależna od `poolSize` rodzica); `maxExercises = targetCount +
-listenAllowance + agentPolicy.slack`. To zastępuje stałe PoC
-(`POOL_COUNT_PER_OBJECTIVE = 10`, `MAX_PER_OBJECTIVE = 14`) i jest poprawką
-„za duża paczka” dla szkoły. `batchCount` i `listenAllowance` liczy kierownik
-istniejącymi funkcjami `objectiveBatchCounts` i `listenChoiceAllowance` z
-`lesson-drafts.ts` (ten sam obszar); funkcja domenowa dostaje je jako dane.
-
-### 3.6. Ujawnienia na całej lekcji
-
-`lessonHardLeaks(state, subject)` → ofiary twardych ujawnień w kolejności
-lekcji (`{ objectiveId, id }[]`), wyłącznie spośród ćwiczeń pul (nie `fixed`).
+`lessonInvariantCheck(state, ctx)` — bezpiecznik po zakończeniu podagentów:
+`findExposureLeaks` (coverage) i `validatePool`/`validatePoolExtra` całej
+lekcji. Przy zachowanym niezmienniku (§3.3) zwraca pustą listę. Gdy nie
+(błąd w kodzie), zwraca ćwiczenia puli do usunięcia (ofiary z pul, a dla
+ofiar `fixed` — świeże źródła), a kierownik usuwa je bez rund naprawczych i
+loguje `invariant_violation`. **Rund naprawczych nie ma** — atomowe przyjęcie
+z kroku 4 je zastępuje.
 
 ### 3.7. Ślepe rozwiązanie
 
-- `solverView(draft)` — widok dziecka: polecenie, pytanie/bodziec, tekst z
-  lukami, opcje, bloki `lesson_order` posortowane, bank słów luk posortowany,
+- `solverView(draft, topic)` — widok dziecka składany z **listy dozwolonych
+  pól**: polecenie (`instructionPl`; dla `lesson_transform` instrukcja z
+  `topic.transforms[transformId]`, jak `lesson-materialize.ts:138`), pytanie i
+  bodziec (`prompt`, `stem`, `statement`), opis obrazka (`visualSubject`), tekst
+  z lukami, opcje, bloki `lesson_order` posortowane, bank słów luk posortowany,
   lewe strony par w kolejności i prawe posortowane (z `extraRight`), grupy i
-  elementy w kolejności. Bez `answer`, `acceptedAnswers`, `focus`,
-  `correctOption`, `gapAnswers`, `explanationPl`, `hint` (podpowiedź nie jest
-  częścią pierwszego widoku), `requiredElements` i pozostałych pól klucza.
+  elementy w kolejności. Test (§9.1) trzyma mapę
+  `Record<keyof LessonExerciseDraft, "view" | "key" | "meta">`, więc nowe pole
+  szkicu wymusza świadomą klasyfikację.
 - `expectedAnswerCount(draft)` — luki w tekście: liczba luk; pary: liczba par;
   grupy: liczba elementów; inaczej 1.
 - `blindMatches(draft, answers, normalizer)`:
-  - luki w tekście: ta sama liczba odpowiedzi, każda równoważna (`answersEquivalent`)
-    odpowiedzi luki na tej pozycji;
-  - pary: odpowiedź i to prawa strona dla i-tej lewej (tolerancja zapisu
-    „lewa => prawa”: bierzemy część po ostatnim „=>”), porównanie po
-    `plainKey` (małe litery, prosty apostrof, jedna spacja);
-  - grupy: etykieta grupy dla i-tego elementu, jak pary;
-  - pozostałe typy: pierwsza odpowiedź równoważna `answer` albo któremuś
-    wariantowi.
+  - luki w tekście: ta sama liczba odpowiedzi, każda równoważna
+    (`answersEquivalent`) odpowiedzi luki na tej pozycji;
+  - pary: i-ta odpowiedź to prawa strona dla i-tej lewej (z zapisu „lewa =>
+    prawa” brana część po ostatnim „=>”), porównanie `plainKey` (małe litery,
+    prosty apostrof, jedna spacja);
+  - grupy: etykieta grupy i-tego elementu, jak pary;
+  - pozostałe typy: pierwsza odpowiedź równoważna `answer` albo wariantowi.
 
 ### 3.8. Plan zagadnień (rozdział)
 
-`validateAgentPlan(rawPlan, subject, material)` → `{ objectives } | { errors }`:
-kształt (Zod), slugi ASCII snake_case i unikalne, **3–6** zagadnień, 2–4 karty,
-≤ 3 przykłady, następnie `agentPolicy.planGate?.(plan, material)`. Udany plan
-składa `DynamicTopicData` i `LessonTopic` przez `subject.buildDynamicTopic` i
-`validateDynamicTopicData` (ta sama ścieżka co dziś), z identyfikatorami
-`${subject.id}.${slug}` zgodnymi z `buildDynamicTopicData`.
+`validateAgentPlan(raw, subject, material)` → `{ objectives: RawPlanObjective[] } | { errors }`:
+kształt (Zod), slugi ASCII snake_case i unikalne, **3–6** zagadnień, 2–4
+karty, ≤ 3 przykłady, `kind`, potem `agentPolicy.planGate?.(plan, material)`.
+Funkcja **nie składa** tematu: identyfikatory (`${subjectId}.d${deckId}.${slug}`),
+przycinanie, ton i rodzaje nadaje kierownik istniejącymi
+`buildDynamicTopicData`, `withSubjectObjectiveKinds` i
+`validateDynamicTopicData` (§7.1) — jedna implementacja dla obu ścieżek.
 
 ## 4. Polityka agenta per przedmiot (`SubjectModule.agentPolicy`)
 
 ```ts
-interface SubjectAgentPolicy {
-  /** Typy rozwiązywane na ślepo przez checker. */
+interface SubjectAgentPolicy {                     // types.ts
   readonly blindSolveTypes: readonly LessonExerciseType[];
-  /** Typy, których `acceptedAnswers` ocenia sędzia. */
   readonly variantCheckTypes: readonly LessonExerciseType[];
-  /** Czy checker dostaje materiał lekcji (przedmiot, w którym rozwiązanie wymaga materiału). */
+  /** Checker dostaje materiał lekcji (rozwiązanie wymaga materiału). */
   readonly checkerNeedsMaterial: boolean;
   readonly independentReserve: number;
   readonly slack: number;
   readonly rejectionTexts: { readonly leakVictim: string; readonly leakSource: string };
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
+  sanitize?(draft: LessonExerciseDraft): { draft: LessonExerciseDraft; removed: readonly string[] };
   exerciseGate?(draft: LessonExerciseDraft, objective: AgentObjective, ctx: { material: string }): string[];
-  /** Czyszczenie świeżego ćwiczenia przed kontrolami (np. usunięcie niedozwolonego pola). */
-  sanitize?(draft: LessonExerciseDraft): { draft: LessonExerciseDraft; removed: string[] };
   objectiveGaps?(pool: readonly LessonExerciseDraft[], objective: AgentObjective, ctx: { material: string }): string[];
-  planGate?(plan: readonly AgentObjective[], material: string): string[];
+  /** Słowa i ramy do pokrycia przez plan (lista dla modelu planera). */
+  planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
+  planGate?(plan: readonly RawPlanObjective[], material: string): string[];
 }
 ```
 
-Przedmiot bez `agentPolicy` nie może być generowany agentem (kierownik rzuca
-błąd walidacji przed jakimkolwiek wywołaniem modelu). Silnik i kierownik nie
-zawierają nazw przedmiotów ani reguł dziedzinowych (test architektury, §9.4).
-`sanitize` działa w `admitBatch` i `precheckBatch` przed krokiem 2.
+Silnik i kierownik nie zawierają identyfikatorów przedmiotów ani reguł
+dziedzinowych — pilnuje tego istniejący skan literałów w
+`domain/lessons/architecture.test.ts:58-110` (obejmuje `domain/lessons/**`,
+`modules/materials/lessons`, `providers/**` poza `fake.ts`; nowy
+`providers/fake-lesson-agent.ts` też nie może ich zawierać).
 
 ### 4.1. Wartości wspólne
 
-`independentReserve: 1`, `slack: 2` dla wszystkich trzech przedmiotów
-(wartości z PoC; strojenie w etapie 3).
+`independentReserve: 1`, `slack: 2` (PoC; strojenie w etapie 3).
 
 ### 4.2. `english_chapter`
 
-- `blindSolveTypes` / `variantCheckTypes`: jak `BLIND_TYPES` /
-  `VARIANT_CHECK_TYPES` PoC dla rozdziału (przecięte z typami przedmiotu);
-  `checkerNeedsMaterial: false`.
-- `requiredTypes`: `words` — `lesson_match`; `lesson_listen_choice`;
-  `lesson_cloze` lub `lesson_group`. `frame` — `lesson_order`;
-  `lesson_listen_choice`; `lesson_cloze` (PoC `REQUIRED_TYPES`). Grupa z typem
-  spoza listy typów zagadnienia jest pomijana (np. przedmiot bez nagrań zdań).
+- `blindSolveTypes` / `variantCheckTypes`: wartości PoC dla rozdziału
+  przecięte z typami przedmiotu; `checkerNeedsMaterial: false`.
+- `requiredTypes`: `words` — [`lesson_match`], [`lesson_listen_choice`],
+  [`lesson_cloze`, `lesson_group`]; `frame` — [`lesson_order`],
+  [`lesson_listen_choice`], [`lesson_cloze`].
 - `exerciseGate`:
-  - zagadnienie `words`: sprawdzana część ćwiczenia (luki, opcja poprawna,
-    tłumaczenie, lewe strony par, elementy grup) zawiera słowo z kart **tego**
-    zagadnienia; pary i grupy — co najmniej dwa (PoC `cardWordErrors`);
-  - zagadnienie `frame` (**nowe**, issue pkt 2): rozwiązanie ćwiczenia
-    (odpowiedź, poprawne zdanie `lesson_order`, zdanie luki po wstawieniu)
-    zawiera stałą część jednej z ram z kart **tego** zagadnienia
-    (`frameKey`); ćwiczenia słuchowe i pary/grupy z bramki wyłączone.
+  - zagadnienie `words`: sprawdzana część (luki, opcja poprawna, odpowiedź,
+    lewe strony par, elementy grup) zawiera słowo z kart **tego** zagadnienia;
+    pary i grupy — co najmniej dwa (PoC `cardWordErrors`);
+  - zagadnienie `frame` (**nowe**, issue pkt 2): rozwiązanie (odpowiedź,
+    zdanie `lesson_order`, zdanie luki po wstawieniu odpowiedzi) zawiera
+    stałą część (`frameKey`) jednej z ram z kart **tego** zagadnienia;
+    `lesson_listen_choice`, pary i grupy wyłączone.
 - `objectiveGaps`: `words` — każde słowo materiału z kart zagadnienia użyte w
-  którymś ćwiczeniu (PoC `uncoveredWords`).
-- `planGate`: każde słowo z list „en — pl” materiału i każda rama z sekcji
-  zwrotów/ram trafia na kartę któregoś zagadnienia (PoC `propose_objectives`).
-- Parser materiału (`parseMaterialLexicon`: słowa „en — pl” bez pytań i zdań,
-  ramy z sekcji „zwroty/ramy”), `frameKey`, `plainText`, `mentions` — nowy plik
-  `english-chapter/material-lexicon.ts`, obok istniejącego `lexicon.ts`
-  (słownik dozwolonych słów, inna odpowiedzialność).
-- `rejectionTexts.leakVictim`: tekst PoC („… change the room, object or
-  place.”).
+  którymś ćwiczeniu.
+- `planCoverage` i `planGate`: słowa z list „en — pl” i ramy z sekcji
+  zwrotów/ram materiału; każde na karcie któregoś zagadnienia.
+- Parser (`parseMaterialLexicon`), `frameKey`, `plainText`, `mentions` —
+  `english-chapter/material-lexicon.ts` (obok `lexicon.ts`, który jest
+  słownikiem dozwolonych słów).
+- `rejectionTexts.leakVictim`: „… change the room, object or place.” (PoC).
 
 ### 4.3. `english_grammar`
 
-- `blindSolveTypes` / `variantCheckTypes`: jak PoC (wartości nie-szkolne,
-  przecięte z typami przedmiotu); `checkerNeedsMaterial: false`.
-- Bez `requiredTypes`, `exerciseGate`, `objectiveGaps`, `planGate` (zagadnienia
-  z katalogu).
-- `hint` bez zmian (w gramatyce to forma podstawowa, np. „go” przy „goes”).
+- `blindSolveTypes` / `variantCheckTypes`: wartości PoC przecięte z typami
+  przedmiotu (gramatyka nie ma `lesson_match`, `lesson_group`,
+  `lesson_cloze`); `checkerNeedsMaterial: false`.
+- Bez `requiredTypes`, `exerciseGate`, `objectiveGaps`, planu.
+- `hint` bez zmian (forma podstawowa, np. „go” przy „goes”).
 - `rejectionTexts.leakVictim`: „… use a different subject, verb or object.”
 
 ### 4.4. `school`
 
 - `blindSolveTypes`: `lesson_choice`, `lesson_match`, `lesson_group`,
   `lesson_cloze`, **`lesson_gap`**; `variantCheckTypes`: **`lesson_gap`**;
-  `checkerNeedsMaterial: true`. `lesson_open_answer` nie jest rozwiązywane na
-  ślepo — sprawdzenie graderem od etapu 2 (issue pkt 1).
-- `sanitize`: `hint` przy typie innym niż `lesson_open_answer` jest **usuwany**
-  (nie odrzucany); wynik narzędzia mówi modelowi o usunięciu. Rodzic może
-  dopisać podpowiedź w edytorze (edycja nie przechodzi przez `sanitize`).
+  `checkerNeedsMaterial: true`. Nie są rozwiązywane na ślepo:
+  `lesson_open_answer` (grader od etapu 2), `lesson_order`,
+  `lesson_calculation`, `lesson_keywords`.
+- `sanitize`: `hint` przy typie innym niż `lesson_open_answer` jest
+  **usuwany**; wynik narzędzia mówi o tym modelowi. Świadome odstępstwo od
+  issue („chyba że rodzic chce inaczej”): agent nie czyta polecenia rodzica w
+  tej sprawie; rodzic dopisuje podpowiedź w edytorze (edycja nie przechodzi
+  przez `sanitize`). Dopisek przepływu narzędzi (próba, potem adapter) mówi
+  modelowi: podpowiedź tylko przy otwartych odpowiedziach.
 - `exerciseGate` — **bramka podpowiedzi** dla `hint` przy
-  `lesson_open_answer`. Po normalizacji (`subject.normalizer`, małe litery,
-  bez interpunkcji) podpowiedź nie zawiera:
-  - odpowiedzi ani żadnego wariantu `acceptedAnswers`;
-  - tekstu żadnego elementu `requiredElements`;
-  - (dla kompletności przy przyszłych typach) tekstu poprawnej opcji ani słowa z
-    banku luk.
+  `lesson_open_answer`:
+  - tokenizacja: tekst po `subject.normalizer`, małe litery, podział na
+    ciągach znaków niebędących literą ani cyfrą; liczby są tokenami;
+  - słowa treściowe frazy: tokeny ≥ 4 liter albo zawierające cyfrę; fraza bez
+    takich tokenów — wszystkie jej tokeny;
+  - zgodność dwóch słów: równe, albo oba ≥ 4 liter i wspólny prefiks ≥
+    max(3, krótsze − 3) („Odra”/„Odrze”, „Polska”/„Polski”,
+    „zmniejszony”/„zmniejszenie” — tak; „mapa”/„mama” — nie);
+  - fraza jest „zawarta” w podpowiedzi, gdy zgodne słowo podpowiedzi ma co
+    najmniej połowa jej słów treściowych (zaokrąglając w górę; przy 1–2
+    słowach — wszystkie);
+  - podpowiedź odpada, gdy zawiera odpowiedź, któryś wariant albo któryś
+    element `requiredElements`.
+  Brak lematyzatora: to przybliżenie. Testy (§9.1) obejmują przykłady z próby
+  („Przykładem jest Mierzeja Wiślana”, „Użyj słów: zmniejszony, uproszczony”)
+  i fałszywe trafienia krótkich słów; fałszywe odrzucenia mierzy etap 3
+  (kod `hint_reveals_answer` w odrzuceniach).
+- `rejectionTexts.leakVictim`: „… ask about a different fact of the material
+  or phrase the question differently.”
 
-  Zawieranie: fraza wielowyrazowa — każde jej słowo treściowe (≥ 4 litery)
-  występuje w podpowiedzi w tej samej lub odmienionej formie; słowo — wspólny
-  rdzeń: równe, gdy któreś ma < 6 liter, inaczej wspólny prefiks ≥ 5 liter i ≥
-  długość krótszego − 3. Brak lematyzatora w repo, więc reguła jest
-  przybliżeniem; testy (§9.1) pilnują przykładów z próby („Przykładem jest
-  Mierzeja Wiślana”, „Użyj słów: zmniejszony, uproszczony”) i krótkich słów bez
-  fałszywych trafień.
-- `rejectionTexts.leakVictim`: „… ask about a different fact of the material or
-  phrase the question differently.” Teksty rozdziału nie trafiają do szkoły.
+## 5. PR wstępny: zdania kart w generowaniu
 
-## 5. Zdania kart jako źródło ujawnień (zmiana produkcyjna)
+**Cel:** angielskie zdania wpisane w treść kart rozdziału są widoczne dla
+dziecka jak przykłady, więc generowanie nie może ich używać jako rozwiązań
+ćwiczeń samodzielnych. Dziś reguła bierze tylko `examples`.
 
-Nowy opcjonalny hak `SubjectModule.cardExposureTexts?(cards)` → teksty z kart,
-które dziecko widzi jako gotowe rozwiązania. Rozdział i gramatyka implementują
-go regułą PoC `cardSentences` (części linii rozdzielone „ — ” albo „ / ”, z
-samych liter ASCII i interpunkcji, zakończone `.?!` albo mające ≥ 3 słowa,
-bez wielokropka ramy; linia słówek „living room — salon” nie jest zdaniem).
-Szkoła haka nie ma (materiał po polsku; dzisiejsze zachowanie).
+- Nowy opcjonalny hak `SubjectModule.cardExposureTexts?(cards)`; implementuje
+  go **tylko `english_chapter`**, regułą PoC `cardSentences` (części linii
+  rozdzielone „ — ” albo „ / ”, z samych liter ASCII i `' ,.?!`, zakończone
+  `.?!` albo ≥ 3 słowa, bez wielokropka; linia słówek „living room — salon”
+  nie jest zdaniem). Gramatyka haka nie dostaje: jej karty mają zdania
+  wplecione w polskie linie z „:” i „→”, których reguła nie łapie, a łapie
+  polski fałszywy alarm („i kropka.”). Szkoła — materiał po polsku.
+- Nowa funkcja domenowa
+  `generationExposureSources(subject, topic, examples)` → przykłady
+  zagadnień rozszerzone o `cardExposureTexts` ich kart.
+- Używają jej **wyłącznie** wejścia reguł generowania: `existingExamples`
+  w `resolveGenerationLeaks` i `examples` w `avoidSentencesFor` w
+  `executeLessonGeneration` i `stageTopUpRound`. Zapisywany
+  `lesson_context.examples` i `finalExamples` dla zapisu są budowane z
+  **nierozszerzonych** przykładów (zdania kart nie trafiają do kontekstu,
+  renderowania karty ani fingerprintów nagrań kart).
+- Bez zmian: pokrycie i publikacja (`lessonCoverageGaps`, także
+  `stageDeficits` rundy pod etap — dalej zgodne z publikacją), lista
+  ujawnień w edytorze, raport ujawnień, sesja (`materializeCard`, ekspozycje
+  tylko z `examples`), krytyk. Pokrycie nadal odwzorowuje scheduler
+  (`architecture.md` §19).
+- **Skutek:** świeże ćwiczenie samodzielne rozdziału z rozwiązaniem równym
+  zdaniu karty odpada przy generowaniu (powód „rozwiązanie widoczne
+  wcześniej”); generator dostaje te zdania na liście do unikania. Istniejące
+  szkice i publikacja bez zmian, więc pomiar blokad nie jest potrzebny.
+- Testy: hak (zdania tak, słówka nie, ramy z wielokropkiem nie, na
+  prawdziwych kartach rozdziału z fixture), `generationExposureSources`,
+  integracyjny `lesson-chapter`: ćwiczenie samodzielne ze zdaniem karty
+  odpada, a zapisany `lesson_context.examples` jest identyczny z wynikiem
+  bez haka.
+- Dokumentacja: `architecture.md` §19 (reguła ujawnień przy generowaniu),
+  `SPEC.md` (lista zdań do unikania, ok. l. 818: „przykłady kart, zdania kart
+  rozdziału i rozwiązania innych ćwiczeń”).
 
-Nowa funkcja domenowa `lessonExposureExamples(subject, topic, examples)` →
-`examples` każdego zagadnienia rozszerzone o `cardExposureTexts` jego kart
-(bez duplikatów). Używają jej **wszystkie** miejsca, które dziś przekazują
-`examples` do reguł ujawnień:
-
-- generowanie: `resolveGenerationLeaks` i `avoidSentencesFor` w
-  `executeLessonGeneration` i `stageTopUpRound`;
-- edytor rodzica: lista ujawnień (`lesson-api.ts`) i pokrycie
-  (`lessonCoverageGaps`);
-- publikacja: pokrycie publikacyjne;
-- raport ujawnień (`lesson-exposure-report.ts`);
-- agent (§3.3, §3.6).
-
-Wyjątek: krytyk lekcji (`lesson-review.ts`) — bez zmian, usuwany w etapie 4.
-Zapisane `lesson_context.examples` się nie zmieniają (zdania kart dochodzą przy
-odczycie), więc nie ma migracji; wersje opublikowane są niezmienne i reguła
-ich nie dotyka.
-
-**Skutek:** ćwiczenie samodzielne, którego rozwiązanie jest zdaniem z karty,
-odpada przy generowaniu i nie liczy się do pokrycia publikacji. Istniejące
-szkice mogą stracić pokrycie — przed PR uruchamiam raport ujawnień
-(`blockedBefore`/`blockedAfter`) na lokalnej bazie i podaję liczby w opisie
-PR; gdy szkiców zablokowanych przybywa, decyzję o wdrożeniu podejmuje
-właściciel.
+Etap 1 korzysta z tej samej funkcji: `fixedSources` stanu agenta =
+`generationExposureSources` bez `examples` zagadnień (te żyją w
+`state.examples`) plus przykłady szkicu.
 
 ## 6. Porty i fake'i
 
 ### 6.1. `ports/ai.ts`
 
 ```ts
+/** Licznik kosztu runu: adapter zgłasza KAŻDE żądanie HTTP (także nieudane) — usd albo null (nieznany). */
+interface RunCostSink { record(usd: number | null): void }
+
 interface LessonObjectiveAgentInput {
-  /** Te same pola co partia dzisiejszego potoku dla jednego zagadnienia (produkcyjny prompt). */
+  /** Pola promptu produkcyjnego (rola, reguły, typy, materiał, polecenie, tematy zdań, avoidSentences).
+   *  Liczby partii (`countPerObjective`, `stageCounts`, `listenChoicePerObjective`) wypełnia kierownik
+   *  z `targets`; `targets` jest jedynym źródłem liczb. */
   readonly pool: LessonPoolInput;
-  readonly objective: { readonly id: string; readonly title: string; readonly kind?: "words" | "frame" };
-  readonly otherObjectives: readonly { readonly title: string; readonly cards: string }[];
-  /** Przykłady i zdania kart zagadnienia (do unikania jako odpowiedzi samodzielnych). */
+  readonly objective: {
+    readonly id: string; readonly title: string; readonly kind?: "words" | "frame";
+    readonly cards: readonly { readonly title: string; readonly body: string }[];
+    readonly examplesFromPlan: boolean;           // false = model dostarcza przykłady przez submit
+  };
+  readonly otherObjectives: readonly { readonly title: string; readonly kind?: "words" | "frame"; readonly cards: string }[];
+  /** Przykłady i zdania kart lekcji, których nie wolno użyć jako odpowiedzi samodzielnych. */
   readonly cardSentences: readonly string[];
   readonly targets: {
     readonly guided: number; readonly productive: number; readonly independent: number;
-    readonly requiredTypes: readonly string[];   // „lesson_match”, „lesson_cloze or lesson_group”
-    readonly targetCount: number; readonly maxExercises: number;
+    readonly requiredTypes: readonly (readonly LessonExerciseType[])[];
+    readonly targetCount: number; readonly listenAllowance: number; readonly maxExercises: number;
   };
   readonly maxSteps: number;
-  /** Runda naprawcza: ćwiczenia usunięte przez kontrolę całej lekcji. */
-  readonly repair?: { readonly removed: readonly { readonly id: string; readonly reason: string }[] };
 }
 
-/** Skrót wyniku dla modelu (bez pełnych szkiców). */
-interface LessonAgentToolOutcome {
-  readonly results: readonly ({ readonly index: number; readonly accepted: string; readonly note?: string }
+interface LessonAgentToolOutcome {               // skrót dla modelu
+  readonly results: readonly (
+    | { readonly index: number; readonly accepted: string; readonly note?: string }
     | { readonly index: number; readonly errors: readonly string[] })[];
-  readonly counts: { readonly guided: number; readonly productive: number; readonly independent: number; readonly listening: number; readonly total: number };
+  readonly examples?: { readonly accepted: number; readonly errors: readonly string[] };
+  readonly counts: { readonly guided: number; readonly productive: number; readonly independent: number; readonly outsideStages: number; readonly total: number };
   readonly missing: readonly string[];
   readonly complete: boolean;
 }
 
 interface LessonObjectiveAgentTools {
-  submit(raw: readonly unknown[]): Promise<LessonAgentToolOutcome>;
-  remove(id: string): Promise<LessonAgentToolOutcome & { readonly removed: boolean }>;
+  /** Wejście = gałąź `exercises` (+ opcjonalnie `examples` zagadnienia) schematu puli. */
+  submit(raw: { readonly exercises: readonly unknown[]; readonly examples?: readonly unknown[] }): Promise<LessonAgentToolOutcome>;
+  remove(id: string): Promise<LessonAgentToolOutcome & { readonly removed: readonly string[] }>;
   /** complete, budżet, termin albo anulowanie. */
   shouldStop(): boolean;
-  /** Koszt jednego żądania HTTP adaptera w USD; null = nieznany. */
-  reportCost(usd: number | null): void;
 }
 
 interface LessonAgentPlanInput {
@@ -400,7 +488,7 @@ interface LessonAgentPlanInput {
   readonly instruction?: string;
   readonly generationRole: string;
   readonly objectivesRules?: string;
-  /** Słowa i ramy materiału do pokrycia (z planGate przedmiotu) — tylko jako lista dla modelu. */
+  readonly objectiveCount: { readonly min: number; readonly max: number };   // 3–6
   readonly coverage?: { readonly words: readonly string[]; readonly frames: readonly string[] };
   readonly maxSteps: number;
 }
@@ -408,59 +496,61 @@ interface LessonAgentPlanInput {
 interface LessonPoolAgentProvider {
   readonly name: string;
   readonly model: string;
-  runObjective(input: LessonObjectiveAgentInput, tools: LessonObjectiveAgentTools, signal: AbortSignal):
+  runObjective(input: LessonObjectiveAgentInput, tools: LessonObjectiveAgentTools, cost: RunCostSink, signal: AbortSignal):
     Promise<{ readonly steps: number; readonly stopReason: "stopped" | "max_steps" | "model_finished" }>;
   planObjectives(
     input: LessonAgentPlanInput,
-    tools: {
-      propose(raw: unknown): Promise<{ readonly ok: boolean; readonly errors: readonly string[] }>;
-      shouldStop(): boolean;
-      reportCost(usd: number | null): void;
-    },
+    tools: { propose(raw: unknown): Promise<{ readonly ok: boolean; readonly errors: readonly string[] }>; shouldStop(): boolean },
+    cost: RunCostSink,
     signal: AbortSignal,
   ): Promise<{ readonly steps: number }>;
 }
 
+/** Wywołania paczkowe: jedno żądanie na paczkę `submit`, materiał raz (koszt szkoły, issue pkt 7). */
 interface LessonExerciseCheckerProvider {
   readonly name: string;
   readonly model: string;
-  solve(input: { readonly view: string; readonly expectedAnswers: number; readonly material?: string }, signal: AbortSignal):
-    Promise<{ readonly answers: readonly string[]; readonly costUsd: number | null }>;
-  judgeVariants(
-    input: { readonly view: string; readonly answer: string; readonly variants: readonly string[]; readonly material?: string },
-    signal: AbortSignal,
-  ): Promise<{ readonly equivalent: readonly boolean[]; readonly costUsd: number | null }>;
+  solve(input: { readonly items: readonly { readonly view: string; readonly expectedAnswers: number }[]; readonly material?: string },
+    cost: RunCostSink, signal: AbortSignal): Promise<{ readonly answers: readonly (readonly string[] | null)[] }>;
+  judgeVariants(input: { readonly items: readonly { readonly view: string; readonly answer: string; readonly variants: readonly string[] }[]; readonly material?: string },
+    cost: RunCostSink, signal: AbortSignal): Promise<{ readonly equivalent: readonly (readonly boolean[] | null)[] }>;
 }
 ```
 
-Zasady dla adapterów (etap 2, tu jako kontrakt):
+`null` w odpowiedzi checkera = brak wyniku dla tej pozycji (`unavailable`).
 
-- adapter materializuje surowe rekordy jak dziś `generateLessonPool`
+**Kontrakt adapterów (etap 2, zapisany teraz):**
+
+- materializuje surowe rekordy jak `generateLessonPool`
   (`materializeGeneratedCalculations`, `…Keywords`, `…Assignments`) przed
   `submit`; nie waliduje treści;
-- pętla kończy się, gdy `shouldStop()` zwraca `true`, po `maxSteps` krokach
-  albo po zakończeniu przez model; adapter zgłasza koszt **każdego** żądania
-  HTTP przez `reportCost` (`providerMetadata.openrouter.usage.cost`);
-- przerwanie `signal` kończy pętlę wyjątkiem przerwania;
-- do checkera trafia wyłącznie widok ćwiczenia, a przy
-  `checkerNeedsMaterial` także materiał; nigdy dane dziecka.
+- kończy pętlę, gdy `shouldStop()` zwraca `true` (sprawdzane przed każdym
+  krokiem), po `maxSteps` albo gdy model kończy;
+- zgłasza koszt **każdego** żądania HTTP przez `RunCostSink`, także
+  nieudanego i ponowionego (decyzja w etapie 2: `maxRetries: 0` z ponowieniem
+  w kierowniku albo zapis w `onLanguageModelCallEnd`); obok, z tego samego
+  zdarzenia, `UsageRecorder.record` — kierownik nigdy nie woła
+  `UsageRecorder`; test inwentarza `PAID_ADAPTERS` rozszerzony w etapie 2 o
+  importy `ai`/`@openrouter` (dziś wykrywa `fetch(`);
+- przerwanie `signal` kończy wywołanie wyjątkiem przerwania;
+- do checkera trafia wyłącznie to, co jest w jego wejściu (§11).
 
-Miejsce na kontrole modelem w szkole (sędzia podpowiedzi, sprawdzenie
-otwartych odpowiedzi graderem) dodaje etap 2 jako kolejne metody
-`LessonExerciseCheckerProvider` albo użycie `AnswerGraderProvider`; etap 1 nie
-definiuje ich sygnatur (YAGNI), zostawia tylko krok w `admitBatch` otwarty na
-dodatkowe `checks`.
+Miejsce na kontrole modelem w szkole: etap 2 dodaje metody checkera albo
+użycie `AnswerGraderProvider` (dziś proces web — decyzja o procesie worker w
+etapie 2) i nowy rodzaj w `CandidateChecks`; etap 1 nie definiuje sygnatur.
 
 ### 6.2. Fake'i (`providers/fake-lesson-agent.ts`)
 
-- `FakeLessonPoolAgent`: scenariusz per zagadnienie — lista kroków
-  (`{ submit: unknown[] } | { remove: string } | { throw: Error } | { hang: true }`)
-  i kosztów kroków; wykonuje kolejne kroki, dopóki `shouldStop()` nie zwróci
-  `true` albo nie skończy się scenariusz lub `maxSteps`; zapamiętuje wejścia i
-  wyniki narzędzi (asercje testów). Plan: lista propozycji `propose`.
+- `FakeLessonPoolAgent`: scenariusz per zagadnienie (klucz: indeks zagadnienia
+  albo slug, bez identyfikatorów przedmiotów) — lista kroków
+  `{ submit } | { remove } | { parallel: Step[] } | { throw } | { hang: true }`
+  i koszt kroku; wykonuje kroki, dopóki `shouldStop()` nie zwróci `true`, nie
+  skończy się scenariusz lub `maxSteps`; `{ parallel }` wywołuje narzędzia
+  równolegle (jak AI SDK dla kilku wywołań w jednym kroku); zapamiętuje
+  wejścia i wyniki narzędzi. Plan: lista propozycji.
 - `FakeExerciseChecker`: funkcja `view → answers` (domyślnie pusta lista =
-  rozjazd), funkcja werdyktów wariantów (domyślnie wszystkie `true`), tryby
-  `throw`/`hang`, koszt per wywołanie, licznik wywołań i maksymalna
+  rozjazd), funkcja werdyktów (domyślnie `true`), tryby `throw`/`hang`/`null`
+  per pozycja, koszt, licznik wywołań, zapis wejść, maksymalna
   zaobserwowana równoległość.
 
 ## 7. Kierownik (`modules/materials/lessons/lesson-pool-agent.ts`)
@@ -468,241 +558,346 @@ dodatkowe `checks`.
 ```ts
 runLessonPoolAgent(
   deps: { agent: LessonPoolAgentProvider; checker: LessonExerciseCheckerProvider; policy: LessonAgentPolicy },
-  input: LessonPoolAgentRunInput,   // przedmiot, temat lub dane do planu, materiał, polecenie, tematy zdań,
-                                    // poolSize, graderAvailable, fixed (szkic), przykłady szkicu
+  input: LessonPoolAgentRunInput,
   signal: AbortSignal,
 ): Promise<LessonPoolAgentResult>
 ```
 
-`LessonAgentPolicy` (wartości domyślne w kodzie; env od etapu 2):
-`maxStepsPerObjective` 8, `planMaxSteps` 8, `objectiveTimeoutMs` 300 000,
-`runTimeoutMs` 900 000, `runBudgetUsd` 1,00, `concurrency` 4,
-`checkerConcurrency` 8, `repairRounds` 2.
+`LessonPoolAgentRunInput`: `runId` (logi), `subjectId`, `deckId`,
+`objectiveSource` (`"planner"` | `"catalog"` | `"input"`), temat albo
+`DynamicTopicData` (dla `catalog`/`input`), materiał, polecenie, tematy zdań,
+`poolSize`, `graderAvailable`, `fixed` (szkic) i przykłady szkicu,
+`skipObjectives` (zagadnienia już zapisane — pomijane, ich ćwiczenia w
+`fixed`), `initialSpentUsd`, opcjonalny hak `onObjectiveSettled`.
+
+`LessonAgentPolicy` (wartości domyślne w kodzie, env od etapu 2):
+`maxStepsPerObjective` 8, `planMaxSteps` 8, `concurrency` 4,
+`checkerConcurrency` 4 (paczki), `checkerTimeoutMs` 90 000,
+`objectiveTimeoutMs` 300 000 (od faktycznego startu podagenta),
+`runTimeoutMs` = `DEFAULT_LESSON_GENERATION_POLICY.runTimeoutMs` (agent nie
+dłużej niż kontroler runu potoku), `runBudgetUsd` 1,00,
+`unknownCallEstimateUsd` 0,02 (koszt `null` liczony szacunkiem).
 
 ### 7.1. Przebieg
 
-1. **Walidacja wejścia**: przedmiot ma `agentPolicy`; inaczej `AppError("validation")`
+1. **Walidacja**: `asAgentCapable(subject)`; inaczej `AppError("validation")`
    bez wywołań modelu.
-2. **Plan**: przedmiot z `planGate` i bez zagadnień na wejściu →
-   `planObjectives`; `propose` woła `validateAgentPlan` i zwraca błędy modelowi.
-   Brak przyjętego planu po `planMaxSteps` → wynik `plan_failed` (bez dalszych
-   wywołań). Pozostałe przedmioty: zagadnienia z tematu (gramatyka) albo z
-   wejścia (szkoła — `generateLessonObjectives` woła wołający, jak dziś).
-3. **Podagenci**: każde zagadnienie dostaje `runObjective` z `AbortSignal`
-   łączącym sygnał runu, termin zagadnienia i termin runu; najwyżej
-   `concurrency` naraz, w kolejności lekcji.
-4. **Narzędzie `submit`** (dla jednego zagadnienia; wywołania tego samego
-   podagenta są sekwencyjne):
-   1. parsowanie każdego rekordu: `isWellShapedRawExercise`, `objectiveId`
-      równe zagadnieniu, `toExerciseDraft`, sanityzacja `voiceTone` i
-      `explanationPl` jak w potoku (`withoutVoiceToneUnlessAllowed`,
-      `withoutInvalidExplanation`), `scopeFamiliesToRun` przy dogenerowaniu;
+2. **Plan** (`objectiveSource: "planner"`): `planObjectives` z
+   `objectiveCount` 3–6, `coverage` z `planCoverage`, regułami przedmiotu i
+   dopiskiem nadrzędnym „up to 6 objectives when coverage needs it” (prompt
+   przedmiotu mówi 3–5). `propose` woła `validateAgentPlan`, potem
+   `buildDynamicTopicData(deckId)`, `withSubjectObjectiveKinds`,
+   `validateDynamicTopicData`; błędy wracają do modelu. Przykłady z planu
+   trafiają do `state.examples`. Brak planu po `planMaxSteps` → wynik
+   `plan_failed`. `catalog`: temat z katalogu (gramatyka); `input`: dane
+   zagadnień z wejścia (szkoła — `generateLessonObjectives` woła wołający).
+3. **Podagenci**: zagadnienia spoza `skipObjectives`, w kolejności lekcji,
+   najwyżej `concurrency` naraz. Sygnał podagenta łączy sygnał runu, termin
+   zagadnienia i termin runu (`AbortSignal.any`); kierownik pamięta, który
+   z nich przerwał.
+4. **Narzędzia podagenta** — wszystkie wywołania narzędzi jednego zagadnienia
+   przechodzą przez **mutex zagadnienia** (AI SDK wykonuje równoległe
+   wywołania z jednego kroku przez `Promise.all`). `submit`:
+   1. odmowa (bez przyjęcia) po przekroczeniu budżetu, terminu albo po
+      zamknięciu narzędzi;
+   2. parsowanie każdego rekordu: `isWellShapedRawExercise`, `objectiveId`
+      równe zagadnieniu, `toExerciseDraft`, **wspólna sanityzacja** (§7.2);
       błąd = `rejected: shape`;
-   2. `precheckBatch` na bieżącym stanie;
-   3. checker dla przyjętych przez `precheck` i z typem z polityki: `solve`
-      (gdy typ w `blindSolveTypes`), `judgeVariants` (gdy typ w
-      `variantCheckTypes` i są warianty) — równolegle, przez wspólny semafor
-      `checkerConcurrency`, z kosztem doliczanym do budżetu; błąd =
-      brak wyniku;
-   4. `admitBatch` na **bieżącym** stanie (nie na stanie z kroku 2) i
-      podmiana stanu kierownika;
-   5. zwrot `LessonAgentToolOutcome` (skrót; pełne powody i szkice zostają u
-      kierownika w dzienniku odrzuceń).
-   Po przekroczeniu budżetu lub terminu `submit` nie przyjmuje paczki (wynik z
-   błędem „budget exhausted”), a `shouldStop()` zwraca `true`.
-5. **Kontrola całej lekcji**: po zakończeniu wszystkich podagentów
-   `lessonHardLeaks`; ofiary wypadają z pul, a ich zagadnienia (te, które nie
-   są `failed`) dostają rundę naprawczą (`repair.removed`), najwyżej
-   `repairRounds` razy; ofiary pozostałe po ostatniej rundzie wypadają bez
-   naprawy.
-6. **Wynik** `LessonPoolAgentResult`:
-   - `objectives`: per zagadnienie `status` (`complete` | `incomplete` z
-     `missing` | `failed` z kodem błędu klasyfikowanym jak
-     `classifyLessonGenerationFailure`), przyjęte szkice w kolejności lekcji,
-     kroki;
-   - `topic` / `dynamicTopic` (gdy był plan);
+   3. przykłady (gdy `examplesFromPlan === false` i są w wejściu):
+      `submitExamples`;
+   4. `precheckBatch` na bieżącym stanie;
+   5. checker dla `pass` z typem z polityki: jedno `solve` (paczka widoków) i
+      jedno `judgeVariants` na wywołanie `submit`, równolegle, przez semafor
+      `checkerConcurrency`, z `checkerTimeoutMs`; budżet sprawdzany przed
+      każdym wywołaniem (po przekroczeniu — `unavailable`); błąd =
+      `unavailable` dla całej paczki;
+   6. `admitBatch` na **bieżącym** stanie i podmiana stanu — **synchronicznie,
+      bez `await` między odczytem stanu a podmianą** (niezmiennik w kodzie i
+      teście);
+   7. zwrot `LessonAgentToolOutcome`.
+
+   `remove` — `removeExercise` pod tym samym mutexem.
+5. **Zamknięcie zagadnienia**: po powrocie lub wyjątku `runObjective`
+   kierownik czeka na trwające wywołania narzędzi tego zagadnienia, potem je
+   zamyka (kolejne zwracają odmowę bez przyjęcia), liczy `objectiveStatus` i
+   woła `onObjectiveSettled` (awaitowany szeregowo między zagadnieniami; jego
+   błąd przerywa run — w etapie 2 utrata `assertCurrent`).
+6. **Kontrola końcowa**: `lessonInvariantCheck`; ewentualne usunięcia bez
+   naprawy, log `invariant_violation`.
+7. **Wynik** `LessonPoolAgentResult`:
+   - `objectives`: per zagadnienie `status` — `complete` | `incomplete`
+     (`missing`; także po terminie zagadnienia) | `failed` (kod z
+     `classifyLessonGenerationFailure` dla wyjątku dostawcy); przyjęte szkice
+     w kolejności lekcji; przykłady; kroki;
+   - `dynamicTopic` (gdy był plan);
    - `stats`: zgłoszone, przyjęte, odrzucone per rodzaj, `checkUnavailable`,
-     wywołania checkera, usunięte w kontroli lekcji, rundy;
-   - `rejections`: `{ objectiveId, exerciseType, kind, reason }[]` (powody
-     angielskie, bez treści ćwiczeń — do logów i pomiaru);
-   - `costUsd` (suma znanych kosztów) i `costUnknownCalls`.
+     wywołania checkera, `invariantViolations`;
+   - `rejections`: `{ objectiveId, exerciseType, kind, code, detail }[]` —
+     `code` bez treści (logi, w etapie 2 trwały zapis), `detail` z treścią
+     wyłącznie w pamięci wyniku i w zrzucie próby;
+   - `spentUsd` (z `initialSpentUsd`), `unknownCostCalls`.
 
-### 7.2. Błędy i przerwanie
+Mapowanie statusów na stan runu i `needs_review` — etap 2 (tabela decyzji w
+specu etapu 2).
 
-- Wyjątek dostawcy w `runObjective` → zagadnienie `failed`; pozostałe działają
-  dalej. Wyjątek w `planObjectives` → wynik `plan_failed` z kodem błędu.
-- Błąd checkera → brak wyniku kontroli (§3.3), bez porażki.
-- Przerwanie sygnału runu → kierownik czeka na zakończenie trwających wywołań
-  (sygnał je przerywa) i rzuca błąd przerwania; nie zwraca częściowego wyniku.
-- Termin zagadnienia → `incomplete`; termin runu → wszystkie trwające
-  zagadnienia `incomplete`, bez rund naprawczych (kontrola ujawnień całej
-  lekcji nadal usuwa ofiary).
-- Statusy runu w bazie, `needs_review`, ponowienia i zapis — etap 2.
+### 7.2. Wspólna sanityzacja świeżego ćwiczenia
 
-### 7.3. Logi
+Z `acceptFreshLessonPool` (`lesson-pool-acceptance.ts`) wydzielam czystą
+funkcję `sanitizeFreshLessonDraft(draft, subject, familyScope)` ze wszystkimi
+krokami per ćwiczenie, które dziś tam są: `withoutEmptyOptionalArrays`,
+`stripListenChoiceExtras`, `withoutRedundantAcceptedVariants`,
+`stripParentAddedFlags` (model nie oznaczy cytatu jako dodanego przez
+rodzica), `withoutVoiceToneUnlessAllowed`, `withoutInvalidExplanation`,
+`scopeFamiliesToRun`. `acceptFreshLessonPool` woła ją bez zmiany zachowania
+(istniejące testy potoku przechodzą bez zmian); kierownik woła ją w kroku 4.2.
+Kroki na całej puli (`refineGeneratedPool`, `validatePool`, deduplikacja,
+`capListenChoiceOverflow`) odpowiadają krokom 1–3 z §3.3.
 
-`[lesson-agent]` z identyfikatorem runu (przekazanym w wejściu), slugiem
-zagadnienia, licznikami, statusem, krokami i kosztem; bez treści ćwiczeń,
-materiału, tematów zdań i powodów zawierających treść (powody ślepego
-rozwiązania z odpowiedziami trafiają tylko do `rejections` wyniku, nie do
-logów).
+### 7.3. Błędy i przerwanie
+
+- Wyjątek dostawcy w `runObjective` (sygnał zagadnienia nieprzerwany) →
+  `failed`; przerwanie terminem zagadnienia → `incomplete`. Klasyfikacja po
+  tym, który sygnał przerwał, nie po typie wyjątku.
+- Wyjątek w `planObjectives` → `plan_failed` z kodem błędu.
+- Błąd checkera → `unavailable`, bez porażki.
+- Termin runu → trwające zagadnienia `incomplete`, kontrola końcowa działa.
+- Przerwanie sygnału runu (anulowanie, `superseded`, `shutdown`) → kierownik
+  czeka na zamknięcie narzędzi i rzuca `signal.reason`, żeby etap 2 zachował
+  semantykę `withLessonGenerationControl`; nie zwraca wyniku częściowego.
+- **Budżet**: wydatek = `initialSpentUsd` + zgłoszenia `RunCostSink`
+  (`null` → `unknownCallEstimateUsd`). Sprawdzany przed każdym krokiem agenta
+  (`shouldStop`) i przed każdym wywołaniem checkera. Przekroczenie jest
+  ograniczone kosztem żądań już w locie: najwyżej `concurrency` kroków agenta
+  i `checkerConcurrency` paczek checkera.
+
+### 7.4. Logi
+
+`[lesson-agent] run=… obj=<slug>`: liczniki, kody odrzuceń, status, kroki,
+koszt; bez treści ćwiczeń, materiału, kart, tematów zdań i `detail`. Test
+(§9.2) sprawdza, że log nie zawiera treści `detail` z fixture.
 
 ## 8. Próba i narzędzia oceny (`tests/probes/`)
 
-- `agent-generation.probe.test.ts` (`pnpm probe:agent`) zastępuje
+- **`agent-generation.probe.test.ts`** (`pnpm probe:agent`) zastępuje
   `agent-generation-v2` PoC i **nie ma własnych reguł**: woła
   `runLessonPoolAgent`. W pliku próby zostaje tymczasowa implementacja obu
-  portów na AI SDK (`ToolLoopAgent`, `generateText`, OpenRouter), przeniesiona
-  do adaptera w etapie 2. Prompt podagenta: `lessonSystemPrompt` +
-  `lessonUserMaterial` + dopisek przepływu narzędzi z PoC; tryb `probe`
-  (uproszczony schemat) usunięty.
+  portów na AI SDK (`ToolLoopAgent`, `generateText`, OpenRouter, koszt z
+  `providerMetadata.openrouter.usage.cost`), przeniesiona do adaptera w etapie
+  2. Prompt podagenta: `lessonSystemPrompt` + `lessonUserMaterial` + dopisek
+  przepływu narzędzi z PoC (z regułą „hint only for lesson_open_answer”).
+  Tryb `probe` (uproszczony schemat) usunięty.
 - Zmienne: `UMIEM_PROBE_AGENT_SUBJECT` (`chapter` | `grammar` | `school`),
   `_MATERIAL`, `_OBJECTIVES_DUMP`, `_MODEL`, `_REASONING`, `_SOLVER_MODEL`,
-  `_DUMP`, `_TIMEOUT_MS`, `_BUDGET_USD`, `_POOL_SIZE`, `UMIEM_PROBE_COSTS`.
-  Ścieżki wejścia i wyjścia wyłącznie poza repozytorium
-  (`resolveOutsideRepoPath`).
-- Zrzut `dump.json` w formacie czytanym przez `blind/gen-blind-sheet.cjs`
-  (źródło `agent`), z `rejections`, statystykami, krokami, kosztem i statusami
-  zagadnień.
-- Z gałęzi `probe/lesson-pool-agent`: `blind/gen-blind-sheet.cjs`,
-  `blind/score.cjs`, `blind/rubric-generation.md`, `blind/rubric-criteria.md`
-  bez zmian (rubryki zamrożone).
-- Z lokalnej gałęzi `feat/lesson-review-probe` — **same pliki**, bez historii i
-  bez wypychania gałęzi:
-  - `probe-helpers.ts` (`loadDotEnv`, `resolveOutsideRepoPath`, `runDirsOf`) z
-    testem;
-  - nowy `probe-costs.ts` z rejestru `probe-results.ts`: `CostEntry`,
-    `CostLedger`, `readCostLedger`, `initCostLedger`, `appendCostEntry`,
+  `_DUMP`, `_TIMEOUT_MS`, `_BUDGET_USD`, `_POOL_SIZE` (domyślnie
+  `defaultPoolSize` liczby zagadnień, jak potok), `UMIEM_PROBE_COSTS`.
+  Ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`).
+- Zrzut `dump.json` (źródło `agent`) w formacie `blind/gen-blind-sheet.cjs`, z
+  `rejections` (z `detail`), statystykami, krokami, kosztem i statusami.
+- **Punkt odniesienia** — rozszerzenia `chapter-generation.probe.test.ts`
+  (z `feat/lesson-review-probe`, przepisane): zrzut **końcowego szkicu** po
+  `executeLessonGeneration` (po regule twardej i dogenerowaniu, nie stan
+  sprzed krytyka), w tym samym formacie arkusza, oraz zrzut zagadnień z
+  **kartami jako tablicą** (`{ title, body }[]`) — wejście
+  `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP`. Zmienne: `UMIEM_PROBE_REVIEW_DUMP_OUT`
+  → zmiana nazwy na `UMIEM_PROBE_POOL_DUMP_OUT`, `_COSTS`, `_COSTS_INIT`,
+  `_OUT_DIR`, `_ALLOW_HOST`, `_SUBJECT`. Bez zależności od `lesson-review` i
+  bez strojenia krytyka. `_POOL_SIZE` już jest na `main`.
+- Z `probe/lesson-pool-agent`: `blind/gen-blind-sheet.cjs`, `blind/score.cjs`,
+  `blind/rubric-generation.md`, `blind/rubric-criteria.md` bez zmian.
+- Z `feat/lesson-review-probe` — **same pliki**, bez historii i bez wypychania:
+  - `probe-helpers.ts` — rozszerzenie wersji z `main` o `runDirsOf`, z testem;
+  - nowy `probe-costs.ts` z `probe-results.ts`: `CostEntry`, `CostLedger`,
+    `readCostLedger`, `initCostLedger`, `appendCostEntry`,
     `appendProvisionalCostEntry`, `settleCostEntry`, `assertWithinCostCap`,
-    `ledgerCost`, `probeEndpointHost`, z testami; bez etykiet, arkuszy i
-    punktacji krytyka;
-  - rozszerzenia `chapter-generation.probe.test.ts`:
-    `UMIEM_PROBE_REVIEW_DUMP_OUT`, `_POOL_SIZE`, `_COSTS`, `_OUT_DIR`,
-    `_ALLOW_HOST`; bez strojenia krytyka.
+    `ledgerCost`, `estimateProbeCostUsd` (generowanie), `probeEndpointHost`,
+    `errorClassOf`, `sha256File`, z testami; bez etykiet, arkuszy i punktacji
+    krytyka;
+  - `vitest.probe.config.ts` (`loadDotEnv`, tryby przedmiotów).
+- `vitest.unit.config.ts`: dopisać `tests/probes/probe-costs.test.ts` i
+  `tests/probes/probe-helpers.test.ts` (jawna lista plików z `tests/`).
+- `providers/openai/llm.ts`: eksport `lessonSystemPrompt` i
+  `lessonUserMaterial` (jak w PoC).
 - **Higiena**: przed commitem przegląd przenoszonych plików pod kątem imion,
-  identyfikatorów, ścieżek lokalnych i fragmentów materiałów; dzienniki próby
-  bez materiału.
-- Zależności: `ai@7.0.162` i `@openrouter/ai-sdk-provider@3.1.0` jako
-  **devDependencies roota**, przypięte dokładnie, z `pnpm-lock.yaml`. Nie
-  trafiają do `packages/*` (test §9.4).
+  identyfikatorów, ścieżek lokalnych i fragmentów materiałów.
+- Zależności: `ai@7.0.162`, `@openrouter/ai-sdk-provider@3.1.0` (i `zod`, jeśli
+  root go nie ma) jako **devDependencies roota**, przypięte dokładnie, z
+  `pnpm-lock.yaml`; nie trafiają do `packages/*` ani `apps/*` (§9.4).
 
 ## 9. Testy i weryfikacja
 
 ### 9.1. Domena (jednostkowe, fikcyjne dane)
 
-- `admitBatch`: kolejność kroków (który powód wygrywa); duplikat w tej samej
-  paczce; ujawnienie — kandydat ofiarą oraz kandydat źródłem dla przyjętego;
-  `fixed` nietykalne i liczone; limit; brak wyniku checkera = przyjęcie z
-  `unchecked`; odrzucenie wariantów; `sanitize` (usunięte pole w wyniku);
-  stan wejściowy niezmieniony.
-- `precheckBatch` daje te same decyzje kroków 1–2 co `admitBatch` na tym samym
-  stanie.
-- `removeExercise`: tylko własna pula.
-- `objectiveStatus`: minima + rezerwa, `listening` poza etapami, wymagane
-  typy, `objectiveGaps`, `fixed`, `complete`.
-- `objectiveAgentLimits` (`targetCount`, `maxExercises` z dodatkiem słuchowym
-  i `slack`).
-- `blindMatches` dla każdego typu, w tym pary, grupy, luki w tekście; warianty;
-  normalizator; inna liczba odpowiedzi; „=>”; wielkość liter, apostrofy.
-- `solverView`: test własności — żadne pole klucza (§3.7) nie występuje w
-  widoku dla przykładowego ćwiczenia każdego typu; bloki i prawe strony
-  posortowane.
-- `lessonHardLeaks`, `lessonExposureExamples` i `cardExposureTexts` (zdania
-  tak, słówka „en — pl” nie, ramy z wielokropkiem nie).
-- `validateAgentPlan`: 3 i 6 zagadnień przechodzą, 2 i 7 nie; slugi; karty;
-  identyfikatory zgodne z `buildDynamicTopicData`.
-- Rozdział: parser słów i ram; `planGate`; bramka słów kart; bramka ramy;
-  `objectiveGaps`; `requiredTypes` z pominięciem typu spoza zagadnienia.
+- `precheckBatch`/`admitBatch`: kolejność kroków (który powód wygrywa);
+  duplikat w paczce; duplikat i konflikt słuchowy **między zagadnieniami**;
+  limit `listenAllowance`; ujawnienie twarde i miękkie — kandydat ofiarą,
+  kandydat źródłem dla przyjętego, kandydat źródłem dla `fixed`; wadliwe
+  ćwiczenie `fixed` nie blokuje kandydatów; błąd `validatePoolExtra` na innym
+  indeksie odrzuca kandydata; słowa kluczowe przed swoją rodziną w paczce
+  przechodzą; `sanitize` i `refineGeneratedPool` — checker dostaje szkic po
+  nich; `CheckResult` `na`/`unavailable`/`done`; stan wejściowy niezmieniony;
+  `precheck` i `admit` zgodne na tym samym stanie.
+- **Niezmiennik (test własności):** losowe sekwencje `admitBatch` i
+  `removeExercise` na kilku przedmiotach z fixture — po każdej operacji brak
+  nowych ujawnień i nowych błędów walidacji całej lekcji.
+- `removeExercise`: tylko własna pula; sieroty słów kluczowych.
+- `submitExamples`: limity, ujawniająca linia odpada, zastąpienie.
+- `objectiveStatus`: pokrycie przez `lessonCoverageGaps` (ujawnione się nie
+  liczą; szkoła — różne pytania otwarte), rezerwa, `targetCount`,
+  `outsideStages`, wymagane typy z filtrem, przykłady, `objectiveGaps`,
+  `fixed`.
+- `objectiveAgentLimits`; dla szkoły liczby zgodne z `objectiveBatchCounts`.
+- `blindMatches` dla każdego typu (pary, grupy, luki w tekście), warianty,
+  normalizator, inna liczba odpowiedzi, „=>”, wielkość liter, apostrofy.
+- `solverView`: mapa pól (view/key/meta) dla każdego pola
+  `LessonExerciseDraft`; żadne pole `key` w widoku; instrukcja
+  `lesson_transform` z tematu; `visualSubject`; sortowanie.
+- `lessonInvariantCheck`: zwraca usunięcia dla sztucznie zepsutego stanu.
+- `validateAgentPlan`: 3 i 6 przechodzą, 2 i 7 nie; slugi; karty;
+  `planGate`.
+- Rozdział: parser słów i ram; `planCoverage`/`planGate`; bramka słów kart;
+  bramka ramy; `objectiveGaps`; `requiredTypes`.
 - Szkoła: bramka podpowiedzi (odpowiedź, wariant, element wymagany, forma
-  odmieniona, przykłady z próby, krótkie słowa bez fałszywych trafień);
-  `sanitize` usuwa `hint` przy typach innych niż otwarta odpowiedź;
-  `checkerNeedsMaterial`.
+  odmieniona, liczby, fraza bez słów ≥ 4 liter, przykłady z próby, fałszywe
+  trafienia krótkich słów); `sanitize` usuwa `hint` poza otwartą odpowiedzią.
 - Gramatyka: `hint` nietknięty.
+- `sanitizeFreshLessonDraft`: istniejące testy `acceptFreshLessonPool`
+  przechodzą bez zmian + test każdego kroku.
 
-### 9.2. Kierownik (z fake'ami, bez bazy)
+### 9.2. Kierownik (fake'i, bez bazy)
 
-- przebieg do `complete` w kilku krokach (odrzucenie → poprawka → przyjęcie);
-- limit kroków → `incomplete` z brakami;
-- budżet: `shouldStop`, odmowa `submit`, pozostałe zagadnienia kończą;
-- termin zagadnienia i termin runu;
-- awaria dostawcy w jednym zagadnieniu → `failed`, pozostałe `complete`;
-- awaria checkera → przyjęcie z `checkUnavailable`;
-- rozjazd ślepego rozwiązania → odrzucenie z powodem; druga paczka przechodzi;
-- checker wołany wyłącznie dla ćwiczeń po `precheck` i typów z polityki;
-  materiał tylko przy `checkerNeedsMaterial`;
+- przebieg do `complete` (odrzucenie → poprawka → przyjęcie);
+- `maxSteps` → `incomplete` z brakami; termin zagadnienia → `incomplete`;
+  wyjątek dostawcy → `failed`, pozostałe `complete`;
+- budżet: `shouldStop`, odmowa `submit`, checker `unavailable`,
+  `initialSpentUsd`, koszt `null` jako szacunek, przekroczenie ≤ koszt żądań
+  w locie;
+- checker: wołany tylko dla `pass` i typów z polityki, z oczyszczonym
+  szkicem, jedna paczka na `submit`; materiał tylko przy
+  `checkerNeedsMaterial`; wejście bez innych pól (§11); błąd i `null` →
+  `unavailable`;
 - równoległość: nigdy ponad `concurrency` podagentów i `checkerConcurrency`
-  wywołań checkera;
-- ujawnienie między zagadnieniami → ofiara wypada, runda naprawcza z
-  `repair.removed`; po `repairRounds` koniec;
-- plan: odrzucony plan → poprawiony → przyjęty; brak planu → `plan_failed`;
+  paczek; `{ parallel: [submit, submit] }` i `{ parallel: [submit, remove] }`
+  w jednym zagadnieniu — wynik jak sekwencyjny;
+- spóźnione narzędzie po zakończeniu `runObjective` (`hang` checkera, potem
+  termin) — odmowa, stan bez zmian;
+- ujawnienie między zagadnieniami równoległymi — drugi kandydat odpada przy
+  przyjęciu, kontrola końcowa pusta;
+- plan: odrzucony → poprawiony → przyjęty (identyfikatory jak
+  `buildDynamicTopicData`); brak planu → `plan_failed`;
+- przykłady przez `submit` dla gramatyki i szkoły; z planu dla rozdziału;
+- `skipObjectives` + `fixed`: zagadnienie pominięte, liczy się do ujawnień;
+- `onObjectiveSettled`: kolejność, błąd przerywa run;
 - przedmiot bez `agentPolicy` → błąd walidacji bez wywołań;
-- przerwanie sygnału → błąd przerwania;
-- model dostaje skrót (`LessonAgentToolOutcome`), nie pełne szkice;
-- dogenerowanie: `fixed` w wejściu, zagadnienie startuje z ich licznikami.
+- przerwanie sygnału runu → rzucone `signal.reason`;
+- model dostaje skrót (`LessonAgentToolOutcome`), nie szkice;
+- logi bez treści `detail`.
 
-### 9.3. Zdania kart w potoku
+### 9.3. PR wstępny
 
-- jednostkowe: każde miejsce z §5 używa `lessonExposureExamples` (testy
-  `avoid-sentences`, `lesson-coverage`, `lesson-drafts`);
-- integracyjne (`lesson-generation`, `lesson-chapter`,
-  `lesson-exposure-report`, istniejące pliki): ćwiczenie samodzielne z
-  odpowiedzią równą zdaniu karty odpada przy generowaniu i nie liczy się do
-  pokrycia publikacji; szkoła bez zmian.
+§5: jednostkowe haka i `generationExposureSources`; integracyjny
+`lesson-chapter` (odrzucenie, niezmieniony `lesson_context.examples`);
+istniejące testy pokrycia, publikacji i sesji bez zmian.
 
 ### 9.4. Architektura
 
 - `domain/lessons/agent/` nie importuje `ai`, `@openrouter/*`, Drizzle,
   `modules/`, `providers/`, `ports/` ani konfiguracji (rozszerzenie
-  `domain/lessons/architecture.test.ts`), i nie zawiera identyfikatorów
-  przedmiotów (`english_chapter`, `english_grammar`, `school`);
-- nowy test: `ai` i `@openrouter/*` nie występują w `packages/**` ani w
+  `domain/lessons/architecture.test.ts`);
+- nowy test: `ai` i `@openrouter/*` nie występują w `packages/**` ani
   `apps/**` (etap 2 dopuści jeden plik adaptera);
-- kierownik nie zawiera identyfikatorów przedmiotów;
+- istniejący skan identyfikatorów przedmiotów obejmuje nowe pliki;
   `module-boundaries.architecture.test.ts` przechodzi.
 
-### 9.5. Próba
+### 9.5. Próba — przebiegi kontrolne
 
-Testy `probe-costs` i `probe-helpers`; typecheck pliku próby; jeden płatny
-przebieg kontrolny na rozdziale (ok. 0,15 USD, z rejestrem kosztów), żeby
-potwierdzić działanie próby na kodzie domenowym. Pełny pomiar — etap 3.
+Dwa płatne przebiegi z rejestrem kosztów (łącznie ok. 0,45 USD): **szkoła**
+(nowy kod: materiał w checkerze, `sanitize`, bramka podpowiedzi, luki na
+ślepo, paczki checkera) i **rozdział** (planer, bramki rozdziału). Kryteria
+ustalone z góry: przebieg kończy się bez wyjątku; 0 twardych ujawnień i 0
+błędów `validatePool` całej lekcji w zrzucie; każde zagadnienie ma status;
+zrzut czyta `gen-blind-sheet.cjs`; wpis w rejestrze rozliczony. Wynik nie
+jest porównaniem z próbą z 2026-11-03 (inne limity i liczby) — porównanie to
+etap 3.
 
 ### 9.6. Przed PR
 
-`pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build`;
-raport ujawnień na lokalnej bazie (§5). E2E tylko, jeśli zmiana reguły
-ujawnień dotknie `parent-lesson-editor-layout.spec.ts` (uruchomić ten spec).
+`pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build`,
+pełny `pnpm test:e2e:shards` na buildzie produkcyjnym (AGENTS.md).
 
 ## 10. Dokumentacja
 
-- `docs/architecture.md` §19: nowy podrozdział „Agent generujący pulę” (rdzeń,
-  `agentPolicy`, porty, kierownik, status: za flagą od etapu 2) i nota w
-  regule ujawnień o zdaniach kart (`cardExposureTexts`,
-  `lessonExposureExamples`).
-- `AGENTS.md`: zdanie o `agentPolicy` w `SubjectModule` i o tym, że SDK agenta
-  (`ai`, `@openrouter/*`) jest dozwolone wyłącznie w adapterze (od etapu 2) i w
-  `tests/probes`.
-- Nagłówek pliku próby: uruchomienie, zmienne, koszty.
-- API → MCP → `SKILL.md`: bez wpływu (generowanie nie jest wystawione);
-  uzasadnienie w opisie PR.
+- PR wstępny: `architecture.md` §19 i `SPEC.md` (§5).
+- Etap 1:
+  - `docs/architecture.md` §19: podrozdział „Agent generujący pulę” (rdzeń,
+    niezmiennik przyjęcia, `agentPolicy`, porty, kierownik, budżet, status: za
+    flagą od etapu 2) i opis `pnpm probe:agent` (zmienne, format zrzutu,
+    ślepa ocena) obok `probe:review`;
+  - `AGENTS.md`: zdanie o `agentPolicy` w `SubjectModule` i o tym, że `ai` i
+    `@openrouter/*` są dozwolone wyłącznie w adapterze (od etapu 2) i w
+    `tests/probes`;
+  - `provider-config.md` i `.env.example` — etap 2 (brak env w etapie 1);
+  - API → MCP → `SKILL.md`: bez wpływu (generowanie nie jest wystawione);
+    uzasadnienie w opisie PR.
 
 ## 11. Prywatność
 
-Bez zmian względem dzisiejszego generatora: do modeli trafia materiał rodzica,
-tematy zdań (gramatyka, ogrodzony blok danych, jak dziś w `lessonUserMaterial`)
-i zdania do unikania; do checkera wyłącznie widok ćwiczenia, a w szkole także
-materiał. Nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
-Logi bez treści ćwiczeń i materiału (§7.3). Informacja dla rodzica o usłudze
-checkera — etap 2 (razem z konfiguracją).
+- **Generator** (podagent, planer): materiał rodzica, polecenie rodzica,
+  tematy zdań (gramatyka, ogrodzony blok danych jak w `lessonUserMaterial`),
+  karty, przykłady i zdania do unikania — jak dzisiejszy generator.
+- **Checker**: wyłącznie widoki ćwiczeń (§3.7), liczby odpowiedzi, odpowiedź
+  i warianty (sędzia) oraz — tylko przy `checkerNeedsMaterial` — materiał.
+  **Nie dostaje** polecenia rodzica, tematów zdań, kart, przykładów ani
+  zdań do unikania. Test w §9.2.
+- Nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
+- Logi bez treści (§7.4); `detail` tylko w pamięci i zrzucie próby poza
+  repozytorium.
+- Informacja dla rodzica o usłudze checkera — etap 2.
 
 ## 12. Ryzyka
 
-- **Zdania kart zablokują istniejące szkice** — mierzone raportem ujawnień
-  przed PR (§5).
-- **Bramka podpowiedzi to przybliżenie bez lematyzatora** — fałszywe trafienia
-  odrzucają dobre podpowiedzi, a model je poprawia; mierzone w etapie 3
-  (`rejections` z powodem bramki).
-- **Pominięta kontrola przy awarii checkera** obniża jakość bez sygnału dla
-  rodzica — licznik `checkUnavailable` w wyniku i pomiarze; decyzja o progu w
-  etapie 3.
-- **Zależności dev o wysokim numerze wersji (`ai@7.0.162`)** — przypięte
-  dokładnie; aktualizacja tylko świadomie.
+- **Bramka podpowiedzi bez lematyzatora** — fałszywe odrzucenia mierzone w
+  etapie 3 (kod `hint_reveals_answer`).
+- **Pominięta kontrola przy awarii checkera** — licznik `checkUnavailable`;
+  próg w etapie 3.
+- **Paczkowy checker** może gorzej rozwiązywać długie paczki niż pojedyncze
+  wywołania — przebieg kontrolny szkoły i etap 3 sprawdzają rozjazdy; w razie
+  potrzeby limit pozycji w paczce.
+- **Odrzucanie ujawnień miękkich** (krok 4) jest ostrzejsze niż dzisiejsza
+  reguła generowania (tylko twarde) — zgodne z pokryciem publikacji, ale może
+  wydłużyć pętlę; mierzone w etapie 3.
+- **`ai@7.0.162`** — przypięte dokładnie; aktualizacja świadomie.
+
+## 13. Rozstrzygnięcia review (wersja 2)
+
+Krytycy: K1 — zgodność z kodem; K2 — architektura, prywatność, koszty; K3 —
+cel, testy, zakres.
+
+| Uwaga | Rozstrzygnięcie |
+|---|---|
+| Zdania kart rozjadą publikację z sesją (K2, K3); zapis do `lesson_context.examples` (K1, K3); gramatyka bez efektu (K1); pomiar raportem błędny (K1, K3) | Decyzja właściciela: tylko generowanie, osobny PR wstępny, tylko rozdział, źródła niezapisywane (§5) |
+| Identyfikatory planu `d<deckId>` i składanie tematu (K1, K3) | `validateAgentPlan` bez składania; kierownik przez `buildDynamicTopicData` (§3.8, §7.1) |
+| Walidacja tylko w zagadnieniu, limit słuchowy, słowa kluczowe, sieroty, wadliwe `fixed` (K1, K2, K3) | Walidacja całej lekcji, porównanie zbiorów błędów, `listenAllowance`, słowa kluczowe na końcu paczki, sieroty przy `remove` (§3.3) |
+| Niepełna sanityzacja vs `acceptFreshLessonPool` (K1, K2) | Wspólna `sanitizeFreshLessonDraft` (§7.2) |
+| Rundy naprawcze martwe; ofiary `fixed`; miejsce wstawienia (K2, K3) | Atomowe przyjęcie z ujawnieniami w obie strony i `fixed`; kontrola końcowa jako bezpiecznik; bez rund (§3.3, §3.6) |
+| `complete` ≠ pokrycie publikacji i ignoruje `targetCount` (K1, K3) | `lessonCoverageGaps` + rezerwa + `targetCount`; liczby szkoły wyjaśnione (§3.5) |
+| Brak kart własnego zagadnienia i przykładów kart (K1, K3) | `objective.cards`, `submit.examples`, `submitExamples` (§3.4, §6.1) |
+| Równoległe narzędzia, spóźnione `submit` (K1, K2, K3) | Mutex zagadnienia, synchroniczna podmiana stanu, zamykanie narzędzi (§7.1) |
+| Koszty dwoma kanałami, `null`, błędy, przekroczenie (K2, K3) | `RunCostSink` dla każdego żądania, szacunek `null`, budżet przed krokiem i checkerem, granica przekroczenia; `UsageRecorder` tylko w adapterze (§6.1, §7.3) |
+| Koszt checkera w szkole (issue pkt 7) (K3) | Checker paczkowy, materiał raz na paczkę (§6.1) |
+| Treść w `rejections` vs logi (K2) | `code` vs `detail` (§7.1, §7.4) |
+| Terminy i przerwanie vs `withLessonGenerationControl` (K2) | Klasyfikacja po sygnale, `signal.reason`, `checkerTimeoutMs`, `runTimeoutMs` z polityki potoku (§7, §7.3) |
+| Haki pod etap 2 (K2) vs nadmiar kierownika (K3) | Tylko `onObjectiveSettled`, `skipObjectives`, `initialSpentUsd`; bez rund naprawczych; `needs_review` w etapie 2 |
+| `solverView` bez tematu; lista wykluczeń (K1, K3) | `solverView(draft, topic)` z listy dozwolonych pól + mapa pól w teście (§3.7) |
+| Typ `checks`, `unchecked` (K3) | `CheckResult` `na`/`unavailable`/`done` (§3.3) |
+| Bramka podpowiedzi niedookreślona; martwa część dla opcji i banku; prompt; „chyba że rodzic” (K1, K3) | Reguły tokenizacji i zgodności; usunięta martwa część; dopisek promptu; świadome odstępstwo (§4.4) |
+| Planer: 3–5 w prompcie, `coverage` bez źródła, ukryty warunek (K3) | Dopisek nadrzędny, `planCoverage`, `objectiveSource` (§4, §7.1) |
+| Cykl typów, `AgentCapableSubject`, filtr typów (K2) | Typy w `types.ts`, `asAgentCapable`, filtr w rdzeniu (§3, §3.5) |
+| `pool` vs `targets`, `requiredTypes` jako proza, OpenRouter w porcie (K2) | `targets` jedynym źródłem; tablice typów; OpenRouter tylko w kontrakcie adaptera (§6.1) |
+| Prywatność checkera opisana negatywnie (K2) | Pełna lista pozytywna i negatywna + test (§11) |
+| Pliki próby: brakujące eksporty, `vitest.probe.config.ts`, `probe-helpers` na `main`, testy poza `test:unit`, słaby punkt odniesienia, karty w zrzucie (K1, K3) | Lista plików i eksportów, konfiguracje, zrzut końcowego szkicu, karty jako tablica (§8) |
+| Eksport z `llm.ts`, `zod` (K1) | Dopisane (§8) |
+| Skan identyfikatorów już istnieje (K1) | Opisany jako istniejący (§4, §9.4) |
+| E2E niezgodne z AGENTS.md (K3) | Pełny `test:e2e:shards` (§9.6) |
+| Przebieg kontrolny tylko na rozdziale (K3) | Szkoła + rozdział z kryteriami z góry (§9.5) |
+| `precheck` może odsiać ujawnienia przed checkerem (K2) | Kroki 1–4 w `precheck`, sekwencyjnie (§3.3) |
+| Dokumentacja (K3) | `architecture.md` z opisem próby; env w etapie 2 (§10) |
