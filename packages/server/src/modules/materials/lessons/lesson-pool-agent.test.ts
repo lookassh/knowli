@@ -569,6 +569,64 @@ describe("runLessonPoolAgent — plan zagadnień", () => {
     expect(agent.calls).toEqual([]);
   });
 
+  describe("planista ignorujący przerwanie (nigdy się nie kończy)", () => {
+    class StallingPlanAgent extends FakeLessonPoolAgent {
+      constructor(private readonly proposals: readonly unknown[]) {
+        super();
+      }
+
+      override async planObjectives(
+        _input: LessonAgentPlanInput,
+        tools: Parameters<LessonPoolAgentProvider["planObjectives"]>[1],
+      ): Promise<{ steps: number }> {
+        for (const proposal of this.proposals) await tools.propose(proposal);
+        return new Promise<{ steps: number }>(() => undefined);
+      }
+    }
+
+    const planInput = () =>
+      runInput({ subjectId: chapter.id, objectiveSource: { source: "planner" }, material: LISTS, topicTitle: "Unit 1" });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("bez przyjętego planu: po runTimeoutMs plan_failed, bez zawieszenia i bez zegarów", async () => {
+      vi.useFakeTimers();
+      const { deps } = setup({ agentProvider: new StallingPlanAgent([]), subjects: [chapter] });
+      const run = runLessonPoolAgent({ ...deps, policy: { runTimeoutMs: 2000 } }, planInput(), never);
+      await vi.advanceTimersByTimeAsync(1999);
+      let settled = false;
+      void run.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await run;
+      expect(result.planStatus).toBe("plan_failed");
+      expect(result.objectives).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("plan przyjęty przed przerwaniem nadal obowiązuje, mimo że planista się nie kończy", async () => {
+      vi.useFakeTimers();
+      const covered = {
+        objectives: [
+          planObjective("coat", "Płaszcz to coat.", ["I like my coat."]),
+          planObjective("boots", "Buty to boots.", ["My boots are new."]),
+          planObjective("las", "Las i łąka.", ["The forest is green."]),
+        ],
+      };
+      const { deps } = setup({ agentProvider: new StallingPlanAgent([covered]), subjects: [chapter] });
+      const run = runLessonPoolAgent({ ...deps, policy: { runTimeoutMs: 2000 } }, planInput(), never);
+      await vi.advanceTimersByTimeAsync(2000);
+      const result = await run;
+      expect(result.planStatus).toBe("accepted");
+    });
+  });
+
   it("materiał rozdziału bez list: plan przyjęty, zagadnienia complete przy pełnych scenariuszach", async () => {
     const material = "I have a coat. I have boots. She has a dress. We have a skirt. I can see a hat and a scarf.";
     const words = ["coat", "boots", "dress", "skirt", "hat", "scarf"];

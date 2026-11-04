@@ -6,6 +6,7 @@ import { validateDynamicTopicData } from "../../../domain/lessons/topic-resoluti
 import type { DynamicTopicData, RawPlanObjective } from "../../../domain/lessons/types";
 import type { LessonAgentPlanInput, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "./lesson-drafts";
+import { untilAborted } from "./lesson-agent-timers";
 import { classifyLessonGenerationFailure } from "./lesson-generation-errors";
 import type { RunBudgetSink } from "./lesson-pool-agent-policy";
 
@@ -111,11 +112,15 @@ export async function planAgentObjectives(args: PlanArgs): Promise<PlanOutcome> 
 
   let steps: number;
   try {
+    // Wyścig z sygnałem: planista ignorujący przerwanie nie wstrzyma runu po terminie.
     steps = (
-      await args.agent.planObjectives(
-        input,
-        { propose, shouldStop: () => accepted !== undefined || args.cost.exhausted() || args.signal.aborted },
-        cost,
+      await untilAborted(
+        args.agent.planObjectives(
+          input,
+          { propose, shouldStop: () => accepted !== undefined || args.cost.exhausted() || args.signal.aborted },
+          cost,
+          args.signal,
+        ),
         args.signal,
       )
     ).steps;

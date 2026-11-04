@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,14 +8,17 @@ import { describe, expect, it } from "vitest";
  * w `tests/probes/**` oraz jako devDependencies roota. Żaden inny plik
  * źródłowy repozytorium (pakiety, aplikacje, skrypty, testy, integracje) ich
  * nie importuje, a manifesty pakietów i aplikacji nie deklarują tych zależności.
+ * Lista plików pochodzi z gita (śledzone i nieignorowane), więc skan nie wchodzi
+ * w `.claude/worktrees/*` ani inne ignorowane katalogi.
  */
 
 const root = join(__dirname, "..");
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
-/** Katalogi pomijane na każdej głębokości: zależności, git i artefakty buildów oraz testów. */
-const SKIPPED_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", "test-results", "playwright-report", ".venv"]);
 /** Katalogi pomijane po ścieżce względem korzenia: jedyne miejsce, gdzie SDK jest dozwolone. */
-const ALLOWED_DIRS = new Set(["tests/probes"]);
+const ALLOWED_PREFIXES = ["tests/probes/"];
+/** Katalogi pomijane na każdej głębokości (pas bezpieczeństwa obok `git ls-files`) oraz kopie robocze agentów. */
+const SKIPPED_SEGMENTS = new Set(["node_modules"]);
+const SKIPPED_ROOT_PREFIXES = [".claude/"];
 // Nazwane wyjątki (ścieżka względem korzenia repozytorium): testy architektury zawierają nazwy SDK
 // wyłącznie jako dane w dowodach czułości swoich skanów.
 const SENSITIVITY_FIXTURES = new Set(["packages/server/src/domain/lessons/architecture.test.ts", "tests/ai-sdk-scope.test.ts"]);
@@ -23,14 +27,27 @@ function relativeToRoot(path: string): string {
   return path.slice(root.length + 1).replaceAll("\\", "/");
 }
 
-function sourceFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (SKIPPED_DIRS.has(entry.name)) return [];
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) return ALLOWED_DIRS.has(relativeToRoot(path)) ? [] : sourceFiles(path);
-    return SOURCE_FILE.test(entry.name) ? [path] : [];
+/** Czy plik o danej ścieżce względem korzenia podlega skanowi importów SDK. */
+function isScannedPath(path: string): boolean {
+  if (!SOURCE_FILE.test(path)) return false;
+  if (SKIPPED_ROOT_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
+  if (ALLOWED_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
+  if (path.split("/").some((segment) => SKIPPED_SEGMENTS.has(segment))) return false;
+  return !SENSITIVITY_FIXTURES.has(path);
+}
+
+/** Pliki śledzone i nieignorowane (git), przefiltrowane do skanowanych źródeł. */
+function sourceFiles(): string[] {
+  const listed = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
   });
+  return listed
+    .split("\u0000")
+    .filter((path) => path.length > 0 && isScannedPath(path))
+    .filter((path) => existsSync(join(root, path)))
+    .map((path) => join(root, path));
 }
 
 /** Specyfikatory z `from "x"`, `import "x"`, `import("x")` i `require("x")`. */
@@ -54,7 +71,7 @@ const workspaces = [...workspaceDirs("packages"), ...workspaceDirs("apps")];
 
 describe("zakres AI SDK", () => {
   it("żaden plik źródłowy repozytorium poza tests/probes nie importuje ai ani @openrouter/*", () => {
-    const files = sourceFiles(root).filter((file) => !SENSITIVITY_FIXTURES.has(relativeToRoot(file)));
+    const files = sourceFiles();
     // Dowód, że skan rzeczywiście obejmuje całe repozytorium (nie fałszywie zielony).
     expect(files.length).toBeGreaterThan(100);
     const scanned = new Set(files.map(relativeToRoot));
@@ -84,6 +101,17 @@ describe("zakres AI SDK", () => {
       return declared.filter(isAiSdkName).map((name) => `${manifest.slice(root.length + 1)}: ${name}`);
     });
     expect(offenders).toEqual([]);
+  });
+
+  it("filtr ścieżek pomija kopie robocze agentów, sondy, node_modules i wyjątki czułości", () => {
+    expect(isScannedPath(".claude/worktrees/x/packages/a.ts")).toBe(false);
+    expect(isScannedPath("tests/probes/agent.probe.test.ts")).toBe(false);
+    expect(isScannedPath("packages/a/node_modules/ai/index.js")).toBe(false);
+    expect(isScannedPath("tests/ai-sdk-scope.test.ts")).toBe(false);
+    expect(isScannedPath("packages/server/src/domain/lessons/architecture.test.ts")).toBe(false);
+    expect(isScannedPath("packages/a/README.md")).toBe(false);
+    expect(isScannedPath("packages/server/src/index.ts")).toBe(true);
+    expect(isScannedPath("tests/probes-helper.ts")).toBe(true);
   });
 
   it("wykrywa importy SDK w różnych formach (dowód czułości testu)", () => {
