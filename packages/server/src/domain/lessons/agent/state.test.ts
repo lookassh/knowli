@@ -177,7 +177,27 @@ describe("niemutowalność", () => {
   });
 });
 
+describe("nieznane zagadnienie", () => {
+  it("withPool i withExamples rzucają i nie zmieniają stanu", () => {
+    const state = stateWith({ examples: { [first]: ["a"] } });
+    const before = structuredClone(state);
+    expect(() => withPool(state, "nope", [entry("ex1", "nope", "lesson_card")])).toThrow("unknown objective nope");
+    expect(() => withExamples(state, "nope", ["x"])).toThrow("unknown objective nope");
+    expect(state).toEqual(before);
+    expect(poolOf(state, "nope")).toEqual([]);
+    expect(allExamples(state)).toEqual({ [first]: ["a"] });
+  });
+});
+
 describe("takeIds", () => {
+  it("rzuca dla ujemnej lub niecałkowitej liczby", () => {
+    const state = stateWith();
+    expect(() => takeIds(state, -1)).toThrow("invalid id count");
+    expect(() => takeIds(state, 1.5)).toThrow("invalid id count");
+    expect(() => takeIds(state, Number.NaN)).toThrow("invalid id count");
+    expect(state.nextId).toBe(1);
+  });
+
   it("nadaje deterministyczne ex1, ex2 i kontynuuje numerację", () => {
     const state = stateWith();
     const firstTake = takeIds(state, 2);

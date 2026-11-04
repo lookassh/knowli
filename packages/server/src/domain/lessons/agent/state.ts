@@ -1,5 +1,5 @@
 import { outsideStagePath, stageOf } from "../stages";
-import type { AgentObjective, LessonExerciseDraft, LessonTopic } from "../types";
+import type { AgentObjective, LessonExerciseDraft, LessonStage, LessonTopic } from "../types";
 
 /** Ćwiczenie puli agenta z deterministycznym identyfikatorem nadanym przez stan (`ex1`, `ex2`…). */
 export interface AgentPoolEntry {
@@ -62,21 +62,36 @@ export function poolOf(state: LessonAgentState, objectiveId: string): readonly A
   return state.pools.get(objectiveId) ?? [];
 }
 
-/** Nowy stan z podmienioną pulą zagadnienia. */
+function assertKnownObjective(state: LessonAgentState, objectiveId: string): void {
+  if (!state.objectives.some((objective) => objective.id === objectiveId)) {
+    throw new Error(`unknown objective ${objectiveId}`);
+  }
+}
+
+/**
+ * Nowy stan z podmienioną pulą zagadnienia. Pule istnieją tylko dla zagadnień
+ * z `state.objectives` (inaczej wypadłyby z `orderedLesson`): nieznany
+ * identyfikator rzuca `Error("unknown objective <id>")`.
+ */
 export function withPool(
   state: LessonAgentState,
   objectiveId: string,
   pool: readonly AgentPoolEntry[],
 ): LessonAgentState {
+  assertKnownObjective(state, objectiveId);
   return { ...state, pools: new Map(state.pools).set(objectiveId, [...pool]) };
 }
 
-/** Nowy stan z podmienionymi przykładami kart zagadnienia. */
+/**
+ * Nowy stan z podmienionymi przykładami kart zagadnienia; nieznany
+ * identyfikator zagadnienia rzuca `Error("unknown objective <id>")`.
+ */
 export function withExamples(
   state: LessonAgentState,
   objectiveId: string,
   lines: readonly string[],
 ): LessonAgentState {
+  assertKnownObjective(state, objectiveId);
   return { ...state, examples: new Map(state.examples).set(objectiveId, [...lines]) };
 }
 
@@ -92,10 +107,12 @@ export function allExamples(state: LessonAgentState): Record<string, string[]> {
   return merged;
 }
 
+const STAGE_ORDER: readonly LessonStage[] = ["intro", "guided", "productive", "independent"];
+
 /** Ranga etapu: intro < guided < productive < independent < typy poza ścieżką etapów. */
 function stageRank(draft: LessonExerciseDraft): number {
-  if (outsideStagePath(draft.exerciseType)) return 4;
-  return ["intro", "guided", "productive", "independent"].indexOf(stageOf(draft.exerciseType));
+  if (outsideStagePath(draft.exerciseType)) return STAGE_ORDER.length;
+  return STAGE_ORDER.indexOf(stageOf(draft.exerciseType));
 }
 
 /**
@@ -131,8 +148,13 @@ export function orderedLesson(state: LessonAgentState): readonly LessonExerciseD
   return orderedEntries(state).map((entry) => entry.draft);
 }
 
-/** Pobiera `n` kolejnych identyfikatorów (`ex1`, `ex2`…) i zwraca stan z przesuniętym licznikiem. */
+/**
+ * Pobiera `n` kolejnych identyfikatorów (`ex1`, `ex2`…) i zwraca stan z
+ * przesuniętym licznikiem. `n` musi być nieujemną liczbą całkowitą (inaczej
+ * identyfikatory mogłyby się powtórzyć): w przeciwnym razie rzuca błąd.
+ */
 export function takeIds(state: LessonAgentState, n: number): { ids: string[]; state: LessonAgentState } {
+  if (!Number.isInteger(n) || n < 0) throw new Error(`invalid id count ${n}`);
   const ids = Array.from({ length: n }, (_, index) => `ex${state.nextId + index}`);
   return { ids, state: { ...state, nextId: state.nextId + n } };
 }
