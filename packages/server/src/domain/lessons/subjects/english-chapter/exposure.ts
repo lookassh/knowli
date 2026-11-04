@@ -65,28 +65,57 @@ export function chapterExposureText(draft: LessonExposureSource): string {
   }
 }
 
-/** Podział linii karty na części: „ — ” i „ / ” (słówko — tłumaczenie / przykład). */
-const CARD_PART_SEPARATOR = /\s+[—/]\s+/u;
+/**
+ * Kolejne podziały linii karty na części: „ — ” i „ / ” (słówko — tłumaczenie /
+ * przykład), etykieta „: ” („Na przykład: …”), „; ” i granica zdań po `.?!`.
+ */
+const CARD_PART_SEPARATORS: readonly RegExp[] = [/\s+[—/]\s+/u, /:\s+/u, /;\s+/u, /(?<=[.?!])\s+/u];
+/** Punktor albo numeracja na początku części: „- ”, „• ”, „* ”, „1. ”, „1) ”. */
+const CARD_BULLET = /^(?:[-•*]|\d+[.)])\s+/u;
+/** Cudzysłowy otaczające zdanie (oba brzegi). */
+const CARD_QUOTES_AT_EDGES = /^[„“”"«»]+|[„“”"«»]+$/gu;
 /** Zdanie angielskie: litery ASCII, apostrof, spacje i interpunkcja zdania. */
 const CARD_SENTENCE = /^[A-Za-z][A-Za-z' ,.?!]*$/u;
+
+/** Części linii po wszystkich separatorach, w kolejności występowania. */
+function cardLineParts(line: string): string[] {
+  return CARD_PART_SEPARATORS.reduce<string[]>(
+    (parts, separator) => parts.flatMap((part) => part.split(separator)),
+    [line],
+  );
+}
+
+/** Część bez punktora, numeracji i cudzysłowów na brzegach; apostrof typograficzny → `'`. */
+function cleanCardPart(part: string): string {
+  return part
+    .trim()
+    .replace(/[’‘]/gu, "'")
+    .replace(CARD_BULLET, "")
+    .replace(CARD_QUOTES_AT_EDGES, "")
+    .trim();
+}
 
 /**
  * Teksty z treści kart rozdziału, które dziecko widzi jako gotowe rozwiązania
  * (`SubjectModule.cardExposureTexts`): zdania angielskie z przykładów kart.
- * Linie dzielą się na części po „ — ” i „ / ”, a część zostaje, gdy jest
+ * Karta ramy to polskie wyjaśnienie z 1–3 przykładami angielskimi
+ * (`objectivesRules`), więc linie dzielą się kolejno po „ — ” i „ / ”, po
+ * etykiecie „: ” („Na przykład: …”), po „; ” i na granicach zdań po `.?!`;
+ * z każdej części odpada punktor lub numeracja („- ”, „• ”, „* ”, „1. ”, „1) ”)
+ * i cudzysłowy na obu brzegach („…”, "…", «…»). Część zostaje, gdy jest
  * zdaniem: bez wielokropka (rama do uzupełnienia), złożona z liter ASCII,
  * apostrofu, spacji i interpunkcji zdania (polska część odpada na znakach
- * diakrytycznych, cudzysłów typograficzny też) oraz zakończona `.?!` albo
- * licząca ≥ 3 słowa (samo słówko nie jest zdaniem). Świadomy koszt: polskie
- * zdanie bez znaków diakrytycznych przechodzi. Apostrof typograficzny → `'`,
- * duplikaty usunięte. Używane tylko przy generowaniu.
+ * diakrytycznych) oraz zakończona `.?!` albo licząca ≥ 3 słowa (samo słówko
+ * nie jest zdaniem). Świadomy koszt: polskie zdanie bez znaków diakrytycznych
+ * przechodzi. Apostrof typograficzny → `'`, duplikaty usunięte. Używane tylko
+ * przy generowaniu.
  */
 export function chapterCardExposureTexts(cards: readonly { readonly body: string }[]): string[] {
   const sentences: string[] = [];
   for (const card of cards) {
     for (const rawLine of card.body.split(/\r?\n/u)) {
-      for (const part of rawLine.split(CARD_PART_SEPARATOR)) {
-        const text = part.trim().replace(/[’‘]/gu, "'");
+      for (const part of cardLineParts(rawLine)) {
+        const text = cleanCardPart(part);
         if (text === "" || /…|\.\.\./u.test(text) || !CARD_SENTENCE.test(text)) continue;
         if (/[.?!]$/u.test(text) || text.split(/\s+/u).length >= 3) sentences.push(text);
       }

@@ -120,8 +120,41 @@ describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwi�
     ]);
   });
 
-  it("rama z wielokropkiem i zdanie z polskimi znakami odpadają; cudzysłów typograficzny odpada", () => {
-    expect(chapterCardExposureTexts([{ body: "There's a … in the …\nTo jest mój pokój.\n„There is a bed.”" }])).toEqual([]);
+  it("rama z wielokropkiem i zdanie z polskimi znakami odpadają", () => {
+    expect(chapterCardExposureTexts([{ body: "There's a … in the …\nTo jest mój pokój.\nIt's ... today" }])).toEqual([]);
+  });
+
+  it("części po „: ” i „; ”, kilka zdań w linii, punktory i numeracja, cudzysłowy na brzegach", () => {
+    expect(chapterCardExposureTexts([{
+      body: [
+        "Example: It's sunny.",
+        "It's very cold; I'm wearing a coat.",
+        "It's raining. Where is my umbrella? I'm wet!",
+        "• There is a lamp.",
+        "* I like my room.",
+        "1. Where is the bed?",
+        "2) The bed is big.",
+        "\"Where's the box?\"",
+        "«I can see it.»",
+        "“It's under the bed.”",
+        "What's the weather like? It's ...",
+      ].join("\n"),
+    }])).toEqual([
+      "It's sunny.",
+      "It's very cold",
+      "I'm wearing a coat.",
+      "It's raining.",
+      "Where is my umbrella?",
+      "I'm wet!",
+      "There is a lamp.",
+      "I like my room.",
+      "Where is the bed?",
+      "The bed is big.",
+      "Where's the box?",
+      "I can see it.",
+      "It's under the bed.",
+      "What's the weather like?",
+    ]);
   });
 
   it("apostrof typograficzny → ', duplikaty usunięte", () => {
@@ -132,10 +165,26 @@ describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwi�
     expect(chapterCardExposureTexts([{ body: "To jest kot." }])).toEqual(["To jest kot."]);
   });
 
-  it("prawdziwe karty rozdziału: fixture z fake'a zagadnień", () => {
-    // Karty z `fakeLessonObjectives` (providers/fake.ts) dla CHAPTER_MATERIAL z tests/integration/lesson-chapter.test.ts:
-    // zagadnienie 2 ma karty „It's raining.” i „It's snowing.”
-    expect(chapterCardExposureTexts([{ body: "It's raining." }, { body: "It's snowing." }])).toEqual(["It's raining.", "It's snowing."]);
+  it("prawdziwa karta ramy (format `objectivesRules`): wzór po polsku, przykłady po etykiecie, punktor, cudzysłów", () => {
+    const frameCard = {
+      body: [
+        "Wzór: I'm wearing (a) … — mówimy, co mamy na sobie.",
+        "Na przykład: I'm wearing a red hat. I'm wearing boots.",
+        "- It's sunny today.",
+        "„What's the weather like?”",
+        "weather — pogoda",
+      ].join("\n"),
+    };
+    expect(chapterCardExposureTexts([frameCard])).toEqual([
+      "I'm wearing a red hat.",
+      "I'm wearing boots.",
+      "It's sunny today.",
+      "What's the weather like?",
+    ]);
+  });
+
+  it("bez kropki zdaniem jest część z ≥ 3 słowami (granica: 2 słowa odpadają); linie z \\r\\n", () => {
+    expect(chapterCardExposureTexts([{ body: "living room\r\nI like my bed\r\nWhere is it" }])).toEqual(["I like my bed", "Where is it"]);
   });
 
   it("przedmiot udostępnia hak", () => {

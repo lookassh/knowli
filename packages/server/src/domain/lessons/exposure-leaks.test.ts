@@ -280,18 +280,43 @@ describe("resolveGenerationLeaks", () => {
       );
     });
 
-    it("stałe zdanie nie wpływa na filtr nowych przykładów", () => {
-      const existing = translation("We have a cat");
+    it("stałe źródła doklejają się do przykładów zagadnienia (konkatenacja), nie zastępują ich", () => {
+      const freshTranslation = translation("We have a cat");
       const result = resolveGenerationLeaks({
         ...base,
-        existing: [existing],
+        existing: [],
+        fresh: [freshTranslation],
+        existingExamples: { [A]: ["We have a cat."] },
+        newExamples: {},
+        fixedSources: { [A]: ["Card."] },
+      });
+      expect(result.droppedFresh).toEqual([freshTranslation]);
+      expect(result.keptFresh).toEqual([]);
+    });
+
+    it("zagadnienie bez przykładów: same stałe źródła wystarczają do odrzucenia", () => {
+      const freshTranslation = translation("We have a cat");
+      const result = resolveGenerationLeaks({
+        ...base,
+        existing: [],
+        fresh: [freshTranslation],
+        existingExamples: {},
+        fixedSources: { [A]: ["We have a cat."] },
+      });
+      expect(result.droppedFresh).toEqual([freshTranslation]);
+      expect(result.keptFresh).toEqual([]);
+    });
+
+    it("stałe zdanie nie wpływa na filtr nowych przykładów: nowy przykład równy stałemu zdaniu zostaje", () => {
+      const result = resolveGenerationLeaks({
+        ...base,
+        existing: [],
         fresh: [],
         newExamples: { [A]: ["We have a cat."] },
         fixedSources: { [A]: ["We have a cat."] },
       });
-      // Przykład równy istniejącemu tłumaczeniu odpada jak dotąd, niezależnie od stałych źródeł.
-      expect(result.keptNewExamples).toEqual({});
-      expect(result.droppedExampleCount).toBe(1);
+      expect(result.keptNewExamples).toEqual({ [A]: ["We have a cat."] });
+      expect(result.droppedExampleCount).toBe(0);
     });
   });
 });

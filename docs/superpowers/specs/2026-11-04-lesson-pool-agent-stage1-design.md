@@ -404,7 +404,11 @@ dziecka jak przykłady, więc generowanie nie może ich używać jako rozwiąza�
   go **tylko `english_chapter`**, regułą PoC `cardSentences` (części linii
   rozdzielone „ — ” albo „ / ”, z samych liter ASCII i `' ,.?!`, zakończone
   `.?!` albo ≥ 3 słowa, bez wielokropka; linia słówek „living room — salon”
-  nie jest zdaniem). Gramatyka haka nie dostaje: jej karty mają zdania
+  nie jest zdaniem). Ponieważ prawdziwa karta ramy to polskie wyjaśnienie
+  z 1–3 przykładami, części dzielą się dalej po etykiecie „: ”, po „; ” i na
+  granicach zdań po `.?!`, a z każdej odpada punktor lub numeracja („- ”,
+  „• ”, „* ”, „1. ”, „1) ”) i cudzysłowy na obu brzegach („…”, "…", «…»)
+  przed sprawdzeniem reguły. Gramatyka haka nie dostaje: jej karty mają zdania
   wplecione w polskie linie z „:” i „→”, których reguła nie łapie, a łapie
   polski fałszywy alarm („i kropka.”). Szkoła — materiał po polsku.
 - Nowa funkcja domenowa `cardExposureSources(subject, topic)` →
