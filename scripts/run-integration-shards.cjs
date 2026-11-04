@@ -10,47 +10,17 @@
  */
 "use strict";
 
-const { spawn, execFile } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const path = require("node:path");
-const { promisify } = require("node:util");
+const { DETACHED, exec, killTree, prefixStream } = require("./child-process-tree.cjs");
 
-const exec = promisify(execFile);
 const repoRoot = path.resolve(__dirname, "..");
 const VITEST_CLI = path.join(repoRoot, "node_modules/vitest/vitest.mjs");
 // Liczba koszy INTEGRATION_BUCKETS (tests/integration-buckets.ts);
 // zgodności pilnuje test jednostkowy integration-buckets.test.ts.
 const INTEGRATION_BUCKETS = 3;
 
-const DETACHED = process.platform !== "win32";
 const children = new Set();
-
-function killTree(child, signal = "SIGTERM") {
-  if (child.pid === undefined || child.exitCode !== null) return;
-  if (process.platform === "win32") {
-    exec("taskkill", ["/pid", String(child.pid), "/T", "/F"]).catch(() => undefined);
-    return;
-  }
-  // POSIX: dzieci startują detached, więc sygnał idzie do całej grupy procesów.
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    child.kill(signal);
-  }
-}
-
-function prefixStream(stream, prefix, target) {
-  let buffer = "";
-  stream.setEncoding("utf8");
-  stream.on("data", (chunk) => {
-    buffer += chunk;
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) target.write(`${prefix} ${line}\n`);
-  });
-  stream.on("end", () => {
-    if (buffer) target.write(`${prefix} ${buffer}\n`);
-  });
-}
 
 async function cleanupContainers(runIds) {
   // Sieć bezpieczeństwa: Vitest po SIGINT kończy proces bez teardownu
