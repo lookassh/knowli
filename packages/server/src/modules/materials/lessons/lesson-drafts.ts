@@ -1216,7 +1216,7 @@ export function toExerciseDraft(raw: unknown): LessonExerciseDraft {
 export function buildObjectiveCriteria(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
-  topicVersion: number,
+  topicVersion: number | undefined,
 ): { criteria: Record<string, unknown>; criteriaHash: string } {
   const acceptedAnswersHash = createHash("sha256")
     .update(JSON.stringify([...ex.acceptedAnswers].sort()))
@@ -1273,7 +1273,7 @@ export async function applyLessonExercises(
   tx: Tx,
   version: { id: string; deckId: string },
   subject: SubjectModule,
-  topicVersion: number,
+  topicVersion: number | undefined,
   exercises: readonly LessonExerciseDraft[],
 ): Promise<string[]> {
   let position = await nextPosition(tx, version.id);
@@ -1325,12 +1325,16 @@ async function existingAnswersOf(tx: Tx, versionId: string): Promise<string[]> {
     .filter((a): a is string => typeof a === "string");
 }
 
-/** Ćwiczenia już zapisane w wersji szkicu (kontekst walidacji dogenerowania, np. krzyżowa reguła ćwiczeń słuchowych). */
-async function existingDraftsOf(tx: Executor, versionId: string): Promise<LessonExerciseDraft[]> {
-  const rows = await tx
+/**
+ * Ćwiczenia już zapisane w wersji szkicu, w kolejności lekcji (pozycja, potem id — jak sesja lekcji);
+ * kontekst walidacji dogenerowania (np. krzyżowa reguła ćwiczeń słuchowych) i stan stały ścieżki agenta.
+ */
+export async function orderedDraftExercises(db: Executor, deckVersionId: string): Promise<LessonExerciseDraft[]> {
+  const rows = await db
     .select({ payload: itemRevisions.payload })
     .from(itemRevisions)
-    .where(eq(itemRevisions.deckVersionId, versionId));
+    .where(eq(itemRevisions.deckVersionId, deckVersionId))
+    .orderBy(asc(itemRevisions.position), asc(itemRevisions.id));
   return rows.flatMap(({ payload }) => {
     if (!payload || typeof payload !== "object") return [];
     const value = payload as Record<string, unknown>;
@@ -1530,6 +1534,247 @@ function stageCountsOf(exercises: readonly LessonExerciseDraft[]): { guided: num
   return counts;
 }
 
+/** Bieżąca próba runu puli: straż zapisu (stan `running`, ta sama próba i ten sam numer edycji szkicu). */
+export interface LessonRunIdentity {
+  readonly runId: string;
+  readonly attempts: number;
+  readonly expectedEditNumber: number;
+  readonly deckVersionId: string;
+}
+
+/** Wynik próby zapisywany do `lesson_context` szkicu (liczniki tej próby; zapis sumuje je z poprzednim kontekstem). */
+export interface LessonPoolWriteContext {
+  readonly dynamicTopic?: DynamicTopicData;
+  readonly newExamples: Record<string, string[]>;
+  /** Odrzucenia tej próby; sumowane z licznikiem poprzedniego kontekstu (wspólny zapis dolicza kolizje z historyjką i słowa kluczowe). */
+  readonly rejectedCount: number;
+  readonly rejectedReasons: Record<string, number>;
+  readonly droppedObjectiveCount: number;
+}
+
+/** Raport kontroli jakości przebiegu scalony z raportem szkicu (wołany w transakcji zapisu, po zapisie ćwiczeń). */
+type LessonPoolReview = (
+  tx: Tx,
+  versionId: string,
+  previous: LessonReviewReport | undefined,
+  saved: readonly { readonly draft: LessonExerciseDraft; readonly exerciseId: string }[],
+) => Promise<LessonReviewReport>;
+
+type LessonPoolWriteOutcome = "succeeded" | "failed_validation" | "superseded" | "gone";
+
+/**
+ * Przejście bieżącej próby runu puli (straż: `running`, ta sama próba, ten sam numer edycji).
+ * Zegar jawnie, jak w `markRun` — `finishedAt` z zegara usług (testy sterują czasem).
+ */
+export async function markLessonRun(
+  db: Executor,
+  clock: Clock,
+  run: LessonRunIdentity,
+  state: "failed" | "succeeded" | "superseded" | "queued",
+  errorCode: string | null,
+  nextAttemptAt: Date | null = null,
+): Promise<void> {
+  const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : clock.now() })
+    .where(and(eq(generationRuns.id, run.runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, run.attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber)));
+  // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
+  // równoległy retry rodzica podbił expectedEditNumber).
+  if ((result as { rowCount?: number }).rowCount !== 0) {
+    console.log(
+      `[lesson] run=${run.runId} ${state === "queued" ? "ponowienie" : "zakończony"}: state=${state} kod=${errorCode ?? "-"} próba=${run.attempts}`,
+    );
+  }
+}
+
+/**
+ * Kontekst szkicu po porażce walidacji: liczniki próby (plus odrzucenia samego zapisu) zsumowane
+ * z poprzednimi i raport kontroli jakości — bez `review` raport w kontekście zostaje bez zmian.
+ */
+async function failedValidationContext(
+  tx: Tx,
+  versionId: string,
+  prevContext: LessonContext,
+  context: LessonPoolWriteContext,
+  writeRejected: number,
+  rejectedReasons: Record<string, number>,
+  review: LessonPoolReview | undefined,
+  extendContext: ((next: LessonContext) => LessonContext) | undefined,
+): Promise<LessonContext> {
+  const next: LessonContext = {
+    ...prevContext,
+    rejectedCount: (prevContext.rejectedCount ?? 0) + context.rejectedCount + writeRejected,
+    ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
+    droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + context.droppedObjectiveCount,
+    ...(review === undefined ? {} : { review: await review(tx, versionId, prevContext.review, []) }),
+  };
+  return extendContext === undefined ? next : extendContext(next);
+}
+
+/**
+ * Porażka walidacji (0 nowych ćwiczeń): nawet wtedy rodzic widzi skalę odrzuceń i usunięcia kontroli
+ * jakości — zapisujemy liczniki i raport do kontekstu (ta sama straż wersji co przy finalizacji).
+ */
+export async function failLessonPoolValidation(
+  services: Services,
+  args: {
+    run: LessonRunIdentity;
+    context: LessonPoolWriteContext;
+    review?: LessonPoolReview;
+    extendContext?: (next: LessonContext) => LessonContext;
+  },
+): Promise<void> {
+  const { run } = args;
+  await services.db.transaction(async (tx) => {
+    const version = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId)).for("update")
+    )[0];
+    if (version && version.state !== "published" && version.editNumber === run.expectedEditNumber) {
+      const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+      const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, args.context.rejectedReasons);
+      const nextContext = await failedValidationContext(tx, version.id, prevContext, args.context, 0, rejectedReasons, args.review, args.extendContext);
+      await tx
+        .update(deckVersions)
+        .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
+        .where(eq(deckVersions.id, version.id));
+    }
+    await markLessonRun(tx, services.clock, run, "failed", "validation");
+  });
+}
+
+/**
+ * Wspólny zapis puli do szkicu (potok i ścieżka agenta): jedna transakcja pod blokadami wersja → run.
+ * Straże (bieżąca próba, termin finalizacji, wersja szkicu), odrzucenie kolizji z historyjką i słów
+ * kluczowych bez rodziny, zapis ćwiczeń, `lesson_context` z licznikami zsumowanymi z poprzednimi,
+ * uzgodnienie mediów, podbicie numeru edycji, anulowanie innych runów, kolejka historyjki, stan
+ * `review` i sukces runu. `onSuccessTransaction` tylko w gałęzi sukcesu, przed podbiciem numeru edycji.
+ * „superseded” zwraca też, gdy run nie jest już bieżącą próbą (wtedy bez zmiany stanu runu).
+ */
+export async function finalizeLessonPoolWrite(
+  services: Services,
+  args: {
+    run: LessonRunIdentity;
+    subject: SubjectModule;
+    topicVersion: number | undefined;
+    regenerate: boolean;
+    existingDrafts: readonly LessonExerciseDraft[];
+    accepted: readonly LessonExerciseDraft[];
+    context: LessonPoolWriteContext;
+    /** Brak = raport krytyka w kontekście zostaje bez zmian (ścieżka agenta). */
+    review?: LessonPoolReview;
+    /** Ścieżka agenta: dodatkowe pola kontekstu i zapis w tej samej transakcji. */
+    extendContext?: (next: LessonContext) => LessonContext;
+    onSuccessTransaction?: (tx: Tx) => Promise<void>;
+    finalizationDeadlineAtMs: number;
+    signal?: AbortSignal;
+  },
+): Promise<LessonPoolWriteOutcome> {
+  const { run, subject, context } = args;
+  return services.db.transaction(async (tx): Promise<LessonPoolWriteOutcome> => {
+    const version = (
+      await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId)).for("update")
+    )[0];
+    const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, run.runId)).for("update"))[0];
+    if (!current || current.state !== "running" || current.attempts !== run.attempts || current.expectedEditNumber !== run.expectedEditNumber) {
+      return "superseded";
+    }
+    assertLessonGenerationFinalizationAllowed(args.finalizationDeadlineAtMs, args.signal);
+    if (!version) {
+      await markLessonRun(tx, services.clock, run, "failed", "deck_version_gone");
+      return "gone";
+    }
+    if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
+      await markLessonRun(tx, services.clock, run, "superseded", null);
+      return "superseded";
+    }
+    const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
+    // Pula zapisywana do lekcji z historyjką (dogenerowanie, ale też pełny run):
+    // ćwiczenie, którego rozwiązanie powtarza zdanie historyjki, ujawniłoby
+    // odpowiedź (bariera ekspozycji, spec historyjki §5). Historyjka z tej
+    // transakcji — rodzic mógł ją zmienić.
+    const story = prevContext.story;
+    const withoutStoryCollisions = story
+      ? args.accepted.filter((ex) => storyCollisions(story.sentences, solvedSentencesOf([ex]), subject.normalizer).length === 0)
+      : args.accepted;
+    const storyRejected = args.accepted.length - withoutStoryCollisions.length;
+    if (storyRejected > 0) {
+      console.log(`[lesson] run=${run.runId} kolizje z historyjką: odrzucone=${storyRejected}`);
+    }
+    // Kolizja mogła usunąć całą rodzinę pytań otwartych — jej słowa kluczowe odpadają razem z nią.
+    const writeOrphans = withoutOrphanKeywords(args.existingDrafts, withoutStoryCollisions);
+    const accepted = writeOrphans.kept;
+    const writeRejected = storyRejected + writeOrphans.dropped;
+    const rejectedReasons = sumRejectedReasons(
+      sumRejectedReasons(prevContext.rejectedReasons, context.rejectedReasons),
+      reasonCount(ORPHAN_KEYWORDS_REASON, writeOrphans.dropped),
+    );
+    if (accepted.length === 0) {
+      const failedContext = await failedValidationContext(
+        tx, version.id, prevContext, context, writeRejected, rejectedReasons, args.review, args.extendContext,
+      );
+      await tx
+        .update(deckVersions)
+        .set({ lessonContext: failedContext as unknown as Record<string, unknown> })
+        .where(eq(deckVersions.id, version.id));
+      await markLessonRun(tx, services.clock, run, "failed", "validation");
+      return "failed_validation";
+    }
+    const itemIds = await applyLessonExercises(
+      tx,
+      { id: version.id, deckId: version.deckId },
+      subject,
+      args.topicVersion,
+      accepted,
+    );
+    // Raport kontroli jakości: wpisy przebiegu scalone z poprzednimi; listy ćwiczeń tylko dla żywych elementów wersji.
+    const review = args.review === undefined
+      ? undefined
+      : await args.review(tx, version.id, prevContext.review, accepted.map((draft, index) => ({ draft, exerciseId: itemIds[index]! })));
+    // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
+    // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
+    const baseContext: LessonContext = {
+      ...prevContext,
+      ...(context.dynamicTopic ? { dynamicTopic: context.dynamicTopic, objectiveIds: context.dynamicTopic.objectives.map((o) => o.id) } : {}),
+      examples: { ...prevContext.examples, ...context.newExamples },
+      rejectedCount: (prevContext.rejectedCount ?? 0) + context.rejectedCount + writeRejected,
+      ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
+      droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + context.droppedObjectiveCount,
+      ...(review === undefined ? {} : { review }),
+    };
+    const nextContext = args.extendContext === undefined ? baseContext : args.extendContext(baseContext);
+    await tx
+      .update(deckVersions)
+      .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
+      .where(eq(deckVersions.id, version.id));
+    await reconcileDraftAssetsTx(tx, services, version);
+    // Zapis ścieżki agenta w tej samej transakcji (wiersz runu zablokowany wyżej).
+    if (args.onSuccessTransaction !== undefined) {
+      await args.onSuccessTransaction(tx);
+    }
+    const nextEditNumber = version.editNumber + 1;
+    await tx.update(deckVersions).set({ editNumber: nextEditNumber }).where(eq(deckVersions.id, version.id));
+    if (args.regenerate) {
+      // Dogenerowanie celu nie anuluje runu historyjki (spec §6.2).
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), run.runId);
+    } else {
+      // Nowa pula: stara historyjka w toku jest nieaktualna; zlecamy nową
+      // (tylko przedmiot z `lessonStory` i tylko gdy wersja nie ma historyjki).
+      await supersedeLessonRuns(tx, version.id, services.clock.now(), run.runId, { includeStoryRuns: true });
+      if (nextContext.story === undefined) {
+        await queueLessonStoryRunTx(
+          tx,
+          services,
+          { ...version, editNumber: nextEditNumber, lessonContext: nextContext as unknown as Record<string, unknown> },
+          `lesson-story:${run.runId}`,
+        );
+      }
+    }
+    if (version.state !== "review") {
+      await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
+    }
+    await markLessonRun(tx, services.clock, run, "succeeded", null);
+    return "succeeded";
+  });
+}
+
 export async function executeLessonGeneration(services: Services, runId: string, options: { signal?: AbortSignal } = {}): Promise<void> {
   const deps = requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
@@ -1551,17 +1796,9 @@ export async function executeLessonGeneration(services: Services, runId: string,
     return;
   }
   const runStartedAtMs = Date.now();
-  const markCurrentRun = async (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) => {
-    const result = await db.update(generationRuns).set({ state, errorCode, nextAttemptAt, finishedAt: state === "queued" ? null : services.clock.now() })
-      .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running"), eq(generationRuns.attempts, attempts), eq(generationRuns.expectedEditNumber, run.expectedEditNumber!)));
-    // Logujemy tylko realne przejście (WHERE może dopasować 0 wierszy, np. gdy
-    // równoległy retry rodzica podbił expectedEditNumber).
-    if ((result as { rowCount?: number }).rowCount !== 0) {
-      console.log(
-        `[lesson] run=${runId} ${state === "queued" ? "ponowienie" : "zakończony"}: state=${state} kod=${errorCode ?? "-"} próba=${attempts}`,
-      );
-    }
-  };
+  const lessonRun: LessonRunIdentity = { runId, attempts, expectedEditNumber: run.expectedEditNumber!, deckVersionId: run.deckVersionId! };
+  const markCurrentRun = (db: Executor, state: "failed" | "succeeded" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) =>
+    markLessonRun(db, services.clock, lessonRun, state, errorCode, nextAttemptAt);
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
     await markCurrentRun(services.db, "failed", "attempts_exhausted");
     return;
@@ -1609,7 +1846,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   // z odpowiedzią tekstową wyszedłby dopiero przy publikacji).
   const draftContext = (currentVersion.lessonContext ?? {}) as unknown as Partial<LessonContext>;
   const draftExamples: Record<string, string[]> = draftContext.examples ?? {};
-  const existingDrafts = input.regenerate ? await existingDraftsOf(services.db, input.deckVersionId) : [];
+  const existingDrafts = input.regenerate ? await orderedDraftExercises(services.db, input.deckVersionId) : [];
 
   // Partie per cel: albo dogenerowanie jednego celu, albo pełna pula.
   let batches: { objectiveId: string; count: number; existingAnswers: string[]; existingExercises: LessonExerciseStimulus[] }[] = input.regenerate
@@ -1928,32 +2165,16 @@ export async function executeLessonGeneration(services: Services, runId: string,
       return mergeReviewReport(previous, runReport, liveIds);
     };
 
-    // Porażka walidacji (0 nowych ćwiczeń): nawet wtedy rodzic widzi skalę odrzuceń i usunięcia kontroli
-    // jakości — zapisujemy liczniki i raport do kontekstu (ta sama straż wersji co przy finalizacji).
-    const failValidation = async () => {
-      await services.db.transaction(async (tx) => {
-        const version = (
-          await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
-        )[0];
-        if (version && version.state !== "published" && version.editNumber === run.expectedEditNumber) {
-          const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
-          const rejectedReasons = sumRejectedReasons(prevContext.rejectedReasons, runRejectedReasons);
-          await tx
-            .update(deckVersions)
-            .set({
-              lessonContext: {
-                ...prevContext,
-                rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount,
-                ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
-                droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
-                review: await mergedReview(tx, version.id, prevContext.review, []),
-              } as unknown as Record<string, unknown>,
-            })
-            .where(eq(deckVersions.id, version.id));
-        }
-        await markCurrentRun(tx, "failed", "validation");
-      });
-    };
+    // Wynik próby do kontekstu szkicu — liczniki czytane w chwili zapisu (runda pod etap je zwiększa).
+    const writeContext = (): LessonPoolWriteContext => ({
+      ...(dynamicTopicData ? { dynamicTopic: dynamicTopicData } : {}),
+      newExamples: leaks.keptNewExamples,
+      rejectedCount,
+      rejectedReasons: runRejectedReasons,
+      droppedObjectiveCount,
+    });
+    // Porażka walidacji (0 nowych ćwiczeń): liczniki i raport krytyka i tak trafiają do kontekstu.
+    const failValidation = () => failLessonPoolValidation(services, { run: lessonRun, context: writeContext(), review: mergedReview });
 
     // Runda pod brakujący etap (spec etapu przeglądu lekcji): po regule ujawnień, przed zapisem.
     // Pełna generacja bez przyjętych ćwiczeń kończy się porażką bez rundy; ręczne dogenerowanie
@@ -1998,105 +2219,17 @@ export async function executeLessonGeneration(services: Services, runId: string,
       return;
     }
 
-    await services.db.transaction(async (tx) => {
-      const version = (
-        await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
-      )[0];
-      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
-      if (!current || current.state !== "running" || current.attempts !== attempts || current.expectedEditNumber !== run.expectedEditNumber) return;
-      assertLessonGenerationFinalizationAllowed(phaseDeadlineAtMs, options.signal);
-      if (!version) {
-        await markCurrentRun(tx, "failed", "deck_version_gone");
-        return;
-      }
-      if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
-        await markCurrentRun(tx, "superseded", null);
-        return;
-      }
-      const prevContext = (version.lessonContext ?? {}) as unknown as LessonContext;
-      // Pula zapisywana do lekcji z historyjką (dogenerowanie, ale też pełny run):
-      // ćwiczenie, którego rozwiązanie powtarza zdanie historyjki, ujawniłoby
-      // odpowiedź (bariera ekspozycji, spec historyjki §5). Historyjka z tej
-      // transakcji — rodzic mógł ją zmienić.
-      const story = prevContext.story;
-      const withoutStoryCollisions = story
-        ? uniqueValid.filter((ex) => storyCollisions(story.sentences, solvedSentencesOf([ex]), subject.normalizer).length === 0)
-        : uniqueValid;
-      const storyRejected = uniqueValid.length - withoutStoryCollisions.length;
-      if (storyRejected > 0) {
-        console.log(`[lesson] run=${runId} kolizje z historyjką: odrzucone=${storyRejected}`);
-      }
-      // Kolizja mogła usunąć całą rodzinę pytań otwartych — jej słowa kluczowe odpadają razem z nią.
-      const writeOrphans = withoutOrphanKeywords(existingDrafts, withoutStoryCollisions);
-      const accepted = writeOrphans.kept;
-      const writeRejected = storyRejected + writeOrphans.dropped;
-      const rejectedReasons = sumRejectedReasons(
-        sumRejectedReasons(prevContext.rejectedReasons, runRejectedReasons),
-        reasonCount(ORPHAN_KEYWORDS_REASON, writeOrphans.dropped),
-      );
-      if (accepted.length === 0) {
-        await tx
-          .update(deckVersions)
-          .set({
-            lessonContext: {
-              ...prevContext,
-              rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount + writeRejected,
-              ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
-              droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
-              review: await mergedReview(tx, version.id, prevContext.review, []),
-            } as unknown as Record<string, unknown>,
-          })
-          .where(eq(deckVersions.id, version.id));
-        await markCurrentRun(tx, "failed", "validation");
-        return;
-      }
-      const itemIds = await applyLessonExercises(
-        tx,
-        { id: version.id, deckId: version.deckId },
-        subject,
-        input.topicVersion,
-        accepted,
-      );
-      // Raport kontroli jakości: wpisy przebiegu scalone z poprzednimi; listy ćwiczeń tylko dla żywych elementów wersji.
-      const review = await mergedReview(tx, version.id, prevContext.review, accepted.map((draft, index) => ({ draft, exerciseId: itemIds[index]! })));
-      // Uzupełnienie lesson_context: przykłady i licznik odrzuconych (sumujemy przy
-      // dogenerowaniu). lesson_context jest niezmienny dopiero po publikacji.
-      const nextContext: LessonContext = {
-        ...prevContext,
-        ...(dynamicTopicData ? { dynamicTopic: dynamicTopicData, objectiveIds: dynamicTopicData.objectives.map((o) => o.id) } : {}),
-        examples: { ...prevContext.examples, ...leaks.keptNewExamples },
-        rejectedCount: (prevContext.rejectedCount ?? 0) + rejectedCount + writeRejected,
-        ...(Object.keys(rejectedReasons).length > 0 ? { rejectedReasons } : {}),
-        droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + droppedObjectiveCount,
-        review,
-      };
-      await tx
-        .update(deckVersions)
-        .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
-        .where(eq(deckVersions.id, version.id));
-      await reconcileDraftAssetsTx(tx, services, version);
-      const nextEditNumber = version.editNumber + 1;
-      await tx.update(deckVersions).set({ editNumber: nextEditNumber }).where(eq(deckVersions.id, version.id));
-      if (input.regenerate) {
-        // Dogenerowanie celu nie anuluje runu historyjki (spec §6.2).
-        await supersedeLessonRuns(tx, version.id, services.clock.now(), runId);
-      } else {
-        // Nowa pula: stara historyjka w toku jest nieaktualna; zlecamy nową
-        // (tylko przedmiot z `lessonStory` i tylko gdy wersja nie ma historyjki).
-        await supersedeLessonRuns(tx, version.id, services.clock.now(), runId, { includeStoryRuns: true });
-        if (nextContext.story === undefined) {
-          await queueLessonStoryRunTx(
-            tx,
-            services,
-            { ...version, editNumber: nextEditNumber, lessonContext: nextContext as unknown as Record<string, unknown> },
-            `lesson-story:${runId}`,
-          );
-        }
-      }
-      if (version.state !== "review") {
-        await tx.update(deckVersions).set({ state: "review" }).where(eq(deckVersions.id, version.id));
-      }
-      await markCurrentRun(tx, "succeeded", null);
+    await finalizeLessonPoolWrite(services, {
+      run: lessonRun,
+      subject,
+      topicVersion: input.topicVersion,
+      regenerate: Boolean(input.regenerate),
+      existingDrafts,
+      accepted: uniqueValid,
+      context: writeContext(),
+      review: mergedReview,
+      finalizationDeadlineAtMs: phaseDeadlineAtMs,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     console.log(`[lesson] run=${runId} zakończony durationMs=${Date.now() - runStartedAtMs}`);
   } catch (error) {
