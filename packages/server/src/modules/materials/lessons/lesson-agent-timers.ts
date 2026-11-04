@@ -29,6 +29,33 @@ export function deadlineSignal(parent: AbortSignal, ms: number, reason: string):
   };
 }
 
+/**
+ * Wyścig obietnicy dostawcy z sygnałem: przerwanie odrzuca wynik z `signal.reason`, nawet gdy
+ * dostawca ignoruje sygnał i nigdy się nie kończy (terminy nie zależą od uczciwości adaptera).
+ * Spóźniony wynik albo błąd porzuconej obietnicy są pochłaniane; nasłuch zdejmowany po rozstrzygnięciu.
+ */
+export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    promise.catch(() => undefined);
+    return Promise.reject(signal.reason as Error);
+  }
+  return new Promise<T>((resolve, reject) => {
+    // Po przerwaniu późniejsze `resolve`/`reject` niżej nic nie zmieniają (obietnica już odrzucona).
+    const onAbort = () => reject(signal.reason as Error);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error as Error);
+      },
+    );
+  });
+}
+
 /** Semafor FIFO: najwyżej `limit` zadań naraz; `maxConcurrent` to zaobserwowane maksimum. */
 export class Semaphore {
   private active = 0;

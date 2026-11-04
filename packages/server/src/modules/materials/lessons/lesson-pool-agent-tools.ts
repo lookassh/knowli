@@ -15,7 +15,7 @@ import type { LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatus } from "../../../domain/lessons/agent/status";
 import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/types";
 import type { LessonAgentToolOutcome, LessonExerciseCheckerProvider, LessonObjectiveAgentTools } from "../../../ports/ai";
-import { deadlineSignal, type Semaphore } from "./lesson-agent-timers";
+import { deadlineSignal, untilAborted, type Semaphore } from "./lesson-agent-timers";
 import { isWellShapedRawExercise, stripParentAddedFlags, toExerciseDraft } from "./lesson-drafts";
 import type { LessonAgentPolicy, RunBudgetSink } from "./lesson-pool-agent-policy";
 import { sanitizeFreshLessonDraft } from "./lesson-pool-acceptance";
@@ -196,7 +196,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       args.onStats?.({ checkerCalls: 1 });
       const deadline = deadlineSignal(checkerParent, policy.checkerTimeoutMs, CHECKER_TIMEOUT_REASON);
       try {
-        const values = await request(deadline.signal);
+        // Wyścig z terminem: checker ignorujący sygnał nie trzyma miejsca w semaforze ani `close()`.
+        const values = await untilAborted(request(deadline.signal), deadline.signal);
         return Array.isArray(values) ? values : null;
       } catch {
         return null;

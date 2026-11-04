@@ -6,7 +6,7 @@ import { historyLikeSubject } from "../../../domain/lessons/testing/history-like
 import { chapterAgentPolicy } from "../../../domain/lessons/subjects/english-chapter/agent-policy";
 import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
-import type { DynamicTopicData, LessonExerciseDraft, SubjectModule } from "../../../domain/lessons/types";
+import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonAgentPlanInput, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
 import {
   FakeExerciseChecker,
@@ -138,6 +138,19 @@ describe("runLessonPoolAgent — przebieg zagadnień", () => {
       failure: { errorCode: classifyLessonGenerationFailure(new Error("x")).errorCode },
     });
     expect(result.objectives[1]).toMatchObject({ objectiveId: B, status: "complete" });
+  });
+
+  it("błąd kodu przy budowaniu wejścia podagenta odrzuca run (nie jest awarią dostawcy `failed`)", async () => {
+    const bug = new Error("prompt builder bug");
+    // `topic.transforms` czyta tylko budowanie wejścia podagenta (`buildPoolInput`) i widok checkera (tu nieużywany).
+    const broken = Object.defineProperty({ ...topic }, "transforms", {
+      get: () => {
+        throw bug;
+      },
+    }) as LessonTopic;
+    const { agent, deps } = setup({ agent: { objectives: { [SLUG_A]: completeScript(A, 0), [SLUG_B]: completeScript(B, 100) } } });
+    await expect(runLessonPoolAgent(deps, runInput({ objectiveSource: { source: "catalog", topic: broken } }), never)).rejects.toBe(bug);
+    expect(agent.calls).toEqual([]);
   });
 
   it("dwa zagadnienia równolegle z tym samym ujawnieniem: oba prechecki przed przyjęciem → jedno przyjęte, drugie leak_*", async () => {

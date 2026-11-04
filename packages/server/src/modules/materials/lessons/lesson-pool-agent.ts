@@ -13,7 +13,7 @@ import type {
   LessonTopic,
 } from "../../../domain/lessons/types";
 import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
-import { deadlineSignal, Semaphore } from "./lesson-agent-timers";
+import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts } from "./lesson-drafts";
 import { classifyLessonGenerationFailure } from "./lesson-generation-errors";
 import { objectiveAgentInput } from "./lesson-pool-agent-input";
@@ -62,7 +62,11 @@ export interface LessonPoolAgentRunInput {
   readonly skipObjectives: readonly string[];
   readonly familyScope: string | null;
   readonly initialSpentUsd: number;
-  /** Wołany szeregowo, w kolejności zakończenia zagadnień; błąd przerywa run. */
+  /**
+   * Wołany szeregowo, w kolejności zakończenia zagadnień; błąd przerywa run. Dostaje migawkę zagadnienia
+   * sprzed kontroli końcowej (`lessonInvariantCheck`): usunięcia bezpiecznika widać dopiero w wyniku runu,
+   * a uzgodnienie zapisanych zagadnień z tymi usunięciami należy do etapu 2.
+   */
   readonly onObjectiveSettled?: (settled: SettledObjective) => Promise<void>;
 }
 
@@ -355,6 +359,24 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
         budget.record(usd);
       },
     };
+    // Wejście budowane przed narzędziami i poza obsługą błędów dostawcy: błąd kodu (np. w budowaniu
+    // promptu) odrzuca run, zamiast oznaczać zagadnienie jako `failed`. Zagadnienie, którego termin
+    // (np. runu) minął przed startem, nie woła dostawcy.
+    const agentInput = objectiveSignal.aborted
+      ? undefined
+      : objectiveAgentInput({
+          subject,
+          topic,
+          state,
+          objective,
+          limits: limits.get(objective.id)!,
+          material: input.material,
+          ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
+          ...(input.interests === undefined ? {} : { interests: input.interests }),
+          graderAvailable: input.graderAvailable,
+          examplesFromPlan,
+          maxSteps: policy.maxStepsPerObjective,
+        });
     const handle = createObjectiveTools({
       objectiveId: objective.id,
       getState,
@@ -381,22 +403,9 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     let steps = 0;
     let providerError: { readonly error: unknown } | undefined;
     try {
-      // Zagadnienie, którego termin (np. runu) minął przed startem, nie woła dostawcy.
-      if (!objectiveSignal.aborted) {
-        const agentInput = objectiveAgentInput({
-          subject,
-          topic,
-          state,
-          objective,
-          limits: limits.get(objective.id)!,
-          material: input.material,
-          ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
-          ...(input.interests === undefined ? {} : { interests: input.interests }),
-          graderAvailable: input.graderAvailable,
-          examplesFromPlan,
-          maxSteps: policy.maxStepsPerObjective,
-        });
-        steps = (await deps.agent.runObjective(agentInput, handle.tools, agentCost, objectiveSignal)).steps;
+      if (agentInput !== undefined) {
+        // Wyścig z sygnałem zagadnienia: dostawca ignorujący przerwanie nie wstrzymuje terminu ani runu.
+        steps = (await untilAborted(deps.agent.runObjective(agentInput, handle.tools, agentCost, objectiveSignal), objectiveSignal)).steps;
       }
     } catch (error) {
       // `failed` tylko dla wyjątku dostawcy przy nieprzerwanym sygnale zagadnienia; termin → `incomplete`.
@@ -406,6 +415,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       steps = track.requests;
     } finally {
       // Zamknięcie od razu po powrocie: spóźnione wywołania narzędzi kończą się odmową bez przyjęcia.
+      // `close()` czeka na trwające wywołanie narzędzia; jego checker przerywa zamknięcie (wyścig w `callChecker`).
       await handle.close();
       active.delete(handle);
     }

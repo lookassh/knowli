@@ -172,6 +172,53 @@ describe("runLessonPoolAgent — terminy i przerwanie", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("agent ignorujący przerwanie (stall): termin zagadnienia i tak kończy je jako incomplete, run wraca przed runTimeoutMs", async () => {
+    vi.useFakeTimers();
+    const { agent, deps } = setup({
+      agent: { objectives: { [SLUG_A]: [{ stall: true }] } },
+      policy: { objectiveTimeoutMs: 1000, runTimeoutMs: 10_000 },
+    });
+    let settled = false;
+    const run = runLessonPoolAgent(deps, runInput(), never).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    const result = await run;
+    expect(result.objectives[0]).toMatchObject({ objectiveId: A, status: "incomplete" });
+    expect(result.objectives[0]!.failure).toBeUndefined();
+    expect(agent.calls[0]!.tools.shouldStop()).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("checker ignorujący przerwanie (stall): po checkerTimeoutMs paczka unavailable, miejsce w semaforze zwolnione", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    // Pierwsze wywołanie nigdy się nie kończy; kolejne odpowiadają zwykle.
+    const checker = new FakeExerciseChecker({ costUsd: 0, solveBatch: () => (calls++ === 0 ? "stall" : [["inna"]]) });
+    const { deps } = setup({
+      checker,
+      agent: { objectives: { [SLUG_A]: submits(A, 1), [SLUG_B]: submits(B, 1) } },
+      policy: { checkerConcurrency: 1, checkerTimeoutMs: 1000, concurrency: 2 },
+    });
+    let settled = false;
+    const run = runLessonPoolAgent(deps, runInput({ skipObjectives: [] }), never).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Jedno miejsce checkera: drugie zagadnienie czeka na zawieszone wywołanie.
+    expect(checker.solveCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(checker.solveCalls).toHaveLength(2);
+    expect(settled).toBe(true);
+    const result = await run;
+    expect(result.objectives).toHaveLength(2);
+    expect(result.stats).toMatchObject({ checkerCalls: 2, checkUnavailable: 1 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("termin zagadnienia liczy się od startu podagenta, nie od startu runu (zagadnienie czekające na miejsce)", async () => {
     vi.useFakeTimers();
     const { agent, deps } = setup({

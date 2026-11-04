@@ -19,7 +19,9 @@ export type FakeAgentStep =
   | { remove: string }
   | { parallel: FakeAgentStep[] }
   | { throw: Error }
-  | { hang: true };
+  | { hang: true }
+  /** Dostawca ignorujący przerwanie: krok nigdy się nie kończy, także po przerwaniu sygnału. */
+  | { stall: true };
 
 export interface FakeLessonPoolAgentOptions {
   /** Scenariusze per zagadnienie; klucz = slug, czyli `objective.id.split(".").at(-1)`. */
@@ -52,6 +54,11 @@ function rejectOnAbort(signal: AbortSignal): { promise: Promise<never>; dispose:
       if (onAbort) signal.removeEventListener("abort", onAbort);
     },
   };
+}
+
+/** Obietnica, która nigdy się nie rozstrzyga (dostawca ignorujący `signal`). */
+function stalled(): Promise<never> {
+  return new Promise<never>(() => undefined);
 }
 
 /** Śledzi największą liczbę jednocześnie trwających wywołań. */
@@ -158,6 +165,8 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
       await Promise.all(step.parallel.map((inner) => this.executeStep(inner, tools, outcomes, signal)));
     } else if ("throw" in step) {
       throw step.throw;
+    } else if ("stall" in step) {
+      await stalled();
     } else {
       await rejectOnAbort(signal).promise;
     }
@@ -170,11 +179,14 @@ type JudgeInput = Parameters<LessonExerciseCheckerProvider["judgeVariants"]>[0];
 export interface FakeExerciseCheckerOptions {
   /** `view → odpowiedzi` (null = brak wyniku); domyślnie pusta lista, czyli rozjazd. */
   solve?: (view: string) => string[] | null;
-  /** Wynik całej paczki zamiast `solve` per pozycja; `"throw"` rzuca, `"hang"` czeka na przerwanie. */
-  solveBatch?: (items: readonly { view: string }[]) => (string[] | null)[] | "throw" | "hang";
+  /**
+   * Wynik całej paczki zamiast `solve` per pozycja; `"throw"` rzuca, `"hang"` czeka na przerwanie,
+   * `"stall"` nigdy się nie kończy (dostawca ignorujący przerwanie).
+   */
+  solveBatch?: (items: readonly { view: string }[]) => (string[] | null)[] | "throw" | "hang" | "stall";
   /** Werdykt dla jednego wariantu (null = brak wyniku pozycji); domyślnie `true`. */
   judge?: (variant: string) => boolean | null;
-  judgeBatch?: (items: readonly unknown[]) => (boolean[] | null)[] | "throw" | "hang";
+  judgeBatch?: (items: readonly unknown[]) => (boolean[] | null)[] | "throw" | "hang" | "stall";
   /** Koszt jednego wywołania; domyślnie 0, `null` = nieznany. */
   costUsd?: number | null;
   /** Wywołania czekają na tę obietnicę (testy równoległości); przerwanie sygnału przerywa oczekiwanie. */
@@ -202,6 +214,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
       const batch = this.options.solveBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: solve failed");
       if (batch === "hang") return rejectOnAbort(signal).promise;
+      if (batch === "stall") return stalled();
       if (batch) return { answers: batch };
       const solve = this.options.solve ?? (() => []);
       return { answers: input.items.map((item) => solve(item.view)) };
@@ -215,6 +228,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
       const batch = this.options.judgeBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: judgeVariants failed");
       if (batch === "hang") return rejectOnAbort(signal).promise;
+      if (batch === "stall") return stalled();
       if (batch) return { equivalent: batch };
       const judge = this.options.judge ?? (() => true);
       return {
