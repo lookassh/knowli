@@ -62,6 +62,8 @@ describe("agentTestSubject", () => {
       "keywords without open-answer family",
     ]);
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f" })], { material: "" }).size).toBe(0);
+    // Rodzina innego zagadnienia nie wystarcza (jak w szkole i `withoutOrphanKeywords`).
+    expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f", objectiveId: "other" })], { material: "" }).size).toBe(1);
   });
 
   it("refineGeneratedPool usuwa wariant DROP i odrzuca REFINE-REJECT", () => {

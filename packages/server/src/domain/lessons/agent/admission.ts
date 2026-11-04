@@ -1,14 +1,16 @@
 import { exerciseExposureText } from "../exposure-key";
 import { findExposureLeaks, type ExposureLeak } from "../exposure-leaks";
 import { withoutOrphanKeywords } from "../keyword-families";
-import { validateLessonExercise, validatePool } from "../pool-validation";
+import { MAX_TEXT_LENGTH, validateLessonExercise, validatePool } from "../pool-validation";
 import type { AgentObjective, LessonExerciseDraft } from "../types";
 import type { AgentCapableSubject } from "./capable";
+import { blindMatches } from "./solver";
 import {
   allExamples,
   orderedEntries,
   poolOf,
   takeIds,
+  withExamples,
   withPool,
   type AgentPoolEntry,
   type LessonAgentState,
@@ -291,11 +293,44 @@ export function precheckBatch(
   return results;
 }
 
+function quotedList(texts: readonly string[]): string {
+  return texts.length === 0 ? "nothing" : texts.map(quoted).join(", ");
+}
+
+/**
+ * Kroki 5–6 (wyniki checkera dla oczyszczonego szkicu): `na` przechodzi,
+ * `unavailable` przechodzi z `unchecked`, `done` może odrzucić. Ślepe
+ * rozwiązanie wygrywa z wariantami.
+ */
+function checkerSteps(
+  draft: LessonExerciseDraft,
+  checks: CandidateChecks,
+  ctx: AgentCheckContext,
+): { ok: true; unchecked: boolean } | { ok: false; rejection: Rejection } {
+  const { solve, variants } = checks;
+  if (solve.kind === "done" && !blindMatches(draft, solve.value, ctx.subject.normalizer)) {
+    return reject("blind", "blind_mismatch", [
+      `an independent solver who saw only the child's view answered ${quotedList(solve.value)}, which does not match the answer key; make the exercise unambiguous or fix the key`,
+    ]);
+  }
+  if (variants.kind === "done") {
+    const rejectedVariants = draft.acceptedAnswers.filter((_variant, index) => variants.value[index] === false);
+    if (rejectedVariants.length > 0) {
+      return reject(
+        "variant",
+        "variant_rejected",
+        rejectedVariants.map((variant) => `the accepted variant ${quoted(variant)} is not equivalent to the answer ${quoted(draft.answer)}; remove or fix it`),
+      );
+    }
+  }
+  return { ok: true, unchecked: solve.kind === "unavailable" || variants.kind === "unavailable" };
+}
+
 /**
  * Przyjmuje kandydatów `pass` po kolei na bieżącym stanie, powtarzając kroki
- * 1–4 (między `precheck` a `admit` inne zagadnienie mogło dodać ćwiczenie).
- * Kroki 5–6 (`checks`) dochodzą w kolejnym zadaniu. Kolejność jak w
- * `precheckBatch`; wyniki w indeksach wejścia.
+ * 1–4 (między `precheck` a `admit` inne zagadnienie mogło dodać ćwiczenie),
+ * potem kroki 5–6 z `checks` (ten sam indeks co `prechecked`). Kolejność jak
+ * w `precheckBatch`; wyniki w indeksach wejścia.
  */
 export function admitBatch(
   state: LessonAgentState,
@@ -304,7 +339,9 @@ export function admitBatch(
   checks: readonly CandidateChecks[],
   ctx: AgentCheckContext,
 ): { state: LessonAgentState; results: AdmitEntry[] } {
-  void checks;
+  if (checks.length !== prechecked.length) {
+    throw new Error(`checks length ${checks.length} differs from prechecked length ${prechecked.length}`);
+  }
   const results: AdmitEntry[] = new Array(prechecked.length);
   const order = processingOrder(prechecked.map((entry) => entry.pass && isKeywords(entry.draft)));
   let current = state;
@@ -320,11 +357,78 @@ export function admitBatch(
       results[index] = { rejected: outcome.rejection };
       continue;
     }
+    const checked = checkerSteps(entry.draft, checks[index]!, ctx);
+    if (!checked.ok) {
+      results[index] = { rejected: checked.rejection };
+      continue;
+    }
     current = outcome.state;
     before = outcome.snapshot;
-    results[index] = { accepted: outcome.id, sanitized: entry.sanitized, unchecked: false };
+    results[index] = { accepted: outcome.id, sanitized: entry.sanitized, unchecked: checked.unchecked };
   }
   return { state: current, results };
+}
+
+/** Najwyżej tyle przykładów kart na zagadnienie (jak potok generowania). */
+const MAX_EXAMPLES = 3;
+
+/**
+ * Przykłady kart zagadnienia od modelu (§3.4): linie przycięte, niepuste,
+ * najwyżej `MAX_TEXT_LENGTH` znaków (jak `executeLessonGeneration`). Linia
+ * odpada, gdy ujawnia (twardo) rozwiązanie ćwiczenia lekcji — `fixed` albo
+ * puli — dotąd nieujawnionego. Przyjęte (najwyżej 3) zastępują wcześniejsze
+ * przykłady zagadnienia; gdy nie przeszła żadna, stan się nie zmienia.
+ */
+export function submitExamples(
+  state: LessonAgentState,
+  objectiveId: string,
+  lines: unknown,
+  ctx: AgentCheckContext,
+): { state: LessonAgentState; accepted: number; errors: string[] } {
+  if (!Array.isArray(lines)) return { state, accepted: 0, errors: ["examples must be an array of strings"] };
+  objectiveOf(state, objectiveId);
+  const errors: string[] = [];
+  const kept: string[] = [];
+  const entries = orderedEntries(state);
+  const exercises = entries.map((entry) => entry.draft);
+  const leakedBefore = lessonLeaks(state, entries, ctx);
+  lines.forEach((line: unknown, index) => {
+    const label = `example ${index + 1}`;
+    if (typeof line !== "string") {
+      errors.push(`${label}: must be a string`);
+      return;
+    }
+    const text = line.trim();
+    if (text.length === 0) {
+      errors.push(`${label}: is empty`);
+      return;
+    }
+    if (text.length > MAX_TEXT_LENGTH) {
+      errors.push(`${label}: is longer than ${MAX_TEXT_LENGTH} characters`);
+      return;
+    }
+    // Ofiary samej linii: z jedynym przykładem źródłem twardym jest właśnie ona.
+    const victims = findExposureLeaks({
+      exercises,
+      examples: { [objectiveId]: [text] },
+      objectiveOrder: state.objectives.map((objective) => objective.id),
+      subject: ctx.subject,
+      mode: "coverage",
+    })
+      .filter((leak) => leak.source.kind === "card_example" && !leakedBefore.has(entries[leak.index]!.draft))
+      .map((leak) => entries[leak.index]!);
+    if (victims.length > 0) {
+      errors.push(...victims.map((victim) => `${label} ${quoted(text)}: ${leakSourceReason(victim, ctx)}`));
+      return;
+    }
+    if (kept.length >= MAX_EXAMPLES) {
+      errors.push(`${label}: an objective has at most ${MAX_EXAMPLES} card examples; this line was ignored`);
+      return;
+    }
+    kept.push(text);
+  });
+  if (kept.length === 0) return { state, accepted: 0, errors };
+  return { state: withExamples(state, objectiveId, kept), accepted: kept.length, errors };
 }
 
 /**

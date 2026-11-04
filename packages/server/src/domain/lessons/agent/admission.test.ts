@@ -60,6 +60,13 @@ describe("przyjmowanie paczki — limity i kolejność kroków", () => {
     expect(result.prechecked[0]).toMatchObject({ pass: false, rejection: { kind: "limit", code: "limit_full" } });
   });
 
+  it("limit_full liczy wyłącznie pulę agenta, nie ćwiczenia fixed zagadnienia", () => {
+    const context = contextFor({ limits: { [A]: { targetCount: 1, listenAllowance: 0, maxExercises: 1 } } });
+    const state = stateWith({ fixed: [choice(A, 7), choice(A, 8), choice(A, 9)] });
+    const result = submit(state, A, [choice(A, 1), choice(A, 2)], context);
+    expect(result.results.map(codeOf)).toEqual(["accepted", "limit_full"]);
+  });
+
   it("reguła ćwiczenia wygrywa z ujawnieniem: rule_exercise", () => {
     const state = stateWith({ examples: { [A]: ["w 966 roku"] } });
     const invalid = { ...open(A, "Kiedy?", "w 966 roku"), prompt: "" };
@@ -110,6 +117,12 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
   it("wadliwe fixed (duplikat w fixed) nie blokuje poprawnego kandydata", () => {
     const state = stateWith({ fixed: [choice(A, 1), choice(A, 1)] });
     const result = submit(state, A, [choice(A, 2)]);
+    expect(result.results).toEqual([{ accepted: "ex1", sanitized: [], unchecked: false }]);
+  });
+
+  it("fixed odrzucone przez validatePoolExtra (sierota słów kluczowych) nie blokuje poprawnego kandydata", () => {
+    const state = stateWith({ fixed: [keywords(A, "f9", 9)] });
+    const result = submit(state, A, [choice(A, 1)]);
     expect(result.results).toEqual([{ accepted: "ex1", sanitized: [], unchecked: false }]);
   });
 
