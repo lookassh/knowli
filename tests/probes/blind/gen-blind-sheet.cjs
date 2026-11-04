@@ -8,7 +8,8 @@ const { probePath } = require("./paths.cjs");
 
 const [, , lessonDirArg, seed = "gen-compare"] = process.argv;
 const lessonDir = probePath(lessonDirArg, "katalog lekcji");
-const models = fs.readdirSync(lessonDir).filter((name) => fs.existsSync(path.join(lessonDir, name, "dump.json")));
+const candidates = fs.readdirSync(lessonDir).filter((name) => fs.existsSync(path.join(lessonDir, name, "dump.json")));
+const models = [];
 
 function rng(seedText) {
   let state = crypto.createHash("sha256").update(seedText).digest().readUInt32LE(0) || 1;
@@ -21,8 +22,14 @@ function rng(seedText) {
 }
 
 const rows = [];
-for (const model of models) {
+for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
+  // Zrzut nieudanej próby (`{ ...header, errors }`) nie ma ćwiczeń — pomijamy źródło, reszta arkusza powstaje.
+  if (!Array.isArray(dump.exercises)) {
+    console.log(`pominięte źródło bez ćwiczeń: ${model}`);
+    continue;
+  }
+  models.push(model);
   const objectives = new Map((dump.objectives ?? []).map((objective) => [String(objective.id).split(".").at(-1), objective]));
   dump.exercises.forEach((exercise, index) => {
     const slug = String(exercise.objectiveId ?? "").split(".").at(-1);
