@@ -123,6 +123,12 @@ describe("solverView", () => {
       ],
       correctOption: "opt-m",
       answer: "Mieszko",
+      acceptedAnswers: ["Mieszko I"],
+      requiredElements: [{ id: "req-1", text: "pierwszy historyczny władca" }],
+      supplementaryElements: ["dynastia Piastów"],
+      commonErrors: ["pomylenie z Chrobrym"],
+      sourceRefs: [{ quote: "Mieszko I był pierwszym historycznym władcą." }],
+      explanationPl: "Pierwszym władcą był Mieszko.",
     }),
     make("lesson_order", {
       instructionPl: "Ułóż zdanie.",
@@ -137,7 +143,8 @@ describe("solverView", () => {
       instructionPl: "Uzupełnij.",
       stem: "She ___ to school every day.",
       answer: "goes",
-      hint: "go",
+      hint: "bezokolicznik go",
+      focus: ["third person ending"],
       explanationPl: "Po she dodajemy końcówkę -es.",
     }),
     make("lesson_error_fix", {
@@ -150,9 +157,20 @@ describe("solverView", () => {
       statement: "He likes milk.",
       answer: "He does not like milk.",
     }),
-    make("lesson_open_answer", { instructionPl: "Odpowiedz.", prompt: "Dlaczego jest zima?", answer: "Oś Ziemi jest nachylona." }),
+    make("lesson_open_answer", {
+      instructionPl: "Odpowiedz.",
+      prompt: "Dlaczego jest zima?",
+      stem: "Ukryty bodziec nieobecny w widoku dziecka",
+      statement: "Ukryte zdanie nieobecne w widoku dziecka",
+      answer: "Oś Ziemi jest nachylona.",
+      acceptedAnswers: ["Ziemia jest nachylona"],
+      requiredElements: [{ id: "req-2", text: "nachylenie osi Ziemi" }],
+      supplementaryElements: ["pory roku"],
+      commonErrors: ["odległość od Słońca"],
+      sourceRefs: [{ quote: "Oś Ziemi jest nachylona względem orbity." }],
+      explanationPl: "Zima wynika z nachylenia osi.",
+    }),
     make("lesson_keywords", {
-      prompt: "Wyjaśnij fotosyntezę.",
       keywordOptions: [
         { id: "kw-b", text: "chlorofil" },
         { id: "kw-a", text: "światło" },
@@ -189,23 +207,36 @@ describe("solverView", () => {
     }),
   ];
 
-  /** Typy, w których poprawna odpowiedź jest jedną z widocznych opcji — pole `answer` musi się w widoku pojawić. */
-  const answerVisibleByDesign = new Set<LessonExerciseType>([
-    "lesson_notice",
-    "lesson_choice",
-    "lesson_listen_choice",
-    "lesson_short_answer",
-  ]);
-
-  const keyTexts = (draft: LessonExerciseDraft): string[] => {
-    const texts: string[] = [];
-    if (!answerVisibleByDesign.has(draft.exerciseType)) texts.push(draft.answer, ...draft.acceptedAnswers);
-    texts.push(...(draft.focus ?? []), ...(draft.hint ? [draft.hint] : []), ...(draft.explanationPl ? [draft.explanationPl] : []));
-    texts.push(...(draft.commonErrors ?? []), ...(draft.sourceRefs ?? []).map((ref) => ref.quote));
-    if (draft.correctOption && draft.exerciseType !== "lesson_notice") texts.push(draft.correctOption);
-    texts.push(...(draft.keyOptionIds ?? []));
-    return texts.filter((text) => text.length >= 3);
+  /** Wszystkie teksty (także zagnieżdżone: `.text`, `.quote`, identyfikatory) z wartości pola. */
+  const flatten = (value: unknown): string[] => {
+    if (typeof value === "string") return [value];
+    if (Array.isArray(value)) return value.flatMap(flatten);
+    if (value && typeof value === "object") return Object.values(value).flatMap(flatten);
+    return [];
   };
+
+  /** Teksty widoczne dziecku jako opcje wyboru lub słowa zdania — tylko je klucz może legalnie powtarzać. */
+  const visibleOptionTexts = (draft: LessonExerciseDraft): Set<string> =>
+    new Set([
+      ...(draft.options ?? []).map((option) => option.text),
+      ...(draft.noticeSegments ?? []).flat(),
+      ...(draft.keywordOptions ?? []).map((option) => option.text),
+    ]);
+
+  /** Teksty ≥ 3 znaków ze WSZYSTKICH pól klasy `key` szkicu, poza dokładnie powtórzonymi widocznymi opcjami. */
+  const keyTexts = (draft: LessonExerciseDraft): string[] => {
+    const visible = visibleOptionTexts(draft);
+    return keyFields.flatMap((field) => flatten(draft[field])).filter((text) => text.length >= 3 && !visible.has(text));
+  };
+
+  const keyFields = (Object.keys(SOLVER_FIELD_CLASS) as (keyof LessonExerciseDraft)[]).filter(
+    (field) => SOLVER_FIELD_CLASS[field] === "key",
+  );
+
+  it("fixture wypełniają każde pole klasy key przynajmniej raz", () => {
+    const unused = keyFields.filter((field) => !drafts.some((draft) => flatten(draft[field]).length > 0));
+    expect(unused).toEqual([]);
+  });
 
   it("pokrywa wszystkie typy ćwiczeń z fixture", () => {
     expect(new Set(drafts.map((draft) => draft.exerciseType)).size).toBe(drafts.length);
@@ -233,7 +264,7 @@ describe("solverView", () => {
     const draft = drafts.find((candidate) => candidate.exerciseType === "lesson_cloze")!;
     const lines = solverView(draft, topic).split("\n");
     expect(lines).toContain("Roślina pobiera ___ z powietrza i ___ z gleby.");
-    expect(lines).toContain(`Word bank: ${[...draft.gapAnswers!, ...draft.extraWords!].sort().join(", ")}`);
+    expect(lines).toContain(`Word bank: ${[...draft.gapAnswers!, ...draft.extraWords!].sort().join(" | ")}`);
     expect(lines.filter((line) => line.includes("dwutlenek") || line.includes("wodę"))).toEqual([lines.at(-1)]);
   });
 
@@ -258,6 +289,20 @@ describe("solverView", () => {
   it("lesson_order: bloki posortowane", () => {
     const draft = drafts.find((candidate) => candidate.exerciseType === "lesson_order")!;
     expect(solverView(draft, topic)).toContain("Word blocks (shuffled): bones | dogs | like");
+  });
+
+  it("lesson_open_answer: tylko polecenie i pytanie, bez stem i statement", () => {
+    const draft = drafts.find((candidate) => candidate.exerciseType === "lesson_open_answer")!;
+    expect(solverView(draft, topic)).toBe("Odpowiedz.\nDlaczego jest zima?");
+  });
+
+  it("lesson_keywords: pytanie to tytuł celu, nie pole prompt szkicu", () => {
+    const draft = make("lesson_keywords", {
+      prompt: "Pole szkicu niewidoczne dla dziecka",
+      keywordOptions: [{ id: "k1", text: "alfa" }, { id: "k2", text: "beta" }],
+    });
+    const lines = solverView(draft, topic).split("\n");
+    expect(lines).toEqual(["Wybierz 2–3 najważniejsze pojęcia do tej odpowiedzi.", "Cel pierwszy", "Concepts: alfa | beta"]);
   });
 
   it("lesson_transform: polecenie z tematu, gdy szkic go nie niesie", () => {

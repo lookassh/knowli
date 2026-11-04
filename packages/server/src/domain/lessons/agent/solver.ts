@@ -111,12 +111,15 @@ export function solverView(draft: LessonExerciseDraft, topic: LessonTopic): stri
       try {
         if (draft.calculation) lines.push(renderCalculationPrompt(draft.calculation));
       } catch {
-        // Niepoprawna specyfikacja: widok bez treści zadania, walidacja puli zgłosi błąd osobno.
+        // Niepoprawna specyfikacja: treść zadania pomijamy jawnie. Walidacja puli działa przed
+        // sprawdzaniem (rozwiązujący dostaje tylko ćwiczenia, które ją przeszły), więc ta gałąź
+        // nie powinna się zdarzyć; widok bez treści nie jest błędem tej funkcji.
       }
       break;
     }
     case "lesson_keywords":
-      lines.push(instructionOf(draft, topic, messages.kid.lessonKeywordsInstruction), draft.prompt ?? objectiveTitle);
+      // Jak w Kid DTO: pytanie to prompt sparowanej odpowiedzi otwartej (nie ma go w szkicu) albo tytuł celu.
+      lines.push(instructionOf(draft, topic, messages.kid.lessonKeywordsInstruction), objectiveTitle);
       lines.push(`Concepts: ${joined((draft.keywordOptions ?? []).map((option) => option.text))}`);
       break;
     case "lesson_match":
@@ -137,12 +140,12 @@ export function solverView(draft: LessonExerciseDraft, topic: LessonTopic): stri
       lines.push(
         instructionOf(draft, topic, messages.kid.lessonClozeInstruction),
         draft.clozeText,
-        `Word bank: ${[...(draft.gapAnswers ?? []), ...(draft.extraWords ?? [])].sort().join(", ")}`,
+        `Word bank: ${[...(draft.gapAnswers ?? []), ...(draft.extraWords ?? [])].sort().join(" | ")}`,
       );
       break;
     default:
-      // lesson_open_answer i typy bez własnego układu: polecenie i widoczny bodziec.
-      lines.push(instructionOf(draft, topic), draft.prompt, draft.stem, draft.statement);
+      // lesson_open_answer i typy bez własnego układu: polecenie i pytanie, jak w Kid DTO.
+      lines.push(instructionOf(draft, topic), draft.prompt);
   }
   return lines.filter((line): line is string => line !== undefined && line !== "").join("\n");
 }
