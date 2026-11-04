@@ -1,8 +1,18 @@
 import { lessonCoverageGapSources, lessonPoolMinimums } from "../lesson-coverage";
 import { outsideStagePath, stageOf } from "../stages";
-import type { LessonExerciseDraft, SubjectAgentPolicy } from "../types";
-import { snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
-import { allExamples, orderedEntries, orderedLesson, type LessonAgentState } from "./state";
+import type { AgentObjective, LessonExerciseDraft, LessonTopic, SubjectAgentPolicy } from "../types";
+import { removeExercise, snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
+import type { AgentCapableSubject } from "./capable";
+import {
+  allExamples,
+  createLessonAgentState,
+  orderedEntries,
+  orderedLesson,
+  poolOf,
+  withPool,
+  type AgentPoolEntry,
+  type LessonAgentState,
+} from "./state";
 
 /**
  * Status zagadnienia, limity i kontrola końcowa (spec §3.5–3.6). Czyste
@@ -201,4 +211,47 @@ export function lessonInvariantCheck(state: LessonAgentState, ctx: AgentCheckCon
       const entry = snapshot.entries[index]!;
       return entry.id === null ? [] : [{ objectiveId: entry.objectiveId, id: entry.id }];
     });
+}
+
+/**
+ * Kontrola końcowa na całości przed zapisem do szkicu (spec etapu 2a §10 pkt 2): ćwiczenia `accepted`
+ * (wszystkie zagadnienia, także z różnych prób) są pulą, `fixed` (szkic w trybie „dodaj N”) jest
+ * nietykalne. `lessonInvariantCheck` + `removeExercise` (z osieroconymi słowami kluczowymi) łapią
+ * ujawnienia i duplikaty między próbami oraz migawki sprzed bezpiecznika kierownika. `kept` w kolejności
+ * `accepted`; `removed` liczy się do `rejectedCount`.
+ */
+export function finalLessonCheck(args: {
+  readonly subject: AgentCapableSubject;
+  readonly topic: LessonTopic;
+  readonly objectives: readonly AgentObjective[];
+  readonly material: string;
+  readonly fixed: readonly LessonExerciseDraft[];
+  readonly accepted: readonly { readonly objectiveId: string; readonly draft: LessonExerciseDraft }[];
+  readonly examples: Readonly<Record<string, readonly string[]>>;
+  readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>;
+}): { kept: LessonExerciseDraft[]; removed: number } {
+  const ctx: AgentCheckContext = { subject: args.subject, material: args.material, limits: args.limits };
+  let state = createLessonAgentState({
+    topic: args.topic,
+    objectives: args.objectives,
+    fixed: args.fixed,
+    examples: args.examples,
+    fixedSources: {},
+  });
+  // Pule per zagadnienie w kolejności `accepted`; identyfikatory jak w stanie agenta (`ex1`, `ex2`…).
+  const pools = new Map<string, AgentPoolEntry[]>();
+  args.accepted.forEach((entry, index) => {
+    const pool = pools.get(entry.objectiveId) ?? [];
+    pool.push({ id: `ex${index + 1}`, draft: entry.draft });
+    pools.set(entry.objectiveId, pool);
+  });
+  for (const [objectiveId, pool] of pools) state = withPool(state, objectiveId, pool);
+  state = { ...state, nextId: args.accepted.length + 1 };
+
+  for (const violation of lessonInvariantCheck(state, ctx)) {
+    state = removeExercise(state, violation.objectiveId, violation.id, ctx).state;
+  }
+  const survivors = new Set(args.objectives.flatMap((objective) => poolOf(state, objective.id).map((entry) => entry.id)));
+  const kept = args.accepted.flatMap((entry, index) => (survivors.has(`ex${index + 1}`) ? [entry.draft] : []));
+  return { kept, removed: args.accepted.length - kept.length };
 }

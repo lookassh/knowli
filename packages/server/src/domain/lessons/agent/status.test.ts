@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { schoolSubject } from "../subjects/school/module";
-import { A, B, choice, contextFor, gap, keywords, listen, naChecks, open, stateWith, topic } from "../testing/agent-admission-fixtures";
+import { A, B, choice, contextFor, gap, keywords, listen, naChecks, objectives, open, stateWith, subject, topic } from "../testing/agent-admission-fixtures";
 import { withAgentPolicy } from "../testing/agent-test-subject";
 import type { AgentObjective, LessonExerciseDraft, LessonExerciseType } from "../types";
 import { admitBatch, precheckBatch } from "./admission";
@@ -9,6 +9,7 @@ import { orderedLesson, poolOf, withPool, type AgentPoolEntry, type LessonAgentS
 import {
   addedStageExercises,
   addModeStatus,
+  finalLessonCheck,
   lessonInvariantCheck,
   objectiveAgentLimits,
   objectiveStatus,
@@ -305,5 +306,49 @@ describe("lessonInvariantCheck", () => {
   it("nigdy nie zwraca ćwiczeń fixed, także gdy same są wadliwe", () => {
     const state = stateWith({ fixed: [choice(A, 1), choice(A, 1)] });
     expect(lessonInvariantCheck(state, ctx)).toEqual([]);
+  });
+});
+
+describe("finalLessonCheck", () => {
+  const ctx = contextFor();
+  const check = (overrides: Partial<Parameters<typeof finalLessonCheck>[0]>) =>
+    finalLessonCheck({ subject, topic, objectives, material: "", fixed: [], accepted: [], examples: {}, limits: ctx.limits, ...overrides });
+
+  it("bez naruszeń zachowuje wszystkie przyjęte w kolejności wejścia", () => {
+    const accepted = [choice(A, 1), gap(A, "Rok ___.", "966"), choice(B, 2)].map((draft) => ({ objectiveId: draft.objectiveId, draft }));
+    expect(check({ accepted })).toEqual({ kept: accepted.map((entry) => entry.draft), removed: 0 });
+  });
+
+  it("ujawnienie między zagadnieniami z różnych prób usuwa ofiarę z accepted", () => {
+    // Próba 1 zapisała pytanie otwarte A, próba 2 — lukę B, której rozwiązane zdanie podaje odpowiedź A.
+    const victim = open(A, "Rok chrztu?", "966");
+    const source = gap(B, "Chrzest Polski w roku ___.", "966");
+    const result = check({ accepted: [{ objectiveId: A, draft: victim }, { objectiveId: B, draft: source }] });
+    expect(result).toEqual({ kept: [source], removed: 1 });
+  });
+
+  it("duplikat między próbami usuwa późniejszy", () => {
+    const earlier = choice(A, 1);
+    const later = choice(A, 1);
+    const result = check({ accepted: [{ objectiveId: A, draft: earlier }, { objectiveId: A, draft: choice(A, 2) }, { objectiveId: A, draft: later }] });
+    expect(result.removed).toBe(1);
+    expect(result.kept).toHaveLength(2);
+    expect(result.kept[0]).toBe(earlier);
+    expect(result.kept).not.toContain(later);
+  });
+
+  it("fixed nigdy nie usuwany: duplikat fixed usuwa przyjęte, ofiara fixed usuwa przyjęte źródło", () => {
+    const fixed = [choice(A, 1), open(A, "Rok chrztu?", "966")];
+    const duplicate = choice(A, 1);
+    const source = gap(A, "Chrzest Polski w roku ___.", "966");
+    const result = check({ fixed, accepted: [{ objectiveId: A, draft: duplicate }, { objectiveId: A, draft: source }] });
+    expect(result).toEqual({ kept: [], removed: 2 });
+  });
+
+  it("usunięcie pytania otwartego usuwa też osierocone słowa kluczowe jego rodziny", () => {
+    const victim = open(A, "Rok chrztu?", "966", "f1");
+    const family = keywords(A, "f1", 1);
+    const result = check({ examples: { [A]: ["966"] }, accepted: [{ objectiveId: A, draft: victim }, { objectiveId: A, draft: family }] });
+    expect(result).toEqual({ kept: [], removed: 2 });
   });
 });

@@ -112,7 +112,20 @@ export interface LessonContext {
   story?: LessonStory;
   /** Raport automatycznej kontroli jakości (krytyk) z przebiegów generowania tej wersji; nie przechodzi do nowej wersji. */
   review?: LessonReviewReport;
+  /** Zagadnienia do uzupełnienia po częściowym generowaniu agentem (panel rodzica); bez treści. */
+  generationGaps?: LessonGenerationGap[];
 }
+
+/**
+ * Luka generowania agentem (spec etapu 2a §11): zagadnienie `incomplete`/`failed` po pełnej generacji
+ * albo niepełne dogenerowanie (`add_short`: dodano `added` z `requested`).
+ */
+export type LessonGenerationGap = {
+  objectiveId: string;
+  reason: "incomplete" | "failed" | "add_short";
+  added?: number;
+  requested?: number;
+};
 
 /** Wejście runu `lesson` zapisane w `generation_runs.input`. */
 export interface LessonRunInput {
