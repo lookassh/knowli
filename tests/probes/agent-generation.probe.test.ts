@@ -22,6 +22,7 @@ import {
 } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent";
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
 import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, RunCostSink } from "../../packages/server/src/ports/ai";
+import { endpointKeyFromEnv, isSecureOpenRouterEndpoint } from "../../packages/server/src/providers/openrouter-key";
 import { AiSdkExerciseChecker, AiSdkLessonPoolAgent } from "./ai-sdk-lesson-agent";
 import {
   appendProvisionalCostEntry,
@@ -51,7 +52,8 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  * budżetem, po próbie (także po błędzie) rozliczenie: zmierzony `usage.cost` + szacunek
  * polityki za każde żądanie bez kosztu (flaga `estimated`).
  *
- * Pomijana bez klucza `OPENROUTER_API_KEY` (.env) albo bez wejścia (`UMIEM_PROBE_AGENT_MATERIAL`
+ * Pomijana bez klucza (`OPENROUTER_API_KEY` z .env, a bez niego `UMIEM_LLM_API_KEY`, gdy
+ * `UMIEM_LLM_BASE_URL` to https OpenRouter — ta sama reguła co `endpointKeyFromEnv`) albo bez wejścia (`UMIEM_PROBE_AGENT_MATERIAL`
  * lub `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP`). Zmienne:
  * - `UMIEM_PROBE_AGENT_SUBJECT` — `chapter` (domyślnie; planista + bramki rozdziału), `grammar`
  *   albo `school`; gramatyka i szkoła wymagają zrzutu zagadnień;
@@ -83,7 +85,12 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  */
 
 loadDotEnv();
-const apiKey = process.env.OPENROUTER_API_KEY?.trim() || undefined;
+const llmBaseUrl = process.env.UMIEM_LLM_BASE_URL?.trim() || undefined;
+// Próba woła wyłącznie https OpenRouter, więc klucz generatora tylko wtedy, gdy i on tam wskazuje.
+const apiKey =
+  process.env.OPENROUTER_API_KEY?.trim() ||
+  (isSecureOpenRouterEndpoint(llmBaseUrl) ? endpointKeyFromEnv(process.env, "UMIEM_LLM", llmBaseUrl)?.trim() : undefined) ||
+  undefined;
 const materialEnv = process.env.UMIEM_PROBE_AGENT_MATERIAL?.trim() || undefined;
 const objectivesDumpEnv = process.env.UMIEM_PROBE_AGENT_OBJECTIVES_DUMP?.trim() || undefined;
 const enabled = apiKey !== undefined && (materialEnv !== undefined || objectivesDumpEnv !== undefined);
