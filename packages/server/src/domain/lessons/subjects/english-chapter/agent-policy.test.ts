@@ -52,6 +52,23 @@ describe("chapterAgentPolicy — wartości i typy", () => {
     expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
   });
 
+  it("typy ślepe to dokładnie zbiór PoC (gałąź nie-szkolna) przecięty z typami rozdziału", () => {
+    expect(chapterAgentPolicy.blindSolveTypes).toEqual([
+      "lesson_choice",
+      "lesson_gap",
+      "lesson_cloze",
+      "lesson_open_answer",
+      "lesson_order",
+      "lesson_match",
+      "lesson_group",
+    ]);
+    expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
+  });
+
+  it("leakSource ma ustaloną treść", () => {
+    expect(chapterAgentPolicy.rejectionTexts.leakSource).toBe("Use a different sentence.");
+  });
+
   it("leakVictim podpowiada zmianę pokoju, przedmiotu lub miejsca", () => {
     expect(chapterAgentPolicy.rejectionTexts.leakVictim).toContain("change the room, object or place");
   });
@@ -175,6 +192,42 @@ describe("exerciseGate — rama zagadnienia", () => {
   it("zagadnienie bez ramy z materiału na swoich kartach nie dostaje bramki", () => {
     const plain = objective({ kind: "frame", cards: [{ title: "Rama", body: "Coś zupełnie innego" }] });
     expect(gate(draft({ stem: "A ___.", answer: "cat" }), plain)).toEqual([]);
+  });
+});
+
+describe("exerciseGate — przypadki brzegowe", () => {
+  it("zagadnienie z jednym słowem kart: para z tym słowem przechodzi, bez niego dostaje card_word_missing", () => {
+    const pair = (left: string) => draft({ exerciseType: "lesson_match", pairs: [{ left, right: "x" }] });
+    expect(codes(pair("bed"), bedCard)).toEqual([]);
+    expect(codes(pair("door"), bedCard)).toEqual(["card_word_missing"]);
+    const group = (text: string) => draft({ exerciseType: "lesson_group", groupItems: [{ text, groupId: "a" }] });
+    expect(codes(group("bed"), bedCard)).toEqual([]);
+    expect(codes(group("door"), bedCard)).toEqual(["card_word_missing"]);
+  });
+
+  it("lesson_card jest pomijany przez obie bramki", () => {
+    const card = draft({ exerciseType: "lesson_card", answer: "" });
+    expect(gate(card, bedCard)).toEqual([]);
+    expect(gate(card, frameObjective)).toEqual([]);
+  });
+
+  it("zagadnienie bez rodzaju nie ma bramki", () => {
+    expect(gate(draft({ stem: "A ___.", answer: "chair" }), objective({ kind: undefined }))).toEqual([]);
+  });
+
+  it("lesson_listen_choice w bramce słów sprawdza tekst poprawnej opcji", () => {
+    const listen = draft({
+      exerciseType: "lesson_listen_choice",
+      stem: "I sleep in a ___.",
+      options: [
+        { id: "a", text: "bed" },
+        { id: "b", text: "door" },
+      ],
+      correctOption: "a",
+      answer: "door",
+    });
+    expect(codes(listen, bedCard)).toEqual([]);
+    expect(codes({ ...listen, correctOption: "b", answer: "bed" }, bedCard)).toEqual(["card_word_missing"]);
   });
 });
 

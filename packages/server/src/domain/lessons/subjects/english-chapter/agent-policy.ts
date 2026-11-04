@@ -109,7 +109,8 @@ function cardWordFindings(draft: LessonExerciseDraft, objective: AgentObjective,
   if (cardWords.length === 0) return [];
   const checked = checkedCardWordTexts(draft);
   const hits = cardWords.filter((word) => checked.some((text) => mentions(text, word))).length;
-  if (hits >= (isMatchOrGroup(draft) ? 2 : 1)) return [];
+  // Pary i grupy wymagają dwóch słów, ale zagadnienie z jednym słowem kart nie może wymagać więcej niż ma.
+  if (hits >= (isMatchOrGroup(draft) ? Math.min(2, cardWords.length) : 1)) return [];
   const part = draft.exerciseType === "lesson_cloze" ? "gap words" : isMatchOrGroup(draft) ? "items" : "answer";
   return [
     {
