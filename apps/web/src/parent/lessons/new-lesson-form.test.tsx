@@ -443,6 +443,39 @@ describe("NewLessonForm", () => {
       expect(messages.lessons.themesServiceUnknown).toContain("automatyczna kontrola jakości");
     });
 
+    describe("przedmiot z agentem puli (checkService)", () => {
+      const GEN = ["openrouter.ai · google/gemini-3.8-flash", "openrouter.ai · google/gemini-3.8-pro"];
+      const CHECK = "openrouter.ai · deepseek/deepseek-v4.1-flash-1017";
+      const REVIEW = "openrouter.ai · anthropic/claude-sonnet-5.5";
+      const agentGrammar = { ...grammar, generationServices: GEN, checkService: CHECK };
+
+      it("wariant bez materiału: usługi generowania z katalogu przedmiotu, drugi model, bez krytyka", () => {
+        const markup = renderWithCatalog(agentGrammar, { generationService: SERVICE, reviewService: REVIEW });
+        expect(markup).toContain('data-testid="lesson-check-service"');
+        expect(markup).toContain(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
+        expect(markup).not.toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
+        expect(markup).toContain(messages.lessons.generationServiceInfo.replace("{service}", GEN.join(", ")));
+        expect(markup).toContain(messages.lessons.themesService.replace("{service}", GEN.join(", ")));
+        expect(markup).not.toContain(messages.lessons.themesService.replace("{service}", SERVICE));
+        expect(markup).not.toContain('data-testid="lesson-review-service"');
+      });
+
+      it("wariant z materiałem (checkServiceIncludesMaterial)", () => {
+        const markup = renderWithCatalog({ ...school, generationServices: GEN, checkService: CHECK, checkServiceIncludesMaterial: true }, { reviewService: REVIEW });
+        expect(markup).toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
+        expect(markup).not.toContain(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
+        expect(markup).not.toContain('data-testid="lesson-review-service"');
+      });
+
+      it("przedmiot potoku: komunikat krytyka, bez komunikatów agenta", () => {
+        const markup = renderWithCatalog(grammar, { generationService: SERVICE, reviewService: REVIEW });
+        expect(markup).toContain(messages.lessons.reviewServiceInfo.replace("{service}", REVIEW));
+        expect(markup).toContain(messages.lessons.themesService.replace("{service}", SERVICE));
+        expect(markup).not.toContain('data-testid="lesson-check-service"');
+        expect(markup).not.toContain('data-testid="lesson-generation-service"');
+      });
+    });
+
     it("sekcja dla gramatyki: pole, przyciski tylko dla dzieci z listą, notka z nazwą usługi", () => {
       const markup = renderWithCatalog(grammar, { children: [ola, adam], generationService: SERVICE });
       expect(markup).toContain('data-testid="lesson-themes"');
