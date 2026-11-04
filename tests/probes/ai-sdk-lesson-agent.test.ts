@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type {
   LessonAgentToolOutcome,
@@ -273,6 +274,54 @@ describe("AiSdkExerciseChecker (MockLanguageModelV4, bez sieci)", () => {
       new AbortController().signal,
     );
     expect(result.equivalent).toEqual([[true, false], null]);
+  });
+
+  it("solve: zły kształt jednej pozycji daje null tylko dla niej, reszta paczki przechodzi", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ answers: [["cat"], [1, 2], null, ["cow"]] }))] });
+    const result = await new AiSdkExerciseChecker({ model, effort: "low" }).solve(
+      { items: ["A", "B", "C", "D"].map((view) => ({ view, expectedAnswers: 1 })) },
+      recordingCost([]),
+      new AbortController().signal,
+    );
+    expect(result.answers).toEqual([["cat"], null, null, ["cow"]]);
+  });
+
+  it("judgeVariants: zły kształt jednej pozycji daje null tylko dla niej", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ equivalent: [[true], "yes", [false]] }))] });
+    const result = await new AiSdkExerciseChecker({ model, effort: "low" }).judgeVariants(
+      { items: ["A", "B", "C"].map((view) => ({ view, answer: "x", variants: ["y"] })) },
+      recordingCost([]),
+      new AbortController().signal,
+    );
+    expect(result.equivalent).toEqual([[true], null, [false]]);
+  });
+
+  it("maxRetries 0: błąd z isRetryable nie jest ponawiany przez SDK — jedno żądanie, jeden koszt null", async () => {
+    const retryable = () =>
+      new APICallError({ message: "rate limited", url: "https://example.invalid/v1", requestBodyValues: {}, statusCode: 429, isRetryable: true });
+    const checkerModel = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw retryable();
+      },
+    });
+    const checkerCost = recordingCost([]);
+    await expect(
+      new AiSdkExerciseChecker({ model: checkerModel, effort: "low" }).solve({ items: [{ view: "A", expectedAnswers: 1 }] }, checkerCost, new AbortController().signal),
+    ).rejects.toThrow("rate limited");
+    expect(checkerModel.doGenerateCalls).toHaveLength(1);
+    expect(checkerCost.values).toEqual([null]);
+
+    const agentModel = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw retryable();
+      },
+    });
+    const agentCost = recordingCost([]);
+    await expect(
+      new AiSdkLessonPoolAgent({ model: agentModel, effort: "low" }).runObjective(agentInput(), fakeTools([]).tools, agentCost, new AbortController().signal),
+    ).rejects.toThrow("rate limited");
+    expect(agentModel.doGenerateCalls).toHaveLength(1);
+    expect(agentCost.values).toEqual([null]);
   });
 
   it("wyjątek modelu checkera → koszt null i odrzucenie", async () => {

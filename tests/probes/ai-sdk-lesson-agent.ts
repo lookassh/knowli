@@ -332,6 +332,15 @@ function materialBlock(material: string | undefined): string[] {
   return material === undefined ? [] : ["", "<MATERIAL>", material, "</MATERIAL>"];
 }
 
+/**
+ * Pozycja wyniku odporna na błąd modelu: zły kształt jednej pozycji daje `null` (port dopuszcza
+ * brak wyniku per pozycja), a pozostałe pozycje paczki przechodzą — ścisły schemat odrzuciłby całe
+ * wywołanie i cała paczka byłaby `unavailable`.
+ */
+function tolerant<T extends z.ZodType>(schema: T) {
+  return schema.nullable().catch(null);
+}
+
 /** Pozycja `i` wyniku, gdy ma oczekiwany kształt; inaczej `null` (brak wyniku dla pozycji). */
 function atPosition<T>(values: readonly unknown[] | undefined, index: number, valid: (value: unknown) => value is T): T | null {
   const value = values?.[index];
@@ -370,7 +379,7 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
         model: this.languageModel,
         maxRetries: 0,
         providerOptions: { openrouter: { reasoning: { effort: this.effort } } },
-        output: Output.object({ schema: z.object({ answers: z.array(z.array(z.string())) }) }),
+        output: Output.object({ schema: z.object({ answers: z.array(tolerant(z.array(z.string()))) }) }),
         prompt,
         abortSignal: signal,
         ...hooks,
@@ -405,7 +414,7 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
         model: this.languageModel,
         maxRetries: 0,
         providerOptions: { openrouter: { reasoning: { effort: this.effort } } },
-        output: Output.object({ schema: z.object({ equivalent: z.array(z.array(z.boolean())) }) }),
+        output: Output.object({ schema: z.object({ equivalent: z.array(tolerant(z.array(z.boolean()))) }) }),
         prompt,
         abortSignal: signal,
         ...hooks,

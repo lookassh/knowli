@@ -351,6 +351,25 @@ describe.skipIf(!enabled)("próba generowania lekcji na prawdziwym modelu", () =
     const costOf = (operation?: string) => events
       .filter((event) => operation === undefined || (operation === "lesson_review") === (event.operation === "lesson_review"))
       .reduce((sum, event) => sum + (event.providerCostUsd ?? 0), 0);
+    const resultsPath = join(outDir, `chapter-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);
+    /** Plik wyników: wspólna część (wejście, model, czas, wywołania, koszt) i stan przebiegu. */
+    const resultsOf = (run: { state: string; errorCode: string | null; durationMs: number } & Record<string, unknown>): Record<string, unknown> => ({
+      schema: "chapter-generation-probe-results/v1",
+      at: new Date().toISOString(),
+      subjectKind,
+      material: materialPath === undefined ? { file: null, chars: material.length } : { file: basename(materialPath), sha256: sha256File(materialPath), chars: material.length },
+      model: recorded.llm.model,
+      reviewer: { state: reviewerState, ...(reviewerState === "ready" ? { model: deps.reviewer!.provider!.model, policy: deps.reviewer!.policy } : {}) },
+      poolSize,
+      ...run,
+      calls: recorded.calls,
+      costUsd: { total: costOf(), generation: costOf("generation"), review: costOf("lesson_review") },
+      tokens: {
+        in: events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
+        out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
+      },
+      estimateUsd,
+    });
     try {
       if (subjectKind === "grammar") {
         const subject = createProductionSubjectRegistry().getSubject("english_grammar");
@@ -371,6 +390,12 @@ describe.skipIf(!enabled)("próba generowania lekcji na prawdziwym modelu", () =
           : await createLessonFromMaterial(services, { subjectId: "english_chapter", topicTitlePl, material, poolSize, clientRequestId }));
       }
       await executeLessonGeneration(services, runId);
+    } catch (error) {
+      // Wyjątek przebiegu: plik wyników (czas, wywołania, klasa błędu, koszt) powstaje przed ponownym rzuceniem.
+      // Komunikat błędu (może cytować treść) nie trafia ani do pliku, ani na konsolę z próby.
+      writeFileSync(resultsPath, `${JSON.stringify(resultsOf({ state: "threw", errorCode: null, errorClass: errorClassOf(error), durationMs: Date.now() - started }), null, 2)}\n`, "utf8");
+      line(`Przebieg zakończony wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
+      throw error;
     } finally {
       console.log = originalLog;
       // Koszt zawsze do rejestru — także po błędzie (pieniądze są wydane); brak usage.cost przy wywołaniach → szacunek.
@@ -403,26 +428,7 @@ describe.skipIf(!enabled)("próba generowania lekcji na prawdziwym modelu", () =
       `surowych ćwiczeń z modelu: ${poolCalls.reduce((sum, call) => sum + call.rawExercises, 0)}; ` +
       `czasy pul [s]: ${poolCalls.map((call) => (call.ms / 1000).toFixed(0)).join(", ")}; nieudane: ${recorded.calls.filter((call) => call.failed).length}`);
 
-    const results: Record<string, unknown> = {
-      schema: "chapter-generation-probe-results/v1",
-      at: new Date().toISOString(),
-      subjectKind,
-      material: materialPath === undefined ? { file: null, chars: material.length } : { file: basename(materialPath), sha256: sha256File(materialPath), chars: material.length },
-      model: recorded.llm.model,
-      reviewer: { state: reviewerState, ...(reviewerState === "ready" ? { model: deps.reviewer!.provider!.model, policy: deps.reviewer!.policy } : {}) },
-      poolSize,
-      state: run.state,
-      errorCode: run.errorCode ?? null,
-      durationMs,
-      calls: recorded.calls,
-      costUsd: { total: costOf(), generation: costOf("generation"), review: costOf("lesson_review") },
-      tokens: {
-        in: events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
-        out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
-      },
-      estimateUsd,
-    };
-    const resultsPath = join(outDir, `chapter-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);
+    const results = resultsOf({ state: run.state, errorCode: run.errorCode ?? null, durationMs });
     const writeResults = () => writeFileSync(resultsPath, `${JSON.stringify(results, null, 2)}\n`, "utf8");
 
     const deck = await readLessonDeck(services, deckId);
