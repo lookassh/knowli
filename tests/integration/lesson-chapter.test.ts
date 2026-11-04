@@ -487,7 +487,8 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       const [first, second] = draft.objectiveIds;
       const requests = fakes.llm.lessonRequests;
       expect(requests).toHaveLength(2);
-      expect(requests[0]).not.toHaveProperty("avoidSentences");
+      // Zdania kart rozdziału (zagadnienie 2) idą do generatora od pierwszej partii, choć nie są zapisanymi przykładami.
+      expect(requests[0]!.avoidSentences).toEqual(expect.arrayContaining(["It's raining.", "It's snowing."]));
 
       const solutionsOf = (objectiveId: string) => draft.exercises
         .filter((exercise) => exercise.objectiveId === objectiveId && (exercise.exerciseType === "lesson_gap" || exercise.exerciseType === "lesson_open_answer"))
@@ -509,6 +510,107 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       const regenRequest = requests[2]!;
       expect(regenRequest.avoidSentences).toEqual(expect.arrayContaining([...draft.examples[first!]!, ...draft.examples[second!]!]));
       for (const solution of [...solutionsOf(first!), ...solutionsOf(second!)]) expect(avoidBare(regenRequest.avoidSentences!)).toContain(bare(solution));
+    });
+
+    describe("zdania kart rozdziału jako źródła ujawnień (#237)", () => {
+      const CARD = "There is a bed in my room.";
+      const CARD_ANSWER = "There is a bed in my room";
+      const CARD_MATERIAL = `${CARD} I like my bed.`;
+      const cardTranslation = (objectiveId: string) => ({
+        exerciseType: "lesson_open_answer", objectiveId, instructionPl: "Przetłumacz na angielski.", prompt: "W moim pokoju jest łóżko.",
+        answer: CARD_ANSWER, acceptedAnswers: [], focus: ["bed"],
+      });
+
+      it("pełna generacja: tłumaczenie równe zdaniu karty → poza szkicem; przykłady = zwrócone przez generator", async () => {
+        const { fakes, services } = await chapterWorld();
+        const returned: Record<string, string[]> = {};
+        routeLessonRound(fakes, async (input) => {
+          const regular = await new FakeLlmProvider().generateLessonPool(input);
+          Object.assign(returned, regular.examples);
+          return { ...regular, exercises: withTranslation(regular.exercises, { prompt: "W moim pokoju jest łóżko.", answer: CARD_ANSWER, focus: ["bed"] }) };
+        });
+        const { draft } = await generateChapter(services, CARD_MATERIAL, "Pokój");
+        expect(draft.exercises.some((exercise) => exercise.answer === CARD_ANSWER)).toBe(false);
+        expect(draft.rejectedReasons).toEqual({ [EXPOSURE_REASON]: 1 });
+        // Zdania kart nie trafiają do zapisanych przykładów.
+        expect(Object.keys(returned)).toEqual(draft.objectiveIds);
+        expect(draft.examples).toEqual(returned);
+      });
+
+      it("generator dostaje zdanie karty w avoidSentences pierwszej partii", async () => {
+        const { fakes, services } = await chapterWorld();
+        await generateChapter(services, CARD_MATERIAL, "Pokój");
+        expect(fakes.llm.lessonRequests[0]!.avoidSentences).toContain(CARD);
+      });
+
+      it("dogenerowanie: nowa partia z nowymi przykładami nadal odrzuca tłumaczenie równe zdaniu karty", async () => {
+        const { fakes, services } = await chapterWorld();
+        let call = 0;
+        let regenExamples: Record<string, string[]> = {};
+        routeLessonRound(fakes, async (input) => {
+          call += 1;
+          const objectiveId = input.objectives[0]!.id;
+          if (call === 1) return new FakeLlmProvider().generateLessonPool(input);
+          regenExamples = { [objectiveId]: ["I like my lamp."] };
+          return {
+            exercises: [
+              cardTranslation(objectiveId),
+              gap(objectiveId, "Lubię moje łóżko w pokoju. Wpisz brakujące słowo.", "I like my ___ in my room.", "bed"),
+            ],
+            examples: regenExamples,
+          };
+        });
+        const { deckId, draft } = await generateChapter(services, CARD_MATERIAL, "Pokój");
+        const objectiveId = draft.objectiveIds[0]!;
+        fakes.deps.lessonExecution = MAIN_BATCH_ONLY;
+
+        const regen = await regenerateObjective(services, {
+          deckId, objectiveId, count: 2, expectedEditNumber: draft.editNumber, clientRequestId: randomUUID(),
+        });
+        await executeLessonGeneration(services, regen.runId);
+        expect((await readGeneration(services, regen.runId)).state).toBe("succeeded");
+
+        const after = (await readLessonDeck(services, deckId)).draft!;
+        expect(after.exercises.some((exercise) => exercise.answer === CARD_ANSWER)).toBe(false);
+        expect(after.exercises.some((exercise) => exercise.stem === "I like my ___ in my room.")).toBe(true);
+        expect(after.rejectedReasons).toEqual({ [EXPOSURE_REASON]: 1 });
+        // Nowe przykłady zastępują stare, a zdanie karty (źródło stałe) nie trafia do zapisanych przykładów.
+        expect(after.examples[objectiveId]).toEqual(["I like my lamp."]);
+      });
+
+      it("runda pod etap: ćwiczenie rundy równe zdaniu karty odpada; liczba rund bez zmian", async () => {
+        const { fakes, services } = await chapterWorld();
+        routeLessonRound(fakes, async (input) => {
+          const objectiveId = input.objectives[0]!.id;
+          return {
+            exercises: [
+              {
+                exerciseType: "lesson_choice", objectiveId, instructionPl: "Jest łóżko w pokoju. Wybierz słowo.", stem: "A ___ is in my room.",
+                options: [{ id: "a", text: "bed" }, { id: "b", text: "room" }], correctOption: "a", answer: "bed", acceptedAnswers: [], focus: [],
+              },
+              gap(objectiveId, "Lubię moje łóżko. Wpisz brakujące słowo.", "I like my ___ in my room.", "bed"),
+            ],
+            examples: { [objectiveId]: ["I like my lamp."] },
+          };
+        });
+        fakes.llm.queueLessonTopUp({ exercises: [cardTranslation("placeholder")], examples: {} });
+        // Kolejka rundy nie zna identyfikatora zagadnienia: podstaw go z żądania.
+        const round = fakes.llm.generateLessonPool.bind(fakes.llm);
+        const main = fakes.deps.llm.generateLessonPool;
+        fakes.deps.llm.generateLessonPool = async (input, signal) => {
+          if (input.purpose !== "stage_top_up") return main(input, signal);
+          const result = await round(input);
+          return { ...result, exercises: result.exercises.map((exercise) => ({ ...(exercise as object), objectiveId: input.objectives[0]!.id })) };
+        };
+
+        const { draft } = await generateChapter(services, CARD_MATERIAL, "Pokój");
+        const rounds = fakes.llm.lessonRequests.filter((request) => request.purpose === "stage_top_up");
+        expect(rounds).toHaveLength(1);
+        expect(rounds[0]!.avoidSentences).toContain(CARD);
+        expect(draft.exercises.some((exercise) => exercise.answer === CARD_ANSWER)).toBe(false);
+        expect(draft.rejectedReasons).toEqual({ [EXPOSURE_REASON]: 1 });
+        expect(draft.examples[draft.objectiveIds[0]!]).toEqual(["I like my lamp."]);
+      });
     });
 
     it("domyślna pula fake'a rozdziału nie ma ujawnionych rozwiązań", async () => {
