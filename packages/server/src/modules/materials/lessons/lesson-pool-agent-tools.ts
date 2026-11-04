@@ -65,8 +65,8 @@ export interface ObjectiveToolsArgs {
   readonly objectiveSignal: AbortSignal;
   readonly policy: LessonAgentPolicy;
   readonly familyScope: string | null;
-  /** `true` = przykłady kart ustalił plan; przykłady z `submit` są ignorowane. */
-  readonly examplesFromPlan: boolean;
+  /** `true` = przykłady kart są ustalone (plan albo wznowienie); przykłady z `submit` są ignorowane. */
+  readonly examplesFixed: boolean;
   onRejection(entry: RejectionLogEntry): void;
   /** Opcjonalnie: odmowa całego wywołania (statystyka `refused` kierownika). */
   onRefusal?(code: ToolRefusalCode): void;
@@ -295,7 +295,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     });
 
     // 3–4. Przykłady i precheck na roboczej kopii bieżącego stanu.
-    const ownExamples = !args.examplesFromPlan && examples !== undefined;
+    const ownExamples = !args.examplesFixed && examples !== undefined;
     const base = args.getState();
     const working = ownExamples ? submitExamples(base, objectiveId, examples, ctx).state : base;
     const prechecked = precheckBatch(working, objectiveId, drafts, ctx);

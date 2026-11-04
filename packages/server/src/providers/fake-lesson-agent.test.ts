@@ -6,6 +6,7 @@ import type {
   RunCostSink,
 } from "../ports/ai";
 import { FakeExerciseChecker, FakeLessonPoolAgent } from "./fake-lesson-agent";
+import { createTestRecorder } from "./usage/test-recorder";
 
 const OUTCOME: LessonAgentToolOutcome = {
   results: [],
@@ -294,6 +295,92 @@ describe("FakeLessonPoolAgent", () => {
     );
     expect(result).toEqual({ steps: 2 });
     expect(count).toBe(2);
+  });
+
+  it("calls: drugie wywołanie zagadnienia bierze drugi scenariusz", async () => {
+    const agent = new FakeLessonPoolAgent({
+      objectives: {
+        alpha: { calls: [[{ submit: { exercises: [1] } }], [{ submit: { exercises: [2] } }, { submit: { exercises: [3] } }]] },
+        beta: [{ submit: { exercises: [9] } }],
+      },
+    });
+    const signal = new AbortController().signal;
+    const first = makeTools([]);
+    expect(await agent.runObjective(agentInput("alpha"), first, costSink(), signal)).toEqual({ steps: 1, stopReason: "model_finished" });
+    expect(first.submitted).toEqual([{ exercises: [1] }]);
+    // Wywołanie innego zagadnienia nie przesuwa licznika `alpha`.
+    await agent.runObjective(agentInput("beta"), makeTools([]), costSink(), signal);
+    const second = makeTools([]);
+    expect(await agent.runObjective(agentInput("alpha"), second, costSink(), signal)).toEqual({ steps: 2, stopReason: "model_finished" });
+    expect(second.submitted).toEqual([{ exercises: [2] }, { exercises: [3] }]);
+    // Poza listą scenariuszy: wywołanie bez kroków.
+    expect(await agent.runObjective(agentInput("alpha"), makeTools([]), costSink(), signal)).toEqual({ steps: 0, stopReason: "model_finished" });
+  });
+
+  it("gate: krok czeka, onReached wołane, przerwanie sygnałem odrzuca", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let reached = 0;
+    const agent = new FakeLessonPoolAgent({
+      objectives: { alpha: [{ gate, onReached: () => (reached += 1) }, { submit: { exercises: [1] } }] },
+      stepCostUsd: 0.01,
+    });
+    const tools = makeTools([]);
+    const cost = costSink();
+    const running = agent.runObjective(agentInput("alpha"), tools, cost, new AbortController().signal);
+    await vi.waitFor(() => expect(reached).toBe(1));
+    await delay(5);
+    expect(tools.submitted).toEqual([]);
+    open();
+    expect(await running).toEqual({ steps: 2, stopReason: "model_finished" });
+    expect(tools.submitted).toEqual([{ exercises: [1] }]);
+    expect(cost.values).toEqual([0.01, 0.01]);
+
+    // Bramka, która się nie otwiera: przerwanie sygnału odrzuca `signal.reason`.
+    const closed = new FakeLessonPoolAgent({ objectives: { alpha: [{ gate: new Promise<void>(() => undefined) }] } });
+    const controller = new AbortController();
+    const waiting = closed.runObjective(agentInput("alpha"), makeTools([]), costSink(), controller.signal);
+    await delay(5);
+    const reason = new Error("deadline");
+    controller.abort(reason);
+    await expect(waiting).rejects.toBe(reason);
+  });
+
+  it("usage: jeden zapis na krok", async () => {
+    const usage = createTestRecorder();
+    const agent = new FakeLessonPoolAgent({
+      objectives: { alpha: [{ submit: { exercises: [1] } }, { parallel: [{ remove: "x" }, { remove: "y" }] }] },
+      plans: [{ p: 1 }],
+      stepCostUsd: 0.02,
+      usage,
+    });
+    const signal = new AbortController().signal;
+    await agent.runObjective(agentInput("alpha"), makeTools([]), costSink(), signal);
+    await agent.planObjectives(
+      { maxSteps: 8 } as never,
+      { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
+      costSink(),
+      signal,
+    );
+    const base = { feature: "lesson_generation", provider: "openrouter", model: agent.model, outcome: "ok", httpStatus: 200, providerCostUsd: 0.02 };
+    expect(usage.events).toEqual([
+      { ...base, operation: "agent_objective" },
+      { ...base, operation: "agent_objective" },
+      { ...base, operation: "agent_plan" },
+    ]);
+
+    // Koszt nieznany: zdarzenie bez kwoty.
+    const unknown = createTestRecorder();
+    await new FakeLessonPoolAgent({ objectives: { alpha: [{ remove: "x" }] }, usage: unknown }).runObjective(
+      agentInput("alpha"),
+      makeTools([]),
+      costSink(),
+      signal,
+    );
+    expect(unknown.events).toHaveLength(1);
+    expect(unknown.events[0]).not.toHaveProperty("providerCostUsd");
   });
 });
 

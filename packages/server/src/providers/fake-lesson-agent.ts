@@ -6,6 +6,8 @@ import type {
   LessonPoolAgentProvider,
   RunCostSink,
 } from "../ports/ai";
+import type { UsageRecorder } from "../ports/usage";
+import { recordResponse } from "./usage/record-http";
 
 /**
  * Deterministyczne fake'i agenta puli lekcji i checkera (etap 1 issue #237): sterowane scenariuszem,
@@ -21,15 +23,31 @@ export type FakeAgentStep =
   | { throw: Error }
   | { hang: true }
   /** Dostawca ignorujący przerwanie: krok nigdy się nie kończy, także po przerwaniu sygnału. */
-  | { stall: true };
+  | { stall: true }
+  /**
+   * „Wywołanie w locie”: `onReached` sygnalizuje dojście do kroku, potem krok czeka na `gate`;
+   * przerwanie sygnału odrzuca `signal.reason`. Koszt kroku jest zapisany przed czekaniem.
+   */
+  | { gate: Promise<void>; onReached?: () => void };
+
+/** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
+export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
 
 export interface FakeLessonPoolAgentOptions {
-  /** Scenariusze per zagadnienie; klucz = slug, czyli `objective.id.split(".").at(-1)`. */
-  objectives?: Record<string, FakeAgentStep[]>;
+  /**
+   * Scenariusze per zagadnienie; klucz = slug, czyli `objective.id.split(".").at(-1)`. Przy `calls`
+   * wywołanie spoza listy nie ma kroków.
+   */
+  objectives?: Record<string, FakeObjectiveScript>;
   /** Kolejne propozycje planu przekazywane do `propose`. */
   plans?: unknown[];
   /** Koszt jednego kroku zapisywany w `RunCostSink`; brak = `null` (koszt nieznany). */
   stepCostUsd?: number | null;
+  /**
+   * Dziennik kosztów: jeden `recordResponse` na krok (jak adapter na żądanie HTTP), `provider`
+   * `"openrouter"`, operacje `agent_objective` i `agent_plan`.
+   */
+  usage?: UsageRecorder;
 }
 
 type PlanTools = Parameters<LessonPoolAgentProvider["planObjectives"]>[1];
@@ -94,6 +112,8 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
   }[] = [];
   readonly planCalls: { input: LessonAgentPlanInput; proposals: unknown[] }[] = [];
   private readonly meter = new ConcurrencyMeter();
+  /** Liczba dotychczasowych wywołań `runObjective` per slug (wybór scenariusza z `calls`). */
+  private readonly callCounts = new Map<string, number>();
 
   constructor(private readonly options: FakeLessonPoolAgentOptions = {}) {}
 
@@ -109,7 +129,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     signal: AbortSignal,
   ): Promise<{ steps: number; stopReason: "stopped" | "max_steps" | "model_finished" }> {
     const slug = input.objective.id.split(".").at(-1) ?? input.objective.id;
-    const script = this.options.objectives?.[slug] ?? [];
+    const script = this.scriptFor(slug);
     const outcomes: unknown[] = [];
     this.calls.push({ objectiveId: input.objective.id, input, tools, outcomes });
     return this.meter.track(async () => {
@@ -120,7 +140,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
         if (tools.shouldStop()) return { steps, stopReason: "stopped" as const };
         // „Wywołanie modelu”: koszt odpowiedzi jest zapisany przed narzędziami, więc przerwanie w trakcie
         // narzędzi go nie gubi (jak onLanguageModelCallEnd w AI SDK).
-        cost.record(this.options.stepCostUsd ?? null);
+        this.recordStep(cost, "agent_objective");
         steps += 1;
         await this.executeStep(step, tools, outcomes, signal);
       }
@@ -140,12 +160,32 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     for (const plan of this.options.plans ?? []) {
       signal.throwIfAborted();
       if (steps >= input.maxSteps || tools.shouldStop()) break;
-      cost.record(this.options.stepCostUsd ?? null);
+      this.recordStep(cost, "agent_plan");
       steps += 1;
       proposals.push(plan);
       await tools.propose(plan);
     }
     return { steps };
+  }
+
+  private scriptFor(slug: string): FakeAgentStep[] {
+    const script = this.options.objectives?.[slug];
+    const call = this.callCounts.get(slug) ?? 0;
+    this.callCounts.set(slug, call + 1);
+    if (script === undefined) return [];
+    return Array.isArray(script) ? script : (script.calls[call] ?? []);
+  }
+
+  /** Koszt „wywołania modelu”: licznik runu i dziennik kosztów z tego samego zdarzenia (jak adapter). */
+  private recordStep(cost: RunCostSink, operation: "agent_objective" | "agent_plan"): void {
+    const usd = this.options.stepCostUsd ?? null;
+    cost.record(usd);
+    recordResponse(
+      this.options.usage,
+      { feature: "lesson_generation", operation, provider: "openrouter", model: this.model },
+      200,
+      { usage: usd === null ? {} : { cost: usd } },
+    );
   }
 
   private async executeStep(
@@ -167,6 +207,14 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
       throw step.throw;
     } else if ("stall" in step) {
       await stalled();
+    } else if ("gate" in step) {
+      step.onReached?.();
+      const abort = rejectOnAbort(signal);
+      try {
+        await Promise.race([step.gate, abort.promise]);
+      } finally {
+        abort.dispose();
+      }
     } else {
       await rejectOnAbort(signal).promise;
     }

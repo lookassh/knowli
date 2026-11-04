@@ -24,7 +24,8 @@ export interface ObjectiveAgentInputArgs {
   readonly instruction?: string;
   readonly interests?: readonly string[];
   readonly graderAvailable: boolean;
-  readonly examplesFromPlan: boolean;
+  /** `true` = przykłady kart są ustalone (plan albo wznowienie); w porcie pole `objective.examplesFromPlan`. */
+  readonly examplesFixed: boolean;
   readonly maxSteps: number;
 }
 
@@ -74,7 +75,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
       title: objective.titlePl,
       ...(objective.kind === undefined ? {} : { kind: objective.kind }),
       cards: objective.cards,
-      examplesFromPlan: args.examplesFromPlan,
+      examplesFromPlan: args.examplesFixed,
     },
     otherObjectives: state.objectives
       .filter((other) => other.id !== objective.id)
