@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   LessonAgentToolOutcome,
   LessonObjectiveAgentInput,
@@ -209,6 +209,50 @@ describe("FakeLessonPoolAgent", () => {
     expect(agent.maxConcurrent).toBe(3);
   });
 
+  it("przerwany sygnał odrzuca signal.reason przed krokiem i nie woła narzędzi ani kosztu", async () => {
+    const agent = new FakeLessonPoolAgent({ objectives: { alpha: [{ submit: { exercises: [1] } }] } });
+    const controller = new AbortController();
+    const reason = new Error("aborted-before");
+    controller.abort(reason);
+    const tools = makeTools([]);
+    const cost = costSink();
+    await expect(agent.runObjective(agentInput("alpha"), tools, cost, controller.signal)).rejects.toBe(reason);
+    expect(tools.submitted).toEqual([]);
+    expect(cost.values).toEqual([]);
+  });
+
+  it("sygnał przerwany po koszcie kroku, a przed narzędziami, odrzuca signal.reason bez wołania narzędzia", async () => {
+    const agent = new FakeLessonPoolAgent({ objectives: { alpha: [{ submit: { exercises: [1] } }] }, stepCostUsd: 0.01 });
+    const controller = new AbortController();
+    const reason = new Error("aborted-after-cost");
+    const cost: RunCostSink & { values: (number | null)[] } = {
+      values: [],
+      record(usd) {
+        this.values.push(usd);
+        controller.abort(reason);
+      },
+    };
+    const tools = makeTools([]);
+    await expect(agent.runObjective(agentInput("alpha"), tools, cost, controller.signal)).rejects.toBe(reason);
+    expect(cost.values).toEqual([0.01]);
+    expect(tools.submitted).toEqual([]);
+  });
+
+  it("przerwany sygnał odrzuca signal.reason także w planObjectives", async () => {
+    const agent = new FakeLessonPoolAgent({ plans: [1] });
+    const controller = new AbortController();
+    const reason = new Error("plan-aborted");
+    controller.abort(reason);
+    await expect(
+      agent.planObjectives(
+        { maxSteps: 8 } as never,
+        { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
+        costSink(),
+        controller.signal,
+      ),
+    ).rejects.toBe(reason);
+  });
+
   it("planObjectives proponuje kolejne plany do shouldStop() i zapisuje wejścia", async () => {
     const agent = new FakeLessonPoolAgent({ plans: [{ p: 1 }, { p: 2 }, { p: 3 }], stepCostUsd: 0.01 });
     const proposed: unknown[] = [];
@@ -385,5 +429,31 @@ describe("FakeExerciseChecker", () => {
     const call = checker.solve({ items: [] }, costSink(), controller.signal);
     controller.abort(reason);
     await expect(call).rejects.toBe(reason);
+  });
+
+  it("wywołanie z już przerwanym sygnałem odrzuca signal.reason bez zapisu kosztu", async () => {
+    const checker = new FakeExerciseChecker({});
+    const controller = new AbortController();
+    const reason = new Error("checker-pre-aborted");
+    controller.abort(reason);
+    const cost = costSink();
+    await expect(checker.solve({ items: [] }, cost, controller.signal)).rejects.toBe(reason);
+    await expect(checker.judgeVariants({ items: [] }, cost, controller.signal)).rejects.toBe(reason);
+    expect(cost.values).toEqual([]);
+  });
+
+  it("gate nie zostawia nasłuchów abort na wspólnym, nieprzerwanym sygnale", async () => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const added = vi.spyOn(signal, "addEventListener");
+    const removed = vi.spyOn(signal, "removeEventListener");
+    const checker = new FakeExerciseChecker({ gate: Promise.resolve() });
+    for (let index = 0; index < 20; index += 1) {
+      await checker.solve({ items: [{ view: `v${index}`, expectedAnswers: 1 }] }, costSink(), signal);
+    }
+    const listenersAdded = added.mock.calls.filter(([type]) => type === "abort").length;
+    const listenersRemoved = removed.mock.calls.filter(([type]) => type === "abort").length;
+    expect(listenersAdded).toBe(20);
+    expect(listenersRemoved).toBe(listenersAdded);
   });
 });

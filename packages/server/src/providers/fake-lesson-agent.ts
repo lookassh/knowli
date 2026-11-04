@@ -32,15 +32,26 @@ export interface FakeLessonPoolAgentOptions {
 
 type PlanTools = Parameters<LessonPoolAgentProvider["planObjectives"]>[1];
 
-/** Czeka na przerwanie sygnału i odrzuca `signal.reason`; przerwany wcześniej odrzuca od razu. */
-function rejectOnAbort(signal: AbortSignal): Promise<never> {
-  return new Promise<never>((_resolve, reject) => {
+/**
+ * Czeka na przerwanie sygnału i odrzuca `signal.reason`; przerwany wcześniej odrzuca od razu.
+ * `dispose` zdejmuje nasłuch, więc wyścig z innym zdarzeniem nie zostawia listenerów na wspólnym sygnale.
+ */
+function rejectOnAbort(signal: AbortSignal): { promise: Promise<never>; dispose: () => void } {
+  let onAbort: (() => void) | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
     if (signal.aborted) {
       reject(signal.reason);
       return;
     }
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
+  return {
+    promise,
+    dispose: () => {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    },
+  };
 }
 
 /** Śledzi największą liczbę jednocześnie trwających wywołań. */
@@ -62,6 +73,12 @@ class ConcurrencyMeter {
 export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
   readonly name = "fake-lesson-agent";
   readonly model = "fake-lesson-agent-model";
+  /**
+   * Zapis wywołań `runObjective`. Przy kroku `parallel` `outcomes` są w kolejności ZAKOŃCZENIA narzędzi,
+   * nie startu. Wynik wywołania: `model_finished`, gdy scenariusz się skończył; `max_steps`, gdy limit
+   * kroków wejścia zostanie osiągnięty przed końcem scenariusza; `stopped` po `shouldStop()`.
+   * Przerwany `signal` (sprawdzany przed każdym krokiem i przed narzędziami) odrzuca `signal.reason`.
+   */
   readonly calls: {
     objectiveId: string;
     input: LessonObjectiveAgentInput;
@@ -91,6 +108,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     return this.meter.track(async () => {
       let steps = 0;
       for (const step of script) {
+        signal.throwIfAborted();
         if (steps >= input.maxSteps) return { steps, stopReason: "max_steps" as const };
         if (tools.shouldStop()) return { steps, stopReason: "stopped" as const };
         // „Wywołanie modelu”: koszt odpowiedzi jest zapisany przed narzędziami, więc przerwanie w trakcie
@@ -107,12 +125,13 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     input: LessonAgentPlanInput,
     tools: PlanTools,
     cost: RunCostSink,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<{ steps: number }> {
     const proposals: unknown[] = [];
     this.planCalls.push({ input, proposals });
     let steps = 0;
     for (const plan of this.options.plans ?? []) {
+      signal.throwIfAborted();
       if (steps >= input.maxSteps || tools.shouldStop()) break;
       cost.record(this.options.stepCostUsd ?? null);
       steps += 1;
@@ -128,6 +147,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     outcomes: unknown[],
     signal: AbortSignal,
   ): Promise<void> {
+    signal.throwIfAborted();
     if ("submit" in step) {
       const raw = step.submit as Parameters<LessonObjectiveAgentTools["submit"]>[0];
       outcomes.push(await tools.submit(raw));
@@ -139,7 +159,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     } else if ("throw" in step) {
       throw step.throw;
     } else {
-      await rejectOnAbort(signal);
+      await rejectOnAbort(signal).promise;
     }
   }
 }
@@ -181,7 +201,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
       await this.admit(cost, signal);
       const batch = this.options.solveBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: solve failed");
-      if (batch === "hang") return rejectOnAbort(signal);
+      if (batch === "hang") return rejectOnAbort(signal).promise;
       if (batch) return { answers: batch };
       const solve = this.options.solve ?? (() => []);
       return { answers: input.items.map((item) => solve(item.view)) };
@@ -194,7 +214,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
       await this.admit(cost, signal);
       const batch = this.options.judgeBatch?.(input.items);
       if (batch === "throw") throw new Error("fake checker: judgeVariants failed");
-      if (batch === "hang") return rejectOnAbort(signal);
+      if (batch === "hang") return rejectOnAbort(signal).promise;
       if (batch) return { equivalent: batch };
       const judge = this.options.judge ?? (() => true);
       return {
@@ -208,7 +228,15 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
 
   /** Czeka na `gate` (z przerwaniem), potem zapisuje koszt żądania — także gdy wynik będzie wyjątkiem. */
   private async admit(cost: RunCostSink, signal: AbortSignal): Promise<void> {
-    if (this.options.gate) await Promise.race([this.options.gate, rejectOnAbort(signal)]);
+    signal.throwIfAborted();
+    if (this.options.gate) {
+      const abort = rejectOnAbort(signal);
+      try {
+        await Promise.race([this.options.gate, abort.promise]);
+      } finally {
+        abort.dispose();
+      }
+    }
     cost.record(this.options.costUsd === undefined ? 0 : this.options.costUsd);
   }
 }
