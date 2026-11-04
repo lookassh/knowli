@@ -11,7 +11,9 @@
  *
  * Kosze są ułożone zachłannie (LPT) wg czasów plików (`endTime - startTime`
  * z `--reporter=json`) z pełnego lokalnego przebiegu 2026-11-04 (baza testów
- * w tmpfs bez fsync): suma plików ~326 s, kosze po ~109 s. Najdłuższe pliki:
+ * w tmpfs bez fsync, przebieg sekwencyjny): suma plików ~326 s, kosze po
+ * ~109 s sumy czasów plików (czas zegarowy kosza ze startem kontenera
+ * i importem modułów to ok. 145 s przy trzech koszach naraz). Najdłuższe pliki:
  * `lesson-review.test.ts` (~34 s) i `learning-algorithm.test.ts` (~30 s).
  * Gdy czasy plików mocno urosną, przelicz pomiar i ułóż kosze od nowa.
  * Wybór kosza daje `UMIEM_INTEGRATION_BUCKET` (1..N)

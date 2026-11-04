@@ -52,6 +52,18 @@ function prefixStream(stream, prefix, target) {
   });
 }
 
+async function cleanupContainers(runIds) {
+  // Sieć bezpieczeństwa: Vitest po SIGINT kończy proces bez teardownu
+  // global-setup, więc kontenery koszy zostałyby do sprzątania przez kolejny
+  // przebieg. Nazwa: `knowli-it-<runId>-<pid Vitesta>`, runId zawiera pid runnera.
+  for (const runId of runIds) {
+    const { stdout } = await exec("docker", ["ps", "-aq", "--filter", `name=knowli-it-${runId}-`]).catch(() => ({ stdout: "" }));
+    const ids = stdout.split(/\r?\n/).map((id) => id.trim()).filter(Boolean);
+    // -v: kontener sprzed tmpfs miałby anonimowy wolumen danych.
+    if (ids.length > 0) await exec("docker", ["rm", "-f", "-v", ...ids]).catch(() => undefined);
+  }
+}
+
 function runBucket(bucket, runId, vitestArgs) {
   const label = `integration-${bucket}/${INTEGRATION_BUCKETS}`;
   const startedAt = Date.now();
@@ -87,12 +99,23 @@ async function main() {
     return;
   }
   const startedAt = Date.now();
+  // Każdy kosz ma stałą listę plików, więc filtr (np. nazwa pliku) nie trafi
+  // w pozostałe kosze — bez tej flagi kończyłyby się porażką „No test files found”.
+  const bucketArgs = vitestArgs.length > 0 ? ["--passWithNoTests", ...vitestArgs] : vitestArgs;
   // Sufiks pid: dwa równoległe wywołania runnera nie dzielą nazw kontenerów.
+  const runIds = [];
   const runs = [];
   for (let bucket = 1; bucket <= INTEGRATION_BUCKETS; bucket += 1) {
-    runs.push(runBucket(bucket, `shards-it-${bucket}-${process.pid}`, vitestArgs));
+    const runId = `shards-it-${bucket}-${process.pid}`;
+    runIds.push(runId);
+    runs.push(runBucket(bucket, runId, bucketArgs));
   }
-  const results = await Promise.all(runs);
+  let results;
+  try {
+    results = await Promise.all(runs);
+  } finally {
+    await cleanupContainers(runIds);
+  }
 
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
   console.log(`\n[integration-shards] Podsumowanie (${elapsed} s):`);
@@ -106,21 +129,25 @@ async function main() {
 }
 
 let interrupted = false;
-process.on("SIGINT", () => {
+function interrupt(signal) {
   if (interrupted) {
     for (const child of children) killTree(child, "SIGKILL");
     process.exit(130);
   }
   interrupted = true;
   process.exitCode = 130;
-  // Pierwsze Ctrl+C: SIGINT do dzieci, żeby teardown Vitesta usunął kontenery;
-  // SIGKILL po limicie, gdyby teardown się zawiesił (osierocone kontenery
-  // sprząta global-setup następnego przebiegu, gdy ich właściciel nie żyje).
+  // Pierwsze przerwanie: sygnał do dzieci (na Windows od razu taskkill /F),
+  // SIGKILL po limicie. Kontenery koszy usuwa cleanupContainers w main(),
+  // gdy dzieci się zamkną; po twardym wyjściu sprząta je global-setup
+  // kolejnego przebiegu, bo ich właściciel już nie żyje.
   for (const child of children) {
-    killTree(child, "SIGINT");
+    killTree(child, signal);
     setTimeout(() => killTree(child, "SIGKILL"), 15_000).unref();
   }
-});
+}
+// SIGTERM/SIGHUP też: dzieci startują w osobnej grupie procesów (POSIX)
+// i bez tego przeżyłyby runner.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => interrupt(signal));
 
 main().catch((error) => {
   if (interrupted) return;

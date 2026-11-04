@@ -16,6 +16,7 @@ import {
   parseDockerTimestamp,
   parseHostPort,
   parseInspectOutput,
+  POSTGRES_IMAGE,
   selectStaleContainers,
   startPostgresContainer,
   type TestContainer,
@@ -274,8 +275,11 @@ describe("startPostgresContainer", () => {
     const args = runtime.lastRunArgs;
     expect(args[args.indexOf("--tmpfs") + 1]).toBe("/var/lib/postgresql/data");
     // Opcje serwera po nazwie obrazu, nie opcje `docker run`.
-    const serverArgs = args.slice(args.indexOf("postgres:17-alpine") + 1);
-    expect(serverArgs).toEqual(["-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]);
+    const imageIndex = args.indexOf(POSTGRES_IMAGE);
+    expect(imageIndex).toBeGreaterThan(args.indexOf("--tmpfs"));
+    expect(args.slice(imageIndex + 1)).toEqual([
+      "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_wal_size=256MB",
+    ]);
   });
 
   it("removes its failed container by ID before retrying", async () => {

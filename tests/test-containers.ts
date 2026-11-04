@@ -20,7 +20,7 @@ export const OWNER_PID_NAMESPACE_LABEL = "knowli.test-owner-pidns";
 // uznajemy za osierocony dopiero po dobie.
 export const MAX_CONTAINER_AGE_MS = 24 * 60 * 60 * 1000;
 
-const POSTGRES_IMAGE = "postgres:17-alpine";
+export const POSTGRES_IMAGE = "postgres:17-alpine";
 
 export interface TestContainer {
   id: string;
@@ -207,8 +207,9 @@ export async function findContainer(name: string): Promise<TestContainer | null>
 }
 
 export async function removeContainer(id: string): Promise<void> {
-  // -v: obraz postgres trzyma dane w anonimowym wolumenie, a jawne `rm -f`
-  // (inaczej niż samo --rm po zatrzymaniu) bez -v zostawia go na dysku VM.
+  // -v: kontener bez tmpfs (sprzed niego albo z innego checkoutu) trzyma dane
+  // w anonimowym wolumenie, a jawne `rm -f` (inaczej niż samo --rm po
+  // zatrzymaniu) bez -v zostawia go na dysku VM.
   await docker("rm", "-f", "-v", id).catch(() => undefined);
 }
 
@@ -260,8 +261,12 @@ export interface StartedContainer {
 // też anonimowy wolumen obrazu) i wyłączone fsync/synchronous_commit/
 // full_page_writes zostawiają semantykę transakcji i blokad bez zmian —
 // tracimy tylko odporność na awarię serwera, której testy nie sprawdzają.
+// tmpfs nie ma limitu rozmiaru (pamięć maszyny Dockera), więc max_wal_size
+// ogranicza WAL między checkpointami — naraz działa do 7 takich kontenerów.
+// Ścieżka danych obowiązuje do postgres:17; obraz 18 trzyma dane
+// w /var/lib/postgresql/18/docker i przy podbiciu POSTGRES_IMAGE trzeba ją zmienić.
 const POSTGRES_DATA_DIR = "/var/lib/postgresql/data";
-const POSTGRES_NON_DURABLE_SETTINGS = ["fsync=off", "synchronous_commit=off", "full_page_writes=off"];
+const POSTGRES_NON_DURABLE_SETTINGS = ["fsync=off", "synchronous_commit=off", "full_page_writes=off", "max_wal_size=256MB"];
 
 function postgresRunArgs(name: string): string[] {
   return [
