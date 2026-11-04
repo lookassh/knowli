@@ -408,9 +408,8 @@ dziecka jak przykłady, więc generowanie nie może ich używać jako rozwiąza�
   z 1–3 przykładami, części dzielą się dalej po etykiecie „: ”, po „; ” i na
   granicach zdań po `.?!`, a z każdej odpada punktor lub numeracja („- ”,
   „• ”, „* ”, „1. ”, „1) ”) i cudzysłowy na obu brzegach („…”, "…", «…»)
-  przed sprawdzeniem reguły. Gramatyka haka nie dostaje: jej karty mają zdania
-  wplecione w polskie linie z „:” i „→”, których reguła nie łapie, a łapie
-  polski fałszywy alarm („i kropka.”). Szkoła — materiał po polsku.
+  przed sprawdzeniem reguły. Gramatyka haka nie dostaje: reguła zdania dawałaby w jej polskich kartach
+  fałszywe alarmy (np. „i kropka.”). Szkoła — materiał po polsku.
 - Nowa funkcja domenowa `cardExposureSources(subject, topic)` →
   `cardExposureTexts` kart per zagadnienie (bez przykładów).
 - `resolveGenerationLeaks` dostaje opcjonalny parametr `fixedSources`
