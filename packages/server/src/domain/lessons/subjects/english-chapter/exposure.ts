@@ -77,8 +77,8 @@ const CARD_BULLET = /^(?:[-•*]|\d+[.)])\s+/u;
 /** Cudzysłowy na początku zdania; na końcu obcina je `trimTrailing` (liniowo, bez `[…]+$`). */
 const CARD_LEADING_QUOTES = /^[„“”"«»]+/u;
 const CARD_QUOTE_CHARS: ReadonlySet<string> = new Set(["„", "“", "”", "\"", "«", "»"]);
-/** Zdanie angielskie: litery ASCII, apostrof, spacje i interpunkcja zdania. */
-const CARD_SENTENCE = /^[A-Za-z][A-Za-z' ,.?!]*$/u;
+/** Zdanie angielskie: litery ASCII, apostrof, spacje, interpunkcja zdania i łącznik wewnątrz słowa („T-shirt”). */
+const CARD_SENTENCE = /^[A-Za-z](?:[A-Za-z' ,.?!]|(?<=[A-Za-z])-(?=[A-Za-z]))*$/u;
 
 /** Części linii po wszystkich separatorach, w kolejności występowania. */
 function cardLineParts(line: string): string[] {

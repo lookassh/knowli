@@ -581,9 +581,12 @@ runLessonPoolAgent(
 ): Promise<LessonPoolAgentResult>
 ```
 
-`LessonPoolAgentRunInput`: `runId` (logi), `subjectId`, `deckId`,
-`objectiveSource` (`"planner"` | `"catalog"` | `"input"`), temat albo
-`DynamicTopicData` (dla `catalog`/`input`), materiał, polecenie, tematy zdań,
+`deps` zawiera też `subjects: Pick<SubjectRegistry, "getSubject">` — jawne
+źródło `SubjectModule` (nieznany przedmiot → błąd walidacji bez wywołań).
+`LessonPoolAgentRunInput`: `runId` (logi), `subjectId`, `deckId`, źródło
+zagadnień jako unia rozłączna (`objectiveSource`): `{ source: "planner" }`,
+`{ source: "catalog"; topic }` albo `{ source: "input"; dynamicTopic }`
+(temat z `subject.buildDynamicTopic`), materiał, polecenie, tematy zdań,
 `poolSize`, `graderAvailable`, `fixed` (szkic) i przykłady szkicu,
 `skipObjectives` (zagadnienia już zapisane — pomijane, ich ćwiczenia w
 `fixed`), `initialSpentUsd`, opcjonalny hak `onObjectiveSettled`.
@@ -676,10 +679,14 @@ Z `acceptFreshLessonPool` (`lesson-pool-acceptance.ts`) wydzielam czystą
 funkcję `sanitizeFreshLessonDraft(draft, subject, familyScope)` ze wszystkimi
 krokami per ćwiczenie, które dziś tam są: `withoutEmptyOptionalArrays`,
 `stripListenChoiceExtras`, `withoutRedundantAcceptedVariants`,
-`stripParentAddedFlags` (model nie oznaczy cytatu jako dodanego przez
-rodzica), `withoutVoiceToneUnlessAllowed`, `withoutInvalidExplanation`,
+`withoutVoiceToneUnlessAllowed`, `withoutInvalidExplanation`,
 `scopeFamiliesToRun`. `acceptFreshLessonPool` woła ją bez zmiany zachowania
-(istniejące testy potoku przechodzą bez zmian); kierownik woła ją w kroku 4.2.
+(istniejące testy potoku przechodzą bez zmian) i nadal wywołuje
+`stripParentAddedFlags` (model nie oznaczy cytatu jako dodanego przez
+rodzica) po `refineGeneratedDrafts`; kierownik wywołuje `stripParentAddedFlags`
+osobno, zaraz po `sanitizeFreshLessonDraft`, przed rdzeniem agenta (krok
+4.2). Dzisiejsze haki `refineGeneratedPool` nie czytają flagi `parentAdded`,
+więc różna kolejność nie zmienia decyzji; nowy hak nie może od niej zależeć.
 Kroki na całej puli (`refineGeneratedPool`, `validatePool`, deduplikacja,
 `capListenChoiceOverflow`) odpowiadają krokom 1–3 z §3.3.
 

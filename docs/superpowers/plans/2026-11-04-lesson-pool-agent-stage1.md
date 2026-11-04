@@ -238,7 +238,7 @@ expect(hintRevealsAnswer("burza nad morzem", open("Burza nad morzem Bałtyckim")
 **Interfaces:**
 - Produces:
   - W `ports/ai.ts` dokładnie typy §6.1.
-  - `FakeLessonPoolAgent implements LessonPoolAgentProvider`: `constructor(options: { objectives?: Record<string, FakeAgentStep[]>; plans?: unknown[]; stepCostUsd?: number | null })` (klucz = slug, `objective.id.split(".").at(-1)`); `FakeAgentStep = { submit: { exercises: unknown; examples?: unknown } } | { remove: string } | { parallel: FakeAgentStep[] } | { throw: Error } | { hang: true }`. Każdy krok: sprawdź `shouldStop()` → wykonaj narzędzia → `cost.record(stepCostUsd ?? null)` (koszt po narzędziach, jak AI SDK). `{ parallel }` uruchamia narzędzia kroków bez czekania. `hang` czeka na przerwanie `signal` i odrzuca `signal.reason`. Pola: `calls: { objectiveId: string; input: LessonObjectiveAgentInput; tools: LessonObjectiveAgentTools; outcomes: unknown[] }[]`, `maxConcurrent: number`.
+  - `FakeLessonPoolAgent implements LessonPoolAgentProvider`: `constructor(options: { objectives?: Record<string, FakeAgentStep[]>; plans?: unknown[]; stepCostUsd?: number | null })` (klucz = slug, `objective.id.split(".").at(-1)`); `FakeAgentStep = { submit: { exercises: unknown; examples?: unknown } } | { remove: string } | { parallel: FakeAgentStep[] } | { throw: Error } | { hang: true }`. Każdy krok: sprawdź `shouldStop()` → „wywołanie modelu”: `cost.record(stepCostUsd ?? null)` → wykonaj narzędzia kroku (koszt odpowiedzi modelu zapisany przed narzędziami, jak `onLanguageModelCallEnd` w AI SDK — przerwanie w trakcie narzędzi nie gubi kosztu). `{ parallel }` uruchamia narzędzia kroków bez czekania. `hang` czeka na przerwanie `signal` i odrzuca `signal.reason`. Pola: `calls: { objectiveId: string; input: LessonObjectiveAgentInput; tools: LessonObjectiveAgentTools; outcomes: unknown[] }[]`, `maxConcurrent: number`.
   - `FakeExerciseChecker implements LessonExerciseCheckerProvider`: `constructor(options: { solve?: (view: string) => string[] | null; solveBatch?: (items: readonly { view: string }[]) => (string[] | null)[] | "throw" | "hang"; judge?: (variant: string) => boolean | null; judgeBatch?: (items: readonly unknown[]) => (boolean[] | null)[] | "throw" | "hang"; costUsd?: number | null; gate?: Promise<void> })` (`*Batch` ma pierwszeństwo; `gate` — wywołania czekają na obietnicę, do testów równoległości); domyślnie `solve` → `[]` (rozjazd), `judge` → `true`, `costUsd: 0`; pola `solveCalls`, `judgeCalls` (pełne wejścia), `maxConcurrent`.
 
 - [ ] **Step 1: Testy fake'ów**: kroki do `shouldStop()`; koszt po narzędziach (`record` wołane po `submit`); `parallel` — dwa `submit` startują przed zakończeniem pierwszego (narzędzie z opóźnieniem); `hang` odrzuca `signal.reason` po `abort(reason)`; `maxConcurrent`; checker: `solveBatch` zwraca krótszą listę → wynik przekazany 1:1; `"throw"` → wyjątek; `gate`.
@@ -297,9 +297,7 @@ interface LessonPoolAgentRunInput {
   readonly runId: string;
   readonly subjectId: string;
   readonly deckId: string;
-  readonly objectiveSource: "planner" | "catalog" | "input";
-  readonly topic?: LessonTopic;                 // catalog
-  readonly dynamicTopic?: DynamicTopicData;     // input
+  readonly objectives: AgentObjectiveSource;
   readonly topicTitle: string;
   readonly material: string;
   readonly instruction?: string;
@@ -332,12 +330,21 @@ interface LessonPoolAgentResult {
   readonly spentUsd: number;
   readonly unknownCostCalls: number;
 }
-function runLessonPoolAgent(deps: { agent: LessonPoolAgentProvider; checker: LessonExerciseCheckerProvider; policy?: Partial<LessonAgentPolicy> }, input: LessonPoolAgentRunInput, signal: AbortSignal): Promise<LessonPoolAgentResult>;
+/** Źródło zagadnień — unia rozłączna (każdy wariant niesie swoje dane). */
+type AgentObjectiveSource =
+  | { readonly source: "planner" }                                      // przedmiot z planGate; temat buduje subject.buildDynamicTopic
+  | { readonly source: "catalog"; readonly topic: LessonTopic }        // gramatyka
+  | { readonly source: "input"; readonly dynamicTopic: DynamicTopicData }; // szkoła; temat = subject.buildDynamicTopic(dynamicTopic)
+function runLessonPoolAgent(
+  deps: { agent: LessonPoolAgentProvider; checker: LessonExerciseCheckerProvider; subjects: Pick<SubjectRegistry, "getSubject">; policy?: Partial<LessonAgentPolicy> },
+  input: LessonPoolAgentRunInput,
+  signal: AbortSignal,
+): Promise<LessonPoolAgentResult>;
 ```
 
 Decyzje:
 - `fixedSources` = `mergeExamples(cardExposureSources(subject, topic), input.draftExamples)`; `examples` stanu startowo `{}` (plan wpisuje swoje);
-- `targets` per zagadnienie: `targetCount` z `objectiveBatchCounts(poolSize, liczba zagadnień, subject)`, `listenAllowance` z `listenChoiceAllowance(subject, objective, stimuli fixed)`, etapy z `poolStageCounts`, `maxExercises` z `objectiveAgentLimits`, `requiredTypes` z polityki (po filtrze);
+- `targets` per zagadnienie: `targetCount` — `objectiveBatchCounts(poolSize, liczba zagadnień, subject)`; `listenAllowance` — `listenChoiceAllowance(subject, objective, stimuli fixed)`; etapy — `poolStageCounts`; `maxExercises` — `objectiveAgentLimits`, `requiredTypes` z polityki (po filtrze);
 - `pool` = `buildPoolInput(...)` z liczbami z `targets`; `avoidSentences` = `avoidSentencesFor({ examples: allExamples(state), exercises: orderedLesson(state), subject })` w chwili startu podagenta; `cardSentences` = wszystkie teksty `allExamples(state)` lekcji;
 - plan: `propose(raw)` → `validateAgentPlan` → `buildDynamicTopicData(objectives, subject.id, deckId, topicTitle, validator, ttsForPrompts)` → `withSubjectObjectiveKinds` → `validateDynamicTopicData`; przykłady z planu przypisane po **slugu z tematu** (po sanityzacji); `planMaxSteps` bez przyjęcia → `plan_failed`; wyjątek → `plan_failed` + `classifyLessonGenerationFailure`;
 - start podagentów w kolejności lekcji przez `Semaphore(concurrency)`; termin zagadnienia od wejścia do `runObjective`; `onObjectiveSettled` w kolejce szeregowej w kolejności zakończenia; błąd haka → zamknięcie wszystkich narzędzi, przerwanie sygnałów zagadnień, odrzucenie runu tym błędem;
@@ -350,7 +357,7 @@ Decyzje:
   - dwa zagadnienia równolegle wysyłają ćwiczenia z tym samym ujawnieniem (checker z `gate`, oba prechecki przed pierwszym przyjęciem) → dokładnie jedno przyjęte, drugie `leak_*`; `invariantViolations === 0`;
   - plan: propozycja z niepokrytym słowem → `errors` zawiera słowo; druga przyjęta; identyfikatory `^.+\.d<deckId>\.[a-z0-9_]{1,40}$`; przykłady z planu w `objectives[i].examples`; brak planu po 8 krokach → `plan_failed`, `agent.calls` bez podagentów; `planObjectives` rzuca → `plan_failed` z kodem;
   - materiał rozdziału bez list → plan przyjęty, zagadnienia `complete` przy pełnych scenariuszach;
-  - `objectiveSource: "input"`: przykłady przez `submit.examples` → w wyniku;
+  - `objectives: { source: "input", dynamicTopic }`: przykłady przez `submit.examples` → w wyniku; przedmiot rozwiązany przez `deps.subjects.getSubject(subjectId)` (nieznany → `AppError` `validation` bez wywołań);
   - `skipObjectives` + `fixed`: brak wywołania agenta dla pominiętego, jego `fixed` blokuje duplikat w innym;
   - zdanie karty (`withAgentPolicy(englishChapterSubject)`, karta „There is a bed in my room.”) → samodzielne tłumaczenie z tą odpowiedzią `leak_victim`;
   - `targets.targetCount` = `objectiveBatchCounts(...)` (szkoła z `withAgentPolicy(schoolSubject)` → ≥ 8);
@@ -365,7 +372,8 @@ Decyzje:
 - Modify: `.../lesson-pool-agent.ts`; Test: `.../lesson-pool-agent.limits.test.ts`
 
 - [ ] **Step 1: Testy** (`vi.useFakeTimers()`, `vi.advanceTimersByTimeAsync`; jedno zagadnienie, `checker.costUsd: 0`, chyba że niżej inaczej):
-  - `runBudgetUsd: 0.05`, `stepCostUsd: 0.02`, scenariusz 5 × `submit` → wykonane 3 kroki, `spentUsd === 0.06`, `solveCalls.length === 3`;
+  - `runBudgetUsd: 0.05`, `stepCostUsd: 0.02`, scenariusz 5 × `submit` → 3 wywołania modelu, `spentUsd === 0.06`, `solveCalls.length === 2` (koszt trzeciego wywołania zapisany przed narzędziami wyczerpuje budżet, więc trzeci `submit` dostaje `refused_budget`);
+  - przerwanie sygnału zagadnienia po „wywołaniu modelu”, w trakcie `submit` (checker `hang`) → koszt tego wywołania jest w `spentUsd`;
   - `stepCostUsd: null` → `spentUsd === 0.06` po 3 krokach, `unknownCostCalls === 3`;
   - `initialSpentUsd: 0.99`, budżet 1,00 → 1 krok, `spentUsd === 1.01`;
   - granica przekroczenia: `concurrency: 2`, dwa zagadnienia, `stepCostUsd: 0.03`, budżet 0,05 → `spentUsd ≤ 0.05 + 2 × 0.03`;
@@ -398,9 +406,9 @@ Decyzje:
 - Modify: `tests/probes/chapter-generation.probe.test.ts`, `vitest.unit.config.ts` (dopisz test dymny)
 
 **Interfaces:**
-- Produces: `AiSdkLessonPoolAgent implements LessonPoolAgentProvider` (konstruktor `{ model: LanguageModel; effort: string }`): `ToolLoopAgent`, narzędzia `submit_exercises` (`jsonSchema` z gałęzi `exercises` i `examples` `lessonPoolJsonSchema(input.pool)`; materializacja `materializeGeneratedAssignments(materializeGeneratedKeywords(materializeGeneratedCalculations(...)))` przed `tools.submit`) i `remove_exercise`; `stopWhen: [isStepCount(maxSteps), () => tools.shouldStop()]`; `maxRetries: 0`; `providerOptions.openrouter.reasoning.effort`; koszt każdego kroku `cost.record(providerMetadata?.openrouter?.usage?.cost ?? null)` w callbacku kroku (nazwę sprawdź w `node_modules/ai/dist/index.d.ts` przypiętej wersji: `onStepEnd`, inaczej `onStepFinish`); wyjątek wywołania → `cost.record(null)` i ponowne rzucenie. Planer analogicznie z `propose_objectives`. `AiSdkExerciseChecker implements LessonExerciseCheckerProvider` (`{ model; effort }`): `generateText` + `Output.object` (`{ answers: string[][] }` / `{ equivalent: boolean[][] }` po pozycjach), `maxRetries: 0`, koszt jak wyżej.
+- Produces: `AiSdkLessonPoolAgent implements LessonPoolAgentProvider` (konstruktor `{ model: LanguageModel; effort: string }`): `ToolLoopAgent`, narzędzia `submit_exercises` (`jsonSchema` z gałęzi `exercises` i `examples` `lessonPoolJsonSchema(input.pool)`; materializacja `materializeGeneratedAssignments(materializeGeneratedKeywords(materializeGeneratedCalculations(...)))` przed `tools.submit`) i `remove_exercise`; `stopWhen: [isStepCount(maxSteps), () => tools.shouldStop()]`; `maxRetries: 0`; `providerOptions.openrouter.reasoning.effort`; koszt każdego **żądania modelu** `cost.record(providerMetadata?.openrouter?.usage?.cost ?? null)` w callbacku wywołania modelu (`onLanguageModelCallEnd`; nazwę i pola potwierdź w `node_modules/ai/dist/index.d.ts` przypiętej wersji), czyli przed wykonaniem narzędzi kroku; wyjątek wywołania modelu bez odpowiedzi → `cost.record(null)` i ponowne rzucenie. Planer analogicznie z `propose_objectives`. `AiSdkExerciseChecker implements LessonExerciseCheckerProvider` (`{ model; effort }`): `generateText` + `Output.object` (`{ answers: string[][] }` / `{ equivalent: boolean[][] }` po pozycjach), `maxRetries: 0`, koszt jak wyżej.
 
-- [ ] **Step 1: Test dymny** `ai-sdk-lesson-agent.test.ts` (`MockLanguageModelV4` z `ai/test`, bez sieci): model zwraca wywołanie `submit_exercises` → fake narzędzi dostaje zmaterializowane rekordy; `shouldStop()` = `true` kończy pętlę po kroku; `providerMetadata.openrouter.usage.cost: 0.01` → `cost.record(0.01)`; przerwanie sygnału → odrzucenie; checker mapuje `answers` po pozycjach.
+- [ ] **Step 1: Test dymny** `ai-sdk-lesson-agent.test.ts` (`MockLanguageModelV4` z `ai/test`, bez sieci): model zwraca wywołanie `submit_exercises` → fake narzędzi dostaje zmaterializowane rekordy; `shouldStop()` = `true` kończy pętlę po kroku; `providerMetadata.openrouter.usage.cost: 0.01` → `cost.record(0.01)` zapisane przed wykonaniem narzędzia (narzędzie z opóźnieniem przerwane sygnałem — koszt i tak zapisany); przerwanie sygnału → odrzucenie; checker mapuje `answers` po pozycjach.
 - [ ] **Step 2: FAIL → Step 3: implementacja adapterów → Step 4: PASS** — `pnpm exec vitest run --config vitest.unit.config.ts tests/probes/ai-sdk-lesson-agent.test.ts`.
 - [ ] **Step 5: Próba** `agent-generation.probe.test.ts` wg §8: zmienne, `describe.skipIf` bez klucza i wejść, nagłówek z opisem uruchomienia i kosztów; prompt podagenta = `lessonSystemPrompt(pool)` + dopisek przepływu narzędzi z PoC (`objectiveInstructions`) + „hint only for lesson_open_answer”; planer + „up to 6 objectives when coverage needs it”; rejestr kosztów (`assertWithinCostCap`, wpis tymczasowy i rozliczenie); na końcu asercje stanu końcowego (`lessonInvariantCheck` pusty, `findExposureLeaks` coverage bez twardych, `validatePool`/`validatePoolExtra` całej lekcji puste) i raport liczby ujawnień w trybie `generation`; zrzut `UMIEM_PROBE_AGENT_DUMP` w formacie PoC + `objectives[].status`, `rejections[].detail`.
 - [ ] **Step 6: Punkt odniesienia** — `chapter-generation.probe.test.ts`: `UMIEM_PROBE_POOL_DUMP_OUT` — po `executeLessonGeneration` zrzut końcowego szkicu w formacie arkusza i zrzut zagadnień z kartami `{ title, body }[]` (wejście `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP`); `UMIEM_PROBE_COSTS`, `_COSTS_INIT`, `_OUT_DIR`, `_ALLOW_HOST`, `_SUBJECT` wg `feat/lesson-review-probe`; bez importów z `lesson-review`.

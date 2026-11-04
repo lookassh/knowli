@@ -165,6 +165,14 @@ describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwi�
     expect(chapterCardExposureTexts([{ body: "To jest kot." }])).toEqual(["To jest kot."]);
   });
 
+  it("łącznik wewnątrz słowa należy do zdania („T-shirt”), samotny łącznik nie", () => {
+    expect(chapterCardExposureTexts([{ body: "I'm wearing a T-shirt.\nIt's a well-known park." }])).toEqual([
+      "I'm wearing a T-shirt.",
+      "It's a well-known park.",
+    ]);
+    expect(chapterCardExposureTexts([{ body: "It is - cold." }])).toEqual([]);
+  });
+
   it("długi ciąg spacji i cudzysłowów nie wywołuje nawrotów (czas liniowy)", () => {
     const started = performance.now();
     const result = chapterCardExposureTexts([{ body: `${" ".repeat(50_000)}x${"”".repeat(50_000)}y` }]);
