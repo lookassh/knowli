@@ -281,6 +281,11 @@ export interface Services {
   /** Nazwa usługi krytyka lekcji (`host · model`), gdy jest gotowy; nieobecna = krytyk wyłączony. */
   reviewService?: string;
   /**
+   * Opis agenta puli lekcji dla panelu rodzica (przedmioty z listy i etykiety usług, z env
+   * procesu web); nieobecny = wszystkie przedmioty idą potokiem. To opis konfiguracji, nie klient modelu.
+   */
+  lessonAgentPublic?: LessonAgentPublic;
+  /**
    * Recorder kosztów usług AI (spec llm-cost-tracking §4). Nieobecny = brak
    * zapisu kosztów; `flush()` przy zamykaniu procesu i w testach.
    */
@@ -309,6 +314,7 @@ export function createServices(
     sessionActivity?: SessionActivityDeps;
     generationService?: string;
     reviewService?: string;
+    lessonAgentPublic?: LessonAgentPublic;
     usage?: UsageRecorder;
     subjects?: SubjectRegistry;
   },
@@ -327,6 +333,7 @@ export function createServices(
     ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
     ...(input.generationService ? { generationService: input.generationService } : {}),
     ...(input.reviewService ? { reviewService: input.reviewService } : {}),
+    ...(input.lessonAgentPublic ? { lessonAgentPublic: input.lessonAgentPublic } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
   };
 }
@@ -761,6 +768,13 @@ export function lessonAgentSettingsFromEnv(
   };
 }
 
+/** Opis agenta puli dla panelu rodzica: przedmioty z listy i etykiety usług (`host · model`). */
+export interface LessonAgentPublic {
+  readonly subjects: ReadonlySet<string>;
+  readonly generationService: string;
+  readonly checkService: string;
+}
+
 /**
  * Opis agenta dla panelu rodzica (web): przedmioty z listy i nazwy usług.
  * Nigdy nie rzuca — nieznane identyfikatory i przedmioty bez polityki pomija,
@@ -770,7 +784,7 @@ export function lessonAgentSettingsFromEnv(
 export function lessonAgentPublicFromEnv(
   env: Record<string, string | undefined>,
   subjects: Pick<SubjectRegistry, "getSubject">,
-): { readonly subjects: ReadonlySet<string>; readonly generationService: string; readonly checkService: string } | undefined {
+): LessonAgentPublic | undefined {
   const known = agentSubjectIds(env).filter((id) => subjects.getSubject(id)?.agentPolicy !== undefined);
   if (known.length === 0) return undefined;
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
