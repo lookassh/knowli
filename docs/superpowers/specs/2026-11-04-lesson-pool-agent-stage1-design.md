@@ -103,6 +103,7 @@ interface AgentObjective {                      // types.ts
   readonly descriptionEn: string;
   readonly kind?: DynamicObjectiveKind;          // "words" | "frame" (rozdział)
   readonly cards: readonly { readonly title: string; readonly body: string }[];
+  readonly exerciseTypes: readonly LessonExerciseType[];   // filtr requiredTypes (§3.5)
 }
 interface AgentPoolEntry { readonly id: string; readonly draft: LessonExerciseDraft }
 interface LessonAgentState {
@@ -155,12 +156,13 @@ puli.
 2. **reguły ćwiczenia**: `validateLessonExercise`, potem
    `agentPolicy.exerciseGate`;
 3. **reguły lekcji**: `validatePool` na **całej lekcji**
-   (`orderedLesson` z kandydatem, `context.existingExercises` jak w potoku),
-   potem `subject.validatePoolExtra` z materiałem. Kandydat odpada, gdy
-   którakolwiek z nich zgłasza błąd kandydata **albo** nowy błąd dowolnego
-   innego ćwiczenia, który przed wstawieniem nie występował (porównanie
-   zbiorów błędów przed i po, nie liczby ważnych — wadliwe ćwiczenie `fixed`
-   nie blokuje wszystkich kandydatów);
+   (`orderedLesson` z kandydatem w `exercises`, `existingExercises: []` —
+   cała lekcja jest już w wejściu), potem `subject.validatePoolExtra` z
+   materiałem. Kandydat odpada, gdy którakolwiek z nich odrzuca kandydata
+   **albo** odrzuca ćwiczenie, którego przed wstawieniem nie odrzucała
+   (porównanie zbiorów odrzuconych ćwiczeń po referencji szkicu, nie tekstów
+   błędów ani liczby ważnych — wadliwe ćwiczenie `fixed` nie blokuje
+   wszystkich kandydatów);
 4. **ujawnienia** w trybie `coverage` (`findExposureLeaks` na
    `orderedLesson` z kandydatem; źródła: `examples` + `fixedSources`):
    kandydat odpada, gdy sam staje się ujawniony (twardo albo miękko) **albo**
@@ -182,9 +184,10 @@ wyłącznie z oczyszczonym szkicem.
 `admitBatch(state, objectiveId, prechecked, checks, ctx)` przyjmuje kandydatów
 `pass` **po kolei na bieżącym stanie**, powtarzając kroki 1–4 (między
 `precheck` a `admit` inne zagadnienie mogło dodać ćwiczenie), potem 5–6.
-Słowa kluczowe (`lesson_keywords`, szkoła) są przyjmowane na końcu paczki, po
-pytaniach otwartych swojej rodziny, więc wynik nie zależy od kolejności w
-paczce.
+Słowa kluczowe (`lesson_keywords`, szkoła) są w `precheckBatch` i w
+`admitBatch` przetwarzane na końcu paczki (stabilnie), po pytaniach otwartych
+swojej rodziny, a wyniki wracają w indeksach wejścia — wynik nie zależy od
+kolejności w paczce.
 
 ```ts
 type CheckResult<T> = { readonly kind: "na" } | { readonly kind: "unavailable" } | { readonly kind: "done"; readonly value: T };
@@ -305,7 +308,8 @@ interface SubjectAgentPolicy {                     // types.ts
   readonly rejectionTexts: { readonly leakVictim: string; readonly leakSource: string };
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
   sanitize?(draft: LessonExerciseDraft): { draft: LessonExerciseDraft; removed: readonly string[] };
-  exerciseGate?(draft: LessonExerciseDraft, objective: AgentObjective, ctx: { material: string }): string[];
+  /** Kod trafia do `Rejection.code` (np. `hint_reveals_answer`), powód do modelu. */
+  exerciseGate?(draft: LessonExerciseDraft, objective: AgentObjective, ctx: { material: string }): readonly { readonly code: string; readonly reason: string }[];
   objectiveGaps?(pool: readonly LessonExerciseDraft[], objective: AgentObjective, ctx: { material: string }): string[];
   /** Słowa i ramy do pokrycia przez plan (lista dla modelu planera). */
   planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
@@ -403,15 +407,20 @@ dziecka jak przykłady, więc generowanie nie może ich używać jako rozwiąza�
   nie jest zdaniem). Gramatyka haka nie dostaje: jej karty mają zdania
   wplecione w polskie linie z „:” i „→”, których reguła nie łapie, a łapie
   polski fałszywy alarm („i kropka.”). Szkoła — materiał po polsku.
-- Nowa funkcja domenowa
-  `generationExposureSources(subject, topic, examples)` → przykłady
-  zagadnień rozszerzone o `cardExposureTexts` ich kart.
-- Używają jej **wyłącznie** wejścia reguł generowania: `existingExamples`
-  w `resolveGenerationLeaks` i `examples` w `avoidSentencesFor` w
-  `executeLessonGeneration` i `stageTopUpRound`. Zapisywany
-  `lesson_context.examples` i `finalExamples` dla zapisu są budowane z
-  **nierozszerzonych** przykładów (zdania kart nie trafiają do kontekstu,
-  renderowania karty ani fingerprintów nagrań kart).
+- Nowa funkcja domenowa `cardExposureSources(subject, topic)` →
+  `cardExposureTexts` kart per zagadnienie (bez przykładów).
+- `resolveGenerationLeaks` dostaje opcjonalny parametr `fixedSources`
+  (zagadnienie → teksty): doklejany do źródeł **po** zastąpieniu przykładów
+  nowymi (`{ ...existingExamples, ...keptNewExamples }` nadpisuje cały wpis
+  zagadnienia, więc zdania kart podane w `existingExamples` zniknęłyby przy
+  każdej partii z nowymi przykładami); nie wpływa na `keptNewExamples` ani
+  `droppedExampleCount`.
+- Używają ich **wyłącznie** wejścia reguł generowania: `fixedSources` w
+  `resolveGenerationLeaks` (reguła twarda w `executeLessonGeneration` i
+  `stageTopUpRound`) oraz `examples` w `avoidSentencesFor` (przykłady
+  scalone ze zdaniami kart). Zapisywany `lesson_context.examples` i
+  `finalExamples` dla zapisu się nie zmieniają (zdania kart nie trafiają do
+  kontekstu, renderowania karty ani fingerprintów nagrań kart).
 - Bez zmian: pokrycie i publikacja (`lessonCoverageGaps`, także
   `stageDeficits` rundy pod etap — dalej zgodne z publikacją), lista
   ujawnień w edytorze, raport ujawnień, sesja (`materializeCard`, ekspozycje
@@ -422,17 +431,22 @@ dziecka jak przykłady, więc generowanie nie może ich używać jako rozwiąza�
   wcześniej”); generator dostaje te zdania na liście do unikania. Istniejące
   szkice i publikacja bez zmian, więc pomiar blokad nie jest potrzebny.
 - Testy: hak (zdania tak, słówka nie, ramy z wielokropkiem nie, na
-  prawdziwych kartach rozdziału z fixture), `generationExposureSources`,
-  integracyjny `lesson-chapter`: ćwiczenie samodzielne ze zdaniem karty
-  odpada, a zapisany `lesson_context.examples` jest identyczny z wynikiem
-  bez haka.
+  prawdziwych kartach rozdziału z fixture), `cardExposureSources`,
+  `resolveGenerationLeaks` z `fixedSources` (zdanie karty przetrwa nowe
+  przykłady zagadnienia i nie trafia do `keptNewExamples`), integracyjny
+  `lesson-chapter`: ćwiczenie samodzielne ze zdaniem karty odpada, a
+  zapisany `lesson_context.examples` równa się przykładom zwróconym przez
+  generator. Istniejąca asercja „pierwsza partia bez `avoidSentences`”
+  (`lesson-chapter.test.ts` ok. l. 490) zmienia się na zdania kart lekcji.
+- Świadomy koszt reguły: polskie zdanie bez znaków diakrytycznych („To jest
+  kot.”) też zostanie uznane za zdanie karty — tylko zaostrza regułę.
 - Dokumentacja: `architecture.md` §19 (reguła ujawnień przy generowaniu),
   `SPEC.md` (lista zdań do unikania, ok. l. 818: „przykłady kart, zdania kart
   rozdziału i rozwiązania innych ćwiczeń”).
 
 Etap 1 korzysta z tej samej funkcji: `fixedSources` stanu agenta =
-`generationExposureSources` bez `examples` zagadnień (te żyją w
-`state.examples`) plus przykłady szkicu.
+`cardExposureSources(subject, topic)` scalone z przykładami szkicu
+(przykłady zagadnień przebiegu żyją w `state.examples`).
 
 ## 6. Porty i fake'i
 
@@ -576,7 +590,14 @@ runLessonPoolAgent(
 `objectiveTimeoutMs` 300 000 (od faktycznego startu podagenta),
 `runTimeoutMs` = `DEFAULT_LESSON_GENERATION_POLICY.runTimeoutMs` (agent nie
 dłużej niż kontroler runu potoku), `runBudgetUsd` 1,00,
-`unknownCallEstimateUsd` 0,02 (koszt `null` liczony szacunkiem).
+`unknownCallEstimateUsd` 0,02 (koszt `null` liczony szacunkiem). Terminy
+kierownik tworzy na `setTimeout` + `AbortController` (jak
+`lesson-generation-control.ts`), nie `AbortSignal.timeout`, żeby testy
+mogły sterować czasem. Budżet jest wyczerpany, gdy wydatek ≥ `runBudgetUsd`.
+`cardSentences` podagenta to wszystkie przykłady i zdania kart **lekcji**
+(ujawnienia twarde działają między zagadnieniami). Przykłady w `submit` przy
+`examplesFromPlan === true` są ignorowane z notą „examples are fixed by the
+plan”.
 
 ### 7.1. Przebieg
 
@@ -607,21 +628,26 @@ dłużej niż kontroler runu potoku), `runBudgetUsd` 1,00,
       `submitExamples`;
    4. `precheckBatch` na bieżącym stanie;
    5. checker dla `pass` z typem z polityki: jedno `solve` (paczka widoków) i
-      jedno `judgeVariants` na wywołanie `submit`, równolegle, przez semafor
-      `checkerConcurrency`, z `checkerTimeoutMs`; budżet sprawdzany przed
-      każdym wywołaniem (po przekroczeniu — `unavailable`); błąd =
-      `unavailable` dla całej paczki;
-   6. `admitBatch` na **bieżącym** stanie i podmiana stanu — **synchronicznie,
-      bez `await` między odczytem stanu a podmianą** (niezmiennik w kodzie i
-      teście);
+      jedno `judgeVariants` na wywołanie `submit`, równolegle; każde zajmuje
+      jedno miejsce semafora `checkerConcurrency`; sygnał = sygnał
+      zagadnienia (obejmuje run i termin zagadnienia) + `checkerTimeoutMs`;
+      budżet sprawdzany przed każdym wywołaniem (po przekroczeniu —
+      `unavailable`); błąd = `unavailable` dla całej paczki;
+   6. jeśli narzędzia są już zamknięte albo sygnał zagadnienia przerwany —
+      odmowa bez przyjęcia; inaczej `admitBatch` na **bieżącym** stanie i
+      podmiana stanu — **synchronicznie, bez `await` między odczytem stanu a
+      podmianą** (niezmiennik w kodzie i teście);
    7. zwrot `LessonAgentToolOutcome`.
 
    `remove` — `removeExercise` pod tym samym mutexem.
 5. **Zamknięcie zagadnienia**: po powrocie lub wyjątku `runObjective`
-   kierownik czeka na trwające wywołania narzędzi tego zagadnienia, potem je
-   zamyka (kolejne zwracają odmowę bez przyjęcia), liczy `objectiveStatus` i
-   woła `onObjectiveSettled` (awaitowany szeregowo między zagadnieniami; jego
-   błąd przerywa run — w etapie 2 utrata `assertCurrent`).
+   kierownik **od razu** zamyka narzędzia (kolejne wywołania i trwające przed
+   krokiem 4.6 kończą się odmową bez przyjęcia), czeka na trwające wywołania,
+   liczy `objectiveStatus` i woła `onObjectiveSettled` — w kolejności
+   zakończenia zagadnień, szeregowo (kolejka; nie wstrzymuje startu
+   kolejnych podagentów). Błąd haka zamyka wszystkie narzędzia, przerywa
+   pozostałe zagadnienia i kończy run odrzuceniem tym błędem (w etapie 2
+   utrata `assertCurrent`).
 6. **Kontrola końcowa**: `lessonInvariantCheck`; ewentualne usunięcia bez
    naprawy, log `invariant_violation`.
 7. **Wynik** `LessonPoolAgentResult`:
@@ -794,7 +820,7 @@ koszt; bez treści ćwiczeń, materiału, kart, tematów zdań i `detail`. Test
 
 ### 9.3. PR wstępny
 
-§5: jednostkowe haka i `generationExposureSources`; integracyjny
+§5: jednostkowe haka, `cardExposureSources` i `fixedSources`; integracyjny
 `lesson-chapter` (odrzucenie, niezmieniony `lesson_context.examples`);
 istniejące testy pokrycia, publikacji i sesji bez zmian.
 
@@ -810,13 +836,20 @@ istniejące testy pokrycia, publikacji i sesji bez zmian.
 
 ### 9.5. Próba — przebiegi kontrolne
 
-Dwa płatne przebiegi z rejestrem kosztów (łącznie ok. 0,45 USD): **szkoła**
-(nowy kod: materiał w checkerze, `sanitize`, bramka podpowiedzi, luki na
-ślepo, paczki checkera) i **rozdział** (planer, bramki rozdziału). Kryteria
-ustalone z góry: przebieg kończy się bez wyjątku; 0 twardych ujawnień i 0
-błędów `validatePool` całej lekcji w zrzucie; każde zagadnienie ma status;
-zrzut czyta `gen-blind-sheet.cjs`; wpis w rejestrze rozliczony. Wynik nie
-jest porównaniem z próbą z 2026-11-03 (inne limity i liczby) — porównanie to
+Przed każdym płatnym przebiegiem — wyraźna zgoda właściciela w czacie.
+Trzy płatne przebiegi z rejestrem kosztów (limit rejestru 2,00 USD,
+`_BUDGET_USD` 0,40 na przebieg agenta; szacunek łącznie ok. 0,65 USD):
+`probe:chapter` na materiale szkoły (zrzut zagadnień dla agenta), agent
+**szkoła** (materiał w checkerze, `sanitize`, bramka podpowiedzi, luki na
+ślepo, paczki checkera) i agent **rozdział** (planer, bramki rozdziału).
+Materiały — pliki właściciela poza repozytorium. Najwyżej jedno powtórzenie
+po porażce. Próba sama sprawdza stan końcowy (`lessonInvariantCheck`,
+`findExposureLeaks` w trybach `coverage` i `generation`, `validatePool`,
+`validatePoolExtra`) i raportuje różnicę trybów. Kryteria ustalone z góry:
+przebieg kończy się bez wyjątku; 0 twardych ujawnień (coverage) i 0 błędów
+walidacji całej lekcji; każde zagadnienie ma status; zrzut czyta
+`gen-blind-sheet.cjs`; wpis w rejestrze rozliczony. Wynik nie jest
+porównaniem z próbą z 2026-11-03 (inne limity i liczby) — porównanie to
 etap 3.
 
 ### 9.6. Przed PR
@@ -901,3 +934,14 @@ cel, testy, zakres.
 | Przebieg kontrolny tylko na rozdziale (K3) | Szkoła + rozdział z kryteriami z góry (§9.5) |
 | `precheck` może odsiać ujawnienia przed checkerem (K2) | Kroki 1–4 w `precheck`, sekwencyjnie (§3.3) |
 | Dokumentacja (K3) | `architecture.md` z opisem próby; env w etapie 2 (§10) |
+
+Poprawki po review planów (2026-11-04): `fixedSources` w
+`resolveGenerationLeaks` i `cardExposureSources` zamiast doklejania zdań kart
+do `existingExamples` (nowe przykłady zagadnienia nadpisywały wpis; §5);
+`AgentObjective.exerciseTypes`; kody bramek przedmiotu (`exerciseGate` →
+`{ code, reason }`); słowa kluczowe na końcu paczki także w `precheckBatch`;
+porównanie odrzuceń po referencji z `existingExercises: []`; natychmiastowe
+zamknięcie narzędzi, sygnał zagadnienia w checkerze i ponowne sprawdzenie
+przed przyjęciem; terminy na `setTimeout`; kolejność `onObjectiveSettled`;
+`cardSentences` z całej lekcji; przebiegi kontrolne z zgodą właściciela,
+trzema przebiegami i limitami (§9.5).

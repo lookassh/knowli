@@ -4,184 +4,166 @@
 
 **Goal:** Angielskie zdania wpisane w treść kart rozdziału są stałym źródłem ujawnień przy generowaniu puli (reguła twarda i lista zdań do unikania), bez zapisu do `lesson_context.examples` i bez zmian w pokryciu, publikacji i sesji.
 
-**Architecture:** Opcjonalny hak `SubjectModule.cardExposureTexts` (tylko `english_chapter`) i czysta funkcja domenowa `generationExposureSources`, której wynik trafia wyłącznie do wejść `resolveGenerationLeaks.existingExamples` i `avoidSentencesFor.examples` w `executeLessonGeneration` i `stageTopUpRound`. Zapisywane przykłady i `stageDeficits` dostają przykłady nierozszerzone.
+**Architecture:** Opcjonalny hak `SubjectModule.cardExposureTexts` (tylko `english_chapter`), czysta funkcja `cardExposureSources(subject, topic)` i nowy parametr `fixedSources` w `resolveGenerationLeaks` (doklejany po zastąpieniu przykładów nowymi). `executeLessonGeneration` i `stageTopUpRound` podają zdania kart wyłącznie do `fixedSources` i do `avoidSentencesFor`.
 
 **Tech Stack:** TypeScript strict, Vitest (unit + integracja na PostgreSQL), pnpm.
 
-**Spec:** `docs/superpowers/specs/2026-11-04-lesson-pool-agent-stage1-design.md` §5 (wersja 2).
+**Spec:** `docs/superpowers/specs/2026-11-04-lesson-pool-agent-stage1-design.md` §5 (wersja 2 z poprawkami po review planów).
+
+**Gałąź:** bieżąca gałąź worktree (zawiera spec i plany); PR do `main`.
 
 ## Global Constraints
 
 - Kod i identyfikatory po angielsku; komentarze, dokumentacja i opisy PR po polsku.
 - Hak implementuje **tylko** `english_chapter`; gramatyka i szkoła go nie mają.
-- Zdania kart **nigdy** nie trafiają do zapisywanego `lesson_context.examples`, `finalExamples` dla zapisu, renderowania karty ani fingerprintów nagrań.
-- Bez zmian: `lessonCoverageGaps`/`stageDeficits`, publikacja, lista ujawnień edytora, raport ujawnień, `materializeCard`, krytyk (`lesson-review.ts`).
-- Instalacja tylko `pnpm install --prefer-offline --frozen-lockfile`, nigdy `npm install`; ten PR nie zmienia zależności.
+- Zdania kart **nigdy** nie trafiają do zapisywanego `lesson_context.examples`, `keptNewExamples`, `finalExamples` dla zapisu, renderowania karty ani fingerprintów nagrań.
+- Bez zmian: `lessonCoverageGaps`/`stageDeficits` (runda liczy braki na `ctx.examples`), publikacja, lista ujawnień edytora, raport ujawnień, `materializeCard`, krytyk (`lesson-review.ts`).
+- Instalacja tylko `pnpm install --prefer-offline --frozen-lockfile`; ten PR nie zmienia zależności.
 - Nie wypychaj do `main`, nie scalaj PR (AGENTS.md, Policy).
 
 ## Review Focus
 
-- Karta z linią mieszaną polsko-angielską („Pokój — my room is big.”) — część angielska po „ — ” jest zdaniem tylko, gdy spełnia regułę; polska część nigdy (test w Task 1).
-- Typograficzne apostrofy i cudzysłowy w zdaniu karty („There’s a bed.”) — reguła akceptuje apostrof typograficzny po normalizacji do `'` (test w Task 1).
-- Dogenerowanie (`regenerate`) — zdania kart działają także dla nowej partii wobec przykładów szkicu (test w Task 2).
-- Runda pod etap — źródło zdań kart w `resolveGenerationLeaks` i `avoidSentencesFor` rundy, a `stageDeficits` bez nich (test w Task 2).
-- Zagadnienie, którego karty nie mają zdań — wynik równy wejściowym przykładom, bez pustych wpisów (test w Task 1).
+- Linia mieszana polsko-angielska „Pokój — my room is big.” — angielska część jest zdaniem, polska „Pokój” nie (test w Task 1).
+- Apostrof typograficzny („There’s a bed.”) — normalizowany do `'`; zdanie w cudzysłowie typograficznym („„There is a bed.”") odpada w całości (test w Task 1, zachowanie świadome).
+- Dogenerowanie — nowa partia z nowymi przykładami zagadnienia nadal widzi zdania kart (test w Task 3).
+- Runda pod etap — zdanie karty odrzuca ćwiczenie rundy, a braki etapów liczone bez zdań kart (test w Task 3).
+- Zagadnienie bez zdań na kartach — `cardExposureSources` nie zawiera klucza; `fixedSources` pusty nie zmienia wyniku `resolveGenerationLeaks` (testy w Task 1–2).
 
 ---
 
-### Task 1: Hak `cardExposureTexts` i `generationExposureSources`
+### Task 1: Hak `cardExposureTexts` i `cardExposureSources`
 
 **Files:**
 - Modify: `packages/server/src/domain/lessons/types.ts` (pole w `SubjectModule`, obok `normalizeExposureText`)
-- Modify: `packages/server/src/domain/lessons/subjects/english-chapter/exposure.ts`
-- Modify: `packages/server/src/domain/lessons/subjects/english-chapter/module.ts`
-- Create: `packages/server/src/domain/lessons/generation-exposure-sources.ts`
-- Test: `packages/server/src/domain/lessons/subjects/english-chapter/exposure.test.ts`
-- Test: `packages/server/src/domain/lessons/generation-exposure-sources.test.ts`
+- Modify: `packages/server/src/domain/lessons/subjects/english-chapter/exposure.ts`, `.../english-chapter/module.ts`
+- Create: `packages/server/src/domain/lessons/card-exposure-sources.ts`
+- Test: `.../english-chapter/exposure.test.ts`, `packages/server/src/domain/lessons/card-exposure-sources.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `SubjectModule.cardExposureTexts?(cards: readonly { readonly body: string }[]): string[]` — komentarz JSDoc po polsku: teksty z treści kart, które dziecko widzi jako gotowe rozwiązania; używane wyłącznie przy generowaniu.
+  - `SubjectModule.cardExposureTexts?(cards: readonly { readonly body: string }[]): string[]` — JSDoc po polsku: teksty z treści kart, które dziecko widzi jako gotowe rozwiązania; tylko generowanie.
   - `chapterCardExposureTexts(cards: readonly { readonly body: string }[]): string[]` w `english-chapter/exposure.ts`.
-  - `generationExposureSources(subject: Pick<SubjectModule, "cardExposureTexts">, topic: Pick<LessonTopic, "objectives">, examples: Readonly<Record<string, readonly string[]>>): Record<string, string[]>`.
+  - `cardExposureSources(subject: Pick<SubjectModule, "cardExposureTexts">, topic: Pick<LessonTopic, "objectives">): Record<string, string[]>` — tylko zagadnienia z niepustą listą.
 
-- [ ] **Step 1: Testy `chapterCardExposureTexts`** w `exposure.test.ts`:
-
-```ts
-describe("chapterCardExposureTexts", () => {
-  it("zdania angielskie z kart: kropka/pytajnik albo ≥ 3 słowa", () => {
-    expect(chapterCardExposureTexts([{ body: "There is a bed in my room.\nWhere is the lamp?" }]))
-      .toEqual(["There is a bed in my room.", "Where is the lamp?"]);
-  });
-  it("linia słówek nie jest zdaniem; część po „ — ” lub „ / ” oceniana osobno", () => {
-    expect(chapterCardExposureTexts([{ body: "living room — salon\nbed — łóżko / I have a big bed." }]))
-      .toEqual(["I have a big bed."]);
-  });
-  it("rama z wielokropkiem i tekst z polskimi znakami odpadają", () => {
-    expect(chapterCardExposureTexts([{ body: "There's a … in the …\nTo jest mój pokój." }])).toEqual([]);
-  });
-  it("apostrof typograficzny normalizowany, duplikaty usunięte", () => {
-    expect(chapterCardExposureTexts([{ body: "There’s a bed." }, { body: "There's a bed." }])).toEqual(["There's a bed."]);
-  });
-});
-```
-
-- [ ] **Step 2: Uruchom — FAIL**
-
-Run: `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/subjects/english-chapter/exposure.test.ts`
-Expected: FAIL (`chapterCardExposureTexts` nie istnieje).
-
-- [ ] **Step 3: Zaimplementuj `chapterCardExposureTexts`** — reguła `cardSentences` z PoC (`git show origin/probe/lesson-pool-agent:tests/probes/agent-generation-v2.probe.test.ts`, funkcja `cardSentences`): linie → części po `/\s+[—/]\s+/u` → apostrof typograficzny na `'` → pomiń puste, z wielokropkiem (`…` lub `...`) i niepasujące do `/^[A-Za-z][A-Za-z' ,.?!]*$/u` → zachowaj zakończone `[.?!]` albo mające ≥ 3 słowa → deduplikacja z zachowaniem kolejności. Podłącz w `englishChapterSubject` jako `cardExposureTexts: chapterCardExposureTexts`.
-
-- [ ] **Step 4: Uruchom — PASS** (komenda jak w Step 2).
-
-- [ ] **Step 5: Testy `generationExposureSources`** w `generation-exposure-sources.test.ts` (temat z dwoma zagadnieniami `o1`, `o2`; przedmiot-zaślepka z `cardExposureTexts: (cards) => cards.map((c) => c.body)`):
+- [ ] **Step 1: Testy `chapterCardExposureTexts`** (`exposure.test.ts`):
 
 ```ts
-it("dokleja teksty kart do przykładów zagadnienia, bez duplikatów", () => {
-  expect(generationExposureSources(subject, topic, { o1: ["Ex one."] }))
-    .toEqual({ o1: ["Ex one.", "Card one."], o2: ["Card two."] });
+it("zdania z kropką/pytajnikiem albo ≥ 3 słowa", () => {
+  expect(chapterCardExposureTexts([{ body: "There is a bed in my room.\nWhere is the lamp?" }]))
+    .toEqual(["There is a bed in my room.", "Where is the lamp?"]);
 });
-it("przedmiot bez haka: kopia wejścia", () => {
-  expect(generationExposureSources({}, topic, { o1: ["Ex one."] })).toEqual({ o1: ["Ex one."] });
+it("słówka nie; części po „ — ” i „ / ” osobno; polska część odpada", () => {
+  expect(chapterCardExposureTexts([{ body: "living room — salon\nbed — łóżko / I have a big bed.\nPokój — my room is big." }]))
+    .toEqual(["I have a big bed.", "my room is big."]);
 });
-it("zagadnienie bez tekstów kart i bez przykładów nie dostaje pustego wpisu", () => {
-  const silent = { cardExposureTexts: () => [] };
-  expect(generationExposureSources(silent, topic, {})).toEqual({});
+it("rama z wielokropkiem i zdanie z polskimi znakami odpadają; cudzysłów typograficzny odpada", () => {
+  expect(chapterCardExposureTexts([{ body: "There's a … in the …\nTo jest mój pokój.\n„There is a bed.”" }])).toEqual([]);
 });
-it("nie mutuje wejścia", () => {
-  const examples = { o1: ["Ex one."] };
-  generationExposureSources(subject, topic, examples);
-  expect(examples).toEqual({ o1: ["Ex one."] });
+it("apostrof typograficzny → ', duplikaty usunięte", () => {
+  expect(chapterCardExposureTexts([{ body: "There’s a bed." }, { body: "There's a bed." }])).toEqual(["There's a bed."]);
+});
+it("świadomy koszt: polskie zdanie bez znaków diakrytycznych jest uznane za zdanie", () => {
+  expect(chapterCardExposureTexts([{ body: "To jest kot." }])).toEqual(["To jest kot."]);
+});
+it("prawdziwe karty rozdziału: fixture z fake'a zagadnień", () => {
+  // karty z `fakeLessonObjectives` (providers/fake.ts) dla CHAPTER_MATERIAL z tests/integration/lesson-chapter.test.ts:
+  // zagadnienie 2 ma karty „It's raining.” i „It's snowing.”
+  expect(chapterCardExposureTexts([{ body: "It's raining." }, { body: "It's snowing." }])).toEqual(["It's raining.", "It's snowing."]);
 });
 ```
 
-- [ ] **Step 6: Uruchom — FAIL**, potem **zaimplementuj** `generationExposureSources` (wynik: dla każdego zagadnienia tematu i każdego klucza `examples` — przykłady, potem teksty kart, bez duplikatów; klucze bez tekstów pominięte), potem **PASS**.
+- [ ] **Step 2: FAIL** — `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/subjects/english-chapter/exposure.test.ts`
+- [ ] **Step 3: Zaimplementuj** — reguła `cardSentences` z PoC (`git show origin/probe/lesson-pool-agent:tests/probes/agent-generation-v2.probe.test.ts`, funkcja `cardSentences`): linie → części po `/\s+[—/]\s+/u` → `’‘` na `'` → pomiń puste, z `…`/`...` i niepasujące do `/^[A-Za-z][A-Za-z' ,.?!]*$/u` → zachowaj zakończone `[.?!]` albo z ≥ 3 słowami → deduplikacja. Podłącz `cardExposureTexts: chapterCardExposureTexts` w `englishChapterSubject`.
+- [ ] **Step 4: PASS** (komenda ze Step 2).
+- [ ] **Step 5: Testy `cardExposureSources`** (temat-fixture: `o1` z kartą „Card one.”, `o2` z kartą „Card two.”, `o3` z kartą „x”; przedmiot `{ cardExposureTexts: (cards) => cards.map((c) => c.body).filter((b) => b.endsWith(".")) }`):
 
-Run: `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/generation-exposure-sources.test.ts`
-
-- [ ] **Step 7: Szybkie testy architektury lekcji**
-
-Run: `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/architecture.test.ts packages/server/src/modules/module-boundaries.architecture.test.ts`
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add packages/server/src/domain/lessons
-git commit -m "Lekcje: zdania kart rozdziału jako źródło ujawnień — hak przedmiotu (#237)"
+```ts
+expect(cardExposureSources(subject, topic)).toEqual({ o1: ["Card one."], o2: ["Card two."] });
+expect(cardExposureSources({}, topic)).toEqual({});
+expect(englishGrammarSubject.cardExposureTexts).toBeUndefined();
+expect(schoolSubject.cardExposureTexts).toBeUndefined();
 ```
 
-### Task 2: Podpięcie w generowaniu i dokumentacja
+- [ ] **Step 6: FAIL → implementacja → PASS** — `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/card-exposure-sources.test.ts`
+- [ ] **Step 7:** `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/architecture.test.ts packages/server/src/modules/module-boundaries.architecture.test.ts` — PASS.
+- [ ] **Step 8: Commit** — „Lekcje: zdania kart rozdziału jako źródło ujawnień — hak przedmiotu (#237)”.
+
+### Task 2: `fixedSources` w `resolveGenerationLeaks`
 
 **Files:**
-- Modify: `packages/server/src/modules/materials/lessons/lesson-drafts.ts` (`executeLessonGeneration` ok. l. 1732, 1830, 1862; `StageTopUpContext` ok. l. 1389; `stageTopUpRound` ok. l. 1470, 1498)
-- Test: `tests/integration/lesson-chapter.test.ts` (describe „reguła twarda: rozwiązanie widoczne wcześniej”)
-- Modify: `docs/architecture.md` §19.15, `docs/SPEC.md` (ok. l. 818)
+- Modify: `packages/server/src/domain/lessons/exposure-leaks.ts:181-234`
+- Test: `packages/server/src/domain/lessons/exposure-leaks.test.ts`
 
 **Interfaces:**
-- Consumes: `generationExposureSources` (Task 1).
-- Produces: `StageTopUpContext.generationSources: Readonly<Record<string, readonly string[]>>` — przykłady rundy rozszerzone o zdania kart; `ctx.examples` bez zmian (dla `stageDeficits`).
+- Produces: `resolveGenerationLeaks(input & { readonly fixedSources?: Readonly<Record<string, readonly string[]>> })` — źródła reguły twardej: `{ ...existingExamples, ...keptNewExamples }` z doklejonymi per zagadnienie (konkatenacja) `fixedSources`; filtr nowych przykładów i `keptNewExamples`/`droppedExampleCount` bez zmian.
 
-- [ ] **Step 1: Testy integracyjne** w describe „reguła twarda…” `lesson-chapter.test.ts` (wzór: istniejący test „pełna generacja: przykład karty zagadnienia A…”; karty z fake `generateLessonObjectives` to pierwsze dwa zdania sekcji materiału):
+- [ ] **Step 1: Testy** (wzór istniejących testów `resolveGenerationLeaks` w pliku):
+  - zagadnienie `o1` z `existingExamples: { o1: ["Old."] }`, `newExamples: { o1: ["New one."] }`, `fixedSources: { o1: ["We have a cat."] }`, świeże samodzielne tłumaczenie z odpowiedzią „We have a cat” → `droppedFresh` zawiera je, `keptNewExamples` = `{ o1: ["New one."] }`, `droppedExampleCount` = 0;
+  - to samo bez `fixedSources` → tłumaczenie w `keptFresh` (dotychczasowe zachowanie);
+  - `fixedSources: {}` → wynik identyczny jak bez parametru.
+- [ ] **Step 2: FAIL → Step 3: implementacja → Step 4: PASS** — `pnpm exec vitest run --config vitest.unit.config.ts packages/server/src/domain/lessons/exposure-leaks.test.ts`
+- [ ] **Step 5: Commit** — „Lekcje: stałe źródła ujawnień w regule twardej generowania (#237)”.
+
+### Task 3: Podpięcie w generowaniu i dokumentacja
+
+**Files:**
+- Modify: `packages/server/src/modules/materials/lessons/lesson-drafts.ts` — `executeLessonGeneration` (`avoidSentencesFor` ok. l. 1732; reguła twarda `resolveGenerationLeaks` ok. l. 1862–1869); `StageTopUpContext` (od l. 1370); `stageTopUpRound` (`avoidSentencesFor` l. 1470, `resolveGenerationLeaks` l. 1495–1502); wywołanie `stageTopUpRound` (ok. l. 1968)
+- Test: `tests/integration/lesson-chapter.test.ts`
+- Modify: `docs/architecture.md` §19.15, `docs/SPEC.md` (l. 818)
+
+**Interfaces:**
+- Consumes: `cardExposureSources` (Task 1), `resolveGenerationLeaks.fixedSources` (Task 2).
+- Produces: `StageTopUpContext.cardSources: Readonly<Record<string, readonly string[]>>`.
+
+- [ ] **Step 1: Zmień istniejącą asercję** w teście „generator dostaje zdania do unikania…” (`lesson-chapter.test.ts` ok. l. 490): zamiast `expect(requests[0]).not.toHaveProperty("avoidSentences")` — `expect(requests[0]!.avoidSentences).toEqual(expect.arrayContaining(["It's raining.", "It's snowing."]))` (karty zagadnienia 2 `CHAPTER_MATERIAL` z fake'a). Dopasuj dokładne zdania do faktycznych kart fixture, odczytując je z `fakeLessonObjectives` dla tego materiału.
+- [ ] **Step 2: Nowe testy** w describe „reguła twarda…” (`CARD = "There is a bed in my room."`, materiał `` `${CARD} I like my bed.` ``, tytuł „Pokój”; fake bierze karty z pierwszych dwóch zdań sekcji):
 
 ```ts
-it("pełna generacja: tłumaczenie równe zdaniu z treści karty → poza szkicem, przykłady bez zdań kart", async () => {
+it("pełna generacja: tłumaczenie równe zdaniu karty → poza szkicem; przykłady = zwrócone przez generator", async () => {
   const { fakes, services } = await chapterWorld();
-  const CARD = "There is a bed in my room.";
+  const returned: Record<string, string[]> = {};
   routeLessonRound(fakes, async (input) => {
     const regular = await new FakeLlmProvider().generateLessonPool(input);
-    return { ...regular, exercises: withTranslation(regular.exercises, { prompt: "W moim pokoju jest łóżko.", answer: CARD.slice(0, -1), focus: ["bed"] }) };
+    Object.assign(returned, regular.examples);
+    return { ...regular, exercises: withTranslation(regular.exercises, { prompt: "W moim pokoju jest łóżko.", answer: "There is a bed in my room", focus: ["bed"] }) };
   });
   const { draft } = await generateChapter(services, `${CARD} I like my bed.`, "Pokój");
-  expect(draft.exercises.some((exercise) => exercise.answer === CARD.slice(0, -1))).toBe(false);
+  expect(draft.exercises.some((exercise) => exercise.answer === "There is a bed in my room")).toBe(false);
   expect(draft.rejectedReasons).toEqual({ [EXPOSURE_REASON]: 1 });
-  expect(Object.values(draft.examples).flat()).not.toContain(CARD);
+  expect(draft.examples).toEqual(returned);
 });
-it("generator dostaje zdania kart na liście do unikania", async () => {
-  // jak test „generator dostaje zdania do unikania…”: pierwsze żądanie puli ma CARD w avoidSentences
+it("generator dostaje zdanie karty w avoidSentences pierwszej partii", async () => {
+  const { fakes, services } = await chapterWorld();
+  await generateChapter(services, `${CARD} I like my bed.`, "Pokój");
+  expect(fakes.llm.lessonRequests[0]!.avoidSentences).toContain(CARD);
 });
-it("dogenerowanie: zdanie karty działa także dla nowej partii", async () => { /* wzór: „dogenerowanie: nowa luka…” */ });
-it("runda pod etap: zdanie karty odrzuca ćwiczenie rundy, braki etapów liczone bez zdań kart", async () => {
-  /* wzór: „dogenerowanie z rundą pod etap…”; asercja: ćwiczenie rundy równe zdaniu karty odpada,
-     a liczba żądań rundy jest taka sama jak bez haka (stageDeficits bez zdań kart) */
+it("dogenerowanie: nowa partia z nowymi przykładami nadal odrzuca tłumaczenie równe zdaniu karty", async () => {
+  // szkic z generateChapter jak wyżej (bez podmiany), potem regenerateObjective dla jedynego zagadnienia;
+  // routeLessonRound zwraca nowe przykłady { [id]: ["I like my lamp."] } i tłumaczenie z odpowiedzią "There is a bed in my room"
+  // asercje: brak tej odpowiedzi w szkicu; rejectedReasons[EXPOSURE_REASON] === 1; draft.examples[id] === ["I like my lamp."]
+});
+it("runda pod etap: ćwiczenie rundy równe zdaniu karty odpada; liczba rund bez zmian", async () => {
+  // wzór: test „dogenerowanie z rundą pod etap…” (lessonExecution = DEFAULT_LESSON_GENERATION_POLICY);
+  // runda zwraca lukę samodzielną z odpowiedzią "There is a bed in my room";
+  // asercje: brak tej odpowiedzi w szkicu; rounds (purpose === "stage_top_up") ma tę samą długość co w teście-wzorze (1)
 });
 ```
 
-Asercje ostatnich trzech testów: odpowiedź równa zdaniu karty nie trafia do szkicu; `lessonRequests[...].avoidSentences` zawiera zdanie karty; `draft.examples` nie zawiera zdania karty.
+- [ ] **Step 3: FAIL** — `pnpm exec vitest run --config vitest.integration.config.ts tests/integration/lesson-chapter.test.ts` (nowe i zmieniony test FAIL, reszta PASS).
+- [ ] **Step 4: Podepnij** w `lesson-drafts.ts`:
+  - `executeLessonGeneration`: `const cardSources = cardExposureSources(subject, activeTopic)` po rozwiązaniu tematu; `avoidSentencesFor({ examples: mergeExamples(mergeExamples(draftExamples, examples), cardSources), … })`; reguła twarda (`resolveGenerationLeaks` z `fresh: mainReview.exercises`) dostaje `fixedSources: cardSources`; wywołanie z `fresh: []` (finalExamples) bez zmian.
+  - `StageTopUpContext.cardSources` (przekazywane z `executeLessonGeneration`); w `stageTopUpRound` `avoidSentencesFor({ examples: mergeExamples(ctx.examples, ctx.cardSources), … })` i `resolveGenerationLeaks({ …, fixedSources: ctx.cardSources })`; `deficitsOf` bez zmian.
+  - Krytyk (`reviewPhase`) bez zmian.
+- [ ] **Step 5: PASS** (komenda ze Step 3), potem: `pnpm exec vitest run --config vitest.integration.config.ts tests/integration/lesson-generation.test.ts tests/integration/lesson-review.test.ts tests/integration/lesson-exposure-report.test.ts` — PASS; jeśli test z materiałem zawierającym zdania kart zmieni wynik, zaktualizuj asercję tylko wtedy, gdy nowa wartość wynika z reguły (opisz w commicie).
+- [ ] **Step 6: Dokumentacja** — `architecture.md` §19.15: akapit o zdaniach kart przy generowaniu (hak `cardExposureTexts`, `fixedSources`, niezapisywane; pokrycie, publikacja, edytor, raport i sesja liczą tylko przykłady). `SPEC.md` l. 818: „przykłady kart, zdania z treści kart rozdziału i rozwiązania innych ćwiczeń”.
+- [ ] **Step 7: Commit** — „Lekcje: zdania kart w regule ujawnień i zdaniach do unikania przy generowaniu (#237)”.
 
-- [ ] **Step 2: Uruchom — FAIL**
-
-Run: `pnpm exec vitest run --config vitest.integration.config.ts tests/integration/lesson-chapter.test.ts`
-Expected: nowe testy FAIL, pozostałe PASS.
-
-- [ ] **Step 3: Podepnij źródła** w `lesson-drafts.ts`:
-  - `executeLessonGeneration`: `avoidSentencesFor({ examples: generationExposureSources(subject, activeTopic, mergeExamples(draftExamples, examples)), … })`; w obu `resolveGenerationLeaks` (`finalExamples` i reguła twarda) `existingExamples: generationExposureSources(subject, topic, draftExamples)`; `newExamples`, `finalExamples` i zapis `examples: { ...prevContext.examples, ...leaks.keptNewExamples }` bez zmian.
-  - `StageTopUpContext`: nowe pole `generationSources`; wywołujący przekazuje `generationExposureSources(subject, topic, finalExamples)`. W `stageTopUpRound` `avoidSentencesFor` i `resolveGenerationLeaks.existingExamples` biorą `ctx.generationSources`; `deficitsOf` dalej `ctx.examples`.
-  - Krytyk (`reviewPhase`, `examples: finalExamples`) bez zmian.
-
-- [ ] **Step 4: Uruchom — PASS** (komenda jak w Step 2), potem pełne testy lekcji:
-
-Run: `pnpm exec vitest run --config vitest.integration.config.ts tests/integration/lesson-generation.test.ts tests/integration/lesson-chapter.test.ts tests/integration/lesson-review.test.ts tests/integration/lesson-exposure-report.test.ts`
-Expected: PASS.
-
-- [ ] **Step 5: Dokumentacja**
-  - `docs/architecture.md` §19.15: akapit — przy generowaniu (reguła twarda i zdania do unikania, także runda pod etap) źródłem ujawnień są też zdania z treści kart przedmiotu z hakiem `cardExposureTexts` (dziś rozdział); nie są zapisywane w `lesson_context.examples`; pokrycie, publikacja, edytor, raport i sesja liczą tylko przykłady (pokrycie nadal odwzorowuje scheduler).
-  - `docs/SPEC.md` ok. l. 818: lista zdań do unikania — „przykłady kart, zdania z treści kart rozdziału i rozwiązania innych ćwiczeń”.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add packages/server/src/modules/materials/lessons/lesson-drafts.ts tests/integration/lesson-chapter.test.ts docs/architecture.md docs/SPEC.md
-git commit -m "Lekcje: zdania kart w regule ujawnień i zdaniach do unikania przy generowaniu (#237)"
-```
-
-### Task 3: Weryfikacja i PR
+### Task 4: Weryfikacja i PR
 
 - [ ] **Step 1:** `pnpm typecheck` — PASS.
 - [ ] **Step 2:** `pnpm test:unit` — PASS.
-- [ ] **Step 3:** `pnpm test:integration` — PASS (ok. 5 min).
+- [ ] **Step 3:** `pnpm test:integration` — PASS.
 - [ ] **Step 4:** `pnpm build` — PASS.
-- [ ] **Step 5:** `pnpm test:e2e:shards` — PASS (645 testów wg AGENTS.md; raportuj faktyczne liczby).
-- [ ] **Step 6:** Trzech niezależnych krytyków na diffie gałęzi (memory: przegląd końcowy), poprawki.
-- [ ] **Step 7:** Push gałęzi i PR do `main` (nie scalać). Opis po polsku: co zmieniono, czego świadomie nie zmieniono (§5 specu), wykonane sprawdzenia z liczbami, wpływ API → MCP → `SKILL.md`: brak (generowanie nie jest wystawione; `learning-overview` nie obejmuje lekcji). W PR także spec i oba plany (`docs/superpowers/specs/…`, `docs/superpowers/plans/…`).
+- [ ] **Step 5:** `pnpm test:e2e:shards` — PASS (raportuj faktyczne liczby).
+- [ ] **Step 6:** Trzech niezależnych krytyków na diffie gałęzi, poprawki.
+- [ ] **Step 7:** Push gałęzi i PR do `main` (nie scalać). Opis po polsku: co zmieniono, czego świadomie nie zmieniono (§5), sprawdzenia z liczbami, wpływ API → MCP → `SKILL.md`: brak (generowanie nie jest wystawione; `learning-overview` nie obejmuje lekcji). W PR także spec i oba plany.
