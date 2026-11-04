@@ -208,7 +208,7 @@ describe("wydajność przyjmowania", () => {
     };
   }
 
-  it("90 ćwiczeń, 6 zagadnień, materiał ok. 15 000 znaków: precheckBatch + admitBatch paczki 12 < 2000 ms", () => {
+  it("90 ćwiczeń, 6 zagadnień, materiał ok. 15 000 znaków: precheckBatch + admitBatch paczki 12 < 2000 ms (w CI < 10 000 ms)", () => {
     expect(material.length).toBeGreaterThan(14_000);
     expect(material.length).toBeLessThan(16_000);
     const school = withAgentPolicy(schoolSubject);
@@ -225,6 +225,7 @@ describe("wydajność przyjmowania", () => {
     const admitted = admitBatch(state, ids[0]!, prechecked, batch.map(() => NA_CHECKS), context);
     const elapsed = performance.now() - startedAt;
     expect(admitted.results.filter((entry) => "accepted" in entry)).toHaveLength(12);
-    expect(elapsed).toBeLessThan(2000);
+    // Strażnik złożoności (np. kwadratowej), nie benchmark: współdzielony runner CI dostaje zapas.
+    expect(elapsed).toBeLessThan(process.env.CI ? 10_000 : 2000);
   });
 });

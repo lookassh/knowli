@@ -41,12 +41,22 @@ for (let i = rows.length - 1; i > 0; i -= 1) {
 }
 
 const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
+
+/** Treść ćwiczenia bez metadanych zdradzających źródło: `id` (`ex<N>` agenta, UUID potoku), `revisionId`, pola `*Audio`, temat w `objectiveId`. */
+function blindContent(exercise) {
+  const content = {};
+  for (const [field, value] of Object.entries(exercise ?? {})) {
+    if (field === "id" || field === "revisionId" || field.endsWith("Audio")) continue;
+    content[field] = field === "objectiveId" ? String(value ?? "").split(".").at(-1) : value;
+  }
+  return content;
+}
 const header = ["rowId", "subject", "objective", "exercise", "verdict", "criterion", "adjudicatorNote"];
 const lines = [header.join(",")];
 const key = { seed, models, rows: [] };
 rows.forEach((row, position) => {
   const rowId = `r${String(position + 1).padStart(3, "0")}`;
-  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(row.exercise)), "", "", ""].join(","));
+  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise))), "", "", ""].join(","));
   key.rows.push({ rowId, model: row.model, index: row.index });
 });
 
