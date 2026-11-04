@@ -22,10 +22,18 @@ const BULLET = /^(?:[-•*]|\d+[.)])(?:\s+|$)/u;
 const LEADING_QUOTES = /^["“„«]+/u;
 const TRAILING_QUOTES: ReadonlySet<string> = new Set(["\"", "”", "“", "»"]);
 
-/** Część materiału bez punktora, numeracji i cudzysłowów na brzegach — inaczej nie ma jej na żadnej karcie. */
+const SINGLE_OPEN: ReadonlySet<string> = new Set(["'", "‘", "‚"]);
+const SINGLE_CLOSE: ReadonlySet<string> = new Set(["'", "’", "‘"]);
+
+/**
+ * Część materiału bez punktora, numeracji i cudzysłowów na brzegach — inaczej nie ma jej na
+ * żadnej karcie. Pojedyncze cudzysłowy tylko w parze („'bed'”), żeby apostrof („I'm”, „dogs'”) został.
+ */
 function stripMarkers(part: string): string {
   const unbulleted = part.trim().replace(BULLET, "").replace(LEADING_QUOTES, "");
-  return trimTrailing(unbulleted, TRAILING_QUOTES).trim();
+  const text = trimTrailing(unbulleted, TRAILING_QUOTES).trim();
+  const quoted = text.length >= 2 && SINGLE_OPEN.has(text[0]!) && SINGLE_CLOSE.has(text.at(-1)!);
+  return quoted ? text.slice(1, -1).trim() : text;
 }
 
 /**

@@ -38,6 +38,14 @@ describe("parseMaterialLexicon", () => {
       frames: ["I'm wearing a …", "Where's the …?"],
     });
   });
+
+  it("usuwa pary pojedynczych cudzysłowów, ale zostawia apostrofy w słowach", () => {
+    const material = ["Słówka:", "'bed' — łóżko", "‘lamp’ — lampa", "dogs' — psów", "Zwroty:", "'I'm wearing a …'", "I'm hungry."].join("\n");
+    expect(parseMaterialLexicon(material)).toEqual({
+      words: ["bed", "lamp", "dogs'"],
+      frames: ["I'm wearing a …", "I'm hungry."],
+    });
+  });
 });
 
 describe("plainText", () => {
