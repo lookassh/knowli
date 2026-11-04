@@ -19,6 +19,25 @@ describe("parseMaterialLexicon", () => {
   it("obsługuje końce linii CRLF i puste linie", () => {
     expect(parseMaterialLexicon("Zwroty:\r\n\r\nThere's a … in the …\r\n")).toEqual({ words: [], frames: ["There's a … in the …"] });
   });
+
+  it("usuwa punktory, numerację i cudzysłowy z brzegów słów i ram", () => {
+    const material = [
+      "Słówka:",
+      "- lamp — lampa",
+      "1. bed — łóżko",
+      "2) chair — krzesło",
+      "• \"desk\" — biurko",
+      "„living room” — salon",
+      "Zwroty:",
+      "- I'm wearing a …",
+      "* „Where's the …?”",
+      "-",
+    ].join("\n");
+    expect(parseMaterialLexicon(material)).toEqual({
+      words: ["lamp", "bed", "chair", "desk", "living room"],
+      frames: ["I'm wearing a …", "Where's the …?"],
+    });
+  });
 });
 
 describe("plainText", () => {

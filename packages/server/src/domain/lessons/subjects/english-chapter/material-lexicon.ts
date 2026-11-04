@@ -5,6 +5,8 @@
  * `lexicon.ts`; tutaj czytamy wyłącznie to, co rodzic wkleił do materiału.
  */
 
+import { trimTrailing } from "./text";
+
 export interface MaterialLexicon {
   /** Słowa angielskie z linii „en — pl”, w kolejności materiału. */
   readonly words: string[];
@@ -14,6 +16,17 @@ export interface MaterialLexicon {
 
 /** Najwięcej wyrazów angielskiej strony linii „en — pl”, żeby nie brać zdań za słówka. */
 const MAX_WORD_TOKENS = 3;
+
+/** Punktor albo numeracja na początku: „- ”, „• ”, „* ”, „1. ”, „1) ” (jak karty w `exposure.ts`); sam punktor też. */
+const BULLET = /^(?:[-•*]|\d+[.)])(?:\s+|$)/u;
+const LEADING_QUOTES = /^["“„«]+/u;
+const TRAILING_QUOTES: ReadonlySet<string> = new Set(["\"", "”", "“", "»"]);
+
+/** Część materiału bez punktora, numeracji i cudzysłowów na brzegach — inaczej nie ma jej na żadnej karcie. */
+function stripMarkers(part: string): string {
+  const unbulleted = part.trim().replace(BULLET, "").replace(LEADING_QUOTES, "");
+  return trimTrailing(unbulleted, TRAILING_QUOTES).trim();
+}
 
 /**
  * Słowa z linii „en — pl” (bez pytań i zdań) oraz ramy z sekcji, której nagłówek
@@ -31,14 +44,15 @@ export function parseMaterialLexicon(material: string): MaterialLexicon {
       continue;
     }
     if (/zwroty|ramy/u.test(section)) {
-      frames.push(text);
+      const frame = stripMarkers(text);
+      if (frame !== "") frames.push(frame);
       continue;
     }
     // Pierwsza „ — ” otoczona białymi znakami (bez `.+?`, który nawraca); linia jest obcięta, więc obie strony są niepuste.
     const dash = /\s—\s/u.exec(text);
-    const english = dash === null ? undefined : text.slice(0, dash.index);
-    if (english !== undefined && !/[?.!]/u.test(english) && english.trim().split(/\s+/u).length <= MAX_WORD_TOKENS) {
-      words.push(english.trim());
+    const english = dash === null ? undefined : stripMarkers(text.slice(0, dash.index));
+    if (english !== undefined && english !== "" && !/[?.!]/u.test(english) && english.split(/\s+/u).length <= MAX_WORD_TOKENS) {
+      words.push(english);
     }
   }
   return { words, frames };
