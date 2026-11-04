@@ -144,9 +144,9 @@ describe("silnik lekcji bez literałów identyfikatorów przedmiotów", () => {
 
 /**
  * Agent puli (`domain/lessons/agent/**`, etap 1 #237) to czysty rdzeń: nie zna
- * SDK modeli, bazy, modułów, providerów, portów ani konfiguracji środowiska,
- * a czas, losowość i środowisko dostaje wyłącznie jawnie. Katalog może jeszcze
- * nie istnieć (wtedy brak plików do sprawdzenia) — reguła obowiązuje od pierwszego pliku.
+ * SDK modeli, bazy, modułów, providerów, portów, modułów wbudowanych Node ani konfiguracji środowiska,
+ * a czas, losowość i środowisko dostaje wyłącznie jawnie. Skan musi znaleźć
+ * pliki rdzenia (brak katalogu albo zła ścieżka kończy test błędem, nie zielenią).
  */
 const agentDir = join(lessonsDir, "agent");
 
@@ -160,13 +160,22 @@ function importSpecifiers(source: string): string[] {
 function isForbiddenAgentImport(specifier: string): boolean {
   if (specifier === "ai" || specifier.startsWith("ai/")) return true;
   if (specifier.startsWith("@openrouter/")) return true;
+  // Moduły wbudowane Node (pliki, sieć, `crypto`, `perf_hooks`) to I/O, losowość albo czas.
+  if (specifier.startsWith("node:")) return true;
   if (specifier === "drizzle-orm" || specifier.startsWith("drizzle-orm/")) return true;
   const segments = specifier.split("/");
   if (segments.some((segment) => segment === "modules" || segment === "providers" || segment === "ports")) return true;
   return /^config([.-]|$)/u.test(segments[segments.length - 1] ?? "");
 }
 
-const FORBIDDEN_AGENT_TOKENS: readonly RegExp[] = [/\bDate\.now\s*\(/u, /\bMath\.random\s*\(/u, /\bprocess\.env\b/u];
+const FORBIDDEN_AGENT_TOKENS: readonly RegExp[] = [
+  /\bDate\.now\s*\(/u,
+  /\bnew\s+Date\s*\(/u,
+  /\bMath\.random\s*\(/u,
+  /\bcrypto\.randomUUID\s*\(/u,
+  /\bperformance\.now\s*\(/u,
+  /\bprocess\.env\b/u,
+];
 
 function agentViolations(source: string): string[] {
   const code = withoutComments(source);
@@ -187,7 +196,10 @@ function agentSources(): string[] {
 
 describe("czysty rdzeń agenta puli (domain/lessons/agent)", () => {
   it("żaden plik agenta nie importuje zakazanych modułów ani nie sięga po czas, losowość i środowisko", () => {
-    const offenders = agentSources().flatMap((file) =>
+    const files = agentSources();
+    // Dowód, że skan rzeczywiście znajduje pliki rdzenia (nie fałszywie zielony przy złej ścieżce).
+    expect(files.length).toBeGreaterThan(5);
+    const offenders = files.flatMap((file) =>
       agentViolations(readFileSync(file, "utf8")).map((violation) => `${relativeToServer(file)}: ${violation}`),
     );
     expect(offenders).toEqual([]);
@@ -207,6 +219,12 @@ describe("czysty rdzeń agenta puli (domain/lessons/agent)", () => {
     expect(agentViolations("const t = Date.now();")).toHaveLength(1);
     expect(agentViolations("const r = Math.random();")).toHaveLength(1);
     expect(agentViolations("const e = process.env.KEY;")).toHaveLength(1);
+    expect(agentViolations("const d = new Date();")).toHaveLength(1);
+    expect(agentViolations("const d = new  Date(0);")).toHaveLength(1);
+    expect(agentViolations("const id = crypto.randomUUID();")).toHaveLength(1);
+    expect(agentViolations("const t = performance.now();")).toHaveLength(1);
+    expect(agentViolations('import { randomUUID } from "node:crypto";')).toEqual(['import "node:crypto"']);
+    expect(agentViolations('import { readFileSync } from "node:fs";')).toEqual(['import "node:fs"']);
   });
 
   it("dopuszcza importy rdzenia i pomija komentarze (dowód braku fałszywych alarmów)", () => {
@@ -214,6 +232,7 @@ describe("czysty rdzeń agenta puli (domain/lessons/agent)", () => {
     expect(agentViolations('import { c } from "../card-exposure-sources";')).toEqual([]);
     expect(agentViolations('import { z } from "zod";')).toEqual([]);
     expect(agentViolations('import { a } from "../airline";')).toEqual([]);
+    expect(agentViolations('import { n } from "./node-order";\nconst d: Date | undefined = undefined;')).toEqual([]);
     expect(agentViolations('// Date.now() i process.env tylko w opisie\n/* import x from "ai"; */\nconst ok = 1;')).toEqual([]);
   });
 });

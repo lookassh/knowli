@@ -108,6 +108,15 @@ describe("submitExamples", () => {
     expect(result.errors[0]).toContain("example 4");
   });
 
+  it("identyczne linie (po przycięciu) liczą się raz i nie zajmują miejsc kolejnych przykładów", () => {
+    const result = submitExamples(stateWith(), A, ["Zdanie pierwsze.", "Zdanie pierwsze.", "  Zdanie pierwsze. ", "Zdanie drugie.", "Zdanie trzecie."], ctx);
+    expect(result.accepted).toBe(3);
+    expect(result.state.examples.get(A)).toEqual(["Zdanie pierwsze.", "Zdanie drugie.", "Zdanie trzecie."]);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toMatch(/^example 2: .*duplicate/u);
+    expect(result.errors[1]).toMatch(/^example 3: .*duplicate/u);
+  });
+
   it("linia ujawniająca przyjęte samodzielne ćwiczenie → błąd, pozostałe przyjęte", () => {
     const state = acceptAll(stateWith(), A, [open(A, "Rok chrztu?", "966")]);
     const result = submitExamples(state, A, ["Chrzest Polski.", "966"], ctx);

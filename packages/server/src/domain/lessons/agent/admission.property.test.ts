@@ -63,6 +63,8 @@ const CHOICE_STEMS = ["Wybierz: ___.", "Uzupełnij: ___."] as const;
 const FAMILIES = [undefined, "f1", "f2"] as const;
 const OPS_PER_SEED = 20;
 const SEEDS = Array.from({ length: 50 }, (_, index) => index + 1);
+/** Ziarna testu pokrycia kodów odrzuceń (podzbiór `SEEDS`). */
+const COVERAGE_SEEDS = SEEDS.slice(0, 10);
 const LIMITS: ObjectiveAgentLimits = { targetCount: 3, listenAllowance: 1, maxExercises: 5 };
 
 const SCHOOL_MATERIAL =
@@ -248,10 +250,10 @@ function randomChecks(rng: Rng, draft: LessonExerciseDraft): CandidateChecks {
   return { solve, variants };
 }
 
-const observedCodes = new Set<string>();
-
-function record(results: readonly AdmitEntry[]): void {
-  for (const entry of results) if ("rejected" in entry) observedCodes.add(entry.rejected.code);
+/** Zbiera kody odrzuceń do zbioru wołającego (bez stanu modułu: wynik nie zależy od kolejności testów). */
+function record(codes: Set<string> | undefined, results: readonly AdmitEntry[]): void {
+  if (codes === undefined) return;
+  for (const entry of results) if ("rejected" in entry) codes.add(entry.rejected.code);
 }
 
 /** Jedna operacja na stanie; `onStep` dostaje każdy stan pośredni (wyrocznia po każdej operacji). */
@@ -261,6 +263,7 @@ function randomOperation(
   state: LessonAgentState,
   ctx: AgentCheckContext,
   onStep: (state: LessonAgentState, description: string) => void,
+  codes?: Set<string>,
 ): LessonAgentState {
   const [first, second] = objectiveIdsOf(world);
   const objectiveId = rng.chance(0.5) ? first : second;
@@ -275,13 +278,13 @@ function randomOperation(
       const otherDrafts = Array.from({ length: 1 + rng.int(2) }, () => world.draft(rng, other));
       const otherPrechecked = precheckBatch(current, other, otherDrafts, ctx);
       const interleaved = admitBatch(current, other, otherPrechecked, otherPrechecked.map(() => ({ solve: { kind: "na" }, variants: { kind: "na" } }) as const), ctx);
-      record(interleaved.results);
+      record(codes, interleaved.results);
       current = interleaved.state;
       onStep(current, `admit ${other} [${otherDrafts.map(label).join(", ")}] (między precheck a admit)`);
     }
     const checks = prechecked.map((entry, index) => randomChecks(rng, entry.pass ? entry.draft : drafts[index]!));
     const admitted = admitBatch(current, objectiveId, prechecked, checks, ctx);
-    record(admitted.results);
+    record(codes, admitted.results);
     onStep(admitted.state, `admit ${objectiveId} [${drafts.map(label).join(", ")}]`);
     return admitted.state;
   }
@@ -298,16 +301,29 @@ function randomOperation(
   return examples.state;
 }
 
-function runSeed(world: World, seed: number, input: Omit<LessonAgentStateInput, "topic" | "objectives">, check: (state: LessonAgentState, where: string) => void): void {
+function runSeed(
+  world: World,
+  seed: number,
+  input: Omit<LessonAgentStateInput, "topic" | "objectives">,
+  check: (state: LessonAgentState, where: string) => void,
+  codes?: Set<string>,
+): void {
   const rng = new Rng(seed);
   const ctx = contextOf(world);
   let state = initialState(world, input);
   const log: string[] = [];
   for (let op = 0; op < OPS_PER_SEED; op += 1) {
-    state = randomOperation(rng, world, state, ctx, (next, description) => {
-      log.push(description);
-      check(next, `seed ${seed}, op ${op}: ${log.join(" | ")}`);
-    });
+    state = randomOperation(
+      rng,
+      world,
+      state,
+      ctx,
+      (next, description) => {
+        log.push(description);
+        check(next, `seed ${seed}, op ${op}: ${log.join(" | ")}`);
+      },
+      codes,
+    );
   }
 }
 
@@ -376,8 +392,13 @@ describe("niezmiennik przyjmowania — wadliwe fixed", () => {
 });
 
 describe("niezmiennik przyjmowania — pokrycie kodów", () => {
-  // Biegnie po wszystkich ziarnach powyżej (vitest wykonuje testy pliku po kolei).
-  it("każdy z kodów lesson_pool, leak_victim, leak_source, limit_full wystąpił", () => {
-    for (const code of ["lesson_pool", "leak_victim", "leak_source", "limit_full"]) expect(observedCodes, code).toContain(code);
+  // Własny przebieg ziaren (bez wyroczni): wynik nie zależy od kolejności ani filtrowania testów pliku.
+  it("każdy z kodów lesson_pool, leak_victim, leak_source, limit_full wystąpił", { timeout: 60_000 }, () => {
+    const codes = new Set<string>();
+    for (const world of [testWorld, schoolWorld]) {
+      const start = world.start(objectiveIdsOf(world));
+      for (const seed of COVERAGE_SEEDS) runSeed(world, seed, start, () => undefined, codes);
+    }
+    for (const code of ["lesson_pool", "leak_victim", "leak_source", "limit_full"]) expect(codes, code).toContain(code);
   });
 });

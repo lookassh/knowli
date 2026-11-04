@@ -103,6 +103,20 @@ describe("acceptFreshLessonPool (walidacja świeżej puli)", () => {
     expect(result.accepted).toHaveLength(1);
   });
 
+  it("sumuje porzucone wyjaśnienia i warianty po wszystkich ćwiczeniach partii", () => {
+    const noExplanations: SubjectModule = { ...subjectWithRefine, exerciseExplanations: false };
+    const result = acceptFreshLessonPool(input({
+      subject: noExplanations,
+      rawExercises: [
+        { ...choiceRaw("plays"), explanationPl: "Wyjaśnienie pierwsze.", acceptedAnswers: ["plays", "plays"] },
+        { ...choiceRaw("eats"), explanationPl: "Wyjaśnienie drugie.", acceptedAnswers: ["eats"] },
+      ],
+    }));
+    expect(result.accepted.map((e) => e.answer)).toEqual(["plays", "eats"]);
+    expect(result.droppedExplanations).toBe(2);
+    expect(result.droppedAcceptedVariants).toBe(3);
+  });
+
   it("familyScope dopisuje sufiks runu do rodzin; null ich nie rusza", () => {
     const seen: (string | undefined)[] = [];
     const spy: SubjectModule = {

@@ -28,6 +28,11 @@ describe("stemMatches", () => {
     expect(stemMatches("kot", "koń")).toBe(false);
   });
 
+  it("końcówka najwyżej 3 litery: wspólne „prze” nie łączy różnych słów (pilnuje MAX_ENDING_LENGTH)", () => {
+    // Prefiks 4 < 8 − 3 = 5; przy końcówce 4 litery fałszywie by pasowały.
+    expect(stemMatches("przemysł", "przeciwny")).toBe(false);
+  });
+
   it("równe słowa pasują także krótkie, a liczby tylko przy równości", () => {
     expect(stemMatches("kot", "KOT")).toBe(true);
     expect(stemMatches("1410", "1410")).toBe(true);

@@ -1,4 +1,4 @@
-import { lessonPoolMinimums, stageDeficits } from "../lesson-coverage";
+import { lessonCoverageGapSources, lessonPoolMinimums } from "../lesson-coverage";
 import { outsideStagePath, stageOf } from "../stages";
 import type { LessonExerciseDraft, SubjectAgentPolicy } from "../types";
 import { snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
@@ -68,8 +68,9 @@ function limitsOf(ctx: AgentCheckContext, objectiveId: string): ObjectiveAgentLi
 
 /**
  * Status zagadnienia na CAŁEJ lekcji (§3.5): pokrycie etapów (ćwiczenia
- * ujawnione i powtórzone odpowiedzi otwarte się nie liczą; minimum
- * samodzielnych podniesione o `independentReserve`), liczba ćwiczeń, wymagane
+ * ujawnione się nie liczą; minimum samodzielnych podniesione o
+ * `independentReserve`), osobno reguła różnych odpowiedzi otwartych
+ * (szkoła: „distinct open answers: n of 2”), liczba ćwiczeń, wymagane
  * typy, przykłady kart i braki przedmiotu. `fixed` zagadnienia liczą się wszędzie.
  */
 export function objectiveStatus(state: LessonAgentState, objectiveId: string, ctx: AgentCheckContext): ObjectiveStatus {
@@ -85,18 +86,20 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
 
   const base = lessonPoolMinimums(subject);
   const required = { ...base, independent: base.independent + subject.agentPolicy.independentReserve };
-  const deficits = stageDeficits(
-    {
-      subject: { ...subject, poolMinimums: required },
-      exercises: orderedLesson(state),
-      examples: allExamples(state),
-      objectiveIds: state.objectives.map((item) => item.id),
-    },
-    objectiveId,
-  );
+  // Źródła braków osobno: reguła różnych odpowiedzi otwartych (szkoła) ma własny komunikat, bo jako
+  // brak etapu samodzielnego zaniżałaby liczbę („independent: 2 of 3” przy trzech ćwiczeniach).
+  const gaps = lessonCoverageGapSources({
+    subject: { ...subject, poolMinimums: required },
+    exercises: orderedLesson(state),
+    examples: allExamples(state),
+    objectiveIds: state.objectives.map((item) => item.id),
+  });
   for (const stage of ASSESSED) {
-    if (deficits[stage] > 0) missing.push(`${stage}: ${required[stage] - deficits[stage]} of ${required[stage]}`);
+    const gap = gaps.stages.find((item) => item.objectiveId === objectiveId && item.stage === stage);
+    if (gap !== undefined) missing.push(`${stage}: ${gap.actual} of ${gap.required}`);
   }
+  const distinct = gaps.distinctOpenAnswers.find((item) => item.objectiveId === objectiveId);
+  if (distinct !== undefined) missing.push(`distinct open answers: ${distinct.actual} of ${distinct.required}`);
 
   if (counts.total < limits.targetCount) missing.push(`exercises: ${counts.total} of ${limits.targetCount}`);
 

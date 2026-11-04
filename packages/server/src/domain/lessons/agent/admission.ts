@@ -374,8 +374,8 @@ const MAX_EXAMPLES = 3;
 
 /**
  * Przykłady kart zagadnienia od modelu (§3.4): linie przycięte, niepuste,
- * najwyżej `MAX_TEXT_LENGTH` znaków (jak `executeLessonGeneration`). Linia
- * odpada, gdy ujawnia (twardo) rozwiązanie ćwiczenia lekcji — `fixed` albo
+ * najwyżej `MAX_TEXT_LENGTH` znaków (jak `executeLessonGeneration`), bez
+ * powtórzeń (identyczna linia po przycięciu liczy się raz). Linia odpada, gdy ujawnia (twardo) rozwiązanie ćwiczenia lekcji — `fixed` albo
  * puli — dotąd nieujawnionego. Przyjęte (najwyżej 3) zastępują wcześniejsze
  * przykłady zagadnienia; gdy nie przeszła żadna, stan się nie zmienia.
  */
@@ -405,6 +405,11 @@ export function submitExamples(
     }
     if (text.length > MAX_TEXT_LENGTH) {
       errors.push(`${label}: is longer than ${MAX_TEXT_LENGTH} characters`);
+      return;
+    }
+    // Powtórzona linia nie zajmuje kolejnego z trzech miejsc.
+    if (kept.includes(text)) {
+      errors.push(`${label}: duplicates an earlier example; this line was ignored`);
       return;
     }
     // Ofiary samej linii: z jedynym przykładem źródłem twardym jest właśnie ona.

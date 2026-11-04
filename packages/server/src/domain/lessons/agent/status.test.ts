@@ -74,6 +74,24 @@ describe("objectiveStatus — pokrycie etapów", () => {
     expect(objectiveStatus(state, A, schoolCtx).missing).toContain("independent: 2 of 3");
   });
 
+  it("brak różnych pytań otwartych przy pełnym etapie samodzielnym → osobny komunikat, nie zaniżone `independent`", () => {
+    const calculation = (n: number): LessonExerciseDraft => ({
+      exerciseType: "lesson_calculation",
+      objectiveId: A,
+      prompt: `Oblicz ${n} + ${n}.`,
+      answer: String(2 * n),
+      acceptedAnswers: [],
+      focus: [],
+    });
+    let state = stateWith({ examples: { [A]: ["Stolica."] } });
+    // Etap samodzielny 3/3 (jedno pytanie otwarte i dwa rachunki), ale tylko jedna odpowiedź otwarta.
+    state = pooled(state, A, [...guidedThree, ...productiveTwo, open(A, "Pytanie 1?", "Gniezno"), calculation(21), calculation(34)]);
+    const status = objectiveStatus(state, A, schoolCtx);
+    expect(status.missing).toContain("distinct open answers: 1 of 2");
+    expect(status.missing.some((line) => line.startsWith("independent"))).toBe(false);
+    expect(status.complete).toBe(false);
+  });
+
   it("ćwiczenia fixed liczą się do etapów i do total", () => {
     let state = stateWith({ fixed: [gap(A, "Fixed ___.", "966")], examples: { [A]: ["Stolica."] } });
     state = pooled(state, A, [...guidedThree, gap(A, "Pula ___.", "1025"), ...independentThree]);

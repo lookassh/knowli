@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentObjective, LessonExerciseDraft } from "../../types";
+import { baseNormalizer } from "../../normalize";
 import { schoolAgentPolicy } from "./agent-policy";
 import { schoolSubject } from "./module";
 
@@ -21,6 +22,11 @@ const sanitize = (d: LessonExerciseDraft) => schoolAgentPolicy.sanitize!(d);
 describe("schoolAgentPolicy — wartości i typy", () => {
   it("jest polityką przedmiotu szkolnego", () => {
     expect(schoolSubject.agentPolicy).toBe(schoolAgentPolicy);
+  });
+
+  it("bramka podpowiedzi używa normalizatora przedmiotu (skrót `baseNormalizer` w polityce)", () => {
+    // Polityka nie importuje modułu (cykl), więc normalizator jest wpisany wprost — musi być tym samym.
+    expect(schoolSubject.normalizer).toBe(baseNormalizer);
   });
 
   it("ma zapas samodzielnych 1 i luz 2, a checker dostaje materiał", () => {

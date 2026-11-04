@@ -252,10 +252,13 @@ describe("submit — checker", () => {
     const tools = setup({ subject: policySubject });
     const invalid = { ...open(A, "Kiedy?", "w 966 roku"), prompt: "" };
     const outcome = await tools.tools.submit({
-      exercises: [choice(A, 1), gapWithVariant, open(A, "Kto?", "Mieszko I"), invalid, choice(A, 2), gap(A, "Rok ___ to chrzest.", "966")],
+      // Drugi `choice(A, 1)` to duplikat w paczce: odpada już w precheck, więc nie trafia do checkera.
+      exercises: [choice(A, 1), gapWithVariant, open(A, "Kto?", "Mieszko I"), invalid, choice(A, 2), gap(A, "Rok ___ to chrzest.", "966"), choice(A, 1)],
     });
-    expect(outcome.results.map((result) => ("accepted" in result ? "ok" : "rejected"))).toEqual(["ok", "ok", "ok", "rejected", "ok", "ok"]);
+    expect(outcome.results.map((result) => ("accepted" in result ? "ok" : "rejected"))).toEqual(["ok", "ok", "ok", "rejected", "ok", "ok", "rejected"]);
+    expect(tools.rejections.map((entry) => entry.code)).toContain("lesson_pool");
     expect(tools.checker.solveCalls).toHaveLength(1);
+    expect(tools.checker.solveCalls[0]!.items).toHaveLength(2);
     expect(tools.checker.solveCalls[0]!.items.map((item) => item.view)).toEqual([
       expect.stringContaining("Pytanie numer 1"),
       expect.stringContaining("Pytanie numer 2"),

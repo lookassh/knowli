@@ -222,7 +222,8 @@ pule) nie ma nowych ujawnień ani nowych błędów `validatePool`/
 `submitExamples(state, objectiveId, lines, ctx)` — dla zagadnień bez
 przykładów z planu (`objectiveSource !== "planner"`, §7.1): 1–3 linie,
 przycięte i ograniczone jak dziś w `executeLessonGeneration`
-(`MAX_TEXT_LENGTH`). Linia odpada, gdy ujawnia rozwiązanie ćwiczenia lekcji
+(`MAX_TEXT_LENGTH`); identyczna linia (po przycięciu) liczy się raz i nie
+zajmuje kolejnego miejsca. Linia odpada, gdy ujawnia rozwiązanie ćwiczenia lekcji
 (twardo, `fixed` lub puli). Zastępuje wcześniejsze przykłady zagadnienia
 (jak ostatnia partia w potoku). Przykłady wpływają na kolejne kontrole
 ujawnień.
@@ -245,6 +246,8 @@ potoku.
 - **pokrycie**: `lessonCoverageGaps` dla tego zagadnienia na całej lekcji
   (ćwiczenia ujawnione nie liczą się; szkoła — różne pytania otwarte), z
   minimum etapu samodzielnego podniesionym o `agentPolicy.independentReserve`;
+  brak różnych pytań otwartych ma osobny komunikat („distinct open answers:
+  n of 2”), nie zaniżony brak etapu samodzielnego;
 - **liczba**: `total` (bez `outsideStages`) ≥ `targetCount`;
 - **wymagane typy**: każda grupa z `agentPolicy.requiredTypes?.(objective)`,
   po odfiltrowaniu przez rdzeń typów spoza `objective.exerciseTypes`, ma co

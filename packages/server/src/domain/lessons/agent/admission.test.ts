@@ -80,9 +80,10 @@ describe("przyjmowanie paczki — limity i kolejność kroków", () => {
     expect(result.results[0]).toMatchObject({ rejected: { kind: "limit", code: "limit_listen" } });
   });
 
-  it("limit_listen liczy ćwiczenia słuchowe puli i fixed zagadnienia", () => {
+  it("limit_listen liczy ćwiczenia słuchowe puli i fixed zagadnienia (nie innych zagadnień)", () => {
     const context = contextFor({ limits: { [A]: { targetCount: 4, listenAllowance: 2, maxExercises: 8 } } });
-    const state = stateWith({ fixed: [listen(A, 1)] });
+    // Ćwiczenie słuchowe B w `fixed` nie zajmuje limitu A.
+    const state = stateWith({ fixed: [listen(A, 1), listen(B, 9)] });
     const result = submit(state, A, [listen(A, 2), listen(A, 3)], context);
     expect(result.results.map(codeOf)).toEqual(["accepted", "limit_listen"]);
   });
