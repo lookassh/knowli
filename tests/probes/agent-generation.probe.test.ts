@@ -26,6 +26,7 @@ import { AiSdkExerciseChecker, AiSdkLessonPoolAgent } from "./ai-sdk-lesson-agen
 import {
   appendProvisionalCostEntry,
   assertWithinCostCap,
+  costCapFromEnv,
   errorClassOf,
   initCostLedger,
   probeEndpointHost,
@@ -69,7 +70,8 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  * - `UMIEM_PROBE_AGENT_DUMP` — `dump.json` (źródło `agent`) w formacie
  *   `blind/gen-blind-sheet.cjs` (+ `objectives[].status`, `rejections[].detail`, statystyki,
  *   kroki, koszt, wynik kontroli końcowej); istniejący plik nie jest nadpisywany;
- * - `UMIEM_PROBE_COSTS` — rejestr `costs.json` (musi istnieć; nowy zakłada `UMIEM_PROBE_COSTS_INIT=1`).
+ * - `UMIEM_PROBE_COSTS` — rejestr `costs.json` (musi istnieć; nowy zakłada `UMIEM_PROBE_COSTS_INIT=1`
+ *   z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD; limit istniejącego rejestru się nie zmienia).
  * Wszystkie ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`). Na konsolę idą
  * wyłącznie liczby, statusy i człony identyfikatorów zagadnień — treść ćwiczeń, materiału,
  * kart i `detail` odrzuceń tylko w zrzucie poza repozytorium.
@@ -244,7 +246,10 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     // Jak potok: preferencja typów otwartych zależy od obecności modelu oceniającego w konfiguracji.
     const graderAvailable = graderConfigured(withConfigDefaults(process.env));
 
-    const ledger = process.env.UMIEM_PROBE_COSTS_INIT === "1" ? initCostLedger(costsPath) : readCostLedger(costsPath);
+    const ledger =
+      process.env.UMIEM_PROBE_COSTS_INIT === "1"
+        ? initCostLedger(costsPath, costCapFromEnv(process.env.UMIEM_PROBE_COSTS_CAP_USD))
+        : readCostLedger(costsPath);
     assertWithinCostCap(ledger, runBudgetUsd, `agent ${subjectKind}`);
     if (dumpPath !== undefined) mkdirSync(dirname(dumpPath), { recursive: true });
     const inputLabel = objectivesDumpPath !== undefined ? basename(objectivesDumpPath) : basename(materialPath!);

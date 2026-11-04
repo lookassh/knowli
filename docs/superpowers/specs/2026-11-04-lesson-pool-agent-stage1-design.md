@@ -736,7 +736,8 @@ koszt; bez treści ćwiczeń, materiału, kart, tematów zdań i `detail`. Test
 - Zmienne: `UMIEM_PROBE_AGENT_SUBJECT` (`chapter` | `grammar` | `school`),
   `_MATERIAL`, `_OBJECTIVES_DUMP`, `_MODEL`, `_REASONING`, `_SOLVER_MODEL`,
   `_DUMP`, `_TIMEOUT_MS`, `_BUDGET_USD`, `_POOL_SIZE` (domyślnie
-  `defaultPoolSize` liczby zagadnień, jak potok), `UMIEM_PROBE_COSTS`.
+  `defaultPoolSize` liczby zagadnień, jak potok), `UMIEM_PROBE_COSTS`
+  (`UMIEM_PROBE_COSTS_CAP_USD` — limit nowego rejestru, domyślnie 10 USD).
   Ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`).
 - Zrzut `dump.json` (źródło `agent`) w formacie `blind/gen-blind-sheet.cjs`, z
   `rejections` (z `detail`), statystykami, krokami, kosztem i statusami.
@@ -848,10 +849,14 @@ istniejące testy pokrycia, publikacji i sesji bez zmian.
 ### 9.4. Architektura
 
 - `domain/lessons/agent/` nie importuje `ai`, `@openrouter/*`, Drizzle,
-  `modules/`, `providers/`, `ports/` ani konfiguracji (rozszerzenie
+  `modules/`, `providers/`, `ports/`, modułów `node:` ani konfiguracji i nie
+  używa `Date.now`, `new Date(`, `Math.random`, `crypto.randomUUID`,
+  `performance.now`, `process.env` (rozszerzenie
   `domain/lessons/architecture.test.ts`);
-- nowy test: `ai` i `@openrouter/*` nie występują w `packages/**` ani
-  `apps/**` (etap 2 dopuści jeden plik adaptera);
+- nowy test: `ai` i `@openrouter/*` nie występują w żadnym pliku źródłowym
+  repozytorium poza `tests/probes/**` (pomijane zależności i artefakty
+  buildów); manifesty `packages/*` i `apps/*` ich nie deklarują (etap 2
+  dopuści jeden plik adaptera);
 - istniejący skan identyfikatorów przedmiotów obejmuje nowe pliki;
   `module-boundaries.architecture.test.ts` przechodzi.
 

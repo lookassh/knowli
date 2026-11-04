@@ -4,24 +4,31 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Zakres AI SDK (etap 1 #237): `ai` i `@openrouter/*` wolno używać wyłącznie
- * w `tests/probes/**` oraz jako devDependencies roota. Kod produkcyjny
- * (źródła pakietów i aplikacji) ich nie importuje, a manifesty pakietów
- * i aplikacji nie deklarują tych zależności.
+ * w `tests/probes/**` oraz jako devDependencies roota. Żaden inny plik
+ * źródłowy repozytorium (pakiety, aplikacje, skrypty, testy, integracje) ich
+ * nie importuje, a manifesty pakietów i aplikacji nie deklarują tych zależności.
  */
 
 const root = join(__dirname, "..");
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
-const SKIPPED_DIRS = new Set(["node_modules", ".next", "dist", "build", "coverage"]);
-// Nazwany wyjątek (ścieżka względem korzenia repozytorium): test architektury
-// agenta zawiera nazwy SDK wyłącznie jako dane w dowodzie czułości swojego skanu.
-const SENSITIVITY_FIXTURES = new Set(["packages/server/src/domain/lessons/architecture.test.ts"]);
+/** Katalogi pomijane na każdej głębokości: zależności, git i artefakty buildów oraz testów. */
+const SKIPPED_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", "test-results", "playwright-report", ".venv"]);
+/** Katalogi pomijane po ścieżce względem korzenia: jedyne miejsce, gdzie SDK jest dozwolone. */
+const ALLOWED_DIRS = new Set(["tests/probes"]);
+// Nazwane wyjątki (ścieżka względem korzenia repozytorium): testy architektury zawierają nazwy SDK
+// wyłącznie jako dane w dowodach czułości swoich skanów.
+const SENSITIVITY_FIXTURES = new Set(["packages/server/src/domain/lessons/architecture.test.ts", "tests/ai-sdk-scope.test.ts"]);
+
+function relativeToRoot(path: string): string {
+  return path.slice(root.length + 1).replaceAll("\\", "/");
+}
 
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (SKIPPED_DIRS.has(entry.name)) return [];
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
+    if (entry.isDirectory()) return ALLOWED_DIRS.has(relativeToRoot(path)) ? [] : sourceFiles(path);
     return SOURCE_FILE.test(entry.name) ? [path] : [];
   });
 }
@@ -46,17 +53,21 @@ function workspaceDirs(parent: string): string[] {
 const workspaces = [...workspaceDirs("packages"), ...workspaceDirs("apps")];
 
 describe("zakres AI SDK", () => {
-  it("żaden plik źródłowy pakietów i aplikacji nie importuje ai ani @openrouter/*", () => {
-    const files = workspaces
-      .flatMap((workspace) => sourceFiles(join(workspace, "src")))
-      .filter((file) => !SENSITIVITY_FIXTURES.has(file.slice(root.length + 1).replaceAll("\\", "/")));
-    // Dowód, że skan rzeczywiście znajduje pliki (nie fałszywie zielony).
+  it("żaden plik źródłowy repozytorium poza tests/probes nie importuje ai ani @openrouter/*", () => {
+    const files = sourceFiles(root).filter((file) => !SENSITIVITY_FIXTURES.has(relativeToRoot(file)));
+    // Dowód, że skan rzeczywiście obejmuje całe repozytorium (nie fałszywie zielony).
     expect(files.length).toBeGreaterThan(100);
+    const scanned = new Set(files.map(relativeToRoot));
+    for (const sample of ["packages/server/src/index.ts", "tests/integration-buckets.test.ts", "vitest.unit.config.ts"]) {
+      expect(scanned.has(sample), sample).toBe(true);
+    }
+    expect([...scanned].some((path) => path.startsWith("tests/probes/"))).toBe(false);
+    expect([...scanned].some((path) => path.includes("node_modules/"))).toBe(false);
 
     const offenders = files.flatMap((file) =>
       importSpecifiers(readFileSync(file, "utf8"))
         .filter(isAiSdkName)
-        .map((specifier) => `${file.slice(root.length + 1)}: "${specifier}"`),
+        .map((specifier) => `${relativeToRoot(file)}: "${specifier}"`),
     );
     expect(offenders).toEqual([]);
   });

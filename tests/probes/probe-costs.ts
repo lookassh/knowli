@@ -98,10 +98,27 @@ function writeLedger(path: string, ledger: CostLedger): void {
   renameSync(temporary, path);
 }
 
-/** Jawne założenie rejestru (`{ capUsd: 10, spentUsd: 0, entries: [] }`); istniejący zostaje bez zmian. */
-export function initCostLedger(path: string): CostLedger {
+/**
+ * Limit nowego rejestru z `UMIEM_PROBE_COSTS_CAP_USD`: brak albo pusta wartość → domyślne 10 USD;
+ * wartość niebędąca dodatnią liczbą skończoną (kropka dziesiętna) → błąd przed jakimkolwiek wywołaniem.
+ */
+export function costCapFromEnv(value: string | undefined): number {
+  const text = value?.trim() ?? "";
+  if (text === "") return DEFAULT_COST_CAP_USD;
+  const cap = Number(text);
+  if (!/^\d+(?:\.\d+)?$/u.test(text) || !Number.isFinite(cap) || cap <= 0) {
+    throw new Error(`UMIEM_PROBE_COSTS_CAP_USD musi być dodatnią liczbą USD (np. 2.5), jest: ${JSON.stringify(text)}.`);
+  }
+  return cap;
+}
+
+/**
+ * Jawne założenie rejestru (`{ capUsd, spentUsd: 0, entries: [] }`, domyślnie limit 10 USD);
+ * istniejący zostaje bez zmian, także jego limit.
+ */
+export function initCostLedger(path: string, capUsd: number = DEFAULT_COST_CAP_USD): CostLedger {
   if (existsSync(path)) return readCostLedger(path);
-  const ledger: CostLedger = { capUsd: DEFAULT_COST_CAP_USD, spentUsd: 0, entries: [] };
+  const ledger: CostLedger = { capUsd, spentUsd: 0, entries: [] };
   writeLedger(path, ledger);
   return ledger;
 }

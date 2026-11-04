@@ -30,6 +30,7 @@ import { testDatabase } from "../integration/helpers";
 import {
   appendProvisionalCostEntry,
   assertWithinCostCap,
+  costCapFromEnv,
   errorClassOf,
   estimateProbeCostUsd,
   initCostLedger,
@@ -64,7 +65,7 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  *   `chapter-<czas>.json` na każde uruchomienie (liczby, braki pokrycia, koszt; tu też treść
  *   tytułów zagadnień i odpowiedzi luk — tylko w pliku);
  * - `UMIEM_PROBE_COSTS` — rejestr kosztów prób `costs.json` (wymagany, musi istnieć; nowy zakłada
- *   tylko `UMIEM_PROBE_COSTS_INIT=1`): przed startem „wydane + szacunek > limit → stop”, przed
+ *   tylko `UMIEM_PROBE_COSTS_INIT=1`, z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD): przed startem „wydane + szacunek > limit → stop”, przed
  *   pierwszym płatnym wywołaniem wpis tymczasowy z szacunkiem (zabity proces nadal się liczy), po
  *   próbie (także po błędzie) zastąpiony kosztem z `usage.cost`, a gdy go brak albo jest poniżej
  *   0,005 USD na wywołanie — szacunkiem z flagą `estimated`. Włączony krytyk lekcji (konfiguracja
@@ -306,7 +307,10 @@ describe.skipIf(!enabled)("próba generowania lekcji na prawdziwym modelu", () =
 
     // Włączony krytyk (konfiguracja z env) liczony jak dodatkowe generowanie — górna granica jego wywołań.
     const estimateUsd = estimateProbeCostUsd({ generations: reviewerState === "ready" ? 2 : 1 });
-    const ledger = process.env.UMIEM_PROBE_COSTS_INIT === "1" ? initCostLedger(costsPath) : readCostLedger(costsPath);
+    const ledger =
+      process.env.UMIEM_PROBE_COSTS_INIT === "1"
+        ? initCostLedger(costsPath, costCapFromEnv(process.env.UMIEM_PROBE_COSTS_CAP_USD))
+        : readCostLedger(costsPath);
     assertWithinCostCap(ledger, estimateUsd, `generowanie ${subjectKind}${reviewerState === "ready" ? " z krytykiem" : ""}`);
     const costEntry = {
       probe: `chapter:${subjectKind}${reviewerState === "ready" ? "+review" : ""}`,

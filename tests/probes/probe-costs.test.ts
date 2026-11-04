@@ -6,6 +6,7 @@ import {
   appendCostEntry,
   appendProvisionalCostEntry,
   assertWithinCostCap,
+  costCapFromEnv,
   errorClassOf,
   estimateProbeCostUsd,
   initCostLedger,
@@ -58,6 +59,19 @@ describe("koszty prób", () => {
     expect(readCostLedger(path)).toEqual({ capUsd: 10, spentUsd: 0, entries: [] });
     appendCostEntry(path, { at: "x", probe: "p", dump: "d", costUsd: 1 });
     expect(initCostLedger(path).spentUsd).toBe(1);
+  });
+
+  it("limit z UMIEM_PROBE_COSTS_CAP_USD: nowy rejestr dostaje podany limit, istniejący zachowuje swój", () => {
+    expect(costCapFromEnv(undefined)).toBe(10);
+    expect(costCapFromEnv("  ")).toBe(10);
+    expect(costCapFromEnv("2.5")).toBe(2.5);
+    for (const bad of ["abc", "0", "-1", "Infinity", "1,5"]) expect(() => costCapFromEnv(bad), bad).toThrow(/UMIEM_PROBE_COSTS_CAP_USD/u);
+
+    const path = join(dir(), "costs.json");
+    expect(initCostLedger(path, costCapFromEnv("2.5"))).toEqual({ capUsd: 2.5, spentUsd: 0, entries: [] });
+    expect(readCostLedger(path).capUsd).toBe(2.5);
+    // Ponowna inicjalizacja z innym limitem nie zmienia istniejącego rejestru.
+    expect(initCostLedger(path, 50).capUsd).toBe(2.5);
   });
 
   it("dopisuje wpis i przelicza wydane z wpisów (zaokrąglenie do mikrodolara)", () => {
