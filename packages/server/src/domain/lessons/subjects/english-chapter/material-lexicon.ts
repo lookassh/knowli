@@ -34,9 +34,10 @@ export function parseMaterialLexicon(material: string): MaterialLexicon {
       frames.push(text);
       continue;
     }
-    const pair = /^(.+?)\s+—\s+(.+)$/u.exec(text);
-    const english = pair?.[1];
-    if (english !== undefined && !/[?.!]/u.test(english) && english.split(/\s+/u).length <= MAX_WORD_TOKENS) {
+    // Pierwsza „ — ” otoczona białymi znakami (bez `.+?`, który nawraca); linia jest obcięta, więc obie strony są niepuste.
+    const dash = /\s—\s/u.exec(text);
+    const english = dash === null ? undefined : text.slice(0, dash.index);
+    if (english !== undefined && !/[?.!]/u.test(english) && english.trim().split(/\s+/u).length <= MAX_WORD_TOKENS) {
       words.push(english.trim());
     }
   }

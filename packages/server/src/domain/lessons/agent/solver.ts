@@ -6,8 +6,10 @@ import type { AnswerNormalizer, LessonExerciseDraft, LessonTopic } from "../type
 /**
  * Widok dziecka dla niezależnego rozwiązującego („ślepy solver”) i porównanie jego
  * odpowiedzi z kluczem ćwiczenia (spec etapu 1 §3.7). Czyste funkcje nad szkicem:
- * bez modelu, zegara i losowości — kolejność banków i kolumn ustala zwykłe `.sort()`.
+ * bez modelu, zegara i losowości — kolejność banków i kolumn ustala `sortedTexts`.
  */
+
+const sortedTexts = (texts: readonly string[]): string[] => [...texts].sort((a, b) => a.localeCompare(b, "en"));
 
 /**
  * Klasa pola szkicu względem widoku dziecka (Kid DTO z `lesson-materialize.ts`):
@@ -56,7 +58,7 @@ export const SOLVER_FIELD_CLASS: Readonly<Record<keyof LessonExerciseDraft, "vie
   explanationPl: "key", // widoczne dopiero po błędnej odpowiedzi
 };
 
-const joined = (texts: readonly string[]): string => [...texts].sort().join(" | ");
+const joined = (texts: readonly string[]): string => sortedTexts(texts).join(" | ");
 
 /** Polecenie widoczne dla dziecka: z szkicu, z przekształcenia tematu albo tytuł celu (jak materializacja). */
 function instructionOf(draft: LessonExerciseDraft, topic: LessonTopic, fallback?: string): string | undefined {
@@ -140,7 +142,7 @@ export function solverView(draft: LessonExerciseDraft, topic: LessonTopic): stri
       lines.push(
         instructionOf(draft, topic, messages.kid.lessonClozeInstruction),
         draft.clozeText,
-        `Word bank: ${[...(draft.gapAnswers ?? []), ...(draft.extraWords ?? [])].sort().join(" | ")}`,
+        `Word bank: ${joined([...(draft.gapAnswers ?? []), ...(draft.extraWords ?? [])])}`,
       );
       break;
     default:

@@ -4,8 +4,10 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { probePath } = require("./paths.cjs");
 
-const [, , lessonDir, seed = "gen-compare"] = process.argv;
+const [, , lessonDirArg, seed = "gen-compare"] = process.argv;
+const lessonDir = probePath(lessonDirArg, "katalog lekcji");
 const models = fs.readdirSync(lessonDir).filter((name) => fs.existsSync(path.join(lessonDir, name, "dump.json")));
 
 function rng(seedText) {

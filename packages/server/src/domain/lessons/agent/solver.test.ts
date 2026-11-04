@@ -264,7 +264,7 @@ describe("solverView", () => {
     const draft = drafts.find((candidate) => candidate.exerciseType === "lesson_cloze")!;
     const lines = solverView(draft, topic).split("\n");
     expect(lines).toContain("Roślina pobiera ___ z powietrza i ___ z gleby.");
-    expect(lines).toContain(`Word bank: ${[...draft.gapAnswers!, ...draft.extraWords!].sort().join(" | ")}`);
+    expect(lines).toContain(`Word bank: ${[...draft.gapAnswers!, ...draft.extraWords!].sort((a, b) => a.localeCompare(b, "en")).join(" | ")}`);
     expect(lines.filter((line) => line.includes("dwutlenek") || line.includes("wodę"))).toEqual([lines.at(-1)]);
   });
 

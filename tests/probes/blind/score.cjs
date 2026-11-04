@@ -1,6 +1,7 @@
 // Liczy wady per źródło: łączy verdicts.csv (jeden lub kilka katalogów oceny) z key.json ślepego arkusza.
 // Użycie: node tests/probes/blind/score.cjs <key.json> <verdicts.csv> [<verdicts.csv> ...]
 const fs = require("fs");
+const { probePath } = require("./paths.cjs");
 
 function parseCsv(text) {
   const rows = [];
@@ -27,7 +28,9 @@ function parseCsv(text) {
   return body.map((cells) => Object.fromEntries(header.map((name, i) => [name, cells[i] ?? ""])));
 }
 
-const [, , keyPath, ...verdictPaths] = process.argv;
+const [, , keyArg, ...verdictArgs] = process.argv;
+const keyPath = probePath(keyArg, "key.json");
+const verdictPaths = verdictArgs.map((arg) => probePath(arg, "verdicts.csv"));
 const key = JSON.parse(fs.readFileSync(keyPath, "utf8"));
 const sourceOf = new Map(key.rows.map((row) => [row.rowId, row.model]));
 const verdicts = verdictPaths.flatMap((path) => parseCsv(fs.readFileSync(path, "utf8")));
