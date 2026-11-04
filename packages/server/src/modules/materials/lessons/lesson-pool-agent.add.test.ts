@@ -75,6 +75,16 @@ function outcomeOf(agent: FakeLessonPoolAgent, call: number, step: number): Less
   return agent.calls[call]!.outcomes[step] as LessonAgentToolOutcome;
 }
 
+/** Podział etapów promptu: suma = remaining + braki etapów i nie przekracza limitu nowych ćwiczeń. */
+function expectStagesWithin(
+  targets: { guided: number; productive: number; independent: number; maxExercises: number },
+  promptTargetCount: number,
+): void {
+  const sum = targets.guided + targets.productive + targets.independent;
+  expect(sum).toBe(promptTargetCount);
+  expect(sum).toBeLessThanOrEqual(targets.maxExercises);
+}
+
 const never = new AbortController().signal;
 
 beforeEach(() => {
@@ -150,8 +160,8 @@ describe("runLessonPoolAgent — tryb „dodaj N”: zakres i walidacja", () => 
     expect(resolved).not.toHaveBeenCalled();
   });
 
-  it("liczba ćwiczeń spoza liczb całkowitych ≥ 0 → validation bez wywołań", async () => {
-    for (const count of [-1, 1.5, Number.NaN]) {
+  it("liczba ćwiczeń spoza liczb całkowitych ≥ 1 → validation bez wywołań", async () => {
+    for (const count of [0, -1, 1.5, Number.NaN]) {
       const { agent, deps } = setup();
       await expect(runLessonPoolAgent(deps, runInput({ target: { mode: "add", objectiveId: A, count } }), never)).rejects.toMatchObject({
         code: "validation",
@@ -167,7 +177,9 @@ describe("runLessonPoolAgent — tryb „dodaj N”: limity i komplet", () => {
     const eight = Array.from({ length: 8 }, (_, i) => extra(A, i + 1));
     const { agent, deps } = setup({ subjects: [listening], agent: { objectives: { [SLUG_A]: [{ submit: { exercises: eight } }] } } });
     const result = await runLessonPoolAgent(deps, runInput({ fixed: [...draftOf(A, 0), listen(A, 1)] }), never);
-    expect(agent.calls[0]!.input.targets).toMatchObject({ listenAllowance: 2, maxExercises: 3 });
+    // Prompt widzi tylko resztę dodatku słuchowego; przyjmowanie liczy łączny dodatek razem z `fixed`.
+    expect(agent.calls[0]!.input.targets).toMatchObject({ targetCount: 2, listenAllowance: 1, maxExercises: 3 });
+    expectStagesWithin(agent.calls[0]!.input.targets, 2);
     expect(result.objectives[0]!.exercises).toEqual(eight.slice(0, 3));
     expect(result.rejections.map((entry) => entry.code)).toEqual(Array.from({ length: 5 }, () => "limit_full"));
     expect(result.objectives[0]!.status).toBe("complete");
@@ -188,7 +200,11 @@ describe("runLessonPoolAgent — tryb „dodaj N”: limity i komplet", () => {
       },
     });
     const result = await runLessonPoolAgent(deps, runInput({ fixed }), never);
-    expect(agent.calls[0]!.input.targets).toMatchObject({ targetCount: 3, maxExercises: 3 });
+    const { targets } = agent.calls[0]!.input;
+    expect(targets).toMatchObject({ targetCount: 3, maxExercises: 3 });
+    expectStagesWithin(targets, 3);
+    // Etap z brakiem dostaje w prompcie co najmniej brak.
+    expect(targets.independent).toBeGreaterThanOrEqual(1);
     const first = outcomeOf(agent, 0, 0);
     expect(first.complete).toBe(false);
     expect(first.missing[0]).toBe("new exercises: 2 of 2");
@@ -231,6 +247,8 @@ describe("runLessonPoolAgent — tryb „dodaj N”: limity i komplet", () => {
     await runLessonPoolAgent(deps, runInput(), never);
     const { input } = agent.calls[0]!;
     expect(input.targets).toMatchObject({ targetCount: 2, listenAllowance: 0, maxExercises: 2 });
+    // Bez podnoszenia etapu samodzielnego do minimum zagadnienia: `fixed` już je spełnia.
+    expectStagesWithin(input.targets, 2);
     const { guided, productive, independent } = input.targets;
     expect(input.pool.stageCounts).toEqual({ guided, productive, independent });
     expect(input.pool.countPerObjective).toBe(guided + productive + independent);

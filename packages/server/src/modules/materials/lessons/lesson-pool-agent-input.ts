@@ -4,7 +4,7 @@ import { allExamples, orderedLesson, type LessonAgentState } from "../../../doma
 import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
 import { lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
 import type { AgentObjective, LessonTopic } from "../../../domain/lessons/types";
-import type { LessonObjectiveAgentInput } from "../../../ports/ai";
+import type { LessonObjectiveAgentInput, LlmLessonStageCounts } from "../../../ports/ai";
 import { buildPoolInput, poolStageCounts } from "./lesson-drafts";
 
 /**
@@ -28,10 +28,11 @@ export interface ObjectiveAgentInputArgs {
   readonly examplesFixed: boolean;
   readonly maxSteps: number;
   /**
-   * Liczba ćwiczeń dla promptu (`targets.targetCount` i podział etapów), gdy różni się od
-   * `limits.targetCount` — tryb „dodaj N”: nowe ćwiczenia i braki etapów, bez `fixed` (spec etapu 2a §6.4).
+   * Liczby promptu wyliczone przez wołającego zamiast z `limits` — tryb „dodaj N” (spec etapu 2a §6.4):
+   * podział etapów z braków etapów i `remaining` (bez `fixed` i bez podnoszenia etapu samodzielnego),
+   * `targetCount` = suma etapów, `listenAllowance` = reszta dodatku słuchowego. `maxExercises` z `limits`.
    */
-  readonly promptTargetCount?: number;
+  readonly promptTargets?: { readonly stages: LlmLessonStageCounts; readonly listenAllowance: number };
 }
 
 function cardsText(objective: AgentObjective): string {
@@ -52,8 +53,8 @@ function agentStageCounts(subject: AgentCapableSubject, objective: AgentObjectiv
 export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObjectiveAgentInput {
   const { subject, topic, state, objective, limits } = args;
   const examples = allExamples(state);
-  const targetCount = args.promptTargetCount ?? limits.targetCount;
-  const stages = agentStageCounts(subject, objective, targetCount);
+  const stages = args.promptTargets?.stages ?? agentStageCounts(subject, objective, limits.targetCount);
+  const targetCount = args.promptTargets === undefined ? limits.targetCount : stages.guided + stages.productive + stages.independent;
   const base = buildPoolInput(
     subject,
     topic,
@@ -87,7 +88,13 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
       .filter((other) => other.id !== objective.id)
       .map((other) => ({ title: other.titlePl, ...(other.kind === undefined ? {} : { kind: other.kind }), cards: cardsText(other) })),
     cardSentences: [...new Set(Object.values(examples).flat())],
-    targets: { ...stages, requiredTypes, ...limits, targetCount },
+    targets: {
+      ...stages,
+      requiredTypes,
+      ...limits,
+      targetCount,
+      ...(args.promptTargets === undefined ? {} : { listenAllowance: args.promptTargets.listenAllowance }),
+    },
     maxSteps: args.maxSteps,
     ...(promptNotes.length === 0 ? {} : { promptNotes: [...promptNotes] }),
   };

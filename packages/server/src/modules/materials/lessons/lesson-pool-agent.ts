@@ -2,7 +2,14 @@ import { AppError } from "../../../errors";
 import { removeExercise, type AgentCheckContext, type ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
 import { agentObjectivesOf, asAgentCapable, type AgentCapableSubject } from "../../../domain/lessons/agent/capable";
 import { createLessonAgentState, orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
-import { lessonInvariantCheck, objectiveAgentLimits, objectiveStatus, objectiveStatusFor, stageGapOf } from "../../../domain/lessons/agent/status";
+import {
+  lessonInvariantCheck,
+  objectiveAgentLimits,
+  objectiveStatus,
+  objectiveStatusFor,
+  stageGapOf,
+  type ObjectiveStatus,
+} from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { outsideStagePath } from "../../../domain/lessons/stages";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
@@ -13,9 +20,9 @@ import type {
   LessonExerciseDraft,
   LessonTopic,
 } from "../../../domain/lessons/types";
-import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
+import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, LlmLessonStageCounts, RunCostSink } from "../../../ports/ai";
 import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
-import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts } from "./lesson-drafts";
+import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import { objectiveAgentInput } from "./lesson-pool-agent-input";
 import { planAgentObjectives } from "./lesson-pool-agent-plan";
 import {
@@ -176,8 +183,8 @@ function resolveSubject(deps: LessonPoolAgentDeps, input: LessonPoolAgentRunInpu
     if (input.objectiveSource.source === "planner") {
       throw new AppError("validation", { message: "add mode needs catalog or input objectives, not a plan" });
     }
-    if (!Number.isInteger(target.count) || target.count < 0) {
-      throw new AppError("validation", { message: "add mode count must be a non-negative integer" });
+    if (!Number.isInteger(target.count) || target.count < 1) {
+      throw new AppError("validation", { message: "add mode count must be a positive integer" });
     }
   }
   return asAgentCapable(subject);
@@ -200,30 +207,42 @@ function poolExercises(state: LessonAgentState, objectiveId: string): LessonExer
     .map((entry) => entry.draft);
 }
 
-/** Ćwiczenia słuchowe zagadnienia w `fixed`. */
-function ownListenCount(fixed: readonly LessonExerciseDraft[], objectiveId: string): number {
-  return fixed.filter((draft) => draft.objectiveId === objectiveId && draft.exerciseType === "lesson_listen_choice").length;
+/** Limity przyjmowania i liczby promptu zagadnienia w trybie „dodaj N” (§6.4). */
+interface AddModePlan {
+  readonly limits: ObjectiveAgentLimits;
+  readonly promptTargets: { readonly stages: LlmLessonStageCounts; readonly listenAllowance: number };
 }
 
 /**
- * Limity zagadnienia w trybie „dodaj N” przed policzeniem braków etapów (§6.4): `targetCount` statusu =
- * ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`; dodatek słuchowy jako łączny limit
- * (przyjmowanie samo liczy `fixed`). `maxExercises` kierownik uzupełnia po zbudowaniu stanu.
+ * Tryb „dodaj N” (§6.4), braki etapów ze statusu zagadnienia na starcie (`start`):
+ * - limity: `targetCount` statusu = ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`; dodatek
+ *   słuchowy jako łączny limit (przyjmowanie samo liczy `fixed`); `maxExercises` = `count` + suma braków
+ *   etapów + reszta dodatku słuchowego (`slack` 0; `limit_full` liczy tylko pulę);
+ * - prompt: podział etapów = braki etapów + `count` rozłożone podziałem partii, bez podnoszenia etapu
+ *   samodzielnego (`fixed` już się liczy), więc suma = `count` + braki ≤ `maxExercises`; dodatek słuchowy
+ *   w prompcie = to, co jeszcze można przyjąć.
  */
-function addModeBaseLimits(
+function addModePlan(
   subject: AgentCapableSubject,
-  topic: LessonTopic,
+  objective: LessonTopic["objectives"][number],
   fixed: readonly LessonExerciseDraft[],
-  target: { readonly objectiveId: string; readonly count: number },
-): ObjectiveAgentLimits {
-  const objective = topic.objectives.find((item) => item.id === target.objectiveId)!;
-  const fixedOnStagePath = fixed.filter(
-    (draft) => draft.objectiveId === target.objectiveId && !outsideStagePath(draft.exerciseType),
-  ).length;
+  count: number,
+  start: ObjectiveStatus,
+): AddModePlan {
+  const own = fixed.filter((draft) => draft.objectiveId === objective.id);
+  const fixedOnStagePath = own.filter((draft) => !outsideStagePath(draft.exerciseType)).length;
+  const listenAllowance = listenChoiceAllowance(subject, objective, []);
+  const listenLeft = Math.max(0, listenAllowance - own.filter((draft) => draft.exerciseType === "lesson_listen_choice").length);
+  const split = poolStageCounts(subject, objective.exerciseTypes, count);
+  const stages = {
+    guided: start.stageGaps.guided + split.guided,
+    productive: start.stageGaps.productive + split.productive,
+    independent: start.stageGaps.independent + split.independent,
+  };
+  const stageGap = stageGapOf(start);
   return {
-    targetCount: fixedOnStagePath + target.count,
-    listenAllowance: listenChoiceAllowance(subject, objective, []),
-    maxExercises: target.count,
+    limits: { targetCount: fixedOnStagePath + count, listenAllowance, maxExercises: count + stageGap + listenLeft },
+    promptTargets: { stages, listenAllowance: listenLeft },
   };
 }
 
@@ -360,7 +379,6 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   const ctx: AgentCheckContext = { subject, material: input.material, limits };
   const addTarget = input.target?.mode === "add" ? input.target : undefined;
   const addMode = addTarget === undefined ? undefined : { remaining: addTarget.count };
-  if (addTarget !== undefined) limits.set(addTarget.objectiveId, addModeBaseLimits(subject, topic, input.fixed, addTarget));
 
   const extraSources = input.extraExposureSources ?? [];
   let state = createLessonAgentState({
@@ -374,15 +392,15 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       extraSources.length === 0 ? {} : { [EXTRA_SOURCES_KEY]: extraSources },
     ),
   });
-  // Tryb „dodaj N”: limit nowych ćwiczeń = remaining + braki etapów na starcie + reszta dodatku słuchowego
-  // (`slack` 0); prompt dostaje remaining + braki etapów, nie liczby z `fixed`.
-  let promptTargetCount: number | undefined;
+  // Tryb „dodaj N”: braki etapów na starcie (nie zależą od `targetCount`, więc wystarczą limity puli w ctx),
+  // potem limity zagadnienia ustawiane raz.
+  let promptTargets: AddModePlan["promptTargets"] | undefined;
   if (addTarget !== undefined) {
-    const base = limits.get(addTarget.objectiveId)!;
-    const stageGap = stageGapOf(objectiveStatus(state, addTarget.objectiveId, ctx));
-    const listenLeft = Math.max(0, base.listenAllowance - ownListenCount(input.fixed, addTarget.objectiveId));
-    limits.set(addTarget.objectiveId, { ...base, maxExercises: addTarget.count + stageGap + listenLeft });
-    promptTargetCount = addTarget.count + stageGap;
+    const objective = topic.objectives.find((item) => item.id === addTarget.objectiveId)!;
+    const start = objectiveStatus(state, addTarget.objectiveId, ctx);
+    const plan = addModePlan(subject, objective, input.fixed, addTarget.count, start);
+    limits.set(addTarget.objectiveId, plan.limits);
+    promptTargets = plan.promptTargets;
   }
   const getState = () => state;
   const setState = (next: LessonAgentState) => {
@@ -496,7 +514,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
             graderAvailable: input.graderAvailable,
             examplesFixed,
             maxSteps: policy.maxStepsPerObjective,
-            ...(promptTargetCount === undefined ? {} : { promptTargetCount }),
+            ...(promptTargets === undefined ? {} : { promptTargets }),
           });
     const handle = createObjectiveTools({
       objectiveId: objective.id,
