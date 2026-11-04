@@ -6,7 +6,16 @@ import type { AgentObjective, LessonExerciseDraft, LessonExerciseType } from "..
 import { admitBatch, precheckBatch } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { orderedLesson, poolOf, withPool, type AgentPoolEntry, type LessonAgentState } from "./state";
-import { lessonInvariantCheck, objectiveAgentLimits, objectiveStatus } from "./status";
+import {
+  addedStageExercises,
+  addModeStatus,
+  lessonInvariantCheck,
+  objectiveAgentLimits,
+  objectiveStatus,
+  objectiveStatusFor,
+  stageGapOf,
+  type ObjectiveStatus,
+} from "./status";
 
 /** Szkoła (minima 3/2/2, rezerwa samodzielnych 1 → wymagane 3/2/3); fixture'y służą tylko do pokrycia. */
 const school = withAgentPolicy(schoolSubject);
@@ -39,9 +48,41 @@ describe("objectiveStatus — pokrycie etapów", () => {
     state = pooled(state, A, [...guidedThree, ...productiveTwo, ...independentThree]);
     expect(objectiveStatus(state, A, schoolCtx)).toEqual({
       counts: { guided: 3, productive: 2, independent: 3, outsideStages: 0, total: 8 },
+      stageGaps: { guided: 0, productive: 0, independent: 0 },
       missing: [],
       complete: true,
     });
+  });
+
+  it("stageGaps zgodne z missing etapów", () => {
+    const partial = objectiveStatus(pooled(stateWith(), A, [choice(A, 1)]), A, schoolCtx);
+    expect(partial.missing).toEqual(expect.arrayContaining(["guided: 1 of 3", "productive: 0 of 2", "independent: 0 of 3"]));
+    expect(partial.stageGaps).toEqual({ guided: 2, productive: 2, independent: 3 });
+    expect(stageGapOf(partial)).toBe(7);
+
+    // Ujawnione ćwiczenie nie liczy się do etapu — tak samo w missing i w stageGaps.
+    let leaked = stateWith({ examples: { [A]: ["Gniezno"] } });
+    leaked = pooled(leaked, A, [...guidedThree, ...productiveTwo, ...independentThree]);
+    const status = objectiveStatus(leaked, A, schoolCtx);
+    expect(status.missing).toContain("independent: 2 of 3");
+    expect(status.stageGaps).toEqual({ guided: 0, productive: 0, independent: 1 });
+    expect(stageGapOf(status)).toBe(1);
+  });
+
+  it("reguła różnych odpowiedzi otwartych nie jest brakiem etapu w stageGaps", () => {
+    const calculation = (n: number): LessonExerciseDraft => ({
+      exerciseType: "lesson_calculation",
+      objectiveId: A,
+      prompt: `Oblicz ${n} + ${n}.`,
+      answer: String(2 * n),
+      acceptedAnswers: [],
+      focus: [],
+    });
+    let state = stateWith({ examples: { [A]: ["Stolica."] } });
+    state = pooled(state, A, [...guidedThree, ...productiveTwo, open(A, "Pytanie 1?", "Gniezno"), calculation(21), calculation(34)]);
+    const status = objectiveStatus(state, A, schoolCtx);
+    expect(status.missing).toContain("distinct open answers: 1 of 2");
+    expect(status.stageGaps).toEqual({ guided: 0, productive: 0, independent: 0 });
   });
 
   it("pula 3/2/2 → braki w etapie samodzielnym (rezerwa), bez innych etapów", () => {
@@ -172,6 +213,55 @@ describe("objectiveStatus — wymagane typy i braki przedmiotu", () => {
     const state = pooled(stateWith({ fixed: [gap(A, "Fixed ___.", "966")] }), A, [choice(A, 1)]);
     expect(objectiveStatus(state, A, ctx).missing.at(-1)).toBe("subject gap");
     expect(seen).toEqual([2]);
+  });
+});
+
+describe("tryb „dodaj N” — addModeStatus", () => {
+  const full = (): LessonAgentState =>
+    pooled(stateWith({ examples: { [A]: ["Stolica."] } }), A, [...guidedThree, ...productiveTwo, ...independentThree]);
+
+  it("addModeStatus: komplet tylko przy remaining nowych i bez braków etapów", () => {
+    const complete = objectiveStatus(full(), A, schoolCtx);
+    expect(addModeStatus(complete, 1, 2).complete).toBe(false);
+    expect(addModeStatus(complete, 2, 2).complete).toBe(true);
+    expect(addModeStatus(complete, 3, 2).complete).toBe(true);
+
+    // Brak etapu blokuje komplet mimo `remaining` nowych.
+    const short = objectiveStatus(pooled(stateWith({ examples: { [A]: ["Stolica."] } }), A, [...guidedThree, ...productiveTwo]), A, schoolCtx);
+    expect(stageGapOf(short)).toBe(3);
+    expect(addModeStatus(short, 5, 2).complete).toBe(false);
+
+    // Pozostałe braki (liczba ćwiczeń, przykłady kart, braki przedmiotu) są tylko wskazówkami.
+    const hints: ObjectiveStatus = { ...complete, missing: ["exercises: 8 of 10", "card examples: 0 of 1-3", "subject gap"], complete: false };
+    expect(addModeStatus(hints, 2, 2)).toEqual({ missing: ["new exercises: 2 of 2", ...hints.missing], complete: true });
+  });
+
+  it("addModeStatus: missing zaczyna się od new exercises", () => {
+    const short = objectiveStatus(pooled(stateWith(), A, [choice(A, 1)]), A, schoolCtx);
+    const status = addModeStatus(short, 1, 2);
+    expect(status.missing[0]).toBe("new exercises: 1 of 2");
+    expect(status.missing.slice(1)).toEqual(short.missing);
+    // Także przy komplecie: model widzi postęp nowych ćwiczeń.
+    expect(addModeStatus(objectiveStatus(full(), A, schoolCtx), 2, 2).missing).toEqual(["new exercises: 2 of 2"]);
+  });
+
+  it("addedStageExercises liczy tylko pulę na ścieżce etapów (bez fixed, słuchowych i słów kluczowych)", () => {
+    let state = stateWith({ fixed: [gap(A, "Fixed ___.", "966")] });
+    state = pooled(state, A, [choice(A, 1), listen(A, 1), keywords(A, "f1", 1), open(A, "Pytanie?", "Gniezno", "f1")]);
+    state = pooled(state, B, [choice(B, 9)]);
+    expect(addedStageExercises(state, A)).toBe(2);
+  });
+
+  it("objectiveStatusFor: bez trybu add = objectiveStatus; z trybem add — missing i complete z addModeStatus", () => {
+    const state = pooled(full(), A, [gap(A, "Nowe ___.", "1038")]);
+    const base = objectiveStatus(state, A, schoolCtx);
+    expect(objectiveStatusFor(state, A, schoolCtx)).toEqual(base);
+    expect(objectiveStatusFor(state, A, schoolCtx, { remaining: 2 })).toEqual({
+      ...base,
+      ...addModeStatus(base, addedStageExercises(state, A), 2),
+    });
+    expect(objectiveStatusFor(state, A, schoolCtx, { remaining: 2 }).complete).toBe(true);
+    expect(objectiveStatusFor(state, A, schoolCtx, { remaining: 10 }).complete).toBe(false);
   });
 });
 

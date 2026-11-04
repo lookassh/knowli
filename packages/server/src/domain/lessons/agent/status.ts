@@ -37,8 +37,16 @@ export interface ObjectiveCounts {
   readonly total: number;
 }
 
+/** Braki etapów zagadnienia (wymagane − jest, ≥ 0) — te same, co pozycje etapów w `missing`. */
+export interface StageGaps {
+  readonly guided: number;
+  readonly productive: number;
+  readonly independent: number;
+}
+
 export interface ObjectiveStatus {
   readonly counts: ObjectiveCounts;
+  readonly stageGaps: StageGaps;
   /** Braki dla modelu (angielski); puste = zagadnienie kompletne. */
   readonly missing: string[];
   readonly complete: boolean;
@@ -83,6 +91,7 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
     .map((entry) => entry.draft);
   const counts = countsOf(drafts);
   const missing: string[] = [];
+  const stageGaps = { guided: 0, productive: 0, independent: 0 };
 
   const base = lessonPoolMinimums(subject);
   const required = { ...base, independent: base.independent + subject.agentPolicy.independentReserve };
@@ -96,7 +105,9 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
   });
   for (const stage of ASSESSED) {
     const gap = gaps.stages.find((item) => item.objectiveId === objectiveId && item.stage === stage);
-    if (gap !== undefined) missing.push(`${stage}: ${gap.actual} of ${gap.required}`);
+    if (gap === undefined) continue;
+    missing.push(`${stage}: ${gap.actual} of ${gap.required}`);
+    stageGaps[stage] = Math.max(0, gap.required - gap.actual);
   }
   const distinct = gaps.distinctOpenAnswers.find((item) => item.objectiveId === objectiveId);
   if (distinct !== undefined) missing.push(`distinct open answers: ${distinct.actual} of ${distinct.required}`);
@@ -116,7 +127,50 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
   }
 
   missing.push(...(subject.agentPolicy.objectiveGaps?.(drafts, objective, { material }) ?? []));
-  return { counts, missing, complete: missing.length === 0 };
+  return { counts, stageGaps, missing, complete: missing.length === 0 };
+}
+
+/** Suma braków etapów zagadnienia (tryb „dodaj N”, spec etapu 2a §6.4). */
+export function stageGapOf(status: ObjectiveStatus): number {
+  return status.stageGaps.guided + status.stageGaps.productive + status.stageGaps.independent;
+}
+
+/**
+ * Komplet w trybie „dodaj N” (§6.4): co najmniej `remaining` nowych ćwiczeń i brak braków etapów.
+ * Pozostałe braki statusu (liczba ćwiczeń, wymagane typy, przykłady, braki przedmiotu) zostają w
+ * `missing` jako wskazówki dla modelu, po pozycji `new exercises: k of N`.
+ */
+export function addModeStatus(
+  status: ObjectiveStatus,
+  added: number,
+  remaining: number,
+): { readonly missing: string[]; readonly complete: boolean } {
+  return {
+    missing: [`new exercises: ${added} of ${remaining}`, ...status.missing],
+    complete: added >= remaining && stageGapOf(status) === 0,
+  };
+}
+
+/** Nowe ćwiczenia zagadnienia w tym runie: pula (bez `fixed`) na ścieżce etapów, jak `counts.total`. */
+export function addedStageExercises(state: LessonAgentState, objectiveId: string): number {
+  return orderedEntries(state).filter(
+    (entry) => entry.objectiveId === objectiveId && entry.id !== null && !outsideStagePath(entry.draft.exerciseType),
+  ).length;
+}
+
+/**
+ * Status zagadnienia w trybie runu: bez `add` — `objectiveStatus`; z `add` — `missing` i `complete`
+ * z `addModeStatus` (wspólne źródło dla narzędzi podagenta i kierownika).
+ */
+export function objectiveStatusFor(
+  state: LessonAgentState,
+  objectiveId: string,
+  ctx: AgentCheckContext,
+  add?: { readonly remaining: number },
+): ObjectiveStatus {
+  const status = objectiveStatus(state, objectiveId, ctx);
+  if (add === undefined) return status;
+  return { ...status, ...addModeStatus(status, addedStageExercises(state, objectiveId), add.remaining) };
 }
 
 /**

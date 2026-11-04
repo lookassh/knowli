@@ -2,8 +2,9 @@ import { AppError } from "../../../errors";
 import { removeExercise, type AgentCheckContext, type ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
 import { agentObjectivesOf, asAgentCapable, type AgentCapableSubject } from "../../../domain/lessons/agent/capable";
 import { createLessonAgentState, orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
-import { lessonInvariantCheck, objectiveAgentLimits, objectiveStatus } from "../../../domain/lessons/agent/status";
+import { lessonInvariantCheck, objectiveAgentLimits, objectiveStatus, objectiveStatusFor, stageGapOf } from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
+import { outsideStagePath } from "../../../domain/lessons/stages";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type {
   AgentObjective,
@@ -44,6 +45,15 @@ export type AgentObjectiveSource =
   | { readonly source: "planner" }
   | { readonly source: "catalog"; readonly topic: LessonTopic }
   | { readonly source: "input"; readonly dynamicTopic: DynamicTopicData };
+
+/**
+ * Cel runu: `pool` (domyślnie) — pula wszystkich zagadnień; `add` — `count` nowych ćwiczeń jednego
+ * zagadnienia (przycisk „Dogeneruj +N”, spec etapu 2a §6.4). `count` to liczba jeszcze brakujących nowych
+ * ćwiczeń (wołający odejmuje nowe ćwiczenia z punktu kontrolnego).
+ */
+export type LessonPoolAgentTarget =
+  | { readonly mode: "pool" }
+  | { readonly mode: "add"; readonly objectiveId: string; readonly count: number };
 
 export interface SettledObjective {
   readonly objectiveId: string;
@@ -94,6 +104,8 @@ export interface LessonPoolAgentRunInput {
   readonly examplesFixed?: boolean;
   /** Stałe źródła ujawnień spoza zagadnień (np. zdania historyjki szkicu). */
   readonly extraExposureSources?: readonly string[];
+  /** Brak = `{ mode: "pool" }`. W trybie `add` `skipObjectives` nie ma znaczenia: działa tylko `objectiveId`. */
+  readonly target?: LessonPoolAgentTarget;
   /**
    * Wołany raz, po przyjęciu planu (`planner`) albo od razu po rozwiązaniu tematu (`catalog`/`input`),
    * przed podagentami; błąd przerywa run jak błąd `onObjectiveSettled`. Nie jest wołany przy `plan_failed`.
@@ -158,6 +170,16 @@ function resolveSubject(deps: LessonPoolAgentDeps, input: LessonPoolAgentRunInpu
   if (input.objectiveSource.source !== "catalog" && subject.buildDynamicTopic === undefined) {
     throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
   }
+  const target = input.target;
+  if (target?.mode === "add") {
+    // Dogenerowanie dotyczy zagadnienia istniejącego szkicu: plan stworzyłby nowe zagadnienia.
+    if (input.objectiveSource.source === "planner") {
+      throw new AppError("validation", { message: "add mode needs catalog or input objectives, not a plan" });
+    }
+    if (!Number.isInteger(target.count) || target.count < 0) {
+      throw new AppError("validation", { message: "add mode count must be a non-negative integer" });
+    }
+  }
   return asAgentCapable(subject);
 }
 
@@ -176,6 +198,33 @@ function poolExercises(state: LessonAgentState, objectiveId: string): LessonExer
   return orderedEntries(state)
     .filter((entry) => entry.objectiveId === objectiveId && entry.id !== null)
     .map((entry) => entry.draft);
+}
+
+/** Ćwiczenia słuchowe zagadnienia w `fixed`. */
+function ownListenCount(fixed: readonly LessonExerciseDraft[], objectiveId: string): number {
+  return fixed.filter((draft) => draft.objectiveId === objectiveId && draft.exerciseType === "lesson_listen_choice").length;
+}
+
+/**
+ * Limity zagadnienia w trybie „dodaj N” przed policzeniem braków etapów (§6.4): `targetCount` statusu =
+ * ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`; dodatek słuchowy jako łączny limit
+ * (przyjmowanie samo liczy `fixed`). `maxExercises` kierownik uzupełnia po zbudowaniu stanu.
+ */
+function addModeBaseLimits(
+  subject: AgentCapableSubject,
+  topic: LessonTopic,
+  fixed: readonly LessonExerciseDraft[],
+  target: { readonly objectiveId: string; readonly count: number },
+): ObjectiveAgentLimits {
+  const objective = topic.objectives.find((item) => item.id === target.objectiveId)!;
+  const fixedOnStagePath = fixed.filter(
+    (draft) => draft.objectiveId === target.objectiveId && !outsideStagePath(draft.exerciseType),
+  ).length;
+  return {
+    targetCount: fixedOnStagePath + target.count,
+    listenAllowance: listenChoiceAllowance(subject, objective, []),
+    maxExercises: target.count,
+  };
 }
 
 export async function runLessonPoolAgent(
@@ -230,6 +279,11 @@ export async function runLessonPoolAgent(
       topic = subject.buildDynamicTopic!(source.dynamicTopic);
     }
     const resolvedTopic = dynamicTopic ?? (source.source === "input" ? source.dynamicTopic : undefined);
+    const target = input.target;
+    if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
+      // Przed hakiem planu i podagentami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
+      throw new AppError("validation", { message: `unknown objective ${target.objectiveId}` });
+    }
     if (input.onObjectivesResolved !== undefined) {
       // Przed podagentami: ścieżka zapisuje temat, przykłady planu i wydatek (punkt kontrolny).
       await input.onObjectivesResolved({
@@ -304,6 +358,9 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     ]),
   );
   const ctx: AgentCheckContext = { subject, material: input.material, limits };
+  const addTarget = input.target?.mode === "add" ? input.target : undefined;
+  const addMode = addTarget === undefined ? undefined : { remaining: addTarget.count };
+  if (addTarget !== undefined) limits.set(addTarget.objectiveId, addModeBaseLimits(subject, topic, input.fixed, addTarget));
 
   const extraSources = input.extraExposureSources ?? [];
   let state = createLessonAgentState({
@@ -317,6 +374,16 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       extraSources.length === 0 ? {} : { [EXTRA_SOURCES_KEY]: extraSources },
     ),
   });
+  // Tryb „dodaj N”: limit nowych ćwiczeń = remaining + braki etapów na starcie + reszta dodatku słuchowego
+  // (`slack` 0); prompt dostaje remaining + braki etapów, nie liczby z `fixed`.
+  let promptTargetCount: number | undefined;
+  if (addTarget !== undefined) {
+    const base = limits.get(addTarget.objectiveId)!;
+    const stageGap = stageGapOf(objectiveStatus(state, addTarget.objectiveId, ctx));
+    const listenLeft = Math.max(0, base.listenAllowance - ownListenCount(input.fixed, addTarget.objectiveId));
+    limits.set(addTarget.objectiveId, { ...base, maxExercises: addTarget.count + stageGap + listenLeft });
+    promptTargetCount = addTarget.count + stageGap;
+  }
   const getState = () => state;
   const setState = (next: LessonAgentState) => {
     state = next;
@@ -375,7 +442,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   });
 
   const settle = (objective: AgentObjective, steps: number, error: { readonly error: unknown } | undefined): SettledObjective => {
-    const status = objectiveStatus(state, objective.id, ctx);
+    const status = objectiveStatusFor(state, objective.id, ctx, addMode);
     const base = {
       objectiveId: objective.id,
       missing: status.missing,
@@ -429,6 +496,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
             graderAvailable: input.graderAvailable,
             examplesFixed,
             maxSteps: policy.maxStepsPerObjective,
+            ...(promptTargetCount === undefined ? {} : { promptTargetCount }),
           });
     const handle = createObjectiveTools({
       objectiveId: objective.id,
@@ -442,6 +510,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       policy,
       familyScope: input.familyScope,
       examplesFixed,
+      ...(addMode === undefined ? {} : { addMode }),
       onRejection: (entry) => {
         rejections.push(entry);
         stats.rejectedByKind[entry.kind] = (stats.rejectedByKind[entry.kind] ?? 0) + 1;
@@ -481,7 +550,9 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   };
 
   const skipped = new Set(input.skipObjectives);
-  const toRun = objectives.filter((objective) => !skipped.has(objective.id));
+  const toRun = objectives.filter((objective) =>
+    addTarget === undefined ? !skipped.has(objective.id) : objective.id === addTarget.objectiveId,
+  );
   await Promise.all(toRun.map((objective) => objectiveSemaphore.run(() => runOne(objective)).catch(fail)));
   await hooks;
   if (failure !== undefined) throw failure.error;
@@ -499,7 +570,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     const settled = settledById.get(objective.id);
     if (settled === undefined) return [];
     if (violations.length === 0) return [settled];
-    const status = objectiveStatus(state, objective.id, ctx);
+    const status = objectiveStatusFor(state, objective.id, ctx, addMode);
     return [
       {
         ...settled,

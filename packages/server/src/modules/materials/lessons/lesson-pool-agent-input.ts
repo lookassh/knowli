@@ -27,6 +27,11 @@ export interface ObjectiveAgentInputArgs {
   /** `true` = przykłady kart są ustalone (plan albo wznowienie); w porcie pole `objective.examplesFromPlan`. */
   readonly examplesFixed: boolean;
   readonly maxSteps: number;
+  /**
+   * Liczba ćwiczeń dla promptu (`targets.targetCount` i podział etapów), gdy różni się od
+   * `limits.targetCount` — tryb „dodaj N”: nowe ćwiczenia i braki etapów, bez `fixed` (spec etapu 2a §6.4).
+   */
+  readonly promptTargetCount?: number;
 }
 
 function cardsText(objective: AgentObjective): string {
@@ -47,12 +52,13 @@ function agentStageCounts(subject: AgentCapableSubject, objective: AgentObjectiv
 export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObjectiveAgentInput {
   const { subject, topic, state, objective, limits } = args;
   const examples = allExamples(state);
-  const stages = agentStageCounts(subject, objective, limits.targetCount);
+  const targetCount = args.promptTargetCount ?? limits.targetCount;
+  const stages = agentStageCounts(subject, objective, targetCount);
   const base = buildPoolInput(
     subject,
     topic,
     objective.id,
-    limits.targetCount,
+    targetCount,
     args.material,
     args.instruction,
     args.graderAvailable,
@@ -81,7 +87,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
       .filter((other) => other.id !== objective.id)
       .map((other) => ({ title: other.titlePl, ...(other.kind === undefined ? {} : { kind: other.kind }), cards: cardsText(other) })),
     cardSentences: [...new Set(Object.values(examples).flat())],
-    targets: { ...stages, requiredTypes, ...limits },
+    targets: { ...stages, requiredTypes, ...limits, targetCount },
     maxSteps: args.maxSteps,
     ...(promptNotes.length === 0 ? {} : { promptNotes: [...promptNotes] }),
   };
