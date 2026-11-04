@@ -39,16 +39,15 @@ export type PlanOutcome =
     }
   | { readonly status: "plan_failed"; readonly failure: { readonly errorCode: string }; readonly steps: number };
 
+/** Górna granica przykładów zagadnienia (pilnuje jej `validateAgentPlan`); tu tylko w tekście dla modelu. */
+const MAX_PLAN_EXAMPLES = 3;
+
 /** Brak przyjętej propozycji po wszystkich krokach: ten sam kod co niepoprawne zagadnienia w potoku. */
 const NOT_ACCEPTED_CODE = classifyLessonGenerationFailure(new AppError("validation")).errorCode;
 
-function slugOf(objectiveId: string): string {
-  return objectiveId.slice(objectiveId.lastIndexOf(".") + 1);
-}
-
 /** Linie przykładów planu: przycięte, niepuste, najwyżej `MAX_TEXT_LENGTH` znaków (jak w potoku). */
-function planExampleLines(objective: RawPlanObjective | undefined): string[] {
-  return (objective?.examples ?? [])
+function planExampleLines(objective: RawPlanObjective): string[] {
+  return objective.examples
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && line.length <= MAX_TEXT_LENGTH);
 }
@@ -68,6 +67,13 @@ export async function planAgentObjectives(args: PlanArgs): Promise<PlanOutcome> 
     if (accepted !== undefined) return { ok: false, errors: ["a plan was already accepted"] };
     const plan = validateAgentPlan(raw, subject, material);
     if (!plan.ok) return { ok: false, errors: plan.errors };
+    // Przy przykładach z planu `submit` ich nie przyjmuje, a status wymaga 1–3: zagadnienie bez przykładu
+    // nigdy nie byłoby kompletne, więc taka propozycja wraca do modelu.
+    const lines = plan.objectives.map(planExampleLines);
+    const exampleErrors = lines.flatMap((list, index) =>
+      list.length === 0 ? [`objective ${index + 1}: needs 1-${MAX_PLAN_EXAMPLES} card examples (non-empty, at most ${MAX_TEXT_LENGTH} characters)`] : [],
+    );
+    if (exampleErrors.length > 0) return { ok: false, errors: exampleErrors };
     const built = buildDynamicTopicData(
       plan.objectives,
       subject.id,
@@ -81,12 +87,12 @@ export async function planAgentObjectives(args: PlanArgs): Promise<PlanOutcome> 
     const data = withSubjectObjectiveKinds(subject, built.data);
     const topicErrors = validateDynamicTopicData(subject, data);
     if (topicErrors.length > 0) return { ok: false, errors: topicErrors };
-    // Przykłady po slugu z tematu (po sanityzacji), nie po surowym slugu modelu.
+    // Przykłady po INDEKSIE: `buildDynamicTopicData` zachowuje kolejność, a odrzucenie całej propozycji przy
+    // porzuconym zagadnieniu gwarantuje parę 1:1 (slug tematu po sanityzacji może się różnić od surowego).
     const examples: Record<string, string[]> = {};
-    for (const objective of data.objectives) {
-      const lines = planExampleLines(plan.objectives.find((item) => item.slug === slugOf(objective.id)));
-      if (lines.length > 0) examples[objective.id] = lines;
-    }
+    data.objectives.forEach((objective, index) => {
+      examples[objective.id] = lines[index]!;
+    });
     accepted = { dynamicTopic: data, examples };
     return { ok: true, errors: [] };
   };

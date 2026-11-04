@@ -153,6 +153,7 @@ export async function runLessonPoolAgent(
     let dynamicTopic: DynamicTopicData | undefined;
     let planExamples: Readonly<Record<string, readonly string[]>> = {};
     if (source.source === "planner") {
+      const planStartUsd = cost.spentUsd;
       const plan = await planAgentObjectives({
         agent: deps.agent,
         subject,
@@ -166,7 +167,7 @@ export async function runLessonPoolAgent(
       });
       if (signal.aborted) throw signal.reason;
       console.log(
-        `[lesson-agent] run=${input.runId} plan status=${plan.status}${plan.status === "plan_failed" ? ` error=${plan.failure.errorCode}` : ""} steps=${plan.steps} costUsd=${cost.spentUsd.toFixed(4)}`,
+        `[lesson-agent] run=${input.runId} plan status=${plan.status}${plan.status === "plan_failed" ? ` error=${plan.failure.errorCode}` : ""} steps=${plan.steps} costUsd=${(cost.spentUsd - planStartUsd).toFixed(4)}`,
       );
       if (plan.status === "plan_failed") {
         return {
@@ -336,6 +337,16 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     if (stopped()) return;
     // Termin zagadnienia liczy się od faktycznego startu podagenta (po miejscu w semaforze).
     const deadline = deadlineSignal(objectivesParent, policy.objectiveTimeoutMs, OBJECTIVE_TIMEOUT_REASON);
+    try {
+      const settled = await superviseObjective(objective, deadline.signal);
+      enqueueHook(settled);
+    } finally {
+      // Zegar i nasłuch terminu zdejmowane także przy błędzie budowy narzędzi albo wejścia.
+      deadline.dispose();
+    }
+  };
+
+  const superviseObjective = async (objective: AgentObjective, objectiveSignal: AbortSignal): Promise<SettledObjective> => {
     const track: ObjectiveTrack = { accepted: 0, rejected: new Map(), costUsd: 0, requests: 0 };
     const budget = objectiveCost(track);
     const agentCost: RunCostSink = {
@@ -352,7 +363,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       checker: deps.checker,
       checkerSemaphore,
       cost: budget,
-      objectiveSignal: deadline.signal,
+      objectiveSignal,
       policy,
       familyScope: input.familyScope,
       examplesFromPlan,
@@ -368,10 +379,10 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     });
     active.add(handle);
     let steps = 0;
-    let thrown: { readonly error: unknown } | undefined;
+    let providerError: { readonly error: unknown } | undefined;
     try {
       // Zagadnienie, którego termin (np. runu) minął przed startem, nie woła dostawcy.
-      if (!deadline.signal.aborted) {
+      if (!objectiveSignal.aborted) {
         const agentInput = objectiveAgentInput({
           subject,
           topic,
@@ -385,10 +396,12 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
           examplesFromPlan,
           maxSteps: policy.maxStepsPerObjective,
         });
-        steps = (await deps.agent.runObjective(agentInput, handle.tools, agentCost, deadline.signal)).steps;
+        steps = (await deps.agent.runObjective(agentInput, handle.tools, agentCost, objectiveSignal)).steps;
       }
     } catch (error) {
-      thrown = { error };
+      // `failed` tylko dla wyjątku dostawcy przy nieprzerwanym sygnale zagadnienia; termin → `incomplete`.
+      // Sygnał sprawdzany TERAZ, przed `close()`: przerwanie w trakcie zamykania nie zmienia klasyfikacji.
+      if (!objectiveSignal.aborted) providerError = { error };
       // Kroki przerwanego wywołania nie wracają z dostawcy: liczba jego żądań to najlepsze przybliżenie.
       steps = track.requests;
     } finally {
@@ -396,15 +409,12 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       await handle.close();
       active.delete(handle);
     }
-    // `failed` tylko dla wyjątku dostawcy przy nieprzerwanym sygnale zagadnienia; termin → `incomplete`.
-    const interrupted = deadline.signal.aborted;
-    deadline.dispose();
-    const settled = settle(objective, steps, thrown !== undefined && !interrupted ? thrown : undefined);
+    const settled = settle(objective, steps, providerError);
     settledById.set(objective.id, settled);
     console.log(
       `[lesson-agent] run=${input.runId} obj=${slugOf(objective.id)} status=${settled.status}${settled.failure === undefined ? "" : ` error=${settled.failure.errorCode}`} steps=${steps} accepted=${track.accepted} rejected=${formatCodes(track.rejected)} costUsd=${track.costUsd.toFixed(4)}`,
     );
-    enqueueHook(settled);
+    return settled;
   };
 
   const skipped = new Set(input.skipObjectives);
