@@ -165,6 +165,14 @@ describe("chapterCardExposureTexts — zdania z kart widoczne jako gotowe rozwi�
     expect(chapterCardExposureTexts([{ body: "To jest kot." }])).toEqual(["To jest kot."]);
   });
 
+  it("długi ciąg spacji i cudzysłowów nie wywołuje nawrotów (czas liniowy)", () => {
+    const started = performance.now();
+    const result = chapterCardExposureTexts([{ body: `${" ".repeat(50_000)}x${"”".repeat(50_000)}y` }]);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(result).toEqual([]);
+    expect(chapterCardExposureTexts([{ body: "„There is a bed.”” — „I like it.”" }])).toEqual(["There is a bed.", "I like it."]);
+  });
+
   it("prawdziwa karta ramy (format `objectivesRules`): wzór po polsku, przykłady po etykiecie, punktor, cudzysłów", () => {
     const frameCard = {
       body: [
