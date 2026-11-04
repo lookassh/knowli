@@ -8,7 +8,11 @@ const { probePath } = require("./paths.cjs");
 
 const [, , lessonDirArg, seed = "gen-compare"] = process.argv;
 const lessonDir = probePath(lessonDirArg, "katalog lekcji");
-const candidates = fs.readdirSync(lessonDir).filter((name) => fs.existsSync(path.join(lessonDir, name, "dump.json")));
+// `readdirSync` nie gwarantuje kolejności — sortujemy, żeby ten sam seed dawał ten sam arkusz na każdym systemie.
+const candidates = fs
+  .readdirSync(lessonDir)
+  .filter((name) => fs.existsSync(path.join(lessonDir, name, "dump.json")))
+  .sort((a, b) => a.localeCompare(b, "en"));
 const models = [];
 
 function rng(seedText) {
