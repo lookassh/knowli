@@ -29,10 +29,10 @@ import { lessonSystemPrompt, lessonUserMaterial } from "../../packages/server/sr
  * `maxRetries: 0` — każde żądanie HTTP jest jednym wpisem kosztu. Adaptery nic nie logują.
  */
 
-/** Koszt żądania z metadanych OpenRouter; brak albo nie-liczba = nieznany (`null`). */
+/** Koszt żądania z metadanych OpenRouter; brak, nie-liczba albo wartość ujemna = nieznany (`null`), żeby nie zaniżyć rejestru. */
 export function openRouterCostOf(meta: ProviderMetadata | undefined): number | null {
   const cost = (meta as { openrouter?: { usage?: { cost?: unknown } } } | undefined)?.openrouter?.usage?.cost;
-  return typeof cost === "number" && Number.isFinite(cost) ? cost : null;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : null;
 }
 
 /**

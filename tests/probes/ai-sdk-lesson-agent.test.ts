@@ -8,7 +8,7 @@ import type {
   LessonPoolInput,
   RunCostSink,
 } from "../../packages/server/src/ports/ai";
-import { AiSdkExerciseChecker, AiSdkLessonPoolAgent, objectiveInstructions } from "./ai-sdk-lesson-agent";
+import { AiSdkExerciseChecker, AiSdkLessonPoolAgent, objectiveInstructions, openRouterCostOf } from "./ai-sdk-lesson-agent";
 
 /**
  * Test dymny tymczasowych adapterów AI SDK (etap 1 issue #237, spec §6.1): model zastępuje
@@ -121,6 +121,19 @@ function fakeTools(log: string[], options: { stopAfterSubmit?: boolean; submit?:
   };
   return { tools, submitted };
 }
+
+describe("openRouterCostOf", () => {
+  const meta = (cost: unknown) => ({ openrouter: { usage: { cost } } }) as never;
+
+  it("koszt liczbowy ≥ 0 przechodzi, brak, nie-liczba i wartość ujemna to nieznany", () => {
+    expect(openRouterCostOf(meta(0.0123))).toBe(0.0123);
+    expect(openRouterCostOf(meta(0))).toBe(0);
+    expect(openRouterCostOf(meta(-0.01))).toBeNull();
+    expect(openRouterCostOf(meta(Number.NaN))).toBeNull();
+    expect(openRouterCostOf(meta("0.01"))).toBeNull();
+    expect(openRouterCostOf(undefined)).toBeNull();
+  });
+});
 
 describe("objectiveInstructions (dopisek przepływu narzędzi)", () => {
   it("dopisuje promptNotes przedmiotu; bez nich nie ma reguły o podpowiedzi (gramatyka zachowuje hint)", () => {

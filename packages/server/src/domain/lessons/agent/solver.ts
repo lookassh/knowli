@@ -12,6 +12,14 @@ import type { AnswerNormalizer, LessonExerciseDraft, LessonTopic } from "../type
 const sortedTexts = (texts: readonly string[]): string[] => [...texts].sort((a, b) => a.localeCompare(b, "en"));
 
 /**
+ * Elementy grupowania w kolejności alfabetycznej tekstu — ta sama w widoku i w `blindMatches`.
+ * Kolejność szkicu bywa skorelowana z `groupId` (model wypisuje grupę po grupie), więc
+ * pozycja zdradzałaby przypisanie.
+ */
+const groupItemsInViewOrder = (draft: LessonExerciseDraft): NonNullable<LessonExerciseDraft["groupItems"]> =>
+  [...(draft.groupItems ?? [])].sort((a, b) => a.text.localeCompare(b.text, "en"));
+
+/**
  * Klasa pola szkicu względem widoku dziecka (Kid DTO z `lesson-materialize.ts`):
  * `view` — widoczne przed odpowiedzią; `key` — wyłącznie klucz lub ocena;
  * `mixed` — widoczne tylko w przekształconej postaci (posortowany bank, kolumny
@@ -135,7 +143,7 @@ export function solverView(draft: LessonExerciseDraft, topic: LessonTopic): stri
       lines.push(
         instructionOf(draft, topic, messages.kid.lessonGroupInstruction),
         `Groups: ${(draft.groups ?? []).map((group) => group.label).join(" | ")}`,
-        `Items (in this order): ${(draft.groupItems ?? []).map((item) => item.text).join(" | ")}`,
+        `Items (in this order): ${groupItemsInViewOrder(draft).map((item) => item.text).join(" | ")}`,
       );
       break;
     case "lesson_cloze":
@@ -180,7 +188,7 @@ export function blindMatches(draft: LessonExerciseDraft, answers: readonly strin
       const expected =
         draft.exerciseType === "lesson_match"
           ? (draft.pairs ?? []).map((pair) => pair.right)
-          : (draft.groupItems ?? []).map((item) => draft.groups?.find((group) => group.id === item.groupId)?.label ?? "");
+          : groupItemsInViewOrder(draft).map((item) => draft.groups?.find((group) => group.id === item.groupId)?.label ?? "");
       return expected.every((right, index) => plainKey(answers[index]?.split("=>").at(-1) ?? "") === plainKey(right));
     }
     default:

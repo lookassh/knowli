@@ -278,11 +278,11 @@ describe("solverView", () => {
     }
   });
 
-  it("lesson_group: etykiety grup i elementy w kolejności szkicu, bez groupId", () => {
+  it("lesson_group: etykiety grup i elementy alfabetycznie (nie w kolejności szkicu), bez groupId", () => {
     const draft = drafts.find((candidate) => candidate.exerciseType === "lesson_group")!;
     const view = solverView(draft, topic);
     expect(view).toContain("Groups: Ssaki | Ptaki");
-    expect(view).toContain("Items (in this order): wróbel | słoń");
+    expect(view).toContain("Items (in this order): słoń | wróbel");
     expect(view).not.toContain("grp-");
   });
 
@@ -402,8 +402,11 @@ describe("blindMatches", () => {
     expect(blindMatches(match, ["kot => dog", "pies => cat"], baseNormalizer)).toBe(false);
   });
 
-  it("grupy: po etykietach grup w kolejności elementów", () => {
-    expect(blindMatches(group, ["słoń => Ssaki", "wróbel => ptaki", "lew => Ssaki"], baseNormalizer)).toBe(true);
+  it("grupy: po etykietach grup w kolejności elementów z widoku (alfabetycznej)", () => {
+    expect(solverView(group, topic)).toContain("Items (in this order): lew | słoń | wróbel");
+    expect(blindMatches(group, ["lew => Ssaki", "słoń => Ssaki", "wróbel => ptaki"], baseNormalizer)).toBe(true);
+    // Kolejność szkicu nie jest kluczem: odpowiedzi ułożone po niej to rozjazd.
+    expect(blindMatches(group, ["słoń => Ssaki", "wróbel => Ptaki", "lew => Ssaki"], baseNormalizer)).toBe(false);
     expect(blindMatches(group, ["Ssaki", "Ptaki", "Ptaki"], baseNormalizer)).toBe(false);
   });
 
