@@ -662,7 +662,7 @@ function reasonCount(reason: string, count: number): Record<string, number> {
 }
 
 /** Przykłady kart ze szkicu i z bieżącego przebiegu, razem (per zagadnienie: najpierw szkic). */
-function mergeExamples(
+export function mergeExamples(
   draft: Readonly<Record<string, readonly string[]>>,
   fresh: Readonly<Record<string, readonly string[]>>,
 ): Record<string, string[]> {

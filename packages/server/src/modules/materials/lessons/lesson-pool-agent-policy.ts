@@ -35,11 +35,16 @@ export const DEFAULT_LESSON_AGENT_POLICY: LessonAgentPolicy = {
   unknownCallEstimateUsd: 0.02,
 };
 
+/** Licznik kosztu z odczytem wyczerpania budżetu (narzędzia podagenta zgłaszają koszt checkera i sprawdzają budżet). */
+export interface RunBudgetSink extends RunCostSink {
+  exhausted(): boolean;
+}
+
 /**
  * Licznik wydatku runu (§7.3): `initialSpentUsd` + zgłoszenia adapterów; koszt
  * nieznany (`null` albo wartość nieskończona/ujemna) liczony szacunkiem.
  */
-export class RunCostMeter implements RunCostSink {
+export class RunCostMeter implements RunBudgetSink {
   private spent: number;
   private unknown = 0;
 

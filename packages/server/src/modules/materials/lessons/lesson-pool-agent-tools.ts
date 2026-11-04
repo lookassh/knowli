@@ -17,7 +17,7 @@ import type { LessonExerciseDraft, LessonTopic } from "../../../domain/lessons/t
 import type { LessonAgentToolOutcome, LessonExerciseCheckerProvider, LessonObjectiveAgentTools } from "../../../ports/ai";
 import { deadlineSignal, type Semaphore } from "./lesson-agent-timers";
 import { isWellShapedRawExercise, stripParentAddedFlags, toExerciseDraft } from "./lesson-drafts";
-import type { LessonAgentPolicy, RunCostMeter } from "./lesson-pool-agent-policy";
+import type { LessonAgentPolicy, RunBudgetSink } from "./lesson-pool-agent-policy";
 import { sanitizeFreshLessonDraft } from "./lesson-pool-acceptance";
 
 /**
@@ -39,6 +39,18 @@ export interface RejectionLogEntry {
 /** Odmowa całego wywołania (bez przyjęcia); nie jest odrzuceniem ćwiczenia. */
 export type ToolRefusalCode = "refused_budget" | "refused_closed";
 
+/**
+ * Przyrosty statystyk runu: `submitted` — rekordy wywołań przetworzonych (bez odmowy na wejściu),
+ * `accepted` — przyjęte do puli, `checkerCalls` — faktyczne wywołania checkera, `checkUnavailable` —
+ * przyjęte bez wyniku checkera (`unchecked`).
+ */
+export interface ObjectiveToolsStats {
+  readonly submitted: number;
+  readonly accepted: number;
+  readonly checkerCalls: number;
+  readonly checkUnavailable: number;
+}
+
 export interface ObjectiveToolsArgs {
   readonly objectiveId: string;
   getState(): LessonAgentState;
@@ -47,7 +59,8 @@ export interface ObjectiveToolsArgs {
   readonly checker: LessonExerciseCheckerProvider;
   /** Wspólny dla runu: jedno miejsce na wywołanie `solve` albo `judgeVariants`. */
   readonly checkerSemaphore: Semaphore;
-  readonly cost: RunCostMeter;
+  /** Licznik runu (albo jego nakładka per zagadnienie): koszt checkera i odczyt budżetu. */
+  readonly cost: RunBudgetSink;
   /** Sygnał zagadnienia (run, termin runu i termin zagadnienia). */
   readonly objectiveSignal: AbortSignal;
   readonly policy: LessonAgentPolicy;
@@ -57,6 +70,8 @@ export interface ObjectiveToolsArgs {
   onRejection(entry: RejectionLogEntry): void;
   /** Opcjonalnie: odmowa całego wywołania (statystyka `refused` kierownika). */
   onRefusal?(code: ToolRefusalCode): void;
+  /** Opcjonalnie: przyrosty statystyk runu kierownika. */
+  onStats?(delta: Partial<ObjectiveToolsStats>): void;
 }
 
 const REFUSAL_TEXT: Readonly<Record<ToolRefusalCode, string>> = {
@@ -108,6 +123,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
   let closed = false;
   // Zamknięcie przerywa też trwające wywołania checkera: ich wynik i tak skończy się odmową.
   const closing = new AbortController();
+  // Jeden sygnał rodzica terminów checkera na całe zagadnienie (nie per wywołanie).
+  const checkerParent = AbortSignal.any([args.objectiveSignal, closing.signal]);
 
   // Mutex zagadnienia: kolejka FIFO obietnic; każde wywołanie czeka na poprzednie (także nieudane).
   let tail: Promise<unknown> = Promise.resolve();
@@ -167,16 +184,17 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     return { ok: true, draft: stripParentAddedFlags([sanitized])[0]! };
   }
 
-  /** Jedno wywołanie checkera pod semaforem i terminem; `null` = cała paczka `unavailable`. */
+  /**
+   * Jedno wywołanie checkera pod semaforem i terminem; `null` = cała paczka `unavailable`. `request`
+   * tylko woła dostawcę: wejście (widoki) buduje wołający przed wywołaniem, więc błąd w budowaniu
+   * widoku jest wyjątkiem, a nie maskowanym `unavailable`.
+   */
   async function callChecker(request: (signal: AbortSignal) => Promise<readonly unknown[]>): Promise<readonly unknown[] | null> {
     return args.checkerSemaphore.run(async () => {
       // Budżet sprawdzany przed każdym wywołaniem (po oczekiwaniu na semafor).
       if (args.cost.exhausted() || isClosed()) return null;
-      const deadline = deadlineSignal(
-        AbortSignal.any([args.objectiveSignal, closing.signal]),
-        policy.checkerTimeoutMs,
-        CHECKER_TIMEOUT_REASON,
-      );
+      args.onStats?.({ checkerCalls: 1 });
+      const deadline = deadlineSignal(checkerParent, policy.checkerTimeoutMs, CHECKER_TIMEOUT_REASON);
       try {
         const values = await request(deadline.signal);
         return Array.isArray(values) ? values : null;
@@ -201,26 +219,25 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     });
     const draftAt = (index: number) => (prechecked[index] as Extract<PrecheckEntry, { pass: true }>).draft;
     const material = agentPolicy.checkerNeedsMaterial ? { material: ctx.material } : {};
+    // Wejścia checkera powstają poza obsługą błędów dostawcy (błąd widoku to błąd kodu, nie `unavailable`).
+    const solveItems = solveIndexes.map((index) => ({
+      view: solverView(draftAt(index), topic),
+      expectedAnswers: expectedAnswerCount(draftAt(index)),
+    }));
+    const judgeItems = judgeIndexes.map((index) => ({
+      view: solverView(draftAt(index), topic),
+      answer: draftAt(index).answer,
+      variants: [...draftAt(index).acceptedAnswers],
+    }));
     const [solved, judged] = await Promise.all([
-      solveIndexes.length === 0
+      solveItems.length === 0
         ? null
-        : callChecker(async (signal) => {
-            const items = solveIndexes.map((index) => ({
-              view: solverView(draftAt(index), topic),
-              expectedAnswers: expectedAnswerCount(draftAt(index)),
-            }));
-            return (await args.checker.solve({ items, ...material }, args.cost, signal)).answers;
-          }),
-      judgeIndexes.length === 0
+        : callChecker(async (signal) => (await args.checker.solve({ items: solveItems, ...material }, args.cost, signal)).answers),
+      judgeItems.length === 0
         ? null
-        : callChecker(async (signal) => {
-            const items = judgeIndexes.map((index) => ({
-              view: solverView(draftAt(index), topic),
-              answer: draftAt(index).answer,
-              variants: [...draftAt(index).acceptedAnswers],
-            }));
-            return (await args.checker.judgeVariants({ items, ...material }, args.cost, signal)).equivalent;
-          }),
+        : callChecker(
+            async (signal) => (await args.checker.judgeVariants({ items: judgeItems, ...material }, args.cost, signal)).equivalent,
+          ),
     ]);
     return prechecked.map((entry, index) => ({
       solve: checkAt(solveIndexes, solved, index, isStringList),
@@ -264,6 +281,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       };
     }
 
+    args.onStats?.({ submitted: exercises.length });
+
     // 2. Parsowanie i wspólna sanityzacja (§7.2).
     const parsed = exercises.map(parseRecord);
     const drafts: LessonExerciseDraft[] = [];
@@ -294,6 +313,12 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     const admitted = admitBatch(examplesStep?.state ?? current, objectiveId, prechecked, checks, ctx);
     args.setState(admitted.state);
     // Koniec sekcji krytycznej.
+
+    const acceptedEntries = admitted.results.filter((entry) => "accepted" in entry);
+    args.onStats?.({
+      accepted: acceptedEntries.length,
+      checkUnavailable: acceptedEntries.filter((entry) => "accepted" in entry && entry.unchecked).length,
+    });
 
     const results = parsed.map((record, index): ToolResult => {
       if (!record.ok) {
