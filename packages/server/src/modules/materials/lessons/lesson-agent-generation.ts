@@ -110,6 +110,37 @@ function withGenerationGaps(next: LessonContext, gaps: readonly LessonGeneration
 }
 
 /**
+ * Postęp zawężony do ćwiczeń zapisanych do szkicu (te same referencje co w postępie): zagadnienie, któremu
+ * kontrola końcowa albo zapis odrzuciły ćwiczenie, nie jest kompletem — o luce decyduje liczba zapisanych.
+ */
+function writtenProgress(progress: LessonAgentProgress, written: readonly LessonExerciseDraft[]): LessonAgentProgress {
+  const kept = new Set(written);
+  const objectives = Object.fromEntries(
+    Object.entries(progress.objectives).map(([objectiveId, entry]) => {
+      const exercises = entry.exercises.filter((exercise) => kept.has(exercise));
+      const dropped = exercises.length < entry.exercises.length;
+      return [objectiveId, { ...entry, exercises, ...(dropped && entry.status === "complete" ? { status: "incomplete" as const } : {}) }];
+    }),
+  );
+  return { ...progress, objectives };
+}
+
+/**
+ * Postęp po porażce walidacji zapisu (odrzucone wszystkie przyjęte ćwiczenia): liczniki usunięć wyzerowane
+ * (są już w kontekście szkicu), ćwiczenia zagadnień usunięte, a komplet bez ćwiczeń staje się `incomplete` —
+ * kolejna próba generuje je od nowa.
+ */
+function discardedProgress(progress: LessonAgentProgress): LessonAgentProgress {
+  const objectives = Object.fromEntries(
+    Object.entries(progress.objectives).map(([objectiveId, entry]) => [
+      objectiveId,
+      { ...entry, exercises: [], ...(entry.status === "complete" ? { status: "incomplete" as const } : {}) },
+    ]),
+  );
+  return { ...progress, objectives, removedAfterAcceptance: 0, droppedObjectiveCount: 0 };
+}
+
+/**
  * Postęp z punktu kontrolnego z tematem sprawdzonym regułami katalogu jak przy pierwszej próbie
  * (`parseLessonAgentProgress` sprawdza tylko obwiednię). Zły temat = brak postępu (start od zera).
  */
@@ -216,7 +247,16 @@ export async function executeLessonAgentGeneration(
       limits: lessonAgentLimits(capable, topic, input.poolSize),
     });
     if (check.removed > 0) console.log(`[lesson-agent] run=${runId} final_check removed=${check.removed}`);
-    const gaps = generationGapsOf(progress, lessonOrder, regenerate === undefined ? "pool" : { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } });
+    // Luki z ćwiczeń faktycznie zapisanych: dogenerowanie liczy „dodano k z N” po odrzuceniach kontroli
+    // końcowej i samego zapisu (kolizje z historyjką), nie z przyjętych przez agenta.
+    let gaps: LessonGenerationGap[] = [];
+    const gapsAfterWrite = (written: readonly LessonExerciseDraft[]): LessonGenerationGap[] =>
+      regenerate === undefined
+        ? generationGapsOf(progress, lessonOrder, "pool")
+        : generationGapsOf(writtenProgress(progress, written), lessonOrder, { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } });
+    // Porażka walidacji zapisu (wszystko odrzucone): liczniki są już w kontekście, a odrzucone ćwiczenia
+    // nie wracają — „Ponów” generuje od nowa zamiast liczyć te same usunięcia ponownie.
+    const discarded = discardedProgress(progress);
     const context: LessonPoolWriteContext = {
       ...(mode === "pool" && dynamicTopic !== undefined ? { dynamicTopic } : {}),
       newExamples,
@@ -233,15 +273,22 @@ export async function executeLessonAgentGeneration(
       existingDrafts: draft.exercises,
       accepted: check.kept,
       context,
-      extendContext: (next) => withGenerationGaps(next, mergeGenerationGaps(next.generationGaps, gaps, mode, addObjectiveId)),
+      // Porażka walidacji (nic nie zapisano) zostawia luki bez zmian, jak porażka przed zapisem.
+      extendContext: (next, saved) => {
+        if (saved.length === 0) return next;
+        gaps = gapsAfterWrite(saved);
+        return withGenerationGaps(next, mergeGenerationGaps(next.generationGaps, gaps, mode, addObjectiveId));
+      },
       onSuccessTransaction: async (tx) => {
         await tx.update(generationRuns)
           .set({ agentCheckpoint: summarizeLessonAgentProgress(progress, attempts) as unknown as Record<string, unknown> })
           .where(eq(generationRuns.id, runId));
       },
+      onFailedValidationTransaction: (tx) => saveLessonAgentCheckpoint(tx, run, discarded),
       finalizationDeadlineAtMs: runDeadlineAtMs,
       ...(signal === undefined ? {} : { signal }),
     });
+    if (written === "failed_validation") latest = discarded;
     console.log(`[lesson-agent] run=${runId} write=${written} kept=${check.kept.length} gaps=${gaps.length} durationMs=${Date.now() - args.runStartedAtMs}`);
   };
 
@@ -260,8 +307,9 @@ export async function executeLessonAgentGeneration(
       // Jak `failValidation` potoku: liczniki trafiają do kontekstu szkicu (raport krytyka bez zmian). Postęp
       // zostaje do „Ponów” z licznikami wyzerowanymi w tej samej transakcji — kolejny zapis do szkicu doliczy
       // tylko nowe usunięcia, nie te już policzone w kontekście.
+      // `latest` dopiero po zatwierdzeniu: przy wycofanej transakcji zapis best-effort zostawia liczniki,
+      // których kontekst nie dostał.
       const counted: LessonAgentProgress = { ...progress, removedAfterAcceptance: 0, droppedObjectiveCount: 0 };
-      latest = counted;
       await failLessonPoolValidation(services, {
         run,
         context: {
@@ -272,6 +320,7 @@ export async function executeLessonAgentGeneration(
         },
         onTransaction: (tx) => saveLessonAgentCheckpoint(tx, run, counted),
       });
+      latest = counted;
       return;
     }
     await save(progress);

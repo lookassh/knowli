@@ -1572,6 +1572,12 @@ export interface LessonPoolWriteContext {
   readonly droppedObjectiveCount: number;
 }
 
+/**
+ * Dodatkowe pola kontekstu szkicu (ścieżka agenta), w transakcji zapisu: `written` = ćwiczenia zapisane do
+ * szkicu po odrzuceniach samego zapisu (kolizje z historyjką, słowa kluczowe bez rodziny); puste przy porażce.
+ */
+type LessonContextExtension = (next: LessonContext, written: readonly LessonExerciseDraft[]) => LessonContext;
+
 /** Raport kontroli jakości przebiegu scalony z raportem szkicu (wołany w transakcji zapisu, po zapisie ćwiczeń). */
 type LessonPoolReview = (
   tx: Tx,
@@ -1625,7 +1631,7 @@ async function failedValidationContext(
   writeRejected: number,
   rejectedReasons: Record<string, number>,
   review: LessonPoolReview | undefined,
-  extendContext: ((next: LessonContext) => LessonContext) | undefined,
+  extendContext: LessonContextExtension | undefined,
 ): Promise<LessonContext> {
   const next: LessonContext = {
     ...prevContext,
@@ -1634,7 +1640,7 @@ async function failedValidationContext(
     droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + context.droppedObjectiveCount,
     ...(review === undefined ? {} : { review: await review(tx, versionId, prevContext.review, []) }),
   };
-  return extendContext === undefined ? next : extendContext(next);
+  return extendContext === undefined ? next : extendContext(next, []);
 }
 
 /**
@@ -1648,7 +1654,7 @@ export async function failLessonPoolValidation(
     run: LessonRunIdentity;
     context: LessonPoolWriteContext;
     review?: LessonPoolReview;
-    extendContext?: (next: LessonContext) => LessonContext;
+    extendContext?: LessonContextExtension;
     onTransaction?: (tx: Tx) => Promise<void>;
   },
 ): Promise<void> {
@@ -1676,7 +1682,9 @@ export async function failLessonPoolValidation(
  * Straże (bieżąca próba, termin finalizacji, wersja szkicu), odrzucenie kolizji z historyjką i słów
  * kluczowych bez rodziny, zapis ćwiczeń, `lesson_context` z licznikami zsumowanymi z poprzednimi,
  * uzgodnienie mediów, podbicie numeru edycji, anulowanie innych runów, kolejka historyjki, stan
- * `review` i sukces runu. `onSuccessTransaction` tylko w gałęzi sukcesu, przed podbiciem numeru edycji.
+ * `review` i sukces runu. `onSuccessTransaction` tylko w gałęzi sukcesu, przed podbiciem numeru edycji;
+ * `onFailedValidationTransaction` tylko w gałęzi porażki walidacji (zapis odrzucił wszystko), przed zmianą
+ * stanu runu.
  * „superseded” zwraca też, gdy run nie jest już bieżącą próbą (wtedy bez zmiany stanu runu).
  */
 export async function finalizeLessonPoolWrite(
@@ -1691,9 +1699,10 @@ export async function finalizeLessonPoolWrite(
     context: LessonPoolWriteContext;
     /** Brak = raport krytyka w kontekście zostaje bez zmian (ścieżka agenta). */
     review?: LessonPoolReview;
-    /** Ścieżka agenta: dodatkowe pola kontekstu i zapis w tej samej transakcji. */
-    extendContext?: (next: LessonContext) => LessonContext;
+    /** Ścieżka agenta: dodatkowe pola kontekstu i zapisy w tej samej transakcji (sukces albo porażka walidacji). */
+    extendContext?: LessonContextExtension;
     onSuccessTransaction?: (tx: Tx) => Promise<void>;
+    onFailedValidationTransaction?: (tx: Tx) => Promise<void>;
     finalizationDeadlineAtMs: number;
     signal?: AbortSignal;
   },
@@ -1745,6 +1754,7 @@ export async function finalizeLessonPoolWrite(
         .update(deckVersions)
         .set({ lessonContext: failedContext as unknown as Record<string, unknown> })
         .where(eq(deckVersions.id, version.id));
+      await args.onFailedValidationTransaction?.(tx);
       await markLessonRun(tx, services.clock, run, "failed", "validation");
       return "failed_validation";
     }
@@ -1773,7 +1783,7 @@ export async function finalizeLessonPoolWrite(
       droppedObjectiveCount: (prevContext.droppedObjectiveCount ?? 0) + context.droppedObjectiveCount,
       ...(review === undefined ? {} : { review }),
     };
-    const nextContext = args.extendContext === undefined ? baseContext : args.extendContext(baseContext);
+    const nextContext = args.extendContext === undefined ? baseContext : args.extendContext(baseContext, accepted);
     await tx
       .update(deckVersions)
       .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
