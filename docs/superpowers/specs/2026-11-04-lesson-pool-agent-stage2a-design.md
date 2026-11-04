@@ -61,8 +61,9 @@ zachowania potoku.
 `modules/materials/lessons/lesson-agent-generation.ts`, zapis wspólny w
 `lesson-drafts.ts`, punkt kontrolny w `lesson-agent-checkpoint.ts` (schemat,
 odczyt, zapis), straż i „Ponów” w `generation-runs.ts`/`generation.ts`,
-adapter w `providers/openai/`, składanie w `providers/generation-env.ts`
-(wyłącznie worker), parsowanie env w `config.ts` (bez importu SDK). Brak nowych
+adapter w `providers/openai/`, składanie w `providers/lesson-agent-env.ts`
+(eksport `@learning/server/lesson-agent`, wyłącznie worker), parsowanie env w
+`config.ts` (bez importu SDK). Brak nowych
 zależności między obszarami. Nowe zależności pakietu: `ai@7.0.162` i
 `@openrouter/ai-sdk-provider@3.1.0` w `packages/server` (`dependencies`,
 wersje dokładne, `pnpm --filter @learning/server add --save-exact`); devDependencies
@@ -224,8 +225,13 @@ klucz, nazwy usług):
   albo przedmiot bez `agentPolicy`, niepoprawna liczba, nieznany wysiłek,
   generator i checker z tej samej rodziny (ten sam prefiks przed `/`).
 
-**Składanie (`providers/generation-env.ts`, tylko worker):**
-`createGenerationDepsFromEnv` dostaje `lessonAgent?: LessonAgentDeps`:
+**Składanie (tylko worker):** `lessonAgentDepsFromEnv(env, subjects, usage, llm)`
+w nowym `providers/lesson-agent-env.ts`, wystawionym jako osobny eksport pakietu
+`@learning/server/lesson-agent` (web importuje `@learning/server` i
+`generation-env.ts`, więc adapter nie może być osiągalny z nich).
+`apps/worker/src/composition.ts` przekazuje wynik do
+`createGenerationDepsFromEnv(env, usage, { lessonAgent })`, który wstawia
+`GenerationDeps.lessonAgent?: LessonAgentDeps`:
 
 ```ts
 interface LessonAgentDeps {
@@ -717,7 +723,7 @@ właściciela.
 | Błąd konfiguracji dostawcy pali próby | Mapowanie błędów: `configuration` nieprzejściowy (§4) |
 | Treść lekcji w trwałym wierszu runu | Podsumowanie bez treści po zapisie; zerowanie przy anulowaniu (§8.1) |
 | Zmiana listy przedmiotów między próbami | Wybór przy każdej próbie; potok ignoruje postęp |
-| Web pobiera SDK do bundla | Składanie adaptera tylko w `generation-env.ts`; test importów `config.ts` |
+| Web pobiera SDK do bundla | Adapter osiągalny tylko z `@learning/server/lesson-agent` (worker); test importów |
 
 ## 15. Rozstrzygnięcia po review (wersja 2)
 
@@ -739,7 +745,7 @@ właściciela.
 | Budżet: ponowienie mimo wyczerpania, start podagentów, utrata wydatku (K1, K2, K3) | Wiersz 1 §9; start pod budżetem (§6.3); zapis best-effort (§8.2 pkt 4) |
 | Ustawienia prywatności dostawcy (`deny`) (K2) | `UMIEM_LESSON_AGENT[_CHECKER]_PROVIDER_*` z dziedziczeniem z `UMIEM_LLM` (§5) |
 | Kolejność kluczy, własny klucz, jawny `apiKey`/`baseURL` (K2) | `endpointKeyFromEnv` z prefiksem; jawne opcje i test (§4, §5) |
-| Web nie może rzucać przy starcie; bundel SDK (K2) | `lessonAgentPublicFromEnv` nie rzuca; adapter tylko w `generation-env.ts` (§5) |
+| Web nie może rzucać przy starcie; bundel SDK (K2) | `lessonAgentPublicFromEnv` nie rzuca; adapter tylko przez eksport `@learning/server/lesson-agent` (§5) |
 | Punkt kontrolny bez czyszczenia (K2) | Podsumowanie bez treści; zerowanie przy `supersedeLessonRuns` (§8.1) |
 | `UMIEM_FAKE_PROVIDERS` z pustymi fake'ami (K3) | Domyślny scenariusz „jak LLM”, checker `null`; test składania z env (§5, §12) |
 | „Ponów”: gałęzie i budżet (K1, K2, K3) | Wszystkie gałęzie kolejkujące, pod `FOR UPDATE` (§8.4); test dwóch kart |
