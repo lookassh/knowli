@@ -254,6 +254,15 @@ export interface StartedContainer {
   url: string;
 }
 
+// Baza testów jest jednorazowa (kontener --rm), więc trwałość zapisu nic nie
+// daje, a kosztuje: pliki czyszczą tabele w każdym beforeEach i każdy commit
+// czekałby na fsync. Katalog danych w tmpfs (RAM maszyny Dockera; zastępuje
+// też anonimowy wolumen obrazu) i wyłączone fsync/synchronous_commit/
+// full_page_writes zostawiają semantykę transakcji i blokad bez zmian —
+// tracimy tylko odporność na awarię serwera, której testy nie sprawdzają.
+const POSTGRES_DATA_DIR = "/var/lib/postgresql/data";
+const POSTGRES_NON_DURABLE_SETTINGS = ["fsync=off", "synchronous_commit=off", "full_page_writes=off"];
+
 function postgresRunArgs(name: string): string[] {
   return [
     "-d",
@@ -264,9 +273,12 @@ function postgresRunArgs(name: string): string[] {
     "POSTGRES_USER=postgres",
     "-e",
     "POSTGRES_PASSWORD=test",
+    "--tmpfs",
+    POSTGRES_DATA_DIR,
     "--name",
     name,
     POSTGRES_IMAGE,
+    ...POSTGRES_NON_DURABLE_SETTINGS.flatMap((setting) => ["-c", setting]),
   ];
 }
 

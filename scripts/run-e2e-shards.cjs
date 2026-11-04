@@ -154,6 +154,12 @@ function runPlaywright(label, runId, port, playwrightArgs, extraEnv = {}) {
         // Kosz tylko z extraEnv danego świata; wartość z powłoki nie może
         // zawęzić innych światów (pusta = wszystkie specy real).
         UMIEM_E2E_BUCKET: "",
+        // Własny cache transformacji Playwrighta per świat (i per checkout):
+        // światy startujące naraz zapisywały te same pliki wspólnego
+        // %TEMP%\playwright-transform-cache i na Windows global-setup padał
+        // z EPERM przy pierwszym przebiegu po zmianie kodu.
+        PWTEST_CACHE_DIR: process.env.PWTEST_CACHE_DIR
+          ?? path.join(repoRoot, "node_modules/.cache/playwright-transform", label.replace(/[^a-z0-9-]+/gi, "-")),
         ...extraEnv,
       },
       stdio: ["ignore", "pipe", "pipe"],
