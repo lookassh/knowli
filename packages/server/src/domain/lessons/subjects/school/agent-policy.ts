@@ -22,12 +22,18 @@ const HINT_TYPE: LessonExerciseType = "lesson_open_answer";
 
 const normalizer = baseNormalizer;
 
+/** Dopisek dla podagenta: odpowiednik `sanitize` (podpowiedź poza pytaniem otwartym i tak jest usuwana). */
+const PROMPT_NOTES: readonly string[] = [
+  "Hint only for lesson_open_answer: the hint field must be null for every other exercise type.",
+];
+
 export const schoolAgentPolicy: SubjectAgentPolicy = {
   blindSolveTypes: BLIND_SOLVE_TYPES,
   variantCheckTypes: VARIANT_CHECK_TYPES,
   checkerNeedsMaterial: true,
   independentReserve: 1,
   slack: 2,
+  promptNotes: PROMPT_NOTES,
   rejectionTexts: {
     leakVictim:
       "An independent answer must not be visible earlier — ask about a different fact of the material or phrase the question differently.",

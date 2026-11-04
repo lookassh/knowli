@@ -8,7 +8,7 @@ import type {
   LessonPoolInput,
   RunCostSink,
 } from "../../packages/server/src/ports/ai";
-import { AiSdkExerciseChecker, AiSdkLessonPoolAgent } from "./ai-sdk-lesson-agent";
+import { AiSdkExerciseChecker, AiSdkLessonPoolAgent, objectiveInstructions } from "./ai-sdk-lesson-agent";
 
 /**
  * Test dymny tymczasowych adapterów AI SDK (etap 1 issue #237, spec §6.1): model zastępuje
@@ -121,6 +121,17 @@ function fakeTools(log: string[], options: { stopAfterSubmit?: boolean; submit?:
   };
   return { tools, submitted };
 }
+
+describe("objectiveInstructions (dopisek przepływu narzędzi)", () => {
+  it("dopisuje promptNotes przedmiotu; bez nich nie ma reguły o podpowiedzi (gramatyka zachowuje hint)", () => {
+    const noted = objectiveInstructions(agentInput({ promptNotes: ["NOTE-ONE about hints.", "NOTE-TWO."] }));
+    expect(noted).toContain("NOTE-ONE about hints.");
+    expect(noted).toContain("NOTE-TWO.");
+    const plain = objectiveInstructions(agentInput());
+    expect(plain).not.toContain("NOTE-ONE");
+    expect(plain).not.toContain("Hint only for lesson_open_answer");
+  });
+});
 
 describe("AiSdkLessonPoolAgent (MockLanguageModelV4, bez sieci)", () => {
   it("materializuje surowe rekordy przed submit i kończy pętlę po kroku, gdy shouldStop() zwraca true", async () => {

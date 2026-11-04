@@ -137,7 +137,8 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
     `Target: guided >= ${targets.guided}, productive >= ${targets.productive}, independent >= ${targets.independent}, required types: ${required}; ` +
       `about ${targets.targetCount} exercises in stages (plus up to ${targets.listenAllowance} lesson_listen_choice), at most ${targets.maxExercises} exercises in total. ` +
       "Vary sentences: never two exercises with the same sentence, and do not reuse one template more than twice.",
-    "Hint only for lesson_open_answer: the hint field must be null for every other exercise type.",
+    // Reguły przedmiotu dla podagenta (np. szkoła: podpowiedź tylko przy pytaniu otwartym) — z polityki, nie stałe.
+    ...(input.promptNotes ?? []),
     "WORKFLOW: call submit_exercises with ALL exercises of the objective in ONE call. The tool checks each one (subject and pool rules, answer leaks against the whole lesson, " +
       "a blind solve by another model, and an independent check of every accepted answer variant). Rejected exercises are NOT in the pool: the result names each problem. " +
       "Then call submit_exercises again with ONLY corrected or additional exercises, until the result says complete=true. remove_exercise deletes one of your accepted exercises by id. " +

@@ -5,6 +5,8 @@ import { withAgentPolicy } from "../../../domain/lessons/testing/agent-test-subj
 import { historyLikeSubject } from "../../../domain/lessons/testing/history-like-subject";
 import { chapterAgentPolicy } from "../../../domain/lessons/subjects/english-chapter/agent-policy";
 import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
+import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { schoolAgentPolicy } from "../../../domain/lessons/subjects/school/agent-policy";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonAgentPlanInput, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
@@ -261,14 +263,41 @@ describe("runLessonPoolAgent — przebieg zagadnień", () => {
     const [first] = agent.calls;
     const target = objectiveBatchCounts(0, 2, plain)[0]!;
     expect(first!.input.targets).toMatchObject({ targetCount: target, listenAllowance: 0, maxExercises: target + 2, requiredTypes: [] });
-    expect(first!.input.pool.countPerObjective).toBe(target);
-    expect(first!.input.pool.stageCounts).toEqual({
-      guided: first!.input.targets.guided,
-      productive: first!.input.targets.productive,
-      independent: first!.input.targets.independent,
-    });
+    const { guided, productive, independent } = first!.input.targets;
+    expect(first!.input.pool.stageCounts).toEqual({ guided, productive, independent });
+    // Liczba partii w prompcie = suma etapów (tekst promptu mówi, że podział obejmuje tyle ćwiczeń).
+    expect(first!.input.pool.countPerObjective).toBe(guided + productive + independent);
     expect(first!.input.cardSentences).toEqual(["Zdanie szkicu."]);
     expect(first!.input.otherObjectives.map((other) => other.title)).toEqual([topic.objectives[1]!.titlePl]);
+  });
+
+  it("targets.independent obejmuje rezerwę samodzielnych (jak status): pula 60 na 6 zagadnień → 4/4/3", async () => {
+    const prefix = A.slice(0, A.lastIndexOf(".") + 1);
+    const six: LessonTopic = { ...topic, objectives: Array.from({ length: 6 }, (_, i) => ({ ...topic.objectives[0]!, id: `${prefix}six${i + 1}` })) };
+    const { agent, deps } = setup();
+    const result = await runLessonPoolAgent(deps, runInput({ objectiveSource: { source: "catalog", topic: six }, poolSize: 60 }), never);
+    expect(agent.calls).toHaveLength(6);
+    for (const call of agent.calls) {
+      // Podział partii 10 ćwiczeń daje 2 samodzielne; status wymaga minimum 2 + rezerwa 1.
+      expect(call.input.targets).toMatchObject({ guided: 4, productive: 4, independent: 3, targetCount: 10 });
+      expect(call.input.pool.stageCounts).toEqual({ guided: 4, productive: 4, independent: 3 });
+      expect(call.input.pool.countPerObjective).toBe(11);
+    }
+    expect(result.objectives[0]!.missing).toContain("independent: 0 of 3");
+  });
+
+  it("promptNotes z polityki przedmiotu: szkoła dostaje dopisek o podpowiedzi, przedmiot bez dopisków — brak pola", async () => {
+    expect(schoolAgentPolicy.promptNotes).toEqual(["Hint only for lesson_open_answer: the hint field must be null for every other exercise type."]);
+    const noted = withAgentPolicy(plain, { promptNotes: schoolAgentPolicy.promptNotes });
+    const withNotes = setup({ subjects: [noted] });
+    await runLessonPoolAgent(withNotes.deps, runInput({ subjectId: noted.id }), never);
+    for (const call of withNotes.agent.calls) expect(call.input.promptNotes).toEqual(schoolAgentPolicy.promptNotes);
+
+    const without = setup();
+    await runLessonPoolAgent(without.deps, runInput(), never);
+    for (const call of without.agent.calls) expect(call.input).not.toHaveProperty("promptNotes");
+    expect(englishGrammarSubject.agentPolicy?.promptNotes).toBeUndefined();
+    expect(englishChapterSubject.agentPolicy?.promptNotes).toBeUndefined();
   });
 });
 

@@ -175,6 +175,11 @@ export interface SubjectAgentPolicy {
   /** Słowa i ramy do pokrycia przez plan (lista dla modelu planera). */
   planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
   planGate?(plan: readonly RawPlanObjective[], material: string): string[];
+  /**
+   * Dopiski przedmiotu do instrukcji podagenta zagadnienia (po angielsku, dla modelu), np. szkoła:
+   * podpowiedź tylko przy pytaniu otwartym. Brak = bez dopisków (gramatyka zachowuje `hint`).
+   */
+  readonly promptNotes?: readonly string[];
 }
 /** Normalizator odpowiedzi przedmiotu. */
 export interface AnswerNormalizer {

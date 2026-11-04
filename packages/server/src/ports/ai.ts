@@ -196,7 +196,9 @@ export interface LessonReviewerProvider {
 /**
  * Licznik kosztu runu agenta puli (etap 1 issue #237). Adapter zgłasza KAŻDE żądanie HTTP, także
  * nieudane i ponowione: kwotę w USD albo `null`, gdy koszt jest nieznany (kierownik liczy wtedy
- * szacunek). Kierownik nigdy nie woła `UsageRecorder` — robi to adapter z tego samego zdarzenia.
+ * szacunek). Koszt zapisuje się raz na wywołanie modelu, zaraz po odpowiedzi i PRZED wykonaniem
+ * narzędzi tego kroku (przerwanie w trakcie narzędzi go nie gubi). Kierownik nigdy nie woła
+ * `UsageRecorder` — robi to adapter z tego samego zdarzenia.
  */
 export interface RunCostSink {
   record(usd: number | null): void;
@@ -236,6 +238,11 @@ export interface LessonObjectiveAgentInput {
     readonly maxExercises: number;
   };
   readonly maxSteps: number;
+  /**
+   * Dopiski przedmiotu do instrukcji podagenta (`SubjectAgentPolicy.promptNotes`, po angielsku);
+   * adapter dokleja je do dopisku przepływu narzędzi. Brak = przedmiot bez dopisków.
+   */
+  readonly promptNotes?: readonly string[];
 }
 
 /** Skrót wyniku narzędzia dla modelu: co przyjęto, co odrzucono i czego brakuje do kompletu. */
@@ -313,7 +320,8 @@ export interface LessonPoolAgentProvider {
  * Niezależny solver i sędzia wariantów ćwiczeń agenta puli. Wywołania paczkowe: jedno żądanie na
  * paczkę `submit`, materiał raz. `null` w odpowiedzi = brak wyniku dla pozycji (`unavailable`).
  * Do checkera trafia wyłącznie jego wejście: widoki, liczby odpowiedzi, odpowiedź i warianty oraz
- * materiał, gdy przedmiot go wymaga — nigdy klucz odpowiedzi.
+ * materiał, gdy przedmiot go wymaga. `solve` nigdy nie dostaje klucza odpowiedzi (sam widok i liczba
+ * odpowiedzi); `judgeVariants` dostaje odpowiedź kanoniczną i warianty, bo ocenia ich równoważność.
  */
 export interface LessonExerciseCheckerProvider {
   readonly name: string;
