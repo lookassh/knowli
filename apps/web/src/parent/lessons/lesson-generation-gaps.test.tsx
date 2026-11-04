@@ -14,6 +14,11 @@ const gaps: LessonGenerationGapDto[] = [
 describe("niepełna pula po generowaniu agentem", () => {
   it("alert z liczbą zagadnień", () => {
     expect(generationGapsAlertText(gaps)).toBe("Generowanie zakończyło się częściowo: 3 zagadnienia do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.");
+    // polska odmiana: 1 zagadnienie, 2–4 zagadnienia, 5+ zagadnień
+    expect(generationGapsAlertText(gaps.slice(0, 1))).toBe("Generowanie zakończyło się częściowo: 1 zagadnienie do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.");
+    expect(generationGapsAlertText(gaps.slice(0, 2))).toBe("Generowanie zakończyło się częściowo: 2 zagadnienia do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.");
+    const five = Array.from({ length: 5 }, (_, i): LessonGenerationGapDto => ({ objectiveId: `o${i}`, reason: "incomplete" }));
+    expect(generationGapsAlertText(five)).toBe("Generowanie zakończyło się częściowo: 5 zagadnień do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.");
     const markup = renderParentMarkup(<LessonGenerationGapsAlert gaps={gaps} />);
     expect(markup).toContain('data-testid="lesson-generation-gaps"');
     expect(markup).toContain(generationGapsAlertText(gaps));

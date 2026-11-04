@@ -1166,7 +1166,11 @@ export const messages = {
     generationServiceInfo: "Materiał lekcji trafia do usługi generującej ćwiczenia: {service}. Nie wysyłamy do niej imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfo: "Gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje je na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfoWithMaterial: "Materiał lekcji i gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje ćwiczenia na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
-    generationGapsAlert: "Generowanie zakończyło się częściowo: {n} zagadnienia do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",
+    generationGapsAlert: {
+      one: "Generowanie zakończyło się częściowo: {n} zagadnienie do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",
+      few: "Generowanie zakończyło się częściowo: {n} zagadnienia do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",
+      many: "Generowanie zakończyło się częściowo: {n} zagadnień do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",
+    } as Record<string, string>,
     generationGapIncomplete: "Niepełne po generowaniu",
     generationGapFailed: "Nie udało się wygenerować",
     generationGapAddShort: "Dodano {added} z {requested}",

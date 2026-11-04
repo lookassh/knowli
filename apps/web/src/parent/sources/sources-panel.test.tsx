@@ -128,6 +128,9 @@ describe("SourcePage", () => {
     it("usługi generowania i drugi model w wariancie szkolnym (z materiałem), krytyk tylko dla przedmiotu potoku", () => {
       const both = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, agentCatalog(true)));
       expect(both).toContain(messages.lessons.generationServiceInfo.replace("{service}", GEN.join(", ")));
+      // te same usługi generowania przy obu przyciskach: komunikat tylko raz
+      expect(both).toContain('data-testid="source-generation-service-chapter"');
+      expect(both).not.toContain('data-testid="source-generation-service-school"');
       expect(both).toContain('data-testid="source-check-service-school"');
       expect(both).toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
       expect(both).toContain('data-testid="source-check-service-chapter"');

@@ -342,9 +342,12 @@ export default function SourcePage({
       {lessonButtons.length === 0 && (
         <Text size="sm" className="pp-editor-muted" data-testid="source-no-lesson-subjects">{messages.sources.noLessonSubjects}</Text>
       )}
-      {buttonServices.map(({ kind, info }) => (
+      {buttonServices.map(({ kind, info }, index) => (
         <Stack key={kind} gap={4}>
-          {info.generation && <Text size="sm" className="pp-editor-muted" data-testid={`source-generation-service-${kind}`}>{info.generation}</Text>}
+          {/* ten sam komunikat o generowaniu (te same usługi) pokazujemy raz, gdy oba przyciski prowadzą do agenta */}
+          {info.generation && !buttonServices.slice(0, index).some((earlier) => earlier.info.generation === info.generation) && (
+            <Text size="sm" className="pp-editor-muted" data-testid={`source-generation-service-${kind}`}>{info.generation}</Text>
+          )}
           {info.check && <Text size="sm" className="pp-editor-muted" data-testid={`source-check-service-${kind}`}>{info.check}</Text>}
         </Stack>
       ))}

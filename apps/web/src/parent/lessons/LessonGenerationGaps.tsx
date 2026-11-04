@@ -2,6 +2,7 @@
 
 import { Alert, Text } from "@mantine/core";
 import { messages, type LessonGenerationGapDto } from "@learning/contracts";
+import { polishPlural } from "../deck-list-grouping";
 import { ParentIcon } from "../ParentIcon";
 
 /** Zagadnienia do uzupełnienia, bez powtórzeń (serwer trzyma jeden wpis na zagadnienie). */
@@ -11,7 +12,8 @@ export function generationGapObjectiveCount(gaps: readonly LessonGenerationGapDt
 
 /** Tekst alertu o częściowym generowaniu agentem puli. */
 export function generationGapsAlertText(gaps: readonly LessonGenerationGapDto[]): string {
-  return messages.lessons.generationGapsAlert.replace("{n}", String(generationGapObjectiveCount(gaps)));
+  const count = generationGapObjectiveCount(gaps);
+  return messages.lessons.generationGapsAlert[polishPlural(count)]!.replace("{n}", String(count));
 }
 
 /** Tekst znacznika zagadnienia; „dodano k z N” bez liczb (stary ładunek) pokazuje się jak niepełne zagadnienie. */

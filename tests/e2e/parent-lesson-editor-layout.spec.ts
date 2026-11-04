@@ -949,7 +949,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
     await openLesson(page, { data: gappedLesson });
     const alert = page.getByTestId("lesson-generation-gaps");
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText(messages.lessons.generationGapsAlert.replace("{n}", "2"));
+    await expect(alert).toContainText(messages.lessons.generationGapsAlert.few.replace("{n}", "2"));
     await expect(alert).not.toHaveAttribute("role", "alert");
 
     const incomplete = page.getByTestId(`objective-gap-${OBJ_A}`);
