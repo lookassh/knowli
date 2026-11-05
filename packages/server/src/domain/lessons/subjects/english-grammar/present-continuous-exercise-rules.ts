@@ -4,14 +4,14 @@ import { editDistance } from "../../../text-distance";
 import { baseOfIngForm, isCollocationIngForm, isIngFormInTable } from "../english/ing-forms";
 import { englishNormalizer } from "../english/normalizer";
 import { BE_FORMS } from "./be-agreement";
-import { ingBaseOf, presentSimpleBaseOf } from "./present-continuous-tense-choice";
+import { ingBaseOf, presentSimpleBaseOf, SENTENCE_BOUNDARY, tenseTokens } from "./present-continuous-tense-choice";
 import { presentSimpleForms } from "./present-simple-forms";
 
 /**
  * Reguły typów ćwiczeń tematu Present Continuous: poprawianie błędu (design
- * „Present Continuous” §6.3), „Wskaż słowo” (§6.5) i „Posłuchaj i wybierz”
- * (§6.6). Wydzielone z `present-continuous-validation.ts`, który je woła; ten
- * plik nie importuje walidatora tematu (bez cyklu). Komunikaty z prefiksami
+ * „Present Continuous” §6.3), kształt przekształcenia, „Wskaż słowo” (§6.5)
+ * i „Posłuchaj i wybierz” (§6.6). Wydzielone z `present-continuous-validation.ts`,
+ * który je woła; ten plik nie importuje walidatora tematu (bez cyklu). Komunikaty z prefiksami
  * `pc-error-fix:`, `pc-notice:`, `pc-shape:` (§8).
  */
 
@@ -87,7 +87,7 @@ const ERROR_FIX_KIND_LABELS: Readonly<Record<ErrorFixKind, string>> = {
  * zamiast be to kategorie błędów celów 1, 3, 4 (zgodność klucza z podmiotem
  * sprawdza reguła be); cele porównania (2, 6) ćwiczą zamianę PS ↔ PC.
  */
-const ERROR_FIX_KINDS: Readonly<Record<string, readonly ErrorFixKind[]>> = {
+export const ERROR_FIX_KINDS: Readonly<Record<string, readonly ErrorFixKind[]>> = {
   affirmative: ["missing_be", "missing_ing", "wrong_be"],
   now_or_usually: ["tense_swap"],
   negative: ["missing_be", "missing_ing", "wrong_be", "do_for_be"],
@@ -230,6 +230,46 @@ export function validateNotice(ex: LessonExerciseDraft, errors: string[]): void 
   const target = normalizeTokens(ex.correctOption ?? "");
   if (target.length !== 1 || target[0] !== ingForms[0]) {
     errors.push(`pc-notice: correctOption: słowem do wskazania musi być forma -ing „${ingForms[0]}”`);
+  }
+}
+
+/** Czy tekst zawiera przeczenie (po rozwinięciu isn't / aren't / doesn't / don't). */
+function isNegative(text: string): boolean {
+  return tenseTokens(text).includes("not");
+}
+
+/** Czy ostatnie zdanie tekstu to pytanie z inwersją: am/is/are (także isn't/aren't) albo What + am/is/are na początku i „?” na końcu. */
+function isInvertedQuestion(text: string): boolean {
+  if (!/\?\s*$/.test(text)) return false;
+  const tokens = tenseTokens(text.trim().replace(/\?\s*$/, "").split(SENTENCE_BOUNDARY).at(-1) ?? "");
+  return BE_FORMS.has(tokens[0] ?? "") || (tokens[0] === "what" && BE_FORMS.has(tokens[1] ?? ""));
+}
+
+/**
+ * Kształt przekształcenia (§3.1): `to_question` — zdanie wyjściowe nie jest
+ * pytaniem, a każdy klucz to pytanie z inwersją („He is playing now.” → „Is he
+ * playing now?”; ostatnie zdanie, więc „Look! Is Tom playing?” też); inaczej
+ * klucz-twierdzenie oznaczyłby poprawne pytanie dziecka jako błąd.
+ * `to_negative` / `to_affirmative` — zdanie wyjściowe ma przeciwną biegunowość
+ * niż odpowiedź (biegunowość odpowiedzi sprawdza reguła be).
+ */
+export function validateTransformShape(ex: LessonExerciseDraft, errors: string[]): void {
+  const statement = ex.statement;
+  // Brak zdania wyjściowego zgłasza walidacja ogólna typu.
+  if (statement === undefined || statement.trim() === "") return;
+  if (ex.transformId === "to_question") {
+    if (/\?\s*$/.test(statement)) errors.push("pc-shape: statement: zdanie do zamiany na pytanie nie może być pytaniem");
+    const keys = [{ field: "answer", text: ex.answer }, ...ex.acceptedAnswers.map((text) => ({ field: "acceptedAnswers", text }))];
+    for (const { field, text } of keys) {
+      if (!isInvertedQuestion(text)) {
+        errors.push(`pc-shape: ${field}: pytanie zaczyna się od am/is/are (albo isn't/aren't) albo od What + am/is/are i kończy znakiem „?”`);
+      }
+    }
+    return;
+  }
+  const direction = ex.transformId === "to_negative" ? "twierdzenie → przeczenie" : ex.transformId === "to_affirmative" ? "przeczenie → twierdzenie" : undefined;
+  if (direction !== undefined && isNegative(statement) === isNegative(ex.answer)) {
+    errors.push(`pc-shape: statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (${ex.transformId}: ${direction})`);
   }
 }
 

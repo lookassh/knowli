@@ -3,7 +3,16 @@ import type { LessonExerciseDraft } from "../../types";
 import { solverView } from "../../agent/solver";
 import { validatePool } from "../../pool-validation";
 import { englishGrammarSubject } from "./module";
-import { stripGapVerb } from "./present-continuous-validation";
+import { ERROR_FIX_KINDS } from "./present-continuous-exercise-rules";
+import { TENSE_CHOICE_OBJECTIVES } from "./present-continuous-tense-choice";
+import {
+  BE_GAP_OBJECTIVES,
+  NEGATED_VERB_GAP_OBJECTIVES,
+  PC_ALLOWED_ING_RULES,
+  PC_FORM_OBJECTIVES,
+  PC_POLARITY,
+  stripGapVerb,
+} from "./present-continuous-validation";
 import { presentContinuousV1 } from "./topics/present-continuous";
 import { validateEnglishGrammarExercise } from "./validators";
 
@@ -43,7 +52,6 @@ describe("stripGapVerb", () => {
 describe("validatePresentContinuousExercise — luka, poprawne", () => {
   const ok: [Objective, string, string][] = [
     ["affirmative", "He ___ (play) football now.", "is playing"],
-    ["affirmative", "They always ___ (play) football now.", "are playing"],
     ["affirmative", "Łucja ___ (read) now.", "is reading"],
     ["affirmative", "The children ___ (play) now.", "are playing"],
     ["affirmative", "Tom and Ola ___ (jump) now.", "are jumping"],
@@ -65,7 +73,7 @@ describe("validatePresentContinuousExercise — luka, poprawne", () => {
     ["affirmative", "She ___ (have) lunch now.", "is having"],
     ["affirmative", "He ___ (look) at the stars now.", "is looking"],
     ["affirmative", "They ___ playing now.", "are"],
-    ["negative", "She ___ sleeping now.", "isn't"],
+    ["negative", "Is she sleeping? No, she ___.", "isn't"],
     ["affirmative", "The cat and the dog ___ (sleep) now.", "are sleeping"],
     ["affirmative", "Tom and his sister ___ (play) now.", "are playing"],
     ["affirmative", "Look! The cat and the dog ___ (sleep).", "are sleeping"],
@@ -117,7 +125,7 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
   });
 
   it("nawias dalej w zdaniu (pc-shape:)", () => {
-    expectPrefix(pcGap("affirmative", "He ___ football (play) now.", "is playing"), "pc-shape:");
+    expectError(pcGap("affirmative", "He ___ football (play) now.", "is playing"), "pc-shape: stem: nawias jest dozwolony tylko tuż po luce");
   });
 
   it("nawias w bodźcu wyboru i „posłuchaj i wybierz” (pc-shape:)", () => {
@@ -167,7 +175,7 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
   it("forma be w poprzednim zdaniu albo zdaniu składowym nie blokuje luki z czasownikiem", () => {
     expect(validate(pcGap("affirmative", "Mum is cooking and Dad ___ (read) now.", "is reading"))).toEqual([]);
     expect(validate(pcGap("affirmative", "Look! Mum is cooking. Dad ___ (read) now.", "is reading"))).toEqual([]);
-    expect(validate(pcGap("affirmative", "I do my homework every day and Tom ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Mum does the cooking and Tom ___ (read) now.", "is reading"))).toEqual([]);
     expect(validate(pcGap("affirmative", "This is Ola. She ___ (read) now.", "is reading"))).toEqual([]);
     expect(validate(pcGap("affirmative", "Ola's mum ___ (read) now.", "is reading"))).toEqual([]);
     expect(validate(pcGap("now_or_usually", "Every day Ola ___ (read) a comic.", "reads"))).toEqual([]);
@@ -407,11 +415,9 @@ describe("validatePresentContinuousExercise — cele porównania (2 i 6), odrzuc
     ["„now / usually” ze scenką w poleceniu", pcNowUsually("Ola is reading a book.", "now", { instructionPl: "Cicho! Ola czyta." }), "pc-marker:"],
     ["„now / usually” z pytaniem", pcNowUsually("Is Ola reading a book?", "now"), "pc-shape:"],
     ["klasa double w celu 2 (także przy Present Simple)", pcGap("now_or_usually", "He ___ (swim) every day.", "swims"), "pc-ing:"],
-    ["cel 2: nawias z „not”", pcGap("now_or_usually", "He ___ (not play) football every day.", "doesn't play"), "pc-shape:"],
     ["cel 2: luka na formę be", pcGap("now_or_usually", "Look! Ola ___ reading.", "is"), "pc-shape:"],
     ["cel 6: luka na formę be", pcGap("now_or_usually_more", "Look! Ola ___ not reading.", "is"), "pc-shape:"],
     ["cel 2: wybór z pytaniem", pcChoice("now_or_usually", "___ Ola reading a comic now?", "Is", "Does"), "pc-shape:"],
-    ["cel 6: luka z pytaniem", pcGap("now_or_usually_more", "___ you (play) tennis every Saturday?", "Do"), "pc-shape:"],
     ["cel 6: pytanie w „Ułóż zdanie”", pcOrder("now_or_usually_more", "Do you play football on Saturdays?"), "pc-shape:"],
     ["cel 2: czasownik stanu w dowolnej formie", pcTranslation("now_or_usually", "Ona codziennie lubi jabłka.", "She likes apples every day."), "pc-state:"],
     ["polecenie „Teraz czy zwykle?” (mieszane grupy)", pcGap("now_or_usually", "Ola ___ (read) a comic every evening.", "reads", { instructionPl: "Teraz czy zwykle?" }), "pc-marker:"],
@@ -428,6 +434,15 @@ describe("validatePresentContinuousExercise — cele porównania (2 i 6), odrzuc
   ];
   it.each(rejected)("%s", (_name, ex, prefix) => {
     expectPrefix(ex, prefix);
+  });
+
+  it("cel 2: nawias z „not” (pc-shape:)", () => {
+    expectError(pcGap("now_or_usually", "He ___ (not play) football every day.", "doesn't play"), "pc-shape: stem: nawias z „not” jest dozwolony tylko w celach przeczeń");
+  });
+
+  it("cel 6: luka z pytaniem przy poprawnym kształcie luki — tylko reguła pytań", () => {
+    expect(validate(pcGap("now_or_usually_more", "You ___ (not play) tennis every Saturday?", "don't play")))
+      .toEqual(["pc-shape: pytania w tym celu tylko w wyborze i tłumaczeniu (w luce forma po podmiocie zdradza odpowiedź)"]);
   });
 
   it("pytanie z luką w wyborze — tylko pc-shape: (pytania wyłącznie całymi zdaniami)", () => {
@@ -474,5 +489,236 @@ describe("przypięte zachowanie poza walidatorem tematu", () => {
     const result = validatePool([choice, translation], englishGrammarSubject, presentContinuousV1);
     expect(result.rejected).toEqual([]);
     expect(result.valid).toEqual([choice, translation]);
+  });
+});
+
+/** Czy któryś komunikat zawiera `fragment` (fragment komunikatu, nie sam prefiks — test pada po usunięciu reguły). */
+function expectError(ex: LessonExerciseDraft, fragment: string): void {
+  const errors = validate(ex);
+  expect(errors.some((error) => error.includes(fragment)), `${fragment} w ${JSON.stringify(errors)}`).toBe(true);
+}
+
+const USUALLY = (field: string) => `pc-marker: ${field}: wskaźnik „zwykle” (every day, always, codziennie…) nie pasuje do Present Continuous`;
+const NEEDS_NOW = "pc-marker: ćwiczenie potrzebuje wskaźnika „teraz” (now, at the moment, Look!, teraz, Cicho!…) — bez niego Present Simple też byłby poprawny";
+const GOING_TO = (field: string) => `pc-marker: ${field}: „going to” + czasownik to przyszłość (be going to)`;
+
+describe("cele 1, 3, 4, 5 — wskaźnik „zwykle” odrzuca ćwiczenie (pc-marker:)", () => {
+  const rejected: [string, LessonExerciseDraft, string][] = [
+    ["cel 1: luka z „every day”", pcGap("affirmative", "Tom ___ (play) football every day.", "is playing"), "stem"],
+    ["cel 1: luka z „on Saturdays”", pcGap("affirmative", "We ___ (play) tennis on Saturdays.", "are playing"), "stem"],
+    ["cel 1: luka z „always” i „now”", pcGap("affirmative", "They always ___ (play) football now.", "are playing"), "stem"],
+    ["cel 1: wybór z „always” w kluczu", pcChoice("affirmative", "She ___ her mum now.", "is always helping", "always helps"), "answer"],
+    ["cel 1: kolejność z „every day”", pcOrder("affirmative", "Tom is playing football every day."), "answer"],
+    ["cel 1: tłumaczenie z „every day” w kluczu", pcTranslation("affirmative", "Mama teraz gotuje obiad.", "Mum is cooking dinner every day."), "answer"],
+    ["cel 1: scenka „zwykle” w poleceniu", pcGap("affirmative", "Tom ___ (play) football now.", "is playing", { instructionPl: "Tom zawsze gra w piłkę po szkole." }), "instructionPl"],
+    ["cel 1: poprawianie z „on Mondays”", pcErrorFix("affirmative", "Ola reading comics on Mondays.", "Ola is reading comics on Mondays."), "statement"],
+    ["cel 1: „Posłuchaj i wybierz” z „every morning”", pcSentence("lesson_listen_choice", "affirmative", "are", {
+      stem: "The dogs ___ playing in the park every morning.",
+      options: [{ id: "a", text: "are" }, { id: "b", text: "is" }],
+      correctOption: "a",
+    }), "stem"],
+    ["cel 3: luka z „every day”", pcGap("negative", "She ___ (not watch) TV every day.", "isn't watching"), "stem"],
+    ["cel 3: przekształcenie z „every day”", pcTransform("negative", "to_negative", "She is watching TV every day.", "She isn't watching TV every day."), "statement"],
+    ["cel 4: kolejność z „every day”", pcOrder("questions", "Is Tom playing football every day?"), "answer"],
+    ["cel 4: krótka odpowiedź z „every day”", pcShortAnswer("Is Ola reading every day?", "Yes, she is.", "No, she isn't."), "prompt"],
+    ["cel 5: luka z „every day”", pcGap("ing_spelling", "He ___ (swim) every day.", "is swimming"), "stem"],
+    ["cel 5: luka z „always”", pcGap("ing_spelling", "Tom ___ (swim) always.", "is swimming"), "stem"],
+  ];
+  it.each(rejected)("%s", (_name, ex, field) => {
+    expectError(ex, USUALLY(field));
+  });
+
+  it("słowo czasu w poleceniu zadania nie jest wskaźnikiem („Zawsze czytaj…”, „Teraz uzupełnij…”)", () => {
+    expect(validate(pcGap("affirmative", "He ___ (play) football now.", "is playing", { instructionPl: "Zawsze czytaj całe zdanie." }))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Ola ___ (read) a comic.", "is reading", { instructionPl: "Teraz uzupełnij zdanie." }))).toEqual([NEEDS_NOW]);
+  });
+});
+
+describe("cele 1, 3, 4, 5 — wskaźnik „teraz” wymagany tam, gdzie Present Simple też by pasował (pc-marker:)", () => {
+  const rejected: [string, LessonExerciseDraft][] = [
+    ["cel 1: wybór is reading / reads", pcChoice("affirmative", "Ola ___ a book.", "is reading", "reads")],
+    ["cel 1: wybór is playing / plays", pcChoice("affirmative", "Tom ___ football in the garden.", "is playing", "plays")],
+    ["cel 3: wybór isn't playing / doesn't play", pcChoice("negative", "Tom ___ football.", "isn't playing", "doesn't play")],
+    ["cel 4: wybór pytania Is she reading? / Does she read?", pcSentence("lesson_choice", "questions", "Is she reading?", {
+      options: [{ id: "a", text: "Is she reading?" }, { id: "b", text: "Does she read?" }],
+      correctOption: "a",
+    })],
+    ["cel 1: luka z czasownikiem", pcGap("affirmative", "Ola ___ (read) a comic.", "is reading")],
+    ["cel 5: luka z czasownikiem", pcGap("ing_spelling", "Tom ___ (swim) in the lake.", "is swimming")],
+    ["cel 1: poprawianie błędu", pcErrorFix("affirmative", "She is play tennis.", "She is playing tennis.")],
+    ["cel 4: poprawianie błędu", pcErrorFix("questions", "Does she reading?", "Is she reading?")],
+    ["cel 3: przekształcenie", pcTransform("negative", "to_negative", "He is playing.", "He isn't playing.")],
+    ["cel 4: przekształcenie na pytanie", pcTransform("questions", "to_question", "He is playing.", "Is he playing?")],
+  ];
+  it.each(rejected)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([NEEDS_NOW]);
+  });
+
+  const ok: [string, LessonExerciseDraft][] = [
+    ["wybór bez formy Present Simple w opcjach", pcChoice("affirmative", "Ola ___ a book.", "is reading", "are reading")],
+    ["wybór z formą PS niezgodną z osobą", pcChoice("affirmative", "Ola ___ a book.", "is reading", "read")],
+    ["luka na formę be", pcGap("affirmative", "They ___ playing.", "are")],
+    ["„Posłuchaj i wybierz”", pcSentence("lesson_listen_choice", "affirmative", "is", {
+      stem: "Tom ___ playing football.",
+      options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
+      correctOption: "a",
+    })],
+    ["kolejność", pcOrder("affirmative", "Tom is playing football.")],
+    ["krótka odpowiedź", pcShortAnswer("Is she reading?", "Yes, she is.", "No, she isn't.")],
+    ["scenka w poleceniu", pcGap("affirmative", "Grandpa ___ (sleep) on the sofa.", "is sleeping", { instructionPl: "Cicho! Dziadek śpi." })],
+    ["„Look at …!” na początku", pcChoice("affirmative", "Look at Tom! He ___ .", "is jumping", "jumps")],
+    ["cel 4: „What … doing?” jako kontekst", pcGap("questions", "What are you doing? I ___ (read) a book.", "am reading")],
+    ["cel 4: poprawianie „What does he doing?”", pcErrorFix("questions", "What does he doing?", "What is he doing?")],
+    ["cel 1: wskaźnik w kluczu poprawiania", pcErrorFix("affirmative", "She is play tennis now.", "She is playing tennis now.")],
+  ];
+  it.each(ok)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([]);
+  });
+});
+
+describe("„going to” + czasownik (przyszłość) odrzuca ćwiczenie w każdym celu (pc-marker:)", () => {
+  it("wybór „now / usually”, kolejność, przekształcenie i luka", () => {
+    expectError(pcNowUsually("Ola is going to read a comic.", "now"), GOING_TO("stem"));
+    expectError(pcOrder("affirmative", "Tom is going to play football now."), GOING_TO("answer"));
+    expectError(pcTransform("questions", "to_question", "Tom is going to play now.", "Is Tom going to play now?"), GOING_TO("statement"));
+    expectError(pcGap("affirmative", "Tom ___ (go) to play football now.", "is going"), GOING_TO("answer"));
+  });
+
+  it("„going to” + miejsce zostaje Present Continuous", () => {
+    expect(validate(pcOrder("affirmative", "Tom is going to school now."))).toEqual([]);
+    expect(validate(pcOrder("affirmative", "Dad is going to work now."))).toEqual([]);
+  });
+});
+
+describe("„be” jako łącznik w zdaniu z kluczem (bez reguły -ing po nim)", () => {
+  const ok: [string, LessonExerciseDraft][] = [
+    ["wybór po zdaniu „This is Ola.”", pcChoice("affirmative", "This is Ola. She ___ a book now.", "is reading", "are reading")],
+    ["wybór po zdaniu „It is sunny.”", pcChoice("affirmative", "It is sunny. The children ___ football now.", "are playing", "is playing")],
+    ["wybór po zdaniu „Dad is tired.”", pcChoice("affirmative", "Dad is tired. He ___ now.", "is sleeping", "are sleeping")],
+    ["kolejność z łącznikiem i Present Continuous", pcOrder("affirmative", "It is sunny and we are playing now.")],
+    ["tłumaczenie z łącznikiem", pcTranslation("affirmative", "Patrz! Mama jest w kuchni i gotuje obiad.", "Look! Mum is in the kitchen and she is cooking dinner.")],
+    ["cel 3: tłumaczenie z łącznikiem", pcTranslation("negative", "Tata jest w ogrodzie i teraz nie gotuje.", "Dad is in the garden and he isn't cooking now.")],
+  ];
+  it.each(ok)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([]);
+  });
+
+  it("zdanie z samym łącznikiem nie jest Present Continuous; forma bez -ing nadal odrzucona (pc-ing:)", () => {
+    expectError(pcOrder("affirmative", "Mum is in the kitchen now."), "pc-ing: answer: zdanie w Present Continuous potrzebuje am/is/are + formy -ing");
+    expectError(pcTranslation("affirmative", "Ona teraz gra.", "She is plays now."), "pc-ing: answer: po am/is/are potrzebna jest forma -ing, a stoi „plays”");
+  });
+});
+
+describe("cel 3: luka na formę be z przeczeniem tylko po „No”", () => {
+  it("„She ___ sleeping now.” → „isn't” (twierdzenie też pasuje) odrzucone", () => {
+    expectError(pcGap("negative", "She ___ sleeping now.", "isn't"), "pc-be: answer: przeczenie w luce na formę be tylko po „No”");
+    expectError(pcGap("negative", "We ___ playing now.", "aren't"), "pc-be: answer: przeczenie w luce na formę be tylko po „No”");
+  });
+
+  it("po „No” i z „not” po luce — poprawne", () => {
+    expect(validate(pcGap("negative", "Is she sleeping? No, she ___.", "isn't"))).toEqual([]);
+    expect(validate(pcGap("negative", "She ___ not sleeping now.", "is"))).toEqual([]);
+  });
+});
+
+describe("krótka odpowiedź: osoba zgodna z liczbą podmiotu pytania (imię, rzeczownik)", () => {
+  it.each([
+    ["Are the boys running now?", "Yes, he is.", "No, they aren't.", "osoba „he”"],
+    ["Is Tom reading now?", "Yes, they are.", "No, he isn't.", "osoba „they”"],
+    ["Are Tom and Ola playing now?", "Yes, she is.", "No, they aren't.", "osoba „she”"],
+  ])("%s → %s (pc-be:)", (prompt, correct, wrong, fragment) => {
+    expectError(pcShortAnswer(prompt, correct, wrong), `pc-be: answer: ${fragment} w odpowiedzi nie pasuje do podmiotu pytania`);
+  });
+
+  it.each([
+    ["Are the boys running now?", "Yes, they are.", "No, he isn't."],
+    ["Is Tom reading now?", "Yes, he is.", "No, they aren't."],
+    ["Is the cat sleeping now?", "No, it isn't.", "Yes, they are."],
+    ["Look at Ola! Is she reading?", "Yes, she is.", "No, he isn't."],
+  ])("%s → %s", (prompt, correct, wrong) => {
+    expect(validate(pcShortAnswer(prompt, correct, wrong))).toEqual([]);
+  });
+});
+
+describe("przekształcenia: kształt pytania i biegunowość zdania wyjściowego (pc-shape:)", () => {
+  const TO_QUESTION = "pc-shape: answer: pytanie zaczyna się od am/is/are (albo isn't/aren't) albo od What + am/is/are i kończy znakiem „?”";
+  it("to_question: odpowiedź-twierdzenie albo bez „?” odrzucona", () => {
+    expectError(pcTransform("questions", "to_question", "He is playing now.", "He is playing now."), TO_QUESTION);
+    expectError(pcTransform("questions", "to_question", "He is playing now.", "Is he playing now"), TO_QUESTION);
+    expectError(pcTransform("questions", "to_question", "He is playing now.", "He is playing now?"), TO_QUESTION);
+  });
+
+  it("to_question: zdanie wyjściowe nie jest pytaniem", () => {
+    expectError(pcTransform("questions", "to_question", "Is he playing now?", "Is he playing now?"), "pc-shape: statement: zdanie do zamiany na pytanie nie może być pytaniem");
+  });
+
+  it("to_question: poprawne kształty", () => {
+    expect(validate(pcTransform("questions", "to_question", "They are playing now.", "Are they playing now?"))).toEqual([]);
+    expect(validate(pcTransform("questions", "to_question", "They aren't playing now.", "Aren't they playing now?"))).toEqual([]);
+    expect(validate(pcTransform("questions", "to_question", "Look! Tom is playing.", "Look! Is Tom playing?"))).toEqual([]);
+  });
+
+  it("to_negative i to_affirmative: zdanie wyjściowe ma przeciwną biegunowość", () => {
+    expectError(pcTransform("negative", "to_negative", "He isn't playing now.", "He is not playing now."),
+      "pc-shape: statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (to_negative: twierdzenie → przeczenie)");
+    expectError(pcTransform("negative", "to_affirmative", "She is playing now.", "He is playing now."),
+      "pc-shape: statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (to_affirmative: przeczenie → twierdzenie)");
+    expect(validate(pcTransform("negative", "to_affirmative", "He isn't playing now.", "He is playing now."))).toEqual([]);
+  });
+
+  it("to_affirmative: odpowiedź z przeczeniem (pc-be:)", () => {
+    expectError(pcTransform("negative", "to_affirmative", "He is playing now.", "He isn't playing now."), "pc-be: answer: forma przecząca nie pasuje do celu twierdzącego");
+  });
+});
+
+describe("wybór: opcja z apostrofem na początku (pc-shape:)", () => {
+  it("„'re playing” obok „are playing”", () => {
+    expectError(pcChoice("affirmative", "They ___ football now.", "are playing", "'re playing"),
+      "pc-shape: options: opcja nie może zaczynać się apostrofem („'re playing”) — zapisz pełną formę am/is/are");
+  });
+});
+
+describe("luka z dwoma albo więcej podkreśleniami", () => {
+  it("„__” i „____” działają jak „___”", () => {
+    expect(validate(pcGap("affirmative", "Look! Mum __ (cook) dinner.", "is cooking"))).toEqual([]);
+    expect(validate(pcChoice("affirmative", "Mum __ dinner now.", "is cooking", "are cooking"))).toEqual([]);
+    expect(validate(pcGap("questions", "__ she reading a book?", "Is"))).toEqual([]);
+  });
+});
+
+describe("luki do uzupełnienia w testach (przegląd Task 13, C-M5)", () => {
+  it("cel 3: „aren't …ing” i „am not …ing”", () => {
+    expect(validate(pcGap("negative", "They ___ (not play) football now.", "aren't playing"))).toEqual([]);
+    expect(validate(pcGap("negative", "I ___ (not play) now.", "am not playing"))).toEqual([]);
+    expect(validate(pcTranslation("negative", "Oni teraz nie grają.", "They aren't playing now."))).toEqual([]);
+    expect(validate(pcTranslation("negative", "Teraz nie gram.", "I am not playing now."))).toEqual([]);
+  });
+
+  it.each([
+    ["now_or_usually", pcGap("now_or_usually", "Ola ___ (read) a comic tomorrow.", "is reading")],
+    ["negative", pcGap("negative", "She ___ (not watch) TV tomorrow.", "isn't watching")],
+    ["questions", pcGap("questions", "___ she reading tomorrow?", "Is")],
+    ["ing_spelling", pcGap("ing_spelling", "He ___ (swim) tomorrow.", "is swimming")],
+    ["now_or_usually_more", pcGap("now_or_usually_more", "She ___ (not watch) TV tomorrow.", "isn't watching")],
+  ])("wskaźnik zakazany w celu %s (pc-marker:)", (_objective, ex) => {
+    expectError(ex, "pc-marker: stem: wskaźnik czasu „tomorrow” jest zakazany w temacie");
+  });
+
+  it("cel 2: „looking at” (kolokacja) w obu czasach", () => {
+    expect(validate(pcGap("now_or_usually", "Look! Ola ___ (look) at the stars.", "is looking"))).toEqual([]);
+    expect(validate(pcGap("now_or_usually", "Ola ___ (look) at the stars every evening.", "looks"))).toEqual([]);
+  });
+});
+
+describe("tabele reguł tematu zgodne z celami katalogu", () => {
+  it("klucze map i zbiory celów odpowiadają celom `presentContinuousV1`", () => {
+    const objectives = presentContinuousV1.objectives.map((objective) => objective.id.split(".").at(-1)!).sort();
+    expect(Object.keys(PC_POLARITY).sort()).toEqual(objectives);
+    expect(Object.keys(PC_ALLOWED_ING_RULES).sort()).toEqual(objectives);
+    expect(Object.keys(ERROR_FIX_KINDS).sort()).toEqual(objectives);
+    expect([...PC_FORM_OBJECTIVES, ...TENSE_CHOICE_OBJECTIVES].sort()).toEqual(objectives);
+    for (const set of [BE_GAP_OBJECTIVES, NEGATED_VERB_GAP_OBJECTIVES]) {
+      for (const objective of set) expect(objectives, objective).toContain(objective);
+    }
   });
 });

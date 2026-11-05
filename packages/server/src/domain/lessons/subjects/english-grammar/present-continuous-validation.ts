@@ -1,4 +1,5 @@
 import type { LessonExerciseDraft } from "../../types";
+import { GAP_VERB_BRACKET } from "../../feedback-sentence-text";
 import { normalizeTokens } from "../../normalize";
 import {
   baseOfIngForm,
@@ -27,12 +28,13 @@ import {
   TRANSFORM_POLARITY,
   type BePolarity,
 } from "./be-agreement";
-import { validateErrorFix, validateListenChoiceOptions, validateNotice } from "./present-continuous-exercise-rules";
+import { validateErrorFix, validateListenChoiceOptions, validateNotice, validateTransformShape } from "./present-continuous-exercise-rules";
 import {
   CLAUSE_CONJUNCTIONS,
   ingBaseOf,
   isGapQuestion,
   isNowUsuallyChoice,
+  presentSimpleBaseOf,
   SENTENCE_BOUNDARY,
   TENSE_CHOICE_OBJECTIVES,
   TENSE_NAMES,
@@ -77,34 +79,32 @@ export const PC_POLARITY: Readonly<Record<string, BePolarity>> = {
   now_or_usually_more: "any",
 };
 
+/**
+ * Cele 1, 3, 4, 5: każdy klucz jest w Present Continuous (luka z czasownikiem
+ * → am/is/are [not] + -ing, całe zdania z formą be + -ing), wskaźnik „zwykle”
+ * odrzuca ćwiczenie, a tam, gdzie Present Simple też by pasował, potrzebny jest
+ * wskaźnik „teraz”. Cele porównania (2, 6) obsługuje `validateTenseChoice`.
+ */
+export const PC_FORM_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
+
 /** Cele z luką na samą formę be („___ she reading?”, §6.2). */
-const BE_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions"]);
+export const BE_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions"]);
 
 /** Cele, w których nawias luki z czasownikiem musi zawierać „not” (§6.2); w pozostałych „not” jest zakazane. */
-const NEGATED_VERB_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["negative", "now_or_usually_more"]);
-
-/** Cele, w których odpowiedź luki z czasownikiem to am/is/are [not] + -ing (cele porównania — `validateTenseChoice`). */
-const BE_ING_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
-
-/**
- * Nawias z czasownikiem tuż po luce. Silnik ma własną kopię wzorca
- * (`feedback-sentence-text.ts`, design §6.7), bo `domain/lessons` nie importuje
- * przedmiotów — zmieniaj oba miejsca razem.
- */
-const GAP_VERB = /_{2,}\s*\(([^)]*)\)/;
+export const NEGATED_VERB_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["negative", "now_or_usually_more"]);
 
 const LEADING_APOSTROPHE = /^['’‘ʼ´`]/;
 
-// Bliźniak: `withoutGapVerb` w `domain/lessons/feedback-sentence-text.ts` (domena lekcji nie importuje przedmiotów).
 /**
- * Usuwa „(verb)” / „(not verb)” stojące tuż po luce. Zwraca bodziec z samą
- * luką, czasownik z nawiasu (małe litery, bez „not”) i flagę przeczenia.
- * Nawias w innym miejscu zdania zostaje w bodźcu.
+ * Usuwa „(verb)” / „(not verb)” stojące tuż po luce (ten sam wzorzec co zdanie
+ * po odpowiedzi w silniku, `GAP_VERB_BRACKET`). Zwraca bodziec z samą luką,
+ * czasownik z nawiasu (małe litery, bez „not”) i flagę przeczenia. Nawias
+ * w innym miejscu zdania zostaje w bodźcu.
  */
 export function stripGapVerb(stem: string): { stem: string; verb?: string; negative: boolean } {
-  const match = GAP_VERB.exec(stem);
+  const match = GAP_VERB_BRACKET.exec(stem);
   if (match === null) return { stem, negative: false };
-  const tokens = normalizeTokens(match[1] ?? "");
+  const tokens = normalizeTokens(match[2] ?? "");
   const negative = tokens[0] === "not";
   const verbTokens = negative ? tokens.slice(1) : tokens;
   const stripped = `${stem.slice(0, match.index)}___${stem.slice(match.index + match[0].length)}`;
@@ -131,6 +131,8 @@ interface ScannedField {
   readonly field: string;
   readonly text: string;
   readonly lang: "en" | "pl";
+  /** Polskie polecenie: słowa czasu przy poleceniu zadania nie są wskaźnikiem (`scanTimeMarkers`). */
+  readonly instruction?: boolean;
 }
 
 /**
@@ -141,7 +143,7 @@ interface ScannedField {
 function scannedFields(ex: LessonExerciseDraft): ScannedField[] {
   const fields: ScannedField[] = [];
   const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => {
-    if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang });
+    if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang, ...(field === "instructionPl" ? { instruction: true } : {}) });
   };
   add("stem", ex.stem, "en");
   add("statement", ex.statement, "en");
@@ -167,19 +169,117 @@ function validateGapHint(ex: LessonExerciseDraft, errors: string[]): void {
   }
 }
 
-/** Wskaźniki zakazane (przyszłość, dwuznaczność, §5.1) w każdym skanowanym polu. */
+/** „going to” + miejsce, nie czasownik („Dad is going to work.” — do pracy). */
+const GOING_TO_PLACES: ReadonlySet<string> = new Set(["work"]);
+
+/** Czy tekst ma „going to” + formę podstawową czasownika (przyszłość „be going to”: „Ola is going to read”). */
+function hasGoingToFuture(text: string): boolean {
+  const tokens = normalizeTokens(text);
+  return tokens.some((token, i) => {
+    const verb = tokens[i + 2];
+    if (token !== "going" || tokens[i + 1] !== "to" || verb === undefined || GOING_TO_PLACES.has(verb)) return false;
+    return verb === "be" || presentSimpleBaseOf(verb) === verb;
+  });
+}
+
+/**
+ * Wskaźniki zakazane (przyszłość, dwuznaczność, §5.1) w każdym skanowanym polu
+ * oraz przyszłość „be going to” + czasownik — także w zdaniu z odpowiedzią
+ * wstawioną w lukę („He ___ (go) to play…” → „He is going to play…”).
+ */
 function validateForbiddenMarkers(ex: LessonExerciseDraft, errors: string[]): void {
-  for (const { field, text, lang } of scannedFields(ex)) {
+  const fields = scannedFields(ex);
+  for (const { field, text, lang } of fields) {
     const { forbidden } = scanTimeMarkers(text, lang);
     if (forbidden.length > 0) {
       errors.push(`pc-marker: ${field}: wskaźnik czasu „${forbidden.join("”, „")}” jest zakazany w temacie (przyszłość albo dwuznaczność)`);
     }
   }
+  const englishTexts = [
+    ...fields.filter(({ lang }) => lang === "en"),
+    ...answersOf(ex).map(({ field, text }) => ({ field, text: answerSentence(ex, text) })),
+  ];
+  const goingTo = new Set(englishTexts.filter(({ text }) => hasGoingToFuture(text)).map(({ field }) => field));
+  for (const field of goingTo) {
+    errors.push(`pc-marker: ${field}: „going to” + czasownik to przyszłość (be going to) — nie występuje w tym temacie`);
+  }
 }
 
 /**
- * Nawias dopuszczalny tylko tuż po luce `lesson_gap` (§6.2) — lektor czyta
- * bodziec wyboru i „posłuchaj i wybierz” razem z nawiasem.
+ * Cele 1, 3, 4, 5: czy ćwiczenie dopuszcza też odpowiedź w Present Simple bez
+ * wskaźnika „teraz” — luka z czasownikiem, poprawianie błędu, przekształcenie
+ * i wybór, którego opcja to poprawna forma Present Simple („Ola ___ a book.”:
+ * is reading / reads). Luka na formę be, „Wskaż słowo”, „Posłuchaj i wybierz”,
+ * kolejność i krótka odpowiedź mają formę be w zdaniu albo w opcjach.
+ */
+function needsNowMarker(ex: LessonExerciseDraft): boolean {
+  switch (ex.exerciseType) {
+    case "lesson_gap":
+      return ex.stem !== undefined && stripGapVerb(ex.stem).verb !== undefined;
+    case "lesson_error_fix":
+    case "lesson_transform":
+      return true;
+    case "lesson_choice":
+      return (ex.options ?? []).some((option) => isWellFormedPresentSimpleOption(ex, option.text));
+    default:
+      return false;
+  }
+}
+
+/** Wszystkie klasy pisowni — poprawność formy Present Simple opcji nie zależy od klas celu. */
+const ALL_ING_RULES: readonly IngRule[] = ["plain", "drop_e", "double", "ie_to_y", "other"];
+
+/**
+ * Czy opcja wyboru wstawiona w bodziec daje poprawne orzeczenie w Present
+ * Simple (forma zgodna z osobą: „Ola reads”, „Tom doesn't play”, „Does she
+ * read?”). Liczą się tylko orzeczenia z czasownikiem z samej opcji, nie
+ * z reszty bodźca.
+ */
+function isWellFormedPresentSimpleOption(ex: LessonExerciseDraft, option: string): boolean {
+  const optionTokens = new Set(tenseTokens(option));
+  const context: PresentSimpleContext = { expectedBeForm, allowedRules: ALL_ING_RULES };
+  const simple = tenseSentences(answerSentence(ex, option)).flatMap(({ tokens, groups }) =>
+    groups.filter((group) => group.tense === "simple" && optionTokens.has(tokens[group.verbIndex]!)).map((group) => ({ tokens, group })));
+  return simple.length > 0 && simple.every(({ tokens, group }) => {
+    const errors: string[] = [];
+    validatePresentSimpleGroup(tokens, group, context, "options", errors);
+    return errors.length === 0;
+  });
+}
+
+/** Pytanie „What + am/is/are + podmiot + doing?” (cel 4) — samo ustala, że chodzi o teraz. */
+function hasWhatDoingQuestion(text: string): boolean {
+  return sentenceTokens(text).some((tokens) =>
+    (tokens[0] === "what's" || (tokens[0] === "what" && BE_FORMS.has(tokens[1] ?? ""))) && tokens.includes("doing"));
+}
+
+/**
+ * Cele 1, 3, 4, 5 (zasada §2.6 — jeden poprawny czas): wskaźnik „zwykle”
+ * w którymkolwiek skanowanym polu odrzuca ćwiczenie („Tom ___ (play) football
+ * every day.” → is playing to błędna angielszczyzna), a ćwiczenie, w którym
+ * Present Simple też byłby poprawny (`needsNowMarker`), potrzebuje wskaźnika
+ * „teraz” albo — w celu 4 — pytania „What … doing?”.
+ */
+function validateNowContext(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+  const fields = scannedFields(ex);
+  const scans = fields.map(({ field, text, lang, instruction }) => ({ field, groups: scanTimeMarkers(text, lang, { instruction: instruction === true }).groups }));
+  for (const { field, groups } of scans) {
+    if (groups.has("usually")) {
+      errors.push(`pc-marker: ${field}: wskaźnik „zwykle” (every day, always, codziennie…) nie pasuje do Present Continuous — w tym celu czynność dzieje się teraz`);
+    }
+  }
+  if (!needsNowMarker(ex) || scans.some(({ groups }) => groups.has("now"))) return;
+  if (objective === "questions") {
+    const sentences = [...fields.filter(({ lang }) => lang === "en").map(({ text }) => text), ...answersOf(ex).map(({ text }) => wholeSentenceOf(ex, text))];
+    if (sentences.some(hasWhatDoingQuestion)) return;
+  }
+  errors.push("pc-marker: ćwiczenie potrzebuje wskaźnika „teraz” (now, at the moment, Look!, teraz, Cicho!…) — bez niego Present Simple też byłby poprawny");
+}
+
+/**
+ * Nawias dopuszczalny tylko tuż po luce `lesson_gap` (§6.2) — w wyborze
+ * czasownik stoi w opcjach, a lektor czyta bodziec „posłuchaj i wybierz”
+ * razem z nawiasem.
  */
 function validateBrackets(ex: LessonExerciseDraft, errors: string[]): void {
   const texts: { field: string; text: string | undefined }[] = [
@@ -322,9 +422,11 @@ function validateBeForm(form: string, stem: string, field: string, errors: strin
 
 /**
  * Luka na samą formę be (cele 1, 3, 4): forma zgodna z podmiotem, biegunowość
- * z celu i Yes/No. Przeczenie w odpowiedzi tylko w celu 3 albo po „No” i bez
- * „not” po luce — inaczej twierdzenie pasuje tak samo („___ she reading?” →
- * Is / Isn't) albo powstaje podwójne przeczenie („She isn't not sleeping”).
+ * z celu i Yes/No. Przeczenie w odpowiedzi tylko po „No” i bez „not” po luce —
+ * inaczej twierdzenie pasuje tak samo („___ she reading?” → Is / Isn't, „She
+ * ___ sleeping now.” → is / isn't) albo powstaje podwójne przeczenie („She
+ * isn't not sleeping”). W wyborze celu 3 opcje ustalają biegunowość
+ * (isn't / aren't), a dystraktor ± not łapie `validateBeChoiceDistractors`.
  */
 function validateBeOnlyGapAnswer(
   ex: LessonExerciseDraft,
@@ -341,8 +443,10 @@ function validateBeOnlyGapAnswer(
       errors.push(`pc-be: ${field}: po luce stoi już „not” — odpowiedź z przeczeniem daje podwójne przeczenie`);
       return;
     }
-    if (objective !== "negative" && marker !== "no") {
-      errors.push(`pc-be: ${field}: przeczenie w luce na formę be tylko w celu przeczeń albo po „No” — inaczej twierdzenie też pasuje`);
+    // W wyborze celu 3 biegunowość ustalają opcje (isn't / aren't); wpisywana luka dopuszcza też twierdzenie.
+    const optionsFixPolarity = objective === "negative" && ex.exerciseType !== "lesson_gap";
+    if (!optionsFixPolarity && marker !== "no") {
+      errors.push(`pc-be: ${field}: przeczenie w luce na formę be tylko po „No” — inaczej twierdzenie też pasuje (w celu przeczeń: She ___ not sleeping. → is)`);
       return;
     }
   }
@@ -471,7 +575,7 @@ function validateGap(ex: LessonExerciseDraft, objective: string, errors: string[
       } else {
         validateBeOnlyGapAnswer(ex, gap.stem, parsed, field, errors);
       }
-    } else if (BE_ING_GAP_OBJECTIVES.has(objective)) {
+    } else if (PC_FORM_OBJECTIVES.has(objective)) {
       validateBeIngGapAnswer(ex, objective, { stem: gap.stem, verb, negative: gap.negative }, text, field, errors);
     }
   }
@@ -492,9 +596,6 @@ const WHOLE_SENTENCE_TYPES: ReadonlySet<string> = new Set([
   "lesson_open_answer",
 ]);
 
-/** Cele, w których każde zdanie odpowiedzi jest w Present Continuous (cele porównania — `validateTenseChoice`). */
-const PC_SENTENCE_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
-
 /**
  * Skróty z „'s” zakazane w kluczach (§6.3): normalizator rozwija je do „is”
  * albo „has”, więc klucz „He's running.” zaliczyłby „He has running.”.
@@ -504,8 +605,8 @@ const S_CONTRACTIONS: ReadonlySet<string> = new Set(["he's", "she's", "it's", "w
 /** Pytajniki na początku zdania; dozwolony jest tylko wzorzec „What + am/is/are + podmiot + doing?”. */
 const QUESTION_WORDS: ReadonlySet<string> = new Set([...BE_WH_WORDS, "which"]);
 
-/** Przysłówki między formą be a formą -ing („She is always playing”). */
-const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["always", "still", "just", "really"]);
+/** Przysłówki między formą be a formą -ing („She is still sleeping”); „always” to wskaźnik „zwykle”. */
+const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["still", "just", "really"]);
 
 /** Tokeny zdań tekstu (po rozwinięciu isn't / aren't i skrótów zaimków), bez pustych. */
 function sentenceTokens(text: string): string[][] {
@@ -581,10 +682,22 @@ function verbIndexAfterBe(tokens: readonly string[], index: number, inverted: bo
 }
 
 /**
+ * Czy token po formie be to forma czasownika: forma -ing (także spoza tabeli),
+ * forma Present Simple albo podstawowa czasownika znanego tematowi („She is
+ * play”, „She is plays”). Inny token („in”, „sunny”, „Ola”) to orzecznik po
+ * łączniku be („Mum is in the kitchen”, „This is Ola”).
+ */
+function isVerbFormAfterBe(tokens: readonly string[], index: number): boolean {
+  const token = tokens[index]!;
+  return token.endsWith("ing") || presentSimpleBaseOf(token) !== undefined || isCollocationIngForm(tokens, index);
+}
+
+/**
  * Forma -ing po formie be: z tabeli i dozwolonej klasy albo kolokacja
  * „having/looking” (nie w celu 5). Tabelę i klasę sprawdzamy tylko dla formy
  * z klucza (§4, „w sprawdzanym miejscu”) — w wyborze „The dogs ___ running.”
- * forma -ing stoi w bodźcu, a sprawdzana jest forma be.
+ * forma -ing stoi w bodźcu, a sprawdzana jest forma be. Zwraca false, gdy be
+ * jest łącznikiem (po nim nie stoi forma czasownika) — wtedy bez reguły -ing.
  */
 function validateIngAfterBe(
   ex: LessonExerciseDraft,
@@ -594,15 +707,16 @@ function validateIngAfterBe(
   keyTokens: ReadonlySet<string>,
   field: string,
   errors: string[],
-): void {
+): boolean {
   const token = tokens[index];
   if (token === undefined) {
     errors.push(`pc-ing: ${field}: po am/is/are brak formy -ing czasownika`);
-    return;
+    return true;
   }
+  if (!isVerbFormAfterBe(tokens, index)) return false;
   const fromKey = keyTokens.has(token);
   if (isIngFormInTable(token)) {
-    if (!fromKey) return;
+    if (!fromKey) return true;
     const verb = baseOfIngForm(token)!;
     const rule = ingRuleOf(verb)!;
     // Cel 5: forma `plain` dopuszczona w wyborze jako kontrast (§4).
@@ -612,25 +726,28 @@ function validateIngAfterBe(
     if (!allowed.includes(rule)) {
       errors.push(`pc-ing: ${field}: czasownik „${verb}” (pisownia ${rule}) nie pasuje do celu (dozwolone: ${allowed.join(", ")})`);
     }
-    return;
+    return true;
   }
   if (isCollocationIngForm(tokens, index)) {
     if (fromKey && objective === "ing_spelling") {
       errors.push(`pc-ing: ${field}: kolokacja „${token}” nie ćwiczy pisowni z tabeli — nie w celu pisowni -ing`);
     }
-    return;
+    return true;
   }
   if (!token.endsWith("ing")) {
     errors.push(`pc-ing: ${field}: po am/is/are potrzebna jest forma -ing, a stoi „${token}” (She is playing, nie She is plays)`);
   } else if (fromKey) {
     errors.push(`pc-ing: ${field}: „${token}” jest spoza tabeli form -ing`);
   }
+  return true;
 }
 
 /**
  * Formy be jednego zdania: zgodność z podmiotem i forma -ing po każdej
  * z nich (`keyTokens` undefined = bez sprawdzania formy -ing). Zwraca, czy
- * w zdaniu jest forma be.
+ * w zdaniu jest forma be i czy któraś buduje Present Continuous (po niej
+ * forma czasownika albo koniec krótkiej odpowiedzi „Yes, she is.”; łącznik
+ * „Mum is in the kitchen” się nie liczy).
  */
 function validateSentenceBeForms(
   ex: LessonExerciseDraft,
@@ -639,10 +756,11 @@ function validateSentenceBeForms(
   keyTokens: ReadonlySet<string> | undefined,
   field: string,
   errors: string[],
-): boolean {
+): { hasBe: boolean; hasContinuousBe: boolean } {
   let start = 0;
   let previousBe: number | undefined;
   let hasBe = false;
+  let hasContinuousBe = false;
   for (const [index, form] of tokens.entries()) {
     if (!BE_FORMS.has(form)) continue;
     if (previousBe !== undefined) {
@@ -655,32 +773,61 @@ function validateSentenceBeForms(
     if (expected !== undefined && expected !== form) {
       errors.push(`pc-be: ${field}: forma „${form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
     }
-    if (keyTokens === undefined) continue;
+    if (keyTokens === undefined) {
+      hasContinuousBe = true;
+      continue;
+    }
     const verbIndex = verbIndexAfterBe(tokens, index, isInvertedBe(tokens, start, index));
-    if (verbIndex !== undefined) validateIngAfterBe(ex, objective, tokens, verbIndex, keyTokens, field, errors);
+    if (verbIndex === undefined || validateIngAfterBe(ex, objective, tokens, verbIndex, keyTokens, field, errors)) hasContinuousBe = true;
   }
-  return hasBe;
+  return { hasBe, hasContinuousBe };
 }
 
-/** Zaimek podmiotu pytania „Is she…?” / „What are you…?”; undefined dla imienia, rzeczownika i luki. */
-function questionPronoun(question: string): string | undefined {
-  const [tokens] = sentenceTokens(question);
-  if (tokens === undefined || question.includes("___")) return undefined;
-  const beIndex = tokens[0] === "what" ? 1 : 0;
-  if (!BE_FORMS.has(tokens[beIndex] ?? "")) return undefined;
-  const subject = tokens[beIndex + 1] === "not" ? tokens[beIndex + 2] : tokens[beIndex + 1];
-  return subject !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, subject) ? subject : undefined;
+/**
+ * Podmiot pytania krótkiej odpowiedzi: zaimek („Is she…?”, „What are you…?”)
+ * albo — dla imienia i rzeczownika — forma be wymagana przez podmiot („Are the
+ * boys…?” → are). Bierze pierwsze zdanie otwarte formą be albo What + be
+ * („Look at Ola! Is she reading?”); undefined bez takiego zdania i w bodźcu
+ * z luką.
+ */
+function questionSubject(question: string): { pronoun: string } | { beForm: string } | undefined {
+  if (question.includes("___")) return undefined;
+  for (const tokens of sentenceTokens(question)) {
+    const beIndex = tokens[0] === "what" ? 1 : 0;
+    if (!BE_FORMS.has(tokens[beIndex] ?? "")) continue;
+    const subject = tokens[beIndex + 1] === "not" ? tokens[beIndex + 2] : tokens[beIndex + 1];
+    if (subject !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, subject)) return { pronoun: subject };
+    const beForm = expectedBeAt(tokens, 0, beIndex);
+    return beForm === undefined ? undefined : { beForm };
+  }
+  return undefined;
 }
 
-/** Osoba krótkiej odpowiedzi zgodna z pytaniem („Is she reading?” → „Yes, she is.”, „Are you…?” → „I am”). */
+/** Zaimki odpowiedzi na pytanie z imieniem albo rzeczownikiem: is → he/she/it, are → they. */
+const ANSWER_PRONOUNS_BY_BE: Readonly<Record<string, readonly string[]>> = { is: ["he", "she", "it"], are: ["they"] };
+
+/**
+ * Osoba krótkiej odpowiedzi zgodna z pytaniem („Is she reading?” → „Yes, she
+ * is.”, „Are you…?” → „I am”, „Are the boys…?” → „they are”, „Is Tom…?” →
+ * he/she/it is).
+ */
 function validateShortAnswerPerson(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
   const question = shortAnswerQuestion(ex);
-  const pronoun = question === undefined ? undefined : questionPronoun(question.text);
-  if (pronoun === undefined) return;
+  const subject = question === undefined ? undefined : questionSubject(question.text);
+  if (subject === undefined) return;
   const tokens = expandedTokens(answer);
   const index = tokens.findIndex((token, i) => Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(tokens[i + 1] ?? ""));
-  if (index >= 0 && !beAnswerPronounAllowed(tokens[index]!, { pronoun, fromQuestion: true })) {
-    errors.push(`pc-be: ${field}: osoba „${tokens[index]}” w odpowiedzi nie pasuje do podmiotu pytania „${pronoun}”`);
+  if (index < 0) return;
+  const pronoun = tokens[index]!;
+  if ("pronoun" in subject) {
+    if (!beAnswerPronounAllowed(pronoun, { pronoun: subject.pronoun, fromQuestion: true })) {
+      errors.push(`pc-be: ${field}: osoba „${pronoun}” w odpowiedzi nie pasuje do podmiotu pytania „${subject.pronoun}”`);
+    }
+    return;
+  }
+  const allowed = ANSWER_PRONOUNS_BY_BE[subject.beForm] ?? [];
+  if (!allowed.includes(pronoun)) {
+    errors.push(`pc-be: ${field}: osoba „${pronoun}” w odpowiedzi nie pasuje do podmiotu pytania (${subject.beForm} → ${allowed.join("/")})`);
   }
 }
 
@@ -703,13 +850,13 @@ function validateSentenceAnswer(
   for (const tokens of sentences) validateQuestionWords(tokens, field, errors);
   // Czasownik stanu zgłasza reguła wspólna — bez drugiego komunikatu o formie -ing.
   const keyTokens = stateVerbIn(sentence, "ing_form") === undefined ? new Set(expandedTokens(answer)) : undefined;
-  let hasBe = false;
-  for (const tokens of sentences) {
-    if (validateSentenceBeForms(ex, objective, tokens, keyTokens, field, errors)) hasBe = true;
-  }
-  if (!hasBe) {
+  const beForms = sentences.map((tokens) => validateSentenceBeForms(ex, objective, tokens, keyTokens, field, errors));
+  if (!beForms.some(({ hasBe }) => hasBe)) {
     errors.push(`pc-be: ${field}: zdanie w Present Continuous potrzebuje formy am/is/are`);
     return;
+  }
+  if (!beForms.some(({ hasContinuousBe }) => hasContinuousBe)) {
+    errors.push(`pc-ing: ${field}: zdanie w Present Continuous potrzebuje am/is/are + formy -ing (samo „Mum is in the kitchen.” to nie Present Continuous)`);
   }
   if (checkPolarity) {
     const marker = sentences.map((tokens) => tokens[0]).findLast((token) => token === "yes" || token === "no");
@@ -746,7 +893,7 @@ function validateBeChoiceDistractors(ex: LessonExerciseDraft, stem: string, erro
 
 /** Całe zdania (choice, order, short_answer, transform, open_answer; §6.3, §5.4). */
 function validateSentences(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
-  const pcObjective = PC_SENTENCE_OBJECTIVES.has(objective);
+  const pcObjective = PC_FORM_OBJECTIVES.has(objective);
   const gapStem = beChoiceGapStem(ex);
   for (const { field, text } of sentenceAnswersOf(ex)) {
     const contraction = normalizeTokens(text).find((token) => S_CONTRACTIONS.has(token));
@@ -867,7 +1014,7 @@ function validateNowUsuallyChoice(ex: LessonExerciseDraft, objective: string, er
   if (scanTimeMarkers(stem, "en").groups.size > 0) {
     errors.push("pc-marker: stem: zdanie w wyborze „now / usually” nie może mieć wskaźnika czasu — czas wynika z formy");
   }
-  if (ex.instructionPl !== undefined && scanTimeMarkers(ex.instructionPl, "pl").groups.size === 1) {
+  if (ex.instructionPl !== undefined && scanTimeMarkers(ex.instructionPl, "pl", { instruction: true }).groups.size === 1) {
     errors.push("pc-marker: instructionPl: polecenie wyboru „now / usually” zdradza odpowiedź wskaźnikiem albo scenką");
   }
   const sentences = tenseSentences(stem);
@@ -935,17 +1082,47 @@ function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors:
 }
 
 /**
+ * Luka to w silniku 2+ podkreśleń (`fillGap`); reguły tematu szukają „___”,
+ * więc bodziec i pytanie krótkiej odpowiedzi dostają jedną postać luki.
+ */
+function withCanonicalGaps(ex: LessonExerciseDraft): LessonExerciseDraft {
+  const canonical = (text: string): string => text.replace(/_{2,}/g, "___");
+  return {
+    ...ex,
+    ...(ex.stem === undefined ? {} : { stem: canonical(ex.stem) }),
+    ...(ex.prompt === undefined ? {} : { prompt: canonical(ex.prompt) }),
+  };
+}
+
+/**
+ * Opcja wyboru zaczynająca się apostrofem („'re playing” obok „are playing”):
+ * normalizacja zdejmuje apostrof z brzegu tokenu, więc opcja nie jest skrótem
+ * zaimka i myli dziecko — jak odpowiedź luki (`validateGap`).
+ */
+function validateChoiceOptionApostrophes(ex: LessonExerciseDraft, errors: string[]): void {
+  if (ex.exerciseType !== "lesson_choice") return;
+  for (const option of ex.options ?? []) {
+    if (LEADING_APOSTROPHE.test(option.text.trim())) {
+      errors.push(`pc-shape: options: opcja nie może zaczynać się apostrofem („${option.text}”) — zapisz pełną formę am/is/are`);
+    }
+  }
+}
+
+/**
  * Walidator ćwiczenia tematu Present Continuous; cel z ostatniego segmentu
  * `objectiveId`. Zwraca komunikaty z prefiksami `pc-…:` (pusta lista = poprawne).
  */
-export function validatePresentContinuousExercise(ex: LessonExerciseDraft): string[] {
-  if (ex.exerciseType === "lesson_card") return [];
+export function validatePresentContinuousExercise(draft: LessonExerciseDraft): string[] {
+  if (draft.exerciseType === "lesson_card") return [];
+  const ex = withCanonicalGaps(draft);
   const objective = objectiveOf(ex);
   const errors: string[] = [];
   validateForbiddenMarkers(ex, errors);
   validateBrackets(ex, errors);
   validateStateVerbs(ex, objective, errors);
+  validateChoiceOptionApostrophes(ex, errors);
   if (TENSE_CHOICE_OBJECTIVES.has(objective)) validateTenseChoice(ex, objective, errors);
+  if (PC_FORM_OBJECTIVES.has(objective)) validateNowContext(ex, objective, errors);
   if (ex.exerciseType === "lesson_gap") {
     validateGapHint(ex, errors);
     validateGap(ex, objective, errors);
@@ -953,6 +1130,7 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
     validateSentences(ex, objective, errors);
   }
   if (ex.exerciseType === "lesson_error_fix") validateErrorFix(ex, objective, errors);
+  if (ex.exerciseType === "lesson_transform") validateTransformShape(ex, errors);
   if (ex.exerciseType === "lesson_notice") validateNotice(ex, errors);
   if (ex.exerciseType === "lesson_listen_choice") validateListenChoiceOptions(ex, errors);
   // Reguła luki na formę be i reguła zdania mogą zgłosić tę samą niezgodność formy z podmiotem.

@@ -186,15 +186,16 @@ export function tenseChoiceShapeErrors(ex: LessonExerciseDraft, objective: strin
 }
 
 /**
- * Grupa wskaźników ćwiczenia celu porównania (§5.2) ze skanowanych pól:
+ * Grupa wskaźników ćwiczenia celu porównania (§5.2) ze skanowanych pól
+ * (polecenie z `instruction` — bez słów czasu przy poleceniu zadania):
  * co najmniej jeden wskaźnik i wszystkie z jednej grupy. undefined (z
  * komunikatem) przy braku wskaźnika albo grupach mieszanych.
  */
 export function tenseChoiceMarkerGroup(
-  fields: readonly { readonly text: string; readonly lang: "en" | "pl" }[],
+  fields: readonly { readonly text: string; readonly lang: "en" | "pl"; readonly instruction?: boolean }[],
   errors: string[],
 ): MarkerGroup | undefined {
-  const groups = new Set(fields.flatMap(({ text, lang }) => [...scanTimeMarkers(text, lang).groups]));
+  const groups = new Set(fields.flatMap(({ text, lang, instruction }) => [...scanTimeMarkers(text, lang, { instruction: instruction === true }).groups]));
   if (groups.size === 0) {
     errors.push("pc-marker: ćwiczenie potrzebuje wskaźnika czasu (now, Look!, every day…) albo scenki w poleceniu (Cicho!, teraz, codziennie…)");
     return undefined;
