@@ -14,8 +14,10 @@ import {
   checkBePolarity,
   expectedBeFormNearGap,
   parseBeGapAnswer,
+  TRANSFORM_POLARITY,
   type BePolarity,
 } from "./be-agreement";
+import { validatePresentContinuousExercise } from "./present-continuous-validation";
 import { isAcceptablePresentSimpleAnswer, presentSimpleForms } from "./present-simple-forms";
 
 /**
@@ -87,13 +89,6 @@ const TO_BE_POLARITY: Readonly<Record<string, BePolarity>> = {
   affirmative_forms: "affirmative",
   contractions: "affirmative",
   negative_forms: "negative",
-};
-
-/** Biegunowość wymagana przez przekształcenie (pierwszeństwo przed celem). */
-const TRANSFORM_POLARITY: Readonly<Record<string, BePolarity>> = {
-  to_affirmative: "affirmative",
-  to_negative: "negative",
-  to_question: "any",
 };
 
 function toBeObjectivePolarity(objective: string): BePolarity {
@@ -300,6 +295,11 @@ export function validateEnglishGrammarExercise(
     if ([ex.answer, ...ex.acceptedAnswers].some((answer) => equivalentText(ex.prompt!, answer))) {
       errors.push("prompt: bodziec tłumaczenia nie może być równy odpowiedzi ani jej wariantowi");
     }
+  }
+
+  if (topic.id === "present_continuous") {
+    errors.push(...validatePresentContinuousExercise(ex));
+    return errors;
   }
 
   if (topic.id === "to_be" && ex.exerciseType === "lesson_gap") {

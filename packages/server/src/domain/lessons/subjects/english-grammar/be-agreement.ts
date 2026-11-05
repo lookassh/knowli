@@ -204,6 +204,13 @@ export function beStemContext(stem: string | undefined): { negative: boolean; ma
 /** Biegunowość wymagana od formy „to be”: z celu tematu albo z przekształcenia. */
 export type BePolarity = "affirmative" | "negative" | "any";
 
+/** Biegunowość wymagana przez przekształcenie (pierwszeństwo przed celem). */
+export const TRANSFORM_POLARITY: Readonly<Record<string, BePolarity>> = {
+  to_affirmative: "affirmative",
+  to_negative: "negative",
+  to_question: "any",
+};
+
 /**
  * Forma „to be” w pełnym zdaniu i forma wymagana przez jej podmiot: pierwsza
  * forma am/is/are (po rozwinięciu skrótów) zastąpiona luką trafia do
