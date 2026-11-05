@@ -1524,14 +1524,9 @@ describe("generowanie puli lekcji (integracja)", () => {
       expect(draft.rejectedReasons).toEqual({ [labels.leak_victim!]: 1 });
     });
 
-    /**
-     * ZNANA LUKA ścieżki agenta (raport Task 6 etapu 3 PR 2): przyjęcie (`admission.ts`, krok 4) odrzuca
-     * drugie i kolejne pytanie rodziny jako `leak_victim` (miękkie ujawnienie przez wcześniejsze pytanie
-     * samodzielne), bo `findExposureLeaks` nie zna rodzin — potok i DTO szkicu (`lesson-api.ts`, `sameFamily`)
-     * je wyłączają. Test opisuje zachowanie wymagane (§6.1 „rodzina pytań otwartych liczona raz”);
-     * `it.fails` do naprawy domeny — po niej zmień na `it`.
-     */
-    it.fails("szkoła: rodzina trzech pytań otwartych z jedną odpowiedzią zostaje w szkicu, a pokrycie liczy jedno", async () => {
+    // Rodzina pytań (ta sama odpowiedź wzorcowa) nie ujawnia rozwiązania samej sobie: przyjęcie agenta
+    // stosuje tę samą regułę co ostrzeżenia szkicu (`familyRepeatsAllowed`), a pokrycie liczy rodzinę raz.
+    it("szkoła: rodzina trzech pytań otwartych z jedną odpowiedzią zostaje w szkicu, a pokrycie liczy jedno", async () => {
       let independentTarget: number | undefined;
       const fakes = await agentFakes({
         objectives: {

@@ -40,6 +40,20 @@ export interface ExposureLeakInput {
    * (także warianty zaakceptowane ofiary) — ostrzejsza, bo działa na świeżych tekstach.
    */
   readonly mode: "coverage" | "generation";
+  /**
+   * `true`: powtórzenie odpowiedzi w tej samej rodzinie pytań ({@link sameQuestionFamily}) nie jest
+   * źródłem miękkiego ujawnienia — rodzina to zamierzona struktura (różne sformułowania jednego pytania),
+   * a pokrycie i tak liczy ją raz. Źródła twarde i samodzielne ćwiczenia spoza rodziny działają jak zwykle.
+   */
+  readonly familyRepeatsAllowed?: boolean;
+}
+
+/**
+ * Ta sama rodzina pytań: to samo zagadnienie i ta sama niepusta `familyId` (rodziny pytań otwartych
+ * szkoły). Wspólna dla przyjęcia agenta puli i ostrzeżeń szkicu dla rodzica.
+ */
+export function sameQuestionFamily(a: LessonExerciseDraft, b: LessonExerciseDraft): boolean {
+  return a.objectiveId === b.objectiveId && a.familyId !== undefined && a.familyId.trim() !== "" && a.familyId === b.familyId;
 }
 
 /** Ofiarą bywa tylko ćwiczenie samodzielne ze ścieżki etapów. */
@@ -131,6 +145,9 @@ function firstSoftSourceOf(victimIndex: number, input: ExposureLeakInput): LeakS
   let best: { readonly index: number; readonly position: readonly [number, number] } | undefined;
   input.exercises.forEach((other, index) => {
     if (index === victimIndex || stageOf(other.exerciseType) !== "independent") {
+      return;
+    }
+    if (input.familyRepeatsAllowed === true && sameQuestionFamily(victim, other)) {
       return;
     }
     const position = positionOf(input, index);

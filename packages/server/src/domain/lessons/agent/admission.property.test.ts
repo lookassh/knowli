@@ -235,6 +235,8 @@ function lessonFindings(state: LessonAgentState, ctx: AgentCheckContext) {
     objectiveOrder: state.objectives.map((objective) => objective.id),
     subject: ctx.subject,
     mode: "coverage",
+    // Powtórzenie w rodzinie pytań nie jest ujawnieniem (ta sama reguła co ostrzeżenia szkicu dla rodzica).
+    familyRepeatsAllowed: true,
   }).map((leak) => lesson[leak.index]!);
   const pool = validatePool(lesson, ctx.subject, state.topic, { existingExercises: [] }).rejected.map((item) => item.exercise);
   const extra = [...(ctx.subject.validatePoolExtra?.(lesson, { material: ctx.material }) ?? [])]

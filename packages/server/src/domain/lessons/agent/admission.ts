@@ -115,6 +115,8 @@ function lessonLeaks(state: LessonAgentState, entries: readonly OrderedLessonEnt
     objectiveOrder: state.objectives.map((objective) => objective.id),
     subject: ctx.subject,
     mode: "coverage",
+    // Rodzina pytań otwartych (ta sama odpowiedź wzorcowa) nie ujawnia rozwiązania samej sobie — jak w szkicu.
+    familyRepeatsAllowed: true,
   });
   return new Map(leaks.map((leak) => [entries[leak.index]!.draft, leak] as const));
 }

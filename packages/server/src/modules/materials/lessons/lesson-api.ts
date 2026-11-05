@@ -356,9 +356,8 @@ async function readLessonDraftDto(
   // Ujawnione rozwiązania (spec etapu przeglądu lekcji §8): tylko edytowalny szkic — wersja opublikowana
   // jest niezmienna, więc rodzic nie ma czego poprawić; indeksy z domeny mapujemy na id ćwiczeń.
   // Miękkie powtórzenie w rodzinie pytań szkoły (ta sama rodzina w tym samym zagadnieniu) to zamierzona
-  // struktura, nie błąd rodzica: bez ostrzeżenia, choć pokrycie nadal liczy rodzinę raz.
-  const sameFamily = (a: LessonExerciseDraft, b: LessonExerciseDraft) =>
-    a.objectiveId === b.objectiveId && a.familyId !== undefined && a.familyId.trim() !== "" && a.familyId === b.familyId;
+  // struktura, nie błąd rodzica: bez ostrzeżenia, choć pokrycie nadal liczy rodzinę raz (ta sama reguła
+  // co przyjęcie agenta puli).
   const exposureLeaks: ExposureLeakDto[] = draftSubject && !published
     ? findExposureLeaks({
         exercises: drafts,
@@ -366,8 +365,8 @@ async function readLessonDraftDto(
         objectiveOrder: context.objectiveIds,
         subject: draftSubject,
         mode: "coverage",
+        familyRepeatsAllowed: true,
       })
-        .filter((leak) => !(leak.kind === "soft" && leak.source.kind === "exercise" && sameFamily(drafts[leak.index]!, drafts[leak.source.index]!)))
         .map((leak) => ({
           exerciseId: revisions[leak.index]!.itemId,
           kind: leak.kind,

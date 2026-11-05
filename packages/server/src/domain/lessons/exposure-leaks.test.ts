@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findExposureLeaks, resolveGenerationLeaks } from "./exposure-leaks";
+import { findExposureLeaks, resolveGenerationLeaks, sameQuestionFamily } from "./exposure-leaks";
 import { englishChapterSubject } from "./subjects/english-chapter/module";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { schoolSubject } from "./subjects/school/module";
@@ -72,6 +72,39 @@ describe("findExposureLeaks", () => {
         { index: 2, kind: "soft", source: { kind: "exercise", index: 0 } },
       ]);
     }
+  });
+
+  it("szkoła, familyRepeatsAllowed: rodzina pytań bez wpisów; pytanie spoza rodziny i inna rodzina nadal soft", () => {
+    const family = (familyId: string | undefined, objectiveId = A) =>
+      draft({ objectiveId, prompt: "Stolica Polski?", answer: "Warszawa", ...(familyId === undefined ? {} : { familyId }) });
+    for (const mode of MODES) {
+      const leaks = (exercises: LessonExerciseDraft[], objectiveOrder = [A]) =>
+        findExposureLeaks({ exercises, examples: {}, objectiveOrder, subject: schoolSubject, mode, familyRepeatsAllowed: true });
+      expect(leaks([family("f1"), family("f1"), family("f1")])).toEqual([]);
+      // Inna rodzina, brak rodziny albo pusta rodzina: zwykłe miękkie ujawnienie.
+      expect(leaks([family("f1"), family("f2")])).toEqual([{ index: 1, kind: "soft", source: { kind: "exercise", index: 0 } }]);
+      expect(leaks([family(undefined), family("f1")])).toEqual([{ index: 1, kind: "soft", source: { kind: "exercise", index: 0 } }]);
+      expect(leaks([family(" "), family(" ")])).toEqual([{ index: 1, kind: "soft", source: { kind: "exercise", index: 0 } }]);
+      // Ta sama nazwa rodziny w innym zagadnieniu to inna rodzina.
+      expect(leaks([family("f1", B), family("f1", A)], [B, A])).toEqual([{ index: 1, kind: "soft", source: { kind: "exercise", index: 0 } }]);
+      // Najwcześniejsze źródło z tej samej rodziny nie zasłania późniejszego źródła spoza rodziny.
+      expect(leaks([family("f1"), family(undefined), family("f1")])).toEqual([
+        { index: 1, kind: "soft", source: { kind: "exercise", index: 0 } },
+        { index: 2, kind: "soft", source: { kind: "exercise", index: 1 } },
+      ]);
+      // Źródła twarde (przykład karty) działają także w rodzinie.
+      expect(findExposureLeaks({
+        exercises: [family("f1"), family("f1")], examples: { [A]: ["Warszawa"] }, objectiveOrder: [A], subject: schoolSubject, mode, familyRepeatsAllowed: true,
+      }).map((leak) => leak.kind)).toEqual(["hard", "hard"]);
+    }
+  });
+
+  it("sameQuestionFamily: to samo zagadnienie i ta sama niepusta familyId", () => {
+    expect(sameQuestionFamily(draft({ familyId: "f1" }), draft({ familyId: "f1" }))).toBe(true);
+    expect(sameQuestionFamily(draft({ familyId: "f1" }), draft({ familyId: "f2" }))).toBe(false);
+    expect(sameQuestionFamily(draft({ familyId: "f1" }), draft({ familyId: "f1", objectiveId: B }))).toBe(false);
+    expect(sameQuestionFamily(draft({}), draft({}))).toBe(false);
+    expect(sameQuestionFamily(draft({ familyId: "" }), draft({ familyId: "" }))).toBe(false);
   });
 
   it.each(MODES)("„Posłuchaj i wybierz” (%s) z rozwiązanym zdaniem równym tłumaczeniu → hard", (mode) => {
