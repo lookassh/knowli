@@ -17,7 +17,7 @@ import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lesso
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_FAKE_DECK_ITEMS, FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, FakeImageProvider, FakeLessonReviewer, FakeLlmProvider, FakeTtsProvider } from "./fake";
+import { DEFAULT_FAKE_DECK_ITEMS, FAKE_HOLD_MAX_AGE_MS, FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, FakeImageProvider, FakeLessonReviewer, FakeLlmProvider, FakeTtsProvider, waitWhileFakeHeld } from "./fake";
 
 describe("bramka fake providerów E2E (holdFile)", () => {
   it("zestaw, TTS i obraz czekają, dopóki plik bramki istnieje", async () => {
@@ -36,6 +36,17 @@ describe("bramka fake providerów E2E (holdFile)", () => {
       rmSync(holdFile);
       await Promise.all(calls);
       expect(settled.sort()).toEqual(["deck", "image", "tts"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignoruje plik bramki starszy niż FAKE_HOLD_MAX_AGE_MS (awaria testu bez zwolnienia)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "knowli-fake-hold-"));
+    const holdFile = join(dir, "hold");
+    try {
+      writeFileSync(holdFile, "");
+      await waitWhileFakeHeld(holdFile, () => Date.now() + FAKE_HOLD_MAX_AGE_MS + 1_000);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

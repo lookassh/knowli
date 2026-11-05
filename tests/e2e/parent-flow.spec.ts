@@ -356,6 +356,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Edytor ma własny adres, więc odświeżenie zostawia go otwartym.
   await page.reload();
   await expect(page.getByTestId("editor-title")).toHaveValue(DECK_TITLE);
+  await expect(page.getByTestId("generation-banner")).toBeVisible();
   await releaseFakeGeneration();
   await expect(page.getByTestId("item-card-0")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("item-card-6")).toBeVisible();

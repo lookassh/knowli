@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import type { GenerationDeps, LessonSpeechDeps, SessionActivityDeps, SpeechDeps } from "../config";
 import type {
   AnswerGraderProvider,
@@ -115,12 +115,21 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Bramka testów E2E (`UMIEM_FAKE_HOLD_FILE`): dopóki plik istnieje, fake
- * generowanie zestawu, TTS i obrazów czeka. Test, który sprawdza przejściowy
+ * generowanie słówek, TTS i ilustracji czeka. Test, który sprawdza przejściowy
  * stan „generowanie”, tworzy plik przed akcją i usuwa go po asercji — zamiast
- * ścigać się ze sztucznym opóźnieniem wszystkich wywołań.
+ * ścigać się ze sztucznym opóźnieniem wszystkich wywołań. Plik starszy niż
+ * FAKE_HOLD_MAX_AGE_MS jest ignorowany: po awarii procesu testu (bez
+ * afterEach) kolejne testy świata nie wiszą do swoich limitów czasu.
  */
-export async function waitWhileFakeHeld(holdFile: string | undefined): Promise<void> {
-  while (holdFile !== undefined && existsSync(holdFile)) await sleep(50);
+export const FAKE_HOLD_MAX_AGE_MS = 120_000;
+
+export async function waitWhileFakeHeld(holdFile: string | undefined, now: () => number = Date.now): Promise<void> {
+  if (holdFile === undefined) return;
+  for (;;) {
+    const stat = statSync(holdFile, { throwIfNoEntry: false });
+    if (stat === undefined || now() - stat.mtimeMs > FAKE_HOLD_MAX_AGE_MS) return;
+    await sleep(50);
+  }
 }
 
 /** Opcje fake providerów: sztuczne opóźnienia i bramka E2E. */
