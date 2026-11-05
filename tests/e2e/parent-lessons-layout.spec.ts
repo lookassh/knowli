@@ -95,6 +95,23 @@ test("telefon: formularz bez przewijania w poziomie, cele ≥ 44 px, pula podą�
   }
 });
 
+test("bez klucza formularz nowej lekcji pokazuje komunikat i nie pozwala wysłać", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const api = await openNewLesson(page, () => 202, Promise.resolve(), [], { ...catalog, lessonGenerationAvailable: false });
+    await page.getByTestId("lesson-material").fill("He plays football every day.");
+    await expect(page.getByTestId("lesson-generation-unavailable")).toHaveText(messages.lessons.generationErrors.lesson_agent_unavailable!);
+    await expect(page.getByTestId("lesson-create-submit")).toBeDisabled();
+    await expectNoHorizontalOverflow(page);
+    expect(api.creates).toHaveLength(0);
+  }
+  // z kluczem: bez komunikatu, wysyłka dostępna
+  await openNewLesson(page);
+  await page.getByTestId("lesson-material").fill("He plays football every day.");
+  await expect(page.getByTestId("lesson-generation-unavailable")).toHaveCount(0);
+  await expect(page.getByTestId("lesson-create-submit")).toBeEnabled();
+});
+
 test("tematy zdań: wstawienie zainteresowań dziecka trafia do polecenia, sekcja ukryta dla rozdziału i szkoły", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const api = await openNewLesson(page, () => 202, Promise.resolve(), children);

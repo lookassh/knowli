@@ -61,6 +61,8 @@ interface Api {
   getStatus: number;
   /** Status następnego PATCH (200 — zwykły zapis; inny — błąd bez zmiany źródła). */
   patchStatus: number;
+  /** `lessonGenerationAvailable` katalogu lekcji (false — serwer bez klucza OpenRouter). */
+  generationAvailable: boolean;
 }
 
 const BODY = "Unit 3 — Food\npizza — pizza\napple — jabłko\nI like pizza. Do you like apples?";
@@ -100,7 +102,7 @@ async function mockApi(page: Page): Promise<Api> {
   const api: Api = {
     sources: new Map([[SOURCE_ID, storedSource()]]), creates: [], patches: [], deletes: [], lessonCreates: [],
     conflictNext: false, createFailures: 0, lessonStatus: 202, deckLists: [[]], deckListCalls: 0,
-    listStatus: 200, getStatus: 200, patchStatus: 200,
+    listStatus: 200, getStatus: 200, patchStatus: 200, generationAvailable: true,
   };
   const failure = (status: number) => ({ status, json: { ...envelope(status >= 500 ? "internal" : "validation", "Błąd."), retryable: status >= 500 } });
   await page.route("**/api/v1/parent/**", async (route) => {
@@ -108,7 +110,7 @@ async function mockApi(page: Page): Promise<Api> {
     const method = request.method();
     const path = new URL(request.url()).pathname.replace("/api/v1/parent", "");
     if (path === "/login") return route.fulfill({ json: { authenticated: true, setupRequired: false } });
-    if (path === "/lesson-catalog") return route.fulfill({ json: catalog });
+    if (path === "/lesson-catalog") return route.fulfill({ json: { ...catalog, lessonGenerationAvailable: api.generationAvailable } });
     if (path === "/decks" && method === "GET") {
       const list = api.deckLists[Math.min(api.deckListCalls, api.deckLists.length - 1)]!;
       api.deckListCalls += 1;
@@ -247,6 +249,18 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId("source-heading")).toHaveText("Unit 4 — Sport");
       await expect(page.getByTestId("source-no-decks")).toBeVisible();
       expect(api.creates).toEqual([{ clientRequestId: expect.any(String), title: "Unit 4 — Sport", body: "football — piłka nożna\nI play football." }]);
+    });
+
+    test("bez klucza: tworzenie lekcji ze źródła wyłączone z komunikatem, zestaw słówek aktywny", async ({ page }) => {
+      const api = await mockApi(page);
+      api.generationAvailable = false;
+      await page.goto(`/parent/sources/${SOURCE_ID}`);
+      await expect(page.getByTestId("source-generation-unavailable")).toHaveText(messages.lessons.generationErrors.lesson_agent_unavailable!);
+      await expect(page.getByTestId("source-create-chapter")).toBeDisabled();
+      await expect(page.getByTestId("source-create-school")).toBeDisabled();
+      await expect(page.getByTestId("source-create-vocabulary")).toBeEnabled();
+      await expectNoHorizontalOverflow(page);
+      expect(api.lessonCreates).toHaveLength(0);
     });
 
     test("edycja: tylko zmienione pola, konflikt 409 pokazuje komunikat i odświeżenie", async ({ page }) => {

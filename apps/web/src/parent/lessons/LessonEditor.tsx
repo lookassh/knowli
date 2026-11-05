@@ -333,6 +333,10 @@ export default function LessonEditor({
   const catalogQuery = useQuery(orpc.lessonCatalog.get.queryOptions());
   const catalog = catalogQuery.data ?? null;
   const catalogError = catalogQuery.error;
+  // bez klucza OpenRouter na serwerze agent nie wystartuje: „Dogeneruj” i ponowienie runu lekcji są wyłączone
+  // (run historyjki nie korzysta z agenta, więc jego ponowienie zostaje)
+  const generationUnavailable = catalog?.lessonGenerationAvailable === false;
+  const generationUnavailableText = messages.lessons.generationErrors.lesson_agent_unavailable!;
   useEffect(() => {
     if (catalogError) setError(errorMessage(catalogError));
   }, [catalogError]);
@@ -563,7 +567,7 @@ export default function LessonEditor({
   };
 
   const retry = async () => {
-    if (!deck?.generation || busyRef.current || dirty.current || conflict) return;
+    if (!deck?.generation || busyRef.current || dirty.current || conflict || generationUnavailable) return;
     const runId = deck.generation.id;
     setBusyState(true);
     setError(null);
@@ -578,7 +582,7 @@ export default function LessonEditor({
   };
 
   const regenerate = async (objectiveId: string) => {
-    if (!draft || busyRef.current || regenLock.current || generating || isDirty) return;
+    if (!draft || busyRef.current || regenLock.current || generating || isDirty || generationUnavailable) return;
     regenLock.current = true;
     const count = regenCounts[objectiveId] ?? 4;
     setBusyState(true);
@@ -803,7 +807,7 @@ export default function LessonEditor({
   const forcedObjectives = groups.filter((g) => g.stages.some((s) => errorsIn(s.exercises) > 0)).map((g) => g.objectiveId);
   const forcedStages = groups.flatMap((g) => g.stages.filter((s) => errorsIn(s.exercises) > 0).map((s) => stageKey(g.objectiveId, s.stage)));
   const exerciseCount = form?.exercises.length ?? 0;
-  const regenDisabled = busy || generating || isDirty;
+  const regenDisabled = busy || generating || isDirty || generationUnavailable;
 
   // klucz: identyfikator ćwiczenia (przeżywa zapis, który nadaje nowe klucze klienta), dla nowych — klucz klienta
   const toggleCard = (key: string) => setOpenCards((current) => {
@@ -1272,6 +1276,7 @@ export default function LessonEditor({
         childrenList={childrenList}
         gradingModel={deck.grading.available ? (deck.grading.model ?? null) : null}
         onRegenerate={draft ? (objectiveId) => void regenerate(objectiveId) : undefined}
+        {...(generationUnavailable ? { regenerateUnavailable: generationUnavailableText } : {})}
       />
     </Stack>
   );
@@ -1331,9 +1336,10 @@ export default function LessonEditor({
                 <>
                   <Text size="sm">{messages.lessons.stalledGenerationHint}</Text>
                   <Button size="md" variant="default" data-testid="retry-stalled-generation" leftSection={<ParentIcon name="refresh" />}
-                    disabled={busy || isDirty || conflict} onClick={retry}>
+                    disabled={busy || isDirty || conflict || generationUnavailable} onClick={retry}>
                     {messages.lessons.retryGeneration}
                   </Button>
+                  {generationUnavailable && <Text size="sm" data-testid="generation-unavailable">{generationUnavailableText}</Text>}
                 </>
               )}
             </Stack>
@@ -1342,10 +1348,13 @@ export default function LessonEditor({
         {deck?.generation?.state === "failed" && (
           <Alert color="red" variant="light" data-testid="generation-failed">
             <Stack gap="xs" align="flex-start">
-              <Text size="sm">{generationFailure}</Text>
-              <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />} onClick={retry}>
+              {/* ten sam tekst (run bez agenta) pokazujemy raz — jako komunikat o niedostępnym generowaniu */}
+              {!(generationUnavailable && generationFailure === generationUnavailableText) && <Text size="sm">{generationFailure}</Text>}
+              <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />}
+                disabled={generationUnavailable} onClick={retry}>
                 {messages.lessons.retryGeneration}
               </Button>
+              {generationUnavailable && <Text size="sm" data-testid="generation-unavailable">{generationUnavailableText}</Text>}
             </Stack>
           </Alert>
         )}
@@ -1367,6 +1376,10 @@ export default function LessonEditor({
           </div>
         )}
         {draft?.generationGaps && <LessonGenerationGapsAlert gaps={draft.generationGaps} />}
+        {/* „Dogeneruj” jest wyłączone — powód obok (przy nieudanym runie ten sam tekst jest już w alercie wyżej) */}
+        {editable && generationUnavailable && groups.length > 0 && deck?.generation?.state !== "failed" && !(generating && deck?.generation?.state === "running") && (
+          <Text size="sm" className="pp-editor-muted" data-testid="regen-unavailable">{generationUnavailableText}</Text>
+        )}
         {error && !showActionBar && errorAlert}
 
         {conflict && (
@@ -1410,6 +1423,7 @@ export default function LessonEditor({
         {regenTarget && (
           <Stack gap="md">
             <Text size="sm" fw={600}>{objectiveMeta(regenTarget)?.titlePl ?? regenTarget}</Text>
+            {generationUnavailable && <Text size="sm" data-testid="regen-modal-unavailable">{generationUnavailableText}</Text>}
             <NumberInput size="md" label={messages.lessons.regenerateCount} description={messages.lessons.regenerateHint}
               data-testid={`regen-count-${regenTarget}`} min={1} max={60} allowDecimal={false} allowNegative={false} clampBehavior="none" maw={200}
               value={regenCounts[regenTarget] ?? 4}

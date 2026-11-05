@@ -194,6 +194,17 @@ describe("SourcePage", () => {
       expect(markup).not.toContain('data-testid="source-no-lesson-subjects"');
     });
 
+    it("bez klucza (lessonGenerationAvailable: false): przyciski lekcji wyłączone z komunikatem, zestaw słówek aktywny", () => {
+      const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, { ...fullCatalog, lessonGenerationAvailable: false }));
+      expect(markup).toMatch(/<button[^>]*disabled=""[^>]*data-testid="source-create-chapter"/);
+      expect(markup).toMatch(/<button[^>]*disabled=""[^>]*data-testid="source-create-school"/);
+      expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*data-testid="source-create-vocabulary"/);
+      expect(markup).toContain('data-testid="source-generation-unavailable"');
+      expect(markup).toContain(messages.lessons.generationErrors.lesson_agent_unavailable);
+      const available = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source));
+      expect(available).not.toContain('data-testid="source-generation-unavailable"');
+    });
+
     it("katalog jeszcze się wczytuje: przyciski są, ale wyłączone", () => {
       const markup = renderParentMarkup(<SourcePage sourceId={SOURCE_ID} {...handlers()} />, withSource(source, null));
       expect(markup).toMatch(/<button[^>]*disabled=""[^>]*data-testid="source-create-chapter"/);
