@@ -508,7 +508,6 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
     // Wymaganie 10.1: provider oceny dowolnych odpowiedzi (nazwa modelu z
     // konfiguracji, bez sekretów). `available=false` steruje komunikatem rodzica.
     grading: services.grader ? { available: true, model: services.grader.provider.model } : { available: false },
-    // Etykieta usługi kontroli jakości lekcji (bez sekretów); brak = kontrola wyłączona.
   };
 }
 
