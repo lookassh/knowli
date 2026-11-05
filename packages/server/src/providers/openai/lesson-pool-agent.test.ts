@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APICallError, InvalidToolInputError, JSONParseError, NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { messages } from "@learning/contracts";
 import type {
   LessonAgentToolOutcome,
   LessonObjectiveAgentInput,
@@ -178,6 +179,27 @@ describe("AiSdkLessonPoolAgent (MockLanguageModelV4, bez sieci)", () => {
     expect(cost.values).toEqual([0.01]);
     // Opcje dostawcy, bez ponowień SDK.
     expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: { reasoning: { effort: "low" } } });
+  });
+
+  it("rachunek: kod liczy odpowiedź i treść przed submit zamiast ufać polom modelu", async () => {
+    const material = "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.";
+    const calculation = {
+      exerciseType: "lesson_calculation",
+      objectiveId: "subject.topic.animals",
+      calculation: { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" },
+      sourceRefs: [{ quote: material }],
+    };
+    const injected = { ...calculation, answer: "999 km", prompt: "Nowe fakty geograficzne", focus: ["999"], acceptedAnswers: ["999"] };
+    const model = new MockLanguageModelV4({ doGenerate: [toolCallResult("submit_exercises", { exercises: [injected] }), textResult("never reached")] });
+    const { tools, submitted } = fakeTools([], { stopAfterSubmit: true });
+
+    await new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model }).runObjective(agentInput(), tools, recordingCost([]), new AbortController().signal);
+
+    expect(submitted[0]!.exercises[0]).toMatchObject({
+      ...calculation, answer: "750 m", focus: [], acceptedAnswers: [],
+      prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m.",
+      instructionPl: messages.kid.lessonCalculationInstruction,
+    });
   });
 
   it("nie woła modelu, gdy zagadnienie jest zamknięte przed pierwszym krokiem", async () => {

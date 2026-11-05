@@ -4,6 +4,7 @@ import { agentObjectivesOf } from "../domain/lessons/agent/capable";
 import { createLessonAgentState, orderedLesson, poolOf, withExamples, withPool, allExamples, type LessonAgentState } from "../domain/lessons/agent/state";
 import { objectiveStatus } from "../domain/lessons/agent/status";
 import { cardExposureSources } from "../domain/lessons/card-exposure-sources";
+import { explanationTextErrors } from "../domain/lessons/exercise-explanation";
 import { lessonExerciseTargetKey } from "../domain/lessons/exposure-key";
 import { findExposureLeaks } from "../domain/lessons/exposure-leaks";
 import { stageOf } from "../domain/lessons/stages";
@@ -355,5 +356,57 @@ describe("fakeObjectiveExercises — „+N” i liczby", () => {
     expect(open.prompt.startsWith("Przetłumacz")).toBe(true);
     expect(open.sourceRefs).toHaveLength(1);
     expect(open.requiredElements).toHaveLength(1);
+  });
+});
+
+describe("fakeObjectiveExercises — flagi przedmiotu, cytaty i zdania do unikania", () => {
+  it("wyjaśnienia: przy fladze każde ćwiczenie ma poprawne wyjaśnienie (gramatyka i rozdział), bez flagi żadne", () => {
+    for (const lesson of [grammarLesson(), chapterLesson(CHAPTER_MATERIAL)]) {
+      const input = inputsOf(lesson, emptyState(lesson))[0]!;
+      const on = fakeObjectiveExercises({ ...input, pool: { ...input.pool, exerciseExplanations: true } }, 0).exercises;
+      expect(on.length).toBeGreaterThan(0);
+      for (const exercise of on) expect(explanationTextErrors((exercise as { explanationPl: string }).explanationPl)).toEqual([]);
+      const off = fakeObjectiveExercises({ ...input, pool: { ...input.pool, exerciseExplanations: false } }, 0).exercises;
+      for (const exercise of off) expect(exercise).not.toHaveProperty("explanationPl");
+    }
+  });
+
+  it("ton lektora: tylko pierwsze ćwiczenie `curious` przy fladze, bez flagi brak pola", () => {
+    const lesson = grammarLesson();
+    const input = inputsOf(lesson, emptyState(lesson))[0]!;
+    const on = fakeObjectiveExercises({ ...input, pool: { ...input.pool, voiceTones: true } }, 0).exercises as { voiceTone?: string }[];
+    expect(on.map((exercise) => exercise.voiceTone)).toEqual(["curious", ...on.slice(1).map(() => undefined)]);
+    const off = fakeObjectiveExercises({ ...input, pool: { ...input.pool, voiceTones: false } }, 0).exercises;
+    for (const exercise of off) expect(exercise).not.toHaveProperty("voiceTone");
+  });
+
+  it("rozdział: bez cytatów i podpowiedzi", () => {
+    const lesson = chapterLesson(CHAPTER_MATERIAL);
+    for (const input of inputsOf(lesson, emptyState(lesson))) {
+      for (const exercise of fakeObjectiveExercises(input, input.objective.index * 1000).exercises) {
+        expect(exercise).not.toHaveProperty("sourceRefs");
+        expect(exercise).not.toHaveProperty("hint");
+      }
+    }
+  });
+
+  it("avoidSentences: zdanie z listy zastąpione innym, liczba ćwiczeń bez zmian", () => {
+    const lesson = chapterLesson(CHAPTER_MATERIAL);
+    const input = inputsOf(lesson, emptyState(lesson))[0]!;
+    const answers = (generated: { exercises: unknown[] }): string[] =>
+      generated.exercises
+        .filter((raw) => (raw as { exerciseType: string }).exerciseType === "lesson_open_answer")
+        .map((raw) => (raw as { answer: string }).answer);
+    const base = fakeObjectiveExercises(input, 0);
+    const baseAnswers = answers(base);
+    expect(baseAnswers.length).toBeGreaterThan(0);
+    const avoided = baseAnswers[0]!;
+    const replaced = fakeObjectiveExercises({ ...input, pool: { ...input.pool, avoidSentences: [`  ${avoided.toUpperCase()}.  `] } }, 0);
+    const replacedAnswers = answers(replaced);
+    expect(replaced.exercises).toHaveLength(base.exercises.length);
+    expect(replacedAnswers).toHaveLength(baseAnswers.length);
+    const normalise = (text: string): string => text.toLowerCase().trim().replace(/\.$/u, "");
+    expect(replacedAnswers.map(normalise)).not.toContain(normalise(avoided));
+    expect(new Set(replacedAnswers.map(normalise)).size).toBe(replacedAnswers.length);
   });
 });

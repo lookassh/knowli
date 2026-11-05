@@ -264,7 +264,6 @@ export {
   FakeSttProvider,
   FakeTtsProvider,
   type LlmBehavior,
-  type LlmLessonBehavior,
   type FakeGraderBehavior,
 } from "./providers/fake";
 export { createGenerationDepsFromEnv, generationPublicServiceFromEnv, imageProviderFromEnv } from "./providers/generation-env";

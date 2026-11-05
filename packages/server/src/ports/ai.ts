@@ -97,10 +97,6 @@ export interface LessonPoolInput {
   readonly groundingRequired?: boolean;
   /** Tożsamość duplikatu w obrębie puli; domyślnie zgodność odpowiedzi. */
   readonly deduplication?: "answer" | "exercise";
-  /** Odpowiedzi już w puli (dla dogenerowania bez duplikatów). */
-  readonly existingAnswers?: readonly string[];
-  /** Bodźce już w puli, używane gdy przedmiot deduplikuje całe ćwiczenia. */
-  readonly existingExercises?: readonly { objectiveId: string; exerciseType: string; stimulus: string }[];
   /** Czy generator ma zwracać `voiceTone` ćwiczenia (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
   readonly voiceTones?: boolean;
   /** Czy generator ma zwracać `explanationPl` ćwiczenia (przedmiot z `exerciseExplanations`); bez flagi schemat i prompt nie mają pola. */
@@ -111,11 +107,6 @@ export interface LessonPoolInput {
    * po `toLowerCase().trim()` bez końcowej kropki; brak pola = bez ograniczeń.
    */
   readonly avoidSentences?: readonly string[];
-  /**
-   * Po co wołamy generator: `pool` (domyślnie) — pełna generacja lub dogenerowanie puli;
-   * `stage_top_up` — runda dogenerowania w etapie przeglądu lekcji. Fake rozdziela po tym kolejki zachowań.
-   */
-  readonly purpose?: "pool" | "stage_top_up";
 }
 
 /**
@@ -131,8 +122,6 @@ export interface LessonObjectivesInput {
   readonly generationRole: string;
   /** Czy karty zagadnień niosą `voiceTone` (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
   readonly voiceTones?: boolean;
-  /** Reguły przedmiotu dla podziału materiału na zagadnienia (opcjonalne). */
-  readonly objectivesRules?: string;
 }
 
 /**
@@ -259,7 +248,7 @@ export interface LessonAgentPlanInput {
 
 /**
  * Agent puli ćwiczeń (etap 1 issue #237): model w pętli wywołuje narzędzia, a serwer waliduje każdy
- * wynik. Kontrakt adapterów: surowe rekordy materializuje jak `generateLessonPool` przed `submit`
+ * wynik. Kontrakt adapterów: surowe rekordy materializuje (rachunki, słowa kluczowe, pary/grupy/luki) przed `submit`
  * i nie waliduje treści; kończy pętlę, gdy `shouldStop()` zwraca `true` (sprawdzane przed każdym
  * krokiem), po `maxSteps` albo gdy model kończy; zgłasza koszt każdego żądania przez `RunCostSink`;
  * przerwanie `signal` kończy wywołanie wyjątkiem przerwania.
@@ -366,17 +355,6 @@ export interface LlmProvider {
     input: LessonStoryInput,
     signal?: AbortSignal,
   ): Promise<{ story: unknown }>;
-  /**
-   * Generacja surowej puli ćwiczeń jednego celu (design „Generowanie puli”).
-   * Zwraca ćwiczenia do walidacji w domenie (`pool-validation.ts`) oraz
-   * przykłady per cel do kart lekcji. Adapter materializuje surowe parametry
-   * lesson_calculation do kanonicznego prompt/answer przed wspólną walidacją;
-   * wadliwe rekordy pozostawia do indywidualnego odrzucenia.
-   */
-  generateLessonPool(
-    input: LessonPoolInput,
-    signal?: AbortSignal,
-  ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }>;
 }
 
 /** `wav` = PCM od providera opakowane w WAV (Gemini TTS); `mp3` = gotowy plik providera. */

@@ -7,7 +7,6 @@ import type {
   GraderInput,
   ImageProvider,
   LessonObjectivesInput,
-  LessonPoolInput,
   LessonStoryInput,
   LlmGeneratedItem,
   LlmGenerateDeckInput,
@@ -27,8 +26,6 @@ import { letterGroups } from "../domain/pronunciation-fragments";
 import { FUNCTION_WORDS } from "../domain/lessons/subjects/english/function-words";
 import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
 import { normalizeTokens } from "../domain/lessons/normalize";
-import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeLessonPoolExercises } from "./fake-lesson-pool";
-import { materializeGeneratedCalculations } from "./lesson-calculations";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -137,35 +134,9 @@ export interface FakeProviderOptions {
   holdFile?: string;
 }
 
-// Stałe generatora fake'a lekcji żyją w `fake-lesson-pool.ts`; reeksport dla dotychczasowych importów.
-export { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER } from "./fake-lesson-pool";
-
 export type LlmBehavior =
   | { items: Array<Record<string, unknown>> }
   | { error: string; retryable: boolean };
-
-/**
- * Zachowanie fake'a dla generacji puli lekcji: albo surowe ćwiczenia + przykłady
- * do zwrócenia, albo błąd (retryable jak dla decków), albo deterministyczna pula
- * domyślna generowana z wejścia. `invalid: true` zmusza fake do wygenerowania
- * ćwiczeń odrzucanych przez walidację (dowód odrzuceń pojedynczych).
- */
-export type LlmLessonBehavior =
-  | { exercises: unknown[]; examples?: Record<string, string[]> }
-  | { error: string; retryable: boolean }
-  | { invalid: true };
-
-/** Celowo niepoprawne ćwiczenie (puste pola) — do dowodu odrzuceń walidacji. */
-function fakeInvalidExercise(objectiveId: string): Record<string, unknown> {
-  return {
-    exerciseType: "lesson_gap",
-    objectiveId,
-    answer: "a b c d e", // > 3 tokeny → odrzucone
-    acceptedAnswers: [],
-    focus: [],
-    stem: "no gap marker here",
-  };
-}
 
 /** Slug zagadnienia z tytułu (ASCII, podkreślniki) — do fake celów dynamicznych. */
 function slugifyTitle(title: string, fallback: string): string {
@@ -211,9 +182,6 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
         { title: "Wyjaśnienie", body: first },
         { title: "Do zapamiętania", body: second },
       ],
-      // Rodzaj zagadnienia zwraca tylko model, któremu przedmiot dał reguły podziału (rozdział):
-      // pierwsze to grupa słów, kolejne to ramy zdaniowe.
-      ...(input.objectivesRules === undefined ? {} : { kind: i === 0 ? "words" : "frame" }),
     };
   });
   // Przykładowy ton pierwszej karty (etap B): tylko gdy generator ma go zwracać.
@@ -228,12 +196,9 @@ export class FakeLlmProvider implements LlmProvider {
   readonly name = "fake-llm";
   readonly model = "fake-llm-1";
   readonly requests: LlmGenerateDeckInput[] = [];
-  readonly lessonRequests: LessonPoolInput[] = [];
   readonly objectiveRequests: LessonObjectivesInput[] = [];
   readonly storyRequests: LessonStoryInput[] = [];
   #behaviors: LlmBehavior[] = [];
-  #lessonBehaviors: LlmLessonBehavior[] = [];
-  #lessonTopUpBehaviors: LlmLessonBehavior[] = [];
   readonly #delayMs: number;
   readonly #lessonDelayMs: number;
   readonly #holdFile: string | undefined;
@@ -247,16 +212,6 @@ export class FakeLlmProvider implements LlmProvider {
   /** Zastępuje plan zachowań: kolejne wywołania zjadają elementy z kolejki, ostatni się powtarza. */
   queue(...behaviors: LlmBehavior[]): void {
     this.#behaviors = behaviors;
-  }
-
-  /** Plan zachowań generacji puli lekcji (jedna partia per cel = jedno wywołanie); nie dotyczy rundy `stage_top_up`. */
-  queueLesson(...behaviors: LlmLessonBehavior[]): void {
-    this.#lessonBehaviors = behaviors;
-  }
-
-  /** Plan zachowań rundy dogenerowania etapu przeglądu (`purpose: "stage_top_up"`); bez niego runda dostaje domyślną deterministyczną pulę. */
-  queueLessonTopUp(...behaviors: LlmLessonBehavior[]): void {
-    this.#lessonTopUpBehaviors = behaviors;
   }
 
   async generateDeck(input: LlmGenerateDeckInput): Promise<{ items: LlmGeneratedItem[] }> {
@@ -301,36 +256,6 @@ export class FakeLlmProvider implements LlmProvider {
         ],
       },
     };
-  }
-
-  async generateLessonPool(
-    input: LessonPoolInput,
-  ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }> {
-    this.lessonRequests.push(input);
-    const delayMs = input.material.includes(FAKE_SLOW_MARKER)
-      ? Math.max(this.#lessonDelayMs, FAKE_SLOW_DELAY_MS)
-      : this.#lessonDelayMs;
-    if (delayMs > 0) {
-      await sleep(delayMs);
-    }
-    const queue = input.purpose === "stage_top_up" ? this.#lessonTopUpBehaviors : this.#lessonBehaviors;
-    const behavior = queue.length > 1 ? queue.shift()! : queue[0] ?? null;
-    if (!behavior) {
-      const result = fakeLessonPoolExercises(input);
-      return { ...result, exercises: materializeGeneratedCalculations(result.exercises) };
-    }
-    if ("error" in behavior) {
-      const error = new Error(behavior.error) as Error & { retryable?: boolean };
-      error.retryable = behavior.retryable;
-      throw error;
-    }
-    if ("invalid" in behavior) {
-      // Mieszanka: połowa poprawnych, połowa odrzucanych — dowód odrzuceń pojedynczych.
-      const good = fakeLessonPoolExercises(input);
-      const bad = input.objectives.map((o) => fakeInvalidExercise(o.id));
-      return { exercises: materializeGeneratedCalculations([...good.exercises, ...bad]), examples: good.examples };
-    }
-    return { exercises: materializeGeneratedCalculations(behavior.exercises), examples: behavior.examples ?? {} };
   }
 }
 

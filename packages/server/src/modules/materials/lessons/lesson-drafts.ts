@@ -134,7 +134,8 @@ export interface LessonRunInput {
   dynamicTopic?: DynamicTopicData;
   /**
    * Dogenerowanie jednego celu: nowe ćwiczenia dopisujemy, nie czyścimy. Runy z kolejki sprzed etapu 3
-   * mogą mieć tu jeszcze `existingAnswers`/`existingExercises` potoku — wejście jest rzutowane, agent ich nie czyta.
+   * mogą mieć tu jeszcze pola potoku (odpowiedzi i bodźce istniejących ćwiczeń) — wejście jest
+   * rzutowane, agent ich nie czyta.
    */
   regenerate?: { objectiveId: string; count: number };
   /** Run historyjki (`LESSON_STORY_PURPOSE`); brak = generowanie puli ćwiczeń. */
@@ -509,19 +510,19 @@ const ORPHAN_KEYWORDS_REASON = "ćwiczenie bez rodziny pytań otwartych";
 
 /**
  * Ile ćwiczeń słuchowych generator może jeszcze dodać do celu: limit na cel minus ćwiczenia
- * słuchowe tego celu już w szkicu (dogenerowanie) i we wcześniejszych partiach runu. 0, gdy
- * przedmiot nie nagrywa zdań albo typ nie leży na liście celu.
+ * słuchowe tego celu już obecne (`present`; agent podaje `[]` i ćwiczenia szkicu odejmuje sam). 0, gdy przedmiot
+ * nie nagrywa zdań albo typ nie leży na liście celu.
  */
 export function listenChoiceAllowance(
   subject: SubjectModule,
   objective: { id: string; exerciseTypes: readonly string[] },
-  existingExercises: readonly LessonExerciseStimulus[],
+  present: readonly LessonExerciseStimulus[],
 ): number {
   if (!subject.ttsForFeedbackSentence || !subject.exerciseTypes.includes("lesson_listen_choice") || !objective.exerciseTypes.includes("lesson_listen_choice")) {
     return 0;
   }
-  const existing = existingExercises.filter((exercise) => exercise.objectiveId === objective.id && exercise.exerciseType === "lesson_listen_choice").length;
-  return Math.max(0, LISTEN_CHOICE_PER_OBJECTIVE - existing);
+  const listened = present.filter((exercise) => exercise.objectiveId === objective.id && exercise.exerciseType === "lesson_listen_choice").length;
+  return Math.max(0, LISTEN_CHOICE_PER_OBJECTIVE - listened);
 }
 
 /** Czysta reguła rodzin słów kluczowych żyje w domenie (używa jej też agent puli); reeksport dla obecnych wywołujących. */
@@ -553,16 +554,14 @@ export function buildPoolInput(
   material: string,
   instruction: string | undefined,
   graderAvailable: boolean,
-  existingAnswers: readonly string[],
-  existingExercises: readonly LessonExerciseStimulus[] = [],
   interests?: readonly string[],
-  options: { readonly avoidSentences?: readonly string[]; readonly purpose?: LessonPoolInput["purpose"] } = {},
+  options: { readonly avoidSentences?: readonly string[] } = {},
 ): LessonPoolInput {
   // Tematy i reguła ich użycia idą do modelu razem albo wcale (reguła należy do przedmiotu).
   const interestsRule = subject.prompts.interestsRule;
   const withInterests = interestsRule !== undefined && interests !== undefined && interests.length > 0;
   const objective = topic.objectives.find((o) => o.id === objectiveId)!;
-  const listenAllowance = listenChoiceAllowance(subject, objective, existingExercises);
+  const listenAllowance = listenChoiceAllowance(subject, objective, []);
   return {
     subjectId: subject.id,
     subjectTitle: subject.titlePl,
@@ -592,7 +591,7 @@ export function buildPoolInput(
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą partii: tylko przedmiot z nagraniami zdań
-    // i cel, którego lista zawiera typ, pomniejszony o ćwiczenia słuchowe celu już w szkicu/partiach.
+    // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje agent w swoich limitach).
     ...(listenAllowance > 0 ? { listenChoicePerObjective: listenAllowance } : {}),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
@@ -600,10 +599,7 @@ export function buildPoolInput(
     deduplication: subject.poolDeduplication ?? "answer",
     voiceTones: subject.ttsForPrompts === true,
     exerciseExplanations: subject.exerciseExplanations,
-    ...(existingAnswers.length > 0 ? { existingAnswers: [...existingAnswers] } : {}),
-    ...(existingExercises.length > 0 ? { existingExercises: [...existingExercises] } : {}),
     ...(options.avoidSentences !== undefined && options.avoidSentences.length > 0 ? { avoidSentences: [...options.avoidSentences] } : {}),
-    ...(options.purpose === undefined ? {} : { purpose: options.purpose }),
   };
 }
 
@@ -1398,7 +1394,6 @@ export async function generateDynamicObjectives(
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
         generationRole: subject.prompts.generationRole,
         voiceTones: subject.ttsForPrompts === true,
-        ...(subject.prompts.objectivesRules === undefined ? {} : { objectivesRules: subject.prompts.objectivesRules }),
       },
       signal,
     ),

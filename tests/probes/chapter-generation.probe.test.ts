@@ -128,18 +128,6 @@ function recordingLlm(inner: LlmProvider): { llm: LlmProvider; calls: RecordedCa
     generateLessonStory: () => {
       throw new Error("generateLessonStory is not exercised by this probe");
     },
-    async generateLessonPool(input, signal) {
-      const started = Date.now();
-      try {
-        const result = await inner.generateLessonPool(input, signal);
-        calls.push({ method: "pool", ms: Date.now() - started, rawExercises: result.exercises.length, failed: false });
-        raw.push({ objectiveId: input.objectives.map((objective) => objective.id).join(","), exercises: result.exercises, examples: result.examples });
-        return result;
-      } catch (error) {
-        calls.push({ method: "pool", ms: Date.now() - started, rawExercises: 0, failed: true });
-        throw error;
-      }
-    },
   };
   return { llm, calls, raw, rawObjectives };
 }

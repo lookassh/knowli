@@ -5,7 +5,6 @@ import type {
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
   LessonPoolAgentProvider,
-  LlmProvider,
   RunCostSink,
 } from "../ports/ai";
 import type { UsageRecorder } from "../ports/usage";
@@ -14,9 +13,8 @@ import { recordResponse } from "./usage/record-http";
 
 /**
  * Deterministyczne fake'i agenta puli lekcji i checkera (etap 1 issue #237): sterowane scenariuszem,
- * bez sieci i modeli. Służą testom kierownika agenta i trybowi `UMIEM_FAKE_PROVIDERS=1` (etap 2a §5:
- * `fromLlm` + checker `unavailable`; etap 3 PR 2 §5.2: pętla generatora `generate`); nie są adapterem
- * żadnej usługi. Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
+ * bez sieci i modeli. Służą testom kierownika agenta i trybowi `UMIEM_FAKE_PROVIDERS=1` (etap 3 PR 2
+ * §5.2: pętla generatora `generate` + checker `unavailable`); nie są adapterem żadnej usługi. Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
  */
 
 /** Krok scenariusza podagenta: jedno „wywołanie modelu” z narzędziami albo awarią. */
@@ -38,9 +36,6 @@ export type FakeAgentStep =
   /** Zgłoszenie zbudowane z wejścia podagenta w czasie kroku (identyfikatory zagadnień szkoły i rozdziału zawierają `deckId`). */
   | { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } };
 
-/** Krok wewnętrzny trybu `fromLlm`: jedno „wywołanie modelu” z wynikiem `generateLessonPool`. */
-type FakeObjectiveStep = FakeAgentStep | { fromLlm: LlmProvider };
-
 /** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
 export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
 
@@ -60,16 +55,10 @@ export interface FakeLessonPoolAgentOptions {
    */
   usage?: UsageRecorder;
   /**
-   * Tryb „jak LLM” (tryb fake workera): zagadnienie bez scenariusza zgłasza w jednym kroku wynik
-   * `generateLessonPool` dla swojego zagadnienia, a planer bez `plans` — deterministyczny plan z pokrycia
-   * materiału ({@link fakePlanFromCoverage}).
-   */
-  fromLlm?: LlmProvider;
-  /**
    * Pętla generatora (spec etapu 3 §5.2): zagadnienie bez scenariusza zgłasza {@link fakeObjectiveExercises}
    * i dokłada kroki tylko dla braków z wyniku narzędzia (do `maxSteps`); planer bez `plans` — plan
    * z pokrycia. `delayMs` opóźnia każdy krok, a `FAKE_SLOW_MARKER` w materiale — pierwszy krok
-   * zagadnienia do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał. Ma pierwszeństwo przed `fromLlm`.
+   * zagadnienia do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał.
    */
   generate?: { delayMs?: number };
   /** Zapis historii `calls` i `planCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
@@ -238,7 +227,7 @@ function materialHeadings(material: string): string[] {
 }
 
 /**
- * Deterministyczny plan trybu `fromLlm`: trzy zagadnienia „Część 1/2/3”. Słowa pokrycia (gdy brak —
+ * Deterministyczny plan generatora (`generate`): trzy zagadnienia „Część 1/2/3”. Słowa pokrycia (gdy brak —
  * nagłówki materiału) dzielone po kolei i po równo na dwa zagadnienia `words`, ramy w trzecim `frame`; bez
  * ram trzecie też jest zagadnieniem słów. Przy mniejszej liczbie słów niż zagadnień słowa się powtarzają,
  * więc każda karta ma słowo materiału. Karta „Words”/„Frames” z listą pokrywa cały materiał (bramka planu),
@@ -325,7 +314,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     if (scripted === undefined && this.options.generate !== undefined) {
       return this.meter.track(() => this.runGenerator(input, tools, cost, signal, outcomes));
     }
-    const script = scripted ?? (this.options.fromLlm ? [{ fromLlm: this.options.fromLlm }] : []);
+    const script = scripted ?? [];
     const progress = { generated: 0 };
     return this.meter.track(async () => {
       let steps = 0;
@@ -397,8 +386,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     const proposals: unknown[] = [];
     if (this.options.record !== false) this.planCalls.push({ input, proposals });
     let steps = 0;
-    const fromCoverage = this.options.generate !== undefined || this.options.fromLlm !== undefined;
-    const plans = this.options.plans ?? (fromCoverage ? [fakePlanFromCoverage(input)] : []);
+    const plans = this.options.plans ?? (this.options.generate !== undefined ? [fakePlanFromCoverage(input)] : []);
     for (const plan of plans) {
       signal.throwIfAborted();
       if (steps >= input.maxSteps || tools.shouldStop()) break;
@@ -410,8 +398,8 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     return { steps };
   }
 
-  /** Scenariusz wywołania; `undefined` = zagadnienie bez scenariusza (wtedy generator, `fromLlm` albo brak kroków). */
-  private scriptFor(slug: string): FakeObjectiveStep[] | undefined {
+  /** Scenariusz wywołania; `undefined` = zagadnienie bez scenariusza (wtedy generator albo brak kroków). */
+  private scriptFor(slug: string): FakeAgentStep[] | undefined {
     const script = this.options.objectives?.[slug];
     const call = this.callCounts.get(slug) ?? 0;
     this.callCounts.set(slug, call + 1);
@@ -432,7 +420,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
   }
 
   private async executeStep(
-    step: FakeObjectiveStep,
+    step: FakeAgentStep,
     tools: LessonObjectiveAgentTools,
     outcomes: unknown[],
     signal: AbortSignal,
@@ -450,14 +438,6 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
       outcomes.push(await tools.submit(generated));
     } else if ("build" in step) {
       outcomes.push(await tools.submit(step.build(input) as SubmitInput));
-    } else if ("fromLlm" in step) {
-      // Wynik generatora potoku dla wejścia podagenta, zawężony do jego zagadnienia.
-      const objective = input.objective;
-      const res = await step.fromLlm.generateLessonPool(input.pool, signal);
-      signal.throwIfAborted();
-      const exercises = res.exercises.filter((exercise) => (exercise as { objectiveId?: unknown } | null)?.objectiveId === objective.id);
-      const examples = objective.examplesFromPlan ? undefined : res.examples?.[objective.id];
-      outcomes.push(await tools.submit({ exercises, ...(examples === undefined ? {} : { examples }) }));
     } else if ("submit" in step) {
       const raw = step.submit as SubmitInput;
       outcomes.push(await tools.submit(raw));

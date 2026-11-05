@@ -63,8 +63,6 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     args.material,
     args.instruction,
     args.graderAvailable,
-    [],
-    [],
     args.interests,
     { avoidSentences: avoidSentencesFor({ examples, exercises: orderedLesson(state), subject }) },
   );
