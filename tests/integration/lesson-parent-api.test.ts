@@ -33,6 +33,7 @@ import { finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } f
 import { EDITOR_CARD_EXAMPLE, lessonWorld, seedEditorPoolWithLeak } from "../fixtures/lesson-world";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 import { createLessonSnapshot, toLessonDraftPatch } from "../../apps/web/src/parent/lessons/lesson-editor-state";
@@ -343,11 +344,9 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
   });
 
   it("generacja → edycja samego tytułu → publikacja → rzeczywista sesja dziecka", async () => {
-    const fakes = await fakeGeneration();
-    disposers.push(fakes.dispose);
-    const generate = fakes.llm.generateLessonPool.bind(fakes.llm);
-    fakes.llm.generateLessonPool = async (...args) => {
-      const result = await generate(...args);
+    // Zgłoszenie generatora fake'a agenta z pierwszą luką zamienioną na przekształcenie.
+    const fakes = await fakeGeneration({ agent: { generate: {}, objectives: { negative: [{ build: (input) => {
+      const result = fakeObjectiveExercises(input, 0);
       let replaced = false;
       return { ...result, exercises: result.exercises.map((raw) => {
         const ex = raw as Record<string, unknown>;
@@ -357,7 +356,8 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
         return { ...base, exerciseType: "lesson_transform", statement: "She dances.", transformId: "to_negative",
           answer: "She does not dance", focus: ["does", "not"], acceptedAnswers: [] };
       }) };
-    };
+    } }] } } });
+    disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);
     // Transform jest preferowany dopiero przy dostępnym graderze; dokładna
     // odpowiedź w tym teście nadal jest oceniana deterministycznie.

@@ -14,6 +14,7 @@ import {
   executeLessonGeneration,
   historyLikeSubject,
   isLessonAgentAvailable,
+  publishLessonDraft,
   readLessonDeck,
   regenerateObjective,
   retryGeneration,
@@ -23,7 +24,7 @@ import {
   type Services,
 } from "@learning/server";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
-import type { LessonCommand } from "@learning/contracts";
+import type { LessonCommand, LessonDraftDto } from "@learning/contracts";
 import { testDatabase } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
@@ -773,6 +774,133 @@ describe("agent puli lekcji (integracja)", () => {
       // Podsumowanie punktu kontrolnego zapisuje tylko ścieżka agenta.
       expectSummaryWithoutContent(row.agent_checkpoint, 1);
       expect(await exerciseCount((await versionOf(runId)).id)).toBeGreaterThan(0);
+    });
+
+    describe("tryb fake z env (spec etapu 3 §5.2): publikowalna pula bez luk i bez odrzuceń ujawnień", () => {
+      /** Kopia `CHAPTER_BODY` z `tests/e2e/parent-sources.spec.ts` (materiał bez sekcji „Słowa:”/„Zwroty:”). */
+      const CHAPTER_BODY = [
+        "Zagadnienie 1: Ubrania",
+        "coat, boots, dress, skirt, t-shirt",
+        "Zagadnienie 2: Pogoda",
+        "It's raining. It's snowing. What's the weather like?",
+        "Zagadnienie 3: Co mam na sobie",
+        "I'm wearing a coat. I'm wearing boots.",
+      ].join("\n");
+      const GRAMMAR_OBJECTIVES = [OBJECTIVE, NEGATIVE, "english_grammar.present_simple.question"];
+
+      /** Usługi z produkcyjnym rejestrem i agentem złożonym jak w workerze trybu fake (albo jego bliźniakiem z historią). */
+      async function envWorld(agent?: FakeLessonPoolAgent): Promise<Services> {
+        const fakes = await fakeGeneration();
+        disposers.push(fakes.dispose);
+        const fromEnv = lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1" });
+        if (!isLessonAgentAvailable(fromEnv)) throw new Error("tryb fake bez agenta");
+        const lessonAgent = agent === undefined ? fromEnv : { ...fromEnv, agent };
+        return servicesWith(fakes, { ...fakes.deps, lessonAgent }, new ManualClock());
+      }
+
+      async function grammarLesson(services: Services) {
+        return createLesson(services, command({ objectiveIds: GRAMMAR_OBJECTIVES, poolSize: 60 }));
+      }
+
+      async function schoolLesson(services: Services) {
+        return createSchoolLesson(services, {
+          subjectTitlePl: "Geografia", topicTitlePl: "Polska", material: SCHOOL_MATERIAL, poolSize: 40, clientRequestId: randomUUID(),
+        });
+      }
+
+      async function chapterLesson(services: Services, material: string) {
+        return createLessonFromMaterial(services, {
+          subjectId: "english_chapter", topicTitlePl: "Unit 1", material, poolSize: 40, clientRequestId: randomUUID(),
+        });
+      }
+
+      /**
+       * Run zakończony sukcesem bez `generationGaps`, z każdym zagadnieniem `complete` w podsumowaniu punktu
+       * kontrolnego (`objectiveIds` — oczekiwany zbiór; brak = zagadnienia szkicu) i bez odrzuceń `duplicate`
+       * ani `leak_*`. Zwraca szkic.
+       */
+      async function expectCleanRun(services: Services, runId: string, deckId: string, objectiveIds?: readonly string[]): Promise<LessonDraftDto> {
+        const row = await fullRun(runId);
+        expect(row.state).toBe("succeeded");
+        const draft = (await readLessonDeck(services, deckId)).draft!;
+        expect(draft.generationGaps).toBeUndefined();
+        expect(contextOf(await versionOf(runId)).generationGaps).toBeUndefined();
+        const summary = row.agent_checkpoint as { kind: string; objectives: Record<string, { status: string; accepted: number }>; rejectionCodes: Record<string, number> };
+        expect(summary.kind).toBe("summary");
+        expect(Object.keys(summary.objectives).sort()).toEqual([...(objectiveIds ?? draft.objectiveIds)].sort());
+        for (const [objectiveId, entry] of Object.entries(summary.objectives)) expect(entry.status, objectiveId).toBe("complete");
+        expect(Object.keys(summary.rejectionCodes).filter((code) => code === "duplicate" || code.startsWith("leak_"))).toEqual([]);
+        return draft;
+      }
+
+      async function expectPublishable(services: Services, draft: LessonDraftDto): Promise<void> {
+        await expect(publishLessonDraft(services, draft.id, draft.editNumber)).resolves.toEqual({ deckVersionId: draft.id });
+      }
+
+      it("(a) gramatyka present_simple: trzy zagadnienia, pula 60", async () => {
+        const services = await envWorld();
+        const { runId, deckId } = await grammarLesson(services);
+        await executeLessonGeneration(services, runId);
+        const draft = await expectCleanRun(services, runId, deckId, GRAMMAR_OBJECTIVES);
+        expect(draft.objectiveIds).toEqual(GRAMMAR_OBJECTIVES);
+        await expectPublishable(services, draft);
+      });
+
+      it("(b) rozdział na materiale „Zagadnienie N:” (CHAPTER_BODY z E2E), pula 40", async () => {
+        const services = await envWorld();
+        const { runId, deckId } = await chapterLesson(services, CHAPTER_BODY);
+        await executeLessonGeneration(services, runId);
+        const draft = await expectCleanRun(services, runId, deckId);
+        expect(draft.objectiveIds.length).toBeGreaterThan(0);
+        await expectPublishable(services, draft);
+      });
+
+      it("(c) szkoła na materiale z zagadnieniami, pula 40", async () => {
+        const services = await envWorld();
+        const { runId, deckId } = await schoolLesson(services);
+        await executeLessonGeneration(services, runId);
+        const draft = await expectCleanRun(services, runId, deckId);
+        expect(draft.objectiveIds.length).toBeGreaterThan(0);
+        await expectPublishable(services, draft);
+      });
+
+      it("(d) „+6” na pierwszym zagadnieniu gramatyki dopisuje co najmniej 6 ćwiczeń", async () => {
+        const services = await envWorld();
+        const { runId, deckId } = await grammarLesson(services);
+        await executeLessonGeneration(services, runId);
+        const before = await expectCleanRun(services, runId, deckId, GRAMMAR_OBJECTIVES);
+        const own = (draft: LessonDraftDto) => draft.exercises.filter((exercise) => exercise.objectiveId === OBJECTIVE).length;
+
+        const topUp = await regenerateObjective(services, {
+          deckId, objectiveId: OBJECTIVE, count: 6, expectedEditNumber: before.editNumber, clientRequestId: randomUUID(),
+        });
+        await executeLessonGeneration(services, topUp.runId);
+
+        const after = await expectCleanRun(services, topUp.runId, deckId, [OBJECTIVE]);
+        expect(own(after)).toBeGreaterThanOrEqual(own(before) + 6);
+        await expectPublishable(services, after);
+      });
+
+      it("(e) rozdział z sekcjami „Słowa:”/„Zwroty:” → rodzaje words, words, frame", async () => {
+        const services = await envWorld();
+        const { runId, deckId } = await chapterLesson(services, CHAPTER_MATERIAL);
+        await executeLessonGeneration(services, runId);
+        const draft = await expectCleanRun(services, runId, deckId);
+        expect(draft.dynamicTopic!.objectives.map((objective) => objective.kind)).toEqual(["words", "words", "frame"]);
+        await expectPublishable(services, draft);
+      });
+
+      it("bliźniak z historią wywołań: gramatyka i szkoła kończą każde zagadnienie jednym krokiem generatora", async () => {
+        for (const create of [grammarLesson, schoolLesson]) {
+          const agent = new FakeLessonPoolAgent({ generate: {} });
+          const services = await envWorld(agent);
+          const { runId, deckId } = await create(services);
+          await executeLessonGeneration(services, runId);
+          await expectCleanRun(services, runId, deckId);
+          expect(agent.calls.length).toBeGreaterThan(0);
+          expect(agent.calls.map((call) => call.outcomes.length)).toEqual(agent.calls.map(() => 1));
+        }
+      });
     });
 
     it("rejectedCount = usunięcia po przyjęciu, nie odrzucenia w pętli", async () => {

@@ -142,7 +142,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
   /** Fake'i z agentem puli (pętla generatora; zagadnienia ze scenariuszem wg `agent.objectives`). */
   async function agentFakes(agent?: FakeLessonPoolAgentOptions) {
-    const fakes = await fakeGeneration({ withAgent: true, ...(agent === undefined ? {} : { agent }) });
+    const fakes = await fakeGeneration(agent === undefined ? {} : { agent });
     disposers.push(fakes.dispose);
     return fakes;
   }

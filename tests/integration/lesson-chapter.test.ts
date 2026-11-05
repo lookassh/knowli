@@ -140,7 +140,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
 
   /** Usługi z produkcyjnym rejestrem przedmiotów i fałszywymi providerami z agentem puli (`agent` = scenariusze i plany). */
   async function chapterWorld(agent: FakeLessonPoolAgentOptions = {}) {
-    const fakes = await fakeGeneration({ withAgent: true, agent });
+    const fakes = await fakeGeneration({ agent });
     disposers.push(fakes.dispose);
     const clock = new ManualClock();
     const services = createServices({ db: testDatabase().db, clock, media: fakes.settings, generation: fakes.deps });
@@ -693,6 +693,79 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
         cards: index === 0 ? [{ ...objective.cards[0]!, voiceTone: "cheerful" as const }, ...objective.cards.slice(1)] : objective.cards,
       })) },
     })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("„+N” na szkicu rozdziału sprzed agenta: temat i rodzaj zagadnienia ze szkicu, pusty punkt kontrolny (Review Focus 5)", async () => {
+    // Szkic jak z potoku: tytuły „Zagadnienie N: …” z nagłówków materiału, zagadnienie ramy jako drugie,
+    // bez `agent_checkpoint` (run zestawu unieważniony edycją rodzica).
+    const { fakes, services } = await chapterWorld();
+    const choice = (objectiveId: string, instructionPl: string, stem: string, correct: string, wrong: string) => ({
+      exerciseType: "lesson_choice", objectiveId, instructionPl, stem,
+      options: [{ id: "a", text: correct }, { id: "b", text: wrong }], correctOption: "a",
+      answer: correct, acceptedAnswers: [], focus: [],
+    });
+    const gap = (objectiveId: string, instructionPl: string, stem: string, answer: string) => ({
+      exerciseType: "lesson_gap", objectiveId, instructionPl, stem, answer, acceptedAnswers: [], focus: [answer],
+    });
+    const seeded = await seedChapterDraft(services, {
+      material: [
+        "Zagadnienie 1: Ubrania",
+        "coat, boots, dress, skirt, hat",
+        "Zagadnienie 2: Co mam na sobie",
+        "I'm wearing a coat today. I'm wearing boots. She is wearing a dress.",
+      ].join("\n"),
+      topicTitlePl: "Ubrania",
+      objectives: [
+        {
+          slug: "ubrania", titlePl: "Zagadnienie 1: Ubrania", kind: "words",
+          cards: [{ title: "Słowa", body: "coat, boots, dress, skirt, hat" }, { title: "Temat", body: "Ubrania" }],
+          exercises: (_deckId, objectiveId) => [
+            {
+              exerciseType: "lesson_match", objectiveId, instructionPl: "Połącz słowa w pary.",
+              pairs: [{ left: "coat", right: "płaszcz" }, { left: "boots", right: "buty" }, { left: "dress", right: "sukienka" }],
+              extraRight: ["czapka"], answer: "coat, boots, dress", acceptedAnswers: [], focus: [],
+            },
+            choice(objectiveId, "Mam na sobie spódnicę. Wybierz słowo.", "This is my ___.", "skirt", "hat"),
+            gap(objectiveId, "To moja czapka. Wpisz brakujące słowo.", "This is my ___.", "hat"),
+          ],
+        },
+        {
+          slug: "co_mam_na_sobie", titlePl: "Zagadnienie 2: Co mam na sobie", kind: "frame",
+          cards: [{ title: "Zdania", body: "I'm wearing a coat today. I'm wearing boots." }, { title: "Temat", body: "Co mam na sobie" }],
+          exercises: (_deckId, objectiveId) => [
+            {
+              exerciseType: "lesson_order", objectiveId, instructionPl: "Ona ma na sobie sukienkę. Ułóż zdanie.",
+              items: [{ id: "i1", text: "She" }, { id: "i2", text: "is" }, { id: "i3", text: "wearing" }, { id: "i4", text: "a dress" }],
+              answer: "She is wearing a dress", acceptedAnswers: [], focus: [],
+            },
+            choice(objectiveId, "Mam na sobie buty. Wybierz słowo.", "I'm wearing ___.", "boots", "hat"),
+          ],
+        },
+      ],
+    });
+    const [frameObjectiveId] = seeded.objectiveIds.slice(1);
+    const checkpoints = await query<{ agent_checkpoint: unknown }>(
+      "select agent_checkpoint from learning_app.generation_runs where deck_version_id = $1", [seeded.versionId],
+    );
+    expect(checkpoints.map((row) => row.agent_checkpoint)).toEqual([null]);
+    const before = (await readLessonDeck(services, seeded.deckId)).draft!;
+    const ofFrame = (draft: LessonDraftDto) => draft.exercises.filter((exercise) => exercise.objectiveId === frameObjectiveId).length;
+
+    const regen = await regenerateObjective(services, {
+      deckId: seeded.deckId, objectiveId: frameObjectiveId!, count: 4, expectedEditNumber: seeded.editNumber, clientRequestId: randomUUID(),
+    });
+    await executeLessonGeneration(services, regen.runId);
+
+    expect((await readGeneration(services, regen.runId)).state).toBe("succeeded");
+    const after = (await readLessonDeck(services, seeded.deckId)).draft!;
+    expect(ofFrame(after)).toBeGreaterThanOrEqual(ofFrame(before) + 4);
+    // Podagent dostał zagadnienie ze szkicu: rodzaj `frame`, tytuł i karty bez planu.
+    expect(fakes.agent.planCalls).toHaveLength(0);
+    expect(fakes.agent.calls).toHaveLength(1);
+    const objective = fakes.agent.calls[0]!.input.objective;
+    expect(objective).toMatchObject({ id: frameObjectiveId, kind: "frame", title: "Zagadnienie 2: Co mam na sobie", index: 1 });
+    expect(objective.cards).toEqual(before.dynamicTopic!.objectives[1]!.cards);
+    expect(after.dynamicTopic).toEqual(before.dynamicTopic);
   });
 
   it("regresja szkoły: createSchoolLesson dalej tworzy cele school.d… z cytatami źródłowymi", async () => {

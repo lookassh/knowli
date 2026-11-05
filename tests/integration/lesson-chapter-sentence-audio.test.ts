@@ -145,7 +145,7 @@ describe("lekcja Angielski — rozdział: odczyt zdania po odpowiedzi (integracj
 
   /** Szkic z dwoma zagadnieniami (słowa i rama) z pulami sterowanymi, zasiany bez generowania. */
   async function chapterWorld() {
-    const fakes = await fakeGeneration({ withAgent: true });
+    const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
     const clock = new ManualClock();
     const services = createServices({ db, clock, media: mediaSettings(fakes), generation: fakes.deps });
