@@ -38,11 +38,12 @@ const NOW_OR_USUALLY = "Zapytaj siebie: teraz czy zwykle?";
 /**
  * Reguły werdyktu wspólne dla celów porównania (spec §7.3): sprawdzanym elementem
  * jest wybór czasu, więc błąd formy przy dobrym czasie to „prawie” bez kategorii.
- * Przykłady błędów formy i hybryd różnią się między celem 2 a 6.
+ * Zakres wymogu kontekstu i przykłady błędów formy i hybryd różnią się między
+ * celem 2 (wybór „now / usually” celowo bez wskaźnika, §5.5) a celem 6.
  */
-function tenseChoiceVerdict(formExamples: string, hybridExamples: string): string {
+function tenseChoiceVerdict(contextScope: string, formExamples: string, hybridExamples: string): string {
   return (
-    "The context always makes the right tense clear: a time marker in the sentence (now, right now, Look!, every day, usually, on Mondays) " +
+    `${contextScope} the context makes the right tense clear: a time marker in the sentence (now, right now, Look!, every day, usually, on Mondays) ` +
     "or a short Polish scene in the instruction. The checked element is the choice of tense, not the verb form. " +
     `If the child chooses the right tense but makes a form mistake (${formExamples}), return 'almost' with errorCategory: null. ` +
     "If the child uses the wrong tense, return 'incorrect' with continuous_for_habit (present continuous for something that happens usually) " +
@@ -95,7 +96,11 @@ const nowOrUsually: LearningObjective = {
   descriptionEn:
     "Choosing between the present simple for things that happen usually, regularly or every day (Ola reads every day.) " +
     "and the present continuous for things happening right now, at this moment (Ola is reading now.), in affirmative sentences only. " +
+    "One kind of exercise checks the meaning of a form instead: a lesson_choice with options exactly 'now' and 'usually', " +
+    "whose stimulus is an affirmative present simple or present continuous sentence with no time marker at all (Ola is reading a book.); " +
+    "the key follows from the tense of the sentence (present continuous → now, present simple → usually). " +
     tenseChoiceVerdict(
+      "In every other exercise, where the child chooses or produces a tense,",
       "a missing -s, a wrong -ing spelling",
       "I'm go to school every day.",
     ) +
@@ -269,6 +274,7 @@ const nowOrUsuallyMore: LearningObjective = {
     "(She doesn't watch TV on Mondays. / She isn't watching TV now.); Do/Does + subject + base verb to ask about habits " +
     "versus Am/Is/Are + subject + -ing to ask about right now (Do you play football on Saturdays? / Are you playing football now?). " +
     tenseChoiceVerdict(
+      "In every exercise",
       "doesn't eats, a question without do or does, a wrong -ing spelling",
       "She isn't watch TV on Mondays., Are you play football on Saturdays?",
     ) +
