@@ -65,7 +65,7 @@ export const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
   those: "are",
 };
 
-export const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "feet", "teeth"]);
+export const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "mice", "feet", "teeth"]);
 
 /** Imiona własne kończące się na „s”, które heurystyka liczby wzięłaby za liczbę mnogą. */
 export const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);
@@ -98,11 +98,6 @@ export const BE_AFTER_SKIP: ReadonlySet<string> = new Set([
   "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
 ]);
 
-/**
- * Zaimek osobowy bezpośrednio przy luce: ostatni token przed luką (zdanie)
- * albo pierwszy po niej (pytanie z inwersją). Tylko sąsiedztwo — zaimek
- * z innej części zdania (np. dopełnienie „for you”) nie jest podmiotem.
- */
 /** Przysłówki, które mogą stać między podmiotem a luką (She always ___). */
 export const BE_ADVERBS: ReadonlySet<string> = new Set([
   "always", "usually", "often", "sometimes", "never", "rarely", "seldom", "also", "just", "still", "really", "very",
@@ -137,6 +132,11 @@ export function beAnswerPronounAllowed(answerPronoun: string, near: BeNearPronou
   return allowed.includes(answerPronoun);
 }
 
+/**
+ * Zaimek osobowy bezpośrednio przy luce: ostatni token przed luką (zdanie)
+ * albo pierwszy po niej (pytanie z inwersją). Tylko sąsiedztwo — zaimek
+ * z innej części zdania (np. dopełnienie „for you”) nie jest podmiotem.
+ */
 export function bePronounNearGap(stem: string): BeNearPronoun | undefined {
   const [, after = ""] = stem.split("___", 2);
   const beforeTokens = beSubjectTokensBefore(stem);
@@ -201,8 +201,28 @@ export function beStemContext(stem: string | undefined): { negative: boolean; ma
   };
 }
 
+/** Biegunowość wymagana od formy „to be”: z celu tematu albo z przekształcenia. */
+export type BePolarity = "affirmative" | "negative" | "any";
+
+/**
+ * Forma „to be” w pełnym zdaniu i forma wymagana przez jej podmiot: pierwsza
+ * forma am/is/are (po rozwinięciu skrótów) zastąpiona luką trafia do
+ * `expectedBeFormNearGap`. undefined = w zdaniu nie ma formy „to be”;
+ * `expected` undefined = podmiotu nie da się ustalić.
+ */
+export function beAgreementInSentence(
+  sentence: string,
+): { readonly form: "am" | "is" | "are"; readonly expected: string | undefined } | undefined {
+  const tokens = normalizeTokens(sentence).flatMap((token) => BE_CONTRACTED_TOKENS[token] ?? [token]);
+  const index = tokens.findIndex((token) => BE_FORMS.has(token));
+  if (index < 0) return undefined;
+  const form = tokens[index] as "am" | "is" | "are";
+  const withGap = [...tokens.slice(0, index), "___", ...tokens.slice(index + 1)].join(" ");
+  return { form, expected: expectedBeFormNearGap(withGap) };
+}
+
 export function checkBePolarity(
-  objective: string,
+  polarity: BePolarity,
   effectiveNegative: boolean,
   marker: string | undefined,
   field: string,
@@ -214,10 +234,10 @@ export function checkBePolarity(
   if (marker === "no" && !effectiveNegative) {
     errors.push(`${field}: odpowiedź po „No” musi być przeczeniem`);
   }
-  if ((objective === "affirmative_forms" || objective === "contractions") && effectiveNegative) {
+  if (polarity === "affirmative" && effectiveNegative) {
     errors.push(`${field}: forma przecząca nie pasuje do celu twierdzącego`);
   }
-  if (objective === "negative_forms" && !effectiveNegative) {
+  if (polarity === "negative" && !effectiveNegative) {
     errors.push(`${field}: brak przeczenia (not) wymaganego przez cel`);
   }
 }

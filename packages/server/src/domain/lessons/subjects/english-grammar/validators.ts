@@ -14,6 +14,7 @@ import {
   checkBePolarity,
   expectedBeFormNearGap,
   parseBeGapAnswer,
+  type BePolarity,
 } from "./be-agreement";
 import { isAcceptablePresentSimpleAnswer, presentSimpleForms } from "./present-simple-forms";
 
@@ -81,9 +82,23 @@ function hasBaseVerbAfterGap(stem: string, hint?: string): boolean {
   return !candidates.some((candidate) => candidate !== verb && presentSimpleForms(candidate).has(verb));
 }
 
-/**
- * Walidator ćwiczeń przedmiotu. Zwraca listę błędów po polsku (pusta = poprawne).
- */
+/** Biegunowość formy „to be” wymagana przez cel tematu „to be”; inne cele → dowolna. */
+const TO_BE_POLARITY: Readonly<Record<string, BePolarity>> = {
+  affirmative_forms: "affirmative",
+  contractions: "affirmative",
+  negative_forms: "negative",
+};
+
+/** Biegunowość wymagana przez przekształcenie (pierwszeństwo przed celem). */
+const TRANSFORM_POLARITY: Readonly<Record<string, BePolarity>> = {
+  to_affirmative: "affirmative",
+  to_negative: "negative",
+  to_question: "any",
+};
+
+function toBeObjectivePolarity(objective: string): BePolarity {
+  return Object.hasOwn(TO_BE_POLARITY, objective) ? TO_BE_POLARITY[objective]! : "any";
+}
 
 /**
  * Reguła luki tematu „to be”: odpowiedź (i każdy wariant) musi być formą
@@ -127,7 +142,7 @@ function validateBeGapAnswer(ex: LessonExerciseDraft, answer: string, field: str
   if (expected !== undefined && expected !== parsed.form) {
     errors.push(`${field}: forma „${parsed.form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
   }
-  checkBePolarity(objective, parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
+  checkBePolarity(toBeObjectivePolarity(objective), parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
 }
 
 /**
@@ -179,7 +194,7 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
         errors.push(`${field}: forma „${parsed.form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
       }
       const stemCtx = beStemContext(gapContext);
-      checkBePolarity(objective, parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
+      checkBePolarity(toBeObjectivePolarity(objective), parsed.negative || stemCtx.negative, parsed.marker ?? stemCtx.marker, field, errors);
       return;
     }
   }
@@ -210,14 +225,10 @@ function validateBeAnswerText(ex: LessonExerciseDraft, answer: string, field: st
   }
   if (!hasBe) return;
   const marker = tokens[0] === "yes" || tokens[0] === "no" ? tokens[0] : undefined;
-  const polarityObjective = ex.transformId === "to_affirmative"
-    ? "affirmative_forms"
-    : ex.transformId === "to_negative"
-      ? "negative_forms"
-      : ex.transformId === "to_question"
-        ? ""
-        : objective;
-  checkBePolarity(polarityObjective, tokens.includes("not"), marker, field, errors);
+  const polarity = ex.transformId !== undefined && Object.hasOwn(TRANSFORM_POLARITY, ex.transformId)
+    ? TRANSFORM_POLARITY[ex.transformId]!
+    : toBeObjectivePolarity(objective);
+  checkBePolarity(polarity, tokens.includes("not"), marker, field, errors);
 }
 
 /** Zaimek wymagany przez piktogram bodźca obrazkowego (kto jest na obrazku). */
@@ -273,6 +284,9 @@ function validateVisualPronoun(ex: LessonExerciseDraft, errors: string[]): void 
   }
 }
 
+/**
+ * Walidator ćwiczeń przedmiotu. Zwraca listę błędów po polsku (pusta = poprawne).
+ */
 export function validateEnglishGrammarExercise(
   ex: LessonExerciseDraft,
   topic: LessonTopic,
