@@ -545,6 +545,7 @@ describe("materializeExercise — luka Present Continuous w kartkówce", () => {
         objectiveId: "english_grammar.present_continuous.affirmative",
         instructionPl: "Uzupełnij lukę.",
         stem: "He ___ (play) football now.",
+        hint: "gra w piłkę",
         answer: "is playing",
         acceptedAnswers: [],
         focus: ["is", "playing"],
@@ -559,6 +560,7 @@ describe("materializeExercise — luka Present Continuous w kartkówce", () => {
     if (task.prompt.kind !== "lesson_gap") return;
     expect(task.prompt.stemWithGap).toContain("(play)");
     expect(task.prompt).not.toHaveProperty("hint");
+    expect(JSON.stringify(task.prompt)).not.toContain("gra w piłkę");
   });
 });
 

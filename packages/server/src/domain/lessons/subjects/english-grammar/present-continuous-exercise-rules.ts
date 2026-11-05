@@ -1,9 +1,10 @@
 import type { LessonExerciseDraft } from "../../types";
 import { normalizeTokens } from "../../normalize";
 import { editDistance } from "../../../text-distance";
-import { baseOfIngForm, COLLOCATION_ING_FORMS, isCollocationIngForm, isIngFormInTable } from "../english/ing-forms";
+import { baseOfIngForm, isCollocationIngForm, isIngFormInTable } from "../english/ing-forms";
 import { englishNormalizer } from "../english/normalizer";
 import { BE_FORMS } from "./be-agreement";
+import { ingBaseOf, presentSimpleBaseOf } from "./present-continuous-tense-choice";
 import { presentSimpleForms } from "./present-simple-forms";
 
 /**
@@ -70,20 +71,29 @@ export function errorFixRegion(statement: string, answer: string): { readonly wr
   return diff === null ? null : { wrong: diff.wrong, right: diff.right };
 }
 
-type ErrorFixKind = "missing_be" | "missing_ing" | "ing_spelling";
+type ErrorFixKind = "missing_be" | "missing_ing" | "wrong_be" | "do_for_be" | "ing_spelling" | "tense_swap";
 
 const ERROR_FIX_KIND_LABELS: Readonly<Record<ErrorFixKind, string>> = {
   missing_be: "brak am/is/are",
   missing_ing: "brak -ing po am/is/are",
+  wrong_be: "zła forma am/is/are",
+  do_for_be: "do/does zamiast am/is/are",
   ing_spelling: "zła pisownia -ing",
+  tense_swap: "Present Simple zamiast Present Continuous albo odwrotnie",
 };
 
-/** Sprawdzany element celu w obszarze różnicy (§6.3). Cele porównania (2, 6) — zamiana PS ↔ PC — mają własną regułę. */
+/**
+ * Sprawdzany element celu w obszarze różnicy (§6.3). Zła forma be i do/does
+ * zamiast be to kategorie błędów celów 1, 3, 4 (zgodność klucza z podmiotem
+ * sprawdza reguła be); cele porównania (2, 6) ćwiczą zamianę PS ↔ PC.
+ */
 const ERROR_FIX_KINDS: Readonly<Record<string, readonly ErrorFixKind[]>> = {
-  affirmative: ["missing_be", "missing_ing"],
-  negative: ["missing_be", "missing_ing"],
-  questions: ["missing_be", "missing_ing"],
+  affirmative: ["missing_be", "missing_ing", "wrong_be"],
+  now_or_usually: ["tense_swap"],
+  negative: ["missing_be", "missing_ing", "wrong_be", "do_for_be"],
+  questions: ["missing_be", "missing_ing", "wrong_be", "do_for_be"],
   ing_spelling: ["ing_spelling"],
+  now_or_usually_more: ["tense_swap"],
 };
 
 /** Brak formy be: odpowiedź to zdanie z błędem z jedną dodaną formą am/is/are („He playing” → „He is playing”). */
@@ -99,7 +109,7 @@ function ingBaseAt(tokens: readonly string[], index: number): string | undefined
   if (token === undefined) return undefined;
   const fromTable = baseOfIngForm(token);
   if (fromTable !== undefined || !isCollocationIngForm(tokens, index)) return fromTable;
-  return Object.keys(COLLOCATION_ING_FORMS).find((base) => COLLOCATION_ING_FORMS[base] === token);
+  return ingBaseOf(token);
 }
 
 /**
@@ -114,6 +124,53 @@ function isMissingIng({ wrong, right, answerTokens, start }: ErrorFixDiff): bool
   return answerTokens.slice(0, start).some((token) => BE_FORMS.has(token));
 }
 
+/** Zła forma be: po jednym tokenie z każdej strony, oba to am/is/are („He are playing” → „He is playing”). */
+function isWrongBe({ wrong, right }: ErrorFixDiff): boolean {
+  return wrong.length === 1 && right.length === 1 && BE_FORMS.has(wrong[0]!) && BE_FORMS.has(right[0]!);
+}
+
+/**
+ * do/does zamiast formy be przed formą -ing (cele 3, 4): „He doesn't playing
+ * now.” → „He isn't playing now.”, „Does she reading?” → „Is she reading?”.
+ */
+function isDoForBe({ wrong, right, answerTokens, start }: ErrorFixDiff): boolean {
+  if (wrong.length !== 1 || right.length !== 1 || (wrong[0] !== "do" && wrong[0] !== "does") || !BE_FORMS.has(right[0]!)) return false;
+  return answerTokens.some((token, i) => i > start && (isIngFormInTable(token) || isCollocationIngForm(answerTokens, i)));
+}
+
+/** Strona obszaru w Present Simple: forma czasownika albo do/does + not + forma podstawowa. */
+function presentSimpleSide(tokens: readonly string[]): { base: string; negative: boolean } | undefined {
+  if (tokens.length === 1) {
+    const base = presentSimpleBaseOf(tokens[0]!);
+    return base === undefined ? undefined : { base, negative: false };
+  }
+  const [operator, not, verb] = tokens;
+  if (tokens.length !== 3 || (operator !== "do" && operator !== "does") || not !== "not") return undefined;
+  return presentSimpleBaseOf(verb!) === verb ? { base: verb!, negative: true } : undefined;
+}
+
+/** Strona obszaru w Present Continuous: am/is/are [not] + forma -ing. */
+function presentContinuousSide(tokens: readonly string[]): { base: string; negative: boolean } | undefined {
+  const negative = tokens[1] === "not";
+  if (tokens.length !== (negative ? 3 : 2) || !BE_FORMS.has(tokens[0]!)) return undefined;
+  const base = ingBaseOf(tokens.at(-1)!);
+  return base === undefined ? undefined : { base, negative };
+}
+
+/**
+ * Zamiana PS ↔ PC (cele 2, 6): jedna strona to forma Present Simple
+ * czasownika, druga be + jego forma -ing, z tą samą biegunowością („Look!
+ * Ola reads.” → „Look! Ola is reading.”). Zgodność strony poprawnej z grupą
+ * wskaźnika sprawdza reguła czasu odpowiedzi.
+ */
+function isTenseSwap({ wrong, right }: ErrorFixDiff): boolean {
+  return [[wrong, right], [right, wrong]].some(([simpleTokens, continuousTokens]) => {
+    const simple = presentSimpleSide(simpleTokens!);
+    const continuous = presentContinuousSide(continuousTokens!);
+    return simple !== undefined && continuous !== undefined && simple.base === continuous.base && simple.negative === continuous.negative;
+  });
+}
+
 /** Zła pisownia -ing (cel 5): forma błędna spoza tabeli, poprawna z tabeli, różnica kilku liter. */
 function isIngSpelling({ wrong, right }: ErrorFixDiff): boolean {
   if (wrong.length !== 1 || right.length !== 1) return false;
@@ -123,7 +180,10 @@ function isIngSpelling({ wrong, right }: ErrorFixDiff): boolean {
 const ERROR_FIX_MATCHERS: Readonly<Record<ErrorFixKind, (diff: ErrorFixDiff) => boolean>> = {
   missing_be: isMissingBe,
   missing_ing: isMissingIng,
+  wrong_be: isWrongBe,
+  do_for_be: isDoForBe,
   ing_spelling: isIngSpelling,
+  tense_swap: isTenseSwap,
 };
 
 /**
@@ -154,13 +214,17 @@ export function validateErrorFix(ex: LessonExerciseDraft, objective: string, err
 
 /**
  * „Wskaż słowo” (§6.5): we wszystkich zdaniach dokładnie jeden token z formą
- * -ing z tabeli i jest nim `correctOption` — inaczej dziecko wskazałoby inną
- * poprawną formę i dostało błąd (materializacja bierze pierwszy pasujący segment).
+ * -ing (z tabeli albo z kolokacji „having lunch”, „looking at”) i jest nim
+ * `correctOption` — inaczej dziecko wskazałoby inną poprawną formę i dostało
+ * błąd (materializacja bierze pierwszy pasujący segment).
  */
 export function validateNotice(ex: LessonExerciseDraft, errors: string[]): void {
-  const ingForms = (ex.noticeSegments ?? []).flatMap((sentence) => sentence.flatMap(normalizeTokens)).filter(isIngFormInTable);
+  const ingForms = (ex.noticeSegments ?? []).flatMap((sentence) => {
+    const tokens = sentence.flatMap(normalizeTokens);
+    return tokens.filter((token, i) => isIngFormInTable(token) || isCollocationIngForm(tokens, i));
+  });
   if (ingForms.length !== 1) {
-    errors.push(`pc-notice: noticeSegments: liczba form -ing z tabeli w zdaniach: ${ingForms.length} — potrzebna dokładnie jedna`);
+    errors.push(`pc-notice: noticeSegments: liczba form -ing w zdaniach: ${ingForms.length} — potrzebna dokładnie jedna`);
     return;
   }
   const target = normalizeTokens(ex.correctOption ?? "");

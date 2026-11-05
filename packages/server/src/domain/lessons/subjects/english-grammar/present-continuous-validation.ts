@@ -28,7 +28,25 @@ import {
   type BePolarity,
 } from "./be-agreement";
 import { validateErrorFix, validateListenChoiceOptions, validateNotice } from "./present-continuous-exercise-rules";
-import { scanTimeMarkers } from "./time-markers";
+import {
+  CLAUSE_CONJUNCTIONS,
+  ingBaseOf,
+  isNowUsuallyChoice,
+  SENTENCE_BOUNDARY,
+  TENSE_CHOICE_OBJECTIVES,
+  TENSE_NAMES,
+  tenseChoiceMarkerGroup,
+  tenseChoiceShapeErrors,
+  tenseSentences,
+  tenseTokens,
+  validatePresentSimpleFormAnswer,
+  validatePresentSimpleGroup,
+  validateTenseOfGroups,
+  verbGroupsIn,
+  type PresentSimpleContext,
+  type TenseSentence,
+} from "./present-continuous-tense-choice";
+import { scanTimeMarkers, type MarkerGroup } from "./time-markers";
 
 /**
  * Reguły tematu Present Continuous (design „Present Continuous” §4–§6).
@@ -64,7 +82,7 @@ const BE_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative
 /** Cele, w których nawias luki z czasownikiem musi zawierać „not” (§6.2); w pozostałych „not” jest zakazane. */
 const NEGATED_VERB_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["negative", "now_or_usually_more"]);
 
-/** Cele, w których odpowiedź luki z czasownikiem to am/is/are [not] + -ing (cele porównania mają własne reguły). */
+/** Cele, w których odpowiedź luki z czasownikiem to am/is/are [not] + -ing (cele porównania — `validateTenseChoice`). */
 const BE_ING_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
 
 /**
@@ -181,14 +199,39 @@ function stateVerbInAnswer(ex: LessonExerciseDraft, answer: string): string | un
   return stateVerbIn(answerSentence(ex, answer), "ing_form");
 }
 
-function validateStateVerbs(ex: LessonExerciseDraft, errors: string[]): void {
-  for (const { field, text } of answersOf(ex)) {
-    const verb = stateVerbInAnswer(ex, text);
+/**
+ * Czasowniki stanu (§5.3): w celach 1, 3, 4, 5 bez formy -ing w zdaniu
+ * z odpowiedzią; w celach porównania w dowolnej formie w każdym skanowanym
+ * polu angielskim (odpowiedzi i opcje wstawione w bodziec, żeby „has” miało
+ * kontekst kolokacji „has lunch”).
+ */
+function validateStateVerbs(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+  const tenseChoice = TENSE_CHOICE_OBJECTIVES.has(objective);
+  const report = (field: string, verb: string | undefined): void => {
     if (verb === "be") {
       errors.push(`pc-state: ${field}: forma „being” (He is being silly) nie występuje w tym temacie`);
     } else if (verb !== undefined) {
-      errors.push(`pc-state: ${field}: czasownik „${verb}” opisuje stan i nie występuje z -ing w tym temacie`);
+      errors.push(tenseChoice
+        ? `pc-state: ${field}: czasownik „${verb}” opisuje stan — w wyborze teraz/zwykle nie występuje w żadnej formie`
+        : `pc-state: ${field}: czasownik „${verb}” opisuje stan i nie występuje z -ing w tym temacie`);
     }
+  };
+  if (!tenseChoice) {
+    for (const { field, text } of answersOf(ex)) report(field, stateVerbInAnswer(ex, text));
+    return;
+  }
+  const answer = normalizeTokens(ex.answer).join(" ");
+  const texts = [
+    { field: "stem", text: ex.stem },
+    { field: "statement", text: ex.statement },
+    { field: "prompt", text: ex.exerciseType === "lesson_open_answer" ? undefined : ex.prompt },
+    ...answersOf(ex).map(({ field, text }) => ({ field, text: answerSentence(ex, text) })),
+    ...(ex.options ?? [])
+      .filter((option) => normalizeTokens(option.text).join(" ") !== answer)
+      .map((option) => ({ field: "options", text: answerSentence(ex, option.text) })),
+  ];
+  for (const { field, text } of texts) {
+    if (text !== undefined) report(field, stateVerbIn(text, "any_form"));
   }
 }
 
@@ -222,24 +265,21 @@ function invertedSubjectAfterGap(stem: string): string[] | undefined {
   return subject.length === 0 ? undefined : subject;
 }
 
-/** Spójniki rozpoczynające kolejne zdanie składowe („Mum is cooking and Dad is reading”). */
-const CLAUSE_CONJUNCTIONS: ReadonlySet<string> = new Set(["and", "but", "while", "so", "because", "or"]);
-
-/** Granice zdań w tekście; przecinek nie jest granicą („Look, Mum is cooking”). */
-const SENTENCE_BOUNDARY = /[.!?;:]+/;
-
 /**
  * Podmiot przed luką: tokeny od początku zdania (po „Look!” i innych zdaniach)
- * do luki, bez przysłówków; po wcześniejszej formie be — od spójnika, który
- * otwiera kolejne zdanie składowe („Mum is cooking and Dad ___” → „dad”).
+ * do luki, bez przysłówków; po wcześniejszej formie be albo orzeczeniu
+ * w Present Simple — od spójnika, który otwiera kolejne zdanie składowe („Mum
+ * is cooking and Dad ___”, „Mum cooks dinner and Dad ___” → „dad”, nie
+ * podmiot złożony).
  */
 function subjectSpanBeforeGap(stem: string): string[] {
   const sentence = (stem.split("___", 2)[0] ?? "").split(SENTENCE_BOUNDARY).at(-1) ?? "";
   const tokens = expandedTokens(sentence).filter((token) => !BE_ADVERBS.has(token));
-  const lastBe = tokens.findLastIndex((token) => BE_FORMS.has(token));
-  if (lastBe < 0) return tokens;
-  const conjunction = tokens.findIndex((token, i) => i > lastBe && CLAUSE_CONJUNCTIONS.has(token));
-  return tokens.slice(conjunction >= 0 ? conjunction + 1 : lastBe + 1);
+  const lastSimple = verbGroupsIn(tokens).findLast((group) => group.tense === "simple")?.verbIndex ?? -1;
+  const boundary = Math.max(tokens.findLastIndex((token) => BE_FORMS.has(token)), lastSimple);
+  if (boundary < 0) return tokens;
+  const conjunction = tokens.findIndex((token, i) => i > boundary && CLAUSE_CONJUNCTIONS.has(token));
+  return tokens.slice(conjunction >= 0 ? conjunction + 1 : boundary + 1);
 }
 
 /**
@@ -412,7 +452,7 @@ const WHOLE_SENTENCE_TYPES: ReadonlySet<string> = new Set([
   "lesson_open_answer",
 ]);
 
-/** Cele, w których każde zdanie odpowiedzi jest w Present Continuous (cele porównania mają własne reguły). */
+/** Cele, w których każde zdanie odpowiedzi jest w Present Continuous (cele porównania — `validateTenseChoice`). */
 const PC_SENTENCE_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
 
 /**
@@ -694,6 +734,159 @@ function validateSentences(ex: LessonExerciseDraft, objective: string, errors: s
   }
 }
 
+/** Osoba podmiotu (heurystyka formy be) i klasy pisowni celu dla reguł Present Simple. */
+function presentSimpleContext(objective: string): PresentSimpleContext {
+  return { expectedBeForm, allowedRules: PC_ALLOWED_ING_RULES[objective] ?? [] };
+}
+
+/**
+ * Luka z czasownikiem w nawiasie albo wybór formy do luki w celach porównania
+ * (§6.2): Present Continuous jak w celach 1–5, Present Simple z
+ * `presentSimpleFormFor` (osoba z bodźca, przeczenie z nawiasu).
+ */
+function validateTenseFormAnswer(
+  ex: LessonExerciseDraft,
+  objective: string,
+  gap: { stem: string; verb?: string; negative?: boolean },
+  answer: string,
+  field: string,
+  errors: string[],
+): void {
+  const tokens = tenseTokens(answer);
+  if (BE_FORMS.has(tokens[0] ?? "")) {
+    const verb = gap.verb ?? ingBaseOf(tokens.at(-1)!);
+    if (verb === undefined) {
+      errors.push(`pc-ing: ${field}: „${tokens.at(-1)}” jest spoza tabeli form -ing`);
+      return;
+    }
+    validateBeIngGapAnswer(ex, objective, { stem: gap.stem, verb, negative: gap.negative ?? tokens.includes("not") }, answer, field, errors);
+    return;
+  }
+  validatePresentSimpleFormAnswer(answer, gap, presentSimpleContext(objective), field, errors);
+}
+
+/** Całe zdanie w celach porównania (§6.3): orzeczenia w Present Simple zgodne z osobą, w Present Continuous jak w celach 1–5. */
+function validateTenseSentenceAnswer(
+  ex: LessonExerciseDraft,
+  objective: string,
+  answer: string,
+  sentences: readonly TenseSentence[],
+  field: string,
+  errors: string[],
+): void {
+  if (sentences.every(({ groups }) => groups.length === 0)) {
+    errors.push(sentences.some(({ tokens }) => tokens.some((token) => ingBaseOf(token) !== undefined))
+      ? `pc-be: ${field}: przed formą -ing brak am/is/are`
+      : `pc-shape: ${field}: brak czasownika z tabeli w Present Simple albo Present Continuous`);
+    return;
+  }
+  for (const { tokens, groups } of sentences) {
+    for (const group of groups) {
+      if (group.tense === "simple") validatePresentSimpleGroup(tokens, group, presentSimpleContext(objective), field, errors);
+    }
+  }
+  if (sentences.some(({ groups }) => groups.some((group) => group.tense === "continuous"))) {
+    validateSentenceAnswer(ex, objective, answer, field, true, errors);
+  } else {
+    for (const { tokens } of sentences) validateQuestionWords(tokens, field, errors);
+  }
+}
+
+/**
+ * Klucz albo opcja w celu porównania: czas każdego orzeczenia zgodny z grupą
+ * wskaźników (także w drugim zdaniu składowym: „Mum cooks dinner and Dad is
+ * reading now.”), potem forma — w luce i wyborze formy względem bodźca,
+ * w pozostałych typach w całym zdaniu.
+ */
+function validateTenseAnswer(
+  ex: LessonExerciseDraft,
+  objective: string,
+  gap: { stem: string; verb?: string; negative?: boolean } | undefined,
+  answer: string,
+  field: string,
+  group: MarkerGroup | undefined,
+  errors: string[],
+): void {
+  const sentences = tenseSentences(gap === undefined ? wholeSentenceOf(ex, answer) : answerSentence(ex, answer));
+  validateTenseOfGroups(sentences, group, field, errors);
+  if (gap === undefined) {
+    validateTenseSentenceAnswer(ex, objective, answer, sentences, field, errors);
+  } else {
+    validateTenseFormAnswer(ex, objective, gap, answer, field, errors);
+  }
+}
+
+/**
+ * Wybór „now / usually” (§5.5, cel 2): bodziec to jedno zdanie twierdzące
+ * w Present Simple albo Present Continuous bez wskaźnika, klucz wynika z czasu
+ * zdania. Polecenie nie może zdradzać odpowiedzi scenką jednej grupy
+ * („Teraz czy zwykle?” ma obie grupy i niczego nie zdradza).
+ */
+function validateNowUsuallyChoice(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+  const stem = ex.stem ?? "";
+  if (scanTimeMarkers(stem, "en").groups.size > 0) {
+    errors.push("pc-marker: stem: zdanie w wyborze „now / usually” nie może mieć wskaźnika czasu — czas wynika z formy");
+  }
+  if (ex.instructionPl !== undefined && scanTimeMarkers(ex.instructionPl, "pl").groups.size === 1) {
+    errors.push("pc-marker: instructionPl: polecenie wyboru „now / usually” zdradza odpowiedź wskaźnikiem albo scenką");
+  }
+  const sentences = tenseSentences(stem);
+  const groups = sentences.flatMap((sentence) => sentence.groups);
+  const verbGroup = groups[0];
+  const shapeOk = groups.length === 1 && !stem.includes("___") && !stem.includes("?") && !tenseTokens(stem).includes("not");
+  if (verbGroup === undefined || !shapeOk) {
+    errors.push("pc-shape: stem: w wyborze „now / usually” bodziec to jedno zdanie twierdzące w Present Simple albo Present Continuous");
+    return;
+  }
+  const key = normalizeTokens(ex.options?.find((option) => option.id === ex.correctOption)?.text ?? "").join(" ");
+  const expectedKey = verbGroup.tense === "continuous" ? "now" : "usually";
+  if (key !== expectedKey) {
+    errors.push(`pc-marker: correctOption: zdanie w ${TENSE_NAMES[verbGroup.tense]} wymaga odpowiedzi „${expectedKey}”`);
+  }
+  if (verbGroup.tense === "continuous") {
+    validateSentenceAnswer(ex, objective, stem, "stem", true, errors);
+  } else {
+    const sentence = sentences.find((candidate) => candidate.groups.length > 0)!;
+    validatePresentSimpleGroup(sentence.tokens, verbGroup, presentSimpleContext(objective), "stem", errors);
+  }
+}
+
+/**
+ * Cele porównania (2, 6; §5.2, §5.5, §6.2, §6.3): wskaźniki jednej grupy,
+ * czas klucza i wariantów zgodny z grupą, forma zgodna z osobą, kształt zdań;
+ * w wyborze żaden dystraktor nie może spełniać tych samych reguł co klucz.
+ */
+function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+  if (objective === "now_or_usually" && isNowUsuallyChoice(ex)) {
+    validateNowUsuallyChoice(ex, objective, errors);
+    return;
+  }
+  const group = tenseChoiceMarkerGroup(scannedFields(ex), errors);
+  errors.push(...tenseChoiceShapeErrors(ex, objective));
+  let gap: { stem: string; verb?: string; negative?: boolean } | undefined;
+  if (ex.exerciseType === "lesson_gap") {
+    // Kształt luki bez nawiasu (luka na formę be, brak czasownika) zgłasza `validateGap`.
+    const stripped = ex.stem === undefined ? undefined : stripGapVerb(ex.stem);
+    if (stripped?.verb === undefined) return;
+    gap = { stem: stripped.stem, verb: stripped.verb, negative: stripped.negative };
+  } else if (ex.exerciseType === "lesson_choice" && ex.stem?.includes("___") === true) {
+    gap = { stem: ex.stem };
+  }
+  const answers = ex.exerciseType === "lesson_gap" ? answersOf(ex) : sentenceAnswersOf(ex);
+  for (const { field, text } of answers) {
+    if (!LEADING_APOSTROPHE.test(text.trim())) validateTenseAnswer(ex, objective, gap, text, field, group, errors);
+  }
+  if (ex.exerciseType !== "lesson_choice" || group === undefined) return;
+  for (const option of ex.options ?? []) {
+    if (option.id === ex.correctOption) continue;
+    const optionErrors: string[] = [];
+    validateTenseAnswer(ex, objective, gap, option.text, "options", group, optionErrors);
+    if (optionErrors.length === 0) {
+      errors.push(`pc-marker: options: „${option.text}” też pasuje do wskaźnika i podmiotu — dystraktor musi być błędny`);
+    }
+  }
+}
+
 /**
  * Walidator ćwiczenia tematu Present Continuous; cel z ostatniego segmentu
  * `objectiveId`. Zwraca komunikaty z prefiksami `pc-…:` (pusta lista = poprawne).
@@ -704,7 +897,8 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
   const errors: string[] = [];
   validateForbiddenMarkers(ex, errors);
   validateBrackets(ex, errors);
-  validateStateVerbs(ex, errors);
+  validateStateVerbs(ex, objective, errors);
+  if (TENSE_CHOICE_OBJECTIVES.has(objective)) validateTenseChoice(ex, objective, errors);
   if (ex.exerciseType === "lesson_gap") {
     validateGapHint(ex, errors);
     validateGap(ex, objective, errors);

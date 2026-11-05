@@ -316,15 +316,112 @@ describe("validatePresentContinuousExercise — całe zdania, odrzucone", () => 
   });
 });
 
+/** Wybór „now / usually” (§5.5): bodziec bez wskaźnika, klucz z czasu zdania. */
+function pcNowUsually(stem: string, key: "now" | "usually", extra: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  return pcSentence("lesson_choice", "now_or_usually", key, {
+    instructionPl: "Kiedy to się dzieje?",
+    stem,
+    options: [{ id: "a", text: key }, { id: "b", text: key === "now" ? "usually" : "now" }],
+    correctOption: "a",
+    ...extra,
+  });
+}
+
+function pcErrorFix(objective: Objective, statement: string, answer: string): LessonExerciseDraft {
+  return pcSentence("lesson_error_fix", objective, answer, { statement });
+}
+
+describe("validatePresentContinuousExercise — cele porównania (2 i 6), poprawne", () => {
+  const ok: [string, LessonExerciseDraft][] = [
+    ["cel 2: luka ze wskaźnikiem „zwykle”", pcGap("now_or_usually", "Ola ___ (read) a comic every evening.", "reads")],
+    ["cel 2: luka po „Look!”", pcGap("now_or_usually", "Look! Ola ___ (read) a comic.", "is reading")],
+    ["cel 2: okolicznik na początku zdania", pcGap("now_or_usually", "Every day Ola ___ (read) a comic.", "reads")],
+    ["cel 2: podmiot złożony w Present Simple", pcGap("now_or_usually", "Every evening Mum and Dad ___ (watch) TV.", "watch")],
+    ["cel 2: podmiot „Tom and Ola”", pcGap("now_or_usually", "Tom and Ola ___ (play) football every day.", "play")],
+    ["cel 2: drugie zdanie składowe po Present Simple", pcGap("now_or_usually", "Mum cooks dinner and Dad ___ (read) every evening.", "reads")],
+    ["cel 2: wybór na scence z polecenia", pcSentence("lesson_choice", "now_or_usually", "is sleeping", {
+      instructionPl: "Cicho! Dziadek śpi.",
+      stem: "Grandpa ___ in the armchair.",
+      options: [{ id: "a", text: "sleeps" }, { id: "b", text: "is sleeping" }],
+      correctOption: "b",
+    })],
+    ["cel 2: „now / usually” do zdania w Present Continuous", pcNowUsually("Ola is reading a book.", "now")],
+    ["cel 2: „now / usually” do zdania w Present Simple", pcNowUsually("Ola reads books.", "usually")],
+    ["cel 2: „now / usually” z poleceniem „Teraz czy zwykle?”", pcNowUsually("Ola reads books.", "usually", { instructionPl: "Teraz czy zwykle?" })],
+    ["cel 2: kolokacja „having lunch”", pcTranslation("now_or_usually", "Ona teraz je obiad.", "She is having lunch now.")],
+    ["cel 2: tłumaczenie w Present Simple", pcTranslation("now_or_usually", "Tata codziennie gotuje obiad.", "Dad cooks dinner every day.")],
+    ["cel 2: poprawianie Present Simple na Present Continuous", pcErrorFix("now_or_usually", "Look! Ola reads.", "Look! Ola is reading.")],
+    ["cel 2: poprawianie Present Continuous na Present Simple", pcErrorFix("now_or_usually", "Ola is reading every day.", "Ola reads every day.")],
+    ["cel 6: poprawianie przeczenia", pcErrorFix("now_or_usually_more", "She isn't watching TV every morning.", "She doesn't watch TV every morning.")],
+    ["cel 6: luka z przeczeniem w Present Simple", pcGap("now_or_usually_more", "She ___ (not watch) TV every morning.", "doesn't watch")],
+    ["cel 6: luka z przeczeniem w Present Continuous", pcGap("now_or_usually_more", "She ___ (not watch) TV now.", "isn't watching")],
+    ["cel 6: „am not” i klasa double", pcGap("now_or_usually_more", "I ___ (not swim) now.", "am not swimming")],
+    ["cel 6: „don't” w liczbie mnogiej", pcGap("now_or_usually_more", "They ___ (not swim) on Sundays.", "don't swim")],
+    ["cel 6: wybór pytania", pcSentence("lesson_choice", "now_or_usually_more", "Do you play football on Saturdays?", {
+      instructionPl: "Wybierz poprawne pytanie.",
+      options: [{ id: "a", text: "Do you play football on Saturdays?" }, { id: "b", text: "Are you playing football on Saturdays?" }],
+      correctOption: "a",
+    })],
+    ["cel 6: wybór przeczenia w luce", pcChoice("now_or_usually_more", "She ___ TV every morning.", "doesn't watch", "isn't watching")],
+    ["cel 6: tłumaczenie pytania", pcTranslation("now_or_usually_more", "Czy grasz teraz w piłkę?", "Are you playing football now?")],
+  ];
+  it.each(ok)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([]);
+  });
+});
+
+describe("validatePresentContinuousExercise — cele porównania (2 i 6), odrzucone", () => {
+  const rejected: [string, LessonExerciseDraft, string][] = [
+    ["luka bez wskaźnika", pcGap("now_or_usually", "Ola ___ (read) a comic.", "reads"), "pc-marker:"],
+    ["mieszane grupy wskaźników", pcGap("now_or_usually", "Look! Ola ___ (read) a comic every evening.", "is reading"), "pc-marker:"],
+    ["Present Simple po „Look!”", pcGap("now_or_usually", "Look! Ola ___ (read).", "reads"), "pc-marker:"],
+    ["Present Continuous przy „every evening”", pcGap("now_or_usually", "Ola ___ (read) a comic every evening.", "is reading"), "pc-marker:"],
+    ["forma Present Simple niezgodna z osobą", pcGap("now_or_usually", "He ___ (play) every day.", "play"), "pc-be:"],
+    ["forma Present Simple w liczbie mnogiej niezgodna z osobą", pcGap("now_or_usually", "Tom and Ola ___ (play) football every day.", "plays"), "pc-be:"],
+    ["„now / usually” ze wskaźnikiem w bodźcu", pcNowUsually("Ola is reading now.", "now"), "pc-marker:"],
+    ["„now / usually” z kluczem „usually” do zdania w Present Continuous", pcNowUsually("Ola is reading a book.", "usually"), "pc-marker:"],
+    ["„now / usually” ze scenką w poleceniu", pcNowUsually("Ola is reading a book.", "now", { instructionPl: "Cicho! Ola czyta." }), "pc-marker:"],
+    ["„now / usually” z pytaniem", pcNowUsually("Is Ola reading a book?", "now"), "pc-shape:"],
+    ["klasa double w celu 2 (także przy Present Simple)", pcGap("now_or_usually", "He ___ (swim) every day.", "swims"), "pc-ing:"],
+    ["cel 2: nawias z „not”", pcGap("now_or_usually", "He ___ (not play) football every day.", "doesn't play"), "pc-shape:"],
+    ["cel 2: luka na formę be", pcGap("now_or_usually", "Look! Ola ___ reading.", "is"), "pc-shape:"],
+    ["cel 6: luka na formę be", pcGap("now_or_usually_more", "Look! Ola ___ not reading.", "is"), "pc-shape:"],
+    ["cel 2: wybór z pytaniem", pcChoice("now_or_usually", "___ Ola reading a comic now?", "Is", "Does"), "pc-shape:"],
+    ["cel 6: luka z pytaniem", pcGap("now_or_usually_more", "___ you (play) tennis every Saturday?", "Do"), "pc-shape:"],
+    ["cel 6: pytanie w „Ułóż zdanie”", pcOrder("now_or_usually_more", "Do you play football on Saturdays?"), "pc-shape:"],
+    ["cel 2: czasownik stanu w dowolnej formie", pcTranslation("now_or_usually", "Ona codziennie lubi jabłka.", "She likes apples every day."), "pc-state:"],
+    ["polecenie „Teraz czy zwykle?” (mieszane grupy)", pcGap("now_or_usually", "Ola ___ (read) a comic every evening.", "reads", { instructionPl: "Teraz czy zwykle?" }), "pc-marker:"],
+    ["cel 2: poprawianie zmienia tylko podmiot", pcErrorFix("now_or_usually", "Look! Tom is reading.", "Look! Ola is reading."), "pc-error-fix:"],
+    ["cel 2: poprawianie z kluczem w złym czasie", pcErrorFix("now_or_usually", "Look! Ola is reading.", "Look! Ola reads."), "pc-marker:"],
+    ["cel 2: tłumaczenie w Present Continuous przy „codziennie”", pcTranslation("now_or_usually", "Ola czyta codziennie.", "Ola is reading every day."), "pc-marker:"],
+    ["cel 6: przeczenie w Present Continuous przy „every morning”", pcGap("now_or_usually_more", "She ___ (not watch) TV every morning.", "isn't watching"), "pc-marker:"],
+    ["cel 6: wybór pytania z operatorem niezgodnym z osobą", pcSentence("lesson_choice", "now_or_usually_more", "Does you play football on Saturdays?", {
+      options: [{ id: "a", text: "Does you play football on Saturdays?" }, { id: "b", text: "Are you playing football on Saturdays?" }],
+      correctOption: "a",
+    }), "pc-be:"],
+    ["wybór z dwoma poprawnymi opcjami", pcChoice("now_or_usually", "Look! Ola ___ a comic.", "is reading", "is drawing"), "pc-marker:"],
+    ["dwa zdania składowe w różnych czasach", pcGap("now_or_usually", "Mum cooks dinner and Dad ___ (read) now.", "is reading"), "pc-marker:"],
+  ];
+  it.each(rejected)("%s", (_name, ex, prefix) => {
+    expectPrefix(ex, prefix);
+  });
+
+  it("drugie zdanie składowe po Present Simple: podmiot to tylko „Dad” (bez pc-be:)", () => {
+    const errors = validate(pcGap("now_or_usually", "Mum cooks dinner and Dad ___ (read) now.", "is reading"));
+    expect(errors.some((error) => error.startsWith("pc-be:")), JSON.stringify(errors)).toBe(false);
+  });
+});
+
 describe("przypięte zachowanie poza walidatorem tematu", () => {
-  it("widok checkera luki celu 2: scenka z polecenia i czasownik w nawiasie (bez podpowiedzi)", () => {
+  it("widok checkera luki celu 2: scenka z polecenia i czasownik w nawiasie, bez podpowiedzi", () => {
     const gap = pcGap("now_or_usually", "Grandpa ___ (sleep) in the armchair.", "is sleeping", {
       instructionPl: "Cicho! Dziadek śpi.",
-      hint: "",
+      hint: "play",
     });
     const view = solverView(gap, presentContinuousV1);
     expect(view).toContain("Cicho! Dziadek śpi.");
     expect(view).toContain("Grandpa ___ (sleep) in the armchair.");
+    expect(view).not.toContain("play");
   });
 
   it("pula z wyborem i tłumaczeniem tego samego zdania przechodzi walidację (spec §6.3, świadomie)", () => {
