@@ -170,6 +170,11 @@ export interface LessonAgentDeps {
   readonly subjects: ReadonlySet<string>;
   readonly agent: LessonPoolAgentProvider;
   readonly checker: LessonExerciseCheckerProvider;
+  /**
+   * Grader kontroli otwartej (etap 2b, `UMIEM_GRADER_*`); nieobecny = kontrola otwarta nie dotyczy
+   * (tryb fake zawsze bez gradera).
+   */
+  readonly grader?: AgentGraderDeps;
   readonly policy: Partial<LessonAgentPolicy>;
   /** Rezerwa na finalizację przed terminem runu (domyślnie `AGENT_FINALIZATION_RESERVE_MS`); nadpisywana w testach. */
   readonly finalizationReserveMs?: number;

@@ -20,6 +20,22 @@ export interface AgentCheckGrader {
   readonly timeoutMs: number;
 }
 
+/**
+ * Liczniki kontroli etapu 2b (§7.4) widoczne w statystykach runu, punkcie kontrolnym i podsumowaniu:
+ * wyłącznie liczby, bez treści. Klucze = pola `ObjectiveToolsStats`.
+ */
+export const CHECK_COUNTER_KEYS = [
+  "hintChecks",
+  "openChecks",
+  "graderCalls",
+  "hintUnavailable",
+  "openUnavailable",
+  "graderErrors",
+  "graderInvalidVerdicts",
+] as const;
+
+export type CheckCounterKey = (typeof CHECK_COUNTER_KEYS)[number];
+
 export class AgentCheckRun {
   /** Osobny od checkera: grader to inna usługa i nie czeka za długimi wywołaniami etapu 1. */
   readonly graderSemaphore: Semaphore;
