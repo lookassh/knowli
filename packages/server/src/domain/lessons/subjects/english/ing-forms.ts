@@ -217,6 +217,9 @@ export function stateVerbIn(text: string, mode: "any_form" | "ing_form"): string
   return undefined;
 }
 
+/** Czasowniki stanu z formą -ing dozwoloną w kolokacji (§4, wyjątek; poza celem 5). */
+export const COLLOCATION_ING_FORMS: Readonly<Record<string, string>> = { have: "having", look: "looking" };
+
 /**
  * Czy token na pozycji `index` to forma -ing z kolokacji dozwolonej poza tabelą:
  * „having” + breakfast / lunch / dinner / a bath / a shower / fun / a party

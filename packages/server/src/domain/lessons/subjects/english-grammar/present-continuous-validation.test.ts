@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LessonExerciseDraft } from "../../types";
+import { solverView } from "../../agent/solver";
+import { validatePool } from "../../pool-validation";
+import { englishGrammarSubject } from "./module";
 import { stripGapVerb } from "./present-continuous-validation";
 import { presentContinuousV1 } from "./topics/present-continuous";
 import { validateEnglishGrammarExercise } from "./validators";
@@ -310,5 +313,31 @@ describe("validatePresentContinuousExercise — całe zdania, odrzucone", () => 
   it("czasownik stanu w kluczu wyboru daje tylko komunikat pc-state:", () => {
     const errors = validate(pcChoice("affirmative", "___", "I am liking it now.", "I like it now."));
     expect(errors.every((error) => error.startsWith("pc-state:")), JSON.stringify(errors)).toBe(true);
+  });
+});
+
+describe("przypięte zachowanie poza walidatorem tematu", () => {
+  it("widok checkera luki celu 2: scenka z polecenia i czasownik w nawiasie (bez podpowiedzi)", () => {
+    const gap = pcGap("now_or_usually", "Grandpa ___ (sleep) in the armchair.", "is sleeping", {
+      instructionPl: "Cicho! Dziadek śpi.",
+      hint: "",
+    });
+    const view = solverView(gap, presentContinuousV1);
+    expect(view).toContain("Cicho! Dziadek śpi.");
+    expect(view).toContain("Grandpa ___ (sleep) in the armchair.");
+  });
+
+  it("pula z wyborem i tłumaczeniem tego samego zdania przechodzi walidację (spec §6.3, świadomie)", () => {
+    const choice: LessonExerciseDraft = {
+      ...pcChoice("affirmative", "Dad ___ dinner now.", "is cooking", "are cooking"),
+      focus: ["is", "cooking"],
+    };
+    const translation: LessonExerciseDraft = {
+      ...pcTranslation("affirmative", "Tata teraz gotuje obiad.", "Dad is cooking dinner now."),
+      focus: ["is", "cooking"],
+    };
+    const result = validatePool([choice, translation], englishGrammarSubject, presentContinuousV1);
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toEqual([choice, translation]);
   });
 });

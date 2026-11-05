@@ -2,6 +2,7 @@ import type { LessonExerciseDraft } from "../../types";
 import { normalizeTokens } from "../../normalize";
 import {
   baseOfIngForm,
+  COLLOCATION_ING_FORMS,
   ingFormOf,
   ingRuleOf,
   isCollocationIngForm,
@@ -26,6 +27,7 @@ import {
   TRANSFORM_POLARITY,
   type BePolarity,
 } from "./be-agreement";
+import { validateErrorFix, validateListenChoiceOptions, validateNotice } from "./present-continuous-exercise-rules";
 import { scanTimeMarkers } from "./time-markers";
 
 /**
@@ -64,9 +66,6 @@ const NEGATED_VERB_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["negative", "n
 
 /** Cele, w których odpowiedź luki z czasownikiem to am/is/are [not] + -ing (cele porównania mają własne reguły). */
 const BE_ING_GAP_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
-
-/** Czasowniki stanu z formą -ing dozwoloną w kolokacji (§4, wyjątek; poza celem 5). */
-const COLLOCATION_ING_FORMS: Readonly<Record<string, string>> = { have: "having", look: "looking" };
 
 /**
  * Nawias z czasownikiem tuż po luce. Silnik ma własną kopię wzorca
@@ -398,9 +397,15 @@ function validateGap(ex: LessonExerciseDraft, objective: string, errors: string[
   }
 }
 
-/** Typy z całym zdaniem w odpowiedzi sprawdzane w tym miejscu (§6.3; `error_fix` ma własne reguły). */
+/**
+ * Typy z całym zdaniem w odpowiedzi (§6.3; „Posłuchaj i wybierz” — luka na
+ * formę be jak w wyborze). `error_fix`, `notice` i opcje „Posłuchaj i wybierz”
+ * mają dodatkowe reguły w `present-continuous-exercise-rules.ts`.
+ */
 const WHOLE_SENTENCE_TYPES: ReadonlySet<string> = new Set([
   "lesson_choice",
+  "lesson_listen_choice",
+  "lesson_error_fix",
   "lesson_order",
   "lesson_short_answer",
   "lesson_transform",
@@ -634,9 +639,10 @@ function validateSentenceAnswer(
   validateShortAnswerPerson(ex, answer, field, errors);
 }
 
-/** Bodziec z luką na formę be w wyborze albo krótkiej odpowiedzi (ten sam kształt co luka, §6.2). */
+/** Bodziec z luką na formę be w wyborze, „Posłuchaj i wybierz” albo krótkiej odpowiedzi (ten sam kształt co luka, §6.2). */
 function beChoiceGapStem(ex: LessonExerciseDraft): string | undefined {
-  const stem = ex.exerciseType === "lesson_choice" ? ex.stem : shortAnswerQuestion(ex)?.text;
+  const choice = ex.exerciseType === "lesson_choice" || ex.exerciseType === "lesson_listen_choice";
+  const stem = choice ? ex.stem : shortAnswerQuestion(ex)?.text;
   return stem?.includes("___") ? stem : undefined;
 }
 
@@ -705,6 +711,9 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
   } else if (WHOLE_SENTENCE_TYPES.has(ex.exerciseType)) {
     validateSentences(ex, objective, errors);
   }
+  if (ex.exerciseType === "lesson_error_fix") validateErrorFix(ex, objective, errors);
+  if (ex.exerciseType === "lesson_notice") validateNotice(ex, errors);
+  if (ex.exerciseType === "lesson_listen_choice") validateListenChoiceOptions(ex, errors);
   // Reguła luki na formę be i reguła zdania mogą zgłosić tę samą niezgodność formy z podmiotem.
   return [...new Set(errors)];
 }
