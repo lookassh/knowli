@@ -46,7 +46,8 @@ describe("bramka fake providerów E2E (holdFile)", () => {
     const holdFile = join(dir, "hold");
     try {
       writeFileSync(holdFile, "");
-      await waitWhileFakeHeld(holdFile, () => Date.now() + FAKE_HOLD_MAX_AGE_MS + 1_000);
+      // Świeży plik wstrzymałby wywołanie bez końca; stary kończy czekanie od razu.
+      await expect(waitWhileFakeHeld(holdFile, () => Date.now() + FAKE_HOLD_MAX_AGE_MS + 1_000)).resolves.toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
