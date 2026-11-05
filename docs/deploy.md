@@ -28,8 +28,9 @@ każdym deploju.
      modele, głos i ton są w domyślnej konfiguracji
      `packages/server/src/config-defaults.ts`),
      `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (web: próby ustne dziecka),
-   - **lekcje wymagają klucza OpenRouter** (`OPENROUTER_API_KEY` albo
-     `UMIEM_LESSON_AGENT_API_KEY`) w web i w worker — agent puli jest jedynym
+   - **lekcje wymagają klucza OpenRouter** (`OPENROUTER_API_KEY`,
+     `UMIEM_LESSON_AGENT_API_KEY` albo `UMIEM_LLM_API_KEY` przy `UMIEM_LLM_BASE_URL`
+     na https OpenRouter) w web i w worker — agent puli jest jedynym
      generatorem lekcji (sekcja „Generowanie lekcji” niżej),
    - `OPENAI_API_KEY` trafia wyłącznie do `https://api.openai.com`, a wspólny
      klucz wyłącznie po https na openrouter.ai; klucz w złym miejscu kończy start
@@ -53,8 +54,9 @@ Od etapu 3 (#237, PR 2) lekcje wszystkich przedmiotów generuje wyłącznie agen
 puli (worker, OpenRouter; opis i zmienne: `docs/provider-config.md`, sekcja
 „Agent puli lekcji”). Co to znaczy przy wdrożeniu:
 
-- **Klucz.** `OPENROUTER_API_KEY` (albo `UMIEM_LESSON_AGENT_API_KEY`) musi być
-  w web **i** w worker. Używaj w obu serwisach tego samego klucza i tych samych
+- **Klucz.** `OPENROUTER_API_KEY` (albo `UMIEM_LESSON_AGENT_API_KEY`; trzecia
+  rezerwa to `UMIEM_LLM_API_KEY`, gdy `UMIEM_LLM_BASE_URL` wskazuje https
+  OpenRouter — kolejność w `docs/provider-config.md`) musi być w web **i** w worker. Używaj w obu serwisach tego samego klucza i tych samych
   `UMIEM_LESSON_AGENT_MODEL` / `UMIEM_LESSON_AGENT_CHECKER_MODEL`: etykiety usług
   w panelu rodzica pochodzą z web, a lekcje liczy worker. Po dodaniu albo zmianie
   klucza zrestartuj oba serwisy.
@@ -82,7 +84,10 @@ puli (worker, OpenRouter; opis i zmienne: `docs/provider-config.md`, sekcja
   TTS na `api.openai.com`) traci generowanie lekcji; słówka, TTS i ilustracje
   działają jak dotąd.
 - **Wycofanie.** Zmiana nie ma migracji bazy: `git revert` PR etapu 3 PR 2 i
-  ponowne wdrożenie przywracają dawny potok.
+  ponowne wdrożenie przywracają dawny potok. Runy zakończone już kodem
+  `lesson_agent_unavailable` pokażą po wycofaniu ogólny komunikat błędu (dawny
+  katalog komunikatów nie zna tego kodu) — wystarczy je ponowić; szkice i punkty
+  kontrolne agenta pozostają czytelne.
 
 ## Test dymny wdrożenia
 

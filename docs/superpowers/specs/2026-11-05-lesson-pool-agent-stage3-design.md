@@ -484,7 +484,7 @@ wymieniają nowych domyślnych odbiorców wprost.
 
 `probe:chapter` po PR 2 generuje agentem. Zmiany:
 
-1. składa `lessonAgentDepsFromEnv(env, registry, usage)` z
+1. składa `lessonAgentDepsFromEnv(env, usage)` (bez rejestru — agent obsługuje każdy przedmiot) z
    `@learning/server/lesson-agent` (tests/probes mogą ładować SDK);
    `LessonAgentUnavailable` to błąd sondy przed pierwszym wywołaniem;
 2. wpis tymczasowy rejestru = budżet runu agenta (nie szacunek potoku);
@@ -593,6 +593,22 @@ wymieniają nowych domyślnych odbiorców wprost.
   porażce walidacji, z kumulowanych `rejectionCodes` runu. `rejectedCount` bez
   zmiany znaczenia (usunięcia po przyjęciu). Panel („Powody odrzuceń przy
   generowaniu”) działa bez zmian.
+- **Powody bez słów (decyzja właściciela 2026-11-05, przegląd końcowy).** Powody
+  odrzuceń to ogólne polskie etykiety kodów, bez słów: dawny powód rozdziału ze
+  słowem („słowo spoza materiału: raining”, „tylko słowa pomocnicze: the”)
+  trafia do rodzica jako etykieta kodu `refine` („ćwiczenie niezgodne z regułami
+  przedmiotu”), a tekst ze słowem dostaje tylko generator w odpowiedzi narzędzia.
+  `docs/SPEC.md` §37 opisuje to zamiast przykładów ze słowami.
+- **Licznik w panelu (przegląd końcowy).** Suma powodów (odrzucenia w pętli
+  agenta) bywa większa od `rejectedCount` (usunięcia po przyjęciu), więc edytor
+  pokazuje jako liczbę odrzuconych większą z obu wartości, a „inne powody: N” =
+  ta liczba minus suma wypisanych powodów — powody spoza pierwszej piątki nie
+  znikają. Bez zmian kontraktu.
+- **Rozstrzygnięcie 4: `GenerationDeps.lessonAgent` opcjonalne w typie**
+  (`LessonAgentDeps | LessonAgentUnavailable | undefined`), bo `GenerationDeps`
+  składają też web i fabryki testowe; „wymagane w workerze” (§5.1) pilnuje test
+  kompozycji workera, a `executeLessonGeneration` traktuje `undefined` jak
+  `LessonAgentUnavailable`.
 - **Rozstrzygnięcie 3: generator rozdziału zna zagadnienie.** Fake generuje
   słowa i ramy z kart zagadnienia, co najmniej jedno ćwiczenie każdej grupy
   `targets.requiredTypes` i każde słowo kart przynajmniej raz (na materiale bez
