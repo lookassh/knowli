@@ -301,6 +301,18 @@ export interface LessonExerciseDraft {
 }
 
 /**
+ * Kryteria v3 odpowiedzi otwartej szkoły w prywatnym kluczu zadania (z payloadu
+ * rewizji): ten sam kształt dla oceny odpowiedzi dziecka i kontroli agenta puli.
+ */
+export interface SchoolCriteria {
+  readonly requiredElements: readonly { readonly id: string; readonly text: string }[];
+  readonly supplementaryElements: readonly string[];
+  readonly commonErrors?: readonly string[];
+  readonly expectedForm?: string;
+  readonly sourceQuotes: readonly string[];
+}
+
+/**
  * Przedmiot jako wtyczka. Dostarcza katalog tematów i celów, dozwolone typy
  * ćwiczeń, normalizator odpowiedzi, kategorie błędów, profil promptów oraz
  * walidator specyficzny dla przedmiotu. Dodanie przedmiotu = nowy katalog
