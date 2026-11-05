@@ -142,6 +142,7 @@ wyłączony) jest wołany tylko z potoku. Usuwamy go w całości:
   `generation-env.test.ts`, `fake.test.ts`, `catalog-validation.test.ts`,
   `apps/worker/src/loop.test.ts`, `new-lesson-form.test.tsx` (asercja tekstu
   `themesService` odwrócona), `sources-panel.test.tsx`,
+  `apps/web/src/parent/lessons/lesson-exercise-card.test.tsx`,
   `lesson-agent-generation.test.ts`.
 - **Przenosimy** z `lesson-review.test.ts` test „Utwórz nową wersję → kopia
   bez `review` i bez `generationGaps`” (jedyny test `withoutRunReports`) do
@@ -171,13 +172,14 @@ Typecheck obejmuje `tests/**`, więc kolejność wymuszają importy:
 1. Panel rodzica (pola kontraktów są opcjonalne) z testami web i częściami E2E.
 2. Kontrakty, komunikaty i DTO: `Review*`, `review*`, `themesService*`,
    `reviewDto`, `Services.reviewService`, kompozycja web, test kontraktów,
-   test `lesson-review.test.ts`, który czyta DTO.
-3. Potok i domena: faza przeglądu, `lesson-review.ts`, `review-*.ts`,
-   `lesson-fingerprint.ts`, `LessonContext.review`, przeniesienie testów z
-   §2.4, usunięcie `lesson-review.test.ts`, sonda i `probe:review`, kosze,
-   zmiana `lesson-agent-generation.test.ts`.
-4. Konfiguracja, port i adapter: typy portu, adapter i schemat, fake,
-   `generation-env.ts`, blok w `config.ts`, `config-defaults.ts`, prefiksy,
+   `tests/integration/lesson-review.test.ts` (czyta DTO, więc znika tu, razem z
+   wpisem w koszach) i przeniesione testy z §2.4.
+3. Potok i domena: faza przeglądu, `lesson-review.ts`, `review-verdicts.ts`,
+   `review-report.ts` (bez `review-criteria.ts`, który zostaje do kroku 4, bo
+   importuje go adapter), `lesson-fingerprint.ts`, `LessonContext.review`,
+   sonda i `probe:review`, zmiana `lesson-agent-generation.test.ts`.
+4. Konfiguracja, port i adapter: typy portu, adapter i schemat, `review-criteria.ts`,
+   fake, `generation-env.ts`, blok w `config.ts`, `config-defaults.ts`, prefiksy,
    `index.ts`, worker (`loop.ts`, `main.ts`) z testem, `ai-sdk-scope`, wątki w
    `chapter-generation.probe.test.ts`.
 5. `reviewRules`: typ, walidacja, teksty przedmiotów i ich testy.
