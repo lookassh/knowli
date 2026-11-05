@@ -401,6 +401,8 @@ describe("AiSdkExerciseChecker.judgeHints (§4)", () => {
               { verdict: "unsupported" },
               { verdict: "language", reason: "  Bad inflection.  " },
               "ok",
+              { verdict: "ok", reason: null },
+              { verdict: "reveals", reason: null },
             ],
           }),
           0.003,
@@ -408,13 +410,16 @@ describe("AiSdkExerciseChecker.judgeHints (§4)", () => {
       ],
     });
     const cost = recordingCost([]);
-    const result = await checkerOf(model).judgeHints({ items: Array.from({ length: 7 }, () => HINT_ITEM), material: "MATERIAL-TEXT" }, cost, new AbortController().signal);
+    const result = await checkerOf(model).judgeHints({ items: Array.from({ length: 9 }, () => HINT_ITEM), material: "MATERIAL-TEXT" }, cost, new AbortController().signal);
     expect(result.verdicts).toEqual([
       { verdict: "ok" },
       { verdict: "reveals", reason: "x".repeat(200) },
       null,
       null,
       { verdict: "language", reason: "Bad inflection." },
+      null,
+      // reason: null — przy ok jest ignorowany, przy innym werdykcie brak powodu daje null (pozycja nie jest gubiona przez schemat).
+      { verdict: "ok" },
       null,
       null,
     ]);

@@ -701,7 +701,7 @@ const CHECKER_DATA_RULE =
 const OPEN_ANSWER_MAX_CHARS = 600;
 const HINT_REASON_MAX_CHARS = 200;
 
-const HINT_VERDICT_SCHEMA = z.object({ verdict: z.enum(["ok", "unsupported", "language", "reveals"]), reason: z.string().optional() });
+const HINT_VERDICT_SCHEMA = z.object({ verdict: z.enum(["ok", "unsupported", "language", "reveals"]), reason: z.string().nullish() });
 
 /** Werdykt pozycji, gdy ma poprawny kształt: powód niepusty poza `ok`, przycięty; inaczej `null`. */
 function hintVerdictOf(value: z.infer<typeof HINT_VERDICT_SCHEMA> | null | undefined): HintVerdict | null {
