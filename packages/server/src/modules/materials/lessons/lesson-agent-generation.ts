@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import type { Services } from "../../../config";
+import { isLessonAgentAvailable, type Services } from "../../../config";
 import { deckVersions, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
@@ -180,7 +180,7 @@ export async function executeLessonAgentGeneration(
 ): Promise<void> {
   const deps = requireGeneration(services);
   const agentDeps = deps.lessonAgent;
-  if (agentDeps === undefined) throw new AppError("internal", { message: "lesson agent not configured" });
+  if (!isLessonAgentAvailable(agentDeps)) throw new AppError("internal", { message: "lesson agent not configured" });
   const { attempts, subject, input, signal } = args;
   const runId = args.run.id;
   const run: LessonRunIdentity = { runId, attempts, expectedEditNumber: args.run.expectedEditNumber!, deckVersionId: args.run.deckVersionId! };

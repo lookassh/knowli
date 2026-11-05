@@ -1853,7 +1853,7 @@ export async function executeLessonGeneration(services: Services, runId: string,
   const subject = services.subjects.getSubject(input.subjectId);
   // Wybór ścieżki przy każdej próbie (spec etapu 2a §3), z rejestru bez I/O. Agent sam rozlicza limit
   // prób (wyczerpane próby z postępem → zapis bez wywołań modelu), więc wybór zapada przed nim.
-  if (subject !== undefined && lessonGeneratorFor(subject, deps.lessonAgent) === "agent") {
+  if (subject !== undefined && lessonGeneratorFor(deps.lessonAgent) === "agent") {
     if (!(await lessonRunIsCurrent(services.db, lessonRun))) {
       await markCurrentRun(services.db, "superseded", null);
       return;

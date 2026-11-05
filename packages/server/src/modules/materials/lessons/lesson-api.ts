@@ -175,15 +175,15 @@ function offersListenChoice(subject: SubjectModule): boolean {
 }
 
 /**
- * Usługi widoczne dla rodzica przy przedmiocie obsługiwanym przez agenta puli (spec etapu 2a §11):
+ * Usługi widoczne dla rodzica przy przedmiocie (spec etapu 2a §11; agent generuje każdy przedmiot):
  * model agenta, a gdy do `UMIEM_LLM` idzie etap zagadnień (temat dynamiczny bez planera z polityki)
- * albo run historyjki (przedmiot z `lessonStory`), także ta usługa; drugi model (checker) i informacja, czy dostaje materiał. Przedmiot poza listą
- * agenta — bez pól (obowiązuje katalogowe `generationService`).
+ * albo run historyjki (przedmiot z `lessonStory`), także ta usługa; drugi model (checker) i informacja,
+ * czy dostaje materiał. Bez agenta (generowanie lekcji niedostępne) — bez pól.
  */
 function agentServicesOf(services: Services, subject: SubjectModule) {
   const agent = services.lessonAgentPublic;
   const policy = subject.agentPolicy;
-  if (!agent || !agent.subjects.has(subject.id)) return {};
+  if (!agent) return {};
   const stageService = services.generationService;
   const topicsFromMaterial = materialCreationMode(subject) !== undefined && policy.planCoverage === undefined;
   // Krok poza agentem z materiałem lekcji: etap zagadnień albo run historyjki po nowej puli (oba przez `UMIEM_LLM`).
@@ -202,6 +202,8 @@ function agentServicesOf(services: Services, subject: SubjectModule) {
 
 export function lessonCatalog(services: Services): SubjectCatalogDto {
   return {
+    // Opis agenta jest w web przy kluczu OpenRouter albo w trybie fake — wtedy worker z tym samym env ma agenta (`lessonAgentPublicFromEnv`).
+    lessonGenerationAvailable: services.lessonAgentPublic !== undefined,
     ...(services.generationService ? { generationService: services.generationService } : {}),
     subjects: services.subjects.listSubjects().map((subject) => {
       const latestByTopic = new Map<string, LessonTopic>();

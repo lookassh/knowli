@@ -1,4 +1,4 @@
-import type { LessonAgentDeps } from "../../../config";
+import { isLessonAgentAvailable, type GenerationDeps } from "../../../config";
 import { AppError } from "../../../errors";
 import { outsideStagePath } from "../../../domain/lessons/stages";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -16,9 +16,12 @@ export type { LessonGenerationGap };
  * identyfikatorów przedmiotów.
  */
 
-/** Agent wtedy i tylko wtedy, gdy są zależności agenta, przedmiot jest na liście konfiguracji i ma politykę agenta. */
-export function lessonGeneratorFor(subject: SubjectModule, agent: LessonAgentDeps | undefined): "agent" | "pipeline" {
-  return agent !== undefined && agent.subjects.has(subject.id) && subject.agentPolicy !== undefined ? "agent" : "pipeline";
+/**
+ * Agent dla każdego przedmiotu, gdy worker ma jego zależności. Potok tylko bez agenta (brak klucza
+ * OpenRouter albo brak pola) — stan przejściowy etapu 3 PR 2, znika w Task 9.
+ */
+export function lessonGeneratorFor(agent: GenerationDeps["lessonAgent"]): "agent" | "pipeline" {
+  return isLessonAgentAvailable(agent) ? "agent" : "pipeline";
 }
 
 /**

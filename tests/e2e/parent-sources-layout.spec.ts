@@ -14,6 +14,7 @@ const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 const NEW_ID = "1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d";
 
 const catalog = {
+  lessonGenerationAvailable: true,
   subjects: [
     { id: "english_grammar", titlePl: "Gramatyka angielska", creation: "catalog", subjectTitleRequired: false,
       topics: [{ id: "present_simple", titlePl: "Present Simple", objectives: [{ id: "negation", titlePl: "Przeczenia" }] }] },

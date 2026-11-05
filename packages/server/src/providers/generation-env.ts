@@ -123,6 +123,16 @@ export function imageProviderFromEnv(
 }
 
 /**
+ * Opóźnienie fake'owej generacji lekcji (tryb `UMIEM_FAKE_PROVIDERS=1`):
+ * `UMIEM_FAKE_LESSON_DELAY_MS`, inaczej `UMIEM_FAKE_DELAY_MS`; wartość nieliczbowa → 0.
+ * Wspólne dla fake LLM potoku i fake agenta puli (`providers/lesson-agent-env.ts`).
+ */
+export function fakeLessonDelayMsFromEnv(env: Record<string, string | undefined>): number {
+  const delayMs = Number(env.UMIEM_FAKE_LESSON_DELAY_MS ?? env.UMIEM_FAKE_DELAY_MS ?? 0);
+  return Number.isFinite(delayMs) ? delayMs : 0;
+}
+
+/**
  * Składanie zależności generacji ze zmiennych środowiskowych (worker, E2E):
  * UMIEM_FAKE_PROVIDERS=1 wyłącza sieciowe adaptery; bez klucza API wynik jest
  * undefined i proces wykonawczy nie wystartuje. Nazwy providerów w env muszą
@@ -149,11 +159,10 @@ export function createGenerationDepsFromEnv(
   const lessonExecution = lessonGenerationPolicyFromEnv(env);
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
     const delayMs = Number(env.UMIEM_FAKE_DELAY_MS ?? 0);
-    const lessonDelayMs = Number(env.UMIEM_FAKE_LESSON_DELAY_MS ?? env.UMIEM_FAKE_DELAY_MS ?? 0);
     return {
       ...fakeGenerationDeps(mediaStore, {
         delayMs: Number.isFinite(delayMs) ? delayMs : 0,
-        lessonDelayMs: Number.isFinite(lessonDelayMs) ? lessonDelayMs : 0,
+        lessonDelayMs: fakeLessonDelayMsFromEnv(env),
         // bramka E2E: plik wstrzymuje fake'owe generowanie zestawu i mediów (fake.ts)
         ...(env.UMIEM_FAKE_HOLD_FILE ? { holdFile: env.UMIEM_FAKE_HOLD_FILE } : {}),
       }),

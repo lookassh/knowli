@@ -45,6 +45,7 @@ const lesson = {
 };
 
 const catalog = {
+  lessonGenerationAvailable: true,
   subjects: [{
     id: "english_grammar", titlePl: "Gramatyka angielska", creation: "catalog", subjectTitleRequired: false,
     topics: [{

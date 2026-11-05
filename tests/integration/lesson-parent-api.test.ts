@@ -316,6 +316,30 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     expect(cards[0]).toEqual({ title: "Dodaj -s", body: expect.any(String) });
     expect(Object.keys(cards[0]!).sort()).toEqual(["body", "title"]);
     for (const forbidden of ["descriptionEn", "errorCategories", "hints"]) expect(objective).not.toHaveProperty(forbidden);
+    // usługi bez opisu agenta (web bez klucza OpenRouter): generowanie lekcji niedostępne, bez usług agenta
+    expect(catalog.lessonGenerationAvailable).toBe(false);
+    expect(subject).not.toHaveProperty("generationServices");
+  });
+
+  it("katalog z opisem agenta: generowanie lekcji dostępne, usługi przy każdym przedmiocie", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+    const services = createServices({
+      db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
+      lessonAgentPublic: { generationService: "fake-lesson-agent-model", checkService: "fake-lesson-checker-model" },
+    });
+    await setupParent(services, "lesson-api-pin");
+    const { token } = await loginParent(services, "lesson-api-pin");
+
+    const res = await call(services, "GET", "lesson-catalog", { cookie: token });
+    expect(res.status).toBe(200);
+    const catalog = SubjectCatalogDtoSchema.parse(await res.json());
+    expect(catalog.lessonGenerationAvailable).toBe(true);
+    for (const subject of catalog.subjects) {
+      expect(subject.generationServices?.[0]).toBe("fake-lesson-agent-model");
+      expect(subject.checkService).toBe("fake-lesson-checker-model");
+    }
   });
 
   it("generacja → edycja samego tytułu → publikacja → rzeczywista sesja dziecka", async () => {

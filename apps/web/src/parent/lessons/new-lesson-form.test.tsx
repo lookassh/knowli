@@ -43,7 +43,7 @@ const grammar = {
 const school = { id: "school", titlePl: "Przedmiot szkolny", creation: "material", subjectTitleRequired: true, topics: [] };
 const chapter = { id: "english_chapter", titlePl: "Angielski — rozdział", creation: "material", subjectTitleRequired: false, offersListenChoice: true, topics: [] };
 
-const catalog = { subjects: [grammar, school, chapter] } as unknown as SubjectCatalogDto;
+const catalog = { lessonGenerationAvailable: true, subjects: [grammar, school, chapter] } as unknown as SubjectCatalogDto;
 
 const values = (overrides: Partial<NewLessonValues> = {}): NewLessonValues => ({
   ...initialLessonValues(catalog),
@@ -55,6 +55,7 @@ const values = (overrides: Partial<NewLessonValues> = {}): NewLessonValues => ({
 function renderWithCatalog(first: unknown, extras: { children?: unknown[]; generationService?: string } = {}): string {
   const queryClient = new QueryClient();
   queryClient.setQueryData(orpc.lessonCatalog.get.queryOptions().queryKey, {
+    lessonGenerationAvailable: true,
     subjects: [first],
     ...(extras.generationService ? { generationService: extras.generationService } : {}),
   } as unknown as SubjectCatalogDto);

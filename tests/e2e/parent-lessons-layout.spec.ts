@@ -10,6 +10,7 @@ import { messages } from "@learning/contracts";
  */
 
 const catalog = {
+  lessonGenerationAvailable: true,
   generationService: "openrouter.ai · google/gemini-3.8-flash",
   subjects: [
     {

@@ -35,9 +35,7 @@ const checkpointTopic: DynamicTopicData = { titlePl: "Checkpoint", objectives: [
 const draftTopic: DynamicTopicData = { titlePl: "Szkic", objectives: [] };
 const schoolTopic: DynamicTopicData = { titlePl: "Etap zagadnień", objectives: [] };
 
-function deps(subjects: string[]): LessonAgentDeps {
-  return { subjects: new Set(subjects), agent: {} as LessonAgentDeps["agent"], checker: {} as LessonAgentDeps["checker"], policy: {} };
-}
+const agentDeps: LessonAgentDeps = { agent: {} as LessonAgentDeps["agent"], checker: {} as LessonAgentDeps["checker"], policy: {} };
 
 function runInput(overrides: Partial<LessonRunInput> = {}): LessonRunInput {
   return {
@@ -91,16 +89,16 @@ const choiceB = choice(B, 2);
 const gapB = gap(B, "Drugi rok ___.", "1025");
 
 describe("lessonGeneratorFor", () => {
-  it("agent dla przedmiotu z listy z polityką agenta", () => {
-    expect(lessonGeneratorFor(catalog, deps([catalog.id]))).toBe("agent");
+  it("agent, gdy są zależności agenta (każdy przedmiot)", () => {
+    expect(lessonGeneratorFor(agentDeps)).toBe("agent");
   });
 
-  it("potok dla przedmiotu spoza listy", () => {
-    expect(lessonGeneratorFor(catalog, deps(["other"]))).toBe("pipeline");
+  it("potok przy niedostępnym agencie (brak klucza OpenRouter) — stan przejściowy", () => {
+    expect(lessonGeneratorFor({ unavailable: "no_openrouter_key" })).toBe("pipeline");
   });
 
-  it("potok bez zależności agenta", () => {
-    expect(lessonGeneratorFor(catalog, undefined)).toBe("pipeline");
+  it("potok bez zależności agenta (web, fabryki testowe)", () => {
+    expect(lessonGeneratorFor(undefined)).toBe("pipeline");
   });
 });
 
