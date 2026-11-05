@@ -113,11 +113,10 @@ function fakeSourceDeckItems(input: { material: string; maxItems: number; vocabu
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Znacznik w materiale lekcji (pula fake LLM) albo w tekście nagrania (fake
- * TTS) wydłuża to wywołanie do co najmniej FAKE_SLOW_DELAY_MS niezależnie od
- * skonfigurowanego opóźnienia: E2E działa bez sztucznych opóźnień, a testy
- * trwającej pracy (restart generacji lekcji, publikacja przy niegotowym
- * nagraniu) nadal ją widzą.
+ * Materiał lekcji z tym znacznikiem wydłuża generację puli fake LLM do co
+ * najmniej FAKE_SLOW_DELAY_MS niezależnie od `lessonDelayMs`: E2E generuje
+ * lekcje bez sztucznego opóźnienia, a test restartu trwającej generacji
+ * nadal ją widzi.
  */
 export const FAKE_SLOW_MARKER = "[fake-slow]";
 export const FAKE_SLOW_DELAY_MS = 3_000;
@@ -689,9 +688,8 @@ export class FakeTtsProvider implements TtsProvider {
 
   async synthesize(input: TtsSynthesizeInput): Promise<{ bytes: Uint8Array; mimeType: string }> {
     this.requests.push(input);
-    const delayMs = input.text.includes(FAKE_SLOW_MARKER) ? Math.max(this.#delayMs, FAKE_SLOW_DELAY_MS) : this.#delayMs;
-    if (delayMs > 0) {
-      await sleep(delayMs);
+    if (this.#delayMs > 0) {
+      await sleep(this.#delayMs);
     }
     if (this.failuresLeft > 0) {
       this.failuresLeft -= 1;

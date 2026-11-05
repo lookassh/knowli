@@ -448,23 +448,6 @@ describe("FakeLlmProvider — zestaw słówek ze źródła", () => {
 describe("FakeTtsProvider", () => {
   const base = { text: "Świetnie!", locale: "pl-PL", voice: "fake-voice", format: "mp3" as const };
 
-  it("znacznik wolnej pracy w tekście opóźnia nagranie mimo zerowego delayMs", async () => {
-    vi.useFakeTimers();
-    try {
-      const tts = new FakeTtsProvider();
-      await expect(tts.synthesize(base)).resolves.toBeDefined();
-      let settled = false;
-      const slow = tts.synthesize({ ...base, text: `We swim. ${FAKE_SLOW_MARKER}` }).then(() => { settled = true; });
-      await vi.advanceTimersByTimeAsync(FAKE_SLOW_DELAY_MS - 1);
-      expect(settled).toBe(false);
-      await vi.advanceTimersByTimeAsync(1);
-      await slow;
-      expect(settled).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("różne instrukcje dają różne bajty", async () => {
     const tts = new FakeTtsProvider();
     const plain = await tts.synthesize(base);
