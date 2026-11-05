@@ -12,7 +12,7 @@ import { APOSTROPHE_VARIANTS, normalizeTokens } from "../../normalize";
  *   po nim `!` (w angielskim także `,`: „Listen, the baby is crying”; normalizacja tokenów
  *   usuwa `!`, więc sprawdzane jest surowe wejście);
  * - `Look at …!` — wykrzyknienie z dopełnieniem: słowa wpisu na początku zdania, dalej
- *   dowolne słowa do `!` kończącego to zdanie („Look at Tom!”);
+ *   dowolne słowa do `!` kończącego to zdanie („Look at Tom!”, „Spójrz na Tomka!”);
  * - `Gdzie jest …` — fraza tylko na początku tekstu (pierwsze tokeny);
  * - `N times a week` — `N` to liczebnik (two…ten) albo liczba cyfrowa;
  * - pozostałe wpisy to frazy dopasowywane po tokenach `normalizeTokens`.
@@ -110,6 +110,8 @@ export const TIME_MARKER_LISTS = {
     "Zobacz!",
     "Posłuchaj!",
     "Słuchaj!",
+    "Spójrz na …!",
+    "Popatrz na …!",
     "Gdzie jest …",
     "Gdzie są …",
   ],
@@ -260,20 +262,31 @@ function hasMarker(
 const INSTRUCTION_TIME_WORDS: ReadonlySet<string> = new Set(["teraz", "właśnie", "zawsze", "zwykle", "zazwyczaj"]);
 
 /**
- * Sąsiedzi, przy których słowo czasu dotyczy zadania, a nie scenki: polecenie
- * zadania („Teraz wybierz…”, „Zawsze czytaj…”) albo zaimek pytający („forma,
- * która właśnie pasuje”, „Zobacz, jak teraz…”).
+ * Polecenia zadania, przy których słowo czasu dotyczy zadania, a nie scenki
+ * („Teraz wybierz…”, „Zawsze czytaj…”).
  */
-const INSTRUCTION_NEIGHBOURS: ReadonlySet<string> = new Set([
+const INSTRUCTION_IMPERATIVES: ReadonlySet<string> = new Set([
   "uzupełnij", "wybierz", "napisz", "popraw", "przetłumacz", "ułóż", "zaznacz", "wskaż", "przeczytaj", "czytaj", "posłuchaj", "pamiętaj",
-  "która", "który", "które", "jak",
 ]);
 
-/** Tokeny polecenia bez słów czasu stojących tuż przy poleceniu zadania albo zaimku pytającym. */
+const RELATIVE_PRONOUNS: ReadonlySet<string> = new Set(["która", "który", "które"]);
+
+/**
+ * Zdanie względne o formie, nie o scenie: „forma, która właśnie pasuje”,
+ * „zdanie, które teraz brzmi dobrze”, „forma, która teraz jest dobra”. Samo
+ * „które teraz” to scenka („Dzieci, które teraz są w parku…”).
+ */
+function isRelativeAboutForm(tokens: readonly string[], i: number): boolean {
+  if (!RELATIVE_PRONOUNS.has(tokens[i - 1] ?? "")) return false;
+  const next = tokens[i + 1] ?? "";
+  return next === "pasuje" || next === "brzmi" || (next === "jest" && /^dobr[aey]$/u.test(tokens[i + 2] ?? ""));
+}
+
+/** Tokeny polecenia bez słów czasu stojących tuż przy poleceniu zadania albo w zdaniu względnym o formie. */
 function withoutInstructionTimeWords(tokens: readonly string[]): string[] {
   return tokens.map((token, i) => {
     const instruction = INSTRUCTION_TIME_WORDS.has(token) &&
-      (INSTRUCTION_NEIGHBOURS.has(tokens[i - 1] ?? "") || INSTRUCTION_NEIGHBOURS.has(tokens[i + 1] ?? ""));
+      (INSTRUCTION_IMPERATIVES.has(tokens[i - 1] ?? "") || INSTRUCTION_IMPERATIVES.has(tokens[i + 1] ?? "") || isRelativeAboutForm(tokens, i));
     return instruction ? "" : token;
   });
 }
@@ -294,8 +307,9 @@ function findForbidden(tokens: readonly string[]): string[] {
  * Klasyfikuje wskaźniki czasu w tekście ćwiczenia (jedno pole). `lang` wybiera
  * listy grup; wskaźniki zakazane (przyszłość, dwuznaczność) są wspólne.
  * `instruction` (polskie polecenie, `instructionPl`): słowa teraz / właśnie /
- * zawsze / zwykle / zazwyczaj tuż przy poleceniu zadania albo przy która /
- * który / które / jak nie są wskaźnikiem („Teraz uzupełnij zdanie.”).
+ * zawsze / zwykle / zazwyczaj tuż przy poleceniu zadania albo między która /
+ * który / które a pasuje / brzmi / jest dobra nie są wskaźnikiem („Teraz
+ * uzupełnij zdanie.”, „forma, która właśnie pasuje”).
  */
 export function scanTimeMarkers(text: string, lang: "en" | "pl", options: { readonly instruction?: boolean } = {}): MarkerScan {
   const tokens = normalizeTokens(text);

@@ -104,13 +104,30 @@ describe("scanTimeMarkers — rozszerzone listy (przegląd Task 13)", () => {
     expect(instruction("Wybierz formę, która właśnie pasuje.")).toEqual([]);
     expect(instruction("Zawsze czytaj całe zdanie.")).toEqual([]);
     expect(instruction("Uzupełnij zwykle zdanie.")).toEqual([]);
-    expect(instruction("Zobacz, jak teraz gra Tom.")).toEqual([]);
     expect(instruction("Pamiętaj: zawsze am/is/are + -ing.")).toEqual([]);
     expect(instruction("Tata teraz gotuje. Uzupełnij zdanie.")).toEqual(["now"]);
     expect(instruction("Ola zawsze czyta po obiedzie. Wybierz formę.")).toEqual(["usually"]);
     expect(instruction("Posłuchaj! Dziecko płacze.")).toEqual(["now"]);
     // Bez trybu polecenia (np. zdanie do tłumaczenia) słowo czasu liczy się zawsze.
     expect(groups("Teraz uzupełnij zdanie.", "pl")).toEqual(["now"]);
+  });
+
+  it("polecenie: „która/które” neutralizuje słowo czasu tylko przed pasuje / brzmi / jest dobra", () => {
+    const instruction = (text: string) => [...scanTimeMarkers(text, "pl", { instruction: true }).groups].sort();
+    expect(instruction("Wybierz zdanie, które teraz brzmi dobrze.")).toEqual([]);
+    expect(instruction("Zaznacz formę, która teraz jest dobra.")).toEqual([]);
+    expect(instruction("Wskaż wyraz, który właśnie pasuje.")).toEqual([]);
+    // „jak” nie jest już sąsiadem polecenia: „Zobacz, jak teraz czyta Ola.” to scenka „teraz”.
+    expect(instruction("Zobacz, jak teraz czyta Ola.")).toEqual(["now"]);
+    expect(instruction("Dzieci, które teraz są w parku, grają w piłkę.")).toEqual(["now"]);
+    expect(instruction("Ola, która zawsze czyta po obiedzie, siedzi w fotelu.")).toEqual(["usually"]);
+  });
+
+  it("„Spójrz na …!” i „Popatrz na …!” na początku zdania to wskaźnik „teraz”", () => {
+    expect(groups("Spójrz na Tomka! On skacze.", "pl")).toEqual(["now"]);
+    expect(groups("Mama jest w domu. Popatrz na psa!", "pl")).toEqual(["now"]);
+    expect(groups("Spójrz na tablicę.", "pl")).toEqual([]);
+    expect(groups("Ola patrzy. Spójrz na to, co robi.", "pl")).toEqual([]);
   });
 });
 
