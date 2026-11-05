@@ -34,9 +34,13 @@ export function feedbackSentenceText(
     case "lesson_gap":
       raw = fillGap(source.stem && withoutGapVerb(source.stem), source.answer);
       break;
+    // Wybór może mieć ten sam nawias co luka („Ola ___ (read) a comic.” w Present Simple); „posłuchaj
+    // i wybierz” zostaje bez zmian.
     case "lesson_choice":
+      raw = fillGap(source.stem && withoutGapVerb(source.stem), correctOptionText(source));
+      break;
     case "lesson_listen_choice":
-      raw = fillGap(source.stem, source.options?.find((option) => option.id === source.correctOption)?.text);
+      raw = fillGap(source.stem, correctOptionText(source));
       break;
     case "lesson_order":
       raw = joinOrderItems(source.items);
@@ -64,14 +68,23 @@ function joinOrderItems(items: FeedbackSentenceSource["items"]): string | undefi
 }
 
 /**
+ * Nawias stojący tuż po luce: grupa 1 to luka, grupa 2 treść nawiasu
+ * („___ (play)”, „___ (not watch)”). Wspólny dla zdania po odpowiedzi
+ * i walidatora tematu Present Continuous (`stripGapVerb`).
+ */
+export const GAP_VERB_BRACKET = /(_{2,})\s*\(([^)]*)\)/;
+
+/**
  * Usuwa „(verb)” / „(not verb)” stojące tuż po luce, żeby zdanie po odpowiedzi
  * (pokazywane, czytane przez TTS, porównywane z historyjką) nie zawierało
- * podpowiedzi. Nawias dalej w zdaniu zostaje. Bliźniaczy regex: `stripGapVerb`
- * w `subjects/english-grammar/present-continuous-validation.ts` (domena lekcji
- * nie importuje przedmiotów, stąd dwie kopie).
+ * podpowiedzi. Nawias dalej w zdaniu zostaje.
  */
 function withoutGapVerb(stem: string): string {
-  return stem.replace(/(_{2,})\s*\([^)]*\)/, "$1");
+  return stem.replace(GAP_VERB_BRACKET, "$1");
+}
+
+function correctOptionText(source: FeedbackSentenceSource): string | undefined {
+  return source.options?.find((option) => option.id === source.correctOption)?.text;
 }
 
 /** Wstawia tekst w jedyną lukę (2+ podkreśleń); inaczej `undefined`. */
