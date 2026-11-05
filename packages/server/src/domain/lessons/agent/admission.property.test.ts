@@ -4,7 +4,7 @@ import { keywordsAnswer, validateLessonExercise, validatePool } from "../pool-va
 import { schoolSubject } from "../subjects/school/module";
 import { choice, gap, keywords, listen, open, subject as testSubject, topic as testTopic } from "../testing/agent-admission-fixtures";
 import { withAgentPolicy } from "../testing/agent-test-subject";
-import type { LessonExerciseDraft, LessonTopic } from "../types";
+import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../types";
 import {
   admitBatch,
   precheckBatch,
@@ -19,7 +19,7 @@ import {
   type OpenCheckOutcome,
   type OpenGraded,
 } from "./admission";
-import { agentObjectivesOf, type AgentCapableSubject } from "./capable";
+import { agentObjectivesOf } from "./capable";
 import { allExamples, createLessonAgentState, orderedLesson, poolOf, type LessonAgentState, type LessonAgentStateInput } from "./state";
 
 /**
@@ -76,7 +76,7 @@ const SCHOOL_MATERIAL =
 const SCHOOL_QUOTES = ["Mieszko I przyjął chrzest w 966 roku.", "Stolicą państwa było Gniezno.", "Żoną Mieszka była Dąbrówka."] as const;
 
 interface World {
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly material: string;
   /** Losowy szkic zagadnienia ze słownika (może łamać reguły — wtedy odpada w kroku 2). */

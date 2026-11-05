@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { Services } from "../../../config";
 import { deckVersions, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import { agentObjectivesOf, asAgentCapable } from "../../../domain/lessons/agent/capable";
+import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { completeObjectivesOnLesson, finalLessonCheck } from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
@@ -257,11 +257,10 @@ export async function executeLessonAgentGeneration(
     const lessonOrder = topic.objectives.map((objective) => objective.id);
     const accepted = acceptedInLessonOrder(progress, mode === "add" ? [addObjectiveId!] : lessonOrder);
     const newExamples = mode === "add" ? {} : newExamplesOf(progress, lessonOrder);
-    const capable = asAgentCapable(subject);
     const agentObjectives = agentObjectivesOf(topic, kindsOf(dynamicTopic));
-    const limits = lessonAgentLimits(capable, topic, input.poolSize);
+    const limits = lessonAgentLimits(subject, topic, input.poolSize);
     const check = finalLessonCheck({
-      subject: capable,
+      subject,
       topic,
       objectives: agentObjectives,
       material: input.material,
@@ -279,7 +278,7 @@ export async function executeLessonAgentGeneration(
     let gaps: LessonGenerationGap[] = [];
     const completeOnWritten = (written: readonly LessonExerciseDraft[]): ReadonlySet<string> =>
       completeObjectivesOnLesson({
-        subject: capable,
+        subject,
         topic,
         objectives: agentObjectives,
         material: input.material,

@@ -1,9 +1,8 @@
 import type { ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
-import type { AgentCapableSubject } from "../../../domain/lessons/agent/capable";
 import { allExamples, orderedLesson, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
 import { lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
-import type { AgentObjective, LessonTopic } from "../../../domain/lessons/types";
+import type { AgentObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonObjectiveAgentInput, LlmLessonStageCounts } from "../../../ports/ai";
 import { buildPoolInput, poolStageCounts } from "./lesson-drafts";
 
@@ -15,7 +14,7 @@ import { buildPoolInput, poolStageCounts } from "./lesson-drafts";
  * przekazanymi danymi.
  */
 export interface ObjectiveAgentInputArgs {
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly state: LessonAgentState;
   readonly objective: AgentObjective;
@@ -44,7 +43,7 @@ function cardsText(objective: AgentObjective): string {
  * minimum publikacji z rezerwą (`independentReserve`) — tego samego progu, którego wymaga
  * `objectiveStatus`. Pozostałe etapy bez zmian, więc suma może przekroczyć `targetCount`.
  */
-function agentStageCounts(subject: AgentCapableSubject, objective: AgentObjective, targetCount: number) {
+function agentStageCounts(subject: SubjectModule, objective: AgentObjective, targetCount: number) {
   const split = poolStageCounts(subject, objective.exerciseTypes, targetCount);
   const independent = Math.max(split.independent, lessonPoolMinimums(subject).independent + subject.agentPolicy.independentReserve);
   return { ...split, independent };

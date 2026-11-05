@@ -27,8 +27,8 @@ export function lessonGeneratorFor(subject: SubjectModule, agent: LessonAgentDep
  */
 export function agentCheckStartLine(runId: string, subject: SubjectModule, hasGrader: boolean): string {
   const policy = subject.agentPolicy;
-  const hintJudge = (policy?.hintJudgeTypes?.length ?? 0) > 0;
-  const openCheck = (policy?.openAnswerCheckTypes?.length ?? 0) > 0 && hasGrader;
+  const hintJudge = (policy.hintJudgeTypes?.length ?? 0) > 0;
+  const openCheck = (policy.openAnswerCheckTypes?.length ?? 0) > 0 && hasGrader;
   return `[lesson-agent] run=${runId} hintJudge=${hintJudge ? "on" : "off"} openCheck=${openCheck ? "on" : "off"}`;
 }
 
@@ -116,7 +116,7 @@ function poolSource(args: LessonAgentRunInputArgs): AgentObjectiveSource | { rea
   if (progress?.dynamicTopic !== undefined) return { source: "input", dynamicTopic: progress.dynamicTopic };
   if (input.dynamicTopic !== undefined) return { source: "input", dynamicTopic: input.dynamicTopic };
   if (subject.buildDynamicTopic === undefined) return catalogSource(args.catalogTopic, input.objectiveIds);
-  if (subject.agentPolicy?.planCoverage !== undefined) return { source: "planner" };
+  if (subject.agentPolicy.planCoverage !== undefined) return { source: "planner" };
   if (args.schoolTopic !== undefined) return { source: "input", dynamicTopic: args.schoolTopic };
   return { needsObjectives: true };
 }

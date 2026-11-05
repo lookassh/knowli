@@ -1,8 +1,7 @@
 import { lessonCoverageGapSources, lessonPoolMinimums } from "../lesson-coverage";
 import { outsideStagePath, stageOf } from "../stages";
-import type { AgentObjective, LessonExerciseDraft, LessonTopic, SubjectAgentPolicy } from "../types";
+import type { AgentObjective, LessonExerciseDraft, LessonTopic, SubjectAgentPolicy, SubjectModule } from "../types";
 import { removeExercise, snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
-import type { AgentCapableSubject } from "./capable";
 import {
   allExamples,
   createLessonAgentState,
@@ -221,7 +220,7 @@ export function lessonInvariantCheck(state: LessonAgentState, ctx: AgentCheckCon
  * `accepted`; `removed` liczy się do `rejectedCount`.
  */
 export function finalLessonCheck(args: {
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly objectives: readonly AgentObjective[];
   readonly material: string;
@@ -263,7 +262,7 @@ export function finalLessonCheck(args: {
  * źródła ujawnień) jak w stanie kierownika, żeby liczba przykładów kart i ujawnienia liczyły się tak samo.
  */
 export function completeObjectivesOnLesson(args: {
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly objectives: readonly AgentObjective[];
   readonly material: string;

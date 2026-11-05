@@ -288,12 +288,9 @@ describe("fabryki mowy — zapis kosztów (usage)", () => {
 describe("lessonAgentSettingsFromEnv", () => {
   const subjects = createProductionSubjectRegistry();
   const KEY = { OPENROUTER_API_KEY: "sk-or-v1-shared" };
-  const agentSubject = () => subjects.listSubjects().find((s) => s.agentPolicy !== undefined)!;
+  const agentSubject = () => subjects.listSubjects()[0]!;
   const base = (extra: Record<string, string | undefined> = {}) =>
     withConfigDefaults({ UMIEM_LESSON_AGENT_SUBJECTS: agentSubject().id, ...KEY, ...extra });
-  const withoutPolicy = {
-    getSubject: (id: string) => (id === "plain" ? { ...agentSubject(), id: "plain", agentPolicy: undefined } : subjects.getSubject(id)),
-  };
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -340,11 +337,9 @@ describe("lessonAgentSettingsFromEnv", () => {
     expect(lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_API_KEY: "sk-or-v1-agent" }), subjects)?.apiKey).toBe("sk-or-v1-agent");
   });
 
-  it("nieznany przedmiot i przedmiot bez polityki to błąd startu z nazwą zmiennej", () => {
+  it("nieznany przedmiot to błąd startu z nazwą zmiennej", () => {
     expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_SUBJECTS: `${agentSubject().id},nie_ma_takiego` }), subjects))
       .toThrow(/UMIEM_LESSON_AGENT_SUBJECTS.*nie_ma_takiego/);
-    expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_SUBJECTS: "plain" }), withoutPolicy))
-      .toThrow(/UMIEM_LESSON_AGENT_SUBJECTS.*plain.*no agent policy/);
   });
 
   it("błędna liczba, wysiłek albo budżet to błąd z nazwą zmiennej", () => {
@@ -394,7 +389,7 @@ describe("lessonAgentSettingsFromEnv", () => {
 
 describe("lessonAgentPublicFromEnv", () => {
   const subjects = createProductionSubjectRegistry();
-  const id = subjects.listSubjects().find((s) => s.agentPolicy !== undefined)!.id;
+  const id = subjects.listSubjects()[0]!.id;
 
   it("nazwy usług bez klucza (obecność zależy od listy)", () => {
     expect(lessonAgentPublicFromEnv(withConfigDefaults({ UMIEM_LESSON_AGENT_SUBJECTS: id }), subjects)).toEqual({
@@ -406,13 +401,10 @@ describe("lessonAgentPublicFromEnv", () => {
       .toBe("openrouter.ai · x/y");
   });
 
-  it("pusta lista → undefined; nieznane i bez polityki pomijane bez wyjątku", () => {
+  it("pusta lista → undefined; nieznane pomijane bez wyjątku", () => {
     expect(lessonAgentPublicFromEnv(withConfigDefaults({}), subjects)).toBeUndefined();
     expect(lessonAgentPublicFromEnv({ UMIEM_LESSON_AGENT_SUBJECTS: "nie_ma_takiego" }, subjects)).toBeUndefined();
-    const plain = {
-      getSubject: (x: string) => (x === "plain" ? { ...subjects.getSubject(id)!, id: "plain", agentPolicy: undefined } : subjects.getSubject(x)),
-    };
-    expect(lessonAgentPublicFromEnv({ UMIEM_LESSON_AGENT_SUBJECTS: `plain,nie_ma_takiego,${id}` }, plain)?.subjects).toEqual(new Set([id]));
+    expect(lessonAgentPublicFromEnv({ UMIEM_LESSON_AGENT_SUBJECTS: `nie_ma_takiego,${id}` }, subjects)?.subjects).toEqual(new Set([id]));
   });
 
   it("nie rzuca na błędnych liczbach i wysiłkach", () => {

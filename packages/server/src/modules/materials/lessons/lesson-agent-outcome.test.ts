@@ -99,11 +99,6 @@ describe("lessonGeneratorFor", () => {
     expect(lessonGeneratorFor(catalog, deps(["other"]))).toBe("pipeline");
   });
 
-  it("potok dla przedmiotu z listy bez polityki agenta", () => {
-    const { agentPolicy: _policy, ...withoutPolicy } = catalog;
-    expect(lessonGeneratorFor(withoutPolicy, deps([catalog.id]))).toBe("pipeline");
-  });
-
   it("potok bez zależności agenta", () => {
     expect(lessonGeneratorFor(catalog, undefined)).toBe("pipeline");
   });

@@ -1,9 +1,8 @@
 import { AppError } from "../../../errors";
-import type { AgentCapableSubject } from "../../../domain/lessons/agent/capable";
 import { AGENT_PLAN_MAX_OBJECTIVES, AGENT_PLAN_MIN_OBJECTIVES, validateAgentPlan } from "../../../domain/lessons/agent/plan";
 import { MAX_TEXT_LENGTH } from "../../../domain/lessons/pool-validation";
 import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
-import type { DynamicTopicData, RawPlanObjective } from "../../../domain/lessons/types";
+import type { DynamicTopicData, RawPlanObjective, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonAgentPlanInput, LessonPoolAgentProvider, RunCostSink } from "../../../ports/ai";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "./lesson-drafts";
 import { untilAborted } from "./lesson-agent-timers";
@@ -19,7 +18,7 @@ import { agentFailureOf, type AgentFailure, type RunBudgetSink } from "./lesson-
 
 export interface PlanArgs {
   readonly agent: LessonPoolAgentProvider;
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly deckId: string;
   readonly topicTitle: string;
   readonly material: string;

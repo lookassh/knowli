@@ -5,7 +5,6 @@ import type {
   LessonObjectiveAgentTools,
   RunCostSink,
 } from "../ports/ai";
-import { asAgentCapable } from "../domain/lessons/agent/capable";
 import { validateAgentPlan } from "../domain/lessons/agent/plan";
 import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
@@ -706,7 +705,7 @@ describe("FakeLessonPoolAgent — fromLlm (prawdziwy kierownik, checker niedost�
       { title: "Frames", body: "I am wearing …\nPut on your …" },
     ]);
     expect(plan.objectives.map((objective) => objective.examples)).toEqual([["coat"], ["scarf"], ["I am wearing …"]]);
-    const validated = validateAgentPlan(plan, asAgentCapable(englishChapterSubject), material);
+    const validated = validateAgentPlan(plan, englishChapterSubject, material);
     expect(validated.ok).toBe(true);
     // Bramka pokrycia przedmiotu (część validateAgentPlan) — sprawdzona też wprost.
     expect(englishChapterSubject.agentPolicy!.planGate!(validated.ok ? validated.objectives : [], material)).toEqual([]);
@@ -797,7 +796,7 @@ describe("FakeLessonPoolAgent — fromLlm (prawdziwy kierownik, checker niedost�
     });
     expect(plan.objectives.map((objective) => (objective.cards as { body: string }[])[0]!.body)).toEqual(bodies);
     expect(plan.objectives.map((objective) => (objective.examples as string[])[0])).toEqual(bodies.map((body) => body.split(", ")[0]));
-    expect(validateAgentPlan(plan, asAgentCapable(englishChapterSubject), material)).toMatchObject({ ok: true });
+    expect(validateAgentPlan(plan, englishChapterSubject, material)).toMatchObject({ ok: true });
   });
 
   it("plan bez pokrycia przedmiotu bierze nagłówki materiału (trzy zagadnienia słów)", () => {

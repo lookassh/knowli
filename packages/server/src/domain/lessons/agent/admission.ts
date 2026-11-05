@@ -2,8 +2,7 @@ import { exerciseExposureText } from "../exposure-key";
 import { findExposureLeaks, type ExposureLeak } from "../exposure-leaks";
 import { withoutOrphanKeywords } from "../keyword-families";
 import { MAX_TEXT_LENGTH, validateLessonExercise, validatePool } from "../pool-validation";
-import type { AgentObjective, LessonExerciseDraft } from "../types";
-import type { AgentCapableSubject } from "./capable";
+import type { AgentObjective, LessonExerciseDraft, SubjectModule } from "../types";
 import { blindMatches } from "./solver";
 import {
   allExamples,
@@ -32,7 +31,7 @@ export interface ObjectiveAgentLimits {
 
 /** Kontekst kontroli (§3.2). */
 export interface AgentCheckContext {
-  readonly subject: AgentCapableSubject;
+  readonly subject: SubjectModule;
   readonly material: string;
   readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>;
 }

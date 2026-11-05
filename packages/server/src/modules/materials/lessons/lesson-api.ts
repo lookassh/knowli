@@ -178,12 +178,12 @@ function offersListenChoice(subject: SubjectModule): boolean {
  * Usługi widoczne dla rodzica przy przedmiocie obsługiwanym przez agenta puli (spec etapu 2a §11):
  * model agenta, a gdy do `UMIEM_LLM` idzie etap zagadnień (temat dynamiczny bez planera z polityki)
  * albo run historyjki (przedmiot z `lessonStory`), także ta usługa; drugi model (checker) i informacja, czy dostaje materiał. Przedmiot poza listą
- * agenta albo bez polityki — bez pól (obowiązuje katalogowe `generationService`).
+ * agenta — bez pól (obowiązuje katalogowe `generationService`).
  */
 function agentServicesOf(services: Services, subject: SubjectModule) {
   const agent = services.lessonAgentPublic;
   const policy = subject.agentPolicy;
-  if (!agent || !policy || !agent.subjects.has(subject.id)) return {};
+  if (!agent || !agent.subjects.has(subject.id)) return {};
   const stageService = services.generationService;
   const topicsFromMaterial = materialCreationMode(subject) !== undefined && policy.planCoverage === undefined;
   // Krok poza agentem z materiałem lekcji: etap zagadnień albo run historyjki po nowej puli (oba przez `UMIEM_LLM`).
