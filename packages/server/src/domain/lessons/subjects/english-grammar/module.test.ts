@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { englishGrammarSubject } from "./module";
-import { englishGrammarPrompts } from "./prompts";
+import { englishGrammarPrompts, PRESENT_CONTINUOUS_PROMPT_EXAMPLES, presentContinuousFieldRules } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
@@ -9,6 +9,7 @@ import { answersEquivalent, validateLessonExercise } from "../../pool-validation
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
 import type { LessonExerciseDraft } from "../../types";
+import { stateVerbIn } from "../english/ing-forms";
 
 describe("englishGrammarSubject — spójność katalogu", () => {
   it("validateSubject zwraca pustą listę (katalog poprawny)", () => {
@@ -68,9 +69,8 @@ describe("englishGrammarSubject — spójność katalogu", () => {
       [
         "For lesson_open_answer, prompt is the source sentence in the prompt language to translate; answer and acceptedAnswers are in the answer language.",
         "Example: prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' Never repeat the canonical answer or any accepted answer as the prompt stimulus.",
-        "For lesson_gap set hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null.",
-        "The gap answer must be a present simple form of that base verb (plays, doesn't play) — keep it short, at most the verb with an auxiliary (never a full sentence with a subject).",
-        "An operator-only answer (do, does, don't, doesn't, do not, does not) may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do.",
+        "For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null; the gap answer must be a present simple form of that base verb (plays, doesn't play) — keep it short, at most the verb with an auxiliary (never a full sentence with a subject).",
+        "In those objectives an operator-only answer (do, does, don't, doesn't, do not, does not) may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do.",
         "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
         "Expanded contractions are NOT new acceptedAnswers variants: after normalization "does not play" equals "doesn't play", so never list the expanded form of the canonical answer in acceptedAnswers.",
         "For objectives whose id contains ".to_be." the checked verb is 'to be': set the lesson_gap hint to "be" (or leave it null) and make the gap answer am, is or are matching the subject (I -> am; he, she, it -> is; you, we, they -> are), in negatives am not, is not, are not, isn't or aren't. 'To be' questions swap the subject and the form (Is she happy?, Are they ready?) and never use do or does; short answers repeat the form (Yes, she is. / No, they aren't.).",
@@ -85,6 +85,35 @@ describe("englishGrammarSubject — spójność katalogu", () => {
         "Write He ___ dinosaurs. or She ___ football., never He ___ snakes. or She ___ soccer.",
         "This does not apply to Do / Does or watch / watches, which sound different anyway (___ she play tennis? is fine).",
         "Never set instructionPl, hint or visualSubject on a lesson_listen_choice exercise: the recording is the whole stimulus and the child sees only the gap sentence and the options.",
+        "For objectives whose id contains '.present_continuous.' (an action happening right now, at this moment) these rules apply; objectives are named by the last part of their id, and now_or_usually and now_or_usually_more are the tense-choice objectives.",
+        "Verbs: in affirmative, now_or_usually, negative and questions use only these verbs, which add -ing without spelling changes: play, read, jump, fix, do, go, walk, talk, eat, drink, sleep, cook, paint, draw, sing, watch, listen, wait, work, study, climb, cry, fly, carry, ask, open, help, wash, clean, brush, call, kick, throw, catch, pull, push, build, wear, laugh, learn, buy, bring, send, fall, turn, pick, stay, count, try, hurry, rain, snow — also in the brackets of a gap and when the answer is in the present simple.",
+        "In ing_spelling every exercise practises one spelling rule with these verbs: drop the final e: make, write, ride, dance, smile, bake, take, come, give, live, drive, skate, close, use, move, share, save, leave, wave, shine; double the last consonant: run, swim, sit, get, stop, shop, hop, clap, dig, jog, put, cut, hit, chat, skip, drop, win; ie becomes y: lie, tie; a verb from the first list only as a contrast in lesson_choice.",
+        "In now_or_usually_more use the verbs of all these lists.",
+        "Never use travel, begin, visit, cancel.",
+        "Besides these verbs the present continuous may also use having breakfast, having lunch, having dinner, having a bath, having a shower, having fun, having a party, looking at, looking for (never in ing_spelling).",
+        "Never use these state verbs in the -ing form, and never being: like, love, hate, prefer, want, need, wish, know, understand, believe, remember, forget, recognise, mean, seem, sound, cost, own, belong, think, see, hear, feel, taste, smell, have, look; the collocations above are the only exceptions.",
+        "In the tense-choice objectives never use them in any form at all (no likes, has, wants), except those collocations and Look!.",
+        "Time markers — now: now, right now, at the moment; Look! Listen! Shh! Be quiet! only at the start of a sentence; in Polish: teraz, właśnie, w tej chwili, w tym momencie, akurat; Cicho! Ciii! Patrz! Popatrz! Spójrz! Zobacz! Posłuchaj! Słuchaj! only at the start of a sentence; Gdzie jest …? / Gdzie są …? only at the start of the text.",
+        "Usually: every day, every week, every morning, every evening, every night, every weekend, every summer, every Monday, every Tuesday, every Wednesday, every Thursday, every Friday, every Saturday, every Sunday, usually, always, often, sometimes, never, on Mondays, on Tuesdays, on Wednesdays, on Thursdays, on Fridays, on Saturdays, on Sundays, at weekends, once a week, twice a week, <number> times a week, <number> times a day; in Polish: codziennie, każdego dnia, każdego ranka, każdego wieczoru, co rano, co wieczór, co tydzień, co sobotę, w każdy, w każdą, w każde, w poniedziałki, we wtorki, w środy, w czwartki, w piątki, w soboty, w niedziele, w weekendy, zwykle, zazwyczaj, zawsze, często, czasem, czasami, rzadko, nigdy.",
+        "Never use any of these markers anywhere in the exercise, in English or Polish (future or ambiguous): tomorrow, tonight, next week, next month, next year, next weekend, next summer, next winter, next spring, next autumn, next holidays, next time, next morning, next evening, next night, next Monday, next Tuesday, next Wednesday, next Thursday, next Friday, next Saturday, next Sunday, this evening, this morning, this afternoon, today, on Monday, on Tuesday, on Wednesday, on Thursday, on Friday, on Saturday, on Sunday, at the weekend, jutro, wieczorem, dzisiaj, dziś.",
+        "A present continuous sentence never has a usually marker, and always is never used with the present continuous.",
+        "Every lesson_gap has hint null and one of two shapes.",
+        "Verb gap: the gap stands for the whole verb form and the base verb stands in brackets right after the gap (Tom ___ (play) football now. → is playing); write (not verb) in the brackets in the verb gaps of negative and in every gap of now_or_usually_more (She ___ (not watch) TV now. → isn't watching), and never in other objectives.",
+        "Be gap, only in affirmative, negative and questions: the gap stands only for am, is or are (optionally with not, never not alone), the -ing form already stands in the sentence and there are no brackets (___ she reading a book? → Is; No, they ___. → aren't).",
+        "Never write brackets anywhere else: not elsewhere in a gap sentence, and never in a lesson_choice or lesson_listen_choice stem or option, a statement or an answer. am, is or are always matches the subject (I am; he, she, it, one name or one thing is; you, we, they, two names or a plural noun are); short answers repeat it (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.).",
+        "In a be gap and in a lesson_choice between forms of am, is or are, a negative answer (isn't, aren't, am not) is allowed only in negative or after No, and never when not already follows the gap; never offer two options that differ only by not or n't (Is / Isn't).",
+        "Answers and accepted answers never use he's, she's, it's, what's, that's, there's, where's or who's: write the full is (He is playing.).",
+        "The only wh-question is What + am/is/are + subject + doing? (What are you doing?), answered with a full present continuous sentence; never start a sentence with any other question (What is she reading?, Where is he going?). lesson_error_fix: the statement and the answer differ in one place of at most 3 words, and that place is the checked mistake: in affirmative, negative and questions a missing am/is/are (He playing football. → He is playing football.), a verb without -ing after am/is/are (She is play. → She is playing.) or a wrong form of am/is/are (They is jumping. → They are jumping.); in negative and questions also do or does instead of am/is/are (He doesn't playing now. → He isn't playing now.); in ing_spelling only a wrong -ing spelling (He is swiming. → He is swimming.); in the tense-choice objectives the present simple swapped with the present continuous of the same verb (Look! Ola reads. → Look! Ola is reading.), with the correct side matching the time marker.",
+        "Translations (lesson_open_answer) in affirmative, negative, questions and ing_spelling: the Polish prompt has a now marker and no usually marker (Mama teraz gotuje obiad.), and the answer contains its literal English equivalent (Mum is cooking dinner now.; teraz → now, w tej chwili → at the moment, Patrz! → Look!); never list accepted answers without it.",
+        "Tense-choice objectives (now_or_usually: affirmative sentences only; now_or_usually_more: negatives and questions only): every exercise has a clear context of exactly one marker group — now markers, and then every verb is in the present continuous, or usually markers, and then every verb is in the present simple (with -s or does/doesn't for he, she, it or one name, the base form or do/don't otherwise).",
+        "The context is an English marker in the sentence or a short Polish scene in instructionPl (in lesson_open_answer: in the Polish prompt); about half of these exercises use a scene without an English marker (Cicho! Dziadek śpi. / Gdzie jest tata? / Ola codziennie gra w piłkę.).",
+        "Markers count in stem, statement, answer, acceptedAnswers, options, instructionPl and prompt, so never mix the groups there and never write the refrain teraz czy zwykle in an instruction; explanationPl names the marker or the scene (Widzisz every day? To zwykle, więc Ola reads.).",
+        "In their lesson_choice the options are forms of the same verb in the two tenses (reads / is reading) and exactly one fits: never a distractor that is also correct, such as another verb in the right tense.",
+        "Each lesson_choice stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.), never a bare Ola ___ ., because the instruction does not make two stems different.",
+        "Never put a gap in a question: in now_or_usually_more questions appear only as whole-sentence options of lesson_choice (Do you play football on Saturdays? / Are you playing football on Saturdays?) and in lesson_open_answer, and its gaps and lesson_error_fix use negatives only. now_or_usually also checks meaning: a lesson_choice with options exactly now and usually, instructionPl exactly Kiedy to się dzieje? and a stem that is one affirmative present simple or present continuous sentence with no time marker and no gap (Ola is reading a comic. → now; Ola reads comics. → usually). lesson_listen_choice (affirmative, negative, questions): the options are exactly is / are, isn't / aren't, or Is / Are opening a question — never He's / He. lesson_notice (affirmative): across all its sentences exactly one word is an -ing form, and correctOption is that word.",
+        "Polish appears only in instructionPl and in the lesson_open_answer prompt; stems, statements, options and answers are in English (Polish names such as Ola are fine).",
+        "Examples (key fields only): {"exerciseType":"lesson_gap","objectiveId":"english_grammar.present_continuous.affirmative","instructionPl":"Uzupełnij zdanie.","stem":"Tom ___ (play) football in the garden now.","answer":"is playing","acceptedAnswers":[],"focus":["is","playing"]} {"exerciseType":"lesson_choice","objectiveId":"english_grammar.present_continuous.now_or_usually","instructionPl":"Cicho! Dziadek śpi.",
+        "Wybierz dobrą formę.","stem":"Grandpa ___ on the sofa.","options":[{"id":"a","text":"is sleeping"},{"id":"b","text":"sleeps"}],"correctOption":"a","answer":"is sleeping","acceptedAnswers":[],"focus":["is","sleeping"]} {"exerciseType":"lesson_choice","objectiveId":"english_grammar.present_continuous.now_or_usually","instructionPl":"Kiedy to się dzieje?","stem":"Ola is reading a comic.","options":[{"id":"a","text":"now"},{"id":"b","text":"usually"}],"correctOption":"a","answer":"now","acceptedAnswers":[],"focus":["now"]} {"exerciseType":"lesson_gap","objectiveId":"english_grammar.present_continuous.now_or_usually_more","instructionPl":"Uzupełnij zdanie.","stem":"Tom ___ (not swim) on Mondays.","answer":"doesn't swim","acceptedAnswers":[],"focus":["doesn't","swim"]}",
       ]
     `);
   });
@@ -410,5 +439,59 @@ describe("temat present_continuous — cele, kategorie i opisy (spec §3, §7.3,
     }
     expect(text("now_or_usually")).toContain("jedzie");
     expect(text("now_or_usually")).toContain("jeździ");
+  });
+});
+
+describe("fieldRules — temat present_continuous i zawężenie Present Simple (spec §7)", () => {
+  const rules = englishGrammarPrompts.fieldRules ?? "";
+  const PS_HEADER = "For objectives whose id contains '.present_simple.'";
+  const PC_HEADER = "For objectives whose id contains '.present_continuous.'";
+
+  it("reguły luki Present Simple, hint jako bezokolicznik i operator dotyczą tylko celów '.present_simple.' (§7.1)", () => {
+    // Jedno zdanie od nagłówka do formy odpowiedzi: model nie czyta reguły jako ogólnej dla przedmiotu.
+    expect(rules).toMatch(/For objectives whose id contains '\.present_simple\.'[^.]*present simple form of that base verb/);
+    const header = rules.indexOf(PS_HEADER);
+    const toBe = rules.indexOf('For objectives whose id contains ".to_be."');
+    expect(header).toBeGreaterThanOrEqual(0);
+    for (const fragment of ["BASE FORM (infinitive)", "present simple form of that base verb", "operator-only answer"]) {
+      expect(rules.indexOf(fragment), fragment).toBeGreaterThan(header);
+      expect(rules.indexOf(fragment), fragment).toBeLessThan(toBe);
+    }
+    expect(rules.slice(0, header)).not.toMatch(/lesson_gap set hint|operator/);
+  });
+
+  it("blok '.present_continuous.' zawiera kluczowe reguły i listy ze stałych (§7.2)", () => {
+    const block = presentContinuousFieldRules();
+    expect(block.startsWith(PC_HEADER)).toBe(true);
+    expect(rules).toContain(block);
+    for (const fragment of ["'.present_continuous.'", "hint null", "Look!", "every day", "tomorrow", "play", "swim", "What + am/is/are", "Kiedy to się dzieje?"]) {
+      expect(block, fragment).toContain(fragment);
+    }
+    // Refren „teraz czy zwykle” ma wskaźniki obu grup — prompt go zakazuje, a nie proponuje.
+    expect(block).toContain("never write the refrain teraz czy zwykle");
+  });
+
+  it("przykłady bloku przechodzą walidator przedmiotu i ogólną walidację ćwiczenia, a tekst bloku zawiera ich JSON", () => {
+    expect(PRESENT_CONTINUOUS_PROMPT_EXAMPLES.map((ex) => `${ex.objectiveId.split(".").at(-1)}/${ex.exerciseType}`)).toEqual([
+      "affirmative/lesson_gap",
+      "now_or_usually/lesson_choice",
+      "now_or_usually/lesson_choice",
+      "now_or_usually_more/lesson_gap",
+    ]);
+    const block = presentContinuousFieldRules();
+    for (const ex of PRESENT_CONTINUOUS_PROMPT_EXAMPLES) {
+      expect(validateEnglishGrammarExercise(ex, presentContinuousV1), ex.stem).toEqual([]);
+      expect(validateLessonExercise(ex, englishGrammarSubject, presentContinuousV1), ex.stem).toEqual([]);
+      expect(block).toContain(JSON.stringify(ex));
+    }
+  });
+
+  it("kolokacje wymienione w bloku są dozwolone przez regułę czasowników stanu (§5.3)", () => {
+    const block = presentContinuousFieldRules();
+    const collocations = /may also use (.+?) \(never in ing_spelling\)/.exec(block)?.[1]?.split(", ") ?? [];
+    expect(collocations.length).toBeGreaterThan(0);
+    for (const phrase of collocations) {
+      expect(stateVerbIn(`She is ${phrase} now.`, "ing_form"), phrase).toBeUndefined();
+    }
   });
 });
