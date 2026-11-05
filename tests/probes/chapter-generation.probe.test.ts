@@ -14,6 +14,7 @@ import {
   createSchoolLesson,
   createServices,
   executeLessonGeneration,
+  lessonAgentPolicyFromEnv,
   publishLessonDraft,
   readGeneration,
   readLessonDeck,
@@ -26,12 +27,14 @@ import {
 } from "@learning/server";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonDraftDto } from "@learning/contracts";
-import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
+import { currentUsageScope } from "../../packages/server/src/ports/usage";
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import type { DynamicTopicData } from "../../packages/server/src/domain/lessons/types";
 import { testDatabase } from "../integration/helpers";
 import {
+  agentCostEstimates,
   agentLedgerCost,
+  appendCostEntry,
   appendProvisionalCostEntry,
   assertWithinCostCap,
   costByOperation,
@@ -40,8 +43,10 @@ import {
   initCostLedger,
   readCostLedger,
   runCosts,
+  sanitizedProbeError,
   settleCostEntry,
   sha256File,
+  unsettledEvents,
   type CostLedger,
 } from "./probe-costs";
 import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
@@ -73,7 +78,9 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  * - `UMIEM_PROBE_POOL_SIZE` — wielkość puli (domyślnie 60, jak w panelu);
  * - `UMIEM_PROBE_TOPIC` — tytuł tematu (domyślnie „Unit 1” / „Mapa”; gramatyka: z katalogu);
  * - `UMIEM_PROBE_ADD_COUNT` — po udanym runie „+N” (`regenerateObjective`) z tą liczbą dla
- *   pierwszego zagadnienia: osobny wpis tymczasowy rejestru i raport `addedExercises`;
+ *   pierwszego zagadnienia: osobny wpis tymczasowy rejestru i raport `addedExercises`; „+N”
+ *   zakończone inaczej niż `succeeded` to porażka próby (po zapisie wyników), a gdy główny run
+ *   się nie udał, plik wyników dostaje `add: { skipped }`;
  * - `UMIEM_PROBE_OUT_DIR` — katalog wyników poza repozytorium (wymagany): plik
  *   `chapter-<czas>.json` na każde uruchomienie (liczby, braki pokrycia, koszt; tu też treść
  *   tytułów zagadnień i odpowiedzi luk oraz wiersze dzienników `[lesson]`/`[lesson-agent]` — tylko
@@ -82,7 +89,9 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  *   tylko `UMIEM_PROBE_COSTS_INIT=1`, z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD): przed startem
  *   „wydane + szacunek (z „+N”) > limit → stop”, przed każdym runem wpis tymczasowy z budżetem runu
  *   (zabity proces nadal się liczy), po runie (także po błędzie) zastąpiony kosztem z `usage.cost`;
- *   wywołanie bez kosztu liczone szacunkiem kierownika agenta z flagą `estimated`;
+ *   wywołanie bez kosztu liczone szacunkiem kierownika agenta (polityka z env) z flagą `estimated`;
+ *   wpis rozlicza każde jeszcze nierozliczone zdarzenie (także bez zakresu runu i spóźnione
+ *   zakończenia wcześniejszego runu), a to, co dojdzie po ostatnim rozliczeniu, dostaje osobny wpis;
  * - `UMIEM_PROBE_ALLOW_HOST` — host usługi inny niż OpenRouter dopuszczony jawnie (domyślnie próba
  *   odmawia wywołania innego hosta i każdego adresu bez https); nagłówek próby wypisuje modele i hosty;
  * - `UMIEM_PROBE_DUMP` — plik JSON z pełnym szkicem, podsumowaniem runu i dziennikiem do ręcznej oceny;
@@ -287,13 +296,17 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     const preflight = probePreflight(env, { subject: subjectKind, ...(addCount === undefined ? {} : { addCount }), ...(allowHost === undefined ? {} : { allowHost }) });
     const runBudgetUsd = preflight.estimateUsd / (addCount === undefined ? 1 : 2);
 
-    // Zdarzenia kosztów z runem, w którym padły (próba wykonuje runy po kolei, jak worker jeden run naraz).
-    const events: Array<UsageEvent & { runId: string | null }> = [];
-    let activeRunId: string | null = null;
+    // Zdarzenia kosztów z runem z zakresu kosztów (`withUsageScope` w `driveRun`): zakres przeżywa `await`,
+    // więc żądanie przerwane terminem, które skończy się później, nadal niesie swój run.
+    type ProbeEvent = UsageEvent & { runId: string | null };
+    const events: ProbeEvent[] = [];
+    const settled = new Set<ProbeEvent>();
     const usage: UsageRecorder = {
-      record: (event) => void events.push({ ...event, runId: activeRunId }),
+      record: (event) => void events.push({ ...event, runId: currentUsageScope()?.generationRunId ?? null }),
       flush: async () => undefined,
     };
+    // Szacunki wywołań bez kosztu z polityki, z którą działa run (env), nie z wartości domyślnych.
+    const estimates = agentCostEstimates(lessonAgentPolicyFromEnv(env));
     const base = createGenerationDepsFromEnv(env, usage);
     if (!base) throw new Error("Brak konfiguracji zależności generacji (OPENAI_API_KEY dla obrazów / UMIEM_LLM_*) w .env.");
     const lessonAgent = lessonAgentDepsFromEnv(env, usage);
@@ -343,9 +356,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       }
       write(...args);
     };
-    console.log = capture(original.log);
-    console.warn = capture(original.warn);
-    console.error = capture(original.error);
+    const captureConsole = () => {
+      console.log = capture(original.log);
+      console.warn = capture(original.warn);
+      console.error = capture(original.error);
+    };
     const restoreConsole = () => Object.assign(console, original);
 
     /**
@@ -368,27 +383,65 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
           await sleep(waitMs + 250);
           waitedMs += waitMs + 250;
         }
-        activeRunId = runId;
-        try {
-          await withUsageScope({ generationRunId: runId }, () => executeLessonGeneration(services, runId));
-        } finally {
-          activeRunId = null;
-        }
+        await withUsageScope({ generationRunId: runId }, () => executeLessonGeneration(services, runId));
         attempts += 1;
       }
     };
 
-    /** Rozliczenie wpisu tymczasowego runu kosztem jego zdarzeń (także po błędzie — pieniądze są wydane). */
-    const settleRun = (provisionalId: string, probe: string, runId: string | undefined, label: string): CostLedger => {
-      const own = events.filter((event) => runId !== undefined && event.runId === runId);
-      const { costUsd, estimated } = agentLedgerCost(own, {
-        unknownCallUsd: DEFAULT_LESSON_AGENT_POLICY.unknownCallEstimateUsd,
-        unknownGraderCallUsd: DEFAULT_LESSON_AGENT_POLICY.unknownGraderCallEstimateUsd,
-      });
+    /**
+     * Rozliczenie wpisu tymczasowego runu kosztem wszystkich jeszcze nierozliczonych zdarzeń (także po
+     * błędzie — pieniądze są wydane; runy idą po kolei, więc to zdarzenia tego runu, wywołania bez
+     * zakresu i spóźnione zakończenia wcześniejszego runu). Zdarzenia oznaczane po udanym zapisie.
+     */
+    const settleRun = (provisionalId: string, probe: string, label: string): CostLedger => {
+      const own = unsettledEvents(events, settled);
+      const { costUsd, estimated } = agentLedgerCost(own, estimates);
       if (estimated) line(`UWAGA (${label}): wywołania bez usage.cost — do rejestru wpisany koszt z szacunkiem ${costUsd.toFixed(4)} USD`);
       const updated = settleCostEntry(costsPath, provisionalId, { at: new Date().toISOString(), ...costEntry, probe, costUsd, ...(estimated ? { estimated } : {}) });
+      for (const event of own) settled.add(event);
       line(`koszt ${label}=${costUsd.toFixed(4)} USD; łącznie wydane=${updated.spentUsd.toFixed(4)} z ${updated.capUsd} USD`);
       return updated;
+    };
+
+    /** Zdarzenia po ostatnim rozliczeniu (spóźnione zakończenia przerwanych żądań): osobny wpis, nic nie znika z rejestru. */
+    const settleLate = () => {
+      const late = unsettledEvents(events, settled);
+      if (late.length === 0) return;
+      const { costUsd, estimated } = agentLedgerCost(late, estimates);
+      appendCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: `${costEntry.probe}:late`, costUsd, ...(estimated ? { estimated } : {}) });
+      for (const event of late) settled.add(event);
+      line(`koszt spóźnionych wywołań=${costUsd.toFixed(4)} USD (osobny wpis rejestru)`);
+    };
+
+    /**
+     * Płatny run z rejestrem: przechwycenie dzienników zakładane wewnątrz `try` (zawsze zdjęte),
+     * rozliczenie wpisu tymczasowego w `finally` — jego błąd nie zasłania błędu runu (wpis
+     * tymczasowy z szacunkiem zostaje w rejestrze). Wyjątek runu: najpierw `onError` (plik wyników),
+     * potem ponowne rzucenie bez komunikatu ({@link sanitizedProbeError}).
+     */
+    const paidRun = async (provisionalId: string, probe: string, label: string, onError: (error: unknown) => void, body: () => Promise<void>): Promise<void> => {
+      let failure: { error: unknown } | undefined;
+      try {
+        captureConsole();
+        await body();
+      } catch (error) {
+        failure = { error };
+        restoreConsole();
+        try {
+          onError(error);
+        } catch (reportError) {
+          line(`UWAGA (${label}): zapis wyników po wyjątku nie powiódł się (${errorClassOf(reportError)})`);
+        }
+      } finally {
+        restoreConsole();
+        try {
+          settleRun(provisionalId, probe, label);
+        } catch (settleError) {
+          line(`UWAGA (${label}): rozliczenie rejestru nie powiodło się (${errorClassOf(settleError)}) — wpis tymczasowy (szacunek) zostaje`);
+          if (failure === undefined) throw settleError;
+        }
+      }
+      if (failure !== undefined) throw sanitizedProbeError(failure.error, label);
     };
 
     const started = Date.now();
@@ -398,7 +451,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       costUsd: {
         total: events.reduce((sum, event) => sum + (event.providerCostUsd ?? 0), 0),
         byOperation: costByOperation(events),
-        runs: runCosts(events, runBudgetUsd),
+        runs: runCosts(events, runBudgetUsd, estimates),
       },
       tokens: {
         in: events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
@@ -428,7 +481,13 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     let main: { attempts: number; waitedMs: number } = { attempts: 0, waitedMs: 0 };
     // Wpis tymczasowy (budżet runu) przed pierwszym płatnym wywołaniem: zabity proces nadal liczy się do limitu.
     const provisionalId = appendProvisionalCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, costUsd: runBudgetUsd });
-    try {
+    const onMainError = (error: unknown) => {
+      // Wyjątek przebiegu: plik wyników (czas, koszt, klasa błędu) powstaje przed ponownym rzuceniem.
+      // Komunikat błędu (może cytować treść) nie trafia ani do pliku, ani na konsolę z próby.
+      writeResultsFile(resultsOf({ state: "threw", errorCode: null, errorClass: errorClassOf(error), durationMs: Date.now() - started, ...main }));
+      line(`Przebieg zakończony wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
+    };
+    await paidRun(provisionalId, costEntry.probe, "runu", onMainError, async () => {
       const clientRequestId = randomUUID();
       if (subjectKind === "grammar") {
         const subject = createProductionSubjectRegistry().getSubject("english_grammar");
@@ -449,17 +508,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
           : await createLessonFromMaterial(services, { subjectId: "english_chapter", topicTitlePl, material, poolSize, clientRequestId }));
       }
       main = await driveRun(runId);
-    } catch (error) {
-      restoreConsole();
-      // Wyjątek przebiegu: plik wyników (czas, koszt, klasa błędu) powstaje przed ponownym rzuceniem.
-      // Komunikat błędu (może cytować treść) nie trafia ani do pliku, ani na konsolę z próby.
-      writeResultsFile(resultsOf({ state: "threw", errorCode: null, errorClass: errorClassOf(error), durationMs: Date.now() - started, ...main }));
-      line(`Przebieg zakończony wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
-      throw error;
-    } finally {
-      restoreConsole();
-      settleRun(provisionalId, costEntry.probe, runId, "runu");
-    }
+    });
     const durationMs = Date.now() - started;
     if (runId === undefined || deckId === undefined) throw new Error("Brak runu po utworzeniu lekcji");
 
@@ -477,14 +526,17 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     // Próba raportuje jakość bez asercji; wymaga tylko, by generacja się zakończyła (`queued` po wyczerpaniu prób to porażka).
     if (!["succeeded", "failed"].includes(run.state)) writeResults();
     expect(["succeeded", "failed"]).toContain(run.state);
-    for (const cost of runCosts(events, runBudgetUsd).filter((entry) => entry.runId === runId)) {
-      line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
+    for (const cost of runCosts(events, runBudgetUsd, estimates).filter((entry) => entry.runId === runId)) {
+      line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} (z szacunkiem wywołań bez kosztu ${cost.agentEstimatedUsd.toFixed(4)}) ` +
+        `z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
         `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; wywołań ${cost.calls}, bez usage.cost ${cost.unknownCostCalls}`);
     }
 
     const deck = await readLessonDeck(services, deckId);
     let draft = deck.draft;
     if (!draft) {
+      if (addCount !== undefined) results.add = { skipped: `brak szkicu po generacji (stan=${run.state})`, requested: addCount };
+      settleLate();
       writeResults();
       if (poolDumpPath !== undefined) throw new Error(`Brak szkicu po generacji (stan=${run.state}) — brak puli do zrzutu ${basename(poolDumpPath)}`);
       line("Brak szkicu po generacji — nie ma co raportować.");
@@ -510,6 +562,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     }
 
     // „+N” na pierwszym zagadnieniu: osobny run z własnym wpisem tymczasowym i kontrolą limitu.
+    let addState: string | undefined;
+    if (addCount !== undefined && run.state !== "succeeded") {
+      results.add = { skipped: `główny run nie zakończył się sukcesem (stan=${run.state})`, requested: addCount };
+      line(`„+${addCount}” pominięte: główny run nie zakończył się sukcesem`);
+    }
     if (addCount !== undefined && run.state === "succeeded") {
       const objectiveId = draft.dynamicTopic?.objectives[0]?.id ?? draft.objectiveIds[0];
       if (objectiveId === undefined) throw new Error("Szkic bez zagadnień — „+N” niemożliwe");
@@ -518,31 +575,28 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       const addProbe = `${costEntry.probe}:add`;
       const addProvisionalId = appendProvisionalCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: addProbe, costUsd: runBudgetUsd });
       const addStarted = Date.now();
+      const addDeckId = deckId;
+      const expectedEditNumber = draft.editNumber;
       let addRunId: string | undefined;
       let add: { attempts: number; waitedMs: number } = { attempts: 0, waitedMs: 0 };
-      console.log = capture(original.log);
-      console.warn = capture(original.warn);
-      console.error = capture(original.error);
-      try {
-        ({ runId: addRunId } = await regenerateObjective(services, {
-          deckId: deckId,
-          objectiveId,
-          count: addCount,
-          expectedEditNumber: draft.editNumber,
-          clientRequestId: randomUUID(),
-        }));
-        add = await driveRun(addRunId);
-      } catch (error) {
-        restoreConsole();
+      const onAddError = (error: unknown) => {
         results.add = { state: "threw", errorClass: errorClassOf(error), objective: slugOf(objectiveId), requested: addCount, ...add };
         writeResults();
         line(`„+N” zakończone wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
-        throw error;
-      } finally {
-        restoreConsole();
-        settleRun(addProvisionalId, addProbe, addRunId, "„+N”");
-      }
+      };
+      await paidRun(addProvisionalId, addProbe, "„+N”", onAddError, async () => {
+        ({ runId: addRunId } = await regenerateObjective(services, {
+          deckId: addDeckId,
+          objectiveId,
+          count: addCount,
+          expectedEditNumber,
+          clientRequestId: randomUUID(),
+        }));
+        add = await driveRun(addRunId);
+      });
+      if (addRunId === undefined) throw new Error("Brak runu „+N” po regenerateObjective");
       const addRun = await readGeneration(services, addRunId);
+      addState = addRun.state;
       const afterDraft = (await readLessonDeck(services, deckId)).draft;
       const after = afterDraft?.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length ?? before;
       results.add = {
@@ -573,6 +627,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     }
     line(`Publikowalny: ${publishable}`);
     results.publishable = publishable;
+    settleLate();
     writeResults();
     line(`Wyniki: ${resultsPath}`);
     line("");
@@ -581,5 +636,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       writeFileSync(dumpPath, JSON.stringify({ draft, agent: agentSummary, publishable, lessonLog, durationMs }, null, 2), "utf8");
       line(`Zrzut pełnego szkicu i dziennika: ${dumpPath}`);
     }
+    // „+N” to część przebiegu kontrolnego: inny stan niż `succeeded` jest porażką próby (wyniki są już zapisane).
+    if (addCount !== undefined && run.state === "succeeded") expect(addState, "stan runu „+N”").toBe("succeeded");
   });
 });

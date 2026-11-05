@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  agentCostEstimates,
   agentLedgerCost,
   appendCostEntry,
   appendProvisionalCostEntry,
@@ -15,8 +16,10 @@ import {
   probeEndpointHost,
   readCostLedger,
   runCosts,
+  sanitizedProbeError,
   settleCostEntry,
   sha256File,
+  unsettledEvents,
   type ProbeCostEvent,
 } from "./probe-costs";
 
@@ -147,19 +150,61 @@ describe("koszty przebiegu agenta puli", () => {
     expect(costByOperation([{ runId: null }])).toEqual({ unknown: { calls: 1, costUsd: 0, unknownCostCalls: 1 } });
   });
 
+  const estimates = { unknownCallUsd: 0.02, unknownGraderCallUsd: 0.002 };
+
   it("runCosts: agent i kontrole porównane z budżetem runu, lesson_objectives osobno, w kolejności runów", () => {
-    expect(runCosts(events, 0.55)).toEqual([
-      { runId: "run-a", agentUsd: 0.574, lessonObjectivesUsd: 0.01, otherUsd: 0, calls: 6, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: true },
-      { runId: "run-b", agentUsd: 0.5, lessonObjectivesUsd: 0, otherUsd: 0, calls: 2, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: false },
-      { runId: null, agentUsd: 0, lessonObjectivesUsd: 0, otherUsd: 0.003, calls: 1, unknownCostCalls: 0, budgetUsd: 0.55, overBudget: false },
+    expect(runCosts(events, 0.55, estimates)).toEqual([
+      { runId: "run-a", agentUsd: 0.574, agentEstimatedUsd: 0.576, lessonObjectivesUsd: 0.01, otherUsd: 0, calls: 6, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: true },
+      { runId: "run-b", agentUsd: 0.5, agentEstimatedUsd: 0.52, lessonObjectivesUsd: 0, otherUsd: 0, calls: 2, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: false },
+      { runId: null, agentUsd: 0, agentEstimatedUsd: 0, lessonObjectivesUsd: 0, otherUsd: 0.003, calls: 1, unknownCostCalls: 0, budgetUsd: 0.55, overBudget: false },
     ]);
     // Etap zagadnień nie zużywa budżetu agenta: sam koszt agenta równy budżetowi to nie przekroczenie.
-    expect(runCosts([{ operation: "agent_objective", providerCostUsd: 1, runId: "r" }, { operation: "lesson_objectives", providerCostUsd: 0.2, runId: "r" }], 1)[0]!.overBudget).toBe(false);
-    expect(runCosts([], 1)).toEqual([]);
+    expect(runCosts([{ operation: "agent_objective", providerCostUsd: 1, runId: "r" }, { operation: "lesson_objectives", providerCostUsd: 0.2, runId: "r" }], 1, estimates)[0]!.overBudget).toBe(false);
+    expect(runCosts([], 1, estimates)).toEqual([]);
+  });
+
+  it("runCosts: wywołania agenta bez usage.cost liczą się do budżetu szacunkiem kierownika (grader osobno); etap zagadnień bez kosztu nie", () => {
+    const nearLimit: ProbeCostEvent[] = [{ operation: "agent_objective", providerCostUsd: 0.99, runId: "r" }];
+    expect(runCosts(nearLimit, 1, estimates)[0]!.overBudget).toBe(false);
+    // Jedno wywołanie bez kosztu (szacunek 0,02) przesuwa run ponad budżet — zmierzony koszt sam by tego nie pokazał.
+    const unknownStep = runCosts([...nearLimit, { operation: "agent_objective", runId: "r" }], 1, estimates)[0]!;
+    expect(unknownStep).toMatchObject({ agentUsd: 0.99, agentEstimatedUsd: 1.01, unknownCostCalls: 1, overBudget: true });
+    // Grader bez kosztu: szacunek gradera (0,002), więc 0,99 + 0,002 mieści się w budżecie, a sześć takich wywołań już nie.
+    expect(runCosts([...nearLimit, { operation: "check_grade", runId: "r" }], 1, estimates)[0]).toMatchObject({ agentEstimatedUsd: 0.992, overBudget: false });
+    const graders = Array.from({ length: 6 }, (): ProbeCostEvent => ({ operation: "check_grade", runId: "r" }));
+    expect(runCosts([...nearLimit, ...graders], 1, estimates)[0]).toMatchObject({ agentEstimatedUsd: 1.002, overBudget: true });
+    // lesson_objectives bez kosztu jest poza budżetem agenta.
+    expect(runCosts([...nearLimit, { operation: "lesson_objectives", runId: "r" }], 1, estimates)[0]).toMatchObject({ agentEstimatedUsd: 0.99, unknownCostCalls: 1, overBudget: false });
+  });
+
+  it("agentCostEstimates: szacunki z polityki runu (env), brakujące z wartości domyślnych kierownika", () => {
+    expect(agentCostEstimates({})).toEqual({ unknownCallUsd: 0.02, unknownGraderCallUsd: 0.002 });
+    expect(agentCostEstimates({ unknownCallEstimateUsd: 0.05 })).toEqual({ unknownCallUsd: 0.05, unknownGraderCallUsd: 0.002 });
+    expect(agentCostEstimates({ unknownCallEstimateUsd: 0.05, unknownGraderCallEstimateUsd: 0.01 })).toEqual({ unknownCallUsd: 0.05, unknownGraderCallUsd: 0.01 });
+  });
+
+  it("unsettledEvents: rozliczenie bierze wszystko, czego nie rozliczono — bez zakresu runu i spóźnione zdarzenia wcześniejszego runu — i nic dwa razy", () => {
+    const settled = new Set<ProbeCostEvent>();
+    const log: ProbeCostEvent[] = [
+      { operation: "agent_objective", providerCostUsd: 0.3, runId: "run-a" },
+      { operation: "lesson_objectives", providerCostUsd: 0.01, runId: null },
+    ];
+    const first = unsettledEvents(log, settled);
+    expect(first).toEqual(log);
+    for (const event of first) settled.add(event);
+    // Żądanie runu A przerwane terminem kończy się po jego rozliczeniu (zakres runu niesie run A), a w runie „+N” pada wywołanie bez zakresu.
+    const late: ProbeCostEvent = { operation: "check_solve", providerCostUsd: 0.004, runId: "run-a" };
+    const add: ProbeCostEvent = { operation: "agent_objective", providerCostUsd: 0.2, runId: "run-b" };
+    const unscoped: ProbeCostEvent = { operation: "agent_objective", runId: null };
+    log.push(late, add, unscoped);
+    const second = unsettledEvents(log, settled);
+    expect(second).toEqual([late, add, unscoped]);
+    expect(agentLedgerCost(second, estimates)).toEqual({ costUsd: 0.224, estimated: true });
+    for (const event of second) settled.add(event);
+    expect(unsettledEvents(log, settled)).toEqual([]);
   });
 
   it("agentLedgerCost: zmierzony koszt; wywołanie bez usage.cost → szacunek kierownika (grader osobno) z flagą", () => {
-    const estimates = { unknownCallUsd: 0.02, unknownGraderCallUsd: 0.002 };
     // 0.01 + 0.02 + 0.3 + 0.25 + 0.004 + 0.5 + 0.003 zmierzone; check_grade 0.002 i check_variants 0.02 szacowane.
     expect(agentLedgerCost(events, estimates)).toEqual({ costUsd: 1.109, estimated: true });
     expect(agentLedgerCost(events.filter((event) => event.providerCostUsd !== undefined), estimates)).toEqual({ costUsd: 1.087, estimated: false });
@@ -196,6 +241,17 @@ describe("errorClassOf / sha256File", () => {
     expect(errorClassOf(new Error("x"))).toBe("Error");
     expect(errorClassOf("tekst")).toBe("string");
     expect(errorClassOf(undefined)).toBe("undefined");
+  });
+
+  it("sanitizedProbeError: klasa i kod-identyfikator bez komunikatu (może cytować materiał)", () => {
+    const appError = Object.assign(new Error("dynamic objectives invalid: The cat sits on the mat"), { code: "validation" });
+    const sanitized = sanitizedProbeError(appError, "Przebieg");
+    expect(sanitized.message).toBe("Przebieg: wyjątek Error kod=validation (komunikat pominięty — może cytować materiał)");
+    expect(sanitized.message).not.toContain("cat");
+    // Kod, który nie jest identyfikatorem, też może nieść treść.
+    expect(sanitizedProbeError(Object.assign(new TypeError("x"), { code: "tekst z materiału" }), "„+N”").message).toBe("„+N”: wyjątek TypeError (komunikat pominięty — może cytować materiał)");
+    expect(sanitizedProbeError("tajne", "Przebieg").message).not.toContain("tajne");
+    expect(sanitizedProbeError(null, "Przebieg").message).toContain("wyjątek object");
   });
 
   it("sha256File: skrót SHA-256 zawartości pliku", () => {
