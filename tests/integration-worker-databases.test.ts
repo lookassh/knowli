@@ -7,12 +7,12 @@ import {
 } from "./integration-worker-databases";
 
 describe("bazy workerów integracji (integration-worker-databases)", () => {
-  it("domyślna liczba workerów to połowa wątków w zakresie 2–8", () => {
+  it("domyślna liczba workerów to połowa wątków w zakresie 2–6", () => {
     expect(defaultIntegrationWorkers(1)).toBe(2);
     expect(defaultIntegrationWorkers(4)).toBe(2);
     expect(defaultIntegrationWorkers(8)).toBe(4);
-    expect(defaultIntegrationWorkers(16)).toBe(8);
-    expect(defaultIntegrationWorkers(64)).toBe(8);
+    expect(defaultIntegrationWorkers(12)).toBe(6);
+    expect(defaultIntegrationWorkers(16)).toBe(6);
   });
 
   it("URL workera podmienia tylko nazwę bazy", () => {

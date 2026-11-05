@@ -14,9 +14,14 @@ import { readTestRunConfig } from "./test-run-config";
  */
 const WORKER_DATABASE_PREFIX = "knowli_w";
 
-/** Połowa wątków procesora, od 2 do 8: reszta zostaje dla Postgresa i innych przebiegów. */
+/**
+ * Połowa wątków procesora, od 2 do 6: reszta zostaje dla Postgresa i przebiegów
+ * z innych sesji. Pomiar 2026-11-05 (16 wątków): 5 workerów 101 s, 6 — 89 s,
+ * 8 — 74 s; powyżej 6 przebieg solo zyskuje niewiele, a kilka przebiegów naraz
+ * coraz mocniej przeciąża procesor.
+ */
 export function defaultIntegrationWorkers(cpus: number = availableParallelism()): number {
-  return Math.min(8, Math.max(2, Math.floor(cpus / 2)));
+  return Math.min(6, Math.max(2, Math.floor(cpus / 2)));
 }
 
 /**

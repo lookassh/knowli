@@ -80,11 +80,11 @@ export function readTestRunConfig(env: Record<string, string | undefined>): Test
 
   const rawIntegrationWorkers = env.UMIEM_INTEGRATION_WORKERS;
   if (rawIntegrationWorkers !== undefined && rawIntegrationWorkers !== "" && !/^\d+$/.test(rawIntegrationWorkers)) {
-    throw new Error("UMIEM_INTEGRATION_WORKERS must be an integer from 1 to 32");
+    throw new Error("UMIEM_INTEGRATION_WORKERS must be an integer from 1 to 16");
   }
   const integrationWorkers = rawIntegrationWorkers === undefined || rawIntegrationWorkers === "" ? null : Number(rawIntegrationWorkers);
-  if (integrationWorkers !== null && (integrationWorkers < 1 || integrationWorkers > 32)) {
-    throw new Error("UMIEM_INTEGRATION_WORKERS must be an integer from 1 to 32");
+  if (integrationWorkers !== null && (integrationWorkers < 1 || integrationWorkers > 16)) {
+    throw new Error("UMIEM_INTEGRATION_WORKERS must be an integer from 1 to 16");
   }
 
   return {

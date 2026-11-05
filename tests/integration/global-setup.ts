@@ -56,13 +56,23 @@ async function createWorkerDatabases(templateUrl: string, workers: number): Prom
 
 interface GlobalSetupContext {
   provide: (key: string, value: unknown) => void;
+  /** Rozwiązany config przebiegu (także z flagami CLI, np. `--maxWorkers`). */
+  globalConfig?: { maxWorkers?: number; pool?: string };
 }
 
 export default async function globalSetup({
   provide,
+  globalConfig,
 }: GlobalSetupContext): Promise<(() => Promise<void>) | void> {
+  // Wątki dzieliłyby `process.env` i stan modułów między plikami (np. plik
+  // ustawia DATABASE_URL na poziomie modułu), więc izolacja wymaga procesów.
+  if (globalConfig?.pool !== undefined && globalConfig.pool !== "forks") {
+    throw new Error(`Testy integracyjne wymagają pool "forks", a przebieg ma "${globalConfig.pool}" — nie podawaj --pool w CLI`);
+  }
+  // Tyle baz, ilu workerów faktycznie uruchomi Vitest — także po `--maxWorkers`
+  // w CLI (inaczej worker spoza zakresu nie miałby bazy).
+  const workers = globalConfig?.maxWorkers ?? resolveIntegrationWorkers(process.env);
   await removeStaleContainers();
-  const workers = resolveIntegrationWorkers(process.env);
   const name = containerName();
   const container = await startPostgresContainer({
     name,

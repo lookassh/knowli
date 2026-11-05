@@ -103,10 +103,10 @@ describe("readTestRunConfig", () => {
     expect(readTestRunConfig({}).integrationWorkers).toBeNull();
     expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "" }).integrationWorkers).toBeNull();
     expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "1" }).integrationWorkers).toBe(1);
-    expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "32" }).integrationWorkers).toBe(32);
+    expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "16" }).integrationWorkers).toBe(16);
   });
 
-  it.each(["0", "33", "-1", "a", "1.5"])("rejects invalid integration workers %j", (value) => {
+  it.each(["0", "17", "-1", "a", "1.5"])("rejects invalid integration workers %j", (value) => {
     expect(() => readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: value })).toThrow(/UMIEM_INTEGRATION_WORKERS/);
   });
 });
