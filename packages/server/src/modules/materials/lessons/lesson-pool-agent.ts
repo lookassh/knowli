@@ -21,6 +21,7 @@ import type {
   LessonTopic,
 } from "../../../domain/lessons/types";
 import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, LlmLessonStageCounts, RunCostSink } from "../../../ports/ai";
+import { AgentCheckRun } from "./lesson-agent-check-run";
 import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import { objectiveAgentInput } from "./lesson-pool-agent-input";
@@ -422,6 +423,8 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   const stats = emptyStats();
   const rejections: RejectionLogEntry[] = [];
   const checkerSemaphore = new Semaphore(policy.checkerConcurrency);
+  // Wspólne dla runu: semafor gradera, pamięć wyników kontroli i wyłącznik gradera (etap 2b).
+  const checkRun = new AgentCheckRun(policy);
   const objectiveSemaphore = new Semaphore(policy.concurrency);
 
   // Błąd haka (albo kierownika) przerywa wszystkie zagadnienia przez wspólny sygnał.
@@ -535,6 +538,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
       ctx,
       checker: deps.checker,
       checkerSemaphore,
+      checkRun,
       cost: budget,
       objectiveSignal,
       policy,
