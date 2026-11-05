@@ -1786,14 +1786,30 @@ describe("agent puli lekcji (integracja)", () => {
       }
       const summaryCodes = (row: FullRunRow) => row.agent_checkpoint as RunSummary;
 
-      /** Wiersze startowe kontroli (`hintJudge=… openCheck=…`) zapisane przez `fn` w `console.log`. */
-      async function withStartLines<T>(fn: () => Promise<T>): Promise<string[]> {
+      /** Wszystkie wiersze zapisane przez `fn` w `console.log` (każdy argument jako tekst). */
+      async function withLogLines<T>(fn: () => Promise<T>): Promise<string[]> {
         const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
         try {
           await fn();
-          return log.mock.calls.map((call) => String(call[0])).filter((line) => START_LINE.test(line));
+          return log.mock.calls.map((call) => call.map((part) => (typeof part === "string" ? part : JSON.stringify(part))).join(" "));
         } finally {
           log.mockRestore();
+        }
+      }
+
+      /** Wiersze startowe kontroli (`hintJudge=… openCheck=…`) zapisane przez `fn` w `console.log`. */
+      async function withStartLines<T>(fn: () => Promise<T>): Promise<string[]> {
+        return (await withLogLines(fn)).filter((line) => START_LINE.test(line));
+      }
+
+      /** Prywatność (§8): treść kontroli (odpowiedzi rozwiązującego, podpowiedzi, powody) nie trafia do logów ani do runu. */
+      function expectNoCheckContent(lines: readonly string[], row: FullRunRow, texts: readonly string[]): void {
+        const logs = lines.join("\n");
+        const runJson = JSON.stringify(row);
+        expect(lines.length).toBeGreaterThan(0);
+        for (const text of texts) {
+          expect(logs, text).not.toContain(text);
+          expect(runJson, text).not.toContain(text);
         }
       }
 
@@ -1814,10 +1830,13 @@ describe("agent puli lekcji (integracja)", () => {
         );
         const { runId } = await schoolLesson(services);
 
-        const startLines = await withStartLines(() => executeLessonGeneration(services, runId));
+        const lines = await withLogLines(() => executeLessonGeneration(services, runId));
+        const startLines = lines.filter((line) => START_LINE.test(line));
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
+        // Odpowiedzi rozwiązującego (także odrzucona niepełna) ani brakujący element w powodzie nie trafiają do logów i podsumowania.
+        expectNoCheckContent(lines, row, [FULL, PARTIAL, 'Missing: "Odra"']);
         const summary = summaryCodes(row);
         expect(summary.rejectionCodes.open_not_accepted).toBe(1);
         expect(summary.checkCounters!.openChecks).toBeGreaterThanOrEqual(1);
@@ -1906,8 +1925,9 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("hint unsupported then fix: podpowiedź spoza materiału odrzucona, poprawka bez podpowiedzi przyjęta", async () => {
         const grader = schoolGrader();
+        const JUDGE_REASON = "the material says nothing about it";
         const checker = schoolChecker({
-          judgeHint: (item) => (item.hint === BAD_HINT ? { verdict: "unsupported", reason: "the material says nothing about it" } : { verdict: "ok" }),
+          judgeHint: (item) => (item.hint === BAD_HINT ? { verdict: "unsupported", reason: JUDGE_REASON } : { verdict: "ok" }),
         });
         const { services } = await agentWorld(
           ["school"],
@@ -1923,10 +1943,12 @@ describe("agent puli lekcji (integracja)", () => {
         );
         const { runId } = await schoolLesson(services);
 
-        await executeLessonGeneration(services, runId);
+        const lines = await withLogLines(() => executeLessonGeneration(services, runId));
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
+        // Zła podpowiedź i powód sędziego tylko w pamięci kontroli — nie w logach ani podsumowaniu.
+        expectNoCheckContent(lines, row, [BAD_HINT, JUDGE_REASON]);
         const summary = summaryCodes(row);
         expect(summary.rejectionCodes.hint_unsupported).toBe(1);
         expect(summary.rejectionCodes.open_not_accepted).toBeUndefined();
