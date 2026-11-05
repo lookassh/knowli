@@ -467,7 +467,10 @@ semafora checkera (`checkerConcurrency`, domyślnie 4) i mają własny termin
   `hintChecks`, `openChecks`, `graderCalls`, `hintUnavailable`,
   `openUnavailable`, `graderErrors`, `graderInvalidVerdicts`.
 - **Wyłącznik:** po 3 kolejnych nieudanych wywołaniach gradera w runie (błąd,
-  termin, werdykt odrzucony przez walidację) agent przestaje wołać grader;
+  własny termin gradera `UMIEM_GRADER_TIMEOUT_MS`, werdykt odrzucony przez
+  walidację) agent przestaje wołać grader; przerwanie wywołania limitem etapu 2
+  (`graderStageTimeoutMs`, §7.2) **nie jest awarią gradera** — nie zwiększa
+  `graderErrors` ani licznika porażek, a pozycja jest po prostu niesprawdzona;
   kontrola otwarta nie dotyczy do końca runu, a log zapisuje raz
   `grader_unavailable`. Udane wywołanie zeruje licznik kolejnych porażek.
 
@@ -688,3 +691,45 @@ uruchomienie z kluczem tylko za zgodą właściciela (etap 3).
 | Brak osobnego wyłącznika kontroli | Świadomie (bez nowych env), §13 |
 | Szacunek kosztu bez wyprowadzenia | Wzór w §7.3 |
 | Braki w liście dokumentacji | §12 uzupełniona (AGENTS.md gradera, wiersz `answer_grading`, komentarze portu, MCP w PR) |
+
+## 16. Noty z implementacji
+
+Odstępstwa i doprecyzowania względem powyższego designu, przyjęte w trakcie
+implementacji:
+
+1. **Nazwa typu werdyktu.** W domenie (`domain/lessons/agent/admission.ts`)
+   typ nazywa się `AgentHintVerdict`; port zachowuje `HintVerdict` (struktury
+   są identyczne, `ports/ai.ts` nie ma importów).
+2. **Limit etapu 2 to nie awaria gradera (§7.2, §7.4).** Wywołanie przerwane
+   przez `graderStageTimeoutMs` (30 s) nie zwiększa `graderErrors` i nie liczy
+   się do wyłącznika; pozycja jest tylko niesprawdzona (`unchecked`).
+   Porażką gradera są: własny termin (`UMIEM_GRADER_TIMEOUT_MS`), rzucony błąd
+   i werdykt odrzucony przez walidację. „Termin” w §7.4 oznacza więc własny
+   termin gradera.
+3. **Pamięć runu a wyłącznik.** Zapamiętane wyniki kontroli otwartej `done`
+   obowiązują także po otwarciu wyłącznika (pamięć jest sprawdzana jako
+   pierwsza, §6.2 pkt 1); to prawdziwe werdykty gradera.
+4. **Termin pojedynczego wywołania gradera** liczy `deadlineSignal(sygnał
+   etapu, timeoutMs)` z `lesson-agent-timers` zamiast `AbortSignal.timeout`
+   (§7.2): to samo znaczenie, ale działa z zegarami fake w testach.
+5. **Nieznany koszt gradera** trafia do budżetu runu jako szacunek 0,002 USD
+   przez opakowanie odbiornika kosztów; nie zwiększa `unknownCostCalls`
+   (licznik zostaje dla wywołań checkera i agenta).
+6. **`OpenAnswerFields.expectedForm`** ma typ `string` (payload ćwiczenia
+   typuje je jako `string`, szkic jako unię literałów).
+7. **Klucz pamięci kontroli otwartej** (`openKey`) to widok, odpowiedź,
+   `acceptedAnswers` i kryteria szkoły; nie zawiera identyfikatora ani opisu
+   celu (niskie ryzyko kolizji; znane ograniczenie).
+8. **Liczniki kontroli** (`checkCounters`) są scalane do punktu kontrolnego po
+   każdej próbie, jak `rejectionCodes` w 2a; zamknięcie workera w trakcie
+   próby gubi liczniki tej próby.
+9. **Panel:** komunikat `openCheckServiceInfo` pojawia się wszędzie tam, gdzie
+   komunikat o checkerze: w formularzu nowej lekcji i na stronie źródła.
+10. **`judgeHints`:** `reason` może być `null` w odpowiedzi modelu (pole
+    `nullish`); adapter przycina go do 200 znaków.
+11. **Próba ręczna:** opakowanie `meteredChecker` w
+    `tests/probes/agent-generation.probe.test.ts` deleguje dwie nowe metody
+    checkera (typecheck); próby nie uruchomiono (płatna).
+12. **Etykiety kategorii:** kopie `categoryLabels` w `lesson-attempts.ts`,
+    `lesson-supervision.ts` i `lesson-mock-tests.ts` zastąpiło wspólne
+    `lessonCategoryLabels`.
