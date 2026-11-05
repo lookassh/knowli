@@ -46,7 +46,7 @@ wyraźnie gorszy od dzisiejszego potoku. Stan pkt 1 issue po 2a:
 3. Port checkera: `judgeHints`, `solveOpen`, adapter AI SDK i fake (§4).
 4. Grader w agencie: opcjonalny `RunCostSink`, etykieta kosztu, składanie w
    workerze (§5).
-5. Przebieg paczki `submit_exercises`, decyzja, pamięć wyników w runie (§6).
+5. Przebieg paczki `submit_exercises`, decyzja, pamięć wyników w próbie runu (§6).
 6. Limity, budżet, koszty i widoczność awarii (§7), prywatność (§8), panel
    rodzica (§9), konfiguracja i wdrożenie (§10).
 7. Testy (§11) i dokumentacja (§12).
@@ -304,7 +304,7 @@ nie jest wołany.
 
 ### 6.2. Kolejność
 
-1. **Pamięć runu** (§6.3): pozycje z zapamiętanym wynikiem nie są wysyłane
+1. **Pamięć próby runu** (§6.3): pozycje z zapamiętanym wynikiem nie są wysyłane
    ponownie.
 2. **Etap 1, równolegle** (`Promise.all`): `solve`, `judgeVariants` (2a),
    `judgeHints`, `solveOpen` — każde tylko przy niepustym zbiorze pozycji,
@@ -324,17 +324,20 @@ nie jest wołany.
 4. **Decyzja:** `admitBatch` w tej samej sekcji krytycznej co dziś, po
    zakończeniu obu etapów.
 
-### 6.3. Pamięć wyników w runie
+### 6.3. Pamięć wyników w próbie runu
 
-Wyniki `done` są zapamiętywane w pamięci runu (nie w bazie, nie w punkcie
-kontrolnym):
+Wyniki `done` są zapamiętywane w pamięci próby runu (nie w bazie, nie w
+punkcie kontrolnym; `AgentCheckRun` powstaje przy każdym wywołaniu
+`runLessonPoolAgent`, więc po ponowieniu zadania pamięć startuje pusta):
 
 - werdykt podpowiedzi — klucz: odcisk `(view, answer, requiredElements, hint)`;
-- wynik kontroli otwartej — klucz: odcisk `(view, answer, acceptedAnswers,
-  schoolCriteria)`.
+- wynik kontroli otwartej — klucz: odcisk `(objectiveId, exerciseType, view,
+  answer, acceptedAnswers, schoolCriteria)` (wejście gradera zależy od celu,
+  §16 nota 15).
 
-Poprawka samej podpowiedzi nie powtarza więc kontroli otwartej i odwrotnie.
-Wyniki `unavailable` nie są zapamiętywane.
+Poprawka samej podpowiedzi nie powtarza więc kontroli otwartej, a poprawka
+samych kryteriów lub wariantów — werdyktu podpowiedzi. Wyniki `unavailable`
+nie są zapamiętywane.
 
 ### 6.4. Wynik kontroli i decyzja
 
@@ -371,8 +374,8 @@ wszystko w jednym kroku.
 | `hint: unsupported` | odrzucenie, `hint` | `hint_unsupported` | `hintUnsupported` + `reason` |
 | `hint: language` | odrzucenie, `hint` | `hint_language` | `hintLanguage` + `reason` |
 | `hint: reveals` | odrzucenie, `hint` | `hint_reveals_paraphrase` | `hintReveals` + `reason` |
-| `open`: pierwsza nieprzyjęta odpowiedź ma `missing` | odrzucenie, `open` | `open_not_accepted` | `openMissing` + odpowiedź + brakujące elementy |
-| `open`: nieprzyjęta odpowiedź bez `missing` (tylko `wrong`) | odrzucenie, `open` | `open_not_accepted` | `openWrong` + odpowiedź + błędne stwierdzenia |
+| `open`: pierwsza nieprzyjęta odpowiedź ma niepuste `wrong` albo `knowledge = incorrect` | odrzucenie, `open` | `open_not_accepted` | `openWrong` + odpowiedź + brakujące elementy (gdy są) + błędne stwierdzenia (gdy są) |
+| `open`: pierwsza nieprzyjęta odpowiedź `partial` bez `wrong` | odrzucenie, `open` | `open_not_accepted` | `openMissing` + odpowiedź + brakujące elementy |
 | którakolwiek należna kontrola `unavailable`, żadna nie odrzuca | przyjęcie | — | nota `unchecked` |
 | reszta | przyjęcie | — | — |
 
@@ -434,7 +437,10 @@ semafora checkera (`checkerConcurrency`, domyślnie 4) i mają własny termin
   AbortSignal.timeout(grader.timeoutMs)])`.
 - **Limit etapu 2:** `graderStageTimeoutMs = 30_000` (stała polityki) liczony
   od startu etapu; po nim pozostałe wywołania są przerywane, a ich pozycje
-  niesprawdzone. Krok narzędzia trwa więc najwyżej: etap 1 jak w 2a + 30 s.
+  niesprawdzone. Etap 2 trwa więc zwykle najwyżej 30 s ponad etap 1 jak w
+  2a; oczekiwanie na miejsce w semaforze (checkera i gradera) nie jest
+  przerywalne (jak checker w 2a), więc przy dużej konkurencji krok narzędzia
+  może trwać dłużej (§13).
 - `callChecker` i `callGrader` dzielą logikę budżetu, zamknięcia i statystyk
   (wspólna funkcja generyczna); `callChecker` zachowuje kontrakt 2a.
 
@@ -466,13 +472,17 @@ semafora checkera (`checkerConcurrency`, domyślnie 4) i mają własny termin
 - **Liczniki** w statystykach i w podsumowaniu runu (bez treści):
   `hintChecks`, `openChecks`, `graderCalls`, `hintUnavailable`,
   `openUnavailable`, `graderErrors`, `graderInvalidVerdicts`.
-- **Wyłącznik:** po 3 kolejnych nieudanych wywołaniach gradera w runie (błąd,
+- **Wyłącznik:** po 3 kolejnych nieudanych wywołaniach gradera w próbie runu (błąd,
   własny termin gradera `UMIEM_GRADER_TIMEOUT_MS`, werdykt odrzucony przez
   walidację) agent przestaje wołać grader; przerwanie wywołania limitem etapu 2
   (`graderStageTimeoutMs`, §7.2) **nie jest awarią gradera** — nie zwiększa
   `graderErrors` ani licznika porażek, a pozycja jest po prostu niesprawdzona;
-  kontrola otwarta nie dotyczy do końca runu, a log zapisuje raz
-  `grader_unavailable`. Udane wywołanie zeruje licznik kolejnych porażek.
+  kontrola otwarta nie dotyczy do końca próby runu (także pozycji paczki,
+  której etap 1 trwał w chwili otwarcia wyłącznika: bez noty i bez
+  `openUnavailable`), a log zapisuje raz na próbę `grader_unavailable`. Udane
+  wywołanie zeruje licznik kolejnych porażek. Wyłącznik żyje w `AgentCheckRun`
+  próby (§6.3): po ponowieniu zadania startuje zamknięty, więc
+  `grader_unavailable` może się zalogować ponownie.
 
 ## 8. Prywatność
 
@@ -653,6 +663,11 @@ uruchomienie z kluczem tylko za zgodą właściciela (etap 3).
   odpowiedzi, które grader zalicza; odpowiedź dziecka może zostać oceniona
   inaczej (`formOk`, inna treść).
 - **Fleksja w samych ćwiczeniach** pozostaje bez kontroli modelem.
+- **Czas kroku przy konkurencji:** oczekiwanie na miejsce w semaforze
+  checkera albo gradera nie jest przerywalne (jak checker w 2a); limit etapu 2
+  (30 s) liczy się od startu etapu, więc przy zajętych semaforach krok
+  narzędzia może przekroczyć „etap 1 + 30 s”. Zamknięcie narzędzi i tak
+  kończy krok odmową po zwolnieniu miejsca.
 
 ## 14. Kolejność commitów (orientacyjnie)
 
@@ -676,7 +691,7 @@ uruchomienie z kluczem tylko za zgodą właściciela (etap 3).
 | Dziecko dopasowuje deterministycznie bez gradera | To samo w kontroli; para równa po normalizacji oceniana raz |
 | `partial` bez braków dostawał radę o elementach | Pole `wrong`, osobny tekst `openWrong`; teksty bronią przed luzowaniem kryteriów |
 | Jedno odrzucenie na krok przy dwóch wadach | Podpowiedź i kontrola otwarta oceniane razem, oba powody w jednym wierszu |
-| Powtarzanie kontroli przy poprawce | Pamięć wyników `done` w runie, klucze z odcisków pól |
+| Powtarzanie kontroli przy poprawce | Pamięć wyników `done` w próbie runu, klucze z odcisków pól |
 | Semafor i termin dwóch etapów | Etap 1 jak w 2a; osobny semafor gradera (stała 4), limit etapu 2 30 s, ponowne sprawdzenie budżetu po zajęciu miejsca |
 | Nieznany koszt gradera wyczerpuje budżet | `unknownGraderCallEstimateUsd = 0.002` |
 | Ciche „niesprawdzone” przy złej konfiguracji | Log startu, osobne liczniki w podsumowaniu, wyłącznik po 3 porażkach |
@@ -707,7 +722,7 @@ implementacji:
    Porażką gradera są: własny termin (`UMIEM_GRADER_TIMEOUT_MS`), rzucony błąd
    i werdykt odrzucony przez walidację. „Termin” w §7.4 oznacza więc własny
    termin gradera.
-3. **Pamięć runu a wyłącznik.** Zapamiętane wyniki kontroli otwartej `done`
+3. **Pamięć próby runu a wyłącznik.** Zapamiętane wyniki kontroli otwartej `done`
    obowiązują także po otwarciu wyłącznika (pamięć jest sprawdzana jako
    pierwsza, §6.2 pkt 1); to prawdziwe werdykty gradera.
 4. **Termin pojedynczego wywołania gradera** liczy `deadlineSignal(sygnał
@@ -718,9 +733,8 @@ implementacji:
    (licznik zostaje dla wywołań checkera i agenta).
 6. **`OpenAnswerFields.expectedForm`** ma typ `string` (payload ćwiczenia
    typuje je jako `string`, szkic jako unię literałów).
-7. **Klucz pamięci kontroli otwartej** (`openKey`) to widok, odpowiedź,
-   `acceptedAnswers` i kryteria szkoły; nie zawiera identyfikatora ani opisu
-   celu (niskie ryzyko kolizji; znane ograniczenie).
+7. **Klucz pamięci kontroli otwartej** (`openKey`) — zastąpione notą 15:
+   klucz zawiera też cel i typ ćwiczenia.
 8. **Liczniki kontroli** (`checkCounters`) są scalane do punktu kontrolnego po
    każdej próbie, jak `rejectionCodes` w 2a; zamknięcie workera w trakcie
    próby gubi liczniki tej próby.
@@ -734,3 +748,34 @@ implementacji:
 12. **Etykiety kategorii:** kopie `categoryLabels` w `lesson-attempts.ts`,
     `lesson-supervision.ts` i `lesson-mock-tests.ts` zastąpiło wspólne
     `lessonCategoryLabels`.
+
+Poprawki po przeglądzie końcowym gałęzi (trzech krytyków):
+
+13. **Komunikat panelu (§9).** Tekst „sprawdza podpowiedzi i odpowiedzi na
+    pytania otwarte” brzmiał jak sprawdzanie odpowiedzi dziecka i zgubił
+    zapewnienie o prywatności z 2a. Nowy tekst: „… sprawdza podpowiedzi i
+    pisze próbne odpowiedzi na pytania otwarte. Dostaje ćwiczenia i materiał
+    lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.”
+14. **Wybór tekstu `open_not_accepted` (§6.4).** Braki nie mają już
+    pierwszeństwa: odpowiedź z błędnymi stwierdzeniami albo `incorrect`
+    dostaje `openWrong` (z listą błędów zawsze, gdy niepusta, i z listą braków,
+    gdy są), a `openMissing` tylko `partial` bez błędów. Inaczej odpowiedź
+    sprzeczna z materiałem skłaniałaby agenta do luzowania kryteriów (§13).
+15. **Klucz kontroli otwartej (§6.3)** zawiera `objectiveId` i `exerciseType`:
+    wejście gradera zależy od celu (tytuł, polecenie), więc to samo ćwiczenie w
+    dwóch celach nie dzieli wyniku. Klucz werdyktu podpowiedzi zostaje bez
+    zmian — wejście sędziego to dokładnie pola klucza.
+16. **Rozjazd długości w adapterze checkera.** Gdy lista `verdicts`
+    (`judgeHints`) albo `answers` (`solveOpen`) ma inną długość niż liczba
+    pozycji, cała paczka jest niesprawdzona (`null` na każdej pozycji) —
+    dopasowanie po pozycji mogłoby przypisać werdykt innemu ćwiczeniu. JSON w
+    `<ITEMS>` ma „<” escapowane jako `\u003c`, więc pole z „</ITEMS>” nie
+    zamyka bloku danych. `solve` i `judgeVariants` (2a) bez zmian.
+17. **Zakres wyłącznika i pamięci (§6.3, §7.4)** to próba runu, nie cały run:
+    `AgentCheckRun` powstaje przy każdym wywołaniu `runLessonPoolAgent`, więc
+    po ponowieniu zadania wyłącznik startuje zamknięty, pamięć pusta, a
+    `grader_unavailable` może się zalogować ponownie. Wyłącznik otwarty w
+    trakcie etapu 1 paczki (przez inne zagadnienie) sprawia, że jej pozycje
+    jeszcze bez oceny nie dotyczą (bez noty i bez `openUnavailable`), a
+    paczka zakończona odmową nie zwiększa `hintUnavailable` ani
+    `openUnavailable`.

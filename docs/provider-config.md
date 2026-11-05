@@ -178,9 +178,10 @@ Zasady:
   agenta działa jak wcześniej; osobnego wyłącznika ani nowych zmiennych nie ma.
   Do gradera trafia to samo co przy dziecku (pytanie, kryteria, cytaty z
   materiału) z odpowiedzią modelu zamiast odpowiedzi dziecka; werdykty nie trafiają
-  do `lesson_verdicts`. Po 3 kolejnych porażkach gradera w runie agent przestaje go
-  wołać (log `grader_unavailable`), a kolejne ćwiczenia przechodzą bez kontroli
-  otwartej; ćwiczenia z nieudanym wywołaniem dostają notę „niesprawdzone”.
+  do `lesson_verdicts`. Po 3 kolejnych porażkach gradera w próbie runu agent przestaje
+  go wołać (log `grader_unavailable`, raz na próbę: po ponowieniu zadania wyłącznik
+  startuje od nowa), a kolejne ćwiczenia przechodzą bez kontroli otwartej;
+  ćwiczenia z nieudanym wywołaniem dostają notę „niesprawdzone”.
   Nieznany koszt wywołania gradera liczy się do budżetu runu jako 0,002 USD.
 
 ## Ocena odpowiedzi lekcji (web)

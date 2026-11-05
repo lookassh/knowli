@@ -52,7 +52,7 @@ dostawcy.
 | `tts` | worker | `providers/openai/tts.ts` | OpenRouter, Gemini 3.8 Flash TTS | zadanie 0 (§8.1): odpowiedź nie niesie kosztu; szacunek z długości audio (przybliżenie, rozliczenie prawdopodobnie tokenowe) |
 | `illustration` | worker | `providers/images/openai.ts` (media run) | OpenAI | szacunek: obrazy × stawka |
 | `deck_cover` | web | `providers/images/openai.ts` przez `materials/deck-cover.ts` `generateDeckCover` (bez runu) | OpenAI | szacunek: obrazy × stawka |
-| `answer_grading` | web | `providers/openai-compatible/grader.ts` | OpenRouter, Gemini 3.8 Flash | `usage.cost`; w workerze ten sam adapter (kontrola otwartych odpowiedzi agenta puli, etap 2b #237) zapisuje `lesson_generation` / `check_grade` (opcja `usageLabel`) i zgłasza koszt do budżetu runu (opcja `cost`); brak kosztu = 0,002 USD w budżecie runu |
+| `answer_grading` | web | `providers/openai-compatible/grader.ts` | OpenRouter, Gemini 3.8 Flash | `usage.cost`; w workerze ten sam adapter (kontrola otwartych odpowiedzi agenta puli, etap 2b #237) zapisuje `lesson_generation` / `check_grade` (opcja `usageLabel`) i zgłasza koszt do budżetu runu (trzeci parametr `grade(input, signal, cost?)`, odbiornik `RunCostSink`); brak kosztu = 0,002 USD w budżecie runu |
 | `session_activity_review` | web | `providers/openai-compatible/session-activity.ts` | OpenRouter, Gemini 3.8 Flash | `usage.cost` |
 | `lesson_stt` | web | `providers/openai-compatible/stt.ts` (dyktowanie i odpowiedzi ustne lekcji) | OpenRouter (np. ElevenLabs Scribe) | `usage.cost` (zadanie 0) |
 | `speech_stt` | web | `providers/azure/stt.ts` | Azure Speech | szacunek: czas audio × stawka |
