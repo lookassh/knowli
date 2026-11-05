@@ -41,6 +41,8 @@ import {
 } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
 
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
+import { stageOf } from "../../packages/server/src/domain/lessons/stages";
+import { solvedSentencesOf } from "../../packages/server/src/domain/lessons/story";
 import { supersedeLessonRuns } from "../../packages/server/src/modules/materials/generation-runs";
 import {
   emptyLessonAgentProgress,
@@ -764,14 +766,48 @@ describe("agent puli lekcji (integracja)", () => {
       const context = after.lesson_context as { rejectedCount: number; generationGaps?: unknown };
       // 2 (bezpiecznik) + 1 (kontrola końcowa: duplikat); odrzucenie w pętli się nie liczy.
       expect(context.rejectedCount).toBe(((before.lesson_context as { rejectedCount?: number }).rejectedCount ?? 0) + 3);
-      // Luki z zapisanych ćwiczeń: zagadnienie A straciło w kontroli końcowej ćwiczenie, więc nie jest już
-      // kompletem (ostrożnie — bez ponownego liczenia statusu), B nie ma żadnego.
-      expect(context.generationGaps).toEqual([
+      // Zagadnienie A straciło w kontroli końcowej tylko duplikat — na zapisanej lekcji nadal jest kompletem.
+      expect(context.generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
+      const summary = row.agent_checkpoint as { rejectionCodes: Record<string, number> };
+      expect(Object.values(summary.rejectionCodes).reduce((sum, value) => sum + value, 0)).toBeGreaterThanOrEqual(1);
+    });
+
+    it("pełna pula: zapis odrzuca ćwiczenia potrzebne do minimum etapu → luka incomplete mimo kompletu u agenta", async () => {
+      // Próba 1: A gotowe, B błąd przejściowy (punkt kontrolny z kompletem A); próba 2: B bez ćwiczeń.
+      const malformed = [{ submit: { exercises: [{ exerciseType: "lesson_choice", objectiveId: NEGATIVE }] } }];
+      const negative = { calls: [[{ throw: new GenerationProviderError("transient") }], malformed] };
+      const { services, clock } = await agentWorld(["english_grammar"], { objectives: { negative } });
+      const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+      await executeLessonGeneration(services, runId);
+      const first = await fullRun(runId);
+      expect(first.state).toBe("queued");
+      const own = parseLessonAgentProgress(first.agent_checkpoint, runId)!.objectives[OBJECTIVE]!;
+      expect(own.status).toBe("complete");
+      // Historyjka szkicu powtarza rozwiązania wszystkich ćwiczeń etapu samodzielnego A — zapis je odrzuca.
+      const independent = own.exercises.filter((exercise) => stageOf(exercise.exerciseType) === "independent");
+      expect(independent.length).toBeGreaterThan(0);
+      const version = await versionOf(runId);
+      await setContextField(version.id, "story", {
+        sentences: solvedSentencesOf(independent),
+        questions: [{ id: "q1", question: "Kto?", options: [{ id: "a", text: "Tom" }, { id: "b", text: "Ola" }], correctOption: "a" }],
+      });
+      clock.advanceMs(10 * 60_000);
+
+      await executeLessonGeneration(services, runId);
+
+      expect((await fullRun(runId)).state).toBe("succeeded");
+      const after = await versionOf(runId);
+      const written = await query<{ exercise_type: string }>(
+        "select payload->>'exerciseType' as exercise_type from learning_app.item_revisions where deck_version_id = $1",
+        [after.id],
+      );
+      expect(written.length).toBeGreaterThan(0);
+      expect(written.filter((row) => stageOf(row.exercise_type as LessonExerciseDraft["exerciseType"]) === "independent")).toEqual([]);
+      // Na zapisanej lekcji A nie spełnia minimum etapu samodzielnego: luka mimo kompletu u agenta.
+      expect(contextOf(after).generationGaps).toEqual([
         { objectiveId: OBJECTIVE, reason: "incomplete" },
         { objectiveId: NEGATIVE, reason: "incomplete" },
       ]);
-      const summary = row.agent_checkpoint as { rejectionCodes: Record<string, number> };
-      expect(Object.values(summary.rejectionCodes).reduce((sum, value) => sum + value, 0)).toBeGreaterThanOrEqual(1);
     });
 
     it("podsumowanie punktu kontrolnego wycofane razem z nieudanym zapisem końcowym", async () => {
@@ -1470,7 +1506,7 @@ describe("agent puli lekcji (integracja)", () => {
         expect((version.lesson_context as { story?: unknown }).story).toEqual(STORY_LATE);
       });
 
-      it("pełna pula: kolizja z historyjką w zapisie → luka zagadnienia z zapisanych ćwiczeń, nie z przyjętych", async () => {
+      it("pełna pula: kolizja z historyjką w zapisie, zapisana pula nadal pełna → bez luki", async () => {
         // Pula z fake LLM (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
         // szkicu — agent w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
         const collision = gapExercise("Sam ___ his red bike.", "rides");
@@ -1490,8 +1526,8 @@ describe("agent puli lekcji (integracja)", () => {
         const version = await versionOf(runId);
         expect((await draftRows(version.id)).map((item) => item.payload.stem)).not.toContain(collision.stem);
         expect(contextOf(version).rejectedCount).toBe((contextOf(before).rejectedCount ?? 0) + 1);
-        // …ale zapis odrzucił jego ćwiczenie, więc zagadnienie nie jest kompletem w szkicu.
-        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: OBJECTIVE, reason: "incomplete" }]);
+        // …zapis odrzucił nadmiarowe ćwiczenie, a status liczony od nowa na zapisanej lekcji to nadal komplet.
+        expect(contextOf(version).generationGaps).toBeUndefined();
       });
 
       it("dogeneruj z błędem przejściowym → requeue → łącznie ≤ limitu, bez duplikatów", async () => {

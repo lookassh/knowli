@@ -9,6 +9,7 @@ import { orderedLesson, poolOf, withPool, type AgentPoolEntry, type LessonAgentS
 import {
   addedStageExercises,
   addModeStatus,
+  completeObjectivesOnLesson,
   finalLessonCheck,
   lessonInvariantCheck,
   objectiveAgentLimits,
@@ -350,5 +351,42 @@ describe("finalLessonCheck", () => {
     const family = keywords(A, "f1", 1);
     const result = check({ examples: { [A]: ["966"] }, accepted: [{ objectiveId: A, draft: victim }, { objectiveId: A, draft: family }] });
     expect(result).toEqual({ kept: [], removed: 2 });
+  });
+});
+
+describe("completeObjectivesOnLesson", () => {
+  const full = [...guidedThree, ...productiveTwo, ...independentThree];
+  const complete = (overrides: Partial<Parameters<typeof completeObjectivesOnLesson>[0]>) =>
+    completeObjectivesOnLesson({
+      subject: school,
+      topic,
+      objectives,
+      material: "",
+      fixed: [],
+      written: full,
+      examples: { [A]: ["Stolica Piastów."] },
+      fixedSources: {},
+      limits: schoolCtx.limits,
+      ...overrides,
+    });
+
+  it("zapisana pula spełniająca minima: komplet; zagadnienie bez ćwiczeń — nie", () => {
+    expect(complete({})).toEqual(new Set([A]));
+  });
+
+  it("nadmiarowe ćwiczenie odrzucone przy zapisie nie psuje kompletu", () => {
+    expect(complete({ written: [...full.slice(0, 3), choice(A, 4), ...full.slice(3)].filter((draft) => draft !== full[0]) })).toEqual(new Set([A]));
+  });
+
+  it("brak ćwiczenia potrzebnego do minimum etapu: bez kompletu", () => {
+    expect(complete({ written: full.slice(0, -1) })).toEqual(new Set());
+  });
+
+  it("przykłady kart liczą się z własnych przykładów zagadnienia, nie z pozostałych źródeł ujawnień", () => {
+    expect(complete({ examples: {}, fixedSources: { [A]: ["Stolica Piastów."] } })).toEqual(new Set());
+  });
+
+  it("fixed liczy się do zagadnienia jak w kierowniku", () => {
+    expect(complete({ fixed: independentThree, written: [...guidedThree, ...productiveTwo] })).toEqual(new Set([A]));
   });
 });

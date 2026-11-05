@@ -4,7 +4,7 @@ import type { Services } from "../../../config";
 import { deckVersions, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { agentObjectivesOf, asAgentCapable } from "../../../domain/lessons/agent/capable";
-import { finalLessonCheck } from "../../../domain/lessons/agent/status";
+import { completeObjectivesOnLesson, finalLessonCheck } from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -111,16 +111,23 @@ function withGenerationGaps(next: LessonContext, gaps: readonly LessonGeneration
 }
 
 /**
- * Postęp zawężony do ćwiczeń zapisanych do szkicu (te same referencje co w postępie): zagadnienie, któremu
- * kontrola końcowa albo zapis odrzuciły ćwiczenie, nie jest kompletem — o luce decyduje liczba zapisanych.
+ * Postęp zawężony do ćwiczeń zapisanych do szkicu (te same referencje co w postępie). Zagadnienie `complete`,
+ * któremu kontrola końcowa albo zapis odrzuciły ćwiczenie, staje się `incomplete`, chyba że jest kompletem
+ * na zapisanej lekcji (`completeOnWritten`, tryb puli: status liczony od nowa). Dogenerowanie podaje
+ * `undefined` — o luce decyduje liczba zapisanych nowych ćwiczeń.
  */
-function writtenProgress(progress: LessonAgentProgress, written: readonly LessonExerciseDraft[]): LessonAgentProgress {
+function writtenProgress(
+  progress: LessonAgentProgress,
+  written: readonly LessonExerciseDraft[],
+  completeOnWritten?: ReadonlySet<string>,
+): LessonAgentProgress {
   const kept = new Set(written);
   const objectives = Object.fromEntries(
     Object.entries(progress.objectives).map(([objectiveId, entry]) => {
       const exercises = entry.exercises.filter((exercise) => kept.has(exercise));
       const dropped = exercises.length < entry.exercises.length;
-      return [objectiveId, { ...entry, exercises, ...(dropped && entry.status === "complete" ? { status: "incomplete" as const } : {}) }];
+      const broken = dropped && entry.status === "complete" && completeOnWritten?.has(objectiveId) !== true;
+      return [objectiveId, { ...entry, exercises, ...(broken ? { status: "incomplete" as const } : {}) }];
     }),
   );
   return { ...progress, objectives };
@@ -250,28 +257,41 @@ export async function executeLessonAgentGeneration(
     const accepted = acceptedInLessonOrder(progress, mode === "add" ? [addObjectiveId!] : lessonOrder);
     const newExamples = mode === "add" ? {} : newExamplesOf(progress, lessonOrder);
     const capable = asAgentCapable(subject);
+    const agentObjectives = agentObjectivesOf(topic, kindsOf(dynamicTopic));
+    const limits = lessonAgentLimits(capable, topic, input.poolSize);
     const check = finalLessonCheck({
       subject: capable,
       topic,
-      objectives: agentObjectivesOf(topic, kindsOf(dynamicTopic)),
+      objectives: agentObjectives,
       material: input.material,
       fixed: draft.exercises,
       accepted: accepted.map((exercise) => ({ objectiveId: exercise.objectiveId, draft: exercise })),
       // Zdania i przykłady kart są źródłami ujawnień tak jak w kierowniku.
       examples: mergeExamples(cardExposureSources(subject, topic), mode === "add" ? draft.examples : newExamples),
-      limits: lessonAgentLimits(capable, topic, input.poolSize),
+      limits,
     });
     if (check.removed > 0) console.log(`[lesson-agent] run=${runId} final_check removed=${check.removed}`);
-    // Luki z ćwiczeń faktycznie zapisanych (pula i dogenerowanie): zagadnienie, któremu kontrola końcowa albo
-    // sam zapis (kolizje z historyjką) odrzuciły ćwiczenie, nie jest kompletem, a dogenerowanie liczy
-    // „dodano k z N” z zapisanych, nie z przyjętych przez agenta.
+    // Luki z ćwiczeń faktycznie zapisanych: w puli zagadnienie, któremu kontrola końcowa albo sam zapis (kolizje
+    // z historyjką) odrzuciły ćwiczenie, traci komplet tylko wtedy, gdy nie jest kompletem na zapisanej lekcji
+    // (status jak w kierowniku: własne przykłady kart, pozostałe źródła ujawnień, limity puli); dogenerowanie
+    // liczy „dodano k z N” z zapisanych, nie z przyjętych przez agenta.
     let gaps: LessonGenerationGap[] = [];
+    const completeOnWritten = (written: readonly LessonExerciseDraft[]): ReadonlySet<string> =>
+      completeObjectivesOnLesson({
+        subject: capable,
+        topic,
+        objectives: agentObjectives,
+        material: input.material,
+        fixed: draft.exercises,
+        written,
+        examples: newExamples,
+        fixedSources: cardExposureSources(subject, topic),
+        limits,
+      });
     const gapsAfterWrite = (written: readonly LessonExerciseDraft[]): LessonGenerationGap[] =>
-      generationGapsOf(
-        writtenProgress(progress, written),
-        lessonOrder,
-        regenerate === undefined ? "pool" : { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } },
-      );
+      regenerate === undefined
+        ? generationGapsOf(writtenProgress(progress, written, completeOnWritten(written)), lessonOrder, "pool")
+        : generationGapsOf(writtenProgress(progress, written), lessonOrder, { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } });
     // Porażka walidacji zapisu (wszystko odrzucone): liczniki są już w kontekście, a odrzucone ćwiczenia
     // nie wracają — „Ponów” generuje od nowa zamiast liczyć te same usunięcia ponownie.
     const discarded = discardedProgress(progress);

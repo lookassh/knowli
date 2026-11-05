@@ -255,3 +255,40 @@ export function finalLessonCheck(args: {
   const kept = args.accepted.flatMap((entry, index) => (survivors.has(`ex${index + 1}`) ? [entry.draft] : []));
   return { kept, removed: args.accepted.length - kept.length };
 }
+
+/**
+ * Zagadnienia kompletne na lekcji po zapisie (spec etapu 2a §11): stan jak w `finalLessonCheck` —
+ * `fixed` nietykalne, zapisane ćwiczenia jako pule zagadnień w kolejności `written` — i `objectiveStatus`
+ * każdego zagadnienia tematu. `examples` (własne przykłady kart zagadnień) i `fixedSources` (pozostałe
+ * źródła ujawnień) jak w stanie kierownika, żeby liczba przykładów kart i ujawnienia liczyły się tak samo.
+ */
+export function completeObjectivesOnLesson(args: {
+  readonly subject: AgentCapableSubject;
+  readonly topic: LessonTopic;
+  readonly objectives: readonly AgentObjective[];
+  readonly material: string;
+  readonly fixed: readonly LessonExerciseDraft[];
+  readonly written: readonly LessonExerciseDraft[];
+  readonly examples: Readonly<Record<string, readonly string[]>>;
+  readonly fixedSources: Readonly<Record<string, readonly string[]>>;
+  readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>;
+}): Set<string> {
+  const ctx: AgentCheckContext = { subject: args.subject, material: args.material, limits: args.limits };
+  let state = createLessonAgentState({
+    topic: args.topic,
+    objectives: args.objectives,
+    fixed: args.fixed,
+    examples: args.examples,
+    fixedSources: args.fixedSources,
+  });
+  const pools = new Map<string, AgentPoolEntry[]>();
+  args.written.forEach((draft, index) => {
+    const pool = pools.get(draft.objectiveId) ?? [];
+    pool.push({ id: `ex${index + 1}`, draft });
+    pools.set(draft.objectiveId, pool);
+  });
+  const known = new Set(args.objectives.map((objective) => objective.id));
+  for (const [objectiveId, pool] of pools) if (known.has(objectiveId)) state = withPool(state, objectiveId, pool);
+  state = { ...state, nextId: args.written.length + 1 };
+  return new Set(args.objectives.filter((objective) => objectiveStatus(state, objective.id, ctx).complete).map((objective) => objective.id));
+}
