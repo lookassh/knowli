@@ -380,8 +380,8 @@ Rozstrzygnięcia podjęte podczas implementacji, które zmieniają albo doprecyz
 
 - Reguła o pustym `hint` (§6.2) dotyczy wyłącznie `lesson_gap`; generyczny prompt przedmiotu dopuszcza podpowiedź w innych typach, a walidator PC jej tam nie egzekwuje.
 - Luka tylko na formę be (bez nawiasu): odpowiedź przecząca jest dopuszczona wyłącznie wtedy, gdy w bodźcu nie ma „not” po luce i (cel 3 albo w bodźcu stoi marker „No”). Zamyka to dwuznaczne klucze i podwójne przeczenia.
-- Ta sama reguła biegunowości działa dla `lesson_choice` z luką na formę be. Dodatkowo dystraktor równy kluczowi z dodanym lub usuniętym „not” / „n't” jest odrzucany, jeśli w bodźcu nie ma markera Yes/No — inaczej poprawne byłyby dwie opcje.
-- Pytania w celach 2 i 6 występują wyłącznie jako całe zdania (`choice`, `open_answer`); w pytaniu nigdy nie ma luki (§3.1 dla celu 6 rozszerzone na cel 2).
+- Ta sama reguła biegunowości działa dla `lesson_choice` z luką na formę be. Dodatkowo dystraktor równy kluczowi z dodanym lub usuniętym „not” / „n't” jest odrzucany, jeśli w bodźcu nie ma markera Yes/No — inaczej poprawne byłyby dwie opcje. Kontrola ± not jest pomijana, gdy „not” stoi już za luką.
+- Cel 6: pytania tylko w `lesson_choice` (całe zdania w opcjach) i `lesson_open_answer`; w celu 2 pytań nie ma (§6.3). W `lesson_choice` i `lesson_listen_choice` celów 2 i 6 pytanie z luką jest odrzucane osobnym komunikatem `pc-shape:` (forma po podmiocie zdradza czas).
 - Luka z czasownikiem nie może stać po formie be ani po do/does w tej samej klauzuli.
 - Pytanie z inwersją i luką na formę be, w którym podmiotem jest imię albo rzeczownik („___ Ola reading?”): gdy pomocniki zgodności be nie zwracają formy, walidator wyprowadza ją z tokenów po luce.
 
