@@ -15,6 +15,12 @@ import {
   type UsageFeature,
   type UsageRecorder,
 } from "@learning/server";
+import {
+  FakeExerciseChecker,
+  FakeLessonPoolAgent,
+  type FakeLessonPoolAgentOptions,
+} from "../../packages/server/src/providers/fake-lesson-agent";
+import type { LessonAgentPolicy } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
 
 // Klasy fake'ów żyją w packages/server (współdzielone z trybem
 // UMIEM_FAKE_PROVIDERS=1); testy tylko konfigurują zachowania.
@@ -38,20 +44,46 @@ export interface FakeGeneration {
   dispose: () => Promise<void>;
 }
 
-export async function fakeGeneration(): Promise<FakeGeneration> {
+export interface FakeGenerationOptions {
+  /** Składa agenta puli lekcji (fake z pętlą generatora); bez niej `lessonAgent` nieustawione (potok). */
+  withAgent?: boolean;
+  /** Opcje fake'a agenta, nadpisują domyślne `generate: {}`. */
+  agent?: FakeLessonPoolAgentOptions;
+  /** Checker zamiast domyślnego „niedostępnego”. */
+  checker?: FakeExerciseChecker;
+  policy?: Partial<LessonAgentPolicy>;
+}
+
+export async function fakeGeneration(options: FakeGenerationOptions = {}): Promise<FakeGeneration & { agent: FakeLessonPoolAgent }> {
   const root = await mkdtemp(join(tmpdir(), "knowli-media-"));
   const store = createLocalMediaStore(root);
   const llm = new FakeLlmProvider();
   const tts = new FakeTtsProvider();
   const image = new FakeImageProvider();
   const settings = fakeMediaSettings;
+  const agent = new FakeLessonPoolAgent({ generate: {}, ...options.agent });
   return {
     llm,
     tts,
     image,
     store,
     settings,
-    deps: { llm, tts, image, mediaStore: store },
+    agent,
+    deps: {
+      llm,
+      tts,
+      image,
+      mediaStore: store,
+      ...(options.withAgent
+        ? {
+            lessonAgent: {
+              agent,
+              checker: options.checker ?? new FakeExerciseChecker({ unavailable: true }),
+              policy: options.policy ?? {},
+            },
+          }
+        : {}),
+    },
     root,
     dispose: () => rm(root, { recursive: true, force: true }),
   };

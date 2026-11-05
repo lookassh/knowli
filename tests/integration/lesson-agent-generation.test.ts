@@ -37,7 +37,7 @@ import {
   type FakeAgentStep,
   type FakeLessonPoolAgentOptions,
 } from "../../packages/server/src/providers/fake-lesson-agent";
-import type { HintVerdict, LessonObjectiveAgentInput, LlmProvider } from "../../packages/server/src/ports/ai";
+import type { HintVerdict, LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
 import {
   DEFAULT_LESSON_GENERATION_POLICY,
   type LessonGenerationPolicy,
@@ -311,8 +311,8 @@ describe("agent puli lekcji (integracja)", () => {
       return createServices({ db: testDatabase().db, clock, media: fakes.settings, generation });
     }
 
-    /** Scenariusz fake'a agenta: stały albo budowany z fake'ów świata (kroki „jak LLM” w ponowieniach). */
-    type AgentScript = Omit<FakeLessonPoolAgentOptions, "fromLlm"> | ((fakes: FakeGeneration) => FakeLessonPoolAgentOptions);
+    /** Scenariusz fake'a agenta; zagadnienia bez scenariusza generuje pętla generatora (`generate: {}`). */
+    type AgentScript = FakeLessonPoolAgentOptions;
 
     interface WorldOptions {
       readonly policy?: LessonAgentDeps["policy"];
@@ -325,14 +325,13 @@ describe("agent puli lekcji (integracja)", () => {
     }
 
     /**
-     * Produkcyjny rejestr, fake LLM, fake agenta (domyślnie „jak LLM”), checker niedostępny.
+     * Produkcyjny rejestr, fake agenta (domyślnie pętla generatora), checker niedostępny.
      * Kontroler sprawdza bieżącość próby co 20 ms (edycja i „Ponów” w trakcie przerywają próbę od razu).
      */
     async function agentWorld(agentOptions: AgentScript = {}, world: WorldOptions = {}): Promise<AgentWorld> {
-      const fakes = await fakeGeneration();
+      const fakes = await fakeGeneration({ agent: agentOptions });
       disposers.push(fakes.dispose);
-      const options = typeof agentOptions === "function" ? agentOptions(fakes) : agentOptions;
-      const agent = new FakeLessonPoolAgent({ fromLlm: fakes.llm, ...options });
+      const { agent } = fakes;
       const lessonAgent: LessonAgentDeps = {
         agent,
         checker: world.checker ?? new FakeExerciseChecker({ unavailable: true }),
@@ -413,10 +412,10 @@ describe("agent puli lekcji (integracja)", () => {
     const transient = (): FakeAgentStep => ({ throw: new GenerationProviderError("transient") });
 
     /**
-     * Krok „jak LLM” w scenariuszu ponowień: wywołanie spoza listy `calls` nie ma kroków (nie wraca do
-     * `fromLlm`), więc wynik generatora w ponowieniu podaje się jawnie (krok wewnętrzny fake'a).
+     * Jedno zgłoszenie generatora fake'a w scenariuszu ponowień: wywołanie spoza listy `calls` nie ma
+     * kroków (nie wraca do pętli generatora), więc wynik generatora w ponowieniu podaje się jawnie.
      */
-    const llmStep = (llm: LlmProvider): FakeAgentStep => ({ fromLlm: llm }) as unknown as FakeAgentStep;
+    const GENERATE: FakeAgentStep = { generate: true };
 
     /** Wywołanie „w locie”, które kończy tylko przerwanie sygnału. */
     const never = (): FakeAgentStep => ({ gate: new Promise<void>(() => undefined) });
@@ -479,7 +478,7 @@ describe("agent puli lekcji (integracja)", () => {
       row.agent_checkpoint as { totalSpentUsd: number; objectives: Record<string, { status: string; accepted: number }> };
 
     it("rozdział: planer → szkic, dynamicTopic, przykłady, editNumber+1, podsumowanie bez treści", async () => {
-      const { fakes, services, agent } = await agentWorld();
+      const { services, agent } = await agentWorld();
       const { runId, deckId } = await createLessonFromMaterial(services, {
         subjectId: "english_chapter",
         topicTitlePl: "Unit 1",
@@ -494,7 +493,7 @@ describe("agent puli lekcji (integracja)", () => {
       const row = await fullRun(runId);
       expect(row.state).toBe("succeeded");
       expect(agent.planCalls).toHaveLength(1);
-      expect(fakes.llm.lessonRequests.length).toBeGreaterThan(0);
+      expect(agent.calls.length).toBeGreaterThan(0);
       const after = await versionOf(runId);
       expect(after.edit_number).toBe(before.edit_number + 1);
       expect(after.state).toBe("review");
@@ -739,7 +738,7 @@ describe("agent puli lekcji (integracja)", () => {
     });
 
     it("agent: attempts > MAX → attempts_exhausted bez wywołań", async () => {
-      const { fakes, services, agent } = await agentWorld();
+      const { services, agent } = await agentWorld();
       const { runId } = await createLesson(services, command());
       await pool.query("update learning_app.generation_runs set attempts = 3 where id = $1", [runId]);
 
@@ -749,7 +748,6 @@ describe("agent puli lekcji (integracja)", () => {
       expect(row.state).toBe("failed");
       expect(row.error_code).toBe("attempts_exhausted");
       expect(row.attempts).toBe(4);
-      expect(fakes.llm.lessonRequests).toEqual([]);
       expect(agent.calls).toEqual([]);
     });
 
@@ -774,8 +772,6 @@ describe("agent puli lekcji (integracja)", () => {
       expect(row.state).toBe("succeeded");
       // Podsumowanie punktu kontrolnego zapisuje tylko ścieżka agenta.
       expectSummaryWithoutContent(row.agent_checkpoint, 1);
-      // generator fake'a agenta, nie fake LLM potoku
-      expect(fakes.llm.lessonRequests).toEqual([]);
       expect(await exerciseCount((await versionOf(runId)).id)).toBeGreaterThan(0);
     });
 
@@ -886,11 +882,11 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("błąd przejściowy zagadnienia → queued; kolejna próba pomija gotowe, planera i etap zagadnień szkoły, przenosi wydatek, kończy zapisem", async () => {
         // Drugie zagadnienie rozdziału i szkoły: w próbie 1 błąd przejściowy, w próbie 2 wynik generatora.
-        const flaky = (fakes: FakeGeneration) => ({ calls: [[transient()], [llmStep(fakes.llm)]] });
-        const { fakes, services, agent } = await agentWorld((fakes) => ({
+        const flaky = { calls: [[transient()], [GENERATE]] };
+        const { fakes, services, agent } = await agentWorld({
           stepCostUsd: 0.01,
-          objectives: { part_2: flaky(fakes), gory_polski: flaky(fakes) },
-        }));
+          objectives: { part_2: flaky, gory_polski: flaky },
+        });
         const callsOf = (prefix: string) => agent.calls.filter((call) => call.objectiveId.startsWith(prefix)).map((call) => slugOf(call.objectiveId));
 
         // Rozdział (planer).
@@ -907,11 +903,11 @@ describe("agent puli lekcji (integracja)", () => {
         expect(requeued.error_code).toBe("provider");
         expect(requeued.next_attempt_at).not.toBeNull();
         const saved = parseLessonAgentProgress(requeued.agent_checkpoint, chapter.runId)!;
-        // Fake generatora rozdziału nie domyka zagadnień słów i ram — `incomplete` startują od zera jak `failed`.
+        // Generator rozdziału używa słów kart i wymaganych typów, więc zagadnienia bez awarii są kompletne.
         expect(Object.fromEntries(Object.entries(saved.objectives).map(([id, entry]) => [slugOf(id), entry.status]))).toEqual({
-          part_1: "incomplete",
+          part_1: "complete",
           part_2: "failed",
-          part_3: "incomplete",
+          part_3: "complete",
         });
         expect(saved.dynamicTopic?.objectives).toHaveLength(3);
         expect(Object.keys(saved.planExamples ?? {})).toHaveLength(3);
@@ -926,10 +922,10 @@ describe("agent puli lekcji (integracja)", () => {
         expect(chapterRow.attempts).toBe(2);
         // Planer pominięty: temat i przykłady planu z punktu kontrolnego.
         expect(agent.planCalls).toHaveLength(1);
-        expect(callsOf("english_chapter.")).toEqual(["part_1", "part_2", "part_3", "part_1", "part_2", "part_3"]);
+        expect(callsOf("english_chapter.")).toEqual(["part_1", "part_2", "part_3", "part_2"]);
         expectSummaryWithoutContent(chapterRow.agent_checkpoint, 2);
-        // Wydatek przeniesiony: 0,04 z próby 1 + trzy kroki próby 2.
-        expect(summaryOf(chapterRow).totalSpentUsd).toBeCloseTo(0.07, 6);
+        // Wydatek przeniesiony: 0,04 z próby 1 + jeden krok próby 2 (tylko `part_2`).
+        expect(summaryOf(chapterRow).totalSpentUsd).toBeCloseTo(0.05, 6);
         const chapterVersion = await versionOf(chapter.runId);
         const chapterContext = chapterVersion.lesson_context as { dynamicTopic: unknown };
         expect(chapterContext.dynamicTopic).toEqual(saved.dynamicTopic);
@@ -1095,9 +1091,9 @@ describe("agent puli lekcji (integracja)", () => {
       it("podbicie editNumber przez acceptVerdictAsVariant w trakcie → run superseded (nie running), agent_checkpoint NULL", async () => {
         const inFlight = gate();
         // Wywołanie 1: pula lekcji; wywołanie 2: dogenerowanie, w trakcie którego rodzic przyjmuje wariant.
-        const { services } = await agentWorld((fakes) => ({
-          objectives: { third_person_s: { calls: [[llmStep(fakes.llm)], [inFlight.step]] } },
-        }));
+        const { services } = await agentWorld({
+          objectives: { third_person_s: { calls: [[GENERATE], [inFlight.step]] } },
+        });
         const lesson = await createLesson(services, command());
         await executeLessonGeneration(services, lesson.runId);
         expect((await fullRun(lesson.runId)).state).toBe("succeeded");
@@ -1136,7 +1132,7 @@ describe("agent puli lekcji (integracja)", () => {
         const inFlight = gate();
         // Długi odstęp sprawdzania bieżącości: starą próbę kończy wyłącznie straż zapisu punktu kontrolnego.
         const { services, agent } = await agentWorld(
-          (fakes) => ({ stepCostUsd: 0.01, objectives: { negative: { calls: [[inFlight.step], [llmStep(fakes.llm)]] } } }),
+          { stepCostUsd: 0.01, objectives: { negative: { calls: [[inFlight.step], [GENERATE]] } } },
           { execution: { cancelPollMs: 60_000 } },
         );
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
@@ -1169,30 +1165,26 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("Ponów po częściowym runie → wznowienie bez zduplikowanych familyId", async () => {
         /**
-         * Generator dogenerowania: jedno pytanie otwarte z rodziną o stałym slugu — model powtarza slug w każdej
-         * próbie, więc rozdzielić rodziny musi zakres runu (`familyScope`) per próba. Fake proszony o jedno
-         * ćwiczenie etapu samodzielnego; `offset` przesuwa jego indeks odpowiedzi za pulę (inaczej odpowiedź
-         * powtarza odpowiedź puli i odpada jako ujawniona).
+         * Krok dogenerowania: jedno pytanie otwarte z rodziną o stałym slugu — model powtarza slug w każdej
+         * próbie, więc rozdzielić rodziny musi zakres runu (`familyScope`) per próba. Generator proszony
+         * o jedno ćwiczenie etapu samodzielnego; `offset` przesuwa jego indeks odpowiedzi za pulę (inaczej
+         * odpowiedź powtarza odpowiedź puli i odpada jako ujawniona).
          */
-        const oneFamily = (llm: LlmProvider, offset: number): LlmProvider =>
-          ({
-            generateLessonPool: async (input: Parameters<LlmProvider["generateLessonPool"]>[0], signal?: AbortSignal) => {
-              const existingExercises = Array.from({ length: offset }, () => ({})) as unknown as typeof input.existingExercises;
-              const stageCounts = { guided: 0, productive: 0, independent: 1 };
-              const result = await llm.generateLessonPool({ ...input, existingExercises, stageCounts }, signal);
-              const open = result.exercises
-                .filter((exercise) => (exercise as { exerciseType?: unknown }).exerciseType === "lesson_open_answer")
-                .slice(0, 1)
-                .map((exercise) => ({ ...(exercise as Record<string, unknown>), familyId: "pytanie-1" }));
-              return { ...result, exercises: open };
-            },
-          }) as unknown as LlmProvider;
-        // Wywołanie 1: pula lekcji; 2: dogenerowanie — jedno pytanie, potem błąd przejściowy; 3: wznowienie po „Ponów”.
-        const { services, agent } = await agentWorld((fakes) => ({
-          objectives: {
-            rzeki_polski: { calls: [[llmStep(fakes.llm)], [llmStep(oneFamily(fakes.llm, 100)), transient()], [llmStep(oneFamily(fakes.llm, 200))]] },
+        const oneFamily = (offset: number): FakeAgentStep => ({
+          build: (input) => {
+            const open = fakeObjectiveExercises(input, offset, { independent: 1 })
+              .exercises.filter((exercise) => (exercise as { exerciseType?: unknown }).exerciseType === "lesson_open_answer")
+              .slice(0, 1)
+              .map((exercise) => ({ ...(exercise as Record<string, unknown>), familyId: "pytanie-1" }));
+            return { exercises: open };
           },
-        }));
+        });
+        // Wywołanie 1: pula lekcji; 2: dogenerowanie — jedno pytanie, potem błąd przejściowy; 3: wznowienie po „Ponów”.
+        const { services, agent } = await agentWorld({
+          objectives: {
+            rzeki_polski: { calls: [[GENERATE], [oneFamily(100), transient()], [oneFamily(200)]] },
+          },
+        });
         const school = await createSchoolLesson(services, {
           subjectTitlePl: "Geografia",
           topicTitlePl: "Polska",
@@ -1240,9 +1232,9 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("porażka walidacji, potem „Ponów” i sukces → liczniki usunięć w kontekście raz", async () => {
         // Próba 1 nic nie przyjmuje (porażka walidacji), próba po „Ponów” — wynik generatora.
-        const { services } = await agentWorld((fakes) => ({
-          objectives: { third_person_s: { calls: [[], [llmStep(fakes.llm)]] } },
-        }));
+        const { services } = await agentWorld({
+          objectives: { third_person_s: { calls: [[], [GENERATE]] } },
+        });
         const { runId } = await createLesson(services, command());
         const before = contextOf(await versionOf(runId));
         // Wcześniejsza próba: 2 usunięcia bezpiecznika i 1 zagadnienie odrzucone przy budowie tematu.
@@ -1364,36 +1356,29 @@ describe("agent puli lekcji (integracja)", () => {
       }
 
       /**
-       * Generator dogenerowania (fake LLM): indeks odpowiedzi przesunięty za pulę (`offset`; inaczej odpowiedzi
-       * powtarzają pulę i odpadają jako duplikaty), liczby etapów i dodatku słuchowego zamiast liczb promptu
+       * Krok dogenerowania (generator fake'a): indeks odpowiedzi przesunięty za pulę (`offset`; inaczej odpowiedzi
+       * powtarzają pulę i odpadają jako duplikaty), liczby etapów i dodatku słuchowego zamiast liczb z wejścia
        * (`stages`, `listen`), najwyżej `take` pierwszych ćwiczeń, `extra` przed wynikiem generatora.
        */
-      function addGenerator(
-        llm: LlmProvider,
-        options: {
-          offset: number;
-          stages?: { guided: number; productive: number; independent: number };
-          listen?: number;
-          take?: number;
-          extra?: readonly LessonExerciseDraft[];
-        },
-      ): LlmProvider {
+      function addGenerator(options: {
+        offset: number;
+        stages?: { guided: number; productive: number; independent: number };
+        listen?: number;
+        take?: number;
+        extra?: readonly LessonExerciseDraft[];
+      }): FakeAgentStep {
         return {
-          generateLessonPool: async (input: Parameters<LlmProvider["generateLessonPool"]>[0], signal?: AbortSignal) => {
-            const existingExercises = Array.from({ length: options.offset }, () => ({})) as unknown as typeof input.existingExercises;
-            const result = await llm.generateLessonPool(
-              {
-                ...input,
-                existingExercises,
-                ...(options.stages === undefined ? {} : { stageCounts: options.stages }),
-                ...(options.listen === undefined ? {} : { listenChoicePerObjective: options.listen }),
-              },
-              signal,
-            );
-            const generated = options.take === undefined ? result.exercises : result.exercises.slice(0, options.take);
-            return { ...result, exercises: [...(options.extra ?? []), ...generated] };
+          build: (input) => {
+            const request: LessonObjectiveAgentInput = {
+              ...input,
+              pool: { ...input.pool, ...(options.stages === undefined ? {} : { stageCounts: options.stages }) },
+              targets: { ...input.targets, ...(options.listen === undefined ? {} : { listenAllowance: options.listen }) },
+            };
+            const result = fakeObjectiveExercises(request, options.offset);
+            const taken = options.take === undefined ? result.exercises : result.exercises.slice(0, options.take);
+            return { ...result, exercises: [...(options.extra ?? []), ...taken] };
           },
-        } as unknown as LlmProvider;
+        };
       }
 
       /** Lekcja gramatyki z pulą z pierwszego wywołania agenta i run „Dogeneruj +N” zagadnienia w kolejce. */
@@ -1447,16 +1432,16 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("dogeneruj +2 → najwyżej 2+stageGap+listenLeft nowych, szkic nietknięty, generationGaps bez wpisu zagadnienia", async () => {
         // Wywołanie 2: generator zgłasza znacznie więcej ćwiczeń, niż wolno przyjąć.
-        const { services, agent } = await agentWorld((fakes) => ({
+        const { services, agent } = await agentWorld({
           objectives: {
             third_person_s: {
               calls: [
-                [llmStep(fakes.llm)],
-                [llmStep(addGenerator(fakes.llm, { offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 }))],
+                [GENERATE],
+                [addGenerator({ offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 })],
               ],
             },
           },
-        }));
+        });
         const { draft, add, before, poolRunId } = await draftWithAdd(services, 2, (versionId) =>
           // Luki z wcześniejszego generowania: wpis tego zagadnienia znika, wpis innego zostaje.
           setContextField(versionId, "generationGaps", [
@@ -1508,19 +1493,19 @@ describe("agent puli lekcji (integracja)", () => {
         // Wywołanie 2: luka z rozwiązaniem ze zdania historyjki zapisanej w trakcie runu (agent jej nie zna)
         // i jedno zwykłe ćwiczenie — agent przyjmuje oba, zapis odrzuca kolizję.
         const lateCollision = gapExercise("Sam ___ his red bike.", "rides");
-        const { services, agent } = await agentWorld((fakes) => ({
+        const { services, agent } = await agentWorld({
           objectives: {
             third_person_s: {
               calls: [
-                [llmStep(fakes.llm)],
+                [GENERATE],
                 [
                   inFlight.step,
-                  llmStep(addGenerator(fakes.llm, { offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1, extra: [lateCollision] })),
+                  addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1, extra: [lateCollision] }),
                 ],
               ],
             },
           },
-        }));
+        });
         const { draft, add, before } = await draftWithAdd(services, 2, (versionId) => setContextField(versionId, "story", STORY_START));
         const contextBefore = contextOf(await versionOf(add.runId));
 
@@ -1552,9 +1537,9 @@ describe("agent puli lekcji (integracja)", () => {
         // Pula z fake LLM (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
         // szkicu — agent w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
         const collision = gapExercise("Sam ___ his red bike.", "rides");
-        const { services } = await agentWorld((fakes) => ({
-          objectives: { third_person_s: { calls: [[llmStep(addGenerator(fakes.llm, { offset: 0, extra: [collision] }))]] } },
-        }));
+        const { services } = await agentWorld({
+          objectives: { third_person_s: { calls: [[addGenerator({ offset: 0, extra: [collision] })]] } },
+        });
         const { runId } = await createLesson(services, command());
         const before = await versionOf(runId);
         await setContextField(before.id, "story", STORY_LATE);
@@ -1575,17 +1560,17 @@ describe("agent puli lekcji (integracja)", () => {
       it("dogeneruj z błędem przejściowym → requeue → łącznie ≤ limitu, bez duplikatów", async () => {
         // Wywołanie 2: jedno ćwiczenie, potem błąd przejściowy; wywołanie 3 (ponowienie) zaczyna od tego samego
         // ćwiczenia (ten sam indeks odpowiedzi) i zgłasza dużo więcej.
-        const { services, agent } = await agentWorld((fakes) => ({
+        const { services, agent } = await agentWorld({
           objectives: {
             third_person_s: {
               calls: [
-                [llmStep(fakes.llm)],
-                [llmStep(addGenerator(fakes.llm, { offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 })), transient()],
-                [llmStep(addGenerator(fakes.llm, { offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 }))],
+                [GENERATE],
+                [addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 }), transient()],
+                [addGenerator({ offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 })],
               ],
             },
           },
-        }));
+        });
         const { draft, add, before } = await draftWithAdd(services, 3);
 
         await executeLessonGeneration(services, add.runId);
@@ -1619,9 +1604,9 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("dogeneruj bez nowych → failed, editNumber bez zmian", async () => {
-        const { services, agent } = await agentWorld((fakes) => ({
-          objectives: { third_person_s: { calls: [[llmStep(fakes.llm)], []] } },
-        }));
+        const { services, agent } = await agentWorld({
+          objectives: { third_person_s: { calls: [[GENERATE], []] } },
+        });
         const { draft, add, before } = await draftWithAdd(services, 2);
 
         await executeLessonGeneration(services, add.runId);
@@ -1639,13 +1624,13 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("dogeneruj z niedoborem → add_short dodano k z N", async () => {
         // Wywołanie 2: model kończy po jednym ćwiczeniu.
-        const { services } = await agentWorld((fakes) => ({
+        const { services } = await agentWorld({
           objectives: {
             third_person_s: {
-              calls: [[llmStep(fakes.llm)], [llmStep(addGenerator(fakes.llm, { offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 }))]],
+              calls: [[GENERATE], [addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 })]],
             },
           },
-        }));
+        });
         const { draft, add, before } = await draftWithAdd(services, 3);
 
         await executeLessonGeneration(services, add.runId);
@@ -1662,17 +1647,17 @@ describe("agent puli lekcji (integracja)", () => {
         const inFlight = gate();
         const lateCollision = gapExercise("Sam ___ his red bike.", "rides");
         // Wywołanie 2: jedyne zgłoszone ćwiczenie koliduje z historyjką zapisaną w trakcie; wywołanie 3 po „Ponów”.
-        const { services } = await agentWorld((fakes) => ({
+        const { services } = await agentWorld({
           objectives: {
             third_person_s: {
               calls: [
-                [llmStep(fakes.llm)],
+                [GENERATE],
                 [inFlight.step, { submit: { exercises: [lateCollision] } }],
-                [llmStep(addGenerator(fakes.llm, { offset: 200 }))],
+                [addGenerator({ offset: 200 })],
               ],
             },
           },
-        }));
+        });
         const { draft, add, before } = await draftWithAdd(services, 2);
         const contextBefore = contextOf(await versionOf(add.runId));
         // Wcześniejsza próba: 2 usunięcia bezpiecznika kierownika.
@@ -1769,32 +1754,26 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       /**
-       * Generator: wynik fake LLM, w którym `edit` zmienia pierwsze pytanie otwarte (`all` — każde) albo — z
+       * Krok generatora: wynik fake'a, w którym `edit` zmienia pierwsze pytanie otwarte (`all` — każde) albo — z
        * `only` — wynik ma tylko to jedno, zmienione pytanie (poprawka jednego ćwiczenia). `offset` przesuwa
        * indeks odpowiedzi za pulę i prosi o jedno ćwiczenie etapu samodzielnego (dogenerowanie).
        */
       function openPool(
-        llm: LlmProvider,
         edit: (exercise: Exercise) => Exercise,
         options: { all?: true; only?: true; offset?: number } = {},
-      ): LlmProvider {
+      ): FakeAgentStep {
         return {
-          generateLessonPool: async (input: Parameters<LlmProvider["generateLessonPool"]>[0], signal?: AbortSignal) => {
-            const request =
+          build: (input) => {
+            const result =
               options.offset === undefined
-                ? input
-                : {
-                    ...input,
-                    existingExercises: Array.from({ length: options.offset }, () => ({})) as unknown as typeof input.existingExercises,
-                    stageCounts: { guided: 0, productive: 0, independent: 1 },
-                  };
-            const result = await llm.generateLessonPool(request, signal);
+                ? fakeObjectiveExercises(input, 0)
+                : fakeObjectiveExercises(input, options.offset, { independent: 1 });
             const first = result.exercises.find(isOpen);
-            if (options.only) return { ...result, exercises: first === undefined ? [] : [edit(first)], examples: {} };
+            if (options.only) return { exercises: first === undefined ? [] : [edit(first)] };
             const exercises = result.exercises.map((exercise) => (isOpen(exercise) && (options.all || exercise === first) ? edit(exercise) : exercise));
             return { ...result, exercises };
           },
-        } as unknown as LlmProvider;
+        };
       }
 
       function schoolLesson(services: Services) {
@@ -1854,14 +1833,14 @@ describe("agent puli lekcji (integracja)", () => {
         const grader = schoolGrader();
         const checker = schoolChecker();
         const { services } = await agentWorld(
-          (fakes) => ({
+          {
             objectives: {
               rzeki_polski: [
-                llmStep(openPool(fakes.llm, disputed)),
-                llmStep(openPool(fakes.llm, (exercise) => repaired(disputed(exercise)), { only: true })),
+                openPool(disputed),
+                openPool((exercise) => repaired(disputed(exercise)), { only: true }),
               ],
             },
-          }),
+          },
           { checker, grader },
         );
         const { runId } = await schoolLesson(services);
@@ -1893,10 +1872,10 @@ describe("agent puli lekcji (integracja)", () => {
         const grader = schoolGrader();
         const checker = schoolChecker();
         const { services, agent } = await agentWorld(
-          (fakes) => {
-            const everyDisputed = llmStep(openPool(fakes.llm, disputed, { all: true }));
+          (() => {
+            const everyDisputed = openPool(disputed, { all: true });
             return { objectives: { rzeki_polski: [everyDisputed, everyDisputed, everyDisputed, everyDisputed, everyDisputed] } };
-          },
+          })(),
           { checker, grader, policy: { maxStepsPerObjective: 3 } },
         );
         const { runId } = await schoolLesson(services);
@@ -1938,7 +1917,7 @@ describe("agent puli lekcji (integracja)", () => {
       it("no grader → no open calls: bez gradera rozwiązujący i grader nie są wołane, sędzia podpowiedzi działa", async () => {
         const checker = schoolChecker({ judgeHint: () => ({ verdict: "ok" }) });
         const { services } = await agentWorld(
-          (fakes) => ({ objectives: { rzeki_polski: [llmStep(openPool(fakes.llm, (exercise) => ({ ...exercise, hint: GOOD_HINT })))] } }),
+          { objectives: { rzeki_polski: [openPool((exercise) => ({ ...exercise, hint: GOOD_HINT }))] } },
           { checker },
         );
         const { runId } = await schoolLesson(services);
@@ -1964,14 +1943,14 @@ describe("agent puli lekcji (integracja)", () => {
           judgeHint: (item) => (item.hint === BAD_HINT ? { verdict: "unsupported", reason: JUDGE_REASON } : { verdict: "ok" }),
         });
         const { services } = await agentWorld(
-          (fakes) => ({
+          {
             objectives: {
               rzeki_polski: [
-                llmStep(openPool(fakes.llm, (exercise) => ({ ...exercise, hint: BAD_HINT }))),
-                llmStep(openPool(fakes.llm, (exercise) => exercise, { only: true })),
+                openPool((exercise) => ({ ...exercise, hint: BAD_HINT })),
+                openPool((exercise) => exercise, { only: true }),
               ],
             },
-          }),
+          },
           { checker, grader },
         );
         const { runId } = await schoolLesson(services);
@@ -1997,19 +1976,19 @@ describe("agent puli lekcji (integracja)", () => {
         const grader = schoolGrader();
         const checker = schoolChecker();
         const { services, agent } = await agentWorld(
-          (fakes) => ({
+          {
             objectives: {
               rzeki_polski: {
                 calls: [
-                  [llmStep(fakes.llm)],
+                  [GENERATE],
                   [
-                    llmStep(openPool(fakes.llm, disputed, { only: true, offset: 100 })),
-                    llmStep(openPool(fakes.llm, (exercise) => repaired(disputed(exercise)), { only: true, offset: 100 })),
+                    openPool(disputed, { only: true, offset: 100 }),
+                    openPool((exercise) => repaired(disputed(exercise)), { only: true, offset: 100 }),
                   ],
                 ],
               },
             },
-          }),
+          },
           { checker, grader },
         );
         const school = await schoolLesson(services);
