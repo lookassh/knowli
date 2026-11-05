@@ -1,4 +1,3 @@
-
 export interface WorkerLoopOptions {
   pollMs: number;
   staleMs: number;
