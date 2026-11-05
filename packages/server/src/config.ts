@@ -464,6 +464,38 @@ export function graderFromEnv(env: Record<string, string | undefined>, usage?: U
   };
 }
 
+/**
+ * Zależności gradera w agencie puli lekcji (etap 2b #237, proces worker): ten sam adapter co
+ * w web, ale z etykietą kosztu `lesson_generation`/`check_grade`; `timeoutMs` to deadline
+ * jednego wywołania. Bez limitu wywołań na sesję — budżet pilnuje run.
+ */
+export interface AgentGraderDeps {
+  readonly provider: AnswerGraderProvider;
+  readonly timeoutMs: number;
+}
+
+/**
+ * Grader agenta puli ze zmiennych `UMIEM_GRADER_*` — to samo połączenie, dodatki żądania i
+ * timeout co {@link graderFromEnv} (rezerwa `OPENROUTER_API_KEY`). Brak konfiguracji →
+ * undefined; częściowa → ten sam błąd startu co w web.
+ */
+export function agentGraderFromEnv(env: Record<string, string | undefined>, usage?: UsageRecorder): AgentGraderDeps | undefined {
+  const connection = graderConnectionFromEnv(env);
+  if (connection === undefined) {
+    return undefined;
+  }
+  const { baseUrl, apiKey, model } = connection;
+  const timeoutMs = positiveIntEnv("UMIEM_GRADER_TIMEOUT_MS", env.UMIEM_GRADER_TIMEOUT_MS, DEFAULT_GRADER_TIMEOUT_MS);
+  return {
+    provider: createOpenAiCompatibleGrader({
+      baseUrl, apiKey, model, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
+      usageLabel: { feature: "lesson_generation", operation: "check_grade" },
+      ...(usage ? { usage } : {}),
+    }),
+    timeoutMs,
+  };
+}
+
 interface ReviewerConnection {
   baseUrl: string;
   apiKey: string;
@@ -773,6 +805,18 @@ export interface LessonAgentPublic {
   readonly subjects: ReadonlySet<string>;
   readonly generationService: string;
   readonly checkService: string;
+  /** Usługa oceny odpowiedzi próbnych do pytań otwartych (`host · model` gradera); brak = grader niedostępny. */
+  readonly openCheckService?: string;
+}
+
+/** Etykieta gradera (`host · model`, nigdy klucz); nie rzuca — błąd konfiguracji gradera pomija pole. */
+function openCheckServiceLabel(env: Record<string, string | undefined>): string | undefined {
+  try {
+    const connection = graderConnectionFromEnv(env);
+    return connection === undefined ? undefined : `${new URL(connection.baseUrl).host} · ${connection.model}`;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -790,9 +834,11 @@ export function lessonAgentPublicFromEnv(
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
     return { subjects: new Set(known), generationService: "fake-lesson-agent-model", checkService: "fake-lesson-checker-model" };
   }
+  const openCheckService = openCheckServiceLabel(env);
   return {
     subjects: new Set(known),
     generationService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_MODEL")}`,
     checkService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_CHECKER_MODEL")}`,
+    ...(openCheckService ? { openCheckService } : {}),
   };
 }

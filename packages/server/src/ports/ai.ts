@@ -497,7 +497,10 @@ export interface GraderInput {
   };
   /** Zatwierdzone warianty poprawnej odpowiedzi (dane referencyjne). */
   readonly acceptedAnswers: readonly string[];
-  /** Odpowiedź dziecka przekazywana jako dane: ≤ 200 znaków (lekcje), ≤ 600 (odpowiedzi szkolne). */
+  /**
+   * Odpowiedź dziecka przekazywana jako dane: ≤ 200 znaków (lekcje), ≤ 600 (odpowiedzi szkolne).
+   * W kontroli agenta puli (etap 2b) to odpowiedź rozwiązującego modelu, nie dziecka.
+   */
   readonly childAnswer: string;
   /**
    * Dane ścieżki szkolnej (Etap 2): elementy wymagane ćwiczenia, forma i cytaty
@@ -528,7 +531,13 @@ export interface AnswerGraderProvider {
   readonly promptVersion: string;
   /** Wersja promptu dla konkretnego wejścia (szkoła/grupa); brak = `promptVersion`. */
   promptVersionForInput?(input: GraderInput): string;
-  grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
+  /**
+   * `cost` (opcjonalny) dostaje kwotę żądania HTTP według reguł kosztu runu agenta puli
+   * (`architecture.md` §23): odpowiedź spoza 2xx → `0`, brak odpowiedzi albo nieczytelne ciało
+   * 2xx → `null`, 2xx → `usage.cost` z treści, gdy dostawca go podaje, inaczej `null`. Web woła
+   * bez niego; woła agent puli przy kontrolach (etap 2b #237).
+   */
+  grade(input: GraderInput, signal: AbortSignal, cost?: RunCostSink): Promise<unknown>;
 }
 
 /**
