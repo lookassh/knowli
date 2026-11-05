@@ -17,10 +17,10 @@ import { materializeGeneratedCalculations } from "./lesson-calculations";
  */
 
 /**
- * Materiał lekcji z tym znacznikiem wydłuża pierwszy krok każdego zagadnienia fake agenta (i wywołanie
- * fake LLM etapu zagadnień) do co najmniej FAKE_SLOW_DELAY_MS, przerywalnie, niezależnie od
- * skonfigurowanego opóźnienia kroku (`UMIEM_FAKE_LESSON_DELAY_MS`): E2E generuje lekcje bez sztucznego opóźnienia, a test
- * restartu trwającej generacji nadal ją widzi.
+ * Materiał lekcji z tym znacznikiem wydłuża pierwszy krok każdego zagadnienia fake agenta do co najmniej
+ * FAKE_SLOW_DELAY_MS, przerywalnie, niezależnie od skonfigurowanego opóźnienia kroku
+ * (`UMIEM_FAKE_LESSON_DELAY_MS`): E2E generuje lekcje bez sztucznego opóźnienia, a test restartu
+ * trwającej generacji nadal ją widzi.
  */
 export const FAKE_SLOW_MARKER = "[fake-slow]";
 export const FAKE_SLOW_DELAY_MS = 3_000;
