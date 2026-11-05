@@ -806,8 +806,13 @@ prawdy. Opis końcowy: `docs/architecture.md` §19.17 i §23.
     lekcji przed uruchomieniem kierownika.
 12. **Luki trybu `pool` z zapisanych ćwiczeń:** zagadnienie `complete`, któremu
     kontrola końcowa albo sam zapis (kolizje z historyjką, osierocone słowa
-    kluczowe) odrzuciły choć jedno ćwiczenie, dostaje lukę `incomplete` —
-    ostrożnie, bez ponownego liczenia statusu na zapisanej puli.
+    kluczowe) odrzuciły choć jedno ćwiczenie, dostaje lukę `incomplete` tylko
+    wtedy, gdy nie jest kompletem na zapisanej lekcji: status liczony od nowa
+    funkcją domeny `completeObjectivesOnLesson` (stan jak w `finalLessonCheck`,
+    `objectiveStatus`, własne przykłady kart, pozostałe źródła ujawnień i limity
+    puli jak w kierowniku). Odrzucony nadmiar albo duplikat luki nie daje.
+    Dogenerowanie liczy dalej zapisane nowe ćwiczenia. Podsumowanie punktu
+    kontrolnego zachowuje statusy agenta sprzed zapisu.
 13. **Spełnione „+N” usuwa wpis luki zagadnienia** (dodano ≥ N), nawet gdy braki
     etapów zostały; pokazują je nadal znaczniki pokrycia w edytorze. Podpowiedź
     „Dogeneruj” nie wspomina uzupełnienia braków etapów (tekst bez zmian).
@@ -824,3 +829,5 @@ prawdy. Opis końcowy: `docs/architecture.md` §19.17 i §23.
     `generationServices` także usługę `UMIEM_LLM` (run historyjki dostaje
     materiał), o ile różni się od usługi agenta; przy kilku usługach komunikat
     jest w liczbie mnogiej (`generationServicesInfo`).
+17. **Tematy zdań w panelu:** notka o tematach podaje tylko model agenta
+    (pierwsza z `generationServices`); usługa historyjki tematów nie dostaje.
