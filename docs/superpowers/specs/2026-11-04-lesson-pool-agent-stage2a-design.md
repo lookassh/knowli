@@ -804,3 +804,23 @@ prawdy. Opis końcowy: `docs/architecture.md` §19.17 i §23.
 11. **Pozostałe doprecyzowania:** `add_short` liczy ćwiczenia faktycznie zapisane
     (po kolizjach z historyjką); temat katalogowy jest zawężony do `objectiveIds`
     lekcji przed uruchomieniem kierownika.
+12. **Luki trybu `pool` z zapisanych ćwiczeń:** zagadnienie `complete`, któremu
+    kontrola końcowa albo sam zapis (kolizje z historyjką, osierocone słowa
+    kluczowe) odrzuciły choć jedno ćwiczenie, dostaje lukę `incomplete` —
+    ostrożnie, bez ponownego liczenia statusu na zapisanej puli.
+13. **Spełnione „+N” usuwa wpis luki zagadnienia** (dodano ≥ N), nawet gdy braki
+    etapów zostały; pokazują je nadal znaczniki pokrycia w edytorze. Podpowiedź
+    „Dogeneruj” nie wspomina uzupełnienia braków etapów (tekst bez zmian).
+    Dogenerowanie agentem nie generuje przykładów kart (`examplesFixed: true`).
+14. **DTO i fork:** `generationGaps` w DTO szkicu tylko dla zagadnień z
+    `objectiveIds` (zagadnienie usunięte przez rodzica nie ma luki do uzupełnienia);
+    nowa wersja z opublikowanej nie dziedziczy `generationGaps` (jak `review`).
+15. **Punkt kontrolny i terminy:** wartość nie do użycia jako postęp (uszkodzona
+    obwiednia, zły temat) zachowuje nieujemny wydatek (`salvageLessonAgentSpend`);
+    sukces zapisu potokiem zeruje `agent_checkpoint`; termin kierownika liczony
+    od startu runu (`runStartedAtMs`, §7.2), jak termin finalizacji; odczyty przed
+    próbą są w obsłudze błędów (błąd bazy nie zostawia runu w `running`).
+16. **Usługi w panelu:** przedmiot z historyjką (`lessonStory`) ma w
+    `generationServices` także usługę `UMIEM_LLM` (run historyjki dostaje
+    materiał), o ile różni się od usługi agenta; przy kilku usługach komunikat
+    jest w liczbie mnogiej (`generationServicesInfo`).
