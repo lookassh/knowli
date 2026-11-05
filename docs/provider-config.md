@@ -179,7 +179,8 @@ Zasady:
   Do gradera trafia to samo co przy dziecku (pytanie, kryteria, cytaty z
   materiału) z odpowiedzią modelu zamiast odpowiedzi dziecka; werdykty nie trafiają
   do `lesson_verdicts`. Po 3 kolejnych porażkach gradera w runie agent przestaje go
-  wołać (log `grader_unavailable`), a ćwiczenia przechodzą z notą „niesprawdzone”.
+  wołać (log `grader_unavailable`), a kolejne ćwiczenia przechodzą bez kontroli
+  otwartej; ćwiczenia z nieudanym wywołaniem dostają notę „niesprawdzone”.
   Nieznany koszt wywołania gradera liczy się do budżetu runu jako 0,002 USD.
 
 ## Ocena odpowiedzi lekcji (web)
