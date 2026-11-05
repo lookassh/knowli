@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { GenerationDeps, LessonSpeechDeps, SessionActivityDeps, SpeechDeps } from "../config";
 import type {
   AnswerGraderProvider,
@@ -111,6 +112,23 @@ function fakeSourceDeckItems(input: { material: string; maxItems: number; vocabu
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Bramka testów E2E (`UMIEM_FAKE_HOLD_FILE`): dopóki plik istnieje, fake
+ * generowanie zestawu, TTS i obrazów czeka. Test, który sprawdza przejściowy
+ * stan „generowanie”, tworzy plik przed akcją i usuwa go po asercji — zamiast
+ * ścigać się ze sztucznym opóźnieniem wszystkich wywołań.
+ */
+export async function waitWhileFakeHeld(holdFile: string | undefined): Promise<void> {
+  while (holdFile !== undefined && existsSync(holdFile)) await sleep(50);
+}
+
+/** Opcje fake providerów: sztuczne opóźnienia i bramka E2E. */
+export interface FakeProviderOptions {
+  delayMs?: number;
+  lessonDelayMs?: number;
+  holdFile?: string;
+}
 
 /**
  * Materiał lekcji z tym znacznikiem wydłuża generację puli fake LLM do co
@@ -579,10 +597,12 @@ export class FakeLlmProvider implements LlmProvider {
   #lessonTopUpBehaviors: LlmLessonBehavior[] = [];
   readonly #delayMs: number;
   readonly #lessonDelayMs: number;
+  readonly #holdFile: string | undefined;
 
-  constructor(options: { delayMs?: number; lessonDelayMs?: number } = {}) {
+  constructor(options: FakeProviderOptions = {}) {
     this.#delayMs = options.delayMs ?? 0;
     this.#lessonDelayMs = options.lessonDelayMs ?? this.#delayMs;
+    this.#holdFile = options.holdFile;
   }
 
   /** Zastępuje plan zachowań: kolejne wywołania zjadają elementy z kolejki, ostatni się powtarza. */
@@ -605,6 +625,7 @@ export class FakeLlmProvider implements LlmProvider {
     if (this.#delayMs > 0) {
       await sleep(this.#delayMs);
     }
+    await waitWhileFakeHeld(this.#holdFile);
     const behavior =
       this.#behaviors.length > 1 ? this.#behaviors.shift()! : this.#behaviors[0] ?? null;
     if (!behavior) {
@@ -681,9 +702,11 @@ export class FakeTtsProvider implements TtsProvider {
   readonly requests: TtsSynthesizeInput[] = [];
   failuresLeft = 0;
   readonly #delayMs: number;
+  readonly #holdFile: string | undefined;
 
-  constructor(options: { delayMs?: number } = {}) {
+  constructor(options: FakeProviderOptions = {}) {
     this.#delayMs = options.delayMs ?? 0;
+    this.#holdFile = options.holdFile;
   }
 
   async synthesize(input: TtsSynthesizeInput): Promise<{ bytes: Uint8Array; mimeType: string }> {
@@ -691,6 +714,7 @@ export class FakeTtsProvider implements TtsProvider {
     if (this.#delayMs > 0) {
       await sleep(this.#delayMs);
     }
+    await waitWhileFakeHeld(this.#holdFile);
     if (this.failuresLeft > 0) {
       this.failuresLeft -= 1;
       throw new Error("tts unavailable");
@@ -720,10 +744,12 @@ export class FakeImageProvider implements ImageProvider {
     format: string;
   }> = [];
   readonly #delayMs: number;
+  readonly #holdFile: string | undefined;
   readonly #output?: { bytes: Uint8Array; mimeType: string };
 
-  constructor(options: { delayMs?: number; output?: { bytes: Uint8Array; mimeType: string } } = {}) {
+  constructor(options: FakeProviderOptions & { output?: { bytes: Uint8Array; mimeType: string } } = {}) {
     this.#delayMs = options.delayMs ?? 0;
+    this.#holdFile = options.holdFile;
     this.#output = options.output;
   }
 
@@ -738,6 +764,7 @@ export class FakeImageProvider implements ImageProvider {
     if (this.#delayMs > 0) {
       await sleep(this.#delayMs);
     }
+    await waitWhileFakeHeld(this.#holdFile);
     if (this.failuresLeft > 0) {
       this.failuresLeft -= 1;
       throw new Error("image unavailable");
@@ -818,7 +845,7 @@ export function fakeSpeechDeps(): SpeechDeps {
 /** Komplet zależności generacji na fake'ach dla wskazanego magazynu mediów. */
 export function fakeGenerationDeps(
   mediaStore: MediaStore,
-  options: { delayMs?: number; lessonDelayMs?: number } = {},
+  options: FakeProviderOptions = {},
 ): GenerationDeps {
   return {
     llm: new FakeLlmProvider(options),
