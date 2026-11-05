@@ -149,6 +149,20 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
     expectPrefix(pcGap("affirmative", "I ___ (play) now.", "'m playing"), "pc-shape:");
   });
 
+  it("luka z czasownikiem obejmuje całą formę — be albo do/does przed luką w tym samym zdaniu (pc-shape:)", () => {
+    expectPrefix(pcGap("questions", "Is she ___ (read) a book?", "is reading"), "pc-shape:");
+    expectPrefix(pcGap("affirmative", "She is ___ (play) now.", "is playing"), "pc-shape:");
+    expectPrefix(pcGap("negative", "She isn't ___ (not watch) TV now.", "isn't watching"), "pc-shape:");
+    expectPrefix(pcGap("now_or_usually_more", "She doesn't ___ (not watch) TV every morning.", "doesn't watch"), "pc-shape:");
+    expectPrefix(pcGap("affirmative", "I'm ___ (play) now.", "am playing"), "pc-shape:");
+    expectPrefix(pcGap("affirmative", "Look! Mum is cooking and Dad is ___ (read).", "is reading"), "pc-shape:");
+  });
+
+  it("forma be w poprzednim zdaniu albo zdaniu składowym nie blokuje luki z czasownikiem", () => {
+    expect(validate(pcGap("affirmative", "Mum is cooking and Dad ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! Mum is cooking. Dad ___ (read) now.", "is reading"))).toEqual([]);
+  });
+
   it("wskaźnik zakazany (pc-marker:)", () => {
     expectPrefix(pcGap("affirmative", "He ___ (play) tennis tomorrow.", "is playing"), "pc-marker:");
     expectPrefix(pcGap("affirmative", "He ___ (play) tennis now.", "is playing", { instructionPl: "Jutro mecz." }), "pc-marker:");

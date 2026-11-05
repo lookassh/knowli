@@ -406,12 +406,42 @@ function validateBeIngGapAnswer(
   validateIngForm(ex, objective, gap.verb, tail[0]!, answer, field, errors);
 }
 
+/**
+ * Zdanie składowe z luką: tokeny przed luką od ostatniej granicy zdania albo od
+ * spójnika otwierającego zdanie po wcześniejszym orzeczeniu („Mum is cooking
+ * and Dad ___” → „dad”; ten sam podział co w `subjectSpanBeforeGap`).
+ */
+function clauseTokensBeforeGap(stem: string): string[] {
+  const sentence = (stem.split("___", 2)[0] ?? "").split(SENTENCE_BOUNDARY).at(-1) ?? "";
+  const tokens = tenseTokens(sentence);
+  let start = 0;
+  for (const group of verbGroupsIn(tokens)) {
+    const conjunction = tokens.findIndex((token, i) => i > group.verbIndex && CLAUSE_CONJUNCTIONS.has(token));
+    if (conjunction < 0) break;
+    start = conjunction + 1;
+  }
+  return tokens.slice(start);
+}
+
+/**
+ * Luka z czasownikiem (§6.2) obejmuje całą formę (am/is/are [not] + -ing albo
+ * Present Simple), więc przed luką w tym samym zdaniu składowym nie ma już
+ * formy be ani do/does — inaczej po wstawieniu powstaje „Is she is reading?”.
+ */
+function validateVerbGapOwnsWholeForm(stem: string, errors: string[]): void {
+  const present = clauseTokensBeforeGap(stem).find((token) => BE_FORMS.has(token) || token === "do" || token === "does");
+  if (present !== undefined) {
+    errors.push(`pc-shape: stem: luka z czasownikiem obejmuje całą formę — w zdaniu przed luką jest już „${present}” (He ___ (play) now.)`);
+  }
+}
+
 /** Luka (`lesson_gap`, §6.2): kształt luki, nawias z czasownikiem, forma be i -ing. */
 function validateGap(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
   if (ex.stem === undefined) return;
   const gap = stripGapVerb(ex.stem);
   const { verb } = gap;
   if (verb !== undefined) {
+    validateVerbGapOwnsWholeForm(gap.stem, errors);
     if (gap.negative && !NEGATED_VERB_GAP_OBJECTIVES.has(objective)) {
       errors.push("pc-shape: stem: nawias z „not” jest dozwolony tylko w celach przeczeń");
     }
