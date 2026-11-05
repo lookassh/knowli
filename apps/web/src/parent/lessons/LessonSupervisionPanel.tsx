@@ -143,12 +143,13 @@ function ObjectiveCard({ objective, onRegenerate, regenerateUnavailable }: {
               <Text size="sm">{messages.lessons.poolExhausted}</Text>
               {onRegenerate && (
                 <Button size="md" variant="light" data-testid={`pool-regen-${id}`} leftSection={<ParentIcon name="refresh" />}
-                  disabled={regenerateUnavailable !== undefined} onClick={() => onRegenerate(id)}>
+                  disabled={regenerateUnavailable !== undefined}
+                  aria-describedby={regenerateUnavailable !== undefined ? `pool-regen-unavailable-${id}` : undefined} onClick={() => onRegenerate(id)}>
                   {messages.lessons.poolExhaustedAction}
                 </Button>
               )}
               {onRegenerate && regenerateUnavailable !== undefined && (
-                <Text size="sm" data-testid={`pool-regen-unavailable-${id}`}>{regenerateUnavailable}</Text>
+                <Text size="sm" id={`pool-regen-unavailable-${id}`} data-testid={`pool-regen-unavailable-${id}`}>{regenerateUnavailable}</Text>
               )}
             </Stack>
           </Alert>

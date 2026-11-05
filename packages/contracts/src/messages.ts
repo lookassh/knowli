@@ -839,9 +839,9 @@ export const messages = {
     gradingProviderNone: "Ocena dowolnych odpowiedzi jest wyłączona (brak modelu oceniającego).",
     coverageIncomplete: "Brak pokrycia — uzupełnij ćwiczenia brakujących etapów przed publikacją.",
     rejectedCount: "Odrzucono ćwiczeń przy generowaniu: {n}",
-    // Powody pochodzą z trzech źródeł: sprawdzania słów z materiału (słownik rozdziału), rozwiązań
-    // widocznych wcześniej (ćwiczenia samodzielne) i słów kluczowych bez rodziny pytań otwartych
-    // (szkoła); resztę odrzuceń zbiera „inne powody”.
+    // Powody to etykiety kodów odrzuceń agenta puli (`agentRejectionReasons`, liczby kumulowane w
+    // runie, bez treści ćwiczeń i bez słów); licznik nad listą jest nie mniejszy niż suma powodów,
+    // a powody spoza pierwszej piątki i odrzucenia bez powodu zbiera „inne powody”.
     rejectedReasonsLabel: "Powody odrzuceń przy generowaniu",
     rejectedReason: "{reason} ×{n}",
     rejectedOtherReasons: "inne powody: {n}",

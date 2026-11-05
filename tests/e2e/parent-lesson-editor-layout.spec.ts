@@ -204,11 +204,14 @@ test.describe("bez klucza OpenRouter (lessonGenerationAvailable: false)", () => 
     await expect(page.getByTestId(`regen-open-${OBJ_A}`)).toBeDisabled();
     await expect(page.getByTestId(`regen-open-${OBJ_B}`)).toBeDisabled();
     await expect(page.getByTestId("regen-unavailable")).toHaveText(unavailable);
+    // Wyłączony przycisk wskazuje powód (czytnik ekranu odczyta go razem z przyciskiem).
+    await expect(page.getByTestId(`regen-open-${OBJ_A}`)).toHaveAccessibleDescription(unavailable);
     await expectNoHorizontalOverflow(page);
 
     await page.getByTestId("lesson-tab-children").click();
     await expect(page.getByTestId(`pool-regen-${OBJ_A}`)).toBeDisabled();
     await expect(page.getByTestId(`pool-regen-unavailable-${OBJ_A}`)).toHaveText(unavailable);
+    await expect(page.getByTestId(`pool-regen-${OBJ_A}`)).toHaveAccessibleDescription(unavailable);
     expect(calls.requests.filter((r) => r.path.endsWith("/regenerate"))).toHaveLength(0);
   });
 
@@ -230,7 +233,24 @@ test.describe("bez klucza OpenRouter (lessonGenerationAvailable: false)", () => 
     await expect(page.getByTestId("generation-failed")).toContainText(unavailable);
     await expect(page.getByTestId("generation-unavailable")).toHaveText(unavailable);
     await expect(page.getByTestId("generation-retry")).toBeDisabled();
+    await expect(page.getByTestId("generation-retry")).toHaveAccessibleDescription(unavailable);
     expect(calls.requests.filter((r) => r.method === "POST" && r.path.includes("/generation"))).toHaveLength(0);
+  });
+
+  test("historyjka: nieudany run historyjki da się ponowić — nie potrzebuje agenta puli", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const calls = await openLesson(page, {
+      catalogData: offCatalog,
+      data: {
+        ...lesson,
+        draft: { ...lesson.draft, storyEnabled: true, story: null },
+        storyGeneration: { ...runBase, id: uuid(97), state: "failed", errorCode: "provider_timeout" },
+      } as unknown as typeof lesson,
+    });
+    await expect(page.getByTestId("lesson-story-failed")).toBeVisible();
+    await expect(page.getByTestId("lesson-story-retry")).toBeEnabled();
+    await page.getByTestId("lesson-story-retry").click();
+    await expect.poll(() => calls.requests.filter((r) => r.method === "POST" && r.path.includes("/generation")).length).toBe(1);
   });
 
   test("inny błąd runu: własny komunikat błędu i wyłączone ponowienie z komunikatem o kluczu", async ({ page }) => {
@@ -328,6 +348,29 @@ test("rozdział angielskiego: powody odrzuceń pod licznikiem i rodzaj zagadnien
   await expect(page.getByTestId(`objective-kind-${WORDS}`)).toHaveText(messages.lessons.objectiveKind.words!);
   await expect(page.getByTestId(`objective-kind-${FRAME}`)).toHaveText(messages.lessons.objectiveKind.frame!);
   await expectNoHorizontalOverflow(page);
+});
+
+test("szkic agenta: licznik odrzuceń nie mniejszy niż suma powodów, a powody spoza piątki w „inne powody”", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const agentDraft = {
+    ...version(draftId, "draft", 2),
+    // Agent: `rejectedCount` liczy tylko usunięcia po przyjęciu, a powody — każde odrzucenie w pętli runu.
+    rejectedCount: 1,
+    rejectedReasons: {
+      "rozwiązanie widoczne wcześniej": 12,
+      "drugi model rozwiązał inaczej": 5,
+      "zły format ćwiczenia": 2,
+      "za dużo ćwiczeń w etapie": 1,
+      "podpowiedź zdradza odpowiedź": 1,
+      "niepoprawny wariant odpowiedzi": 1,
+    },
+  };
+  await openLesson(page, { data: { ...lesson, draft: agentDraft, published: null, assignments: [] } as unknown as typeof lesson });
+  await expect(page.getByTestId("rejected-count")).toHaveText(messages.lessons.rejectedCount.replace("{n}", "22"));
+  const reasons = page.getByTestId("rejected-reasons").getByRole("listitem");
+  await expect(reasons).toHaveCount(6);
+  await expect(reasons.nth(0)).toHaveText("rozwiązanie widoczne wcześniej ×12");
+  await expect(page.getByTestId("rejected-other")).toHaveText("inne powody: 1");
 });
 
 test("lekcja bez powodów odrzuceń i bez rodzaju zagadnień nie pokazuje listy ani znaczka", async ({ page }) => {
