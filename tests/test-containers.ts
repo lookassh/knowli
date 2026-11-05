@@ -266,7 +266,9 @@ export interface StartedContainer {
 // Ścieżka danych obowiązuje do postgres:17; obraz 18 trzyma dane
 // w /var/lib/postgresql/18/docker i przy podbiciu POSTGRES_IMAGE trzeba ją zmienić.
 const POSTGRES_DATA_DIR = "/var/lib/postgresql/data";
-const POSTGRES_NON_DURABLE_SETTINGS = ["fsync=off", "synchronous_commit=off", "full_page_writes=off", "max_wal_size=256MB"];
+// max_connections: każdy worker integracji ma pulę `pg` (do 10 połączeń) plus
+// pule pomocnicze testów restartu, a domyślne 100 wyczerpałoby się przy 8 workerach.
+const POSTGRES_NON_DURABLE_SETTINGS = ["fsync=off", "synchronous_commit=off", "full_page_writes=off", "max_wal_size=256MB", "max_connections=300"];
 
 function postgresRunArgs(name: string): string[] {
   return [
