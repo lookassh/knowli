@@ -49,6 +49,36 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolAgentPolicy.variantCheckTypes).toEqual(["lesson_gap"]);
   });
 
+  it("sędzia podpowiedzi i kontrola otwarta dotyczą wyłącznie pytania otwartego", () => {
+    expect(schoolAgentPolicy.hintJudgeTypes).toEqual(["lesson_open_answer"]);
+    expect(schoolAgentPolicy.openAnswerCheckTypes).toEqual(["lesson_open_answer"]);
+    const subjectTypes = new Set<string>(schoolSubject.exerciseTypes);
+    for (const type of [...(schoolAgentPolicy.hintJudgeTypes ?? []), ...(schoolAgentPolicy.openAnswerCheckTypes ?? [])]) {
+      expect(subjectTypes.has(type)).toBe(true);
+    }
+  });
+
+  it("niepusta lista kontroli ma komplet tekstów odrzuceń, a sędzia podpowiedzi wymaga materiału", () => {
+    const texts = schoolAgentPolicy.rejectionTexts;
+    if ((schoolAgentPolicy.hintJudgeTypes ?? []).length > 0) {
+      for (const text of [texts.hintUnsupported, texts.hintLanguage, texts.hintReveals]) expect(text?.length ?? 0).toBeGreaterThan(0);
+      expect(schoolAgentPolicy.checkerNeedsMaterial).toBe(true);
+    }
+    if ((schoolAgentPolicy.openAnswerCheckTypes ?? []).length > 0) {
+      for (const text of [texts.openMissing, texts.openWrong]) expect(text?.length ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  it("teksty odrzuceń wskazują, co poprawić, i nie pozwalają wyrzucić wymaganych elementów", () => {
+    const texts = schoolAgentPolicy.rejectionTexts;
+    expect(texts.hintUnsupported).toContain("set hint to null");
+    expect(texts.hintLanguage).toContain("not correct Polish");
+    expect(texts.hintReveals).toContain("Hint at the reasoning, not the content");
+    expect(texts.openMissing).toContain("supplementaryElements");
+    expect(texts.openMissing).toContain("Do not drop elements the question genuinely requires");
+    expect(texts.openWrong).toContain("commonErrors");
+  });
+
   it("leakVictim nie wspomina pokoju i podpowiada inny fakt lub inne sformułowanie", () => {
     expect(schoolAgentPolicy.rejectionTexts.leakVictim).not.toContain("room");
     expect(schoolAgentPolicy.rejectionTexts.leakVictim).toContain("ask about a different fact of the material or phrase the question differently");

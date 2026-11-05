@@ -250,6 +250,9 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       variants: checkAt(judgeIndexes, judged, index, (value): value is readonly boolean[] =>
         entry.pass && isVerdictList(value, entry.draft.acceptedAnswers.length),
       ),
+      // Sędzia podpowiedzi i kontrola otwarta: wyniki podłącza późniejsze zadanie etapu 2b.
+      hint: { kind: "na" },
+      open: { kind: "na" },
     }));
   }
 

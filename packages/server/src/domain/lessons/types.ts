@@ -162,7 +162,23 @@ export interface SubjectAgentPolicy {
   readonly checkerNeedsMaterial: boolean;
   readonly independentReserve: number;
   readonly slack: number;
-  readonly rejectionTexts: { readonly leakVictim: string; readonly leakSource: string };
+  /** Typy, w których sędzia podpowiedzi ocenia niepusty `hint` (etap 2b). Brak = pusta lista. */
+  readonly hintJudgeTypes?: readonly LessonExerciseType[];
+  /** Typy sprawdzane kontrolą otwartą: rozwiązujący + grader (etap 2b). Brak = pusta lista. */
+  readonly openAnswerCheckTypes?: readonly LessonExerciseType[];
+  /**
+   * Szablony odrzuceń dla modelu (po angielsku). Pola sędziego podpowiedzi i kontroli otwartej
+   * są wymagane tylko wtedy, gdy przedmiot ma niepustą odpowiednią listę typów.
+   */
+  readonly rejectionTexts: {
+    readonly leakVictim: string;
+    readonly leakSource: string;
+    readonly hintUnsupported?: string;
+    readonly hintLanguage?: string;
+    readonly hintReveals?: string;
+    readonly openMissing?: string;
+    readonly openWrong?: string;
+  };
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
   sanitize?(draft: LessonExerciseDraft): { draft: LessonExerciseDraft; removed: readonly string[] };
   /** Kod trafia do `Rejection.code` (np. `hint_reveals_answer`), powód do modelu. */
