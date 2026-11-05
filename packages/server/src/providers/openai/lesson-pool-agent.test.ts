@@ -15,6 +15,7 @@ import {
   AiSdkExerciseChecker,
   AiSdkLessonPoolAgent,
   objectiveInstructions,
+  objectiveUserPrompt,
   OPENROUTER_BASE_URL,
   openRouterCostOf,
   toGenerationProviderError,
@@ -75,7 +76,7 @@ const POOL: LessonPoolInput = {
 function agentInput(overrides: Partial<LessonObjectiveAgentInput> = {}): LessonObjectiveAgentInput {
   return {
     pool: POOL,
-    objective: { id: "subject.topic.animals", title: "Zwierzęta", cards: [{ title: "Słowa", body: "cat — kot" }], examplesFromPlan: false },
+    objective: { id: "subject.topic.animals", title: "Zwierzęta", cards: [{ title: "Słowa", body: "cat — kot" }], examplesFromPlan: false, index: 0, existingCount: 0 },
     otherObjectives: [],
     cardSentences: [],
     targets: { guided: 2, productive: 2, independent: 3, requiredTypes: [], targetCount: 6, listenAllowance: 0, maxExercises: 8 },
@@ -946,6 +947,27 @@ describe("providerOptions (spec §4, §5)", () => {
     const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ equivalent: [[true]] }))] });
     await new AiSdkExerciseChecker(agentOptions(model, { effort: "none" })).judgeVariants(JUDGE_INPUT, recordingCost([]), new AbortController().signal);
     expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: {} });
+  });
+});
+
+describe("prompt podagenta bez pól fake'a", () => {
+  it("prompt podagenta nie zawiera index ani existingCount", async () => {
+    const input = agentInput({ objective: { ...agentInput().objective, index: 3907, existingCount: 4561 } });
+    for (const text of [objectiveInstructions(input), objectiveUserPrompt(input)]) {
+      expect(text).not.toContain("3907");
+      expect(text).not.toContain("4561");
+    }
+    const model = new MockLanguageModelV4({ doGenerate: [textResult("done")] });
+    await new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model }).runObjective(
+      input,
+      fakeTools([]).tools,
+      recordingCost([]),
+      new AbortController().signal,
+    );
+    const request = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    expect(request).not.toContain("3907");
+    expect(request).not.toContain("4561");
+    expect(request).not.toContain("existingCount");
   });
 });
 

@@ -1,5 +1,5 @@
 import type { ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
-import { allExamples, orderedLesson, type LessonAgentState } from "../../../domain/lessons/agent/state";
+import { allExamples, orderedEntries, orderedLesson, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
 import { lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
 import type { AgentObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -10,8 +10,9 @@ import { buildPoolInput, poolStageCounts } from "./lesson-drafts";
  * Wejście podagenta zagadnienia (spec etapu 1 §6.1, §7): pola promptu z
  * `buildPoolInput` z liczbami z `targets` (jedyne źródło liczb), lista zdań do
  * unikania i zdania kart CAŁEJ lekcji z bieżącego stanu (w chwili startu
- * podagenta) oraz dopiski przedmiotu (`promptNotes`). Czysta funkcja nad
- * przekazanymi danymi.
+ * podagenta) oraz dopiski przedmiotu (`promptNotes`). Pozycja zagadnienia
+ * i liczba jego ćwiczeń w stanie (`objective.index`, `objective.existingCount`)
+ * służą wyłącznie fake'owi agenta. Czysta funkcja nad przekazanymi danymi.
  */
 export interface ObjectiveAgentInputArgs {
   readonly subject: SubjectModule;
@@ -82,6 +83,8 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
       ...(objective.kind === undefined ? {} : { kind: objective.kind }),
       cards: objective.cards,
       examplesFromPlan: args.examplesFixed,
+      index: state.objectives.findIndex((item) => item.id === objective.id),
+      existingCount: orderedEntries(state).filter((entry) => entry.objectiveId === objective.id).length,
     },
     otherObjectives: state.objectives
       .filter((other) => other.id !== objective.id)

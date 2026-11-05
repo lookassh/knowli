@@ -180,6 +180,13 @@ export interface LessonObjectiveAgentInput {
     readonly cards: readonly { readonly title: string; readonly body: string }[];
     /** `false` = model dostarcza przykłady zagadnienia przez `submit`; `true` = przykłady ustalone (plan albo wznowienie). */
     readonly examplesFromPlan: boolean;
+    /**
+     * Pozycja zagadnienia w kolejności lekcji (od 0; zagadnień jest `otherObjectives.length + 1`) i liczba
+     * ćwiczeń zagadnienia już w stanie runu (`fixed` i przyjęte). Tylko dla fake'a agenta (rozłączna
+     * numeracja zagadnień i „+N”); adapter modelu ich nie wysyła.
+     */
+    readonly index: number;
+    readonly existingCount: number;
   };
   readonly otherObjectives: readonly {
     readonly title: string;
