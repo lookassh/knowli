@@ -164,4 +164,123 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
     expectPrefix(pcGap("affirmative", "They ___ playing now.", "aren't"), "pc-be:");
     expectPrefix(pcGap("questions", "Is she reading? No, she ___.", "is"), "pc-be:");
   });
+
+  it("przeczenie w luce na formę be tylko w celu 3 albo po „No”, bez podwójnego „not” (pc-be:)", () => {
+    expectPrefix(pcGap("questions", "___ she reading a book?", "Isn't"), "pc-be:");
+    expectPrefix(pcGap("questions", "She ___ reading now.", "isn't"), "pc-be:");
+    expectPrefix(pcGap("negative", "She ___ not sleeping now.", "isn't"), "pc-be:");
+    expect(validate(pcGap("questions", "Is she reading? No, she ___.", "isn't"))).toEqual([]);
+    expect(validate(pcGap("negative", "She ___ not sleeping now.", "is"))).toEqual([]);
+  });
+});
+
+/** Szkic ćwiczenia z całym zdaniem tematu Present Continuous. */
+function pcSentence(
+  exerciseType: LessonExerciseDraft["exerciseType"],
+  objective: Objective,
+  answer: string,
+  extra: Partial<LessonExerciseDraft> = {},
+): LessonExerciseDraft {
+  return {
+    exerciseType,
+    objectiveId: `english_grammar.present_continuous.${objective}`,
+    answer,
+    acceptedAnswers: [],
+    focus: [],
+    ...extra,
+  };
+}
+
+function pcChoice(objective: Objective, stem: string, correct: string, wrong: string): LessonExerciseDraft {
+  return pcSentence("lesson_choice", objective, correct, {
+    stem,
+    options: [{ id: "a", text: correct }, { id: "b", text: wrong }],
+    correctOption: "a",
+  });
+}
+
+function pcOrder(objective: Objective, answer: string): LessonExerciseDraft {
+  const words = answer.split(" ");
+  return pcSentence("lesson_order", objective, answer, { items: words.map((text, index) => ({ id: `w${index}`, text })) });
+}
+
+function pcTransform(objective: Objective, transformId: string, statement: string, answer: string): LessonExerciseDraft {
+  return pcSentence("lesson_transform", objective, answer, { statement, transformId });
+}
+
+function pcTranslation(objective: Objective, prompt: string, answer: string): LessonExerciseDraft {
+  return pcSentence("lesson_open_answer", objective, answer, { prompt });
+}
+
+function pcShortAnswer(prompt: string, correct: string, wrong: string): LessonExerciseDraft {
+  return pcSentence("lesson_short_answer", "questions", correct, {
+    prompt,
+    options: [{ id: "a", text: correct }, { id: "b", text: wrong }],
+    correctOption: "a",
+  });
+}
+
+describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
+  const ok: [string, LessonExerciseDraft][] = [
+    ["wybór w celu 1", pcChoice("affirmative", "Look! Mum ___ dinner.", "is cooking", "are cooking")],
+    ["kolejność w celu 4 (What … doing?)", pcOrder("questions", "What is he doing?")],
+    ["krótka odpowiedź w celu 4", pcShortAnswer("Is she reading?", "Yes, she is.", "No, she isn't.")],
+    ["przekształcenie na przeczenie w celu 3", pcTransform("negative", "to_negative", "He is playing now.", "He isn't playing now.")],
+    ["przekształcenie na pytanie w celu 4", pcTransform("questions", "to_question", "He is playing now.", "Is he playing now?")],
+    ["tłumaczenie w celu 1", pcTranslation("affirmative", "Tata teraz gotuje obiad.", "Dad is cooking dinner now.")],
+    ["pytanie z imieniem", pcOrder("questions", "Is Ola reading?")],
+    ["pytanie z przeczeniem ze skrótem", pcOrder("questions", "Aren't they playing?")],
+    ["pytanie z przeczeniem i imieniem", pcOrder("questions", "Isn't Ola reading now?")],
+    ["What + podmiot w liczbie mnogiej + doing", pcOrder("questions", "What are the children doing?")],
+    ["dwa zdania z różnymi podmiotami", pcTranslation("affirmative", "Teraz mama gotuje, a tata czyta.", "Mum is cooking and Dad is reading now.")],
+    ["podmiot złożony w drugim zdaniu", pcTranslation("affirmative", "Teraz mama gotuje, a Tom i Ola grają.", "Mum is cooking and Tom and Ola are playing now.")],
+    ["kolokacja „having lunch”", pcTranslation("affirmative", "Ona teraz je obiad.", "She is having lunch now.")],
+    ["pisownia w celu 5", pcTranslation("ing_spelling", "On teraz pływa.", "He is swimming now.")],
+    ["„What … doing?” z odpowiedzią pełnym zdaniem", pcShortAnswer("What are you doing?", "I am reading a book.", "I reading a book.")],
+    ["krótka odpowiedź z luką po „No”", pcShortAnswer("Is she reading? No, she ___.", "isn't", "is")],
+    ["wybór formy be przy -ing z bodźca (klasa sprawdzana tylko w kluczu)", pcChoice("affirmative", "The dogs ___ running now.", "are", "is")],
+    ["wybór Is/Are przy imieniu", pcChoice("questions", "___ Ola reading a book?", "Is", "Are")],
+  ];
+  it.each(ok)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([]);
+  });
+});
+
+describe("validatePresentContinuousExercise — całe zdania, odrzucone", () => {
+  const rejected: [string, LessonExerciseDraft, string][] = [
+    ["klucz z „He's”", pcTranslation("affirmative", "On teraz gra.", "He's playing now."), "pc-shape:"],
+    ["klucz z „What's”", pcOrder("questions", "What's he doing?"), "pc-shape:"],
+    ["pytanie z „Where”", pcOrder("questions", "Where is he going?"), "pc-shape:"],
+    ["„What” bez „doing”", pcOrder("questions", "What is he eating?"), "pc-shape:"],
+    ["pytanie z „Where” w bodźcu krótkiej odpowiedzi", pcShortAnswer("Where is he going?", "He is going to school.", "He going to school."), "pc-shape:"],
+    ["hybryda „is plays”", pcTranslation("affirmative", "Ona teraz gra.", "She is plays now."), "pc-ing:"],
+    ["forma bez -ing „is play”", pcOrder("affirmative", "She is play now."), "pc-ing:"],
+    ["czasownik drop_e w celu 1", pcTranslation("affirmative", "On teraz pisze.", "He is writing now."), "pc-ing:"],
+    ["czasownik plain w celu 5", pcTranslation("ing_spelling", "On teraz gra.", "He is playing now."), "pc-ing:"],
+    ["„They is”", pcTranslation("affirmative", "Oni teraz grają.", "They is playing now."), "pc-be:"],
+    ["„The dogs is”", pcTranslation("affirmative", "Psy teraz biegają.", "The dogs is running now."), "pc-be:"],
+    ["„Are Ola”", pcOrder("questions", "Are Ola reading?"), "pc-be:"],
+    ["„Isn't they”", pcOrder("questions", "Isn't they playing?"), "pc-be:"],
+    ["brak formy be", pcTranslation("affirmative", "On teraz gra.", "He playing now."), "pc-be:"],
+    ["to_negative z odpowiedzią twierdzącą", pcTransform("negative", "to_negative", "He is playing now.", "He is playing now!"), "pc-be:"],
+    ["przeczenie w celu 1", pcOrder("affirmative", "He isn't playing now."), "pc-be:"],
+    ["„Yes” z przeczeniem", pcShortAnswer("Is she reading?", "Yes, she isn't.", "No, she is."), "pc-be:"],
+    ["osoba krótkiej odpowiedzi niezgodna z pytaniem", pcShortAnswer("Is she reading?", "Yes, he is.", "No, she isn't."), "pc-be:"],
+    ["tłumaczenie bez wskaźnika", pcTranslation("affirmative", "Tata gotuje obiad.", "Dad is cooking dinner now."), "pc-marker:"],
+    ["tłumaczenie ze wskaźnikiem „zwykle”", pcTranslation("affirmative", "Tata teraz zawsze gotuje obiad.", "Dad is cooking dinner now."), "pc-marker:"],
+    ["wybór z kluczem z czasownikiem stanu", pcChoice("affirmative", "___", "I am liking it now.", "I like it now."), "pc-state:"],
+    ["wybór z formą be niezgodną z podmiotem", pcChoice("affirmative", "The dogs ___ now.", "is running", "are running"), "pc-be:"],
+  ];
+  it.each(rejected)("%s", (_name, ex, prefix) => {
+    expectPrefix(ex, prefix);
+  });
+
+  it("wariant odpowiedzi z „there's” (pc-shape:)", () => {
+    expectPrefix({ ...pcTranslation("affirmative", "Teraz pies biega.", "A dog is running now."), acceptedAnswers: ["There's a dog running now."] }, "pc-shape:");
+  });
+
+  it("czasownik stanu w kluczu wyboru daje tylko komunikat pc-state:", () => {
+    const errors = validate(pcChoice("affirmative", "___", "I am liking it now.", "I like it now."));
+    expect(errors.every((error) => error.startsWith("pc-state:")), JSON.stringify(errors)).toBe(true);
+  });
 });

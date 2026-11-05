@@ -1,9 +1,11 @@
 import type { LessonExerciseDraft } from "../../types";
 import { normalizeTokens } from "../../normalize";
 import {
+  baseOfIngForm,
   ingFormOf,
   ingRuleOf,
   isCollocationIngForm,
+  isIngFormInTable,
   stateVerbIn,
   type IngRule,
 } from "../english/ing-forms";
@@ -13,6 +15,7 @@ import {
   BE_FORM_BY_SUBJECT,
   BE_FORMS,
   BE_WH_WORDS,
+  beAnswerPronounAllowed,
   bePronounNearGap,
   beStemContext,
   beSubjectTokensBefore,
@@ -249,7 +252,12 @@ function validateBeForm(form: string, stem: string, field: string, errors: strin
   }
 }
 
-/** Luka na samą formę be (cele 1, 3, 4): forma zgodna z podmiotem, biegunowość z celu i Yes/No. */
+/**
+ * Luka na samą formę be (cele 1, 3, 4): forma zgodna z podmiotem, biegunowość
+ * z celu i Yes/No. Przeczenie w odpowiedzi tylko w celu 3 albo po „No” i bez
+ * „not” po luce — inaczej twierdzenie pasuje tak samo („___ she reading?” →
+ * Is / Isn't) albo powstaje podwójne przeczenie („She isn't not sleeping”).
+ */
 function validateBeOnlyGapAnswer(
   ex: LessonExerciseDraft,
   stem: string,
@@ -258,8 +266,20 @@ function validateBeOnlyGapAnswer(
   errors: string[],
 ): void {
   validateBeForm(parsed.form, stem, field, errors);
+  const objective = objectiveOf(ex);
+  const marker = yesNoBeforeGap(stem);
+  if (parsed.negative) {
+    if (expandedTokens(stem.split("___", 2)[1] ?? "").includes("not")) {
+      errors.push(`pc-be: ${field}: po luce stoi już „not” — odpowiedź z przeczeniem daje podwójne przeczenie`);
+      return;
+    }
+    if (objective !== "negative" && marker !== "no") {
+      errors.push(`pc-be: ${field}: przeczenie w luce na formę be tylko w celu przeczeń albo po „No” — inaczej twierdzenie też pasuje`);
+      return;
+    }
+  }
   const negative = parsed.negative || beStemContext(stem).negative;
-  checkBePolarity(polarityOf(ex, objectiveOf(ex)), negative, yesNoBeforeGap(stem), `pc-be: ${field}`, errors);
+  checkBePolarity(polarityOf(ex, objective), negative, marker, `pc-be: ${field}`, errors);
 }
 
 /** Forma -ing czasownika z nawiasu: z tabeli i dozwolonej klasy albo kolokacja „having/looking” (nie w celu 5). */
@@ -351,6 +371,262 @@ function validateGap(ex: LessonExerciseDraft, objective: string, errors: string[
   }
 }
 
+/** Typy z całym zdaniem w odpowiedzi sprawdzane w tym miejscu (§6.3; `error_fix` ma własne reguły). */
+const WHOLE_SENTENCE_TYPES: ReadonlySet<string> = new Set([
+  "lesson_choice",
+  "lesson_order",
+  "lesson_short_answer",
+  "lesson_transform",
+  "lesson_open_answer",
+]);
+
+/** Cele, w których każde zdanie odpowiedzi jest w Present Continuous (cele porównania mają własne reguły). */
+const PC_SENTENCE_OBJECTIVES: ReadonlySet<string> = new Set(["affirmative", "negative", "questions", "ing_spelling"]);
+
+/**
+ * Skróty z „'s” zakazane w kluczach (§6.3): normalizator rozwija je do „is”
+ * albo „has”, więc klucz „He's running.” zaliczyłby „He has running.”.
+ */
+const S_CONTRACTIONS: ReadonlySet<string> = new Set(["he's", "she's", "it's", "what's", "that's", "there's", "where's", "who's"]);
+
+/** Pytajniki na początku zdania; dozwolony jest tylko wzorzec „What + am/is/are + podmiot + doing?”. */
+const QUESTION_WORDS: ReadonlySet<string> = new Set([...BE_WH_WORDS, "which"]);
+
+/** Spójniki rozpoczynające kolejne zdanie składowe („Mum is cooking and Dad is reading”). */
+const CLAUSE_CONJUNCTIONS: ReadonlySet<string> = new Set(["and", "but", "while", "so", "because", "or"]);
+
+/** Przysłówki między formą be a formą -ing („She is always playing”). */
+const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["always", "still", "just", "really"]);
+
+/** Granice zdań w tekście; przecinek nie jest granicą („Look, Mum is cooking”). */
+const SENTENCE_BOUNDARY = /[.!?;:]+/;
+
+/** Tokeny zdań tekstu (po rozwinięciu isn't / aren't i skrótów zaimków), bez pustych. */
+function sentenceTokens(text: string): string[][] {
+  return text.split(SENTENCE_BOUNDARY).map(expandedTokens).filter((tokens) => tokens.length > 0);
+}
+
+/** Klucze ćwiczenia z całym zdaniem: odpowiedź, warianty i tekst poprawnej opcji, gdy różni się od odpowiedzi. */
+function sentenceAnswersOf(ex: LessonExerciseDraft): { field: string; text: string }[] {
+  const answers = answersOf(ex);
+  const correct = ex.options?.find((option) => option.id === ex.correctOption)?.text;
+  if (correct !== undefined && normalizeTokens(correct).join(" ") !== normalizeTokens(ex.answer).join(" ")) {
+    answers.push({ field: "options", text: correct });
+  }
+  return answers;
+}
+
+/** Bodziec krótkiej odpowiedzi (pytanie) — `prompt` albo `stem`. */
+function shortAnswerQuestion(ex: LessonExerciseDraft): { field: string; text: string } | undefined {
+  if (ex.exerciseType !== "lesson_short_answer") return undefined;
+  if (ex.prompt !== undefined) return { field: "prompt", text: ex.prompt };
+  return ex.stem === undefined ? undefined : { field: "stem", text: ex.stem };
+}
+
+/** Pełne zdanie odpowiedzi: bodziec z luką wypełnioną kluczem (wybór, krótka odpowiedź z luką) albo sam klucz. */
+function wholeSentenceOf(ex: LessonExerciseDraft, answer: string): string {
+  const question = shortAnswerQuestion(ex);
+  if (question !== undefined && question.text.includes("___")) return question.text.replace("___", answer);
+  return answerSentence(ex, answer);
+}
+
+/** Pytajnik na początku zdania poza wzorcem „What + am/is/are + podmiot + doing?” (§6.3). */
+function validateQuestionWords(tokens: readonly string[], field: string, errors: string[]): void {
+  const first = tokens[0];
+  if (first === undefined || !QUESTION_WORDS.has(first)) return;
+  const whatDoing = first === "what" && BE_FORMS.has(tokens[1] ?? "") && tokens.slice(2).includes("doing");
+  if (!whatDoing) {
+    errors.push(`pc-shape: ${field}: pytanie szczegółowe tylko we wzorcu „What + am/is/are + podmiot + doing?” (What is he doing?)`);
+  }
+}
+
+/** Czy forma be na pozycji `index` otwiera pytanie z inwersją („Is she…”, „What are they…”). */
+function isInvertedBe(tokens: readonly string[], start: number, index: number): boolean {
+  return index === start || (index === start + 1 && BE_WH_WORDS.has(tokens[start]!));
+}
+
+/**
+ * Forma be wymagana przez podmiot formy na pozycji `index`. Zdanie składowe
+ * zaczyna się po spójniku za poprzednią formą be („… and Dad ___ reading”);
+ * w pytaniu z inwersją „not” po formie be jest pomijane („Aren't they” →
+ * „___ they”), żeby podmiot stał tuż po luce.
+ */
+function expectedBeAt(tokens: readonly string[], start: number, index: number): string | undefined {
+  const after = tokens.slice(index + 1);
+  if (isInvertedBe(tokens, start, index) && after[0] === "not") after.shift();
+  return expectedBeForm([...tokens.slice(start, index), "___", ...after].join(" "));
+}
+
+/** Pozycja formy -ing po formie be albo undefined (krótka odpowiedź „Yes, she is.”). */
+function verbIndexAfterBe(tokens: readonly string[], index: number, inverted: boolean): number | undefined {
+  let next = index + 1;
+  if (tokens[next] === "not") next++;
+  if (!inverted) {
+    while (next < tokens.length && BE_ADVERBS_IN_PC.has(tokens[next]!)) next++;
+    return next < tokens.length ? next : undefined;
+  }
+  // Pytanie z inwersją: forma -ing stoi po podmiocie („Is the king reading?” — „king” to nie forma -ing).
+  const isVerb = (token: string, i: number): boolean => isIngFormInTable(token) || isCollocationIngForm(tokens, i);
+  const found = tokens.findIndex((token, i) => i > next && isVerb(token, i));
+  if (found >= 0) return found;
+  const outOfTable = tokens.findIndex((token, i) => i > next && token.endsWith("ing"));
+  return outOfTable >= 0 ? outOfTable : tokens.length;
+}
+
+/**
+ * Forma -ing po formie be: z tabeli i dozwolonej klasy albo kolokacja
+ * „having/looking” (nie w celu 5). Tabelę i klasę sprawdzamy tylko dla formy
+ * z klucza (§4, „w sprawdzanym miejscu”) — w wyborze „The dogs ___ running.”
+ * forma -ing stoi w bodźcu, a sprawdzana jest forma be.
+ */
+function validateIngAfterBe(
+  ex: LessonExerciseDraft,
+  objective: string,
+  tokens: readonly string[],
+  index: number,
+  keyTokens: ReadonlySet<string>,
+  field: string,
+  errors: string[],
+): void {
+  const token = tokens[index];
+  if (token === undefined) {
+    errors.push(`pc-ing: ${field}: po am/is/are brak formy -ing czasownika`);
+    return;
+  }
+  const fromKey = keyTokens.has(token);
+  if (isIngFormInTable(token)) {
+    if (!fromKey) return;
+    const verb = baseOfIngForm(token)!;
+    const rule = ingRuleOf(verb)!;
+    // Cel 5: forma `plain` dopuszczona w wyborze jako kontrast (§4).
+    const allowed = objective === "ing_spelling" && ex.exerciseType === "lesson_choice"
+      ? [...PC_ALLOWED_ING_RULES[objective]!, "plain"]
+      : PC_ALLOWED_ING_RULES[objective] ?? [];
+    if (!allowed.includes(rule)) {
+      errors.push(`pc-ing: ${field}: czasownik „${verb}” (pisownia ${rule}) nie pasuje do celu (dozwolone: ${allowed.join(", ")})`);
+    }
+    return;
+  }
+  if (isCollocationIngForm(tokens, index)) {
+    if (fromKey && objective === "ing_spelling") {
+      errors.push(`pc-ing: ${field}: kolokacja „${token}” nie ćwiczy pisowni z tabeli — nie w celu pisowni -ing`);
+    }
+    return;
+  }
+  if (!token.endsWith("ing")) {
+    errors.push(`pc-ing: ${field}: po am/is/are potrzebna jest forma -ing, a stoi „${token}” (She is playing, nie She is plays)`);
+  } else if (fromKey) {
+    errors.push(`pc-ing: ${field}: „${token}” jest spoza tabeli form -ing`);
+  }
+}
+
+/**
+ * Formy be jednego zdania: zgodność z podmiotem i forma -ing po każdej
+ * z nich (`keyTokens` undefined = bez sprawdzania formy -ing). Zwraca, czy
+ * w zdaniu jest forma be.
+ */
+function validateSentenceBeForms(
+  ex: LessonExerciseDraft,
+  objective: string,
+  tokens: readonly string[],
+  keyTokens: ReadonlySet<string> | undefined,
+  field: string,
+  errors: string[],
+): boolean {
+  let start = 0;
+  let previousBe: number | undefined;
+  let hasBe = false;
+  for (const [index, form] of tokens.entries()) {
+    if (!BE_FORMS.has(form)) continue;
+    if (previousBe !== undefined) {
+      const conjunction = tokens.findIndex((token, i) => i > previousBe! && i < index && CLAUSE_CONJUNCTIONS.has(token));
+      start = conjunction >= 0 ? conjunction + 1 : previousBe + 1;
+    }
+    previousBe = index;
+    hasBe = true;
+    const expected = expectedBeAt(tokens, start, index);
+    if (expected !== undefined && expected !== form) {
+      errors.push(`pc-be: ${field}: forma „${form}” nie pasuje do podmiotu (poprawnie: ${expected})`);
+    }
+    if (keyTokens === undefined) continue;
+    const verbIndex = verbIndexAfterBe(tokens, index, isInvertedBe(tokens, start, index));
+    if (verbIndex !== undefined) validateIngAfterBe(ex, objective, tokens, verbIndex, keyTokens, field, errors);
+  }
+  return hasBe;
+}
+
+/** Zaimek podmiotu pytania „Is she…?” / „What are you…?”; undefined dla imienia, rzeczownika i luki. */
+function questionPronoun(question: string): string | undefined {
+  const [tokens] = sentenceTokens(question);
+  if (tokens === undefined || question.includes("___")) return undefined;
+  const beIndex = tokens[0] === "what" ? 1 : 0;
+  if (!BE_FORMS.has(tokens[beIndex] ?? "")) return undefined;
+  const subject = tokens[beIndex + 1] === "not" ? tokens[beIndex + 2] : tokens[beIndex + 1];
+  return subject !== undefined && Object.hasOwn(BE_FORM_BY_SUBJECT, subject) ? subject : undefined;
+}
+
+/** Osoba krótkiej odpowiedzi zgodna z pytaniem („Is she reading?” → „Yes, she is.”, „Are you…?” → „I am”). */
+function validateShortAnswerPerson(ex: LessonExerciseDraft, answer: string, field: string, errors: string[]): void {
+  const question = shortAnswerQuestion(ex);
+  const pronoun = question === undefined ? undefined : questionPronoun(question.text);
+  if (pronoun === undefined) return;
+  const tokens = expandedTokens(answer);
+  const index = tokens.findIndex((token, i) => Object.hasOwn(BE_FORM_BY_SUBJECT, token) && BE_FORMS.has(tokens[i + 1] ?? ""));
+  if (index >= 0 && !beAnswerPronounAllowed(tokens[index]!, { pronoun, fromQuestion: true })) {
+    errors.push(`pc-be: ${field}: osoba „${tokens[index]}” w odpowiedzi nie pasuje do podmiotu pytania „${pronoun}”`);
+  }
+}
+
+/**
+ * Klucz z całym zdaniem w celach 1, 3, 4, 5 (§6.3): pytajnik tylko „What …
+ * doing?”, każda forma be zgodna z podmiotem i z formą -ing po niej, zdanie
+ * z formą be, biegunowość z celu albo przekształcenia, osoba krótkiej odpowiedzi.
+ */
+function validateSentenceAnswer(ex: LessonExerciseDraft, objective: string, answer: string, field: string, errors: string[]): void {
+  const sentence = wholeSentenceOf(ex, answer);
+  const sentences = sentenceTokens(sentence);
+  for (const tokens of sentences) validateQuestionWords(tokens, field, errors);
+  // Czasownik stanu zgłasza reguła wspólna — bez drugiego komunikatu o formie -ing.
+  const keyTokens = stateVerbIn(sentence, "ing_form") === undefined ? new Set(expandedTokens(answer)) : undefined;
+  let hasBe = false;
+  for (const tokens of sentences) {
+    if (validateSentenceBeForms(ex, objective, tokens, keyTokens, field, errors)) hasBe = true;
+  }
+  if (!hasBe) {
+    errors.push(`pc-be: ${field}: zdanie w Present Continuous potrzebuje formy am/is/are`);
+    return;
+  }
+  const marker = sentences.map((tokens) => tokens[0]).findLast((token) => token === "yes" || token === "no");
+  const negative = sentences.some((tokens) => tokens.includes("not"));
+  checkBePolarity(polarityOf(ex, objective), negative, marker, `pc-be: ${field}`, errors);
+  validateShortAnswerPerson(ex, answer, field, errors);
+}
+
+/** Całe zdania (choice, order, short_answer, transform, open_answer; §6.3, §5.4). */
+function validateSentences(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+  const pcObjective = PC_SENTENCE_OBJECTIVES.has(objective);
+  for (const { field, text } of sentenceAnswersOf(ex)) {
+    const contraction = normalizeTokens(text).find((token) => S_CONTRACTIONS.has(token));
+    if (contraction !== undefined) {
+      errors.push(`pc-shape: ${field}: skrót „${contraction}” jest zakazany w kluczu — zapisz pełne „is” (He is playing)`);
+      continue;
+    }
+    if (pcObjective) validateSentenceAnswer(ex, objective, text, field, errors);
+  }
+  if (!pcObjective) return;
+  const question = shortAnswerQuestion(ex);
+  if (question !== undefined) {
+    for (const tokens of sentenceTokens(question.text)) validateQuestionWords(tokens, question.field, errors);
+  }
+  // Tłumaczenie (§5.4): „Mama gotuje” bez kontekstu ma dwa poprawne tłumaczenia.
+  if (ex.exerciseType === "lesson_open_answer" && ex.prompt !== undefined) {
+    const { groups } = scanTimeMarkers(ex.prompt, "pl");
+    if (groups.size !== 1 || !groups.has("now")) {
+      errors.push("pc-marker: prompt: zdanie do tłumaczenia potrzebuje wskaźnika „teraz” (teraz, w tej chwili, Patrz!) i żadnego „zwykle”");
+    }
+  }
+}
+
 /**
  * Walidator ćwiczenia tematu Present Continuous; cel z ostatniego segmentu
  * `objectiveId`. Zwraca komunikaty z prefiksami `pc-…:` (pusta lista = poprawne).
@@ -365,6 +641,8 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
   if (ex.exerciseType === "lesson_gap") {
     validateGapHint(ex, errors);
     validateGap(ex, objective, errors);
+  } else if (WHOLE_SENTENCE_TYPES.has(ex.exerciseType)) {
+    validateSentences(ex, objective, errors);
   }
   return errors;
 }
