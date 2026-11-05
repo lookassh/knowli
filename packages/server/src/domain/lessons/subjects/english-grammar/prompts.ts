@@ -6,7 +6,8 @@ const PC = "english_grammar.present_continuous";
 
 /**
  * Przykłady bloku Present Continuous (design „Present Continuous” §7.2): luka
- * celu 1, wybór celu 2 na scence, wybór „now / usually” i luka celu 6. Tekst
+ * celu 1, wybór celu 2 na scence, wybór „now / usually”, luka celu 6 i wybór
+ * celu 6 między całymi pytaniami (bodziec to zdanie kontekstu bez luki). Tekst
  * promptu zawiera ich JSON, a test modułu przepuszcza je przez walidator
  * przedmiotu — przykład w prompcie nie może uczyć modelu odrzucanego kształtu.
  */
@@ -51,6 +52,17 @@ export const PRESENT_CONTINUOUS_PROMPT_EXAMPLES: readonly LessonExerciseDraft[] 
     acceptedAnswers: [],
     focus: ["doesn't", "swim"],
   },
+  {
+    exerciseType: "lesson_choice",
+    objectiveId: `${PC}.now_or_usually_more`,
+    instructionPl: "Wybierz dobre pytanie.",
+    stem: "Ola is at the tennis club.",
+    options: [{ id: "a", text: "Does Ola play tennis on Saturdays?" }, { id: "b", text: "Is Ola playing tennis on Saturdays?" }],
+    correctOption: "a",
+    answer: "Does Ola play tennis on Saturdays?",
+    acceptedAnswers: [],
+    focus: ["Does", "play"],
+  },
 ];
 
 /**
@@ -76,14 +88,17 @@ function markerText(entries: readonly string[]): string {
  * czasu, czasowników i czasowników stanu pochodzą ze stałych, więc prompt nie
  * rozjedzie się z regułami odrzucania. Kolokacje „having/looking” są wypisane
  * ręcznie — test modułu sprawdza, że reguła czasowników stanu je przepuszcza.
- * Agent puli dostaje ten sam blok przez `lessonSystemPrompt`.
+ * Blok zamyka zdanie „End of present continuous rules.”, bo `fieldRules` są
+ * wspólne dla tematów, a nazwy celów (negative, questions) powtarzają się
+ * w innych tematach. Agent puli dostaje ten sam blok przez `lessonSystemPrompt`.
  */
 export function presentContinuousFieldRules(): string {
   const verbs = (...rules: IngRule[]): string => ingVerbsByRule(rules).join(", ");
   const markers = TIME_MARKER_LISTS;
   return [
-    "For objectives whose id contains '.present_continuous.' (an action happening right now, at this moment) these rules apply; " +
-      "objectives are named by the last part of their id, and now_or_usually and now_or_usually_more are the tense-choice objectives.",
+    "For objectives whose id contains '.present_continuous.' (an action happening right now, at this moment) everything until the sentence " +
+      "'End of present continuous rules.' applies only to them; there objectives are named by the last part of their id " +
+      "(negative means english_grammar.present_continuous.negative), and now_or_usually and now_or_usually_more are the tense-choice objectives.",
     `Verbs: in affirmative, now_or_usually, negative and questions use only these verbs, which add -ing without spelling changes: ${verbs("plain")} — ` +
       "also in the brackets of a gap and when the answer is in the present simple.",
     "In ing_spelling every exercise practises one spelling rule with these verbs: " +
@@ -94,37 +109,61 @@ export function presentContinuousFieldRules(): string {
       "having fun, having a party, looking at, looking for (never in ing_spelling).",
     `Never use these state verbs in the -ing form, and never being: ${[...STATE_VERBS].join(", ")}; the collocations above are the only exceptions. ` +
       "In the tense-choice objectives never use them in any form at all (no likes, has, wants), except those collocations and Look!.",
-    `Time markers — now: ${markerText(markers.nowEn)}; in Polish: ${markerText(markers.nowPl)}.`,
+    `Time markers — now: ${markerText(markers.nowEn)}; in Polish: ${markerText(markers.nowPl)}. ` +
+      "A Polish exclamation counts only with ! (Cicho! Dziadek śpi., never Cicho, dziadek śpi.).",
     `Usually: ${markerText(markers.usuallyEn)}; in Polish: ${markerText(markers.usuallyPl)}.`,
     `Never use any of these markers anywhere in the exercise, in English or Polish (future or ambiguous): ${markers.forbidden.join(", ")}. ` +
-      "A present continuous sentence never has a usually marker, and always is never used with the present continuous.",
+      "Never use be going to: going to + a verb is the future (never Tom is going to play.); going to + a place is fine (Tom is going to school now.).",
+    "A correct present continuous sentence (an answer, an accepted answer, a correct option) never has a usually marker, and always is never used " +
+      "with the present continuous; only in the tense-choice objectives may the mistaken statement of a lesson_error_fix or a distractor " +
+      "pair the present continuous with a usually marker.",
+    "In affirmative, negative, questions and ing_spelling everything happens right now: never write a usually marker anywhere in their exercises " +
+      "(not in a stem, statement, option, answer, instructionPl or prompt, and not in a mistaken lesson_error_fix statement either). " +
+      "Every verb gap, every lesson_error_fix, every lesson_transform and every lesson_choice whose options include a present simple form " +
+      "(reads, doesn't play, Does she read?) needs a now marker, because without it the present simple would be correct too: " +
+      "an English marker in the sentence (Ola ___ (read) a comic now.) or a short Polish scene in instructionPl " +
+      "(Cicho! Dziadek śpi. Uzupełnij zdanie. with Grandpa ___ (sleep) on the sofa.); in questions What + am/is/are + subject + doing? also counts " +
+      "(What are you doing? I ___ (read) a book. → am reading). Be gaps, lesson_notice, lesson_listen_choice, lesson_order and lesson_short_answer may go without a marker.",
+    "In instructionPl a Polish scene is its own short sentence before the task (Tata teraz gotuje. Uzupełnij zdanie.); " +
+      "never use teraz, właśnie, zawsze or zwykle as words of the task itself (never Teraz uzupełnij zdanie. or Zawsze czytaj całe zdanie.).",
     "Every lesson_gap has hint null and one of two shapes. Verb gap: the gap stands for the whole verb form and the base verb stands in brackets right after the gap " +
       "(Tom ___ (play) football now. → is playing); write (not verb) in the brackets in the verb gaps of negative and in every gap of now_or_usually_more " +
       "(She ___ (not watch) TV now. → isn't watching), and never in other objectives.",
     "Be gap, only in affirmative, negative and questions: the gap stands only for am, is or are (optionally with not, never not alone), " +
       "the -ing form already stands in the sentence and there are no brackets (They ___ playing now. → are; in questions: ___ she reading a book? → Is; " +
       "Are they playing? No, they ___. → aren't). In questions use the be gap, never a verb gap after the subject (never Is she ___ (read)?).",
+    "A negative be-gap answer (isn't, aren't, am not) needs No before the gap, in negative too (Is she sleeping? No, she ___. → isn't), " +
+      "and never stands where not already follows the gap (She ___ not sleeping now. → is). " +
+      "In a lesson_choice between forms of am, is or are a negative key is allowed only in negative, or after No in questions; " +
+      "never offer two options that differ only by not or n't (Is / Isn't). " +
+      "Yes/No short answers belong to questions: affirmative never uses a No short answer.",
     "Never write brackets anywhere else: not elsewhere in a gap sentence, and never in a lesson_choice or lesson_listen_choice stem or option, a statement or an answer.",
     "am, is or are always matches the subject (I am; he, she, it, one name or one thing is; you, we, they, two names or a plural noun are); " +
-      "short answers repeat it (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.).",
-    "In a be gap and in a lesson_choice between forms of am, is or are, a negative answer (isn't, aren't, am not) is allowed only in negative, or after No in questions, " +
-      "and never when not already follows the gap; never offer two options that differ only by not or n't (Is / Isn't). " +
-      "Yes/No short answers belong to questions: affirmative never uses a No short answer.",
+      "short answers repeat it and agree in number with a name or a noun too (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.; " +
+      "Are the boys playing? → Yes, they are.; Is Tom reading? → Yes, he is.).",
+    "A context sentence may use is or are without a verb (This is Ola. She ___ (read) a book now.; It is sunny.), " +
+      "but every present continuous sentence of an answer has am/is/are + an -ing verb; never use a verb as an adjective after is (never The door is open.).",
     "Answers and accepted answers never use he's, she's, it's, what's, that's, there's, where's or who's: write the full is (He is playing.).",
     "The only wh-question is What + am/is/are + subject + doing? (What are you doing?), answered with a full present continuous sentence; " +
-      "never start a sentence with any other question word (What is she reading?, Where is he going?).",
+      "never start a sentence with any other wh-question, including other What questions (What is she reading?, Where is he going?).",
     "lesson_error_fix: the statement and the answer differ in one place of at most 3 words, and that place is the checked mistake: " +
-      "in affirmative, negative and questions a missing am/is/are (He playing football. → He is playing football.; in negative: " +
+      "in affirmative and negative a missing am/is/are (He playing football now. → He is playing football now.; in negative: " +
       "He not playing now. → He is not playing now.; the answer always has the polarity of the objective), " +
-      "a verb without -ing after am/is/are (She is play. → She is playing.) or a wrong form of am/is/are (They is jumping. → They are jumping.); " +
-      "in negative and questions also do or does instead of am/is/are (He doesn't playing now. → He isn't playing now.); " +
-      "in ing_spelling only a wrong -ing spelling (He is swiming. → He is swimming.); in the tense-choice objectives the present simple swapped " +
-      "with the present continuous of the same verb (Look! Ola reads. → Look! Ola is reading.), with the correct side matching the time marker.",
+      "a verb without -ing after am/is/are (She is play now. → She is playing now.) or a wrong form of am/is/are (Look! They is jumping. → Look! They are jumping.); " +
+      "in negative also do or does instead of am/is/are (He doesn't playing now. → He isn't playing now.); " +
+      "in ing_spelling only a wrong -ing spelling (He is swiming now. → He is swimming now.); in the tense-choice objectives the present simple swapped " +
+      "with the present continuous of the same verb, in either direction, with the correct side matching the time marker " +
+      "(Look! Ola reads. → Look! Ola is reading.; Ola is reading comics every day. → Ola reads comics every day.).",
+    "lesson_transform: in negative to_negative turns an affirmative sentence into its negative (He is playing now. → He isn't playing now.) " +
+      "and to_affirmative a negative one into an affirmative (He isn't playing now. → He is playing now.); in questions to_question turns a statement, " +
+      "never a question, into a yes/no question that starts with Am, Is or Are and ends with ? (They are playing now. → Are they playing now?; " +
+      "Look! Tom is playing. → Look! Is Tom playing?).",
     "Translations (lesson_open_answer) in affirmative, negative, questions and ing_spelling: the Polish prompt has a now marker and no usually marker " +
       "(Mama teraz gotuje obiad.), and the answer contains its literal English equivalent (Mum is cooking dinner now.; teraz → now, " +
       "w tej chwili → at the moment, Patrz! → Look!); never list accepted answers without it.",
-    "Tense-choice objectives (now_or_usually: affirmative sentences only; now_or_usually_more: negatives and questions only): every exercise has a clear context " +
-      "of exactly one marker group — now markers, and then every verb is in the present continuous, or usually markers, and then every verb is in the present simple " +
+    "Tense-choice objectives (now_or_usually: affirmative sentences only; now_or_usually_more: negatives and questions only): every exercise, " +
+      "except the now / usually meaning check below, has a clear context of exactly one marker group — now markers, and then every verb is in the present continuous, " +
+      "or usually markers, and then every verb is in the present simple " +
       "(with -s or does/doesn't for he, she, it or one name, the base form or do/don't otherwise).",
     "The context is an English marker in the sentence or a short Polish scene in instructionPl (in lesson_open_answer: in the Polish prompt); " +
       "about half of these exercises use a scene without an English marker (Cicho! Dziadek śpi. / Gdzie jest tata? / Ola codziennie gra w piłkę.).",
@@ -135,14 +174,21 @@ export function presentContinuousFieldRules(): string {
     "Each lesson_choice stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.), never a bare Ola ___ ., " +
       "because the instruction does not make two stems different.",
     "In the tense-choice objectives never put a gap in a question: in now_or_usually_more questions appear only as whole-sentence options of lesson_choice " +
-      "(Do you play football on Saturdays? / Are you playing football on Saturdays?) and in lesson_open_answer, and its gaps and lesson_error_fix use negatives only.",
+      "(Do you play football on Saturdays? / Are you playing football on Saturdays?) and in lesson_open_answer, and its gaps and lesson_error_fix use negatives only. " +
+      "Such a lesson_choice has as its stem a different short English context sentence in every exercise, with no gap (Ola is at the tennis club.), " +
+      "and the time marker stands in both options.",
     "now_or_usually also checks meaning: a lesson_choice with options exactly now and usually, instructionPl exactly Kiedy to się dzieje? and a stem that is one " +
-      "affirmative present simple or present continuous sentence with no time marker and no gap (Ola is reading a comic. → now; Ola reads comics. → usually).",
+      "affirmative present simple or present continuous sentence with no time marker and no gap (Ola is reading a comic. → now; Ola reads comics. → usually); " +
+      "a present simple stem has a general plural object (Ola reads comics., never Ola reads a comic.).",
     "lesson_listen_choice (affirmative, negative, questions): the options are exactly is / are, isn't / aren't, or Is / Are opening a question — never He's / He.",
     "lesson_notice (affirmative): across all its sentences exactly one word is an -ing form, and correctOption is that word.",
+    "The examples of each objective (shown to the child on its cards) follow the same rules: in affirmative, negative, questions and ing_spelling " +
+      "present continuous sentences with a now marker and action verbs only; in the tense-choice objectives a pair with the same verb, " +
+      "one sentence with a now marker and one with a usually marker (Ola is reading now. / Ola reads comics every day.).",
     "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers are in English " +
       "(Polish names such as Ola are fine).",
     `Examples (key fields only): ${PRESENT_CONTINUOUS_PROMPT_EXAMPLES.map((example) => JSON.stringify(example)).join(" ")}`,
+    "End of present continuous rules.",
   ].join(" ");
 }
 
