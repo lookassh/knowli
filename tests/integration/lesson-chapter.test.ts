@@ -403,13 +403,10 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       expect(draft.rejectedReasons).toEqual({ [labels.leak_victim!]: 1 });
     });
 
-    // Znana luka domeny na ścieżce agenta: przyjęcie (`admission.ts`, `lessonLeaks`) woła `findExposureLeaks`
-    // w trybie `coverage` (równość `target_key`, bez rozwinięcia skrótów i bez wariantów ofiary), a potok
-    // odrzucał świeże ćwiczenia w trybie `generation` (`answersEquivalent` z normalizatorem). „Where is the box?”
-    // przechodzi więc obok przykładu „Where's the box?”. Asercje zachowania wymaganego zostają; po naprawie
-    // przyjęcia `it.fails` → `it`.
-    it.fails("pełna generacja: wariant „Where is the box?” tłumaczenia wobec przykładu „Where's the box?” → poza szkicem", async () => {
-      const BOX_MATERIAL = "The box is on the bed. I can see the box. Where is the box? Where's the box?";
+    // Przyjęcie agenta porównuje ujawnienia trybem `generation` (normalizator przedmiotu rozwija skróty).
+    it("pełna generacja: wariant „Where is the box?” tłumaczenia wobec przykładu „Where's the box?” → poza szkicem", async () => {
+      // Zdanie z lampą i biurkiem: przy trzech słowach treści generator fake'a nie ma dość różnych tłumaczeń na trzy zagadnienia.
+      const BOX_MATERIAL = "The box is on the bed. I can see the box. Where is the box? Where's the box? The lamp is on the desk.";
       const boxPlan = plan([
         { slug: "part_1", titlePl: "Pudełko", kind: "words", examples: ["Where's the box?"], cards: [{ title: "Zdanie", body: "The box is on the bed." }, { title: "Temat", body: "Pudełko" }] },
         { slug: "part_2", titlePl: "Łóżko", kind: "words", examples: ["The bed."], cards: [{ title: "Słowa", body: "bed" }, { title: "Temat", body: "Łóżko" }] },

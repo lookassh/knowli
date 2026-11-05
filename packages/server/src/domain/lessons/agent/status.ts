@@ -183,7 +183,7 @@ export function objectiveStatusFor(
 }
 
 /**
- * Bezpiecznik po zakończeniu podagentów (§3.6): `findExposureLeaks` (coverage)
+ * Bezpiecznik po zakończeniu podagentów (§3.6): `findExposureLeaks` (tryb przyjmowania, `generation`)
  * i `validatePool`/`validatePoolExtra` całej lekcji. Przy zachowanym
  * niezmienniku przyjmowania pusta lista; inaczej ćwiczenia PULI do usunięcia:
  * ofiary z pul, a dla ofiary `fixed` — źródło ujawnienia, o ile jest z puli
