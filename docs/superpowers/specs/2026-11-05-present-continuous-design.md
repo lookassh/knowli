@@ -1,6 +1,6 @@
 # Temat Present Continuous w lekcjach gramatyki — projekt
 
-Wersja 2 (po przeglądzie trzech krytyków: dydaktyka i język, kod, zakres i ryzyko), 2026-11-05. Gałąź `feature/present-continuous` od `origin/main` 3b4c1ec0.
+Wersja 3 (po przeglądzie planu przez trzech krytyków; decyzja właściciela z 2026-11-05: zmiana §6.7 dla wszystkich przedmiotów), 2026-11-05. Wersja 2: po przeglądzie projektu przez trzech krytyków (dydaktyka i język, kod, zakres i ryzyko). Gałąź `feature/present-continuous` od `origin/main` 3b4c1ec0.
 Powiązane: #279 (poziom materiału, osobno), #280 (Present Continuous v2), #237 (agent puli — etap 3 w toku).
 
 ## 1. Cel i kontekst
@@ -9,7 +9,7 @@ Trzeci temat katalogu przedmiotu `english_grammar`: `present_continuous@1`. Gł�
 
 Cel właściciela: dziecko ma **zrozumieć, kiedy użyć czasu**, a nie wkuć formę. Trudność polskiego ucznia leży w wyborze czasu, nie w budowie formy: polskie „Ola czyta” odpowiada i „Ola reads”, i „Ola is reading”. Dlatego porównanie z Present Simple jest częścią tematu od pierwszej sesji.
 
-Temat to dane katalogu plus reguły przedmiotu `english_grammar` (walidator, prompty). Jedna mała zmiana silnika: zdanie czytane po odpowiedzi pomija czasownik w nawiasie przy luce (§6.7). Bez zmian w kontraktach, bazie, Kid UI, panelu rodzica, polityce agenta, MCP i `SKILL.md`.
+Temat to dane katalogu plus reguły przedmiotu `english_grammar` (walidator, prompty). Jedna mała zmiana silnika, dla wszystkich przedmiotów: zdanie czytane po odpowiedzi pomija czasownik w nawiasie przy luce (§6.7). Bez zmian w kontraktach, bazie, Kid UI, panelu rodzica, polityce agenta, MCP i `SKILL.md`.
 
 ## 2. Zasady dydaktyczne
 
@@ -46,7 +46,7 @@ Typy oznaczają `lesson_*`. Każdy cel ma typ etapu prowadzonego, produktywnego 
 
 Zakres celów:
 - **1 `affirmative`:** twierdzenia z czasownikami czynności; podmiot zaimek, imię albo rzeczownik z materiału (także liczba mnoga: „The dogs are running.”). `listen_choice`: is / are.
-- **2 `now_or_usually`:** wybór Present Simple albo Present Continuous w zdaniach twierdzących, ze wskaźnika albo scenki (§5.2); plus `lesson_choice` „now / usually” (§5.5).
+- **2 `now_or_usually`:** wybór Present Simple albo Present Continuous wyłącznie w zdaniach twierdzących (przeczenia i pytania należą do celu 6), ze wskaźnika albo scenki (§5.2); plus `lesson_choice` „now / usually” (§5.5).
 - **3 `negative`:** am not / isn't / aren't + -ing. `listen_choice`: isn't / aren't. `transform`: `to_negative`.
 - **4 `questions`:** pytania ogólne (Is she reading?), krótkie odpowiedzi (Yes, she is. / No, they aren't.) i stały zwrot „What + am/is/are + podmiot + doing?” z odpowiedzią pełnym zdaniem. `listen_choice`: Is / Are na początku pytania. `transform`: `to_question`.
 - **5 `ing_spelling`:** pisownia formy -ing; tylko czasowniki z reguł na kartach (§4).
@@ -58,7 +58,7 @@ Rekomendacja wyboru celów (w SPEC i opisie PR; formularz rodzica bez zmian, dom
 - dziecko po temacie Present Simple: cele 1, 2, 4 (młodsze), wszystkie (11-latek);
 - dziecko bez Present Simple: cele 1, 3, 4; cel 2 i 6 dopiero po temacie Present Simple.
 
-### 3.2 Karty (szkic treści; jedno–dwa krótkie zdania na kartę)
+### 3.2 Karty (szkic treści; jedno–dwa krótkie zdania na kartę, 2–4 karty na cel — `catalog-validation.ts`)
 
 Cel 1 `affirmative`:
 - „Co się dzieje?”: „Popatrz! Tom is running. Mum is cooking. To dzieje się teraz, w tej chwili.”
@@ -83,9 +83,8 @@ Cel 4 `questions`:
 
 Cel 5 `ing_spelling`:
 - „Zwykle tylko -ing”: „play → playing, read → reading, jump → jumping.”
-- „Znika e”: „make → making, write → writing (jedno t!).”
+- „Znika e, ie → y”: „make → making, write → writing (jedno t!). Końcówka ie zmienia się w y: lie → lying, tie → tying.”
 - „Podwójna litera”: „Gdy krótkie słowo kończy się na jedną samogłoskę i jedną spółgłoskę, podwajamy ostatnią literę: run → running, swim → swimming, sit → sitting. Ale: jump → jumping, fix → fixing.”
-- „ie → y”: „lie → lying, tie → tying.”
 - „Przykłady z lekcji”: „{{examples}}”
 
 Cel 6 `now_or_usually_more`:
@@ -124,10 +123,10 @@ Cele 2 i 6 celowo nie mają kategorii formy (`missing_ending`, `wrong_auxiliary`
 
 Nowy plik `packages/server/src/domain/lessons/subjects/english/ing-forms.ts` (+ test): zamknięta tabela ok. 80 czasowników czynności poziomu A1–A2 → forma -ing w pisowni brytyjskiej (`answerLocale: en-GB`), z klasą reguły pisowni:
 
-- `plain` (play → playing, read → reading, jump → jumping, fix → fixing),
+- `plain` (play → playing, read → reading, jump → jumping, fix → fixing, do → doing — potrzebne do „What … doing?”),
 - `drop_e` (make → making, write → writing, ride → riding),
 - `double` (run → running, swim → swimming, sit → sitting, get → getting),
-- `ie_to_y` (lie → lying, tie → tying),
+- `ie_to_y` (lie → lying, tie → tying; tylko te dwa — „die” pomijamy w materiale dla dzieci),
 - `other` (travel → travelling i podobne; poza celem 5).
 
 API (czyste funkcje):
@@ -138,12 +137,12 @@ API (czyste funkcje):
 
 Tabela zamiast reguł: podwojenie zależy od akcentu (visit → visiting, begin → beginning), a brytyjskie „-ll” od konwencji. Tabela nie zawiera czasowników stanu (§5.3).
 
-Użycie według celu (odpowiedź kanoniczna, warianty i nawias w luce):
+Użycie według celu (odpowiedź kanoniczna, warianty i czasownik w nawiasie luki — także gdy odpowiedzią jest forma Present Simple, np. „He ___ (swim) every day.” w celu 2 jest odrzucane):
 - cele 1, 2, 3, 4: tylko klasa `plain`;
-- cel 5: klasy `drop_e`, `double`, `ie_to_y` (każde ćwiczenie ćwiczy jedną z reguł z kart); `plain` dopuszczone w ćwiczeniach prowadzonych jako kontrast;
+- cel 5: klasy `drop_e`, `double`, `ie_to_y` (każde ćwiczenie ćwiczy jedną z reguł z kart); `plain` dopuszczone w ćwiczeniach prowadzonych (`choice`) jako kontrast;
 - cel 6: klasy `plain`, `drop_e`, `double`, `ie_to_y`.
 
-Czasownik spoza tabeli albo spoza dozwolonych klas w sprawdzanym miejscu odrzuca ćwiczenie.
+Czasownik spoza tabeli albo spoza dozwolonych klas w sprawdzanym miejscu odrzuca ćwiczenie. Wyjątek: formy -ing z kolokacji dozwolonych w §5.3 („having” + posiłek/kąpiel/zabawa, „looking” + at/for) są przyjmowane poza tabelą w każdym celu poza 5 (cel 5 ćwiczy pisownię z tabeli).
 
 ## 5. Reguły jednoznaczności
 
@@ -167,9 +166,9 @@ Każde ćwiczenie (poza kartą i wyborem „now / usually”, §5.5) ma co najmn
 
 ### 5.3 Czasowniki stanu
 
-Zamknięta lista: like, love, hate, prefer, want, need, wish, know, understand, believe, remember, forget, recognise, mean, seem, sound, cost, own, belong, think, see, hear, feel, taste, smell, have, look (poza wyjątkami), be (w formie „being”).
+Zamknięta lista: like, love, hate, prefer, want, need, wish, know, understand, believe, remember, forget, recognise, mean, seem, sound, cost, own, belong, think, see, hear, feel, taste, smell, have, look (poza wyjątkami). Czasownik „be” nie jest na liście (am/is/are budują sam czas); rozpoznawana jest tylko forma „being” („He is being silly” — odrzucane we wszystkich celach).
 
-- Cele 2 i 6: żadne skanowane pole nie zawiera tych czasowników w dowolnej formie, z wyjątkami: „have” w kolokacjach breakfast / lunch / dinner / a bath / a shower / fun / a party; „look at”, „look for”; wykrzyknienie „Look!”.
+- Cele 2 i 6: żadne skanowane pole nie zawiera czasowników z listy w dowolnej formie, z wyjątkami: „have” w kolokacjach breakfast / lunch / dinner / a bath / a shower / fun / a party; „look at”, „look for”; wykrzyknienie „Look!”.
 - Wszystkie cele: czasownik z listy nie występuje w formie -ing w odpowiedziach i wariantach, z tymi samymi wyjątkami („She is having lunch”, „He is looking at the stars” są dozwolone).
 
 ### 5.4 Tłumaczenia w celach 1, 3, 4, 5
@@ -190,18 +189,20 @@ Plik `english-grammar/validators.ts`: nowa gałąź `topic.id === "present_conti
 
 ### 6.1 Wydzielenie wspólnych funkcji „to be”
 
-Funkcje `bePronounNearGap`, `expectedBeFormNearGap`, `parseBeGapAnswer`, `checkBePolarity` i część `validateBeAnswerText` (zgodność osoby z formą be, reguła „Yes, I'm.”) przenosimy do `english-grammar/be-agreement.ts` jako czyste funkcje. Osobny commit: czyste przeniesienie bez zmiany zachowania, testy `to_be` zielone przed i po. Dopiero następny commit: `checkBePolarity` dostaje mapę cel → biegunowość zamiast stałych identyfikatorów celów `to_be`. Temat PC nie używa `validateBeAnswerText` w całości (odrzuca do/does, potrzebne w celu 6) ani `parseBeGapAnswer` (zwraca `null` dla „is swimming”) — ma własny parser odpowiedzi luki.
+Funkcje `bePronounNearGap`, `expectedBeFormNearGap`, `parseBeGapAnswer`, `checkBePolarity` i część `validateBeAnswerText` (zgodność osoby z formą be, reguła „Yes, I'm.”) przenosimy do `english-grammar/be-agreement.ts` jako czyste funkcje. Tak samo `presentSimpleForms`, `isAcceptablePresentSimpleAnswer` i ich stałe (`IRREGULAR_THIRD_PERSON`, `VOWELS`) przenosimy do `english-grammar/present-simple-forms.ts` — inaczej plik PC importowałby `validators.ts`, a `validators.ts` plik PC (cykl). Osobny commit: czyste przeniesienie bez zmiany zachowania, testy `to_be` i Present Simple zielone przed i po. Dopiero następny commit: `checkBePolarity` dostaje mapę cel → biegunowość zamiast stałych identyfikatorów celów `to_be`. Temat PC nie używa `validateBeAnswerText` w całości (odrzuca do/does, potrzebne w celu 6) ani `parseBeGapAnswer` (zwraca `null` dla „is swimming”) — ma własny parser odpowiedzi luki.
 
 ### 6.2 Luka (`lesson_gap`)
 
 Dwa kształty, rozpoznawane po treści luki:
 
-- **Luka z czasownikiem:** luka obejmuje całą formę czasownika, a forma podstawowa stoi w nawiasie tuż za luką: „He ___ (play) football now.” (cel 1), „He ___ (swim) now.” (cel 5), „Ola ___ (read) a comic every evening.” (cel 2). W przeczeniu nawias zawiera „not” + formę podstawową, bo bez niego twierdzenie też byłoby poprawne: „She ___ (not watch) TV now.” → „isn't watching”, „She ___ (not watch) TV every morning.” → „doesn't watch”. Nawias z „not” jest wymagany w celu 3 i w lukach celu 6, a zakazany w pozostałych. Odpowiedź:
+- **Luka z czasownikiem:** luka obejmuje całą formę czasownika, a forma podstawowa stoi w nawiasie tuż za luką: „He ___ (play) football now.” (cel 1), „He ___ (swim) now.” (cel 5), „Ola ___ (read) a comic every evening.” (cel 2). W przeczeniu nawias zawiera „not” + formę podstawową, bo bez niego twierdzenie też byłoby poprawne: „She ___ (not watch) TV now.” → „isn't watching”, „She ___ (not watch) TV every morning.” → „doesn't watch”. Nawias z „not” jest wymagany w luce z czasownikiem w celu 3 i w lukach celu 6, a zakazany w celach 1, 2, 4 i 5. Odpowiedź:
   - cele 1, 3, 5: am / is / are [not] + forma -ing (skróty isn't / aren't dozwolone; bez samego „'m” — normalizacja zdejmuje apostrof z brzegu tokenu);
   - cele 2 i 6: forma Present Simple albo Present Continuous zgodna z grupą wskaźnika i osobą (§5.2); w celu 6 tylko przeczenia (doesn't / don't + forma podstawowa albo isn't / aren't / am not + -ing).
 - **Luka na formę be:** luka obejmuje tylko formę be, a forma -ing stoi w zdaniu; bez nawiasu: „___ she reading a book?” → „Is”, „Yes, she ___.” → „is”, „They ___ playing now.” → „are”. Tylko cele 1, 3, 4.
 
-`hint` zawsze pusty: checker agenta i kartkówka go nie widzą (`agent/solver.ts`, `lesson-materialize.ts`), więc czasownik musi być w zdaniu. Forma be zgodna z podmiotem (`be-agreement.ts`; podmioty: zaimki, imiona, rzeczowniki w liczbie mnogiej regularnej i nieregularnej z tabeli — children, people, men, women, mice, feet, teeth — oraz podmiot złożony „X and Y” → are; imiona zakończone na -s, np. „James”, traktowane jako liczba pojedyncza). Biegunowość zgodna z celem (3 — przeczenie). Odpowiedź luki ma najwyżej 3 słowa po rozwinięciu skrótów (istniejące `MAX_GAP_ANSWER_TOKENS`). Forma -ing z tabeli i z dozwolonej klasy (§4).
+`hint` zawsze pusty: checker agenta i kartkówka go nie widzą (`agent/solver.ts`, `lesson-materialize.ts`), więc czasownik musi być w zdaniu. Nawias w bodźcu dopuszczalny jest wyłącznie tuż po luce `lesson_gap`; nawias w innym miejscu luki oraz w bodźcu i opcjach `lesson_choice` / `lesson_listen_choice` odrzuca ćwiczenie (`pc-shape:`) — tam nawias nie jest usuwany ze zdania czytanego przez lektora.
+
+Forma be zgodna z podmiotem. Podmiot ustala ta sama logika co w temacie `to_be` (`expectedBeFormNearGap` na bodźcu po usunięciu nawiasu): pomija przysłówki przed luką („They always ___”), okolicznik na początku zdania („Every day Ola ___”, „On Saturdays they ___”) i obsługuje pytania („What ___ they doing?”, „___ she reading?”). Podmioty: zaimki, imiona, rzeczowniki w liczbie mnogiej regularnej i nieregularnej z tabeli — children, people, men, women, mice, feet, teeth — oraz podmiot złożony „X and Y” → are; imiona zakończone na -s, np. „James”, traktowane jako liczba pojedyncza; dodanie „mice” do tabeli liczby mnogiej dotyczy też tematu `to_be` i jest zamierzone). Biegunowość zgodna z celem (1, 2, 5 — twierdzenie; 3 — przeczenie; 4 i 6 — dowolna) albo z przekształceniem (`to_negative` → przeczenie, `to_affirmative` → twierdzenie, `to_question` → dowolna). Odpowiedź luki ma najwyżej 3 słowa po rozwinięciu skrótów (istniejące `MAX_GAP_ANSWER_TOKENS`). Forma -ing z tabeli i z dozwolonej klasy (§4).
 
 ### 6.3 Całe zdania (choice, error_fix, transform, short_answer, open_answer, order)
 
@@ -209,8 +210,10 @@ Dwa kształty, rozpoznawane po treści luki:
 - Odpowiedź poprawna nie zawiera am / is / are + forma bez -ing („She is plays”, „She is play”).
 - **Skróty z „'s”:** `answer` i `acceptedAnswers` nie zawierają he's / she's / it's / what's / that's / there's / where's — `contractions.ts` rozwija je do „is” albo „has”, a dopasowanie przyjmuje dowolny wspólny wariant, więc klucz „He's running.” zaliczyłby „He has running.”. Dziecko może wpisać „He's running” — dopasuje się do klucza „He is running” (`evaluate.ts`). Skrót po rzeczowniku („Mum's cooking”) nie jest rozwijany, nie dopasuje się deterministycznie i trafi do modelu oceniającego (gdy skonfigurowany); klucz używa wtedy pełnego „is”.
 - Pytanie szczegółowe tylko we wzorcu „What + am/is/are + podmiot + doing?”; inne pytajniki odrzucają ćwiczenie.
-- **`error_fix`:** błędne zdanie (`statement`) i odpowiedź po normalizacji (z rozwinięciem skrótów) różnią się jednym spójnym obszarem tokenów (diff tokenów: wspólny prefiks i sufiks, reszta to obszar). Obszar zawiera sprawdzany element celu, klasyfikowany deterministycznie: brak formy be (cele 1, 3, 4), brak -ing albo forma bez -ing po be (1, 3, 4), zła pisownia -ing — forma błędna nie jest w tabeli, a poprawna jest (5), zamiana PS ↔ PC (2, 6). Inny obszar różnicy odrzuca ćwiczenie.
-- Cele 2 i 6: reguły §5.2 i §5.3. Cele 1, 3, 4, 5: §5.3 (bez -ing przy czasownikach stanu) i §5.4 dla `open_answer`.
+- **`error_fix`:** błędne zdanie (`statement`) i odpowiedź po normalizacji (z rozwinięciem skrótów) różnią się jednym spójnym obszarem tokenów (diff tokenów: wspólny prefiks i sufiks, reszta to obszar; najwyżej 3 tokeny po każdej stronie). Obszar zawiera sprawdzany element celu, klasyfikowany deterministycznie: brak formy be (cele 1, 3, 4), brak -ing albo forma bez -ing po be (1, 3, 4), zła pisownia -ing — forma błędna nie jest w tabeli, a poprawna jest (5), zamiana PS ↔ PC (2, 6: jedna strona to forma Present Simple czasownika, druga to be + jego forma -ing, np. „Look! Ola reads.” → „Look! Ola is reading.”, „Ola is reading every day.” → „Ola reads every day.”; strona poprawna zgodna z grupą wskaźnika). Inny obszar różnicy odrzuca ćwiczenie.
+- **Warianty równoważne:** `acceptedAnswers` równoważne kluczowi po normalizacji („is not watching” przy „isn't watching”) silnik usuwa przy zapisie (`withoutRedundantAcceptedVariants`), więc obie formy przeczenia dziecka dopasowuje normalizator, nie lista wariantów.
+- **Wyciek między ćwiczeniami** (wybór „Dad ___ dinner now.” obok tłumaczenia „Tata teraz gotuje obiad.”): świadomie bez nowej reguły — ten sam stan jest dziś w temacie Present Simple, a sesja ma 5–10 minut; test przypina, że pula z taką parą przechodzi walidację.
+- Cele 2 i 6: reguły §5.2 i §5.3; w celu 2 tylko zdania twierdzące (pytajnik albo not / n't w odpowiedzi odrzuca ćwiczenie), w celu 6 pytania tylko w `lesson_choice` i `lesson_open_answer`. Cele 1, 3, 4, 5: §5.3 (bez -ing przy czasownikach stanu) i §5.4 dla `open_answer`.
 - Wszystkie cele: wskaźniki zakazane z §5.1.
 
 ### 6.4 Wybór (`lesson_choice`) i polski kontekst
@@ -225,11 +228,18 @@ Tylko cel 1: dziecko wskazuje formę -ing; segmentacja na pojedyncze słowa. Reg
 
 Cele 1, 3, 4. Istniejące reguły (`listenChoiceSibilantErrors`, brak `instructionPl`) obowiązują. Opcje z is / are, isn't / aren't, Is / Are; nie „He's” / „He”.
 
-### 6.7 Zdanie po odpowiedzi bez nawiasu (zmiana silnika)
+### 6.7 Zdanie po odpowiedzi bez nawiasu (zmiana silnika, wszystkie przedmioty)
 
-`feedbackSentenceText` (`domain/lessons/feedback-sentence-text.ts`) dla `lesson_gap` usuwa nawias stojący bezpośrednio po luce (`/_{2,}\s*\([^)]*\)/` → luka) przed wstawieniem odpowiedzi. Bez tego zdanie pokazywane i czytane dziecku po odpowiedzi brzmiałoby „He is swimming (swim) now.”, lektor TTS nagrałby „(swim)” (`ttsForFeedbackSentence: true`, `media-reconciliation.ts`), a bariera ekspozycji historyjki (`solvedSentencesOf`, `story.ts`) nie rozpoznałaby zdania „He is swimming now.”.
+`feedbackSentenceText` (`domain/lessons/feedback-sentence-text.ts`) dla `lesson_gap` usuwa nawias stojący bezpośrednio po luce (`/_{2,}\s*\([^)]*\)/` → luka) przed wstawieniem odpowiedzi. Bez tego zdanie czytane dziecku po odpowiedzi brzmi „He is swimming (swim) now.”: lektor TTS nagrywa „(swim)” (`ttsForFeedbackSentence: true`, `media-reconciliation.ts`), a bariera ekspozycji historyjki (`solvedSentencesOf`, `story.ts`) nie rozpoznaje zdania „He is swimming now.”.
 
-Zakres: tylko nawias tuż po luce, tylko `lesson_gap`. Żaden przedmiot nie używa dziś tej konwencji (fake generuje „___ here (word).” — wyraz między luką a nawiasem, bez zmiany). Test w `feedback-sentence-text.test.ts`: luka z nawiasem, luka bez nawiasu (bez zmian), nawias dalej w zdaniu (bez zmian), wybór (bez zmian).
+Konwencja „___ (czasownik)” **już istnieje** w Present Simple: używają jej fixture'y i testy (`tests/fixtures/lesson-world.ts`, `fake.test.ts`, `grader.test.ts`, spec E2E edytora) i może ją pisać generator mimo reguły o `hint`, więc ten sam błąd dotyczy dziś istniejących lekcji. Decyzja właściciela (2026-11-05): zmiana dla wszystkich przedmiotów, bez flagi tematu.
+
+Zakres: tylko nawias tuż po luce, tylko `lesson_gap` (wybór i „posłuchaj i wybierz” bez zmian — ich tożsamość i nagranie bodźca nie zmieniają się). Skutki dla istniejących danych:
+- **Opublikowane wersje bez zmian:** sesja bierze nagranie zdania przypięte do rewizji (`revision_assets`, rola `feedback_audio`), nie liczy tekstu od nowa.
+- **Szkice:** przy najbliższym uzgodnieniu mediów (edycja szkicu) luka z nawiasem dostaje nowe nagranie zdania bez nawiasu — jedno nagranie TTS na taką lukę.
+- **Historyjka:** bariera ekspozycji zaczyna wykrywać zdania historyjki równe rozwiązaniu takiej luki. Nowe ćwiczenia z kolizją odpadają przy zapisie puli (`lesson-drafts.ts`), a zapis historyjki i publikacja szkicu z kolizją kończą się błędem walidacji historyjki (`lesson-api.ts`, `assertStoryValid`) — rodzic zmienia albo generuje historyjkę od nowa. To poprawne zachowanie (wcześniej odpowiedź wyciekała), ale może zatrzymać publikację szkicu, który dziś przechodzi; opis PR to mówi.
+
+Testy: `feedback-sentence-text.test.ts` (luka z nawiasem, z „(not …)”, luka bez nawiasu, nawias dalej w zdaniu, wybór — bez zmian), `story.test.ts` (kolizja wykryta) oraz przegląd istniejących testów i fixture'ów z „___ (…)”, których oczekiwane zdanie się zmienia.
 
 ## 7. Prompty
 
@@ -242,7 +252,7 @@ Zdania `fieldRules` o luce w Present Simple, `hint` jako bezokoliczniku i operat
 ### 7.2 Blok `.present_continuous.`
 
 Treść (po angielsku, dla modelu):
-- luka: dwa kształty z §6.2 (czasownik w nawiasie tuż za luką albo luka na formę be bez nawiasu), `hint` null, odpowiedź do 3 słów;
+- luka: dwa kształty z §6.2 (czasownik w nawiasie tuż za luką albo luka na formę be bez nawiasu), `hint` null, odpowiedź do 3 słów; nawias nigdzie poza tym miejscem, w szczególności nie w wyborze i „posłuchaj i wybierz”;
 - tylko sytuacje „right now”, czasowniki czynności; zakazane wskaźniki przyszłości z §5.1; nigdy czasowniki stanu z §5.3 w formie -ing (z wyjątkami);
 - w celach 1–4 tylko czasowniki dostające -ing bez zmian (play, read, jump…); w celu 5 czasowniki z reguł kart; listy czasowników do wyboru generowane z tabeli §4;
 - tłumaczenia celów 1, 3, 4, 5: polskie zdanie ze wskaźnikiem „teraz”; odpowiedź z odpowiednikiem wskaźnika; bez wariantów z usuniętym wskaźnikiem;
@@ -261,15 +271,15 @@ Model oceniający działa tylko dla odpowiedzi tekstowych niedopasowanych determ
 
 `descriptionEn` celów 2 i 6 definiuje sprawdzany element jako **wybór czasu** (nie formę czasownika) i mówi wprost: dobrze wybrany czas z błędem formy (brak -s, „doesn't eats”, brak operatora w pytaniu, błąd pisowni -ing) → `almost` z `errorCategory: null`; zły czas → `incorrect` z `continuous_for_habit` / `simple_for_now`; hybryda („I'm go every day”) → `incorrect` z `be_plus_simple`. To nie przeczy ogólnej `almostDefinition` przedmiotu („błąd w sprawdzanym elemencie nigdy nie jest almost”), bo sprawdzanym elementem jest tu wybór czasu. Konsekwencja świadoma: w celach porównania błąd formy Present Simple nie obniża postępu; formę Present Simple ćwiczy jego własny temat.
 
-Opis celu 2 mówi też, że historyjka może mieszać Present Simple i Present Continuous (§9).
+Opisy celów 2 i 6 mówią też, że historyjka może mieszać Present Simple i Present Continuous (§9); opisy celów 1, 3, 4, 5 tego nie mówią.
 
 ## 8. Agent puli (#237)
 
-Bez zmian w `agent-policy.ts` gramatyki. Czasownik w nawiasie (§6.2) daje checkerowi wszystko do rozwiązania luki na ślepo; dwuznaczność zamyka deterministycznie walidator (§5), checker jest niezależną drugą kontrolą. Po PR 2 etapu 3 powody odrzuceń mają kody (`rejectionCodes`); błędy walidatora przedmiotu mogą trafiać pod jeden kod — sonda (§11.3) liczy powody PC z komunikatów walidatora, które zaczynają się od stałych prefiksów (`pc-marker:`, `pc-ing:`, `pc-be:`, `pc-state:`, `pc-error-fix:`, `pc-notice:`).
+Bez zmian w `agent-policy.ts` gramatyki. Czasownik w nawiasie (§6.2) daje checkerowi wszystko do rozwiązania luki na ślepo; dwuznaczność zamyka deterministycznie walidator (§5), checker jest niezależną drugą kontrolą. Odrzucenia agenta mają kod bez treści i `detail` z komunikatami walidatora (`RejectionLogEntry`, `lesson-pool-agent-tools.ts`); błędy walidatora przedmiotu trafiają pod jeden kod, więc sonda (§11.3) dzieli `detail` po „; ” i liczy komunikaty PC po stałych prefiksach: `pc-marker:`, `pc-ing:`, `pc-be:`, `pc-state:`, `pc-error-fix:`, `pc-notice:`, `pc-shape:` (pozostałe reguły kształtu: nawias, `hint`, skróty z 's, pytajniki, typ zdania). Prefiksy widzi też rodzic w błędach walidacji przy ręcznej edycji szkicu (`lesson-api.ts`) — tak jak dziś widzi techniczne komunikaty walidatora; świadomie bez osobnych tekstów dla rodzica.
 
 ## 9. Historyjka
 
-Do promptu historyjki trafiają opisy wybranych celów (`lesson-story-generation.ts`). Wspólnych `storyRules` nie zmieniamy. Mieszanie czasów („Every day Tom walks to school. Today he is riding his bike.”) wynika z opisu celu 2 i pojawia się tylko wtedy, gdy rodzic wybrał cel 2 albo 6. Pytania historyjki dotyczą treści. Test: prompt historyjki z celem 2 zawiera zdanie opisu dopuszczające Present Simple.
+Do promptu historyjki trafiają opisy wybranych celów (`lesson-story-generation.ts`). Wspólnych `storyRules` nie zmieniamy. Mieszanie czasów („Every day Tom walks to school. Right now he is riding his bike.”) wynika z opisów celów 2 i 6 i pojawia się tylko wtedy, gdy rodzic wybrał któryś z nich. Pytania historyjki dotyczą treści. Test (w `module.test.ts`, bo budowa promptu historyjki jest prywatna w adapterze): zdanie o mieszaniu czasów jest w `descriptionEn` dokładnie celów 2 i 6.
 
 ## 10. Dane, prywatność, kontrakty
 
@@ -294,12 +304,18 @@ Bez nowych przepływów danych: do modeli trafia to samo co dla innych tematów 
   - `error_fix`: jeden obszar różnicy, dwa obszary → odrzucone, obszar poza elementem celu → odrzucone;
   - czasownik spoza tabeli; czasownik `drop_e` w celu 1 → odrzucony; czasownik `plain` w ćwiczeniu produktywnym celu 5 → odrzucony;
   - `lesson_notice` z dwiema formami -ing → odrzucone; „morning” obok jednej formy -ing → poprawne;
-  - tłumaczenie bez „teraz” w celu 1 → odrzucone.
-- `evaluate`/normalizator (jednostkowo): odpowiedź dziecka „He's running.”, „he is running”, „He is running” z wielkimi literami i bez kropki pasują do klucza „He is running.”; „Mum's cooking.” nie pasuje deterministycznie do „Mum is cooking.” (udokumentowane zachowanie).
-- `feedback-sentence-text.test.ts`: §6.7.
-- `solver` (jednostkowo): `solverView` ćwiczenia ze scenką zawiera `instructionPl` i `stem` z nawiasem.
-- `module.test.ts`: rejestr udostępnia `present_continuous@1`; pętla spójności tematów obejmuje nowy temat; wersje `present_simple@1` i `to_be@1` bez zmian; cele 1, 3, 4 mają `lesson_listen_choice`, cele 2, 5, 6 nie; przykłady z bloku `.present_continuous.` przechodzą walidator; prompt zawiera kilka konkretnych wskaźników i czasowników z tabel (nie porównanie całej listy — byłaby to tautologia).
-- **Migawka `fieldRules`:** test porównuje `fieldRules` z zapisaną migawką; zmiana w PR pokazuje w diffie, że bloki PS i `to_be` różnią się tylko zamierzonym zawężeniem. Zrzuty pul z wcześniejszych sond PS i `to_be` w `tests/probes` (jeśli istnieją w repo) przechodzą przez nowy walidator bez nowych odrzuceń.
+  - tłumaczenie bez „teraz” w celu 1 → odrzucone;
+  - podmiot: „They always ___ (play) now.”, „Every day Ola ___ (read) a comic.” (cel 2), „What ___ they doing?”;
+  - nawias w bodźcu wyboru i „posłuchaj i wybierz” → odrzucone; nawias z „not” w celu 2 → odrzucone; cel 2 z pytaniem → odrzucone; luka na formę be w celu 2, 5, 6 → odrzucona;
+  - `error_fix` celów 2 i 6 (zamiana PS ↔ PC) poprawny i odrzucony;
+  - przekształcenia: biegunowość odpowiedzi zgodna z `transformId`;
+  - pula z wyborem i tłumaczeniem tego samego zdania przechodzi `validatePool` (§6.3, świadomie).
+- `evaluate`/normalizator (jednostkowo, `matchLessonAnswer`): odpowiedź dziecka „He's playing.”, „he is playing”, „He is playing” z wielkimi literami i bez kropki pasują do klucza „He is playing.”; „isnt watching” i „is not watching” pasują do „isn't watching”; samo „playing” nie pasuje do „is playing”; „Mum's cooking.” nie pasuje deterministycznie do „Mum is cooking.” (udokumentowane zachowanie).
+- `feedback-sentence-text.test.ts` i `story.test.ts`: §6.7.
+- `solverView` (w testach PC, bez zmian w `agent/`): luka celu 2 ze scenką w `instructionPl` — widok zawiera scenkę i `stem` z nawiasem, a nie zawiera `hint`.
+- Kartkówka (`lesson-materialize.test.ts`): zadanie luki PC w trybie kartkówki ma `stemWithGap` z nawiasem i bez `hint` — czasownik zostaje widoczny.
+- `module.test.ts`: rejestr udostępnia `present_continuous@1`; pętla spójności tematów obejmuje nowy temat; wersje `present_simple@1` i `to_be@1` bez zmian; cele 1, 3, 4 mają `lesson_listen_choice`, cele 2, 5, 6 nie; przykłady z bloku `.present_continuous.` (wyeksportowane stałe, z których składany jest tekst promptu) przechodzą walidator; prompt zawiera kilka konkretnych wskaźników i czasowników z tabel (nie porównanie całej listy — byłaby to tautologia).
+- **Migawka `fieldRules`:** test porównuje `fieldRules` z migawką inline (`toMatchInlineSnapshot`, konwencja repo); migawkę obecnego tekstu commitujemy przed zmianą promptu, więc diff PR pokazuje, że bloki PS i `to_be` różnią się tylko zamierzonym zawężeniem. Zrzutów pul z wcześniejszych sond PS i `to_be` nie ma w repo — regresję PS mierzy sonda (§11.3).
 
 ### 11.2 Integracyjne
 
@@ -309,21 +325,23 @@ Jeśli PR 2 nie zostanie scalony do czasu ukończenia części domenowej i sondy
 
 ### 11.3 Sonda (płatna, `tests/probes`)
 
-Pula dla celów 1–6 na przykładowym materiale z podręcznika (fikcyjny, w repo) + przebieg regresyjny Present Simple na materiale z wcześniejszej sondy PS.
+Pula dla celów 1–6 na przykładowym materiale z podręcznika (fikcyjny, w repo) + przebieg regresyjny Present Simple. Wcześniejszych zrzutów PS nie ma w repo, więc punkt odniesienia to przebieg PS na tym samym materiale z kodu sprzed zmiany promptu (commit przed zadaniem promptów; osobny worktree) — chyba że właściciel wskaże zrzut z wcześniejszej sondy.
 
 - Uruchomienie wyłącznie po wyraźnej zgodzie właściciela na konkretną wiadomość z szacunkiem kosztu; każde ponowienie wymaga nowej zgody.
-- Limit rejestru kosztów sondy: 2 USD łącznie (jeden przebieg PC, jeden regresyjny PS); najwyżej 2 rundy strojenia promptu, każda za osobną zgodą.
+- Budżet runu agenta ustawiony jawnie (`UMIEM_PROBE_AGENT_BUDGET_USD`, 0,60 USD na przebieg; domyślny 1 USD nie zostawiłby zapasu w limicie). Limit rejestru kosztów sondy: 2 USD łącznie na trzy przebiegi (PC, PS przed zmianą, PS po zmianie). Strojenie promptu (najwyżej 2 rundy) to nowy rejestr z nowym limitem i za osobną zgodą.
+- Przegląd części domenowej przez trzech krytyków odbywa się przed sondą; zmiana walidatora lub promptu po sondzie (poza strojeniem z §11.3) wymaga decyzji właściciela, czy powtórzyć sondę.
+- Ślepą ocenę próbki wykonuje osoba albo agent inny niż implementer.
 - **Kryteria akceptacji PC:** przebieg kończy się w budżecie runu; każdy cel spełnia minima publikacji bez ręcznych poprawek; odrzucenia w celach 2 i 6 ≤ 40% wygenerowanych ćwiczeń; ćwiczenia na scenkach ≥ 30% przyjętych ćwiczeń celów 2 i 6; ślepa ocena próbki (rubryka z `tests/probes/blind`) — zero ćwiczeń dwuznacznych.
 - **Kryterium regresji PS:** odsetek odrzuceń nie wyższy o więcej niż 10 punktów procentowych od wcześniejszej sondy PS na tym samym materiale.
 - Raport: odrzucenia z powodami (prefiksy §8), proporcja scenek, wynik checkera.
 
 ### 11.4 Kontrola końcowa
 
-`pnpm check`; `pnpm test:e2e:shards` przed PR. Bez nowych speców E2E — brak zmian UI (zmiana §6.7 dotyczy tekstu zdania, pokrytego testem jednostkowym i integracyjnym).
+`pnpm check`; `pnpm test:integration` (pełny, sekwencyjny — na tej gałęzi nie ma `test:integration:shards`); `pnpm test:e2e:shards` przed PR. Bez nowych speców E2E — brak zmian UI (zmiana §6.7 dotyczy tekstu zdania, pokrytego testem jednostkowym i integracyjnym).
 
 ## 12. Kolejność prac i koordynacja z #237
 
-1. Część domenowa od razu na `feature/present-continuous`: `ing-forms.ts`, `time-markers.ts`, wydzielenie `be-agreement.ts` (czyste przeniesienie, osobny commit), walidator PC, `feedbackSentenceText`, prompty, katalog, testy jednostkowe. PR 2 etapu 3 nie dotyka `english-grammar/`, `english/` ani `feedback-sentence-text.ts`; wspólne pliki to dokumentacja (§13).
+1. Część domenowa od razu na `feature/present-continuous`: `ing-forms.ts`, `time-markers.ts`, wydzielenie `be-agreement.ts` i `present-simple-forms.ts` (czyste przeniesienie, osobny commit), walidator PC, `feedbackSentenceText`, prompty, katalog, testy jednostkowe, przegląd trzech krytyków. PR 2 etapu 3 nie dotyka `english-grammar/`, `english/` ani `feedback-sentence-text.ts`; wspólne pliki to dokumentacja (§13) i pliki testów, których ta gałąź nie zmienia (`llm.test.ts`, `agent-generation.probe.test.ts`, `tests/integration/fakes.ts`, `agent/*`).
 2. Po scaleniu PR 2: rebase na `origin/main`, test integracyjny (§11.2), sonda (§11.3), strojenie.
 3. Jeśli PR 2 się opóźnia: test integracyjny na obecnej ścieżce (§11.2), sonda na obecnym agencie; rebase po scaleniu PR 2 z ponownym `pnpm check`.
 4. Jeden PR. Scalenie przez właściciela dopiero po zaakceptowanej sondzie — do tego czasu temat nie jest widoczny w produkcji.
@@ -331,7 +349,8 @@ Pula dla celów 1–6 na przykładowym materiale z podręcznika (fikcyjny, w rep
 ## 13. Dokumentacja
 
 - `docs/SPEC.md`: oba miejsca z listą tematów w części o lekcjach (ok. l. 779 i 784) + rekomendacja wyboru celów (§3.1).
-- `docs/folder-structure.md`: nowe pliki tematu, `english/ing-forms.ts`, `english-grammar/time-markers.ts`, `be-agreement.ts`, `present-continuous-validation.ts`.
+- `docs/folder-structure.md`: nowe pliki tematu, `english/ing-forms.ts`, `english-grammar/time-markers.ts`, `be-agreement.ts`, `present-simple-forms.ts`, `present-continuous-validation.ts`.
+- `docs/architecture.md` §19: jedno zdanie o §6.7 (zdanie po odpowiedzi luki bez czasownika w nawiasie, wszystkie przedmioty).
 - `.kiro/specs/grammar-module/`: wzmianka o trzecim temacie, jeśli dokument wymienia tematy.
 - Przy konflikcie z dokumentacją PR 2 rozwiązujemy przy rebase (zmiany rozłączne treściowo).
 
