@@ -30,7 +30,7 @@ import {
   type Services,
 } from "@learning/server";
 import { messages, type LessonCommand } from "@learning/contracts";
-import { countRows, testDatabase, testDatabaseUrl } from "./helpers";
+import { countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
@@ -39,7 +39,6 @@ import type { LessonAgentToolOutcome, LessonObjectiveAgentInput } from "../../pa
 import { lessonExerciseIdentity } from "../../packages/server/src/domain/lessons/exercise-identity";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
-import { parseLessonAgentProgress } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
 import type { FakeAgentStep, FakeLessonPoolAgent, FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
 import { FAKE_EXPLANATION, fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { materializeGeneratedCalculations } from "../../packages/server/src/providers/lesson-calculations";
@@ -88,21 +87,6 @@ async function setLessonContextKey(versionId: string, key: string, value: unknow
     "update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, $1::text[], $2::jsonb) where id = $3",
     [[key], JSON.stringify(value), versionId],
   );
-}
-
-/**
- * Kody odrzuceń runu z `generation_runs.agent_checkpoint`: podsumowanie po zapisie do szkicu, pełny
- * postęp po porażce walidacji. Kumulują się w obrębie runu (także po „Ponów”).
- */
-async function rejectionCodesOf(runId: string): Promise<Record<string, number>> {
-  const [row] = await query<{ agent_checkpoint: { kind?: string; rejectionCodes?: Record<string, number> } | null }>(
-    "select agent_checkpoint from learning_app.generation_runs where id = $1",
-    [runId],
-  );
-  const checkpoint = row!.agent_checkpoint;
-  expect(checkpoint).not.toBeNull();
-  if (checkpoint!.kind === "summary") return checkpoint!.rejectionCodes!;
-  return parseLessonAgentProgress(checkpoint, runId)!.rejectionCodes;
 }
 
 /** „Bez odrzuceń” na ścieżce agenta: żadnego kodu odrzucenia w runie. */
@@ -826,7 +810,8 @@ describe("generowanie puli lekcji (integracja)", () => {
     await executeLessonGeneration(services, regen.runId);
 
     const after = await query<{ payload: LessonExerciseDraft }>("select payload from learning_app.item_revisions where deck_version_id = $1", [versionId]);
-    expect(after.length).toBeGreaterThan(beforeCount);
+    // „+4”: co najmniej cztery nowe ćwiczenia (generator fake'a dopisuje żądaną liczbę).
+    expect(after.length).toBeGreaterThanOrEqual(beforeCount + 4);
     const [version] = await query<{ edit_number: number }>("select edit_number from learning_app.deck_versions where id = $1", [versionId]);
     expect(version!.edit_number).toBe(3);
     await expect(editLessonDraft(services, versionId, { expectedEditNumber: 2, title: "stary formularz" })).rejects.toMatchObject({ code: "conflict" });
@@ -1287,7 +1272,8 @@ describe("generowanie puli lekcji (integracja)", () => {
     const afterCalculations = after.draft!.exercises.filter((exercise) => exercise.exerciseType === "lesson_calculation");
     expect(afterCalculations.map((exercise) => exercise.answer).sort()).toEqual(["1000 m", "750 m"]);
     expect(after.draft!.exercises.length).toBe(deck.draft!.exercises.length + 1);
-    expect(Object.values(await rejectionCodesOf(topUp.runId)).reduce((sum, value) => sum + value, 0)).toBe(1);
+    // Rachunek z przemianowaną rodziną to duplikat istniejącej puli — jedno odrzucenie z dokładnym kodem.
+    expect(await rejectionCodesOf(topUp.runId)).toEqual({ lesson_pool: 1 });
   });
 
   it("zestaw szkolny: publikacja i sesja dziecka na typach zamkniętych", async () => {

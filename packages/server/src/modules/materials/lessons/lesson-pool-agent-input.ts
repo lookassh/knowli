@@ -40,7 +40,7 @@ function cardsText(objective: AgentObjective): string {
 }
 
 /**
- * Podział etapów zagadnienia dla modelu: podział partii potoku z etapem samodzielnym podniesionym do
+ * Podział etapów zagadnienia dla modelu: podział `poolStageCounts` z etapem samodzielnym podniesionym do
  * minimum publikacji z rezerwą (`independentReserve`) — tego samego progu, którego wymaga
  * `objectiveStatus`. Pozostałe etapy bez zmian, więc suma może przekroczyć `targetCount`.
  */
@@ -66,7 +66,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     args.interests,
     { avoidSentences: avoidSentencesFor({ examples, exercises: orderedLesson(state), subject }) },
   );
-  // Ten sam podział w prompcie co w `targets`; liczba partii = suma etapów (prompt: „podział obejmuje N ćwiczeń”).
+  // Ten sam podział w prompcie co w `targets`; liczba ćwiczeń = suma etapów (prompt: „podział obejmuje N ćwiczeń”).
   const pool = { ...base, stageCounts: stages, countPerObjective: stages.guided + stages.productive + stages.independent };
   // Wymagane typy po filtrze typów zagadnienia (jak w statusie); pusta grupa nie jest wymaganiem.
   const requiredTypes = (subject.agentPolicy.requiredTypes?.(objective) ?? [])

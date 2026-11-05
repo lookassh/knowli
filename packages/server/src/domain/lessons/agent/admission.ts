@@ -110,7 +110,7 @@ function lessonRules(state: LessonAgentState, ctx: AgentCheckContext): LessonRul
 
 /**
  * Tryb porównań ujawnień w przyjmowaniu: `generation` (równoważność odpowiedzi po normalizatorze
- * przedmiotu, także warianty ofiary), jak reguła twarda potoku na świeżych tekstach — „Where is the box?”
+ * przedmiotu, także warianty ofiary) — „Where is the box?”
  * ujawnia przykład „Where's the box?”, a wariant tłumaczenia równy zdaniu innego ćwiczenia też jest
  * ujawnieniem. Ostrzejszy od `coverage` (równość `target_key`), więc pula przyjęta tak jest czysta także
  * w pokryciu i w ostrzeżeniach szkicu. Ten sam tryb w migawce, bezpieczniku i kontroli końcowej.
@@ -441,7 +441,7 @@ export function admitBatch(
   return { state: current, results };
 }
 
-/** Najwyżej tyle przykładów kart na zagadnienie (jak potok generowania). */
+/** Najwyżej tyle przykładów kart na zagadnienie. */
 const MAX_EXAMPLES = 3;
 
 /**

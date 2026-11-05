@@ -153,7 +153,7 @@ export interface GenerationDeps {
    * Agent puli lekcji dla każdego przedmiotu (składany tylko w workerze,
    * `providers/lesson-agent-env.ts`; worker ustawia pole zawsze). Bez klucza
    * OpenRouter — {@link LessonAgentUnavailable}; nieobecny (web, fabryki testowe)
-   * znaczy to samo. Do etapu 3 PR 2, Task 9 lekcje bez agenta generuje jeszcze potok.
+   * znaczy to samo: run lekcji kończy się wtedy `failed`/`lesson_agent_unavailable`.
    */
   lessonAgent?: LessonAgentDeps | LessonAgentUnavailable;
 }

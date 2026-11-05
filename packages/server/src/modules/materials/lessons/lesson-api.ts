@@ -202,7 +202,8 @@ function agentServicesOf(services: Services, subject: SubjectModule) {
 
 export function lessonCatalog(services: Services): SubjectCatalogDto {
   return {
-    // Opis agenta jest w web przy kluczu OpenRouter albo w trybie fake — wtedy worker z tym samym env ma agenta (`lessonAgentPublicFromEnv`).
+    // Opis agenta jest w web przy kluczu OpenRouter albo w trybie fake — wtedy worker z tym samym env ma agenta, jeśli wystartuje
+    // (np. błędny limit `UMIEM_LESSON_AGENT_*` zatrzymuje start workera, a web go nie sprawdza; `lessonAgentPublicFromEnv`).
     lessonGenerationAvailable: services.lessonAgentPublic !== undefined,
     ...(services.generationService ? { generationService: services.generationService } : {}),
     subjects: services.subjects.listSubjects().map((subject) => {

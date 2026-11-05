@@ -37,12 +37,6 @@ export function assertLessonGenerationFinalizationAllowed(
   if (now() >= runDeadlineAtMs) throw new GenerationProviderError("timeout");
 }
 
-function abortError(): Error {
-  const error = new Error("aborted");
-  error.name = "AbortError";
-  return error;
-}
-
 /** Bounds a whole multi-request run and interrupts it when its DB identity changes. */
 export async function withLessonGenerationControl<T>(
   options: LessonGenerationControlOptions,

@@ -448,10 +448,10 @@ export function splitStages(count: number, mix: StageMix = DEFAULT_LESSON_POLICY
 }
 
 /**
- * Podział partii na etapy dla jednego celu. Rachunek dzieli etap samodzielny
- * z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy etap
- * samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
- * z etapu produktywnego (o ile ten zachowa swoje minimum). Budżet partii bez zmian.
+ * Podział liczby ćwiczeń celu na etapy (`targets` kierownika agenta). Rachunek dzieli
+ * etap samodzielny z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy
+ * etap samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
+ * z etapu produktywnego (o ile ten zachowa swoje minimum). Łączna liczba bez zmian.
  */
 export function poolStageCounts(
   subject: SubjectModule,
@@ -485,8 +485,8 @@ export function minimumCountPerObjective(subject: SubjectModule): number {
 }
 
 /**
- * Liczby ćwiczeń partii per cel. Zamówiona pula dzieli się dokładnie (część
- * całkowita + reszta), więc suma partii jej nie przekracza. Wyjątek: gdy pula
+ * Liczby ćwiczeń per cel. Zamówiona pula dzieli się dokładnie (część
+ * całkowita + reszta), więc suma liczb celów jej nie przekracza. Wyjątek: gdy pula
  * jest mniejsza niż (liczba celów × minimum publikacji), każdy cel dostaje
  * minimum — inaczej szkic byłby niepublikowalny; nadwyżkę loguje wywołujący.
  */
@@ -590,7 +590,7 @@ export function buildPoolInput(
     ...(withInterests ? { interests: [...interests] } : {}),
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
-    // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą partii: tylko przedmiot z nagraniami zdań
+    // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą ćwiczeń celu: tylko przedmiot z nagraniami zdań
     // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje agent w swoich limitach).
     ...(listenAllowance > 0 ? { listenChoicePerObjective: listenAllowance } : {}),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),

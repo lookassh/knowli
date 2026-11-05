@@ -58,7 +58,7 @@ export interface LlmPromptProfileInput {
   readonly interestsRule?: string;
 }
 
-/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (partia per cel). */
+/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (liczby z `targets` kierownika agenta). */
 export interface LlmLessonStageCounts {
   readonly guided: number;
   readonly productive: number;
@@ -75,7 +75,7 @@ export interface LessonPoolInput {
   readonly exerciseTypes: readonly string[];
   /** Przekształcenia dostępne w temacie (dla `lesson_transform`). */
   readonly transforms: readonly LlmLessonTransformInput[];
-  /** Cele tej partii — zwykle jeden (generacja per cel). */
+  /** Cele wejścia — w wejściu podagenta dokładnie jeden (jego zagadnienie). */
   readonly objectives: readonly LlmLessonObjectiveInput[];
   readonly material: string;
   readonly instruction?: string;
@@ -85,9 +85,9 @@ export interface LessonPoolInput {
   readonly countPerObjective: number;
   readonly stageCounts: LlmLessonStageCounts;
   /**
-   * Ile DODATKOWYCH ćwiczeń `lesson_listen_choice` (0–2) wolno wygenerować na cel partii: leżą poza
-   * podziałem etapów i poza `countPerObjective`, a prompt podnosi o nie limit partii. Brak pola = adapter
-   * nie prosi o ten typ (przedmiot bez nagrań zdań albo cel bez typu na liście).
+   * Ile DODATKOWYCH ćwiczeń `lesson_listen_choice` (0–2) wolno wygenerować na cel: leżą poza
+   * podziałem etapów i poza `countPerObjective`, a prompt podnosi o nie limit ćwiczeń celu. Brak pola =
+   * adapter nie prosi o ten typ (przedmiot bez nagrań zdań albo cel bez typu na liście).
    */
   readonly listenChoicePerObjective?: number;
   /** Ile miejsc etapu samodzielnego zastrzec dla różnych pytań otwartych (przedmioty v3). */
@@ -158,7 +158,7 @@ export interface RunCostSink {
 export interface LessonObjectiveAgentInput {
   /**
    * Pola promptu produkcyjnego (rola, reguły, typy, materiał, polecenie, tematy zdań, avoidSentences).
-   * Liczby partii (`countPerObjective`, `stageCounts`, `listenChoicePerObjective`) wypełnia kierownik
+   * Liczby ćwiczeń (`countPerObjective`, `stageCounts`, `listenChoicePerObjective`) wypełnia kierownik
    * z `targets`; `targets` jest jedynym źródłem liczb.
    */
   readonly pool: LessonPoolInput;

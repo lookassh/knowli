@@ -10,7 +10,7 @@ import { agentFailureOf, type AgentFailure, type RunBudgetSink } from "./lesson-
 
 /**
  * Plan zagadnień kierownika agenta puli (spec etapu 1 §7.1 pkt 2): planista
- * proponuje zagadnienia, a `propose` składa temat tą samą ścieżką co potok
+ * proponuje zagadnienia, a `propose` składa temat wspólną ścieżką tematów dynamicznych
  * (`validateAgentPlan` → `buildDynamicTopicData` → `withSubjectObjectiveKinds` →
  * `validateDynamicTopicData`). Błędy wracają do modelu; pierwsza poprawna
  * propozycja wygrywa.
@@ -41,10 +41,10 @@ export type PlanOutcome =
 /** Górna granica przykładów zagadnienia (pilnuje jej `validateAgentPlan`); tu tylko w tekście dla modelu. */
 const MAX_PLAN_EXAMPLES = 3;
 
-/** Brak przyjętej propozycji po wszystkich krokach: ten sam kod co niepoprawne zagadnienia w potoku. */
+/** Brak przyjętej propozycji po wszystkich krokach: ten sam kod (`validation`) co niepoprawne zagadnienia etapu zagadnień. */
 const NOT_ACCEPTED_FAILURE = agentFailureOf(new AppError("validation"));
 
-/** Linie przykładów planu: przycięte, niepuste, najwyżej `MAX_TEXT_LENGTH` znaków (jak w potoku). */
+/** Linie przykładów planu: przycięte, niepuste, najwyżej `MAX_TEXT_LENGTH` znaków (limit tekstów lekcji). */
 function planExampleLines(objective: RawPlanObjective): string[] {
   return objective.examples
     .map((line) => line.trim())

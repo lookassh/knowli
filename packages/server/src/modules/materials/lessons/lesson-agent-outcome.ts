@@ -87,7 +87,7 @@ export type LessonAgentRunInputResult =
 
 /**
  * Temat katalogowy zawężony do zagadnień lekcji (`objectiveIds` runu, kolejność tematu): kierownik
- * uruchamia każde zagadnienie tematu, a limity liczy z ich liczby — jak partie potoku z `objectiveIds`.
+ * uruchamia każde zagadnienie tematu, a limity liczy z ich liczby.
  */
 export function lessonCatalogTopic(topic: LessonTopic, objectiveIds: readonly string[]): LessonTopic {
   const selected = new Set(objectiveIds);

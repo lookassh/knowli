@@ -40,21 +40,27 @@ export function buildWorkerServices(): { services: Services; pool: WorkerPool; u
   const prices = pricesFromEnv(env);
   const subjects = createProductionSubjectRegistry();
   const { db, pool } = createDatabase(databaseUrl);
-  const usage = createDrizzleUsageRecorder({ db, clock: systemClock, prices });
-  const base = createGenerationDepsFromEnv(env, usage);
-  if (!base) {
-    throw new Error("OPENAI_API_KEY is not configured (obrazy; LLM i TTS biorą OPENROUTER_API_KEY) — albo ustaw UMIEM_FAKE_PROVIDERS=1");
+  try {
+    const usage = createDrizzleUsageRecorder({ db, clock: systemClock, prices });
+    const base = createGenerationDepsFromEnv(env, usage);
+    if (!base) {
+      throw new Error("OPENAI_API_KEY is not configured (obrazy; LLM i TTS biorą OPENROUTER_API_KEY) — albo ustaw UMIEM_FAKE_PROVIDERS=1");
+    }
+    const lessonAgent = lessonAgentDepsFromEnv(env, usage);
+    if (!isLessonAgentAvailable(lessonAgent)) console.log("[config] lesson-agent=unavailable reason=no_openrouter_key");
+    const generation = { ...base, lessonAgent };
+    const services = createServices({
+      db,
+      clock: systemClock,
+      media: mediaSettingsFromEnv(env),
+      generation,
+      subjects,
+      usage,
+    });
+    return { services, pool, usage };
+  } catch (error) {
+    // Błąd konfiguracji po utworzeniu puli (adaptery, agent): pula zamknięta, zanim błąd zatrzyma start.
+    void pool.end().catch(() => undefined);
+    throw error;
   }
-  const lessonAgent = lessonAgentDepsFromEnv(env, usage);
-  if (!isLessonAgentAvailable(lessonAgent)) console.log("[config] lesson-agent=unavailable reason=no_openrouter_key");
-  const generation = { ...base, lessonAgent };
-  const services = createServices({
-    db,
-    clock: systemClock,
-    media: mediaSettingsFromEnv(env),
-    generation,
-    subjects,
-    usage,
-  });
-  return { services, pool, usage };
 }

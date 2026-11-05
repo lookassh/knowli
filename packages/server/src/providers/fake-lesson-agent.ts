@@ -14,7 +14,8 @@ import { recordResponse } from "./usage/record-http";
 /**
  * Deterministyczne fake'i agenta puli lekcji i checkera (etap 1 issue #237): sterowane scenariuszem,
  * bez sieci i modeli. Służą testom kierownika agenta i trybowi `UMIEM_FAKE_PROVIDERS=1` (etap 3 PR 2
- * §5.2: pętla generatora `generate` + checker `unavailable`); nie są adapterem żadnej usługi. Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
+ * §5.2: pętla generatora `generate` + checker `unavailable`); nie są adapterem żadnej usługi.
+ * Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
  */
 
 /** Krok scenariusza podagenta: jedno „wywołanie modelu” z narzędziami albo awarią. */

@@ -25,13 +25,12 @@ import { lessonPoolMinimums } from "../../packages/server/src/domain/lessons/les
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import { englishChapterSubject } from "../../packages/server/src/domain/lessons/subjects/english-chapter/module";
 import { chapterCardExposureTexts, normalizeChapterExposureText } from "../../packages/server/src/domain/lessons/subjects/english-chapter/exposure";
-import { parseLessonAgentProgress } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
 import type { LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
 import type { FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
 import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { seedChapterDraft } from "./chapter-lesson-helpers";
 import { fakeGeneration } from "./fakes";
-import { ManualClock, testDatabase } from "./helpers";
+import { ManualClock, rejectionCodesOf, testDatabase } from "./helpers";
 import { mockTestDeck } from "./mock-test-helpers";
 
 /**
@@ -51,20 +50,6 @@ const labels = messages.lessons.agentRejectionReasons;
 
 async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   return (await pool.query(sql, params)).rows as T[];
-}
-
-/**
- * Kody odrzuceń runu z `generation_runs.agent_checkpoint`: podsumowanie po zapisie do szkicu, pełny
- * postęp po porażce walidacji. Kumulują się w obrębie runu (także po „Ponów”).
- */
-async function rejectionCodesOf(runId: string): Promise<Record<string, number>> {
-  const [row] = await query<{ agent_checkpoint: { kind?: string; rejectionCodes?: Record<string, number> } | null }>(
-    "select agent_checkpoint from learning_app.generation_runs where id = $1", [runId],
-  );
-  const checkpoint = row!.agent_checkpoint;
-  expect(checkpoint).not.toBeNull();
-  if (checkpoint!.kind === "summary") return checkpoint!.rejectionCodes!;
-  return parseLessonAgentProgress(checkpoint, runId)!.rejectionCodes;
 }
 
 interface PlanObjective {

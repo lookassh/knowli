@@ -1065,7 +1065,6 @@ describe("run historyjki lekcji (integracja)", () => {
     expect(after.exercises).toHaveLength(before.exercises.length);
     expect(after.rejectedCount).toBe(before.rejectedCount + 1);
 
-
     expect((await versionRow(versionId)).lesson_context.story).toBeDefined();
   });
 });

@@ -6,12 +6,11 @@ import {
 } from "@learning/server";
 import type { LessonDraftDto, TaskDto } from "@learning/contracts";
 import { lessonWorld, type LessonWorldOptions } from "../fixtures/lesson-world";
-import { buildTestServices, ManualClock, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
+import { buildTestServices, ManualClock, rejectionCodesOf, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { markTtsReady } from "./school-lesson-audio-helpers";
 import type { FakeAgentStep, FakeObjectiveScript } from "../../packages/server/src/providers/fake-lesson-agent";
 import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
-import { parseLessonAgentProgress } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
 
 /**
  * Ćwiczenie „Posłuchaj i wybierz” (`lesson_listen_choice`): rodzic widzi stan
@@ -44,17 +43,6 @@ async function generatedGrammarDraft() {
   await executeLessonGeneration(services, run.runId);
   const draft = (await readLessonDeck(services, run.deckId)).draft!;
   return { services, run, draft };
-}
-
-/** Kody odrzuceń runu z `generation_runs.agent_checkpoint` (podsumowanie po zapisie, pełny postęp po porażce walidacji). */
-async function rejectionCodesOf(runId: string): Promise<Record<string, number>> {
-  const [row] = (await pool.query<{ agent_checkpoint: { kind?: string; rejectionCodes?: Record<string, number> } | null }>(
-    "select agent_checkpoint from learning_app.generation_runs where id = $1", [runId],
-  )).rows;
-  const checkpoint = row!.agent_checkpoint;
-  expect(checkpoint).not.toBeNull();
-  if (checkpoint!.kind === "summary") return checkpoint!.rejectionCodes!;
-  return parseLessonAgentProgress(checkpoint, runId)!.rejectionCodes;
 }
 
 const listenOf = (draft: LessonDraftDto) => draft.exercises.filter((exercise) => exercise.exerciseType === "lesson_listen_choice");

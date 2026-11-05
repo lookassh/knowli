@@ -234,7 +234,7 @@ interface AddModePlan {
  * - limity: `targetCount` statusu = ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`; dodatek
  *   słuchowy jako łączny limit (przyjmowanie samo liczy `fixed`); `maxExercises` = `count` + suma braków
  *   etapów + reszta dodatku słuchowego (`slack` 0; `limit_full` liczy tylko pulę);
- * - prompt: podział etapów = braki etapów + `count` rozłożone podziałem partii, bez podnoszenia etapu
+ * - prompt: podział etapów = braki etapów + `count` rozłożone przez `poolStageCounts`, bez podnoszenia etapu
  *   samodzielnego (`fixed` już się liczy), więc suma = `count` + braki ≤ `maxExercises`; dodatek słuchowy
  *   w prompcie = to, co jeszcze można przyjąć.
  */
@@ -263,7 +263,7 @@ function addModePlan(
 }
 
 /**
- * Limity zagadnień trybu „pula” z liczb partii potoku: `targetCount` z puli rodzica, dodatek słuchowy jako
+ * Limity zagadnień trybu „pula” z liczb per cel (`objectiveBatchCounts`): `targetCount` z puli rodzica, dodatek słuchowy jako
  * łączny limit zagadnienia (przyjmowanie samo liczy ćwiczenia słuchowe `fixed`), `limit_full` liczy tylko
  * pulę. Wspólne z kontrolą końcową ścieżki agenta przed zapisem do szkicu.
  */

@@ -261,7 +261,6 @@ describe("lekcja — API rodzica (szkic i patch tematów)", () => {
     await executeLessonGeneration(services, topUp.runId);
     expect(fakes.agent.calls.length).toBeGreaterThan(before);
     for (const call of fakes.agent.calls.slice(before)) expect(call.input.pool).not.toHaveProperty("interests");
-
   });
 
   it("patch niepustej listy dla przedmiotu bez reguły tematów kończy się validation i nic nie zapisuje", async () => {

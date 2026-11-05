@@ -346,11 +346,10 @@ export async function executeLessonAgentGeneration(
       return;
     }
     if (outcome.kind === "failed" && outcome.errorCode === "validation") {
-      // Liczniki trafiają do kontekstu szkicu. Postęp
-      // zostaje do „Ponów” z licznikami wyzerowanymi w tej samej transakcji — kolejny zapis do szkicu doliczy
-      // tylko nowe usunięcia, nie te już policzone w kontekście.
-      // `latest` dopiero po zatwierdzeniu: przy wycofanej transakcji zapis best-effort zostawia liczniki,
-      // których kontekst nie dostał.
+      // Liczniki trafiają do kontekstu szkicu. Postęp zostaje do „Ponów” z licznikami wyzerowanymi w tej
+      // samej transakcji — kolejny zapis do szkicu doliczy tylko nowe usunięcia, nie te już policzone
+      // w kontekście. `latest` dopiero po zatwierdzeniu: przy wycofanej transakcji zapis best-effort
+      // zostawia liczniki, których kontekst nie dostał.
       const counted: LessonAgentProgress = {
         ...progress,
         removedAfterAcceptance: 0,

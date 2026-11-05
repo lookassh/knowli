@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { messages } from "@learning/contracts";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../errors";
@@ -598,6 +599,40 @@ describe("agentRejectedReasons", () => {
   it("kody spoza katalogu nie trafiają do prototypu zwykłego obiektu", () => {
     expect(agentRejectedReasons({ constructor: 1, __proto__: 1 })).toEqual({ [messages.lessons.agentRejectionOther]: 1 });
     expect(agentRejectedReasons({})).toEqual({});
+  });
+
+  it("kody o nazwach z prototypu jako własne pola (JSON.parse, jak z JSONB) idą do „inne powody” bez podmiany prototypu", () => {
+    // Literał obiektu z `__proto__` ustawia prototyp; JSON.parse daje własne pole „__proto__”.
+    const stored = JSON.parse('{"constructor":1,"__proto__":2,"toString":1,"leak_victim":1}') as Record<string, number>;
+    expect(Object.hasOwn(stored, "__proto__")).toBe(true);
+    const reasons = agentRejectedReasons(stored);
+    expect(reasons).toEqual({ [messages.lessons.agentRejectionOther]: 4, [labels.leak_victim!]: 1 });
+    expect(Object.getPrototypeOf(reasons)).toBe(Object.prototype);
+    expect(Object.keys(reasons)).not.toContain("__proto__");
+  });
+
+  it("każdy kod odrzucenia emitowany przez przyjęcie, narzędzia agenta, bramki przedmiotów i kontrole 2b ma etykietę", () => {
+    // Skan źródeł emiterów kodów: `reject(rodzaj, "kod"`, `code: "kod"` (odrzucenia narzędzi, bramki
+    // przedmiotów, kontrola otwarta) i krotki `["hint_…", …]` sędziego podpowiedzi. Nowy kod bez etykiety
+    // pokazałby się rodzicowi jako „inne powody”.
+    const subjectsDir = new URL("../../../domain/lessons/subjects/", import.meta.url);
+    const policies = readdirSync(subjectsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && readdirSync(new URL(`${entry.name}/`, subjectsDir)).includes("agent-policy.ts"))
+      .map((entry) => new URL(`${entry.name}/agent-policy.ts`, subjectsDir));
+    const files = [new URL("../../../domain/lessons/agent/admission.ts", import.meta.url), new URL("./lesson-pool-agent-tools.ts", import.meta.url), ...policies];
+    const codes = new Set<string>();
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const pattern of [/reject\(\s*"[a-z]+",\s*"([a-z_]+)"/gu, /\bcode: "([a-z_]+)"/gu, /\["(hint_[a-z_]+)",/gu]) {
+        for (const match of text.matchAll(pattern)) codes.add(match[1]!);
+      }
+    }
+    // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki rozdziału i szkoły, kontrole 2b).
+    for (const known of ["limit_full", "leak_victim", "variant_rejected", "refine", "open_not_accepted", "shape_malformed", "card_word_missing", "hint_reveals_answer", "hint_language"]) {
+      expect(codes, known).toContain(known);
+    }
+    expect(policies.length).toBeGreaterThanOrEqual(2);
+    expect([...codes].filter((code) => !Object.hasOwn(labels, code))).toEqual([]);
   });
 
   it("każdy kod z katalogu ma etykietę bez treści ćwiczeń (krótka, bez cudzysłowów)", () => {

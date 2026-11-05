@@ -752,30 +752,6 @@ describe("agent puli lekcji (integracja)", () => {
       expect(agent.calls).toEqual([]);
     });
 
-    it("składanie z env: lessonAgentDepsFromEnv(UMIEM_FAKE_PROVIDERS=1) → pełna generacja ścieżką agenta (generator fake'a)", async () => {
-      const fakes = await fakeGeneration();
-      disposers.push(fakes.dispose);
-      const registry = createSubjectRegistry([englishGrammarSubject, historyLikeSubject]);
-      const lessonAgent = lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1" });
-      expect(isLessonAgentAvailable(lessonAgent)).toBe(true);
-      const services = createServices({
-        db: testDatabase().db,
-        clock: new ManualClock(),
-        media: fakes.settings,
-        generation: { ...fakes.deps, lessonAgent },
-        subjects: registry,
-      });
-      const { runId } = await createLesson(services, command());
-
-      await executeLessonGeneration(services, runId);
-
-      const row = await fullRun(runId);
-      expect(row.state).toBe("succeeded");
-      // Podsumowanie punktu kontrolnego zapisuje tylko ścieżka agenta.
-      expectSummaryWithoutContent(row.agent_checkpoint, 1);
-      expect(await exerciseCount((await versionOf(runId)).id)).toBeGreaterThan(0);
-    });
-
     describe("tryb fake z env (spec etapu 3 §5.2): publikowalna pula bez luk i bez odrzuceń ujawnień", () => {
       /** Kopia `CHAPTER_BODY` z `tests/e2e/parent-sources.spec.ts` (materiał bez sekcji „Słowa:”/„Zwroty:”). */
       const CHAPTER_BODY = [
@@ -816,8 +792,9 @@ describe("agent puli lekcji (integracja)", () => {
 
       /**
        * Run zakończony sukcesem bez `generationGaps`, z każdym zagadnieniem `complete` w podsumowaniu punktu
-       * kontrolnego (`objectiveIds` — oczekiwany zbiór; brak = zagadnienia szkicu) i bez odrzuceń `duplicate`
-       * ani `leak_*`. Zwraca szkic.
+       * kontrolnego (`objectiveIds` — oczekiwany zbiór; brak = zagadnienia szkicu), bez żadnego odrzucenia
+       * (`rejectionCodes` puste — duplikaty to `lesson_pool`, ujawnienia `leak_*`) i bez kosztu (fake z env:
+       * `stepCostUsd: 0`). Zwraca szkic.
        */
       async function expectCleanRun(services: Services, runId: string, deckId: string, objectiveIds?: readonly string[]): Promise<LessonDraftDto> {
         const row = await fullRun(runId);
@@ -825,11 +802,14 @@ describe("agent puli lekcji (integracja)", () => {
         const draft = (await readLessonDeck(services, deckId)).draft!;
         expect(draft.generationGaps).toBeUndefined();
         expect(contextOf(await versionOf(runId)).generationGaps).toBeUndefined();
-        const summary = row.agent_checkpoint as { kind: string; objectives: Record<string, { status: string; accepted: number }>; rejectionCodes: Record<string, number> };
+        const summary = row.agent_checkpoint as {
+          kind: string; objectives: Record<string, { status: string; accepted: number }>; rejectionCodes: Record<string, number>; totalSpentUsd: number;
+        };
         expect(summary.kind).toBe("summary");
         expect(Object.keys(summary.objectives).sort()).toEqual([...(objectiveIds ?? draft.objectiveIds)].sort());
         for (const [objectiveId, entry] of Object.entries(summary.objectives)) expect(entry.status, objectiveId).toBe("complete");
-        expect(Object.keys(summary.rejectionCodes).filter((code) => code === "duplicate" || code.startsWith("leak_"))).toEqual([]);
+        expect(summary.rejectionCodes).toEqual({});
+        expect(summary.totalSpentUsd).toBe(0);
         return draft;
       }
 
@@ -892,7 +872,8 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("bliźniak z historią wywołań: gramatyka i szkoła kończą każde zagadnienie jednym krokiem generatora", async () => {
         for (const create of [grammarLesson, schoolLesson]) {
-          const agent = new FakeLessonPoolAgent({ generate: {} });
+          // Jak fake z env (`stepCostUsd: 0`), ale z historią wywołań.
+          const agent = new FakeLessonPoolAgent({ generate: {}, stepCostUsd: 0 });
           const services = await envWorld(agent);
           const { runId, deckId } = await create(services);
           await executeLessonGeneration(services, runId);
@@ -1662,7 +1643,7 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("pełna pula: kolizja z historyjką w zapisie, zapisana pula nadal pełna → bez luki", async () => {
-        // Pula z fake LLM (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
+        // Pula z generatora fake'a (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
         // szkicu — agent w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
         const collision = gapExercise("Sam ___ his red bike.", "rides");
         const { services } = await agentWorld({
