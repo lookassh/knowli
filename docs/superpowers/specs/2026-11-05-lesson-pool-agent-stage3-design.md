@@ -1,459 +1,348 @@
-# Agent puli lekcji — etap 3: płatny odbiór i przełączenie domyślne (#237)
+# Agent puli lekcji — etap 3: agent jedynym generatorem, usunięcie krytyka (#237)
 
-Wersja 1, 2026-11-05. Etapy 1, 2a i 2b są scalone (#258, #275). Ten dokument
-opisuje etap 3 z issue #237: odbiór na prawdziwych modelach z progami
-zamrożonymi przed uruchomieniem i przełączenie domyślne per przedmiot.
+Wersja 2, 2026-11-05. Zastępuje wersję 1 (płatne porównanie agenta z potokiem),
+którą właściciel odrzucił: agent ma generować i dogenerowywać lekcje, a stary
+sposób i krytyk mają zniknąć. Etapy 1, 2a i 2b są scalone (#258, #275).
 
-## 1. Cel i decyzje właściciela
+## 1. Cel i decyzje właściciela (2026-11-05)
 
-**Cel.** Rozstrzygnąć per przedmiot (rozdział, gramatyka, szkoła), czy lekcje
-ma domyślnie generować agent puli, czy dzisiejszy potok. Rozstrzygnięcie
-opiera się na pomiarze produkcyjnej ścieżki obu źródeł na tych samych
-zasadach, a nie na próbie PoC z 2026-11-03.
-
-**Decyzje (2026-11-05):**
+**Cel.** Pulę ćwiczeń lekcji generuje i dogenerowuje („Dogeneruj +N”) wyłącznie
+agent puli. Dzisiejszy sposób jednym wywołaniem z rundami dogenerowania etapów
+(„potok”) i krytyk lekcji znikają z kodu.
 
 | Pytanie | Decyzja |
 |---|---|
-| Reguła decyzji | agent „nie gorszy od potoku” (§4), z progami bezwzględnymi kosztu i czasu |
-| Ślepa ocena | dwóch niezależnych oceniających na arkusz, rozbieżności rozstrzyga trzeci (§6) |
-| Przegrany przedmiot | zostaje na potoku; poprawki to osobne zadanie z własnym pomiarem; progów nie zmieniamy po fakcie |
-| Lekcje | te same trzy co 2026-11-03: Unit 3, Present Simple, geografia |
-| Sonda | jedna produkcyjna sonda dla obu źródeł (podejście A, §5) |
-
-**W zakresie (jeden PR):**
-
-1. Sonda pomiarowa: źródło `pipeline|agent` w `probe:chapter`, ślad agenta (§5).
-2. Skrypt przebiegów, arkusze, liczenie i decyzja (§5.4, §6, §7).
-3. Płatne przebiegi i ślepa ocena — **dopiero po jawnej zgodzie właściciela**
-   na konkretny plan i limit (§9).
-4. Raport z wynikami w repozytorium, bez treści ćwiczeń i materiału (§8).
-5. Przełączenie domyślne tylko dla zwycięzców i jego skutki (§10).
-
-**Poza zakresem:** strojenie promptów, polityk przedmiotu i stałych
-(`independentReserve`, `slack`, limity kroków) — przegrany przedmiot dostaje
-osobne zadanie; drugi materiał na przedmiot; usunięcie krytyka (etap 4);
-lematyzator; pokazywanie rodzicowi liczby niesprawdzonych ćwiczeń; punkty 2–7
-z „Do rozwiązania” w issue (raport je opisuje, nie naprawia).
-
-**Moduł i zależności.** Zmiany kodu produkcyjnego dotyczą wyłącznie
-konfiguracji (`config-defaults.ts`, `config.ts`: rozwiązywanie listy
-przedmiotów agenta, §10). Reszta to `tests/probes/**`. Bez migracji, bez
-zmian kontraktów, bez nowych zależności.
-
-## 2. Co sprawdzamy i co obiecały wcześniejsze etapy
-
-Decyzję podejmuje reguła §4. Raport musi też odpowiedzieć na pytania, które
-spece etapów 1 i 2b odłożyły do etapu 3 (metryki diagnostyczne, bez wpływu na
-decyzję):
-
-- fałszywe odrzucenia bramki podpowiedzi bez lematyzatora (`hint_reveals_answer`)
-  i sędziego (`hint_unsupported`, `hint_language`, `hint_reveals_paraphrase`);
-- fałszywe odrzucenia kontroli otwartej (`open_not_accepted`) oraz rozjazdów
-  ślepego rozwiązania i wariantów;
-- skala niesprawdzonych pozycji (`checkUnavailable`, `hintUnavailable`,
-  `openUnavailable`, `graderErrors`, `graderInvalidVerdicts`);
-- luzowanie kryteriów po `open_not_accepted`: średnia liczba
-  `requiredElements` w szkole, agent kontra potok;
-- długość pętli: kroki na zagadnienie, odrzucenia ujawnień miękkich;
-- rzeczywisty koszt kontroli 2b (`check_hints`, `check_open`, `check_grade`)
-  wobec szacunku +0,03–0,07 USD.
-
-## 3. Protokół
-
-**Przebiegi.** Na każdą lekcję 3 przebiegi potoku i 3 przebiegi agenta, razem
-18. Wejściem są pliki `material.txt` z 2026-11-03 (katalog
-`C:\Users\looka\knowli-probe-data\gen-compare`), kopiowane do katalogu
-pomiaru poza repozytorium; raport podaje ich SHA-256.
-
-| Lekcja | Przedmiot | Wejście |
-|---|---|---|
-| `unit3` | `english_chapter` | materiał Unit 3 |
-| `grammar` | `english_grammar` | temat `present_simple` z katalogu i materiał rodzica |
-| `school` | `school` (Geografia, temat „Mapa”) | materiał geografii (ok. 15,5 tys. znaków) |
-
-**Konfiguracja.** Wartości z `config-defaults.ts` na commicie pomiaru, bez
-nadpisań w `.env` poza kluczami (sonda sprawdza to w §5.2): agent — generator
-`google/gemini-3.8-flash`, checker `deepseek/deepseek-v4.1-flash-1017`,
-`low`/`low`, polityka domyślna (budżet runu 1,00 USD); potok — dzisiejszy
-model generatora; grader `UMIEM_GRADER_*`; krytyk wyłączony; pula 60 (jak w
-panelu). Raport zapisuje modele i hash commitu.
-
-**Zagadnienia naturalnie.** Oba źródła idą ścieżką produkcyjną od utworzenia
-lekcji: rozdział — zagadnienia potoku albo planista agenta; szkoła —
-wywołanie zagadnień przy `createSchoolLesson` w każdym przebiegu; gramatyka —
-katalog. Zmienność zagadnień dotyczy obu źródeł jednakowo, a mierzymy to, co
-dostanie rodzic.
-
-**Kolejność.** Najpierw wszystkie przebiegi, potem arkusze i ocena, na końcu
-decyzja. Oceniający nie widzą wyników przebiegów (czasów, kosztów, odrzuceń).
-
-**Zamrożenie.** Progi z §4 trafiają do `thresholds.json` w katalogu pomiaru
-przed pierwszym płatnym wywołaniem; SHA-256 pliku wpisujemy do raportu i do
-wiadomości z prośbą o zgodę (§9). `decide.cjs` odmawia liczenia przy innym
-hashu. Po pierwszym płatnym wywołaniu progów, rubryk ani podziału na części
-nie zmieniamy.
-
-## 4. Metryki i reguła decyzji
-
-Metryki liczymy per lekcja i źródło, łącząc 3 przebiegi (wiersze arkusza
-`agent-r1…3` → `agent`).
-
-| Metryka | Definicja |
-|---|---|
-| **W** | wiersze z wadą inną niż wyłącznie K5 / wszystkie wiersze źródła; werdykt końcowy (zgodny albo rozjemcy). Wiersz z K5 i innym kryterium liczy się do W |
-| **K5** | liczba wierszy z kryterium K5 w werdykcie końcowym |
-| **Kompletność** | liczba przebiegów, które zakończyły się `succeeded` i bez znaczników braków (`generationGaps` pusta) |
-| **Porażki** | przebiegi zakończone `failed` albo wyjątkiem po powtórce technicznej (§5.4) |
-| **Koszt** | średnia i maksimum kosztu przebiegu z rejestru (USD) |
-| **Czas** | mediana i maksimum czasu zegarowego `executeLessonGeneration` (s) |
-
-**Reguła decyzji.** Agent zostaje domyślnym źródłem przedmiotu, gdy spełnia
-wszystkie warunki:
-
-1. W(agent) ≤ W(potok) + 3 pkt proc.;
-2. K5(agent) ≤ K5(potok);
-3. kompletność agenta ≥ 2 z 3;
-4. porażki agenta = 0;
-5. średni koszt agenta ≤ 0,40 USD i żaden przebieg nie przekracza 1,00 USD;
-6. mediana czasu agenta ≤ 300 s i żaden przebieg nie zakończył się terminem
-   runu (`deadline` w podsumowaniu punktu kontrolnego).
-
-Margines 3 pkt proc. to ok. 1,5 błędu standardowego różnicy dwóch odsetków
-przy ok. 200 wierszach na źródło i odsetkach ok. 5%. Potok nie musi spełniać
-warunków 3–6; to punkt odniesienia, nie kandydat.
-
-**Brak danych.** Gdy źródło ma mniej niż 2 przebiegi z ćwiczeniami (np.
-przekroczony limit wydatków, §9), warunek 1–2 dla lekcji ma wynik „brak
-danych”, a przedmiot nie jest przełączany.
-
-**Wysoki szum.** Gdy zgodność oceniających przed rozjemcą (§6.3) jest dla
-lekcji niższa niż 80%, raport oznacza lekcję „wysoki szum”. Jeśli wtedy
-|W(agent) − W(potok) − 3| ≤ 1 pkt proc., `decide.cjs` zwraca „decyzja
-właściciela” zamiast werdyktu.
-
-**`thresholds.json`** (wartości jak wyżej):
-
-```json
-{
-  "schema": "lesson-agent-acceptance-thresholds/v1",
-  "defectMarginPp": 3,
-  "leaksNotAbovePipeline": true,
-  "minCompleteRuns": 2,
-  "maxFailedRuns": 0,
-  "maxMeanCostUsd": 0.40,
-  "maxRunCostUsd": 1.00,
-  "maxMedianDurationS": 300,
-  "noDeadlineRuns": true,
-  "minAgreement": 0.80,
-  "noiseBandPp": 1,
-  "minRunsWithExercises": 2
-}
-```
-
-## 5. Sonda pomiarowa
-
-### 5.1. Źródło w `probe:chapter`
-
-`tests/probes/chapter-generation.probe.test.ts` dostaje zmienną
-`UMIEM_PROBE_GENERATOR=pipeline|agent` (domyślnie `pipeline`; inna wartość to
-błąd przed wywołaniem). Przy `agent`:
-
-- env sondy ustawia `UMIEM_LESSON_AGENT_SUBJECTS` na identyfikator badanego
-  przedmiotu (wartość jawna, niezależna od §10);
-- sonda składa `lessonAgent` tak jak `apps/worker/src/composition.ts`:
-  `lessonAgentDepsFromEnv(env, subjects, usage, deps.llm)`, i przekazuje
-  `{ ...deps, lessonAgent: owinięte(lessonAgent) }` do `createServices`;
-- wynik `undefined` (brak klucza) albo — dla szkoły — brak `grader` to błąd
-  sondy przed pierwszym płatnym wywołaniem („pomiar bez kontroli otwartej”).
-
-Przy `pipeline` sonda działa jak dziś. Oba źródła przechodzą tę samą ścieżkę:
-`createLesson*` → `executeLessonGeneration` → zapis do szkicu → końcowa
-kontrola lekcji → `readLessonDeck`.
-
-### 5.2. Strażnicy konfiguracji
-
-Przed pierwszym wywołaniem sonda kończy się błędem, gdy:
-
-- krytyk jest włączony (`UMIEM_REVIEWER_ENABLED` ≠ `false`);
-- `.env` nadpisuje którąkolwiek zmienną `UMIEM_LESSON_AGENT_*` poza kluczem
-  (porównanie z `CONFIG_DEFAULTS`); wyjątek: `UMIEM_LESSON_AGENT_SUBJECTS`
-  ustawiane przez sondę;
-- host generatora, checkera albo gradera nie jest https OpenRouter
-  (`probeEndpointHost`, jak dziś; `UMIEM_PROBE_ALLOW_HOST` nie dotyczy
-  pomiaru — skrypt przebiegów go nie przekazuje).
-
-Nagłówek pliku wyników zapisuje modele generatora, checkera i gradera,
-politykę agenta i hash commitu (`git rev-parse HEAD` przekazany przez skrypt
-przebiegów w `UMIEM_PROBE_COMMIT`).
-
-### 5.3. Ślad agenta
-
-Zmienna `UMIEM_PROBE_AGENT_TRACE` (plik poza repozytorium, nie jest
-nadpisywany). Sonda owija porty z `LessonAgentDeps` cienkimi dekoratorami w
-`tests/probes/agent-trace.ts` (bez zmian w kodzie produkcyjnym):
-
-- `agent.runObjective` — owija `tools.submit` i `tools.remove`:
-  zapisuje zagadnienie (slug), wejście paczki, wynik per ćwiczenie (status,
-  kod, rodzaj, `detail`) i braki zagadnienia; liczy kroki;
-- `checker.solve`, `judgeVariants`, `judgeHints`, `solveOpen` — wejście i
-  wyjście paczki (pozycje z indeksem paczki, żeby połączyć je z `submit`);
-- `grader.provider.grade` — wejście bez zmian i werdykt (wymiary
-  `knowledge`, `precision`, listy `wrong`/`missing`; bez `commentPl`).
-
-Dekoratory nie zmieniają argumentów ani wyników i przekazują `signal` i
-`cost`; błąd zapisu śladu nie przerywa przebiegu (ślad oznaczony
-`incomplete: true`). Po przebiegu sonda dopisuje do śladu podsumowanie z
-`generation_runs.agent_checkpoint` (statusy, histogram kodów,
-`checkCounters`, `totalSpentUsd`, `attempts`).
-
-### 5.4. Zrzut końcowego szkicu
-
-`UMIEM_PROBE_POOL_DUMP_OUT` działa dla obu źródeł (format
-`blind/gen-blind-sheet.cjs`, jak dziś) i dostaje pola: `source`
-(`pipeline|agent`), `generationGaps`, `durationMs`, `costUsd` z podziałem na
-operacje (`lesson_generation`, `agent_*`, `check_*`), `runState`
-(`succeeded|failed|threw`), `deadline` (z podsumowania agenta) oraz liczby:
-ćwiczenia, ćwiczenia z `hint`, średnia liczba `requiredElements` pytań
-otwartych.
-
-**Koszt w rejestrze.** Wpis tymczasowy agenta to budżet runu (1,00 USD), potoku
-— dzisiejszy szacunek. Rozliczenie: suma `providerCostUsd` z `UsageRecorder`
-plus szacunek polityki za zdarzenia bez kosztu (flaga `estimated`).
-
-### 5.5. Skrypt przebiegów
-
-`tests/probes/acceptance/run-acceptance.cjs <katalog pomiaru> [--only=<lekcja>/<źródło>-r<n>,...]`:
-
-- czyta `plan.json` z katalogu pomiaru (lista 18 przebiegów: lekcja, źródło,
-  numer) i `thresholds.json`;
-- uruchamia `pnpm probe:chapter` z env przebiegu: przedmiot, materiał,
-  `UMIEM_PROBE_GENERATOR`, ścieżki `<lekcja>/<źródło>-r<n>/{dump.json,trace.json}`,
-  `UMIEM_PROBE_OUT_DIR`, wspólny `UMIEM_PROBE_COSTS`, `UMIEM_PROBE_COMMIT`,
-  unikalne `UMIEM_TEST_RUN_ID`; wyjście do `run.log`;
-- najwyżej 3 przebiegi naraz; przed startem każdego: wydane + 1,00 USD ×
-  (przebiegi w locie + 1) ≤ limit rejestru, inaczej czeka albo kończy
-  (żadnych nowych startów po przekroczeniu);
-- przebieg z wyjątkiem technicznym (klasa błędu sieci, 5xx, `ECONNRESET`,
-  błąd kontenera) powtarza raz; przebieg, który zakończył się `failed`, nie
-  jest powtarzany (liczy się do porażek); katalog nieudanej próby dostaje
-  przyrostek `-attempt1`;
-- pomija przebieg z istniejącym `dump.json` (wznowienie po przerwaniu);
-- na konsolę wypisuje wyłącznie lekcję, źródło, stan, czas i koszt.
-
-## 6. Ślepa ocena
-
-### 6.1. Arkusze lekcji
-
-`gen-blind-sheet.cjs` (bez zmian w mieszaniu) dla katalogu lekcji z 6
-źródłami. Nowa opcja `--chunk=80` dzieli wymieszany arkusz na części
-`sheet-01.csv…` po najwyżej 80 wierszy (ostatnia może być krótsza); klucz
-jest jeden. Seed: `acceptance-<lekcja>`.
-
-### 6.2. Oceniający i rozjemca
-
-Każdą część oceniają dwaj świeży subagenci (model Opus) niezależnie, każdy
-do własnego `verdicts-a.csv` / `verdicts-b.csv` w formacie dzisiejszym
-(`rowId`, `verdict`, `criterion`, `adjudicatorNote`). Dostają wyłącznie:
-część arkusza, `rubric-generation.md`, `rubric-criteria.md` i `material.txt`
-— bez klucza, śladów, zrzutów, wyników drugiego oceniającego i informacji o
-liczbie źródeł.
-
-**Rozbieżność:** różny `verdict` albo — przy obu `defect` — rozłączne zbiory
-kryteriów. Rozbieżne wiersze `merge-verdicts.cjs` zbiera do
-`disputes-<część>.csv` (wiersz arkusza + oba werdykty z notami, bez
-oznaczenia A/B). Trzeci subagent (Opus) wydaje werdykt końcowy do
-`verdicts-final-<część>.csv`; wiersze zgodne przechodzą bez zmian (przy obu
-`defect` kryteria to suma obu zbiorów).
-
-### 6.3. Liczenie
-
-`score.cjs` dostaje tryb `--final <key.json> <verdicts-final…>` (dzisiejsze
-wywołanie bez trybu działa jak dotąd) i liczy per źródło (z łączeniem
-`-r<n>`) W, K5 i liczby wierszy; `merge-verdicts.cjs` zapisuje
-`agreement.json`: odsetek zgodnych wierszy i κ Cohena (ok/wada) per lekcja.
-
-### 6.4. Arkusz fałszywych odrzuceń
-
-`gen-rejection-sheet.cjs <katalog lekcji> <seed>` czyta ślady agenta lekcji i
-losuje (seed `acceptance-rejections-<lekcja>`) do 20 odrzuconych ćwiczeń na
-grupę kodów:
-
-| Grupa | Odrzucenia (`Rejection.kind` / `code`) |
-|---|---|
-| bramka podpowiedzi | `rule` / `hint_reveals_answer` |
-| sędzia podpowiedzi | `hint` / `hint_unsupported`, `hint_language`, `hint_reveals_paraphrase` |
-| kontrola otwarta | `open` / `open_not_accepted` |
-| ślepe rozwiązanie | `blind` / każdy kod (dziś `blind_mismatch`) |
-| warianty | `variant` / każdy kod (dziś `variant_rejected`) |
-
-Grupy dotyczą tylko odrzuceń modelowych i bramki podpowiedzi; odrzucenia
-`shape`, `rule` (poza `hint_reveals_answer`), `lesson`, `leak` i `limit` są
-deterministyczne i raport podaje dla nich same liczby z histogramu.
-
-Wiersz zawiera kontekst zagadnienia, ćwiczenie i nazwę grupy z jednym
-zdaniem opisu reguły (po polsku, stałe w skrypcie) — bez `detail`, odpowiedzi
-rozwiązującego i werdyktu gradera. Oceniający wpisuje `justified` | `unjustified`
-| `unclear` i notę. Ocena jak w §6.2 (dwóch + rozjemca). Raport: odsetek
-`unjustified` per grupa i lekcja z przedziałem Wilsona 95%; grupa z mniej niż
-5 próbkami ma tylko liczby.
-
-## 7. Decyzja
-
-`decide.cjs <katalog pomiaru>`:
-
-1. sprawdza SHA-256 `thresholds.json` wobec wartości z `plan.json`;
-2. czyta zrzuty (kompletność, porażki, koszt, czas, `deadline`), wyniki
-   `score.cjs --final` i `agreement.json`;
-3. dla każdej lekcji wypisuje każdy warunek §4 osobno (`pass` | `fail` |
-   `no_data`) z wartościami i werdykt `agent` | `pipeline` |
-   `owner_decision`;
-4. zapisuje `decision.json` (same liczby i werdykty).
-
-Werdykt `owner_decision` rozstrzyga właściciel na podstawie raportu; bez jego
-odpowiedzi przedmiot zostaje na potoku.
-
-## 8. Raport
-
-`docs/superpowers/reports/2026-11-05-lesson-pool-agent-acceptance.md` (data
-pomiaru w nazwie), po polsku:
-
-- konfiguracja (modele, commit, polityka, hash progów i materiałów);
-- tabela per lekcja: W, K5, kompletność, porażki, koszt, czas obu źródeł,
-  warunki i werdykt;
-- zgodność oceniających, liczba rozbieżności;
-- metryki diagnostyczne z §2, w tym fałszywe odrzucenia per grupa;
-- dla przegranych przedmiotów: główne źródła wad i odrzuceń opisane słownie
-  (kryterium, typ ćwiczenia, charakter błędu) — **bez cytatów materiału ani
-  treści ćwiczeń**;
-- wydatki łącznie i per źródło.
-
-Surowe dane (materiały, zrzuty, ślady, arkusze, werdykty) zostają w katalogu
-pomiaru poza repozytorium.
-
-## 9. Bramka zgody i koszty
-
-Płatne wywołania startują dopiero po jawnej zgodzie właściciela w czacie,
-wydanej na wiadomość zawierającą: plan 18 przebiegów, limit rejestru,
-szacunek kosztu, hash `thresholds.json` i hash commitu sondy. Zgoda dotyczy
-tego planu; dołożenie przebiegów (np. po przekroczeniu limitu) wymaga nowej.
-
-**Szacunek** (próba 2026-11-03 i przebieg kontrolny 2a): agent — rozdział
-0,11–0,15, gramatyka ok. 0,07, szkoła 0,20–0,31 + kontrole 2b 0,03–0,15 USD;
-potok 0,05–0,20 USD na przebieg. Razem ok. 3–4 USD. **Limit rejestru: 6 USD**
-(`UMIEM_PROBE_COSTS_INIT=1`, `UMIEM_PROBE_COSTS_CAP_USD=6`, nowy plik
-`costs.json` w katalogu pomiaru).
-
-Ocena subagentami nie zużywa OpenRouter. Szacunkowo ok. 1200 wierszy
-arkuszy lekcji i do ok. 300 wierszy arkuszy odrzuceń, każdy oceniany dwa razy,
-plus rozjemcy.
-
-## 10. Przełączenie domyślne
-
-### 10.1. Wartość `auto`
-
-Dziś `withConfigDefaults` traktuje pusty łańcuch jak brak wartości, więc po
-zmianie domyślnej listy na niepustą jawne `UMIEM_LESSON_AGENT_SUBJECTS=""` nie
-wyłączyłoby agenta. Dlatego:
-
-- `CONFIG_DEFAULTS.UMIEM_LESSON_AGENT_SUBJECTS = "auto"`;
-- `auto` = lista przedmiotów przyjętych w odbiorze, stała
-  `ACCEPTED_LESSON_AGENT_SUBJECTS` w `config.ts` (z raportu), z regułą:
-  przedmiot z niepustym `agentPolicy.openAnswerCheckTypes` wchodzi tylko przy
-  pełnej konfiguracji gradera (`graderConfigured(env)`); bez niej zostaje na
-  potoku i worker zapisuje jedno ostrzeżenie `[config]` przy starcie;
-- `none` = agent wyłączony (nowa wartość jawna; `""` po `withConfigDefaults`
-  oznacza `auto`);
-- jawna lista działa jak dziś (także szkoła bez gradera — jak w 2b);
-- `auto`, `none` i lista się wykluczają (`auto,school` to błąd startu).
-
-Jedna czysta funkcja `resolveLessonAgentSubjects(env, subjects)` (w miejscu
-`agentSubjectIds`) obsługuje worker (`lessonAgentSubjectsFromEnv`) i web
-(`lessonAgentPublicFromEnv`), więc panel pokazuje te same przedmioty co worker
-przy tym samym env. Gdy odbiór nie przyjmie żadnego przedmiotu, stała jest
-pusta, a domyślna wartość i tak staje się `auto` (bez zmiany zachowania) —
-kolejne przyjęcia zmieniają tylko stałą.
-
-Brak klucza OpenRouter przy niepustym wyniku działa jak dziś: ostrzeżenie i
-potok (`lessonAgentSettingsFromEnv`).
-
-### 10.2. Testy i światy
-
-- **E2E:** światy (`tests/e2e/**` global setup i env weba/workera) ustawiają
-  jawnie `UMIEM_LESSON_AGENT_SUBJECTS=none`, bo przy `UMIEM_FAKE_PROVIDERS=1`
-  niepusta lista składa `FakeLessonPoolAgent`, a asercje speców opierają się na
-  potoku. Ścieżkę agenta pokrywają testy integracyjne
-  `lesson-agent-generation.test.ts` (fake'i i `MockLanguageModel`).
-- **Integracja:** helpery składające usługi z env (`tests/integration/helpers.ts`
-  i miejsca z `withConfigDefaults`) ustawiają `none`, poza testami agenta,
-  które ustawiają listę jawnie (jak dziś).
-- **Unit:** `resolveLessonAgentSubjects` — `auto` z graderem i bez, `none`,
-  `""`, jawna lista, mieszanki jako błąd, nieznany przedmiot; zgodność workera
-  i weba (te same przedmioty dla tego samego env).
-
-### 10.3. Wdrożenie
-
-Bez migracji. Web i worker wdrażamy razem (panel i worker czytają tę samą
-wartość). Po wdrożeniu przedmioty z `ACCEPTED_LESSON_AGENT_SUBJECTS` generuje
-agent, gdy worker ma klucz OpenRouter; szkoła dodatkowo wymaga
-`UMIEM_GRADER_*` w workerze. Wycofanie: `UMIEM_LESSON_AGENT_SUBJECTS=none`.
-
-## 11. Prywatność
-
-- Sonda tworzy lekcje bez profilu dziecka; do modeli trafia wyłącznie to, co w
-  produkcji (spec 2a §11, 2b §8). Ślad agenta zawiera dane wysyłane do
-  checkera i gradera, więc leży wyłącznie poza repozytorium
-  (`resolveOutsideRepoPath`).
-- Konsola sondy i skryptów: liczby, kody, slugi, stany. Bez treści ćwiczeń,
-  podpowiedzi, odpowiedzi rozwiązującego, materiału i `detail`.
-- Subagenci oceniający dostają materiał i ćwiczenia (jak 2026-11-03), bez
-  danych dziecka.
-- Raport w repozytorium bez cytatów materiału i treści ćwiczeń (§8).
-
-## 12. Testy przed płatnym pomiarem
-
-- **Unit** (`vitest.unit.config.ts`, nowe pliki dopisane do `include`):
-  `merge-verdicts`, `score --final`, `decide` (wszystkie warunki §4, brak
-  danych, wysoki szum, zły hash), `gen-rejection-sheet` (losowanie z seedem,
-  limit 20, brak `detail` w wierszach), `--chunk` arkusza,
-  `agent-trace` (dekoratory przekazują argumenty, wyniki, `signal`, `cost`;
-  błąd zapisu nie przerywa), plan i limit w `run-acceptance` (czysta funkcja
-  harmonogramu: limit wydatków, powtórka tylko technicznej klasy błędu,
-  wznowienie).
-- **Próba sondy bez kosztu:** `UMIEM_FAKE_PROVIDERS=1` z
-  `UMIEM_PROBE_GENERATOR=agent` dla trzech przedmiotów (szkoła z fake
-  graderem): powstaje zrzut i ślad, nagłówek ma modele, konsola nie zawiera
-  treści (sprawdzenie skryptem na `run.log`). Fake nie wymaga zgody.
-- **Konfiguracja (§10):** unit i integracja jak w §10.2.
-- **Przed PR:** `pnpm check`, `pnpm test:integration`, pełny
-  `pnpm test:e2e:shards` (po przełączeniu domyślnym zachowanie światów nie
-  może się zmienić).
-
-## 13. Dokumentacja
-
-- `docs/architecture.md` §19.17: status etapu 3, wynik odbioru, `auto`/`none`,
-  odesłanie do raportu; opis pomiaru (`UMIEM_PROBE_GENERATOR`,
-  `UMIEM_PROBE_AGENT_TRACE`, skrypty `acceptance/`).
-- `docs/provider-config.md`, `.env.example`: `auto`, `none`, reguła szkoły z
-  graderem.
-- `AGENTS.md`: zdanie „Agent jest domyślnie wyłączony” → stan po odbiorze
-  (`auto`, przyjęte przedmioty, `none` wyłącza).
-- `docs/SPEC.md` §29a.10: przełączenie domyślne.
-- API → MCP → `SKILL.md`: bez wpływu (generowanie i katalog nie są częścią
-  MCP; brak nowych pól); uzasadnienie w opisie PR.
-
-## 14. Ryzyka i ograniczenia
-
-- **Jedna lekcja na przedmiot:** wynik może nie uogólnić się na inne
-  materiały; raport mówi to wprost.
-- **Oceniający z tej samej rodziny modeli** (Opus) mogą mieć wspólne
-  skrzywienia; rozjemca tego nie usuwa. Zgodność mierzy tylko szum losowy.
-- **Zmienność zagadnień** zwiększa rozrzut między przebiegami; 3 przebiegi to
-  mało, a margines 3 pkt proc. jest kompromisem.
-- **Ślad agenta** owija porty, więc nie widzi decyzji wewnątrz `admitBatch`
-  poza wynikiem `submit`; to wystarcza do fałszywych odrzuceń.
-- **Ceny OpenRouter** mogą się zmienić; koszt raportujemy z `usage.cost` w
-  dniu pomiaru.
-- **`auto` zmienia zachowanie wdrożeń**, które nie ustawiają zmiennej: po
-  aktualizacji przyjęte przedmioty generuje agent (przy kluczu). Opis PR i
-  `provider-config.md` mówią to wprost, z `none` jako wycofaniem.
+| Płatne porównanie agent kontra potok | nie robimy |
+| Stary sposób generowania | usunąć, nie zostawiać jako zapasu |
+| Krytyk lekcji | usunąć (dawny etap 4) |
+| Podział | dwa PR: PR 1 krytyk, PR 2 agent jedynym generatorem |
+| Brak klucza OpenRouter w workerze | worker startuje, lekcje się nie generują, panel mówi dlaczego (§4.4) |
+| Test na prawdziwych modelach | test dymny: 1 płatny przebieg na przedmiot, za zgodą przed startem (§5) |
+
+**Poza zakresem:** strojenie promptów i polityk agenta; lematyzator; punkty 2–7
+z „Do rozwiązania” w issue; pokazywanie rodzicowi liczby niesprawdzonych
+ćwiczeń; zmiany słówek, kartkówek i sesji dziecka.
+
+**Moduł i zależności.** Obszar `materials/lessons` (autorstwo materiału) i
+konfiguracja (`config.ts`, `config-defaults.ts`, kompozycje web i worker).
+Bez nowych zależności, bez migracji, bez zmian granic modułów. Transakcje
+zapisu do szkicu (`finalizeLessonPoolWrite`) i punkt kontrolny agenta bez zmian.
+
+**Kolejność:** PR 1 scala właściciel, PR 2 powstaje na `main` po PR 1.
+
+## 2. PR 1: usunięcie krytyka lekcji
+
+### 2.1. Zakres
+
+Krytyk (PR #236, `LessonReviewerProvider`, `UMIEM_REVIEWER_*`, domyślnie
+wyłączony) jest wołany tylko z potoku. Usuwamy go w całości:
+
+- **Domena:** `domain/lessons/review-criteria.ts`, `review-report.ts`,
+  `review-verdicts.ts` (z testami); pole `SubjectModule.reviewRules` (typ,
+  walidacja katalogu, teksty w promptach przedmiotów i w
+  `testing/history-like-subject.ts`).
+- **Moduł:** `modules/materials/lessons/lesson-review.ts` (z testem); w
+  `lesson-drafts.ts` faza przeglądu, `REVIEW_*`, `LessonPoolReview`,
+  `LessonContext.review`, parametry `review` w `stageTopUpRound`,
+  `failLessonPoolValidation`, `finalizeLessonPoolWrite`; termin fazy wraca do
+  terminu runu.
+- **Port i adaptery:** typy krytyka w `ports/ai.ts`;
+  `providers/openai/lesson-reviewer.ts`, `lesson-review-schema.ts` (z testem);
+  `FakeLessonReviewer` w `providers/fake.ts`; `fakeReviewerFromEnv` i pole
+  `reviewer` w `generation-env.ts`; prefiks `UMIEM_REVIEWER` w
+  `chat-request-options.ts` i `openrouter-key.ts`.
+- **Konfiguracja:** `GenerationDeps.reviewer`, `ReviewerPolicy|State|Deps`,
+  `Services.reviewService`, `reviewerEnabled`, `reviewerFromEnv`,
+  `reviewerPublicServiceFromEnv` i reszta bloku krytyka w `config.ts`;
+  `UMIEM_REVIEWER_*` w `config-defaults.ts`; eksport w `index.ts`;
+  `reviewerHealthBudgetWarning` w workerze (`loop.ts`, `main.ts`);
+  `reviewService` w kompozycji web.
+- **Kontrakty:** `SubjectCatalogDto.reviewService`, schematy `Review*`,
+  `LessonDraftDto.review`, `LessonDeckDto.reviewService`; komunikaty `review*`
+  w `messages.lessons` (37 kluczy).
+- **Panel rodzica:** `LessonReviewBanner.tsx` (z testem); notatki i plakietki
+  krytyka w `LessonExerciseCard.tsx` i `LessonEditor.tsx`; informacja o
+  usłudze krytyka w `LessonSupervisionPanel.tsx`, `NewLessonForm.tsx`,
+  `SourcePage.tsx`; styl `.pp-lesson-review-toggle`.
+- **Sondy:** `tests/probes/lesson-review.probe.test.ts`, skrypt
+  `probe:review`; wątki krytyka w `chapter-generation.probe.test.ts`
+  (stan krytyka, koszt `lesson_review`, prefiks `[lesson-review]`).
+- **Dokumentacja:** `docs/architecture.md` §19.16 i odwołania w §19.15 i
+  §19.17; `docs/SPEC.md` §29a.9; `AGENTS.md` (punkt o krytyku i wzmianki w
+  punktach o agencie, tematach zdań i pomiarze integracji); `.env.example`;
+  `docs/folder-structure.md`. Spec i plany krytyka z 2026-11-02 zostają jako
+  historia, z dopiskiem „usunięty w etapie 3 #237” na początku.
+
+### 2.2. Nie mylić — zostaje
+
+- **Ocena aktywności sesji** (`SessionActivityReviewer`,
+  `session_activity_review`, `ParentWorkCardDto.reviewService`,
+  `WorkCardPanel`) to inna funkcja.
+- `findExposureLeaks`, `lesson-pool-acceptance.ts`, `lesson-json-request.ts`,
+  `lesson-payload.ts`, `nextReviewAt`, `mockTestReview*`.
+- W PR 1 zostaje też cały potok (bez fazy przeglądu) — usuwa go PR 2.
+
+### 2.3. Dane i zgodność
+
+- `lesson_context.review` to klucz w kolumnie JSONB `deck_versions.lesson_context`
+  — **bez migracji**. `readLessonContext` kopiuje tylko znane pola, więc stare
+  szkice z kluczem `review` działają; `withoutRunReports` nadal usuwa klucz
+  `review` przy tworzeniu nowej wersji, żeby nie przenosić starych raportów.
+- Wiersze `provider_usage_events` z `operation = 'lesson_review'` zostają jako
+  historia (kolumna tekstowa, bez CHECK).
+- Pozostawione `UMIEM_REVIEWER_*` w `.env` niczego nie psują (nieczytane).
+- Rodzic traci linijkę „Dogenerowane ćwiczenia, by uzupełnić brakujące etapy:
+  N” (żyła tylko w raporcie krytyka). W PR 2 rundy dogenerowania etapów i tak
+  znikają.
+
+### 2.4. Testy PR 1
+
+- Usuwamy testy krytyka (unit, `tests/integration/lesson-review.test.ts`,
+  sonda, E2E banera i plakietek w `parent-lesson-editor-layout.spec.ts`,
+  asercje `lesson-review-service` w `parent-lessons-layout.spec.ts`).
+- `tests/integration/lesson-review.test.ts` zawiera jedyne testy integracyjne
+  rundy dogenerowania etapów. Nie przenosimy ich: PR 2 usuwa tę rundę; do
+  scalenia PR 2 potok ma pokrycie testów jednostkowych `trimToStageDeficits` i
+  `lesson-generation.test.ts`.
+- `tests/integration-buckets.ts`: wpis pliku i komentarz;
+  `tests/ai-sdk-scope.test.ts`: przykładowy plik `lesson-reviewer.ts` zastąpić
+  istniejącym (`lesson-json-request.ts`).
+- `tests/integration/lesson-agent-generation.test.ts`: test „agent nie woła
+  krytyka i nie rusza `review` w kontekście” traci sens — usunąć część o
+  krytyku, zostawić resztę asercji.
+- `lesson-fingerprint.ts` (`exerciseFingerprint`) staje się martwy — usunąć z
+  testem.
+- Przed PR: `pnpm check`, `pnpm test:integration`, `pnpm test:e2e:shards`.
+
+### 2.5. API → MCP → SKILL.md
+
+Zmiany dotyczą wyłącznie DTO panelu rodzica (usunięte pola opcjonalne).
+Generowanie i szkic nie są częścią MCP ani `learning-overview`; `integrations/`
+nie odwołuje się do tych pól. Bez zmian w MCP i `SKILL.md`.
+
+## 3. PR 2: agent jedynym generatorem — zakres
+
+### 3.1. Co znika
+
+- **Wybór ścieżki:** `lessonGeneratorFor`, lista `UMIEM_LESSON_AGENT_SUBJECTS`
+  (`agentSubjectIds`, `lessonAgentSubjectsFromEnv`, pole
+  `LessonAgentDeps.subjects`). `executeLessonGeneration` zawsze woła
+  `executeLessonAgentGeneration`.
+- **Potok w `lesson-drafts.ts`:** ciało potoku w `executeLessonGeneration`,
+  `stageTopUpRound`, `StageTopUpContext`, `stageCountsOf`,
+  `batchesForObjectives`, `trimToStageDeficits`, `STAGE_TOP_UP_*`,
+  `EXPOSURE_LEAK_REASON`, `withinStageQuotas`, `capListenChoiceOverflow`,
+  `collectBatchExerciseMetadata`, `filterExercisesToRequestedObjective`,
+  `summarizeLessonPoolValidation`, `refineGeneratedDrafts`,
+  `existingAnswersOf`, `existingExercisesOf`, `uniqueStimuli`; gałąź
+  `finalizeLessonPoolWrite`, która czyści punkt kontrolny po zapisie potokiem;
+  pola `LessonRunInput.regenerate.existingAnswers|existingExercises` (stare
+  runy w kolejce z tymi polami nadal się parsują — pola ignorowane).
+- **Inne moduły:** `acceptFreshLessonPool` (`lesson-pool-acceptance.ts`;
+  `sanitizeFreshLessonDraft` zostaje), `resolveGenerationLeaks`
+  (`exposure-leaks.ts`), `stageDeficits` (`lesson-coverage.ts`), `callSoft`
+  (`lesson-generation-control.ts`), `stageTopUp` w polityce generowania.
+- **Port i adapter:** `LlmProvider.generateLessonPool` i `LessonPoolInput.purpose`
+  (`ports/ai.ts`); `generateLessonPool` i `lessonExamplesToRecord` w
+  `providers/openai/llm.ts` oraz blok „istniejące odpowiedzi” promptu, jeśli
+  nie używa go agent (sprawdzić w planie; agent podaje `[]`).
+- **Rozdział — zagadnienia potoku:** `objectivesRules` przedmiotu rozdziału i
+  gałąź `kind` w zagadnieniach (prompt, schemat, `fakeLessonObjectives`):
+  rozdział planuje planista agenta. `generateLessonObjectives` zostaje dla
+  szkoły.
+
+### 3.2. Co zostaje (agent z tego korzysta)
+
+`buildPoolInput`, `poolStageCounts`, `objectiveBatchCounts`,
+`minimumCountPerObjective`, `meetsStageMinimums`, `splitStages`,
+`lessonSystemPrompt`, `lessonUserMaterial`, `lessonPoolJsonSchema`,
+`finalizeLessonPoolWrite`, `failLessonPoolValidation`, `generateDynamicObjectives`
+(szkoła), `markLessonRun`, `mergeExamples`, historyjka lekcji,
+`sanitizeFreshLessonDraft`, `validatePool*`, `refineGeneratedPool`,
+`materialize*`, `findExposureLeaks`, `classifyLessonGenerationFailure`,
+`generationGaps`, `agent_checkpoint`, `UMIEM_LESSON_GENERATION_*`,
+`UMIEM_LLM_*` (zagadnienia szkoły, historyjka). Parametry `buildPoolInput`
+używane tylko przez potok (`existingAnswers`, `existingExercises`, `purpose`)
+usuwamy.
+
+Testy `llm.test.ts` sprawdzające treść promptu przez `generateLessonPool`
+przenosimy na `lessonSystemPrompt`/`lessonUserMaterial` — bez utraty asercji
+o treści.
+
+### 3.3. `agentPolicy` obowiązkowe
+
+`SubjectModule.agentPolicy` staje się wymagane (typ i walidacja rejestru przy
+starcie). Trzy przedmioty produkcyjne już je mają. Testowy
+`historyLikeSubject` dostaje politykę wzorowaną na szkole bez kontroli 2b
+(`hintJudgeTypes` i `openAnswerCheckTypes` puste). Test architektury
+(`module-boundaries` / rejestr) pilnuje, że każdy przedmiot w rejestrze ma
+politykę. `AGENTS.md`: nowy przedmiot dodaje także `agentPolicy`.
+
+## 4. PR 2: konfiguracja, tryb fake, panel
+
+### 4.1. Konfiguracja
+
+- `UMIEM_LESSON_AGENT_SUBJECTS` znika z `CONFIG_DEFAULTS`, `.env.example` i
+  dokumentacji; pozostawiona w `.env` jest ignorowana (bez błędu).
+- Pozostałe `UMIEM_LESSON_AGENT_*` (modele, wysiłek, limity, routing,
+  `UMIEM_LESSON_AGENT_API_KEY`) bez zmian i są walidowane przy każdym starcie
+  workera — błędna wartość zatrzymuje start z nazwą zmiennej, jak dziś.
+- `lessonAgentDepsFromEnv` zwraca zależności agenta zawsze, gdy jest klucz
+  OpenRouter; bez klucza zwraca wariant „niedostępny” (§4.4) zamiast
+  `undefined` i ostrzeżenia o potoku.
+- Grader kontroli otwartej szkoły bez zmian: bez pełnego `UMIEM_GRADER_*`
+  szkoła działa bez kontroli otwartej (jak w 2b), log startu
+  `openCheck=off`.
+
+### 4.2. Tryb fake (`UMIEM_FAKE_PROVIDERS=1`)
+
+- Lekcje generuje `FakeLessonPoolAgent`. Deterministyczny generator ćwiczeń z
+  `FakeLlmProvider.generateLessonPool` przenosimy do `providers/fake-lesson-agent.ts`
+  (funkcja fake'a, nie metoda portu `LlmProvider`); tryb `fromLlm` znika.
+- `FAKE_SLOW_MARKER` działa w fake-agencie (opóźnienie 3 s na pierwszym kroku
+  zagadnienia), bo E2E używa go do stanu „generowanie”.
+- Checker fake: `FakeExerciseChecker` w trybie „poprawne odpowiedzi” zamiast
+  `unavailable`, żeby tryb fake przechodził pełną ścieżkę przyjęcia (ślepe
+  rozwiązanie zgodne z kluczem, warianty i podpowiedzi `ok`). Grader w fake
+  nadal nieobecny (kontrola otwarta nie dotyczy).
+- Planista rozdziału w fake daje zagadnienia z pokrycia (`fakePlanFromCoverage`)
+  — tytuły zagadnień rozdziału w E2E zmieniają się z „Zagadnienie N: …” na
+  tytuły planisty fake. Specy dopasowujemy do nowych tytułów.
+
+### 4.3. Panel rodzica
+
+- Katalog przedmiotów zawsze opisuje usługi agenta (`generationServices`,
+  `checkService`, `checkServiceIncludesMaterial`, `openCheckService`) — bez
+  warunku listy. `generationService` potoku znika z katalogu tam, gdzie
+  dotyczył puli; zostaje informacja o usłudze zagadnień szkoły i historyjki,
+  jeśli panel ją dziś pokazuje (sprawdzić w planie).
+- `lessonAgentPublicFromEnv` liczy dostępność z tego samego klucza co worker
+  (`lessonAgentKeyFromEnv` w `try`; web i worker czytają ten sam `.env`).
+
+### 4.4. Brak klucza OpenRouter
+
+- **Worker** startuje normalnie (słówka, media, kartkówki, ocena aktywności
+  działają). Log startu jedną linią: `[config] lesson-agent=unavailable
+  reason=no_openrouter_key`.
+- **Run lekcji** (pełna generacja i „+N”) kończy się od razu `failed` z nowym
+  kodem `lesson_agent_unavailable` (nieponawialny), bez wywołań modeli.
+- **Panel:** komunikat błędu runu „Generowanie lekcji wymaga klucza
+  OpenRouter w konfiguracji serwera.” (`messages.lessons.generationErrors`).
+  Katalog dostaje pole `lessonGenerationAvailable: boolean` (web liczy je z
+  klucza); formularz nowej lekcji i przycisk „Dogeneruj” pokazują przy `false`
+  ten sam komunikat i są wyłączone.
+- Klucz w złym kształcie (np. klucz OpenAI pod `OPENROUTER_API_KEY`) pozostaje
+  błędem startu, jak dziś.
+
+### 4.5. Prywatność
+
+Bez zmian względem 2a/2b: generator, checker i grader dostają to, co dziś przy
+przedmiocie na liście agenta. Zmienia się tylko to, że dotyczy to każdej
+lekcji: domyślnymi odbiorcami danych lekcji stają się generator agenta
+(OpenRouter, Gemini) i checker innej rodziny (OpenRouter, DeepSeek), w szkole
+z materiałem; grader w workerze przy pełnym `UMIEM_GRADER_*`. Nigdy dane
+dziecka. Panel nadal informuje o tych usługach. Opis PR i
+`provider-config.md` wymieniają nowych domyślnych odbiorców wprost.
+
+### 4.6. Koszt i wdrożenie
+
+- Agent kosztuje więcej niż potok (budżet runu domyślnie 1,00 USD; próba
+  2026-11-03: rozdział 0,11–0,15, gramatyka ok. 0,07, szkoła 0,20–0,31 USD
+  plus kontrole 2b). `docs/deploy.md` i opis PR mówią to wprost.
+- Bez migracji. Web i worker wdrażamy razem (katalog i run czytają ten sam
+  klucz). Runy w kolejce sprzed wdrożenia przejdą agentem (agent ignoruje pola
+  potoku w wejściu, start z pustym punktem kontrolnym).
+- Wycofanie: `git revert` PR 2 (stary sposób wraca w całości); zmiennej
+  przełączającej nie ma.
+
+## 5. PR 2: testy
+
+### 5.1. Testy integracyjne
+
+- `tests/integration/fakes.ts`: fake'i generowania składają agenta
+  (fake-agent + fake checker) zamiast `routeLessonRound`.
+- `lesson-generation.test.ts` (56 testów) i `lesson-chapter.test.ts` (26):
+  testy sprawdzające mechanikę potoku (partie, `MAIN_BATCH_ONLY`, rundy
+  dogenerowania etapów, liczba żądań puli, reguła twarda po fakcie) usuwamy.
+  Testy zachowań, które nadal obowiązują, przepisujemy na agenta, o ile nie
+  pokrywa ich już `lesson-agent-generation.test.ts`: zapis do szkicu i
+  wersjonowanie, anulowanie i `superseded`, ponowienia i błędy dostawcy,
+  przykłady kart, historyjka, tematy zdań, „+N”, polecenie rodzica, temat
+  dynamiczny szkoły, odrzucenie przy publikacji. Plan wymienia każdy test z
+  decyzją (usunąć / przepisać / już pokryty przez …).
+- `lesson-agent-generation.test.ts`: testy „przedmiot spoza listy idzie
+  potokiem” usuwamy; dochodzi test braku klucza (`lesson_agent_unavailable`,
+  zero wywołań modeli).
+- Pliki ze zmianą tylko w składaniu (`lesson-story`, `child-interests`,
+  `lesson-listen-choice`, `source-materials`, `lesson-parent-api`,
+  `lesson-error-explanation`, `lesson-story-audio`, `publish-media-reconcile`,
+  `grammar-without-tts`, `lesson-chapter-sentence-audio`,
+  `lesson-sentence-audio`): dopasować oczekiwane liczby i tytuły do fake-agenta.
+
+### 5.2. Unit, E2E, architektura
+
+- Unit: `config.test.ts` (lista przedmiotów → klucz i dostępność),
+  `lesson-agent-env.test.ts`, `lesson-agent-outcome.test.ts`, `fake.test.ts`,
+  `fake-lesson-agent` (przeniesiony generator, `FAKE_SLOW_MARKER`, checker
+  „poprawne”), `lesson-drafts.test.ts`, `lesson-generation-policy.test.ts`,
+  `llm.test.ts` (przeniesienie asercji promptu), kompozycje web i worker
+  (z kluczem i bez).
+- E2E (`real`): `lesson-parent.spec.ts` (restart z `FAKE_SLOW_MARKER`,
+  przykłady, luka + „Dogeneruj”), `lesson-real-flow`, `lesson-archive`,
+  `lesson-parent-supervision`, `parent-sources` — dopasować do fake-agenta;
+  nowy przypadek w mocked: formularz nowej lekcji przy
+  `lessonGenerationAvailable: false`.
+- Architektura: `tests/ai-sdk-scope.test.ts` i
+  `lesson-agent-imports.architecture.test.ts` bez zmian w regułach (web nadal
+  nie ładuje SDK — sprawdzić bundle jak w 2a); test „każdy przedmiot ma
+  `agentPolicy`”.
+- Przed PR: `pnpm check`, brak SDK w bundlu web, `pnpm test:integration`,
+  pełny `pnpm test:e2e:shards`.
+
+### 5.3. Test dymny na prawdziwych modelach
+
+- Sonda `probe:chapter` po PR 2 generuje agentem (innej ścieżki nie ma).
+  Zostaje rejestr kosztów, strażnik hosta i zapis poza repozytorium; usuwamy z
+  niej wątki potoku i krytyka. `probe:agent` (bez bazy) zostaje do szybkich
+  prób.
+- **Bramka zgody:** przed uruchomieniem wiadomość do właściciela z planem
+  (3 przebiegi: Unit 3, Present Simple, geografia — materiały z 2026-11-03),
+  limitem rejestru 3 USD i commitem; bez „tak” nic nie startuje.
+- **Sprawdzamy (bez ślepej oceny):** run kończy się `succeeded`; liczba
+  ćwiczeń per zagadnienie i etap; `generationGaps` i braki publikacji;
+  koszt (z `usage.cost`) i czas; histogram kodów odrzuceń i `checkCounters`
+  z podsumowania; w szkole `openCheck=on` i niezerowe `openChecks`.
+- **Wynik** trafia do opisu PR 2 (same liczby, bez treści). Przebieg z
+  porażką albo bez ćwiczeń w którymś przedmiocie zatrzymuje PR do decyzji
+  właściciela.
+- Test dymny wykonujemy na gałęzi PR 2 po zielonych testach, przed otwarciem
+  PR.
+
+## 6. Dokumentacja (PR 2)
+
+- `docs/architecture.md`: §19.3 (generowanie puli — agent zamiast partii),
+  §19.15 (bez rund dogenerowania etapów), §19.17 (stan: jedyny generator,
+  brak listy, brak klucza), odwołania do potoku.
+- `docs/provider-config.md`: sekcja agenta bez listy przedmiotów i bez
+  „powrotu do potoku”; brak klucza; nowi domyślni odbiorcy danych; koszt.
+- `.env.example`: bez `UMIEM_LESSON_AGENT_SUBJECTS`.
+- `docs/deploy.md`: „Aktualizacja aplikacji” — klucz OpenRouter wymagany do
+  lekcji, koszt, wycofanie przez revert.
+- `docs/SPEC.md` §29a.8 i §29a.10; `AGENTS.md` (punkty o agencie i
+  `agentPolicy`, usunięcie „domyślnie wyłączony”); `docs/folder-structure.md`.
+- Spece i plany etapów 1–2b zostają jako historia.
+
+## 7. Ryzyka
+
+- **Niepełne pule:** potok gwarantował minima etapów rundami dogenerowania;
+  agent kończy z lukami (`generationGaps`) przy terminie lub budżecie. Rodzic
+  widzi alert i „Dogeneruj”. Test dymny pokaże skalę na trzech lekcjach.
+- **Koszt i czas lekcji** rosną (§4.6).
+- **Zależność od OpenRouter:** bez klucza lekcje się nie generują (§4.4);
+  awaria OpenRouter zatrzymuje generowanie lekcji (ponowienia jak dziś).
+- **Nadmierne kasowanie:** wspólne elementy z §3.2 łatwo wziąć za kod potoku;
+  plan wymienia je jawnie, a testy promptu przenosimy, nie usuwamy.
+- **Duża zmiana testów** (ok. 100–150 testów integracyjnych do usunięcia lub
+  przepisania): plan wymienia każdy test z decyzją, żeby nie zgubić zachowań.
+- **Brak porównania jakości:** świadoma decyzja właściciela; jakość agenta
+  oceniamy w użyciu.
