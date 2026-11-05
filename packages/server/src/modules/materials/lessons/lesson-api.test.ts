@@ -66,8 +66,8 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
     it("przedmiot z agentem: usługi per przedmiot", () => {
       const catalog = withAgent(["english_grammar", "english_chapter"], { generationService: "openrouter.ai · llm" });
       const grammar = catalog.subjects.find((s) => s.id === "english_grammar")!;
-      // tematy katalogowe: do usługi etapu zagadnień nic nie idzie, więc tylko model agenta
-      expect(grammar.generationServices).toEqual(["openrouter.ai · agent-model"]);
+      // tematy katalogowe bez etapu zagadnień, ale run historyjki (`lessonStory`) idzie do usługi UMIEM_LLM
+      expect(grammar.generationServices).toEqual(["openrouter.ai · agent-model", "openrouter.ai · llm"]);
       expect(grammar.checkService).toBe("openrouter.ai · checker-model");
       expect(grammar.checkServiceIncludesMaterial).toBe(false);
       // rozdział: planer z polityki zastępuje etap zagadnień — usługa UMIEM_LLM nie dostaje materiału
@@ -115,18 +115,23 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
     ];
 
     it("szkic: generationGaps w DTO", () => {
-      const context = readLessonContext({ subjectId: "school", generationGaps: gaps });
+      const context = readLessonContext({ subjectId: "school", objectiveIds: ["o1", "o2"], generationGaps: gaps });
       const dto = generationGapsDto(context, false);
       expect(dto).toEqual(gaps);
       expect(dto).not.toBe(context.generationGaps);
       expect(LessonDraftDtoSchema.shape.generationGaps.safeParse(dto).success).toBe(true);
     });
 
+    it("luka usuniętego zagadnienia (poza objectiveIds) znika z DTO; bez pozostałych — bez pola", () => {
+      expect(generationGapsDto(readLessonContext({ objectiveIds: ["o2"], generationGaps: gaps }), false)).toEqual([gaps[1]]);
+      expect(generationGapsDto(readLessonContext({ objectiveIds: ["o3"], generationGaps: gaps }), false)).toBeUndefined();
+    });
+
     it("brak luk, pusta lista albo wersja opublikowana: bez pola", () => {
       expect(generationGapsDto(readLessonContext({}), false)).toBeUndefined();
       expect(generationGapsDto(readLessonContext({ generationGaps: [] }), false)).toBeUndefined();
       expect(readLessonContext({ generationGaps: [] })).not.toHaveProperty("generationGaps");
-      expect(generationGapsDto(readLessonContext({ generationGaps: gaps }), true)).toBeUndefined();
+      expect(generationGapsDto(readLessonContext({ objectiveIds: ["o1", "o2"], generationGaps: gaps }), true)).toBeUndefined();
     });
   });
 

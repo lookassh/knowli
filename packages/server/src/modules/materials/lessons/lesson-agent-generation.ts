@@ -13,6 +13,7 @@ import {
   emptyLessonAgentProgress,
   LessonAgentCheckpointLostError,
   parseLessonAgentProgress,
+  salvageLessonAgentSpend,
   saveLessonAgentCheckpoint,
   summarizeLessonAgentProgress,
   type LessonAgentProgress,
@@ -142,7 +143,7 @@ function discardedProgress(progress: LessonAgentProgress): LessonAgentProgress {
 
 /**
  * Postęp z punktu kontrolnego z tematem sprawdzonym regułami katalogu jak przy pierwszej próbie
- * (`parseLessonAgentProgress` sprawdza tylko obwiednię). Zły temat = brak postępu (start od zera).
+ * (`parseLessonAgentProgress` sprawdza tylko obwiednię). Zły temat = start od zera z zachowanym wydatkiem.
  */
 function validatedProgress(subject: SubjectModule, progress: LessonAgentProgress | undefined, runId: string): LessonAgentProgress | undefined {
   const dynamicTopic = progress?.dynamicTopic;
@@ -155,7 +156,7 @@ function validatedProgress(subject: SubjectModule, progress: LessonAgentProgress
   }
   if (errors.length === 0) return progress;
   console.log(`[lesson-agent] run=${runId} checkpoint=invalid topic`);
-  return undefined;
+  return salvageLessonAgentSpend(progress);
 }
 
 export async function executeLessonAgentGeneration(
@@ -182,17 +183,20 @@ export async function executeLessonAgentGeneration(
   const runDeadlineAtMs = args.runStartedAtMs + executionPolicy.runTimeoutMs;
   const budgetUsd = { ...DEFAULT_LESSON_AGENT_POLICY, ...agentDeps.policy }.runBudgetUsd;
 
-  // Postęp czytany po przejęciu (wiersz runu sprzed claimu mógł nie widzieć „Ponów”).
-  const [checkpointRow] = await services.db.select({ agentCheckpoint: generationRuns.agentCheckpoint })
-    .from(generationRuns).where(eq(generationRuns.id, runId));
-  const start = validatedProgress(subject, parseLessonAgentProgress(checkpointRow?.agentCheckpoint, runId), runId);
+  // Stan sprzed próby: odczyty w `prepare` wewnątrz `try` (błąd bazy rozliczany jak inne awarie próby).
+  let start: LessonAgentProgress | undefined;
+  let draft: DraftView = { exercises: [], examples: {} };
+  let catalogTopic: LessonTopic | undefined;
   // Najświeższa znana wartość postępu: zapis best-effort przy wyjściu (przynajmniej wydatek budżetu).
-  let latest: LessonAgentProgress = start ?? emptyLessonAgentProgress();
+  let latest: LessonAgentProgress = emptyLessonAgentProgress();
+  // Bez odczytanego punktu kontrolnego zapis best-effort nadpisałby go pustym postępem.
+  let loaded = false;
   const save = async (progress: LessonAgentProgress): Promise<void> => {
     latest = progress;
     await saveLessonAgentCheckpoint(services.db, run, progress);
   };
   const saveBestEffort = async (): Promise<void> => {
+    if (!loaded) return;
     try {
       await saveLessonAgentCheckpoint(services.db, run, latest);
     } catch {
@@ -200,16 +204,27 @@ export async function executeLessonAgentGeneration(
     }
   };
 
-  const [version] = await services.db.select({ lessonContext: deckVersions.lessonContext })
-    .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId));
-  const draftContext = (version?.lessonContext ?? {}) as unknown as Partial<LessonContext>;
-  const draft: DraftView = {
-    exercises: mode === "add" ? await orderedDraftExercises(services.db, run.deckVersionId) : [],
-    examples: draftContext.examples ?? {},
-    ...(draftContext.dynamicTopic === undefined ? {} : { dynamicTopic: draftContext.dynamicTopic }),
-    ...(draftContext.story === undefined ? {} : { storySentences: [...draftContext.story.sentences] }),
+  const prepare = async (): Promise<void> => {
+    // Postęp czytany po przejęciu (wiersz runu sprzed claimu mógł nie widzieć „Ponów”); wartość, której
+    // nie da się użyć jako postępu, zachowuje wydatek budżetu.
+    const [checkpointRow] = await services.db.select({ agentCheckpoint: generationRuns.agentCheckpoint })
+      .from(generationRuns).where(eq(generationRuns.id, runId));
+    const raw = checkpointRow?.agentCheckpoint;
+    start = validatedProgress(subject, parseLessonAgentProgress(raw, runId) ?? salvageLessonAgentSpend(raw), runId);
+    latest = start ?? emptyLessonAgentProgress();
+    loaded = true;
+
+    const [version] = await services.db.select({ lessonContext: deckVersions.lessonContext })
+      .from(deckVersions).where(eq(deckVersions.id, run.deckVersionId));
+    const draftContext = (version?.lessonContext ?? {}) as unknown as Partial<LessonContext>;
+    draft = {
+      exercises: mode === "add" ? await orderedDraftExercises(services.db, run.deckVersionId) : [],
+      examples: draftContext.examples ?? {},
+      ...(draftContext.dynamicTopic === undefined ? {} : { dynamicTopic: draftContext.dynamicTopic }),
+      ...(draftContext.story === undefined ? {} : { storySentences: [...draftContext.story.sentences] }),
+    };
+    catalogTopic = subject.buildDynamicTopic === undefined ? resolveLessonTopic(services.subjects, input)?.topic : undefined;
   };
-  const catalogTopic = subject.buildDynamicTopic === undefined ? resolveLessonTopic(services.subjects, input)?.topic : undefined;
 
   /** Temat lekcji do zapisu: dogenerowanie — temat runu albo szkicu; pula — temat z postępu albo runu; inaczej katalog. */
   const lessonTopicOf = (progress: LessonAgentProgress): { topic: LessonTopic; dynamicTopic?: DynamicTopicData } => {
@@ -247,13 +262,16 @@ export async function executeLessonAgentGeneration(
       limits: lessonAgentLimits(capable, topic, input.poolSize),
     });
     if (check.removed > 0) console.log(`[lesson-agent] run=${runId} final_check removed=${check.removed}`);
-    // Luki z ćwiczeń faktycznie zapisanych: dogenerowanie liczy „dodano k z N” po odrzuceniach kontroli
-    // końcowej i samego zapisu (kolizje z historyjką), nie z przyjętych przez agenta.
+    // Luki z ćwiczeń faktycznie zapisanych (pula i dogenerowanie): zagadnienie, któremu kontrola końcowa albo
+    // sam zapis (kolizje z historyjką) odrzuciły ćwiczenie, nie jest kompletem, a dogenerowanie liczy
+    // „dodano k z N” z zapisanych, nie z przyjętych przez agenta.
     let gaps: LessonGenerationGap[] = [];
     const gapsAfterWrite = (written: readonly LessonExerciseDraft[]): LessonGenerationGap[] =>
-      regenerate === undefined
-        ? generationGapsOf(progress, lessonOrder, "pool")
-        : generationGapsOf(writtenProgress(progress, written), lessonOrder, { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } });
+      generationGapsOf(
+        writtenProgress(progress, written),
+        lessonOrder,
+        regenerate === undefined ? "pool" : { add: { objectiveId: regenerate.objectiveId, count: regenerate.count } },
+      );
     // Porażka walidacji zapisu (wszystko odrzucone): liczniki są już w kontekście, a odrzucone ćwiczenia
     // nie wracają — „Ponów” generuje od nowa zamiast liczyć te same usunięcia ponownie.
     const discarded = discardedProgress(progress);
@@ -360,7 +378,8 @@ export async function executeLessonAgentGeneration(
     if ("needsObjectives" in runInput) throw new AppError("internal", { message: "objectives stage did not resolve the topic" });
     if ("nothingToAdd" in runInput) return { progress: begin, outcome: { kind: "finalize" } };
 
-    const remainingMs = control.deadlineAtMs - (agentDeps.finalizationReserveMs ?? AGENT_FINALIZATION_RESERVE_MS) - Date.now();
+    // Termin runu od startu runu (§7.2), jak termin finalizacji zapisu — nie od startu kontrolera.
+    const remainingMs = runDeadlineAtMs - (agentDeps.finalizationReserveMs ?? AGENT_FINALIZATION_RESERVE_MS) - Date.now();
     const emptyAttempt: LessonPoolAgentResult = {
       planStatus: "not_needed",
       objectives: [],
@@ -433,6 +452,7 @@ export async function executeLessonAgentGeneration(
   };
 
   try {
+    await prepare();
     if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
       // Wyczerpane próby przed startem (np. `shutdown` w ostatniej): zapis części bez wywołań modelu.
       if (start !== undefined && acceptedCount(start) >= 1) {

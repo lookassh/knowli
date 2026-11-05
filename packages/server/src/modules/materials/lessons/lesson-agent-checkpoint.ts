@@ -139,6 +139,24 @@ export function parseLessonAgentProgress(value: unknown, runId?: string): Lesson
   };
 }
 
+/**
+ * Sam wydatek z wartości, której nie da się użyć jako postępu (uszkodzona obwiednia, zły temat): pusty
+ * postęp z `budgetSpentUsd`/`totalSpentUsd`, o ile są nieujemnymi liczbami — start od zera nie zeruje
+ * budżetu runu. Podsumowanie, brak wartości albo brak wydatku → `undefined`.
+ */
+export function salvageLessonAgentSpend(value: unknown): LessonAgentProgress | undefined {
+  if (value === null || typeof value !== "object" || (value as { kind?: unknown }).kind === "summary") return undefined;
+  const spend = (field: "budgetSpentUsd" | "totalSpentUsd"): number => {
+    const parsed = nonNegative.safeParse((value as Record<string, unknown>)[field]);
+    return parsed.success ? parsed.data : 0;
+  };
+  const budgetSpentUsd = spend("budgetSpentUsd");
+  // Łącznie nie mniej niż budżet (budżet jest częścią wydatku łącznego).
+  const totalSpentUsd = Math.max(spend("totalSpentUsd"), budgetSpentUsd);
+  if (totalSpentUsd === 0) return undefined;
+  return { ...emptyLessonAgentProgress(), budgetSpentUsd, totalSpentUsd };
+}
+
 /** Podsumowanie po zapisie do szkicu: statusy i liczby przyjętych ćwiczeń, bez treści. */
 export function summarizeLessonAgentProgress(progress: LessonAgentProgress, attempts: number): LessonAgentSummary {
   const objectives: Record<string, { status: string; accepted: number; failureCode?: string }> = {};

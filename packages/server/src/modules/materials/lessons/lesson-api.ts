@@ -116,11 +116,15 @@ export function readLessonContext(raw: Record<string, unknown> | null): LessonCo
 
 /**
  * Luki generowania agentem dla rodzica: tylko edytowalny szkic (wersja opublikowana jest niezmienna,
- * rodzic nie ma czego uzupełnić); kopia bez współdzielenia obiektów z kontekstem.
+ * rodzic nie ma czego uzupełnić) i tylko zagadnienia bieżącego tematu (rodzic mógł usunąć zagadnienie —
+ * jego luki nie da się uzupełnić, jak wpisów raportu kontroli jakości); kopia bez współdzielenia obiektów z kontekstem.
  */
 export function generationGapsDto(context: LessonContextView, published: boolean): LessonGenerationGapDto[] | undefined {
-  if (published || !context.generationGaps?.length) return undefined;
-  return context.generationGaps.map((gap) => ({
+  if (published) return undefined;
+  const inTopic = new Set(context.objectiveIds);
+  const gaps = (context.generationGaps ?? []).filter((gap) => inTopic.has(gap.objectiveId));
+  if (gaps.length === 0) return undefined;
+  return gaps.map((gap) => ({
     objectiveId: gap.objectiveId,
     reason: gap.reason,
     ...(gap.added === undefined ? {} : { added: gap.added }),
@@ -227,8 +231,8 @@ function offersListenChoice(subject: SubjectModule): boolean {
 
 /**
  * Usługi widoczne dla rodzica przy przedmiocie obsługiwanym przez agenta puli (spec etapu 2a §11):
- * model agenta, a gdy etap zagadnień idzie do `UMIEM_LLM` (temat dynamiczny bez planera z polityki),
- * także ta usługa; drugi model (checker) i informacja, czy dostaje materiał. Przedmiot poza listą
+ * model agenta, a gdy do `UMIEM_LLM` idzie etap zagadnień (temat dynamiczny bez planera z polityki)
+ * albo run historyjki (przedmiot z `lessonStory`), także ta usługa; drugi model (checker) i informacja, czy dostaje materiał. Przedmiot poza listą
  * agenta albo bez polityki — bez pól (obowiązuje katalogowe `generationService`).
  */
 function agentServicesOf(services: Services, subject: SubjectModule) {
@@ -237,7 +241,9 @@ function agentServicesOf(services: Services, subject: SubjectModule) {
   if (!agent || !policy || !agent.subjects.has(subject.id)) return {};
   const stageService = services.generationService;
   const topicsFromMaterial = materialCreationMode(subject) !== undefined && policy.planCoverage === undefined;
-  const generationServices = topicsFromMaterial && stageService && stageService !== agent.generationService
+  // Krok poza agentem z materiałem lekcji: etap zagadnień albo run historyjki po nowej puli (oba przez `UMIEM_LLM`).
+  const stageStepRuns = topicsFromMaterial || subject.lessonStory === true;
+  const generationServices = stageStepRuns && stageService && stageService !== agent.generationService
     ? [agent.generationService, stageService]
     : [agent.generationService];
   return {

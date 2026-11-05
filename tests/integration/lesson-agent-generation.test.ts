@@ -49,7 +49,7 @@ import {
   saveLessonAgentCheckpoint,
   type LessonAgentProgress,
 } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
-import { markLessonRun, type LessonRunIdentity } from "../../packages/server/src/modules/materials/lessons/lesson-drafts";
+import { listenChoiceAllowance, markLessonRun, type LessonRunIdentity } from "../../packages/server/src/modules/materials/lessons/lesson-drafts";
 
 const { pool } = testDatabase();
 
@@ -609,14 +609,16 @@ describe("agent puli lekcji (integracja)", () => {
       ]);
     });
 
-    it("uszkodzony punkt kontrolny → start od zera", async () => {
+    it("uszkodzony punkt kontrolny → start od zera z zachowanym wydatkiem", async () => {
       const { services, agent } = await agentWorld(["english_grammar", "english_chapter"]);
-      // Zła obwiednia.
+      // Zła obwiednia; wydatek wcześniejszych prób zostaje (ta próba tylko go powiększa).
       const grammar = await createLesson(services, command());
-      await setCheckpoint(grammar.runId, { version: 1, kind: "progress", objectives: "x" });
+      await setCheckpoint(grammar.runId, { version: 1, kind: "progress", objectives: "x", budgetSpentUsd: 0.3, totalSpentUsd: 0.5 });
       await executeLessonGeneration(services, grammar.runId);
-      expect((await fullRun(grammar.runId)).state).toBe("succeeded");
+      const grammarRow = await fullRun(grammar.runId);
+      expect(grammarRow.state).toBe("succeeded");
       expect(agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE]);
+      expect(summaryOf(grammarRow).totalSpentUsd).toBeGreaterThanOrEqual(0.5);
 
       // Dobra obwiednia, temat łamiący reguły katalogu → planer od zera.
       const chapter = await createLessonFromMaterial(services, {
@@ -626,10 +628,17 @@ describe("agent puli lekcji (integracja)", () => {
         poolSize: 40,
         clientRequestId: randomUUID(),
       });
-      await setCheckpoint(chapter.runId, { ...emptyLessonAgentProgress(), dynamicTopic: { titlePl: "", objectives: [] } });
+      await setCheckpoint(chapter.runId, {
+        ...emptyLessonAgentProgress(),
+        dynamicTopic: { titlePl: "", objectives: [] },
+        budgetSpentUsd: 0.2,
+        totalSpentUsd: 0.2,
+      });
       await executeLessonGeneration(services, chapter.runId);
-      expect((await fullRun(chapter.runId)).state).toBe("succeeded");
+      const chapterRow = await fullRun(chapter.runId);
+      expect(chapterRow.state).toBe("succeeded");
       expect(agent.planCalls).toHaveLength(1);
+      expect(summaryOf(chapterRow).totalSpentUsd).toBeGreaterThanOrEqual(0.2);
     });
 
     it("przełączenie przedmiotu na potok między próbami → potok ignoruje postęp, pełny zapis usuwa generationGaps", async () => {
@@ -658,8 +667,8 @@ describe("agent puli lekcji (integracja)", () => {
       expect(row.attempts).toBe(2);
       expect(agent.calls).toHaveLength(1);
       expect(fakes.llm.lessonRequests.length).toBeGreaterThan(0);
-      // Potok nie czyta ani nie zapisuje punktu kontrolnego.
-      expect(parseLessonAgentProgress(row.agent_checkpoint, runId)).toEqual(saved);
+      // Potok nie czyta punktu kontrolnego, a jego sukces usuwa postęp agenta (treść ćwiczeń) z wiersza runu.
+      expect(row.agent_checkpoint).toBeNull();
       const after = await versionOf(runId);
       expect(after.lesson_context).not.toHaveProperty("generationGaps");
       expect(await exerciseCount(after.id)).toBeGreaterThan(0);
@@ -755,7 +764,12 @@ describe("agent puli lekcji (integracja)", () => {
       const context = after.lesson_context as { rejectedCount: number; generationGaps?: unknown };
       // 2 (bezpiecznik) + 1 (kontrola końcowa: duplikat); odrzucenie w pętli się nie liczy.
       expect(context.rejectedCount).toBe(((before.lesson_context as { rejectedCount?: number }).rejectedCount ?? 0) + 3);
-      expect(context.generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
+      // Luki z zapisanych ćwiczeń: zagadnienie A straciło w kontroli końcowej ćwiczenie, więc nie jest już
+      // kompletem (ostrożnie — bez ponownego liczenia statusu), B nie ma żadnego.
+      expect(context.generationGaps).toEqual([
+        { objectiveId: OBJECTIVE, reason: "incomplete" },
+        { objectiveId: NEGATIVE, reason: "incomplete" },
+      ]);
       const summary = row.agent_checkpoint as { rejectionCodes: Record<string, number> };
       expect(Object.values(summary.rejectionCodes).reduce((sum, value) => sum + value, 0)).toBeGreaterThanOrEqual(1);
     });
@@ -1318,7 +1332,7 @@ describe("agent puli lekcji (integracja)", () => {
           expectedEditNumber: draft.edit_number,
           clientRequestId: randomUUID(),
         });
-        return { draft, add, before: await draftRows(draft.id) };
+        return { draft, add, before: await draftRows(draft.id), poolRunId: lesson.runId };
       }
 
       /** Luka gramatyki zagadnienia; rozwiązane zdanie = `stem` z `answer` w miejscu luki. */
@@ -1365,7 +1379,7 @@ describe("agent puli lekcji (integracja)", () => {
             },
           },
         }));
-        const { draft, add, before } = await draftWithAdd(services, 2, (versionId) =>
+        const { draft, add, before, poolRunId } = await draftWithAdd(services, 2, (versionId) =>
           // Luki z wcześniejszego generowania: wpis tego zagadnienia znika, wpis innego zostaje.
           setContextField(versionId, "generationGaps", [
             { objectiveId: OBJECTIVE, reason: "incomplete" },
@@ -1381,10 +1395,21 @@ describe("agent puli lekcji (integracja)", () => {
         const call = agent.calls.at(-1)!;
         expect(call.objectiveId).toBe(OBJECTIVE);
         const { targets } = call.input;
-        // Prompt: etapy = 2 + braki etapów; limit nowych = etapy + reszta dodatku słuchowego.
+        // Oczekiwane liczby ze szkicu, niezależnie od celów promptu: pula pierwszego runu jest kompletem
+        // (brak braków etapów → stageGap = 0), a reszta dodatku słuchowego = limit zagadnienia − ćwiczenia
+        // słuchowe zagadnienia w szkicu.
+        expect(summaryOf(await fullRun(poolRunId)).objectives[OBJECTIVE]!.status).toBe("complete");
+        const stageGap = 0;
+        const listenInDraft = before.filter((item) => item.payload.objectiveId === OBJECTIVE && item.payload.exerciseType === "lesson_listen_choice").length;
+        const catalogObjective = englishGrammarSubject.topics
+          .flatMap((topic) => topic.objectives)
+          .find((objective) => objective.id === OBJECTIVE)!;
+        const listenLeft = Math.max(0, listenChoiceAllowance(englishGrammarSubject, catalogObjective, []) - listenInDraft);
+        // Prompt: etapy = 2 + braki etapów; limit nowych = 2 + braki etapów + reszta dodatku słuchowego.
         const stagesTarget = targets.guided + targets.productive + targets.independent;
-        expect(stagesTarget).toBeGreaterThanOrEqual(2);
-        expect(targets.maxExercises).toBe(stagesTarget + targets.listenAllowance);
+        expect(stagesTarget).toBe(2 + stageGap);
+        expect(targets.listenAllowance).toBe(listenLeft);
+        expect(targets.maxExercises).toBe(2 + stageGap + listenLeft);
         const after = await draftRows(draft.id);
         // Szkic nietknięty: wcześniejsze ćwiczenia bez zmian, nowe dopisane za nimi.
         expect(after.slice(0, before.length)).toEqual(before);
@@ -1443,6 +1468,30 @@ describe("agent puli lekcji (integracja)", () => {
         // „Dodano k z N” liczy ćwiczenia zapisane, nie przyjęte przez agenta.
         expect(contextOf(version).generationGaps).toEqual([{ objectiveId: OBJECTIVE, reason: "add_short", added: 1, requested: 2 }]);
         expect((version.lesson_context as { story?: unknown }).story).toEqual(STORY_LATE);
+      });
+
+      it("pełna pula: kolizja z historyjką w zapisie → luka zagadnienia z zapisanych ćwiczeń, nie z przyjętych", async () => {
+        // Pula z fake LLM (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
+        // szkicu — agent w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
+        const collision = gapExercise("Sam ___ his red bike.", "rides");
+        const { services } = await agentWorld(["english_grammar"], (fakes) => ({
+          objectives: { third_person_s: { calls: [[llmStep(addGenerator(fakes.llm, { offset: 0, extra: [collision] }))]] } },
+        }));
+        const { runId } = await createLesson(services, command());
+        const before = await versionOf(runId);
+        await setContextField(before.id, "story", STORY_LATE);
+
+        await executeLessonGeneration(services, runId);
+
+        const row = await fullRun(runId);
+        expect(row.state).toBe("succeeded");
+        // Agent uznał zagadnienie za komplet…
+        expect(summaryOf(row).objectives[OBJECTIVE]!.status).toBe("complete");
+        const version = await versionOf(runId);
+        expect((await draftRows(version.id)).map((item) => item.payload.stem)).not.toContain(collision.stem);
+        expect(contextOf(version).rejectedCount).toBe((contextOf(before).rejectedCount ?? 0) + 1);
+        // …ale zapis odrzucił jego ćwiczenie, więc zagadnienie nie jest kompletem w szkicu.
+        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: OBJECTIVE, reason: "incomplete" }]);
       });
 
       it("dogeneruj z błędem przejściowym → requeue → łącznie ≤ limitu, bez duplikatów", async () => {

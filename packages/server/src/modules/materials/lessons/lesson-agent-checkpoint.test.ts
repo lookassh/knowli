@@ -3,6 +3,7 @@ import type { LessonExerciseDraft } from "../../../domain/lessons/types";
 import {
   emptyLessonAgentProgress,
   parseLessonAgentProgress,
+  salvageLessonAgentSpend,
   summarizeLessonAgentProgress,
   type LessonAgentProgress,
 } from "./lesson-agent-checkpoint";
@@ -83,6 +84,24 @@ describe("punkt kontrolny agenta — odczyt i podsumowanie", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     expect(parseLessonAgentProgress({ ...(stored(progress()) as object), version: 2 }, "run-1")).toBeUndefined();
     expect(log.mock.calls.map((call) => String(call[0]))).toEqual(["[lesson-agent] run=run-1 checkpoint=invalid"]);
+  });
+
+  it("salvage: z wartości nie do użycia zostaje sam wydatek (nieujemne liczby), bez treści", () => {
+    const broken = stored(progress()) as { objectives: Record<string, { exercises: Record<string, unknown>[] }> };
+    broken.objectives[OBJECTIVE]!.exercises[0]!.options = "plays";
+    expect(salvageLessonAgentSpend(broken)).toEqual({ ...emptyLessonAgentProgress(), budgetSpentUsd: 0.25, totalSpentUsd: 0.4 });
+    // zła liczba = 0, łącznie nie mniej niż budżet
+    expect(salvageLessonAgentSpend({ kind: "progress", budgetSpentUsd: 0.3, totalSpentUsd: "dużo" })).toEqual({
+      ...emptyLessonAgentProgress(), budgetSpentUsd: 0.3, totalSpentUsd: 0.3,
+    });
+    expect(salvageLessonAgentSpend({ kind: "progress", budgetSpentUsd: -1, totalSpentUsd: 0.2 })).toEqual({
+      ...emptyLessonAgentProgress(), budgetSpentUsd: 0, totalSpentUsd: 0.2,
+    });
+    // brak wydatku, podsumowanie, brak wartości i nie-obiekt → nic
+    expect(salvageLessonAgentSpend({ kind: "progress", objectives: "x" })).toBeUndefined();
+    expect(salvageLessonAgentSpend(stored(summarizeLessonAgentProgress(progress(), 1)))).toBeUndefined();
+    expect(salvageLessonAgentSpend(null)).toBeUndefined();
+    expect(salvageLessonAgentSpend("x")).toBeUndefined();
   });
 
   it("summarize: bez treści", () => {

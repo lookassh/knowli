@@ -1682,7 +1682,8 @@ export async function failLessonPoolValidation(
  * Straże (bieżąca próba, termin finalizacji, wersja szkicu), odrzucenie kolizji z historyjką i słów
  * kluczowych bez rodziny, zapis ćwiczeń, `lesson_context` z licznikami zsumowanymi z poprzednimi,
  * uzgodnienie mediów, podbicie numeru edycji, anulowanie innych runów, kolejka historyjki, stan
- * `review` i sukces runu. `onSuccessTransaction` tylko w gałęzi sukcesu, przed podbiciem numeru edycji;
+ * `review` i sukces runu. `onSuccessTransaction` tylko w gałęzi sukcesu, przed podbiciem numeru edycji
+ * (bez niego — potok — sukces zeruje `agent_checkpoint`);
  * `onFailedValidationTransaction` tylko w gałęzi porażki walidacji (zapis odrzucił wszystko), przed zmianą
  * stanu runu.
  * „superseded” zwraca też, gdy run nie jest już bieżącą próbą (wtedy bez zmiany stanu runu).
@@ -1789,9 +1790,13 @@ export async function finalizeLessonPoolWrite(
       .set({ lessonContext: nextContext as unknown as Record<string, unknown> })
       .where(eq(deckVersions.id, version.id));
     await reconcileDraftAssetsTx(tx, services, version);
-    // Zapis ścieżki agenta w tej samej transakcji (wiersz runu zablokowany wyżej).
+    // Zapis ścieżki agenta w tej samej transakcji (wiersz runu zablokowany wyżej). Potok czyści punkt
+    // kontrolny: postęp agenta z wcześniejszej próby (przedmiot zdjęty z listy agenta) to treść ćwiczeń,
+    // która po sukcesie nie ma już zastosowania.
     if (args.onSuccessTransaction !== undefined) {
       await args.onSuccessTransaction(tx);
+    } else {
+      await tx.update(generationRuns).set({ agentCheckpoint: null }).where(eq(generationRuns.id, run.runId));
     }
     const nextEditNumber = version.editNumber + 1;
     await tx.update(deckVersions).set({ editNumber: nextEditNumber }).where(eq(deckVersions.id, version.id));
