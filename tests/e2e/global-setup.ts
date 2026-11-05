@@ -237,8 +237,12 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       UMIEM_E2E: "1",
       UMIEM_E2E_READY_TOKEN: readyToken,
       UMIEM_FAKE_PROVIDERS: "1",
-      UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",
-      UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "3000",
+      // Bez sztucznych opóźnień fake providerów (dawniej 750 ms na słówka, TTS
+      // i obrazy oraz 3 s na wywołanie lekcji — ok. 40% czasu kosza z lekcjami).
+      // Test, który potrzebuje trwającej pracy (generacji lekcji, nagrania),
+      // oznacza materiał albo tekst nagrania FAKE_SLOW_MARKER (fake.ts).
+      UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "0",
+      UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "0",
       UMIEM_TTS_PROVIDER: "fake-tts",
       UMIEM_TTS_MODEL: "fake-tts-1",
       UMIEM_TTS_VOICE: "fake-voice",

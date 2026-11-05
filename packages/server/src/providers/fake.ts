@@ -112,6 +112,16 @@ function fakeSourceDeckItems(input: { material: string; maxItems: number; vocabu
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Znacznik w materiale lekcji (pula fake LLM) albo w tekście nagrania (fake
+ * TTS) wydłuża to wywołanie do co najmniej FAKE_SLOW_DELAY_MS niezależnie od
+ * skonfigurowanego opóźnienia: E2E działa bez sztucznych opóźnień, a testy
+ * trwającej pracy (restart generacji lekcji, publikacja przy niegotowym
+ * nagraniu) nadal ją widzą.
+ */
+export const FAKE_SLOW_MARKER = "[fake-slow]";
+export const FAKE_SLOW_DELAY_MS = 3_000;
+
 export type LlmBehavior =
   | { items: Array<Record<string, unknown>> }
   | { error: string; retryable: boolean };
@@ -638,8 +648,11 @@ export class FakeLlmProvider implements LlmProvider {
     input: LessonPoolInput,
   ): Promise<{ exercises: unknown[]; examples: Record<string, string[]> }> {
     this.lessonRequests.push(input);
-    if (this.#lessonDelayMs > 0) {
-      await sleep(this.#lessonDelayMs);
+    const delayMs = input.material.includes(FAKE_SLOW_MARKER)
+      ? Math.max(this.#lessonDelayMs, FAKE_SLOW_DELAY_MS)
+      : this.#lessonDelayMs;
+    if (delayMs > 0) {
+      await sleep(delayMs);
     }
     const queue = input.purpose === "stage_top_up" ? this.#lessonTopUpBehaviors : this.#lessonBehaviors;
     const behavior = queue.length > 1 ? queue.shift()! : queue[0] ?? null;
@@ -676,8 +689,9 @@ export class FakeTtsProvider implements TtsProvider {
 
   async synthesize(input: TtsSynthesizeInput): Promise<{ bytes: Uint8Array; mimeType: string }> {
     this.requests.push(input);
-    if (this.#delayMs > 0) {
-      await sleep(this.#delayMs);
+    const delayMs = input.text.includes(FAKE_SLOW_MARKER) ? Math.max(this.#delayMs, FAKE_SLOW_DELAY_MS) : this.#delayMs;
+    if (delayMs > 0) {
+      await sleep(delayMs);
     }
     if (this.failuresLeft > 0) {
       this.failuresLeft -= 1;

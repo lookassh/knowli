@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { DeckDtoSchema, messages } from "@learning/contracts";
+import { FAKE_SLOW_MARKER } from "@learning/server";
 import { loginParent } from "./helpers/parent-session";
 
 /**
@@ -363,6 +364,9 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Popraw słowo i wariant; kosztowna regeneracja dopiero po jawnym zapisie.
   await page.getByTestId("item-target-3").fill("thursday");
   await page.getByTestId("item-accepted-3").fill("Thursday");
+  // Znacznik wydłuża fake TTS przykładu do 3 s (E2E nie ma opóźnień providerów),
+  // więc publikacja niżej trafia na nagranie, które jeszcze się przygotowuje.
+  await page.getByTestId("item-example-3").fill(`We swim on Thursday. ${FAKE_SLOW_MARKER}`);
   await page.getByTestId("save-items").click();
   await expect(page.getByTestId("item-target-3")).toHaveValue("thursday");
   await expect(page.getByTestId("item-audio-state-3")).toContainText("generowanie");
@@ -375,6 +379,7 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   // Nowe audio gotowe → odtworzenie nowego zasobu.
   await expect(page.getByTestId("item-audio-state-3")).toContainText("gotowe", { timeout: 60_000 });
   await playTargetAudio(page, deckId, 3);
+  await expect(page.getByTestId("item-example-audio-state-3")).toContainText("gotowe", { timeout: 60_000 });
 
   // Zły obraz świadomie pominięty — publikacja bez niego jest dozwolona.
   await page.getByTestId("item-menu-3").click();
