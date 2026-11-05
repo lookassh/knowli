@@ -172,6 +172,28 @@ export function unsettledEvents<T extends ProbeCostEvent>(events: readonly T[], 
 }
 
 /**
+ * Wykonuje `body`, a po nim ZAWSZE (także gdy `body` rzuciło) `settle` — rozliczenie spóźnionych
+ * zakończeń przerwanych żądań, żeby rejestr nigdy nie zaniżał wydanych pieniędzy. Błąd `body` jest
+ * ponownie rzucany bez zmian; błąd `settle` (gdy `onSettleError` go nie pochłonie) rzucany tylko wtedy,
+ * gdy `body` nic nie rzuciło.
+ */
+export async function withLateSettlement(body: () => Promise<void>, settle: () => void, onSettleError?: (error: unknown) => void): Promise<void> {
+  let failure: { error: unknown } | undefined;
+  try {
+    await body();
+  } catch (error) {
+    failure = { error };
+  }
+  try {
+    settle();
+  } catch (settleError) {
+    onSettleError?.(settleError);
+    if (failure === undefined) throw settleError;
+  }
+  if (failure !== undefined) throw failure.error;
+}
+
+/**
  * Błąd próby do ponownego rzucenia: klasa i — gdy to identyfikator — kod `AppError`, bez komunikatu
  * (komunikat walidacji może cytować materiał albo odpowiedź modelu, a Vitest wypisuje go na konsolę).
  */

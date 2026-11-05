@@ -20,6 +20,7 @@ import {
   settleCostEntry,
   sha256File,
   unsettledEvents,
+  withLateSettlement,
   type ProbeCostEvent,
 } from "./probe-costs";
 
@@ -258,5 +259,34 @@ describe("errorClassOf / sha256File", () => {
     const path = join(mkdtempSync(join(tmpdir(), "probe-costs-")), "wejscie.txt");
     writeFileSync(path, "abc");
     expect(sha256File(path)).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  });
+  it("withLateSettlement: rozliczenie zawsze po treści; błąd treści nie jest zasłaniany błędem rozliczenia", async () => {
+    const calls: string[] = [];
+    await withLateSettlement(async () => void calls.push("body"), () => void calls.push("settle"));
+    expect(calls).toEqual(["body", "settle"]);
+
+    const bodyError = new Error("body");
+    const reported: unknown[] = [];
+    await expect(
+      withLateSettlement(
+        async () => {
+          throw bodyError;
+        },
+        () => {
+          calls.push("settle-after-failure");
+          throw new Error("settle");
+        },
+        (error) => reported.push(error),
+      ),
+    ).rejects.toBe(bodyError);
+    expect(calls).toContain("settle-after-failure");
+    expect(reported).toHaveLength(1);
+
+    const settleError = new Error("settle only");
+    await expect(
+      withLateSettlement(async () => undefined, () => {
+        throw settleError;
+      }),
+    ).rejects.toBe(settleError);
   });
 });

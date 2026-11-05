@@ -47,6 +47,7 @@ import {
   settleCostEntry,
   sha256File,
   unsettledEvents,
+  withLateSettlement,
   type CostLedger,
 } from "./probe-costs";
 import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
@@ -487,156 +488,158 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       writeResultsFile(resultsOf({ state: "threw", errorCode: null, errorClass: errorClassOf(error), durationMs: Date.now() - started, ...main }));
       line(`Przebieg zakończony wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
     };
-    await paidRun(provisionalId, costEntry.probe, "runu", onMainError, async () => {
-      const clientRequestId = randomUUID();
-      if (subjectKind === "grammar") {
-        const subject = createProductionSubjectRegistry().getSubject("english_grammar");
-        const topic = subject?.topics.filter((candidate) => candidate.id === "present_simple").sort((a, b) => b.version - a.version)[0];
-        if (topic === undefined) throw new Error("Katalog english_grammar nie ma tematu present_simple");
-        ({ runId, deckId } = await createLesson(services, {
-          subjectId: "english_grammar",
-          topicId: topic.id,
-          objectiveIds: topic.objectives.map((objective) => objective.id),
-          material,
-          poolSize,
-          clientRequestId,
-        }));
-      } else {
-        const topicTitlePl = process.env.UMIEM_PROBE_TOPIC ?? (subjectKind === "school" ? "Mapa" : "Unit 1");
-        ({ runId, deckId } = subjectKind === "school"
-          ? await createSchoolLesson(services, { subjectTitlePl: "Geografia", topicTitlePl, material, poolSize, clientRequestId })
-          : await createLessonFromMaterial(services, { subjectId: "english_chapter", topicTitlePl, material, poolSize, clientRequestId }));
+    // Spóźnione zakończenia przerwanych żądań rozlicza `finally` na KAŻDEJ ścieżce po rozliczeniu głównym
+    // (także gdy próba rzuca: `expect`, brak runu „+N”, błąd runu) — rejestr nie zaniża wydanych pieniędzy.
+    await withLateSettlement(async () => {
+      await paidRun(provisionalId, costEntry.probe, "runu", onMainError, async () => {
+        const clientRequestId = randomUUID();
+        if (subjectKind === "grammar") {
+          const subject = createProductionSubjectRegistry().getSubject("english_grammar");
+          const topic = subject?.topics.filter((candidate) => candidate.id === "present_simple").sort((a, b) => b.version - a.version)[0];
+          if (topic === undefined) throw new Error("Katalog english_grammar nie ma tematu present_simple");
+          ({ runId, deckId } = await createLesson(services, {
+            subjectId: "english_grammar",
+            topicId: topic.id,
+            objectiveIds: topic.objectives.map((objective) => objective.id),
+            material,
+            poolSize,
+            clientRequestId,
+          }));
+        } else {
+          const topicTitlePl = process.env.UMIEM_PROBE_TOPIC ?? (subjectKind === "school" ? "Mapa" : "Unit 1");
+          ({ runId, deckId } = subjectKind === "school"
+            ? await createSchoolLesson(services, { subjectTitlePl: "Geografia", topicTitlePl, material, poolSize, clientRequestId })
+            : await createLessonFromMaterial(services, { subjectId: "english_chapter", topicTitlePl, material, poolSize, clientRequestId }));
+        }
+        main = await driveRun(runId);
+      });
+      const durationMs = Date.now() - started;
+      if (runId === undefined || deckId === undefined) throw new Error("Brak runu po utworzeniu lekcji");
+
+      const run = await readGeneration(services, runId);
+      line("");
+      line(`Przebieg: stan=${run.state}${run.errorCode ? ` kod=${run.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(1)} s; ` +
+        `próby=${main.attempts}, oczekiwanie kolejki=${(main.waitedMs / 1000).toFixed(1)} s`);
+      const agentSummary = await agentRunSummary(runId);
+      if (agentSummary !== null) {
+        line(`Agent: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}; ` +
+          `kontrole ${JSON.stringify(agentSummary.checkCounters)}`);
       }
-      main = await driveRun(runId);
-    });
-    const durationMs = Date.now() - started;
-    if (runId === undefined || deckId === undefined) throw new Error("Brak runu po utworzeniu lekcji");
+      const results = resultsOf({ state: run.state, errorCode: run.errorCode ?? null, durationMs, attempts: main.attempts, waitedMs: main.waitedMs, agent: agentSummary });
+      const writeResults = () => writeResultsFile(results);
+      // Próba raportuje jakość bez asercji; wymaga tylko, by generacja się zakończyła (`queued` po wyczerpaniu prób to porażka).
+      if (!["succeeded", "failed"].includes(run.state)) writeResults();
+      expect(["succeeded", "failed"]).toContain(run.state);
+      for (const cost of runCosts(events, runBudgetUsd, estimates).filter((entry) => entry.runId === runId)) {
+        line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} (z szacunkiem wywołań bez kosztu ${cost.agentEstimatedUsd.toFixed(4)}) ` +
+          `z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
+          `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; wywołań ${cost.calls}, bez usage.cost ${cost.unknownCostCalls}`);
+      }
 
-    const run = await readGeneration(services, runId);
-    line("");
-    line(`Przebieg: stan=${run.state}${run.errorCode ? ` kod=${run.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(1)} s; ` +
-      `próby=${main.attempts}, oczekiwanie kolejki=${(main.waitedMs / 1000).toFixed(1)} s`);
-    const agentSummary = await agentRunSummary(runId);
-    if (agentSummary !== null) {
-      line(`Agent: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}; ` +
-        `kontrole ${JSON.stringify(agentSummary.checkCounters)}`);
-    }
-    const results = resultsOf({ state: run.state, errorCode: run.errorCode ?? null, durationMs, attempts: main.attempts, waitedMs: main.waitedMs, agent: agentSummary });
-    const writeResults = () => writeResultsFile(results);
-    // Próba raportuje jakość bez asercji; wymaga tylko, by generacja się zakończyła (`queued` po wyczerpaniu prób to porażka).
-    if (!["succeeded", "failed"].includes(run.state)) writeResults();
-    expect(["succeeded", "failed"]).toContain(run.state);
-    for (const cost of runCosts(events, runBudgetUsd, estimates).filter((entry) => entry.runId === runId)) {
-      line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} (z szacunkiem wywołań bez kosztu ${cost.agentEstimatedUsd.toFixed(4)}) ` +
-        `z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
-        `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; wywołań ${cost.calls}, bez usage.cost ${cost.unknownCostCalls}`);
-    }
-
-    const deck = await readLessonDeck(services, deckId);
-    let draft = deck.draft;
-    if (!draft) {
-      if (addCount !== undefined) results.add = { skipped: `brak szkicu po generacji (stan=${run.state})`, requested: addCount };
-      settleLate();
-      writeResults();
-      if (poolDumpPath !== undefined) throw new Error(`Brak szkicu po generacji (stan=${run.state}) — brak puli do zrzutu ${basename(poolDumpPath)}`);
-      line("Brak szkicu po generacji — nie ma co raportować.");
-      return;
-    }
-    line(`Dziennik generacji: ${lessonLog.length} wierszy (tylko w pliku wyników)`);
-    results.draft = reportDraft(draft);
-
-    // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).
-    if (poolDumpPath !== undefined) {
-      const poolDump = await poolDumpOf(draft, material, {
-        probe: "chapter-generation",
-        at: new Date().toISOString(),
-        subjectKind,
-        materialSha256: materialPath === undefined ? null : sha256File(materialPath),
-        models,
-        runState: run.state,
-        phase: "draft after the lesson agent run (before +N and publish attempt)",
-      });
-      writeFileSync(poolDumpPath, `${JSON.stringify(poolDump, null, 2)}\n`, "utf8");
-      results.poolDump = { file: basename(poolDumpPath), sha256: sha256File(poolDumpPath), exercises: draft.exercises.length, objectives: (poolDump.objectives as unknown[]).length };
-      line(`Zrzut puli i zagadnień (${draft.exercises.length} ćwiczeń, ${(poolDump.objectives as unknown[]).length} zagadnień): ${poolDumpPath}`);
-    }
-
-    // „+N” na pierwszym zagadnieniu: osobny run z własnym wpisem tymczasowym i kontrolą limitu.
-    let addState: string | undefined;
-    if (addCount !== undefined && run.state !== "succeeded") {
-      results.add = { skipped: `główny run nie zakończył się sukcesem (stan=${run.state})`, requested: addCount };
-      line(`„+${addCount}” pominięte: główny run nie zakończył się sukcesem`);
-    }
-    if (addCount !== undefined && run.state === "succeeded") {
-      const objectiveId = draft.dynamicTopic?.objectives[0]?.id ?? draft.objectiveIds[0];
-      if (objectiveId === undefined) throw new Error("Szkic bez zagadnień — „+N” niemożliwe");
-      const before = draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length;
-      assertWithinCostCap(readCostLedger(costsPath), runBudgetUsd, `„+${addCount}”`);
-      const addProbe = `${costEntry.probe}:add`;
-      const addProvisionalId = appendProvisionalCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: addProbe, costUsd: runBudgetUsd });
-      const addStarted = Date.now();
-      const addDeckId = deckId;
-      const expectedEditNumber = draft.editNumber;
-      let addRunId: string | undefined;
-      let add: { attempts: number; waitedMs: number } = { attempts: 0, waitedMs: 0 };
-      const onAddError = (error: unknown) => {
-        results.add = { state: "threw", errorClass: errorClassOf(error), objective: slugOf(objectiveId), requested: addCount, ...add };
+      const deck = await readLessonDeck(services, deckId);
+      let draft = deck.draft;
+      if (!draft) {
+        if (addCount !== undefined) results.add = { skipped: `brak szkicu po generacji (stan=${run.state})`, requested: addCount };
         writeResults();
-        line(`„+N” zakończone wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
-      };
-      await paidRun(addProvisionalId, addProbe, "„+N”", onAddError, async () => {
-        ({ runId: addRunId } = await regenerateObjective(services, {
-          deckId: addDeckId,
-          objectiveId,
-          count: addCount,
-          expectedEditNumber,
-          clientRequestId: randomUUID(),
-        }));
-        add = await driveRun(addRunId);
-      });
-      if (addRunId === undefined) throw new Error("Brak runu „+N” po regenerateObjective");
-      const addRun = await readGeneration(services, addRunId);
-      addState = addRun.state;
-      const afterDraft = (await readLessonDeck(services, deckId)).draft;
-      const after = afterDraft?.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length ?? before;
-      results.add = {
-        state: addRun.state,
-        errorCode: addRun.errorCode ?? null,
-        objective: slugOf(objectiveId),
-        requested: addCount,
-        addedExercises: after - before,
-        durationMs: Date.now() - addStarted,
-        ...add,
-        agent: await agentRunSummary(addRunId),
-      };
-      line(`„+${addCount}” (${slugOf(objectiveId)}): stan=${addRun.state}${addRun.errorCode ? ` kod=${addRun.errorCode}` : ""}; ` +
-        `dodane ćwiczenia=${after - before}; próby=${add.attempts}`);
-      if (afterDraft) draft = afterDraft;
-    }
+        if (poolDumpPath !== undefined) throw new Error(`Brak szkicu po generacji (stan=${run.state}) — brak puli do zrzutu ${basename(poolDumpPath)}`);
+        line("Brak szkicu po generacji — nie ma co raportować.");
+        return;
+      }
+      line(`Dziennik generacji: ${lessonLog.length} wierszy (tylko w pliku wyników)`);
+      results.draft = reportDraft(draft);
 
-    // Próba publikacji końcowego szkicu (po „+N”; baza próby jest jednorazowa).
-    let publishable: string;
-    try {
-      await publishLessonDraft(services, draft.id, draft.editNumber);
-      publishable = "TAK (publishLessonDraft przeszedł; baza próby jest jednorazowa)";
-    } catch (error) {
-      // Na konsolę tylko kod i klasa błędu; komunikat (może cytować ćwiczenia) wyłącznie w pliku wyników.
-      const appError = error as { code?: string; message?: string; details?: unknown };
-      publishable = `NIE (${appError.code ?? "błąd"}, ${errorClassOf(error)})`;
-      results.publishableMessage = appError.message ?? null;
-    }
-    line(`Publikowalny: ${publishable}`);
-    results.publishable = publishable;
-    settleLate();
-    writeResults();
-    line(`Wyniki: ${resultsPath}`);
-    line("");
+      // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).
+      if (poolDumpPath !== undefined) {
+        const poolDump = await poolDumpOf(draft, material, {
+          probe: "chapter-generation",
+          at: new Date().toISOString(),
+          subjectKind,
+          materialSha256: materialPath === undefined ? null : sha256File(materialPath),
+          models,
+          runState: run.state,
+          phase: "draft after the lesson agent run (before +N and publish attempt)",
+        });
+        writeFileSync(poolDumpPath, `${JSON.stringify(poolDump, null, 2)}\n`, "utf8");
+        results.poolDump = { file: basename(poolDumpPath), sha256: sha256File(poolDumpPath), exercises: draft.exercises.length, objectives: (poolDump.objectives as unknown[]).length };
+        line(`Zrzut puli i zagadnień (${draft.exercises.length} ćwiczeń, ${(poolDump.objectives as unknown[]).length} zagadnień): ${poolDumpPath}`);
+      }
 
-    if (dumpPath) {
-      writeFileSync(dumpPath, JSON.stringify({ draft, agent: agentSummary, publishable, lessonLog, durationMs }, null, 2), "utf8");
-      line(`Zrzut pełnego szkicu i dziennika: ${dumpPath}`);
-    }
-    // „+N” to część przebiegu kontrolnego: inny stan niż `succeeded` jest porażką próby (wyniki są już zapisane).
-    if (addCount !== undefined && run.state === "succeeded") expect(addState, "stan runu „+N”").toBe("succeeded");
+      // „+N” na pierwszym zagadnieniu: osobny run z własnym wpisem tymczasowym i kontrolą limitu.
+      let addState: string | undefined;
+      if (addCount !== undefined && run.state !== "succeeded") {
+        results.add = { skipped: `główny run nie zakończył się sukcesem (stan=${run.state})`, requested: addCount };
+        line(`„+${addCount}” pominięte: główny run nie zakończył się sukcesem`);
+      }
+      if (addCount !== undefined && run.state === "succeeded") {
+        const objectiveId = draft.dynamicTopic?.objectives[0]?.id ?? draft.objectiveIds[0];
+        if (objectiveId === undefined) throw new Error("Szkic bez zagadnień — „+N” niemożliwe");
+        const before = draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length;
+        assertWithinCostCap(readCostLedger(costsPath), runBudgetUsd, `„+${addCount}”`);
+        const addProbe = `${costEntry.probe}:add`;
+        const addProvisionalId = appendProvisionalCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: addProbe, costUsd: runBudgetUsd });
+        const addStarted = Date.now();
+        const addDeckId = deckId;
+        const expectedEditNumber = draft.editNumber;
+        let addRunId: string | undefined;
+        let add: { attempts: number; waitedMs: number } = { attempts: 0, waitedMs: 0 };
+        const onAddError = (error: unknown) => {
+          results.add = { state: "threw", errorClass: errorClassOf(error), objective: slugOf(objectiveId), requested: addCount, ...add };
+          writeResults();
+          line(`„+N” zakończone wyjątkiem (${errorClassOf(error)}); wyniki: ${resultsPath}`);
+        };
+        await paidRun(addProvisionalId, addProbe, "„+N”", onAddError, async () => {
+          ({ runId: addRunId } = await regenerateObjective(services, {
+            deckId: addDeckId,
+            objectiveId,
+            count: addCount,
+            expectedEditNumber,
+            clientRequestId: randomUUID(),
+          }));
+          add = await driveRun(addRunId);
+        });
+        if (addRunId === undefined) throw new Error("Brak runu „+N” po regenerateObjective");
+        const addRun = await readGeneration(services, addRunId);
+        addState = addRun.state;
+        const afterDraft = (await readLessonDeck(services, deckId)).draft;
+        const after = afterDraft?.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length ?? before;
+        results.add = {
+          state: addRun.state,
+          errorCode: addRun.errorCode ?? null,
+          objective: slugOf(objectiveId),
+          requested: addCount,
+          addedExercises: after - before,
+          durationMs: Date.now() - addStarted,
+          ...add,
+          agent: await agentRunSummary(addRunId),
+        };
+        line(`„+${addCount}” (${slugOf(objectiveId)}): stan=${addRun.state}${addRun.errorCode ? ` kod=${addRun.errorCode}` : ""}; ` +
+          `dodane ćwiczenia=${after - before}; próby=${add.attempts}`);
+        if (afterDraft) draft = afterDraft;
+      }
+
+      // Próba publikacji końcowego szkicu (po „+N”; baza próby jest jednorazowa).
+      let publishable: string;
+      try {
+        await publishLessonDraft(services, draft.id, draft.editNumber);
+        publishable = "TAK (publishLessonDraft przeszedł; baza próby jest jednorazowa)";
+      } catch (error) {
+        // Na konsolę tylko kod i klasa błędu; komunikat (może cytować ćwiczenia) wyłącznie w pliku wyników.
+        const appError = error as { code?: string; message?: string; details?: unknown };
+        publishable = `NIE (${appError.code ?? "błąd"}, ${errorClassOf(error)})`;
+        results.publishableMessage = appError.message ?? null;
+      }
+      line(`Publikowalny: ${publishable}`);
+      results.publishable = publishable;
+      writeResults();
+      line(`Wyniki: ${resultsPath}`);
+      line("");
+
+      if (dumpPath) {
+        writeFileSync(dumpPath, JSON.stringify({ draft, agent: agentSummary, publishable, lessonLog, durationMs }, null, 2), "utf8");
+        line(`Zrzut pełnego szkicu i dziennika: ${dumpPath}`);
+      }
+      // „+N” to część przebiegu kontrolnego: inny stan niż `succeeded` jest porażką próby (wyniki są już zapisane).
+      if (addCount !== undefined && run.state === "succeeded") expect(addState, "stan runu „+N”").toBe("succeeded");
+    }, settleLate, (settleError) => line(`UWAGA: rozliczenie spóźnionych wywołań nie powiodło się (${errorClassOf(settleError)})`));
   });
 });
