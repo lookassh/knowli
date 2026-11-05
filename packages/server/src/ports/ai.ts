@@ -317,11 +317,14 @@ export interface LessonPoolAgentProvider {
 }
 
 /**
- * Niezależny solver i sędzia wariantów ćwiczeń agenta puli. Wywołania paczkowe: jedno żądanie na
- * paczkę `submit`, materiał raz. `null` w odpowiedzi = brak wyniku dla pozycji (`unavailable`).
- * Do checkera trafia wyłącznie jego wejście: widoki, liczby odpowiedzi, odpowiedź i warianty oraz
- * materiał, gdy przedmiot go wymaga. `solve` nigdy nie dostaje klucza odpowiedzi (sam widok i liczba
- * odpowiedzi); `judgeVariants` dostaje odpowiedź kanoniczną i warianty, bo ocenia ich równoważność.
+ * Niezależny solver i sędzia ćwiczeń agenta puli. Wywołania paczkowe: jedno żądanie na paczkę
+ * `submit`, materiał raz. `null` w odpowiedzi = brak wyniku dla pozycji (`unavailable`).
+ * Do checkera trafia wyłącznie jego wejście: widoki, liczby odpowiedzi, odpowiedź, warianty,
+ * teksty elementów wymaganych i podpowiedź oraz materiał, gdy przedmiot go wymaga. `solve` i
+ * `solveOpen` nigdy nie dostają klucza odpowiedzi (sam widok); `judgeVariants` dostaje odpowiedź
+ * kanoniczną i warianty, bo ocenia ich równoważność; `judgeHints` dostaje odpowiedź wzorcową,
+ * `requiredElements[].text` i podpowiedź, bo ocenia, czy podpowiedź zdradza odpowiedź albo element
+ * wymagany. Nigdy polecenie rodzica, tematy zdań, karty ani dane dziecka.
  */
 export interface LessonExerciseCheckerProvider {
   readonly name: string;
@@ -342,7 +345,38 @@ export interface LessonExerciseCheckerProvider {
     cost: RunCostSink,
     signal: AbortSignal,
   ): Promise<{ readonly equivalent: readonly (readonly boolean[] | null)[] }>;
+  /** Sędzia podpowiedzi pytań otwartych (etap 2b §4): `null` na pozycji = niesprawdzone. */
+  judgeHints(
+    input: {
+      readonly items: readonly {
+        readonly view: string;
+        readonly answer: string;
+        readonly requiredElements: readonly string[];
+        readonly hint: string;
+      }[];
+      readonly material?: string;
+    },
+    cost: RunCostSink,
+    signal: AbortSignal,
+  ): Promise<{ readonly verdicts: readonly (HintVerdict | null)[] }>;
+  /**
+   * Rozwiązujący pytania otwarte (etap 2b §4): dwie różne odpowiedzi na pozycję (inny wybór albo
+   * inne sformułowanie), oceniane potem przez grader; `null` = brak wyniku.
+   */
+  solveOpen(
+    input: { readonly items: readonly { readonly view: string }[]; readonly material?: string },
+    cost: RunCostSink,
+    signal: AbortSignal,
+  ): Promise<{ readonly answers: readonly (readonly [string, string] | null)[] }>;
 }
+
+/**
+ * Werdykt sędziego podpowiedzi; `reason` (≤ 200 znaków, po angielsku) tylko dla modelu agenta.
+ * Strukturalnie zgodny z `AgentHintVerdict` z domeny (port nie importuje domeny).
+ */
+export type HintVerdict =
+  | { readonly verdict: "ok" }
+  | { readonly verdict: "unsupported" | "language" | "reveals"; readonly reason: string };
 
 export interface LlmProvider {
   readonly name: string;
