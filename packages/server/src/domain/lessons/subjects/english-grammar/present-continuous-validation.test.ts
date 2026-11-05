@@ -54,6 +54,10 @@ describe("validatePresentContinuousExercise — luka, poprawne", () => {
     ["questions", "___ the dogs running?", "Are"],
     ["questions", "What ___ Ola doing?", "is"],
     ["questions", "___ Tom and Ola playing?", "Are"],
+    ["questions", "___ the boy and the girl playing?", "Are"],
+    ["questions", "What ___ your mum and dad doing?", "are"],
+    ["questions", "___ your mum and dad cooking?", "Are"],
+    ["questions", "What ___ the cat and the dog doing?", "are"],
     ["ing_spelling", "He ___ (swim) now.", "is swimming"],
     ["affirmative", "She ___ (have) lunch now.", "is having"],
     ["affirmative", "He ___ (look) at the stars now.", "is looking"],
@@ -77,14 +81,26 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
     expectPrefix(pcGap("questions", "___ the dogs running?", "Is"), "pc-be:");
     expectPrefix(pcGap("questions", "What ___ Ola doing?", "are"), "pc-be:");
     expectPrefix(pcGap("questions", "___ Tom and Ola playing?", "Is"), "pc-be:");
+    expectPrefix(pcGap("questions", "___ your mum and dad cooking?", "Is"), "pc-be:");
+    expectPrefix(pcGap("questions", "What ___ the cat and the dog doing?", "is"), "pc-be:");
   });
 
   it("brak formy -ing albo zła forma (pc-ing:)", () => {
     expectPrefix(pcGap("affirmative", "He ___ (play) now.", "is play"), "pc-ing:");
   });
 
-  it("niepusty hint (pc-shape:)", () => {
+  it("niepusty hint w luce (pc-shape:); w innych typach bez reguły tematu", () => {
     expectPrefix(pcGap("affirmative", "He ___ (play) now.", "is playing", { hint: "play" }), "pc-shape:");
+    const openAnswer: LessonExerciseDraft = {
+      exerciseType: "lesson_open_answer",
+      objectiveId: "english_grammar.present_continuous.affirmative",
+      prompt: "Tata teraz gotuje obiad.",
+      hint: "play",
+      answer: "Dad is cooking dinner now.",
+      acceptedAnswers: [],
+      focus: ["is", "cooking"],
+    };
+    expect(validate(openAnswer)).toEqual([]);
   });
 
   it("luka z czasownikiem bez nawiasu (pc-shape:)", () => {

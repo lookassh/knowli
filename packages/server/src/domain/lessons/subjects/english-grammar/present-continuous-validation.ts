@@ -137,7 +137,8 @@ function answerSentence(ex: LessonExerciseDraft, answer: string): string {
   return stripGapVerb(ex.stem).stem.replace("___", answer);
 }
 
-function validateHint(ex: LessonExerciseDraft, errors: string[]): void {
+/** Luka bez podpowiedzi (§6.2): checker agenta i kartkówka nie widzą `hint`, więc czasownik stoi w nawiasie. */
+function validateGapHint(ex: LessonExerciseDraft, errors: string[]): void {
   if ((ex.hint?.trim() ?? "") !== "") {
     errors.push("pc-shape: hint musi być pusty — czasownik stoi w nawiasie tuż po luce");
   }
@@ -203,28 +204,37 @@ function parseBeOnly(answer: string): { form: string; negative: boolean } | null
 }
 
 /**
- * Forma be z podmiotu stojącego po luce w pytaniu z inwersją, gdy podmiotem
- * jest imię albo rzeczownik („___ Ola reading?”, „What ___ the dogs doing?”):
- * tokeny po luce do formy -ing bez określników; „and” → are.
+ * Podmiot po luce w pytaniu z inwersją („___ Ola reading?”, „What ___ the
+ * dogs doing?”): tokeny po luce do formy -ing / „not”, bez określników.
+ * undefined, gdy przed luką stoi coś innego niż sam pytajnik albo po luce nie
+ * ma formy -ing.
  */
-function beFormFromSubjectAfterGap(stem: string): string | undefined {
+function invertedSubjectAfterGap(stem: string): string[] | undefined {
   const before = beSubjectTokensBefore(stem);
   if (before.length > 1 || (before.length === 1 && !BE_WH_WORDS.has(before[0]!))) return undefined;
   const after = normalizeTokens(stem.split("___", 2)[1] ?? "");
   const end = after.findIndex((token) => token === "not" || token.endsWith("ing"));
-  const subject = (end < 0 ? after : after.slice(0, end)).filter((token) => !BE_AFTER_SKIP.has(token));
-  if (end < 0 || subject.length === 0) return undefined;
-  if (subject.includes("and")) return "are";
-  return looksPlural(subject.at(-1)!) ? "are" : "is";
+  if (end < 0) return undefined;
+  const subject = after.slice(0, end).filter((token) => !BE_AFTER_SKIP.has(token));
+  return subject.length === 0 ? undefined : subject;
 }
 
-/** Forma be wymagana przez podmiot przy luce (stem bez nawiasu); undefined = nie da się ustalić. */
+/**
+ * Forma be wymagana przez podmiot przy luce (stem bez nawiasu); undefined = nie
+ * da się ustalić. Pytanie z inwersją i podmiotem złożonym („___ the boy and
+ * the girl playing?”) → are, zanim wspólna heurystyka weźmie pierwszy
+ * rzeczownik; imię albo rzeczownik po luce, którego wspólna heurystyka nie
+ * rozpoznaje („___ Ola reading?”) → liczba z `looksPlural`.
+ */
 function expectedBeForm(stem: string): string | undefined {
+  const inverted = invertedSubjectAfterGap(stem);
+  if (inverted?.includes("and")) return "are";
   const fromSubject = expectedBeFormNearGap(stem);
   if (fromSubject !== undefined) return fromSubject;
   const near = bePronounNearGap(stem);
   if (near !== undefined && !near.fromQuestion) return BE_FORM_BY_SUBJECT[near.pronoun];
-  return beFormFromSubjectAfterGap(stem);
+  if (inverted === undefined) return undefined;
+  return looksPlural(inverted.at(-1)!) ? "are" : "is";
 }
 
 /** Ostatnie „Yes” / „No” przed luką („Is she reading? No, she ___.”). */
@@ -349,10 +359,12 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
   if (ex.exerciseType === "lesson_card") return [];
   const objective = objectiveOf(ex);
   const errors: string[] = [];
-  validateHint(ex, errors);
   validateForbiddenMarkers(ex, errors);
   validateBrackets(ex, errors);
   validateStateVerbs(ex, errors);
-  if (ex.exerciseType === "lesson_gap") validateGap(ex, objective, errors);
+  if (ex.exerciseType === "lesson_gap") {
+    validateGapHint(ex, errors);
+    validateGap(ex, objective, errors);
+  }
   return errors;
 }
