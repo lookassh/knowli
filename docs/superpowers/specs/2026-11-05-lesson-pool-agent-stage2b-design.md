@@ -498,8 +498,9 @@ Bez nowych rodzajów danych w usługach zewnętrznych:
 
 - `checkServiceInfoWithMaterial` (szkoła) — nowy tekst: „Podczas
   przygotowania lekcji drugi model ({service}) rozwiązuje ćwiczenia na próbę,
-  sprawdza podpowiedzi i odpowiedzi na pytania otwarte. Dostaje ćwiczenia i
-  materiał lekcji.”
+  sprawdza podpowiedzi i pisze próbne odpowiedzi na pytania otwarte. Dostaje
+  ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.”
+  (po przeglądzie końcowym, §16).
 - Nowe opcjonalne pole katalogu przedmiotu `openCheckService?: string` i
   komunikat `openCheckServiceInfo`: „Odpowiedzi próbne do pytań otwartych
   ocenia usługa oceny ({service}). Dostaje pytanie, kryteria i cytaty z
