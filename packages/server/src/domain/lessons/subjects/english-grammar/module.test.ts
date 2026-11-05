@@ -4,6 +4,7 @@ import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
+import { presentContinuousV1, STORY_MIX_SENTENCE } from "./topics/present-continuous";
 import { answersEquivalent, validateLessonExercise } from "../../pool-validation";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
@@ -128,6 +129,15 @@ describe("createProductionSubjectRegistry", () => {
     expect(topic?.titlePl).toBe("Czasownik „to be”");
   });
 
+  it("rejestr udostępnia temat present_continuous@1", () => {
+    const registry = createProductionSubjectRegistry();
+    const topic = registry.getTopic("english_grammar", "present_continuous", 1);
+    expect(topic).toBe(presentContinuousV1);
+    expect(topic?.id).toBe("present_continuous");
+    expect(topic?.version).toBe(1);
+    expect(topic?.titlePl).toBe("Present Continuous");
+  });
+
   it("rejestr udostępnia przedmiot i temat present_simple@1", () => {
     const registry = createProductionSubjectRegistry();
     expect(registry.getSubject("english_grammar")).toBe(englishGrammarSubject);
@@ -161,6 +171,17 @@ const TOPIC_CASES = [
       "english_grammar.present_simple.base_form_after_does",
     ],
   },
+  {
+    id: "present_continuous",
+    objectiveIds: [
+      "english_grammar.present_continuous.affirmative",
+      "english_grammar.present_continuous.now_or_usually",
+      "english_grammar.present_continuous.negative",
+      "english_grammar.present_continuous.questions",
+      "english_grammar.present_continuous.ing_spelling",
+      "english_grammar.present_continuous.now_or_usually_more",
+    ],
+  },
 ] as const;
 
 for (const topicCase of TOPIC_CASES) {
@@ -189,6 +210,13 @@ for (const topicCase of TOPIC_CASES) {
       }
     });
 
+    it("każdy cel ma 2–4 karty", () => {
+      for (const objective of topic.objectives) {
+        expect(objective.cards.length, objective.id).toBeGreaterThanOrEqual(2);
+        expect(objective.cards.length, objective.id).toBeLessThanOrEqual(4);
+      }
+    });
+
     it("ma trzy przekształcenia tematu", () => {
       expect(topic.transforms.map((t) => t.id).sort()).toEqual(
         ["to_affirmative", "to_negative", "to_question"].sort(),
@@ -208,6 +236,9 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     for (const suffix of [".affirmative_forms", ".negative_forms", ".questions"]) {
       expect(typesOf(toBeV1, suffix), suffix).toContain("lesson_listen_choice");
     }
+    for (const suffix of [".affirmative", ".negative", ".questions"]) {
+      expect(typesOf(presentContinuousV1, suffix), suffix).toContain("lesson_listen_choice");
+    }
   });
 
   it("cele pisowni, krótkich odpowiedzi i formy po does nie dostają typu", () => {
@@ -216,6 +247,10 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     }
     for (const suffix of [".contractions", ".short_answers"]) {
       expect(typesOf(toBeV1, suffix), suffix).not.toContain("lesson_listen_choice");
+    }
+    // Cele porównania: lektor czytałby wskaźnik czasu, więc słuch nie sprawdzałby wyboru czasu.
+    for (const suffix of [".now_or_usually", ".ing_spelling", ".now_or_usually_more"]) {
+      expect(typesOf(presentContinuousV1, suffix), suffix).not.toContain("lesson_listen_choice");
     }
   });
 
@@ -236,6 +271,12 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
   it("wersje tematów bez zmian", () => {
     expect(presentSimpleV1.version).toBe(1);
     expect(toBeV1.version).toBe(1);
+    expect(presentContinuousV1.version).toBe(1);
+    expect(Object.fromEntries(englishGrammarSubject.topics.map((topic) => [topic.id, topic.version]))).toEqual({
+      present_simple: 1,
+      to_be: 1,
+      present_continuous: 1,
+    });
   });
 
   it("fieldRules opisują regułę typu: jedna luka, słyszalna różnica, bez równoważnych opcji i bez instructionPl", () => {
@@ -254,5 +295,93 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     expect(rules).toMatch(/-s ending that adds no syllable.*right after the gap.*s, z or sh sound/s);
     expect(rules).toContain("This does not apply to Do / Does or watch / watches");
     expect(rules).toContain("never He ___ snakes. or She ___ soccer.");
+  });
+});
+
+describe("temat present_continuous — cele, kategorie i opisy (spec §3, §7.3, §9)", () => {
+  const PC = "english_grammar.present_continuous";
+  const objective = (suffix: string) => presentContinuousV1.objectives.find((o) => o.id === `${PC}.${suffix}`)!;
+  const COMPARISON = ["now_or_usually", "now_or_usually_more"] as const;
+
+  it("typy ćwiczeń celów zgodne z tabelą §3.1", () => {
+    const types = Object.fromEntries(
+      presentContinuousV1.objectives.map((o) => [o.id.slice(PC.length + 1), [...o.exerciseTypes].sort()]),
+    );
+    const lesson = (...names: string[]) => names.map((name) => `lesson_${name}`).sort();
+    expect(types).toEqual({
+      affirmative: lesson("card", "notice", "choice", "listen_choice", "order", "gap", "error_fix", "open_answer"),
+      now_or_usually: lesson("card", "choice", "gap", "error_fix", "open_answer"),
+      negative: lesson("card", "choice", "listen_choice", "gap", "error_fix", "transform", "open_answer"),
+      questions: lesson("card", "choice", "listen_choice", "order", "short_answer", "gap", "transform", "open_answer"),
+      ing_spelling: lesson("card", "choice", "gap", "error_fix", "open_answer"),
+      now_or_usually_more: lesson("card", "choice", "gap", "error_fix", "open_answer"),
+    });
+  });
+
+  it("kategorie błędów tematu i ich przypisanie do celów zgodne z §3.3", () => {
+    expect(presentContinuousV1.extraErrorCategories.map((c) => c.code)).toEqual([
+      "wrong_be_form",
+      "missing_be_form",
+      "missing_ing",
+      "ing_spelling",
+      "be_plus_simple",
+      "continuous_for_habit",
+      "simple_for_now",
+    ]);
+    const categories = Object.fromEntries(
+      presentContinuousV1.objectives.map((o) => [o.id.slice(PC.length + 1), [...o.errorCategories]]),
+    );
+    expect(categories).toEqual({
+      affirmative: ["missing_be_form", "wrong_be_form", "missing_ing"],
+      now_or_usually: ["continuous_for_habit", "simple_for_now", "be_plus_simple"],
+      negative: ["wrong_negation", "missing_be_form", "wrong_be_form", "missing_ing", "extra_auxiliary"],
+      questions: ["word_order", "missing_be_form", "wrong_be_form", "extra_auxiliary", "short_answer_form", "missing_ing"],
+      ing_spelling: ["ing_spelling", "missing_ing"],
+      now_or_usually_more: ["continuous_for_habit", "simple_for_now", "be_plus_simple"],
+    });
+  });
+
+  it("przekształcenia mają te same polecenia co Present Simple", () => {
+    expect(presentContinuousV1.transforms).toEqual(presentSimpleV1.transforms);
+  });
+
+  it("cele porównania nie mają kategorii formy, a opis definiuje werdykt wyboru czasu (§7.3)", () => {
+    for (const suffix of COMPARISON) {
+      const o = objective(suffix);
+      for (const formCategory of ["missing_ending", "wrong_auxiliary", "extra_ending"]) {
+        expect(o.errorCategories, `${suffix}: ${formCategory}`).not.toContain(formCategory);
+      }
+      expect(o.descriptionEn).toContain("The checked element is the choice of tense");
+      expect(o.descriptionEn).toContain("'almost' with errorCategory: null");
+      for (const code of ["continuous_for_habit", "simple_for_now", "be_plus_simple"]) {
+        expect(o.descriptionEn, `${suffix}: ${code}`).toContain(code);
+      }
+    }
+  });
+
+  it("podpowiedzi celów porównania powtarzają refren „teraz czy zwykle?” (§3.3)", () => {
+    for (const suffix of COMPARISON) {
+      for (const hint of Object.values(objective(suffix).hints)) {
+        expect(hint, suffix).toContain("Zapytaj siebie: teraz czy zwykle?");
+      }
+    }
+  });
+
+  it("zdanie o mieszaniu czasów w historyjce jest w opisie dokładnie celów porównania (§9)", () => {
+    expect(STORY_MIX_SENTENCE).toBe("The end-of-lesson story may mix present simple and present continuous.");
+    const withStoryMix = englishGrammarSubject.topics
+      .flatMap((topic) => topic.objectives)
+      .filter((o) => o.descriptionEn.includes(STORY_MIX_SENTENCE))
+      .map((o) => o.id);
+    expect(withStoryMix).toEqual([`${PC}.now_or_usually`, `${PC}.now_or_usually_more`]);
+  });
+
+  it("karty uczą trudnej pisowni -ing i pary jedzie/jeździ (§3.2)", () => {
+    const text = (suffix: string) => objective(suffix).cards.map((card) => `${card.title} ${card.body}`).join(" ");
+    for (const fragment of ["write → writing (jedno t!)", "tie → tying", "jump → jumping", "fix → fixing", "run → running"]) {
+      expect(text("ing_spelling")).toContain(fragment);
+    }
+    expect(text("now_or_usually")).toContain("jedzie");
+    expect(text("now_or_usually")).toContain("jeździ");
   });
 });
