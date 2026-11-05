@@ -471,8 +471,9 @@ describe("NewLessonForm", () => {
         expect(markup).not.toContain(messages.lessons.generationServicesInfo.replace("{service}", GEN[0]!));
       });
 
-      it("przedmiot potoku: usługa tematów zdań z katalogu, bez komunikatów agenta", () => {
-        const markup = renderWithCatalog(grammar, { generationService: SERVICE });
+      it("bez agenta (lessonGenerationAvailable: false) przedmiot nie ma usług agenta: usługa tematów zdań z katalogu, bez komunikatów agenta", () => {
+        // Przy dostępnym agencie katalog podaje usługi agenta dla każdego przedmiotu — przedmiot bez nich jest tylko przy `false`.
+        const markup = renderWithCatalog(grammar, { generationService: SERVICE, available: false });
         expect(markup).toContain(messages.lessons.themesService.replace("{service}", SERVICE));
         expect(markup).not.toContain('data-testid="lesson-check-service"');
         expect(markup).not.toContain('data-testid="lesson-generation-service"');

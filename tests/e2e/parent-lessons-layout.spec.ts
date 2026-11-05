@@ -307,16 +307,14 @@ test("tryb ciemny obejmuje formularz nowej lekcji", async ({ page }) => {
 });
 
 /**
- * Przedmioty generowane agentem puli (spec etapu 2a §11): usługi generowania z katalogu przedmiotu,
- * drugi model rozwiązujący ćwiczenia (wariant z materiałem wg polityki checkera).
+ * Agent puli generuje każdy przedmiot (spec etapu 3 §5.3): przy dostępnym agencie każdy przedmiot ma
+ * usługi generowania i drugi model rozwiązujący ćwiczenia (wariant z materiałem wg polityki checkera).
  */
 const GEN = ["openrouter.ai · google/gemini-3.8-flash", "openrouter.ai · google/gemini-3.8-pro"];
 const CHECK = "openrouter.ai · deepseek/deepseek-v4.1-flash-1017";
 const agentCatalog = {
   ...catalog,
-  subjects: catalog.subjects.map((subject) => subject.id === "english_chapter"
-    ? subject
-    : { ...subject, generationServices: GEN, checkService: CHECK, ...(subject.id === "school" ? { checkServiceIncludesMaterial: true } : {}) }),
+  subjects: catalog.subjects.map((subject) => ({ ...subject, generationServices: GEN, checkService: CHECK, ...(subject.id === "school" ? { checkServiceIncludesMaterial: true } : {}) })),
 };
 
 test("przedmiot z agentem puli: usługi generowania i drugi model, bez przewijania w poziomie", async ({ page }) => {
@@ -332,7 +330,8 @@ test("przedmiot z agentem puli: usługi generowania i drugi model, bez przewijan
   await expect(page.getByTestId("lesson-check-service")).toHaveText(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
   await expectNoHorizontalOverflow(page);
 
-  // rozdział (potok): bez komunikatów agenta
+  // rozdział: też agent — drugi model bez materiału
   await page.getByTestId("lesson-subject").selectOption("english_chapter");
-  await expect(page.getByTestId("lesson-check-service")).toHaveCount(0);
+  await expect(page.getByTestId("lesson-check-service")).toHaveText(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
+  await expectNoHorizontalOverflow(page);
 });
