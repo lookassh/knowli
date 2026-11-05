@@ -32,7 +32,7 @@ export function feedbackSentenceText(
   let raw: string | undefined;
   switch (source.exerciseType) {
     case "lesson_gap":
-      raw = fillGap(source.stem, source.answer);
+      raw = fillGap(source.stem && withoutGapVerb(source.stem), source.answer);
       break;
     case "lesson_choice":
     case "lesson_listen_choice":
@@ -61,6 +61,17 @@ export function feedbackSentenceText(
 function joinOrderItems(items: FeedbackSentenceSource["items"]): string | undefined {
   if (!items || items.length === 0 || items.some((item) => !item.text.trim())) return undefined;
   return items.map((item) => item.text).join(" ");
+}
+
+/**
+ * Usuwa „(verb)” / „(not verb)” stojące tuż po luce, żeby zdanie po odpowiedzi
+ * (pokazywane, czytane przez TTS, porównywane z historyjką) nie zawierało
+ * podpowiedzi. Nawias dalej w zdaniu zostaje. Bliźniaczy regex: `stripGapVerb`
+ * w `subjects/english-grammar/present-continuous-validation.ts` (domena lekcji
+ * nie importuje przedmiotów, stąd dwie kopie).
+ */
+function withoutGapVerb(stem: string): string {
+  return stem.replace(/(_{2,})\s*\([^)]*\)/, "$1");
 }
 
 /** Wstawia tekst w jedyną lukę (2+ podkreśleń); inaczej `undefined`. */

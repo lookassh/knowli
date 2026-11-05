@@ -10,6 +10,18 @@ describe("feedbackSentenceText", () => {
     expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "She ____ football.", answer: "plays" })).toBe("She plays football.");
   });
 
+  it("luka z czasownikiem w nawiasie: zdanie bez nawiasu", () => {
+    expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "He ___ (play) football now.", answer: "is playing" })).toBe("He is playing football now.");
+    expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "She ___ (not watch) TV now.", answer: "isn't watching" })).toBe("She isn't watching TV now.");
+    expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "He ___ (go) to school.", answer: "goes" })).toBe("He goes to school."); // istniejąca konwencja Present Simple
+  });
+
+  it("nawias dalej w zdaniu, luka bez nawiasu i wybór bez zmian", () => {
+    expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "Put ___ here (word).", answer: "it" })).toBe("Put it here (word).");
+    expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "She ___ happy.", answer: "is" })).toBe("She is happy.");
+    expect(feedbackSentenceText({ exerciseType: "lesson_choice", stem: "Ola ___ (read).", options: [{ id: "a", text: "is reading" }], correctOption: "a" })).toBe("Ola is reading (read).");
+  });
+
   it("lesson_gap bez dokładnie jednej luki daje null", () => {
     expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "___ ___ football.", answer: "plays" })).toBeNull();
     expect(feedbackSentenceText({ exerciseType: "lesson_gap", stem: "She plays football.", answer: "plays" })).toBeNull();

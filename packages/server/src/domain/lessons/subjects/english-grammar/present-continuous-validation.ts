@@ -95,6 +95,7 @@ const GAP_VERB = /_{2,}\s*\(([^)]*)\)/;
 
 const LEADING_APOSTROPHE = /^['’‘ʼ´`]/;
 
+// Bliźniak: `withoutGapVerb` w `domain/lessons/feedback-sentence-text.ts` (domena lekcji nie importuje przedmiotów).
 /**
  * Usuwa „(verb)” / „(not verb)” stojące tuż po luce. Zwraca bodziec z samą
  * luką, czasownik z nawiasu (małe litery, bez „not”) i flagę przeczenia.
