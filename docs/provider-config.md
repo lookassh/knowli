@@ -96,13 +96,17 @@ Timeouty lekcji dotyczą jednego requestu (domyślnie 90 s) oraz całego runu ze
 
 Worker wykonuje jeden przelot naraz. `WORKER_POLL_MS` (domyślnie 2000 ms) jest przerwą po zakończeniu przelotu, nie interwałem równoległych uruchomień. `WORKER_HEALTH_STALE_MS` (domyślnie 900000 ms) ustala wiek, po którym `/health` zwraca 503.
 
-## Agent puli lekcji (worker, od 2026-11-05, #237)
+## Agent puli lekcji (worker, jedyny generator lekcji od 2026-11-05, #237)
 
 Agent generuje pulę ćwiczeń lekcji zagadnienie po zagadnieniu (`docs/architecture.md`
 §19.17, design `docs/superpowers/specs/2026-11-04-lesson-pool-agent-stage2a-design.md`).
-Działa WYŁĄCZNIE w procesie worker i jest **domyślnie wyłączony**: web go nie
-składa (dostaje z env tylko listę przedmiotów i etykiety usług dla panelu
-rodzica), a przedmioty spoza listy generuje dotychczasowy potok. Adapter (AI SDK)
+Od etapu 3 (PR 2) jest **jedynym generatorem lekcji** wszystkich przedmiotów:
+nie ma listy przedmiotów (`UMIEM_LESSON_AGENT_SUBJECTS` usunięta, pozostawiona
+w `.env` jest ignorowana), przełącznika „powrotu do potoku” ani dawnego potoku
+(jedno wywołanie LLM na partię i runda pod etap). Działa WYŁĄCZNIE w procesie
+worker: web go nie składa (dostaje z env etykiety usług dla panelu rodzica i
+liczy `lessonGenerationAvailable`). `UMIEM_LLM_*` nadal obsługuje słówka, etap
+zagadnień szkoły i historyjkę lekcji. Adapter (AI SDK)
 mówi wyłącznie z OpenRouter (`https://openrouter.ai/api/v1`): generator i
 checker (drugi model, który rozwiązuje ćwiczenia na próbę i ocenia warianty
 odpowiedzi, a w szkole także podpowiedzi) to osobne wywołania z własnym modelem
@@ -110,7 +114,6 @@ i wysiłkiem rozumowania.
 
 | Zmienna | Domyślnie (`config-defaults.ts`) | Znaczenie |
 | --- | --- | --- |
-| `UMIEM_LESSON_AGENT_SUBJECTS` | puste | Identyfikatory przedmiotów po przecinku (dziś `english_chapter`, `english_grammar`, `school`); puste = wszystkie lekcje generuje potok |
 | `UMIEM_LESSON_AGENT_MODEL` | `google/gemini-3.8-flash` | Model generatora (podagenci zagadnień i planista) |
 | `UMIEM_LESSON_AGENT_REASONING` | `low` | Wysiłek rozumowania generatora: `xhigh`, `high`, `medium`, `low`, `minimal` albo `none` (bez pola `reasoning`) |
 | `UMIEM_LESSON_AGENT_CHECKER_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Model checkera |
@@ -120,7 +123,7 @@ i wysiłkiem rozumowania.
 | `UMIEM_LESSON_AGENT_CHECKER_CONCURRENCY` | `4` | Równoległe wywołania checkera |
 | `UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS` | `300000` | Termin jednego zagadnienia |
 | `UMIEM_LESSON_AGENT_CHECKER_TIMEOUT_MS` | `90000` | Termin jednego wywołania checkera |
-| `UMIEM_LESSON_AGENT_RUN_BUDGET_USD` | `1.00` | Budżet runu we wszystkich automatycznych próbach (wydatek z `usage.cost` OpenRouter; „Ponów” rodzica przyznaje świeży budżet) |
+| `UMIEM_LESSON_AGENT_RUN_BUDGET_USD` | `1.00` | Budżet runu we wszystkich automatycznych próbach (wydatek z `usage.cost` OpenRouter; „Ponów” rodzica przyznaje świeży budżet). To limit wydatku **agenta** w jednym runie, nie ceny jednego wywołania; czas runu ogranicza `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS` (10 min, z rezerwą 30 s na zapis do szkicu) |
 | `UMIEM_LESSON_AGENT_API_KEY` | — | Własny klucz agenta (nie jest w domyślnych) |
 | `UMIEM_LESSON_AGENT[_CHECKER]_PROVIDER_ORDER`, `_QUANTIZATIONS`, `_ALLOW_FALLBACKS`, `_DATA_COLLECTION` | — | Routing dostawców OpenRouter osobno dla generatora i checkera |
 
@@ -130,8 +133,23 @@ Zasady:
   `UMIEM_LLM_API_KEY` (tylko gdy `UMIEM_LLM_BASE_URL` to https OpenRouter).
   Pierwszy niepusty wygrywa; klucz w kształcie OpenAI (`sk-…`, nie `sk-or-…`)
   to błąd startu workera (nie trafia do OpenRouter), a komunikat podaje nazwę
-  zmiennej, nigdy wartość. Niepusta lista przedmiotów bez żadnego klucza daje
-  jedno ostrzeżenie `[config]` i generowanie potokiem.
+  zmiennej, nigdy wartość.
+- **Brak klucza.** Bez żadnego klucza OpenRouter generowanie lekcji jest
+  niedostępne, ale nie zatrzymuje to workera, o ile konfiguracja nie ma innej
+  zależności od OpenRouter (LLM i TTS na OpenAI-direct): worker loguje jedną linię
+  `[config] lesson-agent=unavailable reason=no_openrouter_key`, runy lekcji
+  (także ze starej kolejki) kończą się `failed` z kodem `lesson_agent_unavailable`
+  zaraz po przejęciu — bez wywołań modeli i bez ruszania punktu kontrolnego —
+  a runy historyjki wykonują się normalnie. Przy domyślnych adresach
+  (`UMIEM_LLM_BASE_URL` i `UMIEM_TTS_BASE_URL` na OpenRouter) brak klucza nadal
+  zatrzymuje start workera na tych zmiennych. Web liczy to samo z env i podaje
+  katalogowi lekcji `lessonGenerationAvailable: false`: panel pokazuje
+  „Generowanie lekcji wymaga klucza OpenRouter w konfiguracji serwera. Po dodaniu
+  klucza ponów generowanie.” i wyłącza nową lekcję, „Dogeneruj”, „Dogeneruj
+  ćwiczenia”, „Ponów generowanie” runów lekcji i tworzenie lekcji ze strony źródła
+  (zestaw słówek działa). Po dodaniu klucza zrestartuj web i worker, potem „Ponów”.
+  Klucz w złym kształcie (`UMIEM_LESSON_AGENT_API_KEY=sk-…`) zatrzymuje start
+  workera; web się składa i raportuje niedostępność.
 - **Routing i prywatność dostawcy.** Każda opcja `UMIEM_LESSON_AGENT[_CHECKER]_PROVIDER_*`
   nieustawiona dziedziczy osobno odpowiednią `UMIEM_LLM_PROVIDER_*`, więc
   `UMIEM_LLM_PROVIDER_DATA_COLLECTION=deny` chroni też agenta. Przy wysiłku
@@ -142,17 +160,22 @@ Zasady:
   (pierwszy człon `rodzina/model`, np. `google` i `deepseek`); ta sama rodzina
   to błąd startu workera — checker z rodziny autora rozwiązywałby ćwiczenia
   „jak ich autor”.
-- **Walidacja przy starcie workera.** Nieznany przedmiot, przedmiot bez polityki
-  agenta, niedodatnia liczba w limitach, nieznany wysiłek rozumowania, zła opcja
-  routingu — błąd z nazwą zmiennej. Zmiana którejkolwiek zmiennej wymaga
-  odtworzenia workera (i webu, żeby panel pokazywał właściwe usługi); wybór
-  ścieżki zapada przy każdej próbie runu, więc run w toku przechodzi na nową
-  konfigurację przy kolejnej próbie, a postęp agenta zostaje w punkcie
-  kontrolnym. Web i worker wdraża się z tego samego commitu; migracja `0037`
-  (kolumna punktu kontrolnego) idzie przed workerem.
-- **Tryb fake.** `UMIEM_FAKE_PROVIDERS=1` z niepustą listą przedmiotów składa
-  fake agenta i fake checkera (bez sieci, bez klucza, bez zapisu kosztów); sprawdza
-  tylko listę przedmiotów, nie modele, wysiłki ani routing.
+- **Walidacja przy każdym starcie workera** (także bez klucza): niedodatnia
+  liczba w limitach, nieznany wysiłek rozumowania, zła opcja routingu, ta sama
+  rodzina modeli, klucz w kształcie OpenAI — błąd z nazwą zmiennej. Web
+  `UMIEM_LESSON_AGENT_*` nie waliduje. Zmiana którejkolwiek zmiennej wymaga
+  odtworzenia workera i webu (panel bierze etykiety usług z web, więc oba procesy
+  muszą mieć ten sam klucz oraz te same `UMIEM_LESSON_AGENT_MODEL` i
+  `UMIEM_LESSON_AGENT_CHECKER_MODEL`); run w toku przechodzi na nową konfigurację
+  przy kolejnej próbie, a postęp agenta zostaje w punkcie kontrolnym. Web i
+  worker wdraża się z tego samego commitu.
+- **Tryb fake.** `UMIEM_FAKE_PROVIDERS=1` (w web i workerze) składa fake agenta z
+  deterministycznym generatorem ćwiczeń (`providers/fake-lesson-pool.ts`) i fake
+  checker bez wyniku (ćwiczenia przechodzą jako niesprawdzone) — bez sieci, bez
+  klucza, z kosztem 0 i bez zapisu kosztów; `lessonGenerationAvailable` jest wtedy
+  zawsze `true`. Opóźnienie na krok: `UMIEM_FAKE_LESSON_DELAY_MS`
+  (rezerwowo `UMIEM_FAKE_DELAY_MS`); `FAKE_SLOW_MARKER` w materiale wstrzymuje
+  pierwszy krok każdego zagadnienia o 3 s.
 - **Koszty.** Każde żądanie agenta i checkera trafia do dziennika kosztów
   (`feature = lesson_generation`, `provider = openrouter`, operacje `agent_plan`,
   `agent_objective`, `check_solve`, `check_variants`, w szkole `check_hints`,
@@ -160,13 +183,24 @@ Zasady:
   otwartych odpowiedzi zapisują `lesson_generation` / `check_grade` (dostawca z
   `UMIEM_GRADER_BASE_URL`).
   Przebieg kontrolny 2026-11-04 na domyślnych modelach: 103 s, 0,142 USD,
-  74 z 94 ćwiczeń przyjętych.
-- **Prywatność.** Do generatora trafia to samo co w potoku (materiał, polecenie
-  rodzica, karty, tematy zdań), do checkera widok ćwiczenia, a w szkole także
-  materiał; nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
+  74 z 94 ćwiczeń przyjętych. Agent kosztuje więcej niż dawny potok (próba
+  2026-11-03: rozdział 0,11–0,15, gramatyka ok. 0,07, szkoła 0,20–0,31 USD plus
+  kontrole etapu 2b); budżet runu domyślnie 1,00 USD. Operacja `lesson_pool`
+  w dzienniku kosztów jest historyczna (stare wiersze zostają).
+- **Prywatność i domyślni odbiorcy.** Każda lekcja idzie domyślnie do dwóch usług
+  OpenRouter: generatora (`google/gemini-3.8-flash`: materiał, polecenie rodzica,
+  karty, zdania do unikania, tematy zdań) i checkera innej rodziny
+  (`deepseek/deepseek-v4.1-flash-1017`: widok ćwiczenia, odpowiedź i warianty, a w
+  szkole także materiał i podpowiedź), a w szkole przy pełnym `UMIEM_GRADER_*` w
+  workerze także do usługi gradera (pytanie, kryteria, cytaty, odpowiedź próbna
+  modelu); nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
   Adapter nie loguje treści ani body błędów dostawcy; klucz tylko w adapterze.
   Panel rodzica informuje, do których usług trafia lekcja (formularz lekcji i
   strona źródła).
+- **Konfiguracja OpenAI-direct traci lekcje (zmiana niezgodna, etap 3).**
+  Instancja z LLM i TTS na `api.openai.com` i bez klucza OpenRouter nie wygeneruje
+  już żadnej lekcji (słówka, TTS i ilustracje działają jak dotąd); wycofanie
+  to `git revert` PR etapu 3 PR 2 (bez migracji bazy).
 - **Kontrole modelem w szkole (etap 2b).** W szkole checker sprawdza też
   podpowiedzi pytań otwartych (fakty spoza materiału, polszczyzna, odpowiedź
   podana innymi słowami) i pisze dwie różne poprawne odpowiedzi na każde pytanie

@@ -125,7 +125,7 @@ export function imageProviderFromEnv(
 /**
  * Opóźnienie fake'owej generacji lekcji (tryb `UMIEM_FAKE_PROVIDERS=1`):
  * `UMIEM_FAKE_LESSON_DELAY_MS`, inaczej `UMIEM_FAKE_DELAY_MS`; wartość nieliczbowa → 0.
- * Wspólne dla fake LLM potoku i fake agenta puli (`providers/lesson-agent-env.ts`).
+ * Wspólne dla fake LLM (etap zagadnień szkoły i historyjka) i fake agenta puli (`providers/lesson-agent-env.ts`).
  */
 export function fakeLessonDelayMsFromEnv(env: Record<string, string | undefined>): number {
   const delayMs = Number(env.UMIEM_FAKE_LESSON_DELAY_MS ?? env.UMIEM_FAKE_DELAY_MS ?? 0);
@@ -138,7 +138,7 @@ export function fakeLessonDelayMsFromEnv(env: Record<string, string | undefined>
  * undefined i proces wykonawczy nie wystartuje. Nazwy providerów w env muszą
  * zgadzać się z faktycznymi adapterami, bo wchodzą do fingerprintów mediów.
  *
- * LLM (materiał: zestawy słówek i pule ćwiczeń lekcji) konfigurują opcjonalne,
+ * LLM (materiał: zestawy słówek, etap zagadnień szkoły i historyjka lekcji; same ćwiczenia lekcji pisze agent puli, `lesson-agent-env.ts`) konfigurują opcjonalne,
  * niezależne `UMIEM_LLM_MODEL`/`UMIEM_LLM_BASE_URL`/`UMIEM_LLM_API_KEY` z
  * fallbackami do wartości domyślnych adaptera i `OPENAI_API_KEY` (ten ostatni
  * tylko dla api.openai.com, patrz {@link openAiCompatibleEndpointFromEnv}) — wzorzec jak

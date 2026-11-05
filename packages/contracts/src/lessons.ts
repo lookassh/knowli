@@ -580,7 +580,7 @@ export const LessonDraftDtoSchema = z.object({
   storyAudio: LessonPromptAudioDtoSchema.optional(),
   /**
    * Zagadnienia do uzupełnienia po częściowym generowaniu agentem puli; brak pola = pula pełna,
-   * generowanie potokiem albo wersja opublikowana.
+   * szkic sprzed agenta (dawny potok) albo wersja opublikowana.
    */
   generationGaps: z.array(LessonGenerationGapDtoSchema).min(1).optional(),
 });
