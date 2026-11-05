@@ -41,6 +41,7 @@ interface SetupOptions {
   signal?: AbortSignal;
   semaphore?: Semaphore;
   grader?: FakeAnswerGrader;
+  graderTimeoutMs?: number;
   policy?: LessonAgentPolicy;
   checkRun?: AgentCheckRun;
 }
@@ -71,7 +72,7 @@ function setup(options: SetupOptions = {}) {
     familyScope: null,
     examplesFixed: options.examplesFixed ?? true,
     checkRun,
-    ...(options.grader === undefined ? {} : { grader: { provider: options.grader, timeoutMs: 60_000 } }),
+    ...(options.grader === undefined ? {} : { grader: { provider: options.grader, timeoutMs: options.graderTimeoutMs ?? 60_000 } }),
     onRejection: (entry) => rejections.push(entry),
     onRefusal: (code) => refusals.push(code),
     onStats: (delta: Partial<ObjectiveToolsStats>) => {
@@ -737,7 +738,34 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     expect(tools.stats.hintUnavailable ?? 0).toBe(0);
   });
 
-  it("budget exhausted before stage 2: koszt solveOpen wyczerpuje budżet, grader niewołany", async () => {
+  it("stage cut is not a grader failure: wywołania w locie przerwane limitem etapu nie liczą się do wyłącznika", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: schoolVerdictFor(IDS, [], "correct"), delayMs: 10_000 });
+    const policy = { ...DEFAULT_LESSON_AGENT_POLICY, graderStageTimeoutMs: 50 };
+    const checkRun = new AgentCheckRun(policy);
+    const tools = setup({ subject: school, grader, policy, checkRun });
+    const outcome = await tools.tools.submit({ exercises: [schoolOpen(1), schoolOpen(2)] });
+    // Cztery wywołania w locie (dwie pary) przerwane limitem etapu: więcej niż próg wyłącznika.
+    expect(grader.requests).toHaveLength(4);
+    expect(outcome.results).toEqual([
+      { index: 0, accepted: "ex1", note: "unchecked" },
+      { index: 1, accepted: "ex2", note: "unchecked" },
+    ]);
+    expect(checkRun.graderOpen()).toBe(false);
+    expect(tools.breakerOpened()).toBe(0);
+    expect(tools.stats.graderErrors ?? 0).toBe(0);
+    expect(tools.stats).toMatchObject({ graderCalls: 4, openUnavailable: 2 });
+  });
+
+  it("own grader timeout is a failure: własny termin gradera (przed limitem etapu) liczy się do graderErrors", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: schoolVerdictFor(IDS, [], "correct"), delayMs: 10_000 });
+    const tools = setup({ subject: school, grader, graderTimeoutMs: 20 });
+    const outcome = await tools.tools.submit({ exercises: [schoolOpen(1)] });
+    expect(outcome.results).toEqual([{ index: 0, accepted: "ex1", note: "unchecked" }]);
+    expect(tools.stats).toMatchObject({ graderCalls: 2, graderErrors: 2, openUnavailable: 1 });
+    expect(tools.checkRun.graderOpen()).toBe(false);
+  });
+
+  it("budget exhausted before stage 2:koszt solveOpen wyczerpuje budżet, grader niewołany", async () => {
     const grader = correctGrader();
     const cost = new RunCostMeter(0, 0.05, 0.02);
     const tools = setup({ subject: school, grader, cost, checker: { costUsd: 0.05 } });

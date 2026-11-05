@@ -307,8 +307,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
   /**
    * Jedno wywołanie gradera (§7.2) pod semaforem gradera runu; po zajęciu miejsca także wyłącznik.
    * Termin: limit etapu (`stageSignal`, potomek sygnału zamknięcia) i własny `timeoutMs` gradera.
-   * `null` = odpowiedź niesprawdzona; błąd, termin i werdykt odrzucony walidacją liczą się do
-   * wyłącznika, zamknięcie narzędzi nie.
+   * `null` = odpowiedź niesprawdzona; błąd, własny termin gradera i werdykt odrzucony walidacją
+   * liczą się do wyłącznika, zamknięcie narzędzi i limit etapu nie.
    */
   async function callGrader(grader: AgentCheckGrader, input: GraderInput, criteria: SchoolCriteria, stageSignal: AbortSignal): Promise<SchoolVerdict | null> {
     const outcome = await guarded(args.checkRun.graderSemaphore, {
@@ -321,7 +321,9 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     });
     if (outcome.kind === "skipped") return null;
     if (outcome.kind === "failed") {
-      if (!isClosed()) graderFailure("graderErrors");
+      // Zamknięcie narzędzi i limit etapu nie są awarią gradera: wywołanie mogło dostać miejsce w
+      // semaforze runu późno, a wiszący grader łapie jego własny `timeoutMs`. Pozycja jest niesprawdzona.
+      if (!isClosed() && !stageSignal.aborted) graderFailure("graderErrors");
       return null;
     }
     const verdict = validateSchoolVerdict(outcome.value, {
