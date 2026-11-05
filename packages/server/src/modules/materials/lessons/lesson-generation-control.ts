@@ -19,12 +19,6 @@ export interface LessonGenerationControl {
   assertCurrent(): Promise<void>;
   call<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T>;
   /**
-   * Jak call, ale przekroczenie requestTimeoutMs przerywa tylko to żądanie (abort własnego
-   * kontrolera, bez abort korzenia) i rzuca GenerationProviderError("timeout"); deadline
-   * przebiegu, assertCurrent i zamknięcie procesu jak w call.
-   */
-  callSoft<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T>;
-  /**
    * Długa praca (kierownik puli): sygnał korzenia kontrolera bez limitu pojedynczego żądania
    * (requestTimeoutMs). Przerwanie mapowane jak w call: superseded/shutdown →
    * LessonGenerationCancelledError, termin runu → GenerationProviderError("timeout").
@@ -101,7 +95,7 @@ export async function withLessonGenerationControl<T>(
           ? new LessonGenerationCancelledError("shutdown")
           : new GenerationProviderError("timeout");
 
-  /** Wyścig pracy z sygnałem przerwania (wspólny dla call/callSoft/run), z weryfikacją po sukcesie. */
+  /** Wyścig pracy z sygnałem przerwania (wspólny dla call/run), z weryfikacją po sukcesie. */
   const race = async <R>(
     request: (signal: AbortSignal) => Promise<R>,
     signal: AbortSignal,
@@ -138,8 +132,8 @@ export async function withLessonGenerationControl<T>(
     return remaining;
   };
 
-  /** `soft`: limit żądania przerywa tylko to żądanie; bez tego zamyka cały zakres (timeout runu). */
-  const invoke = async <R>(request: (signal: AbortSignal) => Promise<R>, soft: boolean): Promise<R> => {
+  /** Pojedyncze żądanie: przekroczenie limitu żądania zamyka cały zakres (timeout runu). */
+  const invoke = async <R>(request: (signal: AbortSignal) => Promise<R>): Promise<R> => {
     await verifyCurrent();
     const remaining = remainingRunMs();
     const requestTimedOut = { value: false };
@@ -147,7 +141,7 @@ export async function withLessonGenerationControl<T>(
     const timeoutDelay = Math.min(options.requestTimeoutMs, remaining);
     const requestTimer = setTimeout(() => {
       requestTimedOut.value = options.requestTimeoutMs <= remaining;
-      if (requestTimedOut.value && !soft) abort("timeout");
+      if (requestTimedOut.value) abort("timeout");
       else requestAbort.abort();
     }, timeoutDelay);
     try {
@@ -166,8 +160,7 @@ export async function withLessonGenerationControl<T>(
 
   const control: LessonGenerationControl = {
     assertCurrent: verifyCurrent,
-    call: (request) => invoke(request, false),
-    callSoft: (request) => invoke(request, true),
+    call: invoke,
     run: runLong,
     deadlineAtMs: startedAt + options.runTimeoutMs,
   };

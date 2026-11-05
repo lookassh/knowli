@@ -1,5 +1,4 @@
 import { messages } from "@learning/contracts";
-import { isLessonAgentAvailable, type GenerationDeps } from "../../../config";
 import { AppError } from "../../../errors";
 import { outsideStagePath } from "../../../domain/lessons/stages";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -12,18 +11,10 @@ export type { LessonGenerationGap };
 
 /**
  * Funkcje czyste ścieżki agenta w `executeLessonGeneration` (spec etapu 2a §3,
- * §7.1, §8.3, §9, §11): wybór ścieżki, wejście kierownika z punktu kontrolnego,
+ * §7.1, §8.3, §9, §11): wejście kierownika z punktu kontrolnego,
  * scalenie próby z postępem, wynik próby i luki generowania. Bez bazy, czasu i
  * identyfikatorów przedmiotów.
  */
-
-/**
- * Agent dla każdego przedmiotu, gdy worker ma jego zależności. Potok tylko bez agenta (brak klucza
- * OpenRouter albo brak pola) — stan przejściowy etapu 3 PR 2, znika w Task 9.
- */
-export function lessonGeneratorFor(agent: GenerationDeps["lessonAgent"]): "agent" | "pipeline" {
-  return isLessonAgentAvailable(agent) ? "agent" : "pipeline";
-}
 
 /**
  * Linia logu startu runu (etap 2b §7.4), bez treści: `hintJudge` — przedmiot ma niepustą listę typów sędziego

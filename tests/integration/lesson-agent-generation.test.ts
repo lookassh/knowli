@@ -2148,5 +2148,214 @@ describe("agent puli lekcji (integracja)", () => {
         expect(after.some((entry) => entry.prompt.includes(DISPUTED))).toBe(false);
       });
     });
+
+    describe("brak agenta (#237 etap 3)", () => {
+      /** Usługi tego samego świata (baza, fake'i, zegar) z workerem bez agenta puli. */
+      function withoutAgent(world: AgentWorld, lessonAgent: GenerationDeps["lessonAgent"]): Services {
+        const { lessonAgent: _agent, ...deps } = world.fakes.deps;
+        return servicesWith(world.fakes, lessonAgent === undefined ? deps : { ...deps, lessonAgent }, world.clock);
+      }
+
+      /** Identyfikatory rewizji szkicu w kolejności lekcji. */
+      async function revisionIds(versionId: string): Promise<string[]> {
+        const rows = await query<{ id: string }>(
+          "select id from learning_app.item_revisions where deck_version_id = $1 order by position, id",
+          [versionId],
+        );
+        return rows.map((row) => row.id);
+      }
+
+      async function objectiveExerciseCount(versionId: string, objectiveId: string): Promise<number> {
+        const [row] = await query<{ count: string }>(
+          "select count(*) from learning_app.item_revisions where deck_version_id = $1 and payload->>'objectiveId' = $2",
+          [versionId, objectiveId],
+        );
+        return Number(row!.count);
+      }
+
+      /** Tekst kolumny punktu kontrolnego (porównanie bajt w bajt). */
+      async function checkpointText(runId: string): Promise<string | null> {
+        const [row] = await query<{ checkpoint: string | null }>(
+          "select agent_checkpoint::text as checkpoint from learning_app.generation_runs where id = $1",
+          [runId],
+        );
+        return row!.checkpoint;
+      }
+
+      async function setRunInput(runId: string, patch: Record<string, unknown>): Promise<void> {
+        await pool.query("update learning_app.generation_runs set input = input || $1::jsonb where id = $2", [JSON.stringify(patch), runId]);
+      }
+
+      function expectUnavailable(row: FullRunRow): void {
+        expect(row.state).toBe("failed");
+        expect(row.error_code).toBe("lesson_agent_unavailable");
+        expect(row.attempts).toBe(1);
+        expect(row.next_attempt_at).toBeNull();
+      }
+
+      const UNAVAILABLE: ReadonlyArray<[string, GenerationDeps["lessonAgent"]]> = [
+        ["brak klucza OpenRouter", { unavailable: "no_openrouter_key" }],
+        ["brak pola lessonAgent", undefined],
+      ];
+
+      describe.each(UNAVAILABLE)("%s", (_label, lessonAgent) => {
+        it("pełna generacja gramatyki → failed lesson_agent_unavailable po claimie, bez modeli, punkt kontrolny nietknięty", async () => {
+          const world = await agentWorld();
+          const services = withoutAgent(world, lessonAgent);
+          const { runId } = await createLesson(services, command());
+          const before = await versionOf(runId);
+          // Uszkodzony punkt kontrolny (np. po „Ponów” starej próby): brak agenta go nie czyta ani nie zmienia.
+          await setCheckpoint(runId, { version: 99, objectives: "uszkodzony", budgetSpentUsd: "x" });
+          const checkpointBefore = await checkpointText(runId);
+
+          await executeLessonGeneration(services, runId);
+
+          expectUnavailable(await fullRun(runId));
+          expect(await checkpointText(runId)).toBe(checkpointBefore);
+          expect(world.agent.calls).toEqual([]);
+          expect(world.agent.planCalls).toEqual([]);
+          expect(world.fakes.llm.objectiveRequests).toEqual([]);
+          expect(world.fakes.llm.storyRequests).toEqual([]);
+          const after = await versionOf(runId);
+          expect(after.edit_number).toBe(before.edit_number);
+          expect(await exerciseCount(after.id)).toBe(0);
+          expect(await storyRunStates(after.id)).toEqual([]);
+        });
+
+        it("szkoła: bez etapu zagadnień", async () => {
+          const world = await agentWorld();
+          const services = withoutAgent(world, lessonAgent);
+          const school = await createSchoolLesson(services, {
+            subjectTitlePl: "Geografia",
+            topicTitlePl: "Polska",
+            material: SCHOOL_MATERIAL,
+            poolSize: 40,
+            clientRequestId: randomUUID(),
+          });
+
+          await executeLessonGeneration(services, school.runId);
+
+          expectUnavailable(await fullRun(school.runId));
+          expect(world.fakes.llm.objectiveRequests).toEqual([]);
+          expect(world.agent.calls).toEqual([]);
+          expect(await exerciseCount((await versionOf(school.runId)).id)).toBe(0);
+        });
+
+        it("„+N” → failed lesson_agent_unavailable, szkic i editNumber bez zmian", async () => {
+          const world = await agentWorld();
+          const lesson = await createLesson(world.services, command());
+          await executeLessonGeneration(world.services, lesson.runId);
+          expect((await fullRun(lesson.runId)).state).toBe("succeeded");
+          const draft = await versionOf(lesson.runId);
+          const revisionsBefore = await revisionIds(draft.id);
+          const add = await regenerateObjective(world.services, {
+            deckId: lesson.deckId,
+            objectiveId: OBJECTIVE,
+            count: 4,
+            expectedEditNumber: draft.edit_number,
+            clientRequestId: randomUUID(),
+          });
+          const callsBefore = world.agent.calls.length;
+
+          await executeLessonGeneration(withoutAgent(world, lessonAgent), add.runId);
+
+          expectUnavailable(await fullRun(add.runId));
+          expect(world.agent.calls).toHaveLength(callsBefore);
+          expect((await versionOf(add.runId)).edit_number).toBe(draft.edit_number);
+          expect(await revisionIds(draft.id)).toEqual(revisionsBefore);
+        });
+
+        it("run historyjki z kolejki się wykonuje", async () => {
+          const world = await agentWorld();
+          const lesson = await createLesson(world.services, command());
+          await executeLessonGeneration(world.services, lesson.runId);
+          const draft = await versionOf(lesson.runId);
+          const [story] = await query<{ id: string }>(
+            "select id from learning_app.generation_runs where deck_version_id = $1 and input->>'purpose' = 'story'",
+            [draft.id],
+          );
+
+          await executeLessonGeneration(withoutAgent(world, lessonAgent), story!.id);
+
+          expect((await fullRun(story!.id)).state).toBe("succeeded");
+          expect(world.fakes.llm.storyRequests).toHaveLength(1);
+        });
+
+        it("nieznany przedmiot → failed validation (przed sprawdzeniem agenta)", async () => {
+          const world = await agentWorld();
+          const services = withoutAgent(world, lessonAgent);
+          const { runId } = await createLesson(services, command());
+          await setRunInput(runId, { subjectId: "no_such_subject" });
+
+          await executeLessonGeneration(services, runId);
+
+          const row = await fullRun(runId);
+          expect(row.state).toBe("failed");
+          expect(row.error_code).toBe("validation");
+        });
+
+        it("„Ponów” po dodaniu klucza → succeeded na agencie", async () => {
+          const world = await agentWorld();
+          const { runId } = await createLesson(world.services, command());
+          await executeLessonGeneration(withoutAgent(world, lessonAgent), runId);
+          expect((await fullRun(runId)).error_code).toBe("lesson_agent_unavailable");
+
+          await retryGeneration(world.services, runId);
+          await executeLessonGeneration(world.services, runId);
+
+          const row = await fullRun(runId);
+          expect(row.state).toBe("succeeded");
+          expect(world.agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE]);
+          expect(await exerciseCount((await versionOf(runId)).id)).toBeGreaterThan(0);
+        });
+      });
+
+      it("nieznany przedmiot przy dostępnym agencie → failed validation bez wywołań", async () => {
+        const { services, agent } = await agentWorld();
+        const { runId } = await createLesson(services, command());
+        await setRunInput(runId, { subjectId: "no_such_subject" });
+
+        await executeLessonGeneration(services, runId);
+
+        const row = await fullRun(runId);
+        expect(row.state).toBe("failed");
+        expect(row.error_code).toBe("validation");
+        expect(agent.calls).toEqual([]);
+      });
+
+      it("runy z kolejki sprzed wdrożenia z polami potoku (purpose, existingAnswers, existingExercises) wykonuje agent", async () => {
+        const { services, agent } = await agentWorld();
+        const lesson = await createLesson(services, command());
+        await setRunInput(lesson.runId, { purpose: "pool" });
+        await executeLessonGeneration(services, lesson.runId);
+        expect((await fullRun(lesson.runId)).state).toBe("succeeded");
+        const draft = await versionOf(lesson.runId);
+        const revisionsBefore = await revisionIds(draft.id);
+        const objectiveBefore = await objectiveExerciseCount(draft.id, OBJECTIVE);
+        const add = await regenerateObjective(services, {
+          deckId: lesson.deckId,
+          objectiveId: OBJECTIVE,
+          count: 4,
+          expectedEditNumber: draft.edit_number,
+          clientRequestId: randomUUID(),
+        });
+        await setRunInput(add.runId, {
+          regenerate: {
+            objectiveId: OBJECTIVE,
+            count: 4,
+            existingAnswers: ["x"],
+            existingExercises: [{ objectiveId: OBJECTIVE, exerciseType: "lesson_choice", stimulus: "He ___ football." }],
+          },
+        });
+        const callsBefore = agent.calls.length;
+
+        await executeLessonGeneration(services, add.runId);
+
+        expect((await fullRun(add.runId)).state).toBe("succeeded");
+        expect(agent.calls[callsBefore]!.input.objective.id).toBe(OBJECTIVE);
+        expect(await objectiveExerciseCount(draft.id, OBJECTIVE)).toBeGreaterThanOrEqual(objectiveBefore + 4);
+        expect(await revisionIds(draft.id)).toEqual(expect.arrayContaining(revisionsBefore));
+      });
+    });
   });
 });

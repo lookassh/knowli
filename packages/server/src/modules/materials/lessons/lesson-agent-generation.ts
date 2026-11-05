@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { isLessonAgentAvailable, type Services } from "../../../config";
+import type { LessonAgentDeps, Services } from "../../../config";
 import { deckVersions, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
@@ -176,13 +176,14 @@ export async function executeLessonAgentGeneration(
     attempts: number;
     subject: SubjectModule;
     input: LessonRunInput;
+    /** Zależności agenta; dostępność sprawdza `executeLessonGeneration` zaraz po przejęciu runu. */
+    agent: LessonAgentDeps;
     runStartedAtMs: number;
     signal?: AbortSignal;
   },
 ): Promise<void> {
   const deps = requireGeneration(services);
-  const agentDeps = deps.lessonAgent;
-  if (!isLessonAgentAvailable(agentDeps)) throw new AppError("internal", { message: "lesson agent not configured" });
+  const agentDeps = args.agent;
   const { attempts, subject, input, signal } = args;
   const runId = args.run.id;
   const run: LessonRunIdentity = { runId, attempts, expectedEditNumber: args.run.expectedEditNumber!, deckVersionId: args.run.deckVersionId! };
@@ -345,7 +346,7 @@ export async function executeLessonAgentGeneration(
       return;
     }
     if (outcome.kind === "failed" && outcome.errorCode === "validation") {
-      // Jak `failValidation` potoku: liczniki trafiają do kontekstu szkicu. Postęp
+      // Liczniki trafiają do kontekstu szkicu. Postęp
       // zostaje do „Ponów” z licznikami wyzerowanymi w tej samej transakcji — kolejny zapis do szkicu doliczy
       // tylko nowe usunięcia, nie te już policzone w kontekście.
       // `latest` dopiero po zatwierdzeniu: przy wycofanej transakcji zapis best-effort zostawia liczniki,

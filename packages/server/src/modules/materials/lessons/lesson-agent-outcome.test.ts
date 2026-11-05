@@ -1,6 +1,5 @@
 import { messages } from "@learning/contracts";
 import { describe, expect, it } from "vitest";
-import type { LessonAgentDeps } from "../../../config";
 import { AppError } from "../../../errors";
 import { A, B, choice, gap, keywords, listen, subject as fixtureSubject, topic } from "../../../domain/lessons/testing/agent-admission-fixtures";
 import { withAgentPolicy } from "../../../domain/lessons/testing/agent-test-subject";
@@ -13,7 +12,6 @@ import {
   generationGapsOf,
   lessonAgentRunInputFor,
   lessonAgentRunOutcome,
-  lessonGeneratorFor,
   mergeAttemptIntoProgress,
   mergeGenerationGaps,
   outcomeObjectivesOf,
@@ -37,8 +35,6 @@ const runTopic: DynamicTopicData = { titlePl: "Run", objectives: [] };
 const checkpointTopic: DynamicTopicData = { titlePl: "Checkpoint", objectives: [] };
 const draftTopic: DynamicTopicData = { titlePl: "Szkic", objectives: [] };
 const schoolTopic: DynamicTopicData = { titlePl: "Etap zagadnień", objectives: [] };
-
-const agentDeps: LessonAgentDeps = { agent: {} as LessonAgentDeps["agent"], checker: {} as LessonAgentDeps["checker"], policy: {} };
 
 function runInput(overrides: Partial<LessonRunInput> = {}): LessonRunInput {
   return {
@@ -90,20 +86,6 @@ const choiceA = choice(A, 1);
 const gapA = gap(A, "Rok ___.", "966");
 const choiceB = choice(B, 2);
 const gapB = gap(B, "Drugi rok ___.", "1025");
-
-describe("lessonGeneratorFor", () => {
-  it("agent, gdy są zależności agenta (każdy przedmiot)", () => {
-    expect(lessonGeneratorFor(agentDeps)).toBe("agent");
-  });
-
-  it("potok przy niedostępnym agencie (brak klucza OpenRouter) — stan przejściowy", () => {
-    expect(lessonGeneratorFor({ unavailable: "no_openrouter_key" })).toBe("pipeline");
-  });
-
-  it("potok bez zależności agenta (web, fabryki testowe)", () => {
-    expect(lessonGeneratorFor(undefined)).toBe("pipeline");
-  });
-});
 
 describe("lessonAgentRunInputFor — pełna generacja", () => {
   it("pierwsza próba: wszystkie pola z wejścia runu", () => {
@@ -256,7 +238,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
 });
 
 describe("lessonAgentRunInputFor — dogenerowanie", () => {
-  const regenerate = { objectiveId: A, count: 4, existingAnswers: [] };
+  const regenerate = { objectiveId: A, count: 4 };
   const draftExercises = [choice(A, 10), choiceB];
   const draft = { exercises: draftExercises, examples: { [A]: ["Szkic A."] }, storySentences: ["Zdanie historyjki."] };
 
