@@ -28,10 +28,20 @@ describe("scanTimeMarkers — grupy", () => {
     expect(groups("I never eat fish.", "en")).toEqual(["usually"]);
   });
 
-  it("wykrzyknienie tylko na początku surowego tekstu", () => {
+  it("wykrzyknienie tylko na początku zdania", () => {
     expect(groups("They say: Look! A bird.", "en")).toEqual([]);
     expect(groups("Look at me.", "en")).toEqual([]);
     expect(groups("Listen to me!", "en")).toEqual([]);
+    expect(groups("Dad is here. Look! Mum is cooking.", "en")).toEqual(["now"]);
+    expect(groups('He said "Wow!" Shh, the baby sleeps.', "en")).toEqual(["now"]);
+    expect(groups("  „Cicho! Dziadek śpi.”", "pl")).toEqual(["now"]);
+    expect(groups("Tata czyta. Patrz! Mama gotuje.", "pl")).toEqual(["now"]);
+  });
+
+  it("słowa podobne do wskaźników nie są wskaźnikami", () => {
+    expect(groups("Co robisz?", "pl")).toEqual([]);
+    expect(groups("Każdy lubi lody.", "pl")).toEqual([]);
+    expect(groups("I know the snow.", "en")).toEqual([]);
   });
 
   it("polskie scenki", () => {
@@ -74,6 +84,9 @@ describe("scanTimeMarkers — wskaźniki zakazane", () => {
   it("pozostałe zakazane frazy", () => {
     expect(scanTimeMarkers("We go to a party tonight.", "en").forbidden).toEqual(["tonight"]);
     expect(scanTimeMarkers("We go next week.", "en").forbidden).toEqual(["next week"]);
+    expect(scanTimeMarkers("We go next Monday.", "en").forbidden).toEqual(["next monday"]);
+    expect(scanTimeMarkers("She is sitting next to Tom.", "en").forbidden).toEqual([]);
+    expect(scanTimeMarkers("Ola czyta dziś.", "pl").forbidden).toEqual(["dziś"]);
     expect(scanTimeMarkers("He is reading today.", "en").forbidden).toEqual(["today"]);
     expect(scanTimeMarkers("We swim this morning.", "en").forbidden).toEqual(["this morning"]);
     expect(scanTimeMarkers("We swim this evening.", "en").forbidden).toEqual(["this evening"]);

@@ -8,11 +8,10 @@ import { APOSTROPHE_VARIANTS, normalizeTokens } from "../../normalize";
  * promptu, więc nie rozjadą się ze sobą.
  *
  * Składnia wpisu listy:
- * - `Look!` — wykrzyknienie: tylko na początku surowego tekstu, po nim `!` albo `,`
- *   (normalizacja tokenów usuwa `!`, więc sprawdzane jest surowe wejście);
+ * - `Look!` — wykrzyknienie: na początku surowego tekstu albo zdania (po `.`, `!`, `?`),
+ *   po nim `!` albo `,` (normalizacja tokenów usuwa `!`, więc sprawdzane jest surowe wejście);
  * - `Gdzie jest …` — fraza tylko na początku tekstu (pierwsze tokeny);
  * - `N times a week` — `N` to liczebnik (two…ten) albo liczba cyfrowa;
- * - `next *` — `*` to dowolny jeden token;
  * - pozostałe wpisy to frazy dopasowywane po tokenach `normalizeTokens`.
  */
 
@@ -25,6 +24,22 @@ export interface MarkerScan {
 }
 
 const EN_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+/** Rzeczowniki czasu po „next” (przyszłość); „next to” (obok) nie jest wskaźnikiem. */
+const EN_NEXT_NOUNS = [
+  "week",
+  "month",
+  "year",
+  "weekend",
+  "summer",
+  "winter",
+  "spring",
+  "autumn",
+  "holidays",
+  "time",
+  "morning",
+  "evening",
+  "night",
+];
 const EN_EVERY_NOUNS = ["day", "week", "morning", "evening", "night", "weekend", "summer"];
 const PL_WEEKDAYS_LOCATIVE = [
   "w poniedziałki",
@@ -95,7 +110,7 @@ export const TIME_MARKER_LISTS = {
   forbidden: [
     "tomorrow",
     "tonight",
-    "next *",
+    ...[...EN_NEXT_NOUNS, ...EN_WEEKDAYS].map((noun) => `next ${noun}`),
     "this evening",
     "this morning",
     "this afternoon",
@@ -105,6 +120,7 @@ export const TIME_MARKER_LISTS = {
     "jutro",
     "wieczorem",
     "dzisiaj",
+    "dziś",
   ],
 } as const satisfies Record<string, readonly string[]>;
 
@@ -120,7 +136,7 @@ function compile(entry: string): Phrase {
   const kind = entry.endsWith("!") ? "exclamation" : entry.endsWith("…") ? "start" : "anywhere";
   const tokens = entry
     .split(" ")
-    .flatMap((word) => (word === "N" || word === "*" ? [word] : normalizeTokens(word)));
+    .flatMap((word) => (word === "N" ? [word] : normalizeTokens(word)));
   return { tokens, kind };
 }
 
@@ -142,7 +158,6 @@ const PATTERNS = {
 const FORBIDDEN_PATTERNS = compileAll(TIME_MARKER_LISTS.forbidden);
 
 function tokenMatches(pattern: string, token: string): boolean {
-  if (pattern === "*") return true;
   if (pattern === "N") return NUMBER_WORDS.has(token) || /^\d+$/.test(token);
   return pattern === token;
 }
@@ -168,19 +183,32 @@ function rawLead(text: string): string {
     .replace(/^[^\p{L}\p{N}]+/u, "");
 }
 
-/** Wykrzyknienie na początku surowego tekstu: słowa frazy, potem `!` albo `,`. */
-function startsWithExclamation(lead: string, phrase: Phrase): boolean {
+/** Koniec zdania (`.`, `!`, `?`, opcjonalnie cudzysłów) i odstęp; po nim zaczyna się następne zdanie. */
+const SENTENCE_END = /[.!?]+["'”“’»)]*\s+/gu;
+
+/** Początki zdań surowego tekstu: cały tekst i reszta po każdym końcu zdania (małe litery, bez wiodącej interpunkcji). */
+function sentenceLeads(text: string): string[] {
+  const leads = [rawLead(text)];
+  for (const end of text.matchAll(SENTENCE_END)) {
+    leads.push(rawLead(text.slice(end.index + end[0].length)));
+  }
+  return leads;
+}
+
+/** Wykrzyknienie na początku zdania surowego tekstu: słowa frazy, potem `!` albo `,`. */
+function startsWithExclamation(leads: readonly string[], phrase: Phrase): boolean {
   const words = phrase.tokens.join(String.raw`\s+`);
-  return new RegExp(String.raw`^${words}\s*[!,]`, "u").test(lead);
+  const pattern = new RegExp(String.raw`^${words}\s*[!,]`, "u");
+  return leads.some((lead) => pattern.test(lead));
 }
 
 function hasMarker(
   phrases: readonly Phrase[],
   tokens: readonly string[],
-  lead: string,
+  leads: readonly string[],
 ): boolean {
   return phrases.some((phrase) => {
-    if (phrase.kind === "exclamation") return startsWithExclamation(lead, phrase);
+    if (phrase.kind === "exclamation") return startsWithExclamation(leads, phrase);
     if (phrase.kind === "start") return matchesAt(tokens, 0, phrase.tokens);
     return matchesAnywhere(tokens, phrase);
   });
@@ -204,10 +232,10 @@ function findForbidden(tokens: readonly string[]): string[] {
  */
 export function scanTimeMarkers(text: string, lang: "en" | "pl"): MarkerScan {
   const tokens = normalizeTokens(text);
-  const lead = rawLead(text);
+  const leads = sentenceLeads(text);
   const patterns = PATTERNS[lang];
   const groups = new Set<MarkerGroup>();
-  if (hasMarker(patterns.now, tokens, lead)) groups.add("now");
-  if (hasMarker(patterns.usually, tokens, lead)) groups.add("usually");
+  if (hasMarker(patterns.now, tokens, leads)) groups.add("now");
+  if (hasMarker(patterns.usually, tokens, leads)) groups.add("usually");
   return { groups, forbidden: findForbidden(tokens) };
 }
