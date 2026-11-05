@@ -1,6 +1,6 @@
 # Temat Present Continuous w lekcjach gramatyki — projekt
 
-Wersja 4 (zgodna z implementacją; decyzje z realizacji w §16), 2026-11-05. Wersja 3: po przeglądzie planu przez trzech krytyków; decyzja właściciela z 2026-11-05: zmiana §6.7 dla wszystkich przedmiotów. Wersja 2: po przeglądzie projektu przez trzech krytyków (dydaktyka i język, kod, zakres i ryzyko). Gałąź `feature/present-continuous` od `origin/main` 3b4c1ec0.
+Wersja 5 (po przeglądzie implementacji przez trzech krytyków; reguły celów 1, 3, 4, 5 i skutki §6.7 w §16), 2026-11-05. Wersja 4: zgodna z implementacją, decyzje z realizacji w §16. Wersja 3: po przeglądzie planu przez trzech krytyków; decyzja właściciela z 2026-11-05: zmiana §6.7 dla wszystkich przedmiotów. Wersja 2: po przeglądzie projektu przez trzech krytyków (dydaktyka i język, kod, zakres i ryzyko). Gałąź `feature/present-continuous` od `origin/main` 3b4c1ec0.
 Powiązane: #279 (poziom materiału, osobno), #280 (Present Continuous v2), #237 (agent puli — etap 3 w toku).
 
 ## 1. Cel i kontekst
@@ -9,7 +9,7 @@ Trzeci temat katalogu przedmiotu `english_grammar`: `present_continuous@1`. Gł�
 
 Cel właściciela: dziecko ma **zrozumieć, kiedy użyć czasu**, a nie wkuć formę. Trudność polskiego ucznia leży w wyborze czasu, nie w budowie formy: polskie „Ola czyta” odpowiada i „Ola reads”, i „Ola is reading”. Dlatego porównanie z Present Simple jest częścią tematu od pierwszej sesji.
 
-Temat to dane katalogu plus reguły przedmiotu `english_grammar` (walidator, prompty). Jedna mała zmiana silnika, dla wszystkich przedmiotów: zdanie czytane po odpowiedzi pomija czasownik w nawiasie przy luce (§6.7). Bez zmian w kontraktach, bazie, Kid UI, panelu rodzica, polityce agenta, MCP i `SKILL.md`.
+Temat to dane katalogu plus reguły przedmiotu `english_grammar` (walidator, prompty). Jedna mała zmiana silnika, dla wszystkich przedmiotów: zdanie czytane po odpowiedzi pomija czasownik w nawiasie przy luce i w zwykłym wyborze (§6.7). Bez zmian w kontraktach, bazie, Kid UI, panelu rodzica, polityce agenta, MCP i `SKILL.md`.
 
 ## 2. Zasady dydaktyczne
 
@@ -61,14 +61,14 @@ Rekomendacja wyboru celów (w SPEC i opisie PR; formularz rodzica bez zmian, dom
 ### 3.2 Karty (szkic treści; jedno–dwa krótkie zdania na kartę, 2–4 karty na cel — `catalog-validation.ts`)
 
 Cel 1 `affirmative`:
-- „Co się dzieje?”: „Popatrz! Tom is running. Mum is cooking. To dzieje się teraz, w tej chwili.”
+- „Co się dzieje?”: „Popatrz! Tom is jumping. Mum is cooking. To dzieje się teraz, w tej chwili.”
 - „Dwie części”: „am / is / are już znasz. Dokładasz czasownik z -ing: she is reading, they are playing.”
 - „Przykłady z lekcji”: „Zobacz, co dzieje się teraz: {{examples}}”
 
 Cel 2 `now_or_usually`:
-- „Teraz czy zwykle?”: „Zanim powiesz to po angielsku, zapytaj siebie: teraz czy zwykle? Teraz: Ola is reading. Zwykle: Ola reads.”
+- „Teraz czy zwykle?”: „Po polsku „Ola czyta” to i teraz, i zwykle. Po angielsku wybierasz: teraz — Ola is reading, zwykle — Ola reads. Zapytaj siebie: teraz czy zwykle?”
 - „Dwa zdania”: „Dad cooks dinner every day. — zwykle. Look! Dad is cooking now. — teraz.”
-- „Po polsku czasem słychać”: „Tom jedzie na rowerze — teraz: is riding. Tom jeździ na rowerze codziennie — zwykle: rides.”
+- „Po polsku czasem słychać”: „Tom jedzie na rowerze — teraz: Tom is riding his bike now. Tom jeździ na rowerze codziennie — zwykle: Tom rides his bike every day.”
 - „Przykłady z lekcji”: „{{examples}}”
 
 Cel 3 `negative`:
@@ -84,7 +84,7 @@ Cel 4 `questions`:
 Cel 5 `ing_spelling`:
 - „Zwykle tylko -ing”: „play → playing, read → reading, jump → jumping.”
 - „Znika e, ie → y”: „make → making, write → writing (jedno t!). Końcówka ie zmienia się w y: lie → lying, tie → tying.”
-- „Podwójna litera”: „Gdy krótkie słowo kończy się na jedną samogłoskę i jedną spółgłoskę, podwajamy ostatnią literę: run → running, swim → swimming, sit → sitting. Ale: jump → jumping, fix → fixing.”
+- „Podwójna litera”: „Gdy słowo ma jedną sylabę i kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Nie podwajasz w, x, y: play → playing, fix → fixing, snow → snowing. Ale: jump → jumping (dwie spółgłoski).”
 - „Przykłady z lekcji”: „{{examples}}”
 
 Cel 6 `now_or_usually_more`:
@@ -230,16 +230,18 @@ Cele 1, 3, 4. Istniejące reguły (`listenChoiceSibilantErrors`, brak `instructi
 
 ### 6.7 Zdanie po odpowiedzi bez nawiasu (zmiana silnika, wszystkie przedmioty)
 
-`feedbackSentenceText` (`domain/lessons/feedback-sentence-text.ts`) dla `lesson_gap` usuwa nawias stojący bezpośrednio po luce (`/_{2,}\s*\([^)]*\)/` → luka) przed wstawieniem odpowiedzi. Bez tego zdanie czytane dziecku po odpowiedzi brzmi „He is swimming (swim) now.”: lektor TTS nagrywa „(swim)” (`ttsForFeedbackSentence: true`, `media-reconciliation.ts`), a bariera ekspozycji historyjki (`solvedSentencesOf`, `story.ts`) nie rozpoznaje zdania „He is swimming now.”.
+`feedbackSentenceText` (`domain/lessons/feedback-sentence-text.ts`) dla `lesson_gap` i zwykłego `lesson_choice` usuwa nawias stojący bezpośrednio po luce (stała `GAP_VERB_BRACKET`, `/(_{2,})\s*\(([^)]*)\)/` → luka) przed wstawieniem odpowiedzi. Bez tego zdanie czytane dziecku po odpowiedzi brzmi „He is swimming (swim) now.”: lektor TTS nagrywa „(swim)” (`ttsForFeedbackSentence: true`, `media-reconciliation.ts`), a bariera ekspozycji historyjki (`solvedSentencesOf`, `story.ts`) nie rozpoznaje zdania „He is swimming now.”. Walidator Present Continuous (`stripGapVerb`) używa tej samej stałej.
 
-Konwencja „___ (czasownik)” **już istnieje** w Present Simple: używają jej fixture'y i testy (`tests/fixtures/lesson-world.ts`, `fake.test.ts`, `grader.test.ts`, spec E2E edytora) i może ją pisać generator mimo reguły o `hint`, więc ten sam błąd dotyczy dziś istniejących lekcji. Decyzja właściciela (2026-11-05): zmiana dla wszystkich przedmiotów, bez flagi tematu.
+Konwencja „___ (czasownik)” **już istnieje** w Present Simple: używają jej fixture'y i testy (`tests/fixtures/lesson-world.ts`, także zwykły wybór, `fake.test.ts`, `grader.test.ts`, spec E2E edytora) i może ją pisać generator mimo reguły o `hint`, więc ten sam błąd dotyczy dziś istniejących lekcji. Decyzja właściciela (2026-11-05): zmiana dla wszystkich przedmiotów, bez flagi tematu.
 
-Zakres: tylko nawias tuż po luce, tylko `lesson_gap` (wybór i „posłuchaj i wybierz” bez zmian — ich tożsamość i nagranie bodźca nie zmieniają się). Skutki dla istniejących danych:
+Zakres: tylko nawias tuż po luce; `lesson_gap` i `lesson_choice` (rozstrzygnięcie po przeglądzie: w zwykłym wyborze błąd jest ten sam — lektor czytał „He plays (play) football.”; tożsamość wyboru to bodziec, więc się nie zmienia). `lesson_listen_choice` bez zmian: to samo nagranie jest tam bodźcem ćwiczenia (§19.12 architektury), a walidator PC i tak nie dopuszcza w nim nawiasu. Nawias dalej w zdaniu zostaje. Skutki dla istniejących danych:
 - **Opublikowane wersje bez zmian:** sesja bierze nagranie zdania przypięte do rewizji (`revision_assets`, rola `feedback_audio`), nie liczy tekstu od nowa.
-- **Szkice:** przy najbliższym uzgodnieniu mediów (edycja szkicu) luka z nawiasem dostaje nowe nagranie zdania bez nawiasu — jedno nagranie TTS na taką lukę.
-- **Historyjka:** bariera ekspozycji zaczyna wykrywać zdania historyjki równe rozwiązaniu takiej luki. Nowe ćwiczenia z kolizją odpadają przy zapisie puli (`lesson-drafts.ts`), a zapis historyjki i publikacja szkicu z kolizją kończą się błędem walidacji historyjki (`lesson-api.ts`, `assertStoryValid`) — rodzic zmienia albo generuje historyjkę od nowa. To poprawne zachowanie (wcześniej odpowiedź wyciekała), ale może zatrzymać publikację szkicu, który dziś przechodzi; opis PR to mówi.
+- **Szkice:** każde uzgodnienie mediów liczy tekst od nowa, więc luka albo wybór z nawiasem dostaje nowe nagranie zdania bez nawiasu — jedno płatne nagranie TTS na takie ćwiczenie. Uzgodnienie robi nie tylko edycja: także publikacja szkicu bez żadnej edycji (`reconcileBeforePublish` przed transakcją publikacji, `lesson-api.ts`), zapis generowania, nadzoru i odświeżenie nagrań polecenia. Publikacja na `feedback_audio` nie czeka (bramką jest tylko `target_audio`, a przedmioty lekcji mają `ttsForAnswers: false`), więc pierwsza publikacja takiego szkicu nie kończy się błędem „media w toku”; zadanie wydane przed gotowością nowego nagrania zostaje bez odczytu zdania.
+- **Historyjka:** bariera ekspozycji zaczyna wykrywać zdania historyjki równe rozwiązaniu takiej luki albo wyboru. Nowe ćwiczenia z kolizją odpadają przy zapisie puli (`lesson-drafts.ts`), a zapis historyjki i publikacja szkicu z kolizją kończą się błędem walidacji historyjki (`lesson-api.ts`, `assertStoryValid`) — rodzic zmienia albo generuje historyjkę od nowa. **Każda** edycja ćwiczeń szkicu (`patch.exercises`) sprawdza barierę na całej puli, więc niezwiązana poprawka innego ćwiczenia też może skończyć się tym błędem, jeśli w szkicu jest stara luka z nawiasem kolidująca z historyjką. To poprawne zachowanie (wcześniej odpowiedź wyciekała), ale może zatrzymać zapis albo publikację szkicu, który dziś przechodzi; opis PR to mówi.
+- **Generator historyjki:** dostaje rozwiązane zdania bez nawiasu (lista zdań do niepowtarzania) — zmiana bez skutków ubocznych.
+- **Nawias, który nie jest czasownikiem:** wzorzec usuwa każdy nawias tuż po luce, bez względu na treść. W rozdziale angielskim (`english_chapter`, `ttsForFeedbackSentence: true`) wskazówka w nawiasie po luce nie trafi do nagrania zdania; w innych przedmiotach (np. jednostka „Woda wrze w ___ (°C).”) znika z tekstu zdania i bariery historyjki. Opis PR to wymienia.
 
-Testy: `feedback-sentence-text.test.ts` (luka z nawiasem, z „(not …)”, luka bez nawiasu, nawias dalej w zdaniu, wybór — bez zmian), `story.test.ts` (kolizja wykryta) oraz przegląd istniejących testów i fixture'ów z „___ (…)”, których oczekiwane zdanie się zmienia.
+Testy: `feedback-sentence-text.test.ts` (luka z nawiasem, z „(not …)”, luka bez nawiasu, nawias dalej w zdaniu, zwykły wybór bez nawiasu, „posłuchaj i wybierz” bez zmian), `media-reconciliation.test.ts` (tekst `feedback_audio` luki i wyboru bez nawiasu, „posłuchaj i wybierz” bez zmian), `story.test.ts` (kolizja wykryta) oraz przegląd istniejących testów i fixture'ów z „___ (…)”, których oczekiwane zdanie się zmienia.
 
 ## 7. Prompty
 
@@ -350,7 +352,7 @@ Pula dla celów 1–6 na przykładowym materiale z podręcznika (fikcyjny, w rep
 
 - `docs/SPEC.md`: oba miejsca z listą tematów w części o lekcjach (ok. l. 779 i 784) + rekomendacja wyboru celów (§3.1).
 - `docs/folder-structure.md`: nowe pliki tematu, `english/ing-forms.ts`, `english-grammar/time-markers.ts`, `be-agreement.ts`, `present-simple-forms.ts`, `present-continuous-validation.ts` oraz (z realizacji, §16.6) `present-continuous-exercise-rules.ts` i `present-continuous-tense-choice.ts`.
-- `docs/architecture.md` §19: jedno zdanie o §6.7 (zdanie po odpowiedzi luki bez czasownika w nawiasie, wszystkie przedmioty).
+- `docs/architecture.md` §19: jedno zdanie o §6.7 (zdanie po odpowiedzi luki i zwykłego wyboru bez czasownika w nawiasie, wszystkie przedmioty).
 - `.kiro/specs/grammar-module/`: wzmianka o trzecim temacie, jeśli dokument wymienia tematy.
 - Przy konflikcie z dokumentacją PR 2 rozwiązujemy przy rebase (zmiany rozłączne treściowo).
 
@@ -400,10 +402,29 @@ Rozstrzygnięcia podjęte podczas implementacji, które zmieniają albo doprecyz
 
 ### 16.5 Wybór „now / usually” (§5.5)
 
-Polecenie wyboru „now / usually” może mieć postać „Teraz czy zwykle?” (ograniczenie dotyczy tylko bodźca). Prompt prosi tu o „Kiedy to się dzieje?”, a zakaz refrenu „teraz czy zwykle” (§7.2) obowiązuje w pozostałych ćwiczeniach celów 2 i 6.
+Polecenie wyboru „now / usually” może mieć postać „Teraz czy zwykle?” (ograniczenie dotyczy tylko bodźca; polecenie ze wskaźnikiem jednej grupy jest odrzucane, także „Wybierz: teraz czy zwykle?”, bo „teraz” przy poleceniu zadania nie jest wskaźnikiem — §16.7). Prompt prosi tu dokładnie o „Kiedy to się dzieje?”, a zakaz refrenu „teraz czy zwykle” (§7.2) obowiązuje w pozostałych ćwiczeniach celów 2 i 6.
 
 ### 16.6 Pliki i prompty (§6, §7, §13)
 
 - Reguły `error_fix`, `notice` i `listen_choice` są w `english-grammar/present-continuous-exercise-rules.ts`, a wybór czasu celów 2 i 6 w `english-grammar/present-continuous-tense-choice.ts`; powód: `present-continuous-validation.ts` ma już ponad 700 linii.
 - Blok `.present_continuous.` (ok. 2,5 tys. tokenów) zostaje we wspólnych `fieldRules` przedmiotu (§7). Wpływ na generowanie Present Simple i „to be” mierzy sonda (§11.3); alternatywa (hak promptu per temat w `types.ts`) jest poza tym PR.
 - Dopracowanie promptu po przeglądzie: wskazówki dla luki z czasownikiem w celu 4, przykład `error_fix` z przeczeniem, `explanationPl` po polsku i doprecyzowanie sformułowania o słowie pytającym.
+
+### 16.7 Po przeglądzie implementacji (trzech krytyków, Task 13)
+
+Zasada §2.6 (jeden poprawny czas) obowiązuje we wszystkich celach, nie tylko w celach porównania. Walidator:
+- **Cele 1, 3, 4, 5 bez „zwykle”:** wskaźnik „zwykle” w którymkolwiek skanowanym polu (także w błędnym zdaniu `error_fix`, `instructionPl`, `prompt`) odrzuca ćwiczenie każdego typu (`pc-marker:`). „always” nie jest już przysłówkiem między be a -ing.
+- **Cele 1, 3, 4, 5 z „teraz”:** luka z czasownikiem, każdy `error_fix`, każdy `transform` i wybór, którego opcja daje poprawną formę Present Simple („reads”, „doesn't play”, „Does she read?”), potrzebują wskaźnika „teraz” w dowolnym skanowanym polu (angielski wskaźnik albo polska scenka); w celu 4 wystarcza też „What + am/is/are + podmiot + doing?”. Luka na be, `notice`, `listen_choice`, `order` i `short_answer` go nie potrzebują. Zdanie kontrastu w Present Continuous nie jest wskaźnikiem.
+- **Be jako łącznik:** po am/is/are słowo, które nie jest formą czasownika, to orzecznik („This is Ola.”, „It is sunny.”) i nie jest sprawdzane pod kątem -ing; każdy klucz nadal potrzebuje be + formy -ing. Czasownik z tabeli użyty jak przymiotnik („The door is open.”) jest odrzucany.
+- **Polskie wykrzyknienia tylko z „!”** („Cicho! Dziadek śpi.”; przecinek liczy się tylko w angielskim „Listen, …”). Nowe wykrzyknienia „teraz”: „Shhh!”, „Look at …!”, „Spójrz na …!”, „Popatrz na …!” (słowa na początku zdania, dalej dowolne słowa do „!”).
+- **Słowa polecenia:** w `instructionPl` teraz / właśnie / zawsze / zwykle / zazwyczaj nie są wskaźnikiem tuż przy poleceniu zadania (uzupełnij, wybierz, napisz, popraw, przetłumacz, ułóż, zaznacz, wskaż, przeczytaj, czytaj, posłuchaj, pamiętaj) ani między która / który / które a pasuje / brzmi / jest dobra („Wybierz formę, która właśnie pasuje.”). „Zobacz, jak teraz czyta Ola.” i „Dzieci, które teraz są w parku…” to scenki „teraz”.
+- **Cel 3, luka na be:** przeczenie tylko po „No” („Is she sleeping? No, she ___.” → isn't), jak w celu 4; „She ___ sleeping now.” → isn't jest odrzucane (pasowałoby też „is”). W wyborze celu 3 biegunowość ustalają opcje (isn't / aren't bez „No”; para is / isn't nadal odrzucona).
+- **„going to” + czasownik** (przyszłość) jest odrzucane w każdym celu i polu, także po wstawieniu odpowiedzi w lukę; „going to” + miejsce („going to school”, „going to work”) jest dozwolone.
+- **Krótka odpowiedź:** przy imieniu albo rzeczowniku w pytaniu liczba podmiotu wyznacza zaimek („Are the boys playing?” → „Yes, they are.”, nie „Yes, he is.”); rodzaj nie jest sprawdzany.
+- **Przekształcenia:** `to_question` — zdanie wyjściowe nie jest pytaniem, a klucz i warianty kończą się „?” i ostatnie zdanie zaczyna się od am/is/are (także isn't/aren't) albo od What + am/is/are; `to_negative` / `to_affirmative` — zdanie wyjściowe ma przeciwną biegunowość niż odpowiedź (`pc-shape:`).
+- **Opcja wyboru zaczynająca się apostrofem** („'re playing”) jest odrzucana w każdym celu; luka z dwóch i więcej podkreślników jest traktowana jak „___”.
+- **Tabela -ing bez „live” i „leave”** (w formie ciągłej znaczą zwykle tymczasowość albo przyszłość). Listy „zwykle”: every afternoon / month / year / winter / spring / autumn, once / twice a day, co + każdy dzień tygodnia.
+
+Katalog: przykłady celów 1–4 tylko z czasownikami bez zmian pisowni; karta podwajania z regułą jednej sylaby i bez podwajania po w, x, y; pierwsza karta celu 2 mówi, że „Ola czyta” to i teraz, i zwykle; werdykt celów 2 i 6 nazywa „prawie” także dobry czas z brakiem -ing albo brakiem am/is/are przy „teraz”; podpowiedzi celów 2 i 6 wymieniają polskie scenki obok angielskich wskaźników.
+
+Prompt: blok `.present_continuous.` kończy zdanie „End of present continuous rules.”; mówi wprost o regułach powyżej (wskaźnik „teraz” w celach 1, 3, 4, 5, bez „zwykle”, bez be going to, słowa polecenia, krótkie odpowiedzi, łącznik, przekształcenia); zdanie o „usually” dotyczy tylko zdań poprawnych; `error_fix` celów porównania w obie strony; wybór celu 6 między całymi pytaniami ma bodziec-zdanie kontekstu (przykład w `PRESENT_CONTINUOUS_PROMPT_EXAMPLES` przechodzi walidator); przykłady kart podlegają regułom celu. Blok urósł z ok. 2,8 do ok. 3,8 tys. tokenów.
