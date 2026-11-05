@@ -62,38 +62,39 @@ Rekomendacja wyboru celów (w SPEC i opisie PR; formularz rodzica bez zmian, dom
 
 Cel 1 `affirmative`:
 - „Co się dzieje?”: „Popatrz! Tom is jumping. Mum is cooking. To dzieje się teraz, w tej chwili.”
-- „Dwie części”: „am / is / are już znasz. Dokładasz czasownik z -ing: she is reading, they are playing.”
+- „Dwie części”: „am, is, are już znasz. Dokładasz czasownik z -ing: she is reading, they are playing.”
 - „Przykłady z lekcji”: „Zobacz, co dzieje się teraz: {{examples}}”
 
 Cel 2 `now_or_usually`:
 - „Teraz czy zwykle?”: „Po polsku „Ola czyta” to i teraz, i zwykle. Po angielsku wybierasz: teraz — Ola is reading, zwykle — Ola reads. Zapytaj siebie: teraz czy zwykle?”
-- „Dwa zdania”: „Dad cooks dinner every day. — zwykle. Look! Dad is cooking now. — teraz.”
+- „Dwa zdania”: „Dad cooks dinner every day. — to zwykle. Look! Dad is cooking now. — to teraz.”
 - „Po polsku czasem słychać”: „Tom jedzie na rowerze — teraz: Tom is riding his bike now. Tom jeździ na rowerze codziennie — zwykle: Tom rides his bike every day.”
-- „Przykłady z lekcji”: „{{examples}}”
+- „Przykłady z lekcji”: „Teraz czy zwykle? Sprawdź na przykładach: {{examples}}”
 
 Cel 3 `negative`:
-- „Dodaj not”: „Przeczenie: am not, isn't, aren't + -ing: he isn't sleeping, we aren't playing.”
-- „Przykłady z lekcji”: „{{examples}}”
+- „Dodaj not”: „Przeczenie to am not, isn't albo aren't + czasownik z -ing: he isn't sleeping, we aren't playing.”
+- „Bez don't”: „Tu nie ma don't ani doesn't: she isn't reading, a nie „she doesn't reading”.”
+- „Przykłady z lekcji”: „Popatrz na przeczenia z lekcji: {{examples}}”
 
 Cel 4 `questions`:
-- „Zamień kolejność”: „W pytaniu am/is/are stoi na początku, przed osobą: Is she reading? Are they playing?”
+- „Zamień kolejność”: „W pytaniu am, is, are stoi na początku, przed osobą: Is she reading? Are they playing?”
 - „Krótka odpowiedź”: „Odpowiadasz tą samą formą: Yes, she is. No, they aren't.”
 - „Co teraz robisz?”: „What are you doing? — Co teraz robisz? What is he doing? — Co on teraz robi?”
-- „Przykłady z lekcji”: „{{examples}}”
+- „Przykłady z lekcji”: „Zobacz pytania z lekcji: {{examples}}”
 
 Cel 5 `ing_spelling`:
-- „Zwykle tylko -ing”: „play → playing, read → reading, jump → jumping.”
-- „Znika e, ie → y”: „make → making, write → writing (jedno t!). Końcówka ie zmienia się w y: lie → lying, tie → tying.”
+- „Zwykle tylko -ing”: „Najczęściej dokładasz samo -ing: play → playing, read → reading, jump → jumping.”
+- „Znika e, ie → y”: „Końcowe e znika: make → making, write → writing (jedno t!). Końcówka ie zmienia się w y: lie → lying, tie → tying.”
 - „Podwójna litera”: „Gdy słowo ma jedną sylabę i kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Nie podwajasz w, x, y: play → playing, fix → fixing, snow → snowing. Ale: jump → jumping (dwie spółgłoski).”
-- „Przykłady z lekcji”: „{{examples}}”
+- „Przykłady z lekcji”: „Sprawdź pisownię na przykładach: {{examples}}”
 
 Cel 6 `now_or_usually_more`:
-- „Jak pytasz?”: „Pytasz o to, co zwykle → Do / Does. Pytasz o to, co teraz → Am / Is / Are.”
+- „Jak pytasz?”: „Pytasz o to, co dzieje się zwykle → Do / Does. Pytasz o to, co dzieje się teraz → Am / Is / Are.”
 - „Pytania”: „Do you play football on Saturdays? — zwykle. Are you playing football now? — teraz.”
-- „Przeczenia”: „She doesn't watch TV in the morning. — zwykle. She isn't watching TV now. — teraz.”
-- „Przykłady z lekcji”: „{{examples}}”
+- „Przeczenia”: „She doesn't watch TV on Mondays. — zwykle. She isn't watching TV now. — teraz.”
+- „Przykłady z lekcji”: „Przy każdym przykładzie zapytaj siebie: teraz czy zwykle? {{examples}}”
 
-Ostateczne brzmienie ustala implementacja; kontrolą jest test spójności katalogu i przegląd w PR. Zdania kart z przykładami angielskimi trafiają do listy „zdań do unikania” jak w innych tematach.
+Szkic jest wyrównany z katalogiem `present-continuous.ts` (Task 13c); ostateczne brzmienie ustala implementacja, a kontrolą jest test spójności katalogu i przegląd w PR. Zdania kart z przykładami angielskimi trafiają do listy „zdań do unikania” jak w innych tematach.
 
 ### 3.3 Kategorie błędów
 
@@ -407,7 +408,7 @@ Polecenie wyboru „now / usually” może mieć postać „Teraz czy zwykle?”
 ### 16.6 Pliki i prompty (§6, §7, §13)
 
 - Reguły `error_fix`, `notice` i `listen_choice` są w `english-grammar/present-continuous-exercise-rules.ts`, a wybór czasu celów 2 i 6 w `english-grammar/present-continuous-tense-choice.ts`; powód: `present-continuous-validation.ts` ma już ponad 700 linii.
-- Blok `.present_continuous.` (ok. 2,5 tys. tokenów) zostaje we wspólnych `fieldRules` przedmiotu (§7). Wpływ na generowanie Present Simple i „to be” mierzy sonda (§11.3); alternatywa (hak promptu per temat w `types.ts`) jest poza tym PR.
+- Blok `.present_continuous.` (ok. 3,8 tys. tokenów po przeglądzie, §16.7) zostaje we wspólnych `fieldRules` przedmiotu (§7). Wpływ na generowanie Present Simple i „to be” mierzy sonda (§11.3); alternatywa (hak promptu per temat w `types.ts`) jest poza tym PR.
 - Dopracowanie promptu po przeglądzie: wskazówki dla luki z czasownikiem w celu 4, przykład `error_fix` z przeczeniem, `explanationPl` po polsku i doprecyzowanie sformułowania o słowie pytającym.
 
 ### 16.7 Po przeglądzie implementacji (trzech krytyków, Task 13)

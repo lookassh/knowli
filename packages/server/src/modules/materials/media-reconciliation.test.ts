@@ -192,7 +192,11 @@ describe("requiredAssetsForLessonExercise — zdanie feedbacku (feedback_audio)"
   });
 
   it("nawias z czasownikiem tuż po luce nie trafia do nagrania luki ani wyboru; „posłuchaj i wybierz” bez zmian (design Present Continuous §6.7)", () => {
-    const text = (payload: Record<string, unknown>) => requiredAssetsForLessonExercise(payload, defaultMediaSettings, on)[0]!.metadata;
+    const text = (payload: Record<string, unknown>) => {
+      const asset = requiredAssetsForLessonExercise(payload, defaultMediaSettings, on).find((candidate) => candidate.role === "feedback_audio");
+      expect(asset).toBeDefined();
+      return asset!.metadata;
+    };
     expect(text({ ...gap, stem: "He ___ (swim) in the lake now.", answer: "is swimming" })).toMatchObject({ text: "He is swimming in the lake now." });
     const options = [{ id: "a", text: "reads" }, { id: "b", text: "is reading" }];
     expect(text({ exerciseType: "lesson_choice", stem: "Ola ___ (read) a comic every day.", answerLocale: "en-GB", options, correctOption: "a" }))

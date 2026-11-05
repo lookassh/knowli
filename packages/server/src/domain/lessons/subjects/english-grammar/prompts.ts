@@ -5,6 +5,13 @@ import { TIME_MARKER_LISTS } from "./time-markers";
 const PC = "english_grammar.present_continuous";
 
 /**
+ * Wzór wyjaśnienia `explanationPl` cytowany w prompcie bloku Present Continuous. Musi być
+ * jednym zdaniem (`explanationTextErrors`), inaczej skopiowane wyjaśnienie zostałoby
+ * odrzucone; test modułu sprawdza dokładnie ten tekst.
+ */
+export const PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE = "Every day mówi, że to zwykle, więc Ola reads.";
+
+/**
  * Przykłady bloku Present Continuous (design „Present Continuous” §7.2): luka
  * celu 1, wybór celu 2 na scence, wybór „now / usually”, luka celu 6 i wybór
  * celu 6 między całymi pytaniami (bodziec to zdanie kontekstu bez luki). Tekst
@@ -136,7 +143,7 @@ export function presentContinuousFieldRules(): string {
       "and never stands where not already follows the gap (She ___ not sleeping now. → is). " +
       "In a lesson_choice between forms of am, is or are a negative key is allowed only in negative, or after No in questions; " +
       "never offer two options that differ only by not or n't (Is / Isn't). " +
-      "Yes/No short answers belong to questions: affirmative never uses a No short answer.",
+      "A No short answer after a question is how negative and questions use a negative be gap; only affirmative never uses a No short answer.",
     "Never write brackets anywhere else: not elsewhere in a gap sentence, and never in a lesson_choice or lesson_listen_choice stem or option, a statement or an answer.",
     "am, is or are always matches the subject (I am; he, she, it, one name or one thing is; you, we, they, two names or a plural noun are); " +
       "short answers repeat it and agree in number with a name or a noun too (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.; " +
@@ -168,7 +175,7 @@ export function presentContinuousFieldRules(): string {
     "The context is an English marker in the sentence or a short Polish scene in instructionPl (in lesson_open_answer: in the Polish prompt); " +
       "about half of these exercises use a scene without an English marker (Cicho! Dziadek śpi. / Gdzie jest tata? / Ola codziennie gra w piłkę.).",
     "Markers count in stem, statement, answer, acceptedAnswers, options, instructionPl and prompt, so never mix the groups there " +
-      "and never write the refrain teraz czy zwykle in an instruction; explanationPl names the marker or the scene (Widzisz every day? To zwykle, więc Ola reads.).",
+      `and never write the refrain teraz czy zwykle in an instruction; explanationPl names the marker or the scene (${PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE}).`,
     "In their lesson_choice the options are forms of the same verb in the two tenses (reads / is reading) and exactly one fits: " +
       "never a distractor that is also correct, such as another verb in the right tense.",
     "Each lesson_choice stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.), never a bare Ola ___ ., " +
