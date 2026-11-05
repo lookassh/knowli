@@ -380,9 +380,13 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
    * Kroki 5–7 (§6.2): pamięć runu, etap 1 — `solve`, `judgeVariants`, `judgeHints`, `solveOpen`
    * równolegle, po jednym wywołaniu na paczkę — potem etap 2 (grader). Checker dostaje tylko widoki,
    * liczby, odpowiedź, warianty, teksty elementów wymaganych i podpowiedź (plus materiał, gdy przedmiot
-   * go wymaga); grader — wejście ścieżki szkolnej z odpowiedzią rozwiązującego.
+   * go wymaga); grader — wejście ścieżki szkolnej z odpowiedzią rozwiązującego. Liczniki
+   * niesprawdzonych pozycji zwraca wołającemu: liczą się tylko w paczce, która nie kończy się odmową.
    */
-  async function runChecks(prechecked: readonly PrecheckEntry[], topic: LessonTopic): Promise<CandidateChecks[]> {
+  async function runChecks(
+    prechecked: readonly PrecheckEntry[],
+    topic: LessonTopic,
+  ): Promise<{ readonly checks: CandidateChecks[]; readonly hintUnavailable: number; readonly openUnavailable: number }> {
     const hintTypes = agentPolicy.hintJudgeTypes ?? [];
     const openTypes = agentPolicy.openAnswerCheckTypes ?? [];
     const grader = args.grader;
@@ -421,7 +425,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
         const criteria = schoolCriteriaOf(draft);
         if (objective === undefined || criteria === undefined) return;
         const view = solverView(draft, topic);
-        const key = openKey(view, draft.answer, draft.acceptedAnswers, criteria);
+        const key = openKey(draft, view, draft.answer, draft.acceptedAnswers, criteria);
         const memo = checkRun.openMemo.get(key);
         if (memo !== undefined) {
           openMemoHits.set(index, memo);
@@ -499,6 +503,9 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       if (isOpenPair(pair)) pairs.push({ item, pair });
       else openResults.set(item.index, { kind: "unavailable" });
     });
+    // Wyłącznik otwarty w trakcie etapu 1 (np. przez inne zagadnienie): pozycje jeszcze bez oceny
+    // nie dotyczą (`na`, bez noty i bez `openUnavailable`), jak paczka po otwarciu wyłącznika.
+    if (checkRun.graderOpen()) pairs.length = 0;
     const graded = grader === undefined ? [] : await gradeOpen(grader, pairs);
     pairs.forEach(({ item }, position) => {
       const result = graded[position]!;
@@ -516,14 +523,13 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
 
     const hintUnavailable = [...hintResults.values()].filter((result) => result.kind === "unavailable").length;
     const openUnavailable = [...openResults.values()].filter((result) => result.kind === "unavailable").length;
-    if (hintUnavailable > 0 || openUnavailable > 0) args.onStats?.({ hintUnavailable, openUnavailable });
 
     const memoOr = <T>(memo: ReadonlyMap<number, T>, results: ReadonlyMap<number, CheckResult<T>>, index: number): CheckResult<T> => {
       const remembered = memo.get(index);
       if (remembered !== undefined) return { kind: "done", value: remembered };
       return results.get(index) ?? { kind: "na" };
     };
-    return prechecked.map((entry, index) => ({
+    const checks = prechecked.map((entry, index) => ({
       solve: checkAt(solveIndexes, solved, index, isStringList),
       variants: checkAt(judgeIndexes, judged, index, (value): value is readonly boolean[] =>
         entry.pass && isVerdictList(value, entry.draft.acceptedAnswers.length),
@@ -531,6 +537,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       hint: memoOr(hintMemoHits, hintResults, index),
       open: memoOr(openMemoHits, openResults, index),
     }));
+    return { checks, hintUnavailable, openUnavailable };
   }
 
   function logRejection(exerciseType: string, rejection: Rejection): void {
@@ -586,10 +593,12 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     const prechecked = precheckBatch(working, objectiveId, drafts, ctx);
 
     // 5. Checker.
-    const checks = await runChecks(prechecked, working.topic);
+    const { checks, hintUnavailable, openUnavailable } = await runChecks(prechecked, working.topic);
 
-    // 6. Zamknięte narzędzia albo przerwane zagadnienie: odmowa bez przyjęcia, stan bez zmian.
+    // 6. Zamknięte narzędzia albo przerwane zagadnienie: odmowa bez przyjęcia, stan bez zmian
+    // (bez liczników niesprawdzonych pozycji — paczka nie została rozpatrzona).
     if (isClosed()) return refuse("refused_closed", exercises, examples);
+    if (hintUnavailable > 0 || openUnavailable > 0) args.onStats?.({ hintUnavailable, openUnavailable });
 
     // SEKCJA KRYTYCZNA: od odczytu stanu do podmiany NIE MA żadnego `await` — inne zagadnienia
     // zmieniają wspólny stan wyłącznie między naszymi `await`, więc przyjęcie widzi bieżący stan

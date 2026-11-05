@@ -44,6 +44,7 @@ interface SetupOptions {
   graderTimeoutMs?: number;
   policy?: LessonAgentPolicy;
   checkRun?: AgentCheckRun;
+  objectiveId?: string;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -58,7 +59,7 @@ function setup(options: SetupOptions = {}) {
   const stats: Record<string, number> = {};
   let breakerOpened = 0;
   const handle = createObjectiveTools({
-    objectiveId: A,
+    objectiveId: options.objectiveId ?? A,
     getState: () => state,
     setState: (next) => {
       state = next;
@@ -829,6 +830,57 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     expect(tools.checker.hintCalls).toHaveLength(2);
     expect(grader.requests).toHaveLength(requests);
     expect(tools.stats).toMatchObject({ openChecks: 1, hintChecks: 2 });
+  });
+
+  it("memo key includes the objective: to samo ćwiczenie w dwóch celach to dwie kontrole otwarte", async () => {
+    const grader = correctGrader();
+    const checkRun = new AgentCheckRun(DEFAULT_LESSON_AGENT_POLICY);
+    const first = setup({ subject: school, grader, checkRun });
+    const second = setup({ subject: school, grader, checkRun, objectiveId: B });
+    // Własne polecenie: widok bez tytułu celu, więc identyczny w obu celach (wejście gradera już nie).
+    const exercise = schoolOpen(1, { instructionPl: "Odpowiedz pełnym zdaniem." });
+    expect((await first.tools.submit({ exercises: [exercise] })).results).toEqual([{ index: 0, accepted: "ex1" }]);
+    expect((await second.tools.submit({ exercises: [{ ...exercise, objectiveId: B }] })).results).toEqual([{ index: 0, accepted: "ex1" }]);
+    expect(first.checker.openCalls).toHaveLength(1);
+    expect(second.checker.openCalls).toHaveLength(1);
+    expect(checkRun.openMemo.size).toBe(2);
+  });
+
+  it("breaker opened during stage 1: pozycje bez oceny nie dotyczą (bez noty i bez openUnavailable)", async () => {
+    const grader = correctGrader();
+    const checkRun = new AgentCheckRun(DEFAULT_LESSON_AGENT_POLICY);
+    // Inne zagadnienie otwiera wyłącznik, zanim ta paczka dojdzie do etapu 2.
+    const tripBreaker = () => {
+      while (!checkRun.graderOpen()) checkRun.recordGraderFailure();
+    };
+    const tools = setup({
+      subject: school,
+      grader,
+      checkRun,
+      checker: {
+        solveOpen: () => {
+          tripBreaker();
+          return ["Wisła", "Odra"];
+        },
+      },
+    });
+    const outcome = await tools.tools.submit({ exercises: [schoolOpen(1)] });
+    expect(tools.checker.openCalls).toHaveLength(1);
+    expect(grader.requests).toHaveLength(0);
+    expect(outcome.results).toEqual([{ index: 0, accepted: "ex1" }]);
+    expect(tools.stats.openUnavailable ?? 0).toBe(0);
+    expect(checkRun.openMemo.size).toBe(0);
+  });
+
+  it("refused batch does not count unavailable: odmowa po zamknięciu nie liczy hintUnavailable ani openUnavailable", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: schoolVerdictFor(IDS, [], "correct"), delayMs: 60_000 });
+    const tools = setup({ subject: school, grader });
+    const pending = tools.tools.submit({ exercises: [schoolOpen(1)] });
+    await vi.waitFor(() => expect(grader.requests).toHaveLength(2));
+    await tools.close();
+    expect((await pending).results).toEqual([{ index: 0, errors: ["tools are closed"] }]);
+    expect(tools.stats.openUnavailable ?? 0).toBe(0);
+    expect(tools.stats.hintUnavailable ?? 0).toBe(0);
   });
 
   it("close during grade releases grader slots: odmowa refused_closed, wszystkie miejsca semafora wolne", async () => {

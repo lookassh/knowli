@@ -332,17 +332,22 @@ function hintFinding(verdict: AgentHintVerdict, ctx: AgentCheckContext): { code:
   return { code, reason: [template, verdict.reason].filter((part) => part !== undefined && part !== "").join(" ") };
 }
 
-/** Powód odrzucenia kontroli otwartej: pierwsza nieprzyjęta odpowiedź; braki mają pierwszeństwo przed błędami. */
+/**
+ * Powód odrzucenia kontroli otwartej: pierwsza nieprzyjęta odpowiedź. Błędy wygrywają z brakami:
+ * odpowiedź z błędnymi stwierdzeniami albo `incorrect` dostaje `openWrong` (sprawdź model i kryteria
+ * z materiałem), a `openMissing` (rozluźnij kryteria) tylko `partial` bez błędów — inaczej odpowiedź
+ * sprzeczna z materiałem skłaniałaby agenta do luzowania kryteriów (§13). Lista błędów jest zawsze,
+ * gdy niepusta, także obok braków.
+ */
 function openFinding(outcome: OpenCheckOutcome, ctx: AgentCheckContext): { code: string; reason: string } | undefined {
   const failed = outcome.answers.find((graded) => graded.knowledge !== "correct");
   if (failed === undefined) return undefined;
   const texts = ctx.subject.agentPolicy.rejectionTexts;
-  const answer = `Answer: ${quoted(failed.answer)}.`;
-  const reason =
-    failed.missing.length > 0
-      ? `${texts.openMissing ?? ""} ${answer} Missing: ${quotedList(failed.missing)}`
-      : `${texts.openWrong ?? ""} ${answer} Errors: ${quotedList(failed.wrong)}`;
-  return { code: "open_not_accepted", reason: reason.trim() };
+  const wrongFirst = failed.wrong.length > 0 || failed.knowledge === "incorrect";
+  const parts = [wrongFirst ? (texts.openWrong ?? "") : (texts.openMissing ?? ""), `Answer: ${quoted(failed.answer)}.`];
+  if (failed.missing.length > 0 || !wrongFirst) parts.push(`Missing: ${quotedList(failed.missing)}`);
+  if (failed.wrong.length > 0 || (wrongFirst && failed.missing.length === 0)) parts.push(`Errors: ${quotedList(failed.wrong)}`);
+  return { code: "open_not_accepted", reason: parts.join(" ").trim() };
 }
 
 /**

@@ -45,12 +45,16 @@ describe("klucze pamięci runu", () => {
     expect(hintKey("widokodpowiedź", "", ["a", "b"], "podpowiedź")).not.toBe(base);
   });
 
-  it("openKey zależy od widoku, odpowiedzi, wariantów i kryteriów, nie od podpowiedzi", () => {
+  it("openKey zależy od celu, typu, widoku, odpowiedzi, wariantów i kryteriów, nie od podpowiedzi", () => {
     const criteria = { requiredElements: [{ id: "e1", text: "Wisła" }], supplementaryElements: [], commonErrors: [], sourceQuotes: [] };
-    const base = openKey("widok", "Wisła", [], criteria);
-    expect(openKey("widok", "Wisła", [], { ...criteria })).toBe(base);
-    expect(openKey("widok", "Wisła", ["wisła"], criteria)).not.toBe(base);
-    expect(openKey("widok", "Wisła", [], { ...criteria, requiredElements: [{ id: "e1", text: "Odra" }] })).not.toBe(base);
-    expect(openKey("widok", "Odra", [], criteria)).not.toBe(base);
+    const scope = { objectiveId: "obj-a", exerciseType: "lesson_open_answer" };
+    const base = openKey(scope, "widok", "Wisła", [], criteria);
+    expect(openKey({ ...scope }, "widok", "Wisła", [], { ...criteria })).toBe(base);
+    expect(openKey(scope, "widok", "Wisła", ["wisła"], criteria)).not.toBe(base);
+    expect(openKey(scope, "widok", "Wisła", [], { ...criteria, requiredElements: [{ id: "e1", text: "Odra" }] })).not.toBe(base);
+    expect(openKey(scope, "widok", "Odra", [], criteria)).not.toBe(base);
+    // Wejście gradera zależy od celu (tytuł, polecenie), więc to samo ćwiczenie w innym celu to inny klucz.
+    expect(openKey({ ...scope, objectiveId: "obj-b" }, "widok", "Wisła", [], criteria)).not.toBe(base);
+    expect(openKey({ ...scope, exerciseType: "lesson_short_answer" }, "widok", "Wisła", [], criteria)).not.toBe(base);
   });
 });

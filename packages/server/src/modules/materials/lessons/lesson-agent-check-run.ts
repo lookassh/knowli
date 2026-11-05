@@ -74,8 +74,17 @@ export function hintKey(view: string, answer: string, requiredElements: readonly
   return JSON.stringify([view, answer, requiredElements, hint]);
 }
 
-/** Odcisk kontroli otwartej; kryteria w stałym porządku pól, brak kryteriów = `null`. */
-export function openKey(view: string, answer: string, acceptedAnswers: readonly string[], criteria: SchoolCriteria | undefined): string {
+/**
+ * Odcisk kontroli otwartej; kryteria w stałym porządku pól, brak kryteriów = `null`. Cel i typ
+ * wchodzą do klucza, bo wejście gradera zależy od celu (tytuł, polecenie), nie tylko od widoku.
+ */
+export function openKey(
+  scope: { readonly objectiveId: string; readonly exerciseType: string },
+  view: string,
+  answer: string,
+  acceptedAnswers: readonly string[],
+  criteria: SchoolCriteria | undefined,
+): string {
   const fields =
     criteria === undefined
       ? null
@@ -86,7 +95,7 @@ export function openKey(view: string, answer: string, acceptedAnswers: readonly 
           criteria.expectedForm ?? null,
           criteria.sourceQuotes,
         ];
-  return JSON.stringify([view, answer, acceptedAnswers, fields]);
+  return JSON.stringify([scope.objectiveId, scope.exerciseType, view, answer, acceptedAnswers, fields]);
 }
 
 const HINT_FAILURES = new Set(["unsupported", "language", "reveals"]);

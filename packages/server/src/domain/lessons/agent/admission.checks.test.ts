@@ -177,6 +177,30 @@ describe("admitBatch — sędzia podpowiedzi i kontrola otwarta (etap 2b)", () =
     expect(rejection.reasons[0]).not.toContain(texts.openMissing!);
   });
 
+  it("open: partial z missing i wrong → openWrong z obiema listami (błędy wygrywają z brakami)", () => {
+    const { entry } = admitOne(draft, {
+      open: openDone(graded("partial", "Mieszko I przyjął chrzest w 1000 roku.", ["Odra"], ["chrzest w 1000 roku"]), correct("b")),
+    });
+    const rejection = rejectedOf(entry);
+    expect(rejection).toMatchObject({ kind: "open", code: "open_not_accepted" });
+    expect(rejection.reasons).toHaveLength(1);
+    expect(rejection.reasons[0]!.startsWith(texts.openWrong!)).toBe(true);
+    expect(rejection.reasons[0]).not.toContain(texts.openMissing!);
+    expect(rejection.reasons[0]).toContain('Answer: "Mieszko I przyjął chrzest w 1000 roku."');
+    expect(rejection.reasons[0]).toContain('Missing: "Odra"');
+    expect(rejection.reasons[0]).toContain('Errors: "chrzest w 1000 roku"');
+  });
+
+  it("open: incorrect z samym missing → openWrong z brakującym elementem, bez pustej listy błędów", () => {
+    const { entry } = admitOne(draft, { open: openDone(graded("incorrect", "Bolesław Chrobry.", ["Mieszko I"]), correct("b")) });
+    const rejection = rejectedOf(entry);
+    expect(rejection).toMatchObject({ kind: "open", code: "open_not_accepted" });
+    expect(rejection.reasons[0]!.startsWith(texts.openWrong!)).toBe(true);
+    expect(rejection.reasons[0]).not.toContain(texts.openMissing!);
+    expect(rejection.reasons[0]).toContain('Missing: "Mieszko I"');
+    expect(rejection.reasons[0]).not.toContain("Errors:");
+  });
+
   it("open: pierwsza incorrect → odrzucenie z pierwszą odpowiedzią (nie z drugą)", () => {
     const { entry } = admitOne(draft, { open: openDone(graded("incorrect", "pierwsza", [], ["błąd"]), graded("partial", "druga", ["Odra"])) });
     const rejection = rejectedOf(entry);
