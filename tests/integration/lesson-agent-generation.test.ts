@@ -27,6 +27,8 @@ import type { LessonCommand } from "@learning/contracts";
 import { testDatabase } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { messages } from "@learning/contracts";
+import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
 import { FakeAnswerGrader } from "../../packages/server/src/providers/fake";
 import {
@@ -35,7 +37,7 @@ import {
   type FakeAgentStep,
   type FakeLessonPoolAgentOptions,
 } from "../../packages/server/src/providers/fake-lesson-agent";
-import type { HintVerdict, LlmProvider } from "../../packages/server/src/ports/ai";
+import type { HintVerdict, LessonObjectiveAgentInput, LlmProvider } from "../../packages/server/src/ports/ai";
 import {
   DEFAULT_LESSON_GENERATION_POLICY,
   type LessonGenerationPolicy,
@@ -573,6 +575,89 @@ describe("agent puli lekcji (integracja)", () => {
       const progressAfter = parseLessonAgentProgress(row.agent_checkpoint, runId);
       expect(progressAfter?.objectives[OBJECTIVE]?.status).toBe("incomplete");
       expect(progressAfter?.removedAfterAcceptance).toBe(0);
+    });
+
+    describe("powody odrzuceń w szkicu (decyzja właściciela 2026-11-05)", () => {
+      const labels = messages.lessons.agentRejectionReasons;
+      const reasonsOf = (version: VersionRow) => (version.lesson_context as { rejectedReasons?: Record<string, number> }).rejectedReasons;
+      const malformed = { notAnExercise: true };
+
+      it("rozdział: 2 z 6 ćwiczeń ze słowem spoza kart → etykieta „brak słowa z kart” ×2, bez słowa w szkicu", async () => {
+        // Słowo z materiału, którego nie ma na kartach zagadnienia (przechodzi reguły materiału, nie bramkę kart).
+        const outsider = (input: LessonObjectiveAgentInput, n: number) => {
+          const cards = JSON.stringify(input.objective.cards).toLowerCase();
+          const word = ["coat", "boots", "scarf", "gloves"].find((candidate) => !cards.includes(candidate))!;
+          const onCard = ["coat", "boots", "scarf", "gloves"].find((candidate) => cards.includes(candidate))!;
+          return {
+            exerciseType: "lesson_choice",
+            objectiveId: input.objective.id,
+            stem: `I am wearing ___ (${n}).`,
+            answer: word,
+            acceptedAnswers: [word],
+            instructionPl: "Dziś pada deszcz. Wybierz słowo.",
+            focus: ["wearing"],
+            options: [{ id: "a", text: word }, { id: "b", text: onCard }],
+            correctOption: "a",
+          };
+        };
+        const { services } = await agentWorld({
+          objectives: {
+            part_1: [
+              {
+                build: (input) => {
+                  const valid = fakeObjectiveExercises(input, 0).exercises.slice(0, 4);
+                  return { exercises: [...valid, outsider(input, 1), outsider(input, 2)] };
+                },
+              },
+            ],
+            // Pozostałe zagadnienia bez ćwiczeń: jedyne odrzucenia w runie pochodzą z części 1.
+            part_2: [],
+            part_3: [],
+          },
+        });
+        const { runId } = await createLessonFromMaterial(services, {
+          subjectId: "english_chapter",
+          topicTitlePl: "Unit 1",
+          material: CHAPTER_MATERIAL,
+          poolSize: 40,
+          clientRequestId: randomUUID(),
+        });
+
+        await executeLessonGeneration(services, runId);
+
+        const version = await versionOf(runId);
+        expect((await fullRun(runId)).state).toBe("succeeded");
+        expect(reasonsOf(version)?.[labels.card_word_missing!]).toBe(2);
+        expect(reasonsOf(version)).toEqual({ [labels.card_word_missing!]: 2 });
+        for (const word of ["coat", "boots", "scarf", "gloves"]) expect(JSON.stringify(reasonsOf(version))).not.toContain(word);
+      });
+
+      it("pełne odrzucenie → failed validation, szkic ma etykietę; „Ponów” sumuje kody obu prób bez podwojenia", async () => {
+        const { services } = await agentWorld({
+          objectives: { third_person_s: { calls: [[{ submit: { exercises: [malformed] } }], [{ submit: { exercises: [malformed, malformed] } }]] } },
+        });
+        const { runId } = await createLesson(services, command());
+
+        await executeLessonGeneration(services, runId);
+
+        const failed = await fullRun(runId);
+        expect(failed.state).toBe("failed");
+        expect(failed.error_code).toBe("validation");
+        const label = labels.shape_malformed!;
+        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: 1 });
+        // Pełny postęp zostaje (asercje „bez odrzuceń” czytają kody), z oznaczeniem kodów już zapisanych w szkicu.
+        const saved = parseLessonAgentProgress(failed.agent_checkpoint, runId)!;
+        expect(saved.rejectionCodes).toEqual({ shape_malformed: 1 });
+        expect(saved.rejectionCodesWritten).toEqual({ shape_malformed: 1 });
+
+        await retryGeneration(services, runId);
+        await executeLessonGeneration(services, runId);
+
+        const again = await fullRun(runId);
+        expect(again.state).toBe("failed");
+        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: 3 });
+        expect(parseLessonAgentProgress(again.agent_checkpoint, runId)!.rejectionCodes).toEqual({ shape_malformed: 3 });
+      });
     });
 
     it("wszystkie zagadnienia provider_configuration → failed provider_configuration bez ponowienia", async () => {

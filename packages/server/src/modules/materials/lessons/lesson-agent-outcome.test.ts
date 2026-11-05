@@ -1,3 +1,4 @@
+import { messages } from "@learning/contracts";
 import { describe, expect, it } from "vitest";
 import type { LessonAgentDeps } from "../../../config";
 import { AppError } from "../../../errors";
@@ -8,6 +9,7 @@ import { emptyLessonAgentProgress, type LessonAgentProgress } from "./lesson-age
 import {
   acceptedInLessonOrder,
   agentCheckStartLine,
+  agentRejectedReasons,
   generationGapsOf,
   lessonAgentRunInputFor,
   lessonAgentRunOutcome,
@@ -15,6 +17,7 @@ import {
   mergeAttemptIntoProgress,
   mergeGenerationGaps,
   outcomeObjectivesOf,
+  unwrittenRejectionCodes,
   type LessonAgentRunInputArgs,
 } from "./lesson-agent-outcome";
 import { scopeFamiliesToRun, type LessonRunInput } from "./lesson-drafts";
@@ -586,5 +589,43 @@ describe("agentCheckStartLine", () => {
     expect(agentCheckStartLine("run-1", grammar, false)).toBe("[lesson-agent] run=run-1 hintJudge=off openCheck=off");
     expect(agentCheckStartLine("run-1", withAgentPolicy(fixtureSubject, { hintJudgeTypes: [], openAnswerCheckTypes: [] }), true))
       .toBe("[lesson-agent] run=run-1 hintJudge=off openCheck=off");
+  });
+});
+
+describe("agentRejectedReasons", () => {
+  const labels = messages.lessons.agentRejectionReasons;
+
+  it("mapuje znane kody na polskie etykiety; bez kluczy-kodów w wyniku", () => {
+    const reasons = agentRejectedReasons({ card_word_missing: 2, limit_full: 1, leak_victim: 3 });
+    expect(reasons).toEqual({
+      [labels.card_word_missing!]: 2,
+      [labels.limit_full!]: 1,
+      [labels.leak_victim!]: 3,
+    });
+    expect(Object.keys(reasons)).not.toContain("card_word_missing");
+  });
+
+  it("kody o tej samej etykiecie sumuje, nieznane zbiera pod „inne powody”, zerowe pomija", () => {
+    const reasons = agentRejectedReasons({ refine: 1, rule_exercise: 2, brand_new: 4, other_new: 1, blind_mismatch: 0 });
+    expect(reasons).toEqual({
+      [labels.refine!]: 3,
+      [messages.lessons.agentRejectionOther]: 5,
+    });
+  });
+
+  it("kody spoza katalogu nie trafiają do prototypu zwykłego obiektu", () => {
+    expect(agentRejectedReasons({ constructor: 1, __proto__: 1 })).toEqual({ [messages.lessons.agentRejectionOther]: 1 });
+    expect(agentRejectedReasons({})).toEqual({});
+  });
+
+  it("każdy kod z katalogu ma etykietę bez treści ćwiczeń (krótka, bez cudzysłowów)", () => {
+    for (const label of Object.values(labels)) expect(label).toMatch(/^[^"„”]{3,60}$/u);
+  });
+});
+
+describe("unwrittenRejectionCodes", () => {
+  it("odejmuje kody już zapisane w szkicu; zerowe różnice pomija", () => {
+    expect(unwrittenRejectionCodes({ rejectionCodes: { a: 3, b: 2, c: 1 }, rejectionCodesWritten: { a: 3, b: 1 } })).toEqual({ b: 1, c: 1 });
+    expect(unwrittenRejectionCodes({ rejectionCodes: { a: 2 } })).toEqual({ a: 2 });
   });
 });

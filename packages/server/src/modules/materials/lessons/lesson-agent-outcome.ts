@@ -1,3 +1,4 @@
+import { messages } from "@learning/contracts";
 import { isLessonAgentAvailable, type GenerationDeps } from "../../../config";
 import { AppError } from "../../../errors";
 import { outsideStagePath } from "../../../domain/lessons/stages";
@@ -307,6 +308,32 @@ export function mergeAttemptIntoProgress(
     ...(Object.keys(checkCounters).length === 0 ? {} : { checkCounters }),
     removedAfterAcceptance: progress.removedAfterAcceptance + result.stats.invariantViolations,
   };
+}
+
+/**
+ * Powody odrzuceń agenta dla rodzica (`rejectedReasons` szkicu, decyzja właściciela 2026-11-05): liczby według
+ * polskiej etykiety kodu. Kody bez etykiety sumowane pod „inne powody”, zerowe pomijane; wynik nie niesie treści
+ * ćwiczeń ani słów — tylko etykiety z katalogu komunikatów. Klucze to etykiety, nie kody (panel pokazuje je wprost).
+ */
+export function agentRejectedReasons(codes: Readonly<Record<string, number>>): Record<string, number> {
+  const labels: Readonly<Record<string, string>> = messages.lessons.agentRejectionReasons;
+  const reasons = new Map<string, number>();
+  for (const [code, count] of Object.entries(codes)) {
+    if (count <= 0) continue;
+    const label = Object.hasOwn(labels, code) ? labels[code]! : messages.lessons.agentRejectionOther;
+    reasons.set(label, (reasons.get(label) ?? 0) + count);
+  }
+  return Object.fromEntries(reasons);
+}
+
+/** Kody odrzuceń jeszcze niezapisane w `rejectedReasons` szkicu: kumulowane kody runu minus `rejectionCodesWritten`. */
+export function unwrittenRejectionCodes(progress: Pick<LessonAgentProgress, "rejectionCodes" | "rejectionCodesWritten">): Record<string, number> {
+  const unwritten: Record<string, number> = {};
+  for (const [code, count] of Object.entries(progress.rejectionCodes)) {
+    const delta = count - (progress.rejectionCodesWritten?.[code] ?? 0);
+    if (delta > 0) unwritten[code] = delta;
+  }
+  return unwritten;
 }
 
 /**

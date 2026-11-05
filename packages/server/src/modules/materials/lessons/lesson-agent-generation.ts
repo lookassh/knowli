@@ -21,6 +21,7 @@ import {
 import {
   acceptedInLessonOrder,
   agentCheckStartLine,
+  agentRejectedReasons,
   generationGapsOf,
   lessonAgentRunInputFor,
   lessonAgentRunOutcome,
@@ -28,6 +29,7 @@ import {
   mergeAttemptIntoProgress,
   mergeGenerationGaps,
   outcomeObjectivesOf,
+  unwrittenRejectionCodes,
   type LessonAgentOutcome,
   type LessonGenerationGap,
 } from "./lesson-agent-outcome";
@@ -135,8 +137,8 @@ function writtenProgress(
 }
 
 /**
- * Postęp po porażce walidacji zapisu (odrzucone wszystkie przyjęte ćwiczenia): liczniki usunięć wyzerowane
- * (są już w kontekście szkicu), ćwiczenia zagadnień usunięte, a komplet bez ćwiczeń staje się `incomplete` —
+ * Postęp po porażce walidacji zapisu (odrzucone wszystkie przyjęte ćwiczenia): liczniki usunięć wyzerowane, kody odrzuceń
+ * oznaczone jako zapisane (są już w kontekście szkicu), ćwiczenia zagadnień usunięte, a komplet bez ćwiczeń staje się `incomplete` —
  * kolejna próba generuje je od nowa.
  */
 function discardedProgress(progress: LessonAgentProgress): LessonAgentProgress {
@@ -146,7 +148,7 @@ function discardedProgress(progress: LessonAgentProgress): LessonAgentProgress {
       { ...entry, exercises: [], ...(entry.status === "complete" ? { status: "incomplete" as const } : {}) },
     ]),
   );
-  return { ...progress, objectives, removedAfterAcceptance: 0, droppedObjectiveCount: 0 };
+  return { ...progress, objectives, removedAfterAcceptance: 0, droppedObjectiveCount: 0, rejectionCodesWritten: { ...progress.rejectionCodes } };
 }
 
 /**
@@ -300,7 +302,8 @@ export async function executeLessonAgentGeneration(
       newExamples,
       // Usunięcia po przyjęciu (bezpiecznik kierownika i kontrola końcowa), nie odrzucenia w pętli agenta.
       rejectedCount: progress.removedAfterAcceptance + check.removed,
-      rejectedReasons: {},
+      // Powody dla rodzica: kumulowane kody runu bez tych, które porażka walidacji już zapisała w szkicu.
+      rejectedReasons: agentRejectedReasons(unwrittenRejectionCodes(progress)),
       droppedObjectiveCount: progress.droppedObjectiveCount ?? 0,
     };
     const written = await finalizeLessonPoolWrite(services, {
@@ -347,13 +350,18 @@ export async function executeLessonAgentGeneration(
       // tylko nowe usunięcia, nie te już policzone w kontekście.
       // `latest` dopiero po zatwierdzeniu: przy wycofanej transakcji zapis best-effort zostawia liczniki,
       // których kontekst nie dostał.
-      const counted: LessonAgentProgress = { ...progress, removedAfterAcceptance: 0, droppedObjectiveCount: 0 };
+      const counted: LessonAgentProgress = {
+        ...progress,
+        removedAfterAcceptance: 0,
+        droppedObjectiveCount: 0,
+        rejectionCodesWritten: { ...progress.rejectionCodes },
+      };
       await failLessonPoolValidation(services, {
         run,
         context: {
           newExamples: {},
           rejectedCount: progress.removedAfterAcceptance,
-          rejectedReasons: {},
+          rejectedReasons: agentRejectedReasons(unwrittenRejectionCodes(progress)),
           droppedObjectiveCount: progress.droppedObjectiveCount ?? 0,
         },
         onTransaction: (tx) => saveLessonAgentCheckpoint(tx, run, counted),
