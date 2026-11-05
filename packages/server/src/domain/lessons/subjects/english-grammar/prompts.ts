@@ -102,17 +102,20 @@ export function presentContinuousFieldRules(): string {
       "(Tom ___ (play) football now. → is playing); write (not verb) in the brackets in the verb gaps of negative and in every gap of now_or_usually_more " +
       "(She ___ (not watch) TV now. → isn't watching), and never in other objectives.",
     "Be gap, only in affirmative, negative and questions: the gap stands only for am, is or are (optionally with not, never not alone), " +
-      "the -ing form already stands in the sentence and there are no brackets (___ she reading a book? → Is; No, they ___. → aren't).",
+      "the -ing form already stands in the sentence and there are no brackets (They ___ playing now. → are; in questions: ___ she reading a book? → Is; " +
+      "Are they playing? No, they ___. → aren't). In questions use the be gap, never a verb gap after the subject (never Is she ___ (read)?).",
     "Never write brackets anywhere else: not elsewhere in a gap sentence, and never in a lesson_choice or lesson_listen_choice stem or option, a statement or an answer.",
     "am, is or are always matches the subject (I am; he, she, it, one name or one thing is; you, we, they, two names or a plural noun are); " +
       "short answers repeat it (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.).",
-    "In a be gap and in a lesson_choice between forms of am, is or are, a negative answer (isn't, aren't, am not) is allowed only in negative or after No, " +
-      "and never when not already follows the gap; never offer two options that differ only by not or n't (Is / Isn't).",
+    "In a be gap and in a lesson_choice between forms of am, is or are, a negative answer (isn't, aren't, am not) is allowed only in negative, or after No in questions, " +
+      "and never when not already follows the gap; never offer two options that differ only by not or n't (Is / Isn't). " +
+      "Yes/No short answers belong to questions: affirmative never uses a No short answer.",
     "Answers and accepted answers never use he's, she's, it's, what's, that's, there's, where's or who's: write the full is (He is playing.).",
     "The only wh-question is What + am/is/are + subject + doing? (What are you doing?), answered with a full present continuous sentence; " +
-      "never start a sentence with any other question (What is she reading?, Where is he going?).",
+      "never start a sentence with any other question word (What is she reading?, Where is he going?).",
     "lesson_error_fix: the statement and the answer differ in one place of at most 3 words, and that place is the checked mistake: " +
-      "in affirmative, negative and questions a missing am/is/are (He playing football. → He is playing football.), " +
+      "in affirmative, negative and questions a missing am/is/are (He playing football. → He is playing football.; in negative: " +
+      "He not playing now. → He is not playing now.; the answer always has the polarity of the objective), " +
       "a verb without -ing after am/is/are (She is play. → She is playing.) or a wrong form of am/is/are (They is jumping. → They are jumping.); " +
       "in negative and questions also do or does instead of am/is/are (He doesn't playing now. → He isn't playing now.); " +
       "in ing_spelling only a wrong -ing spelling (He is swiming. → He is swimming.); in the tense-choice objectives the present simple swapped " +
@@ -131,13 +134,13 @@ export function presentContinuousFieldRules(): string {
       "never a distractor that is also correct, such as another verb in the right tense.",
     "Each lesson_choice stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.), never a bare Ola ___ ., " +
       "because the instruction does not make two stems different.",
-    "Never put a gap in a question: in now_or_usually_more questions appear only as whole-sentence options of lesson_choice " +
+    "In the tense-choice objectives never put a gap in a question: in now_or_usually_more questions appear only as whole-sentence options of lesson_choice " +
       "(Do you play football on Saturdays? / Are you playing football on Saturdays?) and in lesson_open_answer, and its gaps and lesson_error_fix use negatives only.",
     "now_or_usually also checks meaning: a lesson_choice with options exactly now and usually, instructionPl exactly Kiedy to się dzieje? and a stem that is one " +
       "affirmative present simple or present continuous sentence with no time marker and no gap (Ola is reading a comic. → now; Ola reads comics. → usually).",
     "lesson_listen_choice (affirmative, negative, questions): the options are exactly is / are, isn't / aren't, or Is / Are opening a question — never He's / He.",
     "lesson_notice (affirmative): across all its sentences exactly one word is an -ing form, and correctOption is that word.",
-    "Polish appears only in instructionPl and in the lesson_open_answer prompt; stems, statements, options and answers are in English " +
+    "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers are in English " +
       "(Polish names such as Ola are fine).",
     `Examples (key fields only): ${PRESENT_CONTINUOUS_PROMPT_EXAMPLES.map((example) => JSON.stringify(example)).join(" ")}`,
   ].join(" ");
