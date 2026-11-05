@@ -454,7 +454,7 @@ describe("NewLessonForm", () => {
         expect(markup).toContain('data-testid="lesson-check-service"');
         expect(markup).toContain(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
         expect(markup).not.toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
-        expect(markup).toContain(messages.lessons.generationServiceInfo.replace("{service}", GEN.join(", ")));
+        expect(markup).toContain(messages.lessons.generationServicesInfo.replace("{service}", GEN.join(", ")));
         expect(markup).toContain(messages.lessons.themesService.replace("{service}", GEN.join(", ")));
         expect(markup).not.toContain(messages.lessons.themesService.replace("{service}", SERVICE));
         expect(markup).not.toContain('data-testid="lesson-review-service"');
@@ -465,6 +465,12 @@ describe("NewLessonForm", () => {
         expect(markup).toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
         expect(markup).not.toContain(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
         expect(markup).not.toContain('data-testid="lesson-review-service"');
+      });
+
+      it("jedna usługa generowania: liczba pojedyncza", () => {
+        const markup = renderWithCatalog({ ...agentGrammar, generationServices: [GEN[0]!] });
+        expect(markup).toContain(messages.lessons.generationServiceInfo.replace("{service}", GEN[0]!));
+        expect(markup).not.toContain(messages.lessons.generationServicesInfo.replace("{service}", GEN[0]!));
       });
 
       it("przedmiot potoku: komunikat krytyka, bez komunikatów agenta", () => {

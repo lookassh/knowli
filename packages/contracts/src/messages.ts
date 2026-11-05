@@ -1164,6 +1164,7 @@ export const messages = {
     reviewDroppedItem: "{objective} — {category}: {reason} (było: {snippet})",
     reviewServiceInfo: "Materiał lekcji i gotowe ćwiczenia trafiają też do automatycznej kontroli jakości ({service}). Nie wysyłamy do niej imienia, wieku ani odpowiedzi dziecka.",
     generationServiceInfo: "Materiał lekcji trafia do usługi generującej ćwiczenia: {service}. Nie wysyłamy do niej imienia, wieku ani odpowiedzi dziecka.",
+    generationServicesInfo: "Materiał lekcji trafia do usług generujących ćwiczenia: {service}. Nie wysyłamy do nich imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfo: "Gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje je na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfoWithMaterial: "Materiał lekcji i gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje ćwiczenia na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
     generationGapsAlert: {

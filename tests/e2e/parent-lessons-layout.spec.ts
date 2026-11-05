@@ -307,7 +307,7 @@ test("przedmiot z agentem puli: usługi generowania i drugi model, bez komunikat
   await page.setViewportSize({ width: 390, height: 844 });
   await openNewLesson(page, () => 202, Promise.resolve(), children, agentCatalog);
   await expect(page.getByTestId("lesson-themes")).toContainText(messages.lessons.themesService.replace("{service}", GEN.join(", ")));
-  await expect(page.getByTestId("lesson-generation-service")).toHaveText(messages.lessons.generationServiceInfo.replace("{service}", GEN.join(", ")));
+  await expect(page.getByTestId("lesson-generation-service")).toHaveText(messages.lessons.generationServicesInfo.replace("{service}", GEN.join(", ")));
   await expect(page.getByTestId("lesson-check-service")).toHaveText(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
   await expect(page.getByTestId("lesson-review-service")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);

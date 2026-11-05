@@ -18,12 +18,15 @@ export interface SubjectServiceInfo {
 
 export function subjectServiceInfo(subject: CatalogSubject | undefined): SubjectServiceInfo {
   const checkService = subject?.checkService;
-  const services = subject?.generationServices?.join(", ") ?? null;
+  const list = subject?.generationServices ?? [];
+  const services = list.length > 0 ? list.join(", ") : null;
   if (!checkService) return { generationServices: services, generation: null, check: null };
   const checkTemplate = subject.checkServiceIncludesMaterial ? messages.lessons.checkServiceInfoWithMaterial : messages.lessons.checkServiceInfo;
+  // Kilka usług (agent i UMIEM_LLM) — liczba mnoga.
+  const generationTemplate = list.length > 1 ? messages.lessons.generationServicesInfo : messages.lessons.generationServiceInfo;
   return {
     generationServices: services,
-    generation: services ? messages.lessons.generationServiceInfo.replace("{service}", () => services) : null,
+    generation: services ? generationTemplate.replace("{service}", () => services) : null,
     check: checkTemplate.replace("{service}", () => checkService),
   };
 }
