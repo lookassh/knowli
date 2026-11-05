@@ -406,6 +406,20 @@ describe("validatePresentContinuousExercise — cele porównania (2 i 6), odrzuc
     expectPrefix(ex, prefix);
   });
 
+  it("pytanie z luką w wyborze — tylko pc-shape: (pytania wyłącznie całymi zdaniami)", () => {
+    const questions: LessonExerciseDraft[] = [
+      pcChoice("now_or_usually_more", "___ you play football on Saturdays?", "Do", "Are"),
+      pcChoice("now_or_usually_more", "___ she play football on Saturdays?", "Does", "Is"),
+      pcChoice("now_or_usually_more", "___ you playing football now?", "Are", "Do"),
+      pcChoice("now_or_usually_more", "What ___ you doing now?", "are", "do"),
+      pcChoice("now_or_usually", "___ Ola read comics every evening", "Does", "Is"),
+    ];
+    for (const ex of questions) {
+      const errors = validate(ex);
+      expect(errors.length > 0 && errors.every((error) => error.startsWith("pc-shape:")), `${ex.stem}: ${JSON.stringify(errors)}`).toBe(true);
+    }
+  });
+
   it("drugie zdanie składowe po Present Simple: podmiot to tylko „Dad” (bez pc-be:)", () => {
     const errors = validate(pcGap("now_or_usually", "Mum cooks dinner and Dad ___ (read) now.", "is reading"));
     expect(errors.some((error) => error.startsWith("pc-be:")), JSON.stringify(errors)).toBe(false);

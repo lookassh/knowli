@@ -31,6 +31,7 @@ import { validateErrorFix, validateListenChoiceOptions, validateNotice } from ".
 import {
   CLAUSE_CONJUNCTIONS,
   ingBaseOf,
+  isGapQuestion,
   isNowUsuallyChoice,
   SENTENCE_BOUNDARY,
   TENSE_CHOICE_OBJECTIVES,
@@ -859,6 +860,13 @@ function validateNowUsuallyChoice(ex: LessonExerciseDraft, objective: string, er
 function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
   if (objective === "now_or_usually" && isNowUsuallyChoice(ex)) {
     validateNowUsuallyChoice(ex, objective, errors);
+    return;
+  }
+  // §3.1: pytania tylko całymi zdaniami — w luce forma po podmiocie zdradza czas
+  // („___ you play…?” → Do, „___ you playing…?” → Are); jeden komunikat zamiast mylących reguł formy.
+  const choice = ex.exerciseType === "lesson_choice" || ex.exerciseType === "lesson_listen_choice";
+  if (choice && ex.stem !== undefined && isGapQuestion(ex.stem)) {
+    errors.push("pc-shape: stem: pytanie w wyborze czasu tylko całymi zdaniami w opcjach (Do you play…? / Are you playing…?) — w luce forma po podmiocie zdradza odpowiedź");
     return;
   }
   const group = tenseChoiceMarkerGroup(scannedFields(ex), errors);

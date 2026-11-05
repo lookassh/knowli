@@ -146,6 +146,20 @@ export function isNowUsuallyChoice(ex: LessonExerciseDraft): boolean {
   return texts[0] === "now" && texts[1] === "usually";
 }
 
+/**
+ * Czy bodziec z luką jest pytaniem: znak zapytania, luka na początku zdania
+ * albo tuż po pytajniku („___ you play…”, „What ___ you doing”), albo
+ * operator / forma be na początku („Does Ola ___ …”).
+ */
+export function isGapQuestion(stem: string): boolean {
+  if (!stem.includes("___")) return false;
+  if (stem.includes("?")) return true;
+  const before = normalizeTokens(stem.split("___", 2)[0] ?? "");
+  const first = tenseTokens(stem)[0];
+  return before.length === 0 || (before.length === 1 && BE_WH_WORDS.has(before[0]!)) ||
+    (first !== undefined && (BE_FORMS.has(first) || first === "do" || first === "does"));
+}
+
 /** Typy, w których cel 6 dopuszcza pytania (§3.1: w luce forma po podmiocie zdradza odpowiedź). */
 const QUESTION_TYPES_MORE: ReadonlySet<string> = new Set(["lesson_choice", "lesson_open_answer"]);
 
