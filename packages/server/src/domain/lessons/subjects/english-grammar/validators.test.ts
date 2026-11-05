@@ -165,6 +165,13 @@ describe("validateEnglishGrammarExercise — lesson_gap, temat to_be", () => {
     expect(validateEnglishGrammarExercise(beGap(AFF, "We ___ happy.", "are"), toBeV1)).toEqual([]);
   });
 
+  it("cel „contractions” wymaga twierdzenia (mapa biegunowości celów)", () => {
+    const CONTRACTIONS = "english_grammar.to_be.contractions";
+    expect(validateEnglishGrammarExercise(beGap(CONTRACTIONS, "She ___ happy.", "is", "be"), toBeV1)).toEqual([]);
+    expect(validateEnglishGrammarExercise(beGap(CONTRACTIONS, "She ___ happy.", "isn't", "be"), toBeV1))
+      .toEqual(["lesson_gap: forma przecząca nie pasuje do celu twierdzącego"]);
+  });
+
   it.each([
     ["biegunowość: twierdzenie z przeczeniem", AFF, "She ___ happy.", "is not", "be"],
     ["biegunowość: przeczenie bez not", NEG, "She ___ happy.", "is", "be"],

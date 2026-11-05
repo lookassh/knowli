@@ -58,20 +58,20 @@ export function parseBeGapAnswer(answer: string): { form: string; negative: bool
 
 export const BE_FORMS: ReadonlySet<string> = new Set(Object.values(BE_FORM_BY_SUBJECT));
 
-export const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
+const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
   this: "is",
   that: "is",
   these: "are",
   those: "are",
 };
 
-export const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "mice", "feet", "teeth"]);
+const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "mice", "feet", "teeth"]);
 
 /** Imiona własne kończące się na „s”, które heurystyka liczby wzięłaby za liczbę mnogą. */
-export const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);
+const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);
 
 /** Rzeczowniki niepoliczalne na „s” łączące się z „is” (tematy zdań z zainteresowań, #197); jawna lista, bo comics/picnics/topics to liczba mnoga. */
-export const BE_UNCOUNTABLE_S_NOUNS: ReadonlySet<string> = new Set([
+const BE_UNCOUNTABLE_S_NOUNS: ReadonlySet<string> = new Set([
   "gymnastics", "athletics", "mathematics", "maths", "physics", "politics", "economics", "electronics",
   "robotics", "aerobics", "acrobatics",
 ]);
@@ -89,7 +89,7 @@ export const BE_DETERMINERS: ReadonlySet<string> = new Set(["the", "a", "an", "m
 export const BE_WH_WORDS: ReadonlySet<string> = new Set(["what", "where", "when", "who", "whom", "whose", "why", "how"]);
 
 /** Tokeny przed luką, które nie są podmiotem (pytajniki, „there”, spójnik). */
-export const BE_NON_SUBJECT_BEFORE: ReadonlySet<string> = new Set([...BE_WH_WORDS, "there", "and", "yes", "no"]);
+const BE_NON_SUBJECT_BEFORE: ReadonlySet<string> = new Set([...BE_WH_WORDS, "there", "and", "yes", "no"]);
 
 /** Tokeny po luce pomijane przy szukaniu podmiotu (określniki i liczebniki słowne). */
 export const BE_AFTER_SKIP: ReadonlySet<string> = new Set([
@@ -110,7 +110,7 @@ export function beSubjectTokensBefore(stem: string): string[] {
 }
 
 /** Dozwolone osoby odpowiedzi dla zaimka z części pytajnej bodźca (zmiana perspektywy). */
-export const BE_ANSWER_PERSONS: Readonly<Record<string, readonly string[]>> = {
+const BE_ANSWER_PERSONS: Readonly<Record<string, readonly string[]>> = {
   i: ["you"],
   you: ["i", "we"],
   we: ["we", "you"],
@@ -210,23 +210,6 @@ export const TRANSFORM_POLARITY: Readonly<Record<string, BePolarity>> = {
   to_negative: "negative",
   to_question: "any",
 };
-
-/**
- * Forma „to be” w pełnym zdaniu i forma wymagana przez jej podmiot: pierwsza
- * forma am/is/are (po rozwinięciu skrótów) zastąpiona luką trafia do
- * `expectedBeFormNearGap`. undefined = w zdaniu nie ma formy „to be”;
- * `expected` undefined = podmiotu nie da się ustalić.
- */
-export function beAgreementInSentence(
-  sentence: string,
-): { readonly form: "am" | "is" | "are"; readonly expected: string | undefined } | undefined {
-  const tokens = normalizeTokens(sentence).flatMap((token) => BE_CONTRACTED_TOKENS[token] ?? [token]);
-  const index = tokens.findIndex((token) => BE_FORMS.has(token));
-  if (index < 0) return undefined;
-  const form = tokens[index] as "am" | "is" | "are";
-  const withGap = [...tokens.slice(0, index), "___", ...tokens.slice(index + 1)].join(" ");
-  return { form, expected: expectedBeFormNearGap(withGap) };
-}
 
 export function checkBePolarity(
   polarity: BePolarity,

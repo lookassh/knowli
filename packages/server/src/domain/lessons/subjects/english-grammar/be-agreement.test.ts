@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { beAgreementInSentence, checkBePolarity, expectedBeFormNearGap } from "./be-agreement";
+import { checkBePolarity, expectedBeFormNearGap } from "./be-agreement";
 
 describe("be-agreement", () => {
   it("expectedBeFormNearGap dla podmiotów PC (bodziec po usunięciu nawiasu)", () => {
@@ -14,19 +14,22 @@ describe("be-agreement", () => {
     expect(expectedBeFormNearGap("What ___ they doing?")).toBe("are");
   });
 
-  it("beAgreementInSentence", () => {
-    expect(beAgreementInSentence("They is playing now.")).toEqual({ form: "is", expected: "are" });
-    expect(beAgreementInSentence("Look! The dogs are running.")).toEqual({ form: "are", expected: "are" });
-    expect(beAgreementInSentence("Is she reading?")).toEqual({ form: "is", expected: "is" });
-    expect(beAgreementInSentence("He's playing now.")).toEqual({ form: "is", expected: "is" });
-    expect(beAgreementInSentence("Ola reads every day.")).toBeUndefined();
-  });
-
   it("checkBePolarity: twierdzenie z przeczeniem i przeczenie bez not", () => {
     const errors: string[] = [];
     checkBePolarity("affirmative", true, undefined, "answer", errors);
     checkBePolarity("negative", false, undefined, "answer", errors);
     checkBePolarity("any", true, "yes", "answer", errors);
-    expect(errors).toHaveLength(3);
+    expect(errors).toEqual([
+      "answer: forma przecząca nie pasuje do celu twierdzącego",
+      "answer: brak przeczenia (not) wymaganego przez cel",
+      "answer: odpowiedź po „Yes” nie może być przeczeniem",
+    ]);
+  });
+
+  it("checkBePolarity: dowolna biegunowość bez Yes/No nie zgłasza błędu", () => {
+    const errors: string[] = [];
+    checkBePolarity("any", true, undefined, "answer", errors);
+    checkBePolarity("any", false, undefined, "answer", errors);
+    expect(errors).toEqual([]);
   });
 });
