@@ -10,6 +10,7 @@ import {
   type IngRule,
 } from "../english/ing-forms";
 import {
+  BE_ADVERBS,
   BE_AFTER_SKIP,
   BE_CONTRACTED_TOKENS,
   BE_FORM_BY_SUBJECT,
@@ -222,14 +223,40 @@ function invertedSubjectAfterGap(stem: string): string[] | undefined {
   return subject.length === 0 ? undefined : subject;
 }
 
+/** Spójniki rozpoczynające kolejne zdanie składowe („Mum is cooking and Dad is reading”). */
+const CLAUSE_CONJUNCTIONS: ReadonlySet<string> = new Set(["and", "but", "while", "so", "because", "or"]);
+
+/** Granice zdań w tekście; przecinek nie jest granicą („Look, Mum is cooking”). */
+const SENTENCE_BOUNDARY = /[.!?;:]+/;
+
+/**
+ * Podmiot przed luką: tokeny od początku zdania (po „Look!” i innych zdaniach)
+ * do luki, bez przysłówków; po wcześniejszej formie be — od spójnika, który
+ * otwiera kolejne zdanie składowe („Mum is cooking and Dad ___” → „dad”).
+ */
+function subjectSpanBeforeGap(stem: string): string[] {
+  const sentence = (stem.split("___", 2)[0] ?? "").split(SENTENCE_BOUNDARY).at(-1) ?? "";
+  const tokens = expandedTokens(sentence).filter((token) => !BE_ADVERBS.has(token));
+  const lastBe = tokens.findLastIndex((token) => BE_FORMS.has(token));
+  if (lastBe < 0) return tokens;
+  const conjunction = tokens.findIndex((token, i) => i > lastBe && CLAUSE_CONJUNCTIONS.has(token));
+  return tokens.slice(conjunction >= 0 ? conjunction + 1 : lastBe + 1);
+}
+
 /**
  * Forma be wymagana przez podmiot przy luce (stem bez nawiasu); undefined = nie
- * da się ustalić. Pytanie z inwersją i podmiotem złożonym („___ the boy and
- * the girl playing?”) → are, zanim wspólna heurystyka weźmie pierwszy
- * rzeczownik; imię albo rzeczownik po luce, którego wspólna heurystyka nie
- * rozpoznaje („___ Ola reading?”) → liczba z `looksPlural`.
+ * da się ustalić. Heurystyki działają na samym zdaniu składowym z luką.
+ * Podmiot złożony przed luką („The cat and the dog ___”, „Tom and his sister
+ * ___”) → are — wspólna heurystyka widzi „and” tylko dwa tokeny przed luką.
+ * Pytanie z inwersją i podmiotem złożonym („___ the boy and the girl
+ * playing?”) → are, zanim wspólna heurystyka weźmie pierwszy rzeczownik; imię
+ * albo rzeczownik po luce, którego wspólna heurystyka nie rozpoznaje („___ Ola
+ * reading?”) → liczba z `looksPlural`.
  */
-function expectedBeForm(stem: string): string | undefined {
+function expectedBeForm(fullStem: string): string | undefined {
+  const span = subjectSpanBeforeGap(fullStem);
+  if (span.indexOf("and") > 0 && span.at(-1) !== "and") return "are";
+  const stem = `${span.join(" ")} ___ ${fullStem.split("___", 2)[1] ?? ""}`;
   const inverted = invertedSubjectAfterGap(stem);
   if (inverted?.includes("and")) return "are";
   const fromSubject = expectedBeFormNearGap(stem);
@@ -392,14 +419,8 @@ const S_CONTRACTIONS: ReadonlySet<string> = new Set(["he's", "she's", "it's", "w
 /** Pytajniki na początku zdania; dozwolony jest tylko wzorzec „What + am/is/are + podmiot + doing?”. */
 const QUESTION_WORDS: ReadonlySet<string> = new Set([...BE_WH_WORDS, "which"]);
 
-/** Spójniki rozpoczynające kolejne zdanie składowe („Mum is cooking and Dad is reading”). */
-const CLAUSE_CONJUNCTIONS: ReadonlySet<string> = new Set(["and", "but", "while", "so", "because", "or"]);
-
 /** Przysłówki między formą be a formą -ing („She is always playing”). */
 const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["always", "still", "just", "really"]);
-
-/** Granice zdań w tekście; przecinek nie jest granicą („Look, Mum is cooking”). */
-const SENTENCE_BOUNDARY = /[.!?;:]+/;
 
 /** Tokeny zdań tekstu (po rozwinięciu isn't / aren't i skrótów zaimków), bez pustych. */
 function sentenceTokens(text: string): string[][] {
@@ -460,7 +481,8 @@ function expectedBeAt(tokens: readonly string[], start: number, index: number): 
 /** Pozycja formy -ing po formie be albo undefined (krótka odpowiedź „Yes, she is.”). */
 function verbIndexAfterBe(tokens: readonly string[], index: number, inverted: boolean): number | undefined {
   let next = index + 1;
-  if (tokens[next] === "not") next++;
+  // Podwójne „not” („isn't not”) zgłasza reguła biegunowości — tu je pomijamy.
+  while (tokens[next] === "not") next++;
   if (!inverted) {
     while (next < tokens.length && BE_ADVERBS_IN_PC.has(tokens[next]!)) next++;
     return next < tokens.length ? next : undefined;
@@ -580,9 +602,17 @@ function validateShortAnswerPerson(ex: LessonExerciseDraft, answer: string, fiel
 /**
  * Klucz z całym zdaniem w celach 1, 3, 4, 5 (§6.3): pytajnik tylko „What …
  * doing?”, każda forma be zgodna z podmiotem i z formą -ing po niej, zdanie
- * z formą be, biegunowość z celu albo przekształcenia, osoba krótkiej odpowiedzi.
+ * z formą be, biegunowość z celu albo przekształcenia (`checkPolarity` false —
+ * biegunowość sprawdziła reguła luki na formę be), osoba krótkiej odpowiedzi.
  */
-function validateSentenceAnswer(ex: LessonExerciseDraft, objective: string, answer: string, field: string, errors: string[]): void {
+function validateSentenceAnswer(
+  ex: LessonExerciseDraft,
+  objective: string,
+  answer: string,
+  field: string,
+  checkPolarity: boolean,
+  errors: string[],
+): void {
   const sentence = wholeSentenceOf(ex, answer);
   const sentences = sentenceTokens(sentence);
   for (const tokens of sentences) validateQuestionWords(tokens, field, errors);
@@ -596,24 +626,55 @@ function validateSentenceAnswer(ex: LessonExerciseDraft, objective: string, answ
     errors.push(`pc-be: ${field}: zdanie w Present Continuous potrzebuje formy am/is/are`);
     return;
   }
-  const marker = sentences.map((tokens) => tokens[0]).findLast((token) => token === "yes" || token === "no");
-  const negative = sentences.some((tokens) => tokens.includes("not"));
-  checkBePolarity(polarityOf(ex, objective), negative, marker, `pc-be: ${field}`, errors);
+  if (checkPolarity) {
+    const marker = sentences.map((tokens) => tokens[0]).findLast((token) => token === "yes" || token === "no");
+    const negative = sentences.some((tokens) => tokens.includes("not"));
+    checkBePolarity(polarityOf(ex, objective), negative, marker, `pc-be: ${field}`, errors);
+  }
   validateShortAnswerPerson(ex, answer, field, errors);
+}
+
+/** Bodziec z luką na formę be w wyborze albo krótkiej odpowiedzi (ten sam kształt co luka, §6.2). */
+function beChoiceGapStem(ex: LessonExerciseDraft): string | undefined {
+  const stem = ex.exerciseType === "lesson_choice" ? ex.stem : shortAnswerQuestion(ex)?.text;
+  return stem?.includes("___") ? stem : undefined;
+}
+
+/**
+ * Dystraktor równy kluczowi z dodanym albo usuniętym „not” („Is” / „Isn't”)
+ * bez „Yes” / „No” przed luką i bez „not” po niej: oba zdania są poprawne.
+ */
+function validateBeChoiceDistractors(ex: LessonExerciseDraft, stem: string, errors: string[]): void {
+  const key = ex.options?.find((option) => option.id === ex.correctOption);
+  const parsedKey = key === undefined ? null : parseBeOnly(key.text);
+  if (parsedKey === null || yesNoBeforeGap(stem) !== undefined) return;
+  if (expandedTokens(stem.split("___", 2)[1] ?? "").includes("not")) return;
+  for (const option of ex.options ?? []) {
+    if (option.id === key!.id) continue;
+    const parsed = parseBeOnly(option.text);
+    if (parsed !== null && parsed.form === parsedKey.form && parsed.negative !== parsedKey.negative) {
+      errors.push(`pc-be: options: „${option.text}” i „${key!.text}” dają dwa poprawne zdania — dystraktor musi być błędny`);
+    }
+  }
 }
 
 /** Całe zdania (choice, order, short_answer, transform, open_answer; §6.3, §5.4). */
 function validateSentences(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
   const pcObjective = PC_SENTENCE_OBJECTIVES.has(objective);
+  const gapStem = beChoiceGapStem(ex);
   for (const { field, text } of sentenceAnswersOf(ex)) {
     const contraction = normalizeTokens(text).find((token) => S_CONTRACTIONS.has(token));
     if (contraction !== undefined) {
       errors.push(`pc-shape: ${field}: skrót „${contraction}” jest zakazany w kluczu — zapisz pełne „is” (He is playing)`);
       continue;
     }
-    if (pcObjective) validateSentenceAnswer(ex, objective, text, field, errors);
+    if (!pcObjective) continue;
+    const parsed = gapStem === undefined ? null : parseBeOnly(text);
+    if (parsed !== null) validateBeOnlyGapAnswer(ex, gapStem!, parsed, field, errors);
+    validateSentenceAnswer(ex, objective, text, field, parsed === null, errors);
   }
   if (!pcObjective) return;
+  if (gapStem !== undefined) validateBeChoiceDistractors(ex, gapStem, errors);
   const question = shortAnswerQuestion(ex);
   if (question !== undefined) {
     for (const tokens of sentenceTokens(question.text)) validateQuestionWords(tokens, question.field, errors);
@@ -644,5 +705,6 @@ export function validatePresentContinuousExercise(ex: LessonExerciseDraft): stri
   } else if (WHOLE_SENTENCE_TYPES.has(ex.exerciseType)) {
     validateSentences(ex, objective, errors);
   }
-  return errors;
+  // Reguła luki na formę be i reguła zdania mogą zgłosić tę samą niezgodność formy z podmiotem.
+  return [...new Set(errors)];
 }

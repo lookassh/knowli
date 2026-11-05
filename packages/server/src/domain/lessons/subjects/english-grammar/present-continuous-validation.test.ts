@@ -63,6 +63,10 @@ describe("validatePresentContinuousExercise — luka, poprawne", () => {
     ["affirmative", "He ___ (look) at the stars now.", "is looking"],
     ["affirmative", "They ___ playing now.", "are"],
     ["negative", "She ___ sleeping now.", "isn't"],
+    ["affirmative", "The cat and the dog ___ (sleep) now.", "are sleeping"],
+    ["affirmative", "Tom and his sister ___ (play) now.", "are playing"],
+    ["affirmative", "Look! The cat and the dog ___ (sleep).", "are sleeping"],
+    ["affirmative", "Mum is cooking and Dad ___ (read) now.", "is reading"],
   ];
   it.each(ok)("%s: „%s” → „%s”", (objective, stem, answer) => {
     expect(validate(pcGap(objective, stem, answer))).toEqual([]);
@@ -83,6 +87,8 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
     expectPrefix(pcGap("questions", "___ Tom and Ola playing?", "Is"), "pc-be:");
     expectPrefix(pcGap("questions", "___ your mum and dad cooking?", "Is"), "pc-be:");
     expectPrefix(pcGap("questions", "What ___ the cat and the dog doing?", "is"), "pc-be:");
+    expectPrefix(pcGap("affirmative", "The cat and the dog ___ (sleep) now.", "is sleeping"), "pc-be:");
+    expectPrefix(pcGap("affirmative", "Ola and her mum ___ (cook) now.", "is cooking"), "pc-be:");
   });
 
   it("brak formy -ing albo zła forma (pc-ing:)", () => {
@@ -240,6 +246,21 @@ describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
     ["krótka odpowiedź z luką po „No”", pcShortAnswer("Is she reading? No, she ___.", "isn't", "is")],
     ["wybór formy be przy -ing z bodźca (klasa sprawdzana tylko w kluczu)", pcChoice("affirmative", "The dogs ___ running now.", "are", "is")],
     ["wybór Is/Are przy imieniu", pcChoice("questions", "___ Ola reading a book?", "Is", "Are")],
+    ["podmiot złożony z określnikami", pcTranslation("affirmative", "Kot i pies teraz śpią.", "The cat and the dog are sleeping now.")],
+    ["podmiot złożony z zaimkiem dzierżawczym", pcTranslation("affirmative", "Tom i jego siostra teraz grają.", "Tom and his sister are playing now.")],
+    ["podmiot złożony „The boy and the girl”", pcOrder("affirmative", "The boy and the girl are playing now.")],
+    ["podmiot złożony „Ola and her mum”", pcOrder("affirmative", "Ola and her mum are cooking now.")],
+    ["podmiot złożony „She and her friend”", pcOrder("affirmative", "She and her friend are playing now.")],
+    ["podmiot złożony po „Look!”", pcTranslation("affirmative", "Patrz! Kot i pies śpią.", "Look! The cat and the dog are sleeping.")],
+    ["wybór z podmiotem złożonym", pcChoice("affirmative", "The cat and the dog ___ now.", "are sleeping", "is sleeping")],
+    ["wybór formy be bez dwuznaczności", pcSentence("lesson_choice", "questions", "Is", {
+      stem: "___ she reading a book?",
+      options: [{ id: "a", text: "Is" }, { id: "b", text: "Are" }, { id: "c", text: "Am" }],
+      correctOption: "a",
+    })],
+    ["wybór po „No” z dystraktorem innej osoby", pcChoice("questions", "Is she reading? No, she ___.", "isn't", "aren't")],
+    ["czasownik pogody", pcOrder("questions", "Is it raining now?")],
+    ["czasownik pogody w wyborze", pcChoice("questions", "___ it snowing now?", "Is", "Are")],
   ];
   it.each(ok)("%s", (_name, ex) => {
     expect(validate(ex)).toEqual([]);
@@ -270,6 +291,13 @@ describe("validatePresentContinuousExercise — całe zdania, odrzucone", () => 
     ["tłumaczenie ze wskaźnikiem „zwykle”", pcTranslation("affirmative", "Tata teraz zawsze gotuje obiad.", "Dad is cooking dinner now."), "pc-marker:"],
     ["wybór z kluczem z czasownikiem stanu", pcChoice("affirmative", "___", "I am liking it now.", "I like it now."), "pc-state:"],
     ["wybór z formą be niezgodną z podmiotem", pcChoice("affirmative", "The dogs ___ now.", "is running", "are running"), "pc-be:"],
+    ["„The cat and the dog is”", pcOrder("affirmative", "The cat and the dog is sleeping now."), "pc-be:"],
+    ["„Tom and his sister is”", pcTranslation("affirmative", "Tom i jego siostra teraz grają.", "Tom and his sister is playing now."), "pc-be:"],
+    ["klucz z „Where's”", pcOrder("questions", "Where's he going?"), "pc-shape:"],
+    ["klucz z „Who's”", pcOrder("questions", "Who's playing now?"), "pc-shape:"],
+    ["wybór: klucz „Isn't” w celu 4 (twierdzenie też pasuje)", pcChoice("questions", "___ she reading a book?", "Isn't", "Is"), "pc-be:"],
+    ["wybór: dystraktor „Isn't” do klucza „Is” (dwie poprawne)", pcChoice("questions", "___ she reading a book?", "Is", "Isn't"), "pc-be:"],
+    ["wybór: podwójne przeczenie w celu 3", pcChoice("negative", "She ___ not sleeping now.", "isn't", "is"), "pc-be:"],
   ];
   it.each(rejected)("%s", (_name, ex, prefix) => {
     expectPrefix(ex, prefix);

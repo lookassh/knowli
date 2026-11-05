@@ -21,6 +21,12 @@ describe("tabela form -ing", () => {
     expect([ingFormOf("fix"), ingFormOf("jump")]).toEqual(["fixing", "jumping"]);
   });
 
+  it("czasowniki pogody („Is it raining now?”)", () => {
+    expect([ingFormOf("rain"), ingRuleOf("rain")]).toEqual(["raining", "plain"]);
+    expect([ingFormOf("snow"), ingRuleOf("snow")]).toEqual(["snowing", "plain"]);
+    expect([ingFormOf("shine"), ingRuleOf("shine")]).toEqual(["shining", "drop_e"]);
+  });
+
   it("czasownik spoza tabeli i czasowniki stanu → undefined", () => {
     expect(ingFormOf("photosynthesise")).toBeUndefined();
     expect(ingRuleOf("photosynthesise")).toBeUndefined();
