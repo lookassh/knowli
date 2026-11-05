@@ -52,6 +52,7 @@ import {
 } from "./probe-costs";
 import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
 import { probePreflight } from "./probe-preflight";
+import { recordingAgent, type AgentSubmission } from "./probe-submissions";
 
 const { eq } = createRequire(new URL("../../packages/server/package.json", import.meta.url))("drizzle-orm") as typeof import("../../packages/server/node_modules/drizzle-orm");
 
@@ -84,8 +85,8 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  *   się nie udał, plik wyników dostaje `add: { skipped }`;
  * - `UMIEM_PROBE_OUT_DIR` — katalog wyników poza repozytorium (wymagany): plik
  *   `chapter-<czas>.json` na każde uruchomienie (liczby, braki pokrycia, koszt; tu też treść
- *   tytułów zagadnień i odpowiedzi luk oraz wiersze dzienników `[lesson]`/`[lesson-agent]` — tylko
- *   w pliku);
+ *   tytułów zagadnień i odpowiedzi luk, wiersze dzienników `[lesson]`/`[lesson-agent]` oraz każde
+ *   ćwiczenie wysłane przez agenta z odpowiedzią walidacji (`agentSubmissions`) — tylko w pliku);
  * - `UMIEM_PROBE_COSTS` — rejestr kosztów prób `costs.json` (wymagany, musi istnieć; nowy zakłada
  *   tylko `UMIEM_PROBE_COSTS_INIT=1`, z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD): przed startem
  *   „wydane + szacunek (z „+N”) > limit → stop”, przed każdym runem wpis tymczasowy z budżetem runu
@@ -334,9 +335,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       mkdirSync(directory, { recursive: true });
     }
 
+    // Wysłane ćwiczenia z odpowiedzią walidacji (przyczyny odrzuceń nie trafiają do punktu kontrolnego) — tylko do pliku wyników.
+    const submissions: AgentSubmission[] = [];
     const services = createServices({
       db: testDatabase().db,
-      generation: { ...base, lessonAgent },
+      generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions) } },
     });
 
     const titleOf = { chapter: "Angielski — rozdział", school: "szkoła (Geografia)", grammar: "Angielski — gramatyka (Present Simple)" } as const;
@@ -459,6 +462,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
       },
       lessonLog: lessonLog.map((text) => text.replace(/run=[0-9a-f-]+ /u, "")),
+      agentSubmissions: submissions,
     });
     /** Plik wyników: wspólna część (wejście, modele, szacunek) i stan przebiegu; koszt i dziennik dokłada zapis. */
     const resultsOf = (run: Record<string, unknown>): Record<string, unknown> => ({
@@ -545,7 +549,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         line("Brak szkicu po generacji — nie ma co raportować.");
         return;
       }
-      line(`Dziennik generacji: ${lessonLog.length} wierszy (tylko w pliku wyników)`);
+      line(`Dziennik generacji: ${lessonLog.length} wierszy; wysłane ćwiczenia: ${submissions.length}, odrzucone: ${submissions.filter((entry) => "errors" in entry).length} (przyczyny tylko w pliku wyników)`);
       results.draft = reportDraft(draft);
 
       // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).
