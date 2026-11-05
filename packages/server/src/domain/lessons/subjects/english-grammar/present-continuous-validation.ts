@@ -424,12 +424,20 @@ function clauseTokensBeforeGap(stem: string): string[] {
 }
 
 /**
+ * Skrót pytajnika albo wskaźnika z „is” (what's, where's, there's…): `tenseTokens`
+ * go nie rozwija. „Ola's” (dzierżawczy) nie pasuje, bo wzorzec zna tylko te słowa.
+ */
+const INTERROGATIVE_BE_CONTRACTION = /^(what|where|who|how|why|when|here|there|that)'s$/;
+
+/**
  * Luka z czasownikiem (§6.2) obejmuje całą formę (am/is/are [not] + -ing albo
  * Present Simple), więc przed luką w tym samym zdaniu składowym nie ma już
  * formy be ani do/does — inaczej po wstawieniu powstaje „Is she is reading?”.
  */
 function validateVerbGapOwnsWholeForm(stem: string, errors: string[]): void {
-  const present = clauseTokensBeforeGap(stem).find((token) => BE_FORMS.has(token) || token === "do" || token === "does");
+  const present = clauseTokensBeforeGap(stem).find(
+    (token) => BE_FORMS.has(token) || token === "do" || token === "does" || INTERROGATIVE_BE_CONTRACTION.test(token),
+  );
   if (present !== undefined) {
     errors.push(`pc-shape: stem: luka z czasownikiem obejmuje całą formę — w zdaniu przed luką jest już „${present}” (He ___ (play) now.)`);
   }

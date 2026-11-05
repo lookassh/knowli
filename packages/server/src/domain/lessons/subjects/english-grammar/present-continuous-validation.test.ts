@@ -158,9 +158,19 @@ describe("validatePresentContinuousExercise — luka, odrzucone", () => {
     expectPrefix(pcGap("affirmative", "Look! Mum is cooking and Dad is ___ (read).", "is reading"), "pc-shape:");
   });
 
+  it("skrót what's / where's i pełne „is” w pytaniu przed luką z czasownikiem (pc-shape:)", () => {
+    expectPrefix(pcGap("questions", "What's Ola ___ (do)?", "is doing"), "pc-shape:");
+    expectPrefix(pcGap("questions", "Where's Tom ___ (go)?", "is going"), "pc-shape:");
+    expectPrefix(pcGap("questions", "What is Ola ___ (do)?", "is doing"), "pc-shape:");
+  });
+
   it("forma be w poprzednim zdaniu albo zdaniu składowym nie blokuje luki z czasownikiem", () => {
     expect(validate(pcGap("affirmative", "Mum is cooking and Dad ___ (read) now.", "is reading"))).toEqual([]);
     expect(validate(pcGap("affirmative", "Look! Mum is cooking. Dad ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "I do my homework every day and Tom ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "This is Ola. She ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Ola's mum ___ (read) now.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("now_or_usually", "Every day Ola ___ (read) a comic.", "reads"))).toEqual([]);
   });
 
   it("wskaźnik zakazany (pc-marker:)", () => {
