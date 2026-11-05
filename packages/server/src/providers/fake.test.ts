@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { lessonExerciseIdentity, lessonExerciseStimulusRecord } from "../domain/lessons/exercise-identity";
 import { explanationTextErrors } from "../domain/lessons/exercise-explanation";
 import { poolCoverage, validatePool } from "../domain/lessons/pool-validation";
@@ -15,7 +15,10 @@ import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../domain/
 import { objectiveBatchCounts, poolStageCounts, toExerciseDraft } from "../modules/materials/lessons/lesson-drafts";
 import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
 import type { GraderInput } from "../ports/ai";
-import { DEFAULT_FAKE_DECK_ITEMS, FakeAnswerGrader, FakeLessonReviewer, FakeLlmProvider, FakeTtsProvider } from "./fake";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_FAKE_DECK_ITEMS, FAKE_HOLD_MAX_AGE_MS, FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, FakeAnswerGrader, FakeImageProvider, FakeLessonReviewer, FakeLlmProvider, FakeTtsProvider, waitWhileFakeHeld } from "./fake";
 
 describe("FakeAnswerGrader — koszt runu", () => {
   const input: GraderInput = {
@@ -49,6 +52,41 @@ describe("FakeAnswerGrader — koszt runu", () => {
     const grader = new FakeAnswerGrader();
     await expect(grader.grade(input, AbortSignal.timeout(1000))).resolves.toBeDefined();
     expect(grader.callCount).toBe(1);
+  });
+});
+
+describe("bramka fake providerów E2E (holdFile)", () => {
+  it("zestaw, TTS i obraz czekają, dopóki plik bramki istnieje", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "knowli-fake-hold-"));
+    const holdFile = join(dir, "hold");
+    try {
+      writeFileSync(holdFile, "");
+      const settled: string[] = [];
+      const calls = [
+        new FakeLlmProvider({ holdFile }).generateDeck({ prompt: "dni tygodnia", count: 2, vocabularyFormat: "standard" } as never).then(() => settled.push("deck")),
+        new FakeTtsProvider({ holdFile }).synthesize({ text: "monday" } as never).then(() => settled.push("tts")),
+        new FakeImageProvider({ holdFile }).generate({ prompt: "monday", model: "m", size: "s", quality: "q", format: "png" }).then(() => settled.push("image")),
+      ];
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(settled).toEqual([]);
+      rmSync(holdFile);
+      await Promise.all(calls);
+      expect(settled.sort()).toEqual(["deck", "image", "tts"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignoruje plik bramki starszy niż FAKE_HOLD_MAX_AGE_MS (awaria testu bez zwolnienia)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "knowli-fake-hold-"));
+    const holdFile = join(dir, "hold");
+    try {
+      writeFileSync(holdFile, "");
+      // Świeży plik wstrzymałby wywołanie bez końca; stary kończy czekanie od razu.
+      await expect(waitWhileFakeHeld(holdFile, () => Date.now() + FAKE_HOLD_MAX_AGE_MS + 1_000)).resolves.toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -136,6 +174,25 @@ describe("FakeLlmProvider — wybór ze słuchu (listenChoicePerObjective)", () 
     expect(result.valid.filter((draft) => draft.exerciseType === "lesson_listen_choice")).toHaveLength(2);
     // Dodatek leży poza podziałem etapów: reszta puli ma dotychczasową liczbę ćwiczeń.
     expect(drafts).toHaveLength(9 + 2);
+  });
+
+  it("znacznik wolnej lekcji w materiale opóźnia pulę mimo zerowego lessonDelayMs", async () => {
+    vi.useFakeTimers();
+    try {
+      const input = grammarInput(presentSimpleV1, "third_person_s");
+      const llm = new FakeLlmProvider();
+      await expect(llm.generateLessonPool(input)).resolves.toBeDefined();
+      let settled = false;
+      const slow = llm.generateLessonPool({ ...input, material: `${input.material} ${FAKE_SLOW_MARKER}` })
+        .then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(FAKE_SLOW_DELAY_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await slow;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("bez pola (albo z zerem) nie dokłada ćwiczeń słuchowych", async () => {

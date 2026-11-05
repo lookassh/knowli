@@ -9,6 +9,7 @@ describe("readTestRunConfig", () => {
     expect(a.integrationContainerPrefix).not.toBe(b.integrationContainerPrefix);
     expect(a.e2eContainer).not.toBe(b.e2eContainer);
     expect(a.worldFile).not.toBe(b.worldFile);
+    expect(a.fakeHoldFile).not.toBe(b.fakeHoldFile);
     expect(a.outputDir).not.toBe(b.outputDir);
     expect(a.outputDir).toBe("test-results/run-a");
     expect(a.workerHealthPort).not.toBe(b.workerHealthPort);
@@ -25,12 +26,14 @@ describe("readTestRunConfig", () => {
       e2ePort: 24500,
       workerHealthPort: 9301,
       worldFile: "tests/e2e/.world.json",
+      fakeHoldFile: "tests/e2e/.fake-hold",
       outputDir: "test-results",
       e2eWebMode: "start",
       e2eSkipBuild: false,
       e2eWorkers: 4,
       e2eBucket: null,
       integrationBucket: null,
+      integrationWorkers: null,
     });
   });
 
@@ -96,5 +99,16 @@ describe("readTestRunConfig", () => {
 
   it.each(["0", "10", "-1", "a", "1.5"])("rejects invalid integration bucket %j", (value) => {
     expect(() => readTestRunConfig({ UMIEM_INTEGRATION_BUCKET: value })).toThrow(/UMIEM_INTEGRATION_BUCKET/);
+  });
+
+  it("parses integration workers; unset and empty mean the CPU-based default", () => {
+    expect(readTestRunConfig({}).integrationWorkers).toBeNull();
+    expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "" }).integrationWorkers).toBeNull();
+    expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "1" }).integrationWorkers).toBe(1);
+    expect(readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: "16" }).integrationWorkers).toBe(16);
+  });
+
+  it.each(["0", "17", "-1", "a", "1.5"])("rejects invalid integration workers %j", (value) => {
+    expect(() => readTestRunConfig({ UMIEM_INTEGRATION_WORKERS: value })).toThrow(/UMIEM_INTEGRATION_WORKERS/);
   });
 });

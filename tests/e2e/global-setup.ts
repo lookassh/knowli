@@ -225,6 +225,12 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
     await writeFile(worldFile, JSON.stringify({ databaseUrl }, null, 2));
     cleanup.push(() => rm(worldFile, { force: true }));
 
+    // Bramka fake providerów (tests/e2e/helpers/fake-hold.ts): plik po przerwanym
+    // przebiegu nie może wstrzymać generowania w nowym świecie.
+    const fakeHoldFile = join(repoRoot, TEST_RUN_CONFIG.fakeHoldFile);
+    await rm(fakeHoldFile, { force: true });
+    cleanup.push(() => rm(fakeHoldFile, { force: true }));
+
     const mediaRoot = await mkdtemp(join(tmpdir(), "knowli-e2e-media-"));
     cleanup.push(() => rm(mediaRoot, { recursive: true, force: true }));
 
@@ -237,8 +243,14 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
       UMIEM_E2E: "1",
       UMIEM_E2E_READY_TOKEN: readyToken,
       UMIEM_FAKE_PROVIDERS: "1",
-      UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "750",
-      UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "3000",
+      // Fake'i bez sztucznego opóźnienia. Specy, które sprawdzają przejściowy
+      // stan „generowanie” (zestaw, TTS, obrazy), wstrzymują fake'i bramką
+      // UMIEM_FAKE_HOLD_FILE (holdFakeGeneration) zamiast ścigać się z zegarem;
+      // test restartu trwającej generacji lekcji oznacza materiał
+      // FAKE_SLOW_MARKER (fake.ts).
+      UMIEM_FAKE_DELAY_MS: process.env.UMIEM_E2E_FAKE_DELAY_MS ?? "0",
+      UMIEM_FAKE_HOLD_FILE: fakeHoldFile,
+      UMIEM_FAKE_LESSON_DELAY_MS: process.env.UMIEM_E2E_FAKE_LESSON_DELAY_MS ?? "0",
       UMIEM_TTS_PROVIDER: "fake-tts",
       UMIEM_TTS_MODEL: "fake-tts-1",
       UMIEM_TTS_VOICE: "fake-voice",
