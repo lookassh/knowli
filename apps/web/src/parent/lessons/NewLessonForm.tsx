@@ -460,9 +460,10 @@ export default function NewLessonForm({
   };
   // przedmiot z agentem puli ma własne usługi generowania (zamiast katalogowej) i drugi model sprawdzający
   const serviceInfo = subjectServiceInfo(subject);
-  const generationService = serviceInfo.generationServices ?? catalog?.generationService;
-  const themesService = generationService
-    ? messages.lessons.themesService.replace("{service}", () => generationService)
+  // tematy zdań trafiają tylko do generatora ćwiczeń (u agenta — do jego modelu, nie do usługi historyjki)
+  const themesTarget = serviceInfo.themesService ?? catalog?.generationService;
+  const themesService = themesTarget
+    ? messages.lessons.themesService.replace("{service}", () => themesTarget)
     : messages.lessons.themesServiceUnknown;
   // krytyk lekcji nie przegląda puli agenta, więc jego komunikat znika przy przedmiocie z `checkService`
   const reviewService = serviceInfo.check === null ? catalog?.reviewService : undefined;

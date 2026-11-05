@@ -10,6 +10,11 @@ type CatalogSubject = SubjectCatalogDto["subjects"][number];
 export interface SubjectServiceInfo {
   /** Usługi generujące, np. „host · model, host · model”. */
   generationServices: string | null;
+  /**
+   * Usługa, do której trafiają tematy zdań: sam model agenta (pierwsza z `generationServices`; usługa
+   * etapu zagadnień i runu historyjki tematów nie dostaje).
+   */
+  themesService: string | null;
   /** Komunikat o generowaniu (materiał trafia do usług z `generationServices`). */
   generation: string | null;
   /** Komunikat o drugim modelu rozwiązującym ćwiczenia; wariant z materiałem wg polityki checkera. */
@@ -20,12 +25,14 @@ export function subjectServiceInfo(subject: CatalogSubject | undefined): Subject
   const checkService = subject?.checkService;
   const list = subject?.generationServices ?? [];
   const services = list.length > 0 ? list.join(", ") : null;
-  if (!checkService) return { generationServices: services, generation: null, check: null };
+  const themesService = list[0] ?? null;
+  if (!checkService) return { generationServices: services, themesService, generation: null, check: null };
   const checkTemplate = subject.checkServiceIncludesMaterial ? messages.lessons.checkServiceInfoWithMaterial : messages.lessons.checkServiceInfo;
   // Kilka usług (agent i UMIEM_LLM) — liczba mnoga.
   const generationTemplate = list.length > 1 ? messages.lessons.generationServicesInfo : messages.lessons.generationServiceInfo;
   return {
     generationServices: services,
+    themesService,
     generation: services ? generationTemplate.replace("{service}", () => services) : null,
     check: checkTemplate.replace("{service}", () => checkService),
   };

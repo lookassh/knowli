@@ -444,7 +444,8 @@ describe("NewLessonForm", () => {
     });
 
     describe("przedmiot z agentem puli (checkService)", () => {
-      const GEN = ["openrouter.ai · google/gemini-3.8-flash", "openrouter.ai · google/gemini-3.8-pro"];
+      // model agenta, potem usługa UMIEM_LLM (etap zagadnień / historyjka) — ta sama co katalogowa
+      const GEN = ["openrouter.ai · google/gemini-3.8-pro", SERVICE];
       const CHECK = "openrouter.ai · deepseek/deepseek-v4.1-flash-1017";
       const REVIEW = "openrouter.ai · anthropic/claude-sonnet-5.5";
       const agentGrammar = { ...grammar, generationServices: GEN, checkService: CHECK };
@@ -455,7 +456,9 @@ describe("NewLessonForm", () => {
         expect(markup).toContain(messages.lessons.checkServiceInfo.replace("{service}", CHECK));
         expect(markup).not.toContain(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
         expect(markup).toContain(messages.lessons.generationServicesInfo.replace("{service}", GEN.join(", ")));
-        expect(markup).toContain(messages.lessons.themesService.replace("{service}", GEN.join(", ")));
+        // tematy zdań: tylko model agenta (druga usługa — UMIEM_LLM historyjki — tematów nie dostaje)
+        expect(markup).toContain(messages.lessons.themesService.replace("{service}", GEN[0]!));
+        expect(markup).not.toContain(messages.lessons.themesService.replace("{service}", GEN.join(", ")));
         expect(markup).not.toContain(messages.lessons.themesService.replace("{service}", SERVICE));
         expect(markup).not.toContain('data-testid="lesson-review-service"');
       });
