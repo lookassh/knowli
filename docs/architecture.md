@@ -714,7 +714,7 @@ Po błędnej odpowiedzi albo „Nie pamiętam” w lekcji gramatyki lub rozdzia�
 
 ### 19.15. Rozwiązania widoczne wcześniej i dogenerowanie pod etap (2026-11-02)
 
-Ćwiczenie samodzielne sprawdza przypominanie tylko wtedy, gdy dziecko nie widziało jego rozwiązania wcześniej w lekcji. Design: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md` (§3, §5; PR 1 etapu przeglądu — kontrola ujawnień i dogenerowanie; krytyk AI, planowany jako kolejny PR, został usunięty w etapie 3 #237 — §19.16).
+Ćwiczenie samodzielne sprawdza przypominanie tylko wtedy, gdy dziecko nie widziało jego rozwiązania wcześniej w lekcji. Design: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md` (§3, §5; PR 1 etapu przeglądu — kontrola ujawnień i dogenerowanie; krytyk AI wdrożony w PR 2 etapu przeglądu (#236) został usunięty w etapie 3 #237 — §19.16).
 
 - **Dwie relacje, jedna funkcja domenowa.** `findExposureLeaks` (`domain/lessons/exposure-leaks.ts`, czysta, bez I/O) ma tryb `coverage` i `generation`. Pokrycie (odczyt i publikacja) odwzorowuje scheduler: równość kluczy `lessonExerciseTargetKey`/`lessonTextTargetKey` (rozdział — rozwiązane zdanie, gramatyka — słowo, szkoła — odpowiedź). Generowanie jest ostrzejsze: `answersEquivalent` normalizatora przedmiotu na odpowiedzi i `acceptedAnswers`, żeby „She goes to school.” i „She goes to school” nie omijały reguły. Wpis na ofiarę: **twarde** (rozwiązanie = przykład karty albo ćwiczenie niesamodzielne) albo **miękkie** (wcześniejsze ćwiczenie samodzielne o tym samym rozwiązaniu — liczy się tylko pierwsze, reszta nie; rodziny pytań szkolnych współistnieją, nic nie jest usuwane).
 - **Pokrycie.** `lessonCoverageGaps` (`domain/lessons/lesson-coverage.ts`) nie liczy do etapu samodzielnego ćwiczeń ujawnionych (twardo i miękko); reguła różnych odpowiedzi otwartych szkoły (`DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE`) liczy się po wykluczeniu, a przy dwóch źródłach braku wygrywa większy brak. Brak etapu niesie opcjonalne `excluded` (ile ujawnionych wykluczono). Używają go odczyt szkicu (`readLessonDraftDto`) i `publishLessonDraft` (409 `lesson coverage incomplete`, komunikat bez zmian, `details.coverage[]` z `excluded?`). Odczyt **wersji opublikowanej** liczy pokrycie z `ignoreExposure: true` (jak przed regułą: bez `excluded` i bez nowych braków), bo wersja jest niezmienna; wykluczenie działa przy publikacji szkicu. **Zmiana zachowania dla istniejących szkiców**: szkic z ujawnieniem, który wcześniej się publikował, może wymagać poprawy; wersje opublikowane i sesje bez zmian. Edytor podpisuje taki brak „{objective} · {stage}: jest {actual}, trzeba {required} (nie liczy się {excluded} z rozwiązaniem widocznym wcześniej)” (`coverageGapExcluded`).
@@ -729,9 +729,9 @@ Po błędnej odpowiedzi albo „Nie pamiętam” w lekcji gramatyki lub rozdzia�
 - **API → MCP → skill.** Bez zmian: pola dotyczą edytora lekcji rodzica (`LessonDraftDto`), a lekcje są poza `learning-overview`, narzędziami MCP i `SKILL.md` (kontrakt i filtr bez zmian). Nie wymaga wdrożenia u konsumenta MCP.
 - **Niezweryfikowane.** Skuteczność `avoidSentences` i rundy pod etap na prawdziwym modelu — testy używają fake'a, bez próby płatnej.
 
-### 19.16. Krytyk lekcji (2026-11-02, PR 2 etapu przeglądu)
+### 19.16. Krytyk lekcji (2026-11-02, PR 2 etapu przeglądu) — usunięty 2026-11-05 (#237)
 
-Krytyk lekcji usunięty w etapie 3 #237, 2026-11-05; historia: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md`. Reguła twarda ujawnień (§19.15) zostaje.
+Krytyk lekcji usunięty w etapie 3 #237, 2026-11-05; historia: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md`. Reguła twarda ujawnień (§19.15) zostaje. Stary klucz `lesson_context.review` w istniejących szkicach i wersjach jest ignorowany (nie trafia do DTO), a „Utwórz nową wersję” go nie kopiuje.
 
 ### 19.17. Agent generujący pulę (etap 1, 2a i 2b, 2026-11-04/05, #237)
 

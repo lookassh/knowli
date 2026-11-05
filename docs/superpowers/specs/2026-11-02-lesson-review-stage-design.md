@@ -1,4 +1,4 @@
-> Krytyk (PR 2 tego etapu) usunięty w etapie 3 #237 PR 1 (2026-11-05); reguła twarda ujawnień zostaje; runda pod etap usunięta w etapie 3 PR 2.
+> Krytyk (PR 2 tego etapu) usunięty w etapie 3 #237 PR 1 (2026-11-05); reguła twarda ujawnień zostaje; runda pod etap zostanie usunięta w etapie 3 PR 2 (do tego czasu zostaje w kodzie).
 
 # Etap przeglądu przy generowaniu lekcji (kontrola ujawnień + krytyk) — design
 

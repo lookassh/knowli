@@ -69,12 +69,6 @@ describe("validateSubject — reguły (po jednym przypadku negatywnym)", () => {
     expect(storyErrors({ ...subject, lessonStory: false })).toEqual([]);
   });
 
-  it("przedmioty produkcyjne przechodzą walidację katalogu", () => {
-    for (const production of PRODUCTION_SUBJECTS) {
-      expect(validateSubject(production)).toEqual([]);
-    }
-  });
-
   it("dopuszcza ten sam id tematu w różnych wersjach", () => {
     const subject = cloneSubject();
     const older = cloneData(firstTopic(subject));

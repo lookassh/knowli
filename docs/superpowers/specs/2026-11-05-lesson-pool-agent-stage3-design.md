@@ -146,11 +146,13 @@ wyłączony) jest wołany tylko z potoku. Usuwamy go w całości:
   `lesson-agent-generation.test.ts`.
 - **Przenosimy** z `lesson-review.test.ts` test „Utwórz nową wersję → kopia
   bez `review` i bez `generationGaps`” (jedyny test `withoutRunReports`) do
-  `lesson-agent-generation.test.ts`: zasiew obu kluczy `jsonb_set`, publikacja,
-  `createLessonDraftFromPublished`, asercja braku obu kluczy.
-- **Zgodność starych danych:** w `lesson-agent-generation.test.ts` asercję
-  „agent nie rusza `review`” zastępuje: zasiew `review` w JSONB → run →
-  `readLessonDeck`: run `succeeded`, DTO szkicu bez `review`.
+  `tests/integration/lesson-generation.test.ts`: zasiew obu kluczy `jsonb_set`,
+  publikacja, `createLessonDraftFromPublished`, asercja braku obu kluczy.
+  Tam też test „DTO bez `review`”.
+- **Zgodność starych danych:** w `lesson-agent-generation.test.ts` dwa testy
+  na ścieżce potoku („potok: nowy szkic bez klucza review”, „potok: stary klucz
+  review w szkicu”): zasiew `review` w JSONB → run → `readLessonDeck`: run
+  `succeeded`, DTO szkicu bez `review`. Testy „potok:” znikają w PR 2 (§6.1).
 - **Strażnik limitu runu:** w `loop.test.ts` zostaje prosty test
   `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS < WORKER_HEALTH_STALE_MS` na
   wartościach domyślnych (dziś pilnuje tego test ostrzeżenia krytyka).
@@ -337,7 +339,10 @@ dodaje także `agentPolicy`.
 - Przy `true` katalog opisuje usługi agenta (`generationServices`,
   `checkService`, `checkServiceIncludesMaterial`, `openCheckService`) bez
   warunku listy; przy `false` ich nie ma. Informacja o usłudze tematów zdań
-  (`themesService ?? generationService` w formularzu) zostaje; plan sprawdza,
+  (`themesService ?? generationService` w formularzu) zostaje, a gdy agent jest
+  jedynym generatorem, komunikat `themesService*` wymienia też checkera agenta:
+  dostaje gotowe zdania, nie listę tematów (AGENTS.md: checker i krytyk nie
+  widzą listy tematów); plan sprawdza,
   co z katalogowym `generationService` potoku zostaje potrzebne (zagadnienia
   szkoły, historyjka) i odpowiednio zmienia fixture'y `mocked`.
 - Web i worker muszą widzieć ten sam klucz agenta. W `deploy/compose.yaml`
@@ -399,6 +404,9 @@ wymieniają nowych domyślnych odbiorców wprost.
   `lesson-chapter.test.ts`), które muszą mieć po PR 2 test na ścieżce agenta
   (przepisany albo wskazany istniejący w `lesson-agent-generation.test.ts` lub
   unit); plan przypisuje każdemu decyzję:
+  - zgodność starych danych: stary klucz `review` w szkicu (run `succeeded`,
+    DTO bez `review`) i kopia wersji bez `review`/`generationGaps` — przenieść
+    na ścieżkę agenta, bo testy „potok:” znikają;
   - zapis: `payload_version`, `target_key`, umiejętność zagadnienia, stan
     `review`; ćwiczenia słuchowe w gramatyce bez odrzuceń i czyszczenie
     polecenia/podpowiedzi/piktogramu (`agentPolicy.sanitize`);

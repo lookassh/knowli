@@ -819,9 +819,9 @@ Dodanie przedmiotu to nowy katalog modułu i jeden wpis w rejestrze; silnik (typ
 - **Dziecko** nie widzi ostrzeżeń ani raportów (Kid DTO bez zmian). Raport Hermesa (`learning-overview`), MCP i skill bez zmian — lekcje pozostają poza nimi.
 - Szczegóły: `docs/architecture.md` §19.15, design `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md`.
 
-### 29a.9. Automatyczna kontrola jakości przez krytyka (2026-11-02, PR 2)
+### 29a.9. Automatyczna kontrola jakości przez krytyka (2026-11-02, PR 2) — usunięty 2026-11-05 (#237)
 
-Krytyk lekcji usunięty w etapie 3 #237, 2026-11-05; historia: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md`. Reguła twarda ujawnień (§29a.8) zostaje.
+Krytyk lekcji usunięty w etapie 3 #237, 2026-11-05; historia: `docs/superpowers/specs/2026-11-02-lesson-review-stage-design.md`. Reguła twarda ujawnień (§29a.8) zostaje. Stary klucz `lesson_context.review` w istniejących szkicach i wersjach jest ignorowany, a „Utwórz nową wersję” go nie kopiuje.
 
 ### 29a.10. Generowanie puli agentem (2026-11-05, #237, etap 2a i 2b)
 

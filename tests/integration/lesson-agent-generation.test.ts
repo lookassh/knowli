@@ -674,17 +674,19 @@ describe("agent puli lekcji (integracja)", () => {
     });
 
     it("potok: nowy szkic bez klucza review", async () => {
-      const { services } = await agentWorld(["english_chapter"]);
+      const { fakes, services, agent } = await agentWorld(["english_chapter"]);
       const { runId } = await createLesson(services, command());
 
       await executeLessonGeneration(services, runId);
 
       expect((await fullRun(runId)).state).toBe("succeeded");
+      expect(agent.calls).toEqual([]);
+      expect(fakes.llm.lessonRequests.length).toBeGreaterThan(0);
       expect((await versionOf(runId)).lesson_context).not.toHaveProperty("review");
     });
 
     it("potok: stary klucz review w szkicu — run succeeded, klucz zostaje, DTO go nie ma", async () => {
-      const { services } = await agentWorld(["english_chapter"]);
+      const { fakes, services, agent } = await agentWorld(["english_chapter"]);
       const { runId, deckId } = await createLesson(services, command());
       const before = await versionOf(runId);
       // Dane sprzed usunięcia krytyka: klucz zostaje w szkicu, ale nikt go nie czyta ani nie pokazuje.
@@ -693,6 +695,8 @@ describe("agent puli lekcji (integracja)", () => {
       await executeLessonGeneration(services, runId);
 
       expect((await fullRun(runId)).state).toBe("succeeded");
+      expect(agent.calls).toEqual([]);
+      expect(fakes.llm.lessonRequests.length).toBeGreaterThan(0);
       const after = await versionOf(runId);
       expect(after.lesson_context).toHaveProperty("review");
       expect((await readLessonDeck(services, deckId)).draft).not.toHaveProperty("review");
