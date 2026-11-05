@@ -57,11 +57,11 @@ const affirmative: LearningObjective = {
   titlePl: "Teraz: am/is/are + -ing",
   descriptionEn:
     "The present continuous describes an action happening right now, at this moment: am, is or are matching the subject " +
-    "+ the verb with -ing (I am reading, she is playing, the dogs are running). Affirmative sentences with action verbs only.",
+    "+ the verb with -ing (I am reading, she is playing, the dogs are playing). Affirmative sentences with action verbs only.",
   cards: [
     {
       title: "Co się dzieje?",
-      body: "Popatrz! Tom is running. Mum is cooking. To dzieje się teraz, w tej chwili.",
+      body: "Popatrz! Tom is jumping. Mum is cooking. To dzieje się teraz, w tej chwili.",
     },
     {
       title: "Dwie części",
@@ -74,7 +74,7 @@ const affirmative: LearningObjective = {
   ],
   errorCategories: ["missing_be_form", "wrong_be_form", "missing_ing"],
   hints: {
-    missing_be_form: "Przed czasownikiem z -ing potrzebne jest am, is albo are: he is playing.",
+    missing_be_form: "To dzieje się teraz, więc potrzebne jest am, is albo are i czasownik z -ing: he is playing.",
     wrong_be_form: "Dobierz formę do osoby: I am, he/she/it is, you/we/they are.",
     missing_ing: "Gdy jest am/is/are, czasownik ma -ing: she is playing.",
   },
@@ -101,7 +101,7 @@ const nowOrUsually: LearningObjective = {
     "the key follows from the tense of the sentence (present continuous → now, present simple → usually). " +
     tenseChoiceVerdict(
       "In every other exercise, where the child chooses or produces a tense,",
-      "a missing -s, a wrong -ing spelling",
+      "a missing -s, a wrong -ing spelling, am/is/are without -ing or a missing am/is/are when the context is now, such as She is play now. or She playing now.",
       "I'm go to school every day.",
     ) +
     " " +
@@ -109,7 +109,7 @@ const nowOrUsually: LearningObjective = {
   cards: [
     {
       title: "Teraz czy zwykle?",
-      body: "Zanim powiesz to po angielsku, zapytaj siebie: teraz czy zwykle? Teraz: Ola is reading. Zwykle: Ola reads.",
+      body: "Po polsku „Ola czyta” to i teraz, i zwykle. Po angielsku wybierasz: teraz — Ola is reading, zwykle — Ola reads. Zapytaj siebie: teraz czy zwykle?",
     },
     {
       title: "Dwa zdania",
@@ -117,7 +117,7 @@ const nowOrUsually: LearningObjective = {
     },
     {
       title: "Po polsku czasem słychać",
-      body: "Tom jedzie na rowerze — teraz: Tom is riding his bike. Tom jeździ na rowerze codziennie — zwykle: Tom rides his bike.",
+      body: "Tom jedzie na rowerze — teraz: Tom is riding his bike now. Tom jeździ na rowerze codziennie — zwykle: Tom rides his bike every day.",
     },
     {
       title: "Przykłady z lekcji",
@@ -126,8 +126,8 @@ const nowOrUsually: LearningObjective = {
   ],
   errorCategories: ["continuous_for_habit", "simple_for_now", "be_plus_simple"],
   hints: {
-    continuous_for_habit: `${NOW_OR_USUALLY} Every day, usually to zwykle — wtedy bez -ing: Ola reads every day.`,
-    simple_for_now: `${NOW_OR_USUALLY} Now i Look! to teraz — wtedy am/is/are + -ing: Ola is reading now.`,
+    continuous_for_habit: `${NOW_OR_USUALLY} Every day, usually, codziennie, zwykle — to zwykle, wtedy bez am/is/are i bez -ing: Ola reads every day.`,
+    simple_for_now: `${NOW_OR_USUALLY} Now, Look!, teraz, Cicho! — to teraz, wtedy am/is/are + -ing: Ola is reading now.`,
     be_plus_simple: `${NOW_OR_USUALLY} Gdy coś dzieje się zwykle, nie ma am/is/are: I go to school every day.`,
   },
   exerciseTypes: [
@@ -207,7 +207,7 @@ const questions: LearningObjective = {
   errorCategories: ["word_order", "missing_be_form", "wrong_be_form", "extra_auxiliary", "short_answer_form", "missing_ing"],
   hints: {
     word_order: "W pytaniu am/is/are idzie przed osobę: Is she reading? Are they playing?",
-    missing_be_form: "Pytanie zaczyna się od am, is albo are: Are you playing?",
+    missing_be_form: "W pytaniu przed osobą stoi am, is albo are: Are you playing? What are you doing?",
     wrong_be_form: "Dobierz formę do osoby: Am I…?, Is he…?, Are they…?",
     extra_auxiliary: "Tu nie ma do ani does — pytanie zaczyna am, is albo are: Is he reading?",
     short_answer_form: "Krótka odpowiedź powtarza formę z pytania: Is she reading? → Yes, she is.",
@@ -231,8 +231,8 @@ const ingSpelling: LearningObjective = {
   descriptionEn:
     "Spelling of the -ing form (British spelling): most verbs just add -ing (play → playing, read → reading, jump → jumping); " +
     "a final silent -e is dropped (make → making, write → writing); -ie changes to -y (lie → lying, tie → tying); " +
-    "short verbs ending in one vowel + one consonant double the last consonant (run → running, swim → swimming, sit → sitting), " +
-    "but not after two consonants or x (jump → jumping, fix → fixing). Only verbs that follow these rules.",
+    "one-syllable verbs ending in one vowel + one consonant double the last consonant (run → running, swim → swimming, sit → sitting), " +
+    "but not after two consonants or after w, x, y (jump → jumping, fix → fixing, snow → snowing, play → playing). Only verbs that follow these rules.",
   cards: [
     {
       title: "Zwykle tylko -ing",
@@ -244,7 +244,7 @@ const ingSpelling: LearningObjective = {
     },
     {
       title: "Podwójna litera",
-      body: "Gdy krótkie słowo kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Ale: jump → jumping, fix → fixing.",
+      body: "Gdy słowo ma jedną sylabę i kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Nie podwajasz w, x, y: play → playing, fix → fixing, snow → snowing. Ale: jump → jumping (dwie spółgłoski).",
     },
     {
       title: "Przykłady z lekcji",
@@ -275,8 +275,9 @@ const nowOrUsuallyMore: LearningObjective = {
     "versus Am/Is/Are + subject + -ing to ask about right now (Do you play football on Saturdays? / Are you playing football now?). " +
     tenseChoiceVerdict(
       "In every exercise",
-      "doesn't eats, a question without do or does, a wrong -ing spelling",
-      "She isn't watch TV on Mondays., Are you play football on Saturdays?",
+      "doesn't eats, a question without do or does, a wrong -ing spelling, am/is/are without -ing or a missing am/is/are when the context is now, " +
+        "such as She isn't watch TV now. or She playing now.",
+      "She isn't watch TV on Mondays. / Are you play football on Saturdays?",
     ) +
     " " +
     STORY_MIX_SENTENCE,
@@ -300,9 +301,9 @@ const nowOrUsuallyMore: LearningObjective = {
   ],
   errorCategories: ["continuous_for_habit", "simple_for_now", "be_plus_simple"],
   hints: {
-    continuous_for_habit: `${NOW_OR_USUALLY} Zwykle to don't/doesn't albo Do/Does: She doesn't watch TV on Mondays.`,
-    simple_for_now: `${NOW_OR_USUALLY} Teraz to isn't/aren't albo Is/Are + -ing: Are you playing football now?`,
-    be_plus_simple: `${NOW_OR_USUALLY} Nie mieszaj: zwykle Do you play…?, teraz Are you playing…?`,
+    continuous_for_habit: `${NOW_OR_USUALLY} Every day, on Mondays, codziennie — to zwykle, wtedy don't/doesn't albo Do/Does: She doesn't watch TV on Mondays.`,
+    simple_for_now: `${NOW_OR_USUALLY} Now, Look!, teraz — to teraz, wtedy am not/isn't/aren't albo Am/Is/Are + -ing: Are you playing football now?`,
+    be_plus_simple: `${NOW_OR_USUALLY} Gdy coś dzieje się zwykle, nie ma am/is/are: She doesn't watch TV on Mondays. Do you play football on Saturdays?`,
   },
   exerciseTypes: [
     "lesson_card",
