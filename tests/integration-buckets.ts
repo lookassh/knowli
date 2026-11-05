@@ -80,6 +80,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     lesson-calculation.test.ts
     lesson-exposure-report.test.ts
     lesson-listen-choice.test.ts
+    lesson-present-continuous.test.ts
     lesson-question-audio.test.ts
     lesson-sentence-audio.test.ts
     lesson-sessions.test.ts
