@@ -283,8 +283,6 @@ export interface Services {
    * Web nie ma instancji LLM (generuje worker), więc opisuje wspólną konfigurację.
    */
   generationService?: string;
-  /** Nazwa usługi krytyka lekcji (`host · model`), gdy jest gotowy; nieobecna = krytyk wyłączony. */
-  reviewService?: string;
   /**
    * Opis agenta puli lekcji dla panelu rodzica (przedmioty z listy i etykiety usług, z env
    * procesu web); nieobecny = wszystkie przedmioty idą potokiem. To opis konfiguracji, nie klient modelu.
@@ -318,7 +316,6 @@ export function createServices(
     grader?: GraderDeps;
     sessionActivity?: SessionActivityDeps;
     generationService?: string;
-    reviewService?: string;
     lessonAgentPublic?: LessonAgentPublic;
     usage?: UsageRecorder;
     subjects?: SubjectRegistry;
@@ -337,7 +334,6 @@ export function createServices(
     ...(input.grader ? { grader: input.grader } : {}),
     ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
     ...(input.generationService ? { generationService: input.generationService } : {}),
-    ...(input.reviewService ? { reviewService: input.reviewService } : {}),
     ...(input.lessonAgentPublic ? { lessonAgentPublic: input.lessonAgentPublic } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
   };

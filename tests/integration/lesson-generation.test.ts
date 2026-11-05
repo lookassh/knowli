@@ -6,6 +6,7 @@ import {
   computeTargetKey,
   createChild,
   createLesson,
+  createLessonDraftFromPublished,
   createLessonFromMaterial,
   createSchoolLesson,
   claimQueuedRun,
@@ -1520,6 +1521,61 @@ describe("generowanie puli lekcji (integracja)", () => {
     await expect(
       editLessonDraft(services, edited.id, { expectedEditNumber: edited.editNumber, exercises: forged }),
     ).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("„Utwórz nową wersję” → kopia bez review i bez generationGaps", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+
+    // Dawny raport krytyka i luki agenta tamtej wersji (pola kontekstu; zapis bezpośrednio w bazie).
+    await pool.query(
+      "update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, '{review}', $1::jsonb) where id = $2",
+      [JSON.stringify({ status: "reviewed", objectives: [] }), draft.id],
+    );
+    await pool.query(
+      "update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, '{generationGaps}', $1::jsonb) where id = $2",
+      [JSON.stringify([{ objectiveId: draft.objectiveIds[0], reason: "incomplete" }]), draft.id],
+    );
+    await publishLessonDraft(services, draft.id, draft.editNumber);
+    const copy = await createLessonDraftFromPublished(services, deckId);
+
+    const contextOf = (id: string) => query<{ review: unknown; gaps: unknown }>(
+      "select lesson_context->'review' as review, lesson_context->'generationGaps' as gaps from learning_app.deck_versions where id = $1",
+      [id],
+    );
+    expect(copy.id).not.toBe(draft.id);
+    expect(await contextOf(copy.id)).toEqual([{ review: null, gaps: null }]);
+    const [source] = await contextOf(draft.id);
+    expect(source!.review).not.toBeNull();
+    expect(source!.gaps).not.toBeNull();
+    expect(copy.examples).toEqual(draft.examples);
+    expect(copy).not.toHaveProperty("generationGaps");
+  });
+
+  it("DTO szkicu nie ma review mimo starego klucza w kontekście", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+
+    await pool.query(
+      "update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, '{review}', $1::jsonb) where id = $2",
+      [JSON.stringify({
+        status: "reviewed",
+        objectives: [{ objectiveId: draft.objectiveIds[0], status: "reviewed" }],
+        notes: [], changed: [], dropped: [], machine: [], toppedUp: [],
+      }), draft.id],
+    );
+
+    expect((await readLessonDeck(services, deckId)).draft).not.toHaveProperty("review");
   });
 
   describe("reguła twarda: rozwiązanie widoczne wcześniej (spec etapu przeglądu §5.2)", () => {

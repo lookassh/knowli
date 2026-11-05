@@ -500,6 +500,18 @@ describe("NewLessonForm", () => {
       expect(markup).not.toContain("{service}");
     });
 
+    it("notka o usłudze nie wspomina o automatycznej kontroli jakości, a o ocenie odpowiedzi tak", () => {
+      for (const [key, markup] of [
+        ["themesService", renderWithCatalog(grammar, { children: [ola], generationService: SERVICE })],
+        ["themesServiceUnknown", renderWithCatalog(grammar, { children: [ola] })],
+      ] as const) {
+        expect(markup, key).not.toMatch(/kontrol[aię] jakości/i);
+        expect(messages.lessons[key], key).not.toMatch(/kontrol[aię] jakości/i);
+        expect(messages.lessons[key], key).toContain("usługa oceniająca odpowiedzi");
+      }
+      expect(messages.lessons.themesService).toContain("{service}");
+    });
+
     it("sekcja ukryta dla rozdziału, szkoły i przedmiotu bez flagi", () => {
       for (const subject of [chapter, school, { ...grammar, acceptsInterests: false }]) {
         const markup = renderWithCatalog(subject, { children: [ola] });
