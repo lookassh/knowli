@@ -9,7 +9,10 @@ import { APOSTROPHE_VARIANTS, normalizeTokens } from "../../normalize";
  *
  * Składnia wpisu listy:
  * - `Look!` — wykrzyknienie: na początku surowego tekstu albo zdania (po `.`, `!`, `?`),
- *   po nim `!` albo `,` (normalizacja tokenów usuwa `!`, więc sprawdzane jest surowe wejście);
+ *   po nim `!` (w angielskim także `,`: „Listen, the baby is crying”; normalizacja tokenów
+ *   usuwa `!`, więc sprawdzane jest surowe wejście);
+ * - `Look at …!` — wykrzyknienie z dopełnieniem: słowa wpisu na początku zdania, dalej
+ *   dowolne słowa do `!` kończącego to zdanie („Look at Tom!”);
  * - `Gdzie jest …` — fraza tylko na początku tekstu (pierwsze tokeny);
  * - `N times a week` — `N` to liczebnik (two…ten) albo liczba cyfrowa;
  * - pozostałe wpisy to frazy dopasowywane po tokenach `normalizeTokens`.
@@ -40,7 +43,31 @@ const EN_NEXT_NOUNS = [
   "evening",
   "night",
 ];
-const EN_EVERY_NOUNS = ["day", "week", "morning", "evening", "night", "weekend", "summer"];
+const EN_EVERY_NOUNS = [
+  "day",
+  "week",
+  "month",
+  "year",
+  "morning",
+  "afternoon",
+  "evening",
+  "night",
+  "weekend",
+  "summer",
+  "winter",
+  "spring",
+  "autumn",
+];
+/** „co” + biernik dnia tygodnia („co niedzielę”). */
+const PL_WEEKDAYS_EVERY = [
+  "co poniedziałek",
+  "co wtorek",
+  "co środę",
+  "co czwartek",
+  "co piątek",
+  "co sobotę",
+  "co niedzielę",
+];
 const PL_WEEKDAYS_LOCATIVE = [
   "w poniedziałki",
   "we wtorki",
@@ -52,7 +79,7 @@ const PL_WEEKDAYS_LOCATIVE = [
 ];
 
 export const TIME_MARKER_LISTS = {
-  nowEn: ["now", "right now", "at the moment", "Look!", "Listen!", "Shh!", "Be quiet!"],
+  nowEn: ["now", "right now", "at the moment", "Look!", "Listen!", "Shh!", "Shhh!", "Be quiet!", "Look at …!"],
   usuallyEn: [
     ...[...EN_EVERY_NOUNS, ...EN_WEEKDAYS].map((noun) => `every ${noun}`),
     "usually",
@@ -64,6 +91,8 @@ export const TIME_MARKER_LISTS = {
     "at weekends",
     "once a week",
     "twice a week",
+    "once a day",
+    "twice a day",
     "N times a week",
     "N times a day",
   ],
@@ -92,7 +121,7 @@ export const TIME_MARKER_LISTS = {
     "co rano",
     "co wieczór",
     "co tydzień",
-    "co sobotę",
+    ...PL_WEEKDAYS_EVERY,
     "w każdy",
     "w każdą",
     "w każde",
@@ -128,16 +157,21 @@ const NUMBER_WORDS = new Set(["two", "three", "four", "five", "six", "seven", "e
 
 interface Phrase {
   readonly tokens: readonly string[];
-  readonly kind: "anywhere" | "start" | "exclamation";
+  readonly kind: "anywhere" | "start" | "exclamation" | "exclamation_object";
+}
+
+function phraseKind(entry: string): Phrase["kind"] {
+  if (entry.endsWith("…!")) return "exclamation_object";
+  if (entry.endsWith("!")) return "exclamation";
+  return entry.endsWith("…") ? "start" : "anywhere";
 }
 
 /** Wpis listy → fraza: rodzaj wynika ze składni wpisu, tokeny z `normalizeTokens`. */
 function compile(entry: string): Phrase {
-  const kind = entry.endsWith("!") ? "exclamation" : entry.endsWith("…") ? "start" : "anywhere";
   const tokens = entry
     .split(" ")
     .flatMap((word) => (word === "N" ? [word] : normalizeTokens(word)));
-  return { tokens, kind };
+  return { tokens, kind: phraseKind(entry) };
 }
 
 function compileAll(entries: readonly string[]): Phrase[] {
@@ -195,10 +229,17 @@ function sentenceLeads(text: string): string[] {
   return leads;
 }
 
-/** Wykrzyknienie na początku zdania surowego tekstu: słowa frazy, potem `!` albo `,`. */
-function startsWithExclamation(leads: readonly string[], phrase: Phrase): boolean {
+/**
+ * Wykrzyknienie na początku zdania surowego tekstu: słowa frazy, potem `!`;
+ * w angielskim także `,` („Listen, the baby is crying”). Po polsku przecinek
+ * nie wystarcza: „Posłuchaj, a potem wybierz.” i „Zobacz, która forma
+ * pasuje.” to polecenia, nie scenki. Fraza z dopełnieniem („Look at …!”)
+ * dopuszcza dowolne słowa przed `!` w tym samym zdaniu.
+ */
+function startsWithExclamation(leads: readonly string[], phrase: Phrase, lang: "en" | "pl"): boolean {
   const words = phrase.tokens.join(String.raw`\s+`);
-  const pattern = new RegExp(String.raw`^${words}\s*[!,]`, "u");
+  const end = phrase.kind === "exclamation_object" ? String.raw`\s+[^.!?]+!` : lang === "en" ? String.raw`\s*[!,]` : String.raw`\s*!`;
+  const pattern = new RegExp(`^${words}${end}`, "u");
   return leads.some((lead) => pattern.test(lead));
 }
 
@@ -206,11 +247,34 @@ function hasMarker(
   phrases: readonly Phrase[],
   tokens: readonly string[],
   leads: readonly string[],
+  lang: "en" | "pl",
 ): boolean {
   return phrases.some((phrase) => {
-    if (phrase.kind === "exclamation") return startsWithExclamation(leads, phrase);
+    if (phrase.kind === "exclamation" || phrase.kind === "exclamation_object") return startsWithExclamation(leads, phrase, lang);
     if (phrase.kind === "start") return matchesAt(tokens, 0, phrase.tokens);
     return matchesAnywhere(tokens, phrase);
+  });
+}
+
+/** Słowa czasu, które w poleceniu bywają częścią instrukcji zadania („Teraz uzupełnij zdanie.”). */
+const INSTRUCTION_TIME_WORDS: ReadonlySet<string> = new Set(["teraz", "właśnie", "zawsze", "zwykle", "zazwyczaj"]);
+
+/**
+ * Sąsiedzi, przy których słowo czasu dotyczy zadania, a nie scenki: polecenie
+ * zadania („Teraz wybierz…”, „Zawsze czytaj…”) albo zaimek pytający („forma,
+ * która właśnie pasuje”, „Zobacz, jak teraz…”).
+ */
+const INSTRUCTION_NEIGHBOURS: ReadonlySet<string> = new Set([
+  "uzupełnij", "wybierz", "napisz", "popraw", "przetłumacz", "ułóż", "zaznacz", "wskaż", "przeczytaj", "czytaj", "posłuchaj", "pamiętaj",
+  "która", "który", "które", "jak",
+]);
+
+/** Tokeny polecenia bez słów czasu stojących tuż przy poleceniu zadania albo zaimku pytającym. */
+function withoutInstructionTimeWords(tokens: readonly string[]): string[] {
+  return tokens.map((token, i) => {
+    const instruction = INSTRUCTION_TIME_WORDS.has(token) &&
+      (INSTRUCTION_NEIGHBOURS.has(tokens[i - 1] ?? "") || INSTRUCTION_NEIGHBOURS.has(tokens[i + 1] ?? ""));
+    return instruction ? "" : token;
   });
 }
 
@@ -229,13 +293,17 @@ function findForbidden(tokens: readonly string[]): string[] {
 /**
  * Klasyfikuje wskaźniki czasu w tekście ćwiczenia (jedno pole). `lang` wybiera
  * listy grup; wskaźniki zakazane (przyszłość, dwuznaczność) są wspólne.
+ * `instruction` (polskie polecenie, `instructionPl`): słowa teraz / właśnie /
+ * zawsze / zwykle / zazwyczaj tuż przy poleceniu zadania albo przy która /
+ * który / które / jak nie są wskaźnikiem („Teraz uzupełnij zdanie.”).
  */
-export function scanTimeMarkers(text: string, lang: "en" | "pl"): MarkerScan {
+export function scanTimeMarkers(text: string, lang: "en" | "pl", options: { readonly instruction?: boolean } = {}): MarkerScan {
   const tokens = normalizeTokens(text);
+  const groupTokens = options.instruction === true ? withoutInstructionTimeWords(tokens) : tokens;
   const leads = sentenceLeads(text);
   const patterns = PATTERNS[lang];
   const groups = new Set<MarkerGroup>();
-  if (hasMarker(patterns.now, tokens, leads)) groups.add("now");
-  if (hasMarker(patterns.usually, tokens, leads)) groups.add("usually");
+  if (hasMarker(patterns.now, groupTokens, leads, lang)) groups.add("now");
+  if (hasMarker(patterns.usually, groupTokens, leads, lang)) groups.add("usually");
   return { groups, forbidden: findForbidden(tokens) };
 }

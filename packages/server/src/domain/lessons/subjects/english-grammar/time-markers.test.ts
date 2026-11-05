@@ -55,7 +55,7 @@ describe("scanTimeMarkers — grupy", () => {
 
   it("dalsze polskie frazy i wykrzyknienia z diakrytykami", () => {
     expect(groups("Spójrz! Mama gotuje.", "pl")).toEqual(["now"]);
-    expect(groups("Posłuchaj, dziecko płacze.", "pl")).toEqual(["now"]);
+    expect(groups("Posłuchaj! Dziecko płacze.", "pl")).toEqual(["now"]);
     expect(groups("Słuchaj! Ktoś śpiewa.", "pl")).toEqual(["now"]);
     expect(groups("Ciii! Dziadek śpi.", "pl")).toEqual(["now"]);
     expect(groups("Tata w tej chwili czyta.", "pl")).toEqual(["now"]);
@@ -69,6 +69,48 @@ describe("scanTimeMarkers — grupy", () => {
     expect(groups("We wtorki pływamy.", "pl")).toEqual(["usually"]);
     expect(groups("W weekendy gramy w piłkę.", "pl")).toEqual(["usually"]);
     expect(groups("Tom często maluje.", "pl")).toEqual(["usually"]);
+  });
+});
+
+describe("scanTimeMarkers — rozszerzone listy (przegląd Task 13)", () => {
+  it("„Look at …!” na początku zdania i „Shhh!”", () => {
+    expect(groups("Look at Tom! He is jumping.", "en")).toEqual(["now"]);
+    expect(groups("Dad is here. Look at the dogs!", "en")).toEqual(["now"]);
+    expect(groups("Look at the board.", "en")).toEqual([]);
+    expect(groups("They look at Tom!", "en")).toEqual([]);
+    expect(groups("Shhh! The baby is sleeping.", "en")).toEqual(["now"]);
+  });
+
+  it("every + afternoon/month/year/pora roku, once/twice a day, co + dzień tygodnia", () => {
+    for (const text of ["every afternoon", "every month", "every year", "every winter", "every spring", "every autumn", "once a day", "twice a day"]) {
+      expect(groups(`We swim ${text}.`, "en"), text).toEqual(["usually"]);
+    }
+    for (const text of ["co poniedziałek", "co wtorek", "co środę", "co czwartek", "co piątek", "co sobotę", "co niedzielę"]) {
+      expect(groups(`Ola pływa ${text}.`, "pl"), text).toEqual(["usually"]);
+    }
+  });
+
+  it("polskie wykrzyknienie tylko z „!”, angielskie także z przecinkiem", () => {
+    expect(groups("Posłuchaj, a potem wybierz.", "pl")).toEqual([]);
+    expect(groups("Zobacz, która forma pasuje.", "pl")).toEqual([]);
+    expect(groups("Cicho, dziadek śpi.", "pl")).toEqual([]);
+    expect(groups("Listen, the baby is crying.", "en")).toEqual(["now"]);
+  });
+
+  it("polecenie: słowa czasu przy poleceniu zadania albo zaimku pytającym nie są wskaźnikiem", () => {
+    const instruction = (text: string) => [...scanTimeMarkers(text, "pl", { instruction: true }).groups].sort();
+    expect(instruction("Teraz uzupełnij zdanie.")).toEqual([]);
+    expect(instruction("Teraz wybierz dobrą formę.")).toEqual([]);
+    expect(instruction("Wybierz formę, która właśnie pasuje.")).toEqual([]);
+    expect(instruction("Zawsze czytaj całe zdanie.")).toEqual([]);
+    expect(instruction("Uzupełnij zwykle zdanie.")).toEqual([]);
+    expect(instruction("Zobacz, jak teraz gra Tom.")).toEqual([]);
+    expect(instruction("Pamiętaj: zawsze am/is/are + -ing.")).toEqual([]);
+    expect(instruction("Tata teraz gotuje. Uzupełnij zdanie.")).toEqual(["now"]);
+    expect(instruction("Ola zawsze czyta po obiedzie. Wybierz formę.")).toEqual(["usually"]);
+    expect(instruction("Posłuchaj! Dziecko płacze.")).toEqual(["now"]);
+    // Bez trybu polecenia (np. zdanie do tłumaczenia) słowo czasu liczy się zawsze.
+    expect(groups("Teraz uzupełnij zdanie.", "pl")).toEqual(["now"]);
   });
 });
 

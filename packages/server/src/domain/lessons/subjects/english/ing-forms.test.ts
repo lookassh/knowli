@@ -34,6 +34,12 @@ describe("tabela form -ing", () => {
     for (const verb of STATE_VERBS) expect(ingFormOf(verb), verb).toBeUndefined();
   });
 
+  it("live i leave poza tabelą — w Present Continuous znaczą „tymczasowo” albo przyszłość", () => {
+    for (const verb of ["live", "leave"]) expect(ingFormOf(verb), verb).toBeUndefined();
+    for (const form of ["living", "leaving"]) expect(isIngFormInTable(form), form).toBe(false);
+    expect(ingVerbsByRule(["drop_e"])).not.toContain("live");
+  });
+
   it("odwrotność i rozpoznanie formy -ing", () => {
     expect(baseOfIngForm("running")).toBe("run");
     expect(baseOfIngForm("lying")).toBe("lie");
