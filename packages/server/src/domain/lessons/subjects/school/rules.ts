@@ -22,7 +22,7 @@ export const SCHOOL_RULES = defineRules({
     field: "sourceRefs",
     kind: "reject",
     description:
-      "Each quote in sourceRefs is one continuous fragment copied word for word from the material: no list marker and no “...” joining two fragments; " +
+      "Each quote in sourceRefs is one continuous fragment copied word for word from the material, with no “...” joining two fragments (a leading list marker is ignored); " +
       "only letter case, typographic quotes, dashes, the ellipsis character and whitespace may differ.",
   },
   "school.open_required_fields": {

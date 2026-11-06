@@ -11,7 +11,7 @@ import { MAX_SOURCE_QUOTE_LENGTH, MIN_SOURCE_QUOTE_LENGTH } from "@learning/cont
  */
 
 /** Znaki niewidoczne usuwane przed porównaniem: miękki dywiz, spacje i łączniki zerowej szerokości, BOM. */
-const INVISIBLE = /[­​-‍﻿]/gu;
+const INVISIBLE = /[\u00AD\u200B-\u200D\uFEFF]/gu;
 /** Cudzysłowy podwójne: „ ” “ « » (oraz prosty, który zostaje). */
 const DOUBLE_QUOTES = /[„”“«»]/gu;
 /** Cudzysłowy pojedyncze: ‚ ‘ ’. */
@@ -20,8 +20,11 @@ const SINGLE_QUOTES = /[‚‘’]/gu;
 const DASHES = /[‐‑‒–—―−]/gu;
 const ELLIPSIS = /…/gu;
 const WHITESPACE = /^\s+$/u;
-/** Wiodący znacznik listy w cytacie (po normalizacji): `•`, `-`, `*` albo `1.` ze spacją. */
-const LIST_MARKER = /^(?:•\s*|[-*]\s+|\d+\.\s+)/u;
+/**
+ * Wiodący znacznik listy w cytacie (po normalizacji): `•`, `-` albo `*`, albo numer porządkowy
+ * z 1–2 cyfr z `.` lub `)` i spacją. Dłuższa liczba (np. rok „1411.”) to treść cytatu, nie znacznik.
+ */
+const LIST_MARKER = /^(?:•\s*|[-*]\s+|\d{1,2}[.)]\s+)/u;
 
 const graphemes = new Intl.Segmenter("pl", { granularity: "grapheme" });
 

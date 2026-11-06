@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prng } from "../../testing/random-json";
 import type { LessonExerciseDraft } from "../../types";
 import { groundedQuoteLength, normalizeQuote, quoteGrounding, snapQuote } from "./quote-normalize";
+import { schoolSubject } from "./module";
 import { validateSchoolPool } from "./validators";
 
 const OBJECTIVE = "school.quotes.wisla";
@@ -41,7 +42,7 @@ function expectSnapped(quote: string, material: string, expected: string): void 
 
 describe("normalizeQuote", () => {
   it("mapuje znaki znormalizowane na początki grafemów (także rozwinięcia i usunięte znaki)", () => {
-    const { text, map } = normalizeQuote("A­…  „B”");
+    const { text, map } = normalizeQuote("A\u00AD…  „B”");
     expect(text).toBe("a... \"b\"");
     // „a” z 0, miękki dywiz pominięty, „...” z „…” (indeks 2), spacja z pierwszej spacji serii (3), „„” z 5.
     expect(map).toEqual([0, 2, 2, 2, 3, 5, 6, 7]);
@@ -90,11 +91,11 @@ describe("dopasowanie i wyrównanie cytatu (spec §5.2)", () => {
   });
 
   it.each([
-    ["miękki dywiz", "naj­dłuższą"],
-    ["spacja zerowej szerokości", "naj​dłuższą"],
-    ["rozdzielacz zerowej szerokości", "naj‌dłuższą"],
-    ["łącznik zerowej szerokości", "naj‍dłuższą"],
-    ["BOM", "naj﻿dłuższą"],
+    ["miękki dywiz", "naj\u00ADdłuższą"],
+    ["spacja zerowej szerokości", "naj\u200Bdłuższą"],
+    ["rozdzielacz zerowej szerokości", "naj\u200Cdłuższą"],
+    ["łącznik zerowej szerokości", "naj\u200Ddłuższą"],
+    ["BOM", "naj\uFEFFdłuższą"],
   ])("znak niewidoczny w materiale: %s", (_label, word) => {
     expectSnapped("Wisła jest najdłuższą rzeką", `Wisła jest ${word} rzeką Polski.`, "Wisła jest najdłuższą rzeką");
   });
@@ -104,8 +105,20 @@ describe("dopasowanie i wyrównanie cytatu (spec §5.2)", () => {
     expectSnapped("Wisła jest najdłuższą rzeką", BASE, "Wisła jest najdłuższą rzeką");
   });
 
-  it.each(["- ", "• ", "•", "* ", "1. "])("wiodący znacznik listy w cytacie „%s”", (marker) => {
+  it.each(["- ", "• ", "•", "* ", "1. ", "12. ", "3) "])("wiodący znacznik listy w cytacie „%s”", (marker) => {
     expectSnapped(`${marker}Wisła jest najdłuższą rzeką`, BASE, "Wisła jest najdłuższą rzeką");
+  });
+
+  it("liczba dłuższa niż numer porządkowy to treść cytatu, nie znacznik listy (także w walidacji rodzica)", () => {
+    const material = "Bitwa pod Grunwaldem zakończyła się zwycięstwem.";
+    const yearQuote = "1411. Bitwa pod Grunwaldem zakończyła się";
+    expect(quoteRules(yearQuote, material)).toEqual(["school.quote_in_material"]);
+    expect(snapQuote(yearQuote, material)).toBeNull();
+    expect([...schoolSubject.validatePoolExtra!([openWithQuote(yearQuote)], { material }).values()].flat().map((issue) => issue.rule))
+      .toEqual(["school.quote_in_material"]);
+    const ordinalQuote = "1. Bitwa pod Grunwaldem zakończyła się";
+    expectSnapped(ordinalQuote, material, "Bitwa pod Grunwaldem zakończyła się");
+    expect(schoolSubject.validatePoolExtra!([openWithQuote(ordinalQuote)], { material }).size).toBe(0);
   });
 
   it("\\r\\n i podwójna spacja w materiale", () => {
@@ -186,7 +199,7 @@ describe("dopasowanie i wyrównanie cytatu (spec §5.2)", () => {
   it("własność: fragment losowego materiału z losowymi zmianami typograficznymi wyrównuje się do tekstu, który przechodzi walidację i kontrakt", () => {
     const words = [
       "Wisła", "płynie", "przez", "Kraków", "„Ojciec", "Ojczyzny”", "–", "—", "rok", "966", "chrzest…", "Mieszko",
-      "«dawno»", "‚tak’", "naj­dłuższa", "zero​width", "Żółć", "ŁÓDŹ", "İzmir", "państwo", "1410", "‐", "−",
+      "«dawno»", "‚tak’", "naj\u00ADdłuższa", "zero\u200Bwidth", "Żółć", "ŁÓDŹ", "İzmir", "państwo", "1410", "‐", "−",
     ];
     const separators = [" ", " ", " ", "  ", " ", "\r\n", "\n", "\t"];
     const next = prng(5112026);
@@ -196,7 +209,7 @@ describe("dopasowanie i wyrównanie cytatu (spec §5.2)", () => {
       if (next() < 0.5) out = out.replace(/[„”“«»]/gu, "\"").replace(/[‚‘’]/gu, "'");
       if (next() < 0.5) out = out.replace(/[‐‑‒–—―−]/gu, "-");
       if (next() < 0.5) out = out.replace(/…/gu, "...");
-      if (next() < 0.5) out = out.replace(/[­​-‍﻿]/gu, "");
+      if (next() < 0.5) out = out.replace(/[\u00AD\u200B-\u200D\uFEFF]/gu, "");
       if (next() < 0.3) out = out.toLocaleUpperCase("pl");
       else if (next() < 0.3) out = out.toLocaleLowerCase("pl");
       if (next() < 0.3) out = out.replace(/ /gu, "  ");
@@ -213,7 +226,7 @@ describe("dopasowanie i wyrównanie cytatu (spec §5.2)", () => {
       const fragment = tokens.slice(from, to).join(" ");
       // Wycinek bez znaków niewidocznych i bez wiodącego myślnika (zdejmowanego jak znacznik listy) musi
       // sam mieć długość minimalną; krótszy daje `null` z założenia (zostaje cytat modelu).
-      const visible = fragment.replace(/[­​-‍﻿]/gu, "");
+      const visible = fragment.replace(/[\u00AD\u200B-\u200D\uFEFF]/gu, "");
       if (/^[‐‑‒–—―−]/u.test(fragment) || groundedQuoteLength(visible) < MIN_SOURCE_QUOTE_LENGTH) continue;
       const quote = typographic(fragment);
       if (quote.length > MAX_SOURCE_QUOTE_LENGTH || quoteGrounding(quote, material).kind === "too_short") continue;

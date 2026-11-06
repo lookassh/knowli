@@ -100,6 +100,8 @@ function targetsOf(draft: LessonExerciseDraft): { target: HintRevealing["target"
  * Dzisiejszy algorytm bramki (przed poluzowaniem): czy podpowiedź zawiera
  * odpowiedź, wariant albo element wymagany. Zostaje jako warunek konieczny
  * `hintRevealing` (poluzowanie nie może zgłosić więcej niż on) i do testu tej własności.
+ *
+ * @internal Eksport wyłącznie dla testu; produkcyjnie woła się `hintRevealing`.
  */
 export function hintRevealsAnswer(hint: string, draft: LessonExerciseDraft, normalizer: AnswerNormalizer): boolean {
   const hintTokens = tokens(hint, normalizer);
@@ -111,7 +113,7 @@ export function hintRevealsAnswer(hint: string, draft: LessonExerciseDraft, norm
 export interface HintRevealing {
   readonly target: "answer" | "acceptedAnswer" | "requiredElement";
   readonly text: string;
-  readonly words: string[];
+  readonly words: readonly string[];
 }
 
 /**
