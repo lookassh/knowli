@@ -10,9 +10,10 @@ import { describe, expect, it } from "vitest";
  * katalogu (`issueFrom`), więc żaden tekst dla modelu albo rodzica nie omija
  * katalogu. W skanowanych plikach (`SCANNED` niżej):
  * - tablica zgłoszeń — nazwa `errors|issues|reasons|findings`, także z
- *   przedrostkiem (`recordIssues`) — przez `push`, literał tablicy w deklaracji,
- *   przypisaniu albo właściwości nie dostaje literału napisu, szablonu ani spreadu
- *   wywołania, które nie zwraca zgłoszeń;
+ *   przedrostkiem (`recordIssues`) — przez `push`/`unshift`/`concat`, literał
+ *   tablicy w deklaracji, przypisaniu albo właściwości nie dostaje napisu (literał,
+ *   szablon, konkatenacja `+` z napisem, `String(…)`, `join`/`toString`…, zmienna
+ *   lokalna z takim inicjalizatorem) ani spreadu wywołania, które nie zwraca zgłoszeń;
  * - funkcja zgłoszeń (jawny typ wyniku ze zgłoszeniami, nazwa tablicy zgłoszeń
  *   albo hak `SubjectAgentPolicy` z wynikiem `string[]`) nie zwraca tak
  *   zbudowanej tablicy;
@@ -27,6 +28,12 @@ import { describe, expect, it } from "vitest";
  * sprawdzania typów: kształt zgłoszeń pilnują typy, ten test — że napis nie
  * omija fabryki. `throw` nie jest ujściem zgłoszeń (np. `computeCalculationAnswer`
  * dalej rzuca, a agent dostaje `calculationIssues`), więc nie ma dla niego wyjątku.
+ *
+ * Znane granice (analiza składni, bez przepływu danych): napis przekazany przez
+ * ogólny pomocnik (`const fail = (m) => issues.push(m); fail("x")`), stała
+ * poziomu modułu (`const MSG = "x"`, celowo: kody jak `checker_timeout`), funkcja
+ * zwracająca tablicę napisów bez jawnego typu i bez nazwy ujścia oraz alias
+ * fabryki nie są wykrywane.
  *
  * TypeScript 5.9 (`import ts from "typescript"`): natywny TS 7 nie ma API kompilatora.
  */
@@ -69,24 +76,78 @@ const SCANNED: readonly string[] = [
 /** Źródła słownika fabryk i źródeł zgłoszeń oraz sprawdzenia literału id. */
 const VOCABULARY_FILES: readonly string[] = [...sourceFilesUnder(lessonsDir), TOOLS_FILE];
 
+/** Wyjątek: konkretne wyrażenie (źródło ze zwiniętymi białymi znakami) w danej funkcji. */
+interface SinkException {
+  readonly fn: string;
+  readonly expression: string;
+  readonly reason: string;
+}
+
+const EXAMPLES_REASON =
+  "przykłady kart nie są ćwiczeniami: odpowiedź narzędzia o liniach przykładów, poza katalogiem reguł ćwiczeń";
+const examplesText = (expression: string): SinkException => ({ fn: "submitExamples", expression, reason: EXAMPLES_REASON });
+
 /**
- * Nazwane wyjątki (plik → funkcja → uzasadnienie): tekst poza katalogiem reguł,
- * bo nie jest odrzuceniem ćwiczenia. Nie kopiuj ich jako wzorca. Każdy wpis musi
- * coś wyłączać (test pilnuje, że lista nie zostaje nieaktualna).
+ * Nazwane wyjątki (plik → wyrażenia z uzasadnieniem): tekst poza katalogiem reguł,
+ * bo nie jest odrzuceniem ćwiczenia. Wyjątek obejmuje tylko to jedno wyrażenie,
+ * więc nowy napis w tej samej funkcji pada. Nie kopiuj ich jako wzorca. Każdy wpis
+ * musi coś wyłączać (test pilnuje, że lista nie zostaje nieaktualna).
  */
-const EXCEPTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  "domain/lessons/agent/admission.ts": {
-    submitExamples: "przykłady kart nie są ćwiczeniami: odpowiedź narzędzia o liniach przykładów, poza katalogiem reguł ćwiczeń",
-  },
-  "domain/lessons/subjects/english-chapter/agent-policy.ts": {
-    objectiveGaps: "luki zagadnienia dla statusu narzędzia (`missing`), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
-    planGate: "bramka planu dla planisty (słowa i ramy materiału bez karty), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
-  },
-  [TOOLS_FILE]: {
-    submit: "odmowy całego wywołania narzędzia (`exercises` nie jest tablicą, przykłady ustalone planem), przed walidacją ćwiczeń",
-    remove: "odmowa narzędzia usuwania: w puli zagadnienia nie ma ćwiczenia o tym id",
-    cappedReasons: "znacznik `+N more` pominiętych powodów w wyniku narzędzia, nie powód odrzucenia",
-  },
+const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
+  "domain/lessons/agent/admission.ts": [
+    examplesText('"examples must be an array of strings"'),
+    examplesText("`${label}: must be a string`"),
+    examplesText("`${label}: is empty`"),
+    examplesText("`${label}: is longer than ${MAX_TEXT_LENGTH} characters`"),
+    examplesText("`${label}: duplicates an earlier example; this line was ignored`"),
+    // Linia przykładu ujawnia rozwiązanie: powód z fabryki (`formatRuleReason`) z etykietą i cytatem linii.
+    examplesText("...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`)"),
+    examplesText("`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`"),
+  ],
+  "domain/lessons/subjects/english-chapter/agent-policy.ts": [
+    {
+      fn: "objectiveGaps",
+      expression: '`card words not used in any exercise yet: ${uncovered.join(", ")}`',
+      reason: "luka zagadnienia dla statusu narzędzia (`missing`), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
+    },
+    {
+      fn: "planGate",
+      expression: '`material words on no card: ${uncoveredWords.join(", ")}`',
+      reason: "bramka planu dla planisty (słowa materiału bez karty), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
+    },
+    {
+      fn: "planGate",
+      expression: '`material frames on no card: ${uncoveredFrames.join(" | ")}`',
+      reason: "bramka planu dla planisty (ramy materiału bez karty), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
+    },
+  ],
+  [TOOLS_FILE]: [
+    {
+      fn: "cappedReasons",
+      expression: "`+${reasons.length - MAX_REASONS} more`",
+      reason: "znacznik pominiętych powodów w wyniku narzędzia, nie powód odrzucenia",
+    },
+    {
+      fn: "submit",
+      expression: '"exercises must be an array"',
+      reason: "odmowa całego wywołania narzędzia przed walidacją ćwiczeń",
+    },
+    {
+      fn: "submit",
+      expression: '"examples were not processed because exercises must be an array"',
+      reason: "odmowa całego wywołania narzędzia: przykłady nieprzetworzone razem z odrzuconym wywołaniem",
+    },
+    {
+      fn: "submit",
+      expression: '"examples are fixed by the plan"',
+      reason: "przykłady kart ustalone planem: odpowiedź o przykładach, nie odrzucenie ćwiczenia",
+    },
+    {
+      fn: "remove",
+      expression: "`there is no exercise \"${text}\" in this objective's pool`",
+      reason: "odmowa narzędzia usuwania: w puli zagadnienia nie ma ćwiczenia o tym id",
+    },
+  ],
 };
 
 /** Typ wyniku, który oznacza zgłoszenia katalogu. */
@@ -173,7 +234,14 @@ interface Violation {
   /** Najbliższa nazwana funkcja (`<module>` poza funkcją). */
   readonly fn: string;
   readonly line: number;
+  /** Zgłaszane wyrażenie (źródło ze zwiniętymi białymi znakami) — klucz wyjątku. */
+  readonly expression: string;
   readonly text: string;
+}
+
+/** Źródło węzła ze zwiniętymi białymi znakami. */
+function flatText(node: ts.Node, ast: ts.SourceFile): string {
+  return node.getText(ast).replace(/\s+/g, " ");
 }
 
 /** Nazwa wywoływanej funkcji albo ujścia: identyfikator albo ostatnia właściwość. */
@@ -240,7 +308,8 @@ function factoryIdViolations(file: string, source: string, vocabulary: IssueVoca
           file,
           fn: enclosingFunction(node),
           line: ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1,
-          text: `fabryka bez literału id: ${node.getText(ast).replace(/\s+/g, " ").slice(0, 100)}`,
+          expression: flatText(node, ast),
+          text: `fabryka bez literału id: ${flatText(node, ast).slice(0, 100)}`,
         });
       }
     }
@@ -248,6 +317,58 @@ function factoryIdViolations(file: string, source: string, vocabulary: IssueVoca
   };
   visit(ast);
   return violations;
+}
+
+/** Metody dokładające elementy do tablicy zgłoszeń. */
+const SINK_MUTATORS: ReadonlySet<string> = new Set(["push", "unshift", "concat"]);
+/** Metody, których wynik jest zawsze napisem. */
+const TEXT_METHODS: ReadonlySet<string> = new Set(["join", "toString", "toUpperCase", "toLowerCase", "trim"]);
+
+/**
+ * Inicjalizator zmiennej lokalnej o nazwie identyfikatora: szukany w funkcjach
+ * otaczających węzeł (od najbliższej), bez poziomu modułu — stałe modułu (np.
+ * kody `checker_timeout`) nie są tekstem zgłoszenia.
+ */
+function localInitializer(id: ts.Identifier): ts.Expression | undefined {
+  for (let current: ts.Node | undefined = id.parent; current !== undefined; current = current.parent) {
+    if (!isFunctionLike(current)) continue;
+    let found: ts.Expression | undefined;
+    const search = (node: ts.Node): void => {
+      if (found !== undefined) return;
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === id.text && node.initializer !== undefined) {
+        found = node.initializer;
+        return;
+      }
+      ts.forEachChild(node, search);
+    };
+    if (current.body !== undefined) search(current.body);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Wyrażenie, które jest napisem: literał, szablon, konkatenacja `+` z napisem po
+ * którejś stronie, `String(…)`, metoda dająca napis (`join`, `toString`…) albo
+ * zmienna lokalna z takim inicjalizatorem.
+ */
+function isTextExpression(value: ts.Expression, seen: Set<ts.Node>): boolean {
+  const inner = unwrap(value);
+  if (seen.has(inner)) return false;
+  seen.add(inner);
+  if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner) || ts.isTemplateExpression(inner)) return true;
+  if (ts.isBinaryExpression(inner) && inner.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    return isTextExpression(inner.left, seen) || isTextExpression(inner.right, seen);
+  }
+  if (ts.isCallExpression(inner)) {
+    if (ts.isIdentifier(inner.expression) && inner.expression.text === "String") return true;
+    if (ts.isPropertyAccessExpression(inner.expression) && TEXT_METHODS.has(inner.expression.name.text)) return true;
+  }
+  if (ts.isIdentifier(inner)) {
+    const initializer = localInitializer(inner);
+    return initializer !== undefined && isTextExpression(initializer, seen);
+  }
+  return false;
 }
 
 /** Napisy, szablony i spready wywołań spoza źródeł zgłoszeń w ujściach zgłoszeń jednego źródła. */
@@ -259,7 +380,8 @@ function sinkViolations(file: string, source: string, vocabulary: IssueVocabular
       file,
       fn: enclosingFunction(node),
       line: ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1,
-      text: `${what}: ${node.getText(ast).replace(/\s+/g, " ").slice(0, 100)}`,
+      expression: flatText(node, ast),
+      text: `${what}: ${flatText(node, ast).slice(0, 100)}`,
     });
   };
   const returnsIssues = (call: ts.CallExpression): boolean => {
@@ -280,7 +402,7 @@ function sinkViolations(file: string, source: string, vocabulary: IssueVocabular
   /** Wartość trafiająca do zgłoszeń: bez napisu, szablonu i spreadu wywołania spoza źródeł zgłoszeń. */
   const checkValue = (value: ts.Expression, where: string): void => {
     const inner = unwrap(value);
-    if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner) || ts.isTemplateExpression(inner)) {
+    if (isTextExpression(inner, new Set())) {
       report(inner, `${where}: napis`);
     } else if (ts.isConditionalExpression(inner)) {
       checkValue(inner.whenTrue, where);
@@ -308,12 +430,13 @@ function sinkViolations(file: string, source: string, vocabulary: IssueVocabular
     }
   };
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "push") {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && SINK_MUTATORS.has(node.expression.name.text)) {
       const name = terminalName(node.expression.expression);
       if (isSinkName(name)) {
         for (const argument of node.arguments) {
-          if (ts.isSpreadElement(argument)) checkSpread(argument.expression, argument, `${name}.push`);
-          else checkValue(argument, `${name}.push`);
+          const where = `${name}.${node.expression.name.text}`;
+          if (ts.isSpreadElement(argument)) checkSpread(argument.expression, argument, where);
+          else checkValue(argument, where);
         }
       }
     } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
@@ -344,8 +467,16 @@ function productionVocabulary(): IssueVocabulary {
   return issueVocabulary(VOCABULARY_FILES.map((file) => parse(file, read(file))));
 }
 
-function isExcepted(violation: Violation): boolean {
-  return EXCEPTIONS[violation.file]?.[violation.fn] !== undefined;
+function exceptionFor(
+  violation: Violation,
+  exceptions: Readonly<Record<string, readonly SinkException[]>>,
+): SinkException | undefined {
+  return exceptions[violation.file]?.find((entry) => entry.fn === violation.fn && entry.expression === violation.expression);
+}
+
+/** Naruszenia bez wyjątku. */
+function unexcepted(violations: readonly Violation[], exceptions: Readonly<Record<string, readonly SinkException[]>>): Violation[] {
+  return violations.filter((violation) => exceptionFor(violation, exceptions) === undefined);
 }
 
 function describeViolation(violation: Violation): string {
@@ -367,13 +498,15 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
   });
 
   it("w ujściach zgłoszeń nie ma napisów ani spreadów spoza fabryk (poza wyjątkami)", () => {
-    expect(violations.filter((violation) => !isExcepted(violation)).map(describeViolation)).toEqual([]);
+    expect(unexcepted(violations, EXCEPTIONS).map(describeViolation)).toEqual([]);
   });
 
   it("każdy wyjątek coś wyłącza", () => {
-    const used = new Set(violations.filter(isExcepted).map((violation) => `${violation.file}#${violation.fn}`));
-    const listed = Object.entries(EXCEPTIONS).flatMap(([file, fns]) => Object.keys(fns).map((fn) => `${file}#${fn}`));
-    expect(listed.filter((entry) => !used.has(entry))).toEqual([]);
+    const used = new Set(violations.map((violation) => exceptionFor(violation, EXCEPTIONS)));
+    const stale = Object.entries(EXCEPTIONS).flatMap(([file, entries]) =>
+      entries.filter((entry) => !used.has(entry)).map((entry) => `${file} (${entry.fn}) ${entry.expression}`),
+    );
+    expect(stale).toEqual([]);
   });
 
   it("fabryki zgłoszeń dostają literał id we wszystkich źródłach silnika lekcji i narzędzi", () => {
@@ -394,25 +527,53 @@ describe("test zgłoszeń — czułość (fikcyjne źródło)", () => {
       errors.push(issue(idVar, { pl: "p" }));
       errors.push(issue("thing.ok", { pl: "p" }));
       errors.push(...nestedIssues());
+      errors.push("x: " + n);
+      errors.push(n + \`: x\`);
+      errors.push(String(n));
+      const msg = "x";
+      errors.push(msg);
+      errors.unshift(names.join(", "));
+      errors.push(n + 1);
       return errors;
     }
     export function thingFindings(ok: boolean): LessonRuleIssue[] {
       return ok ? [] : [\`bad \${ok}\`];
     }
     const result = { reason: "free text" };
+    const joined = { reason: "bad " + n };
     const fine = { reason: REASON_CODE, issues: [issue("thing.ok", { pl: "p" })] };
     function words(): string[] { return ["a", ...list.map(String)]; }
   `;
   const ast = parse("fixture.ts", fixture);
   const vocabulary = issueVocabulary([ast]);
 
-  it("wykrywa napis, szablon, spread obcego wywołania, napis w zwracanej tablicy i w `reason:`", () => {
+  it("wykrywa napis, szablon, konkatenację, `String`, zmienną z napisem, spread obcego wywołania, napis w zwracanej tablicy i w `reason:`", () => {
     expect(sinkViolations("fixture.ts", fixture, vocabulary).map((violation) => violation.text)).toEqual([
       'errors.push: napis: "x"',
       "errors.push: napis: `x`",
       "errors.push: spread wywołania spoza źródeł zgłoszeń: ...f()",
+      'errors.push: napis: "x: " + n',
+      "errors.push: napis: n + `: x`",
+      "errors.push: napis: String(n)",
+      "errors.push: napis: msg",
+      'errors.unshift: napis: names.join(", ")',
       "return: napis: `bad ${ok}`",
       'reason:: napis: "free text"',
+      'reason:: napis: "bad " + n',
+    ]);
+  });
+
+  it("wyjątek obejmuje tylko wskazane wyrażenie: nowy napis w tej samej funkcji pada", () => {
+    const source = `
+      function submit(raw) {
+        if (!Array.isArray(raw)) return { errors: ["exercises must be an array"] };
+        if (raw.length === 0) return { errors: ["a new refusal"] };
+        return { errors: [] };
+      }
+    `;
+    const exceptions = { "f.ts": [{ fn: "submit", expression: '"exercises must be an array"', reason: "odmowa" }] };
+    expect(unexcepted(sinkViolations("f.ts", source, vocabulary), exceptions).map((violation) => violation.text)).toEqual([
+      'errors:: napis: "a new refusal"',
     ]);
   });
 
