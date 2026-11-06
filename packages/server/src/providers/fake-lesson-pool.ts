@@ -301,8 +301,13 @@ function asSentence(text: string): string {
   return /[.!?]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
+/** Końcowa interpunkcja zdania; pętla zamiast `/[.!?…]+$/` (wyrażenie z nawrotami, S8786). */
+const FINAL_PUNCTUATION: ReadonlySet<string> = new Set([".", "!", "?", "…"]);
+
 function withoutFinalPunctuation(text: string): string {
-  return text.trim().replace(/[.!?…]+$/u, "").trim();
+  let result = text.trim();
+  while (result.length > 0 && FINAL_PUNCTUATION.has(result.at(-1)!)) result = result.slice(0, -1);
+  return result.trim();
 }
 
 /** Słowa bez powtórzeń i bez par zawartych jedno w drugim (pary, opcje i bank luk muszą się różnić). */
