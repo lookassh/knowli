@@ -510,7 +510,8 @@ describe("trwałe generowanie zestawu (integracja)", () => {
   it("błąd końcowego zapisu nie zostawia runu zestawu w running (#299)", async () => {
     const fakes = await fakeGeneration();
     disposers.push(fakes.dispose);
-    const services = generationServices(fakes);
+    const clock = new ManualClock();
+    const services = generationServices(fakes, clock);
     const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "final-write-error" });
     // deadlock w transakcji zapisu wyniku (np. odwrotna kolejność blokad zasobów dwóch zestawów)
     const trigger = `fail_${randomUUID().replaceAll("-", "")}`;
@@ -523,6 +524,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
         await expect(executeGeneration(services, runId)).rejects.toThrow();
         const dto = await readGeneration(services, runId);
         expect(dto).toMatchObject({ attempts: attempt, state: attempt < 3 ? "queued" : "failed" });
+        clock.advanceMs(60_000); // odstęp przed ponowieniem (#300)
       }
       expect((await readGeneration(services, runId)).errorCode).toBe("attempts_exhausted");
     } finally {
