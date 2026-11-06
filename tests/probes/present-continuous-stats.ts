@@ -1,14 +1,16 @@
 import { scanTimeMarkers } from "../../packages/server/src/domain/lessons/subjects/english-grammar/time-markers";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 
-/** Odrzucenie ze zrzutu sondy (podzbiór `RejectionLogEntry`): cel i powody `[id reguły] pole: found` w jednym `detail` (rozdzielone „; ”). */
+/**
+ * Odrzucenie ze zrzutu sondy (podzbiór `RejectionLogEntry`): cel, rodzaj odrzucenia i id reguł jego
+ * powodów. Liczymy `ruleIds`, nie `detail`: powód ofiary („adding this exercise would make…: [reguła]”)
+ * nie zaczyna się od id reguły, więc parsowanie `detail` go gubiło (krytyk C, Task 19).
+ */
 export interface PcDumpRejection {
   readonly objectiveId: string;
-  readonly detail: string;
+  readonly kind: string;
+  readonly ruleIds: readonly string[];
 }
-
-/** Powód z id reguły na początku (`formatRuleReason`); powody bez id liczą się jako `other`. */
-const REASON_RULE = /^\[([a-z0-9_]+(?:\.[a-z0-9_]+)+)\]/;
 
 /** Cele porównania czasów (2 i 6): tu spec §11.3 mierzy odrzucenia i scenki. */
 const COMPARISON_SUFFIXES = [".now_or_usually", ".now_or_usually_more"] as const;
@@ -25,7 +27,7 @@ function hasScene(exercise: LessonExerciseDraft): boolean {
 
 /**
  * Statystyki puli PC dla kryteriów sondy (spec §11.3) z zrzutu `UMIEM_PROBE_AGENT_DUMP`:
- * udział scenek i odrzuceń w celach porównania oraz liczba powodów odrzuceń po id reguły.
+ * udział scenek i odrzuceń w celach porównania oraz liczba id reguł odrzuceń według rodzaju odrzucenia.
  */
 export function pcPoolStats(
   exercises: readonly LessonExerciseDraft[],
@@ -35,18 +37,15 @@ export function pcPoolStats(
   readonly comparisonAccepted: number;
   readonly comparisonRejected: number;
   readonly rejectionShareComparison: number;
-  readonly messagesByRule: Readonly<Record<string, number>>;
+  readonly ruleIdsByKind: Readonly<Record<string, Readonly<Record<string, number>>>>;
 } {
   const accepted = exercises.filter((exercise) => exercise.exerciseType !== "lesson_card" && isComparison(exercise.objectiveId));
   const comparisonRejected = rejections.filter((rejection) => isComparison(rejection.objectiveId)).length;
-  const messagesByRule: Record<string, number> = {};
-  for (const rejection of rejections) {
-    // Dzielimy tylko przed „[”, bo `found` może zawierać „; ”.
-    for (const reason of rejection.detail.split(/; (?=\[)/)) {
-      if (reason.trim() === "") continue;
-      const key = REASON_RULE.exec(reason)?.[1] ?? "other";
-      messagesByRule[key] = (messagesByRule[key] ?? 0) + 1;
-    }
+  const ruleIdsByKind: Record<string, Record<string, number>> = {};
+  for (const { kind, ruleIds } of rejections) {
+    const counts = (ruleIdsByKind[kind] ??= {});
+    // Odrzucenie bez id reguły liczy się jako `other`, żeby suma zgadzała się z liczbą odrzuceń.
+    for (const ruleId of ruleIds.length === 0 ? ["other"] : ruleIds) counts[ruleId] = (counts[ruleId] ?? 0) + 1;
   }
   const total = accepted.length + comparisonRejected;
   return {
@@ -54,6 +53,6 @@ export function pcPoolStats(
     comparisonAccepted: accepted.length,
     comparisonRejected,
     rejectionShareComparison: total === 0 ? 0 : comparisonRejected / total,
-    messagesByRule,
+    ruleIdsByKind,
   };
 }

@@ -647,6 +647,24 @@ describe("validateEnglishGrammarExercise — zgłoszenia reguł katalogu gramaty
     });
   });
 
+  it("biegunowość przekształcenia: found nazywa przekształcenie, nie cel (Task 17, krytyk C Task 19)", () => {
+    const transform = (transformId: string, statement: string, answer: string): LessonExerciseDraft => ({
+      exerciseType: "lesson_transform",
+      objectiveId: "english_grammar.to_be.negative_forms",
+      statement,
+      transformId,
+      answer,
+      acceptedAnswers: [],
+      focus: answer.split(" "),
+    });
+    const found = (ex: LessonExerciseDraft, rule: string) =>
+      validateEnglishGrammarExercise(ex, toBeV1).filter((issue) => issue.rule === rule).map((issue) => issue.found);
+    expect(found(transform("to_negative", "They are ready.", "They are ready!"), "grammar.be_missing_negation"))
+      .toEqual(['answer "They are ready!" has no negation, but the transform "to_negative" requires "not"']);
+    expect(found(transform("to_affirmative", "She isn't happy.", "She isn't happy!"), "grammar.be_negative_in_affirmative_objective"))
+      .toEqual([`answer "She isn't happy!" is negated, but the transform "to_affirmative" is affirmative`]);
+  });
+
   it("wariant w acceptedAnswers wskazuje swoje pole, a pl zachowuje etykietę", () => {
     const issues = validateEnglishGrammarExercise(beGap("She ___ happy.", "is", { acceptedAnswers: ["are"] }), toBeV1);
     expect(issues).toHaveLength(1);

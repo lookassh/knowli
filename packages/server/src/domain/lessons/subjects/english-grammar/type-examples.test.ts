@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GAP_VERB_BRACKET } from "../../feedback-sentence-text";
 import { normalizeTokens } from "../../normalize";
 import type { LessonTopic } from "../../types";
 import { englishGrammarSubject } from "./module";
@@ -24,14 +25,18 @@ function cardSentences(topic: LessonTopic): string[] {
     .filter((sentence) => sentence.split(" ").length >= MIN_SENTENCE_TOKENS);
 }
 
-/** Angielskie teksty przykładu: rozwiązanie (luka wypełniona kluczem), bodźce, opcje i klocki. */
+/**
+ * Angielskie teksty przykładu: klucz i warianty, bodziec z luką wypełnioną każdym z nich (bez nawiasu
+ * z czasownikiem, jak zdanie po odpowiedzi — `GAP_VERB_BRACKET`), zdania, opcje i klocki.
+ */
 function exampleTexts(example: Readonly<Record<string, unknown>>): string[] {
-  const answer = String(example.answer ?? "");
-  const stem = typeof example.stem === "string" ? [example.stem.replace("___", answer)] : [];
+  const keys = [String(example.answer ?? ""), ...(Array.isArray(example.acceptedAnswers) ? (example.acceptedAnswers as string[]) : [])];
+  const stem = typeof example.stem === "string" ? example.stem.replace(GAP_VERB_BRACKET, "$1") : undefined;
+  const filled = stem === undefined ? [] : keys.map((key) => stem.replace(/_{2,}/u, key));
   const fields = ["statement", "prompt"].flatMap((key) => (typeof example[key] === "string" ? [example[key] as string] : []));
   const options = Array.isArray(example.options) ? (example.options as { text: string }[]).map((option) => option.text) : [];
   const segments = Array.isArray(example.noticeSegments) ? (example.noticeSegments as string[][]).map((words) => words.join(" ")) : [];
-  return [answer, ...stem, ...fields, ...options, ...segments].map(joined).filter((text) => text !== "");
+  return [...keys, ...filled, ...fields, ...options, ...segments].map(joined).filter((text) => text !== "");
 }
 
 // Karty „to be” wymieniają gołe formy po przecinku („I am not, she is not”), więc test dotyczy tematu Present Continuous.
@@ -42,6 +47,15 @@ describe("przykłady typów tematu present_continuous", () => {
 
   it("karty tematu mają zdania do porównania", () => {
     expect(sentences.length).toBeGreaterThan(0);
+  });
+
+  it("teksty przykładu: luka bez nawiasu z czasownikiem, wypełniona kluczem i każdym wariantem", () => {
+    expect(exampleTexts({ stem: "Look! Tom ___ (not watch) TV.", answer: "isn't watching", acceptedAnswers: ["is not watching"] })).toEqual([
+      "isn't watching",
+      "is not watching",
+      "look tom isn't watching tv",
+      "look tom is not watching tv",
+    ]);
   });
 
   it.each(topic.objectives.map((objective) => objective.id))("%s: żaden przykład nie zawiera zdania karty ani nie jest jego częścią", (objectiveId) => {
