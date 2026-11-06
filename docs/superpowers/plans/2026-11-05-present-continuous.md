@@ -429,6 +429,46 @@ Jak Task 14A bez Step 1, z różnicą: fake-agent ze skryptem z obecnego `fake-l
 - [ ] **Step 7: Ocena** wg specu §11.3: minima publikacji, `rejectionShareComparison` ≤ 0,4, `sceneShare` ≥ 0,3, regresja PS ≤ +10 pp. Ślepa ocena próbki (`tests/probes/blind`: `gen-blind-sheet.cjs`, `rubric-generation.md`) przez agenta innego niż implementer — zero dwuznacznych. Raport dla właściciela.
 - [ ] **Step 8: Strojenie (opcjonalne, najwyżej 2 rundy):** każda to nowy rejestr z nowym limitem i nowa zgoda; zmiana tylko w `G/prompts.ts` (i migawce), testy Task 10 — PASS, commit „Gramatyka: strojenie promptu Present Continuous po sondzie”, ponowny przebieg. Zmiana walidatora po sondzie → zatrzymaj się i zapytaj.
 
+## Po scaleniu #281 i #282 do `main` (2026-11-06, decyzja właściciela)
+
+Sonda z 2026-11-06 (Task 15, przebiegi na kodzie sprzed #281/#282) dała: PC 16% odrzuceń, cele 2 i 6 27,8%, scenki 30,8%, wszystkie cele kompletne; PS 23,6% → 15,3%. Ślepa ocena: w PC 2 ćwiczenia dwuznaczne tego samego typu (`lesson_error_fix` „Tom doesn't watching TV now.” — „Tom doesn't watch TV now.” też jest poprawne) i 2 graniczne; w PS 25% dwuznacznych bez znacznika „zwykle” (osobno: #288). Na `main` doszły #281 (agent puli jedynym generatorem) i #282 (katalog reguł: walidatory zwracają `LessonRuleIssue` przez `issueFrom` z literałem id, `SubjectModule.rules`, przypadki reguł `*.rule-cases.ts`, prompt z księgi reguł, `agentPolicy.typeExamples`, bez `variant_rejected`). Właściciel: scalić `main`, przenieść PC do katalogu w tym PR, potem nowa sonda. Kolejność: Task 17 → 18 → 19 → Task 15 Step 9 → Task 16.
+
+### Task 17: Scalenie `main` i walidator PC w katalogu reguł (bez zmiany zachowania)
+
+**Files:**
+- Modify: pliki z konfliktem `git merge origin/main` (`G/module.ts`, `G/module.test.ts`, `G/prompts.ts`, `G/validators.ts`, `tests/integration-buckets.ts`, `vitest.unit.config.ts`), `G/be-agreement.ts`, `G/present-continuous-validation.ts`, `G/present-continuous-exercise-rules.ts`, `G/present-continuous-tense-choice.ts`, `G/rules.ts` (albo nowy `G/present-continuous-rules.ts` scalany do `GRAMMAR_RULES`), `G/grammar.rule-cases.ts` (albo nowy `G/present-continuous.rule-cases.ts` dopisany do importów `L/rules/rule-cases.test.ts`), testy walidatora PC, `tests/integration/lesson-present-continuous.test.ts`, `tests/probes/present-continuous-stats.ts` (+ test)
+
+**Interfaces:**
+- Consumes (z `main`): `defineRules`, `issueFrom`, `clip`, `LessonRuleIssue`, `RuleBookContext` (`L/rules/catalog.ts`); `GRAMMAR_RULES`, `grammarIssue` (`G/rules.ts`); `registerRuleCases` (`L/testing/rule-cases.ts`); `SubjectModule.validateExercise(...): readonly LessonRuleIssue[]`.
+- Produces: `validatePresentContinuousExercise(ex, topic): LessonRuleIssue[]`; reguły `grammar.pc_<nazwa>` z `when: (ctx) => ctx.topicId === "present_continuous"`; `pcPoolStats(...).messagesByRule` (zamiast `messagesByPrefix`) liczone po id reguły z `detail` w postaci `[id] pole: found` (inne → `other`).
+
+- [ ] **Step 1: Scalenie** `git merge origin/main` (merge, nie rebase — zrecenzowane SHA zostają). Rozwiązanie konfliktów: wersja `main` + ponownie nałożone zmiany gałęzi (logika „to be” w `G/be-agreement.ts` już jako zgłoszenia `grammarIssue` z id z `main`, „mice” w l.mn., gałąź `topic.id === "present_continuous"`, temat w `module.ts`, migawka `fieldRules`, kosze, `include`). Gdy commit scalenia ma się kompilować, a PC jeszcze zwraca napisy: dopuszczalna tymczasowa reguła `grammar.pc_legacy` (opakowanie napisów, z przypadkiem w rejestrze), usunięta w Step 3. `pnpm typecheck` i testy `G/`, `L/rules/` — PASS. Commit scalenia: „Scalenie main (#281, #282) z gałęzią Present Continuous”.
+- [ ] **Step 2: Test (czerwony):** w testach walidatora PC asercje przechodzą z napisów z prefiksem na id reguły (`issues.map((i) => i.rule)`), z tymi samymi przypadkami przyjęcia i odrzucenia; przypadki w rejestrze dla każdej reguły `reject` PC (wołają prawdziwy `englishGrammarSubject.validateExercise`).
+- [ ] **Step 3: Implementacja:** każda gałąź `errors.push` w trzech plikach PC → `grammarIssue("grammar.pc_…", { field, pl, found })`. Jedna reguła na jedno sprawdzenie (nie na wariant komunikatu); `description` po angielsku, 1–3 zdania, liczby tylko ze stałych; `pl` = dotychczasowy komunikat bez prefiksu `pc-*:` (prefiks zastępuje id reguły); `found` po angielsku z wartością przez `clip`; `field` = ścieżka pola. Wskazówek dydaktycznych jeszcze nie przenoś (Task 18). Usuń `grammar.pc_legacy`.
+- [ ] **Step 4: Test 14B i sonda:** test integracyjny na API agenta po #281 (agent jedynym generatorem); `pcPoolStats` liczy po id reguły; commit „Testy: lekcja Present Continuous na agencie po etapie 3”.
+- [ ] **Step 5: Uruchom** `pnpm check` — PASS (w tym `rules.architecture.test.ts`, `rule-cases.test.ts`, migawki promptu); `pnpm test:integration:shards` — PASS. Commit „Gramatyka: reguły Present Continuous w katalogu reguł”.
+
+Zatrzymaj się i zapytaj, gdy zachowanie walidatora PC (przyjęcie/odrzucenie) musiałoby się zmienić, żeby przejść testy `main`. Jeśli przykład typu z `L/rules/type-cards.ts` łamie regułę PC, to zakres Task 18 — opisz w raporcie.
+
+### Task 18: Prompt PC z księgi reguł, przykłady typów PC, poprawki ze ślepej oceny
+
+**Files:**
+- Modify: `G/prompts.ts` (blok PC z `fieldRules` znika), `G/rules.ts` / `G/present-continuous-rules.ts` (opisy reguł PC i wskazówki tematu jako dopisek opisu z `when` PC, jak `TO_BE_GUIDANCE`), `G/type-examples.ts` (przykłady sześciu celów PC), `G/agent-policy.ts` (jeśli wymaga tego `typeExamples`), `packages/server/src/providers/openai/lesson-pool-prompt.test.ts` + nowa migawka `__snapshots__/lesson-pool-prompt.english_grammar_present_continuous.txt` (jak `english_grammar_to_be`, bez budżetu „przed”), test zdań promptu (dawniej 53/53), pliki walidatora PC (nowa reguła), docs: spec §16, `docs/architecture.md` §19, ten plan.
+
+- [ ] **Step 1: Test (czerwony):** (a) księga reguł zagadnienia PC zawiera opisy reguł PC i wskazówki dydaktyczne, a księgi PS i „to be” — żadnej; (b) każdy przykład typu PC przechodzi walidację swojego celu i nie powtarza zdania z kart tematu; (c) reguła `grammar.pc_error_fix_do_ing`: `lesson_error_fix` w temacie PC, którego `statement` ma do/does/don't/doesn't/do not/does not bezpośrednio przed formą -ing („Tom doesn't watching TV now.”, „Does she reading?”), jest odrzucany we wszystkich celach (dwie poprawne poprawki); „Tom isn't watching TV now.” jako odpowiedź nadal przechodzi.
+- [ ] **Step 2: Implementacja:** reguły egzekwowane opisuje katalog (`when` PC); dydaktyka bez sprawdzenia (scenki, porównanie z PS, aspekt polskiego czasownika) w dopisku opisu jednej reguły PC. Do wskazówek dopisz: `explanationPl` nazywa formę czasownika, która jest w ćwiczeniu; ćwiczenie nie powtarza podmiotu, czasownika i dopełnienia przykładu karty; tłumaczenie z „teraz” ma w `acceptedAnswers` równoważne „now / right now / at the moment”, gdy zdanie na to pozwala. `typeExamples` dla celów PC (każdy typ celu ma własne zdanie, klocki `lesson_order` bez interpunkcji końcowej).
+- [ ] **Step 3: Uruchom** testy `G/`, `L/rules/`, `lesson-pool-prompt.test.ts` — PASS; zgłoś długość migawki PC.
+- [ ] **Step 4: Dokumentacja:** spec §16 (port do katalogu, prefiksy → id reguł, nowa reguła, #288), architecture §19 (reguły PC w katalogu gramatyki), plan.
+- [ ] **Step 5: Uruchom** `pnpm check` — PASS. Commity „Gramatyka: prompt Present Continuous z księgi reguł” i „Gramatyka: Present Continuous — poprawki po ślepej ocenie sondy”.
+
+### Task 19: Trzech krytyków po przeniesieniu do katalogu
+
+- [ ] **Step 1:** Trzech niezależnych krytyków na `git diff origin/main...HEAD`: (a) wierność przeniesienia walidatora (żadna reguła nie zgubiona ani nie poluzowana) i nowa reguła, (b) prompt z księgi reguł i przykłady typów (dydaktyka, spójność z walidatorem, PS i „to be” bez wpływu), (c) testy, rejestr przypadków, migawki, regresje PS i „to be” po scaleniu.
+- [ ] **Step 2:** Poprawki → commity; `pnpm check` — PASS.
+
+**Task 15 Step 9 (powtórzenie sondy):** bramka zgody jak Step 5; przebiegi PC na HEAD, PS na HEAD i PS bazowo na `origin/main` (worktree w scratchpadzie); nowy rejestr z limitem 1 USD, budżet runu 0,60 USD; ocena jak Step 7, z nową ślepą oceną PC.
+
+
 ### Task 16: Weryfikacja całości i PR
 
 - [ ] **Step 1: Uruchom** `pnpm check` — PASS; `pnpm test:integration` — PASS; `pnpm test:e2e:shards` — PASS (liczba testów jak w ostatnim przebiegu `origin/main`; raportuj faktyczną).
