@@ -147,7 +147,7 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
   const { subject, topic, input } = FIXTURES[subjectId]!;
   const prompt = objectiveInstructions(input);
   const allowed = input.pool.objectives[0]!.exerciseTypes as readonly LessonExerciseType[];
-  const ctx = ruleBookContextFor(subject, topic.id, allowed, allowed.includes("lesson_listen_choice"));
+  const ctx = ruleBookContextFor(subject, topic.id, input.pool.objectives[0]!.id, allowed, allowed.includes("lesson_listen_choice"));
 
   it("księga reguł zagadnienia jest w prompcie: reguła z opisem po id, powtórzenie z odesłaniem, reguły `brief` poza promptem", () => {
     const book = input.pool.ruleBook;

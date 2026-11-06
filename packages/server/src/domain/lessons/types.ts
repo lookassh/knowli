@@ -177,6 +177,12 @@ export interface SubjectAgentPolicy {
    * odrzuca `validateSubject`.
    */
   readonly ruleNotes?: Partial<Record<string, string>>;
+  /**
+   * Przykłady typów przedmiotu dla zagadnienia (bez `objectiveId`): zastępują w księdze reguł przykład
+   * karty typu (`TYPE_CARDS`), gdy ogólny przykład łamie reguły tematu albo celu (np. formy „to be”).
+   * Brak typu w wyniku — przykład karty.
+   */
+  typeExamples?(at: { readonly topicId: string; readonly objectiveId: string }): TypeExamples | undefined;
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
   /**
    * Oczyszczenie kandydata agenta przed kontrolami: `removed` — nazwy usuniętych pól,
@@ -203,6 +209,9 @@ export interface SubjectAgentPolicy {
   planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
   planGate?(plan: readonly RawPlanObjective[], material: string): string[];
 }
+/** Przykładowe rekordy agenta według typu (`SubjectAgentPolicy.typeExamples`). */
+export type TypeExamples = Partial<Record<LessonExerciseType, Readonly<Record<string, unknown>>>>;
+
 /** Normalizator odpowiedzi przedmiotu. */
 export interface AnswerNormalizer {
   /** Zbiór równoważnych sekwencji tokenów (np. rozwinięcia skrótów). */

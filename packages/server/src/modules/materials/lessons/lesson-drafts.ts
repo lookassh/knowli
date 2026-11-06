@@ -572,7 +572,7 @@ export function buildPoolInput(
   // i dostępność typu słuchowego, nie wolne miejsce w przydziale (reguły puli dotyczą też istniejących zdań).
   const listenChoice = listenChoiceAvailable(subject, objective);
   const ruleTypes = objective.exerciseTypes.filter((type) => listenChoice || type !== "lesson_listen_choice");
-  const ruleBook = lessonRuleBook(subject, ruleBookContextFor(subject, topic.id, ruleTypes, listenChoice));
+  const ruleBook = lessonRuleBook(subject, ruleBookContextFor(subject, topic.id, objective.id, ruleTypes, listenChoice));
   return {
     subjectId: subject.id,
     subjectTitle: subject.titlePl,

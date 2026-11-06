@@ -7,7 +7,8 @@ import type { LessonExerciseType, SubjectModule } from "../types";
  * katalog), ale trafia do bloku typu w księdze reguł (`rule-book.ts`).
  *
  * Przykład zależy wyłącznie od cech przedmiotu (`SubjectFeatures`), nigdy od
- * jego id: silnik nie zna przedmiotów. Przykład bez `objectiveId` (wstawia go
+ * jego id: silnik nie zna przedmiotów. Gdy ogólny przykład łamie reguły tematu albo celu, przedmiot
+ * podaje własny (`agentPolicy.typeExamples`, wybór w `typeExample`). Przykład bez `objectiveId` (wstawia go
  * księga reguł); test przepuszcza każdy przykład przez materializację, kształt
  * rekordu i walidację ćwiczenia każdego produkcyjnego przedmiotu, który ma typ.
  * Treść neutralna: angielskie słówka i zdania albo ogólnie znane fakty o Polsce.

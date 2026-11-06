@@ -1,8 +1,10 @@
 import type { LessonExerciseType, SubjectAgentPolicy } from "../../types";
+import { grammarTypeExamples } from "./type-examples";
 
 /**
  * Polityka agenta puli dla przedmiotu `english_grammar` (design etapu 1 §4.3):
- * tylko typy rozwiązywane na ślepo i dopiski do reguł silnika (`ruleNotes`). Bez wymaganych typów,
+ * tylko typy rozwiązywane na ślepo, dopiski do reguł silnika (`ruleNotes`) i przykłady typów tematu
+ * „to be” (`typeExamples`). Bez wymaganych typów,
  * bramek, braków i planu; `hint` zostaje bez zmian (forma podstawowa, np. „go”).
  *
  * Listy to zbiór PoC (gałąź nie-szkolna) przecięty z typami gramatyki (brak
@@ -42,4 +44,5 @@ export const grammarAgentPolicy: SubjectAgentPolicy = {
     "check.blind_solve": BLIND_SOLVE_NOTE,
     "variants.duplicate": CONTRACTIONS_NOTE,
   },
+  typeExamples: grammarTypeExamples,
 };

@@ -55,6 +55,22 @@ describe("grammarAgentPolicy", () => {
     expect(grammarAgentPolicy.planGate).toBeUndefined();
   });
 
+  it("przykłady typów: w temacie „to be” każdy cel ma przykład każdego swojego typu, poza nim przykłady kart", () => {
+    for (const topic of englishGrammarSubject.topics) {
+      for (const objective of topic.objectives) {
+        const examples = grammarAgentPolicy.typeExamples?.({ topicId: topic.id, objectiveId: objective.id });
+        if (topic.id !== "to_be") {
+          expect(examples, objective.id).toBeUndefined();
+          continue;
+        }
+        expect(Object.keys(examples ?? {}).sort(), objective.id)
+          .toEqual(objective.exerciseTypes.filter((type) => type !== "lesson_card").sort());
+        for (const [type, example] of Object.entries(examples ?? {})) expect(example?.exerciseType, objective.id).toBe(type);
+      }
+    }
+    expect(grammarAgentPolicy.typeExamples?.({ topicId: "to_be", objectiveId: "english_grammar.to_be.unknown" })).toBeUndefined();
+  });
+
   it("dopiski ujawnień podpowiadają zmianę podmiotu, czasownika lub dopełnienia", () => {
     expect(grammarAgentPolicy.ruleNotes?.["lesson.leak"]).toContain("use a different subject, verb or object");
     expect(grammarAgentPolicy.ruleNotes?.["lesson.leak_source"]).toBe("Use a different sentence.");

@@ -142,7 +142,6 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
   const section = (name: "general" | "lesson" | "checks"): RuleLine[] =>
     placed.filter((entry) => entry.placement.section === name).map(line);
 
-  const features = subjectFeatures(subject);
   // Pierwszy blok typu z pełnym opisem reguły `inEachTypeBlock`; kolejne bloki odsyłają do niego.
   const firstBlockOf = new Map<string, LessonExerciseType>();
   const typeLine = (entry: PlacedRule, type: LessonExerciseType): RuleLine => {
@@ -152,7 +151,7 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
   };
   const types = blockTypes.map((type): TypeBlock => {
     const card = TYPE_CARDS[type];
-    const example = card.example?.(features);
+    const example = typeExample(subject, ctx, type);
     const subjectRule = subject.prompts.typeRules?.[type]?.trim();
     return {
       type,
@@ -169,6 +168,19 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
 }
 
 /**
+ * Przykład typu w zagadnieniu: przykład przedmiotu dla tematu i zagadnienia (`agentPolicy.typeExamples`),
+ * a bez niego przykład karty typu dla cech przedmiotu. `undefined` — typ bez przykładu.
+ */
+export function typeExample(
+  subject: SubjectModule,
+  at: Pick<RuleBookContext, "topicId" | "objectiveId">,
+  type: LessonExerciseType,
+): Readonly<Record<string, unknown>> | undefined {
+  const own = subject.agentPolicy.typeExamples?.({ topicId: at.topicId, objectiveId: at.objectiveId })?.[type];
+  return own ?? TYPE_CARDS[type].example?.(subjectFeatures(subject));
+}
+
+/**
  * Limity i flagi przedmiotu do tekstów opisów reguł — te same, którymi posługuje się walidacja:
  * odpowiedź przedmiotu z payloadem v3 ma limit kontraktu odpowiedzi, pozostałe limit tekstu.
  */
@@ -180,18 +192,20 @@ export function ruleTextContextOf(subject: Pick<SubjectModule, "usesV3Payload" |
 }
 
 /**
- * Pełny kontekst księgi reguł przedmiotu dla zagadnienia tematu `topicId`: `exerciseTypes` — typy dozwolone w
- * zagadnieniu, `listenChoice` — czy `lesson_listen_choice` jest dostępny zagadnieniu (nie: czy
+ * Pełny kontekst księgi reguł przedmiotu dla zagadnienia `objectiveId` tematu `topicId`: `exerciseTypes` — typy
+ * dozwolone w zagadnieniu, `listenChoice` — czy `lesson_listen_choice` jest dostępny zagadnieniu (nie: czy
  * zostało miejsce w przydziale). Pozostałe pola pochodzą z przedmiotu.
  */
 export function ruleBookContextFor(
   subject: SubjectModule,
   topicId: string,
+  objectiveId: string,
   exerciseTypes: readonly LessonExerciseType[],
   listenChoice: boolean,
 ): RuleBookContext {
   return {
     topicId,
+    objectiveId,
     exerciseTypes,
     text: ruleTextContextOf(subject),
     policy: subject.agentPolicy,
@@ -204,7 +218,7 @@ export function ruleBookContextFor(
 }
 
 /** Przykład w JSON: `exerciseType`, zastępczy `objectiveId`, potem pola karty. */
-function exampleJson(example: Record<string, unknown>): string {
+function exampleJson(example: Readonly<Record<string, unknown>>): string {
   const { exerciseType, ...rest } = example;
   return JSON.stringify({ exerciseType, objectiveId: EXAMPLE_OBJECTIVE_ID, ...rest });
 }

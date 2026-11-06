@@ -7,12 +7,16 @@ import { rawShapeIssues } from "../raw-shape";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../types";
 import type { LessonRuleIssue } from "./catalog";
-import { subjectFeatures, TYPE_CARDS, type SubjectFeatures } from "./type-cards";
+import { typeExample } from "./rule-book";
+import { TYPE_CARDS, type SubjectFeatures } from "./type-cards";
 
 /**
  * Karty typów (spec katalogu reguł §2.1): przykład każdej karty przechodzi drogę
  * rekordu agenta — materializację, kształt rekordu i walidację ćwiczenia (kontrakt,
- * rdzeń, przedmiot) — dla każdego produkcyjnego przedmiotu, który ma typ.
+ * rdzeń, przedmiot) — dla każdego produkcyjnego przedmiotu, który ma typ. Przykład
+ * w zagadnieniu to przykład przedmiotu (`agentPolicy.typeExamples`) albo karty
+ * (`typeExample`), więc temat katalogu sprawdzamy w każdym jego zagadnieniu z jego typami:
+ * przykład nie może łamać reguł tematu ani celu (np. form „to be”).
  */
 
 const OBJECTIVE_ID = "examples.objective";
@@ -33,9 +37,33 @@ function topicFor(subject: SubjectModule): LessonTopic {
   return { ...base, objectives: [{ ...objective, exerciseTypes: [...subject.exerciseTypes] }] };
 }
 
-/** Typy przedmiotu, dla których karta musi dać przykład (karta pochodzi z tematu). */
-function exampleTypes(subject: SubjectModule): LessonExerciseType[] {
-  return subject.exerciseTypes.filter((type) => type !== "lesson_card");
+/** Typy, dla których księga musi dać przykład (karta pochodzi z tematu). */
+function exampleTypes(types: readonly LessonExerciseType[]): LessonExerciseType[] {
+  return types.filter((type) => type !== "lesson_card");
+}
+
+/** Zagadnienie, w którym sprawdzamy przykłady razem: jego temat i typy. */
+interface ExampleCase {
+  readonly name: string;
+  readonly topic: LessonTopic;
+  readonly types: readonly LessonExerciseType[];
+}
+
+/**
+ * Zagadnienia przedmiotu: jedno ze wszystkimi typami przedmiotu (przykłady kart) i każde zagadnienie
+ * każdego tematu katalogu z jego typami (przykłady przedmiotu dla tematu i celu). Temat zagadnienia
+ * ma je na pierwszym miejscu.
+ */
+function casesOf(subject: SubjectModule): ExampleCase[] {
+  const all: ExampleCase = { name: "wszystkie typy", topic: topicFor(subject), types: exampleTypes(subject.exerciseTypes) };
+  const catalog = subject.topics.flatMap((topic) =>
+    topic.objectives.map((objective): ExampleCase => ({
+      name: objective.id,
+      topic: { ...topic, objectives: [objective, ...topic.objectives.filter((other) => other !== objective)] },
+      types: exampleTypes(objective.exerciseTypes),
+    })),
+  );
+  return [all, ...catalog];
 }
 
 /** Zgłoszenia jako „id: found” (czytelna różnica przy porażce). */
@@ -45,11 +73,11 @@ function described(issues: readonly LessonRuleIssue[]): string[] {
 
 /** Przykład karty przez drogę rekordu agenta: szkic albo zgłoszenia. */
 function admitExample(subject: SubjectModule, type: LessonExerciseType, topic: LessonTopic): LessonExerciseDraft {
-  const example = TYPE_CARDS[type].example?.(subjectFeatures(subject));
-  expect(example, `${subject.id} ${type}: karta bez przykładu`).toBeDefined();
+  const objectiveId = topic.objectives[0]!.id;
+  const example = typeExample(subject, { topicId: topic.id, objectiveId }, type);
+  expect(example, `${subject.id} ${objectiveId} ${type}: brak przykładu`).toBeDefined();
   expect(example).not.toHaveProperty("objectiveId");
   expect(example!.exerciseType).toBe(type);
-  const objectiveId = topic.objectives[0]!.id;
   const materialized = materializeRawExercise({ ...example, objectiveId });
   if (!materialized.ok) {
     expect.fail(`${subject.id} ${type}: materializacja — ${described(materialized.issues).join("; ")}`);
@@ -57,7 +85,7 @@ function admitExample(subject: SubjectModule, type: LessonExerciseType, topic: L
   expect(described(rawShapeIssues(materialized.record)), `${subject.id} ${type}: kształt rekordu`).toEqual([]);
   // Przykłady nie mają pól `null`, więc rekord po materializacji jest szkicem.
   const draft = materialized.record as unknown as LessonExerciseDraft;
-  expect(described(validateLessonExerciseIssues(draft, subject, topic, { agent: true })), `${subject.id} ${type}`).toEqual([]);
+  expect(described(validateLessonExerciseIssues(draft, subject, topic, { agent: true })), `${subject.id} ${objectiveId} ${type}`).toEqual([]);
   return draft;
 }
 
@@ -69,15 +97,13 @@ describe("karty typów", () => {
     }
   });
 
-  describe.each(PRODUCTION_SUBJECTS.map((subject) => [subject.id, subject] as const))("%s", (_id, subject) => {
-    const topic = topicFor(subject);
-
-    it.each(exampleTypes(subject))("przykład %s przechodzi materializację, kształt i walidację", (type) => {
+  describe.each(PRODUCTION_SUBJECTS.flatMap((subject) => casesOf(subject).map((entry) => [`${subject.id}: ${entry.name}`, subject, entry] as const)))("%s", (_name, subject, { topic, types }) => {
+    it.each(types)("przykład %s przechodzi materializację, kształt i walidację", (type) => {
       admitExample(subject, type, topic);
     });
 
     it("przykłady razem przechodzą walidację puli i haki puli przedmiotu", () => {
-      const drafts = exampleTypes(subject).map((type) => admitExample(subject, type, topic));
+      const drafts = types.map((type) => admitExample(subject, type, topic));
       const pool = validatePoolIssues(drafts, subject, topic, { agent: true });
       expect(pool.rejected.map((entry) => described(entry.issues))).toEqual([]);
       // Materiał: cytaty przykładów (uziemienie samych przykładów, rodziny pytań, słowa kluczowe).
@@ -93,7 +119,7 @@ describe("karty typów", () => {
      * i jego słowa kluczowe (ta sama `familyId`) dotyczą celowo jednego faktu.
      */
     it("przykłady razem nie ujawniają odpowiedzi i nie powtarzają zdania ani bodźca", () => {
-      const drafts = exampleTypes(subject).map((type) => admitExample(subject, type, topic));
+      const drafts = types.map((type) => admitExample(subject, type, topic));
       const leaks = findExposureLeaks({
         exercises: drafts,
         examples: {},
@@ -110,9 +136,14 @@ describe("karty typów", () => {
             .filter((b) => (a.family === undefined || a.family !== b.family) && answersEquivalent(a.text, b.text, subject.normalizer))
             .map((b) => `${a.type} = ${b.type}: ${a.text}`),
         );
+      // Jednowyrazowa odpowiedź luki (np. forma „be”) to nie zdanie: porównujemy zdanie z wstawioną odpowiedzią.
+      const solvedText = (draft: LessonExerciseDraft): string => {
+        const text = exerciseExposureText(subject, draft);
+        return !/\s/u.test(text.trim()) && draft.stem?.includes("___") === true ? draft.stem.replace("___", text) : text;
+      };
       const solved = drafts.map((draft) => ({
         type: draft.exerciseType,
-        text: exerciseExposureText(subject, draft),
+        text: solvedText(draft),
         ...(draft.familyId === undefined ? {} : { family: draft.familyId }),
       }));
       expect(repeated(solved.filter((entry) => entry.text.trim() !== "")), "teksty rozwiązań").toEqual([]);
@@ -128,7 +159,7 @@ describe("karty typów", () => {
     });
 
     it("klocki i odpowiedź lesson_order bez interpunkcji końcowej", () => {
-      if (!subject.exerciseTypes.includes("lesson_order")) return;
+      if (!types.includes("lesson_order")) return;
       const order = admitExample(subject, "lesson_order", topic);
       for (const text of [order.answer, ...(order.items ?? []).map((item) => item.text)]) {
         expect(text, `${subject.id}: ${text}`).not.toMatch(/[.!?]$/u);
@@ -138,7 +169,7 @@ describe("karty typów", () => {
     it("sanityzacja agenta nie zmienia przykładów (np. podpowiedź pytania otwartego zostaje)", () => {
       const sanitize = subject.agentPolicy.sanitize;
       if (sanitize === undefined) return;
-      for (const type of exampleTypes(subject)) {
+      for (const type of types) {
         const draft = admitExample(subject, type, topic);
         const material = (draft.sourceRefs ?? []).map((ref) => ref.quote).join("\n");
         const result = sanitize(draft, { material });

@@ -4,7 +4,7 @@ import { MAX_TEXT_LENGTH } from "../pool-validation";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseType, SubjectModule } from "../types";
 import { describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
-import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, type RuleBook, type RuleLine } from "./rule-book";
+import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, typeExample, type RuleBook, type RuleLine } from "./rule-book";
 import { TYPE_CARDS } from "./type-cards";
 
 /**
@@ -32,8 +32,11 @@ function contextFor(
   topicId: string = topicIdsOf(subject)[0]!,
 ): RuleBookContext {
   const usesV3Payload = subject.usesV3Payload === true;
+  // Pierwsze zagadnienie tematu katalogu (przykłady typów przedmiotu zależą od zagadnienia).
+  const objectiveId = subject.topics.find((topic) => topic.id === topicId)?.objectives[0]?.id ?? `${topicId}.objective`;
   return {
     topicId,
+    objectiveId,
     exerciseTypes,
     text: { answerMaxLength: usesV3Payload ? MAX_LESSON_ANSWER_LENGTH : MAX_TEXT_LENGTH, groundingRequired: subject.sourceQuotes === true },
     policy: subject.agentPolicy,
@@ -152,6 +155,9 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
       for (const block of book.types) {
         expect(block.summary).toBe(TYPE_CARDS[block.type].summary);
         expect(JSON.parse(block.example!), `${name}: ${block.type}`).toMatchObject({ exerciseType: block.type, objectiveId: EXAMPLE_OBJECTIVE_ID });
+        // Przykład przedmiotu dla zagadnienia ma pierwszeństwo przed przykładem karty.
+        expect(JSON.parse(block.example!), `${name}: ${block.type}`)
+          .toEqual({ ...typeExample(subject, ctx, block.type), objectiveId: EXAMPLE_OBJECTIVE_ID });
         // Reguła w bloku typu dotyczy wyłącznie tego typu spośród typów zagadnienia (albo stoi w bloku każdego swojego typu).
         for (const line of block.rules) {
           const rule = ruleById.get(line.id)!;

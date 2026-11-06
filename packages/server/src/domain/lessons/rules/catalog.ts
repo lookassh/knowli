@@ -115,6 +115,8 @@ export interface RuleBookContext {
    * w nim. Warunek na id tematu żyje w katalogu przedmiotu, nigdy w silniku.
    */
   readonly topicId: string;
+  /** Id zagadnienia księgi: wybiera przykłady typów przedmiotu (`SubjectAgentPolicy.typeExamples`). */
+  readonly objectiveId: string;
 }
 
 /** Id reguły: literał `obszar.nazwa` z co najmniej jedną kropką, tylko `[a-z0-9_]` w segmentach. */

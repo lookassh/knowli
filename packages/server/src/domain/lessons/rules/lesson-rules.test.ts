@@ -22,6 +22,7 @@ function context(deduplication: PoolDeduplication): RuleBookContext {
     usesV3Payload: false,
     deduplication,
     topicId: historyLikeSubject.topics[0]!.id,
+    objectiveId: historyLikeSubject.topics[0]!.objectives[0]!.id,
   };
 }
 

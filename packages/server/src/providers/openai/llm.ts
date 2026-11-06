@@ -142,6 +142,11 @@ function ruleLines(lines: readonly LessonRuleBookLine[]): string {
     .join(" ");
 }
 
+/** Zdanie przed blokami typów z przykładami: przykład pokazuje format rekordu, treść daje lekcja. */
+export const EXAMPLES_NOTE =
+  "Each Example shows only the record format: never copy its words or sentences; take the content from this " +
+  "lesson's material and objective.";
+
 /** Tekst powtórzonej reguły w kolejnym bloku typu: odesłanie do bloku z pełnym opisem. */
 export function repeatText(type: string): string {
   return `As in the ${type} block.`;
@@ -169,6 +174,8 @@ export function renderRuleBook(book: LessonRuleBookInput): string {
     );
   }
   if (hasDescribed(book.general)) parts.push(`General: ${ruleLines(book.general)}`);
+  // Przykłady kart nie znają materiału lekcji: model ma z nich brać format rekordu, nie treść.
+  if (book.types.some((block) => block.example !== undefined)) parts.push(EXAMPLES_NOTE);
   for (const block of book.types) {
     parts.push(`${block.type} — ${block.summary}${block.example === undefined ? "" : ` Example: ${block.example}`}`);
     if (block.subjectRule !== undefined && block.subjectRule !== "") parts.push(`  ${block.subjectRule}`);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_LESSON_TEXT_LENGTH } from "@learning/contracts";
-import { createOpenAiLlmProvider, lessonSystemPrompt, lessonUserMaterial, renderRuleBook } from "./llm";
+import { createOpenAiLlmProvider, EXAMPLES_NOTE, lessonSystemPrompt, lessonUserMaterial, renderRuleBook } from "./llm";
 import { lessonPoolJsonSchema } from "./lesson-pool-schema";
 import type { LessonPoolInput, LessonRuleBookInput, LessonStoryInput } from "../../ports/ai";
 import type { LlmGenerateDeckInput } from "../../ports/ai";
@@ -198,12 +198,14 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
     checks: [{ id: "check.blind_solve", text: "CHECK-BLIND." }],
   };
 
-  it("sekcje w stałej kolejności: nagłówek, zdanie o regułach brief, ogólne, bloki typów, lekcja, kontrole", () => {
+  it("sekcje w stałej kolejności: nagłówek, zdanie o regułach brief, ogólne, zdanie o przykładach, bloki typów, lekcja, kontrole", () => {
     expect(renderRuleBook(BOOK)).toBe([
       "RULES — the tool checks every rule below; a rejection names the broken rule in [brackets].",
       "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
         "type card lists; the tool result names and describes a broken rule of this kind.",
       "General: [field.empty] GENERAL-EMPTY.",
+      "Each Example shows only the record format: never copy its words or sentences; take the content from this " +
+        "lesson's material and objective.",
       'lesson_choice — CHOICE-SUMMARY. Example: {"exerciseType":"lesson_choice"}',
       "  CHOICE-SUBJECT.",
       "  [options.count] OPTIONS-COUNT.",
@@ -212,6 +214,12 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
       "Lesson: [lesson.leak] LESSON-LEAK.",
       "Checks by another model: [check.blind_solve] CHECK-BLIND.",
     ].join("\n"));
+  });
+
+  it("zdanie o przykładach tylko przy bloku z przykładem", () => {
+    const withoutExamples = { ...BOOK, types: BOOK.types.map(({ example: _example, ...block }) => block) };
+    expect(renderRuleBook(withoutExamples)).not.toContain(EXAMPLES_NOTE);
+    expect(renderRuleBook(BOOK).split(EXAMPLES_NOTE)).toHaveLength(2);
   });
 
   it("reguły brief: bez id i opisu (opis w wyniku narzędzia), bez pustego wiersza bloku; powtórzenie bez opisu", () => {
