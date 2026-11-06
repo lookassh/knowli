@@ -20,7 +20,7 @@ import { schoolSubject } from "../subjects/school/module";
 import { testIssue } from "../testing/test-issue";
 import { withAgentPolicy } from "../testing/agent-test-subject";
 import { NA_CHECKS } from "../testing/agent-admission-fixtures";
-import type { DynamicTopicData, LessonExerciseDraft } from "../types";
+import type { DynamicObjectiveKind, DynamicTopicData, LessonExerciseDraft } from "../types";
 import { admitBatch, precheckBatch, removeExercise, type AdmitEntry, type AgentCheckContext, type PrecheckEntry } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { createLessonAgentState, orderedLesson, poolOf, type LessonAgentState } from "./state";
@@ -163,17 +163,28 @@ describe("przyjmowanie paczki — kody i powody odrzuceń (spec katalogu reguł 
   it("puste napisy w polach opcjonalnych (ścieżka agenta): field.empty razem z regułami dalszymi", () => {
     const draft = { ...choice(A, 2), instructionPl: "" };
     const rejection = rejectionAt(submit(stateWith(), A, [draft], ruledCtx).results[0]);
-    expect(rejection.code).toBe("rule_exercise");
+    // Bramka też liczy się na kopii bez pustego pola: kod pierwszego ustalenia bramki.
+    expect(rejection.code).toBe("gate_first");
     expect(rejection.ruleIds).toEqual(["field.empty", "test.issue"]);
     expect(rejection.reasons[0]).toMatch(/^\[field\.empty\] instructionPl/u);
-    expect(rejection.reasons).toContain("[test.issue] exercise: subject rule broken");
+    expect(rejection.reasons.slice(1)).toEqual([
+      "[test.issue] exercise: subject rule broken",
+      "[test.issue] exercise: gate finding",
+      "[test.issue] exercise: second finding",
+    ]);
   });
 
-  it("kolejność powodów jest deterministyczna (ta sama paczka dwa razy)", () => {
+  it("kolejność powodów jest stała: kontrakt, rdzeń, przedmiot, bramka; wyniki w indeksach wejścia", () => {
     const batch = [choice(A, 2), { ...choice(A, 1), correctOption: "z", instructionPl: "" }, keywords(A, "f9", 1)];
-    const first = submit(stateWith(), A, batch, ruledCtx).results;
-    const second = submit(stateWith(), A, batch, ruledCtx).results;
-    expect(second).toEqual(first);
+    const results = submit(stateWith(), A, batch, ruledCtx).results;
+    expect(results.map(codeOf)).toEqual(["gate_first", "rule_exercise", "lesson_extra"]);
+    expect(rejectionAt(results[0]).reasons).toEqual([
+      "[test.issue] exercise: subject rule broken",
+      "[test.issue] exercise: gate finding",
+      "[test.issue] exercise: second finding",
+    ]);
+    expect(rejectionAt(results[1]).ruleIds).toEqual(["field.empty", "options.correct_unknown"]);
+    expect(rejectionAt(results[2]).reasons).toEqual(["[test.issue] exercise"]);
   });
 
   it("ofiara reguł lekcji: powód z prefiksem ofiary i id reguły", () => {
@@ -432,6 +443,32 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
     expect(withText.results.map(codeOf)).toEqual(["accepted"]);
     const result = submit(withText.state, WEATHER, [listenWeather], chapterCtx);
     expect(result.results[0]).toMatchObject({ rejected: { kind: "lesson", code: "lesson_pool" } });
+  });
+
+  it("pusty napis w polu opcjonalnym i naruszenie bramki rozdziału: jedno odrzucenie z field.empty i ustaleniem bramki (kod bramki)", () => {
+    // Prawdziwa polityka rozdziału: luka zagadnienia „words” sprawdza słowo spoza kart tego zagadnienia.
+    const lexicon = ["Pogoda:", "raining — pada deszcz", "sunny — słonecznie", "windy — wietrznie", "Ubrania:", "coat — płaszcz", "Zwroty:", "I'm wearing (a) …"].join("\n");
+    const gatedCtx: AgentCheckContext = { ...chapterCtx, subject: englishChapterSubject, material: lexicon };
+    const offCard: LessonExerciseDraft = {
+      exerciseType: "lesson_gap",
+      objectiveId: WEATHER,
+      instructionPl: "Mam na sobie płaszcz. Uzupełnij zdanie.",
+      stem: "I'm wearing a ___.",
+      answer: "coat",
+      acceptedAnswers: [],
+      focus: ["coat"],
+    };
+    // Rodzaj zagadnienia z planu: bramka słów kart działa tylko dla „words”.
+    const kinds = new Map<string, DynamicObjectiveKind>([[WEATHER, "words"], [WEARING, "frame"]]);
+    const kindState = () =>
+      createLessonAgentState({ topic: chapterTopic, objectives: agentObjectivesOf(chapterTopic, kinds), fixed: [], examples: {}, fixedSources: {} });
+    expect(codeOf(submit(kindState(), WEATHER, [offCard], gatedCtx).results[0])).toBe("card_word_missing");
+    const result = submit(kindState(), WEATHER, [{ ...offCard, hint: "" }], gatedCtx);
+    const entry = result.results[0]!;
+    if (!("rejected" in entry)) throw new Error("expected rejection");
+    expect(entry.rejected).toMatchObject({ kind: "rule", code: "card_word_missing", ruleIds: ["field.empty", "chapter.card_word_missing"] });
+    expect(entry.rejected.reasons[0]).toMatch(/^\[field\.empty\] hint/u);
+    expect(entry.rejected.reasons[1]).toMatch(/^\[chapter\.card_word_missing\] answer: the checked answer must contain a word of THIS objective's cards/u);
   });
 });
 

@@ -81,9 +81,8 @@ function validateSubjectRules(module: SubjectModule, errors: string[]): void {
   const rules = (module as { rules?: SubjectModule["rules"] }).rules;
   if (rules === undefined) {
     errors.push("Przedmiot: brak katalogu reguł (rules)");
-    return;
   }
-  for (const id of Object.keys(rules)) {
+  for (const id of Object.keys(rules ?? {})) {
     if (ENGINE_CATALOGS.some((catalog) => Object.hasOwn(catalog, id))) {
       errors.push(`Przedmiot: id reguły „${id}” koliduje z katalogiem reguł silnika`);
     }

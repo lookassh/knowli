@@ -1,8 +1,13 @@
-import { LessonExerciseInputSchema } from "@learning/contracts";
 import { exerciseExposureText } from "../exposure-key";
 import { findExposureLeaks, type ExposureLeak } from "../exposure-leaks";
 import { withoutOrphanKeywords } from "../keyword-families";
-import { answersEquivalent, MAX_TEXT_LENGTH, validateLessonExerciseIssues, validatePoolIssues } from "../pool-validation";
+import {
+  agentReanalysisDraft,
+  answersEquivalent,
+  MAX_TEXT_LENGTH,
+  validateLessonExerciseIssues,
+  validatePoolIssues,
+} from "../pool-validation";
 import { clip, issueFrom, type LessonRuleIssue, type RuleId } from "../rules/catalog";
 import { LESSON_RULES } from "../rules/lesson-rules";
 import { formatRuleReason, formatVictimReason, type RuleReason } from "../rules/rule-reason";
@@ -293,9 +298,10 @@ type StepOutcome =
   | { readonly ok: false; readonly rejection: Rejection };
 
 /**
- * Reguły ćwiczenia (krok 2): kontrakt, rdzeń i przedmiot ścieżką agenta (ponowna analiza po
- * pustych napisach), a przy spełnionym kontrakcie także bramka przedmiotu — wszystko w jednym
- * odrzuceniu. Kod: pierwszego ustalenia bramki, inaczej `rule_exercise`.
+ * Reguły ćwiczenia (krok 2): kontrakt, rdzeń i przedmiot ścieżką agenta i bramka przedmiotu —
+ * wszystko w jednym odrzuceniu. Gdy kontrakt odrzuca wyłącznie puste napisy w polach opcjonalnych,
+ * reguły dalsze i bramka liczą się na kopii bez tych pól (spec katalogu reguł §4.2); przy innych
+ * błędach kontraktu zostają same jego zgłoszenia. Kod: pierwszego ustalenia bramki, inaczej `rule_exercise`.
  */
 function exerciseRejection(
   draft: LessonExerciseDraft,
@@ -304,9 +310,12 @@ function exerciseRejection(
   ctx: AgentCheckContext,
 ): Rejection | undefined {
   const issues = validateLessonExerciseIssues(draft, ctx.subject, state.topic, { agent: true });
-  // Bramka zakłada poprawny kształt szkicu; przy błędzie kontraktu zostają same zgłoszenia walidacji.
-  const contractOk = LessonExerciseInputSchema.safeParse(draft).success;
-  const findings = contractOk ? (ctx.subject.agentPolicy.exerciseGate?.(draft, objective, { material: ctx.material }) ?? []) : [];
+  // Bramka zakłada poprawny kształt szkicu, więc dostaje szkic spełniający kontrakt albo żaden.
+  const gateDraft = agentReanalysisDraft(draft);
+  const findings = gateDraft === null
+    ? []
+    : (ctx.subject.agentPolicy.exerciseGate?.(gateDraft.draft, objective, { material: ctx.material }) ?? [])
+      .filter((finding) => !gateDraft.stripped.includes(finding.issue.field));
   const all = [...issues, ...findings.map((finding) => finding.issue)];
   if (all.length === 0) return undefined;
   return findings.length > 0 ? reject("rule", findings[0]!.code, all).rejection : reject("rule", "rule_exercise", all).rejection;
@@ -445,7 +454,7 @@ function hintFinding(verdict: AgentHintVerdict): { code: string; issue: LessonRu
       : verdict.verdict === "language"
         ? (["hint_language", "not correct in the language of the instructions"] as const)
         : (["hint_reveals_paraphrase", "giving away the answer or a required element in other words"] as const);
-  const reason = verdict.reason.trim() === "" ? "" : `: ${clip(verdict.reason, 200, { quote: false })}`;
+  const reason = verdict.reason.trim() === "" ? "" : `: ${clip(verdict.reason, undefined, { quote: false })}`;
   return {
     code,
     issue: lessonIssue("check.hint_judge", {
