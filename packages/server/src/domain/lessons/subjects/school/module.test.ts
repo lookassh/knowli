@@ -577,6 +577,8 @@ describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
     expect(elements!.found).toBe('requiredElements ids [e2], family "fam" has [e1]');
     const pl = "familyId: ćwiczenie z rodziny „fam” różni się odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny";
     expect(issues.map((issue) => issue.pl)).toEqual([pl, pl]);
+    // Rodzic i model dostają ten komunikat raz, jak przed rozdzieleniem reguł.
+    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? [])).toEqual([pl]);
   });
 
   it("rodzina: różnica tylko w odpowiedzi albo tylko w elementach daje jedną regułę", () => {
@@ -598,6 +600,29 @@ describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
         found: 'quote 1 "Rośliny jedzą słońce na śniadanie." does not occur in the material',
       },
     ]);
+  });
+
+  it("found pozostałych reguł puli: długość cytatu, pojęcie kluczowe", () => {
+    expect(issuesAt([openDraft({ sourceRefs: [{ quote: "966" }] })], 0).map((issue) => [issue.rule, issue.field, issue.found])).toEqual([
+      ["school.quote_too_short", "sourceRefs[0].quote", 'quote 0 "966" has 3 characters, minimum 10'],
+    ]);
+    const outside = keywordsDraft({
+      keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
+      answer: "chlorofil, cukry",
+    });
+    expect(issuesAt([openDraft({ familyId: "def" }), outside], 1).map((issue) => issue.found)).toEqual([
+      `key term "chlorofil" (option "k1") occurs neither in the family's model answer nor in the material`,
+    ]);
+  });
+
+  it("found reguł ćwiczenia: powtórzone id elementów i wynik rachunku", () => {
+    const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+    const foundOf = (draft: LessonExerciseDraft) =>
+      schoolSubject.validateExercise(draft, topic).map((issue) => (typeof issue === "string" ? issue : issue.found));
+    expect(foundOf(openDraft({ requiredElements: [{ id: "e1", text: "Cukry." }, { id: "e1", text: "Światło." }] }))).toEqual([
+      'repeated ids "e1"',
+    ]);
+    expect(foundOf(calculationDraft(scale, { answer: "0,75 km" }))).toEqual(['answer "0,75 km", computed "750 m"']);
   });
 
   it("bramka podpowiedzi i walidator ćwiczenia zgłaszają reguły katalogu szkoły", () => {

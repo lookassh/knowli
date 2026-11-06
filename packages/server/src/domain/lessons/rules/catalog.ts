@@ -124,17 +124,27 @@ export function clip(text: string, max: number = CLIP_MAX, options: { readonly q
   return options.quote === false ? body : `"${body}"`;
 }
 
-/** Komunikaty dla rodzica (`pl`) — dzisiejsze napisy walidatorów. */
+/**
+ * Komunikaty dla rodzica (`pl`) — dzisiejsze napisy walidatorów. Komunikat
+ * identyczny z wcześniejszym na liście jest pomijany (kolejność zostaje): kilka
+ * reguł może dzielić dzisiejszy tekst (np. rodzina różna odpowiedzią i elementami).
+ */
 export function messagesOf(issues: readonly LessonRuleIssue[]): string[] {
-  return issues.map((issue) => issue.pl);
+  return uniqueInOrder(issues.map((issue) => issue.pl));
+}
+
+/** Napisy bez powtórzeń, w kolejności pierwszego wystąpienia. */
+function uniqueInOrder(texts: readonly string[]): string[] {
+  return [...new Set(texts)];
 }
 
 /**
  * Komunikaty dla rodzica ze zgłoszeń haków przedmiotów w okresie przejściowym:
- * napis bez zmian, zgłoszenie reguły przez `pl`. Znika razem z `LegacyIssue`.
+ * napis bez zmian, zgłoszenie reguły przez `pl`, bez powtórzeń (jak `messagesOf`).
+ * Znika razem z `LegacyIssue`.
  */
 export function legacyMessages(items: readonly LegacyIssue[]): string[] {
-  return items.map((item) => (typeof item === "string" ? item : item.pl));
+  return uniqueInOrder(items.map((item) => (typeof item === "string" ? item : item.pl)));
 }
 
 /**

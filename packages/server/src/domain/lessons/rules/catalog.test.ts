@@ -7,6 +7,7 @@ import {
   defineRules,
   describeRule,
   issueFrom,
+  legacyMessages,
   messagesOf,
   ruleOf,
   type LessonRule,
@@ -83,6 +84,27 @@ describe("messagesOf", () => {
       "drugi",
     ]);
     expect(messagesOf([])).toEqual([]);
+  });
+
+  it("pomija komunikat identyczny z wcześniejszym, zachowując kolejność", () => {
+    expect(
+      messagesOf([
+        issue("x.y", { pl: "wspólny" }),
+        issue("x.limit", { pl: "inny" }),
+        issue("x.limit", { pl: "wspólny" }),
+      ]),
+    ).toEqual(["wspólny", "inny"]);
+  });
+});
+
+describe("legacyMessages", () => {
+  it("napis bez zmian, zgłoszenie przez pl, bez powtórzeń w kolejności pierwszego wystąpienia", () => {
+    expect(legacyMessages(["napis", issue("x.y", { pl: "wspólny" }), "wspólny", issue("x.limit", { pl: "napis" }), "ostatni"])).toEqual([
+      "napis",
+      "wspólny",
+      "ostatni",
+    ]);
+    expect(legacyMessages([])).toEqual([]);
   });
 });
 
