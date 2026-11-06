@@ -29,6 +29,21 @@ function generationServices(fakes: FakeGeneration, clock = new ManualClock()): S
   return createServices({ db, clock, media: fakes.settings, generation: fakes.deps });
 }
 
+/** Wstrzymuje wywołanie modelu zestawu do `releaseDeck()`; `deckEntered` — wywołanie już trwa. */
+function holdDeckGeneration(fakes: FakeGeneration) {
+  const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
+  let enterDeck!: () => void;
+  let releaseDeck!: () => void;
+  const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
+  const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
+  fakes.deps.llm.generateDeck = async (input, signal) => {
+    enterDeck();
+    await deckHeld;
+    return originalDeck(input, signal);
+  };
+  return { originalDeck, deckEntered, releaseDeck };
+}
+
 const COMMAND = {
   prompt: "Dni tygodnia po angielsku dla 8-letniego dziecka, proste słowa.",
   idempotencyKey: "generation-key-1",
@@ -438,16 +453,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
       material: "He plays football. She watches television. They study English.",
       clientRequestId: randomUUID(),
     });
-    const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
-    let enterDeck!: () => void;
-    let releaseDeck!: () => void;
-    const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
-    const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
-    fakes.deps.llm.generateDeck = async (input, signal) => {
-      enterDeck();
-      await deckHeld;
-      return originalDeck(input, signal);
-    };
+    const { originalDeck, deckEntered, releaseDeck } = holdDeckGeneration(fakes);
 
     let passFinished = false;
     const pass = runDueGenerationWork(services).then((result) => { passFinished = true; return result; });
@@ -542,16 +548,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     disposers.push(fakes.dispose);
     const services = generationServices(fakes);
     const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "stalled-deck" });
-    const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
-    let enterDeck!: () => void;
-    let releaseDeck!: () => void;
-    const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
-    const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
-    fakes.deps.llm.generateDeck = async (input, signal) => {
-      enterDeck();
-      await deckHeld;
-      return originalDeck(input, signal);
-    };
+    const { originalDeck, deckEntered, releaseDeck } = holdDeckGeneration(fakes);
     const oldWorker = executeGeneration(services, runId);
     await deckEntered;
     const healthy = await readGeneration(services, runId);
