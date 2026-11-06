@@ -11,10 +11,11 @@ import {
   isVisualDataValid,
 } from "@learning/contracts";
 import type { Services } from "../../config";
-import type { Tx } from "../../db/client";
+import type { Executor, Tx } from "../../db/client";
 import type { LlmGenerateDeckInput } from "../../ports/ai";
 import {
   claimQueuedRun,
+  deckRunStalled,
   enqueueGenerationRun,
   isStoryRunInput,
   lessonStoryRunFilter,
@@ -251,10 +252,11 @@ async function insertGenerationDraft(
 }
 
 export async function readGeneration(services: Services, runId: string): Promise<GenerationDto> {
-  const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
-  if (!run) {
+  const row = (await services.db.select({ run: generationRuns, stalled: deckRunStalled }).from(generationRuns).where(eq(generationRuns.id, runId)))[0];
+  if (!row) {
     throw new AppError("not_found");
   }
+  const { run } = row;
   let deckId: string | null = null;
   if (run.deckVersionId) {
     deckId =
@@ -273,6 +275,7 @@ export async function readGeneration(services: Services, runId: string): Promise
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
     rejectedCount: run.rejectedCount ?? null,
+    ...(row.stalled ? { stalled: true } : {}),
   };
 }
 
@@ -280,7 +283,7 @@ export async function readGeneration(services: Services, runId: string): Promise
  * Ręczne ponowienie po porażce (lub odblokowanie runu utkwionego w running
  * po awarii workera). Resetuje budżet prób; nie rusza runów zakończonych.
  * Zwraca id runu do śledzenia: zwykle ten sam, a dla runu historyjki
- * w `running` — id nowego runu, który go zastępuje.
+ * albo utkniętego runu zestawu w `running` — id nowego runu, który go zastępuje.
  */
 export async function retryGeneration(services: Services, runId: string): Promise<{ runId: string }> {
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
@@ -315,20 +318,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
           // a jego miejsce zajmuje NOWY run z pełnym budżetem prób i tym samym
           // wejściem (spec §6.2a). Spóźniony worker starego runu nie przejdzie
           // CAS finalizacji (`running` + próba), więc nie nadpisze wyniku.
-          await tx.update(generationRuns)
-            .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
-            .where(eq(generationRuns.id, runId));
-          const newRunId = randomUUID();
-          await tx.insert(generationRuns).values({
-            id: newRunId,
-            deckVersionId: version.id,
-            expectedEditNumber: version.editNumber,
-            kind: "lesson",
-            dedupeKey: `lesson-story:retry:${newRunId}`,
-            state: "queued",
-            input: current.input,
-          });
-          return { runId: newRunId };
+          return replaceRunningRun(tx, services, current, version.editNumber, "lesson-story");
         }
         // Porażka i odroczone queued dostają nowy budżet prób.
         await tx.update(generationRuns)
@@ -366,6 +356,24 @@ export async function retryGeneration(services: Services, runId: string): Promis
       await resetLessonAgentBudget(tx, runId);
       return { runId };
     }
+    // „Ponów” to świadoma decyzja rodzica: run zestawu przyjmuje bieżący numer
+    // edycji szkicu (#302), inaczej finalizacja po edycji z porażki po cichu
+    // wyrzuciłaby opłacony wynik. Kolejność blokad jak w finalizacji: wersja, potem run.
+    let expectedEditNumber: number | undefined;
+    if (run.kind === "deck") {
+      const version = (await tx.select({ state: deckVersions.state, editNumber: deckVersions.editNumber }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
+      const locked = (await tx.select({ run: generationRuns, stalled: deckRunStalled }).from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      const current = locked?.run;
+      if (!version || version.state === "published" || !current || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
+      if (current.state === "running") {
+        // zdrowy run w toku: drugie wywołanie modelu byłoby opłacone na darmo
+        if (!locked.stalled) throw new AppError("conflict");
+        // `running` (np. po awarii workera, #299): jak przy historyjce; spóźniony
+        // worker nie przejdzie sprawdzenia `running` przy zapisie wyniku.
+        return replaceRunningRun(tx, services, current, version.editNumber, "deck");
+      }
+      expectedEditNumber = version.editNumber;
+    }
     if (run.assetId) {
       const asset = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, run.assetId)))[0];
       if (asset?.state === "ready") {
@@ -378,18 +386,6 @@ export async function retryGeneration(services: Services, runId: string): Promis
           .where(eq(mediaAssets.id, asset.id));
       }
     }
-    // „Ponów” to świadoma decyzja rodzica: run zestawu przyjmuje bieżący numer
-    // edycji szkicu (#302), inaczej finalizacja po edycji z porażki po cichu
-    // wyrzuciłaby opłacony wynik. Kolejność blokad jak w finalizacji: wersja, potem run.
-    let expectedEditNumber: number | undefined;
-    if (run.kind === "deck") {
-      const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
-      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
-      if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") {
-        throw new AppError("conflict");
-      }
-      expectedEditNumber = version.editNumber;
-    }
     // liczba odrzuceń należy do zakończonej próby (porażka `no_source_items`); nowa próba zapisze własną
     await tx
       .update(generationRuns)
@@ -399,8 +395,35 @@ export async function retryGeneration(services: Services, runId: string): Promis
   });
 }
 
+/**
+ * Run w `running` przy „Ponów”: zostaje `superseded`, a jego miejsce zajmuje nowy
+ * run z pełnym budżetem prób i tym samym wejściem (klucz `<prefix>:retry:<id>`).
+ */
+async function replaceRunningRun(
+  tx: Tx,
+  services: Services,
+  current: typeof generationRuns.$inferSelect,
+  expectedEditNumber: number,
+  dedupePrefix: "deck" | "lesson-story",
+): Promise<{ runId: string }> {
+  await tx.update(generationRuns)
+    .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
+    .where(eq(generationRuns.id, current.id));
+  const newRunId = randomUUID();
+  await tx.insert(generationRuns).values({
+    id: newRunId,
+    deckVersionId: current.deckVersionId,
+    expectedEditNumber,
+    kind: current.kind,
+    dedupeKey: `${dedupePrefix}:retry:${newRunId}`,
+    state: "queued",
+    input: current.input,
+  });
+  return { runId: newRunId };
+}
+
 export async function executeGeneration(services: Services, runId: string, signal?: AbortSignal): Promise<void> {
-  const deps = requireGeneration(services);
+  requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
   if (!run) {
     throw new AppError("not_found");
@@ -424,10 +447,33 @@ export async function executeGeneration(services: Services, runId: string, signa
     return;
   }
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
-    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted", null, "running");
     return;
   }
+  try {
+    await generateClaimedDeckRun(services, run, attempts, signal);
+  } catch (error) {
+    // Żaden błąd po przejęciu (np. deadlock albo zerwane połączenie w zapisie
+    // wyniku) nie zostawia runu w `running`, z którego worker go nie podejmie (#299).
+    const retryable = signal?.aborted || (errorCodeOf(error) !== "validation" && attempts < MAX_AUTOMATIC_ATTEMPTS);
+    await markRun(services.db, services.clock, runId, retryable ? "queued" : "failed",
+      retryable ? null : errorCodeOf(error) === "validation" ? "validation" : "attempts_exhausted",
+      retryable && !signal?.aborted ? retryAt(services, attempts, error) : null, "running");
+    throw error;
+  }
+}
 
+/** Wywołanie modelu i zapis wyniku przejętego runu `deck`; każde oznaczenie runu tylko z `running`. */
+async function generateClaimedDeckRun(
+  services: Services,
+  run: typeof generationRuns.$inferSelect,
+  attempts: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const deps = requireGeneration(services);
+  const runId = run.id;
+  const mark = (db: Executor, state: "failed" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) =>
+    markRun(db, services.clock, runId, state, errorCode, nextAttemptAt, "running");
   const runInput = run.input as StoredDeckRunInput;
   const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
   const llmInput: LlmGenerateDeckInput = runInput.mode === "material"
@@ -457,22 +503,22 @@ export async function executeGeneration(services: Services, runId: string, signa
       : { mode: "description", items: GeneratedDeckSchema.parse(result).items };
   } catch (error) {
     if (signal?.aborted) {
-      await markRun(services.db, services.clock, runId, "queued", null);
+      await mark(services.db, "queued", null);
       return;
     }
     const code = errorCodeOf(error);
     if (code === "validation") {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+      await mark(services.db, "failed", "validation");
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
-      await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+      await mark(services.db, "failed", "attempts_exhausted");
     } else {
-      await markRun(services.db, services.clock, runId, "queued", null, retryAt(services, attempts, error));
+      await mark(services.db, "queued", null, retryAt(services, attempts, error));
     }
     return;
   }
 
   if (signal?.aborted) {
-    await markRun(services.db, services.clock, runId, "queued", null);
+    await mark(services.db, "queued", null);
     return;
   }
 
@@ -493,7 +539,7 @@ export async function executeGeneration(services: Services, runId: string, signa
     ({ items, rejectedCount } = selection);
   } else {
     if (generated.items.length === 0) {
-      await markRun(services.db, services.clock, runId, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
+      await mark(services.db, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
       return;
     }
     items = generated.items.map((item) => toVocabularyItem(item, runInput.locales));
@@ -502,7 +548,7 @@ export async function executeGeneration(services: Services, runId: string, signa
       validateVocabularyFormatItems(vocabularyFormat, items);
     } catch (error) {
       if (error instanceof AppError && error.code === "validation") {
-        await markRun(services.db, services.clock, runId, "failed", "validation");
+        await mark(services.db, "failed", "validation");
         return;
       }
       throw error;
@@ -516,15 +562,17 @@ export async function executeGeneration(services: Services, runId: string, signa
       await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
     )[0];
     if (!version) {
-      await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
+      await mark(tx, "failed", "deck_version_gone");
       return;
     }
+    // ta sama kolejność blokad co „Ponów” (wersja, potem run): run zastąpiony w międzyczasie nie zapisuje wyniku
+    const current = (await tx.select({ state: generationRuns.state, expectedEditNumber: generationRuns.expectedEditNumber })
+      .from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+    if (current?.state !== "running") return;
     // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu; numer z wiersza
     // pod blokadą, bo „Ponów” mógł go zmienić po odczycie `run` (#302)
-    const current = (await tx.select({ expectedEditNumber: generationRuns.expectedEditNumber })
-      .from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
-    if (version.state === "published" || version.editNumber !== current?.expectedEditNumber) {
-      await markRun(tx, services.clock, runId, "superseded", null);
+    if (version.state === "published" || version.editNumber !== current.expectedEditNumber) {
+      await mark(tx, "superseded", null);
       return;
     }
     await applyItems(tx, version.id, version.deckId, items);

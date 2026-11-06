@@ -29,6 +29,21 @@ function generationServices(fakes: FakeGeneration, clock = new ManualClock()): S
   return createServices({ db, clock, media: fakes.settings, generation: fakes.deps });
 }
 
+/** Wstrzymuje wywołanie modelu zestawu do `releaseDeck()`; `deckEntered` — wywołanie już trwa. */
+function holdDeckGeneration(fakes: FakeGeneration) {
+  const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
+  let enterDeck!: () => void;
+  let releaseDeck!: () => void;
+  const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
+  const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
+  fakes.deps.llm.generateDeck = async (input, signal) => {
+    enterDeck();
+    await deckHeld;
+    return originalDeck(input, signal);
+  };
+  return { originalDeck, deckEntered, releaseDeck };
+}
+
 const COMMAND = {
   prompt: "Dni tygodnia po angielsku dla 8-letniego dziecka, proste słowa.",
   idempotencyKey: "generation-key-1",
@@ -470,16 +485,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
       material: "He plays football. She watches television. They study English.",
       clientRequestId: randomUUID(),
     });
-    const originalDeck = fakes.deps.llm.generateDeck.bind(fakes.deps.llm);
-    let enterDeck!: () => void;
-    let releaseDeck!: () => void;
-    const deckEntered = new Promise<void>((resolve) => { enterDeck = resolve; });
-    const deckHeld = new Promise<void>((resolve) => { releaseDeck = resolve; });
-    fakes.deps.llm.generateDeck = async (input, signal) => {
-      enterDeck();
-      await deckHeld;
-      return originalDeck(input, signal);
-    };
+    const { originalDeck, deckEntered, releaseDeck } = holdDeckGeneration(fakes);
 
     let passFinished = false;
     const pass = runDueGenerationWork(services).then((result) => { passFinished = true; return result; });
@@ -537,5 +543,73 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     );
     expect(currentAsset?.lease_token).toBe(token);
     expect(currentRun?.state).toBe("running");
+  });
+
+  it("błąd końcowego zapisu nie zostawia runu zestawu w running (#299)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const clock = new ManualClock();
+    const services = generationServices(fakes, clock);
+    const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "final-write-error" });
+    // deadlock w transakcji zapisu wyniku (np. odwrotna kolejność blokad zasobów dwóch zestawów)
+    const trigger = `fail_${randomUUID().replaceAll("-", "")}`;
+    await pool.query(`create function learning_app.${trigger}() returns trigger language plpgsql as
+      $$ begin raise exception 'forced deadlock' using errcode = '40P01'; end $$`);
+    await pool.query(`create trigger ${trigger} before insert on learning_app.item_revisions
+      for each row execute function learning_app.${trigger}()`);
+    try {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await expect(executeGeneration(services, runId)).rejects.toThrow();
+        const dto = await readGeneration(services, runId);
+        expect(dto).toMatchObject({ attempts: attempt, state: attempt < 3 ? "queued" : "failed" });
+        clock.advanceMs(60_000); // odstęp przed ponowieniem (#300)
+      }
+      expect((await readGeneration(services, runId)).errorCode).toBe("attempts_exhausted");
+    } finally {
+      await pool.query(`drop trigger ${trigger} on learning_app.item_revisions`);
+      await pool.query(`drop function learning_app.${trigger}()`);
+    }
+    // „Ponów” po porażce kończy zestaw zwykłym sukcesem
+    const retried = await retryGeneration(services, runId);
+    await executeGeneration(services, retried.runId);
+    expect((await readGeneration(services, retried.runId)).state).toBe("succeeded");
+  });
+
+  it("ponowienie runu zestawu utkwionego w running zastępuje go, a spóźniony worker niczego nie zapisuje (#299)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const services = generationServices(fakes);
+    const { runId } = await enqueueDeckGeneration(services, { ...COMMAND, idempotencyKey: "stalled-deck" });
+    const { originalDeck, deckEntered, releaseDeck } = holdDeckGeneration(fakes);
+    const oldWorker = executeGeneration(services, runId);
+    await deckEntered;
+    const healthy = await readGeneration(services, runId);
+    expect(healthy.state).toBe("running");
+    expect(healthy.stalled).toBeUndefined();
+    // zdrowy run w toku: „Ponów” nie zleca drugiego płatnego wywołania modelu
+    await expect(retryGeneration(services, runId)).rejects.toMatchObject({ code: "conflict" });
+    // od przejęcia minęło ponad 10 minut (np. worker padł) — run jest utknięty
+    await pool.query("update learning_app.generation_runs set claimed_at = now() - interval '11 minutes' where id = $1", [runId]);
+    expect((await readGeneration(services, runId)).stalled).toBe(true);
+
+    const retried = await retryGeneration(services, runId);
+    expect(retried.runId).not.toBe(runId);
+    expect(await readGeneration(services, runId)).toMatchObject({ state: "superseded" });
+    expect(await readGeneration(services, retried.runId)).toMatchObject({ state: "queued", attempts: 0 });
+
+    // spóźniony worker kończy wywołanie modelu: ani szkicu, ani nowego runu nie rusza
+    releaseDeck();
+    await oldWorker;
+    expect((await readGeneration(services, runId)).state).toBe("superseded");
+    expect(await readGeneration(services, retried.runId)).toMatchObject({ state: "queued", attempts: 0 });
+    const deckVersionId = (await readGeneration(services, runId)).deckVersionId!;
+    expect((await query<{ count: number }>(
+      "select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1",
+      [deckVersionId],
+    ))[0]!.count).toBe(0);
+
+    fakes.deps.llm.generateDeck = originalDeck;
+    await executeGeneration(services, retried.runId);
+    expect((await readGeneration(services, retried.runId)).state).toBe("succeeded");
   });
 });

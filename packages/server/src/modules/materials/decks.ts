@@ -44,6 +44,7 @@ import { buildPayload, payloadToItem, validateItems } from "./item-payload";
 import { assertVocabularyDeck, readDeckKind, readVersionDeckKind } from "./deck-kind";
 import { deckStateOf } from "./deck-state";
 import { readDeckSource } from "./source-materials";
+import { deckRunStalled } from "./generation-runs";
 import { validateVocabularyFormatItems } from "../../domain/picture-vocabulary";
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx, requiredAssetsFor, type AssetRole } from "./media-reconciliation";
 import {
@@ -653,17 +654,18 @@ export async function readDraft(services: Services, draftId: string): Promise<Dr
 
 /** Najnowszy run generacji zestawu dla wersji; brak runów daje null. */
 async function latestDeckRun(db: Executor, deckVersionId: string): Promise<GenerationDto | null> {
-  const run = (
+  const row = (
     await db
-      .select()
+      .select({ run: generationRuns, stalled: deckRunStalled })
       .from(generationRuns)
       .where(and(eq(generationRuns.deckVersionId, deckVersionId), eq(generationRuns.kind, "deck")))
       .orderBy(desc(generationRuns.createdAt))
       .limit(1)
   )[0];
-  if (!run) {
+  if (!row) {
     return null;
   }
+  const { run } = row;
   return {
     id: run.id,
     deckId: (
@@ -677,6 +679,7 @@ async function latestDeckRun(db: Executor, deckVersionId: string): Promise<Gener
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
     rejectedCount: run.rejectedCount ?? null,
+    ...(row.stalled ? { stalled: true } : {}),
   };
 }
 

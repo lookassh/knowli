@@ -73,6 +73,14 @@ export async function findEnqueuedRun(
   return null;
 }
 
+/**
+ * Run `deck` w `running` dłużej niż 10 minut od przejęcia (`claimed_at`, czas
+ * bazy) uznajemy za utknięty, np. po awarii workera (#299): dopiero wtedy
+ * „Ponów” go zastępuje, więc rodzic nie opłaci drugiego wywołania modelu
+ * w trakcie zdrowego runu (wywołanie modelu zestawu trwa zwykle kilkadziesiąt sekund).
+ */
+export const deckRunStalled = sql<boolean>`(${generationRuns.kind} = 'deck' and ${generationRuns.state} = 'running' and (${generationRuns.claimedAt} is null or ${generationRuns.claimedAt} <= now() - interval '10 minutes'))`;
+
 export async function markRun(
   db: Executor,
   clock: Clock,
@@ -80,6 +88,8 @@ export async function markRun(
   state: "succeeded" | "failed" | "superseded" | "queued",
   errorCode: string | null,
   nextAttemptAt: Date | null = null,
+  /** `"running"` — tylko run wciąż przejęty (spóźniony worker nie wskrzesi runu zastąpionego przy „Ponów”). */
+  fromState?: "running",
 ): Promise<void> {
   await db
     .update(generationRuns)
@@ -89,7 +99,7 @@ export async function markRun(
       nextAttemptAt,
       finishedAt: state === "queued" ? null : clock.now(),
     })
-    .where(eq(generationRuns.id, runId));
+    .where(and(eq(generationRuns.id, runId), fromState === undefined ? undefined : eq(generationRuns.state, fromState)));
 }
 
 /**
@@ -121,7 +131,7 @@ export async function markRunSucceeded(
  * Porażka runu `deck` ze źródła, gdy żaden element nie przeszedł walidacji per
  * element (`no_source_items`, design 2026-10-30 §6.2), razem z liczbą odrzuceń
  * — panel rodzica pokazuje ją także przy porażce. Szkic zostaje bez zmian.
- * Pozostałe pola jak `markRun(…, "failed", "no_source_items")`.
+ * Pozostałe pola jak `markRun(…, "failed", "no_source_items", "running")`.
  */
 export async function markRunWithoutSourceItems(
   db: Executor,
@@ -138,7 +148,7 @@ export async function markRunWithoutSourceItems(
       finishedAt: clock.now(),
       rejectedCount,
     })
-    .where(eq(generationRuns.id, runId));
+    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running")));
 }
 
 /**
@@ -229,7 +239,7 @@ export async function supersedeFailedLessonStoryRuns(db: Executor, deckVersionId
 export async function claimQueuedRun(db: Executor, runId: string, expectedEditNumber?: number, now?: Date): Promise<number | null> {
   const claimed = await db
     .update(generationRuns)
-    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
+    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1`, claimedAt: sql`now()` })
     .where(and(
       eq(generationRuns.id, runId),
       eq(generationRuns.state, "queued"),
