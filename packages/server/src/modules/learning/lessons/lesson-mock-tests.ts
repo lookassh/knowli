@@ -36,7 +36,7 @@ export type { LessonMockSlot, LessonMockTestPlanSnapshot } from "../../../domain
  * requirements 9.1–9.4). Współdzieli mechanikę słówek przez te same punkty
  * wejścia w `sessions.ts`/`attempts.ts`: plan zamrożony w `mock_test_plan`
  * (dyskryminowany `kind:"lesson"`), jedna odpowiedź na slot kończy zadanie,
- * brak feedbacku w trakcie, limit 10 min, raport per cel utrwalony raz w
+ * brak feedbacku w trakcie, limit czasu `sessionTimeLimitMs` (min. 10 min), raport per cel utrwalony raz w
  * `context.lessonMockTestReport` (trigger czyni go niezmiennym — migracja 0008).
  */
 

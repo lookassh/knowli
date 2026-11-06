@@ -20,7 +20,7 @@ import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 /**
  * Zadanie 17A: próbna kartkówka lekcji po stronie serwera. Start (plan zamrożony,
  * cel `lesson`), wydawanie slotów bez feedbacku, jedna odpowiedź na slot
- * (terminalna), limit 10 min, wznowienie w oknie, ocena modelem w kartkówce,
+ * (terminalna), limit czasu (min. 10 min), wznowienie w oknie, ocena modelem w kartkówce,
  * ekspozycje po kartkówce (ćwiczenie staje się widziane), raport per cel,
  * omówienie dziecka pieczętujące ekspozycje, `mock_test_unavailable`,
  * zamrożona porcja (edycja przypisania po starcie nie zmienia slotów).
