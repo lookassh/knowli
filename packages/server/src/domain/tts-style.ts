@@ -14,8 +14,23 @@ export type TtsStyle = TtsRoleStyle | LessonVoiceTone;
  */
 const ABBREVIATION_DOT = /(?<![\p{L}\d])(np|itp|itd|tzn|tzw|tj|m\.in|p\.n\.e|n\.e|r|w|ok|godz|dr|prof|tys|mln|mld|św|ul|ks)\.(?=\s)/giu;
 
-/** Fragment w cudzysłowie („…”, "…", «…»), w którym wielokropek oznacza lukę ramy, a nie koniec zdania. */
-const QUOTED = /„[^”]*”|"[^"]*"|«[^»]*»/g;
+const QUOTE_CLOSER: Record<string, string> = { "„": "”", "\"": "\"", "«": "»" };
+
+/**
+ * Wielokropek wewnątrz cudzysłowu („…”, "…", «…») to luka ramy, a nie koniec zdania. Skan jednoprzebiegowy
+ * (regex z `[^”]*` dla niedomkniętego cudzysłowu miałby kwadratowy czas); niedomknięty cudzysłów
+ * neutralizuje resztę tekstu, co tylko zaniża liczbę zdań.
+ */
+function maskQuotedEllipsis(text: string): string {
+  let closer: string | undefined;
+  let masked = "";
+  for (const char of text.replace(/\.{3}/g, "…")) {
+    if (closer === undefined) closer = QUOTE_CLOSER[char];
+    else if (char === closer) closer = undefined;
+    masked += closer !== undefined && char === "…" ? "\uE001" : char;
+  }
+  return masked;
+}
 
 /**
  * Liczba zdań w tekście nagrania (spec tonu TTS §4.3): po normalizacji odstępów zdanie to fragment
@@ -25,10 +40,7 @@ const QUOTED = /„[^”]*”|"[^"]*"|«[^»]*»/g;
  * nie koniec zdania.
  */
 export function sentenceCount(text: string): number {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(QUOTED, (quoted) => quoted.replace(/…|\.{3}/g, "\uE001"))
+  return maskQuotedEllipsis(text.replace(/\s+/g, " ").trim())
     .replace(ABBREVIATION_DOT, "$1\uE000")
     .split(/[.!?…]+(?=\s|$)/)
     .filter((fragment) => /[^\s.!?…]/.test(fragment))
