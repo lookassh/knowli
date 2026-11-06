@@ -566,3 +566,15 @@ Odrzucone albo odłożone:
 - Odtworzenie zapisanych zgłoszeń przez stare przyjmowanie bez modeli: nie
   mamy zapisanych werdyktów kontroli modelami; zamiast tego opcje
   rozszerzenia przebiegu (§8).
+
+### Decyzje z przeglądu planu (2026-11-06)
+
+Plan wersja 2 (`docs/superpowers/plans/2026-11-06-lesson-agent-rule-catalog.md`) doprecyzowuje spec. Przy sprzeczności obowiązuje plan:
+- **Kształt rekordu i materializacja** żyją w domenie (`raw-shape.ts`, `raw-materialize.ts`), a reguły `shape.*` w katalogu rdzenia. Punkt kontrolny zachowuje dzisiejszy, łagodny strażnik kształtu.
+- **Bramka podpowiedzi** usuwa podpowiedź tylko wtedy, gdy zdradę zgłasza i dzisiejszy, i nowy algorytm. Zmiana jest wyłącznie poluzowaniem.
+- **`pl` reguł dostępnych tylko agentowi** to krótki polski opis reguły; dzisiejszy angielski tekst dla modelu przechodzi do `found`.
+- **Ponowna analiza po pustych napisach** działa tylko na ścieżce agenta, więc zbiór komunikatów rodzica się nie zmienia.
+- **Rachunek:** `tolerance: null` materializacja traktuje jak brak pola. Reguła `field.empty` dotyczy napisów.
+- **Opisy reguł w wyniku narzędzia** są wysyłane raz na id w zagadnieniu, nie w każdym wyniku.
+- **Wyrównany cytat** zostaje zapisany tylko wtedy, gdy sam przechodzi walidację i limit długości.
+- **Materializacja** pomija pola tak jak dziś (np. `explanationPl` przy parach, grupach i lukach z bankiem). Zmiana treści dla dziecka wymaga osobnej decyzji właściciela.
