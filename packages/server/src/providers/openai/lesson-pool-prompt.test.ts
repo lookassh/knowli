@@ -73,7 +73,7 @@ function fixtureFor(args: {
 async function fixtures(): Promise<Record<string, PromptFixture>> {
   const grammarTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_simple")!;
   const grammar = fixtureFor({ subject: englishGrammarSubject, topic: grammarTopic, material: "", objectiveId: "english_grammar.present_simple.question" });
-  // Temat „to be” ma własne reguły (`when` na temat): migawka zagadnienia z najdłuższym promptem tematu.
+  // Temat „to be” ma własne reguły (`when` na temat): migawka zagadnienia z wyborem obrazka (reguły piktogramu i wskazówki tematu).
   const toBeTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "to_be")!;
   const grammarToBe = fixtureFor({ subject: englishGrammarSubject, topic: toBeTopic, material: "", objectiveId: "english_grammar.to_be.affirmative_forms" });
 
