@@ -83,7 +83,7 @@ describe("lessonExerciseIdentity", () => {
   it("keeps the stored stimulus (criteria of match/group/cloze) unchanged by the dedup folding", () => {
     const cloze = exercise({ exerciseType: "lesson_cloze", clozeText: "It’s a ___.", gapAnswers: ["cat."] });
     expect(lessonExerciseStimulus(cloze)).toBe(JSON.stringify(["it’s a ___.", ["cat."]]));
-    const match = exercise({ exerciseType: "lesson_match", pairs: [{ id: "p", left: "Don’t!", right: "Nie." }] });
+    const match = exercise({ exerciseType: "lesson_match", pairs: [{ left: "Don’t!", right: "Nie." }] });
     expect(lessonExerciseStimulus(match)).toBe(JSON.stringify(["don’t!=nie."]));
   });
 

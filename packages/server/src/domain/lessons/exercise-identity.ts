@@ -17,8 +17,14 @@ function normalizeStimulus(value: string): string {
  * Nie zasila `lessonExerciseStimulus`, bo ten wchodzi do zapisywanych kryteriów (`criteria.assignments`).
  */
 function dedupStimulus(value: string): string {
-  return normalizeStimulus(value.replace(APOSTROPHE_VARIANTS, "'")).replace(/[\s.?!…]+$/u, "");
+  const text = normalizeStimulus(value.replace(APOSTROPHE_VARIANTS, "'"));
+  // Pętla zamiast regexu z `+$` (wielomianowy backtracking, CodeQL); po normalizacji jedynym białym znakiem jest spacja.
+  let end = text.length;
+  while (end > 0 && TRAILING_PUNCTUATION.has(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
 }
+
+const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([" ", ".", "?", "!", "…"]);
 
 type Normalize = (value: string) => string;
 
