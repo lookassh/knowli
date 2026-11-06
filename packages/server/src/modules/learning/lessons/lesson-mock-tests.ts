@@ -121,60 +121,6 @@ export async function createLessonMockTestPlan(
 }
 
 /**
- * Czy istnieje bezpieczna porcja kartkówki lekcji dla dziecka (scope 6 —
- * `KidDeckDto.mockTestAvailable`). Reużywa planera bez utrwalania.
- */
-export async function hasSafeLessonMockPortion(
-  tx: Tx,
-  services: Services,
-  input: { childId: string; deckVersionId: string; requestedTaskCount: number },
-): Promise<boolean> {
-  const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, input.deckVersionId)))[0]!;
-  const context = lessonContextOf(version);
-  const { topic } = requireTopic(services, context);
-  const objectiveOrder = topic.objectives.map((objective) => objective.id)
-    .filter((id) => context.objectiveIds.includes(id));
-  const rows = await tx.select({
-    itemRevisionId: itemRevisions.id,
-    itemId: itemRevisions.itemId,
-    objectiveId: sql<string | null>`${itemRevisions.payload}->>'objectiveId'`,
-    exerciseType: sql<string | null>`${itemRevisions.payload}->>'exerciseType'`,
-    targetKey: itemRevisions.targetKey,
-  }).from(itemRevisions)
-    .where(eq(itemRevisions.deckVersionId, input.deckVersionId))
-    .orderBy(asc(itemRevisions.position), asc(itemRevisions.id));
-  const pool: LessonMockPoolEntry[] = rows.flatMap((row) => {
-    if (!row.objectiveId || !row.exerciseType || !row.targetKey) return [];
-    const exerciseType = row.exerciseType as LessonMockPoolEntry["exerciseType"];
-    return [toLessonMockPoolEntry({
-      itemId: row.itemId,
-      itemRevisionId: row.itemRevisionId,
-      objectiveId: row.objectiveId,
-      exerciseType,
-      targetKey: row.targetKey,
-    })];
-  });
-  const targetKeys = [...new Set(pool.map((entry) => entry.targetKey))];
-  const exposedRows = targetKeys.length
-    ? await tx.selectDistinct({ targetKey: eventExposures.targetKey })
-      .from(eventExposures)
-      .innerJoin(learningEvents, eq(learningEvents.id, eventExposures.eventId))
-      .where(and(
-        eq(eventExposures.childId, input.childId),
-        eq(learningEvents.sealed, true),
-        lte(learningEvents.occurredAt, services.clock.now()),
-        inArray(eventExposures.targetKey, targetKeys),
-      ))
-    : [];
-  return planLessonMockTest({
-    pool,
-    objectiveIds: objectiveOrder,
-    requestedCount: input.requestedTaskCount,
-    exposedTargetKeys: exposedRows.map((row) => row.targetKey),
-  }).length > 0;
-}
-
-/**
  * Wydaje kolejny slot kartkówki lekcji (mirror `issueMockTestTask` słówek):
  * idempotentnie zwraca wydane zadanie; inaczej bierze `slots[tasks.length]`,
  * wstawia `session_tasks` i pisze zapieczętowany `prompt_issued` z ekspozycją
