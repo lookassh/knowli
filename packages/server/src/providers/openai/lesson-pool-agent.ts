@@ -650,7 +650,7 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
         ...hooks,
       }),
     );
-    const answers = result.output.answers;
+    const answers = sameLength(result.output.answers, input.items.length);
     const isAnswers = (value: unknown): value is string[] => Array.isArray(value) && value.every((part) => typeof part === "string");
     return { answers: input.items.map((_item, index) => atPosition(answers, index, isAnswers)) };
   }
@@ -685,7 +685,7 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
         ...hooks,
       }),
     );
-    const verdicts = result.output.equivalent;
+    const verdicts = sameLength(result.output.equivalent, input.items.length);
     return {
       equivalent: input.items.map((item, index) =>
         atPosition(verdicts, index, (value: unknown): value is boolean[] =>
@@ -779,7 +779,7 @@ function jsonForBlock(value: unknown): string {
 }
 
 /**
- * Lista wyników sędziego podpowiedzi i rozwiązującego otwarte: przy innej liczbie pozycji niż w
+ * Lista wyników checkera (każdej metody): przy innej liczbie pozycji niż w
  * żądaniu nie wiadomo, która odpowiedź należy do której pozycji, więc cała paczka jest niesprawdzona
  * (`undefined` → `null` na każdej pozycji) zamiast dopasowania po pozycji.
  */
