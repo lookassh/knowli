@@ -10,6 +10,7 @@ import {
   PC_GUIDANCE,
   PC_NOW_MARKERS,
   PC_EXPLANATION_SCENE_EXAMPLE,
+  PC_FORMS_TRANSLATION_GUIDANCE,
   PC_NOW_OR_USUALLY_GUIDANCE,
   PC_NOW_OR_USUALLY_MORE_GUIDANCE,
   PC_STATE_VERB_LIST,
@@ -498,6 +499,7 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
   const PC_TOPIC_TEXTS = [PC_GUIDANCE, PC_VERB_LISTS, PC_STATE_VERB_LIST, PC_NOW_MARKERS, PC_USUALLY_MARKERS, PC_FORBIDDEN_MARKERS].map((text) => text.trim());
   /** Wskazówki celów porównania i pojedynczych celów porównania — tylko w księgach swoich celów. */
   const PC_OBJECTIVE_TEXTS: [text: string, inObjective: (objective: string) => boolean][] = [
+    [PC_FORMS_TRANSLATION_GUIDANCE.trim(), (objective) => PC_FORM_OBJECTIVES.has(objective)],
     [PC_TENSE_CHOICE_GUIDANCE.trim(), (objective) => TENSE_CHOICE_OBJECTIVES.has(objective)],
     [PC_NOW_OR_USUALLY_GUIDANCE.trim(), (objective) => objective === "now_or_usually"],
     [PC_NOW_OR_USUALLY_MORE_GUIDANCE.trim(), (objective) => objective === "now_or_usually_more"],
@@ -576,13 +578,14 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
       "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt", "never Cicho, dziadek śpi.",
       // Ślepa ocena sondy (Task 18): wyjaśnienie z formą z innego zdania, kopia przykładu karty, tłumaczenie bez wariantu „at the moment”.
       "explanationPl is exactly one sentence", "it names only verb forms that stand in this exercise", "Never copy an example from the objective's cards",
-      "lists the other now markers the sentence allows as acceptedAnswers"]) {
+      "lists the other now markers the sentence allows as acceptedAnswers", "never a bare teraz"]) {
       expect(text, fragment).toContain(fragment);
     }
     // Dydaktyka tematu w dopisku reguły całego tematu, dydaktyka celów porównania przy regułach tych celów;
     // listy przy regułach, które je sprawdzają (w celach porównania przy ich regułach).
     expect(ruleText("grammar.pc_forbidden_marker").endsWith(PC_FORBIDDEN_MARKERS + PC_GUIDANCE)).toBe(true);
     expect(ruleText("grammar.pc_tense_marker_missing").endsWith(PC_NOW_MARKERS + PC_USUALLY_MARKERS + PC_TENSE_CHOICE_GUIDANCE)).toBe(true);
+    expect(ruleText("grammar.pc_translation_now_marker").endsWith(PC_FORMS_TRANSLATION_GUIDANCE)).toBe(true);
     expect(ruleText("grammar.pc_now_or_usually_question").endsWith(PC_NOW_OR_USUALLY_GUIDANCE)).toBe(true);
     expect(ruleText("grammar.pc_tense_choice_question_type").endsWith(PC_NOW_OR_USUALLY_MORE_GUIDANCE)).toBe(true);
     expect(ruleText("grammar.pc_ing_rule_not_allowed").endsWith(PC_VERB_LISTS)).toBe(true);
@@ -609,18 +612,62 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
   const translation = (objective: string, prompt: string, answer: string): LessonExerciseDraft =>
     draft(objective, "lesson_open_answer", answer, { instructionPl: "Przetłumacz na angielski.", prompt });
 
+  type Objective = "affirmative" | "now_or_usually" | "negative" | "questions" | "ing_spelling" | "now_or_usually_more";
+  const OBJECTIVES: readonly Objective[] = ["affirmative", "now_or_usually", "negative", "questions", "ing_spelling", "now_or_usually_more"];
+  const tenseChoice = (objective: Objective): boolean => TENSE_CHOICE_OBJECTIVES.has(objective);
+  /** Luka z czasownikiem zgodna z celem: przeczenie w celach 3 i 6, pisownia -ing z reguły celu 5. */
+  const GAP_BY_OBJECTIVE: Readonly<Record<Objective, readonly [stem: string, answer: string]>> = {
+    affirmative: ["Grandpa ___ (sleep) on the sofa.", "is sleeping"],
+    now_or_usually: ["Grandpa ___ (sleep) on the sofa.", "is sleeping"],
+    negative: ["Grandpa ___ (not watch) TV.", "isn't watching"],
+    questions: ["Grandpa ___ (sleep) on the sofa.", "is sleeping"],
+    ing_spelling: ["Grandpa ___ (sit) on the sofa.", "is sitting"],
+    now_or_usually_more: ["Grandpa ___ (not watch) TV.", "isn't watching"],
+  };
+  const objectiveGap = (objective: Objective, instructionPl: string, prefix = ""): LessonExerciseDraft => {
+    const [stem, answer] = GAP_BY_OBJECTIVE[objective];
+    return gap(objective, instructionPl, `${prefix}${stem}`, answer);
+  };
+  /** Brak wskaźnika „teraz”: w celach form `pc_now_marker_missing`, w celach porównania `pc_tense_marker_missing`. */
+  const missingMarker = (objective: Objective): string => (tenseChoice(objective) ? "grammar.pc_tense_marker_missing" : "grammar.pc_now_marker_missing");
+  type Quoted = [quoted: string, exercise: LessonExerciseDraft, expected: true | string];
+  const inEvery = (quoted: string, entry: (objective: Objective) => [LessonExerciseDraft, true | string]): Quoted[] =>
+    OBJECTIVES.map((objective) => [quoted, ...entry(objective)]);
+  const inTenseChoice = (quoted: string, entry: (objective: Objective) => [LessonExerciseDraft, true | string]): Quoted[] =>
+    OBJECTIVES.filter(tenseChoice).map((objective) => [quoted, ...entry(objective)]);
+
   /**
    * Angielskie zdania z nawiasów wskazówek i list (dawniej sonda „53/53” bloku `fieldRules`): fragment
-   * cytowany w tekście, ćwiczenie z nim i oczekiwanie — przechodzi walidację albo oblewa ją regułą.
+   * cytowany w tekście, ćwiczenie z nim i oczekiwanie — przechodzi walidację albo oblewa ją regułą. Fragment
+   * sprawdzamy w każdym celu, którego księga go pokazuje (pilnuje test pokrycia poniżej).
    */
-  const QUOTED: [quoted: string, exercise: LessonExerciseDraft, expected: true | string][] = [
-    ["Cicho! Dziadek śpi. Uzupełnij zdanie. with Grandpa ___ (sleep) on the sofa.", gap("affirmative", "Cicho! Dziadek śpi. Uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), true],
-    ["never Teraz uzupełnij zdanie.", gap("affirmative", "Teraz uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), "grammar.pc_now_marker_missing"],
-    ["never Cicho, dziadek śpi.", gap("affirmative", "Cicho, dziadek śpi. Uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), "grammar.pc_now_marker_missing"],
-    ["Gdzie jest tata?", choice("now_or_usually", "Gdzie jest tata? Wybierz dobrą formę.", "Dad ___ in the garden.", "is working", "works"), true],
-    ["Ola codziennie gra w piłkę.", gap("now_or_usually", "Ola codziennie gra w piłkę. Uzupełnij zdanie.", "Ola ___ (play) football.", "plays"), true],
-    ["(reads / is reading)", choice("now_or_usually", "Cicho! Ola czyta. Wybierz dobrą formę.", "Ola ___ a comic.", "is reading", "reads"), true],
-    ["Grandpa ___ on the sofa.", choice("now_or_usually", "Cicho! Dziadek śpi. Wybierz dobrą formę.", "Grandpa ___ on the sofa.", "is sleeping", "sleeps"), true],
+  const QUOTED: Quoted[] = [
+    ...inEvery("(Cicho! Dziadek śpi. Uzupełnij zdanie.)", (objective) => [objectiveGap(objective, "Cicho! Dziadek śpi. Uzupełnij zdanie."), true]),
+    ...inEvery("never Teraz uzupełnij zdanie.", (objective) => [objectiveGap(objective, "Teraz uzupełnij zdanie."), missingMarker(objective)]),
+    ...inEvery("never Cicho, dziadek śpi.", (objective) => [objectiveGap(objective, "Cicho, dziadek śpi. Uzupełnij zdanie."), missingMarker(objective)]),
+    ...inEvery("This is Ola., It is sunny.", (objective) => [objectiveGap(objective, "Patrz! Uzupełnij zdanie.", "This is Ola. It is sunny. "), true]),
+    ...inEvery("never The door is open.", (objective) => [
+      translation(objective, "Patrz! Drzwi są otwarte.", "Look! The door is open."),
+      "grammar.pc_ing_after_be",
+    ]),
+    ...inTenseChoice("Gdzie jest tata? / Ola codziennie gra w piłkę.", (objective) => [
+      choice(objective, "Gdzie jest tata? Wybierz dobrą formę.", "Dad ___ in the garden.", "is working", "works"),
+      true,
+    ]),
+    ...inTenseChoice("Gdzie jest tata? / Ola codziennie gra w piłkę.", (objective) => [
+      objective === "now_or_usually"
+        ? gap(objective, "Ola codziennie gra w piłkę. Uzupełnij zdanie.", "Ola ___ (play) football.", "plays")
+        : gap(objective, "Ola codziennie gra w piłkę. Uzupełnij zdanie.", "Ola ___ (not play) tennis.", "doesn't play"),
+      true,
+    ]),
+    ...inTenseChoice("(reads / is reading)", (objective) => [choice(objective, "Cicho! Ola czyta. Wybierz dobrą formę.", "Ola ___ a comic.", "is reading", "reads"), true]),
+    ...inTenseChoice("Grandpa ___ on the sofa.", (objective) => [choice(objective, "Cicho! Dziadek śpi. Wybierz dobrą formę.", "Grandpa ___ on the sofa.", "is sleeping", "sleeps"), true]),
+    // Standard „Środek” (fala 1 Task 19): przykład kart celu porównania ma mocny wskaźnik „teraz”.
+    ...inTenseChoice("(Look! Ola is reading. / Ola reads comics every day.)", (objective) => [translation(objective, "Patrz! Ola czyta.", "Look! Ola is reading."), true]),
+    ...inTenseChoice("(Look! Ola is reading. / Ola reads comics every day.)", (objective) => [
+      translation(objective, "Ola codziennie czyta komiksy.", "Ola reads comics every day."),
+      true,
+    ]),
     [
       "(Ola is in a tennis club. → Does Ola play tennis on Mondays?)",
       draft("now_or_usually_more", "lesson_choice", "Does Ola play tennis on Mondays?", {
@@ -643,32 +690,31 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ["Ola reads comics. → usually", choice("now_or_usually", "Kiedy to się dzieje?", "Ola reads comics.", "usually", "now"), true],
     // Zalecenie dydaktyczne bez sprawdzenia w kodzie: zdanie przechodzi walidację.
     ["not Ola reads a comic.", choice("now_or_usually", "Kiedy to się dzieje?", "Ola reads a comic.", "usually", "now"), true],
-    ["This is Ola.", gap("affirmative", "Uzupełnij zdanie.", "This is Ola. She ___ (read) a book now.", "is reading"), true],
-    ["It is sunny.", gap("affirmative", "Uzupełnij zdanie.", "It is sunny. The children ___ (play) in the park now.", "are playing"), true],
-    ["never The door is open.", translation("affirmative", "Drzwi są teraz otwarte.", "The door is open now."), "grammar.pc_ing_after_be"],
-    // Standard „Środek” (fala 1 Task 19): przykład kart celu porównania ma mocny wskaźnik „teraz”.
-    ["Look! Ola is reading.", translation("now_or_usually", "Patrz! Ola czyta.", "Look! Ola is reading."), true],
-    ["Ola reads comics every day.", translation("now_or_usually", "Ola codziennie czyta komiksy.", "Ola reads comics every day."), true],
-    [
-      "for She is cooking now. it says is cooking",
-      { ...translation("affirmative", "Ona teraz gotuje.", "She is cooking now."), acceptedAnswers: ["She is cooking right now.", "She is cooking at the moment."] },
-      true,
-    ],
-    [
-      "(Tom is drawing a horse now. with Tom is drawing a horse right now. and Tom is drawing a horse at the moment.)",
-      { ...translation("affirmative", "Tom teraz rysuje konia.", "Tom is drawing a horse now."), acceptedAnswers: ["Tom is drawing a horse right now.", "Tom is drawing a horse at the moment."] },
-      true,
-    ],
   ];
 
-  it.each(QUOTED)("%s", (quoted, exercise, expected) => {
-    expect(PC_TEXTS.join(" "), quoted).toContain(quoted);
-    const issues = englishGrammarSubject.validateExercise(exercise, presentContinuousV1).map((issue) => issue.rule);
-    if (expected === true) {
-      expect(issues).toEqual([]);
-      expect(validateLessonExercise(exercise, englishGrammarSubject, presentContinuousV1)).toEqual([]);
-    } else {
-      expect(issues).toContain(expected);
+  /** Tekst księgi reguł celu PC (`objective` — ostatni segment id). */
+  const bookText = (objective: string): string => ruleBookLines(pcTopic.id, `${PC}.${objective}`).map((line) => line.text).join(" ");
+
+  it.each(QUOTED.map(([quoted, exercise, expected]) => [`${exercise.objectiveId.split(".").at(-1)}: ${quoted}`, quoted, exercise, expected] as const))(
+    "%s",
+    (_name, quoted, exercise, expected) => {
+      expect(bookText(exercise.objectiveId.split(".").at(-1)!), quoted).toContain(quoted);
+      const issues = englishGrammarSubject.validateExercise(exercise, presentContinuousV1).map((issue) => issue.rule);
+      if (expected === true) {
+        expect(issues).toEqual([]);
+        expect(validateLessonExercise(exercise, englishGrammarSubject, presentContinuousV1)).toEqual([]);
+      } else {
+        expect(issues).toContain(expected);
+      }
+    },
+  );
+
+  it("każdy cytowany fragment jest sprawdzony w każdym celu, którego księga go pokazuje", () => {
+    for (const quoted of new Set(QUOTED.map(([text]) => text))) {
+      const shown = OBJECTIVES.filter((objective) => bookText(objective).includes(quoted));
+      const checked = new Set(QUOTED.filter(([text]) => text === quoted).map(([, exercise]) => exercise.objectiveId.split(".").at(-1)));
+      expect(shown.length, quoted).toBeGreaterThan(0);
+      expect(shown.filter((objective) => !checked.has(objective)), quoted).toEqual([]);
     }
   });
 

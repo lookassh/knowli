@@ -2,6 +2,7 @@ import { defineRules, issueFrom, type RuleBookContext } from "../../rules/catalo
 import { ENGLISH_RULES } from "../english/rules";
 import {
   PC_FORBIDDEN_MARKERS,
+  PC_FORMS_TRANSLATION_GUIDANCE,
   PC_GUIDANCE,
   PC_NOW_MARKERS,
   PC_NOW_OR_USUALLY_GUIDANCE,
@@ -124,7 +125,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     when: inPresentContinuous,
     field: "exercise",
     kind: "reject",
-    description: "In the present_continuous topic brackets stand only right after the gap of a lesson_gap (He ___ (play) now.), nowhere else.",
+    description: "In the present_continuous topic brackets stand only right after the gap of a lesson_gap (He ___ (play) right now.), nowhere else.",
   },
   "grammar.pc_being": {
     when: inPresentContinuous,
@@ -233,7 +234,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     types: ["lesson_gap"],
     description:
-      "In the present_continuous topic a present continuous verb gap answer starts with am, is or are (They ___ (play) now. → are playing).",
+      "In the present_continuous topic a present continuous verb gap answer starts with am, is or are (They ___ (play) right now. → are playing).",
   },
   "grammar.pc_gap_negation_bracket": {
     when: inPresentContinuous,
@@ -241,7 +242,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     types: ["lesson_gap"],
     description:
-      "In the present_continuous topic a verb gap answer is negated exactly when the brackets say not (She ___ (not watch) TV now. → isn't watching).",
+      "In the present_continuous topic a verb gap answer is negated exactly when the brackets say not (She ___ (not watch) TV right now. → isn't watching).",
   },
   "grammar.pc_ing_after_be": {
     when: inPresentContinuous,
@@ -283,7 +284,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_gap"],
     description:
       "In the present_continuous topic a lesson_gap is either a verb gap with the base verb in brackets right after the gap " +
-      "(He ___ (play) now.) or a be gap whose answer is only am, is or are (with not).",
+      "(He ___ (play) right now.) or a be gap whose answer is only am, is or are (with not).",
   },
   "grammar.pc_be_gap_objective": {
     when: inPresentContinuous,
@@ -349,7 +350,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_open_answer"],
     description:
       "In the affirmative, negative, questions and ing_spelling objectives the Polish prompt of a translation has a now marker " +
-      "(teraz, w tej chwili, Patrz!) and no usually marker.",
+      "(teraz, w tej chwili, Patrz!) and no usually marker." + PC_FORMS_TRANSLATION_GUIDANCE,
   },
   "grammar.pc_translation_key_marker": {
     when: inPresentContinuous,
@@ -369,8 +370,8 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_open_answer"],
     description:
       "In the present_continuous topic, when the answer of a translation has now, right now or at the moment and no " +
-      "exclamation such as Look!, acceptedAnswers hold the answer with each of the other two in its place (Ola is reading now. → " +
-      "Ola is reading right now., Ola is reading at the moment.; the marker may stand elsewhere in the sentence).",
+      "exclamation such as Look!, acceptedAnswers hold the answer with each of the other two in its place (Ola is reading at the moment. → " +
+      "Ola is reading now., Ola is reading right now.; the marker may stand elsewhere in the sentence).",
   },
   "grammar.pc_ing_without_be": {
     when: inTenseChoice,
@@ -598,8 +599,8 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     description:
       "In the present_continuous topic every key of a transform is the statement with only the checked form changed: to_question " +
       "moves am, is or are of the last sentence to its front (Look! Tom is playing now. → Look! Is Tom playing now?, never a " +
-      "What question); to_negative adds not right after am, is or are and to_affirmative removes it (Tom is playing now. ↔ Tom " +
-      "isn't playing now.), in now_or_usually_more also a present simple verb ↔ do/does + not + the base verb; the subject, the " +
+      "What question); to_negative adds not right after am, is or are and to_affirmative removes it (Tom is playing right now. ↔ Tom " +
+      "isn't playing right now.), in now_or_usually_more also a present simple verb ↔ do/does + not + the base verb; the subject, the " +
       "other words and the time marker stay.",
   },
   "grammar.pc_transform_polarity": {

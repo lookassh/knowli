@@ -43,7 +43,7 @@ const NOW_OR_USUALLY = "Zapytaj siebie: teraz czy zwykle?";
  */
 function tenseChoiceVerdict(contextScope: string, formExamples: string, hybridExamples: string): string {
   return (
-    `${contextScope} the context makes the right tense clear: a time marker in the sentence (now, right now, Look!, every day, usually, on Mondays) ` +
+    `${contextScope} the context makes the right tense clear: a time marker in the sentence (right now, at the moment, Look!, every day, usually, on Mondays) ` +
     "or a short Polish scene in the instruction. The checked element is the choice of tense, not the verb form. " +
     `If the child chooses the right tense but makes a form mistake (${formExamples}), return 'almost' with errorCategory: null. ` +
     "If the child uses the wrong tense, return 'incorrect' with continuous_for_habit (present continuous for something that happens usually) " +

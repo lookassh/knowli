@@ -70,20 +70,26 @@ export const PC_GUIDANCE =
   "time of the action clear with a marker or a scene. Polish often uses one verb for both (Ola czyta), so the marker or the " +
   "scene decides, never the Polish verb. " +
   "A short Polish scene in instructionPl is a good context: its own short sentence before the task (Cicho! Dziadek śpi. " +
-  "Uzupełnij zdanie. with Grandpa ___ (sleep) on the sofa.); never use teraz, właśnie, zawsze or zwykle as words of the task " +
+  "Uzupełnij zdanie.); never use teraz, właśnie, zawsze or zwykle as words of the task " +
   "itself (never Teraz uzupełnij zdanie.), because there they are no marker. " +
   "A context sentence may use is or are without a verb (This is Ola., It is sunny.), but never a verb of the table as an " +
   "adjective after is (never The door is open.). " +
   "explanationPl is exactly one sentence: an exclamation or a question of the scene stands in quotes („Look!”, „Cicho!”, " +
-  "„Gdzie jest tata?”), so it ends no sentence; it names only verb forms that stand in this exercise (for She is cooking now. " +
-  "it says is cooking, never another verb such as is reading). " +
-  "A translation carries the Polish now marker into English (teraz → now, w tej chwili → at the moment, Patrz! → Look!) and " +
-  "lists the other now markers the sentence allows as acceptedAnswers (Tom is drawing a horse now. with Tom is drawing a horse " +
-  "right now. and Tom is drawing a horse at the moment.), never a variant without a marker. " +
+  "„Gdzie jest tata?”), so it ends no sentence; it names only verb forms that stand in this exercise (is cooking for a " +
+  "sentence with cooking, never another verb such as is reading). " +
   "The examples of the objective (shown to the child on its cards) follow the rules of its exercises, with the same markers. " +
   "Never copy an example from the objective's cards into an exercise: change at least the subject, the verb or the object. " +
   "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers " +
   "are in English (Polish names such as Ola are fine).";
+
+/**
+ * Tłumaczenia w celach form 1, 3, 4, 5 (§5.4) w dopisku opisu `grammar.pc_translation_now_marker`, reguły tylko tych
+ * celów: goły „teraz” wystarcza w nich poza przeczeniem (standard „Środek”, `grammar.pc_now_marker_bare`).
+ */
+export const PC_FORMS_TRANSLATION_GUIDANCE =
+  " A translation carries the Polish now marker into English (teraz → now, w tej chwili → at the moment, Patrz! → Look!; in a " +
+  "negative never a bare teraz) and lists the other now markers the sentence allows as acceptedAnswers, never a variant " +
+  "without a marker.";
 
 /**
  * Dydaktyka celów porównania (§5.2, §5.5, §6.4) w dopisku opisu `grammar.pc_tense_marker_missing`,
@@ -96,6 +102,9 @@ export const PC_TENSE_CHOICE_GUIDANCE =
   "instruction, because it has markers of both groups. Their lesson_choice options are the same verb in the two tenses " +
   "(reads / is reading), and each stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.). " +
   `explanationPl also names the marker or the scene (${PC_EXPLANATION_EXAMPLE} / ${PC_EXPLANATION_SCENE_EXAMPLE}). ` +
+  "A translation carries the marker of its Polish sentence into English: a scene or a strong now marker (Patrz! → Look!, " +
+  "w tej chwili → at the moment, never a bare teraz) or a usually marker (codziennie → every day), and lists the other now " +
+  "markers the sentence allows as acceptedAnswers. " +
   "The examples of the objective are a pair with the same verb (Look! Ola is reading. / Ola reads comics every day.).";
 
 /** Dydaktyka celu now_or_usually (§5.5) w dopisku opisu `grammar.pc_now_or_usually_question`, reguły tylko tego celu. */

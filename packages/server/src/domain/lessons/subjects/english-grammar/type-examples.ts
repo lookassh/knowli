@@ -328,7 +328,7 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     lesson_order: {
       exerciseType: "lesson_order",
       // Scenka w poleceniu zamiast klocka „now”: klocek dałby kilka poprawnych szyków („We are now drinking milk”).
-      instructionPl: "Popatrz na nas! Ułóż zdanie.",
+      instructionPl: "Cicho! Jemy śniadanie. Ułóż zdanie.",
       items: [{ id: "a", text: "We" }, { id: "b", text: "are" }, { id: "c", text: "drinking" }, { id: "d", text: "milk" }],
       answer: "We are drinking milk",
       acceptedAnswers: [],
