@@ -435,7 +435,7 @@ describe("submit — checker", () => {
     expect(bare(outcome.results)[0]).toEqual({
       index: 0,
       accepted: "ex1",
-      notes: ['[check.variants] acceptedAnswers[0]: variant "dziewięćset sześćdziesiąt sześć" removed: not equivalent to the answer "966"'],
+      notes: ['[check.variants] acceptedAnswers[0]: variant "dziewięćset sześćdziesiąt sześć" removed: not equivalent to the answer "966"; do not add it again'],
     });
     expect(tools.rejections).toEqual([]);
     expect(poolOf(tools.state(), A)[0]!.draft.acceptedAnswers).toEqual([]);
@@ -1040,6 +1040,31 @@ describe("wynik dla modelu — format z katalogu reguł (spec katalogu reguł §
     expect((await setup({ subject: noted }).tools.submit({ exercises: [broken] })).rules).toEqual(first.rules);
   });
 
+  it("wyjaśnienie usunięte przy oczyszczaniu: przyjęte bez pola, nota [explanation.*] explanationPl: removed: …, opis reguły raz", async () => {
+    const tools = setup({ subject: { ...subject, exerciseExplanations: true } });
+    const first = await tools.tools.submit({ exercises: [{ ...choice(A, 1), explanationPl: "Pierwsze zdanie. Drugie zdanie." }] });
+    expect(bare(first.results)).toEqual([{
+      index: 0,
+      accepted: "ex1",
+      notes: ['[explanation.one_sentence] explanationPl: removed: 2 sentences in "Pierwsze zdanie. Drugie zdanie."'],
+    }]);
+    expect(Object.keys(first.rules ?? {})).toEqual(["explanation.one_sentence"]);
+    expect(poolOf(tools.state(), A)[0]!.draft).not.toHaveProperty("explanationPl");
+    // Drugie złamanie tej samej reguły: nota bez ponownego opisu.
+    const second = await tools.tools.submit({ exercises: [{ ...choice(A, 2), explanationPl: "Raz jest tak. Dwa jest tak." }] });
+    expect("accepted" in second.results[0]! && second.results[0].notes).toEqual([
+      '[explanation.one_sentence] explanationPl: removed: 2 sentences in "Raz jest tak. Dwa jest tak."',
+    ]);
+    expect(second).not.toHaveProperty("rules");
+    // Poprawne wyjaśnienie zostaje bez noty; przedmiot bez wyjaśnień dostaje notę explanation.not_allowed.
+    const kept = await tools.tools.submit({ exercises: [{ ...choice(A, 3), explanationPl: "Tak brzmi poprawna forma." }] });
+    expect(bare(kept.results)).toEqual([{ index: 0, accepted: "ex3" }]);
+    const plain = await setup().tools.submit({ exercises: [{ ...choice(A, 4), explanationPl: "Tak brzmi poprawna forma." }] });
+    expect("accepted" in plain.results[0]! && plain.results[0].notes).toEqual([
+      "[explanation.not_allowed] explanationPl: removed: this subject does not show error explanations",
+    ]);
+  });
+
   it("najwyżej 6 powodów na ćwiczenie, siódmy wpis to „+N more”; dziennik ma wszystkie powody", async () => {
     const raw = manyShapeErrors(1);
     const materialized = materializeRawExercise(raw);
@@ -1064,8 +1089,8 @@ describe("wynik dla modelu — format z katalogu reguł (spec katalogu reguł §
     const outcome = await tools.tools.submit({ exercises: [variant] });
     const result = outcome.results[0]!;
     expect("accepted" in result && result.notes).toEqual([
-      '[check.variants] acceptedAnswers[0]: variant "dziewięćset sześćdziesiąt sześć" removed: not equivalent to the answer "966"',
-      '[check.variants] acceptedAnswers[1]: variant "w 966" removed: not equivalent to the answer "966"',
+      '[check.variants] acceptedAnswers[0]: variant "dziewięćset sześćdziesiąt sześć" removed: not equivalent to the answer "966"; do not add it again',
+      '[check.variants] acceptedAnswers[1]: variant "w 966" removed: not equivalent to the answer "966"; do not add it again',
     ]);
     expect(Object.keys(outcome.rules ?? {})).toEqual(["check.variants"]);
     expect(tools.stats.variantsRemoved).toBe(2);

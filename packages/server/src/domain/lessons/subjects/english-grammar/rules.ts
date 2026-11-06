@@ -7,6 +7,20 @@ const TO_BE_TOPIC = "to_be";
 /** Reguła tematu „to be” trafia do księgi reguł tylko w tym temacie. */
 const inToBe = (ctx: RuleBookContext): boolean => ctx.topicId === TO_BE_TOPIC;
 
+/**
+ * Wskazówki tematu „to be” i wyboru obrazka (kod ich nie sprawdza) w opisach reguł tego tematu: trafiają do
+ * promptu tylko w nim, razem z regułą (dopiski `ruleNotes` dotyczą wyłącznie reguł silnika).
+ */
+const TO_BE_GUIDANCE =
+  " 'To be' questions swap the subject and the form (Is she happy?, Are they ready?); short answers repeat the form " +
+  "(Yes, she is. / No, they aren't.). Keep 'to be' sentences very short and concrete, reusing a small set of subjects " +
+  "and words from the material so the only new thing is the form of 'to be'.";
+
+const PICTURE_CHOICE_GUIDANCE =
+  " Picture choice (only in objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set " +
+  "visualSubject to who is pictured; then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ " +
+  "are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture.";
+
 /** Reguła luk Present Simple: walidator sprawdza ją poza tematem „to be”. */
 const outsideToBe = (ctx: RuleBookContext): boolean => ctx.topicId !== TO_BE_TOPIC;
 
@@ -18,24 +32,32 @@ const outsideToBe = (ctx: RuleBookContext): boolean => ctx.topicId !== TO_BE_TOP
 export const GRAMMAR_RULES = defineRules({
   ...ENGLISH_RULES,
   "grammar.visual_answer_pronoun": {
+    // Piktogram ma tylko temat „to be” (wskazówka w dopisku reguły); poza nim opis dostaje model w wyniku narzędzia.
+    when: inToBe,
     field: "answer",
     kind: "reject",
     description:
       "When visualSubject is set, the answer starts with the personal pronoun the picture requires " +
-      "(boy and man: he, girl and woman: she, group: they, dog: it).",
+      "(boy and man: he, girl and woman: she, group: they, dog: it)." + PICTURE_CHOICE_GUIDANCE,
   },
   "grammar.visual_option_pronoun": {
+    // Piktogram ma tylko temat „to be” (wskazówka w dopisku reguły); poza nim opis dostaje model w wyniku narzędzia.
+    when: inToBe,
     field: "options",
     kind: "reject",
     description: "When visualSubject is set, the option marked correct starts with the personal pronoun the picture requires.",
   },
   "grammar.visual_stem_pronoun": {
+    // Piktogram ma tylko temat „to be” (wskazówka w dopisku reguły); poza nim opis dostaje model w wyniku narzędzia.
+    when: inToBe,
     field: "stem",
     kind: "reject",
     description:
       "When visualSubject is set, a subject pronoun in the stem (next to a form of be or right before the gap) is the one the picture requires.",
   },
   "grammar.visual_stem_be_form": {
+    // Piktogram ma tylko temat „to be” (wskazówka w dopisku reguły); poza nim opis dostaje model w wyniku narzędzia.
+    when: inToBe,
     field: "stem",
     kind: "reject",
     description: "When visualSubject is set, every form of be in the stem agrees with the person in the picture.",
@@ -102,7 +124,8 @@ export const GRAMMAR_RULES = defineRules({
     field: "answer",
     kind: "reject",
     when: inToBe,
-    description: "In the to_be topic the form of be in the answer agrees with the subject next to the gap (am, is or are).",
+    description:
+      "In the to_be topic the form of be in the answer agrees with the subject next to the gap (am, is or are)." + TO_BE_GUIDANCE,
   },
   "grammar.be_sentence_person_form": {
     field: "answer",

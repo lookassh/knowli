@@ -41,6 +41,13 @@ const BLIND_SOLVE_NOTE =
   "The Polish source sentence must point to one English wording (pronoun, tense, word order); " +
   "put common equivalent word orders into acceptedAnswers right away.";
 
+/** Jednoznaczność luk z bankiem (sprawdza ją ślepe rozwiązanie pozycja po pozycji). */
+const CLOZE_UNAMBIGUOUS_NOTE =
+  "In lesson_cloze exactly one bank word fits each gap: never two gaps whose words could be swapped.";
+
+/** Dopisek do duplikatu wariantu: skrócona i pełna forma to ten sam wariant po normalizacji. */
+const CONTRACTIONS_NOTE = "Contractions count as the same: doesn't = does not, I'm = I am.";
+
 /** Wymagane typy per rodzaj zagadnienia: przeciw szablonowaniu i dla słuchania. */
 const REQUIRED_TYPES: Readonly<Record<DynamicObjectiveKind, readonly (readonly LessonExerciseType[])[]>> = {
   words: [["lesson_match"], ["lesson_listen_choice"], ["lesson_cloze", "lesson_group"]],
@@ -172,7 +179,8 @@ export const chapterAgentPolicy: SubjectAgentPolicy = {
   ruleNotes: {
     "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — change the room, object or place.",
     "lesson.leak_source": "Use a different sentence.",
-    "check.blind_solve": BLIND_SOLVE_NOTE,
+    "check.blind_solve": `${BLIND_SOLVE_NOTE} ${CLOZE_UNAMBIGUOUS_NOTE}`,
+    "variants.duplicate": CONTRACTIONS_NOTE,
   },
   requiredTypes(objective: AgentObjective) {
     return objective.kind === undefined ? [] : REQUIRED_TYPES[objective.kind];

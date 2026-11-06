@@ -49,7 +49,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "different part of the sentence instead of padding the options. " +
     "lesson_listen_choice (listening choice): a narrator reads the full English sentence aloud and the child picks the word that fills the gap. " +
     "stem is one short natural sentence of at most 12 words whose gap stands on a word or frame element of the material; " +
-    "2 or 3 options, each a word or phrase from the chapter material, as in lesson_choice, and the options sound clearly different when spoken " +
+    "2 or 3 options, each a word or phrase from the chapter material, as in lesson_choice, exactly one correct, and the options sound clearly different when spoken " +
     "(not two spellings of the same word). " +
     "Distractors are plausible: the same category as the correct option, taken from the material. " +
     "lesson_gap: answer is the missing chapter word or phrase and focus is that checked word. Vary the answers: no more than 2 lesson_gap exercises of one " +

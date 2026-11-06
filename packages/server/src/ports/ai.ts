@@ -53,7 +53,7 @@ export interface LlmPromptProfileInput {
   /** Dziedzinowe reguły semantyki pól ćwiczeń (opcjonalne, od przedmiotu). */
   readonly fieldRules?: string;
   /** Semantyka typów par, grup i luk (opcjonalna, od przedmiotu); adapter dokłada ją do części strukturalnej bloku. */
-  readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
+  readonly typeRules?: Partial<Record<string, string>>;
   /** Reguła użycia tematów zdań (opcjonalna, od przedmiotu); adapter dokłada ją do promptu systemowego tylko razem z `interests`. */
   readonly interestsRule?: string;
 }
@@ -95,6 +95,11 @@ export interface LessonPoolInput {
   readonly graderAvailable: boolean;
   /** Czy każde ćwiczenie MUSI nieść cytaty źródłowe z materiału (przedmioty z uziemieniem). */
   readonly groundingRequired?: boolean;
+  /**
+   * Limit długości `answer` i wariantów `acceptedAnswers` przedmiotu (ten sam, którym posługuje się walidacja i
+   * opis reguły `answer.max_length`); schemat narzędzia bierze go stąd.
+   */
+  readonly answerMaxLength: number;
   /** Tożsamość duplikatu w obrębie puli; domyślnie zgodność odpowiedzi. */
   readonly deduplication?: "answer" | "exercise";
   /** Czy generator ma zwracać `voiceTone` ćwiczenia (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
@@ -120,6 +125,8 @@ export interface LessonRuleBookLine {
   readonly text: string;
   /** Tylko id w prompcie (kształt rekordu, powtórzenie listy pól karty typu); opis model dostaje w wyniku narzędzia. */
   readonly brief?: boolean;
+  /** Reguła opisana już w bloku tego typu (`inEachTypeBlock`): renderer odsyła do niego zamiast powtarzać opis. */
+  readonly repeatOf?: string;
 }
 
 /** Blok typu ćwiczenia w księdze reguł: karta typu, semantyka typu przedmiotu i reguły tylko tego typu. */

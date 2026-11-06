@@ -36,7 +36,7 @@ import { keywordsAnswer } from "../../../domain/lessons/pool-validation";
 import { hasLenientRawShape } from "../../../domain/lessons/raw-shape";
 import { familyRunSuffix, withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
 import { messagesOf } from "../../../domain/lessons/rules/catalog";
-import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rules/rule-book";
+import { lessonRuleBook, ruleBookContextFor, ruleTextContextOf } from "../../../domain/lessons/rules/rule-book";
 import {
   lessonExerciseStimulus,
   lessonIdentityOptionsOf,
@@ -607,6 +607,7 @@ export function buildPoolInput(
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
     graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
+    answerMaxLength: ruleTextContextOf(subject).answerMaxLength,
     deduplication: subject.poolDeduplication ?? "answer",
     voiceTones: subject.ttsForPrompts === true,
     exerciseExplanations: subject.exerciseExplanations,

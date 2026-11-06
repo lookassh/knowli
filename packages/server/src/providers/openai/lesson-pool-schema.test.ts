@@ -15,6 +15,9 @@ import {
 } from "@learning/contracts";
 import { describe, expect, it } from "vitest";
 import { MAX_CARD_EXAMPLES } from "../../domain/lessons/agent/admission";
+import { ruleTextContextOf } from "../../domain/lessons/rules/rule-book";
+import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import type { LessonPoolInput } from "../../ports/ai";
 import { lessonPoolJsonSchema, voiceToneProperty } from "./lesson-pool-schema";
 
@@ -22,6 +25,7 @@ const input: LessonPoolInput = {
   subjectId: "subject",
   subjectTitle: "Subject",
   answerLocale: "en-GB",
+  answerMaxLength: MAX_LESSON_TEXT_LENGTH,
   promptLocale: "pl-PL",
   promptProfile: { generationRole: "role", gradingRole: "grade", almostDefinition: "almost" },
   exerciseTypes: ["lesson_card", "lesson_choice", "lesson_gap", "lesson_transform"],
@@ -321,10 +325,21 @@ describe("lessonPoolJsonSchema — limity ze stałych walidacji (spec katalogu r
     for (const field of ["instructionPl", "stem", "statement", "prompt", "hint"]) {
       expect(regular[field], field).toMatchObject({ type: ["null", "string"], minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
     }
-    expect(regular.answer).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_ANSWER_LENGTH });
-    expect(regular.acceptedAnswers.items).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_ANSWER_LENGTH });
+    // Odpowiedź: limit przedmiotu z wejścia (jak opis `answer.max_length`), nie stały limit kontraktu.
+    expect(regular.answer).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
+    expect(regular.acceptedAnswers.items).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
     expect(regular.focus.items).toMatchObject({ minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
     expect(branchOf("lesson_match").properties.instructionPl).toMatchObject({ minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
+  });
+
+  it("limit odpowiedzi to limit przedmiotu z księgi reguł: szkoła 300, przedmioty bez payloadu v3 120", () => {
+    for (const subject of [schoolSubject, englishGrammarSubject]) {
+      const limit = ruleTextContextOf(subject).answerMaxLength;
+      const answer = (lessonPoolJsonSchema({ ...input, answerMaxLength: limit }) as any).properties.exercises.items.properties.answer;
+      expect(answer.maxLength, subject.id).toBe(limit);
+    }
+    expect(ruleTextContextOf(schoolSubject).answerMaxLength).toBe(MAX_LESSON_ANSWER_LENGTH);
+    expect(ruleTextContextOf(englishGrammarSubject).answerMaxLength).toBe(MAX_LESSON_TEXT_LENGTH);
   });
 
   it("listy mają minItems/maxItems równe stałym walidacji", () => {

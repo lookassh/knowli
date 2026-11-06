@@ -315,6 +315,8 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
     .map((other) => `- ${other.title}${other.kind ? ` (${other.kind})` : ""}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
     .join("\n");
   const required = targets.requiredTypes.map((group) => group.join(" or ")).join("; ") || "none";
+  // Słowa kluczowe dotyczą przyjętego pytania otwartego (kaskada `school.keywords_family_rejected`): w kolejnym wywołaniu.
+  const keywords = input.pool.objectives.some((candidate) => candidate.exerciseTypes.includes("lesson_keywords"));
   return [
     lessonSystemPrompt(input.pool),
     `TOOL MODE: deliver exercises ONLY by calling submit_exercises, with objectiveId "${objective.id}" in every exercise. ` +
@@ -330,10 +332,14 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
       `about ${targets.targetCount} exercises in stages (plus up to ${targets.listenAllowance} lesson_listen_choice), at most ${targets.maxExercises} exercises in total. ` +
       `${publicationMinima(targets.publicationMinima)} ` +
       "Vary sentences: never two exercises with the same sentence, and do not reuse one template more than twice.",
-    "WORKFLOW: call submit_exercises with ALL exercises of the objective in ONE call. The tool checks each one against the RULES above. " +
+    `WORKFLOW: call submit_exercises with ALL exercises of the objective in ONE call${keywords ? " (except lesson_keywords)" : ""}. ` +
+      "The tool checks each one against the RULES above. " +
       "Rejected exercises are NOT in the pool: each problem is named as [rule id] field: what is wrong, and the rules field of the result " +
       "describes a rule the first time it is named. " +
-      "Then call submit_exercises again with ONLY corrected or additional exercises, until the result says complete=true. remove_exercise deletes one of your accepted exercises by id. " +
+      "Then call submit_exercises again with ONLY corrected or additional exercises, until the result says complete=true. " +
+      "An accepted exercise with notes is already in the pool: do not resubmit it; to change it, call remove_exercise with its id first, " +
+      "then submit the new version. " +
+      (keywords ? "Send lesson_keywords only in a later call, after its lesson_open_answer was accepted (use that familyId). " : "") +
       "If the blind solver gave a different answer, first decide whether it is EXACTLY as correct for this stimulus: only then add it to acceptedAnswers; " +
       "otherwise the stimulus is ambiguous — make it point to one answer. Never add a variant that adds or drops meaning. Never resubmit an exercise unchanged.",
   ].join("\n\n");

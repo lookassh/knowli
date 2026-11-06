@@ -27,6 +27,9 @@ const BLIND_SOLVE_NOTE =
   "The Polish source sentence must point to one English wording (pronoun, tense, word order); " +
   "put common equivalent word orders into acceptedAnswers right away.";
 
+/** Dopisek do duplikatu wariantu: skrócona i pełna forma to ten sam wariant po normalizacji. */
+const CONTRACTIONS_NOTE = "Contractions count as the same: doesn't = does not, I'm = I am.";
+
 export const grammarAgentPolicy: SubjectAgentPolicy = {
   blindSolveTypes: BLIND_SOLVE_TYPES,
   variantCheckTypes: VARIANT_CHECK_TYPES,
@@ -37,5 +40,6 @@ export const grammarAgentPolicy: SubjectAgentPolicy = {
     "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — use a different subject, verb or object.",
     "lesson.leak_source": "Use a different sentence.",
     "check.blind_solve": BLIND_SOLVE_NOTE,
+    "variants.duplicate": CONTRACTIONS_NOTE,
   },
 };

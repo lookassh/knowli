@@ -112,6 +112,7 @@ export const CORE_RULES = {
   "field.count": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     when: (ctx) => ctx.usesV3Payload,
     description:
       `Lists keep the item counts of the tool schema: requiredElements ${MIN_REQUIRED_ELEMENTS}–${MAX_REQUIRED_ELEMENTS}, ` +
@@ -122,6 +123,7 @@ export const CORE_RULES = {
   "field.invalid": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     description:
       "Every field has the type and allowed values of the tool schema (enums take only the listed values), and the " +
       "exercise has no fields outside the schema.",
@@ -187,22 +189,26 @@ export const CORE_RULES = {
   "exercise.card_not_allowed": {
     field: "exerciseType",
     kind: "reject",
+    promptBrief: true,
     description: "Never submit lesson_card: cards come from the topic, not from the exercise pool.",
     fixedMessage: true,
   },
   "exercise.unknown_objective": {
     field: "objectiveId",
     kind: "reject",
+    promptBrief: true,
     description: "objectiveId is the id of an objective of the topic, copied exactly.",
   },
   "exercise.type_unsupported": {
     field: "exerciseType",
     kind: "reject",
+    promptBrief: true,
     description: "exerciseType is one of the exercise types of the subject.",
   },
   "exercise.type_not_allowed": {
     field: "exerciseType",
     kind: "reject",
+    promptBrief: true,
     description: "exerciseType is one of the types allowed for the objective of the exercise.",
   },
   "exercise.v3_field_not_allowed": {
@@ -222,6 +228,7 @@ export const CORE_RULES = {
   "voice_tone.not_allowed": {
     field: "voiceTone",
     kind: "reject",
+    promptBrief: true,
     // Przedmiot z nagraniami pytań łamie regułę tylko tonem rachunku.
     when: (ctx) => !ctx.voiceTones || ctx.exerciseTypes.includes("lesson_calculation"),
     description: "voiceTone is set only in subjects that record questions, and never on lesson_calculation.",
@@ -231,6 +238,7 @@ export const CORE_RULES = {
   "explanation.not_allowed": {
     field: "explanationPl",
     kind: "sanitize",
+    promptBrief: true,
     when: (ctx) => !ctx.exerciseExplanations,
     description: "explanationPl is set only in subjects that show error explanations; elsewhere leave it out.",
   },
@@ -279,6 +287,7 @@ export const CORE_RULES = {
   "visual.choice_only": {
     field: "visualSubject",
     kind: "reject",
+    promptBrief: true,
     description: "visualSubject (a pictogram of the person or animal) is used only with lesson_choice.",
   },
   "focus.empty": {
@@ -297,18 +306,22 @@ export const CORE_RULES = {
   "variants.count": {
     field: "acceptedAnswers",
     kind: "reject",
+    promptBrief: true,
     description: `acceptedAnswers has at most ${MAX_ACCEPTED_ANSWERS} variants.`,
     limit: "MAX_ACCEPTED_ANSWERS",
   },
   "variants.empty": {
     field: "acceptedAnswers",
     kind: "reject",
+    promptBrief: true,
     description: "No acceptedAnswers variant is blank.",
   },
   "variants.duplicate": {
     field: "acceptedAnswers",
     kind: "reject",
-    description: "No acceptedAnswers variant repeats the answer after normalization; the answer is accepted anyway.",
+    description:
+      "No acceptedAnswers variant equals the answer after normalization: the answer itself is always accepted, so never " +
+      "list it again as a variant.",
   },
   "computed.no_variants": {
     field: "acceptedAnswers",
@@ -528,6 +541,7 @@ export const CORE_RULES = {
   "keywords.option_ids_unique": {
     field: "keywordOptions",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_keywords"],
     description: "The ids of keywordOptions are unique.",
   },
@@ -547,12 +561,14 @@ export const CORE_RULES = {
   "keywords.key_repeated": {
     field: "keyOptionIds",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_keywords"],
     description: "No id repeats in keyOptionIds.",
   },
   "keywords.key_unknown": {
     field: "keyOptionIds",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_keywords"],
     description: "Every id in keyOptionIds is the id of one of the keywordOptions.",
   },
@@ -621,12 +637,14 @@ export const CORE_RULES = {
   "group.ids_unique": {
     field: "groups",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_group"],
     description: "The ids of groups are unique.",
   },
   "group.item_unknown_group": {
     field: "groupItems",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_group"],
     description: "The groupId of every item in groupItems is the id of one of the groups.",
   },
@@ -701,12 +719,14 @@ export const CORE_RULES = {
   "cloze.underscore_outside_gap": {
     field: "clozeText",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_cloze"],
     description: "clozeText has no underscore outside the gap markers.",
   },
   "cloze.bank_word_empty": {
     field: "gapAnswers",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_cloze"],
     description: "Each entry of the word bank (gapAnswers and extraWords) contains a letter or a digit.",
   },
@@ -773,6 +793,7 @@ export const CORE_RULES = {
   "calculation.unknown_key": {
     field: "calculation",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation"],
     priority: "calculation_shape",
     description:

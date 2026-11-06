@@ -145,8 +145,13 @@ describe("przedmiot school", () => {
   it("jawnie włącza cytaty źródłowe i tytuł przedmiotu od rodzica oraz niesie reguły typów w profilu", () => {
     expect(schoolSubject.sourceQuotes).toBe(true);
     expect(schoolSubject.materialSubjectTitle).toBe("parent");
-    expect(Object.keys(schoolSubject.prompts.typeRules ?? {}).sort()).toEqual(["lesson_cloze", "lesson_group", "lesson_match"]);
+    expect(Object.keys(schoolSubject.prompts.typeRules ?? {}).sort()).toEqual(
+      ["lesson_calculation", "lesson_cloze", "lesson_group", "lesson_keywords", "lesson_match"],
+    );
     expect(schoolSubject.prompts.typeRules?.lesson_match).toContain("taken from the parent material");
+    // Wskazówki rachunku i słów kluczowych w blokach typów (dawniej osobne akapity adaptera).
+    expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("Calculations never replace the publication minima in Target.");
+    expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("outside the stage split");
     // Zagadnienia szkoły nie mają rodzaju ani własnych reguł etapu zagadnień.
     expect(schoolSubject.prompts.objectivesRules).toBeUndefined();
   });

@@ -7,6 +7,9 @@ import { validateLessonExercise } from "../../pool-validation";
 import { describeRule, ruleOf, type RuleId, type RuleTextContext } from "../../rules/catalog";
 import { schoolSubject } from "./module";
 
+/** Druga część noty usuniętej podpowiedzi: ćwiczenie zostaje w puli bez podpowiedzi (co dalej). */
+const HINT_NEXT_STEP = "; the exercise is in the pool without a hint (to give it a safe hint, remove_exercise it and submit it again)";
+
 const TEXT_CTX: RuleTextContext = { answerMaxLength: 600, groundingRequired: true };
 
 const objective: AgentObjective = {
@@ -102,8 +105,11 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolAgentPolicy.ruleNotes?.["lesson.leak_source"]?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("szkoła nie dopisuje nic do check.blind_solve (zdanie źródłowe dotyczy przedmiotów angielskich)", () => {
-    expect(schoolAgentPolicy.ruleNotes?.["check.blind_solve"]).toBeUndefined();
+  it("dopisek check.blind_solve szkoły: jednoznaczność wyboru i luk z bankiem (bez zdania źródłowego przedmiotów angielskich)", () => {
+    const note = schoolAgentPolicy.ruleNotes?.["check.blind_solve"] ?? "";
+    expect(note).toContain("lesson_choice has exactly one correct option");
+    expect(note).toContain("never two gaps whose words could be swapped");
+    expect(note).not.toContain("Polish source sentence");
   });
 
   it("nie ma wymaganych typów, braków ani planu", () => {
@@ -146,7 +152,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
         rule: "hint.reveals_words",
         field: "hint",
         pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
-        found: 'removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
+        found: `removed: shares "wiślana" with the answer "Mierzeja Wiślana"${HINT_NEXT_STEP}`,
       },
     ]);
   });
@@ -160,7 +166,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
     }));
     expect(result.removed).toEqual(["hint"]);
     // „pas” ma 3 litery, więc nie jest słowem treściowym.
-    expect(result.notes?.[0]?.found).toBe('removed: shares "piaszczysty" with the required element "piaszczysty pas"');
+    expect(result.notes?.[0]?.found).toBe(`removed: shares "piaszczysty" with the required element "piaszczysty pas"${HINT_NEXT_STEP}`);
   });
 
   it("zostawia podpowiedź kierującą rozumowaniem i brak podpowiedzi", () => {

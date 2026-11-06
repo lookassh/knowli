@@ -36,15 +36,16 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do. " +
     "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support. " +
     "For objectives whose id contains \".to_be.\" the checked verb is 'to be': gap answers are am, is or are, " +
-    "in negatives am not, is not, are not, isn't or aren't. 'To be' questions swap the subject and the form " +
-    "(Is she happy?, Are they ready?); short answers repeat the form (Yes, she is. / No, they aren't.). " +
-    "Keep 'to be' sentences very short and concrete, reusing a small set of subjects and words from the material so the only new thing is the form of 'to be'. " +
-    "Picture choice (only for objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set visualSubject to who is pictured (boy or man = he, girl or woman = she, group = they, dog = it); " +
-    "then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture. " +
-    "lesson_listen_choice (listening choice): a narrator reads the full sentence aloud and the child picks the word that fills the gap, so use it only when the checked form SOUNDS different. " +
-    "stem is one short natural sentence of at most 12 words whose gap stands on the objective's checked element; " +
-    "2 or 3 options differ AUDIBLY in that element (play / plays, don't / doesn't, Do / Does, is / are, isn't / aren't). " +
-    "Do not check a difference that exists only in spelling.",
+    "in negatives am not, is not, are not, isn't or aren't.",
+  // Semantyka typu w jego bloku (znika z typem niedozwolonym w zagadnieniu); wskazówki tematu „to be” i
+  // wyboru obrazka są dopiskami reguł tego tematu (`agentPolicy.ruleNotes`).
+  typeRules: {
+    lesson_listen_choice:
+      "A narrator reads the full sentence aloud and the child picks the word that fills the gap, so use it only when the " +
+      "checked form SOUNDS different. stem is one short natural sentence of at most 12 words whose gap stands on the " +
+      "objective's checked element; 2 or 3 options differ AUDIBLY in that element (play / plays, don't / doesn't, Do / " +
+      "Does, is / are, isn't / aren't) and exactly one is correct. Do not check a difference that exists only in spelling.",
+  },
   storyRules:
     "Write a short story in English for a Polish child, about 8 years old, at a beginner level. " +
     "Use the tense practised by the topic and very simple language. Reuse vocabulary from the parent's material where possible. " +

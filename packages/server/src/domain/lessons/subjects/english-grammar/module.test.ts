@@ -75,7 +75,13 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     const rules = englishGrammarPrompts.fieldRules ?? "";
     expect(rules).toContain(".to_be.");
     expect(rules).toMatch(/gap answers are am, is or are/);
-    expect(rules).toMatch(/short answers repeat the form/);
+    // Wskazówki tematu i wyboru obrazka w opisach reguł tego tematu (prompt tylko w temacie „to be”).
+    expect(rules).not.toMatch(/short answers repeat the form|Picture choice/);
+    expect(ruleText("grammar.be_form_subject")).toMatch(/short answers repeat the form/);
+    expect(ruleText("grammar.visual_answer_pronoun")).toContain("Picture choice (only in objectives whose id contains '.affirmative_forms')");
+    for (const id of ["grammar.visual_answer_pronoun", "grammar.visual_option_pronoun", "grammar.visual_stem_pronoun", "grammar.visual_stem_be_form"]) {
+      expect(englishGrammarSubject.rules[id]?.when?.({ topicId: "present_simple" } as RuleBookContext), id).toBe(false);
+    }
     // Dawne zdania profilu przeszły do opisów reguł (spec katalogu reguł §3).
     expect(ruleText("grammar.be_form_subject")).toContain("agrees with the subject next to the gap");
     expect(ruleText("grammar.be_no_do_does")).toContain("do not use do or does");
@@ -253,11 +259,12 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     expect(toBeV1.version).toBe(1);
   });
 
-  it("fieldRules opisują sens typu (słyszalna różnica), a ograniczenia typu niesie katalog reguł", () => {
-    const rules = englishGrammarPrompts.fieldRules ?? "";
-    expect(rules).toContain("lesson_listen_choice");
+  it("blok typu opisuje sens wyboru ze słuchu (słyszalna różnica, jedna poprawna), a ograniczenia typu niesie katalog reguł", () => {
+    const rules = englishGrammarPrompts.typeRules?.lesson_listen_choice ?? "";
+    expect(englishGrammarPrompts.fieldRules).not.toContain("lesson_listen_choice");
     expect(rules).toMatch(/at most 12 words/);
     expect(rules).toMatch(/audibly/i);
+    expect(rules).toContain("exactly one is correct");
     expect(ruleText("listen.gap_count")).toContain("exactly one gap");
     expect(ruleText("listen.options_equivalent")).toContain("not equivalent");
     expect(ruleText("listen.option_apostrophe")).toContain("apostrophe");

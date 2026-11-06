@@ -41,6 +41,7 @@ export const LESSON_RULES = {
   "lesson.limit_full": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     description:
       "An objective holds at most its exercise limit (target count plus listening allowance plus a small slack); remove " +
       "one of its exercises before submitting another.",
@@ -53,6 +54,15 @@ export const LESSON_RULES = {
     description:
       "An objective holds at most its listening allowance of lesson_listen_choice exercises (its pool and the exercises " +
       "already in the lesson count together); once it is used up, submit other exercise types.",
+  },
+  // Bezpiecznik haka przedmiotu (`refineGeneratedPool`): odrzucenie bez nazwanej reguły.
+  "lesson.refine_unnamed": {
+    field: "exercise",
+    kind: "internal",
+    description: "The subject rejected the exercise without naming a rule; write a different exercise.",
+    internalReason:
+      "Safeguard: every subject's refineGeneratedPool names the broken rule (hook contract); an unnamed rejection is a " +
+      "subject bug, so the agent gets this generic reason instead of a failed objective.",
   },
   // Ujawnienia rozwiązań (tryb `generation`: równoważność po normalizatorze przedmiotu, także warianty).
   "lesson.leak": {
@@ -87,7 +97,9 @@ export const LESSON_RULES = {
     when: (ctx) => ctx.policy.variantCheckTypes.some((type) => ctx.exerciseTypes.includes(type)),
     description:
       "Another model checks every acceptedAnswers variant; a variant not equivalent to the answer is removed (the " +
-      "exercise stays) and the result notes the removal.",
+      "exercise stays) and the result notes the removal. A removed variant is gone for the child: never add it again; if " +
+      "the removed wording is a correct answer, make the prompt more specific so only the key fits, or remove_exercise " +
+      "and write a different one.",
   },
   "check.hint_judge": {
     field: "hint",

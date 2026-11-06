@@ -114,7 +114,7 @@ describe("admitBatch — warianty odrzucone przez checker (spec katalogu reguł 
     expect(entry).toMatchObject({ accepted: "ex1", unchecked: false, removedVariants: ["w X wieku"] });
     expect(entry.notes.map((note) => [note.rule, note.field])).toEqual([["check.variants", "acceptedAnswers[1]"]]);
     expect(entry.notes.map(formatRuleReason)).toEqual([
-      '[check.variants] acceptedAnswers[1]: variant "w X wieku" removed: not equivalent to the answer "w 966 roku"',
+      '[check.variants] acceptedAnswers[1]: variant "w X wieku" removed: not equivalent to the answer "w 966 roku"; do not add it again',
     ]);
     expect(poolOf(result.state, A)[0]!.draft.acceptedAnswers).toEqual(["966"]);
   });
@@ -142,7 +142,10 @@ describe("admitBatch — warianty odrzucone przez checker (spec katalogu reguł 
     const result = submitWith(stateWith(), A, [draft], [variantsDone([false], { solve: { kind: "done", value: ["966"] } })]);
     const rejection = rejectedOf(result.results[0]);
     expect(rejection).toMatchObject({ kind: "blind", code: "blind_mismatch", ruleIds: ["check.blind_solve"] });
-    expect(rejection.reasons[0]).toContain('it matched only the removed variant "966"');
+    expect(rejection.reasons[0]).toContain(
+      'it matched only the removed variant "966", which the variant check judged not equivalent: do not add it again; ' +
+        "make the stimulus point to the key only",
+    );
     expect(rejection.reasons[0]).toContain('the key is "w 966 roku"');
     expect(poolOf(result.state, A)).toHaveLength(0);
   });
@@ -547,7 +550,8 @@ describe("precheckBatch i admitBatch — sanityzacja szkoły (spec katalogu regu
     expect(prechecked[0]).toMatchObject({ pass: true, sanitized: ["hint"], quotesSnapped: 1 });
     const notes = (prechecked[0] as { notes: readonly LessonRuleIssue[] }).notes;
     expect(notes.map(formatRuleReason)).toEqual([
-      '[hint.reveals_words] hint: removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
+      '[hint.reveals_words] hint: removed: shares "wiślana" with the answer "Mierzeja Wiślana"; the exercise is in the pool ' +
+        "without a hint (to give it a safe hint, remove_exercise it and submit it again)",
     ]);
     const admitted = admitBatch(state(), OBJECTIVE, prechecked, [NA_CHECKS], context);
     expect(admitted.results[0]).toEqual({ accepted: "ex1", sanitized: ["hint"], unchecked: false, notes, removedVariants: [], quotesSnapped: 1 });

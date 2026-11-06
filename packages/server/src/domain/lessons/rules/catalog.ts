@@ -60,9 +60,10 @@ export interface LessonRule {
   /** Grupa priorytetu w księdze reguł (`RULE_PRIORITY`); brak = zwykła kolejność po id. */
   readonly priority?: RulePriority;
   /**
-   * W prompcie tylko id reguły, bez opisu (opis dostaje model w wyniku narzędzia, gdy złamie regułę):
-   * kształt rekordu (`shape.*`, ten sam kształt opisuje schemat narzędzia) i reguły, które tylko powtarzają
-   * listę pól karty typu. Budżet długości promptu (Task 8b planu katalogu reguł).
+   * Poza promptem (opis dostaje model w wyniku narzędzia, gdy złamie regułę): kształt rekordu (`shape.*`, ten
+   * sam kształt opisuje schemat narzędzia), reguły, które tylko powtarzają listę pól karty typu albo enum,
+   * typ lub limit schematu narzędzia, oraz rzadko łamane spójności identyfikatorów (np. `group.ids_unique`).
+   * Budżet długości promptu (Task 8b planu katalogu reguł, przegląd końcowy I8).
    */
   readonly promptBrief?: true;
   /**

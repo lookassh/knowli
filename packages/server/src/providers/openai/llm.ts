@@ -131,9 +131,20 @@ function independentReservation(input: LessonPoolInput): string {
     calculations;
 }
 
-/** Wiersze reguł jednej sekcji księgi: `[id] opis`, oddzielone spacją; reguły `brief` pomija (mają wspólny wiersz). */
+/**
+ * Wiersze reguł jednej sekcji księgi: `[id] opis`, oddzielone spacją; reguły `brief` pomija (opisuje je wynik
+ * narzędzia), a powtórzenie reguły z wcześniejszego bloku typu (`repeatOf`) odsyła do tamtego bloku.
+ */
 function ruleLines(lines: readonly LessonRuleBookLine[]): string {
-  return lines.filter((line) => line.brief !== true).map((line) => `[${line.id}] ${line.text}`).join(" ");
+  return lines
+    .filter((line) => line.brief !== true)
+    .map((line) => (line.repeatOf === undefined ? `[${line.id}] ${line.text}` : `[${line.id}] ${repeatText(line.repeatOf)}`))
+    .join(" ");
+}
+
+/** Tekst powtórzonej reguły w kolejnym bloku typu: odesłanie do bloku z pełnym opisem. */
+export function repeatText(type: string): string {
+  return `As in the ${type} block.`;
 }
 
 /** Czy sekcja ma choć jedną regułę z opisem (bez pustych nagłówków). */
@@ -149,15 +160,12 @@ function hasDescribed(lines: readonly LessonRuleBookLine[]): boolean {
  */
 export function renderRuleBook(book: LessonRuleBookInput): string {
   const parts = ["RULES — the tool checks every rule below; a rejection names the broken rule in [brackets]."];
-  // Reguły `brief` (kształt rekordu, powtórzenia list pól kart typów) jednym wierszem: same id, opis w wyniku narzędzia.
-  const brief = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks]
-    .flat()
-    .filter((line) => line.brief === true)
-    .map((line) => `[${line.id}]`);
-  if (brief.length > 0) {
+  // Reguły `brief` (kształt rekordu, pola kart typów, limity schematu narzędzia) bez id i opisu: jedno zdanie, opis w wyniku narzędzia.
+  const brief = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat().some((line) => line.brief === true);
+  if (brief) {
     parts.push(
-      `Record shape and card fields: ${brief.join(" ")} — every exercise has the field types of the tool schema and the ` +
-        "fields its type card lists; a broken one is described in the tool result.",
+      "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
+        "type card lists; the tool result names and describes a broken rule of this kind.",
     );
   }
   if (hasDescribed(book.general)) parts.push(`General: ${ruleLines(book.general)}`);
@@ -231,24 +239,6 @@ export function lessonSystemPrompt(input: LessonPoolInput): string {
         "lesson_short_answer) and lesson_gap over free-text types.",
     );
   }
-  if (input.exerciseTypes.includes("lesson_calculation")) {
-    parts.push(
-      "lesson_calculation: use only a method explicitly taught in the quoted parent material (scale_distance, height_difference or unit_conversion). " +
-        "Numbers may vary as abstract examples of that same method; never invent named places, measurements of real objects or new geographical facts. " +
-        "sourceRefs must quote the method, not a vaguely related fact. If the material teaches no supported calculation method, produce no calculations. " +
-        "Calculations never replace the publication minima in Target. " +
-        "Variants of the same method and units share templateFamilyId, with different parameters; do not repeat existing parameters.",
-    );
-  }
-  if (input.exerciseTypes.includes("lesson_keywords")) {
-    parts.push(
-      "lesson_keywords is an OPTIONAL extra (precision trainer), outside the stage split: at most ONE per objective, " +
-        "and only for a lesson_open_answer family of this same objective (familyId exactly that of the open answer). " +
-        "keywordOptions are short concepts taken from the parent material; keyOptionIds are the concepts a precise answer to that question must use, " +
-        "and the other options are real concepts from the material that are NOT essential for this answer. " +
-        "Never put the answer sentence or a definition into keywordOptions. Skip lesson_keywords when the open answer has fewer than two essential concepts.",
-    );
-  }
   if (input.deduplication !== "exercise") {
     parts.push("When distinct short answers run out, vary full-sentence answers (different subjects, verbs or objects).");
   }
@@ -271,13 +261,17 @@ export function lessonSystemPrompt(input: LessonPoolInput): string {
         "English examples only from this exercise (its answer, sentence or options). Use null when no short, accurate rule applies.",
     );
   }
+  // Dyscyplina języków ma sens tylko przy dwóch językach (język polecenia ≠ język odpowiedzi).
+  const twoLanguages = input.promptLocale !== input.answerLocale;
   parts.push(
     "Field meaning: instructionPl is the child-facing instruction in the prompt language; hint is a short child-facing support clue " +
       "in the answer language; acceptedAnswers lists other acceptable formulations of the answer (a shorter wording without optional " +
-      "words counts; the same words with other spelling of contractions or other capitalization do not). " +
-      "Language discipline: exercise stimuli normally use the answer language, except where field rules for this subject " +
-      "define a source stimulus in the prompt language; answer and acceptedAnswers always use the answer language. " +
-      "Never copy prompt-language words from the parent material into answer-language fields.",
+      "words counts; the same words with other spelling of contractions or other capitalization do not)." +
+      (twoLanguages
+        ? " Language discipline: exercise stimuli normally use the answer language, except where field rules for this subject " +
+          "define a source stimulus in the prompt language; answer and acceptedAnswers always use the answer language. " +
+          "Never copy prompt-language words from the parent material into answer-language fields."
+        : ""),
   );
   parts.push(renderRuleBook(input.ruleBook));
   return parts.join("\n");

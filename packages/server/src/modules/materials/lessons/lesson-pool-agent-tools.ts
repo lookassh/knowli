@@ -148,7 +148,7 @@ type ToolResult = LessonAgentToolResult;
 type ExamplesOutcome = NonNullable<LessonAgentToolOutcome["examples"]>;
 
 type ParsedRecord =
-  | { readonly ok: true; readonly draft: LessonExerciseDraft }
+  | { readonly ok: true; readonly draft: LessonExerciseDraft; readonly notes: readonly LessonRuleIssue[] }
   | { readonly ok: false; readonly exerciseType: string; readonly rejection: Rejection };
 
 const noop = () => undefined;
@@ -305,7 +305,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
   /**
    * Surowy rekord → szkic (spec katalogu reguł §4.3): materializacja typów liczonych przez kod,
    * kształt rekordu i zagadnienie. Zgłoszenia materializacji i kształtu mają kod `shape_malformed`,
-   * obce zagadnienie `shape_objective`.
+   * obce zagadnienie `shape_objective`. Noty wspólnej sanityzacji (usunięte wyjaśnienie) trafiają do
+   * wyniku przyjęcia razem z notami przyjmowania.
    */
   function parseRecord(raw: unknown): ParsedRecord {
     const materialized = materializeRawExercise(raw);
@@ -315,8 +316,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     const draft = toExerciseDraft(materialized.record);
     const foreign = foreignObjectiveIssues(draft.objectiveId, objectiveId);
     if (foreign.length > 0) return shapeRejection(draft.exerciseType, "shape_objective", foreign);
-    const sanitized = sanitizeFreshLessonDraft(draft, ctx.subject, args.familyScope).draft;
-    return { ok: true, draft: stripParentAddedFlags([sanitized])[0]! };
+    const sanitized = sanitizeFreshLessonDraft(draft, ctx.subject, args.familyScope);
+    return { ok: true, draft: stripParentAddedFlags([sanitized.draft])[0]!, notes: sanitized.explanationNotes };
   }
 
   /**
@@ -639,17 +640,26 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     };
   }
 
-  /** Wynik przyjęcia z notami: oczyszczenia reguł (`[id] pole: found`), pola usunięte bez reguły i brak kontroli. */
-  function acceptedResult(index: number, raw: unknown, entry: Extract<AdmitEntry, { accepted: string }>): BuiltResult {
-    const noted = new Set(entry.notes.map((issue) => issue.field));
+  /**
+   * Wynik przyjęcia z notami: oczyszczenia reguł (`[id] pole: found`; najpierw noty parsowania, potem
+   * przyjmowania), pola usunięte bez reguły i brak kontroli.
+   */
+  function acceptedResult(
+    index: number,
+    raw: unknown,
+    entry: Extract<AdmitEntry, { accepted: string }>,
+    parseNotes: readonly LessonRuleIssue[],
+  ): BuiltResult {
+    const issues = [...parseNotes, ...entry.notes];
+    const noted = new Set(issues.map((issue) => issue.field));
     const notes = [
-      ...entry.notes.map((issue) => withoutRunSuffix(formatRuleReason(issue))),
+      ...issues.map((issue) => withoutRunSuffix(formatRuleReason(issue))),
       ...entry.sanitized.filter((field) => !noted.has(field)).map((field) => `${field} removed`),
       ...(entry.unchecked ? ["unchecked: a check by another model was unavailable; accepted without it"] : []),
     ];
     return {
       result: { index, ...echoOf(raw), accepted: entry.accepted, ...(notes.length === 0 ? {} : { notes }) },
-      ruleIds: [...new Set(entry.notes.map((issue) => issue.rule as string))],
+      ruleIds: [...new Set(issues.map((issue) => issue.rule as string))],
     };
   }
 
@@ -723,7 +733,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       const entry = admitted.results[draftIndex]!;
       return "rejected" in entry
         ? rejectedResult(index, raw, drafts[draftIndex]!.exerciseType, entry.rejected)
-        : acceptedResult(index, raw, entry);
+        : acceptedResult(index, raw, entry, record.notes);
     });
     const rules = rulesMap(built);
     let examplesOutcome: ExamplesOutcome | undefined;

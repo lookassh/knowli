@@ -17,7 +17,6 @@ import {
   MAX_KEY_OPTIONS,
   MAX_KEYWORD_LENGTH,
   MAX_KEYWORD_OPTIONS,
-  MAX_LESSON_ANSWER_LENGTH,
   MAX_LESSON_TEXT_LENGTH,
   MAX_MATCH_EXTRA,
   MAX_MATCH_LEFT_LENGTH,
@@ -128,8 +127,9 @@ function lessonExerciseSchema(
     properties: {
       exerciseType: { type: "string", enum: allowedTypes },
       objectiveId: { type: "string", enum: [objective.id] },
-      answer: text(MAX_LESSON_ANSWER_LENGTH),
-      acceptedAnswers: list(text(MAX_LESSON_ANSWER_LENGTH), undefined, MAX_ACCEPTED_ANSWERS),
+      // Limit odpowiedzi przedmiotu (jak `answer.max_length` w księdze reguł), nie stały limit kontraktu.
+      answer: text(input.answerMaxLength),
+      acceptedAnswers: list(text(input.answerMaxLength), undefined, MAX_ACCEPTED_ANSWERS),
       focus: { type: "array", items: text() },
       instructionPl: nullableText(),
       stem: nullableText(),

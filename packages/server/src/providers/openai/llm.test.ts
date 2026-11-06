@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_LESSON_TEXT_LENGTH } from "@learning/contracts";
 import { createOpenAiLlmProvider, lessonSystemPrompt, lessonUserMaterial, renderRuleBook } from "./llm";
 import { lessonPoolJsonSchema } from "./lesson-pool-schema";
 import type { LessonPoolInput, LessonRuleBookInput, LessonStoryInput } from "../../ports/ai";
@@ -31,6 +32,7 @@ const INPUT: LessonPoolInput = {
   subjectId: "english_grammar",
   subjectTitle: "Angielski — gramatyka",
   answerLocale: "en-GB",
+  answerMaxLength: MAX_LESSON_TEXT_LENGTH,
   promptLocale: "pl-PL",
   promptProfile: {
     generationRole: "You are an author of English grammar exercises.",
@@ -186,30 +188,37 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
         subjectRule: "CHOICE-SUBJECT.",
         rules: [{ id: "options.count", text: "OPTIONS-COUNT." }, { id: "choice.stem_required", text: "STEM-REQUIRED.", brief: true }],
       },
-      { type: "lesson_gap", summary: "GAP-SUMMARY.", rules: [{ id: "gap.marker_count", text: "GAP-MARKER.", brief: true }] },
+      {
+        type: "lesson_gap",
+        summary: "GAP-SUMMARY.",
+        rules: [{ id: "gap.marker_count", text: "GAP-MARKER.", brief: true }, { id: "chapter.instruction_stimulus", text: "STIMULUS.", repeatOf: "lesson_choice" }],
+      },
     ],
     lesson: [{ id: "lesson.leak", text: "LESSON-LEAK." }],
     checks: [{ id: "check.blind_solve", text: "CHECK-BLIND." }],
   };
 
-  it("sekcje w stałej kolejności: nagłówek, wiersz id, ogólne, bloki typów, lekcja, kontrole", () => {
+  it("sekcje w stałej kolejności: nagłówek, zdanie o regułach brief, ogólne, bloki typów, lekcja, kontrole", () => {
     expect(renderRuleBook(BOOK)).toBe([
       "RULES — the tool checks every rule below; a rejection names the broken rule in [brackets].",
-      "Record shape and card fields: [shape.record] [choice.stem_required] [gap.marker_count] — every exercise has the field types " +
-        "of the tool schema and the fields its type card lists; a broken one is described in the tool result.",
+      "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
+        "type card lists; the tool result names and describes a broken rule of this kind.",
       "General: [field.empty] GENERAL-EMPTY.",
       'lesson_choice — CHOICE-SUMMARY. Example: {"exerciseType":"lesson_choice"}',
       "  CHOICE-SUBJECT.",
       "  [options.count] OPTIONS-COUNT.",
       "lesson_gap — GAP-SUMMARY.",
+      "  [chapter.instruction_stimulus] As in the lesson_choice block.",
       "Lesson: [lesson.leak] LESSON-LEAK.",
       "Checks by another model: [check.blind_solve] CHECK-BLIND.",
     ].join("\n"));
   });
 
-  it("reguły brief: tylko id we wspólnym wierszu, bez opisu i bez pustego wiersza bloku", () => {
+  it("reguły brief: bez id i opisu (opis w wyniku narzędzia), bez pustego wiersza bloku; powtórzenie bez opisu", () => {
     const text = renderRuleBook(BOOK);
-    for (const hidden of ["SHAPE-RECORD.", "STEM-REQUIRED.", "GAP-MARKER."]) expect(text).not.toContain(hidden);
+    for (const hidden of ["SHAPE-RECORD.", "STEM-REQUIRED.", "GAP-MARKER.", "[shape.record]", "[choice.stem_required]", "[gap.marker_count]", "STIMULUS."]) {
+      expect(text).not.toContain(hidden);
+    }
     expect(text).not.toMatch(/\n {2}\n|\n {2}$/);
   });
 
@@ -254,7 +263,6 @@ describe("lessonSystemPrompt i lessonUserMaterial — składanie promptu puli", 
     ]) {
       expect(system).not.toContain(removed);
     }
-    expect(system).toContain("Calculations never replace the publication minima in Target.");
     expect(system).toContain("Stages of the exercise types (Target below gives the counts)");
   });
 
@@ -315,6 +323,10 @@ describe("lessonSystemPrompt i lessonUserMaterial — składanie promptu puli", 
     expect(system).toContain("For lesson_gap, hint must be the base form of the verb.");
     expect(system).toContain("Language discipline:");
     expect(system).toContain("Never copy prompt-language words from the parent material into answer-language fields");
+    // Jeden język polecenia i odpowiedzi (szkoła): bez dyscypliny języka.
+    const oneLanguage = poolMessages({ ...INPUT, answerLocale: "pl-PL", promptLocale: "pl-PL" }).system;
+    expect(oneLanguage).toContain("acceptedAnswers lists other acceptable formulations of the answer");
+    expect(oneLanguage).not.toContain("Language discipline:");
     // Adapter nie zaszywa wiedzy przedmiotowej o równoważności skrótów (review C1).
     expect(system).not.toContain("does not play");
 

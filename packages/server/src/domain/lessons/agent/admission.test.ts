@@ -480,9 +480,18 @@ describe("przyjmowanie paczki — sanityzacja i refine", () => {
     expect(result.results[0]).toEqual({ rejected: rejection });
   });
 
-  it("refine odrzucający bez zgłoszeń to błąd kontraktu haka przedmiotu", () => {
+  it("refine odrzucający bez zgłoszeń (błąd kontraktu haka): odrzucenie z regułą bezpiecznika, bez wyjątku", () => {
     const silent = withAgentPolicy({ ...subject, refineGeneratedPool: () => ({ kept: [], rejected: [] }) }, subject.agentPolicy);
-    expect(() => precheckBatch(stateWith(), A, [choice(A, 1)], contextFor({ subject: silent }))).toThrow("without rule issues");
+    const [entry] = precheckBatch(stateWith(), A, [choice(A, 1)], contextFor({ subject: silent }));
+    expect(entry).toMatchObject({
+      pass: false,
+      rejection: {
+        kind: "rule",
+        code: "refine",
+        ruleIds: ["lesson.refine_unnamed"],
+        reasons: ["[lesson.refine_unnamed] exercise: the subject rejected this exercise without naming a rule"],
+      },
+    });
   });
 
   it("wariant DROP usunięty w szkicu z precheckBatch; do puli trafia oczyszczony szkic", () => {

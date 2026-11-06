@@ -25,7 +25,8 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
  *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu, oraz reguły `inEachTypeBlock`
  *   w bloku każdego swojego typu);
  * - `general` — reguły rdzenia i przedmiotu bez typów albo wspólne kilku typom
- *   zagadnienia (opis wtedy sam wymienia typy). Poza regułami `inEachTypeBlock` żaden opis się nie powtarza.
+ *   zagadnienia (opis wtedy sam wymienia typy). Poza regułami `inEachTypeBlock` żaden opis się nie powtarza,
+ *   a te w kolejnych blokach mają `repeatOf` (renderer odsyła do pierwszego bloku).
  *
  * W każdej sekcji najpierw reguły grup `RULE_PRIORITY` (w kolejności grup), potem
  * reszta po id. Reguły `internal` nigdy nie trafiają do księgi. Opis z dopiskiem
@@ -35,8 +36,13 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
 export interface RuleLine {
   readonly id: string;
   readonly text: string;
-  /** Reguła z `promptBrief`: renderer promptu wymienia tylko id (opis trafia do wyniku narzędzia). */
+  /** Reguła z `promptBrief`: renderer promptu jej nie wymienia (opis trafia do wyniku narzędzia). */
   readonly brief?: true;
+  /**
+   * Reguła `inEachTypeBlock` opisana już w bloku wcześniejszego typu: renderer odsyła do niego zamiast
+   * powtarzać pełny opis (`text` zostaje pełny).
+   */
+  readonly repeatOf?: LessonExerciseType;
 }
 
 export interface TypeBlock {
@@ -137,10 +143,17 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
     placed.filter((entry) => entry.placement.section === name).map(line);
 
   const features = subjectFeatures(subject);
+  // Pierwszy blok typu z pełnym opisem reguły `inEachTypeBlock`; kolejne bloki odsyłają do niego.
+  const firstBlockOf = new Map<string, LessonExerciseType>();
+  const typeLine = (entry: PlacedRule, type: LessonExerciseType): RuleLine => {
+    const first = firstBlockOf.get(entry.id);
+    if (first === undefined) firstBlockOf.set(entry.id, type);
+    return first === undefined ? line(entry) : { ...line(entry), repeatOf: first };
+  };
   const types = blockTypes.map((type): TypeBlock => {
     const card = TYPE_CARDS[type];
     const example = card.example?.(features);
-    const subjectRule = (subject.prompts.typeRules as Partial<Record<LessonExerciseType, string>> | undefined)?.[type]?.trim();
+    const subjectRule = subject.prompts.typeRules?.[type]?.trim();
     return {
       type,
       summary: card.summary,
@@ -148,7 +161,7 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
       ...(subjectRule === undefined || subjectRule === "" ? {} : { subjectRule }),
       rules: placed
         .filter((entry) => entry.placement.section === "type" && entry.placement.types.includes(type))
-        .map(line),
+        .map((entry) => typeLine(entry, type)),
     };
   });
 

@@ -36,12 +36,17 @@ const TARGET_LABELS: Readonly<Record<HintRevealing["target"], string>> = {
   requiredElement: "the required element",
 };
 
-/** Nota reguły `hint.reveals_words`: zdradzony cel i jego słowa obecne w podpowiedzi. */
+/**
+ * Nota reguły `hint.reveals_words`: zdradzony cel i jego słowa obecne w podpowiedzi, a po nich — co
+ * dalej (ćwiczenie jest w puli bez podpowiedzi; ponowne wysłanie bez usunięcia byłoby duplikatem).
+ */
 function hintRemovedNote(revealing: HintRevealing): LessonRuleIssue {
   const words = revealing.words.map((word) => clip(word)).join(", ");
   return schoolIssue("hint.reveals_words", {
     pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
-    found: `removed: shares ${words} with ${TARGET_LABELS[revealing.target]} ${clip(revealing.text)}`,
+    found:
+      `removed: shares ${words} with ${TARGET_LABELS[revealing.target]} ${clip(revealing.text)}; the exercise is in the ` +
+      "pool without a hint (to give it a safe hint, remove_exercise it and submit it again)",
   });
 }
 
@@ -88,6 +93,10 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
       "Unsupported: use only facts from the material; not correct Polish: fix the wording; gives the content away: " +
       "hint at the reasoning, not the content; if it cannot be fixed, set it to null.",
     "check.open_answer": "The solvers see the material and the grader checks both answers against it.",
+    // Jednoznaczność typów rozwiązywanych na ślepo (sprawdza ją tylko ślepe rozwiązanie).
+    "check.blind_solve":
+      "lesson_choice has exactly one correct option; in lesson_cloze exactly one bank word fits each gap: never two gaps " +
+      "whose words could be swapped.",
   },
   sanitize(draft: LessonExerciseDraft, ctx) {
     const removed: string[] = [];

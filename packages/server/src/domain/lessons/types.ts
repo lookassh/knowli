@@ -221,11 +221,11 @@ export interface SubjectPromptProfile {
    */
   readonly fieldRules?: string;
   /**
-   * Semantyka typów z własną ścisłą gałęzią schematu puli (pary, grupy, luki):
-   * księga reguł dokłada ją do bloku typu obok karty typu (pola, przykład) i
-   * reguł typu. Bez reguł egzekwowanych przez kod.
+   * Semantyka typu (wskazówki, których kod nie sprawdza): księga reguł dokłada ją
+   * do bloku typu obok karty typu (pola, przykład) i reguł typu, więc znika z
+   * promptu razem z typem niedozwolonym w zagadnieniu.
    */
-  readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
+  readonly typeRules?: Partial<Record<LessonExerciseType, string>>;
   /**
    * Reguły etapu zagadnień tematu dynamicznego (ile zagadnień, ich rodzaje,
    * treść kart) doklejane do promptu podziału materiału. Brak = ogólny opis.

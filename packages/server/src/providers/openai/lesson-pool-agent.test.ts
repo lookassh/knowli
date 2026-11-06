@@ -8,6 +8,7 @@ import type {
   LessonPoolInput,
   RunCostSink,
 } from "../../ports/ai";
+import { MAX_LESSON_TEXT_LENGTH } from "@learning/contracts";
 import { GenerationProviderError } from "../../ports/generation-error";
 import { currentUsageScope, withUsageScope, type UsageEvent, type UsageScope } from "../../ports/usage";
 import { createTestRecorder } from "../usage/test-recorder";
@@ -62,6 +63,7 @@ const POOL: LessonPoolInput = {
   subjectId: "subject",
   subjectTitle: "Subject",
   answerLocale: "en-GB",
+  answerMaxLength: MAX_LESSON_TEXT_LENGTH,
   promptLocale: "pl-PL",
   promptProfile: { generationRole: "role", gradingRole: "grade", almostDefinition: "almost" },
   exerciseTypes: ["lesson_card", "lesson_choice", "lesson_match", "lesson_gap"],

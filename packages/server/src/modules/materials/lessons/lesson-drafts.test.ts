@@ -403,7 +403,7 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
     expect(withRules).not.toHaveProperty("objectivesRules");
     const bare = build({ ...schoolSubject, prompts: { ...schoolSubject.prompts, typeRules: undefined } }).promptProfile;
     expect(bare).not.toHaveProperty("typeRules");
-    expect(build(englishGrammarSubject).promptProfile).not.toHaveProperty("typeRules");
+    expect(build(englishGrammarSubject).promptProfile.typeRules).toEqual(englishGrammarSubject.prompts.typeRules);
   });
 
   describe("tematy zdań z zainteresowań dziecka", () => {

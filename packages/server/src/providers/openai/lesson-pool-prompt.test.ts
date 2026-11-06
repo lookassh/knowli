@@ -17,6 +17,7 @@ import type { LessonObjectiveAgentInput } from "../../ports/ai";
 import { FakeLlmProvider } from "../fake";
 import { fakePlanFromCoverage } from "../fake-lesson-agent";
 import { objectiveInstructions } from "./lesson-pool-agent";
+import { repeatText } from "./llm";
 
 /**
  * Złożony prompt podagenta z księgi reguł (spec katalogu reguł §2.4 pkt 5–6, §3) na fikcyjnych
@@ -72,6 +73,9 @@ function fixtureFor(args: {
 async function fixtures(): Promise<Record<string, PromptFixture>> {
   const grammarTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_simple")!;
   const grammar = fixtureFor({ subject: englishGrammarSubject, topic: grammarTopic, material: "", objectiveId: "english_grammar.present_simple.question" });
+  // Temat „to be” ma własne reguły (`when` na temat): migawka zagadnienia z najdłuższym promptem tematu.
+  const toBeTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "to_be")!;
+  const grammarToBe = fixtureFor({ subject: englishGrammarSubject, topic: toBeTopic, material: "", objectiveId: "english_grammar.to_be.affirmative_forms" });
 
   const { objectives } = await new FakeLlmProvider().generateLessonObjectives({
     subjectTitle: schoolSubject.titlePl,
@@ -106,23 +110,24 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
     examples,
     examplesFixed: true,
   });
-  return { english_grammar: grammar, school, english_chapter: chapter };
+  return { english_grammar: grammar, english_grammar_to_be: grammarToBe, school, english_chapter: chapter };
 }
 
 const FIXTURES = await fixtures();
-const SUBJECT_IDS = ["english_grammar", "school", "english_chapter"] as const;
+const SUBJECT_IDS = ["english_grammar", "english_grammar_to_be", "school", "english_chapter"] as const;
 
 /**
  * Budżet długości promptu per przedmiot (rozstrzygnięcie kontrolera Task 8b: ≤ 1,5 × długości sprzed
- * katalogu reguł). Pomiar „przed” 2026-11-06 na HEAD 2ca25cf2, te same fikstury i zagadnienia:
- * gramatyka `present_simple.question` 14 841, szkoła `rzeki_polski` 17 344, rozdział `part_1` 17 259 znaków.
+ * katalogu reguł; po cięciach przeglądu końcowego I8 obniżony do 1,4 ×). Pomiar „przed” 2026-11-06 na HEAD
+ * 2ca25cf2, te same fikstury i zagadnienia: gramatyka `present_simple.question` 14 841, szkoła `rzeki_polski`
+ * 17 344, rozdział `part_1` 17 259 znaków.
  */
-const PROMPT_LENGTH_BEFORE: Readonly<Record<(typeof SUBJECT_IDS)[number], number>> = {
+const PROMPT_LENGTH_BEFORE: Readonly<Partial<Record<(typeof SUBJECT_IDS)[number], number>>> = {
   english_grammar: 14_841,
   school: 17_344,
   english_chapter: 17_259,
 };
-const PROMPT_BUDGET_FACTOR = 1.5;
+const PROMPT_BUDGET_FACTOR = 1.4;
 
 /** Zdania potoku sprzeczne z trybem narzędzi (spec §3 „Usuwane bez odpowiednika”). */
 const REMOVED_PIPELINE_PHRASES = [
@@ -144,13 +149,18 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
   const allowed = input.pool.objectives[0]!.exerciseTypes as readonly LessonExerciseType[];
   const ctx = ruleBookContextFor(subject, topic.id, allowed, allowed.includes("lesson_listen_choice"));
 
-  it("księga reguł zagadnienia jest w prompcie: każda reguła po id, opisy reguł bez `brief`", () => {
+  it("księga reguł zagadnienia jest w prompcie: reguła z opisem po id, powtórzenie z odesłaniem, reguły `brief` poza promptem", () => {
     const book = input.pool.ruleBook;
     const lines = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat();
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
-      expect(prompt, line.id).toContain(`[${line.id}]`);
-      if (line.brief !== true) expect(prompt, line.id).toContain(`[${line.id}] ${line.text}`);
+      if (line.brief === true) expect(prompt, line.id).not.toContain(`[${line.id}]`);
+      else if (line.repeatOf === undefined) expect(prompt, line.id).toContain(`[${line.id}] ${line.text}`);
+      else expect(prompt, line.id).toContain(`[${line.id}] ${repeatText(line.repeatOf)}`);
+    }
+    // Pełny opis reguły powtarzanej w blokach typów stoi w prompcie raz.
+    for (const line of lines.filter((candidate) => candidate.repeatOf !== undefined)) {
+      expect(prompt.split(`[${line.id}] ${line.text}`).length - 1, line.id).toBe(1);
     }
     for (const block of book.types) {
       expect(prompt).toContain(`${block.type} — ${block.summary}`);
@@ -166,7 +176,7 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
         continue;
       }
       const typeMatches = rule.types === undefined || rule.types.some((type) => allowed.includes(type));
-      if (!typeMatches) expect(prompt, id).not.toContain(`[${id}]`);
+      if (!typeMatches || rule.promptBrief === true) expect(prompt, id).not.toContain(`[${id}]`);
       else if (rule.when === undefined || rule.when(ctx)) expect(prompt, id).toContain(`[${id}]`);
     }
   });
@@ -189,7 +199,8 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
     await expect(prompt).toMatchFileSnapshot(`./__snapshots__/lesson-pool-prompt.${subjectId}.txt`);
   });
 
-  it(`budżet długości: najwyżej ${PROMPT_BUDGET_FACTOR} × długości sprzed katalogu reguł`, () => {
-    expect(prompt.length).toBeLessThanOrEqual(Math.floor(PROMPT_LENGTH_BEFORE[subjectId] * PROMPT_BUDGET_FACTOR));
+  // Temat „to be” nie ma pomiaru „przed” (migawka od przeglądu końcowego); budżet tylko dla zmierzonych zagadnień.
+  it.runIf(PROMPT_LENGTH_BEFORE[subjectId] !== undefined)(`budżet długości: najwyżej ${PROMPT_BUDGET_FACTOR} × długości sprzed katalogu reguł`, () => {
+    expect(prompt.length).toBeLessThanOrEqual(Math.floor(PROMPT_LENGTH_BEFORE[subjectId]! * PROMPT_BUDGET_FACTOR));
   });
 });

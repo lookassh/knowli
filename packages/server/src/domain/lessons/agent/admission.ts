@@ -237,9 +237,15 @@ function sanitizeCandidate(
   const refined = refine([sanitizedResult.draft], { material: ctx.material });
   const kept = refined.kept[0];
   if (refined.rejected.length > 0 || kept === undefined) {
-    const issues = refined.rejected.flatMap((item) => item.issues);
-    // Kontrakt haka: odrzucenie zawsze nazywa złamaną regułę przedmiotu.
-    if (issues.length === 0) throw new Error("refineGeneratedPool rejected an exercise without rule issues");
+    const named = refined.rejected.flatMap((item) => item.issues);
+    // Kontrakt haka: odrzucenie nazywa złamaną regułę przedmiotu. Bez niej (błąd przedmiotu) zagadnienie nie
+    // pada na wyjątku: ćwiczenie odpada z ogólnym powodem bezpiecznika.
+    const issues = named.length > 0
+      ? named
+      : [lessonIssue("lesson.refine_unnamed", {
+          pl: "ćwiczenie odrzucone przez regułę przedmiotu",
+          found: "the subject rejected this exercise without naming a rule",
+        })];
     return { ok: false, rejection: rejectionOf("rule", "refine", issues) };
   }
   return { ok: true, draft: kept, ...clean };
@@ -508,7 +514,7 @@ function variantNote(removed: RemovedVariant, draft: LessonExerciseDraft): Lesso
   return lessonIssue("check.variants", {
     field: `acceptedAnswers[${removed.index}]`,
     pl: "acceptedAnswers: wariant nie był równoważny odpowiedzi i został usunięty",
-    found: `variant ${clip(removed.text)} removed: not equivalent to the answer ${clip(draft.answer)}`,
+    found: `variant ${clip(removed.text)} removed: not equivalent to the answer ${clip(draft.answer)}; do not add it again`,
   });
 }
 
@@ -539,7 +545,10 @@ function checkerSteps(
     return reject("blind", "blind_mismatch", [
       lessonIssue("check.blind_solve", {
         pl: "answer: niezależny rozwiązujący odpowiedział inaczej niż klucz",
-        found: viaRemoved === undefined ? detail : `${detail}; it matched only the removed variant ${clip(viaRemoved.text)}`,
+        found: viaRemoved === undefined
+          ? detail
+          : `${detail}; it matched only the removed variant ${clip(viaRemoved.text)}, which the variant check judged not ` +
+            "equivalent: do not add it again; make the stimulus point to the key only",
       }),
     ]);
   }

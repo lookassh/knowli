@@ -213,9 +213,11 @@ describe("księga reguł — przykłady kolejności", () => {
  * którego księga ją zawiera (albo tylko wskazanych przedmiotów — dopiski).
  */
 const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; readonly phrase: string; readonly subjects?: readonly string[] }[] = [
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "should get a short hint (recommended)" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "null only when" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "at least half of them, rounded up" },
+  // Przegląd końcowy (I3, M1): podpowiedź opcjonalna, nigdy nie opisuje odpowiedzi, próg słów bez „rounded up”.
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "may get a short hint" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "never names or describes the answer, even indirectly" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "it must contain fewer than half" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "Words that also appear in the question" },
   { point: "1. podpowiedź pytania otwartego", rule: "check.hint_judge", phrase: "null only if no safe hint exists" },
   { point: "2. tolerancja rachunku", rule: "calculation.tolerance", phrase: "out or set it to zero" },
   { point: "3. rodzina rachunku", rule: "calculation.family_slug", phrase: "scale-distance-km" },
@@ -285,5 +287,18 @@ describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)",
     // Zakaz polecenia w wyborze ze słuchu ma pełny opis (nie tylko id), więc prompt nie przeczy sobie.
     const listen = book.types.find((block) => block.type === "lesson_listen_choice")!.rules.find((line) => line.id === "listen.instruction_not_allowed");
     expect(listen?.brief).toBeUndefined();
+  });
+
+  it("pełny opis w pierwszym bloku, w kolejnych odesłanie do niego (repeatOf), tekst linii bez zmian", () => {
+    const lines = book.types.flatMap((block) =>
+      block.rules.filter((line) => line.id === "chapter.instruction_stimulus").map((line) => ({ type: block.type, line })),
+    );
+    expect(lines.length).toBeGreaterThan(1);
+    const [first, ...rest] = lines;
+    expect(first!.line.repeatOf).toBeUndefined();
+    for (const { line } of rest) {
+      expect(line.repeatOf).toBe(first!.type);
+      expect(line.text).toBe(first!.line.text);
+    }
   });
 });
