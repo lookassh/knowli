@@ -233,7 +233,7 @@ CREATE TABLE generation_runs (
   -- histogram kodów odrzuceń) albo podsumowanie bez treści po zapisie do szkicu;
   -- wspólny materiał lekcji, bez danych dziecka; NULL — run bez agenta albo anulowany
   agent_checkpoint jsonb,
-  -- ostatnie przejęcie runu przez worker (migracja 0038, #299): run deck w running
+  -- ostatnie przejęcie runu przez worker (migracja 0039, #299): run deck w running
   -- ponad 10 minut po nim jest utknięty i rodzic może go ponowić
   claimed_at timestamptz,
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),

@@ -40,7 +40,7 @@ import {
 import { normalizeTargetText } from "../../domain/target-key";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeMediaAsset } from "./media-generation";
-import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "./generation-runtime";
+import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration, retryAt } from "./generation-runtime";
 
 const GeneratedItemSchema = z.object({
   source: z.string().min(1).max(120),
@@ -318,20 +318,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
           // a jego miejsce zajmuje NOWY run z pełnym budżetem prób i tym samym
           // wejściem (spec §6.2a). Spóźniony worker starego runu nie przejdzie
           // CAS finalizacji (`running` + próba), więc nie nadpisze wyniku.
-          await tx.update(generationRuns)
-            .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
-            .where(eq(generationRuns.id, runId));
-          const newRunId = randomUUID();
-          await tx.insert(generationRuns).values({
-            id: newRunId,
-            deckVersionId: version.id,
-            expectedEditNumber: version.editNumber,
-            kind: "lesson",
-            dedupeKey: `lesson-story:retry:${newRunId}`,
-            state: "queued",
-            input: current.input,
-          });
-          return { runId: newRunId };
+          return replaceRunningRun(tx, services, current, version.editNumber, "lesson-story");
         }
         // Porażka i odroczone queued dostają nowy budżet prób.
         await tx.update(generationRuns)
@@ -378,24 +365,9 @@ export async function retryGeneration(services: Services, runId: string): Promis
       if (current.state === "running") {
         // zdrowy run w toku: drugie wywołanie modelu byłoby opłacone na darmo
         if (!locked.stalled) throw new AppError("conflict");
-        // `running` (np. po awarii workera, #299): jak przy historyjce stary run
-        // zostaje `superseded`, a nowy run z pełnym budżetem prób i tym samym
-        // wejściem zajmuje jego miejsce; spóźniony worker nie przejdzie
-        // sprawdzenia `running` przy zapisie wyniku.
-        await tx.update(generationRuns)
-          .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
-          .where(eq(generationRuns.id, runId));
-        const newRunId = randomUUID();
-        await tx.insert(generationRuns).values({
-          id: newRunId,
-          deckVersionId: current.deckVersionId,
-          expectedEditNumber: current.expectedEditNumber,
-          kind: "deck",
-          dedupeKey: `deck:retry:${newRunId}`,
-          state: "queued",
-          input: current.input,
-        });
-        return { runId: newRunId };
+        // `running` (np. po awarii workera, #299): jak przy historyjce; spóźniony
+        // worker nie przejdzie sprawdzenia `running` przy zapisie wyniku.
+        return replaceRunningRun(tx, services, current, current.expectedEditNumber!, "deck");
       }
     }
     if (run.assetId) {
@@ -413,10 +385,37 @@ export async function retryGeneration(services: Services, runId: string): Promis
     // liczba odrzuceń należy do zakończonej próby (porażka `no_source_items`); nowa próba zapisze własną
     await tx
       .update(generationRuns)
-      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, rejectedCount: null })
+      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, rejectedCount: null })
       .where(eq(generationRuns.id, runId));
     return { runId };
   });
+}
+
+/**
+ * Run w `running` przy „Ponów”: zostaje `superseded`, a jego miejsce zajmuje nowy
+ * run z pełnym budżetem prób i tym samym wejściem (klucz `<prefix>:retry:<id>`).
+ */
+async function replaceRunningRun(
+  tx: Tx,
+  services: Services,
+  current: typeof generationRuns.$inferSelect,
+  expectedEditNumber: number,
+  dedupePrefix: "deck" | "lesson-story",
+): Promise<{ runId: string }> {
+  await tx.update(generationRuns)
+    .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
+    .where(eq(generationRuns.id, current.id));
+  const newRunId = randomUUID();
+  await tx.insert(generationRuns).values({
+    id: newRunId,
+    deckVersionId: current.deckVersionId,
+    expectedEditNumber,
+    kind: current.kind,
+    dedupeKey: `${dedupePrefix}:retry:${newRunId}`,
+    state: "queued",
+    input: current.input,
+  });
+  return { runId: newRunId };
 }
 
 export async function executeGeneration(services: Services, runId: string, signal?: AbortSignal): Promise<void> {
@@ -439,12 +438,12 @@ export async function executeGeneration(services: Services, runId: string, signa
   }
   if (signal?.aborted) return;
 
-  const attempts = await claimQueuedRun(services.db, runId);
+  const attempts = await claimQueuedRun(services.db, runId, undefined, services.clock.now());
   if (attempts === null) {
     return;
   }
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
-    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted", "running");
+    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted", null, "running");
     return;
   }
   try {
@@ -454,7 +453,8 @@ export async function executeGeneration(services: Services, runId: string, signa
     // wyniku) nie zostawia runu w `running`, z którego worker go nie podejmie (#299).
     const retryable = signal?.aborted || (errorCodeOf(error) !== "validation" && attempts < MAX_AUTOMATIC_ATTEMPTS);
     await markRun(services.db, services.clock, runId, retryable ? "queued" : "failed",
-      retryable ? null : errorCodeOf(error) === "validation" ? "validation" : "attempts_exhausted", "running");
+      retryable ? null : errorCodeOf(error) === "validation" ? "validation" : "attempts_exhausted",
+      retryable && !signal?.aborted ? retryAt(services, attempts, error) : null, "running");
     throw error;
   }
 }
@@ -468,8 +468,8 @@ async function generateClaimedDeckRun(
 ): Promise<void> {
   const deps = requireGeneration(services);
   const runId = run.id;
-  const mark = (db: Executor, state: "failed" | "superseded" | "queued", errorCode: string | null) =>
-    markRun(db, services.clock, runId, state, errorCode, "running");
+  const mark = (db: Executor, state: "failed" | "superseded" | "queued", errorCode: string | null, nextAttemptAt: Date | null = null) =>
+    markRun(db, services.clock, runId, state, errorCode, nextAttemptAt, "running");
   const runInput = run.input as StoredDeckRunInput;
   const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
   const llmInput: LlmGenerateDeckInput = runInput.mode === "material"
@@ -508,7 +508,7 @@ async function generateClaimedDeckRun(
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await mark(services.db, "failed", "attempts_exhausted");
     } else {
-      await mark(services.db, "queued", null);
+      await mark(services.db, "queued", null, retryAt(services, attempts, error));
     }
     return;
   }

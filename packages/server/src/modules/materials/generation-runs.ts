@@ -87,6 +87,7 @@ export async function markRun(
   runId: string,
   state: "succeeded" | "failed" | "superseded" | "queued",
   errorCode: string | null,
+  nextAttemptAt: Date | null = null,
   /** `"running"` — tylko run wciąż przejęty (spóźniony worker nie wskrzesi runu zastąpionego przy „Ponów”). */
   fromState?: "running",
 ): Promise<void> {
@@ -95,7 +96,7 @@ export async function markRun(
     .set({
       state,
       errorCode,
-      nextAttemptAt: null,
+      nextAttemptAt,
       finishedAt: state === "queued" ? null : clock.now(),
     })
     .where(and(eq(generationRuns.id, runId), fromState === undefined ? undefined : eq(generationRuns.state, fromState)));

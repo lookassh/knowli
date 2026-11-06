@@ -486,7 +486,7 @@ export const generationRuns = app.table(
     // (`markRunWithoutSourceItems`). NULL — run bez walidacji per element (opis,
     // lekcje, media) albo niezakończony. Lekcje liczą odrzucenia w `lesson_context`.
     rejectedCount: integer("rejected_count"),
-    // Ostatnie przejęcie runu przez worker (`claimQueuedRun`, migracja 0038): run
+    // Ostatnie przejęcie runu przez worker (`claimQueuedRun`, migracja 0039): run
     // `deck` w `running` długo po nim jest utknięty i można go ponowić (#299).
     claimedAt: timestamps("claimed_at"),
     // Talia, której szkic zlecił zasób runu mediów (spec 2026-11-02 §3.2): tylko

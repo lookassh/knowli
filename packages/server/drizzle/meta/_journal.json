@@ -272,7 +272,14 @@
       "idx": 38,
       "version": "7",
       "when": 1794290000000,
-      "tag": "0038_generation_run_claimed_at",
+      "tag": "0038_school_verdicts_signed_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794390000000,
+      "tag": "0039_generation_run_claimed_at",
       "breakpoints": true
     }
   ]
