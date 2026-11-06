@@ -97,7 +97,7 @@ describe("przedmiot english_chapter", () => {
     expect(ruleText("chapter.stem_single_gap")).toContain("exactly one gap");
     expect(prompts.fieldRules).not.toContain("hint is always null");
     expect(prompts.fieldRules).toContain("Wpisz brakujące słowo.");
-    expect(prompts.objectivesRules).toContain("3 to 5 objectives");
+    expect(prompts.objectivesRules).toContain("3 to 6 objectives");
     expect(prompts.objectivesRules).toContain("'words'");
     expect(prompts.objectivesRules).toContain("'frame'");
     // Prompt mówi, co odrzuca walidacja słownikowa (review Task 5).
@@ -115,8 +115,8 @@ describe("przedmiot english_chapter", () => {
     // Układanka: 4–7 klocków, bez końcowej kropki/pytajnika sklejonego z ostatnim klockiem; powtórzony klocek odrzuca reguła.
     expect(prompts.fieldRules).toContain("(4 to 7 items)");
     expect(ruleText("chapter.order_items_distinct")).toContain("different text");
-    expect(prompts.fieldRules).toContain("WITHOUT sentence-final punctuation");
-    expect(prompts.fieldRules).toContain("never an item such as 'coat.' or 'like?'");
+    expect(prompts.fieldRules).not.toContain("sentence-final punctuation");
+    expect(ruleText("order.tile_no_final_punctuation")).toContain("never 'coat.' or 'like?'");
     // Pola v3, słowa funkcyjne i powtórzone słowo banku sprawdzają reguły z katalogu.
     expect(prompts.fieldRules).not.toContain("sourceRefs are ALWAYS null");
     expect(prompts.typeRules?.lesson_cloze).not.toContain("appears nowhere else in the text");
