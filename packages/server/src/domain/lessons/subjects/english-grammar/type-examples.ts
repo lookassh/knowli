@@ -1,8 +1,8 @@
 import type { TypeExamples } from "../../types";
 
 /**
- * Przykłady typów tematu „to be” dla księgi reguł agenta (`agentPolicy.typeExamples`). Ogólne
- * przykłady kart typów ćwiczą Present Simple (drinks, plays, don't), a w tym temacie łamią reguły
+ * Przykłady typów tematów „to be” i Present Continuous dla księgi reguł agenta (`agentPolicy.typeExamples`).
+ * Ogólne przykłady kart typów ćwiczą Present Simple (drinks, plays, don't), a w temacie „to be” łamią reguły
  * luki (`hint` „be”, odpowiedź to forma be) i uczą do/does. Każdy cel ma własny zestaw, bo cele
  * różnią się biegunowością (przeczenia wymagają not, cele twierdzące go zabraniają) i formą
  * (skróty, pytania przez inwersję, krótkie odpowiedzi).
@@ -286,12 +286,321 @@ const TO_BE_EXAMPLES: Readonly<Record<ToBeObjective, TypeExamples>> = {
   },
 };
 
+/** Ostatni segment id zagadnienia tematu Present Continuous. */
+type PresentContinuousObjective = "affirmative" | "now_or_usually" | "negative" | "questions" | "ing_spelling" | "now_or_usually_more";
+
+/**
+ * Przykłady typów tematu Present Continuous: ogólne przykłady kart (Present Simple, `hint`) łamią
+ * reguły tematu (luka bez `hint` z czasownikiem w nawiasie, wskaźnik „teraz”, tabela -ing). Zasady
+ * jak w przykładach „to be”; dodatkowo żaden przykład nie powtarza zdania z kart tematu (test
+ * `type-examples.test.ts`), a każdy cel ma własne czasowniki i podmioty.
+ */
+const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, TypeExamples>> = {
+  affirmative: {
+    lesson_notice: {
+      exerciseType: "lesson_notice",
+      instructionPl: "Wskaż czasownik z -ing.",
+      noticeSegments: [["Grandpa", "is", "painting", "now."], ["His", "picture", "is", "big."]],
+      correctOption: "painting",
+      answer: "painting",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Wybierz poprawną formę.",
+      stem: "The birds ___ in the tree now.",
+      options: [{ id: "a", text: "are singing" }, { id: "b", text: "is singing" }],
+      correctOption: "a",
+      answer: "are singing",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_listen_choice: {
+      exerciseType: "lesson_listen_choice",
+      stem: "My sister ___ walking the dog.",
+      options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
+      correctOption: "a",
+      answer: "is",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_order: {
+      exerciseType: "lesson_order",
+      instructionPl: "Ułóż zdanie.",
+      items: [{ id: "a", text: "We" }, { id: "b", text: "are" }, { id: "c", text: "drinking" }, { id: "d", text: "milk" }],
+      answer: "We are drinking milk",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij zdanie.",
+      stem: "Look! Tom ___ (climb) a tree.",
+      answer: "is climbing",
+      acceptedAnswers: [],
+      focus: ["is", "climbing"],
+    },
+    lesson_error_fix: {
+      exerciseType: "lesson_error_fix",
+      instructionPl: "Popraw błąd w zdaniu.",
+      statement: "The boys is kicking a ball now.",
+      answer: "The boys are kicking a ball now.",
+      acceptedAnswers: [],
+      focus: ["are"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Kot teraz śpi na kanapie.",
+      answer: "The cat is sleeping on the sofa now.",
+      acceptedAnswers: [],
+      focus: ["is", "sleeping"],
+    },
+  },
+  now_or_usually: {
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Cicho! Mama pracuje. Wybierz dobrą formę.",
+      stem: "Mum ___ at her desk.",
+      options: [{ id: "a", text: "is working" }, { id: "b", text: "works" }],
+      correctOption: "a",
+      answer: "is working",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij zdanie.",
+      stem: "My brother ___ (walk) to school every day.",
+      answer: "walks",
+      acceptedAnswers: [],
+      focus: ["walks"],
+    },
+    lesson_error_fix: {
+      exerciseType: "lesson_error_fix",
+      instructionPl: "Popraw błąd w zdaniu.",
+      statement: "Look! Grandpa reads the newspaper.",
+      answer: "Look! Grandpa is reading the newspaper.",
+      acceptedAnswers: [],
+      focus: ["is", "reading"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Ola codziennie pije sok.",
+      answer: "Ola drinks juice every day.",
+      acceptedAnswers: [],
+      focus: ["drinks"],
+    },
+  },
+  negative: {
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Wybierz poprawną formę.",
+      stem: "The children ___ sleeping now.",
+      options: [{ id: "a", text: "aren't" }, { id: "b", text: "isn't" }],
+      correctOption: "a",
+      answer: "aren't",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_listen_choice: {
+      exerciseType: "lesson_listen_choice",
+      stem: "The baby ___ crying now.",
+      options: [{ id: "a", text: "isn't" }, { id: "b", text: "aren't" }],
+      correctOption: "a",
+      answer: "isn't",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij zdanie.",
+      stem: "Ola ___ (not draw) now.",
+      answer: "isn't drawing",
+      acceptedAnswers: [],
+      focus: ["isn't", "drawing"],
+    },
+    lesson_error_fix: {
+      exerciseType: "lesson_error_fix",
+      instructionPl: "Popraw błąd w zdaniu.",
+      statement: "Dad not washing the car now.",
+      answer: "Dad isn't washing the car now.",
+      acceptedAnswers: [],
+      focus: ["isn't"],
+    },
+    lesson_transform: {
+      exerciseType: "lesson_transform",
+      instructionPl: "Zamień na przeczenie.",
+      statement: "The girls are talking now.",
+      transformId: "to_negative",
+      answer: "The girls aren't talking now.",
+      acceptedAnswers: [],
+      focus: ["aren't"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Mój brat teraz nie pracuje.",
+      answer: "My brother isn't working now.",
+      acceptedAnswers: [],
+      focus: ["isn't", "working"],
+    },
+  },
+  questions: {
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Wybierz poprawną formę.",
+      stem: "___ your friends waiting for the bus?",
+      options: [{ id: "a", text: "Are" }, { id: "b", text: "Is" }],
+      correctOption: "a",
+      answer: "Are",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_listen_choice: {
+      exerciseType: "lesson_listen_choice",
+      stem: "___ Grandma drinking tea?",
+      options: [{ id: "a", text: "Is" }, { id: "b", text: "Are" }],
+      correctOption: "a",
+      answer: "Is",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_order: {
+      exerciseType: "lesson_order",
+      instructionPl: "Ułóż pytanie.",
+      items: [{ id: "a", text: "Are" }, { id: "b", text: "they" }, { id: "c", text: "eating" }, { id: "d", text: "lunch" }],
+      answer: "Are they eating lunch",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_short_answer: {
+      exerciseType: "lesson_short_answer",
+      instructionPl: "Wybierz krótką odpowiedź.",
+      prompt: "Is Tom helping his mum?",
+      options: [{ id: "a", text: "Yes, he is." }, { id: "b", text: "Yes, he does." }],
+      correctOption: "a",
+      answer: "Yes, he is.",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij pytanie.",
+      stem: "___ you listening to music?",
+      answer: "Are",
+      acceptedAnswers: [],
+      focus: ["Are"],
+    },
+    lesson_transform: {
+      exerciseType: "lesson_transform",
+      instructionPl: "Zamień na pytanie.",
+      statement: "Ola is cleaning her room now.",
+      transformId: "to_question",
+      answer: "Is Ola cleaning her room now?",
+      acceptedAnswers: [],
+      focus: ["Is"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Czy Ola teraz gra na gitarze?",
+      answer: "Is Ola playing the guitar now?",
+      acceptedAnswers: [],
+      focus: ["Is"],
+    },
+  },
+  ing_spelling: {
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Wybierz poprawną pisownię.",
+      stem: "Tom is ___ a letter now.",
+      options: [{ id: "a", text: "writing" }, { id: "b", text: "writeing" }],
+      correctOption: "a",
+      answer: "writing",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij zdanie.",
+      stem: "The cat ___ (sit) on the wall now.",
+      answer: "is sitting",
+      acceptedAnswers: [],
+      focus: ["is", "sitting"],
+    },
+    lesson_error_fix: {
+      exerciseType: "lesson_error_fix",
+      instructionPl: "Popraw błąd w zdaniu.",
+      statement: "The children are danceing now.",
+      answer: "The children are dancing now.",
+      acceptedAnswers: [],
+      focus: ["dancing"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Mama teraz biegnie do sklepu.",
+      answer: "Mum is running to the shop now.",
+      acceptedAnswers: [],
+      focus: ["is", "running"],
+    },
+  },
+  now_or_usually_more: {
+    lesson_choice: {
+      exerciseType: "lesson_choice",
+      instructionPl: "Wybierz dobre pytanie.",
+      stem: "Tom is at the swimming pool.",
+      options: [{ id: "a", text: "Does Tom swim on Fridays?" }, { id: "b", text: "Is Tom swimming on Fridays?" }],
+      correctOption: "a",
+      answer: "Does Tom swim on Fridays?",
+      acceptedAnswers: [],
+      focus: [],
+    },
+    lesson_gap: {
+      exerciseType: "lesson_gap",
+      instructionPl: "Uzupełnij zdanie.",
+      stem: "Grandma ___ (not drive) on Sundays.",
+      answer: "doesn't drive",
+      acceptedAnswers: [],
+      focus: ["doesn't", "drive"],
+    },
+    lesson_error_fix: {
+      exerciseType: "lesson_error_fix",
+      instructionPl: "Popraw błąd w zdaniu.",
+      statement: "We don't eat ice cream now.",
+      answer: "We aren't eating ice cream now.",
+      acceptedAnswers: [],
+      focus: ["aren't", "eating"],
+    },
+    lesson_open_answer: {
+      exerciseType: "lesson_open_answer",
+      instructionPl: "Przetłumacz na angielski.",
+      prompt: "Czy Ola tańczy w soboty?",
+      answer: "Does Ola dance on Saturdays?",
+      acceptedAnswers: [],
+      focus: ["Does"],
+    },
+  },
+};
+
 /** Temat czasownika „to be” (`topics/to-be.ts`). */
 const TO_BE_TOPIC = "to_be";
 
-/** Przykłady przedmiotu dla zagadnienia; poza tematem „to be” — przykłady kart typów. */
+/** Temat Present Continuous (`topics/present-continuous.ts`). */
+const PRESENT_CONTINUOUS_TOPIC = "present_continuous";
+
+/** Przykłady tematów według ostatniego segmentu id zagadnienia. */
+const EXAMPLES_BY_TOPIC: Readonly<Record<string, Readonly<Record<string, TypeExamples>>>> = {
+  [TO_BE_TOPIC]: TO_BE_EXAMPLES,
+  [PRESENT_CONTINUOUS_TOPIC]: PRESENT_CONTINUOUS_EXAMPLES,
+};
+
+/** Przykłady przedmiotu dla zagadnienia; poza tematami „to be” i Present Continuous — przykłady kart typów. */
 export function grammarTypeExamples(at: { readonly topicId: string; readonly objectiveId: string }): TypeExamples | undefined {
-  if (at.topicId !== TO_BE_TOPIC) return undefined;
+  const examples = Object.hasOwn(EXAMPLES_BY_TOPIC, at.topicId) ? EXAMPLES_BY_TOPIC[at.topicId] : undefined;
   const objective = at.objectiveId.split(".").at(-1) ?? "";
-  return Object.hasOwn(TO_BE_EXAMPLES, objective) ? TO_BE_EXAMPLES[objective as ToBeObjective] : undefined;
+  return examples !== undefined && Object.hasOwn(examples, objective) ? examples[objective] : undefined;
 }

@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import { ruleOf, type RuleBookContext, type RuleId } from "../../rules/catalog";
 import { listenChoiceSibilantErrors } from "../english/listen-audibility";
 import { englishGrammarSubject } from "./module";
-import { englishGrammarPrompts, PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE, PRESENT_CONTINUOUS_PROMPT_EXAMPLES, presentContinuousFieldRules } from "./prompts";
+import { englishGrammarPrompts } from "./prompts";
+import {
+  PC_COLLOCATIONS,
+  PC_EXPLANATION_EXAMPLE,
+  PC_FORBIDDEN_MARKERS,
+  PC_GUIDANCE,
+  PC_NOW_MARKERS,
+  PC_STATE_VERB_LIST,
+  PC_USUALLY_MARKERS,
+  PC_VERB_LISTS,
+} from "./present-continuous-guidance";
+import { lessonRuleBook, ruleBookContextFor } from "../../rules/rule-book";
 import { explanationTextErrors } from "../../exercise-explanation";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
@@ -83,50 +94,6 @@ describe("englishGrammarSubject — spójność katalogu", () => {
         "In those objectives an operator-only answer (do, does, don't, doesn't, do not, does not) may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do.",
         "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
         "For objectives whose id contains ".to_be." the checked verb is 'to be': gap answers are am, is or are, in negatives am not, is not, are not, isn't or aren't.",
-        "For objectives whose id contains '.present_continuous.' (an action happening right now, at this moment) everything until the sentence 'End of present continuous rules.' applies only to them; there objectives are named by the last part of their id (negative means english_grammar.present_continuous.negative), and now_or_usually and now_or_usually_more are the tense-choice objectives.",
-        "Verbs: in affirmative, now_or_usually, negative and questions use only these verbs, which add -ing without spelling changes: play, read, jump, fix, do, go, walk, talk, eat, drink, sleep, cook, paint, draw, sing, watch, listen, wait, work, study, climb, cry, fly, carry, ask, open, help, wash, clean, brush, call, kick, throw, catch, pull, push, build, wear, laugh, learn, buy, bring, send, fall, turn, pick, stay, count, try, hurry, rain, snow — also in the brackets of a gap and when the answer is in the present simple.",
-        "In ing_spelling every exercise practises one spelling rule with these verbs: drop the final e: make, write, ride, dance, smile, bake, take, come, give, drive, skate, close, use, move, share, save, wave, shine; double the last consonant: run, swim, sit, get, stop, shop, hop, clap, dig, jog, put, cut, hit, chat, skip, drop, win; ie becomes y: lie, tie; a verb from the first list only as a contrast in lesson_choice.",
-        "In now_or_usually_more use the verbs of all these lists.",
-        "Never use travel, begin, visit, cancel.",
-        "Besides these verbs the present continuous may also use having breakfast, having lunch, having dinner, having a bath, having a shower, having fun, having a party, looking at, looking for (never in ing_spelling).",
-        "Never use these state verbs in the -ing form, and never being: like, love, hate, prefer, want, need, wish, know, understand, believe, remember, forget, recognise, mean, seem, sound, cost, own, belong, think, see, hear, feel, taste, smell, have, look; the collocations above are the only exceptions.",
-        "In the tense-choice objectives never use them in any form at all (no likes, has, wants), except those collocations and Look!.",
-        "Time markers — now: now, right now, at the moment; Look! Listen! Shh! Shhh! Be quiet! Look at …! only at the start of a sentence; in Polish: teraz, właśnie, w tej chwili, w tym momencie, akurat; Cicho! Ciii! Patrz! Popatrz! Spójrz! Zobacz! Posłuchaj! Słuchaj! Spójrz na …! Popatrz na …! only at the start of a sentence; Gdzie jest …? / Gdzie są …? only at the start of the text.",
-        "A Polish exclamation counts only with ! (Cicho! Dziadek śpi., never Cicho, dziadek śpi.).",
-        "Usually: every day, every week, every month, every year, every morning, every afternoon, every evening, every night, every weekend, every summer, every winter, every spring, every autumn, every Monday, every Tuesday, every Wednesday, every Thursday, every Friday, every Saturday, every Sunday, usually, always, often, sometimes, never, on Mondays, on Tuesdays, on Wednesdays, on Thursdays, on Fridays, on Saturdays, on Sundays, at weekends, once a week, twice a week, once a day, twice a day, <number> times a week, <number> times a day; in Polish: codziennie, każdego dnia, każdego ranka, każdego wieczoru, co rano, co wieczór, co tydzień, co poniedziałek, co wtorek, co środę, co czwartek, co piątek, co sobotę, co niedzielę, w każdy, w każdą, w każde, w poniedziałki, we wtorki, w środy, w czwartki, w piątki, w soboty, w niedziele, w weekendy, zwykle, zazwyczaj, zawsze, często, czasem, czasami, rzadko, nigdy.",
-        "Never use any of these markers anywhere in the exercise, in English or Polish (future or ambiguous): tomorrow, tonight, next week, next month, next year, next weekend, next summer, next winter, next spring, next autumn, next holidays, next time, next morning, next evening, next night, next Monday, next Tuesday, next Wednesday, next Thursday, next Friday, next Saturday, next Sunday, this evening, this morning, this afternoon, today, on Monday, on Tuesday, on Wednesday, on Thursday, on Friday, on Saturday, on Sunday, at the weekend, jutro, wieczorem, dzisiaj, dziś.",
-        "Never use be going to: going to + a verb is the future (never Tom is going to play.); going to + a place is fine (Tom is going to school now.).",
-        "A correct present continuous sentence (an answer, an accepted answer, a correct option) never has a usually marker, and always is never used with the present continuous; only in the tense-choice objectives may the mistaken statement of a lesson_error_fix or a distractor pair the present continuous with a usually marker.",
-        "In affirmative, negative, questions and ing_spelling everything happens right now: never write a usually marker anywhere in their exercises (not in a stem, statement, option, answer, instructionPl or prompt, and not in a mistaken lesson_error_fix statement either).",
-        "Every verb gap, every lesson_error_fix, every lesson_transform and every lesson_choice whose options include a present simple form (reads, doesn't play, Does she read?) needs a now marker, because without it the present simple would be correct too: an English marker in the sentence (Ola ___ (read) a comic now.) or a short Polish scene in instructionPl (Cicho! Dziadek śpi.",
-        "Uzupełnij zdanie. with Grandpa ___ (sleep) on the sofa.); in questions What + am/is/are + subject + doing? also counts (What are you doing? I ___ (read) a book. → am reading).",
-        "Be gaps, lesson_notice, lesson_listen_choice, lesson_order and lesson_short_answer may go without a marker.",
-        "In instructionPl a Polish scene is its own short sentence before the task (Tata teraz gotuje.",
-        "Uzupełnij zdanie.); never use teraz, właśnie, zawsze or zwykle as words of the task itself (never Teraz uzupełnij zdanie. or Zawsze czytaj całe zdanie.).",
-        "Every lesson_gap has hint null and one of two shapes.",
-        "Verb gap: the gap stands for the whole verb form and the base verb stands in brackets right after the gap (Tom ___ (play) football now. → is playing); write (not verb) in the brackets in the verb gaps of negative and in every gap of now_or_usually_more (She ___ (not watch) TV now. → isn't watching), and never in other objectives.",
-        "Be gap, only in affirmative, negative and questions: the gap stands only for am, is or are (optionally with not, never not alone), the -ing form already stands in the sentence and there are no brackets (They ___ playing now. → are; in questions: ___ she reading a book? → Is; Are they playing? No, they ___. → aren't).",
-        "In questions use the be gap, never a verb gap after the subject (never Is she ___ (read)?).",
-        "A negative be-gap answer (isn't, aren't, am not) needs No before the gap, in negative too (Is she sleeping? No, she ___. → isn't), and never stands where not already follows the gap (She ___ not sleeping now. → is).",
-        "In a lesson_choice between forms of am, is or are a negative key is allowed only in negative, or after No in questions; never offer two options that differ only by not or n't (Is / Isn't).",
-        "A No short answer after a question is how negative and questions use a negative be gap; only affirmative never uses a No short answer.",
-        "Never write brackets anywhere else: not elsewhere in a gap sentence, and never in a lesson_choice or lesson_listen_choice stem or option, a statement or an answer. am, is or are always matches the subject (I am; he, she, it, one name or one thing is; you, we, they, two names or a plural noun are); short answers repeat it and agree in number with a name or a noun too (Is she reading? → Yes, she is.; Are you playing? → Yes, I am.; Are the boys playing? → Yes, they are.; Is Tom reading? → Yes, he is.).",
-        "A context sentence may use is or are without a verb (This is Ola.",
-        "She ___ (read) a book now.; It is sunny.), but every present continuous sentence of an answer has am/is/are + an -ing verb; never use a verb as an adjective after is (never The door is open.).",
-        "Answers and accepted answers never use he's, she's, it's, what's, that's, there's, where's or who's: write the full is (He is playing.).",
-        "The only wh-question is What + am/is/are + subject + doing? (What are you doing?), answered with a full present continuous sentence; never start a sentence with any other wh-question, including other What questions (What is she reading?, Where is he going?). lesson_error_fix: the statement and the answer differ in one place of at most 3 words, and that place is the checked mistake: in affirmative and negative a missing am/is/are (He playing football now. → He is playing football now.; in negative: He not playing now. → He is not playing now.; the answer always has the polarity of the objective), a verb without -ing after am/is/are (She is play now. → She is playing now.) or a wrong form of am/is/are (Look! They is jumping. → Look! They are jumping.); in negative also do or does instead of am/is/are (He doesn't playing now. → He isn't playing now.); in ing_spelling only a wrong -ing spelling (He is swiming now. → He is swimming now.); in the tense-choice objectives the present simple swapped with the present continuous of the same verb, in either direction, with the correct side matching the time marker (Look! Ola reads. → Look! Ola is reading.; Ola is reading comics every day. → Ola reads comics every day.). lesson_transform: in negative to_negative turns an affirmative sentence into its negative (He is playing now. → He isn't playing now.) and to_affirmative a negative one into an affirmative (He isn't playing now. → He is playing now.); in questions to_question turns a statement, never a question, into a yes/no question that starts with Am, Is or Are and ends with ? (They are playing now. → Are they playing now?; Look! Tom is playing. → Look! Is Tom playing?).",
-        "Translations (lesson_open_answer) in affirmative, negative, questions and ing_spelling: the Polish prompt has a now marker and no usually marker (Mama teraz gotuje obiad.), and the answer contains its literal English equivalent (Mum is cooking dinner now.; teraz → now, w tej chwili → at the moment, Patrz! → Look!); never list accepted answers without it.",
-        "Tense-choice objectives (now_or_usually: affirmative sentences only; now_or_usually_more: negatives and questions only): every exercise, except the now / usually meaning check below, has a clear context of exactly one marker group — now markers, and then every verb is in the present continuous, or usually markers, and then every verb is in the present simple (with -s or does/doesn't for he, she, it or one name, the base form or do/don't otherwise).",
-        "The context is an English marker in the sentence or a short Polish scene in instructionPl (in lesson_open_answer: in the Polish prompt); about half of these exercises use a scene without an English marker (Cicho! Dziadek śpi. / Gdzie jest tata? / Ola codziennie gra w piłkę.).",
-        "Markers count in stem, statement, answer, acceptedAnswers, options, instructionPl and prompt, so never mix the groups there and never write the refrain teraz czy zwykle in an instruction; explanationPl names the marker or the scene (Every day mówi, że to zwykle, więc Ola reads.).",
-        "In their lesson_choice the options are forms of the same verb in the two tenses (reads / is reading) and exactly one fits: never a distractor that is also correct, such as another verb in the right tense.",
-        "Each lesson_choice stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.), never a bare Ola ___ ., because the instruction does not make two stems different.",
-        "In the tense-choice objectives never put a gap in a question: in now_or_usually_more questions appear only as whole-sentence options of lesson_choice (Do you play football on Saturdays? / Are you playing football on Saturdays?) and in lesson_open_answer, and its gaps and lesson_error_fix use negatives only.",
-        "Such a lesson_choice has as its stem a different short English context sentence in every exercise, with no gap (Ola is at the tennis club.), and the time marker stands in both options. now_or_usually also checks meaning: a lesson_choice with options exactly now and usually, instructionPl exactly Kiedy to się dzieje? and a stem that is one affirmative present simple or present continuous sentence with no time marker and no gap (Ola is reading a comic. → now; Ola reads comics. → usually); a present simple stem has a general plural object (Ola reads comics., never Ola reads a comic.). lesson_listen_choice (affirmative, negative, questions): the options are exactly is / are, isn't / aren't, or Is / Are opening a question — never He's / He. lesson_notice (affirmative): across all its sentences exactly one word is an -ing form, and correctOption is that word.",
-        "The examples of each objective (shown to the child on its cards) follow the same rules: in affirmative, negative, questions and ing_spelling present continuous sentences with a now marker and action verbs only; in the tense-choice objectives a pair with the same verb, one sentence with a now marker and one with a usually marker (Ola is reading now. / Ola reads comics every day.).",
-        "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers are in English (Polish names such as Ola are fine).",
-        "Examples (key fields only): {"exerciseType":"lesson_gap","objectiveId":"english_grammar.present_continuous.affirmative","instructionPl":"Uzupełnij zdanie.","stem":"Tom ___ (play) football in the garden now.","answer":"is playing","acceptedAnswers":[],"focus":["is","playing"]} {"exerciseType":"lesson_choice","objectiveId":"english_grammar.present_continuous.now_or_usually","instructionPl":"Cicho! Dziadek śpi.",
-        "Wybierz dobrą formę.","stem":"Grandpa ___ on the sofa.","options":[{"id":"a","text":"is sleeping"},{"id":"b","text":"sleeps"}],"correctOption":"a","answer":"is sleeping","acceptedAnswers":[],"focus":["is","sleeping"]} {"exerciseType":"lesson_choice","objectiveId":"english_grammar.present_continuous.now_or_usually","instructionPl":"Kiedy to się dzieje?","stem":"Ola is reading a comic.","options":[{"id":"a","text":"now"},{"id":"b","text":"usually"}],"correctOption":"a","answer":"now","acceptedAnswers":[],"focus":["now"]} {"exerciseType":"lesson_gap","objectiveId":"english_grammar.present_continuous.now_or_usually_more","instructionPl":"Uzupełnij zdanie.","stem":"Tom ___ (not swim) on Mondays.","answer":"doesn't swim","acceptedAnswers":[],"focus":["doesn't","swim"]} {"exerciseType":"lesson_choice","objectiveId":"english_grammar.present_continuous.now_or_usually_more","instructionPl":"Wybierz dobre pytanie.","stem":"Ola is at the tennis club.","options":[{"id":"a","text":"Does Ola play tennis on Saturdays?"},{"id":"b","text":"Is Ola playing tennis on Saturdays?"}],"correctOption":"a","answer":"Does Ola play tennis on Saturdays?","acceptedAnswers":[],"focus":["Does","play"]} End of present continuous rules.",
       ]
     `);
   });
@@ -361,8 +328,7 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
 
   it("blok typu opisuje sens wyboru ze słuchu (słyszalna różnica, jedna poprawna), a ograniczenia typu niesie katalog reguł", () => {
     const rules = englishGrammarPrompts.typeRules?.lesson_listen_choice ?? "";
-    // Blok Present Continuous ma własne zdania o wyborze ze słuchu w swoim temacie.
-    expect((englishGrammarPrompts.fieldRules ?? "").replace(presentContinuousFieldRules(), "")).not.toContain("lesson_listen_choice");
+    expect(englishGrammarPrompts.fieldRules ?? "").not.toContain("lesson_listen_choice");
     expect(rules).toMatch(/at most 12 words/);
     expect(rules).toMatch(/audibly/i);
     expect(rules).toContain("exactly one is correct");
@@ -484,10 +450,9 @@ describe("temat present_continuous — cele, kategorie i opisy (spec §3, §7.3,
   });
 });
 
-describe("fieldRules — temat present_continuous i zawężenie Present Simple (spec §7)", () => {
+describe("fieldRules — zawężenie Present Simple, bez tematu present_continuous (spec §7)", () => {
   const rules = englishGrammarPrompts.fieldRules ?? "";
   const PS_HEADER = "For objectives whose id contains '.present_simple.'";
-  const PC_HEADER = "For objectives whose id contains '.present_continuous.'";
 
   it("reguły luki Present Simple, hint jako bezokolicznik i operator dotyczą tylko celów '.present_simple.' (§7.1)", () => {
     // Jedno zdanie od nagłówka do formy odpowiedzi: model nie czyta reguły jako ogólnej dla przedmiotu.
@@ -502,59 +467,126 @@ describe("fieldRules — temat present_continuous i zawężenie Present Simple (
     expect(rules.slice(0, header)).not.toMatch(/lesson_gap set hint|operator/);
   });
 
-  it("blok '.present_continuous.' zawiera kluczowe reguły i listy ze stałych (§7.2)", () => {
-    const block = presentContinuousFieldRules();
-    expect(block.startsWith(PC_HEADER)).toBe(true);
-    expect(rules).toContain(block);
-    for (const fragment of ["'.present_continuous.'", "hint null", "Look!", "every day", "tomorrow", "play", "swim", "What + am/is/are", "Kiedy to się dzieje?"]) {
-      expect(block, fragment).toContain(fragment);
-    }
-    // Refren „teraz czy zwykle” ma wskaźniki obu grup — prompt go zakazuje, a nie proponuje.
-    expect(block).toContain("never write the refrain teraz czy zwykle");
-    // Po przeglądzie: zakazy zgodne z walidatorem i zawężone do właściwych celów (fieldRules są wspólne dla tematów).
-    expect(block).toContain("is allowed only in negative, or after No in questions");
-    expect(block).toContain("affirmative never uses a No short answer");
-    expect(block).toContain("In questions use the be gap, never a verb gap after the subject (never Is she ___ (read)?)");
-    expect(block).toContain("He not playing now. → He is not playing now.");
-    expect(block).toContain("In the tense-choice objectives never put a gap in a question");
-    expect(block).not.toMatch(/(^|\. )Never put a gap in a question/);
-    expect(block).toContain("Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt");
-    // Przegląd Task 13: blok ma jawny koniec (wspólne fieldRules), cele 1, 3, 4, 5 dzieją się teraz, bez be going to.
-    expect(block).toContain("everything until the sentence 'End of present continuous rules.' applies only to them");
-    expect(block.endsWith("End of present continuous rules.")).toBe(true);
-    expect(block).toContain("In affirmative, negative, questions and ing_spelling everything happens right now");
-    expect(block).toContain("never use teraz, właśnie, zawsze or zwykle as words of the task itself");
-    expect(block).toContain("Never use be going to");
-    expect(block).not.toContain("A present continuous sentence never has a usually marker");
+  it("fieldRules nie mają reguł tematu present_continuous — opisuje go katalog reguł (Task 18)", () => {
+    expect(rules).not.toContain("present_continuous");
+    expect(rules).not.toMatch(/Look!|tomorrow|Kiedy to się dzieje/);
   });
+});
 
-  it("przykłady bloku przechodzą walidator przedmiotu i ogólną walidację ćwiczenia, a tekst bloku zawiera ich JSON", () => {
-    expect(PRESENT_CONTINUOUS_PROMPT_EXAMPLES.map((ex) => `${ex.objectiveId.split(".").at(-1)}/${ex.exerciseType}`)).toEqual([
-      "affirmative/lesson_gap",
-      "now_or_usually/lesson_choice",
-      "now_or_usually/lesson_choice",
-      "now_or_usually_more/lesson_gap",
-      "now_or_usually_more/lesson_choice",
-    ]);
-    const block = presentContinuousFieldRules();
-    for (const ex of PRESENT_CONTINUOUS_PROMPT_EXAMPLES) {
-      expect(validateEnglishGrammarExercise(ex, presentContinuousV1), ex.stem).toEqual([]);
-      expect(validateLessonExercise(ex, englishGrammarSubject, presentContinuousV1), ex.stem).toEqual([]);
-      expect(block).toContain(JSON.stringify(ex));
+/** Teksty księgi reguł zagadnienia: opisy reguł wszystkich sekcji i bloków typów. */
+function ruleBookLines(topicId: string, objectiveId: string): { id: string; text: string }[] {
+  const topic = englishGrammarSubject.topics.find((candidate) => candidate.id === topicId)!;
+  const types = topic.objectives.find((candidate) => candidate.id === objectiveId)!.exerciseTypes;
+  const book = lessonRuleBook(englishGrammarSubject, ruleBookContextFor(englishGrammarSubject, topicId, objectiveId, types, types.includes("lesson_listen_choice")));
+  return [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat();
+}
+
+describe("księga reguł — temat present_continuous (spec katalogu reguł §3, Task 18)", () => {
+  const PC_TEXTS = [PC_GUIDANCE, PC_VERB_LISTS, PC_STATE_VERB_LIST, PC_NOW_MARKERS, PC_USUALLY_MARKERS, PC_FORBIDDEN_MARKERS].map((text) => text.trim());
+
+  it("w każdym zagadnieniu PC księga ma reguły PC, listy ze stałych i wskazówki; w PS i „to be” — żadnej", () => {
+    for (const topic of englishGrammarSubject.topics) {
+      for (const objective of topic.objectives) {
+        const lines = ruleBookLines(topic.id, objective.id);
+        const text = lines.map((line) => line.text).join(" ");
+        const pcRules = lines.filter((line) => line.id.startsWith("grammar.pc_"));
+        if (topic.id === "present_continuous") {
+          expect(pcRules.length, objective.id).toBeGreaterThan(0);
+          for (const fragment of PC_TEXTS) expect(text, `${objective.id}: ${fragment.slice(0, 40)}`).toContain(fragment);
+        } else {
+          expect(pcRules, objective.id).toEqual([]);
+          for (const fragment of PC_TEXTS) expect(text, `${objective.id}: ${fragment.slice(0, 40)}`).not.toContain(fragment);
+          expect(text, objective.id).not.toContain("present_continuous");
+        }
+      }
     }
   });
 
-  it("wyjaśnienia z promptu (przykłady i cytowany wzór) mają dokładnie jedno zdanie, więc nie są odrzucane przez explanationTextErrors", () => {
-    expect(presentContinuousFieldRules()).toContain(`(${PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE})`);
-    expect(explanationTextErrors(PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE)).toEqual([]);
-    for (const ex of PRESENT_CONTINUOUS_PROMPT_EXAMPLES) {
-      if (ex.explanationPl !== undefined) expect(explanationTextErrors(ex.explanationPl), ex.explanationPl).toEqual([]);
+  it("listy i wskazówki mają kluczowe fragmenty dawnego bloku `fieldRules` (spec §7.2)", () => {
+    const text = PC_TEXTS.join(" ");
+    for (const fragment of ["Look!", "every day", "tomorrow", "play", "swim", "Kiedy to się dzieje?", "travel",
+      "never write the refrain teraz czy zwykle", "never use teraz, właśnie, zawsze or zwykle as words of the task itself",
+      "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt", "never Cicho, dziadek śpi."]) {
+      expect(text, fragment).toContain(fragment);
+    }
+    // Dydaktyka w dopisku jednej reguły; listy przy regułach, które je sprawdzają.
+    expect(ruleText("grammar.pc_tense_marker_missing").endsWith(PC_GUIDANCE)).toBe(true);
+    expect(ruleText("grammar.pc_ing_rule_not_allowed").endsWith(PC_VERB_LISTS)).toBe(true);
+    expect(ruleText("grammar.pc_state_verb_ing").endsWith(PC_STATE_VERB_LIST)).toBe(true);
+    expect(ruleText("grammar.pc_now_marker_missing").endsWith(PC_NOW_MARKERS)).toBe(true);
+    expect(ruleText("grammar.pc_usually_marker").endsWith(PC_USUALLY_MARKERS)).toBe(true);
+    expect(ruleText("grammar.pc_forbidden_marker").endsWith(PC_FORBIDDEN_MARKERS)).toBe(true);
+  });
+
+  const PC = "english_grammar.present_continuous";
+  const draft = (objective: string, exerciseType: LessonExerciseDraft["exerciseType"], answer: string, extra: Partial<LessonExerciseDraft>): LessonExerciseDraft => ({
+    exerciseType,
+    objectiveId: `${PC}.${objective}`,
+    answer,
+    acceptedAnswers: [],
+    // Typy tekstowe wymagają fokusu: całe słowa odpowiedzi.
+    focus: exerciseType === "lesson_choice" ? [] : answer.replace(/[.!?]$/u, "").split(" "),
+    ...extra,
+  });
+  const gap = (objective: string, instructionPl: string, stem: string, answer: string): LessonExerciseDraft =>
+    draft(objective, "lesson_gap", answer, { instructionPl, stem });
+  const choice = (objective: string, instructionPl: string, stem: string, correct: string, wrong: string): LessonExerciseDraft =>
+    draft(objective, "lesson_choice", correct, { instructionPl, stem, options: [{ id: "a", text: correct }, { id: "b", text: wrong }], correctOption: "a" });
+  const translation = (objective: string, prompt: string, answer: string): LessonExerciseDraft =>
+    draft(objective, "lesson_open_answer", answer, { instructionPl: "Przetłumacz na angielski.", prompt });
+
+  /**
+   * Angielskie zdania z nawiasów wskazówek i list (dawniej sonda „53/53” bloku `fieldRules`): fragment
+   * cytowany w tekście, ćwiczenie z nim i oczekiwanie — przechodzi walidację albo oblewa ją regułą.
+   */
+  const QUOTED: [quoted: string, exercise: LessonExerciseDraft, expected: true | string][] = [
+    ["Cicho! Dziadek śpi. Uzupełnij zdanie. with Grandpa ___ (sleep) on the sofa.", gap("affirmative", "Cicho! Dziadek śpi. Uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), true],
+    ["never Teraz uzupełnij zdanie.", gap("affirmative", "Teraz uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), "grammar.pc_now_marker_missing"],
+    ["never Cicho, dziadek śpi.", gap("affirmative", "Cicho, dziadek śpi. Uzupełnij zdanie.", "Grandpa ___ (sleep) on the sofa.", "is sleeping"), "grammar.pc_now_marker_missing"],
+    ["Gdzie jest tata?", choice("now_or_usually", "Gdzie jest tata? Wybierz dobrą formę.", "Dad ___ in the garden.", "is working", "works"), true],
+    ["Ola codziennie gra w piłkę.", gap("now_or_usually", "Ola codziennie gra w piłkę. Uzupełnij zdanie.", "Ola ___ (play) football.", "plays"), true],
+    ["(reads / is reading)", choice("now_or_usually", "Cicho! Ola czyta. Wybierz dobrą formę.", "Ola ___ a comic.", "is reading", "reads"), true],
+    ["Grandpa ___ on the sofa.", choice("now_or_usually", "Cicho! Dziadek śpi. Wybierz dobrą formę.", "Grandpa ___ on the sofa.", "is sleeping", "sleeps"), true],
+    [
+      "(Ola is at the tennis club.)",
+      draft("now_or_usually_more", "lesson_choice", "Does Ola play tennis on Saturdays?", {
+        instructionPl: "Wybierz dobre pytanie.",
+        stem: "Ola is at the tennis club.",
+        options: [{ id: "a", text: "Does Ola play tennis on Saturdays?" }, { id: "b", text: "Is Ola playing tennis on Saturdays?" }],
+        correctOption: "a",
+      }),
+      true,
+    ],
+    ["Ola is reading a comic. → now", choice("now_or_usually", "Kiedy to się dzieje?", "Ola is reading a comic.", "now", "usually"), true],
+    ["Ola reads comics. → usually", choice("now_or_usually", "Kiedy to się dzieje?", "Ola reads comics.", "usually", "now"), true],
+    // Zalecenie dydaktyczne bez sprawdzenia w kodzie: zdanie przechodzi walidację.
+    ["not Ola reads a comic.", choice("now_or_usually", "Kiedy to się dzieje?", "Ola reads a comic.", "usually", "now"), true],
+    ["This is Ola.", gap("affirmative", "Uzupełnij zdanie.", "This is Ola. She ___ (read) a book now.", "is reading"), true],
+    ["It is sunny.", gap("affirmative", "Uzupełnij zdanie.", "It is sunny. The children ___ (play) in the park now.", "are playing"), true],
+    ["never The door is open.", translation("affirmative", "Drzwi są teraz otwarte.", "The door is open now."), "grammar.pc_ing_after_be"],
+    ["Ola is reading now.", translation("now_or_usually", "Ola teraz czyta.", "Ola is reading now."), true],
+    ["Ola reads comics every day.", translation("now_or_usually", "Ola codziennie czyta komiksy.", "Ola reads comics every day."), true],
+  ];
+
+  it.each(QUOTED)("%s", (quoted, exercise, expected) => {
+    expect(PC_TEXTS.join(" "), quoted).toContain(quoted);
+    const issues = englishGrammarSubject.validateExercise(exercise, presentContinuousV1).map((issue) => issue.rule);
+    if (expected === true) {
+      expect(issues).toEqual([]);
+      expect(validateLessonExercise(exercise, englishGrammarSubject, presentContinuousV1)).toEqual([]);
+    } else {
+      expect(issues).toContain(expected);
     }
   });
 
-  it("kolokacje wymienione w bloku są dozwolone przez regułę czasowników stanu (§5.3)", () => {
-    const block = presentContinuousFieldRules();
-    const collocations = /may also use (.+?) \(never in ing_spelling\)/.exec(block)?.[1]?.split(", ") ?? [];
+  it("wzór wyjaśnienia ze wskazówek ma dokładnie jedno zdanie, więc nie jest odrzucany przez explanationTextErrors", () => {
+    expect(PC_GUIDANCE).toContain(`(${PC_EXPLANATION_EXAMPLE})`);
+    expect(explanationTextErrors(PC_EXPLANATION_EXAMPLE)).toEqual([]);
+  });
+
+  it("kolokacje z listy są dozwolone przez regułę czasowników stanu (§5.3)", () => {
+    const collocations = PC_COLLOCATIONS.split(", ");
+    expect(PC_STATE_VERB_LIST).toContain(PC_COLLOCATIONS);
     expect(collocations.length).toBeGreaterThan(0);
     for (const phrase of collocations) {
       expect(stateVerbIn(`She is ${phrase} now.`, "ing_form"), phrase).toBeUndefined();

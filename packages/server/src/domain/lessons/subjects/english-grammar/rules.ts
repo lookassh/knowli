@@ -1,5 +1,13 @@
 import { defineRules, issueFrom, type RuleBookContext } from "../../rules/catalog";
 import { ENGLISH_RULES } from "../english/rules";
+import {
+  PC_FORBIDDEN_MARKERS,
+  PC_GUIDANCE,
+  PC_NOW_MARKERS,
+  PC_STATE_VERB_LIST,
+  PC_USUALLY_MARKERS,
+  PC_VERB_LISTS,
+} from "./present-continuous-guidance";
 
 /** Temat czasownika „to be”: jego reguły sprawdza walidator tylko w tym temacie (`topic.id === "to_be"`). */
 const TO_BE_TOPIC = "to_be";
@@ -33,8 +41,9 @@ export const MAX_ERROR_FIX_REGION_TOKENS = 3;
 /**
  * Reguły tematu Present Continuous (design „Present Continuous” §4–§6): walidator
  * tematu (`present-continuous-validation.ts` i pliki, które woła) zgłasza je przez
- * `grammarIssue`. Jedna reguła na jedno sprawdzenie; wskazówek dydaktycznych
- * tematu (kod ich nie sprawdza) tu nie ma — zostają w bloku `fieldRules` promptu.
+ * `grammarIssue`. Jedna reguła na jedno sprawdzenie. Listy ze stałych walidatora i dydaktyka
+ * tematu (kod jej nie sprawdza) są dopiskami opisów (`present-continuous-guidance.ts`), więc
+ * trafiają do promptu tylko w tym temacie.
  */
 const PRESENT_CONTINUOUS_RULES = defineRules({
   "grammar.pc_gap_hint": {
@@ -50,7 +59,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the present_continuous topic no field uses a future or ambiguous time marker (tomorrow, tonight, next week, today, " +
-      "on Monday, jutro, dzisiaj...), in English or Polish.",
+      "on Monday, jutro, dzisiaj...), in English or Polish." + PC_FORBIDDEN_MARKERS,
   },
   "grammar.pc_going_to_future": {
     when: inPresentContinuous,
@@ -66,7 +75,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the affirmative, negative, questions and ing_spelling objectives no field has a usually marker (every day, always, " +
-      "codziennie, zwykle...): the action happens right now.",
+      "codziennie, zwykle...): the action happens right now." + PC_USUALLY_MARKERS,
   },
   "grammar.pc_now_marker_missing": {
     when: inPresentContinuous,
@@ -75,7 +84,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     description:
       "In the affirmative, negative, questions and ing_spelling objectives a verb gap, a lesson_error_fix, a lesson_transform and " +
       "a lesson_choice with a present simple option have a now marker (now, at the moment, Look!, teraz, Cicho!...) or, in " +
-      "questions, What + am/is/are + subject + doing?; without it the present simple would be correct too.",
+      "questions, What + am/is/are + subject + doing?; without it the present simple would be correct too." + PC_NOW_MARKERS,
   },
   "grammar.pc_bracket_outside_gap": {
     when: inPresentContinuous,
@@ -95,7 +104,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the affirmative, negative, questions and ing_spelling objectives the sentence with the answer has no state verb in " +
-      "the -ing form (liking, knowing, wanting...); having breakfast and looking at style collocations are fine.",
+      "the -ing form (liking, knowing, wanting...); having breakfast and looking at style collocations are fine." + PC_STATE_VERB_LIST,
   },
   "grammar.pc_state_verb_tense_choice": {
     when: inPresentContinuous,
@@ -176,7 +185,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     description:
       "In the present_continuous topic the checked verb follows a spelling rule of the objective: plain verbs in affirmative, " +
       "now_or_usually, negative and questions; drop_e, double and ie_to_y in ing_spelling (plain only as a lesson_choice " +
-      "contrast); any of them in now_or_usually_more.",
+      "contrast); any of them in now_or_usually_more." + PC_VERB_LISTS,
   },
   "grammar.pc_collocation_in_ing_spelling": {
     when: inPresentContinuous,
@@ -394,7 +403,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the now_or_usually and now_or_usually_more objectives every exercise, except the now / usually meaning check, has a " +
-      "time marker (now, Look!, every day...) or a Polish scene in instructionPl (Cicho!, teraz, codziennie...).",
+      "time marker (now, Look!, every day...) or a Polish scene in instructionPl (Cicho!, teraz, codziennie...)." + PC_GUIDANCE,
   },
   "grammar.pc_tense_markers_mixed": {
     when: inPresentContinuous,
