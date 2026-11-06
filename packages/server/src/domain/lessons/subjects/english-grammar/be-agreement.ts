@@ -65,7 +65,7 @@ const BE_DEMONSTRATIVE_FORM: Readonly<Record<string, string>> = {
   those: "are",
 };
 
-const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "mice", "feet", "teeth"]);
+const BE_IRREGULAR_PLURALS: ReadonlySet<string> = new Set(["children", "men", "women", "people", "police", "mice", "feet", "teeth"]);
 
 /** Imiona własne kończące się na „s”, które heurystyka liczby wzięłaby za liczbę mnogą. */
 const BE_S_ENDING_NAMES: ReadonlySet<string> = new Set(["james", "charles", "lucas", "miles", "lewis", "francis"]);

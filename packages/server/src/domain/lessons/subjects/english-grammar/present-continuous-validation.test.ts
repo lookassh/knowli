@@ -1004,3 +1004,49 @@ describe("Task 16 — porządki przed sondą", () => {
     expect(validate(pcSentenceChoice("now_or_usually_more", "Wybierz poprawne pytanie.", "Does Tom swim on Fridays?", "Is Tom swimming on Fridays?"))).toEqual([]);
   });
 });
+
+describe("przegląd PR #329 — dystraktory spoza tabeli i fałszywe odrzucenia", () => {
+  it("cele 1, 3, 4: dystraktor z poprawną formą -ing spoza tabeli może być drugą poprawną odpowiedzią", () => {
+    const RULE = "grammar.pc_distractor_outside_table";
+    expect(validate(pcChoice("affirmative", "Look! Ola ___ the dog.", "is walking", "is feeding"))).toEqual([RULE]);
+    expect(validate(pcChoice("negative", "Ola ___ the dog right now.", "isn't walking", "isn't feeding"))).toEqual([RULE]);
+    expect(validate(pcSentenceChoice("affirmative", undefined, "Look! Ola is walking the dog.", "Look! Ola is feeding the dog."))).toEqual([RULE]);
+    // Literówka formy -ing klucza i zła forma be to błędy dystraktora — bez zgłoszenia.
+    expect(validate(pcChoice("affirmative", "Look! Ola ___ the dog.", "is walking", "is walkking"))).toEqual([]);
+    expect(validate(pcChoice("affirmative", "Look! Ola ___ the dog.", "is walking", "are feeding"))).toEqual([]);
+  });
+
+  it("cele 1, 3, 4: forma z tabeli spoza klasy pisowni celu jest poprawną angielszczyzną (druga poprawna odpowiedź)", () => {
+    expect(validate(pcChoice("affirmative", "Look! Ola ___ a letter.", "is reading", "is writing"))).toEqual(["grammar.pc_choice_distractor_correct"]);
+  });
+
+  it("cele 2 i 6: dystraktor spoza tabeli albo spoza klasy pisowni celu nie jest błędem", () => {
+    expect(validate(pcChoice("now_or_usually", "Look! Ola ___ a letter.", "is reading", "is writing"))).toEqual(["grammar.pc_tense_choice_distractor"]);
+    expect(validate(pcChoice("now_or_usually", "Ola ___ the dog every day.", "walks", "feeds"))).toEqual(["grammar.pc_distractor_outside_table"]);
+    expect(validate(pcChoice("now_or_usually_more", "Look! Ola ___ the dog.", "is walking", "is feeding"))).toEqual(["grammar.pc_distractor_outside_table"]);
+    expect(validate(pcChoice("now_or_usually", "Ola ___ the dog every day.", "walks", "is walking"))).toEqual([]);
+    expect(validate(pcChoice("now_or_usually_more", "Ola ___ the dog on Mondays.", "doesn't walk", "doesn't feed"))).toEqual(["grammar.pc_distractor_outside_table"]);
+  });
+
+  it("drugi czasownik po „and” bez podmiotu należy do zdania i ma czas zgodny ze wskaźnikiem", () => {
+    expect(validate(pcGap("now_or_usually", "Look! Tom ___ (eat) bread and drinks milk.", "is eating"))).toContain("grammar.pc_tense_marker_mismatch");
+    expect(validate(pcGap("now_or_usually", "Look! Tom ___ (eat) bread and milk.", "is eating"))).toEqual([]);
+  });
+
+  it("„police” to liczba mnoga", () => {
+    expect(validate(pcGap("affirmative", "Look! The police ___ (help) the boy.", "are helping"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! The police ___ (help) the boy.", "is helping"))).toEqual(["grammar.pc_be_form_subject"]);
+  });
+
+  it("fałszywe odrzucenia: cytowane „Look!”, rzeczownik na -s, like / own, przysłówek po be, wykrzyknienie „What a…!”", () => {
+    expect(validate(pcGap("now_or_usually", "\"Look!\" Ola ___ (read) a comic.", "is reading"))).toEqual([]);
+    expect(validate(pcGap("now_or_usually", "Ola ___ (walk) like a duck every day.", "walks"))).toEqual([]);
+    expect(validate(pcGap("now_or_usually", "Tom ___ (clean) his own room every day.", "cleans"))).toEqual([]);
+    expect(validate(pcTranslation("affirmative", "Patrz! Wszystkie dzieci się bawią.", "Look! The children are all playing."))).toEqual([]);
+    expect(validate(pcTranslation("affirmative", "Mama teraz czyta.", "Mum is now reading.", ["Mum is reading now.", "Mum is reading right now.", "Mum is reading at the moment."]))).toEqual([]);
+    expect(validate(pcTranslation("affirmative", "Ale bałagan! Tom teraz maluje.", "What a mess! Tom is painting now.", [
+      "What a mess! Tom is painting right now.",
+      "What a mess! Tom is painting at the moment.",
+    ]))).toEqual([]);
+  });
+});

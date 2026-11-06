@@ -186,6 +186,11 @@ interface ScannedField {
   readonly instruction?: boolean;
 }
 
+/** Dopisuje niepuste pole tekstu do skanu wskaźników. */
+function addField(fields: ScannedField[], field: string, text: string | undefined, lang: "en" | "pl"): void {
+  if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang, ...(field === "instructionPl" ? { instruction: true } : {}) });
+}
+
 /**
  * Pola skanowane na wskaźniki czasu (§5.2): angielskie teksty ćwiczenia,
  * polskie polecenie i prompt (dla tłumaczenia — polskie zdanie). Pomijane:
@@ -193,9 +198,7 @@ interface ScannedField {
  */
 function scannedFields(ex: LessonExerciseDraft): ScannedField[] {
   const fields: ScannedField[] = [];
-  const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => {
-    if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang, ...(field === "instructionPl" ? { instruction: true } : {}) });
-  };
+  const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => addField(fields, field, text, lang);
   add("stem", ex.stem, "en");
   add("statement", ex.statement, "en");
   for (const { field, text } of answersOf(ex)) add(field, text, "en");
@@ -220,9 +223,7 @@ function markersOf({ field, text, lang, instruction }: ScannedField): FieldMarke
  */
 function seenMarkers(ex: LessonExerciseDraft, objective: string): (FieldMarkers & { readonly field: string })[] {
   const fields: ScannedField[] = [];
-  const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => {
-    if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang, ...(field === "instructionPl" ? { instruction: true } : {}) });
-  };
+  const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => addField(fields, field, text, lang);
   const stem = ex.stem;
   const gapContext = stem !== undefined && TENSE_CHOICE_OBJECTIVES.has(objective) && stem.includes("___");
   for (const text of gapContext ? gapContextTexts(stem) : [stem]) add("stem", text, "en");
@@ -647,7 +648,6 @@ function validateBeOnlyGapAnswer(
   checkBePolarity(polarityOf(ex, objective), negative, marker, field, answer, errors);
 }
 
-/** Forma -ing czasownika z nawiasu: z tabeli i dozwolonej klasy albo kolokacja „having/looking” (nie w celu 5). */
 /** Zgłoszenie: klasa pisowni -ing czasownika spoza klas celu (luka z czasownikiem i całe zdanie). */
 function ingRuleIssue(field: string, verb: string, rule: IngRule, objective: string, allowed: readonly string[]): LessonRuleIssue {
   return grammarIssue("grammar.pc_ing_rule_not_allowed", {
@@ -657,6 +657,7 @@ function ingRuleIssue(field: string, verb: string, rule: IngRule, objective: str
   });
 }
 
+/** Forma -ing czasownika z nawiasu: z tabeli i dozwolonej klasy albo kolokacja „having/looking” (nie w celu 5). */
 function validateIngForm(ex: LessonExerciseDraft, objective: string, verb: string, ing: string, answer: string, field: string, errors: LessonRuleIssue[]): void {
   const expected = ingFormOf(verb);
   if (expected === undefined) {
@@ -850,8 +851,11 @@ const S_CONTRACTIONS: ReadonlySet<string> = new Set(["he's", "she's", "it's", "w
 /** Pytajniki na początku zdania; dozwolony jest tylko wzorzec „What + am/is/are + podmiot + doing?”. */
 const QUESTION_WORDS: ReadonlySet<string> = new Set([...BE_WH_WORDS, "which"]);
 
-/** Przysłówki między formą be a formą -ing („She is still sleeping”); „always” to wskaźnik „zwykle”. */
-const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["still", "just", "really"]);
+/**
+ * Słowa między formą be a formą -ing („She is still sleeping”, „Mum is now reading”, „The children are all
+ * playing”); „always” to wskaźnik „zwykle”.
+ */
+const BE_ADVERBS_IN_PC: ReadonlySet<string> = new Set(["still", "just", "really", "now", "all", "both"]);
 
 /** Tokeny zdań tekstu (po rozwinięciu isn't / aren't i skrótów zaimków), bez pustych. */
 function sentenceTokens(text: string): string[][] {
@@ -886,6 +890,8 @@ function wholeSentenceOf(ex: LessonExerciseDraft, answer: string): string {
 function validateQuestionWords(tokens: readonly string[], field: string, errors: LessonRuleIssue[]): void {
   const first = tokens[0];
   if (first === undefined || !QUESTION_WORDS.has(first)) return;
+  // „What a mess!” to wykrzyknienie, nie pytanie.
+  if (first === "what" && (tokens[1] === "a" || tokens[1] === "an")) return;
   const whatDoing = first === "what" && BE_FORMS.has(tokens[1] ?? "") && tokens.slice(2).includes("doing");
   if (!whatDoing) {
     errors.push(grammarIssue("grammar.pc_wh_question", {
@@ -1269,8 +1275,34 @@ function validateNumberlessSubjects(ex: LessonExerciseDraft, errors: LessonRuleI
   }
 }
 
-/** Zgłoszenia, które nie czynią zdania błędnym: klasa pisowni -ing spoza celu dotyczy celu, nie angielszczyzny. */
-const NOT_WRONG_ENGLISH: ReadonlySet<string> = new Set(["grammar.pc_ing_rule_not_allowed"]);
+/**
+ * Zgłoszenia, które nie czynią zdania błędnym: klasa pisowni -ing spoza celu i czasownik spoza tabeli
+ * dotyczą celu i tabeli, nie angielszczyzny.
+ */
+const NOT_WRONG_ENGLISH: ReadonlySet<string> = new Set(["grammar.pc_ing_rule_not_allowed", "grammar.pc_verb_outside_table"]);
+
+/**
+ * Ocena dystraktora po regułach klucza (`optionErrors`): `wrong` — łamie regułę angielszczyzny albo to
+ * literówka formy -ing klucza („is walkking”); `correct` — poprawny, także z formą z tabeli spoza klasy
+ * pisowni celu („is writing”); `outside_table` — czasownik spoza tabeli („is feeding”): walidator nie wie,
+ * czy to błąd, więc może to być druga poprawna odpowiedź.
+ */
+function distractorVerdict(option: string, key: string, optionErrors: readonly LessonRuleIssue[]): "wrong" | "correct" | "outside_table" {
+  if (optionErrors.some((issue) => !NOT_WRONG_ENGLISH.has(issue.rule))) return "wrong";
+  if (!optionErrors.some((issue) => issue.rule === "grammar.pc_verb_outside_table")) return "correct";
+  return isIngMisspellingOf(option, key) ? "wrong" : "outside_table";
+}
+
+/** Opcja z jednym czasownikiem bez -ing, z do/does i przeczeniem albo bez („feeds”, „doesn't feed”). */
+const UNKNOWN_SIMPLE_FORM = /^(?:(?:do|does)(?:n't|n’t| not)? )?[a-z]+(?<!ing)$/i;
+
+function outsideTableDistractorIssue(option: string): LessonRuleIssue {
+  return grammarIssue("grammar.pc_distractor_outside_table", {
+    field: "options",
+    pl: `options: „${option}” ma czasownik spoza tabeli, więc może być drugą poprawną odpowiedzią — dystraktor bierze czasownik z tabeli`,
+    found: `option ${clip(option)} uses a verb outside the verb table, so it may be a second correct answer`,
+  });
+}
 
 /** Operatory innych czasów przed formą podstawową („can read”, „will read”, „did read”). */
 const OTHER_TENSE_OPERATORS: ReadonlySet<string> = new Set(["can", "could", "will", "would", "shall", "should", "must", "may", "might", "did"]);
@@ -1393,7 +1425,8 @@ function distractorCorrectIssue(option: string, reasonPl: string, reasonEn: stri
 function validateChoiceDistractors(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   if (ex.exerciseType !== "lesson_choice") return;
   const gapStem = ex.stem?.includes("___") === true ? ex.stem : undefined;
-  const keySentence = wholeSentenceOf(ex, ex.options?.find((option) => option.id === ex.correctOption)?.text ?? ex.answer);
+  const key = ex.options?.find((option) => option.id === ex.correctOption)?.text ?? ex.answer;
+  const keySentence = wholeSentenceOf(ex, key);
   const polarityFixed = gapStem !== undefined &&
     (yesNoBeforeGap(gapStem) !== undefined || expandedTokens(gapStem.split("___", 2)[1] ?? "").includes("not"));
   for (const option of ex.options ?? []) {
@@ -1413,10 +1446,13 @@ function validateChoiceDistractors(ex: LessonExerciseDraft, objective: string, e
     const optionErrors: LessonRuleIssue[] = [];
     validateSentenceAnswer(ex, objective, option.text, "options", true, optionErrors);
     const markers = scanTimeMarkers(sentence, "en");
-    const wrong = isQuestionText(sentence) !== isQuestionText(keySentence) ||
-      optionErrors.some((issue) => !NOT_WRONG_ENGLISH.has(issue.rule)) || markers.groups.has("usually") ||
+    const verdict = distractorVerdict(option.text, key, optionErrors);
+    const wrong = isQuestionText(sentence) !== isQuestionText(keySentence) || verdict === "wrong" || markers.groups.has("usually") ||
       markers.forbidden.length > 0 || hasGoingToFuture(sentence) || stateVerbIn(sentence, "ing_form") !== undefined;
-    if (!wrong) errors.push(distractorCorrectIssue(option.text, "nie łamie żadnej reguły klucza", "breaks no rule of the key"));
+    if (wrong) continue;
+    errors.push(verdict === "correct"
+      ? distractorCorrectIssue(option.text, "nie łamie żadnej reguły klucza", "breaks no rule of the key")
+      : outsideTableDistractorIssue(option.text));
   }
 }
 
@@ -1707,6 +1743,7 @@ function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors:
     if (!LEADING_APOSTROPHE.test(text.trim())) validateTenseAnswer(ex, objective, gap, text, field, group, errors);
   }
   if (ex.exerciseType !== "lesson_choice" || group === undefined) return;
+  const key = ex.options?.find((option) => option.id === ex.correctOption)?.text ?? ex.answer;
   for (const option of ex.options ?? []) {
     if (option.id === ex.correctOption) continue;
     // Inny poprawny czas („can read”, „played”, „didn't watch”) pasuje do wskaźnika jak klucz (krytyk końcowy A, Task 16).
@@ -1720,11 +1757,18 @@ function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors:
     }
     const optionErrors: LessonRuleIssue[] = [];
     validateTenseAnswer(ex, objective, gap, option.text, "options", group, optionErrors);
-    if (optionErrors.length === 0) {
+    // Forma bez -ing spoza tabeli („feeds”, „doesn't feed”, „ate”) to czasownik spoza tabeli, nie zła forma;
+    // inne czasy czasowników z tabeli wyłapał już `otherTenseForm`.
+    const unknownVerb = optionErrors.length === 1 && optionErrors[0]!.rule === "grammar.pc_tense_form_missing" &&
+      UNKNOWN_SIMPLE_FORM.test(option.text.trim());
+    const verdict = unknownVerb ? "outside_table" : distractorVerdict(option.text, key, optionErrors);
+    if (verdict === "correct") {
       errors.push(grammarIssue("grammar.pc_tense_choice_distractor", {
         pl: `options: „${option.text}” też pasuje do wskaźnika i podmiotu — dystraktor musi być błędny`,
         found: `option ${clip(option.text)} fits the time marker and the subject as well as the key`,
       }));
+    } else if (verdict === "outside_table") {
+      errors.push(outsideTableDistractorIssue(option.text));
     }
   }
 }

@@ -114,6 +114,7 @@ registerRuleCases([
       correctOption: "a",
     })),
   },
+  { rule: "grammar.pc_distractor_outside_table", violation: check(choice("affirmative", "Look! Ola ___ the dog.", "is walking", "is feeding")) },
   { rule: "grammar.pc_ing_spelling_distractor", violation: check(choice("ing_spelling", "Look! Tom ___ in the lake.", "is swimming", "is running")) },
   { rule: "grammar.pc_tense_choice_distractor", violation: check(choice("now_or_usually", "Ola ___ comics every day.", "reads", "cooks")) },
   { rule: "grammar.pc_now_or_usually_question", violation: check(translation("now_or_usually", "Czy Ola codziennie czyta?", "Does Ola read every day?")) },

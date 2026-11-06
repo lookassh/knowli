@@ -171,8 +171,24 @@ const HAVE_SINGLE_OBJECTS: ReadonlySet<string> = new Set(["breakfast", "lunch", 
 const HAVE_ARTICLE_OBJECTS: ReadonlySet<string> = new Set(["bath", "shower", "party"]);
 const LOOK_PREPOSITIONS: ReadonlySet<string> = new Set(["at", "for"]);
 
-/** Wykrzyknik „Look!” / „Look,” na początku tekstu lub zdania — nie jest czasownikiem stanu. */
-const LOOK_EXCLAMATION = /(^|[.!?]\s*)look\s*[!,]/gi;
+/**
+ * Wykrzyknik „Look!” / „Look,” na początku tekstu lub zdania, także w cudzysłowie i po dwukropku
+ * albo przecinku („Tom shouts, "Look! …"”) — nie jest czasownikiem stanu.
+ */
+const LOOK_EXCLAMATION = /(^|[.!?:,]\s*)["'“”„«‘’]?look\s*[!,]/gi;
+
+/** Zaimki dzierżawcze: „own” po nich to przymiotnik („his own bike”). */
+const POSSESSIVES: ReadonlySet<string> = new Set(["my", "your", "his", "her", "its", "our", "their"]);
+
+/** Słowa, po których „like a…” to czasownik („I like a good book”); poza nimi to porównanie („swims like a fish”). */
+const LIKE_VERB_BEFORE: ReadonlySet<string> = new Set(["i", "you", "we", "they", "not", "do", "to", "would"]);
+
+/** Czy token na pozycji `index` to inna część mowy niż czasownik stanu: „own” po dzierżawczym, „like” w porównaniu. */
+function isNotStateVerb(token: string, tokens: readonly string[], index: number): boolean {
+  const previous = tokens[index - 1] ?? "";
+  if (token === "own") return POSSESSIVES.has(previous);
+  return token === "like" && index > 0 && ["a", "an"].includes(tokens[index + 1] ?? "") && !LIKE_VERB_BEFORE.has(previous);
+}
 
 /** Czy po czasowniku stanu `base` na pozycji `index` stoi kolokacja dozwolona w §5.3. */
 function isStateCollocation(base: string, tokens: readonly string[], index: number): boolean {
@@ -209,7 +225,7 @@ export function stateVerbIn(text: string, mode: "any_form" | "ing_form"): string
   const tokens = normalizeTokens(text.replace(LOOK_EXCLAMATION, "$1 "));
   for (const [index, token] of tokens.entries()) {
     const verb = stateVerbOfToken(token, mode);
-    if (verb === undefined || isStateCollocation(verb, tokens, index)) continue;
+    if (verb === undefined || isStateCollocation(verb, tokens, index) || isNotStateVerb(token, tokens, index)) continue;
     return verb;
   }
   return undefined;

@@ -244,7 +244,7 @@ const ingSpelling: LearningObjective = {
     },
     {
       title: "Podwójna litera",
-      body: "Gdy słowo ma jedną sylabę i kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Nie podwajasz w, x, y: play → playing, fix → fixing, snow → snowing. Ale: jump → jumping (dwie spółgłoski).",
+      body: "Gdy słowo ma jedną sylabę i kończy się jedną samogłoską i jedną spółgłoską, podwajasz ostatnią literę: run → running, swim → swimming, sit → sitting. Nie podwajasz w, x, y: play → playing, fix → fixing, snow → snowing. Ale: jump → jumping (dwie spółgłoski), read → reading i cook → cooking (dwie samogłoski).",
     },
     {
       title: "Przykłady z lekcji",

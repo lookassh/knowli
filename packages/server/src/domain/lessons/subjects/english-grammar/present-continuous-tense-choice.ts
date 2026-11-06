@@ -100,7 +100,8 @@ function opensQuestion(tokens: readonly string[], index: number): boolean {
   return index === 0 || (index === 1 && BE_WH_WORDS.has(tokens[0]!));
 }
 
-function verbGroupAt(tokens: readonly string[], start: number, index: number): VerbGroup | undefined {
+/** `sharedSubject`: podmiot poprzedniego orzeczenia, gdy `start` stoi tuż po spójniku za nim. */
+function verbGroupAt(tokens: readonly string[], start: number, index: number, sharedSubject?: readonly string[]): VerbGroup | undefined {
   const token = tokens[index]!;
   if (BE_FORMS.has(token)) return { tense: "continuous", index, verbIndex: index, subject: tokens.slice(start, index) };
   if (token === "do" || token === "does") {
@@ -114,10 +115,13 @@ function verbGroupAt(tokens: readonly string[], start: number, index: number): V
       return { tense: "simple", index, verbIndex, base: presentSimpleBaseOf(tokens[verbIndex]!), operator: token, subject };
     }
   }
-  // Forma bez operatora potrzebuje podmiotu przed sobą — „Listen, …” na początku zdania to wykrzyknienie.
-  if (index === start || NOT_BEFORE_FINITE_VERB.has(tokens[index - 1]!)) return undefined;
+  // Forma bez operatora potrzebuje podmiotu przed sobą — „Listen, …” na początku zdania to wykrzyknienie;
+  // tuż po spójniku za orzeczeniem podmiot jest wspólny („Tom is eating bread and drinks milk”). Rzeczownik
+  // w tym miejscu („bread and drinks”) też się liczy: ćwiczenie odpada zamiast przepuścić dwa czasy w zdaniu.
+  if (index === start ? sharedSubject === undefined : NOT_BEFORE_FINITE_VERB.has(tokens[index - 1]!)) return undefined;
   const base = presentSimpleBaseOf(token);
-  return base === undefined ? undefined : { tense: "simple", index, verbIndex: index, base, subject: tokens.slice(start, index) };
+  const subject = index === start ? sharedSubject! : tokens.slice(start, index);
+  return base === undefined ? undefined : { tense: "simple", index, verbIndex: index, base, subject };
 }
 
 /**
@@ -130,10 +134,12 @@ export function verbGroupsIn(tokens: readonly string[]): VerbGroup[] {
   const groups: VerbGroup[] = [];
   let start = 0;
   let index = 0;
+  let sharedSubject: readonly string[] | undefined;
   while (index < tokens.length) {
-    const group = verbGroupAt(tokens, start, index);
+    const group = verbGroupAt(tokens, start, index, sharedSubject);
     if (group === undefined) {
       index += 1;
+      sharedSubject = undefined;
       continue;
     }
     groups.push(group);
@@ -141,6 +147,7 @@ export function verbGroupsIn(tokens: readonly string[]): VerbGroup[] {
     if (conjunction < 0) break;
     start = conjunction + 1;
     index = start;
+    sharedSubject = group.subject;
   }
   return groups;
 }

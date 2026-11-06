@@ -238,17 +238,24 @@ function rawLead(text: string): string {
 /** Znaki zamykające po końcu zdania (cudzysłów, nawias), np. `."` w „He said "Look!" Then…”. */
 const CLOSING_MARKS = new Set(['"', "'", "”", "“", "’", "»", ")"]);
 
+/** Cudzysłowy otwierające cytat po dwukropku albo przecinku. */
+const OPENING_QUOTES = new Set(['"', "'", "“", "„", "«", "‘"]);
+
 /**
- * Początki zdań surowego tekstu: cały tekst i reszta po każdym końcu zdania (`.`, `!`, `?`,
- * opcjonalnie znaki zamykające, potem odstęp), małymi literami, bez wiodącej interpunkcji.
+ * Początki zdań surowego tekstu: cały tekst, reszta po każdym końcu zdania (`.`, `!`, `?`,
+ * opcjonalnie znaki zamykające, potem odstęp) i cytat po dwukropku albo przecinku
+ * („Tom shouts, "Look! …"”), małymi literami, bez wiodącej interpunkcji.
  * Pętla zamiast jednego wyrażenia `[.!?]+…\s+`: to cofało się kwadratowo na ciągach `!!!…`.
  */
 function sentenceLeads(text: string): string[] {
   const leads = [rawLead(text)];
   for (const gap of text.matchAll(/\s+/gu)) {
+    const rest = text.slice(gap.index + gap[0].length);
     let end = gap.index - 1;
     while (end >= 0 && CLOSING_MARKS.has(text.charAt(end))) end -= 1;
-    if (end >= 0 && ".!?".includes(text.charAt(end))) leads.push(rawLead(text.slice(gap.index + gap[0].length)));
+    const sentenceEnd = end >= 0 && ".!?".includes(text.charAt(end));
+    const quoteStart = gap.index > 0 && ",:".includes(text.charAt(gap.index - 1)) && OPENING_QUOTES.has(rest.charAt(0));
+    if (sentenceEnd || quoteStart) leads.push(rawLead(rest));
   }
   return leads;
 }

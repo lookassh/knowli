@@ -54,6 +54,14 @@ describe("verbGroupsIn", () => {
     ]);
   });
 
+  it("czasownik tuż po spójniku za orzeczeniem ma wspólny podmiot (także rzeczownik na -s: ćwiczenie wtedy odpada)", () => {
+    expect(groups("Look Tom is eating bread and drinks milk")).toEqual([
+      { tense: "continuous", base: undefined, operator: undefined, subject: ["look", "tom"] },
+      { tense: "simple", base: "drink", operator: undefined, subject: ["look", "tom"] },
+    ]);
+    expect(groups("Ola is reading and writing now").map((group) => group.tense)).toEqual(["continuous"]);
+  });
+
   it("forma czasownika po określniku, przyimku albo na początku zdania nie jest orzeczeniem", () => {
     expect(groups("The cook and the waiter")).toEqual([]);
     expect(groups("Listen, Tom and Ola")).toEqual([]);

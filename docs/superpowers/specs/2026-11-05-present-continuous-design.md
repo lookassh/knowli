@@ -481,3 +481,12 @@ Walidator się nie zmienia (fala 1, §16.9); zmieniają się wskazówki, przykł
 - **Karty celu 6** mają „right now” zamiast gołego „now” („Are you playing football right now?”, „She isn't watching TV right now.”); karta celu 2 („Tom is riding his bike now.”) bez zmian (decyzja właściciela). Podpowiedź kategorii błędu `simple_for_now` celu 6 ma ten sam przykład („…: Are you playing football right now?”).
 - **„To be” względem `main`.** Zachowanie walidatora „to be” różni się od `main` tylko „mice” w liczbie mnogiej (§6.2) i brzmieniem `found` reguł biegunowości przy przekształceniu (nazywa przekształcenie, nie cel: `the transform "to_negative" requires "not"`; §16.9) — przegląd krytyka C na ponad 100 tys. przypadków.
 - **Migawka promptu** celu `now_or_usually_more` obok `affirmative` (`lesson-pool-prompt.english_grammar_present_continuous_more.txt`).
+
+### 16.13 Po przeglądzie całego PR #329 (2026-11-06, „popraw wszystko”)
+
+- **Dystraktor spoza tabeli** (`grammar.pc_distractor_outside_table`, wybór w celach 1–4 i 6). Dawniej błąd „czasownik spoza tabeli” w dystraktorze liczył się jako błąd angielszczyzny, więc przechodziły dwie poprawne opcje („is walking” / „is feeding”, „walks” / „feeds”). Teraz taki dystraktor odrzuca ćwiczenie, chyba że to literówka formy -ing klucza („is walkking”). W celach 2 i 6 forma z tabeli spoza klasy pisowni celu („is writing” przy „is reading”) to druga poprawna odpowiedź (`grammar.pc_tense_choice_distractor`), jak już w celach 1, 3, 4.
+- **Wspólny podmiot po spójniku.** Forma Present Simple tuż po „and” / „but”… za orzeczeniem to drugi czasownik tego samego podmiotu („Look! Tom is eating bread and drinks milk.” odpada w celach 2 i 6). Rzeczownik na -s w tym miejscu („bread and drinks”) też się liczy — świadomie: ćwiczenie odpada zamiast przepuścić dwa czasy.
+- **„police”** liczy się jako liczba mnoga.
+- **Mniej fałszywych odrzuceń:** „Look!” w cudzysłowie i po przecinku albo dwukropku (wskaźnik i czasownik stanu), „own” po zaimku dzierżawczym i „like a…” w porównaniu (nie czasowniki stanu), „now” / „all” / „both” między be a -ing („Mum is now reading.”), „What a…!” to wykrzyknienie, nie pytanie.
+- **Karta „Podwójna litera”** dopowiada, że po dwóch samogłoskach się nie podwaja (read → reading, cook → cooking).
+- **Bez zmian (świadomie):** rzeczownik na -s po przymiotniku w drugiej części zdania („bread and hot drinks”) dalej bywa brany za czasownik — bez części mowy nie da się go odróżnić od podmiotu („and Dad reads”); kosztuje tylko ponowne wygenerowanie (#280).

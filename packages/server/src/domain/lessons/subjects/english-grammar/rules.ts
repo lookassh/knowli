@@ -472,6 +472,16 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "isn't reading), or another tense that agrees with the subject (can read, will read, did read, was reading, has read, " +
       "played, read).",
   },
+  "grammar.pc_distractor_outside_table": {
+    when: inPcObjectives("affirmative", "now_or_usually", "negative", "questions", "now_or_usually_more"),
+    field: "options",
+    kind: "reject",
+    types: ["lesson_choice"],
+    description:
+      "In a lesson_choice of the present_continuous topic (except ing_spelling) a distractor that breaks no rule of the key " +
+      "takes its verb from the topic's verb table: with a verb outside the table (is feeding, feeds) it may be a second correct " +
+      "answer. A misspelt -ing form of the key's verb (is walkking next to is walking) is a wrong distractor.",
+  },
   "grammar.pc_ing_spelling_distractor": {
     when: inPcObjectives("ing_spelling"),
     field: "options",
