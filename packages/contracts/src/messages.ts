@@ -168,6 +168,7 @@ export const messages = {
     /** Link przy porażce `no_source_items` do strony źródła zestawu (stamtąd nowy zestaw z innym zawężeniem). */
     goToSource: "Przejdź do źródła",
     rejectedFromSource: "Pominięto pozycji spoza tekstu lub niepoprawnych: {n}",
+    stalledGenerationHint: "Jeśli generowanie się zatrzymało, możesz je ponowić.",
     retryGeneration: "Ponów generowanie",
     states: {
       draft: "Szkic",

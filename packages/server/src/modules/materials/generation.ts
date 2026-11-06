@@ -11,7 +11,7 @@ import {
   isVisualDataValid,
 } from "@learning/contracts";
 import type { Services } from "../../config";
-import type { Tx } from "../../db/client";
+import type { Executor, Tx } from "../../db/client";
 import type { LlmGenerateDeckInput } from "../../ports/ai";
 import {
   claimQueuedRun,
@@ -366,6 +366,32 @@ export async function retryGeneration(services: Services, runId: string): Promis
       await resetLessonAgentBudget(tx, runId);
       return { runId };
     }
+    if (run.kind === "deck") {
+      // Taka sama kolejność blokad jak zapis wyniku: wersja, potem run.
+      await tx.select({ id: deckVersions.id }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update");
+      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      if (!current || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
+      if (current.state === "running") {
+        // `running` (np. po awarii workera, #299): jak przy historyjce stary run
+        // zostaje `superseded`, a nowy run z pełnym budżetem prób i tym samym
+        // wejściem zajmuje jego miejsce; spóźniony worker nie przejdzie
+        // sprawdzenia `running` przy zapisie wyniku.
+        await tx.update(generationRuns)
+          .set({ state: "superseded", errorCode: null, nextAttemptAt: null, finishedAt: services.clock.now() })
+          .where(eq(generationRuns.id, runId));
+        const newRunId = randomUUID();
+        await tx.insert(generationRuns).values({
+          id: newRunId,
+          deckVersionId: current.deckVersionId,
+          expectedEditNumber: current.expectedEditNumber,
+          kind: "deck",
+          dedupeKey: `deck:retry:${newRunId}`,
+          state: "queued",
+          input: current.input,
+        });
+        return { runId: newRunId };
+      }
+    }
     if (run.assetId) {
       const asset = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, run.assetId)))[0];
       if (asset?.state === "ready") {
@@ -388,7 +414,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
 }
 
 export async function executeGeneration(services: Services, runId: string, signal?: AbortSignal): Promise<void> {
-  const deps = requireGeneration(services);
+  requireGeneration(services);
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
   if (!run) {
     throw new AppError("not_found");
@@ -412,10 +438,32 @@ export async function executeGeneration(services: Services, runId: string, signa
     return;
   }
   if (attempts > MAX_AUTOMATIC_ATTEMPTS) {
-    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+    await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted", "running");
     return;
   }
+  try {
+    await generateClaimedDeckRun(services, run, attempts, signal);
+  } catch (error) {
+    // Żaden błąd po przejęciu (np. deadlock albo zerwane połączenie w zapisie
+    // wyniku) nie zostawia runu w `running`, z którego worker go nie podejmie (#299).
+    const retryable = signal?.aborted || (errorCodeOf(error) !== "validation" && attempts < MAX_AUTOMATIC_ATTEMPTS);
+    await markRun(services.db, services.clock, runId, retryable ? "queued" : "failed",
+      retryable ? null : errorCodeOf(error) === "validation" ? "validation" : "attempts_exhausted", "running");
+    throw error;
+  }
+}
 
+/** Wywołanie modelu i zapis wyniku przejętego runu `deck`; każde oznaczenie runu tylko z `running`. */
+async function generateClaimedDeckRun(
+  services: Services,
+  run: typeof generationRuns.$inferSelect,
+  attempts: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const deps = requireGeneration(services);
+  const runId = run.id;
+  const mark = (db: Executor, state: "failed" | "superseded" | "queued", errorCode: string | null) =>
+    markRun(db, services.clock, runId, state, errorCode, "running");
   const runInput = run.input as StoredDeckRunInput;
   const vocabularyFormat = runInput.vocabularyFormat ?? "standard";
   const llmInput: LlmGenerateDeckInput = runInput.mode === "material"
@@ -445,22 +493,22 @@ export async function executeGeneration(services: Services, runId: string, signa
       : { mode: "description", items: GeneratedDeckSchema.parse(result).items };
   } catch (error) {
     if (signal?.aborted) {
-      await markRun(services.db, services.clock, runId, "queued", null);
+      await mark(services.db, "queued", null);
       return;
     }
     const code = errorCodeOf(error);
     if (code === "validation") {
-      await markRun(services.db, services.clock, runId, "failed", "validation");
+      await mark(services.db, "failed", "validation");
     } else if (attempts >= MAX_AUTOMATIC_ATTEMPTS) {
-      await markRun(services.db, services.clock, runId, "failed", "attempts_exhausted");
+      await mark(services.db, "failed", "attempts_exhausted");
     } else {
-      await markRun(services.db, services.clock, runId, "queued", null);
+      await mark(services.db, "queued", null);
     }
     return;
   }
 
   if (signal?.aborted) {
-    await markRun(services.db, services.clock, runId, "queued", null);
+    await mark(services.db, "queued", null);
     return;
   }
 
@@ -481,7 +529,7 @@ export async function executeGeneration(services: Services, runId: string, signa
     ({ items, rejectedCount } = selection);
   } else {
     if (generated.items.length === 0) {
-      await markRun(services.db, services.clock, runId, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
+      await mark(services.db, "failed", vocabularyFormat === "picture" ? "no_picture_material" : "validation");
       return;
     }
     items = generated.items.map((item) => toVocabularyItem(item, runInput.locales));
@@ -490,7 +538,7 @@ export async function executeGeneration(services: Services, runId: string, signa
       validateVocabularyFormatItems(vocabularyFormat, items);
     } catch (error) {
       if (error instanceof AppError && error.code === "validation") {
-        await markRun(services.db, services.clock, runId, "failed", "validation");
+        await mark(services.db, "failed", "validation");
         return;
       }
       throw error;
@@ -504,12 +552,15 @@ export async function executeGeneration(services: Services, runId: string, signa
       await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update")
     )[0];
     if (!version) {
-      await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
+      await mark(tx, "failed", "deck_version_gone");
       return;
     }
+    // ta sama kolejność blokad co „Ponów” (wersja, potem run): run zastąpiony w międzyczasie nie zapisuje wyniku
+    const current = (await tx.select({ state: generationRuns.state }).from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+    if (current?.state !== "running") return;
     // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu
     if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
-      await markRun(tx, services.clock, runId, "superseded", null);
+      await mark(tx, "superseded", null);
       return;
     }
     await applyItems(tx, version.id, version.deckId, items);

@@ -79,6 +79,8 @@ export async function markRun(
   runId: string,
   state: "succeeded" | "failed" | "superseded" | "queued",
   errorCode: string | null,
+  /** `"running"` — tylko run wciąż przejęty (spóźniony worker nie wskrzesi runu zastąpionego przy „Ponów”). */
+  fromState?: "running",
 ): Promise<void> {
   await db
     .update(generationRuns)
@@ -88,7 +90,7 @@ export async function markRun(
       nextAttemptAt: null,
       finishedAt: state === "queued" ? null : clock.now(),
     })
-    .where(eq(generationRuns.id, runId));
+    .where(and(eq(generationRuns.id, runId), fromState === undefined ? undefined : eq(generationRuns.state, fromState)));
 }
 
 /**
@@ -120,7 +122,7 @@ export async function markRunSucceeded(
  * Porażka runu `deck` ze źródła, gdy żaden element nie przeszedł walidacji per
  * element (`no_source_items`, design 2026-10-30 §6.2), razem z liczbą odrzuceń
  * — panel rodzica pokazuje ją także przy porażce. Szkic zostaje bez zmian.
- * Pozostałe pola jak `markRun(…, "failed", "no_source_items")`.
+ * Pozostałe pola jak `markRun(…, "failed", "no_source_items", "running")`.
  */
 export async function markRunWithoutSourceItems(
   db: Executor,
@@ -137,7 +139,7 @@ export async function markRunWithoutSourceItems(
       finishedAt: clock.now(),
       rejectedCount,
     })
-    .where(eq(generationRuns.id, runId));
+    .where(and(eq(generationRuns.id, runId), eq(generationRuns.state, "running")));
 }
 
 /**

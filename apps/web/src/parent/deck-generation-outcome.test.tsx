@@ -26,6 +26,15 @@ describe("DeckGenerationOutcome (edytor zestawu słówek)", () => {
     expect(markup).not.toContain('data-testid="generation-failed"');
   });
 
+  it("run w toku: podpowiedź i „Ponów” dla zawieszonego generowania (#299)", () => {
+    const markup = render(run({ state: "running" }));
+    expect(markup).toContain('data-testid="retry-stalled-generation"');
+    expect(markup).toContain(messages.decks.stalledGenerationHint);
+    for (const state of ["queued", "succeeded", "failed"] as const) {
+      expect(render(run({ state })), state).not.toContain('data-testid="retry-stalled-generation"');
+    }
+  });
+
   it("bez odrzuceń albo bez liczby (tryb „z opisu”): bez notki", () => {
     for (const rejectedCount of [0, null, undefined]) {
       const markup = render(run(rejectedCount === undefined ? {} : { rejectedCount }));
