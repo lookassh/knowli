@@ -129,14 +129,18 @@ function verbGroupAt(tokens: readonly string[], start: number, index: number): V
 export function verbGroupsIn(tokens: readonly string[]): VerbGroup[] {
   const groups: VerbGroup[] = [];
   let start = 0;
-  for (let index = 0; index < tokens.length; index++) {
+  let index = 0;
+  while (index < tokens.length) {
     const group = verbGroupAt(tokens, start, index);
-    if (group === undefined) continue;
+    if (group === undefined) {
+      index += 1;
+      continue;
+    }
     groups.push(group);
     const conjunction = tokens.findIndex((token, i) => i > group.verbIndex && CLAUSE_CONJUNCTIONS.has(token));
     if (conjunction < 0) break;
     start = conjunction + 1;
-    index = conjunction;
+    index = start;
   }
   return groups;
 }

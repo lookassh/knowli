@@ -71,9 +71,10 @@ function joinOrderItems(items: FeedbackSentenceSource["items"]): string | undefi
 /**
  * Nawias stojący tuż po luce: grupa 1 to luka, grupa 2 treść nawiasu
  * („___ (play)”, „___ (not watch)”). Wspólny dla zdania po odpowiedzi
- * i walidatora tematu Present Continuous (`stripGapVerb`).
+ * i walidatora tematu Present Continuous (`stripGapVerb`). `(?<!_)` zaczyna dopasowanie
+ * tylko od początku ciągu podkreśleń (bez tego długi ciąg bez nawiasu sprawdzany kwadratowo).
  */
-export const GAP_VERB_BRACKET = /(_{2,})\s*\(([^)]*)\)/;
+export const GAP_VERB_BRACKET = /(?<!_)(_{2,})\s*\(([^)]*)\)/;
 
 /**
  * Usuwa „(verb)” / „(not verb)” stojące tuż po luce, żeby zdanie po odpowiedzi
