@@ -291,9 +291,17 @@ function isInvertedQuestion(text: string): boolean {
   return BE_FORMS.has(tokens[0] ?? "");
 }
 
-/** Zdania tekstu jako tokeny po rozwinięciu skrótów be i do, bez pustych. */
+/**
+ * Tokeny zdania przekształcenia: `tenseTokens` i „X's” → „x is” („Tom's playing” → „tom is playing”).
+ * Dzierżawcze „Tom's dog” rozwija się tak samo w zdaniu wyjściowym i w kluczu, więc porównanie się zgadza.
+ */
+function transformTokens(text: string): string[] {
+  return tenseTokens(text).flatMap((token) => (/^[\p{L}]+'s$/u.test(token) ? [token.slice(0, -2), "is"] : [token]));
+}
+
+/** Zdania tekstu jako tokeny przekształcenia (`transformTokens`), bez pustych. */
 function sentenceTokensOf(text: string): string[][] {
-  return text.split(SENTENCE_BOUNDARY).map(tenseTokens).filter((tokens) => tokens.length > 0);
+  return text.split(SENTENCE_BOUNDARY).map(transformTokens).filter((tokens) => tokens.length > 0);
 }
 
 /**
@@ -384,9 +392,9 @@ export function validateTransformShape(ex: LessonExerciseDraft, objective: strin
     }));
     return;
   }
-  const from = tenseTokens(statement);
+  const from = transformTokens(statement);
   for (const { field, text } of keys) {
-    const to = tenseTokens(text);
+    const to = transformTokens(text);
     const tied = ex.transformId === "to_negative" ? isNegationOf(from, to, objective === "now_or_usually_more") : isNegationOf(to, from, objective === "now_or_usually_more");
     if (!tied) errors.push(transformKeyIssue(field, text, statement, ex.transformId!));
   }

@@ -1150,30 +1150,143 @@ function validateBeChoiceDistractors(ex: LessonExerciseDraft, stem: string, erro
 /** Zgłoszenia, które nie czynią zdania błędnym: klasa pisowni -ing spoza celu dotyczy celu, nie angielszczyzny. */
 const NOT_WRONG_ENGLISH: ReadonlySet<string> = new Set(["grammar.pc_ing_rule_not_allowed"]);
 
+/** Operatory innych czasów przed formą podstawową („can read”, „will read”, „did read”). */
+const OTHER_TENSE_OPERATORS: ReadonlySet<string> = new Set(["can", "could", "will", "would", "shall", "should", "must", "may", "might", "did"]);
+
+/** Czasowniki tabeli, których forma przeszła (i imiesłów) brzmi jak podstawowa. */
+const PAST_SAME_AS_BASE: ReadonlySet<string> = new Set(["read", "put", "cut", "hit"]);
+
 /**
- * Wybór w celach 1, 3, 4 (fala 1 Task 19): każdy dystraktor (w luce — zdanie z nim) łamie regułę klucza
- * (`validateSentenceAnswer`), ma wskaźnik „zwykle” albo zakazany, „going to” + czasownik albo czasownik
- * stanu z -ing. Dystraktor bez żadnego z nich („Look! Tom is reading.” obok „Look! Ola is reading.”,
- * „is drawing” obok „is reading” w „Ola ___ now.”) to druga poprawna odpowiedź. Samą formę am/is/are
- * sprawdzają reguły luki na formę be (`validateBeChoiceDistractors`).
+ * Forma podstawowa regularnej formy przeszłej albo imiesłowu czasownika z tabeli („played”, „cried”,
+ * „stopped”, „danced”, „read”). shortcut: nieregularne formy (ate, drew, has eaten) nie są rozpoznawane;
+ * dopisać tabelę form przeszłych, gdy sonda pokaże takie dystraktory.
+ */
+function pastBaseOf(token: string): string | undefined {
+  if (PAST_SAME_AS_BASE.has(token)) return token;
+  if (!token.endsWith("ed")) return undefined;
+  return [token.slice(0, -2), token.slice(0, -1), `${token.slice(0, -3)}y`, token.slice(0, -3)]
+    .find((base) => base.length > 1 && ingFormOf(base) !== undefined);
+}
+
+/** Słowa, po których „read”, „played” itd. nie są formą przeszłą orzeczenia („doesn't read”, „to read”, „has played”). */
+const NOT_BEFORE_PAST: ReadonlySet<string> = new Set(["do", "does", "not", "to", "was", "were", "has", "have", "had", ...OTHER_TENSE_OPERATORS]);
+
+/** Forma be teraźniejsza, z którą zgadza się forma przeszła lub perfect: was/has ↔ is (am dla was), were/have ↔ are (am dla have). */
+const AUXILIARY_AGREES: Readonly<Record<string, readonly string[]>> = { was: ["is", "am"], were: ["are"], has: ["is"], have: ["are", "am"], had: ["is", "am", "are"] };
+
+/**
+ * Inny czas w dystraktorze (ponowny przegląd fali 1): operator modalny albo did + forma podstawowa,
+ * was/were + -ing, has/have/had + imiesłów, forma przeszła. Taka forma zgodna z podmiotem jest poprawną
+ * angielszczyzną w bodźcu („Ola can read a book now.”), więc to druga poprawna odpowiedź. Podmiot: przy
+ * operatorze na początku opcji wyboru z luką — z bodźca, w pozostałych — sprzed operatora w opcji.
+ */
+function otherTenseForm(option: string, gapStem: string | undefined): string | undefined {
+  const sentences = option.split(SENTENCE_BOUNDARY).map((text) => tenseTokens(text).flatMap(expandNegatedAuxiliary)).filter((tokens) => tokens.length > 0);
+  for (const tokens of sentences) {
+    for (const [index, token] of tokens.entries()) {
+      const nextIndex = tokens[index + 1] === "not" ? index + 2 : index + 1;
+      const next = tokens[nextIndex] ?? "";
+      const phrase = tokens.slice(index, nextIndex + 1).join(" ");
+      if (OTHER_TENSE_OPERATORS.has(token) && presentSimpleBaseOf(next) === next) return phrase;
+      if (Object.hasOwn(AUXILIARY_AGREES, token)) {
+        const continuous = (token === "was" || token === "were") && next.endsWith("ing");
+        const perfect = (token === "has" || token === "have" || token === "had") && pastBaseOf(next) !== undefined;
+        if (!continuous && !perfect) continue;
+        const expected = index === 0 && gapStem !== undefined ? expectedBeForm(gapStem) : expectedBeAt(tokens, 0, index);
+        if (expected === undefined || AUXILIARY_AGREES[token]!.includes(expected)) return phrase;
+        continue;
+      }
+      // Po do/does w zdaniu („Does she read?”) forma podstawowa nie jest formą przeszłą.
+      const operator = tokens.slice(0, index).some((previous) => previous === "do" || previous === "does");
+      if (!operator && pastBaseOf(token) !== undefined && !NOT_BEFORE_PAST.has(tokens[index - 1] ?? "") && !BE_FORMS.has(tokens[index - 1] ?? "")) return token;
+    }
+  }
+  return undefined;
+}
+
+/** Przeczone operatory bez regularnego „-n't” po formie (can't → can, won't → will). */
+const NEGATED_AUXILIARIES: Readonly<Record<string, string>> = { "can't": "can", cannot: "can", "won't": "will", "shan't": "shall" };
+
+/** „wasn't” → was not, „didn't” → did not, „can't” → can not (pozostałe tokeny bez zmian). */
+function expandNegatedAuxiliary(token: string): string[] {
+  const base = NEGATED_AUXILIARIES[token] ?? (token.endsWith("n't") ? token.slice(0, -3) : undefined);
+  return base !== undefined && (OTHER_TENSE_OPERATORS.has(base) || Object.hasOwn(AUXILIARY_AGREES, base)) ? [base, "not"] : [token];
+}
+
+/** Zdania surowego tekstu z kończącą je interpunkcją. */
+const RAW_SENTENCES = /[^.!?;:]+[.!?;:]*/gu;
+
+/**
+ * Szyk zdania z formą be (ponowny przegląd fali 1): „not” tylko tuż po am/is/are, forma be nie kończy
+ * zdania (poza krótką odpowiedzią Yes/No), a zdanie z „?” zaczyna się od am/is/are albo What + am/is/are
+ * — i odwrotnie. „Tom not is watching TV.”, „Look! Ola reading is.”, „Tom is playing now?” mają zły szyk.
+ */
+function hasWordOrderError(text: string): boolean {
+  return (text.match(RAW_SENTENCES) ?? []).some((raw) => {
+    const tokens = expandedTokens(raw);
+    const beIndex = tokens.findIndex((token) => BE_FORMS.has(token));
+    if (beIndex < 0) return false;
+    const notMisplaced = tokens.some((token, i) => token === "not" && !BE_FORMS.has(tokens[i - 1] ?? ""));
+    const shortAnswer = tokens[0] === "yes" || tokens[0] === "no";
+    const beLast = BE_FORMS.has(tokens.at(-1)!) && !shortAnswer;
+    return notMisplaced || beLast || raw.trim().endsWith("?") !== isInvertedBe(tokens, 0, beIndex);
+  });
+}
+
+/** Czy ostatnie zdanie tekstu jest pytaniem (kończy się „?”). */
+function isQuestionText(text: string): boolean {
+  return /\?["'”’)]*\s*$/u.test(text.trim());
+}
+
+/** Tokeny zdania bez „not” (porównanie dystraktora różniącego się od klucza tylko biegunowością). */
+function withoutNot(text: string): string {
+  return tenseTokens(text).filter((token) => token !== "not").join(" ");
+}
+
+/** Zgłoszenie: dystraktor wyboru daje drugie poprawne zdanie. */
+function distractorCorrectIssue(option: string, reasonPl: string, reasonEn: string): LessonRuleIssue {
+  return grammarIssue("grammar.pc_choice_distractor_correct", {
+    field: "options",
+    pl: `options: „${option}” też daje poprawne zdanie (${reasonPl}) — dystraktor musi łamać regułę klucza`,
+    found: `option ${clip(option)} ${reasonEn}, so it is a second correct answer`,
+  });
+}
+
+/**
+ * Wybór w celach 1, 3, 4 (fala 1 Task 19 i ponowny przegląd): dystraktor inny niż sama forma am/is/are
+ * (w luce — zdanie z nim) jest drugą poprawną odpowiedzią, gdy ma poprawny inny czas (`otherTenseForm`),
+ * różni się od klucza tylko „not”, a bodziec nie ustala biegunowości (Yes/No przed luką, „not” po niej;
+ * jak `validateBeChoiceDistractors`), albo nie łamie żadnej reguły klucza. Za błąd liczy się zły szyk
+ * (`hasWordOrderError`), inny kształt niż klucz (pytanie / zdanie oznajmujące), reguła klucza
+ * (`validateSentenceAnswer`), wskaźnik „zwykle” albo zakazany, „going to” + czasownik albo czasownik stanu z -ing.
  */
 function validateChoiceDistractors(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   if (ex.exerciseType !== "lesson_choice") return;
+  const gapStem = ex.stem?.includes("___") === true ? ex.stem : undefined;
+  const keySentence = wholeSentenceOf(ex, ex.options?.find((option) => option.id === ex.correctOption)?.text ?? ex.answer);
+  const polarityFixed = gapStem !== undefined &&
+    (yesNoBeforeGap(gapStem) !== undefined || expandedTokens(gapStem.split("___", 2)[1] ?? "").includes("not"));
   for (const option of ex.options ?? []) {
     if (option.id === ex.correctOption || parseBeOnly(option.text) !== null) continue;
+    const sentence = wholeSentenceOf(ex, option.text);
+    const otherTense = otherTenseForm(option.text, gapStem);
+    if (otherTense !== undefined) {
+      errors.push(distractorCorrectIssue(option.text, `inny czas: „${otherTense}”`, `uses another correct tense (${clip(otherTense)})`));
+      continue;
+    }
+    // Zły szyk to błąd dystraktora także wtedy, gdy różni się od klucza tylko „not” („Tom not is watching”).
+    if (hasWordOrderError(sentence)) continue;
+    if (!polarityFixed && sentence !== keySentence && withoutNot(sentence) === withoutNot(keySentence)) {
+      errors.push(distractorCorrectIssue(option.text, "różni się od klucza tylko przeczeniem", "differs from the key only by not and nothing in the stem fixes the polarity"));
+      continue;
+    }
     const optionErrors: LessonRuleIssue[] = [];
     validateSentenceAnswer(ex, objective, option.text, "options", true, optionErrors);
-    const sentence = wholeSentenceOf(ex, option.text);
     const markers = scanTimeMarkers(sentence, "en");
-    const wrong = optionErrors.some((issue) => !NOT_WRONG_ENGLISH.has(issue.rule)) || markers.groups.has("usually") ||
+    const wrong = isQuestionText(sentence) !== isQuestionText(keySentence) ||
+      optionErrors.some((issue) => !NOT_WRONG_ENGLISH.has(issue.rule)) || markers.groups.has("usually") ||
       markers.forbidden.length > 0 || hasGoingToFuture(sentence) || stateVerbIn(sentence, "ing_form") !== undefined;
-    if (!wrong) {
-      errors.push(grammarIssue("grammar.pc_choice_distractor_correct", {
-        field: "options",
-        pl: `options: „${option.text}” też daje poprawne zdanie — dystraktor musi łamać regułę klucza`,
-        found: `option ${clip(option.text)} breaks no rule of the key, so it is a second correct answer`,
-      }));
-    }
+    if (!wrong) errors.push(distractorCorrectIssue(option.text, "nie łamie żadnej reguły klucza", "breaks no rule of the key"));
   }
 }
 

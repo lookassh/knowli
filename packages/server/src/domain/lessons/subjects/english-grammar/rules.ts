@@ -423,9 +423,13 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_choice"],
     description:
       "In the affirmative, negative and questions objectives every distractor of a lesson_choice that is not only am, is or are " +
-      "(put into the gap, or the whole sentence) breaks a rule the key keeps: a wrong am/is/are, a missing -ing, another tense, " +
-      "the wrong polarity, a usually or forbidden marker... A distractor that is correct too (is drawing next to is reading in " +
-      "Ola ___ now., Look! Tom is reading. next to Look! Ola is reading.) is a second correct answer.",
+      "(put into the gap, or the whole sentence) is wrong: a wrong am/is/are, a missing -ing, a present simple form, a usually " +
+      "or forbidden marker, the wrong word order (Tom not is watching, Ola reading is, Tom is playing now? or a statement next to " +
+      "a question key) or another rule the key keeps. A distractor that is correct too is a second correct answer: another " +
+      "verb or object (is drawing next to is reading in Ola ___ now., Look! Tom is reading. next to Look! Ola is reading.), the " +
+      "key with only not added or removed when no Yes/No before the gap and no not after it fix the polarity (is reading / " +
+      "isn't reading), or another tense that agrees with the subject (can read, will read, did read, was reading, has read, " +
+      "played, read).",
   },
   "grammar.pc_ing_spelling_distractor": {
     when: inPresentContinuous,

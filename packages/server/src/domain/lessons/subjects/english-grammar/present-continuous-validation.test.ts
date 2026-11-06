@@ -560,7 +560,7 @@ describe("cele 1, 3, 4, 5 — wskaźnik „teraz” wymagany tam, gdzie Present 
     ["cel 4: przekształcenie na pytanie", pcTransform("questions", "to_question", "He is playing.", "Is he playing?")],
     // Fala 1 Task 19: opcje inne niż sama forma be dopuszczają inny czas (read, are reading → literówka zamiast czasu).
     ["wybór bez formy Present Simple w opcjach", pcChoice("affirmative", "Ola ___ a book.", "is reading", "are reading")],
-    ["wybór z formą PS niezgodną z osobą", pcChoice("affirmative", "Ola ___ a book.", "is reading", "read")],
+    ["wybór z formą PS niezgodną z osobą", pcChoice("affirmative", "Tom ___ football.", "is playing", "play")],
   ];
   it.each(rejected)("%s", (_name, ex) => {
     expect(validate(ex)).toEqual([NEEDS_NOW]);
@@ -813,7 +813,7 @@ describe("fala 1 Task 19 — I2: w celach 2 i 6 liczy się wskaźnik zdania skł
 
 describe("fala 1 Task 19 — I3: dystraktory wyboru", () => {
   it("(a) cele 1, 3, 4: wybór z czasownikiem w opcjach potrzebuje wskaźnika", () => {
-    expect(validate(pcChoice("affirmative", "Ola ___ a book.", "is reading", "read"))).toEqual(["grammar.pc_now_marker_missing"]);
+    expect(validate(pcChoice("affirmative", "Ola ___ a book.", "is reading", "reads"))).toEqual(["grammar.pc_now_marker_missing"]);
     expect(validate(pcChoice("negative", "Ola ___ a book.", "isn't reading", "aren't reading"))).toEqual(["grammar.pc_now_marker_missing"]);
     expect(validate(pcChoice("affirmative", "Ola ___ reading a book.", "is", "are"))).toEqual([]);
   });
@@ -834,6 +834,38 @@ describe("fala 1 Task 19 — I3: dystraktory wyboru", () => {
     expect(validate(pcChoice("affirmative", "Ola ___ now.", "is reading", "reading"))).toEqual([]);
   });
 
+  it("ponowny przegląd: zły szyk dystraktora to błąd, nie druga poprawna odpowiedź", () => {
+    const ok: LessonExerciseDraft[] = [
+      pcSentenceChoice("questions", "Wybierz pytanie.", "Is Tom playing football now?", "Tom is playing football now?"),
+      pcSentenceChoice("questions", "Wybierz pytanie.", "Are you reading now?", "You are reading now?"),
+      pcChoice("questions", "___ playing football now?", "Is Tom", "Tom is"),
+      pcSentenceChoice("questions", "Wybierz pytanie.", "Is Tom playing football now?", "Tom is playing football now."),
+      pcSentenceChoice("negative", "Wybierz zdanie.", "Tom isn't watching TV right now.", "Tom not is watching TV right now."),
+      pcSentenceChoice("affirmative", "Wybierz zdanie.", "Look! Ola is reading.", "Look! Ola reading is."),
+    ];
+    for (const ex of ok) expect(validate(ex), ex.options!.map((option) => option.text).join(" / ")).toEqual([]);
+  });
+
+  it("ponowny przegląd: dystraktor różny od klucza tylko przeczeniem, gdy bodziec nie ustala biegunowości", () => {
+    expect(validate(pcChoice("affirmative", "Look! Ola ___ a book.", "is reading", "isn't reading"))).toEqual(["grammar.pc_choice_distractor_correct"]);
+    expect(validate(pcSentenceChoice("negative", "Wybierz zdanie.", "Look! Tom isn't playing.", "Look! Tom is playing."))).toEqual(["grammar.pc_choice_distractor_correct"]);
+    expect(validate(pcChoice("questions", "Is Ola reading right now? No, she ___.", "isn't reading", "is reading"))).toEqual([]);
+  });
+
+  it.each([
+    ["can read"], ["will read"], ["didn't read"], ["was reading"], ["has read"], ["read"],
+  ])("ponowny przegląd: dystraktor w innym poprawnym czasie „%s” to druga poprawna odpowiedź", (distractor) => {
+    expect(validate(pcChoice("affirmative", "Ola ___ a book right now.", "is reading", distractor))).toEqual(["grammar.pc_choice_distractor_correct"]);
+  });
+
+  it("ponowny przegląd: inny czas niezgodny z podmiotem i Present Simple zostają błędnymi dystraktorami", () => {
+    expect(validate(pcChoice("affirmative", "Look! The boys ___ football.", "are playing", "was playing"))).toEqual([]);
+    expect(validate(pcChoice("affirmative", "Look! Tom ___ football.", "is playing", "have played"))).toEqual([]);
+    expect(validate(pcChoice("affirmative", "Look! Tom ___ football.", "is playing", "plays"))).toEqual([]);
+    expect(validate(pcSentenceChoice("negative", "Wybierz zdanie.", "Ola isn't reading right now.", "Ola doesn't read right now."))).toEqual([]);
+    expect(validate(pcChoice("affirmative", "Tom ___ football now.", "is playing", "played"))).toEqual(["grammar.pc_choice_distractor_correct"]);
+  });
+
   it("(c) cele 1, 3, 4: dystraktor całego zdania łamie regułę klucza", () => {
     expect(validate(pcSentenceChoice("affirmative", "Which is correct?", "Look! Ola is reading.", "Look! Tom is reading."))).toEqual(["grammar.pc_choice_distractor_correct"]);
     expect(validate(pcSentenceChoice("affirmative", "Which is correct?", "Look! Ola is reading.", "Look! Ola are reading."))).toEqual([]);
@@ -852,6 +884,11 @@ describe("fala 1 Task 19 — I4: klucz przekształcenia powstaje ze zdania wyjś
     ["to_question z przeczenia", pcTransform("questions", "to_question", "She isn't sleeping right now.", "Isn't she sleeping right now?"), "grammar.pc_transform_question_negative"],
   ] as const)("%s", (_name, ex, rule) => {
     expect(validate(ex)).toEqual([rule]);
+  });
+
+  it("ponowny przegląd: „Tom's playing” to „Tom is playing” w zdaniu wyjściowym", () => {
+    expect(validate(pcTransform("negative", "to_negative", "Tom's playing right now.", "Tom isn't playing right now."))).toEqual([]);
+    expect(validate(pcTransform("negative", "to_negative", "Tom's playing right now.", "Ola isn't playing right now."))).toEqual(["grammar.pc_transform_key_statement"]);
   });
 
   it("poprawne przekształcenia, także z wariantem bez skrótu i w celu 6 z do/does", () => {
