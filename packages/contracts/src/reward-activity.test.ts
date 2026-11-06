@@ -162,7 +162,7 @@ describe("session activity award arithmetic", () => {
   it("caps the approved client time at the server-measured session duration", () => {
     const task = (activeIntervals: [number, number][]) => ({ activeIntervals, playbacks: [] });
     expect(sessionApprovedActivityMs([task([[0, 3_600_000]])], 90_000)).toBe(90_000);
-    expect(sessionApprovedActivityMs([task([[0, 50_000]]), task([[0, 50_000]])], 90_000)).toBe(90_000);
+    expect(sessionApprovedActivityMs([task([[0, 50_000]]), task([[50_000, 100_000]])], 90_000)).toBe(90_000);
     expect(sessionApprovedActivityMs([task([[0, 40_000]]), task([[40_000, 70_000]])], 90_000)).toBe(70_000);
     expect(sessionApprovedActivityMs([], 90_000)).toBe(0);
   });
