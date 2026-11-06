@@ -3,6 +3,7 @@ import type { AgentObjective, LessonExerciseDraft } from "../../types";
 import { baseNormalizer } from "../../normalize";
 import { createProductionSubjectRegistry } from "..";
 import { schoolAgentPolicy } from "./agent-policy";
+import { validateLessonExercise } from "../../pool-validation";
 import { schoolSubject } from "./module";
 
 const objective: AgentObjective = {
@@ -17,8 +18,8 @@ function draft(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
   return { exerciseType: "lesson_open_answer", objectiveId: objective.id, answer: "Mierzeja Wiślana", acceptedAnswers: [], focus: [], ...overrides };
 }
 
-const gate = (d: LessonExerciseDraft) => schoolAgentPolicy.exerciseGate!(d, objective, { material: "" });
-const sanitize = (d: LessonExerciseDraft) => schoolAgentPolicy.sanitize!(d);
+const MATERIAL = "Mierzeja Wiślana to piaszczysty pas lądu między Zatoką Gdańską a Zalewem Wiślanym.";
+const sanitize = (d: LessonExerciseDraft, material = MATERIAL) => schoolAgentPolicy.sanitize!(d, { material });
 
 describe("schoolAgentPolicy — wartości i typy", () => {
   it("jest polityką przedmiotu szkolnego", () => {
@@ -123,23 +124,111 @@ describe("schoolAgentPolicy.sanitize", () => {
   });
 });
 
-describe("schoolAgentPolicy.exerciseGate", () => {
-  it("zgłasza podpowiedź ujawniającą odpowiedź", () => {
-    const findings = gate(draft({ hint: "Przykładem jest Mierzeja Wiślana" }));
-    expect(findings.map((finding) => finding.code)).toEqual(["hint_reveals_answer"]);
-    // Model dostaje dzisiejszy tekst (`found ?? pl`), a zgłoszenie wskazuje regułę katalogu.
-    expect(findings.map((finding) => (finding.issue.found ?? finding.issue.pl))).toEqual([
-      "the hint gives away the answer or a required element; hint at the reasoning, not the content",
+describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () => {
+  it("podpowiedź zdradzająca odpowiedź: usunięta z notą reguły z celem i słowami", () => {
+    const result = sanitize(draft({ prompt: "Podaj przykład mierzei.", hint: "Przykładem jest Mierzeja Wiślana" }));
+    expect(result.draft).not.toHaveProperty("hint");
+    expect(result.removed).toEqual(["hint"]);
+    expect(result.notes).toEqual([
+      {
+        rule: "hint.reveals_words",
+        field: "hint",
+        pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
+        found: 'hint removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
+      },
     ]);
-    expect(findings[0]!.issue).toMatchObject({ rule: "hint.reveals_words", field: "hint" });
   });
 
-  it("przepuszcza podpowiedź kierującą rozumowaniem i brak podpowiedzi", () => {
-    expect(gate(draft({ hint: "Pomyśl o piaszczystym pasie lądu." }))).toEqual([]);
-    expect(gate(draft({}))).toEqual([]);
+  it("nota wskazuje element wymagany", () => {
+    const result = sanitize(draft({
+      prompt: "Czym jest mierzeja?",
+      answer: "To pas lądu oddzielający zalew od morza.",
+      requiredElements: [{ id: "e1", text: "piaszczysty pas" }],
+      hint: "Pomyśl o piaszczystym pasie",
+    }));
+    expect(result.removed).toEqual(["hint"]);
+    // „pas” ma 3 litery, więc nie jest słowem treściowym.
+    expect(result.notes?.[0]?.found).toBe('hint removed: shares "piaszczysty" with the required element "piaszczysty pas"');
   });
 
-  it("nie sprawdza podpowiedzi przy innych typach (sanitize je usuwa)", () => {
-    expect(gate(draft({ exerciseType: "lesson_gap", hint: "Mierzeja Wiślana" }))).toEqual([]);
+  it("zostawia podpowiedź kierującą rozumowaniem i brak podpowiedzi", () => {
+    expect(sanitize(draft({ hint: "Pomyśl o piaszczystym pasie lądu." }))).toMatchObject({ removed: [], notes: [] });
+    expect(sanitize(draft({ hint: "Pomyśl o piaszczystym pasie lądu." })).draft.hint).toBe("Pomyśl o piaszczystym pasie lądu.");
+    expect(sanitize(draft({}))).toMatchObject({ removed: [], notes: [] });
+  });
+
+  it("typ inny niż pytanie otwarte: dzisiejsze usunięcie bez noty", () => {
+    const result = sanitize(draft({ exerciseType: "lesson_gap", hint: "Mierzeja Wiślana" }));
+    expect(result.removed).toEqual(["hint"]);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("bramka szkoły nie zwraca ustaleń (podpowiedź nie odrzuca już ćwiczenia)", () => {
+    const findings = schoolAgentPolicy.exerciseGate?.(draft({ hint: "Przykładem jest Mierzeja Wiślana" }), objective, { material: MATERIAL }) ?? [];
+    expect(findings).toEqual([]);
+  });
+
+  it("edytor rodzica przyjmuje podpowiedź, którą sanityzacja agenta by usunęła", () => {
+    const topic = schoolSubject.buildDynamicTopic!({
+      titlePl: "Geografia",
+      objectives: [{ id: objective.id, titlePl: "Mierzeje", descriptionEn: "Spits.", cards: [{ title: "Mierzeja", body: "Pas lądu." }, { title: "Przykład", body: "Mierzeja Wiślana." }] }],
+    });
+    const open = draft({
+      prompt: "Podaj przykład mierzei.",
+      focus: ["Mierzeja"],
+      questionType: "fact",
+      requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }],
+      expectedForm: "short",
+      sourceRefs: [{ quote: "Mierzeja Wiślana to piaszczysty pas lądu" }],
+      hint: "Przykładem jest Mierzeja Wiślana",
+    });
+    expect(sanitize(open).removed).toEqual(["hint"]);
+    expect(validateLessonExercise(open, schoolSubject, topic)).toEqual([]);
+  });
+
+  it("szkic z błędem kontraktu nie rzuca", () => {
+    const broken = draft({
+      prompt: "x".repeat(500),
+      answer: "",
+      acceptedAnswers: ["", "y".repeat(400)],
+      requiredElements: [{ id: "", text: "" }, { id: "e1", text: "Mierzeja Wiślana ".repeat(20) }],
+      sourceRefs: [{ quote: "" }, { quote: "z".repeat(700) }, { quote: "mierzeja wiślana to piaszczysty pas" }],
+      hint: "",
+    });
+    expect(() => sanitize(broken)).not.toThrow();
+    expect(() => sanitize({ ...broken, hint: "Mierzeja Wiślana" })).not.toThrow();
+    expect(() => sanitize(broken, "")).not.toThrow();
+  });
+});
+
+describe("schoolAgentPolicy — cytaty wyrównane do materiału (spec §5.2)", () => {
+  it("zastępuje cytat modelu dokładnym fragmentem materiału i liczy zmiany", () => {
+    const result = sanitize(draft({
+      sourceRefs: [
+        { quote: "mierzeja wiślana to piaszczysty pas lądu" },
+        { quote: "między Zatoką Gdańską a Zalewem Wiślanym" },
+        { quote: "Cytat spoza materiału, zostaje bez zmian." },
+      ],
+    }));
+    expect(result.quotesSnapped).toBe(1);
+    expect(result.draft.sourceRefs).toEqual([
+      { quote: "Mierzeja Wiślana to piaszczysty pas lądu" },
+      { quote: "między Zatoką Gdańską a Zalewem Wiślanym" },
+      { quote: "Cytat spoza materiału, zostaje bez zmian." },
+    ]);
+  });
+
+  it("cytat rodzica (`parentAdded`) bez zmian", () => {
+    const refs = [{ quote: "mierzeja wiślana to piaszczysty pas lądu", parentAdded: true }];
+    const result = sanitize(draft({ sourceRefs: refs }));
+    expect(result.quotesSnapped).toBe(0);
+    expect(result.draft.sourceRefs).toEqual(refs);
+  });
+
+  it("bez zmian cytatów i podpowiedzi zwraca ten sam szkic", () => {
+    const original = draft({ exerciseType: "lesson_gap", sourceRefs: [{ quote: "Mierzeja Wiślana to piaszczysty pas lądu" }] });
+    const result = sanitize(original);
+    expect(result.draft).toBe(original);
+    expect(result.quotesSnapped).toBe(0);
   });
 });

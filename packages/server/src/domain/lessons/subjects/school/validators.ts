@@ -2,6 +2,7 @@ import { MIN_SOURCE_QUOTE_LENGTH } from "@learning/contracts";
 import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { computeCalculationAnswer, renderCalculationPrompt } from "../../calculation";
 import { clip, type LessonRuleIssue } from "../../rules/catalog";
+import { quoteGrounding } from "./quote-normalize";
 import { schoolIssue } from "./rules";
 
 /**
@@ -16,16 +17,11 @@ const OPEN_TYPE = "lesson_open_answer";
 const KEYWORDS_TYPE = "lesson_keywords";
 
 /**
- * Normalizacja do porównania cytatu z materiałem: tylko NFC i białe znaki —
- * cytat pokazywany rodzicowi ma być dokładnym fragmentem, z wielkością liter.
+ * Porównanie sformułowań w rodzinie pytań: NFC, zwinięte białe znaki, bez
+ * wielkości liter. Osobne od dopasowania cytatów (`quote-normalize.ts`).
  */
-function normalizeForGrounding(text: string): string {
-  return text.normalize("NFC").replace(/\s+/g, " ").trim();
-}
-
-/** Porównanie sformułowań w rodzinie pytań: jak wyżej, ale bez wielkości liter. */
 function normalizeForPromptComparison(text: string): string {
-  return normalizeForGrounding(text).toLocaleLowerCase("pl-PL");
+  return text.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("pl-PL");
 }
 
 /** Słowa tekstu po NFC i małymi literami (litery i cyfry). */
@@ -198,13 +194,16 @@ export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTo
 
 /**
  * Walidacja puli z materiałem: (1) każdy cytat niepochodzący od rodzica musi
- * być dokładnym fragmentem materiału (po normalizacji), (2) ćwiczenia jednej
- * rodziny pytań (cel + familyId) muszą mieć tę samą odpowiedź wzorcową i ten
- * sam zbiór identyfikatorów elementów wymaganych.
+ * być fragmentem materiału (po normalizacji typograficznej, `quote-normalize.ts`),
+ * (2) ćwiczenia jednej rodziny pytań (cel + familyId) muszą mieć tę samą
+ * odpowiedź wzorcową i ten sam zbiór identyfikatorów elementów wymaganych.
+ * `rejectedFamilies` (tylko przyjmowanie agenta) to `familyId` pytań otwartych
+ * odrzuconych w bieżącym wywołaniu: słowa kluczowe takiej brakującej rodziny
+ * dostają osobną regułę kaskady zamiast „brak rodziny”.
  */
 export function validateSchoolPool(
   drafts: readonly LessonExerciseDraft[],
-  ctx: { material: string },
+  ctx: { readonly material: string; readonly rejectedFamilies?: ReadonlySet<string> },
 ): ReadonlyMap<number, readonly LessonRuleIssue[]> {
   const errors = new Map<number, LessonRuleIssue[]>();
   const push = (index: number, issue: LessonRuleIssue) => {
@@ -213,23 +212,25 @@ export function validateSchoolPool(
     errors.set(index, list);
   };
 
-  const materialNormalized = normalizeForGrounding(ctx.material);
   drafts.forEach((ex, index) => {
     (ex.sourceRefs ?? []).forEach((ref, refIndex) => {
       if (ref.parentAdded === true) return;
-      const quote = normalizeForGrounding(ref.quote);
       const field = `sourceRefs[${refIndex}].quote`;
-      if (quote.length < MIN_SOURCE_QUOTE_LENGTH) {
+      const grounding = quoteGrounding(ref.quote, ctx.material);
+      if (grounding.kind === "too_short") {
         push(index, schoolIssue("school.quote_too_short", {
           field,
           pl: `sourceRefs: cytat za krótki, aby uziemiał ćwiczenie (min. ${MIN_SOURCE_QUOTE_LENGTH} znaków)`,
-          found: `quote ${refIndex} ${clip(ref.quote)} has ${quote.length} characters, minimum ${MIN_SOURCE_QUOTE_LENGTH}`,
+          found: `quote ${refIndex} ${clip(ref.quote)} has ${grounding.length} characters, minimum ${MIN_SOURCE_QUOTE_LENGTH}`,
         }));
-      } else if (!materialNormalized.includes(quote)) {
+      } else if (grounding.kind === "not_in_material") {
+        const prefix = grounding.matchedPrefix === ""
+          ? "not even its first character occurs there"
+          : `the material matches it only up to ${clip(grounding.matchedPrefix)}`;
         push(index, schoolIssue("school.quote_in_material", {
           field,
           pl: "sourceRefs: cytat nie występuje w materiale źródłowym",
-          found: `quote ${refIndex} ${clip(ref.quote)} does not occur in the material`,
+          found: `quote ${refIndex} ${clip(ref.quote)} does not occur in the material; ${prefix}`,
         }));
       }
     });
@@ -286,6 +287,13 @@ export function validateSchoolPool(
     if (ex.exerciseType !== KEYWORDS_TYPE || !ex.familyId) return;
     const familyIndexes = families.get(JSON.stringify([ex.objectiveId, ex.familyId])) ?? [];
     const family = familyIndexes[0] === undefined ? undefined : drafts[familyIndexes[0]];
+    if (!family && ctx.rejectedFamilies?.has(ex.familyId) === true) {
+      push(index, schoolIssue("school.keywords_family_rejected", {
+        pl: "familyId: pytanie otwarte tej rodziny odpadło w tym samym wywołaniu",
+        found: `the lesson_open_answer with familyId ${clip(ex.familyId)} was rejected in this call; submit these keywords again together with the corrected open question`,
+      }));
+      return;
+    }
     if (!family) {
       push(index, schoolIssue("school.keywords_family_missing", {
         pl: `familyId: brak rodziny pytań otwartych „${ex.familyId}” w tym zagadnieniu`,

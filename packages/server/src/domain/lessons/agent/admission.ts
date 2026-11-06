@@ -79,7 +79,13 @@ export interface Rejection {
 }
 
 export type PrecheckEntry =
-  | { readonly pass: true; readonly draft: LessonExerciseDraft; readonly sanitized: readonly string[] }
+  | {
+      readonly pass: true;
+      readonly draft: LessonExerciseDraft;
+      readonly sanitized: readonly string[];
+      /** Noty sanityzacji przedmiotu dla modelu (`found ?? pl`; pełny format reguł w kolejnym kroku). */
+      readonly notes: readonly string[];
+    }
   | { readonly pass: false; readonly rejection: Rejection };
 
 export type AdmitEntry =
@@ -162,17 +168,20 @@ function limitsOf(ctx: AgentCheckContext, objectiveId: string): ObjectiveAgentLi
 function sanitizeCandidate(
   draft: LessonExerciseDraft,
   ctx: AgentCheckContext,
-): { ok: true; draft: LessonExerciseDraft; sanitized: readonly string[] } | { ok: false; rejection: Rejection } {
-  const sanitizedResult = ctx.subject.agentPolicy.sanitize?.(draft) ?? { draft, removed: [] };
+):
+  | { ok: true; draft: LessonExerciseDraft; sanitized: readonly string[]; notes: readonly string[] }
+  | { ok: false; rejection: Rejection } {
+  const sanitizedResult = ctx.subject.agentPolicy.sanitize?.(draft, { material: ctx.material }) ?? { draft, removed: [] };
+  const notes = (sanitizedResult.notes ?? []).map((issue) => issue.found ?? issue.pl);
   const refine = ctx.subject.refineGeneratedPool;
-  if (refine === undefined) return { ok: true, draft: sanitizedResult.draft, sanitized: sanitizedResult.removed };
+  if (refine === undefined) return { ok: true, draft: sanitizedResult.draft, sanitized: sanitizedResult.removed, notes };
   const refined = refine([sanitizedResult.draft], { material: ctx.material });
   const kept = refined.kept[0];
   if (refined.rejected.length > 0 || kept === undefined) {
     const reasons = refined.rejected.flatMap((item) => messagesOf(item.issues));
     return { ok: false, rejection: { kind: "rule", code: "refine", reasons: reasons.length > 0 ? reasons : ["the subject rules rejected this exercise"] } };
   }
-  return { ok: true, draft: kept, sanitized: sanitizedResult.removed };
+  return { ok: true, draft: kept, sanitized: sanitizedResult.removed, notes };
 }
 
 function entryLabel(entry: OrderedLessonEntry | undefined): string {
@@ -321,7 +330,7 @@ export function precheckBatch(
     }
     working = outcome.state;
     before = outcome.snapshot;
-    results[index] = { pass: true, draft: sanitized.draft, sanitized: sanitized.sanitized };
+    results[index] = { pass: true, draft: sanitized.draft, sanitized: sanitized.sanitized, notes: sanitized.notes };
   }
   return results;
 }

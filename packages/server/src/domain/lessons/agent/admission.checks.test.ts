@@ -383,3 +383,60 @@ describe("wydajność przyjmowania", () => {
     expect(elapsed).toBeLessThan(process.env.CI ? 10_000 : 2000);
   });
 });
+
+describe("precheckBatch i admitBatch — sanityzacja szkoły (spec katalogu reguł §5.1–5.2)", () => {
+  const OBJECTIVE = "school.ddeck.mierzeje";
+  const material = "Mierzeja Wiślana to „piaszczysty” pas lądu – między Zatoką Gdańską a Zalewem Wiślanym.";
+  const topic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Geografia",
+    objectives: [{
+      id: OBJECTIVE,
+      titlePl: "Mierzeje",
+      descriptionEn: "Spits.",
+      cards: [{ title: "Mierzeja", body: "Pas lądu oddziela zalew od morza." }, { title: "Gdzie?", body: "Nad Bałtykiem." }],
+    }],
+  });
+  const state = () => createLessonAgentState({ topic, objectives: agentObjectivesOf(topic), fixed: [], examples: {}, fixedSources: {} });
+  const context: AgentCheckContext = {
+    subject: schoolSubject,
+    material,
+    limits: new Map([[OBJECTIVE, { targetCount: 8, listenAllowance: 0, maxExercises: 10 }]]),
+  };
+  const openAnswer = (overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft => ({
+    exerciseType: "lesson_open_answer",
+    objectiveId: OBJECTIVE,
+    prompt: "Podaj przykład mierzei.",
+    answer: "Mierzeja Wiślana",
+    acceptedAnswers: [],
+    focus: ["Mierzeja"],
+    questionType: "fact",
+    requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }],
+    expectedForm: "short",
+    sourceRefs: [{ quote: "Mierzeja Wiślana to \"piaszczysty\" pas lądu - między" }],
+    ...overrides,
+  });
+
+  it("podpowiedź zdradzająca odpowiedź: ćwiczenie przechodzi bez podpowiedzi, z notą reguły", () => {
+    const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer({ hint: "Przykładem jest Mierzeja Wiślana" })], context);
+    expect(prechecked[0]).toMatchObject({
+      pass: true,
+      sanitized: ["hint"],
+      notes: ['hint removed: shares "wiślana" with the answer "Mierzeja Wiślana"'],
+    });
+    const admitted = admitBatch(state(), OBJECTIVE, prechecked, [NA_CHECKS], context);
+    expect(admitted.results[0]).toEqual({ accepted: "ex1", sanitized: ["hint"], unchecked: false });
+    expect(poolOf(admitted.state, OBJECTIVE)[0]!.draft).not.toHaveProperty("hint");
+  });
+
+  it("podpowiedź kierująca rozumowaniem zostaje, a ćwiczenie bez not", () => {
+    const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer({ hint: "Pomyśl o pasie lądu nad Bałtykiem." })], context);
+    expect(prechecked[0]).toMatchObject({ pass: true, sanitized: [], notes: [], draft: { hint: "Pomyśl o pasie lądu nad Bałtykiem." } });
+  });
+
+  it("cytat różniący się cudzysłowem i myślnikiem przechodzi i trafia do puli jako tekst materiału", () => {
+    const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer()], context);
+    const admitted = admitBatch(state(), OBJECTIVE, prechecked, [NA_CHECKS], context);
+    expect(admitted.results[0]).toHaveProperty("accepted");
+    expect(poolOf(admitted.state, OBJECTIVE)[0]!.draft.sourceRefs).toEqual([{ quote: "Mierzeja Wiślana to „piaszczysty” pas lądu – między" }]);
+  });
+});

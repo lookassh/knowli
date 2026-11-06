@@ -21,7 +21,9 @@ export const SCHOOL_RULES = defineRules({
   "school.quote_in_material": {
     field: "sourceRefs",
     kind: "reject",
-    description: "Each quote in sourceRefs is copied word for word from the material, with the same letter case; only whitespace may differ.",
+    description:
+      "Each quote in sourceRefs is one continuous fragment copied word for word from the material: no list marker and no “...” joining two fragments; " +
+      "only letter case, typographic quotes, dashes, the ellipsis character and whitespace may differ.",
   },
   "school.open_required_fields": {
     field: "exercise",
@@ -103,6 +105,13 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_keywords"],
     description: "lesson_keywords needs a lesson_open_answer with the same familyId in the same objective.",
   },
+  "school.keywords_family_rejected": {
+    field: "familyId",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description:
+      "The lesson_open_answer with this familyId was not accepted in this call or has no familyId; submit the keywords together with that open question.",
+  },
   "school.keyword_not_in_answer": {
     field: "keyOptionIds",
     kind: "reject",
@@ -118,10 +127,11 @@ export const SCHOOL_RULES = defineRules({
   },
   "hint.reveals_words": {
     field: "hint",
-    kind: "reject",
+    kind: "sanitize",
     types: ["lesson_open_answer"],
     description:
-      "The hint must not give away the answer or a required element; hint at the reasoning, not the content, or set hint to null.",
+      "The hint points to the reasoning or to where in the material to look; it must not contain most content words of the answer, an accepted variant " +
+      "or a required element in any word form (words of the question and function words do not count). Such a hint is removed and the exercise is accepted without it.",
   },
 });
 

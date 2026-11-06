@@ -1,13 +1,13 @@
 import { MIN_SOURCE_QUOTE_LENGTH, type CalculationSpec } from "@learning/contracts";
 import { computeCalculationAnswer, renderCalculationPrompt } from "../../calculation";
 import { registerRuleCases } from "../../testing/rule-cases";
-import type { AgentObjective, LessonExerciseDraft, LessonTopic } from "../../types";
+import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { schoolSubject } from "./module";
 
 /**
  * Przypadki reguł katalogu szkoły (`rules.ts`) dla testu kompletności
  * `rules/rule-cases.test.ts`. Każdy przypadek woła prawdziwy hak przedmiotu
- * (`validateExercise`, `validatePoolExtra`, `agentPolicy.exerciseGate`).
+ * (`validateExercise`, `validatePoolExtra`, `agentPolicy.sanitize`).
  */
 
 const OBJECTIVE_ID = "school.cases.fotosynteza";
@@ -28,14 +28,6 @@ const topic: LessonTopic = schoolSubject.buildDynamicTopic!({
     },
   ],
 });
-
-const objective: AgentObjective = {
-  id: OBJECTIVE_ID,
-  titlePl: "Fotosynteza",
-  descriptionEn: "Photosynthesis.",
-  cards: [],
-  exerciseTypes: [],
-};
 
 function openDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
   return {
@@ -92,10 +84,10 @@ function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExer
 }
 
 const exercise = (draft: LessonExerciseDraft) => () => schoolSubject.validateExercise(draft, topic);
-const pool = (drafts: readonly LessonExerciseDraft[]) => () =>
-  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flat();
-const gate = (draft: LessonExerciseDraft) => () =>
-  schoolSubject.agentPolicy.exerciseGate!(draft, objective, { material: MATERIAL }).map((finding) => finding.issue);
+const pool = (drafts: readonly LessonExerciseDraft[], rejectedFamilies?: ReadonlySet<string>) => () =>
+  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL, ...(rejectedFamilies ? { rejectedFamilies } : {}) }).values()].flat();
+const sanitizeNotes = (draft: LessonExerciseDraft) => () =>
+  schoolSubject.agentPolicy.sanitize!(draft, { material: MATERIAL }).notes ?? [];
 
 const family = openDraft({ familyId: "def" });
 
@@ -140,6 +132,8 @@ registerRuleCases([
     ]),
   },
   { rule: "school.keywords_family_missing", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()]) },
+  // Kaskada: pytanie otwarte rodziny „def” odpadło w tym samym wywołaniu agenta.
+  { rule: "school.keywords_family_rejected", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()], new Set(["def"])) },
   {
     rule: "school.keyword_not_in_answer",
     violation: pool([
@@ -156,6 +150,8 @@ registerRuleCases([
   },
   {
     rule: "hint.reveals_words",
-    violation: gate(openDraft({ answer: "Mierzeja Wiślana", requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }], hint: "Przykładem jest Mierzeja Wiślana" })),
+    violation: sanitizeNotes(
+      openDraft({ answer: "Mierzeja Wiślana", requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }], hint: "Przykładem jest Mierzeja Wiślana" }),
+    ),
   },
 ]);

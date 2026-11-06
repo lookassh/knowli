@@ -6,7 +6,7 @@
  */
 
 /** Generator mulberry32: liczby z [0, 1). */
-function prng(seed: number): () => number {
+export function prng(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;

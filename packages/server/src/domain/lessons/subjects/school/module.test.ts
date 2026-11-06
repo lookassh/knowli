@@ -207,11 +207,13 @@ describe("przedmiot school", () => {
     expect(schoolSubject.validatePoolExtra!([parent], { material: MATERIAL }).size).toBe(0);
   });
 
-  it("porównuje cytat z materiałem z wielkością liter, ale bez różnic białych znaków", () => {
+  it("porównuje cytat z materiałem bez różnic białych znaków i wielkości liter, ale słowo w słowo", () => {
     const spaced = openDraft({ sourceRefs: [{ quote: "przy  udziale\nświatła, wytwarza cukry" }] });
     expect(schoolSubject.validatePoolExtra!([spaced], { material: MATERIAL }).size).toBe(0);
     const recased = openDraft({ sourceRefs: [{ quote: "Przy udziale światła, wytwarza cukry" }] });
-    expect(messagesOf(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
+    expect(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).size).toBe(0);
+    const reworded = openDraft({ sourceRefs: [{ quote: "Przy udziale słońca, wytwarza cukry" }] });
+    expect(messagesOf(schoolSubject.validatePoolExtra!([reworded], { material: MATERIAL }).get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
   });
 
   it("wymaga elementów wymaganych i formy dla odpowiedzi otwartej", () => {
@@ -339,6 +341,23 @@ describe("słowa kluczowe (lesson_keywords)", () => {
     });
     const extra = schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL });
     expect(messagesOf(extra.get(1) ?? []).some((error) => error.includes("chlorofil"))).toBe(true);
+  });
+
+  it("kaskada: słowa kluczowe rodziny odrzuconej w tym wywołaniu dostają osobną regułę, a bez takiej rodziny — „brak rodziny”", () => {
+    const issuesOf = (drafts: readonly LessonExerciseDraft[], rejectedFamilies?: ReadonlySet<string>) =>
+      [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL, ...(rejectedFamilies ? { rejectedFamilies } : {}) }).entries()]
+        .map(([index, issues]) => [index, issues.map((issue) => issue.rule)] as const);
+    expect(issuesOf([keywordsDraft(), keywordsDraft({ familyId: "inna" })], new Set(["def"]))).toEqual([
+      [0, ["school.keywords_family_rejected"]],
+      [1, ["school.keywords_family_missing"]],
+    ]);
+    const [rejected] = schoolSubject.validatePoolExtra!([keywordsDraft()], { material: MATERIAL, rejectedFamilies: new Set(["def"]) }).get(0) ?? [];
+    expect(rejected).toMatchObject({ field: "familyId", pl: "familyId: pytanie otwarte tej rodziny odpadło w tym samym wywołaniu" });
+    expect(rejected!.found).toContain('familyId "def" was rejected in this call');
+    // Rodzina obecna w lekcji: kaskada nie dotyczy, nawet gdy slug jest na liście odrzuconych.
+    expect(issuesOf([family, keywordsDraft()], new Set(["def"]))).toEqual([]);
+    // Bez `rejectedFamilies` (edycja i publikacja rodzica) — dzisiejsza reguła.
+    expect(issuesOf([keywordsDraft()])).toEqual([[0, ["school.keywords_family_missing"]]]);
   });
 
   it("nie łączy słów kluczowych z rodziną pytań w kontroli spójności rodziny", () => {
@@ -606,7 +625,7 @@ describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
         rule: "school.quote_in_material",
         field: "sourceRefs[1].quote",
         pl: "sourceRefs: cytat nie występuje w materiale źródłowym",
-        found: 'quote 1 "Rośliny jedzą słońce na śniadanie." does not occur in the material',
+        found: 'quote 1 "Rośliny jedzą słońce na śniadanie." does not occur in the material; the material matches it only up to "roślin"',
       },
     ]);
   });

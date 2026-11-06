@@ -628,9 +628,13 @@ describe("agentRejectedReasons", () => {
       }
     }
     // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki rozdziału i szkoły, kontrole 2b).
-    for (const known of ["limit_full", "leak_victim", "variant_rejected", "refine", "open_not_accepted", "shape_malformed", "card_word_missing", "hint_reveals_answer", "hint_language"]) {
+    for (const known of ["limit_full", "leak_victim", "variant_rejected", "refine", "open_not_accepted", "shape_malformed", "card_word_missing", "hint_language"]) {
       expect(codes, known).toContain(known);
     }
+    // Bramka podpowiedzi szkoły już nie odrzuca (podpowiedź jest usuwana z notą), ale etykieta kodu
+    // zostaje dla szkiców zapisanych wcześniej z tym kodem w `rejectedReasons`.
+    expect(codes).not.toContain("hint_reveals_answer");
+    expect(Object.hasOwn(labels, "hint_reveals_answer")).toBe(true);
     expect(policies.length).toBeGreaterThanOrEqual(2);
     expect([...codes].filter((code) => !Object.hasOwn(labels, code))).toEqual([]);
   });

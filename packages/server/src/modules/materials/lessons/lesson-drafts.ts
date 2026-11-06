@@ -34,7 +34,7 @@ import {
 import { materialCreationMode } from "../../../domain/lessons/material-creation";
 import { keywordsAnswer } from "../../../domain/lessons/pool-validation";
 import { hasLenientRawShape } from "../../../domain/lessons/raw-shape";
-import { withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
+import { familyRunSuffix, withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
 import { messagesOf } from "../../../domain/lessons/rules/catalog";
 import {
   lessonExerciseStimulus,
@@ -781,7 +781,7 @@ export function withoutEmptyOptionalArrays(draft: LessonExerciseDraft): LessonEx
  * nowej partii dostają więc sufiks runu i pozostają wewnątrz niej.
  */
 export function scopeFamiliesToRun(draft: LessonExerciseDraft, runId: string): LessonExerciseDraft {
-  const suffix = `-r${runId.replace(/[^0-9a-f]/gi, "").slice(0, 6).toLowerCase()}`;
+  const suffix = familyRunSuffix(runId);
   // Cut before the suffix without leaving a dangling "-" (templateFamilyId is a strict slug).
   const scoped = (slug: string) => {
     let base = slug.slice(0, 64 - suffix.length);

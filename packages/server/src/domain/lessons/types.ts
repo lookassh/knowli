@@ -184,8 +184,21 @@ export interface SubjectAgentPolicy {
     readonly openWrong?: string;
   };
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
-  sanitize?(draft: LessonExerciseDraft): { draft: LessonExerciseDraft; removed: readonly string[] };
-  /** Kod trafia do `Rejection.code` (np. `hint_reveals_answer`), powód do modelu. */
+  /**
+   * Oczyszczenie kandydata agenta przed kontrolami: `removed` — nazwy usuniętych pól,
+   * `notes` — zgłoszenia reguł `sanitize` dla modelu (np. usunięta podpowiedź),
+   * `quotesSnapped` — liczba cytatów zastąpionych dokładnym fragmentem materiału.
+   */
+  sanitize?(
+    draft: LessonExerciseDraft,
+    ctx: { readonly material: string },
+  ): {
+    draft: LessonExerciseDraft;
+    removed: readonly string[];
+    notes?: readonly LessonRuleIssue[];
+    quotesSnapped?: number;
+  };
+  /** Kod trafia do `Rejection.code` (np. `card_word_missing`), powód do modelu. */
   exerciseGate?(
     draft: LessonExerciseDraft,
     objective: AgentObjective,
@@ -449,7 +462,14 @@ export interface SubjectModule {
    */
   validatePoolExtra?(
     drafts: readonly LessonExerciseDraft[],
-    ctx: { material: string },
+    ctx: {
+      readonly material: string;
+      /**
+       * Tylko przyjmowanie agenta: `familyId` pytań otwartych odrzuconych w bieżącym
+       * wywołaniu (kaskada słów kluczowych). Edycja i publikacja rodzica go nie podają.
+       */
+      readonly rejectedFamilies?: ReadonlySet<string>;
+    },
   ): ReadonlyMap<number, readonly LessonRuleIssue[]>;
   /** Polityka agenta puli — każdy przedmiot jest generowany agentem. */
   readonly agentPolicy: SubjectAgentPolicy;
