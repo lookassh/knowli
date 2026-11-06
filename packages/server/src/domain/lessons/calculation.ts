@@ -183,7 +183,9 @@ function specIssue(issue: z.core.$ZodIssue, spec: unknown): LessonRuleIssue {
   const problem = (() => {
     switch (issue.code) {
       case "invalid_type":
-        return `got ${shown(value)}; expected ${issue.expected}`;
+        return issue.path.length === 0
+          ? `calculation is not an object {kind, unit, params, templateFamilyId}; got ${shown(value)}`
+          : `got ${shown(value)}; expected ${issue.expected}`;
       case "too_small":
         return `got ${shown(value)}; expected at least ${issue.minimum}`;
       case "too_big":

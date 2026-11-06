@@ -923,7 +923,7 @@ function validateKeywords(
   } else if (keyIds.length > 0 && ex.answer !== keywordsAnswer(ex)) {
     issues.push(coreIssue("keywords.answer_computed", {
       pl: "answer: musi być listą pojęć kluczowych złączonych „, ”",
-      found: `answer ${clip(ex.answer)}, computed ${clip(keywordsAnswer(ex))}`,
+      found: computedAnswerFound(ex.answer, keywordsAnswer(ex)),
     }));
   }
   if (keyIds.length >= options.length && options.length > 0) {
@@ -983,8 +983,13 @@ function confusableTexts(texts: readonly string[]): [number, number][] {
 }
 
 /** `found` pary tekstów nie do odróżnienia. */
-function confusableFound(a: string, b: string): string {
-  return `${clip(b)} and ${clip(a)} repeat or contain each other as whole words`;
+function confusableFound(earlier: string, later: string): string {
+  return `${clip(later)} and ${clip(earlier)} repeat or contain each other as whole words`;
+}
+
+/** `found` odpowiedzi różnej od liczonej przez kod. */
+function computedAnswerFound(answer: string, computed: string): string {
+  return `answer ${clip(answer)}, computed ${clip(computed)}`;
 }
 
 /** Pary, grupy i luki z bankiem oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
@@ -1055,7 +1060,7 @@ function validateMatch(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void
   if (pairs.length > 0 && ex.answer !== matchAnswer(ex)) {
     issues.push(coreIssue("match.answer_computed", {
       pl: "answer: musi być listą lewych elementów par złączonych „, ”",
-      found: `answer ${clip(ex.answer)}, computed ${clip(matchAnswer(ex))}`,
+      found: computedAnswerFound(ex.answer, matchAnswer(ex)),
     }));
   }
 }
@@ -1137,7 +1142,7 @@ function validateGroup(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void
   if (groups.length > 0 && ex.answer !== groupAnswer(ex)) {
     issues.push(coreIssue("group.answer_computed", {
       pl: "answer: musi być listą etykiet grup złączonych „ / ”",
-      found: `answer ${clip(ex.answer)}, computed ${clip(groupAnswer(ex))}`,
+      found: computedAnswerFound(ex.answer, groupAnswer(ex)),
     }));
   }
 }
@@ -1232,7 +1237,7 @@ function validateCloze(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void
   if (answers.length > 0 && ex.answer !== clozeAnswer(ex)) {
     issues.push(coreIssue("cloze.answer_computed", {
       pl: "answer: musi być listą słów luk złączonych „, ”",
-      found: `answer ${clip(ex.answer)}, computed ${clip(clozeAnswer(ex))}`,
+      found: computedAnswerFound(ex.answer, clozeAnswer(ex)),
     }));
   }
 }
@@ -1584,13 +1589,13 @@ export interface PoolValidationIssuesResult {
 /** Opcje walidacji puli: kontekst dogenerowania i opcje walidacji ćwiczenia (`agent`). */
 export type PoolValidationOptions = PoolValidationContext & LessonExerciseValidationOptions;
 
+/** Długość wycinka bodźca w `found` reguł puli. */
+const STIMULUS_CLIP = 40;
+
 /** Krótki opis ćwiczenia do `found`: typ i początek bodźca (bez treści spoza ćwiczenia). */
 function exerciseLabel(ex: LessonExerciseDraft, options: LessonExerciseIdentityOptions): string {
   return `${ex.exerciseType} ${clip(lessonExerciseStimulus(ex, options), STIMULUS_CLIP)}`;
 }
-
-/** Długość wycinka bodźca w `found` reguł puli. */
-const STIMULUS_CLIP = 40;
 
 /**
  * Waliduje całą pulę i zwraca zgłoszenia reguł. Najpierw reguły pojedynczego

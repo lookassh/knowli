@@ -1,4 +1,7 @@
 import type { LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
+
+/** Tryb rozpoznawania duplikatów w puli (`SubjectModule.poolDeduplication`; brak = `answer`). */
+export type PoolDeduplication = NonNullable<SubjectModule["poolDeduplication"]>;
 import { CORE_RULES } from "./core-rules";
 import { LESSON_RULES } from "./lesson-rules";
 
@@ -74,6 +77,11 @@ export interface RuleBookContext {
   readonly listenChoice: boolean;
   readonly voiceTones: boolean;
   readonly exerciseExplanations: boolean;
+  /**
+   * Tryb duplikatów puli przedmiotu, którym posługuje się `validatePoolIssues`
+   * (`subject.poolDeduplication ?? "answer"`); wypełnia go wejście agenta (Task 8a).
+   */
+  readonly deduplication: PoolDeduplication;
 }
 
 /** Id reguły: literał `obszar.nazwa` z co najmniej jedną kropką, tylko `[a-z0-9_]` w segmentach. */
