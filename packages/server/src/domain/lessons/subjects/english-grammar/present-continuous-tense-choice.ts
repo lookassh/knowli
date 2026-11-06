@@ -209,7 +209,8 @@ export function tenseChoiceMarkerGroup(
   fields: readonly { readonly text: string; readonly lang: "en" | "pl"; readonly instruction?: boolean }[],
   errors: LessonRuleIssue[],
 ): MarkerGroup | undefined {
-  const groups = new Set(fields.flatMap(({ text, lang, instruction }) => [...scanTimeMarkers(text, lang, { instruction: instruction === true }).groups]));
+  const scans = fields.map(({ text, lang, instruction }) => ({ text, groups: scanTimeMarkers(text, lang, { instruction: instruction === true }).groups }));
+  const groups = new Set(scans.flatMap((scan) => [...scan.groups]));
   if (groups.size === 0) {
     errors.push(grammarIssue("grammar.pc_tense_marker_missing", {
       pl: "ćwiczenie potrzebuje wskaźnika czasu (now, Look!, every day…) albo scenki w poleceniu (Cicho!, teraz, codziennie…)",
@@ -220,7 +221,10 @@ export function tenseChoiceMarkerGroup(
   if (groups.size > 1) {
     errors.push(grammarIssue("grammar.pc_tense_markers_mixed", {
       pl: "wskaźniki „teraz” i „zwykle” naraz — czas odpowiedzi musi wynikać z jednej grupy",
-      found: "the exercise has both now and usually markers",
+      // Skaner zwraca same grupy, więc `found` cytuje pierwsze pole ze wskaźnikiem każdej grupy.
+      found: (["now", "usually"] as const)
+        .map((markerGroup) => `a ${markerGroup} marker in ${clip(scans.find((scan) => scan.groups.has(markerGroup))!.text)}`)
+        .join(" and "),
     }));
     return undefined;
   }
@@ -250,12 +254,15 @@ export function validateTenseOfGroups(
 ): void {
   if (group === undefined) return;
   const expected = TENSE_OF_MARKER_GROUP[group];
-  const wrong = sentences.flatMap(({ groups }) => groups).find((verbGroup) => verbGroup.tense !== expected);
-  if (wrong !== undefined) {
+  const wrongSentence = sentences.find(({ groups }) => groups.some((verbGroup) => verbGroup.tense !== expected));
+  const wrong = wrongSentence?.groups.find((verbGroup) => verbGroup.tense !== expected);
+  if (wrongSentence !== undefined && wrong !== undefined) {
     errors.push(grammarIssue("grammar.pc_tense_marker_mismatch", {
       field,
       pl: `${field}: zdanie ma ${TENSE_NAMES[wrong.tense]}, a wskaźnik „${group === "now" ? "teraz" : "zwykle"}” wymaga ${TENSE_NAMES[expected]}`,
-      found: `${field} has a ${TENSE_NAMES[wrong.tense]} verb, but the ${group} markers require ${TENSE_NAMES[expected]}`,
+      found:
+        `${field} ${clip(wrongSentence.tokens.join(" "))} has a ${TENSE_NAMES[wrong.tense]} verb, ` +
+        `but the ${group} markers require ${TENSE_NAMES[expected]}`,
     }));
   }
 }

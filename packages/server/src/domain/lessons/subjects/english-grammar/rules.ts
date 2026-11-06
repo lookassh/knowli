@@ -125,7 +125,8 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the present_continuous topic a negative be-gap answer needs No before the gap (Is she sleeping? No, she ___.), " +
-      "otherwise the affirmative fits too; only a lesson_choice in the negative objective may offer negative keys without No.",
+      "otherwise the affirmative fits too; only in the negative objective may a be gap outside a lesson_gap (choice, " +
+      "listening choice, short answer) have a negative key without No.",
   },
   "grammar.pc_be_yes_negative": {
     when: inPresentContinuous,
@@ -214,7 +215,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_gap"],
     description:
       "In the present_continuous topic a verb gap stands for the whole verb form, so the clause before the gap has no am, is, are, " +
-      "do, does or what's (never Is she ___ (read)?).",
+      "do or does and no contraction with is such as what's, where's or there's (never Is she ___ (read)?).",
   },
   "grammar.pc_gap_bracket_objective": {
     when: inPresentContinuous,
@@ -260,7 +261,9 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     when: inPresentContinuous,
     field: "answer",
     kind: "reject",
-    description: "In the present_continuous topic every present continuous sentence of a key has am, is or are.",
+    description:
+      "In the present_continuous topic a present continuous key (with the stem around it when it fills a gap) contains at " +
+      "least one am, is or are.",
   },
   "grammar.pc_sentence_not_continuous": {
     when: inPresentContinuous,
@@ -491,7 +494,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
 });
 
 /** Reguła luk Present Simple: walidator sprawdza ją poza tematami „to be” i Present Continuous. */
-const outsideToBe = (ctx: RuleBookContext): boolean => ctx.topicId !== TO_BE_TOPIC && ctx.topicId !== PRESENT_CONTINUOUS_TOPIC;
+const presentSimpleGaps = (ctx: RuleBookContext): boolean => ctx.topicId !== TO_BE_TOPIC && ctx.topicId !== PRESENT_CONTINUOUS_TOPIC;
 
 /**
  * Katalog reguł przedmiotu `english_grammar` (`validateExercise`) ze wspólnym
@@ -636,7 +639,7 @@ export const GRAMMAR_RULES = defineRules({
   "grammar.gap_operator_mismatch": {
     field: "answer",
     kind: "reject",
-    when: outsideToBe,
+    when: presentSimpleGaps,
     types: ["lesson_gap"],
     description:
       "A gap answered with an operator (do, does, don't, doesn't) fits the objective, agrees with the subject near the gap " +
@@ -645,7 +648,7 @@ export const GRAMMAR_RULES = defineRules({
   "grammar.gap_present_simple_form": {
     field: "answer",
     kind: "reject",
-    when: outsideToBe,
+    when: presentSimpleGaps,
     types: ["lesson_gap"],
     description: "When the hint of a lesson_gap is a verb, the gap answer is a Present Simple form of that verb (base form, third person singular, or with do and does).",
   },
