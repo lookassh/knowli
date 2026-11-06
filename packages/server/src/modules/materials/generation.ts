@@ -378,10 +378,22 @@ export async function retryGeneration(services: Services, runId: string): Promis
           .where(eq(mediaAssets.id, asset.id));
       }
     }
+    // „Ponów” to świadoma decyzja rodzica: run zestawu przyjmuje bieżący numer
+    // edycji szkicu (#302), inaczej finalizacja po edycji z porażki po cichu
+    // wyrzuciłaby opłacony wynik. Kolejność blokad jak w finalizacji: wersja, potem run.
+    let expectedEditNumber: number | undefined;
+    if (run.kind === "deck") {
+      const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
+      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") {
+        throw new AppError("conflict");
+      }
+      expectedEditNumber = version.editNumber;
+    }
     // liczba odrzuceń należy do zakończonej próby (porażka `no_source_items`); nowa próba zapisze własną
     await tx
       .update(generationRuns)
-      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, rejectedCount: null })
+      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, rejectedCount: null, ...(expectedEditNumber === undefined ? {} : { expectedEditNumber }) })
       .where(eq(generationRuns.id, runId));
     return { runId };
   });
