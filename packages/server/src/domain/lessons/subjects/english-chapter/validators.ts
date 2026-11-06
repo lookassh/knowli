@@ -1,4 +1,5 @@
 import { answersEquivalent, V3_EXERCISE_FIELDS, type V3ExerciseField } from "../../pool-validation";
+import { messagesOf } from "../../rules/catalog";
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic } from "../../types";
 import { listenChoiceSibilantErrors } from "../english/listen-audibility";
 import { englishNormalizer } from "../english/normalizer";
@@ -81,7 +82,7 @@ function isBlank(text: string | undefined): boolean {
 }
 
 export function validateChapterExercise(ex: LessonExerciseDraft, _topic: LessonTopic): string[] {
-  const errors: string[] = [...listenChoiceSibilantErrors(ex)];
+  const errors: string[] = [...messagesOf(listenChoiceSibilantErrors(ex))];
 
   if (ex.exerciseType === "lesson_choice") {
     const gaps = ex.stem?.match(GAP)?.length ?? 0;
