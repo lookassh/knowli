@@ -1,11 +1,31 @@
 import {
+  MAX_CALCULATION_DECIMALS,
+  MAX_CALCULATION_PARAMETER,
+  MAX_CLOZE_EXTRA,
+  MAX_CLOZE_GAPS,
   MAX_COMMON_ERRORS,
+  MAX_GROUP_ITEMS,
+  MAX_GROUPS,
+  MAX_KEY_OPTIONS,
+  MAX_KEYWORD_OPTIONS,
   MAX_LESSON_TEXT_LENGTH,
+  MAX_MATCH_EXTRA,
+  MAX_MATCH_PAIRS,
   MAX_OPTIONS,
   MAX_ORDER_ITEMS,
   MAX_REQUIRED_ELEMENTS,
+  MAX_SCALE_DENOMINATOR,
   MAX_SOURCE_REFS,
   MAX_SUPPLEMENTARY_ELEMENTS,
+  MAX_TEMPLATE_FAMILY_ID_LENGTH,
+  MIN_CLOZE_EXTRA,
+  MIN_CLOZE_GAPS,
+  MIN_GROUP_ITEMS,
+  MIN_GROUPS,
+  MIN_ITEMS_PER_GROUP,
+  MIN_KEY_OPTIONS,
+  MIN_KEYWORD_OPTIONS,
+  MIN_MATCH_PAIRS,
   MIN_OPTIONS,
   MIN_ORDER_ITEMS,
   MIN_REQUIRED_ELEMENTS,
@@ -16,18 +36,19 @@ import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
   GAP_MARKER,
   MAX_ACCEPTED_ANSWERS,
+  MAX_CLOZE_WORD_TOKENS,
   MAX_GAP_ANSWER_TOKENS,
   MAX_NOTICE_SEGMENTS,
   MAX_NOTICE_SENTENCES,
   MIN_NOTICE_SEGMENTS,
   MIN_NOTICE_SENTENCES,
+  MAX_TOLERANCE_PERCENT,
 } from "./limits";
 
 /**
  * Katalog reguł rdzenia (spec katalogu reguł §2.2): kontrakt, kształt rekordu
  * agenta, pola wspólne i reguły typów z `pool-validation.ts`, rachunki,
- * `explanationPl`. Wypełniany w kolejnych zadaniach (pary, grupy, luki z
- * bankiem, słowa kluczowe i rachunki — Task 4).
+ * `explanationPl`. Kształt rekordu agenta dochodzi w Task 5.
  *
  * Bez importu wartości z `./catalog` (cykl przez `ENGINE_CATALOGS`): katalog
  * deklaruje się przez `satisfies RuleCatalog`, a id sprawdza `defineRules`
@@ -41,7 +62,11 @@ export const CORE_RULES = {
   // items → order.items_count, acceptedAnswers → variants.count, noticeSegments →
   // notice.sentence_count, noticeSegments[i] → notice.segment_count, za długie
   // answer i acceptedAnswers[i] → answer.max_length. Jedna granica ma jeden opis
-  // dla modelu, a reguła ma osiągalny przypadek naruszenia. Reszta list i napisów:
+  // dla modelu, a reguła ma osiągalny przypadek naruszenia. Tak samo listy par, grup,
+  // luk z bankiem i słów kluczowych (Task 4): pairs → match.pairs_count, extraRight →
+  // match.extra_count, groups → group.groups_count, groupItems → group.items_count,
+  // gapAnswers → cloze.gap_count, extraWords → cloze.extra_count, keywordOptions →
+  // keywords.options_count, keyOptionIds → keywords.key_count. Reszta list i napisów:
   // field.count i field.max_length.
   "field.empty": {
     field: "exercise",
@@ -386,12 +411,259 @@ export const CORE_RULES = {
     description: "lesson_open_answer has the question in prompt.",
   },
 
-  // Przejściowe: reguły par, grup, luk z bankiem i słów kluczowych dostają własne id w Task 4.
-  "transitional.type_rules": {
-    field: "exercise",
+  // Słowa kluczowe (`lesson_keywords`).
+  "keywords.options_count": {
+    field: "keywordOptions",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: `lesson_keywords has ${MIN_KEYWORD_OPTIONS}–${MAX_KEYWORD_OPTIONS} keywordOptions.`,
+    limit: "MAX_KEYWORD_OPTIONS",
+  },
+  "keywords.option_ids_unique": {
+    field: "keywordOptions",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: "The ids of keywordOptions are unique.",
+  },
+  "keywords.option_duplicate": {
+    field: "keywordOptions",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: "No two keywordOptions have equivalent texts after normalization.",
+  },
+  "keywords.key_count": {
+    field: "keyOptionIds",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: `keyOptionIds lists ${MIN_KEY_OPTIONS}–${MAX_KEY_OPTIONS} key terms.`,
+    limit: "MAX_KEY_OPTIONS",
+  },
+  "keywords.key_repeated": {
+    field: "keyOptionIds",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: "No id repeats in keyOptionIds.",
+  },
+  "keywords.key_unknown": {
+    field: "keyOptionIds",
+    kind: "reject",
+    types: ["lesson_keywords"],
+    description: "Every id in keyOptionIds is the id of one of the keywordOptions.",
+  },
+  "keywords.distractor_required": {
+    field: "keywordOptions",
     kind: "internal",
-    types: ["lesson_match", "lesson_group", "lesson_cloze", "lesson_keywords"],
-    description: "Rules of lesson_match, lesson_group, lesson_cloze and lesson_keywords before they get their own ids.",
-    internalReason: "Transitional id for type rules that are not catalogued yet; removed when they get their own rules.",
+    types: ["lesson_keywords"],
+    description: "At least one of the keywordOptions is a distractor that keyOptionIds does not list.",
+    internalReason:
+      "Unreachable behind the contract: keywordOptions has more entries than keyOptionIds may list, so a distractor always remains; the check is a safeguard.",
+  },
+  "keywords.answer_computed": {
+    field: "answer",
+    kind: "internal",
+    types: ["lesson_keywords"],
+    description: "The answer of lesson_keywords is the key terms joined with a comma, in the order of keyOptionIds.",
+    internalReason: "Materialization of lesson_keywords computes the answer from keyOptionIds; the agent does not send it.",
+  },
+
+  // Pary (`lesson_match`).
+  "match.pairs_count": {
+    field: "pairs",
+    kind: "reject",
+    types: ["lesson_match"],
+    description: `lesson_match has ${MIN_MATCH_PAIRS}–${MAX_MATCH_PAIRS} pairs.`,
+    limit: "MAX_MATCH_PAIRS",
+  },
+  "match.extra_count": {
+    field: "extraRight",
+    kind: "reject",
+    types: ["lesson_match"],
+    description: `extraRight of lesson_match has at most ${MAX_MATCH_EXTRA} distractors.`,
+    limit: "MAX_MATCH_EXTRA",
+  },
+  "match.confusable": {
+    field: "pairs",
+    kind: "reject",
+    types: ["lesson_match"],
+    description:
+      "On each side of lesson_match (the left texts; the right texts together with extraRight) no text repeats another " +
+      "or contains it as whole words, so the child can tell them apart.",
+  },
+  "match.answer_computed": {
+    field: "answer",
+    kind: "internal",
+    types: ["lesson_match"],
+    description: "The answer of lesson_match is the left texts of the pairs joined with a comma.",
+    internalReason: "Materialization of lesson_match computes the answer from pairs; the agent does not send it.",
+  },
+
+  // Grupy (`lesson_group`).
+  "group.groups_count": {
+    field: "groups",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: `lesson_group has ${MIN_GROUPS}–${MAX_GROUPS} groups.`,
+    limit: "MAX_GROUPS",
+  },
+  "group.items_count": {
+    field: "groupItems",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: `lesson_group has ${MIN_GROUP_ITEMS}–${MAX_GROUP_ITEMS} groupItems.`,
+    limit: "MAX_GROUP_ITEMS",
+  },
+  "group.ids_unique": {
+    field: "groups",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: "The ids of groups are unique.",
+  },
+  "group.item_unknown_group": {
+    field: "groupItems",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: "The groupId of every item in groupItems is the id of one of the groups.",
+  },
+  "group.items_per_group": {
+    field: "groupItems",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: `Each group of lesson_group has at least ${MIN_ITEMS_PER_GROUP} items in groupItems.`,
+    limit: "MIN_ITEMS_PER_GROUP",
+  },
+  "group.label_confusable": {
+    field: "groups",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: "No group label repeats another label or contains it as whole words.",
+  },
+  "group.item_repeated": {
+    field: "groupItems",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: "No text in groupItems repeats another item text (letter case and spacing ignored).",
+  },
+  "group.item_is_label": {
+    field: "groupItems",
+    kind: "reject",
+    types: ["lesson_group"],
+    description: "No text in groupItems is the label of a group.",
+  },
+  "group.answer_computed": {
+    field: "answer",
+    kind: "internal",
+    types: ["lesson_group"],
+    description: "The answer of lesson_group is the group labels joined with a slash.",
+    internalReason: "Materialization of lesson_group computes the answer from groups; the agent does not send it.",
+  },
+
+  // Tekst z lukami i bankiem słów (`lesson_cloze`).
+  "cloze.text_required": {
+    field: "clozeText",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "lesson_cloze carries its text with gaps in clozeText.",
+  },
+  "cloze.gap_count": {
+    field: "clozeText",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: `clozeText has ${MIN_CLOZE_GAPS}–${MAX_CLOZE_GAPS} gaps, each written as ${GAP_MARKER}.`,
+    limit: "MAX_CLOZE_GAPS",
+  },
+  "cloze.answers_count": {
+    field: "gapAnswers",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "gapAnswers has exactly one word for each gap of clozeText, in text order.",
+  },
+  "cloze.extra_count": {
+    field: "extraWords",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: `extraWords has ${MIN_CLOZE_EXTRA}–${MAX_CLOZE_EXTRA} distractor words for the word bank.`,
+    limit: "MAX_CLOZE_EXTRA",
+  },
+  "cloze.words_between_gaps": {
+    field: "clozeText",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "At least one word stands between two gaps of clozeText.",
+  },
+  "cloze.underscore_outside_gap": {
+    field: "clozeText",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "clozeText has no underscore outside the gap markers.",
+  },
+  "cloze.bank_word_empty": {
+    field: "gapAnswers",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "Each entry of the word bank (gapAnswers and extraWords) contains a letter or a digit.",
+  },
+  "cloze.bank_word_tokens": {
+    field: "gapAnswers",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: `Each entry of gapAnswers and extraWords is at most ${MAX_CLOZE_WORD_TOKENS} words long.`,
+    limit: "MAX_CLOZE_WORD_TOKENS",
+  },
+  "cloze.bank_confusable": {
+    field: "gapAnswers",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description: "No word of the bank repeats another bank word or contains it as whole words.",
+  },
+  "cloze.bank_outside_gap": {
+    field: "clozeText",
+    kind: "reject",
+    types: ["lesson_cloze"],
+    description:
+      "No word of the bank appears in clozeText outside the gaps, so the text neither gives away nor rules out a bank word.",
+  },
+  "cloze.answer_computed": {
+    field: "answer",
+    kind: "internal",
+    types: ["lesson_cloze"],
+    description: "The answer of lesson_cloze is the gap words joined with a comma.",
+    internalReason: "Materialization of lesson_cloze computes the answer from gapAnswers; the agent does not send it.",
+  },
+
+  // Specyfikacja rachunku (`calculationIssues` w `calculation.ts`). Wynik, polecenie,
+  // brak parametrów i rodzinę rachunków sprawdzają reguły szkoły (`school.calculation_*`).
+  "calculation.tolerance": {
+    field: "calculation.tolerance",
+    kind: "reject",
+    types: ["lesson_calculation"],
+    description:
+      "Leave calculation.tolerance out or set it to zero, because the code computes the exact result; " +
+      `a non-zero tolerance is at most ${MAX_TOLERANCE_PERCENT}% of the absolute result.`,
+    limit: "MAX_TOLERANCE_SHARE",
+  },
+  "calculation.family_slug": {
+    field: "calculation.templateFamilyId",
+    kind: "reject",
+    types: ["lesson_calculation"],
+    description:
+      `calculation.templateFamilyId is lowercase letters and digits joined by single hyphens, at most ${MAX_TEMPLATE_FAMILY_ID_LENGTH} ` +
+      "characters (e.g. scale-distance-km), even though calculation kinds use underscores.",
+  },
+  "calculation.params": {
+    field: "calculation.params",
+    kind: "reject",
+    types: ["lesson_calculation"],
+    description:
+      "calculation.kind is scale_distance, height_difference or unit_conversion and unit is cm, m or km; params holds the " +
+      `numbers of the kind: scaleDenominator (a positive whole number up to ${MAX_SCALE_DENOMINATOR}) and mapDistanceCm, ` +
+      "upperHeightM not below lowerHeightM, or value and fromUnit. Numbers have at most " +
+      `${MAX_CALCULATION_DECIMALS} decimal places and lie within ±${MAX_CALCULATION_PARAMETER}; distances and values are not negative.`,
+  },
+  "calculation.unknown_key": {
+    field: "calculation",
+    kind: "reject",
+    types: ["lesson_calculation"],
+    description:
+      "calculation has only the keys kind, unit, params, templateFamilyId and tolerance, and params only the parameters of its kind.",
   },
 } as const satisfies RuleCatalog;

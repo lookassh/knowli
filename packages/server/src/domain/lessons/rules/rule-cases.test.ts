@@ -6,6 +6,7 @@ import "../subjects/english-grammar/grammar.rule-cases";
 import "../subjects/school/school.rule-cases";
 import { allRuleCases, type RuleCase } from "../testing/rule-cases";
 import "./core.rule-cases";
+import "./lesson.rule-cases";
 import { defineRules, ENGINE_CATALOGS, issueFrom, type LessonRuleIssue, type RuleCatalog } from "./catalog";
 
 /**

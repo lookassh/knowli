@@ -29,3 +29,15 @@ export const MAX_GAP_ANSWER_TOKENS = 3;
 
 /** Najdłuższe zdanie, które nagrywamy (jak limit odpowiedzi dziecka). */
 export const FEEDBACK_SENTENCE_MAX_LENGTH = 200;
+
+/** `lesson_cloze`: słowo luki i słowo-pułapka mają najwyżej tyle słów (design szkoły §13.1). */
+export const MAX_CLOZE_WORD_TOKENS = 3;
+
+/**
+ * Tolerancja rachunku: najwyżej |wynik| / `MAX_TOLERANCE_SHARE` (1%). Dzielnik ma
+ * tylko czynniki 2 i 5, więc limit w `found` ma skończone rozwinięcie dziesiętne.
+ */
+export const MAX_TOLERANCE_SHARE = 100;
+
+/** Ta sama granica tolerancji w procentach (do opisu reguły i komunikatu). */
+export const MAX_TOLERANCE_PERCENT = 100 / MAX_TOLERANCE_SHARE;

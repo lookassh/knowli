@@ -51,21 +51,31 @@ import type {
 import { explanationIssues } from "./exercise-explanation";
 import { clip, issueFrom, messagesOf, type LessonRuleIssue } from "./rules/catalog";
 import { CORE_RULES } from "./rules/core-rules";
+import { LESSON_RULES } from "./rules/lesson-rules";
 import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
   GAP_MARKER,
   MAX_ACCEPTED_ANSWERS,
+  MAX_CLOZE_WORD_TOKENS,
   MAX_GAP_ANSWER_TOKENS,
   MAX_NOTICE_SEGMENTS,
   MAX_NOTICE_SENTENCES,
   MIN_NOTICE_SEGMENTS,
   MIN_NOTICE_SENTENCES,
 } from "./rules/limits";
-import { lessonExerciseIdentity, lessonIdentityOptionsOf } from "./exercise-identity";
+import {
+  lessonExerciseIdentity,
+  lessonExerciseStimulus,
+  lessonIdentityOptionsOf,
+  type LessonExerciseIdentityOptions,
+} from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
 
 /** Fabryka zgłoszeń reguł rdzenia. */
 const coreIssue = issueFrom(CORE_RULES);
+
+/** Fabryka zgłoszeń reguł lekcji (cała pula). */
+const lessonIssue = issueFrom(LESSON_RULES);
 
 /** Znacznik luki w `stem` ćwiczenia `lesson_gap` (stała w `rules/limits.ts`, bo podaje ją opis reguły). */
 export { GAP_MARKER };
@@ -90,8 +100,8 @@ export {
 /** Zakresy liczby elementów `lesson_order` i opcji wyboru — limity z kontraktów. */
 export { MAX_OPTIONS, MAX_ORDER_ITEMS, MIN_OPTIONS, MIN_ORDER_ITEMS };
 
-/** `lesson_cloze`: słowo luki i słowo-pułapka mają 1–3 słowa (design szkoły §13.1). */
-export const MAX_CLOZE_WORD_TOKENS = 3;
+/** `lesson_cloze`: słowo luki i słowo-pułapka mają 1–3 słowa (design szkoły §13.1; stała w `rules/limits.ts`). */
+export { MAX_CLOZE_WORD_TOKENS };
 
 /** Typy tekstowe (wolna odpowiedź dziecka) — wymagają niepustego `focus`. */
 const TEXT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>([
@@ -263,7 +273,8 @@ function contractMessage(issue: ContractIssue): string {
 
 /**
  * Liczność listy poza zakresem kontraktu. Listy z własną regułą rdzenia (opcje,
- * klocki, warianty, zdania i segmenty `lesson_notice`) dostają jej id — ta sama
+ * klocki, warianty, zdania i segmenty `lesson_notice`, pary, grupy, luki z bankiem,
+ * słowa kluczowe) dostają jej id — ta sama
  * granica co w walidatorze, jeden opis dla modelu; pozostałe `field.count`.
  */
 function contractCountIssue(issue: ContractIssue, details: { field: string; pl: string; found: string }): LessonRuleIssue {
@@ -273,6 +284,19 @@ function contractCountIssue(issue: ContractIssue, details: { field: string; pl: 
   if (head === "acceptedAnswers" && issue.path.length === 1) return coreIssue("variants.count", details);
   if (head === "noticeSegments" && issue.path.length === 1) return coreIssue("notice.sentence_count", details);
   if (head === "noticeSegments" && issue.path.length === 2) return coreIssue("notice.segment_count", details);
+  if (issue.path.length === 1) {
+    switch (head) {
+      case "pairs": return coreIssue("match.pairs_count", details);
+      case "extraRight": return coreIssue("match.extra_count", details);
+      case "groups": return coreIssue("group.groups_count", details);
+      case "groupItems": return coreIssue("group.items_count", details);
+      case "gapAnswers": return coreIssue("cloze.gap_count", details);
+      case "extraWords": return coreIssue("cloze.extra_count", details);
+      case "keywordOptions": return coreIssue("keywords.options_count", details);
+      case "keyOptionIds": return coreIssue("keywords.key_count", details);
+      default: break;
+    }
+  }
   return coreIssue("field.count", details);
 }
 
@@ -695,16 +719,6 @@ function validateFocus(
   }
 }
 
-/**
- * Reguły par, grup, luk z bankiem i słów kluczowych jeszcze jako napisy
- * (własne id dostaną w Task 4): przejściowe zgłoszenie z polem z prefiksu komunikatu.
- */
-function transitionalIssues(run: (errors: string[]) => void): LessonRuleIssue[] {
-  const errors: string[] = [];
-  run(errors);
-  return errors.map((pl) => coreIssue("transitional.type_rules", { field: pl.slice(0, Math.max(pl.indexOf(":"), 0)) || "exercise", pl }));
-}
-
 function validateByType(
   ex: LessonExerciseDraft,
   topic: LessonTopic,
@@ -758,18 +772,18 @@ function validateByType(
       }
       break;
     case "lesson_keywords":
-      issues.push(...transitionalIssues((errors) => validateKeywords(ex, normalizer, errors)));
+      validateKeywords(ex, normalizer, issues);
       break;
     case "lesson_match":
-      issues.push(...transitionalIssues((errors) => validateMatch(ex, errors)));
+      validateMatch(ex, issues);
       validateNoTextAnswers(ex, issues);
       break;
     case "lesson_group":
-      issues.push(...transitionalIssues((errors) => validateGroup(ex, errors)));
+      validateGroup(ex, issues);
       validateNoTextAnswers(ex, issues);
       break;
     case "lesson_cloze":
-      issues.push(...transitionalIssues((errors) => validateCloze(ex, errors)));
+      validateCloze(ex, issues);
       validateNoTextAnswers(ex, issues);
       break;
     default:
@@ -855,38 +869,82 @@ function validateListenChoice(
 function validateKeywords(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   const options = ex.keywordOptions ?? [];
   const keyIds = ex.keyOptionIds ?? [];
   if (options.length < MIN_KEYWORD_OPTIONS || options.length > MAX_KEYWORD_OPTIONS) {
-    errors.push(`keywordOptions: liczba pojęć (${options.length}) poza zakresem ${MIN_KEYWORD_OPTIONS}–${MAX_KEYWORD_OPTIONS}`);
+    issues.push(coreIssue("keywords.options_count", {
+      pl: `keywordOptions: liczba pojęć (${options.length}) poza zakresem ${MIN_KEYWORD_OPTIONS}–${MAX_KEYWORD_OPTIONS}`,
+      found: `${options.length} keywordOptions, allowed ${MIN_KEYWORD_OPTIONS}–${MAX_KEYWORD_OPTIONS}`,
+    }));
   }
-  if (new Set(options.map((option) => option.id)).size !== options.length) {
-    errors.push("keywordOptions: identyfikatory pojęć muszą być unikalne");
+  const repeatedOption = firstRepeated(options.map((option) => option.id));
+  if (repeatedOption !== undefined) {
+    issues.push(coreIssue("keywords.option_ids_unique", {
+      field: `keywordOptions[${repeatedOption.index}].id`,
+      pl: "keywordOptions: identyfikatory pojęć muszą być unikalne",
+      found: `id ${clip(repeatedOption.value)} repeats in keywordOptions`,
+    }));
   }
   for (let i = 0; i < options.length; i++) {
     for (let j = i + 1; j < options.length; j++) {
       if (answersEquivalent(options[i]!.text, options[j]!.text, normalizer)) {
-        errors.push(`keywordOptions: pojęcie „${options[j]!.text}” powiela „${options[i]!.text}” po normalizacji`);
+        issues.push(coreIssue("keywords.option_duplicate", {
+          field: `keywordOptions[${j}]`,
+          pl: `keywordOptions: pojęcie „${options[j]!.text}” powiela „${options[i]!.text}” po normalizacji`,
+          found: `term ${clip(options[j]!.text)} repeats ${clip(options[i]!.text)} after normalization`,
+        }));
       }
     }
   }
   if (keyIds.length < MIN_KEY_OPTIONS || keyIds.length > MAX_KEY_OPTIONS) {
-    errors.push(`keyOptionIds: liczba pojęć kluczowych (${keyIds.length}) poza zakresem ${MIN_KEY_OPTIONS}–${MAX_KEY_OPTIONS}`);
+    issues.push(coreIssue("keywords.key_count", {
+      pl: `keyOptionIds: liczba pojęć kluczowych (${keyIds.length}) poza zakresem ${MIN_KEY_OPTIONS}–${MAX_KEY_OPTIONS}`,
+      found: `${keyIds.length} key terms, allowed ${MIN_KEY_OPTIONS}–${MAX_KEY_OPTIONS}`,
+    }));
   }
-  if (new Set(keyIds).size !== keyIds.length) {
-    errors.push("keyOptionIds: pojęcia kluczowe nie mogą się powtarzać");
+  const repeatedKey = firstRepeated(keyIds);
+  if (repeatedKey !== undefined) {
+    issues.push(coreIssue("keywords.key_repeated", {
+      field: `keyOptionIds[${repeatedKey.index}]`,
+      pl: "keyOptionIds: pojęcia kluczowe nie mogą się powtarzać",
+      found: `id ${clip(repeatedKey.value)} repeats in keyOptionIds`,
+    }));
   }
   const textById = new Map(options.map((option) => [option.id, option.text] as const));
-  if (keyIds.some((id) => !textById.has(id))) {
-    errors.push("keyOptionIds: każde pojęcie kluczowe musi być jednym z pojęć do wyboru");
+  const unknownKey = keyIds.findIndex((id) => !textById.has(id));
+  if (unknownKey !== -1) {
+    issues.push(coreIssue("keywords.key_unknown", {
+      field: `keyOptionIds[${unknownKey}]`,
+      pl: "keyOptionIds: każde pojęcie kluczowe musi być jednym z pojęć do wyboru",
+      found: `${clip(keyIds[unknownKey]!)} is not a keywordOptions id; ids: ${idList(options.map((option) => option.id))}`,
+    }));
   } else if (keyIds.length > 0 && ex.answer !== keywordsAnswer(ex)) {
-    errors.push("answer: musi być listą pojęć kluczowych złączonych „, ”");
+    issues.push(coreIssue("keywords.answer_computed", {
+      pl: "answer: musi być listą pojęć kluczowych złączonych „, ”",
+      found: `answer ${clip(ex.answer)}, computed ${clip(keywordsAnswer(ex))}`,
+    }));
   }
   if (keyIds.length >= options.length && options.length > 0) {
-    errors.push("keywordOptions: wśród pojęć musi być co najmniej jeden dystraktor");
+    issues.push(coreIssue("keywords.distractor_required", {
+      pl: "keywordOptions: wśród pojęć musi być co najmniej jeden dystraktor",
+      found: `${keyIds.length} key terms among ${options.length} keywordOptions`,
+    }));
   }
+}
+
+/** Pierwsza wartość powtórzona na liście: indeks powtórzenia i wartość. */
+function firstRepeated(values: readonly string[]): { readonly index: number; readonly value: string } | undefined {
+  const seen = new Set<string>();
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index]!;
+    if (seen.has(value)) {
+      return { index, value };
+    }
+    seen.add(value);
+  }
+  return undefined;
 }
 
 /** Kanoniczna odpowiedź `lesson_keywords`: pojęcia kluczowe złączone „, ”. */
@@ -906,21 +964,27 @@ function wordsOfText(text: string): string[] {
 }
 
 /**
- * Teksty powtórzone albo zawierające drugi jako ciąg CAŁYCH słów („dostarcza
- * energii” w „dostarcza energii słonecznej”) — nie do odróżnienia dla dziecka.
- * Fragment słowa się nie liczy: „tlen” obok „dwutlenek węgla” jest poprawny.
+ * Pary indeksów `[i, j]` (i < j) tekstów powtórzonych albo zawierających drugi
+ * jako ciąg CAŁYCH słów („dostarcza energii” w „dostarcza energii słonecznej”) —
+ * nie do odróżnienia dla dziecka. Fragment słowa się nie liczy: „tlen” obok
+ * „dwutlenek węgla” jest poprawny.
  */
-function confusableTexts(texts: readonly string[]): [string, string][] {
-  const found: [string, string][] = [];
+function confusableTexts(texts: readonly string[]): [number, number][] {
+  const found: [number, number][] = [];
   const words = texts.map(wordsOfText);
   for (let i = 0; i < texts.length; i++) {
     for (let j = i + 1; j < texts.length; j++) {
       if (isContiguousSubsequence(words[i]!, words[j]!) || isContiguousSubsequence(words[j]!, words[i]!)) {
-        found.push([texts[i]!, texts[j]!]);
+        found.push([i, j]);
       }
     }
   }
   return found;
+}
+
+/** `found` pary tekstów nie do odróżnienia. */
+function confusableFound(a: string, b: string): string {
+  return `${clip(b)} and ${clip(a)} repeat or contain each other as whole words`;
 }
 
 /** Pary, grupy i luki z bankiem oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
@@ -957,23 +1021,42 @@ export function groupAnswer(ex: Pick<LessonExerciseDraft, "groups">): string {
  * `lesson_match` (design szkoły §10.1): 3–5 par, 0–2 dystraktory po prawej;
  * teksty po każdej stronie unikalne i nie zawarte jeden w drugim.
  */
-function validateMatch(ex: LessonExerciseDraft, errors: string[]): void {
+function validateMatch(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   const pairs = ex.pairs ?? [];
   const extra = ex.extraRight ?? [];
   if (pairs.length < MIN_MATCH_PAIRS || pairs.length > MAX_MATCH_PAIRS) {
-    errors.push(`pairs: liczba par (${pairs.length}) poza zakresem ${MIN_MATCH_PAIRS}–${MAX_MATCH_PAIRS}`);
+    issues.push(coreIssue("match.pairs_count", {
+      pl: `pairs: liczba par (${pairs.length}) poza zakresem ${MIN_MATCH_PAIRS}–${MAX_MATCH_PAIRS}`,
+      found: `${pairs.length} pairs, allowed ${MIN_MATCH_PAIRS}–${MAX_MATCH_PAIRS}`,
+    }));
   }
   if (extra.length > MAX_MATCH_EXTRA) {
-    errors.push(`extraRight: najwyżej ${MAX_MATCH_EXTRA} dystraktory`);
+    issues.push(coreIssue("match.extra_count", {
+      pl: `extraRight: najwyżej ${MAX_MATCH_EXTRA} dystraktory`,
+      found: `${extra.length} distractors, limit ${MAX_MATCH_EXTRA}`,
+    }));
   }
-  for (const [a, b] of confusableTexts(pairs.map((pair) => pair.left))) {
-    errors.push(`pairs: „${b}” powiela „${a}” albo się w nim zawiera`);
+  const lefts = pairs.map((pair) => pair.left);
+  for (const [i, j] of confusableTexts(lefts)) {
+    issues.push(coreIssue("match.confusable", {
+      field: `pairs[${j}].left`,
+      pl: `pairs: „${lefts[j]!}” powiela „${lefts[i]!}” albo się w nim zawiera`,
+      found: confusableFound(lefts[i]!, lefts[j]!),
+    }));
   }
-  for (const [a, b] of confusableTexts([...pairs.map((pair) => pair.right), ...extra])) {
-    errors.push(`pairs: „${b}” powiela „${a}” albo się w nim zawiera`);
+  const rights = [...pairs.map((pair) => pair.right), ...extra];
+  for (const [i, j] of confusableTexts(rights)) {
+    issues.push(coreIssue("match.confusable", {
+      field: j < pairs.length ? `pairs[${j}].right` : `extraRight[${j - pairs.length}]`,
+      pl: `pairs: „${rights[j]!}” powiela „${rights[i]!}” albo się w nim zawiera`,
+      found: confusableFound(rights[i]!, rights[j]!),
+    }));
   }
   if (pairs.length > 0 && ex.answer !== matchAnswer(ex)) {
-    errors.push("answer: musi być listą lewych elementów par złączonych „, ”");
+    issues.push(coreIssue("match.answer_computed", {
+      pl: "answer: musi być listą lewych elementów par złączonych „, ”",
+      found: `answer ${clip(ex.answer)}, computed ${clip(matchAnswer(ex))}`,
+    }));
   }
 }
 
@@ -982,41 +1065,80 @@ function validateMatch(ex: LessonExerciseDraft, errors: string[]): void {
  * z co najmniej 2 elementami; etykiety i elementy unikalne, element nie jest
  * etykietą grupy.
  */
-function validateGroup(ex: LessonExerciseDraft, errors: string[]): void {
+function validateGroup(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   const groups = ex.groups ?? [];
   const items = ex.groupItems ?? [];
   if (groups.length < MIN_GROUPS || groups.length > MAX_GROUPS) {
-    errors.push(`groups: liczba grup (${groups.length}) poza zakresem ${MIN_GROUPS}–${MAX_GROUPS}`);
+    issues.push(coreIssue("group.groups_count", {
+      pl: `groups: liczba grup (${groups.length}) poza zakresem ${MIN_GROUPS}–${MAX_GROUPS}`,
+      found: `${groups.length} groups, allowed ${MIN_GROUPS}–${MAX_GROUPS}`,
+    }));
   }
   if (items.length < MIN_GROUP_ITEMS || items.length > MAX_GROUP_ITEMS) {
-    errors.push(`groupItems: liczba elementów (${items.length}) poza zakresem ${MIN_GROUP_ITEMS}–${MAX_GROUP_ITEMS}`);
+    issues.push(coreIssue("group.items_count", {
+      pl: `groupItems: liczba elementów (${items.length}) poza zakresem ${MIN_GROUP_ITEMS}–${MAX_GROUP_ITEMS}`,
+      found: `${items.length} groupItems, allowed ${MIN_GROUP_ITEMS}–${MAX_GROUP_ITEMS}`,
+    }));
   }
-  if (new Set(groups.map((group) => group.id)).size !== groups.length) {
-    errors.push("groups: identyfikatory grup muszą być unikalne");
+  const repeatedId = firstRepeated(groups.map((group) => group.id));
+  if (repeatedId !== undefined) {
+    issues.push(coreIssue("group.ids_unique", {
+      field: `groups[${repeatedId.index}].id`,
+      pl: "groups: identyfikatory grup muszą być unikalne",
+      found: `id ${clip(repeatedId.value)} repeats in groups`,
+    }));
   }
   const groupIds = new Set(groups.map((group) => group.id));
-  if (items.some((item) => !groupIds.has(item.groupId))) {
-    errors.push("groupItems: każdy element musi należeć do jednej z grup");
+  const strayItem = items.findIndex((item) => !groupIds.has(item.groupId));
+  if (strayItem !== -1) {
+    issues.push(coreIssue("group.item_unknown_group", {
+      field: `groupItems[${strayItem}].groupId`,
+      pl: "groupItems: każdy element musi należeć do jednej z grup",
+      found: `groupId ${clip(items[strayItem]!.groupId)} is not a group id; groups: ${idList(groups.map((group) => group.id))}`,
+    }));
   }
   for (const group of groups) {
     const count = items.filter((item) => item.groupId === group.id).length;
     if (count < MIN_ITEMS_PER_GROUP) {
-      errors.push(`groupItems: grupa „${group.label}” ma ${count} elementów (minimum ${MIN_ITEMS_PER_GROUP})`);
+      issues.push(coreIssue("group.items_per_group", {
+        pl: `groupItems: grupa „${group.label}” ma ${count} elementów (minimum ${MIN_ITEMS_PER_GROUP})`,
+        found: `group ${clip(group.id)} has ${count} items, minimum ${MIN_ITEMS_PER_GROUP}`,
+      }));
     }
   }
-  for (const [a, b] of confusableTexts(groups.map((group) => group.label))) {
-    errors.push(`groups: etykieta „${b}” powiela „${a}” albo się w niej zawiera`);
+  const labelTexts = groups.map((group) => group.label);
+  for (const [i, j] of confusableTexts(labelTexts)) {
+    issues.push(coreIssue("group.label_confusable", {
+      field: `groups[${j}].label`,
+      pl: `groups: etykieta „${labelTexts[j]!}” powiela „${labelTexts[i]!}” albo się w niej zawiera`,
+      found: confusableFound(labelTexts[i]!, labelTexts[j]!),
+    }));
   }
   const labels = new Set(groups.map((group) => comparableText(group.label)));
   const seen = new Set<string>();
-  for (const item of items) {
+  items.forEach((item, index) => {
     const key = comparableText(item.text);
-    if (seen.has(key)) errors.push(`groupItems: element „${item.text}” się powtarza`);
-    if (labels.has(key)) errors.push(`groupItems: element „${item.text}” jest etykietą grupy`);
+    if (seen.has(key)) {
+      issues.push(coreIssue("group.item_repeated", {
+        field: `groupItems[${index}]`,
+        pl: `groupItems: element „${item.text}” się powtarza`,
+        found: `item ${clip(item.text)} repeats an earlier item`,
+      }));
+    }
+    if (labels.has(key)) {
+      issues.push(coreIssue("group.item_is_label", {
+        field: `groupItems[${index}]`,
+        pl: `groupItems: element „${item.text}” jest etykietą grupy`,
+        found: `item ${clip(item.text)} is a group label`,
+      }));
+    }
     seen.add(key);
-  }
+  });
   if (groups.length > 0 && ex.answer !== groupAnswer(ex)) {
-    errors.push("answer: musi być listą etykiet grup złączonych „ / ”");
+    issues.push(coreIssue("group.answer_computed", {
+      pl: "answer: musi być listą etykiet grup złączonych „ / ”",
+      found: `answer ${clip(ex.answer)}, computed ${clip(groupAnswer(ex))}`,
+    }));
   }
 }
 
@@ -1026,49 +1148,92 @@ function validateGroup(ex: LessonExerciseDraft, errors: string[]): void {
  * zawarte jedno w drugim, żadne nie występuje w tekście poza lukami (tekst nie
  * może podpowiadać ani wykluczać słowa z banku).
  */
-function validateCloze(ex: LessonExerciseDraft, errors: string[]): void {
+function validateCloze(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   const text = ex.clozeText;
   const answers = ex.gapAnswers ?? [];
   const extra = ex.extraWords ?? [];
   if (text === undefined || text.trim() === "") {
-    errors.push("clozeText: wymagany tekst z lukami dla „lesson_cloze”");
+    issues.push(coreIssue("cloze.text_required", {
+      pl: "clozeText: wymagany tekst z lukami dla „lesson_cloze”",
+      found: missingText("clozeText", text),
+    }));
     return;
   }
   const gaps = clozeGapCount(text);
   if (gaps < MIN_CLOZE_GAPS || gaps > MAX_CLOZE_GAPS) {
-    errors.push(`clozeText: liczba luk (${gaps}) poza zakresem ${MIN_CLOZE_GAPS}–${MAX_CLOZE_GAPS}; lukę oznacz „${GAP_MARKER}”`);
+    issues.push(coreIssue("cloze.gap_count", {
+      pl: `clozeText: liczba luk (${gaps}) poza zakresem ${MIN_CLOZE_GAPS}–${MAX_CLOZE_GAPS}; lukę oznacz „${GAP_MARKER}”`,
+      found: `${gaps} gaps in ${clip(text)}, allowed ${MIN_CLOZE_GAPS}–${MAX_CLOZE_GAPS}`,
+    }));
   }
   if (answers.length !== gaps) {
-    errors.push(`gapAnswers: liczba słów (${answers.length}) różni się od liczby luk (${gaps})`);
+    issues.push(coreIssue("cloze.answers_count", {
+      pl: `gapAnswers: liczba słów (${answers.length}) różni się od liczby luk (${gaps})`,
+      found: `${answers.length} gapAnswers for ${gaps} gaps`,
+    }));
   }
   if (extra.length < MIN_CLOZE_EXTRA || extra.length > MAX_CLOZE_EXTRA) {
-    errors.push(`extraWords: liczba słów-pułapek (${extra.length}) poza zakresem ${MIN_CLOZE_EXTRA}–${MAX_CLOZE_EXTRA}`);
+    issues.push(coreIssue("cloze.extra_count", {
+      pl: `extraWords: liczba słów-pułapek (${extra.length}) poza zakresem ${MIN_CLOZE_EXTRA}–${MAX_CLOZE_EXTRA}`,
+      found: `${extra.length} extraWords, allowed ${MIN_CLOZE_EXTRA}–${MAX_CLOZE_EXTRA}`,
+    }));
   }
   const parts = clozeParts(text);
-  if (parts.slice(1, -1).some((part) => wordsOfText(part).length === 0)) {
-    errors.push("clozeText: między dwiema lukami musi stać co najmniej jedno słowo");
+  const emptyBetween = parts.slice(1, -1).findIndex((part) => wordsOfText(part).length === 0);
+  if (emptyBetween !== -1) {
+    issues.push(coreIssue("cloze.words_between_gaps", {
+      pl: "clozeText: między dwiema lukami musi stać co najmniej jedno słowo",
+      found: `no word between gap ${emptyBetween + 1} and gap ${emptyBetween + 2} in ${clip(text)}`,
+    }));
   }
-  if (parts.some((part) => part.includes("_"))) {
-    errors.push("clozeText: podkreślenie poza znacznikiem luki");
+  const strayUnderscore = parts.find((part) => part.includes("_"));
+  if (strayUnderscore !== undefined) {
+    issues.push(coreIssue("cloze.underscore_outside_gap", {
+      pl: "clozeText: podkreślenie poza znacznikiem luki",
+      found: `a single "_" outside a gap marker in ${clip(strayUnderscore.trim())}`,
+    }));
   }
   const bank = [...answers, ...extra];
-  for (const word of bank) {
+  const bankField = (index: number): string =>
+    index < answers.length ? `gapAnswers[${index}]` : `extraWords[${index - answers.length}]`;
+  bank.forEach((word, index) => {
     const count = wordsOfText(word).length;
-    if (count === 0) errors.push(`gapAnswers: „${word}” nie zawiera liter ani cyfr`);
-    else if (count > MAX_CLOZE_WORD_TOKENS) errors.push(`gapAnswers: „${word}” ma więcej niż ${MAX_CLOZE_WORD_TOKENS} słowa`);
-  }
-  for (const [a, b] of confusableTexts(bank)) {
-    errors.push(`gapAnswers: „${b}” powiela „${a}” albo się w nim zawiera`);
+    if (count === 0) {
+      issues.push(coreIssue("cloze.bank_word_empty", {
+        field: bankField(index),
+        pl: `gapAnswers: „${word}” nie zawiera liter ani cyfr`,
+        found: `${clip(word)} has no letters or digits`,
+      }));
+    } else if (count > MAX_CLOZE_WORD_TOKENS) {
+      issues.push(coreIssue("cloze.bank_word_tokens", {
+        field: bankField(index),
+        pl: `gapAnswers: „${word}” ma więcej niż ${MAX_CLOZE_WORD_TOKENS} słowa`,
+        found: `${count} words in ${clip(word)}, limit ${MAX_CLOZE_WORD_TOKENS}`,
+      }));
+    }
+  });
+  for (const [i, j] of confusableTexts(bank)) {
+    issues.push(coreIssue("cloze.bank_confusable", {
+      field: bankField(j),
+      pl: `gapAnswers: „${bank[j]!}” powiela „${bank[i]!}” albo się w nim zawiera`,
+      found: confusableFound(bank[i]!, bank[j]!),
+    }));
   }
   const visible = parts.map(wordsOfText);
-  for (const word of bank) {
+  bank.forEach((word, index) => {
     const needle = wordsOfText(word);
     if (visible.some((part) => isContiguousSubsequence(part, needle))) {
-      errors.push(`clozeText: słowo „${word}” z banku występuje w tekście poza luką`);
+      issues.push(coreIssue("cloze.bank_outside_gap", {
+        pl: `clozeText: słowo „${word}” z banku występuje w tekście poza luką`,
+        found: `bank word ${clip(word)} (${bankField(index)}) appears in the text outside the gaps`,
+      }));
     }
-  }
+  });
   if (answers.length > 0 && ex.answer !== clozeAnswer(ex)) {
-    errors.push("answer: musi być listą słów luk złączonych „, ”");
+    issues.push(coreIssue("cloze.answer_computed", {
+      pl: "answer: musi być listą słów luk złączonych „, ”",
+      found: `answer ${clip(ex.answer)}, computed ${clip(clozeAnswer(ex))}`,
+    }));
   }
 }
 
@@ -1410,28 +1575,47 @@ export interface PoolValidationResult {
   readonly rejected: { exercise: LessonExerciseDraft; errors: string[] }[];
 }
 
+/** Wynik walidacji puli ze zgłoszeniami reguł (ścieżka agenta). */
+export interface PoolValidationIssuesResult {
+  readonly valid: LessonExerciseDraft[];
+  readonly rejected: { exercise: LessonExerciseDraft; issues: LessonRuleIssue[] }[];
+}
+
+/** Opcje walidacji puli: kontekst dogenerowania i opcje walidacji ćwiczenia (`agent`). */
+export type PoolValidationOptions = PoolValidationContext & LessonExerciseValidationOptions;
+
+/** Krótki opis ćwiczenia do `found`: typ i początek bodźca (bez treści spoza ćwiczenia). */
+function exerciseLabel(ex: LessonExerciseDraft, options: LessonExerciseIdentityOptions): string {
+  return `${ex.exerciseType} ${clip(lessonExerciseStimulus(ex, options), STIMULUS_CLIP)}`;
+}
+
+/** Długość wycinka bodźca w `found` reguł puli. */
+const STIMULUS_CLIP = 40;
+
 /**
- * Waliduje całą pulę. Najpierw reguły pojedynczego ćwiczenia; następnie
- * duplikaty znormalizowanych odpowiedzi (ta sama implementacja co
+ * Waliduje całą pulę i zwraca zgłoszenia reguł. Najpierw reguły pojedynczego
+ * ćwiczenia; następnie ujawnienie odpowiedzi przez ćwiczenie słuchowe i
+ * duplikaty (bodźca albo znormalizowanej odpowiedzi — ta sama implementacja co
  * `findDuplicateAnswers`, przez `groupEquivalentAnswers`) — przy duplikacie
  * zachowuje PIERWSZE poprawne wystąpienie, kolejne odrzuca. Deterministyczne
  * (kolejność wejścia).
  */
-export function validatePool(
+export function validatePoolIssues(
   exercises: readonly LessonExerciseDraft[],
   subject: SubjectModule,
   topic: LessonTopic,
-  context: PoolValidationContext = {},
-): PoolValidationResult {
-  const rejected: { exercise: LessonExerciseDraft; errors: string[] }[] = [];
+  options: PoolValidationOptions = {},
+): PoolValidationIssuesResult {
+  const rejected: { exercise: LessonExerciseDraft; issues: LessonRuleIssue[] }[] = [];
+  const exerciseOptions: LessonExerciseValidationOptions = options.agent === true ? { agent: true } : {};
 
   // Faza 1: reguły pojedynczego ćwiczenia. Zachowujemy pozycje w `exercises`,
   // by faza 2 mogła wskazać PIERWSZE poprawne wystąpienie każdej odpowiedzi.
   const singleValid: { exercise: LessonExerciseDraft; index: number }[] = [];
   exercises.forEach((exercise, index) => {
-    const errors = validateLessonExercise(exercise, subject, topic);
-    if (errors.length > 0) {
-      rejected.push({ exercise, errors });
+    const issues = validateLessonExerciseIssues(exercise, subject, topic, exerciseOptions);
+    if (issues.length > 0) {
+      rejected.push({ exercise, issues });
     } else {
       singleValid.push({ exercise, index });
     }
@@ -1442,7 +1626,7 @@ export function validatePool(
   // tylko identyczny tekst, więc tu porównujemy normalizatorem przedmiotu.
   // Przy dogenerowaniu reguła obejmuje też szkic: nowe ćwiczenie słuchowe nie może czytać odpowiedzi
   // tekstowej szkicu, a nowe ćwiczenie tekstowe nie może mieć odpowiedzi równej zdaniu słuchowemu szkicu.
-  const existing = context.existingExercises ?? [];
+  const existing = options.existingExercises ?? [];
   const textAnswers = [...existing, ...singleValid.map((entry) => entry.exercise)]
     .filter((ex) => LISTEN_CROSS_CHECK_TYPES.has(ex.exerciseType))
     .flatMap((ex) => [ex.answer, ...ex.acceptedAnswers]);
@@ -1452,25 +1636,35 @@ export function validatePool(
     .filter((sentence): sentence is string => sentence !== null);
   const eligible = singleValid.filter(({ exercise }) => {
     if (exercise.exerciseType !== "lesson_listen_choice") {
-      if (
-        existingListenSentences.length > 0 &&
-        LISTEN_CROSS_CHECK_TYPES.has(exercise.exerciseType) &&
-        [exercise.answer, ...exercise.acceptedAnswers].some((answer) =>
-          existingListenSentences.some((sentence) => answersEquivalent(sentence, answer, subject.normalizer)))
-      ) {
-        rejected.push({
-          exercise,
-          errors: ["answer: odpowiedź jest zdaniem ćwiczenia słuchowego w tej lekcji (ćwiczenie słuchowe by ją ujawniło)"],
-        });
-        return false;
+      if (existingListenSentences.length > 0 && LISTEN_CROSS_CHECK_TYPES.has(exercise.exerciseType)) {
+        for (const answer of [exercise.answer, ...exercise.acceptedAnswers]) {
+          const sentence = existingListenSentences.find((listen) => answersEquivalent(listen, answer, subject.normalizer));
+          if (sentence !== undefined) {
+            rejected.push({
+              exercise,
+              issues: [lessonIssue("lesson.listen_reveals_answer", {
+                field: "answer",
+                pl: "answer: odpowiedź jest zdaniem ćwiczenia słuchowego w tej lekcji (ćwiczenie słuchowe by ją ujawniło)",
+                found: `answer ${clip(answer)} is the sentence of a lesson_listen_choice already in the lesson`,
+              })],
+            });
+            return false;
+          }
+        }
       }
       return true;
     }
     const sentence = listenSentenceOf(exercise);
-    if (sentence !== null && textAnswers.some((answer) => answersEquivalent(sentence, answer, subject.normalizer))) {
+    const revealed = sentence === null
+      ? undefined
+      : textAnswers.find((answer) => answersEquivalent(sentence, answer, subject.normalizer));
+    if (sentence !== null && revealed !== undefined) {
       rejected.push({
         exercise,
-        errors: ["stem: zdanie ćwiczenia słuchowego jest odpowiedzią ćwiczenia tekstowego w tej lekcji (ujawniłoby ją)"],
+        issues: [lessonIssue("lesson.listen_reveals_answer", {
+          pl: "stem: zdanie ćwiczenia słuchowego jest odpowiedzią ćwiczenia tekstowego w tej lekcji (ujawniłoby ją)",
+          found: `the sentence ${clip(sentence)} is the answer ${clip(revealed)} of a text exercise in the lesson`,
+        })],
       });
       return false;
     }
@@ -1480,15 +1674,22 @@ export function validatePool(
   // Różne przedmioty mogą potrzebować tożsamości zadania zamiast odpowiedzi.
   // To nie zmienia target_key ani kwalifikacji ujawnienia odpowiedzi.
   if (subject.poolDeduplication === "exercise") {
-    const seen = new Set<string>();
+    const firstByIdentity = new Map<string, LessonExerciseDraft>();
     const valid: LessonExerciseDraft[] = [];
     const identityOptions = lessonIdentityOptionsOf(subject);
     for (const { exercise } of eligible) {
       const identity = lessonExerciseIdentity(exercise, identityOptions);
-      if (seen.has(identity)) {
-        rejected.push({ exercise, errors: ["stimulus: zduplikowany bodziec ćwiczenia w tej samej regule"] });
+      const first = firstByIdentity.get(identity);
+      if (first !== undefined) {
+        rejected.push({
+          exercise,
+          issues: [lessonIssue("lesson.duplicate_stimulus", {
+            pl: "stimulus: zduplikowany bodziec ćwiczenia w tej samej regule",
+            found: `same stimulus as the earlier ${exerciseLabel(first, identityOptions)} in this objective`,
+          })],
+        });
       } else {
-        seen.add(identity);
+        firstByIdentity.set(identity, exercise);
         valid.push(exercise);
       }
     }
@@ -1511,7 +1712,10 @@ export function validatePool(
       const keptAnswer = firstPosition === -1 ? entry.exercise.answer : answers[firstPosition]!;
       rejected.push({
         exercise: entry.exercise,
-        errors: [`answer: duplikat odpowiedzi „${keptAnswer}” już obecnej w puli`],
+        issues: [lessonIssue("lesson.duplicate_answer", {
+          pl: `answer: duplikat odpowiedzi „${keptAnswer}” już obecnej w puli`,
+          found: `answer ${clip(entry.exercise.answer)} is equivalent to the answer ${clip(keptAnswer)} of an earlier exercise`,
+        })],
       });
     } else {
       valid.push(entry.exercise);
@@ -1519,6 +1723,28 @@ export function validatePool(
   });
 
   return { valid, rejected };
+}
+
+/**
+ * Waliduje całą pulę (komunikaty rodzica, `pl`) — opakowanie `validatePoolIssues`
+ * bez ścieżki agenta: te same ćwiczenia poprawne i odrzucone, powody jak dziś.
+ */
+export function validatePool(
+  exercises: readonly LessonExerciseDraft[],
+  subject: SubjectModule,
+  topic: LessonTopic,
+  context: PoolValidationContext = {},
+): PoolValidationResult {
+  const result = validatePoolIssues(
+    exercises,
+    subject,
+    topic,
+    context.existingExercises === undefined ? {} : { existingExercises: context.existingExercises },
+  );
+  return {
+    valid: result.valid,
+    rejected: result.rejected.map(({ exercise, issues }) => ({ exercise, errors: messagesOf(issues) })),
+  };
 }
 
 /** Pozycja pierwszego wystąpienia równoważnego `answers[position]` przed nią. */

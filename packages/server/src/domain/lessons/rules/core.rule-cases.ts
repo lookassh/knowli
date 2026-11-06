@@ -1,22 +1,42 @@
-import { MAX_COMMON_ERRORS, MAX_LESSON_TEXT_LENGTH, MAX_OPTIONS, MAX_ORDER_ITEMS, MIN_ORDER_ITEMS } from "@learning/contracts";
+import {
+  MAX_CLOZE_EXTRA,
+  MAX_CLOZE_GAPS,
+  MAX_COMMON_ERRORS,
+  MAX_GROUP_ITEMS,
+  MAX_GROUPS,
+  MAX_KEY_OPTIONS,
+  MAX_KEYWORD_OPTIONS,
+  MAX_LESSON_TEXT_LENGTH,
+  MAX_MATCH_EXTRA,
+  MAX_MATCH_PAIRS,
+  MAX_OPTIONS,
+  MAX_ORDER_ITEMS,
+  MIN_ORDER_ITEMS,
+  type CalculationSpec,
+} from "@learning/contracts";
+import { calculationIssues } from "../calculation";
+import { clozeAnswer } from "../cloze";
 import { explanationIssues } from "../exercise-explanation";
-import { validateLessonExerciseIssues } from "../pool-validation";
+import { groupAnswer, keywordsAnswer, matchAnswer, validateLessonExerciseIssues } from "../pool-validation";
 import { historyLikeSubject } from "../testing/history-like-subject";
 import { registerRuleCases } from "../testing/rule-cases";
 import type { LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../types";
 import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
   MAX_ACCEPTED_ANSWERS,
+  MAX_CLOZE_WORD_TOKENS,
   MAX_GAP_ANSWER_TOKENS,
   MAX_NOTICE_SEGMENTS,
   MAX_NOTICE_SENTENCES,
+  MAX_TOLERANCE_SHARE,
 } from "./limits";
 
 /**
  * Przypadki reguł katalogu rdzenia (`core-rules.ts`) dla testu kompletności
  * `rule-cases.test.ts`. Każdy przypadek woła prawdziwy
  * `validateLessonExerciseIssues` (albo `explanationIssues`, gdy kontrakt nie
- * dopuszcza danych łamiących regułę) na przedmiocie testowym bez reguł
+ * dopuszcza danych łamiących regułę, i `calculationIssues` dla specyfikacji
+ * rachunku) na przedmiocie testowym bez reguł
  * własnych: silnik nie importuje przedmiotów produkcyjnych.
  */
 
@@ -178,6 +198,125 @@ function open(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft
 function wordyAnswer(length: number): string {
   return `${"ab ".repeat(Math.floor((length - 2) / 3))}${"a".repeat(2 + ((length - 2) % 3))}`;
 }
+
+/** `lesson_match` z odpowiedzią liczoną z par (jak materializacja). */
+function match(pairs: readonly { left: string; right: string }[], extraRight?: readonly string[]): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_match",
+    objectiveId: OBJECTIVE_ID,
+    pairs: [...pairs],
+    ...(extraRight === undefined ? {} : { extraRight: [...extraRight] }),
+    answer: matchAnswer({ pairs: [...pairs] }) || "-",
+    acceptedAnswers: [],
+    focus: [],
+  };
+}
+
+const RIVERS = [
+  { left: "Wisła", right: "rzeka" },
+  { left: "Rysy", right: "szczyt" },
+  { left: "Kraków", right: "miasto" },
+];
+
+/** `n` par o rozróżnialnych tekstach. */
+const pairsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ left: `lewy${i}`, right: `prawy${i}` }));
+
+/** `lesson_group` z odpowiedzią liczoną z grup. */
+function group(
+  groups: readonly { id: string; label: string }[],
+  groupItems: readonly { text: string; groupId: string }[],
+): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_group",
+    objectiveId: OBJECTIVE_ID,
+    groups: [...groups],
+    groupItems: [...groupItems],
+    answer: groupAnswer({ groups: [...groups] }) || "-",
+    acceptedAnswers: [],
+    focus: [],
+  };
+}
+
+const ANIMAL_GROUPS = [{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ptaki" }];
+const ANIMALS = [
+  { text: "Pies", groupId: "g1" },
+  { text: "Kot", groupId: "g1" },
+  { text: "Wróbel", groupId: "g2" },
+  { text: "Sowa", groupId: "g2" },
+];
+
+/** `n` grup po dwa elementy. */
+function groupsOf(n: number): LessonExerciseDraft {
+  const groups = Array.from({ length: n }, (_, i) => ({ id: `g${i}`, label: `grupa${i}` }));
+  return group(groups, groups.flatMap((g) => [{ text: `${g.id}a`, groupId: g.id }, { text: `${g.id}b`, groupId: g.id }]));
+}
+
+/** `n` elementów rozłożonych na dwie grupy zwierząt. */
+const animalsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ text: `zwierzę${i}`, groupId: i % 2 === 0 ? "g1" : "g2" }));
+
+/** `lesson_cloze` z odpowiedzią liczoną ze słów luk. */
+function cloze(overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
+  const draft: LessonExerciseDraft = {
+    exerciseType: "lesson_cloze",
+    objectiveId: OBJECTIVE_ID,
+    clozeText: "Roślina pobiera ___ z gleby i ___ z powietrza.",
+    gapAnswers: ["wodę", "dwutlenek węgla"],
+    extraWords: ["tlen"],
+    answer: "",
+    acceptedAnswers: [],
+    focus: [],
+    ...overrides,
+  };
+  return { ...draft, answer: overrides.answer ?? (clozeAnswer(draft) || "-") };
+}
+
+/** Tekst z `gaps` lukami rozdzielonymi słowami i `answers` słów luk. */
+function clozeWithGaps(gaps: number, answers = gaps): LessonExerciseDraft {
+  return cloze({
+    clozeText: `${Array.from({ length: gaps }, (_, i) => `słowo${i} ___`).join(" ")} koniec.`,
+    gapAnswers: Array.from({ length: answers }, (_, i) => `luka${i}`),
+  });
+}
+
+/** `lesson_keywords` z odpowiedzią liczoną z pojęć kluczowych. */
+function keywords(
+  keywordOptions: readonly { id: string; text: string }[] | undefined,
+  keyOptionIds: readonly string[] | undefined,
+): LessonExerciseDraft {
+  const fields = {
+    ...(keywordOptions === undefined ? {} : { keywordOptions: [...keywordOptions] }),
+    ...(keyOptionIds === undefined ? {} : { keyOptionIds: [...keyOptionIds] }),
+  };
+  return {
+    exerciseType: "lesson_keywords",
+    objectiveId: OBJECTIVE_ID,
+    ...fields,
+    answer: keywordsAnswer(fields) || "-",
+    acceptedAnswers: [],
+    focus: [],
+  };
+}
+
+const TERMS = [
+  { id: "k1", text: "fotosynteza" },
+  { id: "k2", text: "chlorofil" },
+  { id: "k3", text: "korzeń" },
+  { id: "k4", text: "kwiat" },
+];
+
+/** `n` pojęć o rozróżnialnych tekstach. */
+const termsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `t${i}`, text: `pojęcie${i}` }));
+
+/** Specyfikacja rachunku: 3 cm w skali 1:25 000 = 750 m. */
+const scale: CalculationSpec = {
+  kind: "scale_distance",
+  params: { scaleDenominator: 25000, mapDistanceCm: 3 },
+  unit: "m",
+  templateFamilyId: "map-scale",
+};
+
+/** Tolerancja dokładnie na granicy dla wyniku `scale` (750 m). */
+const SCALE_TOLERANCE_LIMIT = 750 / MAX_TOLERANCE_SHARE;
 
 /** Zdanie z jedną luką: `head` liter, spacja, luka, kropka. */
 const longListenStem = `${"A".repeat(100)} ___.`;
@@ -341,6 +480,133 @@ registerRuleCases([
   { rule: "transform.statement_required", violation: check(transform({ statement: undefined })) },
   { rule: "transform.unknown", violation: check(transform({ transformId: "reverse" })) },
   { rule: "open.prompt_required", violation: check(open({ prompt: undefined })) },
+
+  // Słowa kluczowe. Liczności ponad limit zgłasza kontrakt pod id reguły rdzenia.
+  {
+    rule: "keywords.options_count",
+    violation: check(keywords(undefined, ["k1", "k2"])),
+    boundary: check(keywords(termsOf(MAX_KEYWORD_OPTIONS), ["t0", "t1"])),
+  },
+  {
+    rule: "keywords.options_count",
+    violation: check(keywords(termsOf(MAX_KEYWORD_OPTIONS + 1), ["t0", "t1"])),
+    boundary: check(keywords(termsOf(MAX_KEYWORD_OPTIONS), ["t0", "t1"])),
+  },
+  { rule: "keywords.option_ids_unique", violation: check(keywords([...TERMS.slice(0, 3), { id: "k1", text: "kwiat" }], ["k2", "k3"])) },
+  { rule: "keywords.option_duplicate", violation: check(keywords([...TERMS.slice(0, 3), { id: "k4", text: "Fotosynteza" }], ["k1", "k2"])) },
+  {
+    rule: "keywords.key_count",
+    violation: check(keywords(TERMS, undefined)),
+    boundary: check(keywords(TERMS, TERMS.slice(0, MAX_KEY_OPTIONS).map((term) => term.id))),
+  },
+  {
+    rule: "keywords.key_count",
+    violation: check(keywords(termsOf(MAX_KEYWORD_OPTIONS), termsOf(MAX_KEY_OPTIONS + 1).map((term) => term.id))),
+    boundary: check(keywords(termsOf(MAX_KEYWORD_OPTIONS), termsOf(MAX_KEY_OPTIONS).map((term) => term.id))),
+  },
+  { rule: "keywords.key_repeated", violation: check(keywords(TERMS, ["k1", "k1"])) },
+  { rule: "keywords.key_unknown", violation: check(keywords(TERMS, ["k1", "k9"])) },
+
+  // Pary. Liczności ponad limit zgłasza kontrakt pod id reguły rdzenia.
+  {
+    rule: "match.pairs_count",
+    violation: check({ ...match(RIVERS), pairs: undefined }),
+    boundary: check(match(pairsOf(MAX_MATCH_PAIRS))),
+  },
+  {
+    rule: "match.pairs_count",
+    violation: check(match(pairsOf(MAX_MATCH_PAIRS + 1))),
+    boundary: check(match(pairsOf(MAX_MATCH_PAIRS))),
+  },
+  {
+    rule: "match.extra_count",
+    violation: check(match(RIVERS, Array.from({ length: MAX_MATCH_EXTRA + 1 }, (_, i) => `dystraktor${i}`))),
+    boundary: check(match(RIVERS, Array.from({ length: MAX_MATCH_EXTRA }, (_, i) => `dystraktor${i}`))),
+  },
+  { rule: "match.confusable", violation: check(match([...RIVERS.slice(0, 2), { left: "Wisła", right: "miasto" }])) },
+  { rule: "match.confusable", violation: check(match(RIVERS, ["długa rzeka"])) },
+
+  // Grupy. Liczności ponad limit zgłasza kontrakt pod id reguły rdzenia.
+  {
+    rule: "group.groups_count",
+    violation: check({ ...group(ANIMAL_GROUPS, ANIMALS), groups: undefined }),
+    boundary: check(groupsOf(MAX_GROUPS)),
+  },
+  { rule: "group.groups_count", violation: check(groupsOf(MAX_GROUPS + 1)), boundary: check(groupsOf(MAX_GROUPS)) },
+  {
+    rule: "group.items_count",
+    violation: check({ ...group(ANIMAL_GROUPS, ANIMALS), groupItems: undefined }),
+    boundary: check(group(ANIMAL_GROUPS, animalsOf(MAX_GROUP_ITEMS))),
+  },
+  {
+    rule: "group.items_count",
+    violation: check(group(ANIMAL_GROUPS, animalsOf(MAX_GROUP_ITEMS + 1))),
+    boundary: check(group(ANIMAL_GROUPS, animalsOf(MAX_GROUP_ITEMS))),
+  },
+  { rule: "group.ids_unique", violation: check(group([{ id: "g1", label: "Ssaki" }, { id: "g1", label: "Ptaki" }], ANIMALS)) },
+  {
+    rule: "group.item_unknown_group",
+    violation: check(group(ANIMAL_GROUPS, [...ANIMALS.slice(0, 3), { text: "Sowa", groupId: "g4" }])),
+  },
+  {
+    rule: "group.items_per_group",
+    violation: check(group(ANIMAL_GROUPS, [...ANIMALS.slice(0, 3).map((item) => ({ ...item, groupId: "g1" })), ANIMALS[3]!])),
+    boundary: check(group(ANIMAL_GROUPS, ANIMALS)),
+  },
+  { rule: "group.label_confusable", violation: check(group([{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ssaki morskie" }], ANIMALS)) },
+  { rule: "group.item_repeated", violation: check(group(ANIMAL_GROUPS, [...ANIMALS.slice(0, 3), { text: "pies", groupId: "g2" }])) },
+  { rule: "group.item_is_label", violation: check(group(ANIMAL_GROUPS, [...ANIMALS.slice(0, 3), { text: "Ptaki", groupId: "g2" }])) },
+
+  // Tekst z lukami i bankiem słów.
+  { rule: "cloze.text_required", violation: check(cloze({ clozeText: undefined })) },
+  {
+    // Słów luk jest najwyżej MAX_CLOZE_GAPS (kontrakt), więc nadmiar luk zgłasza walidator.
+    rule: "cloze.gap_count",
+    violation: check(clozeWithGaps(MAX_CLOZE_GAPS + 1, MAX_CLOZE_GAPS)),
+    boundary: check(clozeWithGaps(MAX_CLOZE_GAPS)),
+  },
+  {
+    // Słów luk ponad limit: zgłasza kontrakt pod id reguły rdzenia.
+    rule: "cloze.gap_count",
+    violation: check(clozeWithGaps(MAX_CLOZE_GAPS + 1)),
+    boundary: check(clozeWithGaps(MAX_CLOZE_GAPS)),
+  },
+  { rule: "cloze.answers_count", violation: check(cloze({ gapAnswers: ["wodę", "dwutlenek węgla", "sole"] })) },
+  {
+    rule: "cloze.extra_count",
+    violation: check(cloze({ extraWords: undefined })),
+    boundary: check(cloze({ extraWords: Array.from({ length: MAX_CLOZE_EXTRA }, (_, i) => `pułapka${i}`) })),
+  },
+  {
+    rule: "cloze.extra_count",
+    violation: check(cloze({ extraWords: Array.from({ length: MAX_CLOZE_EXTRA + 1 }, (_, i) => `pułapka${i}`) })),
+    boundary: check(cloze({ extraWords: Array.from({ length: MAX_CLOZE_EXTRA }, (_, i) => `pułapka${i}`) })),
+  },
+  { rule: "cloze.words_between_gaps", violation: check(cloze({ clozeText: "Roślina pobiera ___ ___ z powietrza." })) },
+  { rule: "cloze.underscore_outside_gap", violation: check(cloze({ clozeText: "Roślina_pobiera ___ z gleby i ___ z powietrza." })) },
+  { rule: "cloze.bank_word_empty", violation: check(cloze({ extraWords: ["!!"] })) },
+  {
+    rule: "cloze.bank_word_tokens",
+    violation: check(cloze({ extraWords: [Array.from({ length: MAX_CLOZE_WORD_TOKENS + 1 }, (_, i) => `dąb${i}`).join(" ")] })),
+    boundary: check(cloze({ extraWords: [Array.from({ length: MAX_CLOZE_WORD_TOKENS }, (_, i) => `dąb${i}`).join(" ")] })),
+  },
+  { rule: "cloze.bank_confusable", violation: check(cloze({ extraWords: ["wodę morską"] })) },
+  { rule: "cloze.bank_outside_gap", violation: check(cloze({ extraWords: ["gleby"] })) },
+
+  // Specyfikacja rachunku.
+  {
+    rule: "calculation.tolerance",
+    violation: () => calculationIssues({ ...scale, tolerance: SCALE_TOLERANCE_LIMIT + 0.1 }),
+    boundary: () => calculationIssues({ ...scale, tolerance: SCALE_TOLERANCE_LIMIT }),
+  },
+  {
+    rule: "calculation.tolerance",
+    violation: () => calculationIssues({ ...scale, tolerance: null }),
+    boundary: () => calculationIssues({ ...scale, tolerance: 0 }),
+  },
+  { rule: "calculation.family_slug", violation: () => calculationIssues({ ...scale, templateFamilyId: "scale_distance-1" }) },
+  { rule: "calculation.params", violation: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: -1 } }) },
+  { rule: "calculation.unknown_key", violation: () => calculationIssues({ ...scale, params: { ...scale.params, zoom: 2 } }) },
 ]);
 
 /** Poprawne szkice przypadków (test pilnuje, że bez naruszenia przechodzą bez zgłoszeń). */
@@ -356,4 +622,9 @@ export const CORE_CASE_BASELINES: readonly { readonly name: string; readonly iss
   { name: "open", issues: check(open()) },
   { name: "open (v3)", issues: check(open({ commonErrors: ["błąd"] }), richSubject) },
   { name: "gap z wyjaśnieniem", issues: check(gap({ explanationPl: "Przy she dodajemy -s." }), richSubject) },
+  { name: "match", issues: check(match(RIVERS, ["jezioro"])) },
+  { name: "group", issues: check(group(ANIMAL_GROUPS, ANIMALS)) },
+  { name: "cloze", issues: check(cloze()) },
+  { name: "keywords", issues: check(keywords(TERMS, ["k1", "k2"])) },
+  { name: "calculation", issues: () => calculationIssues(scale) },
 ];

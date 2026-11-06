@@ -7,9 +7,13 @@ import {
   contractIssues,
   validateLessonExercise,
   validateLessonExerciseIssues,
+  validatePool,
+  validatePoolIssues,
 } from "./pool-validation";
 import { messagesOf, type LessonRuleIssue } from "./rules/catalog";
 import { CORE_CASE_BASELINES } from "./rules/core.rule-cases";
+import { LESSON_CASE_BASELINES } from "./rules/lesson.rule-cases";
+import { historyLikeSubject } from "./testing/history-like-subject";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { schoolSubject } from "./subjects/school/module";
 import type { LessonExerciseDraft } from "./types";
@@ -285,9 +289,143 @@ describe("opakowanie dla rodzica", () => {
     expect(validateLessonExercise(ex, englishGrammarSubject, englishTopic)).toEqual(messagesOf(issues));
   });
 
-  it("poprawne szkice przypadków reguł rdzenia nie mają zgłoszeń", () => {
-    for (const baseline of CORE_CASE_BASELINES) {
+  it("poprawne szkice przypadków reguł rdzenia i lekcji nie mają zgłoszeń", () => {
+    for (const baseline of [...CORE_CASE_BASELINES, ...LESSON_CASE_BASELINES]) {
       expect(baseline.issues(), baseline.name).toEqual([]);
     }
+  });
+});
+
+describe("reguły par, grup, luk z bankiem i słów kluczowych", () => {
+  const computed = (exerciseType: LessonExerciseDraft["exerciseType"], fields: Record<string, unknown>) =>
+    ({ exerciseType, objectiveId: THIRD_PERSON, answer: "x", acceptedAnswers: [], focus: [], ...fields }) as LessonExerciseDraft;
+
+  it("groupId spoza grup → group.item_unknown_group z polem elementu i dozwolonymi id", () => {
+    const issues = issuesOf(computed("lesson_group", {
+      groups: [{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ptaki" }],
+      groupItems: [
+        { text: "Pies", groupId: "g1" },
+        { text: "Kot", groupId: "g1" },
+        { text: "Wróbel", groupId: "g2" },
+        { text: "Sowa", groupId: "g4" },
+      ],
+    }));
+    const issue = only(issues, "group.item_unknown_group");
+    expect(issue.field).toBe("groupItems[3].groupId");
+    expect(issue.found).toContain('"g4"');
+    expect(issue.found).toContain("g1, g2");
+    expect(issue.pl).toBe("groupItems: każdy element musi należeć do jednej z grup");
+  });
+
+  it("pojedyncze podkreślenie poza luką → cloze.underscore_outside_gap", () => {
+    const issues = issuesOf(computed("lesson_cloze", {
+      clozeText: "Roślina pobiera ___ z gleby_ i ___ z powietrza.",
+      gapAnswers: ["wodę", "dwutlenek węgla"],
+      extraWords: ["tlen"],
+    }));
+    const issue = only(issues, "cloze.underscore_outside_gap");
+    expect(issue.field).toBe("clozeText");
+    expect(issue.found).toContain("gleby_");
+    expect(issue.pl).toBe("clozeText: podkreślenie poza znacznikiem luki");
+  });
+
+  it("dystraktor po prawej powtarzający tekst pary → match.confusable z polem dystraktora", () => {
+    const issues = issuesOf(computed("lesson_match", {
+      pairs: [{ left: "Wisła", right: "rzeka" }, { left: "Rysy", right: "szczyt" }, { left: "Kraków", right: "miasto" }],
+      extraRight: ["długa rzeka"],
+    }));
+    const issue = only(issues, "match.confusable");
+    expect(issue.field).toBe("extraRight[0]");
+    expect(issue.found).toContain('"długa rzeka" and "rzeka"');
+    expect(issue.pl).toBe("pairs: „długa rzeka” powiela „rzeka” albo się w nim zawiera");
+  });
+
+  it("odpowiedź różna od liczonej → reguła internal z obiema wartościami", () => {
+    const issues = issuesOf(computed("lesson_keywords", {
+      keywordOptions: [
+        { id: "k1", text: "fotosynteza" },
+        { id: "k2", text: "chlorofil" },
+        { id: "k3", text: "korzeń" },
+        { id: "k4", text: "kwiat" },
+      ],
+      keyOptionIds: ["k1", "k2"],
+      answer: "chlorofil, fotosynteza",
+    }));
+    expect(only(issues, "keywords.answer_computed").found).toBe('answer "chlorofil, fotosynteza", computed "fotosynteza, chlorofil"');
+  });
+
+  it.each([
+    ["lesson_match", { pairs: Array.from({ length: 6 }, (_, i) => ({ left: `l${i}`, right: `r${i}` })) }, "match.pairs_count", "pairs"],
+    ["lesson_match", { extraRight: ["a", "b", "c"] }, "match.extra_count", "extraRight"],
+    ["lesson_group", { groups: Array.from({ length: 4 }, (_, i) => ({ id: `g${i}`, label: `l${i}` })) }, "group.groups_count", "groups"],
+    ["lesson_group", { groupItems: Array.from({ length: 9 }, (_, i) => ({ text: `t${i}`, groupId: "g" })) }, "group.items_count", "groupItems"],
+    ["lesson_cloze", { gapAnswers: ["a", "b", "c", "d", "e"] }, "cloze.gap_count", "gapAnswers"],
+    ["lesson_cloze", { extraWords: ["a", "b", "c"] }, "cloze.extra_count", "extraWords"],
+    ["lesson_keywords", { keywordOptions: Array.from({ length: 7 }, (_, i) => ({ id: `k${i}`, text: `t${i}` })) }, "keywords.options_count", "keywordOptions"],
+    ["lesson_keywords", { keyOptionIds: ["a", "b", "c", "d"] }, "keywords.key_count", "keyOptionIds"],
+  ] as const)("%s: liczność ponad kontrakt → %s (pole %s)", (type, fields, rule, field) => {
+    const issue = only(issuesOf(computed(type, fields)), rule);
+    expect(issue.field).toBe(field);
+  });
+});
+
+describe("reguły całej puli (validatePoolIssues)", () => {
+  const objectiveId = historyLikeSubject.topics[0]!.objectives[0]!.id;
+  const historyTopic = historyLikeSubject.topics[0]!;
+  const gapOf = (stem: string, answer: string): LessonExerciseDraft =>
+    ({ exerciseType: "lesson_gap", objectiveId, stem, answer, acceptedAnswers: [], focus: [answer] });
+
+  it("powtórzony bodziec → lesson.duplicate_stimulus z typem i fragmentem pierwszego ćwiczenia", () => {
+    const subject = { ...historyLikeSubject, poolDeduplication: "exercise" as const };
+    const first = gapOf("Chrzest Polski odbył się w ___ roku.", "966");
+    const second = gapOf("Chrzest Polski odbył się w ___ roku.", "967");
+    const result = validatePoolIssues([first, second], subject, historyTopic);
+    expect(result.valid).toEqual([first]);
+    expect(result.rejected).toHaveLength(1);
+    const [issue] = result.rejected[0]!.issues;
+    expect(issue).toMatchObject({
+      rule: "lesson.duplicate_stimulus",
+      field: "exercise",
+      pl: "stimulus: zduplikowany bodziec ćwiczenia w tej samej regule",
+    });
+    expect(issue!.found).toContain("lesson_gap");
+    expect(issue!.found).toContain("chrzest polski odbył się");
+  });
+
+  it("równoważna odpowiedź → lesson.duplicate_answer z obiema odpowiedziami", () => {
+    const result = validatePoolIssues(
+      [gapOf("Chrzest Polski odbył się w ___ roku.", "966"), gapOf("Mieszko przyjął chrzest w ___ roku.", "966")],
+      historyLikeSubject,
+      historyTopic,
+    );
+    const [issue] = result.rejected[0]!.issues;
+    expect(issue).toMatchObject({ rule: "lesson.duplicate_answer", field: "answer", pl: "answer: duplikat odpowiedzi „966” już obecnej w puli" });
+    expect(issue!.found).toBe('answer "966" is equivalent to the answer "966" of an earlier exercise');
+  });
+
+  it("validatePool to te same ćwiczenia z komunikatami pl zgłoszeń (także odrzucenia pojedynczego ćwiczenia)", () => {
+    const pool = [
+      gapOf("Chrzest Polski odbył się w ___ roku.", "966"),
+      gapOf("Mieszko przyjął chrzest w ___ roku.", "966"),
+      gapOf("Bez luki.", "966"),
+    ];
+    const issues = validatePoolIssues(pool, historyLikeSubject, historyTopic);
+    const parent = validatePool(pool, historyLikeSubject, historyTopic);
+    expect(parent.valid).toEqual(issues.valid);
+    expect(parent.rejected).toEqual(issues.rejected.map(({ exercise, issues: list }) => ({ exercise, errors: messagesOf(list) })));
+    expect(parent.rejected.map((entry) => entry.errors[0])).toEqual([
+      "stem: „lesson_gap” wymaga dokładnie jednego znacznika luki „___” (znaleziono 0)",
+      "answer: duplikat odpowiedzi „966” już obecnej w puli",
+    ]);
+  });
+
+  it("opcja agent przechodzi do walidacji ćwiczenia (bez zgłoszenia answer typu liczonego)", () => {
+    const match = { exerciseType: "lesson_match", objectiveId: THIRD_PERSON, pairs: [], answer: "", acceptedAnswers: [], focus: [] } as unknown as LessonExerciseDraft;
+    const agent = validatePoolIssues([match], englishGrammarSubject, englishTopic, { agent: true });
+    expect(messagesOf(agent.rejected[0]!.issues)).toEqual(["pairs: wymagane minimum 3"]);
+    expect(validatePool([match], englishGrammarSubject, englishTopic).rejected[0]!.errors).toEqual([
+      "answer: wymagane minimum 1",
+      "pairs: wymagane minimum 3",
+    ]);
   });
 });
