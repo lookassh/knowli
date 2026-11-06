@@ -114,7 +114,8 @@ const admitted = (
 };
 
 /** Paczka w zagadnieniu A (precheck): zgłoszenia ostatniego kandydata. */
-const lastInBatch = (drafts: readonly LessonExerciseDraft[], limits = { targetCount: 1, listenAllowance: 1, maxExercises: 2 }) => () => {
+const lastInBatch = (drafts: readonly LessonExerciseDraft[]) => () => {
+  const limits = { targetCount: 1, listenAllowance: 1, maxExercises: 2 };
   const results = precheckBatch(stateWith(), A, drafts, contextFor({ limits: { [A]: limits, [B]: limits } }));
   return issuesOf(results.at(-1));
 };
