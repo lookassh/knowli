@@ -292,8 +292,8 @@ export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKe
     return expected.every((id, i) => id === itemIds[i]);
   }
   // Klocki o tym samym tekście są zamienne (#298): permutacja klocków, potem tekst na każdej pozycji.
-  const sorted = [...itemIds].sort();
-  const isPermutation = [...expected].sort().every((id, i) => id === sorted[i]);
+  const known = new Set(expected);
+  const isPermutation = new Set(itemIds).size === itemIds.length && itemIds.every((id) => known.has(id));
   return isPermutation && expected.every((id, i) => values[id] === values[itemIds[i]!]);
 }
 
