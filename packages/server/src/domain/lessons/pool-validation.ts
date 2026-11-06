@@ -4,11 +4,14 @@
  * przedmiotu dokłada `subject.validateExercise`. Bez bazy, sieci i zegara.
  *
  * Walidacja działa jednakowo przy generowaniu puli (worker) i przy edycji
- * ćwiczenia przez rodzica. Komunikaty po polsku (parent-facing), z nazwą pola,
- * spójne stylistycznie z `catalog-validation.ts`. Limity są nazwanymi,
+ * ćwiczenia przez rodzica. Każde złamanie reguły to zgłoszenie z katalogu
+ * rdzenia (`rules/core-rules.ts`): `pl` — komunikat po polsku dla rodzica, z
+ * nazwą pola, spójny stylistycznie z `catalog-validation.ts`; `found` — po
+ * angielsku, co konkretnie jest nie tak (dla agenta). Limity są nazwanymi,
  * eksportowanymi stałymi — żadnych rozsianych literałów.
  */
 
+import type { z } from "zod";
 import {
   LessonExerciseInputSchema,
   MAX_CLOZE_EXTRA,
@@ -34,7 +37,7 @@ import {
   MIN_ORDER_ITEMS,
 } from "@learning/contracts";
 import { clozeAnswer, clozeGapCount, clozeParts } from "./cloze";
-import { FEEDBACK_SENTENCE_MAX_LENGTH, feedbackSentenceText, fillGap } from "./feedback-sentence-text";
+import { feedbackSentenceText, fillGap } from "./feedback-sentence-text";
 import { ASSESSED_STAGES, outsideStagePath, stageOf } from "./stages";
 import type {
   AnswerNormalizer,
@@ -45,10 +48,23 @@ import type {
   LessonTopic,
   SubjectModule,
 } from "./types";
-import { explanationTextErrors } from "./exercise-explanation";
-import { messagesOf } from "./rules/catalog";
+import { explanationIssues } from "./exercise-explanation";
+import { clip, issueFrom, messagesOf, type LessonRuleIssue } from "./rules/catalog";
+import { CORE_RULES } from "./rules/core-rules";
+import {
+  FEEDBACK_SENTENCE_MAX_LENGTH,
+  MAX_ACCEPTED_ANSWERS,
+  MAX_GAP_ANSWER_TOKENS,
+  MAX_NOTICE_SEGMENTS,
+  MAX_NOTICE_SENTENCES,
+  MIN_NOTICE_SEGMENTS,
+  MIN_NOTICE_SENTENCES,
+} from "./rules/limits";
 import { lessonExerciseIdentity, lessonIdentityOptionsOf } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
+
+/** Fabryka zgłoszeń reguł rdzenia. */
+const coreIssue = issueFrom(CORE_RULES);
 
 /** Znacznik luki w `stem` ćwiczenia `lesson_gap`. */
 export const GAP_MARKER = "___";
@@ -56,23 +72,25 @@ export const GAP_MARKER = "___";
 /** Maksymalna długość pojedynczego pola tekstowego ćwiczenia (znaki), także wyjaśnienia błędu — limit z kontraktów. */
 export const MAX_TEXT_LENGTH = MAX_LESSON_TEXT_LENGTH;
 
-/** Maksymalna liczba wariantów `acceptedAnswers`. */
-export const MAX_ACCEPTED_ANSWERS = 40;
+/**
+ * Limity walidatorów (stałe w `rules/limits.ts`, bo podają je opisy reguł):
+ * warianty `acceptedAnswers`, zdania i segmenty `lesson_notice`, tokeny
+ * odpowiedzi `lesson_gap`.
+ */
+export {
+  MAX_ACCEPTED_ANSWERS,
+  MAX_GAP_ANSWER_TOKENS,
+  MAX_NOTICE_SEGMENTS,
+  MAX_NOTICE_SENTENCES,
+  MIN_NOTICE_SEGMENTS,
+  MIN_NOTICE_SENTENCES,
+};
 
 /** Zakresy liczby elementów `lesson_order` i opcji wyboru — limity z kontraktów. */
 export { MAX_OPTIONS, MAX_ORDER_ITEMS, MIN_OPTIONS, MIN_ORDER_ITEMS };
 
-/** `lesson_notice`: zakres liczby zdań i segmentów-słów na zdanie. */
-export const MIN_NOTICE_SENTENCES = 2;
-export const MAX_NOTICE_SENTENCES = 3;
-export const MIN_NOTICE_SEGMENTS = 1;
-export const MAX_NOTICE_SEGMENTS = 15;
-
 /** `lesson_cloze`: słowo luki i słowo-pułapka mają 1–3 słowa (design szkoły §13.1). */
 export const MAX_CLOZE_WORD_TOKENS = 3;
-
-/** Maksymalna liczba tokenów odpowiedzi dla `lesson_gap`. */
-export const MAX_GAP_ANSWER_TOKENS = 3;
 
 /** Typy tekstowe (wolna odpowiedź dziecka) — wymagają niepustego `focus`. */
 const TEXT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>([
@@ -177,15 +195,221 @@ function countGapMarkers(stem: string): number {
   return stem.split(GAP_MARKER).length - 1;
 }
 
+/** Lista identyfikatorów do `found` (wycięta, bez cudzysłowu); pusta lista = „none”. */
+function idList(ids: readonly string[]): string {
+  return ids.length === 0 ? "none" : clip(ids.join(", "), undefined, { quote: false });
+}
+
+/** `found` brakującego albo pustego pola tekstowego. */
+function missingText(field: string, value: string | undefined): string {
+  return value === undefined ? `${field} is missing` : `${field} is blank`;
+}
+
+// ---------------------------------------------------------------------------
+// Kontrakt (Zod) → zgłoszenia reguł (spec katalogu reguł §4.2).
+// ---------------------------------------------------------------------------
+
+/** Błąd kontraktu z `safeParse` (Zod 4). */
+type ContractIssue = z.core.$ZodIssue;
+
+/** Ścieżka pola w zapisie `sourceRefs[1].quote`; pusta ścieżka = `exercise`. */
+function fieldPath(path: readonly PropertyKey[]): string {
+  let out = "";
+  for (const segment of path) {
+    out += typeof segment === "number" ? `[${segment}]` : out === "" ? String(segment) : `.${String(segment)}`;
+  }
+  return out === "" ? "exercise" : out;
+}
+
+/** Wartość szkicu pod ścieżką błędu kontraktu (`undefined`, gdy jej nie ma). */
+function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
+  let current: unknown = input;
+  for (const segment of path) {
+    if (current === null || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<PropertyKey, unknown>)[segment];
+  }
+  return current;
+}
+
+/** Otrzymana wartość do `found`: napis w cudzysłowie, reszta jako wycięty JSON. */
+function describeValue(value: unknown): string {
+  if (value === undefined) {
+    return "nothing";
+  }
+  if (typeof value === "string") {
+    return clip(value);
+  }
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    json = undefined;
+  }
+  return clip(json ?? String(value), undefined, { quote: false });
+}
+
+/** Dzisiejszy komunikat rodzica dla błędu kontraktu (znak w znak). */
+function contractMessage(issue: ContractIssue): string {
+  const detail = issue.code === "too_big"
+    ? `przekracza limit ${issue.maximum}`
+    : issue.code === "too_small"
+      ? `wymagane minimum ${issue.minimum}`
+      : "nieprawidłowy typ lub wartość";
+  return `${issue.path.join(".")}: ${detail}`;
+}
+
 /**
- * Reguły ogólne dla ćwiczenia (design „Generowanie puli”), a następnie
- * delegacja do `subject.validateExercise`. Zwraca listę błędów po polsku;
- * pusta lista = ćwiczenie poprawne. Nie rzuca — zbiera wszystkie naruszenia.
+ * Liczność listy poza zakresem kontraktu. Listy z własną regułą rdzenia (opcje,
+ * klocki, warianty, zdania i segmenty `lesson_notice`) dostają jej id — ta sama
+ * granica co w walidatorze, jeden opis dla modelu; pozostałe `field.count`.
  */
+function contractCountIssue(issue: ContractIssue, details: { field: string; pl: string; found: string }): LessonRuleIssue {
+  const [head] = issue.path;
+  if (head === "options" && issue.path.length === 1) return coreIssue("options.count", details);
+  if (head === "items" && issue.path.length === 1) return coreIssue("order.items_count", details);
+  if (head === "acceptedAnswers" && issue.path.length === 1) return coreIssue("variants.count", details);
+  if (head === "noticeSegments" && issue.path.length === 1) return coreIssue("notice.sentence_count", details);
+  if (head === "noticeSegments" && issue.path.length === 2) return coreIssue("notice.segment_count", details);
+  return coreIssue("field.count", details);
+}
+
+/**
+ * Zgłoszenie reguły dla jednego błędu kontraktu (tabela spec §4.2): pusty napis →
+ * `field.empty`; długość napisu → `field.max_length` (odpowiedź i warianty →
+ * `answer.max_length`); liczność listy → `field.count` albo reguła listy; reszta →
+ * `field.invalid` z otrzymaną wartością odczytaną ze szkicu i oczekiwaniem z Zod.
+ */
+function contractIssue(issue: ContractIssue, input: unknown): LessonRuleIssue {
+  const field = fieldPath(issue.path);
+  const pl = contractMessage(issue);
+  const value = valueAt(input, issue.path);
+  const got = describeValue(value);
+  switch (issue.code) {
+    case "too_small":
+    case "too_big": {
+      const bound = issue.code === "too_small" ? `at least ${issue.minimum}` : `at most ${issue.maximum}`;
+      if (issue.origin === "string") {
+        if (issue.code === "too_small" && Number(issue.minimum) === 1) {
+          return coreIssue("field.empty", { field, pl, found: "empty string" });
+        }
+        const length = typeof value === "string" ? value.length : 0;
+        const found = issue.code === "too_small"
+          ? `${length} characters, minimum ${issue.minimum}`
+          : `${length} characters, limit ${issue.maximum}`;
+        const [head] = issue.path;
+        if (issue.code === "too_big" && (head === "answer" || head === "acceptedAnswers")) {
+          return coreIssue("answer.max_length", { field, pl, found });
+        }
+        return coreIssue("field.max_length", { field, pl, found });
+      }
+      if (issue.origin === "array") {
+        const count = Array.isArray(value) ? value.length : 0;
+        return contractCountIssue(issue, { field, pl, found: `${count} items, ${bound}` });
+      }
+      return coreIssue("field.invalid", { field, pl, found: `got ${got}; expected ${bound}` });
+    }
+    case "invalid_type":
+      return coreIssue("field.invalid", { field, pl, found: `got ${got}; expected ${issue.expected}` });
+    case "invalid_value":
+      return coreIssue("field.invalid", {
+        field,
+        pl,
+        found: `got ${got}; expected one of ${clip(issue.values.map((v) => JSON.stringify(v)).join(", "), undefined, { quote: false })}`,
+      });
+    case "unrecognized_keys":
+      return coreIssue("field.invalid", { field, pl, found: `unknown field ${clip(issue.keys.join(", "))}; leave it out` });
+    case "invalid_format":
+      return coreIssue("field.invalid", { field, pl, found: `got ${got}; expected format ${issue.format}` });
+    case "invalid_union":
+      return coreIssue("field.invalid", { field, pl, found: `got ${got}; matches none of the allowed shapes` });
+    default:
+      return coreIssue("field.invalid", { field, pl, found: `got ${got}; fails the contract check` });
+  }
+}
+
+/**
+ * Pola źródłowe odpowiedzi liczonej przez kod (pary, grupy, luki z bankiem,
+ * słowa kluczowe, rachunek). Błąd kontraktu o `answer` takiego typu wynika z
+ * pola źródłowego: znika, gdy pole źródłowe ma własne zgłoszenie, a bez niego
+ * dostaje ścieżkę pola źródłowego (spec §4.2).
+ */
+const COMPUTED_ANSWER_SOURCES: Partial<Record<LessonExerciseType, readonly string[]>> = {
+  lesson_match: ["pairs"],
+  lesson_group: ["groups"],
+  lesson_cloze: ["gapAnswers"],
+  lesson_keywords: ["keyOptionIds", "keywordOptions"],
+  lesson_calculation: ["calculation"],
+};
+
+/** Zgłoszenia kontraktu dla wszystkich błędów `safeParse` naraz. Eksportowane do testów tabeli Zod. */
+export function contractIssues(issues: readonly ContractIssue[], input: unknown): LessonRuleIssue[] {
+  const exerciseType = valueAt(input, ["exerciseType"]);
+  const sources = typeof exerciseType === "string"
+    ? COMPUTED_ANSWER_SOURCES[exerciseType as LessonExerciseType]
+    : undefined;
+  const sourceReported = sources !== undefined &&
+    issues.some((issue) => sources.includes(String(issue.path[0])));
+  const result: LessonRuleIssue[] = [];
+  for (const issue of issues) {
+    const ruleIssue = contractIssue(issue, input);
+    if (sources !== undefined && issue.path[0] === "answer") {
+      if (sourceReported) {
+        continue;
+      }
+      result.push({ ...ruleIssue, field: sources[0]!, found: `answer computed from ${sources[0]!}: ${ruleIssue.found ?? ""}` });
+      continue;
+    }
+    result.push(ruleIssue);
+  }
+  return result;
+}
+
+/** Opcjonalne pola tekstowe szkicu: pusty napis w nich nie przeszkadza dalszej analizie. */
+const OPTIONAL_TEXT_FIELDS: ReadonlySet<string> = new Set([
+  "instructionPl",
+  "stem",
+  "statement",
+  "prompt",
+  "hint",
+  "transformId",
+  "correctOption",
+  "familyId",
+  "clozeText",
+  "explanationPl",
+]);
+
+/**
+ * Pola, które zgłosił kontrakt jako puste, gdy WSZYSTKIE błędy kontraktu to puste
+ * napisy w opcjonalnych polach tekstowych; inaczej `null`.
+ */
+function onlyEmptyOptionalTexts(issues: readonly ContractIssue[], input: unknown): string[] | null {
+  const fields: string[] = [];
+  for (const issue of issues) {
+    const [head] = issue.path;
+    if (
+      issue.code !== "too_small" || issue.origin !== "string" || issue.path.length !== 1 ||
+      typeof head !== "string" || !OPTIONAL_TEXT_FIELDS.has(head) || valueAt(input, issue.path) !== ""
+    ) {
+      return null;
+    }
+    fields.push(head);
+  }
+  return fields;
+}
+
+// ---------------------------------------------------------------------------
+// Reguły ćwiczenia.
+// ---------------------------------------------------------------------------
+
 /** Piktogram bodźca (`visualSubject`) jest dozwolony tylko przy wyborze z listy. */
-function validateVisualSubject(ex: LessonExerciseDraft, errors: string[]): void {
+function validateVisualSubject(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   if (ex.visualSubject !== undefined && ex.exerciseType !== "lesson_choice") {
-    errors.push("visualSubject: piktogram jest dozwolony tylko dla „lesson_choice”");
+    issues.push(coreIssue("visual.choice_only", {
+      pl: "visualSubject: piktogram jest dozwolony tylko dla „lesson_choice”",
+      found: `visualSubject ${clip(ex.visualSubject)} is set on ${ex.exerciseType}`,
+    }));
   }
 }
 
@@ -212,110 +436,223 @@ export type V3ExerciseField = (typeof V3_EXERCISE_FIELDS)[number];
 function v3FieldsPresent(ex: LessonExerciseDraft): V3ExerciseField[] {
   return V3_EXERCISE_FIELDS.filter((field) => ex[field] !== undefined);
 }
-export function validateLessonExercise(
+
+/** Opcje walidacji ćwiczenia. */
+export interface LessonExerciseValidationOptions {
+  /**
+   * Ścieżka agenta: gdy kontrakt odrzuca wyłącznie puste napisy w opcjonalnych
+   * polach tekstowych, pozostałe reguły liczymy raz jeszcze na kopii bez tych
+   * pól i zgłaszamy razem (ćwiczenie i tak jest odrzucone; agent poprawia
+   * wszystko naraz). Rodzic dostaje dzisiejszy zbiór komunikatów, więc API
+   * edycji i publikacji tej opcji nie używa.
+   */
+  readonly reanalyzeEmpty?: boolean;
+}
+
+/**
+ * Reguły ogólne dla ćwiczenia (design „Generowanie puli”), a następnie
+ * delegacja do `subject.validateExercise`. Zwraca zgłoszenia reguł; pusta
+ * lista = ćwiczenie poprawne. Nie rzuca — zbiera wszystkie naruszenia. Przy
+ * błędzie kontraktu dalszych reguł nie sprawdza (wyjątek: `reanalyzeEmpty`).
+ */
+export function validateLessonExerciseIssues(
   ex: LessonExerciseDraft,
   subject: SubjectModule,
   topic: LessonTopic,
-): string[] {
-  const errors: string[] = [];
-  const normalizer = subject.normalizer;
+  options: LessonExerciseValidationOptions = {},
+): LessonRuleIssue[] {
   const shape = LessonExerciseInputSchema.safeParse(ex);
   if (!shape.success) {
-    return shape.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code === "too_big" ? `przekracza limit ${issue.maximum}` : issue.code === "too_small" ? `wymagane minimum ${issue.minimum}` : "nieprawidłowy typ lub wartość"}`);
+    const contract = contractIssues(shape.error.issues, ex);
+    const empty = options.reanalyzeEmpty === true ? onlyEmptyOptionalTexts(shape.error.issues, ex) : null;
+    if (empty === null) {
+      return contract;
+    }
+    const stripped = Object.fromEntries(
+      Object.entries(ex).filter(([key]) => !empty.includes(key)),
+    ) as unknown as LessonExerciseDraft;
+    return [...contract, ...validateLessonExerciseIssues(stripped, subject, topic)];
   }
+
+  const issues: LessonRuleIssue[] = [];
+  const normalizer = subject.normalizer;
 
   // Karta pochodzi z katalogu, nie z puli ćwiczeń.
   if (ex.exerciseType === "lesson_card") {
-    errors.push("exerciseType: „lesson_card” nie jest ćwiczeniem puli (karty pochodzą z katalogu)");
+    issues.push(coreIssue("exercise.card_not_allowed", {
+      pl: "exerciseType: „lesson_card” nie jest ćwiczeniem puli (karty pochodzą z katalogu)",
+    }));
   }
 
   // Cel istnieje w temacie.
   const objective = topic.objectives.find((o) => o.id === ex.objectiveId);
   if (objective === undefined) {
-    errors.push(`objectiveId: cel „${ex.objectiveId}” nie istnieje w temacie „${topic.id}”`);
+    issues.push(coreIssue("exercise.unknown_objective", {
+      pl: `objectiveId: cel „${ex.objectiveId}” nie istnieje w temacie „${topic.id}”`,
+      found: `${clip(ex.objectiveId)} is not an objective of the topic; objectives: ${idList(topic.objectives.map((o) => o.id))}`,
+    }));
   }
 
   // Typ dozwolony dla przedmiotu i dla celu.
   if (!subject.exerciseTypes.includes(ex.exerciseType)) {
-    errors.push(`exerciseType: typ „${ex.exerciseType}” nie jest wspierany przez przedmiot`);
+    issues.push(coreIssue("exercise.type_unsupported", {
+      pl: `exerciseType: typ „${ex.exerciseType}” nie jest wspierany przez przedmiot`,
+      found: `${ex.exerciseType} is not a type of the subject; types: ${idList(subject.exerciseTypes)}`,
+    }));
   }
   if (objective !== undefined && !objective.exerciseTypes.includes(ex.exerciseType)) {
-    errors.push(`exerciseType: typ „${ex.exerciseType}” nie jest dozwolony dla celu „${objective.id}”`);
+    issues.push(coreIssue("exercise.type_not_allowed", {
+      pl: `exerciseType: typ „${ex.exerciseType}” nie jest dozwolony dla celu „${objective.id}”`,
+      found: `${ex.exerciseType} is not allowed for this objective; allowed: ${idList(objective.exerciseTypes)}`,
+    }));
   }
 
   // Payload v3 i dłuższy limit odpowiedzi tylko dla przedmiotów, które je deklarują
   // (gramatyka zachowuje kontrakt v2: odpowiedź i warianty ≤ 120 znaków).
   if (subject.usesV3Payload !== true) {
     for (const field of v3FieldsPresent(ex)) {
-      errors.push(`${field}: pole v3 niedozwolone dla przedmiotu „${subject.id}”`);
+      issues.push(coreIssue("exercise.v3_field_not_allowed", {
+        field,
+        pl: `${field}: pole v3 niedozwolone dla przedmiotu „${subject.id}”`,
+        found: `${field} is set; this subject does not use the extended payload`,
+      }));
     }
-    if ([...ex.answer].length > MAX_TEXT_LENGTH) {
-      errors.push(`answer: przekracza ${MAX_TEXT_LENGTH} znaków`);
+    const answerLength = [...ex.answer].length;
+    if (answerLength > MAX_TEXT_LENGTH) {
+      issues.push(coreIssue("answer.max_length", {
+        pl: `answer: przekracza ${MAX_TEXT_LENGTH} znaków`,
+        found: `${answerLength} characters, limit ${MAX_TEXT_LENGTH}`,
+      }));
     }
-    if (ex.acceptedAnswers.some((a) => [...a].length > MAX_TEXT_LENGTH)) {
-      errors.push(`acceptedAnswers: przekracza ${MAX_TEXT_LENGTH} znaków`);
+    const longVariant = ex.acceptedAnswers.findIndex((a) => [...a].length > MAX_TEXT_LENGTH);
+    if (longVariant !== -1) {
+      issues.push(coreIssue("answer.max_length", {
+        field: `acceptedAnswers[${longVariant}]`,
+        pl: `acceptedAnswers: przekracza ${MAX_TEXT_LENGTH} znaków`,
+        found: `${[...ex.acceptedAnswers[longVariant]!].length} characters, limit ${MAX_TEXT_LENGTH}`,
+      }));
     }
   }
 
   if (ex.voiceTone !== undefined && subject.ttsForPrompts !== true) {
-    errors.push(`voiceTone: ton lektora niedozwolony dla przedmiotu „${subject.id}” (brak nagrań pytań)`);
+    issues.push(coreIssue("voice_tone.not_allowed", {
+      pl: `voiceTone: ton lektora niedozwolony dla przedmiotu „${subject.id}” (brak nagrań pytań)`,
+      found: `voiceTone ${clip(ex.voiceTone)} is set; this subject does not record questions`,
+    }));
   }
   // Rachunek nie ma nagrania pytania z tonem (edytor go nie pokazuje, generator nie zwraca).
   if (ex.voiceTone !== undefined && ex.exerciseType === "lesson_calculation") {
-    errors.push("voiceTone: ton lektora niedozwolony dla lesson_calculation");
+    issues.push(coreIssue("voice_tone.not_allowed", {
+      pl: "voiceTone: ton lektora niedozwolony dla lesson_calculation",
+      found: `voiceTone ${clip(ex.voiceTone)} is set on lesson_calculation`,
+    }));
   }
   if (ex.explanationPl !== undefined) {
     if (subject.exerciseExplanations !== true) {
-      errors.push(`explanationPl: wyjaśnienie błędu niedozwolone dla przedmiotu „${subject.id}”`);
+      issues.push(coreIssue("explanation.not_allowed", {
+        pl: `explanationPl: wyjaśnienie błędu niedozwolone dla przedmiotu „${subject.id}”`,
+        found: "explanationPl is set; this subject does not show error explanations",
+      }));
     } else {
-      errors.push(...explanationTextErrors(ex.explanationPl));
+      issues.push(...explanationIssues(ex.explanationPl));
     }
   }
-  validateVisualSubject(ex, errors);
-  if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
-    errors.push("calculation: parametry są dozwolone tylko dla „lesson_calculation”");
-  }
-  if ((ex.keywordOptions !== undefined || ex.keyOptionIds !== undefined) && ex.exerciseType !== "lesson_keywords") {
-    errors.push("keywordOptions: pojęcia do wyboru są dozwolone tylko dla „lesson_keywords”");
-  }
-  if ((ex.pairs !== undefined || ex.extraRight !== undefined) && ex.exerciseType !== "lesson_match") {
-    errors.push("pairs: pary są dozwolone tylko dla „lesson_match”");
-  }
-  if ((ex.groups !== undefined || ex.groupItems !== undefined) && ex.exerciseType !== "lesson_group") {
-    errors.push("groups: grupy są dozwolone tylko dla „lesson_group”");
-  }
-  if ((ex.clozeText !== undefined || ex.gapAnswers !== undefined || ex.extraWords !== undefined) && ex.exerciseType !== "lesson_cloze") {
-    errors.push("clozeText: tekst z lukami jest dozwolony tylko dla „lesson_cloze”");
-  }
+  validateVisualSubject(ex, issues);
+  validateTypeSpecificFields(ex, issues);
   if (ex.exerciseType === "lesson_listen_choice") {
     // Polecenie dziecka jest stałe z katalogu komunikatów; bodźcem jest nagranie, więc
     // podpowiedź (wskazałaby odpowiedź) i polecenie rodzica nie mają miejsca w payloadzie.
     // `visualSubject` odrzuca już `validateVisualSubject` (tylko `lesson_choice`).
     if (ex.instructionPl?.trim()) {
-      errors.push("instructionPl: niedozwolone dla „lesson_listen_choice” (polecenie jest stałe)");
+      issues.push(coreIssue("listen.instruction_not_allowed", {
+        pl: "instructionPl: niedozwolone dla „lesson_listen_choice” (polecenie jest stałe)",
+        found: `instructionPl ${clip(ex.instructionPl)} is set`,
+      }));
     }
     if (ex.hint?.trim()) {
-      errors.push("hint: niedozwolona dla „lesson_listen_choice” (podpowiedź zdradzałaby odpowiedź)");
+      issues.push(coreIssue("listen.hint_not_allowed", {
+        pl: "hint: niedozwolona dla „lesson_listen_choice” (podpowiedź zdradzałaby odpowiedź)",
+        found: `hint ${clip(ex.hint)} is set`,
+      }));
     }
   }
-  validateTextFieldLengths(ex, errors);
-  validateFocus(ex, normalizer, errors);
-  validateByType(ex, topic, objective, normalizer, errors);
-  validateAcceptedAnswers(ex, normalizer, errors);
+  validateTextFieldLengths(ex, issues);
+  validateFocus(ex, normalizer, issues);
+  validateByType(ex, topic, objective, normalizer, issues);
+  validateAcceptedAnswers(ex, normalizer, issues);
 
   // Reguły specyficzne dla przedmiotu.
-  for (const error of messagesOf(subject.validateExercise(ex, topic))) {
-    errors.push(error);
-  }
+  issues.push(...subject.validateExercise(ex, topic));
 
-  return errors;
+  return issues;
 }
 
-function validateTextFieldLengths(ex: LessonExerciseDraft, errors: string[]): void {
+/**
+ * Komunikaty dla rodzica (`pl`) — dzisiejsze napisy walidacji ćwiczenia, bez
+ * ponownej analizy po pustych napisach. Opakowanie `validateLessonExerciseIssues`.
+ */
+export function validateLessonExercise(
+  ex: LessonExerciseDraft,
+  subject: SubjectModule,
+  topic: LessonTopic,
+): string[] {
+  return messagesOf(validateLessonExerciseIssues(ex, subject, topic));
+}
+
+/** Pola typów szczególnych tylko na swoim typie (rachunek, słowa kluczowe, pary, grupy, luki z bankiem). */
+function validateTypeSpecificFields(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
+  const present = (fields: readonly (keyof LessonExerciseDraft)[]): string =>
+    fields.filter((field) => ex[field] !== undefined).join(" and ");
+  if (ex.calculation !== undefined && ex.exerciseType !== "lesson_calculation") {
+    issues.push(coreIssue("fields.type_specific", {
+      field: "calculation",
+      pl: "calculation: parametry są dozwolone tylko dla „lesson_calculation”",
+      found: `calculation is set on ${ex.exerciseType}`,
+    }));
+  }
+  if ((ex.keywordOptions !== undefined || ex.keyOptionIds !== undefined) && ex.exerciseType !== "lesson_keywords") {
+    issues.push(coreIssue("fields.type_specific", {
+      field: "keywordOptions",
+      pl: "keywordOptions: pojęcia do wyboru są dozwolone tylko dla „lesson_keywords”",
+      found: `${present(["keywordOptions", "keyOptionIds"])} set on ${ex.exerciseType}`,
+    }));
+  }
+  if ((ex.pairs !== undefined || ex.extraRight !== undefined) && ex.exerciseType !== "lesson_match") {
+    issues.push(coreIssue("fields.type_specific", {
+      field: "pairs",
+      pl: "pairs: pary są dozwolone tylko dla „lesson_match”",
+      found: `${present(["pairs", "extraRight"])} set on ${ex.exerciseType}`,
+    }));
+  }
+  if ((ex.groups !== undefined || ex.groupItems !== undefined) && ex.exerciseType !== "lesson_group") {
+    issues.push(coreIssue("fields.type_specific", {
+      field: "groups",
+      pl: "groups: grupy są dozwolone tylko dla „lesson_group”",
+      found: `${present(["groups", "groupItems"])} set on ${ex.exerciseType}`,
+    }));
+  }
+  if ((ex.clozeText !== undefined || ex.gapAnswers !== undefined || ex.extraWords !== undefined) && ex.exerciseType !== "lesson_cloze") {
+    issues.push(coreIssue("fields.type_specific", {
+      field: "clozeText",
+      pl: "clozeText: tekst z lukami jest dozwolony tylko dla „lesson_cloze”",
+      found: `${present(["clozeText", "gapAnswers", "extraWords"])} set on ${ex.exerciseType}`,
+    }));
+  }
+}
+
+/**
+ * Długości pól tekstowych (ta sama granica co w kontrakcie — po przejściu
+ * kontraktu sprawdzenie nie zgłasza; zostaje jako bezpiecznik walidacji).
+ */
+function validateTextFieldLengths(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   for (const field of TEXT_FIELDS) {
     const value = ex[field];
     if (typeof value === "string" && [...value].length > MAX_TEXT_LENGTH) {
-      errors.push(`${field}: przekracza ${MAX_TEXT_LENGTH} znaków`);
+      issues.push(coreIssue("field.max_length", {
+        field,
+        pl: `${field}: przekracza ${MAX_TEXT_LENGTH} znaków`,
+        found: `${[...value].length} characters, limit ${MAX_TEXT_LENGTH}`,
+      }));
     }
   }
 }
@@ -323,18 +660,34 @@ function validateTextFieldLengths(ex: LessonExerciseDraft, errors: string[]): vo
 function validateFocus(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   if (!TEXT_TYPES.has(ex.exerciseType)) {
     return;
   }
   if (ex.focus.length === 0) {
-    errors.push("focus: musi być niepusty dla typu tekstowego");
+    issues.push(coreIssue("focus.empty", {
+      pl: "focus: musi być niepusty dla typu tekstowego",
+      found: `focus is empty on ${ex.exerciseType}`,
+    }));
     return;
   }
   if (!focusCoversAnswer(ex.focus, ex.answer, normalizer)) {
-    errors.push("focus: nie jest ciągłą podsekwencją tokenów odpowiedzi kanonicznej");
+    issues.push(coreIssue("focus.not_contiguous", {
+      pl: "focus: nie jest ciągłą podsekwencją tokenów odpowiedzi kanonicznej",
+      found: `focus ${clip(ex.focus.join(" "))} is not a contiguous run of the answer words ${clip(anyTokens(ex.answer, normalizer).join(" "))}`,
+    }));
   }
+}
+
+/**
+ * Reguły par, grup, luk z bankiem i słów kluczowych jeszcze jako napisy
+ * (własne id dostaną w Task 4): przejściowe zgłoszenie z polem z prefiksu komunikatu.
+ */
+function transitionalIssues(run: (errors: string[]) => void): LessonRuleIssue[] {
+  const errors: string[] = [];
+  run(errors);
+  return errors.map((pl) => coreIssue("transitional.type_rules", { field: pl.slice(0, Math.max(pl.indexOf(":"), 0)) || "exercise", pl }));
 }
 
 function validateByType(
@@ -342,52 +695,67 @@ function validateByType(
   topic: LessonTopic,
   objective: LearningObjective | undefined,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   switch (ex.exerciseType) {
     case "lesson_order":
-      validateOrder(ex, normalizer, errors);
+      validateOrder(ex, normalizer, issues);
       break;
     case "lesson_choice":
-      if (!ex.stem?.trim()) errors.push("stem: wymagane zdanie dla „lesson_choice”");
-      validateOptions(ex, normalizer, errors);
+      if (!ex.stem?.trim()) {
+        issues.push(coreIssue("choice.stem_required", {
+          pl: "stem: wymagane zdanie dla „lesson_choice”",
+          found: missingText("stem", ex.stem),
+        }));
+      }
+      validateOptions(ex, normalizer, issues);
       break;
     case "lesson_listen_choice":
-      validateListenChoice(ex, normalizer, errors);
+      validateListenChoice(ex, normalizer, issues);
       break;
     case "lesson_short_answer":
-      if (!(ex.prompt ?? ex.stem)?.trim()) errors.push("prompt: wymagane pytanie dla „lesson_short_answer”");
-      validateOptions(ex, normalizer, errors);
+      if (!(ex.prompt ?? ex.stem)?.trim()) {
+        issues.push(coreIssue("short_answer.prompt_required", {
+          pl: "prompt: wymagane pytanie dla „lesson_short_answer”",
+          found: missingText("prompt", ex.prompt ?? ex.stem),
+        }));
+      }
+      validateOptions(ex, normalizer, issues);
       break;
     case "lesson_notice":
-      validateNotice(ex, normalizer, errors);
+      validateNotice(ex, normalizer, issues);
       break;
     case "lesson_gap":
-      validateGap(ex, normalizer, errors);
+      validateGap(ex, normalizer, issues);
       break;
     case "lesson_error_fix":
-      validateErrorFix(ex, normalizer, errors);
+      validateErrorFix(ex, normalizer, issues);
       break;
     case "lesson_transform":
-      validateTransform(ex, topic, errors);
+      validateTransform(ex, topic, issues);
       break;
     case "lesson_open_answer":
-      if (!ex.prompt?.trim()) errors.push("prompt: wymagane pytanie dla „lesson_open_answer”");
+      if (!ex.prompt?.trim()) {
+        issues.push(coreIssue("open.prompt_required", {
+          pl: "prompt: wymagane pytanie dla „lesson_open_answer”",
+          found: missingText("prompt", ex.prompt),
+        }));
+      }
       break;
     case "lesson_keywords":
-      validateKeywords(ex, normalizer, errors);
+      issues.push(...transitionalIssues((errors) => validateKeywords(ex, normalizer, errors)));
       break;
     case "lesson_match":
-      validateMatch(ex, errors);
-      validateNoTextAnswers(ex, errors);
+      issues.push(...transitionalIssues((errors) => validateMatch(ex, errors)));
+      validateNoTextAnswers(ex, issues);
       break;
     case "lesson_group":
-      validateGroup(ex, errors);
-      validateNoTextAnswers(ex, errors);
+      issues.push(...transitionalIssues((errors) => validateGroup(ex, errors)));
+      validateNoTextAnswers(ex, issues);
       break;
     case "lesson_cloze":
-      validateCloze(ex, errors);
-      validateNoTextAnswers(ex, errors);
+      issues.push(...transitionalIssues((errors) => validateCloze(ex, errors)));
+      validateNoTextAnswers(ex, issues);
       break;
     default:
       break;
@@ -414,20 +782,27 @@ function listenSentenceOf(ex: LessonExerciseDraft): string | null {
 function validateListenChoice(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   const stem = ex.stem ?? "";
   const gaps = (stem.match(LISTEN_GAP_PATTERN) ?? []).length;
   if (gaps !== 1) {
-    errors.push(`stem: „lesson_listen_choice” wymaga dokładnie jednej luki (ciągu co najmniej dwóch podkreśleń, znaleziono ${gaps})`);
+    issues.push(coreIssue("listen.gap_count", {
+      pl: `stem: „lesson_listen_choice” wymaga dokładnie jednej luki (ciągu co najmniej dwóch podkreśleń, znaleziono ${gaps})`,
+      found: `${gaps} gaps in ${clip(stem)}`,
+    }));
   }
-  validateOptions(ex, normalizer, errors);
+  validateOptions(ex, normalizer, issues);
   const options = ex.options ?? [];
-  for (const option of options) {
-    if (/^['\u2019]/u.test(option.text.trim())) {
-      errors.push(`options: opcja „${option.text}” zaczyna się od apostrofu (skróty tylko jako całe słowa)`);
+  options.forEach((option, index) => {
+    if (/^['’]/u.test(option.text.trim())) {
+      issues.push(coreIssue("listen.option_apostrophe", {
+        field: `options[${index}]`,
+        pl: `options: opcja „${option.text}” zaczyna się od apostrofu (skróty tylko jako całe słowa)`,
+        found: `option ${clip(option.text)} starts with an apostrophe`,
+      }));
     }
-  }
+  });
   if (gaps !== 1) {
     return;
   }
@@ -436,12 +811,24 @@ function validateListenChoice(
       const a = fillGap(stem, options[i]!.text);
       const b = fillGap(stem, options[j]!.text);
       if (a !== undefined && b !== undefined && answersEquivalent(a, b, normalizer)) {
-        errors.push(`options: zdania z opcjami „${options[i]!.text}” i „${options[j]!.text}” są równoważne po normalizacji`);
+        issues.push(coreIssue("listen.options_equivalent", {
+          field: `options[${j}]`,
+          pl: `options: zdania z opcjami „${options[i]!.text}” i „${options[j]!.text}” są równoważne po normalizacji`,
+          found: `options ${clip(options[i]!.text)} and ${clip(options[j]!.text)} give equivalent sentences`,
+        }));
       }
     }
   }
-  if (options.some((option) => option.id === ex.correctOption) && listenSentenceOf(ex) === null) {
-    errors.push(`stem: zdanie z wstawioną poprawną opcją jest puste albo dłuższe niż ${FEEDBACK_SENTENCE_MAX_LENGTH} znaków (lektor go nie nagra)`);
+  const correct = options.find((option) => option.id === ex.correctOption);
+  if (correct !== undefined && listenSentenceOf(ex) === null) {
+    // Ta sama postać zdania co w `feedbackSentenceText` (zwinięte spacje, interpunkcja bez spacji).
+    const filled = (fillGap(stem, correct.text) ?? "").trim().replace(/\s+/g, " ").replace(/ ([.,!?])/g, "$1");
+    issues.push(coreIssue("listen.sentence_length", {
+      pl: `stem: zdanie z wstawioną poprawną opcją jest puste albo dłuższe niż ${FEEDBACK_SENTENCE_MAX_LENGTH} znaków (lektor go nie nagra)`,
+      found: filled === ""
+        ? "the sentence with the correct option is empty"
+        : `the sentence with the correct option has ${filled.length} characters, limit ${FEEDBACK_SENTENCE_MAX_LENGTH}`,
+    }));
   }
 }
 
@@ -522,12 +909,19 @@ function confusableTexts(texts: readonly string[]): [string, string][] {
 }
 
 /** Pary, grupy i luki z bankiem oceniane są z przypisań: bez wariantów tekstowych i fokusa. */
-function validateNoTextAnswers(ex: LessonExerciseDraft, errors: string[]): void {
+function validateNoTextAnswers(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   if (ex.acceptedAnswers.length > 0) {
-    errors.push(`acceptedAnswers: „${ex.exerciseType}” wymaga pustej listy wariantów`);
+    issues.push(coreIssue("computed.no_variants", {
+      pl: `acceptedAnswers: „${ex.exerciseType}” wymaga pustej listy wariantów`,
+      found: `${ex.acceptedAnswers.length} variants on ${ex.exerciseType}`,
+    }));
   }
   if (ex.focus.length > 0) {
-    errors.push(`focus: „${ex.exerciseType}” wymaga pustej listy`);
+    issues.push(coreIssue("computed.no_variants", {
+      field: "focus",
+      pl: `focus: „${ex.exerciseType}” wymaga pustej listy`,
+      found: `${ex.focus.length} focus words on ${ex.exerciseType}`,
+    }));
   }
 }
 
@@ -666,16 +1060,22 @@ function validateCloze(ex: LessonExerciseDraft, errors: string[]): void {
 function validateOrder(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   const items = ex.items ?? [];
   if (items.length < MIN_ORDER_ITEMS || items.length > MAX_ORDER_ITEMS) {
-    errors.push(`items: liczba elementów (${items.length}) poza zakresem ${MIN_ORDER_ITEMS}–${MAX_ORDER_ITEMS}`);
+    issues.push(coreIssue("order.items_count", {
+      pl: `items: liczba elementów (${items.length}) poza zakresem ${MIN_ORDER_ITEMS}–${MAX_ORDER_ITEMS}`,
+      found: `${items.length} items, allowed ${MIN_ORDER_ITEMS}–${MAX_ORDER_ITEMS}`,
+    }));
   }
   if (items.length > 0) {
     const joined = items.map((item) => item.text).join(" ");
     if (!answersEquivalent(joined, ex.answer, normalizer)) {
-      errors.push("items: złączone elementy nie dają odpowiedzi kanonicznej po normalizacji");
+      issues.push(coreIssue("order.items_join", {
+        pl: "items: złączone elementy nie dają odpowiedzi kanonicznej po normalizacji",
+        found: `items join to ${clip(joined)}, the answer is ${clip(ex.answer)}`,
+      }));
     }
   }
 }
@@ -683,22 +1083,32 @@ function validateOrder(
 function validateOptions(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   const options = ex.options ?? [];
   if (options.length < MIN_OPTIONS || options.length > MAX_OPTIONS) {
-    errors.push(`options: liczba opcji (${options.length}) poza zakresem ${MIN_OPTIONS}–${MAX_OPTIONS}`);
+    issues.push(coreIssue("options.count", {
+      pl: `options: liczba opcji (${options.length}) poza zakresem ${MIN_OPTIONS}–${MAX_OPTIONS}`,
+      found: `${options.length} options, allowed ${MIN_OPTIONS}–${MAX_OPTIONS}`,
+    }));
   }
   // Unikalność po normalizacji (dowolny wspólny wariant = duplikat).
   for (let i = 0; i < options.length; i++) {
     for (let j = i + 1; j < options.length; j++) {
       if (answersEquivalent(options[i]!.text, options[j]!.text, normalizer)) {
-        errors.push(`options: opcja „${options[j]!.text}” powiela „${options[i]!.text}” po normalizacji`);
+        issues.push(coreIssue("options.duplicate", {
+          field: `options[${j}]`,
+          pl: `options: opcja „${options[j]!.text}” powiela „${options[i]!.text}” po normalizacji`,
+          found: `option ${clip(options[j]!.text)} repeats ${clip(options[i]!.text)} after normalization`,
+        }));
       }
     }
   }
   if (ex.correctOption === undefined || !options.some((option) => option.id === ex.correctOption)) {
-    errors.push("correctOption: poprawna opcja nie jest jedną z opcji");
+    issues.push(coreIssue("options.correct_unknown", {
+      pl: "correctOption: poprawna opcja nie jest jedną z opcji",
+      found: `correctOption ${ex.correctOption === undefined ? "is missing" : clip(ex.correctOption)}; option ids: ${idList(options.map((option) => option.id))}`,
+    }));
   }
 }
 
@@ -712,66 +1122,97 @@ function validateOptions(
 function validateNotice(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   if (ex.options !== undefined) {
-    errors.push("options: „lesson_notice” nie używa opcji (wskazanie, nie wybór z listy)");
+    issues.push(coreIssue("notice.options_not_allowed", {
+      pl: "options: „lesson_notice” nie używa opcji (wskazanie, nie wybór z listy)",
+      found: `${ex.options.length} options are set`,
+    }));
   }
 
   const sentences = ex.noticeSegments;
   if (sentences === undefined) {
-    errors.push("noticeSegments: wymagane dla „lesson_notice”");
+    issues.push(coreIssue("notice.segments_required", {
+      pl: "noticeSegments: wymagane dla „lesson_notice”",
+      found: "noticeSegments is missing",
+    }));
     return;
   }
   if (sentences.length < MIN_NOTICE_SENTENCES || sentences.length > MAX_NOTICE_SENTENCES) {
-    errors.push(
-      `noticeSegments: liczba zdań (${sentences.length}) poza zakresem ${MIN_NOTICE_SENTENCES}–${MAX_NOTICE_SENTENCES}`,
-    );
+    issues.push(coreIssue("notice.sentence_count", {
+      pl: `noticeSegments: liczba zdań (${sentences.length}) poza zakresem ${MIN_NOTICE_SENTENCES}–${MAX_NOTICE_SENTENCES}`,
+      found: `${sentences.length} sentences, allowed ${MIN_NOTICE_SENTENCES}–${MAX_NOTICE_SENTENCES}`,
+    }));
   }
-  for (const sentence of sentences) {
+  sentences.forEach((sentence, sentenceIndex) => {
     if (sentence.length < MIN_NOTICE_SEGMENTS || sentence.length > MAX_NOTICE_SEGMENTS) {
-      errors.push(
-        `noticeSegments: liczba segmentów w zdaniu (${sentence.length}) poza zakresem ${MIN_NOTICE_SEGMENTS}–${MAX_NOTICE_SEGMENTS}`,
-      );
+      issues.push(coreIssue("notice.segment_count", {
+        field: `noticeSegments[${sentenceIndex}]`,
+        pl: `noticeSegments: liczba segmentów w zdaniu (${sentence.length}) poza zakresem ${MIN_NOTICE_SEGMENTS}–${MAX_NOTICE_SEGMENTS}`,
+        found: `${sentence.length} segments, allowed ${MIN_NOTICE_SEGMENTS}–${MAX_NOTICE_SEGMENTS}`,
+      }));
     }
-    for (const segment of sentence) {
+    sentence.forEach((segment, segmentIndex) => {
+      const field = `noticeSegments[${sentenceIndex}][${segmentIndex}]`;
       if (segment.trim() === "") {
-        errors.push("noticeSegments: pusty segment");
+        issues.push(coreIssue("notice.segment_empty", { field, pl: "noticeSegments: pusty segment", found: "blank segment" }));
       } else if ([...segment].length > MAX_TEXT_LENGTH) {
-        errors.push(`noticeSegments: segment przekracza ${MAX_TEXT_LENGTH} znaków`);
+        // Ta sama granica co w kontrakcie (pole tekstowe), więc ta sama reguła.
+        issues.push(coreIssue("field.max_length", {
+          field,
+          pl: `noticeSegments: segment przekracza ${MAX_TEXT_LENGTH} znaków`,
+          found: `${[...segment].length} characters, limit ${MAX_TEXT_LENGTH}`,
+        }));
       }
-    }
-  }
+    });
+  });
 
   if (ex.correctOption === undefined || ex.correctOption.trim() === "") {
-    errors.push("correctOption: wymagane dla „lesson_notice” (słowo do wskazania)");
+    issues.push(coreIssue("notice.correct_required", {
+      pl: "correctOption: wymagane dla „lesson_notice” (słowo do wskazania)",
+      found: missingText("correctOption", ex.correctOption),
+    }));
     return;
   }
+  const correctOption = ex.correctOption;
   const matchesSegment = sentences.some((sentence) =>
-    sentence.some((segment) => answersEquivalent(segment, ex.correctOption!, normalizer)),
+    sentence.some((segment) => answersEquivalent(segment, correctOption, normalizer)),
   );
   if (!matchesSegment) {
-    errors.push("correctOption: nie jest równe (po normalizacji) żadnemu segmentowi zdań");
+    issues.push(coreIssue("notice.correct_not_segment", {
+      pl: "correctOption: nie jest równe (po normalizacji) żadnemu segmentowi zdań",
+      found: `correctOption ${clip(correctOption)} is not a segment of the sentences`,
+    }));
   }
 }
 
 function validateGap(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   const markers = ex.stem === undefined ? 0 : countGapMarkers(ex.stem);
   if (markers !== 1) {
-    errors.push(`stem: „lesson_gap” wymaga dokładnie jednego znacznika luki „${GAP_MARKER}” (znaleziono ${markers})`);
+    issues.push(coreIssue("gap.marker_count", {
+      pl: `stem: „lesson_gap” wymaga dokładnie jednego znacznika luki „${GAP_MARKER}” (znaleziono ${markers})`,
+      found: `${markers} gap markers in ${ex.stem === undefined ? "a missing stem" : clip(ex.stem)}`,
+    }));
   }
   const answerTokens = anyTokens(ex.answer, normalizer);
   if (answerTokens.length > MAX_GAP_ANSWER_TOKENS) {
-    errors.push(`answer: odpowiedź luki ma więcej niż ${MAX_GAP_ANSWER_TOKENS} tokeny`);
+    issues.push(coreIssue("gap.answer_tokens", {
+      pl: `answer: odpowiedź luki ma więcej niż ${MAX_GAP_ANSWER_TOKENS} tokeny`,
+      found: `${answerTokens.length} words in ${clip(ex.answer)}, limit ${MAX_GAP_ANSWER_TOKENS}`,
+    }));
   }
   // Element sprawdzany pokrywa odpowiedź luki: tokeny odpowiedzi ⊆ focus
   // lub odwrotnie (w dowolnym wariancie normalizacji).
   if (ex.focus.length > 0 && !gapFocusCoversAnswer(ex.focus, ex.answer, normalizer)) {
-    errors.push("focus: nie pokrywa odpowiedzi luki (ani odpowiedź nie pokrywa focus)");
+    issues.push(coreIssue("gap.focus", {
+      pl: "focus: nie pokrywa odpowiedzi luki (ani odpowiedź nie pokrywa focus)",
+      found: `focus ${clip(ex.focus.join(" "))} and the answer ${clip(ex.answer)} do not cover each other`,
+    }));
   }
 }
 
@@ -805,41 +1246,63 @@ function gapFocusCoversAnswer(
 function validateErrorFix(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   if (!ex.statement?.trim()) {
-    errors.push("statement: wymagany dla „lesson_error_fix”");
+    issues.push(coreIssue("error_fix.statement_required", {
+      pl: "statement: wymagany dla „lesson_error_fix”",
+      found: missingText("statement", ex.statement),
+    }));
     return;
   }
   if (answersEquivalent(ex.statement, ex.answer, normalizer)) {
-    errors.push("statement: zdanie z błędem jest identyczne z odpowiedzią po normalizacji");
+    issues.push(coreIssue("error_fix.same_as_answer", {
+      pl: "statement: zdanie z błędem jest identyczne z odpowiedzią po normalizacji",
+      found: `statement ${clip(ex.statement)} equals the answer ${clip(ex.answer)} after normalization`,
+    }));
   }
 }
 
-function validateTransform(ex: LessonExerciseDraft, topic: LessonTopic, errors: string[]): void {
-  if (!ex.statement?.trim()) errors.push("statement: wymagany dla „lesson_transform”");
+function validateTransform(ex: LessonExerciseDraft, topic: LessonTopic, issues: LessonRuleIssue[]): void {
+  if (!ex.statement?.trim()) {
+    issues.push(coreIssue("transform.statement_required", {
+      pl: "statement: wymagany dla „lesson_transform”",
+      found: missingText("statement", ex.statement),
+    }));
+  }
   if (ex.transformId === undefined || !topic.transforms.some((t) => t.id === ex.transformId)) {
-    errors.push(`transformId: przekształcenie „${ex.transformId ?? ""}” nie istnieje w temacie „${topic.id}”`);
+    issues.push(coreIssue("transform.unknown", {
+      pl: `transformId: przekształcenie „${ex.transformId ?? ""}” nie istnieje w temacie „${topic.id}”`,
+      found: `transformId ${ex.transformId === undefined ? "is missing" : clip(ex.transformId)}; topic transforms: ${idList(topic.transforms.map((t) => t.id))}`,
+    }));
   }
 }
 
 function validateAcceptedAnswers(
   ex: LessonExerciseDraft,
   normalizer: AnswerNormalizer,
-  errors: string[],
+  issues: LessonRuleIssue[],
 ): void {
   if (ex.acceptedAnswers.length > MAX_ACCEPTED_ANSWERS) {
-    errors.push(`acceptedAnswers: więcej niż ${MAX_ACCEPTED_ANSWERS} wariantów`);
+    issues.push(coreIssue("variants.count", {
+      pl: `acceptedAnswers: więcej niż ${MAX_ACCEPTED_ANSWERS} wariantów`,
+      found: `${ex.acceptedAnswers.length} variants, limit ${MAX_ACCEPTED_ANSWERS}`,
+    }));
   }
-  for (const variant of ex.acceptedAnswers) {
+  ex.acceptedAnswers.forEach((variant, index) => {
+    const field = `acceptedAnswers[${index}]`;
     if (variant.trim() === "") {
-      errors.push("acceptedAnswers: pusty wariant");
-      continue;
+      issues.push(coreIssue("variants.empty", { field, pl: "acceptedAnswers: pusty wariant", found: "blank variant" }));
+      return;
     }
     if (answersEquivalent(variant, ex.answer, normalizer)) {
-      errors.push(`acceptedAnswers: wariant „${variant}” duplikuje odpowiedź kanoniczną po normalizacji`);
+      issues.push(coreIssue("variants.duplicate", {
+        field,
+        pl: `acceptedAnswers: wariant „${variant}” duplikuje odpowiedź kanoniczną po normalizacji`,
+        found: `variant ${clip(variant)} equals the answer ${clip(ex.answer)} after normalization`,
+      }));
     }
-  }
+  });
 }
 
 /**
