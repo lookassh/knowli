@@ -60,8 +60,9 @@ export const LESSON_RULES = {
     kind: "reject",
     description:
       "The answer of an independent exercise (and each accepted variant) must not be visible to the child earlier in the " +
-      "lesson: not in a card example, not as the answer or sentence of an earlier exercise, and not as the answer of an " +
-      "earlier independent exercise. Questions of one open-question family may share their model answer.",
+      "lesson: it differs from the answer and the sentence of every guided or productive exercise, from every card " +
+      "example and from the answer of an earlier independent exercise. Questions of one open-question family may share " +
+      "their model answer.",
   },
   "lesson.leak_source": {
     field: "answer",
@@ -92,6 +93,7 @@ export const LESSON_RULES = {
   "check.hint_judge": {
     field: "hint",
     kind: "reject",
+    priority: "hint",
     when: (ctx) => (ctx.policy.hintJudgeTypes ?? []).some((type) => ctx.exerciseTypes.includes(type)),
     description:
       "Another model judges the meaning of every non-empty hint: it must be supported by the material, be correct in the " +

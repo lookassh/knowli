@@ -19,6 +19,7 @@ function context(deduplication: PoolDeduplication): RuleBookContext {
     listenChoice: false,
     voiceTones: false,
     exerciseExplanations: false,
+    usesV3Payload: false,
     deduplication,
   };
 }

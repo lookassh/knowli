@@ -25,6 +25,15 @@ import { LESSON_RULES } from "./lesson-rules";
  */
 export type RuleKind = "reject" | "sanitize" | "internal";
 
+/**
+ * Grupy reguł najczęściej łamanych w przebiegu z 2026-11-05 (podpowiedź, cytat,
+ * rodzina pytań, kształt rachunku), w tej kolejności: księga reguł
+ * (`rule-book.ts`) stawia je na początku swojej sekcji.
+ */
+export const RULE_PRIORITY = ["hint", "quote", "family", "calculation_shape"] as const;
+
+export type RulePriority = (typeof RULE_PRIORITY)[number];
+
 /** Limity i flagi przedmiotu, od których zależy tekst opisu reguły (np. długość odpowiedzi). */
 export interface RuleTextContext {
   readonly answerMaxLength: number;
@@ -48,6 +57,8 @@ export interface LessonRule {
   readonly fixedMessage?: true;
   /** Uzasadnienie reguły `internal` (dlaczego agent nie może jej złamać). */
   readonly internalReason?: string;
+  /** Grupa priorytetu w księdze reguł (`RULE_PRIORITY`); brak = zwykła kolejność po id. */
+  readonly priority?: RulePriority;
 }
 
 export type RuleCatalog = Readonly<Record<string, LessonRule>>;
@@ -67,8 +78,10 @@ export interface LessonRuleIssue {
 }
 
 /**
- * Kontekst składania reguł do promptu (warunki `when`). Wypełnia go wejście
- * agenta; tu tylko kształt.
+ * Kontekst składania reguł do promptu (warunki `when`, `lessonRuleBook`).
+ * Wypełnia go wejście agenta; tu tylko kształt. `exerciseTypes` — typy
+ * dozwolone w zagadnieniu; `listenChoice` — czy `lesson_listen_choice` jest
+ * dostępny zagadnieniu (nie: czy zostało miejsce w przydziale).
  */
 export interface RuleBookContext {
   readonly exerciseTypes: readonly LessonExerciseType[];
@@ -77,6 +90,8 @@ export interface RuleBookContext {
   readonly listenChoice: boolean;
   readonly voiceTones: boolean;
   readonly exerciseExplanations: boolean;
+  /** Czy przedmiot używa pól payloadu v3 (`SubjectModule.usesV3Payload`). */
+  readonly usesV3Payload: boolean;
   /**
    * Tryb duplikatów puli przedmiotu, którym posługuje się `validatePoolIssues`
    * (`subject.poolDeduplication ?? "answer"`); wypełnia go wejście agenta (Task 8a).

@@ -57,15 +57,28 @@ import {
  * kontraktu albo `./limits`.
  */
 
-/** Reguła kształtu pola listowego rekordu agenta (wpis `RAW_LIST_FIELDS` w `raw-shape.ts`). */
-function listShapeRule(field: string, items: string, types?: readonly LessonExerciseType[]): LessonRule {
+/**
+ * Reguła kształtu pola listowego rekordu agenta (wpis `RAW_LIST_FIELDS` w `raw-shape.ts`).
+ * `types` i `when` decydują tylko o obecności opisu w księdze reguł.
+ */
+function listShapeRule(
+  field: string,
+  items: string,
+  scope: { readonly types?: readonly LessonExerciseType[]; readonly when?: LessonRule["when"] } = {},
+): LessonRule {
   return {
     field,
     kind: "reject",
-    ...(types === undefined ? {} : { types }),
+    ...scope,
     description: `${field}, when present, is a list of ${items}; null means the field is absent.`,
   };
 }
+
+/** Typy z wyborem z listy opcji. */
+const CHOICE_TYPES: readonly LessonExerciseType[] = ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"];
+
+/** Pola v3 pytania otwartego: tylko przedmioty z payloadem v3. */
+const V3_OPEN_SCOPE = { types: ["lesson_open_answer"], when: (ctx) => ctx.usesV3Payload } as const satisfies Pick<LessonRule, "types" | "when">;
 
 export const CORE_RULES = {
   // Kontrakt (Zod, spec §4.2). Odstępstwo od tabeli §4.2 (decyzja kontrolera,
@@ -83,7 +96,9 @@ export const CORE_RULES = {
   "field.empty": {
     field: "exercise",
     kind: "reject",
-    description: "Leave an optional text field out instead of sending an empty string; required text fields and list entries are never empty.",
+    description:
+      "Never send an empty string: a text field that does not apply is null (or left out), and required text fields and " +
+      "list entries are never empty.",
   },
   "field.max_length": {
     field: "exercise",
@@ -96,6 +111,7 @@ export const CORE_RULES = {
   "field.count": {
     field: "exercise",
     kind: "reject",
+    when: (ctx) => ctx.usesV3Payload,
     description:
       `Lists keep the item counts of the tool schema: requiredElements ${MIN_REQUIRED_ELEMENTS}–${MAX_REQUIRED_ELEMENTS}, ` +
       `supplementaryElements up to ${MAX_SUPPLEMENTARY_ELEMENTS}, commonErrors up to ${MAX_COMMON_ERRORS}, ` +
@@ -139,25 +155,27 @@ export const CORE_RULES = {
   "shape.calculation": {
     field: "calculation",
     kind: "reject",
+    types: ["lesson_calculation"],
+    priority: "calculation_shape",
     description: "calculation, when present, is an object {kind, unit, params, templateFamilyId}.",
   },
   "shape.accepted_answers": listShapeRule("acceptedAnswers", "strings"),
   "shape.focus": listShapeRule("focus", "strings"),
-  "shape.options": listShapeRule("options", "objects {id, text}"),
-  "shape.items": listShapeRule("items", "objects {id, text}"),
-  "shape.keyword_options": listShapeRule("keywordOptions", "objects {id, text}", ["lesson_keywords"]),
-  "shape.key_option_ids": listShapeRule("keyOptionIds", "strings", ["lesson_keywords"]),
-  "shape.notice_segments": listShapeRule("noticeSegments", "lists of strings"),
-  "shape.pairs": listShapeRule("pairs", "objects {left, right}", ["lesson_match"]),
-  "shape.extra_right": listShapeRule("extraRight", "strings", ["lesson_match"]),
-  "shape.groups": listShapeRule("groups", "objects {id, label}", ["lesson_group"]),
-  "shape.group_items": listShapeRule("groupItems", "objects {text, groupId}", ["lesson_group"]),
-  "shape.gap_answers": listShapeRule("gapAnswers", "strings", ["lesson_cloze"]),
-  "shape.extra_words": listShapeRule("extraWords", "strings", ["lesson_cloze"]),
-  "shape.required_elements": listShapeRule("requiredElements", "objects {id, text}"),
-  "shape.supplementary_elements": listShapeRule("supplementaryElements", "strings"),
-  "shape.common_errors": listShapeRule("commonErrors", "strings"),
-  "shape.source_refs": listShapeRule("sourceRefs", "objects {quote}"),
+  "shape.options": listShapeRule("options", "objects {id, text}", { types: CHOICE_TYPES }),
+  "shape.items": listShapeRule("items", "objects {id, text}", { types: ["lesson_order"] }),
+  "shape.keyword_options": listShapeRule("keywordOptions", "objects {id, text}", { types: ["lesson_keywords"] }),
+  "shape.key_option_ids": listShapeRule("keyOptionIds", "strings", { types: ["lesson_keywords"] }),
+  "shape.notice_segments": listShapeRule("noticeSegments", "lists of strings", { types: ["lesson_notice"] }),
+  "shape.pairs": listShapeRule("pairs", "objects {left, right}", { types: ["lesson_match"] }),
+  "shape.extra_right": listShapeRule("extraRight", "strings", { types: ["lesson_match"] }),
+  "shape.groups": listShapeRule("groups", "objects {id, label}", { types: ["lesson_group"] }),
+  "shape.group_items": listShapeRule("groupItems", "objects {text, groupId}", { types: ["lesson_group"] }),
+  "shape.gap_answers": listShapeRule("gapAnswers", "strings", { types: ["lesson_cloze"] }),
+  "shape.extra_words": listShapeRule("extraWords", "strings", { types: ["lesson_cloze"] }),
+  "shape.required_elements": listShapeRule("requiredElements", "objects {id, text}", V3_OPEN_SCOPE),
+  "shape.supplementary_elements": listShapeRule("supplementaryElements", "strings", V3_OPEN_SCOPE),
+  "shape.common_errors": listShapeRule("commonErrors", "strings", V3_OPEN_SCOPE),
+  "shape.source_refs": listShapeRule("sourceRefs", "objects {quote}", { when: (ctx) => ctx.text.groundingRequired }),
 
   // Ćwiczenie jako całość.
   "exercise.card_not_allowed": {
@@ -184,6 +202,7 @@ export const CORE_RULES = {
   "exercise.v3_field_not_allowed": {
     field: "exercise",
     kind: "reject",
+    when: (ctx) => !ctx.usesV3Payload,
     description:
       "Subjects without the extended payload leave out questionType, requiredElements, supplementaryElements, " +
       "commonErrors, expectedForm, familyId, sourceRefs and calculation.",
@@ -197,6 +216,8 @@ export const CORE_RULES = {
   "voice_tone.not_allowed": {
     field: "voiceTone",
     kind: "reject",
+    // Przedmiot z nagraniami pytań łamie regułę tylko tonem rachunku.
+    when: (ctx) => !ctx.voiceTones || ctx.exerciseTypes.includes("lesson_calculation"),
     description: "voiceTone is set only in subjects that record questions, and never on lesson_calculation.",
   },
 
@@ -204,32 +225,38 @@ export const CORE_RULES = {
   "explanation.not_allowed": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => !ctx.exerciseExplanations,
     description: "explanationPl is set only in subjects that show error explanations; elsewhere leave it out.",
   },
   "explanation.empty": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => ctx.exerciseExplanations,
     description: "explanationPl, when set, is not blank.",
   },
   "explanation.max_length": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => ctx.exerciseExplanations,
     description: `explanationPl has at most ${MAX_LESSON_TEXT_LENGTH} characters after trimming.`,
     limit: "MAX_LESSON_TEXT_LENGTH",
   },
   "explanation.line_break": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => ctx.exerciseExplanations,
     description: "explanationPl is a single line without line breaks.",
   },
   "explanation.markup": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => ctx.exerciseExplanations,
     description: "explanationPl is plain text without the markup characters * and _.",
   },
   "explanation.one_sentence": {
     field: "explanationPl",
     kind: "sanitize",
+    when: (ctx) => ctx.exerciseExplanations,
     description: "explanationPl is exactly one sentence.",
   },
 
@@ -300,20 +327,20 @@ export const CORE_RULES = {
   "options.count": {
     field: "options",
     kind: "reject",
-    types: ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"],
+    types: CHOICE_TYPES,
     description: `Choice exercises (lesson_choice, lesson_short_answer, lesson_listen_choice) have ${MIN_OPTIONS}–${MAX_OPTIONS} options.`,
     limit: "MAX_OPTIONS",
   },
   "options.duplicate": {
     field: "options",
     kind: "reject",
-    types: ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"],
+    types: CHOICE_TYPES,
     description: "Option texts are distinct after normalization.",
   },
   "options.correct_unknown": {
     field: "correctOption",
     kind: "reject",
-    types: ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"],
+    types: CHOICE_TYPES,
     description: "correctOption is the id of one of the options.",
   },
 
@@ -697,6 +724,7 @@ export const CORE_RULES = {
     field: "calculation.tolerance",
     kind: "reject",
     types: ["lesson_calculation"],
+    priority: "calculation_shape",
     description:
       "Leave calculation.tolerance out or set it to zero, because the code computes the exact result; " +
       `a non-zero tolerance is at most ${MAX_TOLERANCE_PERCENT}% of the absolute result.`,
@@ -706,6 +734,7 @@ export const CORE_RULES = {
     field: "calculation.templateFamilyId",
     kind: "reject",
     types: ["lesson_calculation"],
+    priority: "calculation_shape",
     description:
       `calculation.templateFamilyId is lowercase letters and digits joined by single hyphens, at most ${MAX_TEMPLATE_FAMILY_ID_LENGTH} ` +
       "characters (e.g. scale-distance-km), even though calculation kinds use underscores.",
@@ -714,6 +743,7 @@ export const CORE_RULES = {
     field: "calculation.params",
     kind: "reject",
     types: ["lesson_calculation"],
+    priority: "calculation_shape",
     description:
       "calculation.kind is scale_distance, height_difference or unit_conversion and unit is cm, m or km; params holds the " +
       `numbers of the kind: scaleDenominator (a positive whole number up to ${MAX_SCALE_DENOMINATOR}) and mapDistanceCm, ` +
@@ -724,6 +754,7 @@ export const CORE_RULES = {
     field: "calculation",
     kind: "reject",
     types: ["lesson_calculation"],
+    priority: "calculation_shape",
     description:
       "calculation has only the keys kind, unit, params, templateFamilyId and tolerance, and params only the parameters of its kind.",
   },
