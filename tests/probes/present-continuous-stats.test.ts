@@ -22,17 +22,20 @@ describe("pcPoolStats", () => {
     draft({ exerciseType: "lesson_gap", objectiveId: AFFIRMATIVE, instructionPl: "Cicho!", stem: "Tom ___ (sleep)." }),
   ];
   const rejections: PcDumpRejection[] = [
-    { objectiveId: NOW_OR_USUALLY, detail: "pc-marker: instructionPl: brak wskaźnika; pc-ing: stem: zła pisownia" },
+    {
+      objectiveId: NOW_OR_USUALLY,
+      detail: '[grammar.pc_tense_marker_missing] exercise: the exercise has no time marker; [grammar.pc_verb_outside_table] stem: the verb "x; y" is not in the verb table; [grammar.pc_tense_marker_missing] answer: again',
+    },
     { objectiveId: AFFIRMATIVE, detail: "x" },
   ];
 
-  it("liczy scenki i odrzucenia tylko w celach porównania, a komunikaty po prefiksach", () => {
+  it("liczy scenki i odrzucenia tylko w celach porównania, a powody po id reguły", () => {
     const stats = pcPoolStats(exercises, rejections);
     expect(stats.sceneShare).toBe(0.5);
     expect(stats.comparisonAccepted).toBe(2);
     expect(stats.comparisonRejected).toBe(1);
     expect(stats.rejectionShareComparison).toBeCloseTo(1 / 3);
-    expect(stats.messagesByPrefix).toEqual({ "pc-marker:": 1, "pc-ing:": 1, other: 1 });
+    expect(stats.messagesByRule).toEqual({ "grammar.pc_tense_marker_missing": 2, "grammar.pc_verb_outside_table": 1, other: 1 });
   });
 
   it("w open_answer scenkę bierze z prompt, a cel more też jest celem porównania", () => {
@@ -50,7 +53,7 @@ describe("pcPoolStats", () => {
 
   it("pusta pula daje zera bez dzielenia przez zero", () => {
     const stats = pcPoolStats([], []);
-    expect(stats).toEqual({ sceneShare: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, messagesByPrefix: {} });
+    expect(stats).toEqual({ sceneShare: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, messagesByRule: {} });
   });
 });
 
