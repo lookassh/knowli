@@ -11,6 +11,9 @@ import type { LessonExerciseType, SubjectModule } from "../types";
  * księga reguł); test przepuszcza każdy przykład przez materializację, kształt
  * rekordu i walidację ćwiczenia każdego produkcyjnego przedmiotu, który ma typ.
  * Treść neutralna: angielskie słówka i zdania albo ogólnie znane fakty o Polsce.
+ * Każdy typ ma własne zdanie albo fakt (odpowiedź i bodziec): model kopiuje
+ * przykłady, a wspólne zdanie kilku typów łamałoby `lesson.leak` i powtarzało
+ * bodziec. Klocki `lesson_order` bez interpunkcji końcowej.
  */
 
 /** Cechy przedmiotu, od których zależy przykład karty. */
@@ -53,15 +56,18 @@ function instruction(features: SubjectFeatures, stimulus: string, task: string):
   return features.instructionIsStimulus ? `${stimulus} ${task}` : task;
 }
 
-/** Cytat źródłowy, gdy przedmiot wymaga uziemienia (pole na końcu rekordu). */
-function grounded(features: SubjectFeatures, record: Record<string, unknown>, quote: string): Record<string, unknown> {
-  return features.groundingRequired ? { ...record, sourceRefs: [{ quote }] } : record;
+/** Cytaty źródłowe, gdy przedmiot wymaga uziemienia (pole na końcu rekordu); ćwiczenie kilku faktów cytuje każdy. */
+function grounded(features: SubjectFeatures, record: Record<string, unknown>, ...quotes: readonly string[]): Record<string, unknown> {
+  return features.groundingRequired ? { ...record, sourceRefs: quotes.map((quote) => ({ quote })) } : record;
 }
 
 /** Wspólny „materiał” polskich przykładów (zdania cytowane w `sourceRefs`). */
 const PL_RIVER = "Wisła jest najdłuższą rzeką w Polsce.";
 const PL_SEA = "Wisła uchodzi do Morza Bałtyckiego.";
 const PL_MOUNTAINS = "Najwyższe góry Polski to Tatry.";
+const PL_CAPITAL = "Stolicą Polski jest Warszawa.";
+const PL_CAPITAL_RIVER = "Przez Warszawę płynie Wisła.";
+const PL_WATER_CYCLE = "Woda paruje, skrapla się w chmurach i spada jako deszcz.";
 const PL_SCALE = "Odległość w terenie to odległość na mapie pomnożona przez mianownik skali.";
 /** Rodzina pytania otwartego i jego słów kluczowych w przykładach. */
 const PL_FAMILY = "wisla-morze";
@@ -143,22 +149,22 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
       if (language === "en") {
         return grounded(features, {
           exerciseType: "lesson_order",
-          instructionPl: instruction(features, "Ona lubi koty.", "Ułóż zdanie."),
-          items: [{ id: "a", text: "She" }, { id: "b", text: "likes" }, { id: "c", text: "cats." }],
-          answer: "She likes cats.",
+          instructionPl: instruction(features, "My gramy w piłkę.", "Ułóż zdanie."),
+          items: [{ id: "a", text: "We" }, { id: "b", text: "play" }, { id: "c", text: "football" }],
+          answer: "We play football",
           acceptedAnswers: [],
           focus: [],
-        }, "She likes cats.");
+        }, "We play football");
       }
       if (language === "pl") {
         return grounded(features, {
           exerciseType: "lesson_order",
-          instructionPl: "Ułóż zdanie.",
-          items: [{ id: "a", text: "Wisła" }, { id: "b", text: "uchodzi do" }, { id: "c", text: "Morza Bałtyckiego." }],
-          answer: "Wisła uchodzi do Morza Bałtyckiego.",
+          instructionPl: "Ułóż etapy krążenia wody w kolejności.",
+          items: [{ id: "a", text: "woda paruje" }, { id: "b", text: "skrapla się w chmurach" }, { id: "c", text: "spada jako deszcz" }],
+          answer: "woda paruje skrapla się w chmurach spada jako deszcz",
           acceptedAnswers: [],
           focus: [],
-        }, PL_SEA);
+        }, PL_WATER_CYCLE);
       }
       return undefined;
     },
@@ -190,24 +196,24 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
       if (language === "en") {
         return grounded(features, {
           exerciseType: "lesson_gap",
-          instructionPl: instruction(features, "Ona lubi koty.", "Uzupełnij lukę."),
-          stem: "She ___ cats.",
+          instructionPl: instruction(features, "On pije mleko.", "Uzupełnij lukę."),
+          stem: "He ___ milk.",
           // Bez polecenia-bodźca jedno rozwiązanie wskazuje forma podstawowa czasownika w podpowiedzi.
-          ...(features.instructionIsStimulus ? {} : { hint: "like" }),
-          answer: "likes",
+          ...(features.instructionIsStimulus ? {} : { hint: "drink" }),
+          answer: "drinks",
           acceptedAnswers: [],
-          focus: ["likes"],
-        }, "She likes cats.");
+          focus: ["drinks"],
+        }, "He drinks milk.");
       }
       if (language === "pl") {
         return grounded(features, {
           exerciseType: "lesson_gap",
           instructionPl: "Uzupełnij zdanie.",
-          stem: "Najdłuższą rzeką w Polsce jest ___.",
-          answer: "Wisła",
+          stem: "Najwyższe góry Polski to ___.",
+          answer: "Tatry",
           acceptedAnswers: [],
-          focus: ["Wisła"],
-        }, PL_RIVER);
+          focus: ["Tatry"],
+        }, PL_MOUNTAINS);
       }
       return undefined;
     },
@@ -221,11 +227,11 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         ? grounded(features, {
             exerciseType: "lesson_error_fix",
             instructionPl: "Popraw błąd w zdaniu.",
-            statement: "She like cats.",
-            answer: "She likes cats.",
+            statement: "They eats apples.",
+            answer: "They eat apples.",
             acceptedAnswers: [],
-            focus: ["likes"],
-          }, "She likes cats.")
+            focus: ["eat"],
+          }, "They eat apples.")
         : undefined,
   },
   lesson_transform: {
@@ -237,12 +243,12 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         ? grounded(features, {
             exerciseType: "lesson_transform",
             instructionPl: "Zamień na przeczenie.",
-            statement: "She likes cats.",
+            statement: "I read books.",
             transformId: "to_negative",
-            answer: "She doesn't like cats.",
+            answer: "I don't read books.",
             acceptedAnswers: [],
-            focus: ["doesn't", "like"],
-          }, "She doesn't like cats.")
+            focus: ["don't", "read"],
+          }, "I don't read books.")
         : undefined,
   },
   lesson_open_answer: {
@@ -255,17 +261,18 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         return grounded(features, {
           exerciseType: "lesson_open_answer",
           instructionPl: "Przetłumacz na angielski.",
-          prompt: "Ona lubi koty.",
-          answer: "She likes cats.",
+          prompt: "Ona pływa w morzu.",
+          answer: "She swims in the sea.",
           acceptedAnswers: [],
-          focus: ["likes"],
-        }, "She likes cats.");
+          focus: ["swims"],
+        }, "She swims in the sea.");
       }
       if (language === "pl") {
         const record: Record<string, unknown> = {
           exerciseType: "lesson_open_answer",
           prompt: "Do jakiego morza uchodzi Wisła?",
-          hint: "Pomyśl, nad jakim morzem leży Polska.",
+          // Podpowiedź wskazuje miejsce w materiale, nie treść odpowiedzi (sędzia podpowiedzi).
+          hint: "Poszukaj w materiale zdania o tym, dokąd płynie Wisła.",
           answer: "Wisła uchodzi do Morza Bałtyckiego.",
           acceptedAnswers: [],
           focus: ["Morza", "Bałtyckiego"],
@@ -341,7 +348,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
           instructionPl: "Połącz nazwy z tym, czym są.",
           pairs: [{ left: "Wisła", right: "rzeka" }, { left: "Tatry", right: "góry" }, { left: "Bałtyk", right: "morze" }],
           extraRight: ["pustynia"],
-        }, PL_MOUNTAINS);
+        }, PL_RIVER, PL_MOUNTAINS);
       }
       return undefined;
     },
@@ -401,10 +408,10 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         return grounded(features, {
           exerciseType: "lesson_cloze",
           instructionPl: "Uzupełnij tekst.",
-          clozeText: "Wisła uchodzi do ___. Najwyższe góry Polski to ___.",
-          gapAnswers: ["Bałtyku", "Tatry"],
-          extraWords: ["Odra"],
-        }, PL_MOUNTAINS);
+          clozeText: "Stolicą Polski jest ___. Przez stolicę płynie rzeka ___.",
+          gapAnswers: ["Warszawa", "Wisła"],
+          extraWords: ["Kraków"],
+        }, PL_CAPITAL, PL_CAPITAL_RIVER);
       }
       return undefined;
     },
@@ -418,12 +425,12 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         ? grounded(features, {
             exerciseType: "lesson_listen_choice",
             stem: "She ___ to school every day.",
-            options: [{ id: "a", text: "walks" }, { id: "b", text: "runs" }],
+            options: [{ id: "a", text: "goes" }, { id: "b", text: "go" }],
             correctOption: "a",
-            answer: "walks",
+            answer: "goes",
             acceptedAnswers: [],
             focus: [],
-          }, "She walks to school every day.")
+          }, "She goes to school every day.")
         : undefined,
   },
 };

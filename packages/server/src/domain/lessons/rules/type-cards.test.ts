@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateLessonExerciseIssues, validatePoolIssues } from "../pool-validation";
+import { exerciseExposureText } from "../exposure-key";
+import { findExposureLeaks } from "../exposure-leaks";
+import { answersEquivalent, validateLessonExerciseIssues, validatePoolIssues } from "../pool-validation";
 import { materializeRawExercise } from "../raw-materialize";
 import { rawShapeIssues } from "../raw-shape";
 import { PRODUCTION_SUBJECTS } from "../subjects";
@@ -82,6 +84,55 @@ describe("karty typów", () => {
       const material = drafts.flatMap((draft) => draft.sourceRefs ?? []).map((ref) => ref.quote).join("\n");
       const extra = subject.validatePoolExtra?.(drafts, { material }) ?? new Map();
       expect([...extra.values()].map(described)).toEqual([]);
+    });
+
+    /**
+     * Model kopiuje przykłady, więc przykłady typów jednego przedmiotu nie mogą modelować
+     * `lesson.leak` ani powtórzonego zdania: razem nie dają ujawnienia (tryb przyjmowania agenta) i każdy
+     * ma własny tekst rozwiązania i własne polskie zdanie-bodziec. Wyjątek: rodzina pytania otwartego
+     * i jego słowa kluczowe (ta sama `familyId`) dotyczą celowo jednego faktu.
+     */
+    it("przykłady razem nie ujawniają odpowiedzi i nie powtarzają zdania ani bodźca", () => {
+      const drafts = exampleTypes(subject).map((type) => admitExample(subject, type, topic));
+      const leaks = findExposureLeaks({
+        exercises: drafts,
+        examples: {},
+        objectiveOrder: [topic.objectives[0]!.id],
+        subject,
+        mode: "generation",
+        familyRepeatsAllowed: true,
+      });
+      expect(leaks.map((leak) => `${drafts[leak.index]!.exerciseType} ← ${JSON.stringify(leak.source)}`)).toEqual([]);
+
+      const repeated = (texts: readonly { type: string; text: string; family?: string }[]): string[] =>
+        texts.flatMap((a, i) =>
+          texts.slice(i + 1)
+            .filter((b) => (a.family === undefined || a.family !== b.family) && answersEquivalent(a.text, b.text, subject.normalizer))
+            .map((b) => `${a.type} = ${b.type}: ${a.text}`),
+        );
+      const solved = drafts.map((draft) => ({
+        type: draft.exerciseType,
+        text: exerciseExposureText(subject, draft),
+        ...(draft.familyId === undefined ? {} : { family: draft.familyId }),
+      }));
+      expect(repeated(solved.filter((entry) => entry.text.trim() !== "")), "teksty rozwiązań").toEqual([]);
+      // Polskie bodźce: zdanie przed poleceniem (przedmiot z poleceniem-bodźcem) i polecenie tłumaczenia.
+      const stimuli = drafts.flatMap((draft) => {
+        const sentence = subject.instructionIsStimulus === true && draft.instructionPl?.includes(". ") === true
+          ? [draft.instructionPl.split(". ")[0]!]
+          : [];
+        const prompt = draft.exerciseType === "lesson_open_answer" && draft.prompt !== undefined ? [draft.prompt] : [];
+        return [...sentence, ...prompt].map((text) => ({ type: draft.exerciseType, text }));
+      });
+      expect(repeated(stimuli), "bodźce").toEqual([]);
+    });
+
+    it("klocki i odpowiedź lesson_order bez interpunkcji końcowej", () => {
+      if (!subject.exerciseTypes.includes("lesson_order")) return;
+      const order = admitExample(subject, "lesson_order", topic);
+      for (const text of [order.answer, ...(order.items ?? []).map((item) => item.text)]) {
+        expect(text, `${subject.id}: ${text}`).not.toMatch(/[.!?]$/u);
+      }
     });
 
     it("sanityzacja agenta nie zmienia przykładów (np. podpowiedź pytania otwartego zostaje)", () => {
