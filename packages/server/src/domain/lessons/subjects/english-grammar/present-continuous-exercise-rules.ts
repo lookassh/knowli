@@ -1,22 +1,21 @@
 import type { LessonExerciseDraft } from "../../types";
 import { normalizeTokens } from "../../normalize";
+import { clip, type LessonRuleIssue } from "../../rules/catalog";
 import { editDistance } from "../../../text-distance";
 import { baseOfIngForm, isCollocationIngForm, isIngFormInTable } from "../english/ing-forms";
 import { englishNormalizer } from "../english/normalizer";
 import { BE_FORMS } from "./be-agreement";
 import { ingBaseOf, presentSimpleBaseOf, SENTENCE_BOUNDARY, tenseTokens } from "./present-continuous-tense-choice";
 import { presentSimpleForms } from "./present-simple-forms";
+import { grammarIssue, MAX_ERROR_FIX_REGION_TOKENS } from "./rules";
 
 /**
  * Reguły typów ćwiczeń tematu Present Continuous: poprawianie błędu (design
  * „Present Continuous” §6.3), kształt przekształcenia, „Wskaż słowo” (§6.5)
  * i „Posłuchaj i wybierz” (§6.6). Wydzielone z `present-continuous-validation.ts`,
- * który je woła; ten plik nie importuje walidatora tematu (bez cyklu). Komunikaty z prefiksami
- * `pc-error-fix:`, `pc-notice:`, `pc-shape:` (§8).
+ * który je woła; ten plik nie importuje walidatora tematu (bez cyklu). Zgłoszenia reguł
+ * `grammar.pc_*` katalogu gramatyki (`rules.ts`).
  */
-
-/** Najwięcej tokenów po każdej stronie obszaru różnicy `error_fix` (§6.3). */
-const MAX_ERROR_FIX_REGION_TOKENS = 3;
 
 /** Najwięcej zmian liter między błędną a poprawną pisownią -ing (swiming → swimming, lieing → lying). */
 const MAX_ING_SPELLING_EDITS = 2;
@@ -191,7 +190,7 @@ const ERROR_FIX_MATCHERS: Readonly<Record<ErrorFixKind, (diff: ErrorFixDiff) => 
  * obszarem (najwyżej 3 tokeny po każdej stronie), a obszar to sprawdzany
  * element celu. Cele bez wpisu w `ERROR_FIX_KINDS` sprawdzają tylko obszar.
  */
-export function validateErrorFix(ex: LessonExerciseDraft, objective: string, errors: string[]): void {
+export function validateErrorFix(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   const statement = ex.statement;
   // Brak zdania z błędem zgłasza walidacja ogólna typu.
   if (statement === undefined || statement.trim() === "") return;
@@ -200,15 +199,23 @@ export function validateErrorFix(ex: LessonExerciseDraft, objective: string, err
   for (const { field, text } of keys) {
     const diff = errorFixDiff(statement, text);
     if (diff === null) {
-      errors.push(`pc-error-fix: ${field}: zdanie z błędem i poprawne muszą różnić się jednym miejscem (najwyżej ${MAX_ERROR_FIX_REGION_TOKENS} słowa po każdej stronie)`);
+      errors.push(grammarIssue("grammar.pc_error_fix_region", {
+        field,
+        pl: `${field}: zdanie z błędem i poprawne muszą różnić się jednym miejscem (najwyżej ${MAX_ERROR_FIX_REGION_TOKENS} słowa po każdej stronie)`,
+        found: `${field} ${clip(text)} and the statement ${clip(statement)} differ in no place or in more than ${MAX_ERROR_FIX_REGION_TOKENS} words on a side`,
+      }));
       continue;
     }
     if (kinds === undefined || kinds.some((kind) => ERROR_FIX_MATCHERS[kind](diff))) continue;
     const shown = (tokens: readonly string[]): string => (tokens.length === 0 ? "(nic)" : tokens.join(" "));
-    errors.push(
-      `pc-error-fix: ${field}: różnica „${shown(diff.wrong)}” → „${shown(diff.right)}” nie jest błędem ćwiczonym w celu ` +
+    const shownEn = (tokens: readonly string[]): string => (tokens.length === 0 ? "(nothing)" : clip(tokens.join(" ")));
+    errors.push(grammarIssue("grammar.pc_error_fix_kind", {
+      field,
+      pl:
+        `${field}: różnica „${shown(diff.wrong)}” → „${shown(diff.right)}” nie jest błędem ćwiczonym w celu ` +
         `(${kinds.map((kind) => ERROR_FIX_KIND_LABELS[kind]).join(", ")})`,
-    );
+      found: `the difference ${shownEn(diff.wrong)} → ${shownEn(diff.right)} is not a mistake the objective ${clip(objective)} practises`,
+    }));
   }
 }
 
@@ -218,18 +225,24 @@ export function validateErrorFix(ex: LessonExerciseDraft, objective: string, err
  * `correctOption` — inaczej dziecko wskazałoby inną poprawną formę i dostało
  * błąd (materializacja bierze pierwszy pasujący segment).
  */
-export function validateNotice(ex: LessonExerciseDraft, errors: string[]): void {
+export function validateNotice(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
   const ingForms = (ex.noticeSegments ?? []).flatMap((sentence) => {
     const tokens = sentence.flatMap(normalizeTokens);
     return tokens.filter((token, i) => isIngFormInTable(token) || isCollocationIngForm(tokens, i));
   });
   if (ingForms.length !== 1) {
-    errors.push(`pc-notice: noticeSegments: liczba form -ing w zdaniach: ${ingForms.length} — potrzebna dokładnie jedna`);
+    errors.push(grammarIssue("grammar.pc_notice_ing_count", {
+      pl: `noticeSegments: liczba form -ing w zdaniach: ${ingForms.length} — potrzebna dokładnie jedna`,
+      found: `the sentences have ${ingForms.length} -ing forms`,
+    }));
     return;
   }
   const target = normalizeTokens(ex.correctOption ?? "");
   if (target.length !== 1 || target[0] !== ingForms[0]) {
-    errors.push(`pc-notice: correctOption: słowem do wskazania musi być forma -ing „${ingForms[0]}”`);
+    errors.push(grammarIssue("grammar.pc_notice_target", {
+      pl: `correctOption: słowem do wskazania musi być forma -ing „${ingForms[0]}”`,
+      found: `correctOption ${clip(ex.correctOption ?? "")} is not the -ing form ${clip(ingForms[0]!)}`,
+    }));
   }
 }
 
@@ -253,23 +266,35 @@ function isInvertedQuestion(text: string): boolean {
  * `to_negative` / `to_affirmative` — zdanie wyjściowe ma przeciwną biegunowość
  * niż odpowiedź (biegunowość odpowiedzi sprawdza reguła be).
  */
-export function validateTransformShape(ex: LessonExerciseDraft, errors: string[]): void {
+export function validateTransformShape(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
   const statement = ex.statement;
   // Brak zdania wyjściowego zgłasza walidacja ogólna typu.
   if (statement === undefined || statement.trim() === "") return;
   if (ex.transformId === "to_question") {
-    if (/\?\s*$/.test(statement)) errors.push("pc-shape: statement: zdanie do zamiany na pytanie nie może być pytaniem");
+    if (/\?\s*$/.test(statement)) {
+      errors.push(grammarIssue("grammar.pc_transform_statement_question", {
+        pl: "statement: zdanie do zamiany na pytanie nie może być pytaniem",
+        found: `statement ${clip(statement)} is already a question`,
+      }));
+    }
     const keys = [{ field: "answer", text: ex.answer }, ...ex.acceptedAnswers.map((text) => ({ field: "acceptedAnswers", text }))];
     for (const { field, text } of keys) {
       if (!isInvertedQuestion(text)) {
-        errors.push(`pc-shape: ${field}: pytanie zaczyna się od am/is/are (albo isn't/aren't) albo od What + am/is/are i kończy znakiem „?”`);
+        errors.push(grammarIssue("grammar.pc_transform_question_shape", {
+          field,
+          pl: `${field}: pytanie zaczyna się od am/is/are (albo isn't/aren't) albo od What + am/is/are i kończy znakiem „?”`,
+          found: `${field} ${clip(text)} is not a question that starts with am/is/are or What + am/is/are and ends with ?`,
+        }));
       }
     }
     return;
   }
   const direction = ex.transformId === "to_negative" ? "twierdzenie → przeczenie" : ex.transformId === "to_affirmative" ? "przeczenie → twierdzenie" : undefined;
   if (direction !== undefined && isNegative(statement) === isNegative(ex.answer)) {
-    errors.push(`pc-shape: statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (${ex.transformId}: ${direction})`);
+    errors.push(grammarIssue("grammar.pc_transform_polarity", {
+      pl: `statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (${ex.transformId}: ${direction})`,
+      found: `statement ${clip(statement)} has the same polarity as the answer ${clip(ex.answer)} (${ex.transformId})`,
+    }));
   }
 }
 
@@ -277,10 +302,13 @@ export function validateTransformShape(ex: LessonExerciseDraft, errors: string[]
 const LISTEN_CHOICE_PAIRS: readonly (readonly string[])[] = [["is", "are"], ["isn't", "aren't"]];
 
 /** „Posłuchaj i wybierz” (§6.6): opcje to para is / are, isn't / aren't albo Is / Are. */
-export function validateListenChoiceOptions(ex: LessonExerciseDraft, errors: string[]): void {
+export function validateListenChoiceOptions(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
   const options = (ex.options ?? []).map((option) => normalizeTokens(option.text).join(" "));
   const isPair = LISTEN_CHOICE_PAIRS.some((pair) => options.length === pair.length && pair.every((text) => options.includes(text)));
   if (!isPair) {
-    errors.push("pc-shape: options: w „Posłuchaj i wybierz” opcje to para is / are, isn't / aren't albo Is / Are (nie „He's” / „He”)");
+    errors.push(grammarIssue("grammar.pc_listen_choice_options", {
+      pl: "options: w „Posłuchaj i wybierz” opcje to para is / are, isn't / aren't albo Is / Are (nie „He's” / „He”)",
+      found: `options ${clip((ex.options ?? []).map((option) => option.text).join(" / "))} are not is / are, isn't / aren't or Is / Are`,
+    }));
   }
 }

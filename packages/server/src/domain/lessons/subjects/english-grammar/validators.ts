@@ -421,11 +421,6 @@ function validateVisualPronoun(ex: LessonExerciseDraft, issues: LessonRuleIssue[
   }
 }
 
-/** shortcut: napisy walidatora PC opakowane regułą przejściową do czasu przeniesienia PC do katalogu (Task 17 Step 3). */
-function legacyPresentContinuousIssues(ex: LessonExerciseDraft): LessonRuleIssue[] {
-  return validatePresentContinuousExercise(ex).map((pl) => grammarIssue("grammar.pc_legacy", { pl, found: clip(pl) }));
-}
-
 /**
  * Walidator ćwiczeń przedmiotu. Zwraca zgłoszenia reguł katalogu gramatyki (pusta lista = poprawne).
  */
@@ -449,7 +444,7 @@ export function validateEnglishGrammarExercise(
   }
 
   if (topic.id === "present_continuous") {
-    issues.push(...legacyPresentContinuousIssues(ex));
+    issues.push(...validatePresentContinuousExercise(ex));
     return issues;
   }
 

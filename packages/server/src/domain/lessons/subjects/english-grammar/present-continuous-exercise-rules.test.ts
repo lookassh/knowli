@@ -6,13 +6,13 @@ import { validateEnglishGrammarExercise } from "./validators";
 
 type Objective = "affirmative" | "now_or_usually" | "negative" | "questions" | "ing_spelling" | "now_or_usually_more";
 
+/** Id reguł zgłoszonych przez walidator przedmiotu w temacie Present Continuous (pusta lista = poprawne). */
 function validate(ex: LessonExerciseDraft): string[] {
-  return validateEnglishGrammarExercise(ex, presentContinuousV1).map((issue) => issue.pl);
+  return validateEnglishGrammarExercise(ex, presentContinuousV1).map((issue) => issue.rule);
 }
 
-function expectPrefix(ex: LessonExerciseDraft, prefix: string): void {
-  const errors = validate(ex);
-  expect(errors.some((error) => error.startsWith(prefix)), `${prefix} w ${JSON.stringify(errors)}`).toBe(true);
+function expectRule(ex: LessonExerciseDraft, rule: string): void {
+  expect(validate(ex)).toContain(rule);
 }
 
 function pcErrorFix(objective: Objective, statement: string, answer: string, extra: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft {
@@ -92,23 +92,23 @@ describe("validatePresentContinuousExercise — poprawianie błędu", () => {
   });
 
   const rejected: [string, LessonExerciseDraft, string][] = [
-    ["inne zdanie (podmiot i dopełnienie)", pcErrorFix("affirmative", "He is playing football now.", "She is playing tennis now."), "pc-error-fix:"],
-    ["dwa odległe obszary różnicy", pcErrorFix("affirmative", "He is play football in the park now.", "He is playing football in the garden now."), "pc-error-fix:"],
-    ["obszar ze słowem bez zmian w środku", pcErrorFix("affirmative", "He is play football at the park now.", "He is playing football in the park now."), "pc-error-fix:"],
-    ["cel 1: zmiana tylko podmiotu", pcErrorFix("affirmative", "Tom is playing now.", "Ola is playing now."), "pc-error-fix:"],
-    ["cel 5: zła forma be (poza elementem celu)", pcErrorFix("ing_spelling", "He are swimming now.", "He is swimming now."), "pc-error-fix:"],
-    ["cel 5: zła forma be przy -ing z klasy plain", pcErrorFix("ing_spelling", "He are playing now.", "He is playing now."), "pc-error-fix:"],
-    ["cel 1: do/does zamiast formy be (tylko cele 3 i 4)", pcErrorFix("affirmative", "He does playing now.", "He is playing now."), "pc-error-fix:"],
-    ["cel 3: do/does → be bez formy -ing", pcErrorFix("negative", "He doesn't happy now.", "He isn't happy now."), "pc-error-fix:"],
-    ["cel 1: inny czasownik", pcErrorFix("affirmative", "She is play now.", "She is reading now."), "pc-error-fix:"],
-    ["cel 1: błąd pisowni należy do celu 5", pcErrorFix("affirmative", "He is jumpping now.", "He is jumping now."), "pc-error-fix:"],
-    ["cel 5: brak -ing to nie błąd pisowni", pcErrorFix("ing_spelling", "He is swim now.", "He is swimming now."), "pc-error-fix:"],
-    ["cel 5: inny czasownik", pcErrorFix("ing_spelling", "He is swiming now.", "He is running now."), "pc-error-fix:"],
-    ["wariant odpowiedzi z innym obszarem", pcErrorFix("affirmative", "He playing now.", "He is playing now.", { acceptedAnswers: ["Tom is playing now."] }), "pc-error-fix:"],
-    ["odpowiedź z formą be niezgodną z podmiotem", pcErrorFix("affirmative", "They playing now.", "They is playing now."), "pc-be:"],
+    ["inne zdanie (podmiot i dopełnienie)", pcErrorFix("affirmative", "He is playing football now.", "She is playing tennis now."), "grammar.pc_error_fix_region"],
+    ["dwa odległe obszary różnicy", pcErrorFix("affirmative", "He is play football in the park now.", "He is playing football in the garden now."), "grammar.pc_error_fix_region"],
+    ["obszar ze słowem bez zmian w środku", pcErrorFix("affirmative", "He is play football at the park now.", "He is playing football in the park now."), "grammar.pc_error_fix_kind"],
+    ["cel 1: zmiana tylko podmiotu", pcErrorFix("affirmative", "Tom is playing now.", "Ola is playing now."), "grammar.pc_error_fix_kind"],
+    ["cel 5: zła forma be (poza elementem celu)", pcErrorFix("ing_spelling", "He are swimming now.", "He is swimming now."), "grammar.pc_error_fix_kind"],
+    ["cel 5: zła forma be przy -ing z klasy plain", pcErrorFix("ing_spelling", "He are playing now.", "He is playing now."), "grammar.pc_error_fix_kind"],
+    ["cel 1: do/does zamiast formy be (tylko cele 3 i 4)", pcErrorFix("affirmative", "He does playing now.", "He is playing now."), "grammar.pc_error_fix_kind"],
+    ["cel 3: do/does → be bez formy -ing", pcErrorFix("negative", "He doesn't happy now.", "He isn't happy now."), "grammar.pc_error_fix_kind"],
+    ["cel 1: inny czasownik", pcErrorFix("affirmative", "She is play now.", "She is reading now."), "grammar.pc_error_fix_kind"],
+    ["cel 1: błąd pisowni należy do celu 5", pcErrorFix("affirmative", "He is jumpping now.", "He is jumping now."), "grammar.pc_error_fix_kind"],
+    ["cel 5: brak -ing to nie błąd pisowni", pcErrorFix("ing_spelling", "He is swim now.", "He is swimming now."), "grammar.pc_error_fix_kind"],
+    ["cel 5: inny czasownik", pcErrorFix("ing_spelling", "He is swiming now.", "He is running now."), "grammar.pc_error_fix_kind"],
+    ["wariant odpowiedzi z innym obszarem", pcErrorFix("affirmative", "He playing now.", "He is playing now.", { acceptedAnswers: ["Tom is playing now."] }), "grammar.pc_error_fix_kind"],
+    ["odpowiedź z formą be niezgodną z podmiotem", pcErrorFix("affirmative", "They playing now.", "They is playing now."), "grammar.pc_be_form_subject"],
   ];
-  it.each(rejected)("%s", (_name, ex, prefix) => {
-    expectPrefix(ex, prefix);
+  it.each(rejected)("%s", (_name, ex, rule) => {
+    expectRule(ex, rule);
   });
 });
 
@@ -117,22 +117,22 @@ describe("validatePresentContinuousExercise — „Wskaż słowo”", () => {
     expect(validate(pcNotice([["Tom", "is", "playing", "now."], ["Good", "morning!"]], "playing"))).toEqual([]);
   });
 
-  it("dwie formy -ing (pc-notice:)", () => {
-    expectPrefix(pcNotice([["Tom", "is", "playing", "now."], ["Ola", "is", "reading."]], "playing"), "pc-notice:");
-    expectPrefix(pcNotice([["Tom", "is", "playing", "now."], ["Ola", "is", "playing."]], "playing"), "pc-notice:");
+  it("dwie formy -ing", () => {
+    expectRule(pcNotice([["Tom", "is", "playing", "now."], ["Ola", "is", "reading."]], "playing"), "grammar.pc_notice_ing_count");
+    expectRule(pcNotice([["Tom", "is", "playing", "now."], ["Ola", "is", "playing."]], "playing"), "grammar.pc_notice_ing_count");
   });
 
   it("znak interpunkcji przy słowie do wskazania", () => {
     expect(validate(pcNotice([["Tom", "is", "playing!"]], "playing"))).toEqual([]);
   });
 
-  it("forma -ing z kolokacji liczy się jak forma z tabeli (pc-notice:)", () => {
-    expectPrefix(pcNotice([["Tom", "is", "playing", "now."], ["Mum", "is", "having", "lunch."]], "playing"), "pc-notice:");
+  it("forma -ing z kolokacji liczy się jak forma z tabeli", () => {
+    expectRule(pcNotice([["Tom", "is", "playing", "now."], ["Mum", "is", "having", "lunch."]], "playing"), "grammar.pc_notice_ing_count");
   });
 
-  it("correctOption inne niż jedyna forma -ing albo brak formy -ing (pc-notice:)", () => {
-    expectPrefix(pcNotice([["Tom", "is", "playing", "now."], ["Good", "morning!"]], "is"), "pc-notice:");
-    expectPrefix(pcNotice([["Tom", "is", "here", "now."], ["Good", "morning!"]], "morning"), "pc-notice:");
+  it("correctOption inne niż jedyna forma -ing albo brak formy -ing", () => {
+    expectRule(pcNotice([["Tom", "is", "playing", "now."], ["Good", "morning!"]], "is"), "grammar.pc_notice_target");
+    expectRule(pcNotice([["Tom", "is", "here", "now."], ["Good", "morning!"]], "morning"), "grammar.pc_notice_ing_count");
   });
 });
 
@@ -146,13 +146,13 @@ describe("validatePresentContinuousExercise — „Posłuchaj i wybierz”", () 
     expect(validate(ex)).toEqual([]);
   });
 
-  it("opcje spoza par is / are, isn't / aren't (pc-shape:)", () => {
-    expectPrefix(pcListenChoice("affirmative", "___ playing football now.", "He's", "He"), "pc-shape:");
-    expectPrefix(pcListenChoice("negative", "She ___ sleeping now.", "isn't", "is"), "pc-shape:");
+  it("opcje spoza par is / are, isn't / aren't", () => {
+    expectRule(pcListenChoice("affirmative", "___ playing football now.", "He's", "He"), "grammar.pc_listen_choice_options");
+    expectRule(pcListenChoice("negative", "She ___ sleeping now.", "isn't", "is"), "grammar.pc_listen_choice_options");
   });
 
-  it("klucz niezgodny z podmiotem albo celem (pc-be:)", () => {
-    expectPrefix(pcListenChoice("negative", "She ___ sleeping now.", "aren't", "isn't"), "pc-be:");
-    expectPrefix(pcListenChoice("affirmative", "The dogs ___ running now.", "is", "are"), "pc-be:");
+  it("klucz niezgodny z podmiotem albo celem", () => {
+    expectRule(pcListenChoice("negative", "She ___ sleeping now.", "aren't", "isn't"), "grammar.pc_be_form_subject");
+    expectRule(pcListenChoice("affirmative", "The dogs ___ running now.", "is", "are"), "grammar.pc_be_form_subject");
   });
 });

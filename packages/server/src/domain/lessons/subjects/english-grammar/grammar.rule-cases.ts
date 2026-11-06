@@ -1,7 +1,6 @@
 import { registerRuleCases } from "../../testing/rule-cases";
 import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { englishGrammarSubject } from "./module";
-import { presentContinuousV1 } from "./topics/present-continuous";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
 
@@ -104,9 +103,5 @@ registerRuleCases([
   {
     rule: "grammar.gap_present_simple_form",
     violation: check(simpleGap("english_grammar.present_simple.third_person_s", "He ___ every day.", "played", "play"), presentSimpleV1),
-  },
-  {
-    rule: "grammar.pc_legacy",
-    violation: check(simpleGap("english_grammar.present_continuous.affirmative", "Tom ___ (play) football now.", "plays", ""), presentContinuousV1),
   },
 ]);

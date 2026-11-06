@@ -1,8 +1,10 @@
 import type { LessonExerciseDraft } from "../../types";
 import { normalizeTokens } from "../../normalize";
+import { clip, type LessonRuleIssue } from "../../rules/catalog";
 import { baseOfIngForm, COLLOCATION_ING_FORMS, ingFormOf, ingRuleOf, STATE_VERBS, type IngRule } from "../english/ing-forms";
 import { BE_CONTRACTED_TOKENS, BE_DETERMINERS, BE_FORMS, BE_WH_WORDS } from "./be-agreement";
 import { presentSimpleForms } from "./present-simple-forms";
+import { grammarIssue } from "./rules";
 import { scanTimeMarkers, type MarkerGroup } from "./time-markers";
 
 /**
@@ -168,19 +170,31 @@ const QUESTION_TYPES_MORE: ReadonlySet<string> = new Set(["lesson_choice", "less
  * pytajnika i bez „not” / „n't” w odpowiedziach); cel 6 — pytania tylko
  * w wyborze i tłumaczeniu.
  */
-export function tenseChoiceShapeErrors(ex: LessonExerciseDraft, objective: string): string[] {
+export function tenseChoiceShapeErrors(ex: LessonExerciseDraft, objective: string): LessonRuleIssue[] {
   const correct = ex.options?.find((option) => option.id === ex.correctOption)?.text;
   const answers = [ex.answer, ...ex.acceptedAnswers, ...(correct === undefined ? [] : [correct])];
   const texts = [ex.stem, ex.statement, ...answers, ...(ex.options ?? []).map((option) => option.text)];
-  const question = texts.some((text) => text?.includes("?") === true);
-  const errors: string[] = [];
+  const question = texts.find((text) => text?.includes("?") === true);
+  const errors: LessonRuleIssue[] = [];
   if (objective === "now_or_usually") {
-    if (question) errors.push("pc-shape: w celu „Teraz czy zwykle?” są tylko zdania twierdzące — pytania należą do celu 6");
-    if (answers.some((text) => tenseTokens(text).includes("not"))) {
-      errors.push("pc-shape: w celu „Teraz czy zwykle?” są tylko zdania twierdzące — przeczenia należą do celu 6");
+    if (question !== undefined) {
+      errors.push(grammarIssue("grammar.pc_now_or_usually_question", {
+        pl: "w celu „Teraz czy zwykle?” są tylko zdania twierdzące — pytania należą do celu 6",
+        found: `the now_or_usually exercise has the question ${clip(question)}`,
+      }));
     }
-  } else if (objective === "now_or_usually_more" && question && !QUESTION_TYPES_MORE.has(ex.exerciseType)) {
-    errors.push("pc-shape: pytania w tym celu tylko w wyborze i tłumaczeniu (w luce forma po podmiocie zdradza odpowiedź)");
+    const negative = answers.find((text) => tenseTokens(text).includes("not"));
+    if (negative !== undefined) {
+      errors.push(grammarIssue("grammar.pc_now_or_usually_negative", {
+        pl: "w celu „Teraz czy zwykle?” są tylko zdania twierdzące — przeczenia należą do celu 6",
+        found: `the now_or_usually key ${clip(negative)} is negated`,
+      }));
+    }
+  } else if (objective === "now_or_usually_more" && question !== undefined && !QUESTION_TYPES_MORE.has(ex.exerciseType)) {
+    errors.push(grammarIssue("grammar.pc_tense_choice_question_type", {
+      pl: "pytania w tym celu tylko w wyborze i tłumaczeniu (w luce forma po podmiocie zdradza odpowiedź)",
+      found: `${ex.exerciseType} has the question ${clip(question)} in the now_or_usually_more objective`,
+    }));
   }
   return errors;
 }
@@ -193,15 +207,21 @@ export function tenseChoiceShapeErrors(ex: LessonExerciseDraft, objective: strin
  */
 export function tenseChoiceMarkerGroup(
   fields: readonly { readonly text: string; readonly lang: "en" | "pl"; readonly instruction?: boolean }[],
-  errors: string[],
+  errors: LessonRuleIssue[],
 ): MarkerGroup | undefined {
   const groups = new Set(fields.flatMap(({ text, lang, instruction }) => [...scanTimeMarkers(text, lang, { instruction: instruction === true }).groups]));
   if (groups.size === 0) {
-    errors.push("pc-marker: ćwiczenie potrzebuje wskaźnika czasu (now, Look!, every day…) albo scenki w poleceniu (Cicho!, teraz, codziennie…)");
+    errors.push(grammarIssue("grammar.pc_tense_marker_missing", {
+      pl: "ćwiczenie potrzebuje wskaźnika czasu (now, Look!, every day…) albo scenki w poleceniu (Cicho!, teraz, codziennie…)",
+      found: "the exercise has no time marker and no scene in instructionPl",
+    }));
     return undefined;
   }
   if (groups.size > 1) {
-    errors.push("pc-marker: wskaźniki „teraz” i „zwykle” naraz — czas odpowiedzi musi wynikać z jednej grupy");
+    errors.push(grammarIssue("grammar.pc_tense_markers_mixed", {
+      pl: "wskaźniki „teraz” i „zwykle” naraz — czas odpowiedzi musi wynikać z jednej grupy",
+      found: "the exercise has both now and usually markers",
+    }));
     return undefined;
   }
   return [...groups][0];
@@ -222,12 +242,21 @@ export function tenseSentences(text: string): TenseSentence[] {
  * Czas każdego orzeczenia zgodny z grupą wskaźników (§5.2) — także w drugim
  * zdaniu składowym („Mum cooks dinner and Dad is reading now.”).
  */
-export function validateTenseOfGroups(sentences: readonly TenseSentence[], group: MarkerGroup | undefined, field: string, errors: string[]): void {
+export function validateTenseOfGroups(
+  sentences: readonly TenseSentence[],
+  group: MarkerGroup | undefined,
+  field: string,
+  errors: LessonRuleIssue[],
+): void {
   if (group === undefined) return;
   const expected = TENSE_OF_MARKER_GROUP[group];
   const wrong = sentences.flatMap(({ groups }) => groups).find((verbGroup) => verbGroup.tense !== expected);
   if (wrong !== undefined) {
-    errors.push(`pc-marker: ${field}: zdanie ma ${TENSE_NAMES[wrong.tense]}, a wskaźnik „${group === "now" ? "teraz" : "zwykle"}” wymaga ${TENSE_NAMES[expected]}`);
+    errors.push(grammarIssue("grammar.pc_tense_marker_mismatch", {
+      field,
+      pl: `${field}: zdanie ma ${TENSE_NAMES[wrong.tense]}, a wskaźnik „${group === "now" ? "teraz" : "zwykle"}” wymaga ${TENSE_NAMES[expected]}`,
+      found: `${field} has a ${TENSE_NAMES[wrong.tense]} verb, but the ${group} markers require ${TENSE_NAMES[expected]}`,
+    }));
   }
 }
 
@@ -239,17 +268,25 @@ export interface PresentSimpleContext {
 }
 
 /** Czasownik w Present Simple z tabeli i klasy pisowni celu (§4 — także przy odpowiedzi PS) albo kolokacja „have/look”. */
-function validatePresentSimpleVerb(base: string, context: PresentSimpleContext, field: string, errors: string[]): void {
+function validatePresentSimpleVerb(base: string, context: PresentSimpleContext, field: string, errors: LessonRuleIssue[]): void {
   const rule = ingRuleOf(base);
   if (rule === undefined) {
     // Czasownik stanu poza kolokacją zgłasza reguła stanu; „has lunch”, „looks at” są dozwolone.
     if (!Object.hasOwn(COLLOCATION_ING_FORMS, base) && !STATE_VERBS.has(base)) {
-      errors.push(`pc-ing: ${field}: czasownik „${base}” jest spoza tabeli form -ing`);
+      errors.push(grammarIssue("grammar.pc_verb_outside_table", {
+        field,
+        pl: `${field}: czasownik „${base}” jest spoza tabeli form -ing`,
+        found: `the verb ${clip(base)} in ${field} is not in the verb table`,
+      }));
     }
     return;
   }
   if (!context.allowedRules.includes(rule)) {
-    errors.push(`pc-ing: ${field}: czasownik „${base}” (pisownia ${rule}) nie pasuje do celu (dozwolone: ${context.allowedRules.join(", ")})`);
+    errors.push(grammarIssue("grammar.pc_ing_rule_not_allowed", {
+      field,
+      pl: `${field}: czasownik „${base}” (pisownia ${rule}) nie pasuje do celu (dozwolone: ${context.allowedRules.join(", ")})`,
+      found: `the verb ${clip(base)} follows the ${rule} spelling rule; the objective allows ${context.allowedRules.join(", ")}`,
+    }));
   }
 }
 
@@ -263,7 +300,7 @@ export function validatePresentSimpleGroup(
   group: VerbGroup,
   context: PresentSimpleContext,
   field: string,
-  errors: string[],
+  errors: LessonRuleIssue[],
 ): void {
   const verb = tokens[group.verbIndex]!;
   const base = group.base!;
@@ -273,10 +310,20 @@ export function validatePresentSimpleGroup(
     const agrees = group.operator === undefined
       ? presentSimpleFormFor(base, thirdPerson, false).includes(verb)
       : group.operator === (thirdPerson ? "does" : "do");
-    if (!agrees) errors.push(`pc-be: ${field}: forma „${group.operator ?? verb}” nie pasuje do podmiotu „${group.subject.join(" ")}”`);
+    if (!agrees) {
+      errors.push(grammarIssue("grammar.pc_simple_form_subject", {
+        field,
+        pl: `${field}: forma „${group.operator ?? verb}” nie pasuje do podmiotu „${group.subject.join(" ")}”`,
+        found: `${field} uses ${clip(group.operator ?? verb)}, which does not agree with the subject ${clip(group.subject.join(" "))}`,
+      }));
+    }
   }
   if (group.operator !== undefined && verb !== base) {
-    errors.push(`pc-shape: ${field}: po do/does stoi forma podstawowa „${base}”, nie „${verb}”`);
+    errors.push(grammarIssue("grammar.pc_simple_base_after_do", {
+      field,
+      pl: `${field}: po do/does stoi forma podstawowa „${base}”, nie „${verb}”`,
+      found: `${field} has ${clip(verb)} after ${group.operator}, not the base form ${clip(base)}`,
+    }));
   }
   validatePresentSimpleVerb(base, context, field, errors);
 }
@@ -297,19 +344,29 @@ export function validatePresentSimpleFormAnswer(
   gap: { readonly stem: string; readonly verb?: string; readonly negative?: boolean },
   context: PresentSimpleContext,
   field: string,
-  errors: string[],
+  errors: LessonRuleIssue[],
 ): void {
   const tokens = tenseTokens(answer);
   const negative = tokens.includes("not");
   if (gap.negative !== undefined && negative !== gap.negative) {
-    errors.push(gap.negative
-      ? `pc-be: ${field}: nawias ma „not”, więc odpowiedź musi być przeczeniem`
-      : `pc-be: ${field}: przeczenie w odpowiedzi wymaga „not” w nawiasie (She ___ (not watch) TV every morning.)`);
+    errors.push(grammarIssue("grammar.pc_gap_negation_bracket", {
+      field,
+      pl: gap.negative
+        ? `${field}: nawias ma „not”, więc odpowiedź musi być przeczeniem`
+        : `${field}: przeczenie w odpowiedzi wymaga „not” w nawiasie (She ___ (not watch) TV every morning.)`,
+      found: gap.negative
+        ? `${field} ${clip(answer)} is not negated, but the brackets say not`
+        : `${field} ${clip(answer)} is negated, but the brackets have no not`,
+    }));
     return;
   }
   const verb = gap.verb ?? presentSimpleBaseOfAnswer(tokens);
   if (verb === undefined) {
-    errors.push(`pc-shape: ${field}: „${answer}” nie jest formą Present Simple ani Present Continuous czasownika z tabeli`);
+    errors.push(grammarIssue("grammar.pc_tense_form_missing", {
+      field,
+      pl: `${field}: „${answer}” nie jest formą Present Simple ani Present Continuous czasownika z tabeli`,
+      found: `${field} ${clip(answer)} is not a present simple or present continuous form of a table verb`,
+    }));
     return;
   }
   const accepts = (thirdPerson: boolean): boolean =>
@@ -319,10 +376,22 @@ export function validatePresentSimpleFormAnswer(
   if (agrees) {
     validatePresentSimpleVerb(verb, context, field, errors);
   } else if (expected !== undefined && accepts(expected !== "is")) {
-    errors.push(`pc-be: ${field}: forma „${answer}” nie pasuje do podmiotu (osoba jak przy „${expected}”)`);
+    errors.push(grammarIssue("grammar.pc_simple_form_subject", {
+      field,
+      pl: `${field}: forma „${answer}” nie pasuje do podmiotu (osoba jak przy „${expected}”)`,
+      found: `${field} ${clip(answer)} does not agree with the subject (the person of ${clip(expected)})`,
+    }));
   } else if (tokens.some((token) => ingBaseOf(token) !== undefined)) {
-    errors.push(`pc-be: ${field}: przed formą -ing brak am/is/are („${answer}”)`);
+    errors.push(grammarIssue("grammar.pc_ing_without_be", {
+      field,
+      pl: `${field}: przed formą -ing brak am/is/are („${answer}”)`,
+      found: `${field} ${clip(answer)} has an -ing form without am/is/are`,
+    }));
   } else {
-    errors.push(`pc-shape: ${field}: „${answer}” nie jest formą Present Simple ani Present Continuous czasownika „${verb}”`);
+    errors.push(grammarIssue("grammar.pc_tense_form_missing", {
+      field,
+      pl: `${field}: „${answer}” nie jest formą Present Simple ani Present Continuous czasownika „${verb}”`,
+      found: `${field} ${clip(answer)} is not a present simple or present continuous form of ${clip(verb)}`,
+    }));
   }
 }
