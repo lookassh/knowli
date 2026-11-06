@@ -119,6 +119,7 @@ registerRuleCases([
     boundary: check(errorFix("affirmative", "He is play the ball now.", "He is playing a game now.")),
   },
   { rule: "grammar.pc_error_fix_kind", violation: check(errorFix("affirmative", "Tom is playing now.", "Ola is playing now.")) },
+  { rule: "grammar.pc_error_fix_do_ing", violation: check(errorFix("negative", "Tom doesn't watching TV now.", "Tom isn't watching TV now.")) },
   { rule: "grammar.pc_notice_ing_count", violation: check(notice([["Tom", "is", "playing", "now."], ["Ola", "is", "reading."]], "playing")) },
   { rule: "grammar.pc_notice_target", violation: check(notice([["Tom", "is", "playing", "now."], ["Good", "morning!"]], "is")) },
   { rule: "grammar.pc_transform_statement_question", violation: check(transform("questions", "to_question", "Is he playing now?", "Is he playing now?")) },

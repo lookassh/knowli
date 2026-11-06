@@ -81,11 +81,14 @@ export const PC_GUIDANCE =
   "simple stem there has a general plural object (Ola reads comics., not Ola reads a comic.). " +
   "A context sentence may use is or are without a verb (This is Ola., It is sunny.), but never a verb of the table as an " +
   "adjective after is (never The door is open.). " +
-  `explanationPl names the marker or the scene (${PC_EXPLANATION_EXAMPLE}). ` +
-  "A translation carries the Polish now marker into English (teraz → now, w tej chwili → at the moment, Patrz! → Look!), " +
-  "never a variant without it. " +
+  "explanationPl names only verb forms that stand in this exercise (for She is cooking now. it says is cooking, never another " +
+  `verb such as is reading), and in the tense-choice objectives also the marker or the scene (${PC_EXPLANATION_EXAMPLE}). ` +
+  "A translation carries the Polish now marker into English (teraz → now, w tej chwili → at the moment, Patrz! → Look!) and " +
+  "lists the other now markers the sentence allows as acceptedAnswers (Tom is drawing a horse now. with Tom is drawing a horse " +
+  "right now. and Tom is drawing a horse at the moment.), never a variant without a marker. " +
   "The examples of each objective (shown to the child on its cards) follow the same rules: in affirmative, negative, questions " +
   "and ing_spelling present continuous sentences with a now marker; in the tense-choice objectives a pair with the same verb " +
   "(Ola is reading now. / Ola reads comics every day.). " +
+  "Never copy an example from the objective's cards into an exercise: change at least the subject, the verb or the object. " +
   "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers " +
   "are in English (Polish names such as Ola are fine).";

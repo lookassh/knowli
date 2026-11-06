@@ -84,8 +84,6 @@ describe("validatePresentContinuousExercise — poprawianie błędu", () => {
     ["cel 5: pisownia -ing", pcErrorFix("ing_spelling", "He is swiming now.", "He is swimming now.")],
     ["cel 5: pisownia ie → y", pcErrorFix("ing_spelling", "The cat is lieing on the sofa now.", "The cat is lying on the sofa now.")],
     ["cel 1: zła forma be", pcErrorFix("affirmative", "He are playing now.", "He is playing now.")],
-    ["cel 3: do/does zamiast formy be", pcErrorFix("negative", "He doesn't playing now.", "He isn't playing now.")],
-    ["cel 4: do/does zamiast formy be w pytaniu", pcErrorFix("questions", "Does she reading now?", "Is she reading now?")],
   ];
   it.each(ok)("%s", (_name, ex) => {
     expect(validate(ex)).toEqual([]);
@@ -98,7 +96,6 @@ describe("validatePresentContinuousExercise — poprawianie błędu", () => {
     ["cel 1: zmiana tylko podmiotu", pcErrorFix("affirmative", "Tom is playing now.", "Ola is playing now."), "grammar.pc_error_fix_kind"],
     ["cel 5: zła forma be (poza elementem celu)", pcErrorFix("ing_spelling", "He are swimming now.", "He is swimming now."), "grammar.pc_error_fix_kind"],
     ["cel 5: zła forma be przy -ing z klasy plain", pcErrorFix("ing_spelling", "He are playing now.", "He is playing now."), "grammar.pc_error_fix_kind"],
-    ["cel 1: do/does zamiast formy be (tylko cele 3 i 4)", pcErrorFix("affirmative", "He does playing now.", "He is playing now."), "grammar.pc_error_fix_kind"],
     ["cel 3: do/does → be bez formy -ing", pcErrorFix("negative", "He doesn't happy now.", "He isn't happy now."), "grammar.pc_error_fix_kind"],
     ["cel 1: inny czasownik", pcErrorFix("affirmative", "She is play now.", "She is reading now."), "grammar.pc_error_fix_kind"],
     ["cel 1: błąd pisowni należy do celu 5", pcErrorFix("affirmative", "He is jumpping now.", "He is jumping now."), "grammar.pc_error_fix_kind"],
@@ -109,6 +106,40 @@ describe("validatePresentContinuousExercise — poprawianie błędu", () => {
   ];
   it.each(rejected)("%s", (_name, ex, rule) => {
     expectRule(ex, rule);
+  });
+});
+
+/**
+ * Ślepa ocena sondy (Task 18): zdanie z do/does przed formą -ing ma dwie poprawki („Tom doesn't
+ * watching TV now.” → „Tom isn't watching TV now.” albo „Tom doesn't watch TV now.”), więc
+ * `error_fix` z takim zdaniem jest odrzucany w każdym celu.
+ */
+describe("validatePresentContinuousExercise — do/does przed formą -ing w zdaniu z błędem", () => {
+  const rejected: [string, LessonExerciseDraft][] = [
+    ["cel 3: doesn't + -ing", pcErrorFix("negative", "Tom doesn't watching TV now.", "Tom isn't watching TV now.")],
+    ["cel 3: don't + -ing", pcErrorFix("negative", "We don't playing football now.", "We aren't playing football now.")],
+    ["cel 3: does not + -ing", pcErrorFix("negative", "He does not playing now.", "He is not playing now.")],
+    ["cel 4: Does + podmiot + -ing", pcErrorFix("questions", "Does she reading now?", "Is she reading now?")],
+    ["cel 4: Do + podmiot z rzeczownikiem + -ing", pcErrorFix("questions", "Do the boys playing now?", "Are the boys playing now?")],
+    ["cel 4: What does + podmiot + doing", pcErrorFix("questions", "What does he doing?", "What is he doing?")],
+    ["cel 1: does + -ing", pcErrorFix("affirmative", "He does playing now.", "He is playing now.")],
+    ["cel 5: kolokacja po doesn't", pcErrorFix("ing_spelling", "She doesn't having lunch now.", "She isn't having lunch now.")],
+    ["cel 6: doesn't + -ing przy „zwykle”", pcErrorFix("now_or_usually_more", "She doesn't watching TV on Mondays.", "She doesn't watch TV on Mondays.")],
+  ];
+  it.each(rejected)("%s", (_name, ex) => {
+    expectRule(ex, "grammar.pc_error_fix_do_ing");
+  });
+
+  const ok: [string, LessonExerciseDraft][] = [
+    ["cel 3: brak formy be przed „not” (odpowiedź z isn't)", pcErrorFix("negative", "Tom not watching TV now.", "Tom isn't watching TV now.")],
+    ["cel 6: zamiana czasu z doesn't + forma podstawowa", pcErrorFix("now_or_usually_more", "Look! Ola doesn't sleep.", "Look! Ola isn't sleeping.")],
+  ];
+  it.each(ok)("%s", (_name, ex) => {
+    expect(validate(ex)).toEqual([]);
+  });
+
+  it("forma -ing po innym czasowniku po do/does (go swimming) nie jest tym błędem", () => {
+    expect(validate(pcErrorFix("now_or_usually_more", "Ola don't go swimming on Mondays.", "Ola doesn't go swimming on Mondays."))).not.toContain("grammar.pc_error_fix_do_ing");
   });
 });
 

@@ -546,7 +546,7 @@ describe("cele 1, 3, 4, 5 — wskaźnik „teraz” wymagany tam, gdzie Present 
     ["cel 1: luka z czasownikiem", pcGap("affirmative", "Ola ___ (read) a comic.", "is reading")],
     ["cel 5: luka z czasownikiem", pcGap("ing_spelling", "Tom ___ (swim) in the lake.", "is swimming")],
     ["cel 1: poprawianie błędu", pcErrorFix("affirmative", "She is play tennis.", "She is playing tennis.")],
-    ["cel 4: poprawianie błędu", pcErrorFix("questions", "Does she reading?", "Is she reading?")],
+    ["cel 4: poprawianie błędu", pcErrorFix("questions", "Is she read?", "Is she reading?")],
     ["cel 3: przekształcenie", pcTransform("negative", "to_negative", "He is playing.", "He isn't playing.")],
     ["cel 4: przekształcenie na pytanie", pcTransform("questions", "to_question", "He is playing.", "Is he playing?")],
   ];
@@ -568,7 +568,8 @@ describe("cele 1, 3, 4, 5 — wskaźnik „teraz” wymagany tam, gdzie Present 
     ["scenka w poleceniu", pcGap("affirmative", "Grandpa ___ (sleep) on the sofa.", "is sleeping", { instructionPl: "Cicho! Dziadek śpi." })],
     ["„Look at …!” na początku", pcChoice("affirmative", "Look at Tom! He ___ .", "is jumping", "jumps")],
     ["cel 4: „What … doing?” jako kontekst", pcGap("questions", "What are you doing? I ___ (read) a book.", "am reading")],
-    ["cel 4: poprawianie „What does he doing?”", pcErrorFix("questions", "What does he doing?", "What is he doing?")],
+    // „What does he doing?” ma dwie poprawki (is he doing / does he do), więc odrzuca je `grammar.pc_error_fix_do_ing`.
+    ["cel 4: poprawianie „What are he doing?”", pcErrorFix("questions", "What are he doing?", "What is he doing?")],
     ["cel 1: wskaźnik w kluczu poprawiania", pcErrorFix("affirmative", "She is play tennis now.", "She is playing tennis now.")],
   ];
   it.each(ok)("%s", (_name, ex) => {

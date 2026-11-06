@@ -70,27 +70,27 @@ export function errorFixRegion(statement: string, answer: string): { readonly wr
   return diff === null ? null : { wrong: diff.wrong, right: diff.right };
 }
 
-type ErrorFixKind = "missing_be" | "missing_ing" | "wrong_be" | "do_for_be" | "ing_spelling" | "tense_swap";
+type ErrorFixKind = "missing_be" | "missing_ing" | "wrong_be" | "ing_spelling" | "tense_swap";
 
 const ERROR_FIX_KIND_LABELS: Readonly<Record<ErrorFixKind, string>> = {
   missing_be: "brak am/is/are",
   missing_ing: "brak -ing po am/is/are",
   wrong_be: "zła forma am/is/are",
-  do_for_be: "do/does zamiast am/is/are",
   ing_spelling: "zła pisownia -ing",
   tense_swap: "Present Simple zamiast Present Continuous albo odwrotnie",
 };
 
 /**
- * Sprawdzany element celu w obszarze różnicy (§6.3). Zła forma be i do/does
- * zamiast be to kategorie błędów celów 1, 3, 4 (zgodność klucza z podmiotem
- * sprawdza reguła be); cele porównania (2, 6) ćwiczą zamianę PS ↔ PC.
+ * Sprawdzany element celu w obszarze różnicy (§6.3). Zła forma be to kategoria
+ * błędów celów 1, 3, 4 (zgodność klucza z podmiotem sprawdza reguła be); cele
+ * porównania (2, 6) ćwiczą zamianę PS ↔ PC. Do/does zamiast be nie jest już
+ * obszarem celów 3 i 4: takie zdanie z błędem ma dwie poprawki (`doBeforeIng`).
  */
 export const ERROR_FIX_KINDS: Readonly<Record<string, readonly ErrorFixKind[]>> = {
   affirmative: ["missing_be", "missing_ing", "wrong_be"],
   now_or_usually: ["tense_swap"],
-  negative: ["missing_be", "missing_ing", "wrong_be", "do_for_be"],
-  questions: ["missing_be", "missing_ing", "wrong_be", "do_for_be"],
+  negative: ["missing_be", "missing_ing", "wrong_be"],
+  questions: ["missing_be", "missing_ing", "wrong_be"],
   ing_spelling: ["ing_spelling"],
   now_or_usually_more: ["tense_swap"],
 };
@@ -129,12 +129,23 @@ function isWrongBe({ wrong, right }: ErrorFixDiff): boolean {
 }
 
 /**
- * do/does zamiast formy be przed formą -ing (cele 3, 4): „He doesn't playing
- * now.” → „He isn't playing now.”, „Does she reading?” → „Is she reading?”.
+ * do/does (także z not) przed formą -ing w zdaniu z błędem (ślepa ocena sondy, Task 18): „Tom doesn't
+ * watching TV now.” ma dwie poprawki (isn't watching albo doesn't watch), a „Does she reading?” — „Is she
+ * reading?” albo „Does she read?”. Między do/does a formą -ing mogą stać not i podmiot pytania, ale nie
+ * forma be ani inny czasownik („Does she go swimming?” to nie ten błąd). Zwraca znalezioną parę albo undefined.
  */
-function isDoForBe({ wrong, right, answerTokens, start }: ErrorFixDiff): boolean {
-  if (wrong.length !== 1 || right.length !== 1 || (wrong[0] !== "do" && wrong[0] !== "does") || !BE_FORMS.has(right[0]!)) return false;
-  return answerTokens.some((token, i) => i > start && (isIngFormInTable(token) || isCollocationIngForm(answerTokens, i)));
+function doBeforeIng(statement: string): string | undefined {
+  for (const tokens of statement.split(SENTENCE_BOUNDARY).map(tenseTokens)) {
+    for (const [index, token] of tokens.entries()) {
+      if (token !== "do" && token !== "does") continue;
+      for (let next = index + 1; next < tokens.length; next++) {
+        const candidate = tokens[next]!;
+        if (isIngFormInTable(candidate) || isCollocationIngForm(tokens, next)) return `${token} ${tokens.slice(index + 1, next + 1).join(" ")}`;
+        if (BE_FORMS.has(candidate) || presentSimpleBaseOf(candidate) !== undefined) break;
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Strona obszaru w Present Simple: forma czasownika albo do/does + not + forma podstawowa. */
@@ -180,7 +191,6 @@ const ERROR_FIX_MATCHERS: Readonly<Record<ErrorFixKind, (diff: ErrorFixDiff) => 
   missing_be: isMissingBe,
   missing_ing: isMissingIng,
   wrong_be: isWrongBe,
-  do_for_be: isDoForBe,
   ing_spelling: isIngSpelling,
   tense_swap: isTenseSwap,
 };
@@ -194,6 +204,16 @@ export function validateErrorFix(ex: LessonExerciseDraft, objective: string, err
   const statement = ex.statement;
   // Brak zdania z błędem zgłasza walidacja ogólna typu.
   if (statement === undefined || statement.trim() === "") return;
+  const doIng = doBeforeIng(statement);
+  if (doIng !== undefined) {
+    errors.push(grammarIssue("grammar.pc_error_fix_do_ing", {
+      pl:
+        `statement: do/does przed formą -ing („${doIng}”) daje dwie poprawki (am/is/are + -ing albo do/does + forma podstawowa) ` +
+        "— wybierz inny błąd",
+      found: `the statement ${clip(statement)} has ${clip(doIng)}: do/does before an -ing form`,
+    }));
+    return;
+  }
   const kinds = Object.hasOwn(ERROR_FIX_KINDS, objective) ? ERROR_FIX_KINDS[objective]! : undefined;
   const keys = [{ field: "answer", text: ex.answer }, ...ex.acceptedAnswers.map((text) => ({ field: "acceptedAnswers", text }))];
   for (const { field, text } of keys) {

@@ -450,9 +450,18 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_error_fix"],
     description:
       "In the present_continuous topic the difference of a lesson_error_fix is the mistake the objective practises: a missing " +
-      "am/is/are, a verb without -ing after am/is/are or a wrong am/is/are (also do/does instead of am/is/are in negative and " +
-      "questions); a wrong -ing spelling in ing_spelling; the present simple swapped with the present continuous of the same " +
-      "verb in the tense-choice objectives.",
+      "am/is/are, a verb without -ing after am/is/are or a wrong am/is/are; a wrong -ing spelling in ing_spelling; the present " +
+      "simple swapped with the present continuous of the same verb in the tense-choice objectives.",
+  },
+  "grammar.pc_error_fix_do_ing": {
+    when: inPresentContinuous,
+    field: "statement",
+    kind: "reject",
+    types: ["lesson_error_fix"],
+    description:
+      "In the present_continuous topic the statement of a lesson_error_fix never has do or does (also don't, doesn't, do not, " +
+      "does not) before an -ing form (Tom doesn't watching TV now., Does she reading?): such a sentence has two correct fixes " +
+      "(Tom isn't watching TV now. / Tom doesn't watch TV now.).",
   },
   "grammar.pc_notice_ing_count": {
     when: inPresentContinuous,

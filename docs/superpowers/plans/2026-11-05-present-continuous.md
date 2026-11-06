@@ -461,6 +461,8 @@ Zatrzymaj się i zapytaj, gdy zachowanie walidatora PC (przyjęcie/odrzucenie) m
 - [ ] **Step 4: Dokumentacja:** spec §16 (port do katalogu, prefiksy → id reguł, nowa reguła, #288), architecture §19 (reguły PC w katalogu gramatyki), plan.
 - [ ] **Step 5: Uruchom** `pnpm check` — PASS. Commity „Gramatyka: prompt Present Continuous z księgi reguł” i „Gramatyka: Present Continuous — poprawki po ślepej ocenie sondy”.
 
+Wynik Task 18 (2026-11-06): listy ze stałych są dopiskami reguł, które je sprawdzają, dydaktyka — dopiskiem `grammar.pc_tense_marker_missing` (`G/present-continuous-guidance.ts`, spec §16.8). Migawka promptu PC (`affirmative`) ma 35 389 znaków (na HEAD przed zadaniem, z blokiem w `fieldRules` i ogólnymi przykładami kart: 43 717); PS 17 577 i „to be” 21 340 znaków (na `6ab44f7e` 17 504 i 21 267 — różnica to zawężenie reguł luki do `.present_simple.`). Nowa reguła zastępuje obszar `error_fix` „do/does → forma be” celów 3 i 4 (§16.3); przypadek testu „What does he doing?” → „What is he doing?” zamieniono na „What are he doing?”.
+
 ### Task 19: Trzech krytyków po przeniesieniu do katalogu
 
 - [ ] **Step 1:** Trzech niezależnych krytyków na `git diff origin/main...HEAD`: (a) wierność przeniesienia walidatora (żadna reguła nie zgubiona ani nie poluzowana) i nowa reguła, (b) prompt z księgi reguł i przykłady typów (dydaktyka, spójność z walidatorem, PS i „to be” bez wpływu), (c) testy, rejestr przypadków, migawki, regresje PS i „to be” po scaleniu.

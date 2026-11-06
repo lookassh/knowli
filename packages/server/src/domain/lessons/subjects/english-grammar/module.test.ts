@@ -506,7 +506,10 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     const text = PC_TEXTS.join(" ");
     for (const fragment of ["Look!", "every day", "tomorrow", "play", "swim", "Kiedy to się dzieje?", "travel",
       "never write the refrain teraz czy zwykle", "never use teraz, właśnie, zawsze or zwykle as words of the task itself",
-      "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt", "never Cicho, dziadek śpi."]) {
+      "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt", "never Cicho, dziadek śpi.",
+      // Ślepa ocena sondy (Task 18): wyjaśnienie z formą z innego zdania, kopia przykładu karty, tłumaczenie bez wariantu „at the moment”.
+      "explanationPl names only verb forms that stand in this exercise", "Never copy an example from the objective's cards",
+      "lists the other now markers the sentence allows as acceptedAnswers"]) {
       expect(text, fragment).toContain(fragment);
     }
     // Dydaktyka w dopisku jednej reguły; listy przy regułach, które je sprawdzają.
@@ -566,6 +569,12 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ["never The door is open.", translation("affirmative", "Drzwi są teraz otwarte.", "The door is open now."), "grammar.pc_ing_after_be"],
     ["Ola is reading now.", translation("now_or_usually", "Ola teraz czyta.", "Ola is reading now."), true],
     ["Ola reads comics every day.", translation("now_or_usually", "Ola codziennie czyta komiksy.", "Ola reads comics every day."), true],
+    ["for She is cooking now. it says is cooking", translation("affirmative", "Ona teraz gotuje.", "She is cooking now."), true],
+    [
+      "(Tom is drawing a horse now. with Tom is drawing a horse right now. and Tom is drawing a horse at the moment.)",
+      { ...translation("affirmative", "Tom teraz rysuje konia.", "Tom is drawing a horse now."), acceptedAnswers: ["Tom is drawing a horse right now.", "Tom is drawing a horse at the moment."] },
+      true,
+    ],
   ];
 
   it.each(QUOTED)("%s", (quoted, exercise, expected) => {
