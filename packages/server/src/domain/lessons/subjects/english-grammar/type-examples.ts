@@ -565,11 +565,11 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     // Luka i poprawianie: czas tylko w polskiej scence polecenia, bez angielskiego wskaźnika w zdaniu (Task 16).
     lesson_gap: {
       exerciseType: "lesson_gap",
-      instructionPl: "Cicho! Babcia śpi na kanapie. Uzupełnij zdanie.",
-      stem: "Grandma ___ (not drive) her car.",
-      answer: "isn't driving",
+      instructionPl: "Cicho! Tata śpi. Uzupełnij zdanie.",
+      stem: "Dad ___ (not watch) TV.",
+      answer: "isn't watching",
       acceptedAnswers: [],
-      focus: ["isn't", "driving"],
+      focus: ["isn't", "watching"],
     },
     lesson_error_fix: {
       exerciseType: "lesson_error_fix",

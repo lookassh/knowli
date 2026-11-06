@@ -543,12 +543,14 @@ const NUMBER_WORD_BE_FORM: Readonly<Record<string, string>> = {
 };
 
 /**
- * Forma be zgodna z liczbą rzeczownika `tokens[index]` z `NUMBERLESS_NOUNS`: z najbliższego określnika
- * wśród trzech słów przed nim („two big fish” → are); undefined — liczby nic nie ustala („the fish”).
+ * Forma be zgodna z liczbą rzeczownika `tokens[index]` z `NUMBERLESS_NOUNS`: „a lot of” / „lots of” wśród
+ * trzech słów przed nim → are, inaczej najbliższy określnik albo liczebnik wśród nich („two big fish” → are);
+ * undefined — liczby nic nie ustala („the fish”, „one of the fish”).
  */
 function numberlessNounBeForm(tokens: readonly string[], index: number): string | undefined {
-  const word = tokens.slice(Math.max(0, index - 3), index)
-    .findLast((token) => BE_DETERMINERS.has(token) || Object.hasOwn(NUMBER_WORD_BE_FORM, token));
+  const window = tokens.slice(Math.max(0, index - 3), index);
+  if (window.some((token, i) => (token === "lot" || token === "lots") && window[i + 1] === "of")) return "are";
+  const word = window.findLast((token) => BE_DETERMINERS.has(token) || Object.hasOwn(NUMBER_WORD_BE_FORM, token));
   return word === undefined ? undefined : NUMBER_WORD_BE_FORM[word];
 }
 
@@ -1308,6 +1310,14 @@ function otherTenseForm(option: string, gapStem: string | undefined): string | u
       const next = tokens[nextIndex] ?? "";
       const phrase = tokens.slice(index, nextIndex + 1).join(" ");
       if (OTHER_TENSE_OPERATORS.has(token) && presentSimpleBaseOf(next) === next) return phrase;
+      // Pytanie z operatorem na początku („Did Tom swim…?”, „What can Ola read?”): forma podstawowa po podmiocie.
+      if (OTHER_TENSE_OPERATORS.has(token) && (index === 0 || (index === 1 && BE_WH_WORDS.has(tokens[0]!)))) {
+        const base = tokens.findIndex((candidate, i) => i > nextIndex && presentSimpleBaseOf(candidate) === candidate);
+        const between = tokens.slice(nextIndex, base);
+        if (base > 0 && between.every((candidate) => !isNumberedAuxiliary(candidate) && ingBaseOf(candidate) === undefined)) {
+          return [...tokens.slice(index, nextIndex), "…", tokens[base]!].join(" ");
+        }
+      }
       if (Object.hasOwn(AUXILIARY_AGREES, token)) {
         const continuous = (token === "was" || token === "were") && next.endsWith("ing");
         const perfect = (token === "has" || token === "have" || token === "had") && pastBaseOf(next) !== undefined;

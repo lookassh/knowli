@@ -347,8 +347,10 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "accepted answer or the correct option (with the stem around it when it fills a gap) of a lesson_gap, lesson_choice, " +
       "lesson_listen_choice, lesson_short_answer, lesson_error_fix or lesson_open_answer such a noun never stands right " +
       "before am, is, are, do, does or a present simple verb, or after the am, is, are, do or does that opens a question " +
-      "(Is the sheep eating?), unless a number word (a, an, one, this, that, each, every, these, those, many, two to ten) " +
-      "stands among the three words before it or the noun is part of a subject joined by and (the cat and the fish are): " +
+      "(Is the sheep eating?), unless a lot of or lots of stands among the three words before it, or the nearest determiner " +
+      "or number word among those three words is a number word (a, an, one, this, that, each, every, these, those, many, two " +
+      "to ten; One of the fish has the as the nearest one), or the noun is part of a subject joined by and (the cat and the " +
+      "fish are): " +
       "otherwise both is and are (eats and eat) are correct. Look! The fish ___ (eat). is wrong; Look! Two fish ___ (eat). → " +
       "are eating is fine. In lesson_order and lesson_transform the tiles or the statement give the form.",
   },
@@ -450,8 +452,10 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_choice"],
     description:
       "In the now_or_usually and now_or_usually_more objectives no distractor of a lesson_choice fits the time marker and the " +
-      "subject as well as the key, and no distractor uses another correct tense (can read, will read, didn't watch, was " +
-      "reading, has played, played, read): it is a second correct answer.",
+      "subject as well as the key, and no distractor uses another tense: can, could, will, would, shall, should, must, may, " +
+      "might or did + the base form (can read, didn't watch, also in a question: Did Tom swim on Fridays?), was or were + " +
+      "-ing, has, have or had + a regular past participle, or a regular past form or read, put, cut, hit (played, read): it " +
+      "is a second correct answer.",
   },
   "grammar.pc_choice_distractor_correct": {
     when: inPcObjectives("affirmative", "negative", "questions"),

@@ -985,3 +985,22 @@ describe("Task 16 — zakres reguły rzeczowników bez liczby (fish, sheep, deer
     expect(validate(pcGap("affirmative", "Look! Tom is reading and the fish ___ (eat).", "are eating"))).toContain(RULE);
   });
 });
+
+describe("Task 16 — porządki przed sondą", () => {
+  it("„a lot of” i „lots of” przed fish / sheep / deer to liczba mnoga", () => {
+    expect(validate(pcGap("affirmative", "Look! A lot of fish ___ (eat).", "are eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! Lots of sheep ___ (eat) grass.", "are eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! A lot of fish ___ (eat).", "is eating"))).toEqual(["grammar.pc_be_form_subject"]);
+    // Najbliższy określnik przed rzeczownikiem to „the”: liczby nic nie ustala.
+    expect(validate(pcGap("affirmative", "Look! One of the fish ___ (eat).", "is eating"))).toContain("grammar.pc_numberless_subject");
+  });
+
+  it("cele 2 i 6: pytanie z operatorem innego czasu na początku (Did Tom swim…?) to druga poprawna odpowiedź", () => {
+    const RULE = "grammar.pc_tense_choice_distractor";
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Wybierz poprawne pytanie.", "Does Tom swim on Fridays?", "Is Tom swimming on Fridays?", "Did Tom swim on Fridays?")))
+      .toEqual([RULE]);
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Wybierz poprawne pytanie.", "Does Tom swim on Fridays?", "Is Tom swimming on Fridays?", "Can Tom swim on Fridays?")))
+      .toEqual([RULE]);
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Wybierz poprawne pytanie.", "Does Tom swim on Fridays?", "Is Tom swimming on Fridays?"))).toEqual([]);
+  });
+});
