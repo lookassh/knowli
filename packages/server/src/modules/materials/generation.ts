@@ -519,8 +519,11 @@ export async function executeGeneration(services: Services, runId: string, signa
       await markRun(tx, services.clock, runId, "failed", "deck_version_gone");
       return;
     }
-    // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu
-    if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
+    // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu; numer z wiersza
+    // pod blokadą, bo „Ponów” mógł go zmienić po odczycie `run` (#302)
+    const current = (await tx.select({ expectedEditNumber: generationRuns.expectedEditNumber })
+      .from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+    if (version.state === "published" || version.editNumber !== current?.expectedEditNumber) {
       await markRun(tx, services.clock, runId, "superseded", null);
       return;
     }
