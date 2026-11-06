@@ -1331,5 +1331,3 @@ export const messages = {
     changeSource: "Zmień źródło",
   },
 } as const;
-
-export type Messages = typeof messages;
