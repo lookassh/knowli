@@ -356,9 +356,12 @@ export async function retryGeneration(services: Services, runId: string): Promis
       await resetLessonAgentBudget(tx, runId);
       return { runId };
     }
+    // „Ponów” to świadoma decyzja rodzica: run zestawu przyjmuje bieżący numer
+    // edycji szkicu (#302), inaczej finalizacja po edycji z porażki po cichu
+    // wyrzuciłaby opłacony wynik. Kolejność blokad jak w finalizacji: wersja, potem run.
+    let expectedEditNumber: number | undefined;
     if (run.kind === "deck") {
-      // Taka sama kolejność blokad jak zapis wyniku: wersja, potem run.
-      const version = (await tx.select({ state: deckVersions.state }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
+      const version = (await tx.select({ state: deckVersions.state, editNumber: deckVersions.editNumber }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
       const locked = (await tx.select({ run: generationRuns, stalled: deckRunStalled }).from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
       const current = locked?.run;
       if (!version || version.state === "published" || !current || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
@@ -367,8 +370,9 @@ export async function retryGeneration(services: Services, runId: string): Promis
         if (!locked.stalled) throw new AppError("conflict");
         // `running` (np. po awarii workera, #299): jak przy historyjce; spóźniony
         // worker nie przejdzie sprawdzenia `running` przy zapisie wyniku.
-        return replaceRunningRun(tx, services, current, current.expectedEditNumber!, "deck");
+        return replaceRunningRun(tx, services, current, version.editNumber, "deck");
       }
+      expectedEditNumber = version.editNumber;
     }
     if (run.assetId) {
       const asset = (await tx.select().from(mediaAssets).where(eq(mediaAssets.id, run.assetId)))[0];
@@ -385,7 +389,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
     // liczba odrzuceń należy do zakończonej próby (porażka `no_source_items`); nowa próba zapisze własną
     await tx
       .update(generationRuns)
-      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, rejectedCount: null })
+      .set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, rejectedCount: null, ...(expectedEditNumber === undefined ? {} : { expectedEditNumber }) })
       .where(eq(generationRuns.id, runId));
     return { runId };
   });
@@ -562,10 +566,12 @@ async function generateClaimedDeckRun(
       return;
     }
     // ta sama kolejność blokad co „Ponów” (wersja, potem run): run zastąpiony w międzyczasie nie zapisuje wyniku
-    const current = (await tx.select({ state: generationRuns.state }).from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+    const current = (await tx.select({ state: generationRuns.state, expectedEditNumber: generationRuns.expectedEditNumber })
+      .from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
     if (current?.state !== "running") return;
-    // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu
-    if (version.state === "published" || version.editNumber !== run.expectedEditNumber) {
+    // wynik zapisujemy tylko przy zgodnym numerze edycji szkicu; numer z wiersza
+    // pod blokadą, bo „Ponów” mógł go zmienić po odczycie `run` (#302)
+    if (version.state === "published" || version.editNumber !== current.expectedEditNumber) {
       await mark(tx, "superseded", null);
       return;
     }
