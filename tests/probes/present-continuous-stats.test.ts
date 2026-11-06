@@ -31,6 +31,7 @@ describe("pcPoolStats", () => {
   it("liczy scenki i odrzucenia tylko w celach porównania, a id reguł według rodzaju odrzucenia", () => {
     const stats = pcPoolStats(exercises, rejections);
     expect(stats.sceneShare).toBe(0.5);
+    expect(stats.sceneSharePolish).toBe(0.5);
     expect(stats.comparisonAccepted).toBe(2);
     expect(stats.comparisonRejected).toBe(1);
     expect(stats.rejectionShareComparison).toBeCloseTo(1 / 3);
@@ -49,13 +50,44 @@ describe("pcPoolStats", () => {
       [],
     );
     expect(stats.comparisonAccepted).toBe(2);
+    expect(stats.sceneSharePolish).toBe(0.5);
     expect(stats.sceneShare).toBe(0.5);
     expect(stats.rejectionShareComparison).toBe(0);
   });
 
+  it("szersza miara: (a) polska scenka, (b) angielskie wykrzyknienie w tym, co widzi dziecko, (c) wybór całych zdań po zdaniu kontekstu", () => {
+    const more = `${PC}.now_or_usually_more`;
+    const options = (a: string, b: string) => ({ options: [{ id: "a", text: a }, { id: "b", text: b }], correctOption: "a" });
+    const scenes: LessonExerciseDraft[] = [
+      // (a) polska scenka w poleceniu
+      draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Cicho! Tom śpi. Uzupełnij zdanie.", stem: "Tom ___ (sleep)." }),
+      // (b) wykrzyknienie w bodźcu, zdaniu z błędem i angielskim prompcie
+      draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Uzupełnij zdanie.", stem: "Look! Tom ___ (run)." }),
+      draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Uzupełnij zdanie.", stem: "Look at Ola! She ___ (dance)." }),
+      draft({ exerciseType: "lesson_error_fix", objectiveId: more, instructionPl: "Popraw błąd.", statement: "Shh! The baby sleeps." }),
+      draft({ exerciseType: "lesson_short_answer", objectiveId: NOW_OR_USUALLY, instructionPl: "Wybierz odpowiedź.", prompt: "Listen! Is Tom singing?" }),
+      // (c) wybór całych zdań z bodźcem-zdaniem kontekstu bez luki
+      draft({ exerciseType: "lesson_choice", objectiveId: more, instructionPl: "Wybierz pytanie.", stem: "Ola is in a tennis club.", ...options("Does Ola play tennis on Mondays?", "Is Ola playing tennis on Mondays?") }),
+    ];
+    const notScenes: LessonExerciseDraft[] = [
+      // Wskaźnik „teraz”, ale nie scenka: zwykłe „now” w bodźcu
+      draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Uzupełnij zdanie.", stem: "Tom ___ (run) now." }),
+      // Wykrzyknienie tylko w kluczu albo w opcji się nie liczy
+      draft({ exerciseType: "lesson_open_answer", objectiveId: more, instructionPl: "Przetłumacz.", prompt: "Tata gotuje obiad.", answer: "Look! Dad is cooking dinner." }),
+      // Wybór z luką
+      draft({ exerciseType: "lesson_choice", objectiveId: NOW_OR_USUALLY, instructionPl: "Wybierz formę.", stem: "Ola ___ a comic now.", ...options("is reading", "reads") }),
+      // Sprawdzenie znaczenia „now / usually”: bodziec bez luki, ale czas ustala forma czasownika
+      draft({ exerciseType: "lesson_choice", objectiveId: NOW_OR_USUALLY, instructionPl: "Kiedy to się dzieje?", stem: "Ola is reading a comic.", ...options("now", "usually") }),
+    ];
+    const stats = pcPoolStats([...scenes, ...notScenes], []);
+    expect(stats.comparisonAccepted).toBe(10);
+    expect(stats.sceneSharePolish).toBe(0.1);
+    expect(stats.sceneShare).toBe(0.6);
+  });
+
   it("pusta pula daje zera bez dzielenia przez zero", () => {
     const stats = pcPoolStats([], []);
-    expect(stats).toEqual({ sceneShare: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, ruleIdsByKind: {} });
+    expect(stats).toEqual({ sceneShare: 0, sceneSharePolish: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, ruleIdsByKind: {} });
   });
 });
 
@@ -88,7 +120,7 @@ describe("zrzut puli sondy", () => {
     const stats = pcPoolStats(dump.exercises!, dump.rejections!);
     console.log(
       JSON.stringify(
-        { exercises: dump.exercises!.length, rejections: dump.rejections!.length, ...stats, sceneShare: Number(stats.sceneShare.toFixed(3)), rejectionShareComparison: Number(stats.rejectionShareComparison.toFixed(3)) },
+        { exercises: dump.exercises!.length, rejections: dump.rejections!.length, ...stats, sceneShare: Number(stats.sceneShare.toFixed(3)), sceneSharePolish: Number(stats.sceneSharePolish.toFixed(3)), rejectionShareComparison: Number(stats.rejectionShareComparison.toFixed(3)) },
         null,
         2,
       ),
