@@ -61,6 +61,29 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
     expect(rawShapeIssues(raw).map((issue) => [issue.rule, issue.field, issue.found])).toEqual([["shape.record", field, found]]);
   });
 
+  it("brak exerciseType: bez shape.answer (typ decyduje, czy odpowiedź liczy kod), z typem wskazanym przez pola", () => {
+    // Przebieg kontrolny 2026-11-06: pary i grupy bez typu dostawały też „answer: expected a string”,
+    // więc model dopisywał `answer` do typów, których odpowiedź liczy kod.
+    const match = { objectiveId: "o", instructionPl: "Połącz.", pairs: [{ left: "a", right: "b" }], extraRight: [] };
+    expect(rawShapeIssues(match).map((issue) => [issue.rule, issue.field, issue.found])).toEqual([[
+      "shape.record",
+      "exerciseType",
+      'expected a string, got nothing; the fields pairs, extraRight belong to lesson_match, so send "exerciseType": "lesson_match"',
+    ]]);
+    const group = { objectiveId: "o", groups: [{ id: "g", label: "G" }], groupItems: [{ text: "x", groupId: "g" }], sourceRefs: null };
+    expect(rawShapeIssues(group)[0]!.found).toContain('so send "exerciseType": "lesson_group"');
+    expect(rawShapeIssues({ ...CHOICE, exerciseType: null, items: [{ id: "a", text: "x" }], options: null })[0]!.found)
+      .toContain('"exerciseType": "lesson_order"');
+    expect(rawShapeIssues({ objectiveId: "o", calculation: { kind: "x" } })[0]!.found).toContain('"exerciseType": "lesson_calculation"');
+  });
+
+  it("brak exerciseType bez jednoznacznych pól: komunikat bez wskazania typu", () => {
+    const { exerciseType: _type, ...untyped } = CHOICE;
+    expect(rawShapeIssues(untyped).map((issue) => [issue.rule, issue.found])).toEqual([["shape.record", "expected a string, got nothing"]]);
+    // Pola dwóch typów naraz: wskazanie byłoby zgadywaniem.
+    expect(rawShapeIssues({ objectiveId: "o", pairs: [], groups: [] })[0]!.found).toBe("expected a string, got nothing");
+  });
+
   it("shape.answer i shape.text_field: napis albo null", () => {
     expect(onlyIssue({ answer: null })).toEqual({ rule: "shape.answer", field: "answer", found: "expected a string, got null" });
     expect(onlyIssue({ stem: 5 })).toEqual({

@@ -170,8 +170,9 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_open_answer"],
     priority: "hint",
     description:
-      "A lesson_open_answer may get a short hint that says where in the material to look or what to think about; the " +
-      "hint never names or describes the answer, even indirectly (leave it null when no such hint exists). The hint is " +
+      "Give each lesson_open_answer a short hint whenever the material allows a safe one: it says where in the material " +
+      "to look (what that part is about, in the question's words) or what to think about; the hint never names or " +
+      "describes the answer, even indirectly, and stays null only when no such hint exists. The hint is " +
       "removed (the exercise stays) when it shares words, in any word form, with the answer, an accepted variant or a " +
       "required element: with one or two content words in such a text it may not contain all of them, with three or " +
       "more it must contain fewer than half. Words that also appear in the question and function words do not count.",

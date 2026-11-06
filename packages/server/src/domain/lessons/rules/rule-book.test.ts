@@ -220,7 +220,7 @@ describe("księga reguł — przykłady kolejności", () => {
  */
 const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; readonly phrase: string; readonly subjects?: readonly string[] }[] = [
   // Przegląd końcowy (I3, M1): podpowiedź opcjonalna, nigdy nie opisuje odpowiedzi, próg słów bez „rounded up”.
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "may get a short hint" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "short hint whenever the material allows a safe one" },
   { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "never names or describes the answer, even indirectly" },
   { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "it must contain fewer than half" },
   { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "Words that also appear in the question" },

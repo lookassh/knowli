@@ -169,6 +169,33 @@ export function textFieldIssues(record: Readonly<Record<string, unknown>>, field
   })];
 }
 
+/**
+ * Pola, które ma tylko jeden typ ćwiczenia. Przebieg kontrolny 2026-11-06: pary i grupy często
+ * przychodziły bez `exerciseType`, a typ wynikał jednoznacznie z pól — komunikat go wskazuje.
+ */
+const TYPE_BY_FIELD: Readonly<Record<string, string>> = {
+  pairs: "lesson_match",
+  extraRight: "lesson_match",
+  groups: "lesson_group",
+  groupItems: "lesson_group",
+  clozeText: "lesson_cloze",
+  gapAnswers: "lesson_cloze",
+  extraWords: "lesson_cloze",
+  keywordOptions: "lesson_keywords",
+  keyOptionIds: "lesson_keywords",
+  calculation: "lesson_calculation",
+  items: "lesson_order",
+  noticeSegments: "lesson_notice",
+};
+
+/** Dopisek do braku typu: typ, do którego należą pola rekordu, gdy jest dokładnie jeden. */
+function typeHint(record: Readonly<Record<string, unknown>>): string {
+  const fields = Object.keys(TYPE_BY_FIELD).filter((field) => record[field] !== null && record[field] !== undefined);
+  const types = [...new Set(fields.map((field) => TYPE_BY_FIELD[field]))];
+  if (types.length !== 1) return "";
+  return `; the fields ${fields.join(", ")} belong to ${types[0]}, so send "exerciseType": "${types[0]}"`;
+}
+
 /** Zgłoszenia `shape.record`: rekord nie jest obiektem albo `exerciseType`/`objectiveId` nie są napisami. */
 export function rawRecordIssues(raw: unknown): LessonRuleIssue[] {
   if (!isObject(raw)) {
@@ -183,21 +210,22 @@ export function rawRecordIssues(raw: unknown): LessonRuleIssue[] {
       : [shapeIssue("shape.record", {
         field,
         pl: `${field}: wymagany napis`,
-        found: `expected a string, got ${kindOf(raw[field])}`,
+        found: `expected a string, got ${kindOf(raw[field])}${field === "exerciseType" ? typeHint(raw) : ""}`,
       })],
   );
 }
 
 /**
  * Zgłoszenia kształtu rekordu agenta (po materializacji): `shape.record`, potem
- * `answer`, pola tekstowe, listy (`RAW_LIST_FIELDS`) i `calculation`. Pusta lista =
+ * `answer` (tylko przy napisie `exerciseType`), pola tekstowe, listy (`RAW_LIST_FIELDS`) i `calculation`. Pusta lista =
  * `toExerciseDraft` niczego nie zgubi po cichu; treść sprawdza walidacja ćwiczenia.
  */
 export function rawShapeIssues(raw: unknown): LessonRuleIssue[] {
   const recordIssues = rawRecordIssues(raw);
   if (!isObject(raw)) return recordIssues;
   const issues = [...recordIssues];
-  if (typeof raw.answer !== "string") {
+  // Bez typu nie wiadomo, czy odpowiedź podaje model, czy liczy ją kod (materializacja pomija rekord).
+  if (typeof raw.exerciseType === "string" && typeof raw.answer !== "string") {
     issues.push(shapeIssue("shape.answer", {
       pl: "answer: odpowiedź musi być napisem",
       found: `expected a string, got ${kindOf(raw.answer)}`,

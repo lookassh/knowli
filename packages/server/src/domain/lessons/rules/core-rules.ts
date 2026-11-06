@@ -135,7 +135,10 @@ export const CORE_RULES = {
     field: "exercise",
     kind: "reject",
     promptBrief: true,
-    description: "Each exercise is a JSON object whose exerciseType and objectiveId are strings.",
+    description:
+      "Each exercise is a JSON object whose exerciseType and objectiveId are strings. Every record names its type in " +
+      "exerciseType, also lesson_match, lesson_group, lesson_cloze, lesson_keywords and lesson_calculation, whose answer " +
+      "the code computes.",
   },
   "shape.objective_id": {
     field: "objectiveId",
