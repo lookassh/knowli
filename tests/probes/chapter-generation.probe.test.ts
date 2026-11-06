@@ -337,9 +337,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     // Wysłane ćwiczenia z odpowiedzią walidacji (przyczyny odrzuceń nie trafiają do punktu kontrolnego) — tylko do pliku wyników.
     const submissions: AgentSubmission[] = [];
+    // Etykieta bieżącego runu (`main`, potem `add` dla „+N”): wysłane ćwiczenia i wiersze dziennika są nią znakowane, a miary liczone osobno per run.
+    let currentRun = "main";
     const services = createServices({
       db: testDatabase().db,
-      generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions) } },
+      generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions, () => currentRun) } },
     });
 
     const titleOf = { chapter: "Angielski — rozdział", school: "szkoła (Geografia)", grammar: "Angielski — gramatyka (Present Simple)" } as const;
@@ -351,11 +353,13 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     // Wiersze dzienników generacji (mogą nieść kody i liczby, a w błędach — szczegóły) tylko do pliku wyników, nie na konsolę.
     const lessonLog: string[] = [];
+    const lessonLogByRun: Record<string, string[]> = {};
     const original = { log: console.log, warn: console.warn, error: console.error };
     const capture = (write: (...args: unknown[]) => void) => (...args: unknown[]) => {
       const text = args.map(String).join(" ");
       if (LOG_PREFIXES.some((prefix) => text.startsWith(prefix))) {
         lessonLog.push(text);
+        (lessonLogByRun[currentRun] ??= []).push(text);
         return;
       }
       write(...args);
@@ -450,8 +454,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     const started = Date.now();
     const resultsPath = join(outDir, `chapter-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);
-    // Kody odrzuceń runu z punktu kontrolnego (wynik narzędzia ich nie niesie); uzupełniane po runie.
-    let rejectionCodes: Record<string, number> = {};
+    /** Miary jednego runu: wysłane ćwiczenia, kody odrzuceń z dziennika i liczniki oczyszczeń tego runu. */
+    const runMetrics = (run: string) => ({
+      ...submissionMetrics(submissions.filter((entry) => entry.run === run), lessonLogByRun[run] ?? []),
+      cleanup: cleanupCounters(lessonLogByRun[run] ?? []),
+    });
     /** Części pliku wyników liczone przy każdym zapisie: koszt (per operacja i per run), tokeny, dziennik generacji, miary przebiegu. */
     const liveParts = (): Record<string, unknown> => ({
       costUsd: {
@@ -464,8 +471,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
       },
       lessonLog: lessonLog.map((text) => text.replace(/run=[0-9a-f-]+ /u, "")),
-      submissionMetrics: submissionMetrics(submissions, rejectionCodes),
-      cleanupCounters: cleanupCounters(lessonLog),
+      submissionMetrics: { main: runMetrics("main"), ...(currentRun === "main" ? {} : { [currentRun]: runMetrics(currentRun) }) },
       agentSubmissions: submissions,
     });
     /** Plik wyników: wspólna część (wejście, modele, szacunek) i stan przebiegu; koszt i dziennik dokłada zapis. */
@@ -529,7 +535,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       line(`Przebieg: stan=${run.state}${run.errorCode ? ` kod=${run.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(1)} s; ` +
         `próby=${main.attempts}, oczekiwanie kolejki=${(main.waitedMs / 1000).toFixed(1)} s`);
       const agentSummary = await agentRunSummary(runId);
-      rejectionCodes = (agentSummary?.rejectionCodes ?? {}) as Record<string, number>;
       if (agentSummary !== null) {
         line(`Agent: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}; ` +
           `kontrole ${JSON.stringify(agentSummary.checkCounters)}`);
@@ -554,11 +559,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         line("Brak szkicu po generacji — nie ma co raportować.");
         return;
       }
-      const metrics = submissionMetrics(submissions, rejectionCodes);
-      const cleanup = cleanupCounters(lessonLog);
+      const { cleanup, ...metrics } = runMetrics("main");
+      // Miary „N/M”: suma liczników / liczba różnych kluczy (kodów, id reguł); same liczby, rozbicie per klucz tylko w pliku wyników.
       const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0);
-      line(`Dziennik generacji: wierszy=${lessonLog.length} wysłane=${metrics.submitted} przyjęte=${metrics.accepted} przyjęte1=${metrics.acceptedFirstCall} wywołania=${metrics.submitCalls} ` +
-        `odrzucone: kody=${total(metrics.rejectedByCode)}/${Object.keys(metrics.rejectedByCode).length} reguły=${total(metrics.rejectedByRule)}/${Object.keys(metrics.rejectedByRule).length} ` +
+      line(`Dziennik generacji: wierszy=${lessonLog.length} wysłane=${metrics.submitted} przyjęte=${metrics.accepted} odrzucone=${metrics.submitted - metrics.accepted} przyjęte1=${metrics.acceptedFirstCall} wywołania=${metrics.submitCalls} ` +
+        `kody odrzuceń=${total(metrics.rejectedByCode)}/${Object.keys(metrics.rejectedByCode).length} reguły=${total(metrics.rejectedByRule)}/${Object.keys(metrics.rejectedByRule).length} ` +
         `noty=${total(metrics.acceptedWithNotes)}/${Object.keys(metrics.acceptedWithNotes).length} otwarte=${metrics.openAnswers} zPodpowiedzią=${metrics.openAnswersWithHint} ` +
         `oczyszczenia: podpowiedzi=${cleanup.hintsRemoved} warianty=${cleanup.variantsRemoved} cytaty=${cleanup.quotesSnapped}`);
       results.draft = reportDraft(draft);
@@ -590,6 +595,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         if (objectiveId === undefined) throw new Error("Szkic bez zagadnień — „+N” niemożliwe");
         const before = draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length;
         assertWithinCostCap(readCostLedger(costsPath), runBudgetUsd, `„+${addCount}”`);
+        currentRun = "add";
         const addProbe = `${costEntry.probe}:add`;
         const addProvisionalId = appendProvisionalCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: addProbe, costUsd: runBudgetUsd });
         const addStarted = Date.now();
