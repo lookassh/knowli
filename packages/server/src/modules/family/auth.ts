@@ -86,8 +86,15 @@ class LoginLimiter {
     this.failures.set(key, recent);
   }
 
-  reset(key: string): void {
-    this.failures.delete(key);
+  /** Udana próba: znane urządzenie zeruje swój kubełek, wspólny traci tylko tę rezerwację. */
+  succeed(key: string, clockNow: Date): void {
+    if (key) {
+      this.failures.delete(key);
+      return;
+    }
+    const recent = this.failures.get(key) ?? [];
+    const index = recent.lastIndexOf(clockNow.getTime());
+    if (index !== -1) recent.splice(index, 1);
   }
 }
 
@@ -169,12 +176,14 @@ export async function loginParent(
   const limiter = limiterFor(services);
   const deviceId = knownDeviceId(deviceToken, credentials.passwordHash);
   const bucket = deviceId ?? "";
-  limiter.reserve(bucket, services.clock.now());
+  const attemptAt = services.clock.now();
+  limiter.reserve(bucket, attemptAt);
   if (!(await verifySecret(secret, credentials.passwordHash))) {
     throw new AppError("invalid_credentials");
   }
 
-  limiter.reset(bucket);
+  // wspólnego kubełka nie zerujemy: logowanie rodzica na nowym urządzeniu nie daje obcym nowych prób
+  limiter.succeed(bucket, attemptAt);
   const device = deviceId ?? randomBytes(16).toString("base64url");
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
