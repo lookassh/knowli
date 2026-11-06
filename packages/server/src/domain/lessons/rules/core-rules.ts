@@ -31,7 +31,8 @@ import {
   MIN_REQUIRED_ELEMENTS,
   MIN_SOURCE_REFS,
 } from "@learning/contracts";
-import type { RuleCatalog } from "./catalog";
+import type { LessonExerciseType } from "../types";
+import type { LessonRule, RuleCatalog } from "./catalog";
 import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
   GAP_MARKER,
@@ -47,14 +48,25 @@ import {
 
 /**
  * Katalog reguł rdzenia (spec katalogu reguł §2.2): kontrakt, kształt rekordu
- * agenta, pola wspólne i reguły typów z `pool-validation.ts`, rachunki,
- * `explanationPl`. Kształt rekordu agenta dochodzi w Task 5.
+ * agenta (`raw-shape.ts`, `raw-materialize.ts`), pola wspólne i reguły typów z
+ * `pool-validation.ts`, rachunki, `explanationPl`.
  *
  * Bez importu wartości z `./catalog` (cykl przez `ENGINE_CATALOGS`): katalog
  * deklaruje się przez `satisfies RuleCatalog`, a id sprawdza `defineRules`
  * przy składaniu `ENGINE_CATALOGS`. Liczby w opisach biorą się ze stałych
  * kontraktu albo `./limits`.
  */
+
+/** Reguła kształtu pola listowego rekordu agenta (wpis `RAW_LIST_FIELDS` w `raw-shape.ts`). */
+function listShapeRule(field: string, items: string, types?: readonly LessonExerciseType[]): LessonRule {
+  return {
+    field,
+    kind: "reject",
+    ...(types === undefined ? {} : { types }),
+    description: `${field}, when present, is a list of ${items}; null means the field is absent.`,
+  };
+}
+
 export const CORE_RULES = {
   // Kontrakt (Zod, spec §4.2). Odstępstwo od tabeli §4.2 (decyzja kontrolera,
   // Task 3): liczności list i długości odpowiedzi, które sprawdza też własna
@@ -97,6 +109,55 @@ export const CORE_RULES = {
       "Every field has the type and the allowed values of the tool schema (enums such as questionType and expectedForm " +
       "take only the listed values), and the exercise has no fields outside the schema.",
   },
+
+  // Kształt surowego rekordu agenta (`raw-shape.ts`, spec §4.3): przed
+  // materializacją i kontraktem, tylko ścieżka agenta. Listy: `RAW_LIST_FIELDS`.
+  "shape.record": {
+    field: "exercise",
+    kind: "reject",
+    description: "Each exercise is a JSON object whose exerciseType and objectiveId are strings.",
+  },
+  "shape.objective_id": {
+    field: "objectiveId",
+    kind: "reject",
+    description: "Submit only exercises of your own objective: objectiveId is exactly the id of the objective you work on.",
+  },
+  "shape.answer": {
+    field: "answer",
+    kind: "reject",
+    description:
+      "answer is a string in every exercise type except lesson_calculation, lesson_keywords, lesson_match, lesson_group " +
+      "and lesson_cloze, whose answer the code computes.",
+  },
+  "shape.text_field": {
+    field: "exercise",
+    kind: "reject",
+    description:
+      "Text fields (instructionPl, stem, statement, prompt, hint, transformId, correctOption, clozeText, questionType, " +
+      "expectedForm, familyId, visualSubject) are strings, or null when they do not apply.",
+  },
+  "shape.calculation": {
+    field: "calculation",
+    kind: "reject",
+    description: "calculation, when present, is an object {kind, unit, params, templateFamilyId}.",
+  },
+  "shape.accepted_answers": listShapeRule("acceptedAnswers", "strings"),
+  "shape.focus": listShapeRule("focus", "strings"),
+  "shape.options": listShapeRule("options", "objects {id, text}"),
+  "shape.items": listShapeRule("items", "objects {id, text}"),
+  "shape.keyword_options": listShapeRule("keywordOptions", "objects {id, text}", ["lesson_keywords"]),
+  "shape.key_option_ids": listShapeRule("keyOptionIds", "strings", ["lesson_keywords"]),
+  "shape.notice_segments": listShapeRule("noticeSegments", "lists of strings"),
+  "shape.pairs": listShapeRule("pairs", "objects {left, right}", ["lesson_match"]),
+  "shape.extra_right": listShapeRule("extraRight", "strings", ["lesson_match"]),
+  "shape.groups": listShapeRule("groups", "objects {id, label}", ["lesson_group"]),
+  "shape.group_items": listShapeRule("groupItems", "objects {text, groupId}", ["lesson_group"]),
+  "shape.gap_answers": listShapeRule("gapAnswers", "strings", ["lesson_cloze"]),
+  "shape.extra_words": listShapeRule("extraWords", "strings", ["lesson_cloze"]),
+  "shape.required_elements": listShapeRule("requiredElements", "objects {id, text}"),
+  "shape.supplementary_elements": listShapeRule("supplementaryElements", "strings"),
+  "shape.common_errors": listShapeRule("commonErrors", "strings"),
+  "shape.source_refs": listShapeRule("sourceRefs", "objects {quote}"),
 
   // Ćwiczenie jako całość.
   "exercise.card_not_allowed": {

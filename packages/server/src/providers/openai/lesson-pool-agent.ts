@@ -31,9 +31,6 @@ import type {
 } from "../../ports/ai";
 import { GenerationProviderError } from "../../ports/generation-error";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
-import { materializeGeneratedAssignments } from "../lesson-assignments";
-import { materializeGeneratedCalculations } from "../lesson-calculations";
-import { materializeGeneratedKeywords } from "../lesson-keywords";
 import {
   recordHttpError,
   recordResponse,
@@ -52,8 +49,8 @@ import { lessonSystemPrompt, lessonUserMaterial } from "./llm";
  * produkcyjny z `ai` i `@openrouter/*` (pilnuje `tests/ai-sdk-scope.test.ts`); osiągalny tylko
  * przez składanie agenta w workerze.
  *
- * Adaptery nie mają reguł: surowe rekordy materializują (`materializeRawExercises`) i oddają
- * narzędziom kierownika, który waliduje wszystko. Mówią wyłącznie z OpenRouter, z kluczem z
+ * Adaptery nie mają reguł: surowe rekordy oddają bez zmian narzędziom kierownika, które je
+ * materializują (`materializeRawExercise` w domenie) i walidują. Mówią wyłącznie z OpenRouter, z kluczem z
  * opcji (biblioteka nie czyta env). `maxRetries: 0` — jedno wywołanie modelu to jedno żądanie
  * HTTP, a przejściowy błąd ponawia run, nie SDK.
  *
@@ -408,11 +405,6 @@ function submitSchema(input: LessonObjectiveAgentInput) {
   } as Parameters<typeof jsonSchema>[0]);
 }
 
-/** Materializacja surowych rekordów modelu przed `submit`: rachunki, słowa kluczowe, pary/grupy/luki (kod liczy odpowiedź). */
-export function materializeRawExercises(raw: readonly unknown[]): unknown[] {
-  return materializeGeneratedAssignments(materializeGeneratedKeywords(materializeGeneratedCalculations([...raw])));
-}
-
 // ---------------------------------------------------------------------------------------------
 // Agent puli
 
@@ -443,10 +435,10 @@ export class AiSdkLessonPoolAgent implements LessonPoolAgentProvider {
       execute: (raw, options) =>
         guard.run(() => {
           const payload = raw as { exercises?: unknown; examples?: unknown };
-          const exercises = Array.isArray(payload.exercises) ? materializeRawExercises(payload.exercises) : payload.exercises;
+          // Surowe rekordy bez zmian: materializację, kształt i reguły robią narzędzia kierownika.
           return untilAborted(
             tools.submit({
-              exercises: exercises as unknown[],
+              exercises: payload.exercises as unknown[],
               ...(Array.isArray(payload.examples) ? { examples: payload.examples as unknown[] } : {}),
             }),
             options.abortSignal,

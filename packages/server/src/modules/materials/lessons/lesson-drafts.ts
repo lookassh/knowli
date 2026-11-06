@@ -33,6 +33,7 @@ import {
 } from "../../../domain/lessons/lesson-policy";
 import { materialCreationMode } from "../../../domain/lessons/material-creation";
 import { keywordsAnswer } from "../../../domain/lessons/pool-validation";
+import { hasLenientRawShape } from "../../../domain/lessons/raw-shape";
 import { withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
 import { messagesOf } from "../../../domain/lessons/rules/catalog";
 import {
@@ -854,62 +855,15 @@ export function lessonPayloadVersion(ex: LessonExerciseDraft, subject: SubjectMo
     : 2;
 }
 /**
- * Schemat KSZTAŁTU surowego ćwiczenia z portu (nie semantyki). Chroni dalszą
- * walidację semantyczną (`validatePool`) przed rekordami, których tablice mają
- * zły typ elementów (np. `options=[null,{…}]`) — bez tego `validateOptions`
- * dereferencuje `null.text` i rzuca `TypeError`, wywracając cały run zamiast
- * odrzucić jeden rekord (wymóg 2.5). Sprawdzamy tylko to, co faza semantyczna
- * dereferencuje: elementy `options`/`items` muszą być `{id,text}`, a
- * `noticeSegments` musi być tablicą tablic napisów. Pozostałe pola pozostają
- * domeną `validateLessonExercise`. `passthrough` — nie odrzucamy pól dodatkowych.
- *
- * Pola opcjonalne są `nullish`, bo structured outputs (json_schema strict)
- * zwraca KAŻDE pole schematu, z `null` dla nie dotyczących typu — brak pola
- * i jawny `null` muszą przejść tak samo (`toExerciseDraft` nulla pomija).
- */
-const optionShapeSchema = z.object({ id: z.string(), text: z.string() }).passthrough();
-const rawExerciseShapeSchema = z
-  .object({
-    exerciseType: z.string(),
-    objectiveId: z.string(),
-    answer: z.string(),
-    acceptedAnswers: z.array(z.string()).nullish(),
-    focus: z.array(z.string()).nullish(),
-    instructionPl: z.string().nullish(),
-    stem: z.string().nullish(),
-    statement: z.string().nullish(),
-    prompt: z.string().nullish(),
-    hint: z.string().nullish(),
-    // `explanationPl` celowo poza strażnikiem: zły typ znaczy „brak wyjaśnienia”
-    // (`sanitizedExplanation`), nie odrzucenie całego ćwiczenia.
-    transformId: z.string().nullish(),
-    correctOption: z.string().nullish(),
-    options: z.array(optionShapeSchema).nullish(),
-    items: z.array(optionShapeSchema).nullish(),
-    keywordOptions: z.array(optionShapeSchema).nullish(),
-    keyOptionIds: z.array(z.string()).nullish(),
-    noticeSegments: z.array(z.array(z.string())).nullish(),
-    pairs: z.array(z.object({ left: z.string(), right: z.string() }).passthrough()).nullish(),
-    extraRight: z.array(z.string()).nullish(),
-    groups: z.array(z.object({ id: z.string(), label: z.string() }).passthrough()).nullish(),
-    groupItems: z.array(z.object({ text: z.string(), groupId: z.string() }).passthrough()).nullish(),
-    clozeText: z.string().nullish(),
-    gapAnswers: z.array(z.string()).nullish(),
-    extraWords: z.array(z.string()).nullish(),
-  })
-  .passthrough();
-
-/**
- * Czy surowy obiekt ma bezpieczny KSZTAŁT do walidacji semantycznej. Rekord o
- * złym kształcie jest odrzucany (liczony do `rejectedCount`), nie rzuca. Nie
- * maskuje realnych błędów treści — sprawdza wyłącznie kształt pól tablicowych,
- * które faza semantyczna dereferencuje.
+ * Czy surowy obiekt ma bezpieczny KSZTAŁT do walidacji semantycznej (łagodny
+ * strażnik punktu kontrolnego, dzisiejsza semantyka — `hasLenientRawShape` w
+ * domenie). Rekord o złym kształcie jest odrzucany (liczony do `rejectedCount`),
+ * nie rzuca. Nie maskuje realnych błędów treści — sprawdza wyłącznie kształt pól,
+ * które faza semantyczna dereferencuje. Ścieżka agenta ze zgłoszeniami reguł:
+ * `rawShapeIssues` (`domain/lessons/raw-shape.ts`).
  */
 export function isWellShapedRawExercise(raw: unknown): boolean {
-  if (raw === null || typeof raw !== "object") {
-    return false;
-  }
-  return rawExerciseShapeSchema.safeParse(raw).success;
+  return hasLenientRawShape(raw);
 }
 
 /** Sanityzacja pól v3 surowego ćwiczenia: tylko poprawnie uformowane wpisy. */

@@ -18,6 +18,9 @@ import type { LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { validateSchoolVerdict, type SchoolVerdict } from "../../../domain/lessons/evaluate";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
+import { materializeRawExercise } from "../../../domain/lessons/raw-materialize";
+import { foreignObjectiveIssues, rawShapeIssues } from "../../../domain/lessons/raw-shape";
+import type { LessonRuleIssue } from "../../../domain/lessons/rules/catalog";
 import type { LessonExerciseDraft, LessonTopic, SchoolCriteria } from "../../../domain/lessons/types";
 import type {
   GraderInput,
@@ -37,7 +40,7 @@ import {
   type AgentCheckRun,
 } from "./lesson-agent-check-run";
 import { deadlineSignal, untilAborted, type Semaphore } from "./lesson-agent-timers";
-import { isWellShapedRawExercise, stripParentAddedFlags, toExerciseDraft } from "./lesson-drafts";
+import { stripParentAddedFlags, toExerciseDraft } from "./lesson-drafts";
 import { lessonGraderInput, lessonInstructionOf, schoolCriteriaOf } from "./lesson-grader-input";
 import type { LessonAgentPolicy, RunBudgetSink } from "./lesson-pool-agent-policy";
 import { sanitizeFreshLessonDraft } from "./lesson-pool-acceptance";
@@ -140,6 +143,15 @@ function rawExerciseType(raw: unknown): string {
   return typeof type === "string" ? type : "unknown";
 }
 
+/** Odrzucenie kształtu; do Task 7 `reasons` to `found ?? pl` każdego zgłoszenia. */
+function shapeRejection(
+  exerciseType: string,
+  code: "shape_malformed" | "shape_objective",
+  issues: readonly LessonRuleIssue[],
+): ParsedRecord {
+  return { ok: false, exerciseType, rejection: { kind: "shape", code, reasons: issues.map((issue) => issue.found ?? issue.pl) } };
+}
+
 function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -215,32 +227,19 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     };
   }
 
+  /**
+   * Surowy rekord → szkic (spec katalogu reguł §4.3): materializacja typów liczonych przez kod,
+   * kształt rekordu i zagadnienie. Zgłoszenia materializacji i kształtu mają kod `shape_malformed`,
+   * obce zagadnienie `shape_objective`.
+   */
   function parseRecord(raw: unknown): ParsedRecord {
-    if (!isWellShapedRawExercise(raw)) {
-      return {
-        ok: false,
-        exerciseType: rawExerciseType(raw),
-        rejection: {
-          kind: "shape",
-          code: "shape_malformed",
-          reasons: [
-            "the exercise record is malformed: exerciseType, objectiveId and answer must be strings, and list fields must be arrays of the expected objects",
-          ],
-        },
-      };
-    }
-    const draft = toExerciseDraft(raw);
-    if (draft.objectiveId !== objectiveId) {
-      return {
-        ok: false,
-        exerciseType: draft.exerciseType,
-        rejection: {
-          kind: "shape",
-          code: "shape_objective",
-          reasons: [`objectiveId must be "${objectiveId}" (this objective), not "${draft.objectiveId}"`],
-        },
-      };
-    }
+    const materialized = materializeRawExercise(raw);
+    if (!materialized.ok) return shapeRejection(materialized.exerciseType, "shape_malformed", materialized.issues);
+    const shapeIssues = rawShapeIssues(materialized.record);
+    if (shapeIssues.length > 0) return shapeRejection(rawExerciseType(raw), "shape_malformed", shapeIssues);
+    const draft = toExerciseDraft(materialized.record);
+    const foreign = foreignObjectiveIssues(draft.objectiveId, objectiveId);
+    if (foreign.length > 0) return shapeRejection(draft.exerciseType, "shape_objective", foreign);
     const sanitized = sanitizeFreshLessonDraft(draft, ctx.subject, args.familyScope).draft;
     return { ok: true, draft: stripParentAddedFlags([sanitized])[0]! };
   }

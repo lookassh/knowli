@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APICallError, InvalidToolInputError, JSONParseError, NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { messages } from "@learning/contracts";
 import type {
   LessonAgentToolOutcome,
   LessonObjectiveAgentInput,
@@ -26,7 +25,7 @@ import {
 /**
  * Testy produkcyjnego adaptera AI SDK agenta puli (issue #237, etap 1 §6.1, etap 2a §4 i §12):
  * model zastępuje `MockLanguageModelV4` z `ai/test` albo zaślepiony `fetch` — bez sieci i bez
- * kluczy. Sprawdza kontrakt adaptera: materializację przed `submit`, zatrzymanie po
+ * kluczy. Sprawdza kontrakt adaptera: surowe rekordy do `submit` bez zmian, zatrzymanie po
  * `shouldStop()`, koszt i zapis kosztów każdego żądania, przerwanie sygnałem, mapowanie błędów
  * na `GenerationProviderError`, opcje dostawcy, jawny klucz i host oraz wyniki checkera.
  */
@@ -93,7 +92,10 @@ const OUTCOME: LessonAgentToolOutcome = {
   complete: false,
 };
 
-/** Surowy rekord dopasowania z fałszywą odpowiedzią: materializacja składa ją z par. */
+/**
+ * Surowy rekord dopasowania z fałszywą odpowiedzią: adapter oddaje go bez zmian (materializację
+ * i odrzucenie robią narzędzia kierownika; testy w `domain/lessons/raw-materialize.test.ts`).
+ */
 const RAW_MATCH = {
   exerciseType: "lesson_match",
   objectiveId: "subject.topic.animals",
@@ -161,7 +163,7 @@ describe("objectiveInstructions (dopisek przepływu narzędzi)", () => {
 });
 
 describe("AiSdkLessonPoolAgent (MockLanguageModelV4, bez sieci)", () => {
-  it("materializuje surowe rekordy przed submit i kończy pętlę po kroku, gdy shouldStop() zwraca true", async () => {
+  it("oddaje surowe rekordy do submit bez materializacji i kończy pętlę po kroku, gdy shouldStop() zwraca true", async () => {
     const model = new MockLanguageModelV4({
       doGenerate: [toolCallResult("submit_exercises", { exercises: [RAW_MATCH], examples: ["I have a cat."] }), textResult("never reached")],
     });
@@ -175,31 +177,10 @@ describe("AiSdkLessonPoolAgent (MockLanguageModelV4, bez sieci)", () => {
     expect(model.doGenerateCalls).toHaveLength(1);
     expect(submitted).toHaveLength(1);
     expect(submitted[0]!.examples).toEqual(["I have a cat."]);
-    expect(submitted[0]!.exercises[0]).toMatchObject({ exerciseType: "lesson_match", answer: "cat, dog, cow", acceptedAnswers: [], focus: [] });
+    expect(submitted[0]!.exercises).toEqual([RAW_MATCH]);
     expect(cost.values).toEqual([0.01]);
     // Opcje dostawcy, bez ponowień SDK.
     expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: { reasoning: { effort: "low" } } });
-  });
-
-  it("rachunek: kod liczy odpowiedź i treść przed submit zamiast ufać polom modelu", async () => {
-    const material = "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.";
-    const calculation = {
-      exerciseType: "lesson_calculation",
-      objectiveId: "subject.topic.animals",
-      calculation: { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" },
-      sourceRefs: [{ quote: material }],
-    };
-    const injected = { ...calculation, answer: "999 km", prompt: "Nowe fakty geograficzne", focus: ["999"], acceptedAnswers: ["999"] };
-    const model = new MockLanguageModelV4({ doGenerate: [toolCallResult("submit_exercises", { exercises: [injected] }), textResult("never reached")] });
-    const { tools, submitted } = fakeTools([], { stopAfterSubmit: true });
-
-    await new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model }).runObjective(agentInput(), tools, recordingCost([]), new AbortController().signal);
-
-    expect(submitted[0]!.exercises[0]).toMatchObject({
-      ...calculation, answer: "750 m", focus: [], acceptedAnswers: [],
-      prompt: "Na mapie w skali 1:25 000 odcinek ma 3 cm. Oblicz odległość w terenie w m.",
-      instructionPl: messages.kid.lessonCalculationInstruction,
-    });
   });
 
   it("nie woła modelu, gdy zagadnienie jest zamknięte przed pierwszym krokiem", async () => {

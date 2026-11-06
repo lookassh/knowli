@@ -238,6 +238,44 @@ describe("submit — parsowanie i wynik dla modelu", () => {
     expect(tools.checker.solveCalls[0]!.items).toHaveLength(1);
   });
 
+  it("kształt: powody to found zgłoszeń shape.* (pole i otrzymany typ), kod shape_malformed; obce zagadnienie z found reguły", async () => {
+    const tools = setup();
+    const outcome = await tools.tools.submit({
+      exercises: [
+        { ...choice(A, 1), options: ["Warszawa"] },
+        { ...choice(A, 2), sourceRefs: [null], focus: "x" },
+        { exerciseType: "lesson_match", objectiveId: A, pairs: [["a", "b"]] },
+        choice(B, 3),
+      ],
+    });
+    expect(outcome.results).toEqual([
+      { index: 0, errors: ["options[0]: expected {id, text}, got a string"] },
+      { index: 1, errors: ["focus: expected a list of strings or null, got a string", "sourceRefs[0]: expected {quote}, got null"] },
+      { index: 2, errors: ["pairs[0]: expected {left, right}, got an array"] },
+      { index: 3, errors: [`objectiveId must be "${A}" (this objective), not "${B}"`] },
+    ]);
+    expect(tools.rejections.map((entry) => [entry.code, entry.exerciseType])).toEqual([
+      ["shape_malformed", "lesson_choice"],
+      ["shape_malformed", "lesson_choice"],
+      ["shape_malformed", "lesson_match"],
+      ["shape_objective", "lesson_choice"],
+    ]);
+    expect(tools.checker.solveCalls).toHaveLength(0);
+  });
+
+  it("surowy rekord typu liczonego przez kod materializuje się w narzędziach (adapter go nie zmienia)", async () => {
+    const tools = setup();
+    await tools.tools.submit({
+      exercises: [{
+        exerciseType: "lesson_match", objectiveId: A, instructionPl: "Połącz pojęcie z opisem.",
+        pairs: [{ left: "Mieszko I", right: "pierwszy władca" }, { left: "Bolesław", right: "pierwszy król" }, { left: "Dąbrówka", right: "żona Mieszka" }],
+        extraRight: [],
+      }],
+    });
+    // Odrzucenie lub przyjęcie zależy od reguł przedmiotu; kształt i materializacja przechodzą.
+    expect(tools.rejections.map((entry) => entry.code)).not.toContain("shape_malformed");
+  });
+
   it("examples: \"x\" → błąd przykładów; przykłady z planu są ignorowane z notą", async () => {
     const own = setup({ examplesFixed: false });
     const bad = await own.tools.submit({ exercises: [], examples: "x" as unknown as unknown[] });

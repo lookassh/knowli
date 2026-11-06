@@ -3,7 +3,8 @@ import { validateSubject } from "../../catalog-validation";
 import { createSubjectRegistry } from "../../registry";
 import { resolveLessonTopic, validateDynamicTopicData } from "../../topic-resolution";
 import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
-import { poolCoverage, validateLessonExercise, validatePool } from "../../pool-validation";
+import { poolCoverage, validateLessonExercise, validateLessonExerciseIssues, validatePool } from "../../pool-validation";
+import { materializeRawExercise } from "../../raw-materialize";
 import { renderCalculationPrompt, computeCalculationAnswer } from "../../calculation";
 import type { CalculationSpec } from "@learning/contracts";
 import { messagesOf, type LessonRuleIssue } from "../../rules/catalog";
@@ -67,6 +68,13 @@ describe("school calculation validation", () => {
     const invalid = { ...scale, kind: "unknown" } as unknown as CalculationSpec;
     expect(validateLessonExercise(calculationDraft(scale, { calculation: invalid }), schoolSubject, topic).some((error) => error.includes("calculation"))).toBe(true);
     expect(validateLessonExercise(calculationDraft(scale, { calculation: { ...scale, tolerance: 8 } }), schoolSubject, topic).some((error) => error.includes("calculation"))).toBe(true);
+  });
+  it("wstrzyknięty wynik rachunku przechodzi materializację bez zmian, a odrzuca go walidacja szkoły", () => {
+    // Gałąź rachunku w schemacie modelu nie ma `answer` ani `prompt`; rekord z nimi (fake, testy) jest gotowy.
+    const injected = calculationDraft(scale, { answer: "999 km", prompt: "Nowe fakty geograficzne" });
+    expect(materializeRawExercise(injected)).toEqual({ ok: true, record: injected });
+    const rules = validateLessonExerciseIssues(injected, schoolSubject, topic, { agent: true }).map((issue) => issue.rule);
+    expect(rules).toEqual(expect.arrayContaining(["school.calculation_answer_computed", "school.calculation_prompt_template"]));
   });
   it("rejects calculation parameters attached to another exercise type", () => {
     expect(validateLessonExercise(openDraft({ calculation: scale }), schoolSubject, topic).some((error) => error.includes("calculation"))).toBe(true);
