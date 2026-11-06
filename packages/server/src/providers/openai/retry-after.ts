@@ -6,8 +6,8 @@ export function retryAfterMs(raw: string | null | undefined, now = Date.now()): 
   const value = raw?.trim();
   if (!value) return undefined;
   if (/^\d+(\.\d+)?$/.test(value)) return Number(value) * 1_000;
-  // Data HTTP zawsze ma nazwy dnia i miesiąca; V8 czyta luźne liczby jak „-5” jako rok.
-  if (!/[a-z]/i.test(value)) return undefined;
+  // Wszystkie trzy formaty daty HTTP zaczynają się nazwą dnia i mają hh:mm:ss; bez tego V8 czyta „-5” albo „a 2030” jako rok.
+  if (!/^[a-z]+,? .*\d\d:\d\d:\d\d/i.test(value)) return undefined;
   const at = Date.parse(value);
   return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
 }
