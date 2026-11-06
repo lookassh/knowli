@@ -23,6 +23,13 @@ describe("sentenceCount", () => {
     expect(sentenceCount("Co?! Naprawdę...")).toBe(2);
   });
 
+  it("nie liczy wielokropka luki ramy w cudzysłowie jako końca zdania", () => {
+    expect(sentenceCount("Zdanie „There's a … in the …” mówi, gdzie jest przedmiot.")).toBe(1);
+    expect(sentenceCount('Zdanie "There is a ... in the ..." mówi, gdzie jest przedmiot.')).toBe(1);
+    expect(sentenceCount("Zdanie «There's a … in the …» mówi, gdzie jest przedmiot.")).toBe(1);
+    expect(sentenceCount("Zdanie „There's a … in the …” mówi, gdzie jest przedmiot. Pasuje tu sowa.")).toBe(2);
+  });
+
   it("nie dzieli na kropce w środku wyrazu lub liczby", () => {
     expect(sentenceCount("To kosztuje 3.5 zł.")).toBe(1);
   });

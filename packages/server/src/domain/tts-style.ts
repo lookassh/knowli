@@ -14,16 +14,21 @@ export type TtsStyle = TtsRoleStyle | LessonVoiceTone;
  */
 const ABBREVIATION_DOT = /(?<![\p{L}\d])(np|itp|itd|tzn|tzw|tj|m\.in|p\.n\.e|n\.e|r|w|ok|godz|dr|prof|tys|mln|mld|św|ul|ks)\.(?=\s)/giu;
 
+/** Fragment w cudzysłowie („…”, "…", «…»), w którym wielokropek oznacza lukę ramy, a nie koniec zdania. */
+const QUOTED = /„[^”]*”|"[^"]*"|«[^»]*»/g;
+
 /**
  * Liczba zdań w tekście nagrania (spec tonu TTS §4.3): po normalizacji odstępów zdanie to fragment
  * zakończony `.`, `!`, `?` lub `…` (albo końcem tekstu). Ciąg znaków kończących, np. „…?”, to jedna granica;
  * znak kończący liczy się, gdy po nim jest odstęp lub koniec tekstu (kropka w „3.5” ani w skrócie
- * „np.”, „itp.”, „m.in.” nie dzieli).
+ * „np.”, „itp.”, „m.in.” nie dzieli). Wielokropek wewnątrz cudzysłowu („There's a … in the …”) to luka ramy,
+ * nie koniec zdania.
  */
 export function sentenceCount(text: string): number {
   return text
     .replace(/\s+/g, " ")
     .trim()
+    .replace(QUOTED, (quoted) => quoted.replace(/…|\.{3}/g, "\uE001"))
     .replace(ABBREVIATION_DOT, "$1\uE000")
     .split(/[.!?…]+(?=\s|$)/)
     .filter((fragment) => /[^\s.!?…]/.test(fragment))
