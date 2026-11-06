@@ -1,4 +1,5 @@
 import type { CalculationSpec, LessonVoiceTone } from "@learning/contracts";
+import type { RuleCatalog } from "./rules/catalog";
 
 /**
  * Typy silnika lekcji (design „Przedmiot i katalog”, „Typy ćwiczeń i etapy”).
@@ -449,4 +450,10 @@ export interface SubjectModule {
   ): ReadonlyMap<number, readonly string[]>;
   /** Polityka agenta puli — każdy przedmiot jest generowany agentem. */
   readonly agentPolicy: SubjectAgentPolicy;
+  /**
+   * Katalog reguł przedmiotu (spec katalogu reguł §2.2): reguły jego walidatorów,
+   * haków puli i bramek. Id nie mogą kolidować z rdzeniem, lekcją ani innym
+   * przedmiotem (wspólny obiekt wpisu, np. fragment angielski, jest dozwolony).
+   */
+  readonly rules: RuleCatalog;
 }

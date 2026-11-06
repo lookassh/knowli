@@ -1,3 +1,4 @@
+import { MIN_SOURCE_QUOTE_LENGTH } from "@learning/contracts";
 import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { computeCalculationAnswer, renderCalculationPrompt } from "../../calculation";
 
@@ -156,8 +157,8 @@ export function validateSchoolPool(
     for (const ref of ex.sourceRefs ?? []) {
       if (ref.parentAdded === true) continue;
       const quote = normalizeForGrounding(ref.quote);
-      if (quote.length < 10) {
-        push(index, "sourceRefs: cytat za krótki, aby uziemiał ćwiczenie (min. 10 znaków)");
+      if (quote.length < MIN_SOURCE_QUOTE_LENGTH) {
+        push(index, `sourceRefs: cytat za krótki, aby uziemiał ćwiczenie (min. ${MIN_SOURCE_QUOTE_LENGTH} znaków)`);
       } else if (!materialNormalized.includes(quote)) {
         push(index, "sourceRefs: cytat nie występuje w materiale źródłowym");
       }

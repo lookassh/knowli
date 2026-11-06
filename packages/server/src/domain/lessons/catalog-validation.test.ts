@@ -1,8 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { validateSubject } from "./catalog-validation";
 import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "./subjects";
 import { historyLikeSubject } from "./testing/history-like-subject";
 import type { SubjectModule } from "./types";
+
+// Katalogi silnika z jedną regułą każdy — do testu kolizji id przedmiotu z rdzeniem
+// i lekcją (pozostałe testy pliku nie zależą od katalogów silnika).
+vi.mock("./rules/core-rules", () => ({
+  CORE_RULES: { "core.fixture": { field: "answer", kind: "reject", description: "Core fixture." } },
+}));
+vi.mock("./rules/lesson-rules", () => ({
+  LESSON_RULES: { "lesson.fixture": { field: "exercise", kind: "reject", description: "Lesson fixture." } },
+}));
 
 /** Rekurencyjnie zdejmuje `readonly` — do mutowalnych kopii testowych. */
 type DeepWritable<T> = T extends (...args: never[]) => unknown
@@ -13,8 +22,8 @@ type DeepWritable<T> = T extends (...args: never[]) => unknown
       ? { -readonly [K in keyof T]: DeepWritable<T[K]> }
       : T;
 
-/** Polityka agenta zostaje niezmienna (nie jest psuta w tych testach), reszta przedmiotu jest mutowalna. */
-type WritableSubject = DeepWritable<Omit<SubjectModule, "agentPolicy">> & Pick<SubjectModule, "agentPolicy">;
+/** Polityka agenta i katalog reguł zostają niezmienne (nie są psute głęboko w tych testach), reszta przedmiotu jest mutowalna. */
+type WritableSubject = DeepWritable<Omit<SubjectModule, "agentPolicy" | "rules">> & Pick<SubjectModule, "agentPolicy" | "rules">;
 
 /** Głęboko klonuje dane JSON (temat, cele) jako mutowalne. */
 function cloneData<T>(value: T): DeepWritable<T> {
@@ -217,5 +226,28 @@ describe("validateSubject — spójność opcji tworzenia z materiału", () => {
   it("przedmioty produkcyjne są spójne (rejestr się buduje)", () => {
     for (const subject of PRODUCTION_SUBJECTS) expect(validateSubject(subject), subject.id).toEqual([]);
     expect(() => createProductionSubjectRegistry()).not.toThrow();
+  });
+});
+
+describe("validateSubject — katalog reguł przedmiotu", () => {
+  const rule = { field: "answer", kind: "reject", description: "Subject fixture." } as const;
+  const ruleErrors = (candidate: SubjectModule) => validateSubject(candidate).filter((error) => error.includes("reguł"));
+
+  it("odrzuca przedmiot bez katalogu reguł", () => {
+    const withoutRules = { ...cloneSubject(), rules: undefined } as unknown as SubjectModule;
+    expect(ruleErrors(withoutRules)).toEqual(["Przedmiot: brak katalogu reguł (rules)"]);
+  });
+
+  it("odrzuca id reguły kolidujące z rdzeniem albo z lekcją", () => {
+    expect(ruleErrors({ ...cloneSubject(), rules: { "core.fixture": rule } })).toEqual([
+      "Przedmiot: id reguły „core.fixture” koliduje z katalogiem reguł silnika",
+    ]);
+    expect(ruleErrors({ ...cloneSubject(), rules: { "lesson.fixture": rule } })).toEqual([
+      "Przedmiot: id reguły „lesson.fixture” koliduje z katalogiem reguł silnika",
+    ]);
+  });
+
+  it("przyjmuje własne id reguł przedmiotu", () => {
+    expect(validateSubject({ ...cloneSubject(), rules: { "test_history.fixture": rule } })).toEqual([]);
   });
 });

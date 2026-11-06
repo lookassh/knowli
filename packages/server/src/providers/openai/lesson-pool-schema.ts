@@ -1,4 +1,4 @@
-import { LessonVoiceToneSchema } from "@learning/contracts";
+import { LessonVoiceToneSchema, MIN_SOURCE_QUOTE_LENGTH } from "@learning/contracts";
 import type { LessonPoolInput } from "../../ports/ai";
 
 const NON_POOL_EXERCISE_TYPES: ReadonlySet<string> = new Set(["lesson_card"]);
@@ -113,7 +113,7 @@ function calculationExerciseSchema(objectiveId: string): Record<string, unknown>
       branch("height_difference", { upperHeightM: parameter, lowerHeightM: parameter }),
       branch("unit_conversion", { value: nonnegative, fromUnit: units }),
     ] },
-    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) },
+    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: MIN_SOURCE_QUOTE_LENGTH, maxLength: 600 } }) },
   });
 }
 
@@ -134,14 +134,14 @@ function keywordsExerciseSchema(objectiveId: string): Record<string, unknown> {
       items: strictObject({ id: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1, maxLength: 40 } }),
     },
     keyOptionIds: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 1 } },
-    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } }) },
+    sourceRefs: { type: "array", minItems: 1, maxItems: 3, items: strictObject({ quote: { type: "string", minLength: MIN_SOURCE_QUOTE_LENGTH, maxLength: 600 } }) },
   });
 }
 
 const strictObject = (properties: Record<string, unknown>) => ({
   type: "object", additionalProperties: false, required: Object.keys(properties), properties,
 });
-const quoteItems = strictObject({ quote: { type: "string", minLength: 10, maxLength: 600 } });
+const quoteItems = strictObject({ quote: { type: "string", minLength: MIN_SOURCE_QUOTE_LENGTH, maxLength: 600 } });
 
 /**
  * Cytaty gałęzi pary/grupy/luki: przy uziemieniu 1–3 obowiązkowe, inaczej

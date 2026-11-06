@@ -20,6 +20,8 @@ import {
   MAX_LESSON_TEXT_LENGTH,
   MAX_MATCH_EXTRA,
   MAX_MATCH_PAIRS,
+  MAX_OPTIONS,
+  MAX_ORDER_ITEMS,
   MIN_CLOZE_EXTRA,
   MIN_CLOZE_GAPS,
   MIN_GROUP_ITEMS,
@@ -28,6 +30,8 @@ import {
   MIN_KEY_OPTIONS,
   MIN_KEYWORD_OPTIONS,
   MIN_MATCH_PAIRS,
+  MIN_OPTIONS,
+  MIN_ORDER_ITEMS,
 } from "@learning/contracts";
 import { clozeAnswer, clozeGapCount, clozeParts } from "./cloze";
 import { FEEDBACK_SENTENCE_MAX_LENGTH, feedbackSentenceText, fillGap } from "./feedback-sentence-text";
@@ -54,13 +58,8 @@ export const MAX_TEXT_LENGTH = MAX_LESSON_TEXT_LENGTH;
 /** Maksymalna liczba wariantów `acceptedAnswers`. */
 export const MAX_ACCEPTED_ANSWERS = 40;
 
-/** Zakres liczby elementów w `lesson_order`. */
-export const MIN_ORDER_ITEMS = 3;
-export const MAX_ORDER_ITEMS = 10;
-
-/** Zakres liczby opcji w typach z zamkniętym wyborem. */
-export const MIN_OPTIONS = 2;
-export const MAX_OPTIONS = 4;
+/** Zakresy liczby elementów `lesson_order` i opcji wyboru — limity z kontraktów. */
+export { MAX_OPTIONS, MAX_ORDER_ITEMS, MIN_OPTIONS, MIN_ORDER_ITEMS };
 
 /** `lesson_notice`: zakres liczby zdań i segmentów-słów na zdanie. */
 export const MIN_NOTICE_SENTENCES = 2;
