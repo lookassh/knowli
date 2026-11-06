@@ -182,9 +182,22 @@ function isTenseSwap({ wrong, right }: ErrorFixDiff): boolean {
 }
 
 /** Zła pisownia -ing (cel 5): forma błędna spoza tabeli, poprawna z tabeli, różnica kilku liter. */
-function isIngSpelling({ wrong, right }: ErrorFixDiff): boolean {
+function isIngSpelling({ wrong, right }: Pick<ErrorFixDiff, "wrong" | "right">): boolean {
   if (wrong.length !== 1 || right.length !== 1) return false;
   return !isIngFormInTable(wrong[0]!) && isIngFormInTable(right[0]!) && editDistance(wrong[0]!, right[0]!) <= MAX_ING_SPELLING_EDITS;
+}
+
+/**
+ * Czy opcja to klucz z błędnie zapisaną formą -ing (cel 5, wybór): po normalizacji różni się od klucza
+ * jednym tokenem, a ten jest jak w `error_fix` złą pisownią formy -ing klucza („is swiming” przy „is
+ * swimming”). Inna poprawna forma („is running”) albo inny czas to drugi poprawny wybór.
+ */
+export function isIngMisspellingOf(option: string, key: string): boolean {
+  const wrong = normalizeTokens(option);
+  const right = normalizeTokens(key);
+  if (wrong.length !== right.length) return false;
+  const differing = wrong.flatMap((token, i) => (token === right[i] ? [] : [i]));
+  return differing.length === 1 && isIngSpelling({ wrong: [wrong[differing[0]!]!], right: [right[differing[0]!]!] });
 }
 
 const ERROR_FIX_MATCHERS: Readonly<Record<ErrorFixKind, (diff: ErrorFixDiff) => boolean>> = {
@@ -271,50 +284,111 @@ function isNegative(text: string): boolean {
   return tenseTokens(text).includes("not");
 }
 
-/** Czy ostatnie zdanie tekstu to pytanie z inwersją: am/is/are (także isn't/aren't) albo What + am/is/are na początku i „?” na końcu. */
+/** Czy ostatnie zdanie tekstu to pytanie z inwersją: am/is/are (także isn't/aren't) na początku i „?” na końcu. */
 function isInvertedQuestion(text: string): boolean {
   if (!/\?\s*$/.test(text)) return false;
   const tokens = tenseTokens(text.trim().replace(/\?\s*$/, "").split(SENTENCE_BOUNDARY).at(-1) ?? "");
-  return BE_FORMS.has(tokens[0] ?? "") || (tokens[0] === "what" && BE_FORMS.has(tokens[1] ?? ""));
+  return BE_FORMS.has(tokens[0] ?? "");
+}
+
+/** Zdania tekstu jako tokeny po rozwinięciu skrótów be i do, bez pustych. */
+function sentenceTokensOf(text: string): string[][] {
+  return text.split(SENTENCE_BOUNDARY).map(tenseTokens).filter((tokens) => tokens.length > 0);
 }
 
 /**
- * Kształt przekształcenia (§3.1): `to_question` — zdanie wyjściowe nie jest
- * pytaniem, a każdy klucz to pytanie z inwersją („He is playing now.” → „Is he
- * playing now?”; ostatnie zdanie, więc „Look! Is Tom playing?” też); inaczej
- * klucz-twierdzenie oznaczyłby poprawne pytanie dziecka jako błąd.
- * `to_negative` / `to_affirmative` — zdanie wyjściowe ma przeciwną biegunowość
- * niż odpowiedź (biegunowość odpowiedzi sprawdza reguła be).
+ * Czy `negative` to `affirmative` z „not” po jednej formie am/is/are, a w celu 6 (`withSimple`)
+ * także z formą Present Simple zastąpioną do/does + not + formą podstawową („Tom plays” → „Tom
+ * does not play”). Zgodność do/does z podmiotem sprawdza reguła Present Simple.
  */
-export function validateTransformShape(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+function isNegationOf(affirmative: readonly string[], negative: readonly string[], withSimple: boolean): boolean {
+  const target = negative.join(" ");
+  return affirmative.some((token, i) => {
+    const replaced = (middle: readonly string[]): boolean => [...affirmative.slice(0, i), ...middle, ...affirmative.slice(i + 1)].join(" ") === target;
+    if (BE_FORMS.has(token)) return replaced([token, "not"]);
+    const base = withSimple ? presentSimpleBaseOf(token) : undefined;
+    return base !== undefined && (replaced(["does", "not", base]) || replaced(["do", "not", base]));
+  });
+}
+
+/** Czy `question` to `statement` z formą am/is/are ostatniego zdania przeniesioną na jego początek (wcześniejsze zdania bez zmian). */
+function isQuestionOf(statement: string, question: string): boolean {
+  const from = sentenceTokensOf(statement);
+  const to = sentenceTokensOf(question);
+  if (from.length === 0 || from.length !== to.length) return false;
+  if (from.slice(0, -1).some((tokens, i) => tokens.join(" ") !== to[i]!.join(" "))) return false;
+  const last = from.at(-1)!;
+  const target = to.at(-1)!.join(" ");
+  return last.some((token, i) => BE_FORMS.has(token) && [token, ...last.toSpliced(i, 1)].join(" ") === target);
+}
+
+/** Zgłoszenie: klucz przekształcenia nie powstaje ze zdania wyjściowego zamianą sprawdzanej formy. */
+function transformKeyIssue(field: string, text: string, statement: string, transformId: string): LessonRuleIssue {
+  return grammarIssue("grammar.pc_transform_key_statement", {
+    field,
+    pl:
+      transformId === "to_question"
+        ? `${field}: pytanie to zdanie wyjściowe z am/is/are przeniesionym na początek (He is playing now. → Is he playing now?), bez innych zmian`
+        : `${field}: odpowiedź to zdanie wyjściowe z dodanym albo usuniętym „not” po am/is/are (He is playing now. → He isn't playing now.), bez innych zmian`,
+    found: `${field} ${clip(text)} is not the statement ${clip(statement)} with only the checked form changed (${transformId})`,
+  });
+}
+
+/**
+ * Kształt przekształcenia (§3.1, fala 1 Task 19): `to_question` — zdanie wyjściowe jest twierdzeniem
+ * (nie pytaniem ani przeczeniem), a każdy klucz to pytanie z inwersją powstałe z niego przez
+ * przeniesienie am/is/are na początek ostatniego zdania („Look! Tom is playing.” → „Look! Is Tom
+ * playing?”; bez pytań z „What”). `to_negative` / `to_affirmative` — zdanie wyjściowe ma przeciwną
+ * biegunowość niż odpowiedź, a każdy klucz różni się od niego tylko „not” po am/is/are (w celu 6 także
+ * do/does + not + forma podstawowa w miejsce formy Present Simple); biegunowość odpowiedzi sprawdza reguła be.
+ */
+export function validateTransformShape(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   const statement = ex.statement;
   // Brak zdania wyjściowego zgłasza walidacja ogólna typu.
   if (statement === undefined || statement.trim() === "") return;
+  const keys = [{ field: "answer", text: ex.answer }, ...ex.acceptedAnswers.map((text) => ({ field: "acceptedAnswers", text }))];
   if (ex.transformId === "to_question") {
     if (/\?\s*$/.test(statement)) {
       errors.push(grammarIssue("grammar.pc_transform_statement_question", {
         pl: "statement: zdanie do zamiany na pytanie nie może być pytaniem",
         found: `statement ${clip(statement)} is already a question`,
       }));
+      return;
     }
-    const keys = [{ field: "answer", text: ex.answer }, ...ex.acceptedAnswers.map((text) => ({ field: "acceptedAnswers", text }))];
+    if (isNegative(statement)) {
+      errors.push(grammarIssue("grammar.pc_transform_question_negative", {
+        pl: "statement: zdanie do zamiany na pytanie jest twierdzeniem — z przeczenia powstają dwa pytania (Isn't she…? / Is she…?)",
+        found: `statement ${clip(statement)} is negated`,
+      }));
+      return;
+    }
     for (const { field, text } of keys) {
       if (!isInvertedQuestion(text)) {
         errors.push(grammarIssue("grammar.pc_transform_question_shape", {
           field,
-          pl: `${field}: pytanie zaczyna się od am/is/are (albo isn't/aren't) albo od What + am/is/are i kończy znakiem „?”`,
-          found: `${field} ${clip(text)} is not a question that starts with am/is/are or What + am/is/are and ends with ?`,
+          pl: `${field}: pytanie zaczyna się od am/is/are i kończy znakiem „?”`,
+          found: `${field} ${clip(text)} is not a question that starts with am/is/are and ends with ?`,
         }));
+      } else if (!isQuestionOf(statement, text)) {
+        errors.push(transformKeyIssue(field, text, statement, ex.transformId));
       }
     }
     return;
   }
   const direction = ex.transformId === "to_negative" ? "twierdzenie → przeczenie" : ex.transformId === "to_affirmative" ? "przeczenie → twierdzenie" : undefined;
-  if (direction !== undefined && isNegative(statement) === isNegative(ex.answer)) {
+  if (direction === undefined) return;
+  if (isNegative(statement) === isNegative(ex.answer)) {
     errors.push(grammarIssue("grammar.pc_transform_polarity", {
       pl: `statement: zdanie do przekształcenia ma przeciwną biegunowość niż odpowiedź (${ex.transformId}: ${direction})`,
       found: `statement ${clip(statement)} has the same polarity as the answer ${clip(ex.answer)} (${ex.transformId})`,
     }));
+    return;
+  }
+  const from = tenseTokens(statement);
+  for (const { field, text } of keys) {
+    const to = tenseTokens(text);
+    const tied = ex.transformId === "to_negative" ? isNegationOf(from, to, objective === "now_or_usually_more") : isNegationOf(to, from, objective === "now_or_usually_more");
+    if (!tied) errors.push(transformKeyIssue(field, text, statement, ex.transformId!));
   }
 }
 

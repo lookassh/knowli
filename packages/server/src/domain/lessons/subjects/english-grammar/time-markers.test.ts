@@ -170,3 +170,31 @@ describe("TIME_MARKER_LISTS", () => {
     expect(TIME_MARKER_LISTS.forbidden).toContain("tomorrow");
   });
 });
+
+describe("scanTimeMarkers — wskaźniki „teraz” i goły „now” (standard „Środek”, 2026-11-06)", () => {
+  const scan = (text: string, lang: "en" | "pl") => scanTimeMarkers(text, lang);
+
+  it("zwraca dopasowane wpisy listy „teraz”", () => {
+    expect(scan("She is reading right now.", "en").nowMarkers).toEqual(["now", "right now"]);
+    expect(scan("Look! Tom is running.", "en").nowMarkers).toEqual(["Look!"]);
+    expect(scan("Tom is playing every day.", "en").nowMarkers).toEqual([]);
+    expect(scan("Patrz! Ola teraz czyta.", "pl").nowMarkers).toEqual(["teraz", "Patrz!"]);
+  });
+
+  it("goły now, teraz, właśnie i akurat nie są mocnym wskaźnikiem; reszta listy jest", () => {
+    for (const [text, lang] of [["Tom is reading now.", "en"], ["Ola teraz czyta.", "pl"], ["Ola właśnie czyta.", "pl"], ["Ola akurat czyta.", "pl"]] as const) {
+      expect(scan(text, lang).strongNow, text).toBe(false);
+    }
+    for (const [text, lang] of [
+      ["Tom is reading right now.", "en"],
+      ["Tom is reading at the moment.", "en"],
+      ["Look! Tom is reading.", "en"],
+      ["Shh! The baby is sleeping now.", "en"],
+      ["Cicho! Dziadek śpi.", "pl"],
+      ["Ola w tej chwili czyta.", "pl"],
+      ["Gdzie jest tata?", "pl"],
+    ] as const) {
+      expect(scan(text, lang).strongNow, text).toBe(true);
+    }
+  });
+});

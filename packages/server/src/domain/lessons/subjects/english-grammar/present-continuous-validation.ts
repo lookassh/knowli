@@ -30,12 +30,14 @@ import {
   TRANSFORM_POLARITY,
   type BePolarity,
 } from "./be-agreement";
-import { validateErrorFix, validateListenChoiceOptions, validateNotice, validateTransformShape } from "./present-continuous-exercise-rules";
+import { isIngMisspellingOf, validateErrorFix, validateListenChoiceOptions, validateNotice, validateTransformShape } from "./present-continuous-exercise-rules";
 import {
   CLAUSE_CONJUNCTIONS,
+  gapContextTexts,
   ingBaseOf,
   isGapQuestion,
   isNowUsuallyChoice,
+  nowMarkerBareIssue,
   presentSimpleBaseOf,
   SENTENCE_BOUNDARY,
   TENSE_CHOICE_OBJECTIVES,
@@ -48,6 +50,7 @@ import {
   validatePresentSimpleGroup,
   validateTenseOfGroups,
   verbGroupsIn,
+  type FieldMarkers,
   type PresentSimpleContext,
   type TenseSentence,
 } from "./present-continuous-tense-choice";
@@ -202,6 +205,55 @@ function scannedFields(ex: LessonExerciseDraft): ScannedField[] {
   return fields;
 }
 
+/** Wskaźniki czasu pola (`scanTimeMarkers`, polecenie bez słów czasu przy poleceniu zadania). */
+function markersOf({ field, text, lang, instruction }: ScannedField): FieldMarkers & { readonly field: string } {
+  const { groups, strongNow } = scanTimeMarkers(text, lang, { instruction: instruction === true });
+  return { field, text, groups, strongNow };
+}
+
+/**
+ * Wskaźniki w tym, co dziecko widzi przed odpowiedzią (fala 1 Task 19): bodziec, zdanie, prompt,
+ * polecenie i zdania „Wskaż słowo”; klucz, warianty i pojedyncza opcja się nie liczą. W celach
+ * porównania bodziec z luką liczy się tylko w częściach dotyczących luki (`gapContextTexts`). Opcje
+ * liczą się razem, gdy każda ma wskaźnik tej samej grupy (wtedy dziecko widzi go w każdym wyborze).
+ */
+function seenMarkers(ex: LessonExerciseDraft, objective: string): (FieldMarkers & { readonly field: string })[] {
+  const fields: ScannedField[] = [];
+  const add = (field: string, text: string | undefined, lang: "en" | "pl"): void => {
+    if (text !== undefined && text.trim() !== "") fields.push({ field, text, lang, ...(field === "instructionPl" ? { instruction: true } : {}) });
+  };
+  const stem = ex.stem;
+  const gapContext = stem !== undefined && TENSE_CHOICE_OBJECTIVES.has(objective) && stem.includes("___");
+  for (const text of gapContext ? gapContextTexts(stem) : [stem]) add("stem", text, "en");
+  add("statement", ex.statement, "en");
+  for (const segments of ex.noticeSegments ?? []) add("noticeSegments", segments.join(" "), "en");
+  add("instructionPl", ex.instructionPl, "pl");
+  add("prompt", ex.prompt, ex.exerciseType === "lesson_open_answer" ? "pl" : "en");
+  const seen = fields.map(markersOf);
+  const options = (ex.options ?? []).map((option) => markersOf({ field: "options", text: option.text, lang: "en" }));
+  for (const group of ["now", "usually"] as const) {
+    if (options.length > 0 && options.every((scan) => scan.groups.has(group))) {
+      seen.push({
+        field: "options",
+        text: options.map((scan) => scan.text).join(" / "),
+        groups: new Set([group]),
+        strongNow: group === "now" && options.every((scan) => scan.strongNow),
+      });
+    }
+  }
+  return seen;
+}
+
+/**
+ * Przeczenie w ćwiczeniu (standard „Środek”, 2026-11-06): nawias (not verb), zanegowany klucz,
+ * wariant albo opcja, zanegowane zdanie z błędem albo zdanie wyjściowe przekształcenia.
+ */
+function isNegativeExercise(ex: LessonExerciseDraft): boolean {
+  if (ex.exerciseType === "lesson_gap" && ex.stem !== undefined && stripGapVerb(ex.stem).negative) return true;
+  return [ex.answer, ...ex.acceptedAnswers, ...(ex.options ?? []).map((option) => option.text), ex.statement ?? ""]
+    .some((text) => tenseTokens(text).includes("not"));
+}
+
 /** Bodziec z luką wypełnioną odpowiedzią (bez nawiasu z czasownikiem) albo sama odpowiedź. */
 function answerSentence(ex: LessonExerciseDraft, answer: string): string {
   const gapTypes = ex.exerciseType === "lesson_gap" || ex.exerciseType === "lesson_choice" || ex.exerciseType === "lesson_listen_choice";
@@ -268,13 +320,14 @@ function validateForbiddenMarkers(ex: LessonExerciseDraft, errors: LessonRuleIss
 }
 
 /**
- * Cele 1, 3, 4, 5: czy ćwiczenie dopuszcza też odpowiedź w Present Simple bez
+ * Cele 1, 3, 4, 5: czy ćwiczenie dopuszcza też odpowiedź w innym czasie bez
  * wskaźnika „teraz” — luka z czasownikiem, poprawianie błędu, przekształcenie
- * i wybór, którego opcja to poprawna forma Present Simple („Ola ___ a book.”:
- * is reading / reads). Luka na formę be, „Wskaż słowo”, „Posłuchaj i wybierz”,
- * kolejność i krótka odpowiedź mają formę be w zdaniu albo w opcjach.
+ * i wybór z opcjami innymi niż sama forma am/is/are („Ola ___ a book.”: is
+ * reading / reads / read; w celu 5 — wybór z opcją w Present Simple). Luka na
+ * formę be, „Wskaż słowo”, „Posłuchaj i wybierz”, kolejność i krótka odpowiedź
+ * mają formę be w zdaniu albo w opcjach.
  */
-function needsNowMarker(ex: LessonExerciseDraft): boolean {
+function needsNowMarker(ex: LessonExerciseDraft, objective: string): boolean {
   switch (ex.exerciseType) {
     case "lesson_gap":
       return ex.stem !== undefined && stripGapVerb(ex.stem).verb !== undefined;
@@ -282,7 +335,10 @@ function needsNowMarker(ex: LessonExerciseDraft): boolean {
     case "lesson_transform":
       return true;
     case "lesson_choice":
-      return (ex.options ?? []).some((option) => isWellFormedPresentSimpleOption(ex, option.text));
+      // Cel 5: dystraktory to błędna pisownia klucza (`validateIngSpellingDistractors`), więc czas ustala sam klucz.
+      return objective === "ing_spelling"
+        ? (ex.options ?? []).some((option) => isWellFormedPresentSimpleOption(ex, option.text))
+        : (ex.options ?? []).some((option) => parseBeOnly(option.text) === null);
     default:
       return false;
   }
@@ -319,13 +375,14 @@ function hasWhatDoingQuestion(text: string): boolean {
  * Cele 1, 3, 4, 5 (zasada §2.6 — jeden poprawny czas): wskaźnik „zwykle”
  * w którymkolwiek skanowanym polu odrzuca ćwiczenie („Tom ___ (play) football
  * every day.” → is playing to błędna angielszczyzna), a ćwiczenie, w którym
- * Present Simple też byłby poprawny (`needsNowMarker`), potrzebuje wskaźnika
- * „teraz” albo — w celu 4 — pytania „What … doing?”.
+ * inny czas też byłby poprawny (`needsNowMarker`), potrzebuje wskaźnika
+ * „teraz” w tym, co dziecko widzi przed odpowiedzią (`seenMarkers`), albo —
+ * w celu 4 — pytania „What … doing?”; przeczenie potrzebuje mocnego wskaźnika
+ * (`nowMarkerBareIssue`).
  */
 function validateNowContext(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   const fields = scannedFields(ex);
-  const scans = fields.map(({ field, text, lang, instruction }) => ({ field, text, groups: scanTimeMarkers(text, lang, { instruction: instruction === true }).groups }));
-  for (const { field, text, groups } of scans) {
+  for (const { field, text, groups } of fields.map(markersOf)) {
     if (groups.has("usually")) {
       errors.push(grammarIssue("grammar.pc_usually_marker", {
         field,
@@ -334,7 +391,12 @@ function validateNowContext(ex: LessonExerciseDraft, objective: string, errors: 
       }));
     }
   }
-  if (!needsNowMarker(ex) || scans.some(({ groups }) => groups.has("now"))) return;
+  if (!needsNowMarker(ex, objective)) return;
+  const now = seenMarkers(ex, objective).filter(({ groups }) => groups.has("now"));
+  if (now.length > 0) {
+    if (isNegativeExercise(ex) && !now.some(({ strongNow }) => strongNow)) errors.push(nowMarkerBareIssue(now[0]!.field, now[0]!.text));
+    return;
+  }
   if (objective === "questions") {
     const sentences = [...fields.filter(({ lang }) => lang === "en").map(({ text }) => text), ...answersOf(ex).map(({ text }) => wholeSentenceOf(ex, text))];
     if (sentences.some(hasWhatDoingQuestion)) return;
@@ -1085,6 +1147,54 @@ function validateBeChoiceDistractors(ex: LessonExerciseDraft, stem: string, erro
   }
 }
 
+/** Zgłoszenia, które nie czynią zdania błędnym: klasa pisowni -ing spoza celu dotyczy celu, nie angielszczyzny. */
+const NOT_WRONG_ENGLISH: ReadonlySet<string> = new Set(["grammar.pc_ing_rule_not_allowed"]);
+
+/**
+ * Wybór w celach 1, 3, 4 (fala 1 Task 19): każdy dystraktor (w luce — zdanie z nim) łamie regułę klucza
+ * (`validateSentenceAnswer`), ma wskaźnik „zwykle” albo zakazany, „going to” + czasownik albo czasownik
+ * stanu z -ing. Dystraktor bez żadnego z nich („Look! Tom is reading.” obok „Look! Ola is reading.”,
+ * „is drawing” obok „is reading” w „Ola ___ now.”) to druga poprawna odpowiedź. Samą formę am/is/are
+ * sprawdzają reguły luki na formę be (`validateBeChoiceDistractors`).
+ */
+function validateChoiceDistractors(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
+  if (ex.exerciseType !== "lesson_choice") return;
+  for (const option of ex.options ?? []) {
+    if (option.id === ex.correctOption || parseBeOnly(option.text) !== null) continue;
+    const optionErrors: LessonRuleIssue[] = [];
+    validateSentenceAnswer(ex, objective, option.text, "options", true, optionErrors);
+    const sentence = wholeSentenceOf(ex, option.text);
+    const markers = scanTimeMarkers(sentence, "en");
+    const wrong = optionErrors.some((issue) => !NOT_WRONG_ENGLISH.has(issue.rule)) || markers.groups.has("usually") ||
+      markers.forbidden.length > 0 || hasGoingToFuture(sentence) || stateVerbIn(sentence, "ing_form") !== undefined;
+    if (!wrong) {
+      errors.push(grammarIssue("grammar.pc_choice_distractor_correct", {
+        field: "options",
+        pl: `options: „${option.text}” też daje poprawne zdanie — dystraktor musi łamać regułę klucza`,
+        found: `option ${clip(option.text)} breaks no rule of the key, so it is a second correct answer`,
+      }));
+    }
+  }
+}
+
+/**
+ * Wybór w celu 5 (fala 1 Task 19): każdy dystraktor to klucz z błędnie zapisaną formą -ing
+ * (`isIngMisspellingOf`: „is swiming” przy „is swimming”). Inna poprawna forma z tabeli („is running”)
+ * albo inny czas byłyby drugą poprawną odpowiedzią.
+ */
+function validateIngSpellingDistractors(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  if (ex.exerciseType !== "lesson_choice") return;
+  const key = ex.options?.find((option) => option.id === ex.correctOption)?.text ?? ex.answer;
+  for (const option of ex.options ?? []) {
+    if (option.id === ex.correctOption || isIngMisspellingOf(option.text, key)) continue;
+    errors.push(grammarIssue("grammar.pc_ing_spelling_distractor", {
+      field: "options",
+      pl: `options: „${option.text}” nie jest błędną pisownią formy -ing z klucza „${key}” — w celu pisowni dystraktor to ta sama forma z błędem (swiming)`,
+      found: `option ${clip(option.text)} is not the key ${clip(key)} with its -ing form misspelt`,
+    }));
+  }
+}
+
 /** Całe zdania (choice, order, short_answer, transform, open_answer; §6.3, §5.4). */
 function validateSentences(ex: LessonExerciseDraft, objective: string, errors: LessonRuleIssue[]): void {
   const pcObjective = PC_FORM_OBJECTIVES.has(objective);
@@ -1106,19 +1216,73 @@ function validateSentences(ex: LessonExerciseDraft, objective: string, errors: L
   }
   if (!pcObjective) return;
   if (gapStem !== undefined) validateBeChoiceDistractors(ex, gapStem, errors);
+  if (objective === "ing_spelling") validateIngSpellingDistractors(ex, errors);
+  else validateChoiceDistractors(ex, objective, errors);
   const question = shortAnswerQuestion(ex);
   if (question !== undefined) {
     for (const tokens of sentenceTokens(question.text)) validateQuestionWords(tokens, question.field, errors);
   }
   // Tłumaczenie (§5.4): „Mama gotuje” bez kontekstu ma dwa poprawne tłumaczenia.
   if (ex.exerciseType === "lesson_open_answer" && ex.prompt !== undefined) {
-    const { groups } = scanTimeMarkers(ex.prompt, "pl");
+    const { groups, strongNow } = scanTimeMarkers(ex.prompt, "pl");
     if (groups.size !== 1 || !groups.has("now")) {
       errors.push(grammarIssue("grammar.pc_translation_now_marker", {
         pl: "prompt: zdanie do tłumaczenia potrzebuje wskaźnika „teraz” (teraz, w tej chwili, Patrz!) i żadnego „zwykle”",
         found: `prompt ${clip(ex.prompt)} needs a now marker and no usually marker`,
       }));
+    } else if (!strongNow && isNegativeExercise(ex)) {
+      errors.push(nowMarkerBareIssue("prompt", ex.prompt));
     }
+  }
+}
+
+/** Polskie wskaźniki „teraz” bez dosłownego odpowiednika w angielskim kluczu („Ola właśnie czyta.” → „Ola is reading.”). */
+const PL_NOW_WITHOUT_LITERAL: ReadonlySet<string> = new Set(["właśnie", "akurat", "Gdzie jest …", "Gdzie są …"]);
+
+/** Wymienne angielskie wskaźniki „teraz” w kluczu tłumaczenia (dłuższe pierwsze: „right now” zawiera „now”). */
+const EN_NOW_PHRASES: readonly (readonly string[])[] = [["right", "now"], ["at", "the", "moment"], ["now"]];
+
+/** Tokeny bez pierwszego wystąpienia frazy albo undefined, gdy jej nie ma. */
+function withoutPhrase(tokens: readonly string[], phrase: readonly string[]): string[] | undefined {
+  const index = tokens.findIndex((_token, i) => phrase.every((part, offset) => tokens[i + offset] === part));
+  return index < 0 ? undefined : tokens.toSpliced(index, phrase.length);
+}
+
+/**
+ * Klucze tłumaczenia (każdy cel, fala 1 Task 19): wskaźnik polskiego zdania przechodzi do każdego
+ * klucza (teraz, w tej chwili, Patrz!… → now, at the moment, Look!…; codziennie, zawsze… → every day,
+ * always…), a klucz z now / right now / at the moment bez wykrzyknienia ma w `acceptedAnswers` ten sam
+ * klucz z każdym z dwóch pozostałych (miejsce wskaźnika dowolne) — dziecko pisze którykolwiek z nich.
+ */
+function validateTranslationKeys(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  if (ex.exerciseType !== "lesson_open_answer" || ex.prompt === undefined) return;
+  const prompt = scanTimeMarkers(ex.prompt, "pl");
+  const literalNow = prompt.nowMarkers.some((entry) => !PL_NOW_WITHOUT_LITERAL.has(entry));
+  for (const { field, text } of answersOf(ex)) {
+    const { groups } = scanTimeMarkers(text, "en");
+    const missing = literalNow && !groups.has("now") ? "now" : prompt.groups.has("usually") && !groups.has("usually") ? "usually" : undefined;
+    if (missing !== undefined) {
+      errors.push(grammarIssue("grammar.pc_translation_key_marker", {
+        field,
+        pl: `${field}: polskie zdanie ma wskaźnik „${missing === "now" ? "teraz" : "zwykle"}”, więc tłumaczenie też go ma (teraz → now, codziennie → every day)`,
+        found: `${field} ${clip(text)} drops the ${missing} marker of the prompt ${clip(ex.prompt)}`,
+      }));
+    }
+  }
+  if (scanTimeMarkers(ex.answer, "en").nowMarkers.some((entry) => entry.endsWith("!"))) return;
+  const key = normalizeTokens(ex.answer);
+  const used = EN_NOW_PHRASES.find((phrase) => withoutPhrase(key, phrase) !== undefined);
+  if (used === undefined) return;
+  const core = withoutPhrase(key, used)!.join(" ");
+  const variants = ex.acceptedAnswers.map(normalizeTokens);
+  const missing = EN_NOW_PHRASES.filter((phrase) => phrase !== used && !variants.some((variant) => withoutPhrase(variant, phrase)?.join(" ") === core));
+  if (missing.length > 0) {
+    const shown = missing.map((phrase) => phrase.join(" "));
+    errors.push(grammarIssue("grammar.pc_translation_now_variants", {
+      field: "acceptedAnswers",
+      pl: `acceptedAnswers: dodaj klucz z „${shown.join("” i z „")}” zamiast „${used.join(" ")}” — dziecko może napisać każdy z nich`,
+      found: `acceptedAnswers lack the answer with ${shown.map((text) => clip(text)).join(" and ")} instead of ${clip(used.join(" "))}`,
+    }));
   }
 }
 
@@ -1283,7 +1447,7 @@ function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors:
     }));
     return;
   }
-  const group = tenseChoiceMarkerGroup(scannedFields(ex), errors);
+  const group = tenseChoiceMarkerGroup(seenMarkers(ex, objective), scannedFields(ex).map(markersOf), errors);
   errors.push(...tenseChoiceShapeErrors(ex, objective));
   let gap: { stem: string; verb?: string; negative?: boolean } | undefined;
   if (ex.exerciseType === "lesson_gap") {
@@ -1365,7 +1529,8 @@ export function validatePresentContinuousExercise(draft: LessonExerciseDraft): L
     validateSentences(ex, objective, errors);
   }
   if (ex.exerciseType === "lesson_error_fix") validateErrorFix(ex, objective, errors);
-  if (ex.exerciseType === "lesson_transform") validateTransformShape(ex, errors);
+  if (ex.exerciseType === "lesson_transform") validateTransformShape(ex, objective, errors);
+  validateTranslationKeys(ex, errors);
   if (ex.exerciseType === "lesson_notice") validateNotice(ex, errors);
   if (ex.exerciseType === "lesson_listen_choice") validateListenChoiceOptions(ex, errors);
   // Reguła luki na formę be i reguła zdania mogą zgłosić tę samą niezgodność formy z podmiotem (`found` się różni).

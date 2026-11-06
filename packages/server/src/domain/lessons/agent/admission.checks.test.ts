@@ -209,7 +209,7 @@ describe("admitBatch — warianty odrzucone przez checker (spec katalogu reguł 
         instructionPl: "Przetłumacz na angielski.",
         prompt: "Ola teraz czyta książkę.",
         answer: "Ola is reading a book now.",
-        acceptedAnswers: [],
+        acceptedAnswers: ["Ola is reading a book right now.", "Ola is reading a book at the moment."],
         focus: ["is", "reading"],
       };
       const prechecked = precheckBatch(pcState, objectiveId, [pcDraft], pcCtx);
@@ -218,8 +218,8 @@ describe("admitBatch — warianty odrzucone przez checker (spec katalogu reguł 
       expect(rejectedOf(result.results[0])).toMatchObject({ kind: "blind", code: "blind_mismatch" });
       expect(poolOf(result.state, objectiveId)).toHaveLength(0);
       // Kontrola: równoważna odpowiedź w dobrym czasie jest dopisywana.
-      const ok = admitBatch(pcState, objectiveId, prechecked, [solved("Ola is reading a book at the moment.", { kind: "done", value: true })], pcCtx);
-      expect(poolOf(ok.state, objectiveId)[0]!.draft.acceptedAnswers).toEqual(["Ola is reading a book at the moment."]);
+      const ok = admitBatch(pcState, objectiveId, prechecked, [solved("At the moment Ola is reading a book.", { kind: "done", value: true })], pcCtx);
+      expect(poolOf(ok.state, objectiveId)[0]!.draft.acceptedAnswers.at(-1)).toBe("At the moment Ola is reading a book.");
     });
   });
 

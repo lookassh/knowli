@@ -22,6 +22,13 @@ export type MarkerGroup = "now" | "usually";
 
 export interface MarkerScan {
   readonly groups: ReadonlySet<MarkerGroup>;
+  /** Dopasowane wpisy listy „teraz” (`nowEn` / `nowPl`, w kolejności listy). */
+  readonly nowMarkers: readonly string[];
+  /**
+   * Mocny wskaźnik „teraz”: wpis spoza `BARE_NOW_MARKERS` (right now, at the moment, Look!, Cicho!,
+   * w tej chwili, Gdzie jest …). Goły „now” bywa „obecnie” (Tom doesn't watch TV now.).
+   */
+  readonly strongNow: boolean;
   /** Znormalizowane (małe litery) zakazane frazy w kolejności występowania, bez powtórzeń. */
   readonly forbidden: readonly string[];
 }
@@ -155,9 +162,18 @@ export const TIME_MARKER_LISTS = {
   ],
 } as const satisfies Record<string, readonly string[]>;
 
+/**
+ * Wskaźniki „teraz”, które same nie wystarczają w przeczeniach i celach porównania (standard „Środek”
+ * właściciela, 2026-11-06): goły „now” i polskie przysłówki bywają „obecnie, ostatnio” („Tom doesn't
+ * watch TV now.”, „Mój brat teraz nie pracuje.”).
+ */
+export const BARE_NOW_MARKERS: ReadonlySet<string> = new Set(["now", "teraz", "właśnie", "akurat"]);
+
 const NUMBER_WORDS = new Set(["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]);
 
 interface Phrase {
+  /** Wpis listy, z którego powstała fraza. */
+  readonly entry: string;
   readonly tokens: readonly string[];
   readonly kind: "anywhere" | "start" | "exclamation" | "exclamation_object";
 }
@@ -173,7 +189,7 @@ function compile(entry: string): Phrase {
   const tokens = entry
     .split(" ")
     .flatMap((word) => (word === "N" ? [word] : normalizeTokens(word)));
-  return { tokens, kind: phraseKind(entry) };
+  return { entry, tokens, kind: phraseKind(entry) };
 }
 
 function compileAll(entries: readonly string[]): Phrase[] {
@@ -245,17 +261,18 @@ function startsWithExclamation(leads: readonly string[], phrase: Phrase, lang: "
   return leads.some((lead) => pattern.test(lead));
 }
 
-function hasMarker(
+/** Wpisy list, których frazy występują w tekście. */
+function matchedEntries(
   phrases: readonly Phrase[],
   tokens: readonly string[],
   leads: readonly string[],
   lang: "en" | "pl",
-): boolean {
-  return phrases.some((phrase) => {
+): string[] {
+  return phrases.filter((phrase) => {
     if (phrase.kind === "exclamation" || phrase.kind === "exclamation_object") return startsWithExclamation(leads, phrase, lang);
     if (phrase.kind === "start") return matchesAt(tokens, 0, phrase.tokens);
     return matchesAnywhere(tokens, phrase);
-  });
+  }).map((phrase) => phrase.entry);
 }
 
 /** Słowa czasu, które w poleceniu bywają częścią instrukcji zadania („Teraz uzupełnij zdanie.”). */
@@ -316,8 +333,10 @@ export function scanTimeMarkers(text: string, lang: "en" | "pl", options: { read
   const groupTokens = options.instruction === true ? withoutInstructionTimeWords(tokens) : tokens;
   const leads = sentenceLeads(text);
   const patterns = PATTERNS[lang];
+  const nowMarkers = matchedEntries(patterns.now, groupTokens, leads, lang);
   const groups = new Set<MarkerGroup>();
-  if (hasMarker(patterns.now, groupTokens, leads, lang)) groups.add("now");
-  if (hasMarker(patterns.usually, groupTokens, leads, lang)) groups.add("usually");
-  return { groups, forbidden: findForbidden(tokens) };
+  if (nowMarkers.length > 0) groups.add("now");
+  if (matchedEntries(patterns.usually, groupTokens, leads, lang).length > 0) groups.add("usually");
+  const strongNow = nowMarkers.some((entry) => !BARE_NOW_MARKERS.has(entry));
+  return { groups, nowMarkers, strongNow, forbidden: findForbidden(tokens) };
 }

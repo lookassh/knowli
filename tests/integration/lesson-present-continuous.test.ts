@@ -71,13 +71,14 @@ const errorFix = (objectiveId: string, statement: string, answer: string, focus:
   focus,
 });
 
+/** Tłumaczenie; klucz z „now” dostaje warianty z „right now” i „at the moment” (`grammar.pc_translation_now_variants`). */
 const translation = (objectiveId: string, prompt: string, answer: string, focus: string[]): LessonExerciseDraft => ({
   exerciseType: "lesson_open_answer",
   objectiveId,
   instructionPl: "Przetłumacz na angielski.",
   prompt,
   answer,
-  acceptedAnswers: [],
+  acceptedAnswers: / now\.$/.test(answer) ? ["right now", "at the moment"].map((marker) => answer.replace(/ now\.$/, ` ${marker}.`)) : [],
   focus,
 });
 
@@ -121,7 +122,7 @@ const NOW_OR_USUALLY_EXERCISES: LessonExerciseDraft[] = [
   errorFix(NOW_OR_USUALLY, "Look! Ola reads.", "Look! Ola is reading.", ["is", "reading"]),
   errorFix(NOW_OR_USUALLY, "Tom is walking to school every day.", "Tom walks to school every day.", ["walks"]),
   translation(NOW_OR_USUALLY, "Mama codziennie gotuje obiad.", "Mum cooks dinner every day.", ["cooks"]),
-  translation(NOW_OR_USUALLY, "Ola teraz gra w tenisa.", "Ola is playing tennis now.", ["is", "playing"]),
+  translation(NOW_OR_USUALLY, "Ola w tej chwili gra w tenisa.", "Ola is playing tennis now.", ["is", "playing"]),
   translation(NOW_OR_USUALLY, "Tom zwykle pije sok.", "Tom usually drinks juice.", ["drinks"]),
 ];
 

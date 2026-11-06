@@ -567,9 +567,14 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ["This is Ola.", gap("affirmative", "Uzupełnij zdanie.", "This is Ola. She ___ (read) a book now.", "is reading"), true],
     ["It is sunny.", gap("affirmative", "Uzupełnij zdanie.", "It is sunny. The children ___ (play) in the park now.", "are playing"), true],
     ["never The door is open.", translation("affirmative", "Drzwi są teraz otwarte.", "The door is open now."), "grammar.pc_ing_after_be"],
-    ["Ola is reading now.", translation("now_or_usually", "Ola teraz czyta.", "Ola is reading now."), true],
+    // Fala 1 Task 19 (standard „Środek”): w celach porównania goły „teraz” nie wystarcza — wskazówkę poprawia fala 2.
+    ["Ola is reading now.", translation("now_or_usually", "Ola teraz czyta.", "Ola is reading now."), "grammar.pc_now_marker_bare"],
     ["Ola reads comics every day.", translation("now_or_usually", "Ola codziennie czyta komiksy.", "Ola reads comics every day."), true],
-    ["for She is cooking now. it says is cooking", translation("affirmative", "Ona teraz gotuje.", "She is cooking now."), true],
+    [
+      "for She is cooking now. it says is cooking",
+      { ...translation("affirmative", "Ona teraz gotuje.", "She is cooking now."), acceptedAnswers: ["She is cooking right now.", "She is cooking at the moment."] },
+      true,
+    ],
     [
       "(Tom is drawing a horse now. with Tom is drawing a horse right now. and Tom is drawing a horse at the moment.)",
       { ...translation("affirmative", "Tom teraz rysuje konia.", "Tom is drawing a horse now."), acceptedAnswers: ["Tom is drawing a horse right now.", "Tom is drawing a horse at the moment."] },

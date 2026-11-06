@@ -78,8 +78,8 @@ describe("validatePresentContinuousExercise — poprawianie błędu", () => {
     ["cel 1: forma bez -ing po be", pcErrorFix("affirmative", "She is play now.", "She is playing now.")],
     ["cel 1: forma Present Simple po be", pcErrorFix("affirmative", "She is plays now.", "She is playing now.")],
     ["cel 1: kolokacja „having lunch”", pcErrorFix("affirmative", "She is have lunch now.", "She is having lunch now.")],
-    ["cel 3: brak formy be przed „not”", pcErrorFix("negative", "He not playing now.", "He isn't playing now.")],
-    ["cel 3: brak -ing w przeczeniu", pcErrorFix("negative", "They aren't play now.", "They aren't playing now.")],
+    ["cel 3: brak formy be przed „not”", pcErrorFix("negative", "He not playing right now.", "He isn't playing right now.")],
+    ["cel 3: brak -ing w przeczeniu", pcErrorFix("negative", "They aren't play right now.", "They aren't playing right now.")],
     ["cel 4: brak -ing w pytaniu", pcErrorFix("questions", "Is she read now?", "Is she reading now?")],
     ["cel 5: pisownia -ing", pcErrorFix("ing_spelling", "He is swiming now.", "He is swimming now.")],
     ["cel 5: pisownia ie → y", pcErrorFix("ing_spelling", "The cat is lieing on the sofa now.", "The cat is lying on the sofa now.")],
@@ -131,7 +131,7 @@ describe("validatePresentContinuousExercise — do/does przed formą -ing w zdan
   });
 
   const ok: [string, LessonExerciseDraft][] = [
-    ["cel 3: brak formy be przed „not” (odpowiedź z isn't)", pcErrorFix("negative", "Tom not watching TV now.", "Tom isn't watching TV now.")],
+    ["cel 3: brak formy be przed „not” (odpowiedź z isn't)", pcErrorFix("negative", "Tom not watching TV right now.", "Tom isn't watching TV right now.")],
     ["cel 6: zamiana czasu z doesn't + forma podstawowa", pcErrorFix("now_or_usually_more", "Look! Ola doesn't sleep.", "Look! Ola isn't sleeping.")],
   ];
   it.each(ok)("%s", (_name, ex) => {

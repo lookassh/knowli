@@ -83,8 +83,24 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the affirmative, negative, questions and ing_spelling objectives a verb gap, a lesson_error_fix, a lesson_transform and " +
-      "a lesson_choice with a present simple option have a now marker (now, at the moment, Look!, teraz, Cicho!...) or, in " +
-      "questions, What + am/is/are + subject + doing?; without it the present simple would be correct too." + PC_NOW_MARKERS,
+      "a lesson_choice whose options are not only am, is or are (in ing_spelling: with a present simple option) have a now marker " +
+      "(now, at the moment, Look!, teraz, Cicho!...) in what the child sees before answering: the stem, the statement, the " +
+      "prompt, instructionPl or the lesson_notice sentences; a marker only in the answer, an accepted answer or one option does " +
+      "not count, and the options count only when every option has a marker of the same group. In questions What + am/is/are + " +
+      "subject + doing? is enough. Without the marker another tense would be correct too." + PC_NOW_MARKERS,
+  },
+  "grammar.pc_now_marker_bare": {
+    when: inPresentContinuous,
+    field: "exercise",
+    kind: "reject",
+    description:
+      "Where an exercise needs a now marker, a bare now, or the Polish teraz, właśnie or akurat, is not enough in two cases, " +
+      "because it can mean nowadays (Tom doesn't watch TV now.): in a negative exercise of the affirmative, negative, questions " +
+      "and ing_spelling objectives (a (not verb) gap, a negated answer, accepted answer or option, a negated statement of a " +
+      "lesson_error_fix or lesson_transform, or a translation with a negated answer, judged by its Polish prompt) and in every " +
+      "exercise of the now_or_usually and now_or_usually_more objectives with the now group. Use right now, at the moment, " +
+      "Look!, Listen!, Shh!, Be quiet!, Look at ...! or a Polish scene (Cicho!, Patrz!, Posłuchaj!, w tej chwili, Gdzie jest " +
+      "...?). In other affirmatives and questions a bare now still counts.",
   },
   "grammar.pc_bracket_outside_gap": {
     when: inPresentContinuous,
@@ -317,6 +333,27 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "In the affirmative, negative, questions and ing_spelling objectives the Polish prompt of a translation has a now marker " +
       "(teraz, w tej chwili, Patrz!) and no usually marker.",
   },
+  "grammar.pc_translation_key_marker": {
+    when: inPresentContinuous,
+    field: "answer",
+    kind: "reject",
+    types: ["lesson_open_answer"],
+    description:
+      "In the present_continuous topic every key of a translation keeps the time marker of the Polish prompt: a prompt with " +
+      "teraz, w tej chwili, w tym momencie or a Polish exclamation (Patrz!, Posłuchaj!, Cicho!...) has an English now marker " +
+      "(now, right now, at the moment, Look!...), and a prompt with a usually marker (codziennie, zawsze, w poniedziałki...) has " +
+      "an English usually marker (every day, always, on Mondays...). Właśnie, akurat and Gdzie jest ...? need no English marker.",
+  },
+  "grammar.pc_translation_now_variants": {
+    when: inPresentContinuous,
+    field: "acceptedAnswers",
+    kind: "reject",
+    types: ["lesson_open_answer"],
+    description:
+      "In the present_continuous topic, when the answer of a translation has now, right now or at the moment and no " +
+      "exclamation such as Look!, acceptedAnswers hold the answer with each of the other two in its place (Ola is reading now. → " +
+      "Ola is reading right now., Ola is reading at the moment.; the marker may stand elsewhere in the sentence).",
+  },
   "grammar.pc_ing_without_be": {
     when: inPresentContinuous,
     field: "answer",
@@ -379,6 +416,27 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "In the now_or_usually and now_or_usually_more objectives no distractor of a lesson_choice fits the time marker and the " +
       "subject as well as the key.",
   },
+  "grammar.pc_choice_distractor_correct": {
+    when: inPresentContinuous,
+    field: "options",
+    kind: "reject",
+    types: ["lesson_choice"],
+    description:
+      "In the affirmative, negative and questions objectives every distractor of a lesson_choice that is not only am, is or are " +
+      "(put into the gap, or the whole sentence) breaks a rule the key keeps: a wrong am/is/are, a missing -ing, another tense, " +
+      "the wrong polarity, a usually or forbidden marker... A distractor that is correct too (is drawing next to is reading in " +
+      "Ola ___ now., Look! Tom is reading. next to Look! Ola is reading.) is a second correct answer.",
+  },
+  "grammar.pc_ing_spelling_distractor": {
+    when: inPresentContinuous,
+    field: "options",
+    kind: "reject",
+    types: ["lesson_choice"],
+    description:
+      "In the ing_spelling objective every distractor of a lesson_choice is the key with its -ing form misspelt (a form outside " +
+      "the verb table at most two letters away: is swiming for is swimming); another correct -ing form (is running) or another " +
+      "tense is a second correct answer.",
+  },
   "grammar.pc_now_or_usually_question": {
     when: inPresentContinuous,
     field: "exercise",
@@ -403,13 +461,20 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the now_or_usually and now_or_usually_more objectives every exercise, except the now / usually meaning check, has a " +
-      "time marker (now, Look!, every day...) or a Polish scene in instructionPl (Cicho!, teraz, codziennie...)." + PC_GUIDANCE,
+      "time marker (Look!, every day...) or a Polish scene in instructionPl (Cicho!, codziennie...) in what the child sees before " +
+      "answering: the stem, the statement, the prompt or instructionPl. In a stem with a gap only the gap's own clause, other " +
+      "parts of its sentence without their own verb and verbless exclamations before it (Look!, Shh!) count, never a sentence or " +
+      "clause with its own verb (Tom plays every day. Ola ___ (read).); a marker only in the answer, an accepted answer or one " +
+      "option does not count, and the options count only when every option has a marker of the same group. A translation's " +
+      "Polish prompt (or a scene in instructionPl) holds the group of its key." + PC_GUIDANCE,
   },
   "grammar.pc_tense_markers_mixed": {
     when: inPresentContinuous,
     field: "exercise",
     kind: "reject",
-    description: "In the now_or_usually and now_or_usually_more objectives the markers of one exercise all belong to one group: now or usually, never both.",
+    description:
+      "In the now_or_usually and now_or_usually_more objectives the markers of one exercise, in every field (also keys and " +
+      "options), all belong to one group: now or usually, never both.",
   },
   "grammar.pc_tense_marker_mismatch": {
     when: inPresentContinuous,
@@ -489,9 +554,28 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     field: "answer",
     kind: "reject",
     types: ["lesson_transform"],
+    description: "In the present_continuous topic every key of a to_question transform is a question that starts with am, is or are and ends with ?.",
+  },
+  "grammar.pc_transform_question_negative": {
+    when: inPresentContinuous,
+    field: "statement",
+    kind: "reject",
+    types: ["lesson_transform"],
     description:
-      "In the present_continuous topic every key of a to_question transform is a question that starts with am, is or are " +
-      "(also isn't or aren't) or with What + am/is/are and ends with ?.",
+      "In the present_continuous topic the statement of a to_question transform is affirmative: a negative statement has two " +
+      "correct questions (Isn't she sleeping? / Is she sleeping?).",
+  },
+  "grammar.pc_transform_key_statement": {
+    when: inPresentContinuous,
+    field: "answer",
+    kind: "reject",
+    types: ["lesson_transform"],
+    description:
+      "In the present_continuous topic every key of a transform is the statement with only the checked form changed: to_question " +
+      "moves am, is or are of the last sentence to its front (Look! Tom is playing now. → Look! Is Tom playing now?, never a " +
+      "What question); to_negative adds not right after am, is or are and to_affirmative removes it (Tom is playing now. ↔ Tom " +
+      "isn't playing now.), in now_or_usually_more also a present simple verb ↔ do/does + not + the base verb; the subject, the " +
+      "other words and the time marker stay.",
   },
   "grammar.pc_transform_polarity": {
     when: inPresentContinuous,

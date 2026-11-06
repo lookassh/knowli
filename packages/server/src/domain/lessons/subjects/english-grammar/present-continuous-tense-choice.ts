@@ -5,7 +5,7 @@ import { baseOfIngForm, COLLOCATION_ING_FORMS, ingFormOf, ingRuleOf, STATE_VERBS
 import { BE_CONTRACTED_TOKENS, BE_DETERMINERS, BE_FORMS, BE_WH_WORDS } from "./be-agreement";
 import { presentSimpleForms } from "./present-simple-forms";
 import { grammarIssue } from "./rules";
-import { scanTimeMarkers, type MarkerGroup } from "./time-markers";
+import type { MarkerGroup } from "./time-markers";
 
 /**
  * Czyste funkcje celów porównania tematu Present Continuous (cele 2 i 6,
@@ -199,26 +199,50 @@ export function tenseChoiceShapeErrors(ex: LessonExerciseDraft, objective: strin
   return errors;
 }
 
+/** Wskaźniki czasu jednego pola (`scanTimeMarkers`). */
+export interface FieldMarkers {
+  readonly text: string;
+  readonly groups: ReadonlySet<MarkerGroup>;
+  readonly strongNow: boolean;
+}
+
 /**
- * Grupa wskaźników ćwiczenia celu porównania (§5.2) ze skanowanych pól
- * (polecenie z `instruction` — bez słów czasu przy poleceniu zadania):
- * co najmniej jeden wskaźnik i wszystkie z jednej grupy. undefined (z
- * komunikatem) przy braku wskaźnika albo grupach mieszanych.
+ * Zgłoszenie gołego „now” (standard „Środek” właściciela, 2026-11-06): w przeczeniach i celach
+ * porównania goły now / teraz / właśnie / akurat nie wystarcza, bo bywa „obecnie” („Tom doesn't watch
+ * TV now.”, „Mój brat teraz nie pracuje.”).
+ */
+export function nowMarkerBareIssue(field: string, text: string): LessonRuleIssue {
+  return grammarIssue("grammar.pc_now_marker_bare", {
+    field,
+    pl:
+      `${field}: samo „now” (teraz, właśnie, akurat) nie wystarcza w przeczeniu ani w wyborze teraz/zwykle — może znaczyć „obecnie”; ` +
+      "użyj right now, at the moment, Look!, Shh! albo scenki (Cicho!, Patrz!, w tej chwili…)",
+    found: `the only now marker in ${clip(text)} is a bare now, teraz, właśnie or akurat`,
+  });
+}
+
+/**
+ * Grupa wskaźników ćwiczenia celu porównania (§5.2). `seen` to pola, które dziecko widzi przed
+ * odpowiedzią (bez klucza, wariantów i pojedynczej opcji), `all` — wszystkie skanowane pola.
+ * Wskaźnik musi stać w `seen`, wszystkie wskaźniki (`seen` i `all`) należą do jednej grupy, a grupa
+ * „teraz” potrzebuje mocnego wskaźnika (`nowMarkerBareIssue`). undefined (z komunikatem) przy braku
+ * wskaźnika, grupach mieszanych albo samym gołym „now”.
  */
 export function tenseChoiceMarkerGroup(
-  fields: readonly { readonly text: string; readonly lang: "en" | "pl"; readonly instruction?: boolean }[],
+  seen: readonly (FieldMarkers & { readonly field: string })[],
+  all: readonly FieldMarkers[],
   errors: LessonRuleIssue[],
 ): MarkerGroup | undefined {
-  const scans = fields.map(({ text, lang, instruction }) => ({ text, groups: scanTimeMarkers(text, lang, { instruction: instruction === true }).groups }));
-  const groups = new Set(scans.flatMap((scan) => [...scan.groups]));
+  const groups = new Set(seen.flatMap((scan) => [...scan.groups]));
   if (groups.size === 0) {
     errors.push(grammarIssue("grammar.pc_tense_marker_missing", {
-      pl: "ćwiczenie potrzebuje wskaźnika czasu (now, Look!, every day…) albo scenki w poleceniu (Cicho!, teraz, codziennie…)",
-      found: "the exercise has no time marker and no scene in instructionPl",
+      pl: "ćwiczenie potrzebuje wskaźnika czasu w tym, co dziecko widzi przed odpowiedzią (Look!, every day…), albo scenki w poleceniu (Cicho!, codziennie…)",
+      found: "the exercise has no time marker in what the child sees before answering (stem, statement, prompt or a scene in instructionPl)",
     }));
     return undefined;
   }
-  if (groups.size > 1) {
+  const scans = [...seen, ...all];
+  if (new Set(scans.flatMap((scan) => [...scan.groups])).size > 1) {
     errors.push(grammarIssue("grammar.pc_tense_markers_mixed", {
       pl: "wskaźniki „teraz” i „zwykle” naraz — czas odpowiedzi musi wynikać z jednej grupy",
       // Skaner zwraca same grupy, więc `found` cytuje pierwsze pole ze wskaźnikiem każdej grupy.
@@ -228,7 +252,39 @@ export function tenseChoiceMarkerGroup(
     }));
     return undefined;
   }
-  return [...groups][0];
+  const group = [...groups][0]!;
+  const now = seen.filter((scan) => scan.groups.has("now"));
+  if (group === "now" && !now.some((scan) => scan.strongNow)) {
+    errors.push(nowMarkerBareIssue(now[0]!.field, now[0]!.text));
+    return undefined;
+  }
+  return group;
+}
+
+/** Zdania surowego tekstu razem z kończącą je interpunkcją (granice jak `SENTENCE_BOUNDARY`). */
+const RAW_SENTENCE = /[^.!?;:]+[.!?;:]*/gu;
+
+/** Spójnik między zdaniami składowymi w surowym tekście (`CLAUSE_CONJUNCTIONS`). */
+const RAW_CLAUSE_CONJUNCTION = new RegExp(String.raw`\s(?:${[...CLAUSE_CONJUNCTIONS].join("|")})\s`, "iu");
+
+/** Czy tekst nie ma orzeczenia (wykrzyknienie „Look!”, „Shh!”, podmiot „Tom” przed „and”). */
+function isVerbless(text: string): boolean {
+  return tenseSentences(text).every(({ groups }) => groups.length === 0);
+}
+
+/**
+ * Części bodźca z luką, których wskaźnik czasu dotyczy luki (cele 2 i 6): zdanie składowe luki, inne
+ * części jej zdania bez własnego orzeczenia i wcześniejsze wykrzyknienia bez orzeczenia („Look!”,
+ * „Shh!”). Zdanie z własnym orzeczeniem („Tom plays football every day.”, „Mum is cooking now and …”)
+ * mówi o innej czynności, więc jego wskaźnik nie rozstrzyga czasu luki.
+ */
+export function gapContextTexts(stem: string): string[] {
+  const sentences = stem.match(RAW_SENTENCE) ?? [stem];
+  const index = sentences.findIndex((sentence) => sentence.includes("___"));
+  if (index < 0) return [stem];
+  const exclamations = sentences.slice(0, index).filter((sentence) => sentence.trim().endsWith("!") && isVerbless(sentence));
+  const clauses = sentences[index]!.split(RAW_CLAUSE_CONJUNCTION).filter((clause) => clause.includes("___") || isVerbless(clause));
+  return [...exclamations, ...clauses];
 }
 
 export interface TenseSentence {
