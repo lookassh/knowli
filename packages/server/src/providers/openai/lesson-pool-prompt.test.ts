@@ -80,6 +80,8 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
   // Temat Present Continuous: reguły, listy i wskazówki tematu (`when` na temat) — zagadnienie z najdłuższym promptem.
   const pcTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")!;
   const grammarPresentContinuous = fixtureFor({ subject: englishGrammarSubject, topic: pcTopic, material: "", objectiveId: "english_grammar.present_continuous.affirmative" });
+  // Cel porównania czasów: wskazówki scenek, wybór całych pytań i reguły wyboru czasu (krytyk końcowy C, Task 16).
+  const grammarPresentContinuousMore = fixtureFor({ subject: englishGrammarSubject, topic: pcTopic, material: "", objectiveId: "english_grammar.present_continuous.now_or_usually_more" });
 
   const { objectives } = await new FakeLlmProvider().generateLessonObjectives({
     subjectTitle: schoolSubject.titlePl,
@@ -114,11 +116,11 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
     examples,
     examplesFixed: true,
   });
-  return { english_grammar: grammar, english_grammar_to_be: grammarToBe, english_grammar_present_continuous: grammarPresentContinuous, school, english_chapter: chapter };
+  return { english_grammar: grammar, english_grammar_to_be: grammarToBe, english_grammar_present_continuous: grammarPresentContinuous, english_grammar_present_continuous_more: grammarPresentContinuousMore, school, english_chapter: chapter };
 }
 
 const FIXTURES = await fixtures();
-const SUBJECT_IDS = ["english_grammar", "english_grammar_to_be", "english_grammar_present_continuous", "school", "english_chapter"] as const;
+const SUBJECT_IDS = ["english_grammar", "english_grammar_to_be", "english_grammar_present_continuous", "english_grammar_present_continuous_more", "school", "english_chapter"] as const;
 
 /**
  * Budżet długości promptu per przedmiot (rozstrzygnięcie kontrolera Task 8b: ≤ 1,5 × długości sprzed

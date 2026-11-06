@@ -31,6 +31,7 @@ describe("pcPoolStats", () => {
   it("liczy scenki i odrzucenia tylko w celach porównania, a id reguł według rodzaju odrzucenia", () => {
     const stats = pcPoolStats(exercises, rejections);
     expect(stats.sceneShare).toBe(0.5);
+    expect(stats.sceneShareBroad).toBe(0.5);
     expect(stats.sceneSharePolish).toBe(0.5);
     expect(stats.comparisonAccepted).toBe(2);
     expect(stats.comparisonRejected).toBe(1);
@@ -51,7 +52,9 @@ describe("pcPoolStats", () => {
     );
     expect(stats.comparisonAccepted).toBe(2);
     expect(stats.sceneSharePolish).toBe(0.5);
-    expect(stats.sceneShare).toBe(0.5);
+    expect(stats.sceneShareBroad).toBe(0.5);
+    // Ścisła miara pomija tłumaczenia.
+    expect(stats.sceneShare).toBe(0);
     expect(stats.rejectionShareComparison).toBe(0);
   });
 
@@ -82,12 +85,33 @@ describe("pcPoolStats", () => {
     const stats = pcPoolStats([...scenes, ...notScenes], []);
     expect(stats.comparisonAccepted).toBe(10);
     expect(stats.sceneSharePolish).toBe(0.1);
-    expect(stats.sceneShare).toBe(0.6);
+    expect(stats.sceneShareBroad).toBe(0.6);
+    // Ścisła miara: tylko (a) z 8 ćwiczeń bez tłumaczenia i sprawdzenia znaczenia.
+    expect(stats.sceneShare).toBe(1 / 8);
+  });
+
+  it("ścisła miara: polska scenka w poleceniu i żaden angielski wskaźnik w bodźcu ani zdaniu z błędem", () => {
+    const more = `${PC}.now_or_usually_more`;
+    const stats = pcPoolStats(
+      [
+        draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Cicho! Dziadek śpi. Uzupełnij zdanie.", stem: "Grandpa ___ (sleep) on the sofa." }),
+        draft({ exerciseType: "lesson_error_fix", objectiveId: more, instructionPl: "Tom nigdy nie je mięsa. Popraw błąd w zdaniu.", statement: "Tom isn't eating meat." }),
+        // Scenka i angielski wskaźnik w bodźcu: dziecko może wypatrzyć słowo.
+        draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Cicho! Dziadek śpi. Uzupełnij zdanie.", stem: "Grandpa ___ (sleep) right now." }),
+        draft({ exerciseType: "lesson_error_fix", objectiveId: more, instructionPl: "Ola codziennie tańczy. Popraw błąd w zdaniu.", statement: "Ola is dancing every day." }),
+        // Bez polskiej scenki.
+        draft({ exerciseType: "lesson_gap", objectiveId: NOW_OR_USUALLY, instructionPl: "Uzupełnij zdanie.", stem: "Look! Tom ___ (run)." }),
+        // Poza mianownikiem: tłumaczenie.
+        draft({ exerciseType: "lesson_open_answer", objectiveId: more, instructionPl: "Przetłumacz.", prompt: "Patrz! Mama gotuje obiad." }),
+      ],
+      [],
+    );
+    expect(stats.sceneShare).toBe(2 / 5);
   });
 
   it("pusta pula daje zera bez dzielenia przez zero", () => {
     const stats = pcPoolStats([], []);
-    expect(stats).toEqual({ sceneShare: 0, sceneSharePolish: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, ruleIdsByKind: {} });
+    expect(stats).toEqual({ sceneShare: 0, sceneShareBroad: 0, sceneSharePolish: 0, comparisonAccepted: 0, comparisonRejected: 0, rejectionShareComparison: 0, ruleIdsByKind: {} });
   });
 });
 
@@ -120,7 +144,7 @@ describe("zrzut puli sondy", () => {
     const stats = pcPoolStats(dump.exercises!, dump.rejections!);
     console.log(
       JSON.stringify(
-        { exercises: dump.exercises!.length, rejections: dump.rejections!.length, ...stats, sceneShare: Number(stats.sceneShare.toFixed(3)), sceneSharePolish: Number(stats.sceneSharePolish.toFixed(3)), rejectionShareComparison: Number(stats.rejectionShareComparison.toFixed(3)) },
+        { exercises: dump.exercises!.length, rejections: dump.rejections!.length, ...stats, sceneShare: Number(stats.sceneShare.toFixed(3)), sceneShareBroad: Number(stats.sceneShareBroad.toFixed(3)), sceneSharePolish: Number(stats.sceneSharePolish.toFixed(3)), rejectionShareComparison: Number(stats.rejectionShareComparison.toFixed(3)) },
         null,
         2,
       ),

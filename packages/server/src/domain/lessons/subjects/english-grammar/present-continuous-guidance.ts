@@ -97,9 +97,13 @@ export const PC_FORMS_TRANSLATION_GUIDANCE =
  */
 export const PC_TENSE_CHOICE_GUIDANCE =
   " Teaching hints for the tense-choice objectives (now_or_usually and now_or_usually_more): every exercise makes clear whether " +
-  "the action is happening right now or happens usually. About half of the exercises use a scene without an English marker " +
-  "(Cicho! Dziadek śpi. / Gdzie jest tata? / Ola codziennie gra w piłkę.); never write the refrain teraz czy zwykle in an " +
-  "instruction, because it has markers of both groups. Their lesson_choice options are the same verb in the two tenses " +
+  "the action is happening right now or happens usually, and the child infers the time from a situation, not from a marker " +
+  "word. At least half of the lesson_gap, lesson_error_fix and gap lesson_choice exercises carry the time only in a short " +
+  "Polish scene in instructionPl and have no English time marker in the stem or statement: now — Cicho! Dziadek śpi. " +
+  "Wybierz dobrą formę. with the stem Grandpa ___ on the sofa.; usually — Tata codziennie myje auto. Popraw błąd w zdaniu. " +
+  "with Dad is washing the car. → Dad washes the car.; other scenes: Gdzie jest tata? / Ola codziennie gra w piłkę. The " +
+  "other exercises may put an English marker into the sentence (Look!, right now, every day); never write the refrain teraz " +
+  "czy zwykle in an instruction, because it has markers of both groups. Their lesson_choice options are the same verb in the two tenses " +
   "(reads / is reading), and each stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.). " +
   `explanationPl also names the marker or the scene (${PC_EXPLANATION_EXAMPLE} / ${PC_EXPLANATION_SCENE_EXAMPLE}). ` +
   "A translation carries the marker of its Polish sentence into English: a scene or a strong now marker (Patrz! → Look!, " +
@@ -119,8 +123,9 @@ export const PC_NOW_OR_USUALLY_GUIDANCE =
  * ze wskaźnikiem „zwykle” (ślepa ocena sondy).
  */
 export const PC_NOW_OR_USUALLY_MORE_GUIDANCE =
-  " In now_or_usually_more a choice between whole questions has as its stem a short English context sentence without a gap " +
+  " In now_or_usually_more a choice between whole questions has instructionPl exactly Wybierz poprawne pytanie. (no time and " +
+  "no scene in it), as its stem a short English context sentence without a gap about the same person or thing as the question " +
   "that fits the key's time and never suggests the other one (Ola is in a tennis club. → Does Ola play tennis on Mondays?), " +
-  "and the time marker in both options. A lesson_error_fix there puts the present continuous with a usually marker into the " +
-  "statement and the present simple into the answer (Ola isn't dancing on Fridays. → Ola doesn't dance on Fridays.), because " +
-  "the present simple with now is often correct English (nowadays).";
+  "and the time marker in both options. A lesson_error_fix there puts the present continuous into the statement and the " +
+  "present simple into the answer, with the usually marker in the statement or in a Polish scene in instructionPl (Ola isn't " +
+  "dancing on Fridays. → Ola doesn't dance on Fridays.), because the present simple with now is often correct English (nowadays).";

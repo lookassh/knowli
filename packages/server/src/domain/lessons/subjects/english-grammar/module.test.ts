@@ -302,7 +302,7 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     for (const suffix of [".contractions", ".short_answers"]) {
       expect(typesOf(toBeV1, suffix), suffix).not.toContain("lesson_listen_choice");
     }
-    // Cele porównania: lektor czytałby wskaźnik czasu, więc słuch nie sprawdzałby wyboru czasu.
+    // Cele porównania: lektor czytałby wskaźnik czasu, więc słuch nie sprawdzałby wyboru czasu; w celu pisowni -ing słuch nie sprawdza pisowni.
     for (const suffix of [".now_or_usually", ".ing_spelling", ".now_or_usually_more"]) {
       expect(typesOf(presentContinuousV1, suffix), suffix).not.toContain("lesson_listen_choice");
     }
@@ -682,10 +682,18 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
       translation(objective, "Ola codziennie czyta komiksy.", "Ola reads comics every day."),
       true,
     ]),
+    // Krytyk końcowy B (Task 16): scenka „zwykle” w poleceniu, bez angielskiego wskaźnika w zdaniu z błędem.
+    ...inTenseChoice("with Dad is washing the car. → Dad washes the car.", (objective) => [
+      {
+        ...draft(objective, "lesson_error_fix", "Dad washes the car.", { instructionPl: "Tata codziennie myje auto. Popraw błąd w zdaniu.", statement: "Dad is washing the car." }),
+        focus: ["washes"],
+      },
+      true,
+    ]),
     [
       "(Ola is in a tennis club. → Does Ola play tennis on Mondays?)",
       draft("now_or_usually_more", "lesson_choice", "Does Ola play tennis on Mondays?", {
-        instructionPl: "Wybierz dobre pytanie.",
+        instructionPl: "Wybierz poprawne pytanie.",
         stem: "Ola is in a tennis club.",
         options: [{ id: "a", text: "Does Ola play tennis on Mondays?" }, { id: "b", text: "Is Ola playing tennis on Mondays?" }],
         correctOption: "a",
