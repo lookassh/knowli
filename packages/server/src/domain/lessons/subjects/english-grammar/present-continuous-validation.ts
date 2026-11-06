@@ -16,6 +16,7 @@ import {
   BE_ADVERBS,
   BE_AFTER_SKIP,
   BE_CONTRACTED_TOKENS,
+  BE_DETERMINERS,
   BE_FORM_BY_SUBJECT,
   BE_FORMS,
   BE_WH_WORDS,
@@ -531,6 +532,26 @@ function subjectSpanBeforeGap(stem: string): string[] {
   return tokens.slice(conjunction >= 0 ? conjunction + 1 : boundary + 1);
 }
 
+/** Rzeczowniki z tą samą formą w liczbie pojedynczej i mnogiej (krytycy końcowi A i C, Task 16): „The sheep is / are eating”. */
+const NUMBERLESS_NOUNS: ReadonlySet<string> = new Set(["fish", "sheep", "deer"]);
+
+/** Słowa przed takim rzeczownikiem, które ustalają jego liczbę, i forma be zgodna z nimi. */
+const NUMBER_WORD_BE_FORM: Readonly<Record<string, string>> = {
+  a: "is", an: "is", one: "is", this: "is", that: "is", each: "is", every: "is",
+  these: "are", those: "are", many: "are", two: "are", three: "are", four: "are", five: "are",
+  six: "are", seven: "are", eight: "are", nine: "are", ten: "are",
+};
+
+/**
+ * Forma be zgodna z liczbą rzeczownika `tokens[index]` z `NUMBERLESS_NOUNS`: z najbliższego określnika
+ * wśród trzech słów przed nim („two big fish” → are); undefined — liczby nic nie ustala („the fish”).
+ */
+function numberlessNounBeForm(tokens: readonly string[], index: number): string | undefined {
+  const word = tokens.slice(Math.max(0, index - 3), index)
+    .findLast((token) => BE_DETERMINERS.has(token) || Object.hasOwn(NUMBER_WORD_BE_FORM, token));
+  return word === undefined ? undefined : NUMBER_WORD_BE_FORM[word];
+}
+
 /**
  * Forma be wymagana przez podmiot przy luce (stem bez nawiasu); undefined = nie
  * da się ustalić. Heurystyki działają na samym zdaniu składowym z luką.
@@ -547,6 +568,11 @@ function expectedBeForm(fullStem: string): string | undefined {
   const stem = `${span.join(" ")} ___ ${fullStem.split("___", 2)[1] ?? ""}`;
   const inverted = invertedSubjectAfterGap(stem);
   if (inverted?.includes("and")) return "are";
+  // fish / sheep / deer: liczbę ustala tylko określnik; bez niego pasują is i are (`grammar.pc_numberless_subject`).
+  if (NUMBERLESS_NOUNS.has(span.at(-1) ?? "")) return numberlessNounBeForm(span, span.length - 1);
+  const after = normalizeTokens(fullStem.split("___", 2)[1] ?? "");
+  const invertedNoun = after.findIndex((token) => NUMBERLESS_NOUNS.has(token));
+  if (invertedNoun >= 0 && inverted?.includes(after[invertedNoun]!) === true) return numberlessNounBeForm(after, invertedNoun);
   const fromSubject = expectedBeFormNearGap(stem);
   if (fromSubject !== undefined) return fromSubject;
   const near = bePronounNearGap(stem);
@@ -1147,6 +1173,66 @@ function validateBeChoiceDistractors(ex: LessonExerciseDraft, stem: string, erro
   }
 }
 
+/**
+ * Krótka odpowiedź z opcjami „Yes…” i „No…” (krytyk końcowy A, Task 16): pytanie bez sytuacji
+ * nie rozstrzyga, czy tak jest, a scenka w poleceniu daje to dziecku za darmo — obie opcje z jednym
+ * „Yes” albo jednym „No” (Yes, she is. / Yes, she does.) sprawdzają formę, nie zgadywanie.
+ */
+function validateShortAnswerYesNo(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  if (ex.exerciseType !== "lesson_short_answer") return;
+  const firsts = new Set((ex.options ?? []).map((option) => normalizeTokens(option.text)[0]));
+  if (firsts.has("yes") && firsts.has("no")) {
+    errors.push(grammarIssue("grammar.pc_be_choice_polarity_distractor", {
+      pl: "options: krótka odpowiedź z opcjami „Yes…” i „No…” — obie mogą być poprawne; wszystkie opcje zaczynaj tym samym Yes albo No",
+      found: `options ${clip((ex.options ?? []).map((option) => option.text).join(" / "))} start with both Yes and No`,
+    }));
+  }
+}
+
+/** Czy token to forma, której liczbę ustala podmiot: am/is/are albo do/does. */
+function isNumberedAuxiliary(token: string): boolean {
+  return BE_FORMS.has(token) || token === "do" || token === "does";
+}
+
+/**
+ * Rzeczownik z `NUMBERLESS_NOUNS` jako podmiot bez słowa ustalającego liczbę: tuż przed am/is/are,
+ * do/does albo formą Present Simple albo po am/is/are, do/does otwierających pytanie („Is the sheep
+ * eating?”). „Tom is feeding the fish.” — dopełnienie, nie podmiot.
+ */
+function numberlessSubjectIn(text: string): string | undefined {
+  for (const tokens of text.split(SENTENCE_BOUNDARY).map(tenseTokens)) {
+    const opener = tokens[0] === "what" ? 1 : 0;
+    for (const [index, token] of tokens.entries()) {
+      if (!NUMBERLESS_NOUNS.has(token) || numberlessNounBeForm(tokens, index) !== undefined) continue;
+      const next = tokens[index + 1] ?? "";
+      const verbAfter = isNumberedAuxiliary(next) || presentSimpleBaseOf(next) !== undefined;
+      const inverted = index > opener && isNumberedAuxiliary(tokens[opener]!) && tokens.slice(opener + 1, index)
+        .every((previous) => !isNumberedAuxiliary(previous) && ingBaseOf(previous) === undefined && presentSimpleBaseOf(previous) === undefined);
+      if (verbAfter || inverted) return token;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Klucz z podmiotem fish / sheep / deer bez słowa ustalającego liczbę (krytycy końcowi A i C, Task 16):
+ * „Look! The fish ___ (eat).” ma dwa poprawne klucze (is eating / are eating), więc temat odrzuca taki
+ * podmiot; wspólna heurystyka „to be” zostaje bez zmian.
+ */
+function validateNumberlessSubjects(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  for (const { field, text } of sentenceAnswersOf(ex)) {
+    const sentence = wholeSentenceOf(ex, text);
+    const noun = numberlessSubjectIn(sentence);
+    if (noun === undefined) continue;
+    errors.push(grammarIssue("grammar.pc_numberless_subject", {
+      field,
+      pl: `${field}: „${noun}” ma tę samą formę w liczbie pojedynczej i mnogiej — bez słowa ustalającego liczbę (one, two, this, these) pasuje is i are; dodaj takie słowo albo użyj innego rzeczownika`,
+      found: `${field} ${clip(sentence)} has ${clip(noun)} as the subject with no word that fixes its number, so both is and are fit`,
+    }));
+    return;
+  }
+}
+
 /** Zgłoszenia, które nie czynią zdania błędnym: klasa pisowni -ing spoza celu dotyczy celu, nie angielszczyzny. */
 const NOT_WRONG_ENGLISH: ReadonlySet<string> = new Set(["grammar.pc_ing_rule_not_allowed"]);
 
@@ -1327,6 +1413,7 @@ function validateSentences(ex: LessonExerciseDraft, objective: string, errors: L
     if (parsed !== null) validateBeOnlyGapAnswer(ex, gapStem!, parsed, text, field, errors);
     validateSentenceAnswer(ex, objective, text, field, parsed === null, errors);
   }
+  validateShortAnswerYesNo(ex, errors);
   if (!pcObjective) return;
   if (gapStem !== undefined) validateBeChoiceDistractors(ex, gapStem, errors);
   if (objective === "ing_spelling") validateIngSpellingDistractors(ex, errors);
@@ -1578,6 +1665,15 @@ function validateTenseChoice(ex: LessonExerciseDraft, objective: string, errors:
   if (ex.exerciseType !== "lesson_choice" || group === undefined) return;
   for (const option of ex.options ?? []) {
     if (option.id === ex.correctOption) continue;
+    // Inny poprawny czas („can read”, „played”, „didn't watch”) pasuje do wskaźnika jak klucz (krytyk końcowy A, Task 16).
+    const otherTense = otherTenseForm(option.text, gap?.stem);
+    if (otherTense !== undefined) {
+      errors.push(grammarIssue("grammar.pc_tense_choice_distractor", {
+        pl: `options: „${option.text}” to inny poprawny czas („${otherTense}”) — dystraktor musi być błędny`,
+        found: `option ${clip(option.text)} uses another correct tense (${clip(otherTense)}), so it is a second correct answer`,
+      }));
+      continue;
+    }
     const optionErrors: LessonRuleIssue[] = [];
     validateTenseAnswer(ex, objective, gap, option.text, "options", group, optionErrors);
     if (optionErrors.length === 0) {
@@ -1633,6 +1729,7 @@ export function validatePresentContinuousExercise(draft: LessonExerciseDraft): L
   validateBrackets(ex, errors);
   validateStateVerbs(ex, objective, errors);
   validateChoiceOptionApostrophes(ex, errors);
+  validateNumberlessSubjects(ex, errors);
   if (TENSE_CHOICE_OBJECTIVES.has(objective)) validateTenseChoice(ex, objective, errors);
   if (PC_FORM_OBJECTIVES.has(objective)) validateNowContext(ex, objective, errors);
   if (ex.exerciseType === "lesson_gap") {

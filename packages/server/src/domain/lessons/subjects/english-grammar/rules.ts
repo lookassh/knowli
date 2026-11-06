@@ -119,7 +119,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "lesson_error_fix or lesson_transform, or a translation with a negated answer, judged by its Polish prompt) and in every " +
       "exercise of the now_or_usually and now_or_usually_more objectives with the now group. Use right now, at the moment, " +
       "Look!, Listen!, Shh!, Be quiet!, Look at ...! or a Polish scene (Cicho!, Patrz!, Posłuchaj!, w tej chwili, Gdzie jest " +
-      "...?). In other affirmatives and questions a bare now still counts.",
+      "...?). In other affirmatives and questions a bare now still counts. The now / usually meaning check is an exception.",
   },
   "grammar.pc_bracket_outside_gap": {
     when: inPresentContinuous,
@@ -333,7 +333,21 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_choice", "lesson_listen_choice", "lesson_short_answer"],
     description:
       "In the present_continuous topic a choice between forms of am, is or are never offers two options that differ only by " +
-      "not or n't (Is / Isn't) when no Yes/No and no not around the gap decide between them.",
+      "not or n't (Is / Isn't) when no Yes/No and no not around the gap decide between them, and the options of a " +
+      "lesson_short_answer never start with both Yes and No (Yes, he is. / No, he isn't. are both correct): all options start " +
+      "with the same Yes or No (Yes, she is. / Yes, she does.).",
+  },
+  "grammar.pc_numberless_subject": {
+    when: inPresentContinuous,
+    field: "answer",
+    kind: "reject",
+    description:
+      "In the present_continuous topic fish, sheep and deer are the same in the singular and the plural, so in a key, an " +
+      "accepted answer or the correct option (with the stem around it when it fills a gap) such a noun never stands right " +
+      "before am, is, are, do, does or a present simple verb, or after the am, is, are, do or does that opens a question " +
+      "(Is the sheep eating?), unless a number word (a, an, one, this, that, each, every, these, those, many, two to ten) " +
+      "stands among the three words before it: otherwise both is and are (eats and eat) are correct. Look! The fish ___ (eat). " +
+      "is wrong; Look! Two fish ___ (eat). → are eating is fine.",
   },
   "grammar.pc_s_contraction": {
     when: inPresentContinuous,
@@ -433,7 +447,8 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_choice"],
     description:
       "In the now_or_usually and now_or_usually_more objectives no distractor of a lesson_choice fits the time marker and the " +
-      "subject as well as the key.",
+      "subject as well as the key, and no distractor uses another correct tense (can read, will read, didn't watch, was " +
+      "reading, has played, played, read): it is a second correct answer.",
   },
   "grammar.pc_choice_distractor_correct": {
     when: inPcObjectives("affirmative", "negative", "questions"),
@@ -499,7 +514,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the now_or_usually and now_or_usually_more objectives the markers of one exercise, in every field (also keys and " +
-      "options), all belong to one group: now or usually, never both.",
+      "options), all belong to one group: now or usually, never both, except the now / usually meaning check.",
   },
   "grammar.pc_tense_marker_mismatch": {
     when: inTenseChoice,

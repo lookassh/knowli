@@ -95,6 +95,7 @@ registerRuleCases([
   { rule: "grammar.pc_sentence_not_continuous", violation: check(translation("affirmative", "Mama jest teraz w kuchni.", "Mum is in the kitchen now.")) },
   { rule: "grammar.pc_short_answer_person", violation: check(shortAnswer("Is she reading?", "Yes, he is.", "No, she isn't.")) },
   { rule: "grammar.pc_be_choice_polarity_distractor", violation: check(choice("questions", "___ she reading a book?", "Is", "Isn't")) },
+  { rule: "grammar.pc_numberless_subject", violation: check(gap("affirmative", "Look! The fish ___ (eat).", "is eating")) },
   { rule: "grammar.pc_s_contraction", violation: check(translation("affirmative", "On teraz gra.", "He's playing now.")) },
   { rule: "grammar.pc_translation_now_marker", violation: check(translation("affirmative", "Tata gotuje obiad.", "Dad is cooking dinner now.")) },
   { rule: "grammar.pc_translation_key_marker", violation: check(translation("affirmative", "Ola teraz czyta.", "Ola is reading.")) },

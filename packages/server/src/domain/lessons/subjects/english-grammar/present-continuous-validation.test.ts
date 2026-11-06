@@ -274,7 +274,7 @@ describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
   const ok: [string, LessonExerciseDraft][] = [
     ["wybór w celu 1", pcChoice("affirmative", "Look! Mum ___ dinner.", "is cooking", "are cooking")],
     ["kolejność w celu 4 (What … doing?)", pcOrder("questions", "What is he doing?")],
-    ["krótka odpowiedź w celu 4", pcShortAnswer("Is she reading?", "Yes, she is.", "No, she isn't.")],
+    ["krótka odpowiedź w celu 4", pcShortAnswer("Is she reading?", "Yes, she is.", "Yes, she does.")],
     ["przekształcenie na przeczenie w celu 3", pcTransform("negative", "to_negative", "He is playing right now.", "He isn't playing right now.")],
     ["przekształcenie na pytanie w celu 4", pcTransform("questions", "to_question", "He is playing now.", "Is he playing now?")],
     ["tłumaczenie w celu 1", pcTranslation("affirmative", "Tata teraz gotuje obiad.", "Dad is cooking dinner now.")],
@@ -575,7 +575,7 @@ describe("cele 1, 3, 4, 5 — wskaźnik „teraz” wymagany tam, gdzie Present 
       correctOption: "a",
     })],
     ["kolejność", pcOrder("affirmative", "Tom is playing football.")],
-    ["krótka odpowiedź", pcShortAnswer("Is she reading?", "Yes, she is.", "No, she isn't.")],
+    ["krótka odpowiedź", pcShortAnswer("Is she reading?", "Yes, she is.", "Yes, she does.")],
     ["scenka w poleceniu", pcGap("affirmative", "Grandpa ___ (sleep) on the sofa.", "is sleeping", { instructionPl: "Cicho! Dziadek śpi." })],
     ["„Look at …!” na początku", pcChoice("affirmative", "Look at Tom! He ___ .", "is jumping", "jumps")],
     ["cel 4: „What … doing?” jako kontekst", pcGap("questions", "What are you doing? I ___ (read) a book.", "am reading")],
@@ -643,10 +643,10 @@ describe("krótka odpowiedź: osoba zgodna z liczbą podmiotu pytania (imię, rz
   });
 
   it.each([
-    ["Are the boys running now?", "Yes, they are.", "No, he isn't."],
-    ["Is Tom reading now?", "Yes, he is.", "No, they aren't."],
-    ["Is the cat sleeping now?", "No, it isn't.", "Yes, they are."],
-    ["Look at Ola! Is she reading?", "Yes, she is.", "No, he isn't."],
+    ["Are the boys running now?", "Yes, they are.", "Yes, he is."],
+    ["Is Tom reading now?", "Yes, he is.", "Yes, they are."],
+    ["Is the cat sleeping now?", "No, it isn't.", "No, they aren't."],
+    ["Look at Ola! Is she reading?", "Yes, she is.", "Yes, he is."],
   ])("%s → %s", (prompt, correct, wrong) => {
     expect(validate(pcShortAnswer(prompt, correct, wrong))).toEqual([]);
   });
@@ -915,5 +915,50 @@ describe("fala 1 Task 19 — I5: klucze tłumaczeń", () => {
     expect(validate(pcTranslation("affirmative", "Ola teraz czyta książkę.", "Ola is reading a book now.", ["Ola is reading a book right now.", "At the moment Ola is reading a book."])))
       .toEqual([]);
     expect(validate(pcTranslation("affirmative", "Patrz! Ola czyta książkę.", "Look! Ola is reading a book."))).toEqual([]);
+  });
+});
+
+describe("Task 16 — dwie poprawne odpowiedzi po krytykach końcowych", () => {
+  it("A-I1: krótka odpowiedź z opcjami Yes i No — obie mogą być poprawne", () => {
+    const yesNo = pcShortAnswer("Is Tom playing football now?", "Yes, he is.", "No, he isn't.");
+    expect(validate(yesNo)).toEqual(["grammar.pc_be_choice_polarity_distractor"]);
+    expect(validate({ ...yesNo, instructionPl: "Patrz! Tom gra w piłkę. Wybierz krótką odpowiedź." })).toEqual(["grammar.pc_be_choice_polarity_distractor"]);
+    expect(validate({ ...pcShortAnswer("Is Tom sleeping right now?", "No, he isn't.", "Yes, he is."), objectiveId: "english_grammar.present_continuous.negative" }))
+      .toEqual(["grammar.pc_be_choice_polarity_distractor"]);
+    expect(validate(pcShortAnswer("Is she reading now?", "Yes, she is.", "Yes, she does."))).toEqual([]);
+    expect(validate({ ...pcShortAnswer("Is she reading now?", "No, she isn't.", "No, she doesn't."), instructionPl: "Patrz! Ona śpi. Wybierz krótką odpowiedź." }))
+      .toEqual([]);
+  });
+
+  it("A-I2: cele 2 i 6 — dystraktor w innym poprawnym czasie to druga poprawna odpowiedź", () => {
+    const RULE = "grammar.pc_tense_choice_distractor";
+    expect(validate(pcSentenceChoice("now_or_usually", "Look! Ola ___ a comic.", "is reading", "reads", "can read"))).toEqual([RULE]);
+    expect(validate(pcSentenceChoice("now_or_usually", "Ola ___ football every day.", "plays", "is playing", "played"))).toEqual([RULE]);
+    expect(validate(pcChoice("now_or_usually", "Ola ___ football every day.", "plays", "played"))).toEqual([RULE]);
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Ola ___ TV on Mondays.", "doesn't watch", "isn't watching", "didn't watch"))).toEqual([RULE]);
+    expect(validate(pcSentenceChoice("now_or_usually", "Look! Ola ___ a comic.", "is reading", "reads"))).toEqual([]);
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Ola ___ TV on Mondays.", "doesn't watch", "isn't watching"))).toEqual([]);
+    expect(validate(pcSentenceChoice("now_or_usually_more", "Wybierz poprawne pytanie.", "Do you play football on Saturdays?", "Are you playing football on Saturdays?")))
+      .toEqual([]);
+  });
+
+  it("A-I3: fish, sheep, deer bez słowa ustalającego liczbę — is i are są poprawne", () => {
+    const RULE = "grammar.pc_numberless_subject";
+    expect(validate(pcGap("affirmative", "Look! The fish ___ (eat).", "is eating"))).toEqual([RULE]);
+    expect(validate(pcGap("affirmative", "Look! The fish ___ (eat).", "are eating"))).toEqual([RULE]);
+    expect(validate({ ...pcChoice("affirmative", "The sheep ___ eating grass now.", "is", "are"), exerciseType: "lesson_listen_choice" })).toEqual([RULE]);
+    expect(validate(pcChoice("questions", "___ the sheep eating now?", "Is", "Are"))).toEqual([RULE]);
+    expect(validate(pcGap("now_or_usually", "The deer ___ (eat) grass every day.", "eats"))).toEqual([RULE]);
+    expect(validate(pcTranslation("affirmative", "Patrz! Ryby jedzą.", "Look! The fish are eating."))).toEqual([RULE]);
+  });
+
+  it("A-I3: liczbę ustala określnik albo zaimek — bez nowej reguły", () => {
+    expect(validate(pcGap("affirmative", "Look! One fish ___ (eat).", "is eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! Two fish ___ (eat).", "are eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! These sheep ___ (eat) grass.", "are eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! This sheep ___ (eat) grass.", "is eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Tom ___ (watch) the fish now.", "is watching"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look at the fish! It ___ (eat).", "is eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! Two fish ___ (eat).", "is eating"))).toEqual(["grammar.pc_be_form_subject"]);
   });
 });
