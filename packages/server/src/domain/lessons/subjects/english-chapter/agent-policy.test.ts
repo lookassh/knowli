@@ -101,7 +101,7 @@ describe("exerciseGate — słowa kart", () => {
     expect(gate(draft({ stem: "I sleep in a ___.", answer: "bed" }), bedCard)).toEqual([]);
     const findings = gate(draft({ stem: "I turn on the ___.", answer: "lamp" }), bedCard);
     expect(findings.map((finding) => finding.code)).toEqual(["card_word_missing"]);
-    expect(findings[0]!.reason).toContain("bed");
+    expect(findings[0]!.issue).toContain("bed");
   });
 
   it("para dwóch słów kart przechodzi, z jednym dostaje card_word_missing", () => {
@@ -173,7 +173,7 @@ describe("exerciseGate — rama zagadnienia", () => {
     const order = draft({ exerciseType: "lesson_order", answer: "I'm wearing a red coat" });
     const findings = gate(order, frameObjective);
     expect(findings.map((finding) => finding.code)).toEqual(["frame_missing"]);
-    expect(findings[0]!.reason).toContain("there's a");
+    expect(findings[0]!.issue).toContain("there's a");
   });
 
   it("luka: zdanie po wstawieniu odpowiedzi musi zawierać ramę", () => {

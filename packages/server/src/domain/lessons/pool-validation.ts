@@ -46,6 +46,7 @@ import type {
   SubjectModule,
 } from "./types";
 import { explanationTextErrors } from "./exercise-explanation";
+import { legacyMessages } from "./rules/catalog";
 import { lessonExerciseIdentity, lessonIdentityOptionsOf } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
 
@@ -303,7 +304,7 @@ export function validateLessonExercise(
   validateAcceptedAnswers(ex, normalizer, errors);
 
   // Reguły specyficzne dla przedmiotu.
-  for (const error of subject.validateExercise(ex, topic)) {
+  for (const error of legacyMessages(subject.validateExercise(ex, topic))) {
     errors.push(error);
   }
 

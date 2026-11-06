@@ -1,6 +1,7 @@
 import { baseNormalizer } from "../../normalize";
 import type { LessonExerciseDraft, LessonExerciseType, SubjectAgentPolicy } from "../../types";
 import { hintRevealsAnswer } from "./hint-gate";
+import { schoolIssue } from "./rules";
 
 /**
  * Polityka agenta puli dla przedmiotu `school` (design etapu 1 §4.4): typy
@@ -68,7 +69,11 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
     return [
       {
         code: "hint_reveals_answer",
-        reason: "the hint gives away the answer or a required element; hint at the reasoning, not the content",
+        // Dzisiejszy tekst dla modelu jest w `found` (model dostaje `found ?? pl`).
+        issue: schoolIssue("hint.reveals_words", {
+          pl: "hint: podpowiedź zdradza odpowiedź albo element wymagany",
+          found: "the hint gives away the answer or a required element; hint at the reasoning, not the content",
+        }),
       },
     ];
   },

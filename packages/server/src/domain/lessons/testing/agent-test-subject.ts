@@ -30,13 +30,13 @@ export function withAgentPolicy(
 
 function refineGeneratedPool(drafts: readonly LessonExerciseDraft[]): {
   kept: LessonExerciseDraft[];
-  rejected: { exercise: LessonExerciseDraft; reason: string }[];
+  rejected: { exercise: LessonExerciseDraft; issues: readonly string[] }[];
 } {
   const kept: LessonExerciseDraft[] = [];
-  const rejected: { exercise: LessonExerciseDraft; reason: string }[] = [];
+  const rejected: { exercise: LessonExerciseDraft; issues: readonly string[] }[] = [];
   for (const draft of drafts) {
     if (draft.answer === "REFINE-REJECT") {
-      rejected.push({ exercise: draft, reason: "refine reject" });
+      rejected.push({ exercise: draft, issues: ["refine reject"] });
       continue;
     }
     kept.push(

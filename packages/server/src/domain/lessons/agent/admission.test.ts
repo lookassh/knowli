@@ -94,7 +94,7 @@ describe("przyjmowanie paczki — limity i kolejność kroków", () => {
 
   it("bramka przedmiotu zwraca swój kod i powody", () => {
     const gated = withAgentPolicy(subject, {
-      exerciseGate: (draft) => (draft.answer === "odpowiedź 2" ? [{ code: "gate_code", reason: "gate reason" }] : []),
+      exerciseGate: (draft) => (draft.answer === "odpowiedź 2" ? [{ code: "gate_code", issue: "gate reason" }] : []),
     });
     const result = submit(stateWith(), A, [choice(A, 1), choice(A, 2)], contextFor({ subject: gated }));
     expect(result.results[0]).toMatchObject({ accepted: "ex1" });

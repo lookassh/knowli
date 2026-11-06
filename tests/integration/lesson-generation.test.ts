@@ -406,7 +406,7 @@ describe("generowanie puli lekcji (integracja)", () => {
         return {
           kept,
           rejected: drafts.filter((draft) => draft.answer === "banned")
-            .map((exercise) => ({ exercise, reason: "słowo spoza materiału: banned" })),
+            .map((exercise) => ({ exercise, issues: ["słowo spoza materiału: banned"] })),
         };
       },
       exposureText: (draft: LessonExerciseDraft) => `Zdanie: ${draft.answer}.`,

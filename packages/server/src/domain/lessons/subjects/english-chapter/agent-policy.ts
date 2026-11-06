@@ -115,7 +115,7 @@ function cardWordFindings(draft: LessonExerciseDraft, objective: AgentObjective,
   return [
     {
       code: "card_word_missing",
-      reason: `the checked ${part} must contain a word of THIS objective's cards (${cardWords.join(", ")}); other words may only fill the sentence.`,
+      issue: `the checked ${part} must contain a word of THIS objective's cards (${cardWords.join(", ")}); other words may only fill the sentence.`,
     },
   ];
 }
@@ -142,7 +142,7 @@ function frameFindings(draft: LessonExerciseDraft, objective: AgentObjective, ma
   return [
     {
       code: "frame_missing",
-      reason: `the solved sentence must contain the fixed part of a sentence frame of THIS objective's cards (${keys.map((key) => `"${key}"`).join(", ")}); do not use another objective's frame.`,
+      issue: `the solved sentence must contain the fixed part of a sentence frame of THIS objective's cards (${keys.map((key) => `"${key}"`).join(", ")}); do not use another objective's frame.`,
     },
   ];
 }

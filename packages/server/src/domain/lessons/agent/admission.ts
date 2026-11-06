@@ -2,6 +2,7 @@ import { exerciseExposureText } from "../exposure-key";
 import { findExposureLeaks, type ExposureLeak } from "../exposure-leaks";
 import { withoutOrphanKeywords } from "../keyword-families";
 import { MAX_TEXT_LENGTH, validateLessonExercise, validatePool } from "../pool-validation";
+import { legacyMessages, legacyModelText } from "../rules/catalog";
 import type { AgentObjective, LessonExerciseDraft, SubjectModule } from "../types";
 import { blindMatches } from "./solver";
 import {
@@ -103,7 +104,7 @@ function lessonRules(state: LessonAgentState, ctx: AgentCheckContext): LessonRul
   const extraRejected = new Map<LessonExerciseDraft, readonly string[]>();
   for (const [index, errors] of ctx.subject.validatePoolExtra?.(lesson, { material: ctx.material }) ?? []) {
     const draft = lesson[index];
-    if (draft !== undefined && errors.length > 0) extraRejected.set(draft, errors);
+    if (draft !== undefined && errors.length > 0) extraRejected.set(draft, legacyMessages(errors));
   }
   return { entries, poolRejected, extraRejected };
 }
@@ -168,7 +169,7 @@ function sanitizeCandidate(
   const refined = refine([sanitizedResult.draft], { material: ctx.material });
   const kept = refined.kept[0];
   if (refined.rejected.length > 0 || kept === undefined) {
-    const reasons = refined.rejected.map((item) => item.reason);
+    const reasons = refined.rejected.flatMap((item) => item.issues.map(legacyModelText));
     return { ok: false, rejection: { kind: "rule", code: "refine", reasons: reasons.length > 0 ? reasons : ["the subject rules rejected this exercise"] } };
   }
   return { ok: true, draft: kept, sanitized: sanitizedResult.removed };
@@ -257,7 +258,7 @@ function deterministicSteps(
   const exerciseErrors = validateLessonExercise(draft, ctx.subject, state.topic);
   if (exerciseErrors.length > 0) return reject("rule", "rule_exercise", exerciseErrors);
   const findings = ctx.subject.agentPolicy.exerciseGate?.(draft, objective, { material: ctx.material }) ?? [];
-  if (findings.length > 0) return reject("rule", findings[0]!.code, findings.map((finding) => finding.reason));
+  if (findings.length > 0) return reject("rule", findings[0]!.code, findings.map((finding) => legacyModelText(finding.issue)));
 
   // Kandydat jako własny obiekt (ochronnie): porównania zbiorów po referencji odróżniają go od
   // reszty lekcji, nawet gdy wołający przekaże ten sam obiekt drugi raz.

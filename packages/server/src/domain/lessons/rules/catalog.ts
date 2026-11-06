@@ -1,4 +1,4 @@
-import type { LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
+import type { LegacyIssue, LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
 import { CORE_RULES } from "./core-rules";
 import { LESSON_RULES } from "./lesson-rules";
 
@@ -127,6 +127,23 @@ export function clip(text: string, max: number = CLIP_MAX, options: { readonly q
 /** Komunikaty dla rodzica (`pl`) — dzisiejsze napisy walidatorów. */
 export function messagesOf(issues: readonly LessonRuleIssue[]): string[] {
   return issues.map((issue) => issue.pl);
+}
+
+/**
+ * Komunikaty dla rodzica ze zgłoszeń haków przedmiotów w okresie przejściowym:
+ * napis bez zmian, zgłoszenie reguły przez `pl`. Znika razem z `LegacyIssue`.
+ */
+export function legacyMessages(items: readonly LegacyIssue[]): string[] {
+  return items.map((item) => (typeof item === "string" ? item : item.pl));
+}
+
+/**
+ * Tekst zgłoszenia haka dla modelu agenta w okresie przejściowym: napis bez
+ * zmian, zgłoszenie reguły przez `found ?? pl` (dzisiejszy angielski tekst
+ * bramki jest w `found`).
+ */
+export function legacyModelText(item: LegacyIssue): string {
+  return typeof item === "string" ? item : (item.found ?? item.pl);
 }
 
 /** Katalogi silnika: rdzeń i lekcja. */

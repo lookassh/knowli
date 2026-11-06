@@ -200,14 +200,14 @@ function firstFailure(elements: readonly string[], lexicon: ReadonlySet<string>)
 export function refineChapterPool(
   drafts: readonly LessonExerciseDraft[],
   ctx: { material: string },
-): { kept: LessonExerciseDraft[]; rejected: { exercise: LessonExerciseDraft; reason: string }[] } {
+): { kept: LessonExerciseDraft[]; rejected: { exercise: LessonExerciseDraft; issues: readonly string[] }[] } {
   const lexicon = materialLexicon(ctx.material);
   const kept: LessonExerciseDraft[] = [];
-  const rejected: { exercise: LessonExerciseDraft; reason: string }[] = [];
+  const rejected: { exercise: LessonExerciseDraft; issues: readonly string[] }[] = [];
   for (const draft of drafts) {
     const failure = firstFailure(checkedElements(draft), lexicon);
     if (failure !== undefined) {
-      rejected.push({ exercise: draft, reason: rejectionReason(failure) });
+      rejected.push({ exercise: draft, issues: [rejectionReason(failure)] });
       continue;
     }
     const clean = withTranslationInstruction(withoutUnsolicitedV3Fields(draft));

@@ -251,7 +251,7 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     const bad = choice({ options: [{ id: "a", text: "raining" }, { id: "b", text: "snowing" }] });
     const result = refineChapterPool([bad], { material: MATERIAL });
     expect(result.kept).toEqual([]);
-    expect(result.rejected).toEqual([{ exercise: bad, reason: "słowo spoza materiału: snowing" }]);
+    expect(result.rejected).toEqual([{ exercise: bad, issues: ["słowo spoza materiału: snowing"] }]);
   });
 
   it("usuwa wariant tłumaczenia spoza materiału i zostawia ćwiczenie", () => {
@@ -265,7 +265,7 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     const kept = refineChapterPool([gap({ acceptedAnswers: ["sunny", "bright"] })], { material: MATERIAL });
     expect(kept.kept.map((ex) => ex.acceptedAnswers)).toEqual([["sunny"]]);
     const rejected = refineChapterPool([gap({ answer: "foggy", focus: ["foggy"] })], { material: MATERIAL });
-    expect(rejected.rejected.map((r) => r.reason)).toEqual(["słowo spoza materiału: foggy"]);
+    expect(rejected.rejected.map((r) => r.issues[0])).toEqual(["słowo spoza materiału: foggy"]);
   });
 
   it("usuwa WSZYSTKIE niezamówione pola v3 z modelu i zostawia ćwiczenie, także z wariantami", () => {
@@ -357,7 +357,7 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     });
     const result = refineChapterPool([match, group, cloze, badOrder], { material: MATERIAL });
     expect(result.kept).toEqual([]);
-    expect(result.rejected.map((r) => r.reason)).toEqual([
+    expect(result.rejected.map((r) => r.issues[0])).toEqual([
       "słowo spoza materiału: cloudy",
       "słowo spoza materiału: scarf",
       "słowo spoza materiału: gloves",
@@ -370,20 +370,20 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
 
   it("element bez słowa treści ma osobny powód „tylko słowa pomocnicze”", () => {
     const articles = choice({ stem: "I'm wearing ___ coat.", options: [{ id: "a", text: "a" }, { id: "b", text: "the" }] });
-    expect(refineChapterPool([articles], { material: MATERIAL }).rejected.map((r) => r.reason)).toEqual([
+    expect(refineChapterPool([articles], { material: MATERIAL }).rejected.map((r) => r.issues[0])).toEqual([
       "tylko słowa pomocnicze: a",
     ]);
     // Także przyimki, operatory i zaimki wskazujące (review Task 5).
     for (const texts of [["in", "on", "at"], ["do", "does"], ["this", "that"], ["It's", "He's"]]) {
       const ex = choice({ stem: "___ coat.", options: texts.map((text, index) => ({ id: `o${index}`, text })) });
-      expect(refineChapterPool([ex], { material: MATERIAL }).rejected[0]?.reason, texts.join("/")).toBe(`tylko słowa pomocnicze: ${texts[0]!.toLowerCase()}`);
+      expect(refineChapterPool([ex], { material: MATERIAL }).rejected[0]?.issues[0], texts.join("/")).toBe(`tylko słowa pomocnicze: ${texts[0]!.toLowerCase()}`);
     }
   });
 
   it("ogranicza długość powodu do 80 znaków (słowo modelu nie tworzy dowolnie długich kluczy)", () => {
     const word = "x".repeat(200);
     const result = refineChapterPool([choice({ options: [{ id: "a", text: "raining" }, { id: "b", text: word }] })], { material: MATERIAL });
-    const reason = result.rejected[0]!.reason;
+    const reason = result.rejected[0]!.issues[0]!;
     expect([...reason].length).toBeLessThanOrEqual(80);
     expect(reason.startsWith("słowo spoza materiału: xxx")).toBe(true);
     expect(reason.endsWith("…")).toBe(true);
@@ -400,7 +400,7 @@ describe("refineChapterPool (walidacja słownikowa świeżej puli)", () => {
     const bad = listen({ options: [{ id: "a", text: "raining" }, { id: "b", text: "snowing" }] });
     const result = refineChapterPool([bad], { material: MATERIAL });
     expect(result.kept).toEqual([]);
-    expect(result.rejected).toEqual([{ exercise: bad, reason: "słowo spoza materiału: snowing" }]);
+    expect(result.rejected).toEqual([{ exercise: bad, issues: ["słowo spoza materiału: snowing"] }]);
   });
 
   it("wybór ze słuchu nie zawęża wariantów odpowiedzi (nie jest typem wariantowym)", () => {

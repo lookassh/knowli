@@ -6,6 +6,7 @@ import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
 import { poolCoverage, validateLessonExercise, validatePool } from "../../pool-validation";
 import { renderCalculationPrompt, computeCalculationAnswer } from "../../calculation";
 import type { CalculationSpec } from "@learning/contracts";
+import { legacyMessages, type LessonRuleIssue } from "../../rules/catalog";
 import { schoolSubject } from "./module";
 
 const MATERIAL =
@@ -73,7 +74,7 @@ describe("school calculation validation", () => {
   it("checks quote membership at the pool hook with material", () => {
     const forged = calculationDraft(scale, { sourceRefs: [{ quote: "Skala mapy określa stosunek odległości." }] });
     expect(validateLessonExercise(forged, schoolSubject, topic)).toEqual([]);
-    expect(schoolSubject.validatePoolExtra!([forged], { material: MATERIAL }).get(0)?.some((error) => error.includes("sourceRefs"))).toBe(true);
+    expect(legacyMessages(schoolSubject.validatePoolExtra!([forged], { material: MATERIAL }).get(0) ?? []).some((error) => error.includes("sourceRefs"))).toBe(true);
   });
   it("allows numeric variants in a shared template family and deduplicates across family IDs", () => {
     const a = calculationDraft();
@@ -93,13 +94,13 @@ describe("school calculation validation", () => {
     { calculation: { ...scale, unit: "km" } },
   ] as const)("rejects inconsistent calculation template family %j", (overrides) => {
     const result = schoolSubject.validatePoolExtra!([calculationDraft(), calculationDraft(scale, overrides)], { material: MATERIAL });
-    expect(result.get(1)?.some((error) => error.includes("templateFamilyId"))).toBe(true);
+    expect(legacyMessages(result.get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
   });
   it("requires a common conversion input unit in a template family", () => {
     const conversion: CalculationSpec = { kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units" };
     const a = calculationDraft(conversion);
     const b = calculationDraft({ ...conversion, params: { value: 3, fromUnit: "cm" } });
-    expect(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1)?.some((error) => error.includes("templateFamilyId"))).toBe(true);
+    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
   });
   it("counts calculations as independent while retaining the school pool minima", () => {
     const gaps = poolCoverage([calculationDraft()], [dynamicData.objectives[0]!.id], schoolSubject.poolMinimums!);
@@ -191,7 +192,7 @@ describe("przedmiot school", () => {
   it("odrzuca cytat spoza materiału, a cytat rodzica przepuszcza", () => {
     const forged = openDraft({ sourceRefs: [{ quote: "Rośliny jedzą słońce na śniadanie." }] });
     const extra = schoolSubject.validatePoolExtra!([forged], { material: MATERIAL });
-    expect(extra.get(0)?.some((e) => e.includes("sourceRefs"))).toBe(true);
+    expect(legacyMessages(extra.get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
 
     const parent = openDraft({ sourceRefs: [{ quote: "Rośliny jedzą słońce na śniadanie.", parentAdded: true }] });
     expect(schoolSubject.validatePoolExtra!([parent], { material: MATERIAL }).size).toBe(0);
@@ -201,7 +202,7 @@ describe("przedmiot school", () => {
     const spaced = openDraft({ sourceRefs: [{ quote: "przy  udziale\nświatła, wytwarza cukry" }] });
     expect(schoolSubject.validatePoolExtra!([spaced], { material: MATERIAL }).size).toBe(0);
     const recased = openDraft({ sourceRefs: [{ quote: "Przy udziale światła, wytwarza cukry" }] });
-    expect(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0)?.some((e) => e.includes("sourceRefs"))).toBe(true);
+    expect(legacyMessages(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
   });
 
   it("wymaga elementów wymaganych i formy dla odpowiedzi otwartej", () => {
@@ -219,7 +220,7 @@ describe("przedmiot school", () => {
     const a = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const b = openDraft({ familyId: "fam", prompt: "Wyjaśnij fotosyntezę.", answer: "Inny wzorzec odpowiedzi, wytwarza cukry.", focus: ["cukry"] });
     const extra = schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL });
-    expect(extra.get(1)?.some((e) => e.includes("familyId"))).toBe(true);
+    expect(legacyMessages(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
   });
   it("rodzina sformułowań przechodzi PEŁNĄ walidację puli (regresja deduplikacji)", () => {
     const topic = schoolSubject.buildDynamicTopic!(dynamicData);
@@ -243,16 +244,16 @@ describe("przedmiot school", () => {
     const a = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const b = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const extra = schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL });
-    expect(extra.get(1)?.some((e) => e.includes("familyId"))).toBe(true);
+    expect(legacyMessages(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
     // Różnica samej wielkości liter to nadal to samo pytanie (w odróżnieniu od cytatów).
     const lower = openDraft({ familyId: "fam", prompt: "co to jest  FOTOSYNTEZA?" });
-    expect(schoolSubject.validatePoolExtra!([a, lower], { material: MATERIAL }).get(1)?.some((e) => e.includes("powiela"))).toBe(true);
+    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, lower], { material: MATERIAL }).get(1) ?? []).some((e) => e.includes("powiela"))).toBe(true);
   });
 
   it("za krótki cytat nie uziemia ćwiczenia", () => {
     const ex = openDraft({ sourceRefs: [{ quote: "966" }] });
     const extra = schoolSubject.validatePoolExtra!([ex], { material: MATERIAL });
-    expect(extra.get(0)?.some((e) => e.includes("za krótki"))).toBe(true);
+    expect(legacyMessages(extra.get(0) ?? []).some((e) => e.includes("za krótki"))).toBe(true);
   });
 
   it("expectedForm na typie zamkniętym jest odrzucane", () => {
@@ -319,7 +320,7 @@ describe("słowa kluczowe (lesson_keywords)", () => {
 
   it("wymaga rodziny pytań otwartych w tym samym zagadnieniu", () => {
     const extra = schoolSubject.validatePoolExtra!([openDraft({ familyId: "inna" }), keywordsDraft()], { material: MATERIAL });
-    expect(extra.get(1)?.some((error) => error.includes("brak rodziny"))).toBe(true);
+    expect(legacyMessages(extra.get(1) ?? []).some((error) => error.includes("brak rodziny"))).toBe(true);
   });
 
   it("wymaga pojęć kluczowych z odpowiedzi wzorcowej albo materiału, a dystraktory sprawdza rodzic", () => {
@@ -328,7 +329,7 @@ describe("słowa kluczowe (lesson_keywords)", () => {
       answer: "chlorofil, cukry",
     });
     const extra = schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL });
-    expect(extra.get(1)?.some((error) => error.includes("chlorofil"))).toBe(true);
+    expect(legacyMessages(extra.get(1) ?? []).some((error) => error.includes("chlorofil"))).toBe(true);
   });
 
   it("nie łączy słów kluczowych z rodziną pytań w kontroli spójności rodziny", () => {
@@ -547,5 +548,67 @@ describe("schoolSubject — zdanie feedbacku", () => {
 
   it("nie przyjmuje wyjaśnień błędu", () => {
     expect(schoolSubject.exerciseExplanations).toBe(false);
+  });
+});
+
+describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
+  /** Zgłoszenia reguł haka puli dla ćwiczenia o danym indeksie. */
+  const issuesAt = (drafts: readonly LessonExerciseDraft[], index: number) =>
+    (schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).get(index) ?? []).filter(
+      (issue): issue is LessonRuleIssue => typeof issue !== "string",
+    );
+
+  it("rodzina: różna odpowiedź i różne elementy to dwie reguły z obiema wartościami i dzisiejszym pl", () => {
+    const a = openDraft({ familyId: "fam" });
+    const b = openDraft({
+      familyId: "fam",
+      prompt: "Wyjaśnij fotosyntezę.",
+      answer: "Roślina wytwarza cukry.",
+      requiredElements: [{ id: "e2", text: "Roślina wytwarza cukry." }],
+    });
+    const issues = issuesAt([a, b], 1);
+    expect(issues.map((issue) => issue.rule)).toEqual(["school.family_answer_differs", "school.family_elements_differ"]);
+    const [answer, elements] = issues;
+    expect(answer!.field).toBe("answer");
+    expect(answer!.found).toContain('"Roślina wytwarza cukry."');
+    expect(answer!.found).toContain('"Roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry."');
+    expect(answer!.found).toContain('"fam"');
+    expect(elements!.field).toBe("requiredElements");
+    expect(elements!.found).toBe('requiredElements ids [e2], family "fam" has [e1]');
+    const pl = "familyId: ćwiczenie z rodziny „fam” różni się odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny";
+    expect(issues.map((issue) => issue.pl)).toEqual([pl, pl]);
+  });
+
+  it("rodzina: różnica tylko w odpowiedzi albo tylko w elementach daje jedną regułę", () => {
+    const a = openDraft({ familyId: "fam" });
+    const answerOnly = openDraft({ familyId: "fam", prompt: "Wyjaśnij fotosyntezę.", answer: "Roślina wytwarza cukry." });
+    expect(issuesAt([a, answerOnly], 1).map((issue) => issue.rule)).toEqual(["school.family_answer_differs"]);
+    const elementsOnly = openDraft({ familyId: "fam", prompt: "Wyjaśnij fotosyntezę.", requiredElements: [{ id: "e9", text: "Cukry." }] });
+    expect(issuesAt([a, elementsOnly], 1).map((issue) => issue.rule)).toEqual(["school.family_elements_differ"]);
+  });
+
+  it("cytat spoza materiału: indeks w polu i w found oraz tekst cytatu", () => {
+    const forged = openDraft({ sourceRefs: [{ quote: "wytwarza cukry" }, { quote: "Rośliny jedzą słońce na śniadanie." }] });
+    const issues = issuesAt([forged], 0);
+    expect(issues).toEqual([
+      {
+        rule: "school.quote_in_material",
+        field: "sourceRefs[1].quote",
+        pl: "sourceRefs: cytat nie występuje w materiale źródłowym",
+        found: 'quote 1 "Rośliny jedzą słońce na śniadanie." does not occur in the material',
+      },
+    ]);
+  });
+
+  it("bramka podpowiedzi i walidator ćwiczenia zgłaszają reguły katalogu szkoły", () => {
+    const topic = schoolSubject.buildDynamicTopic!(dynamicData);
+    const issues = schoolSubject.validateExercise(openDraft({ sourceRefs: undefined, expectedForm: undefined }), topic);
+    expect(issues.map((issue) => (typeof issue === "string" ? issue : issue.rule))).toEqual([
+      "school.quote_required",
+      "school.open_required_fields",
+    ]);
+    for (const issue of issues) {
+      expect(typeof issue !== "string" && Object.hasOwn(schoolSubject.rules, issue.rule)).toBe(true);
+    }
   });
 });

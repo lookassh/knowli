@@ -1,5 +1,5 @@
 import type { CalculationSpec, LessonVoiceTone } from "@learning/contracts";
-import type { RuleCatalog } from "./rules/catalog";
+import type { LessonRuleIssue, RuleCatalog } from "./rules/catalog";
 
 /**
  * Typy silnika lekcji (design „Przedmiot i katalog”, „Typy ćwiczeń i etapy”).
@@ -143,10 +143,20 @@ export interface RawPlanObjective {
   examples: string[];
 }
 
-/** Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, powód do modelu. */
+/**
+ * Zgłoszenie haka przedmiotu w okresie przejściowym (spec katalogu reguł §2.3):
+ * napis (przedmioty jeszcze bez katalogu) albo zgłoszenie reguły. Znika, gdy
+ * wszystkie przedmioty zgłaszają reguły (`legacyMessages` → `messagesOf`).
+ */
+export type LegacyIssue = string | LessonRuleIssue;
+
+/**
+ * Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, a do
+ * modelu tekst zgłoszenia (`legacyModelText`: napis albo `found ?? pl`).
+ */
 export interface AgentGateFinding {
   readonly code: string;
-  readonly reason: string;
+  readonly issue: LegacyIssue;
 }
 
 /**
@@ -409,10 +419,10 @@ export interface SubjectModule {
     ctx: { material: string },
   ): {
     kept: LessonExerciseDraft[];
-    rejected: { exercise: LessonExerciseDraft; reason: string }[];
+    rejected: { exercise: LessonExerciseDraft; issues: readonly LegacyIssue[] }[];
   };
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
-  validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): string[];
+  validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): readonly LegacyIssue[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej
   /** „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania (`pl-PL`) przy przygotowaniu materiału. */
   readonly ttsForPrompts: boolean;
@@ -447,7 +457,7 @@ export interface SubjectModule {
   validatePoolExtra?(
     drafts: readonly LessonExerciseDraft[],
     ctx: { material: string },
-  ): ReadonlyMap<number, readonly string[]>;
+  ): ReadonlyMap<number, readonly LegacyIssue[]>;
   /** Polityka agenta puli — każdy przedmiot jest generowany agentem. */
   readonly agentPolicy: SubjectAgentPolicy;
   /**

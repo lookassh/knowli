@@ -62,7 +62,7 @@ describe("agentTestSubject", () => {
       { material: "" },
     );
     expect(result.kept.map((kept) => kept.acceptedAnswers)).toEqual([["a"]]);
-    expect(result.rejected.map((rejected) => rejected.reason)).toEqual(["refine reject"]);
+    expect(result.rejected.flatMap((rejected) => rejected.issues)).toEqual(["refine reject"]);
   });
 
   it("withAgentPolicy nadpisuje wybrane pola polityki", () => {
