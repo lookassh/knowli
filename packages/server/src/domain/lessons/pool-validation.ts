@@ -70,6 +70,7 @@ import {
   type LessonExerciseIdentityOptions,
 } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
+import { APOSTROPHE_VARIANTS } from "./normalize";
 
 /** Fabryka zgłoszeń reguł rdzenia. */
 const coreIssue = issueFrom(CORE_RULES);
@@ -126,11 +127,14 @@ function sequenceKey(tokens: readonly string[]): string {
   return tokens.join("\u0000");
 }
 
-/** Zbiór kluczy wariantów normalizacji tekstu (dowolny wspólny = równoważność). */
+/**
+ * Zbiór kluczy wariantów normalizacji tekstu (dowolny wspólny = równoważność).
+ * Pomija puste sekwencje — jak `matchLessonAnswer`, gdzie pusta odpowiedź nigdy nie pasuje.
+ */
 function variantKeys(text: string, normalizer: AnswerNormalizer): Set<string> {
   const keys = new Set<string>();
   for (const sequence of normalizer.normalize(text)) {
-    keys.add(sequenceKey(sequence));
+    if (sequence.length > 0) keys.add(sequenceKey(sequence));
   }
   return keys;
 }
@@ -200,6 +204,8 @@ function anyTokens(text: string, normalizer: AnswerNormalizer): readonly string[
 
 /** Luka `lesson_listen_choice`: ciąg 2+ podkreśleń (jak `feedbackSentenceText` i Kid UI `splitGap`). */
 const LISTEN_GAP_PATTERN = /_{2,}/g;
+/** Opcja zaczynająca się od apostrofu w dowolnym zapisie: `'`, typograficzne warianty i grawis. */
+const LEADING_APOSTROPHE = new RegExp(`^(?:['\\u0060]|${APOSTROPHE_VARIANTS.source})`, "u");
 
 /** Liczba wystąpień `GAP_MARKER` w tekście. */
 function countGapMarkers(stem: string): number {
@@ -841,7 +847,7 @@ function validateListenChoice(
   validateOptions(ex, normalizer, issues);
   const options = ex.options ?? [];
   options.forEach((option, index) => {
-    if (/^['’]/u.test(option.text.trim())) {
+    if (LEADING_APOSTROPHE.test(option.text.trim())) {
       issues.push(coreIssue("listen.option_apostrophe", {
         field: `options[${index}]`,
         pl: `options: opcja „${option.text}” zaczyna się od apostrofu (skróty tylko jako całe słowa)`,
@@ -1502,7 +1508,7 @@ function validateAcceptedAnswers(
   }
   ex.acceptedAnswers.forEach((variant, index) => {
     const field = `acceptedAnswers[${index}]`;
-    if (variant.trim() === "") {
+    if (variantKeys(variant, normalizer).size === 0) {
       issues.push(coreIssue("variants.empty", { field, pl: "acceptedAnswers: pusty wariant", found: "blank variant" }));
       return;
     }
