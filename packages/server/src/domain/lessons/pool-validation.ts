@@ -53,6 +53,7 @@ import { clip, issueFrom, messagesOf, type LessonRuleIssue } from "./rules/catal
 import { CORE_RULES } from "./rules/core-rules";
 import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
+  GAP_MARKER,
   MAX_ACCEPTED_ANSWERS,
   MAX_GAP_ANSWER_TOKENS,
   MAX_NOTICE_SEGMENTS,
@@ -66,8 +67,8 @@ import type { PoolMinimums } from "./lesson-policy";
 /** Fabryka zgłoszeń reguł rdzenia. */
 const coreIssue = issueFrom(CORE_RULES);
 
-/** Znacznik luki w `stem` ćwiczenia `lesson_gap`. */
-export const GAP_MARKER = "___";
+/** Znacznik luki w `stem` ćwiczenia `lesson_gap` (stała w `rules/limits.ts`, bo podaje ją opis reguły). */
+export { GAP_MARKER };
 
 /** Maksymalna długość pojedynczego pola tekstowego ćwiczenia (znaki), także wyjaśnienia błędu — limit z kontraktów. */
 export const MAX_TEXT_LENGTH = MAX_LESSON_TEXT_LENGTH;
@@ -332,8 +333,9 @@ function contractIssue(issue: ContractIssue, input: unknown): LessonRuleIssue {
 /**
  * Pola źródłowe odpowiedzi liczonej przez kod (pary, grupy, luki z bankiem,
  * słowa kluczowe, rachunek). Błąd kontraktu o `answer` takiego typu wynika z
- * pola źródłowego: znika, gdy pole źródłowe ma własne zgłoszenie, a bez niego
- * dostaje ścieżkę pola źródłowego (spec §4.2).
+ * pola źródłowego, więc dostaje jego ścieżkę (spec §4.2; `pl` bez zmian). Na
+ * ścieżce agenta znika, gdy pole źródłowe ma własne zgłoszenie; rodzic dostaje
+ * go dalej, żeby zbiór jego komunikatów się nie zmienił.
  */
 const COMPUTED_ANSWER_SOURCES: Partial<Record<LessonExerciseType, readonly string[]>> = {
   lesson_match: ["pairs"],
@@ -343,13 +345,20 @@ const COMPUTED_ANSWER_SOURCES: Partial<Record<LessonExerciseType, readonly strin
   lesson_calculation: ["calculation"],
 };
 
-/** Zgłoszenia kontraktu dla wszystkich błędów `safeParse` naraz. Eksportowane do testów tabeli Zod. */
-export function contractIssues(issues: readonly ContractIssue[], input: unknown): LessonRuleIssue[] {
+/**
+ * Zgłoszenia kontraktu dla wszystkich błędów `safeParse` naraz (`agent` — ścieżka
+ * agenta, zob. `LessonExerciseValidationOptions`). Eksportowane do testów tabeli Zod.
+ */
+export function contractIssues(
+  issues: readonly ContractIssue[],
+  input: unknown,
+  options: { readonly agent?: boolean } = {},
+): LessonRuleIssue[] {
   const exerciseType = valueAt(input, ["exerciseType"]);
   const sources = typeof exerciseType === "string"
     ? COMPUTED_ANSWER_SOURCES[exerciseType as LessonExerciseType]
     : undefined;
-  const sourceReported = sources !== undefined &&
+  const sourceReported = options.agent === true && sources !== undefined &&
     issues.some((issue) => sources.includes(String(issue.path[0])));
   const result: LessonRuleIssue[] = [];
   for (const issue of issues) {
@@ -440,20 +449,24 @@ function v3FieldsPresent(ex: LessonExerciseDraft): V3ExerciseField[] {
 /** Opcje walidacji ćwiczenia. */
 export interface LessonExerciseValidationOptions {
   /**
-   * Ścieżka agenta: gdy kontrakt odrzuca wyłącznie puste napisy w opcjonalnych
-   * polach tekstowych, pozostałe reguły liczymy raz jeszcze na kopii bez tych
-   * pól i zgłaszamy razem (ćwiczenie i tak jest odrzucone; agent poprawia
-   * wszystko naraz). Rodzic dostaje dzisiejszy zbiór komunikatów, więc API
-   * edycji i publikacji tej opcji nie używa.
+   * Ścieżka agenta (przyjmowanie puli). Rodzic dostaje dzisiejszy zbiór
+   * komunikatów, więc API edycji i publikacji tej opcji nie używa. Włącza:
+   * - ponowną analizę po pustych napisach: gdy kontrakt odrzuca wyłącznie puste
+   *   napisy w opcjonalnych polach tekstowych, pozostałe reguły liczymy raz
+   *   jeszcze na kopii bez tych pól i zgłaszamy razem (ćwiczenie i tak jest
+   *   odrzucone; agent poprawia wszystko naraz), bez zgłoszeń o zdjętych polach
+   *   (te ma już `field.empty`);
+   * - pominięcie zgłoszenia kontraktu o `answer` typu liczonego, gdy pole
+   *   źródłowe ma własne zgłoszenie (`contractIssues`).
    */
-  readonly reanalyzeEmpty?: boolean;
+  readonly agent?: boolean;
 }
 
 /**
  * Reguły ogólne dla ćwiczenia (design „Generowanie puli”), a następnie
  * delegacja do `subject.validateExercise`. Zwraca zgłoszenia reguł; pusta
  * lista = ćwiczenie poprawne. Nie rzuca — zbiera wszystkie naruszenia. Przy
- * błędzie kontraktu dalszych reguł nie sprawdza (wyjątek: `reanalyzeEmpty`).
+ * błędzie kontraktu dalszych reguł nie sprawdza (wyjątek: ścieżka agenta, `agent`).
  */
 export function validateLessonExerciseIssues(
   ex: LessonExerciseDraft,
@@ -463,15 +476,17 @@ export function validateLessonExerciseIssues(
 ): LessonRuleIssue[] {
   const shape = LessonExerciseInputSchema.safeParse(ex);
   if (!shape.success) {
-    const contract = contractIssues(shape.error.issues, ex);
-    const empty = options.reanalyzeEmpty === true ? onlyEmptyOptionalTexts(shape.error.issues, ex) : null;
+    const contract = contractIssues(shape.error.issues, ex, { agent: options.agent === true });
+    const empty = options.agent === true ? onlyEmptyOptionalTexts(shape.error.issues, ex) : null;
     if (empty === null) {
       return contract;
     }
     const stripped = Object.fromEntries(
       Object.entries(ex).filter(([key]) => !empty.includes(key)),
     ) as unknown as LessonExerciseDraft;
-    return [...contract, ...validateLessonExerciseIssues(stripped, subject, topic)];
+    const further = validateLessonExerciseIssues(stripped, subject, topic, options)
+      .filter((issue) => !empty.includes(issue.field));
+    return [...contract, ...further];
   }
 
   const issues: LessonRuleIssue[] = [];

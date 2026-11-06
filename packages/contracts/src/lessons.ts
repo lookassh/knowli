@@ -25,17 +25,19 @@ export const MAX_LESSON_ANSWER_LENGTH = 300;
 export const MAX_SOURCE_QUOTE_LENGTH = 600;
 /** Limit materiału zestawu szkolnego (gramatyka zostaje przy 8000). */
 export const MAX_SCHOOL_MATERIAL_LENGTH = 16000;
-const MAX_ACCEPTED_ANSWERS = 40;
+/** Maksymalna liczba wariantów `acceptedAnswers`. */
+export const MAX_ACCEPTED_ANSWERS = 40;
 /** Zakres liczby opcji w typach z zamkniętym wyborem. */
 export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 4;
 /** Zakres liczby elementów w `lesson_order`. */
 export const MIN_ORDER_ITEMS = 3;
 export const MAX_ORDER_ITEMS = 10;
-const MIN_NOTICE_SENTENCES = 2;
-const MAX_NOTICE_SENTENCES = 3;
-const MIN_NOTICE_SEGMENTS = 1;
-const MAX_NOTICE_SEGMENTS = 15;
+/** `lesson_notice`: zakres liczby zdań i segmentów-słów na zdanie. */
+export const MIN_NOTICE_SENTENCES = 2;
+export const MAX_NOTICE_SENTENCES = 3;
+export const MIN_NOTICE_SEGMENTS = 1;
+export const MAX_NOTICE_SEGMENTS = 15;
 /** Payload v3 przedmiotów szkolnych: elementy wymagane (1–6) i uzupełniające (≤ 4), typowe błędy (≤ 4). */
 export const MIN_REQUIRED_ELEMENTS = 1;
 export const MAX_REQUIRED_ELEMENTS = 6;

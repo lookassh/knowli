@@ -9,14 +9,20 @@
 /** Najkrótsze polecenie rozdziału niosące polskie zdanie-bodziec (znaki po przycięciu). */
 export const MIN_STIMULUS_INSTRUCTION_LENGTH = 12;
 
-/** Maksymalna liczba wariantów `acceptedAnswers`. */
-export const MAX_ACCEPTED_ANSWERS = 40;
+/**
+ * Liczba wariantów `acceptedAnswers` i zakresy `lesson_notice`: jedno źródło z kontraktem
+ * (tę samą granicę sprawdza schemat i walidator), tu reeksport dla walidatorów i opisów.
+ */
+export {
+  MAX_ACCEPTED_ANSWERS,
+  MAX_NOTICE_SEGMENTS,
+  MAX_NOTICE_SENTENCES,
+  MIN_NOTICE_SEGMENTS,
+  MIN_NOTICE_SENTENCES,
+} from "@learning/contracts";
 
-/** `lesson_notice`: zakres liczby zdań i segmentów-słów na zdanie. */
-export const MIN_NOTICE_SENTENCES = 2;
-export const MAX_NOTICE_SENTENCES = 3;
-export const MIN_NOTICE_SEGMENTS = 1;
-export const MAX_NOTICE_SEGMENTS = 15;
+/** Znacznik luki w `stem` ćwiczenia `lesson_gap` (podaje go opis reguły). */
+export const GAP_MARKER = "___";
 
 /** Maksymalna liczba tokenów odpowiedzi dla `lesson_gap`. */
 export const MAX_GAP_ANSWER_TOKENS = 3;

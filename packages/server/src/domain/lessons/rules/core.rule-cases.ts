@@ -1,4 +1,4 @@
-import { MAX_COMMON_ERRORS, MAX_LESSON_TEXT_LENGTH, MAX_OPTIONS, MIN_ORDER_ITEMS } from "@learning/contracts";
+import { MAX_COMMON_ERRORS, MAX_LESSON_TEXT_LENGTH, MAX_OPTIONS, MAX_ORDER_ITEMS, MIN_ORDER_ITEMS } from "@learning/contracts";
 import { explanationIssues } from "../exercise-explanation";
 import { validateLessonExerciseIssues } from "../pool-validation";
 import { historyLikeSubject } from "../testing/history-like-subject";
@@ -260,6 +260,16 @@ registerRuleCases([
       options: Array.from({ length: MAX_OPTIONS }, (_, i) => ({ id: i === 0 ? "a" : `o${i}`, text: i === 0 ? "plays" : `word${i}` })),
     })),
   },
+  {
+    // Ponad limit: zgłasza kontrakt, pod id reguły rdzenia.
+    rule: "options.count",
+    violation: check(choice({
+      options: Array.from({ length: MAX_OPTIONS + 1 }, (_, i) => ({ id: i === 0 ? "a" : `o${i}`, text: i === 0 ? "plays" : `word${i}` })),
+    })),
+    boundary: check(choice({
+      options: Array.from({ length: MAX_OPTIONS }, (_, i) => ({ id: i === 0 ? "a" : `o${i}`, text: i === 0 ? "plays" : `word${i}` })),
+    })),
+  },
   { rule: "options.duplicate", violation: check(choice({ options: [{ id: "a", text: "plays" }, { id: "b", text: "Plays" }] })) },
   { rule: "options.correct_unknown", violation: check(choice({ correctOption: "z" })) },
 
@@ -303,6 +313,12 @@ registerRuleCases([
     rule: "order.items_count",
     violation: check({ ...order(["She", "plays", "tennis"]), items: undefined }),
     boundary: check(order(Array.from({ length: MIN_ORDER_ITEMS }, (_, i) => `w${i}`))),
+  },
+  {
+    // Ponad limit: zgłasza kontrakt, pod id reguły rdzenia.
+    rule: "order.items_count",
+    violation: check(order(Array.from({ length: MAX_ORDER_ITEMS + 1 }, (_, i) => `w${i}`))),
+    boundary: check(order(Array.from({ length: MAX_ORDER_ITEMS }, (_, i) => `w${i}`))),
   },
   { rule: "order.items_join", violation: check(order(["She", "plays", "tennis"], "She plays football")) },
 

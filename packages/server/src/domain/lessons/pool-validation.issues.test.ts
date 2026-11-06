@@ -16,9 +16,11 @@ import type { LessonExerciseDraft } from "./types";
 
 /**
  * Zgłoszenia reguł rdzenia (spec katalogu reguł §4.2): tabela błędów kontraktu na
- * prawdziwym `safeParse`, ponowna analiza po pustych napisach (ścieżka agenta),
- * pole źródłowe zamiast `answer` w typach liczonych i konkretne `found`.
- * Komunikaty rodzica (`validateLessonExercise`) pilnuje `pool-validation.test.ts`.
+ * prawdziwym `safeParse` (z odstępstwem: liczności list i długość odpowiedzi z
+ * własną regułą rdzenia dostają jej id), ponowna analiza po pustych napisach i
+ * pominięcie `answer` typów liczonych (oba tylko na ścieżce agenta), pole
+ * źródłowe zamiast `answer` i konkretne `found`. Komunikaty rodzica
+ * (`validateLessonExercise`) pilnuje głównie `pool-validation.test.ts`.
  */
 
 const englishTopic = englishGrammarSubject.topics[0]!;
@@ -37,7 +39,7 @@ function draft(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
   };
 }
 
-const issuesOf = (ex: LessonExerciseDraft, options?: { readonly reanalyzeEmpty?: boolean }) =>
+const issuesOf = (ex: LessonExerciseDraft, options?: { readonly agent?: boolean }) =>
   validateLessonExerciseIssues(ex, englishGrammarSubject, englishTopic, options);
 
 const rulesOf = (issues: readonly LessonRuleIssue[]) => issues.map((issue) => issue.rule as string);
@@ -127,22 +129,51 @@ describe("kontrakt (Zod) → reguły", () => {
   it("liczności list z własną regułą rdzenia dostają jej id", () => {
     const tooManyVariants = issuesOf(draft({ acceptedAnswers: Array.from({ length: 41 }, (_, i) => `v${i}`) }));
     expect(rulesOf(tooManyVariants)).toEqual(["variants.count"]);
+    const tooManyOptions = issuesOf(draft({
+      exerciseType: "lesson_choice",
+      options: Array.from({ length: 5 }, (_, i) => ({ id: `o${i}`, text: `word${i}` })),
+      correctOption: "o0",
+    }));
+    expect(rulesOf(tooManyOptions)).toEqual(["options.count"]);
+    const tooManyItems = issuesOf(draft({
+      exerciseType: "lesson_order",
+      items: Array.from({ length: 11 }, (_, i) => ({ id: `i${i}`, text: `w${i}` })),
+    }));
+    expect(rulesOf(tooManyItems)).toEqual(["order.items_count"]);
+    const notice = (noticeSegments: string[][]) => issuesOf(draft({ exerciseType: "lesson_notice", noticeSegments, correctOption: "plays" }));
+    expect(rulesOf(notice([["plays"], ["a"], ["b"], ["c"]]))).toEqual(["notice.sentence_count"]);
+    const longSentence = notice([["plays", ...Array.from({ length: 15 }, (_, i) => `w${i}`)], ["a"]]);
+    expect(rulesOf(longSentence)).toEqual(["notice.segment_count"]);
+    expect(longSentence[0]!.field).toBe("noticeSegments[0]");
     const longAnswer = schoolIssuesOf(schoolOpen({ answer: "a".repeat(301) }));
     expect(rulesOf(longAnswer)).toEqual(["answer.max_length"]);
   });
 });
 
-describe("ponowna analiza po pustych napisach (reanalyzeEmpty)", () => {
+describe("ponowna analiza po pustych napisach (ścieżka agenta)", () => {
   const emptyHintBadFocus = draft({ hint: "", focus: ["tennis"] });
 
   it("pusty napis w polu opcjonalnym i błędny focus → oba zgłoszenia", () => {
-    const rules = rulesOf(issuesOf(emptyHintBadFocus, { reanalyzeEmpty: true }));
+    const rules = rulesOf(issuesOf(emptyHintBadFocus, { agent: true }));
     expect(rules[0]).toBe("field.empty");
     expect(rules).toContain("focus.not_contiguous");
   });
 
+  it("dalsze zgłoszenia o zdjętym polu są pomijane (pole ma już field.empty)", () => {
+    const issues = issuesOf(draft({
+      exerciseType: "lesson_choice",
+      stem: "",
+      hint: undefined,
+      focus: [],
+      options: [{ id: "a", text: "plays" }, { id: "b", text: "Plays" }],
+      correctOption: "a",
+    }), { agent: true });
+    expect(rulesOf(issues)).toContain("options.duplicate");
+    expect(issues.filter((issue) => issue.field === "stem").map((issue) => issue.rule)).toEqual(["field.empty"]);
+  });
+
   it("field.empty i inny błąd kontraktu → tylko kontrakt", () => {
-    const rules = rulesOf(issuesOf(draft({ hint: "", prompt: "p".repeat(134), focus: ["tennis"] }), { reanalyzeEmpty: true }));
+    const rules = rulesOf(issuesOf(draft({ hint: "", prompt: "p".repeat(134), focus: ["tennis"] }), { agent: true }));
     expect(rules.sort()).toEqual(["field.empty", "field.max_length"]);
   });
 
@@ -162,10 +193,24 @@ describe("pole źródłowe zamiast answer w typach liczonych", () => {
     ["lesson_cloze", "gapAnswers", { clozeText: "a ___ b ___ c", gapAnswers: [] }],
     ["lesson_keywords", "keyOptionIds", { keyOptionIds: [] }],
     ["lesson_calculation", "calculation", { calculation: { kind: "bogus" } }],
-  ] as const)("%s: własne zgłoszenie pola %s → bez zgłoszenia answer", (type, source, fields) => {
-    const issues = issuesOf(base(type, fields));
-    expect(issues.some((issue) => issue.field === source || issue.field.startsWith(`${source}.`))).toBe(true);
-    expect(issues.some((issue) => issue.field === "answer")).toBe(false);
+  ] as const)("%s: własne zgłoszenie pola %s → agent bez zgłoszenia answer, rodzic z nim", (type, source, fields) => {
+    const draftOf = base(type, fields);
+    const agent = issuesOf(draftOf, { agent: true });
+    expect(agent.some((issue) => issue.field === source || issue.field.startsWith(`${source}.`))).toBe(true);
+    expect(agent.some((issue) => issue.pl.startsWith("answer:"))).toBe(false);
+    // Rodzic: dzisiejszy zbiór komunikatów, łącznie z komunikatem o answer.
+    const parent = validateLessonExercise(draftOf, englishGrammarSubject, englishTopic);
+    expect(parent).toContain("answer: wymagane minimum 1");
+    expect(parent.length).toBe(agent.length + 1);
+  });
+
+  it("rodzic dla lesson_match z pairs: [] i answer: \"\" dostaje dokładnie dzisiejsze komunikaty", () => {
+    const ex = base("lesson_match", { pairs: [] });
+    expect(validateLessonExercise(ex, englishGrammarSubject, englishTopic)).toEqual([
+      "answer: wymagane minimum 1",
+      "pairs: wymagane minimum 3",
+    ]);
+    expect(messagesOf(issuesOf(ex, { agent: true }))).toEqual(["pairs: wymagane minimum 3"]);
   });
 
   it.each([
@@ -175,6 +220,7 @@ describe("pole źródłowe zamiast answer w typach liczonych", () => {
     ["lesson_keywords", "keyOptionIds"],
     ["lesson_calculation", "calculation"],
   ] as const)("%s bez pola źródłowego → zgłoszenie answer ma ścieżkę %s", (type, source) => {
+    expect(issuesOf(base(type, {}), { agent: true })).toEqual(issuesOf(base(type, {})));
     const issue = only(issuesOf(base(type, {})), "field.empty");
     expect(issue.field).toBe(source);
     expect(issue.found).toContain(`answer computed from ${source}`);

@@ -14,6 +14,7 @@ import {
 import type { RuleCatalog } from "./catalog";
 import {
   FEEDBACK_SENTENCE_MAX_LENGTH,
+  GAP_MARKER,
   MAX_ACCEPTED_ANSWERS,
   MAX_GAP_ANSWER_TOKENS,
   MAX_NOTICE_SEGMENTS,
@@ -34,9 +35,14 @@ import {
  * kontraktu albo `./limits`.
  */
 export const CORE_RULES = {
-  // Kontrakt (Zod, spec §4.2). Liczności list i długości odpowiedzi, które mają
-  // własną regułę rdzenia (opcje, klocki, warianty, zdania notice, odpowiedź),
-  // zgłaszane są pod jej id.
+  // Kontrakt (Zod, spec §4.2). Odstępstwo od tabeli §4.2 (decyzja kontrolera,
+  // Task 3): liczności list i długości odpowiedzi, które sprawdza też własna
+  // reguła rdzenia, kontrakt zgłasza pod jej id — options → options.count,
+  // items → order.items_count, acceptedAnswers → variants.count, noticeSegments →
+  // notice.sentence_count, noticeSegments[i] → notice.segment_count, za długie
+  // answer i acceptedAnswers[i] → answer.max_length. Jedna granica ma jeden opis
+  // dla modelu, a reguła ma osiągalny przypadek naruszenia. Reszta list i napisów:
+  // field.count i field.max_length.
   "field.empty": {
     field: "exercise",
     kind: "reject",
@@ -334,7 +340,7 @@ export const CORE_RULES = {
     field: "stem",
     kind: "reject",
     types: ["lesson_gap"],
-    description: "The stem of lesson_gap has exactly one gap marker ___ (three underscores).",
+    description: `The stem of lesson_gap has exactly one gap marker ${GAP_MARKER}.`,
   },
   "gap.answer_tokens": {
     field: "answer",
