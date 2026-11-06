@@ -52,7 +52,7 @@ import {
 } from "./probe-costs";
 import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
 import { probePreflight } from "./probe-preflight";
-import { recordingAgent, type AgentSubmission } from "./probe-submissions";
+import { cleanupCounters, recordingAgent, submissionMetrics, type AgentSubmission } from "./probe-submissions";
 
 const { eq } = createRequire(new URL("../../packages/server/package.json", import.meta.url))("drizzle-orm") as typeof import("../../packages/server/node_modules/drizzle-orm");
 
@@ -450,7 +450,9 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     const started = Date.now();
     const resultsPath = join(outDir, `chapter-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);
-    /** Części pliku wyników liczone przy każdym zapisie: koszt (per operacja i per run), tokeny, dziennik generacji. */
+    // Kody odrzuceń runu z punktu kontrolnego (wynik narzędzia ich nie niesie); uzupełniane po runie.
+    let rejectionCodes: Record<string, number> = {};
+    /** Części pliku wyników liczone przy każdym zapisie: koszt (per operacja i per run), tokeny, dziennik generacji, miary przebiegu. */
     const liveParts = (): Record<string, unknown> => ({
       costUsd: {
         total: events.reduce((sum, event) => sum + (event.providerCostUsd ?? 0), 0),
@@ -462,6 +464,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
       },
       lessonLog: lessonLog.map((text) => text.replace(/run=[0-9a-f-]+ /u, "")),
+      submissionMetrics: submissionMetrics(submissions, rejectionCodes),
+      cleanupCounters: cleanupCounters(lessonLog),
       agentSubmissions: submissions,
     });
     /** Plik wyników: wspólna część (wejście, modele, szacunek) i stan przebiegu; koszt i dziennik dokłada zapis. */
@@ -525,6 +529,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       line(`Przebieg: stan=${run.state}${run.errorCode ? ` kod=${run.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(1)} s; ` +
         `próby=${main.attempts}, oczekiwanie kolejki=${(main.waitedMs / 1000).toFixed(1)} s`);
       const agentSummary = await agentRunSummary(runId);
+      rejectionCodes = (agentSummary?.rejectionCodes ?? {}) as Record<string, number>;
       if (agentSummary !== null) {
         line(`Agent: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}; ` +
           `kontrole ${JSON.stringify(agentSummary.checkCounters)}`);
@@ -549,7 +554,13 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         line("Brak szkicu po generacji — nie ma co raportować.");
         return;
       }
-      line(`Dziennik generacji: ${lessonLog.length} wierszy; wysłane ćwiczenia: ${submissions.length}, odrzucone: ${submissions.filter((entry) => "errors" in entry).length} (przyczyny tylko w pliku wyników)`);
+      const metrics = submissionMetrics(submissions, rejectionCodes);
+      const cleanup = cleanupCounters(lessonLog);
+      const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0);
+      line(`Dziennik generacji: wierszy=${lessonLog.length} wysłane=${metrics.submitted} przyjęte=${metrics.accepted} przyjęte1=${metrics.acceptedFirstCall} wywołania=${metrics.submitCalls} ` +
+        `odrzucone: kody=${total(metrics.rejectedByCode)}/${Object.keys(metrics.rejectedByCode).length} reguły=${total(metrics.rejectedByRule)}/${Object.keys(metrics.rejectedByRule).length} ` +
+        `noty=${total(metrics.acceptedWithNotes)}/${Object.keys(metrics.acceptedWithNotes).length} otwarte=${metrics.openAnswers} zPodpowiedzią=${metrics.openAnswersWithHint} ` +
+        `oczyszczenia: podpowiedzi=${cleanup.hintsRemoved} warianty=${cleanup.variantsRemoved} cytaty=${cleanup.quotesSnapped}`);
       results.draft = reportDraft(draft);
 
       // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).

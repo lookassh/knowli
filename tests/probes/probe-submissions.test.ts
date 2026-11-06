@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LessonAgentToolOutcome, LessonObjectiveAgentInput, LessonObjectiveAgentTools, LessonPoolAgentProvider } from "../../packages/server/src/ports/ai";
-import { recordingAgent, type AgentSubmission } from "./probe-submissions";
+import { cleanupCounters, recordingAgent, submissionMetrics, type AgentSubmission } from "./probe-submissions";
 
 const outcome = (results: LessonAgentToolOutcome["results"]): LessonAgentToolOutcome => ({
   results,
@@ -66,5 +66,89 @@ describe("recordingAgent", () => {
 
     expect(seen).toBe(expected);
     expect(log[0]).toMatchObject({ exerciseType: null, errors: ["x"] });
+  });
+});
+
+const accepted = (objective: string, call: number, index: number, exerciseType: string, exercise: unknown, notes?: string[]): AgentSubmission =>
+  ({ objective, call, index, exerciseType, accepted: `ex-${objective}-${call}-${index}`, ...(notes === undefined ? {} : { notes }), exercise });
+const rejected = (objective: string, call: number, index: number, exerciseType: string | null, errors: string[]): AgentSubmission =>
+  ({ objective, call, index, exerciseType, errors, exercise: {} });
+
+describe("submissionMetrics", () => {
+  it("dla pustego dziennika zwraca zera", () => {
+    expect(submissionMetrics([])).toEqual({
+      submitted: 0,
+      accepted: 0,
+      acceptedFirstCall: 0,
+      rejectedByCode: {},
+      rejectedByRule: {},
+      acceptedWithNotes: {},
+      submitCalls: 0,
+      openAnswers: 0,
+      openAnswersWithHint: 0,
+    });
+  });
+
+  it("liczy wysłane, przyjęte, przyjęte w pierwszym wywołaniu i wywołania submit", () => {
+    const log = [
+      accepted("rivers", 1, 0, "lesson_choice", {}),
+      rejected("rivers", 1, 1, "lesson_choice", ["[check.variants] x: y"]),
+      accepted("rivers", 2, 0, "lesson_choice", {}),
+      accepted("lakes", 1, 0, "lesson_choice", {}),
+    ];
+
+    expect(submissionMetrics(log)).toMatchObject({ submitted: 4, accepted: 3, acceptedFirstCall: 2, submitCalls: 3 });
+  });
+
+  it("odrzucenia per reguła: raz na wysłane ćwiczenie i id; błędy bez prefiksu pomija; kody bierze od wywołującego", () => {
+    const log = [
+      rejected("rivers", 1, 0, "lesson_gap", ["[gap.blank_count] clozeText: a", "[gap.blank_count] clozeText: b", "[check.variants] acceptedAnswers: c"]),
+      rejected("rivers", 1, 1, null, ["exercises must be an array"]),
+      rejected("lakes", 1, 0, "lesson_gap", ["[gap.blank_count] clozeText: d"]),
+    ];
+
+    const metrics = submissionMetrics(log, { duplicate: 2, validation: 1 });
+
+    expect(metrics.rejectedByRule).toEqual({ "gap.blank_count": 2, "check.variants": 1 });
+    expect(metrics.rejectedByCode).toEqual({ duplicate: 2, validation: 1 });
+  });
+
+  it("przyjęte z notami per id reguły; noty bez prefiksu nie liczą się do reguł", () => {
+    const log = [
+      accepted("rivers", 1, 0, "lesson_choice", {}, ["[check.variants] acceptedAnswers[0]: removed", "[quote.snap] quote: x"]),
+      accepted("rivers", 1, 1, "lesson_choice", {}, ["[check.variants] acceptedAnswers[1]: removed", "unchecked: a check by another model was unavailable; accepted without it"]),
+      accepted("rivers", 1, 2, "lesson_choice", {}),
+    ];
+
+    expect(submissionMetrics(log).acceptedWithNotes).toEqual({ "check.variants": 2, "quote.snap": 1 });
+  });
+
+  it("openAnswersWithHint: przyjęte pytania otwarte z niepustą podpowiedzią bez noty hint.reveals_words", () => {
+    const log = [
+      accepted("rivers", 1, 0, "lesson_open_answer", { hint: "Think of the sea." }),
+      accepted("rivers", 1, 1, "lesson_open_answer", { hint: "The Vistula." }, ["[hint.reveals_words] hint: removed"]),
+      accepted("rivers", 1, 2, "lesson_open_answer", { hint: "  " }),
+      accepted("rivers", 1, 3, "lesson_open_answer", {}),
+      accepted("rivers", 1, 4, "lesson_choice", { hint: "ignored" }),
+      rejected("rivers", 1, 5, "lesson_open_answer", ["[hint.judge] hint: bad"]),
+    ];
+
+    expect(submissionMetrics(log)).toMatchObject({ openAnswers: 4, openAnswersWithHint: 1 });
+  });
+});
+
+describe("cleanupCounters", () => {
+  it("sumuje liczniki oczyszczeń z wierszy dziennika zagadnień i pomija inne wiersze", () => {
+    const lines = [
+      "[lesson-agent] run=abc obj=rivers status=done steps=3 accepted=5 rejected=- hintsRemoved=1 variantsRemoved=2 quotesSnapped=3 costUsd=0.1000",
+      "[lesson-agent] run=abc obj=lakes status=done steps=2 accepted=4 rejected=duplicate:1 hintsRemoved=0 variantsRemoved=1 quotesSnapped=0 costUsd=0.0500",
+      "[lesson] run=abc something hintsRemoved=9",
+    ];
+
+    expect(cleanupCounters(lines)).toEqual({ hintsRemoved: 1, variantsRemoved: 3, quotesSnapped: 3 });
+  });
+
+  it("dla braku wierszy zwraca zera", () => {
+    expect(cleanupCounters([])).toEqual({ hintsRemoved: 0, variantsRemoved: 0, quotesSnapped: 0 });
   });
 });
