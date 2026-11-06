@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AgentObjective, LessonExerciseDraft } from "../../types";
 import { baseNormalizer } from "../../normalize";
 import { createProductionSubjectRegistry } from "..";
-import { legacyModelText } from "../../rules/catalog";
 import { schoolAgentPolicy } from "./agent-policy";
 import { schoolSubject } from "./module";
 
@@ -129,7 +128,7 @@ describe("schoolAgentPolicy.exerciseGate", () => {
     const findings = gate(draft({ hint: "Przykładem jest Mierzeja Wiślana" }));
     expect(findings.map((finding) => finding.code)).toEqual(["hint_reveals_answer"]);
     // Model dostaje dzisiejszy tekst (`found ?? pl`), a zgłoszenie wskazuje regułę katalogu.
-    expect(findings.map((finding) => legacyModelText(finding.issue))).toEqual([
+    expect(findings.map((finding) => (finding.issue.found ?? finding.issue.pl))).toEqual([
       "the hint gives away the answer or a required element; hint at the reasoning, not the content",
     ]);
     expect(findings[0]!.issue).toMatchObject({ rule: "hint.reveals_words", field: "hint" });

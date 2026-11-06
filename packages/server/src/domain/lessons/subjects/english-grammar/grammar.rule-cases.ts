@@ -1,6 +1,5 @@
-import type { LessonRuleIssue } from "../../rules/catalog";
 import { registerRuleCases } from "../../testing/rule-cases";
-import type { LegacyIssue, LessonExerciseDraft, LessonTopic } from "../../types";
+import type { LessonExerciseDraft, LessonTopic } from "../../types";
 import { englishGrammarSubject } from "./module";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
@@ -15,13 +14,8 @@ const AFF = "english_grammar.to_be.affirmative_forms";
 const NEG = "english_grammar.to_be.negative_forms";
 const SHORT = "english_grammar.to_be.short_answers";
 
-/** Zgłoszenia reguł z haka (napisy okresu przejściowego pomijamy — gramatyka ich nie zwraca). */
-function ruleIssues(items: readonly LegacyIssue[]): LessonRuleIssue[] {
-  return items.filter((item): item is LessonRuleIssue => typeof item !== "string");
-}
-
 const check = (draft: LessonExerciseDraft, topic: LessonTopic) => () =>
-  ruleIssues(englishGrammarSubject.validateExercise(draft, topic));
+  englishGrammarSubject.validateExercise(draft, topic);
 
 /** Luka tematu „to be”. */
 function beGap(objectiveId: string, stem: string, answer: string, hint = "be"): LessonExerciseDraft {

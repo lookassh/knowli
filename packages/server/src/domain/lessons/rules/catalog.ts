@@ -1,4 +1,4 @@
-import type { LegacyIssue, LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
+import type { LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
 import { CORE_RULES } from "./core-rules";
 import { LESSON_RULES } from "./lesson-rules";
 
@@ -130,30 +130,7 @@ export function clip(text: string, max: number = CLIP_MAX, options: { readonly q
  * reguł może dzielić dzisiejszy tekst (np. rodzina różna odpowiedzią i elementami).
  */
 export function messagesOf(issues: readonly LessonRuleIssue[]): string[] {
-  return uniqueInOrder(issues.map((issue) => issue.pl));
-}
-
-/** Napisy bez powtórzeń, w kolejności pierwszego wystąpienia. */
-function uniqueInOrder(texts: readonly string[]): string[] {
-  return [...new Set(texts)];
-}
-
-/**
- * Komunikaty dla rodzica ze zgłoszeń haków przedmiotów w okresie przejściowym:
- * napis bez zmian, zgłoszenie reguły przez `pl`, bez powtórzeń (jak `messagesOf`).
- * Znika razem z `LegacyIssue`.
- */
-export function legacyMessages(items: readonly LegacyIssue[]): string[] {
-  return uniqueInOrder(items.map((item) => (typeof item === "string" ? item : item.pl)));
-}
-
-/**
- * Tekst zgłoszenia haka dla modelu agenta w okresie przejściowym: napis bez
- * zmian, zgłoszenie reguły przez `found ?? pl` (dzisiejszy angielski tekst
- * bramki jest w `found`).
- */
-export function legacyModelText(item: LegacyIssue): string {
-  return typeof item === "string" ? item : (item.found ?? item.pl);
+  return [...new Set(issues.map((issue) => issue.pl))];
 }
 
 /** Katalogi silnika: rdzeń i lekcja. */

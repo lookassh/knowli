@@ -34,7 +34,7 @@ import {
 import { materialCreationMode } from "../../../domain/lessons/material-creation";
 import { keywordsAnswer } from "../../../domain/lessons/pool-validation";
 import { withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
-import { legacyMessages } from "../../../domain/lessons/rules/catalog";
+import { messagesOf } from "../../../domain/lessons/rules/catalog";
 import {
   lessonExerciseStimulus,
   lessonIdentityOptionsOf,
@@ -809,7 +809,7 @@ export function splitByPoolExtra(
   const extraRejected: { exercise: LessonExerciseDraft; errors: string[] }[] = [];
   drafts.forEach((draft, index) => {
     const errs = extra.get(index);
-    if (errs && errs.length > 0) extraRejected.push({ exercise: draft, errors: legacyMessages(errs) });
+    if (errs && errs.length > 0) extraRejected.push({ exercise: draft, errors: messagesOf(errs) });
     else kept.push(draft);
   });
   return { kept, extraRejected };

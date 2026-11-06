@@ -16,6 +16,7 @@ import {
   subject,
   topic,
 } from "../testing/agent-admission-fixtures";
+import { testIssue } from "../testing/test-issue";
 import { withAgentPolicy } from "../testing/agent-test-subject";
 import type { DynamicTopicData, LessonExerciseDraft } from "../types";
 import { admitBatch, precheckBatch, removeExercise, type AdmitEntry, type AgentCheckContext, type PrecheckEntry } from "./admission";
@@ -94,7 +95,7 @@ describe("przyjmowanie paczki — limity i kolejność kroków", () => {
 
   it("bramka przedmiotu zwraca swój kod i powody", () => {
     const gated = withAgentPolicy(subject, {
-      exerciseGate: (draft) => (draft.answer === "odpowiedź 2" ? [{ code: "gate_code", issue: "gate reason" }] : []),
+      exerciseGate: (draft) => (draft.answer === "odpowiedź 2" ? [{ code: "gate_code", issue: testIssue("gate reason") }] : []),
     });
     const result = submit(stateWith(), A, [choice(A, 1), choice(A, 2)], contextFor({ subject: gated }));
     expect(result.results[0]).toMatchObject({ accepted: "ex1" });
@@ -149,7 +150,7 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
         ...subject,
         validatePoolExtra: (drafts) => {
           const triggered = drafts.some((draft) => draft.answer === "odpowiedź 9");
-          return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, ["victim of trigger"]] as const] : [])));
+          return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, [testIssue("victim of trigger")]] as const] : [])));
         },
       },
       subject.agentPolicy,

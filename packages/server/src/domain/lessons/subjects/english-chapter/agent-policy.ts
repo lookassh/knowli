@@ -9,6 +9,7 @@ import type {
 } from "../../types";
 import { chapterExposureText } from "./exposure";
 import { frameKey, mentions, parseMaterialLexicon, plainText } from "./material-lexicon";
+import { chapterIssue } from "./rules";
 
 /**
  * Polityka agenta puli dla przedmiotu `english_chapter` (design etapu 1 §4.2):
@@ -112,10 +113,16 @@ function cardWordFindings(draft: LessonExerciseDraft, objective: AgentObjective,
   // Pary i grupy wymagają dwóch słów, ale zagadnienie z jednym słowem kart nie może wymagać więcej niż ma.
   if (hits >= (isMatchOrGroup(draft) ? Math.min(2, cardWords.length) : 1)) return [];
   const part = draft.exerciseType === "lesson_cloze" ? "gap words" : isMatchOrGroup(draft) ? "items" : "answer";
+  const field = draft.exerciseType === "lesson_cloze" ? "gapAnswers" : draft.exerciseType === "lesson_match" ? "pairs" : draft.exerciseType === "lesson_group" ? "groupItems" : "answer";
   return [
     {
       code: "card_word_missing",
-      issue: `the checked ${part} must contain a word of THIS objective's cards (${cardWords.join(", ")}); other words may only fill the sentence.`,
+      // Dzisiejszy tekst dla modelu jest w `found` (model dostaje `found ?? pl`).
+      issue: chapterIssue("chapter.card_word_missing", {
+        field,
+        pl: `${field}: sprawdzane słowo musi pochodzić z kart tego zagadnienia`,
+        found: `the checked ${part} must contain a word of THIS objective's cards (${cardWords.join(", ")}); other words may only fill the sentence.`,
+      }),
     },
   ];
 }
@@ -142,7 +149,11 @@ function frameFindings(draft: LessonExerciseDraft, objective: AgentObjective, ma
   return [
     {
       code: "frame_missing",
-      issue: `the solved sentence must contain the fixed part of a sentence frame of THIS objective's cards (${keys.map((key) => `"${key}"`).join(", ")}); do not use another objective's frame.`,
+      // Dzisiejszy tekst dla modelu jest w `found` (model dostaje `found ?? pl`).
+      issue: chapterIssue("chapter.frame_missing", {
+        pl: "answer: rozwiązanie musi zawierać stałą część ramy z kart tego zagadnienia",
+        found: `the solved sentence must contain the fixed part of a sentence frame of THIS objective's cards (${keys.map((key) => `"${key}"`).join(", ")}); do not use another objective's frame.`,
+      }),
     },
   ];
 }

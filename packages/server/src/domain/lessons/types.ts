@@ -144,19 +144,12 @@ export interface RawPlanObjective {
 }
 
 /**
- * Zgłoszenie haka przedmiotu w okresie przejściowym (spec katalogu reguł §2.3):
- * napis (przedmioty jeszcze bez katalogu) albo zgłoszenie reguły. Znika, gdy
- * wszystkie przedmioty zgłaszają reguły (`legacyMessages` → `messagesOf`).
- */
-export type LegacyIssue = string | LessonRuleIssue;
-
-/**
  * Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, a do
- * modelu tekst zgłoszenia (`legacyModelText`: napis albo `found ?? pl`).
+ * modelu tekst zgłoszenia (`found ?? pl`).
  */
 export interface AgentGateFinding {
   readonly code: string;
-  readonly issue: LegacyIssue;
+  readonly issue: LessonRuleIssue;
 }
 
 /**
@@ -419,10 +412,10 @@ export interface SubjectModule {
     ctx: { material: string },
   ): {
     kept: LessonExerciseDraft[];
-    rejected: { exercise: LessonExerciseDraft; issues: readonly LegacyIssue[] }[];
+    rejected: { exercise: LessonExerciseDraft; issues: readonly LessonRuleIssue[] }[];
   };
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
-  validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): readonly LegacyIssue[];
+  validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): readonly LessonRuleIssue[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej
   /** „Posłuchaj pytania” (design szkoły §11): nagranie polecenia i pytania (`pl-PL`) przy przygotowaniu materiału. */
   readonly ttsForPrompts: boolean;
@@ -457,7 +450,7 @@ export interface SubjectModule {
   validatePoolExtra?(
     drafts: readonly LessonExerciseDraft[],
     ctx: { material: string },
-  ): ReadonlyMap<number, readonly LegacyIssue[]>;
+  ): ReadonlyMap<number, readonly LessonRuleIssue[]>;
   /** Polityka agenta puli — każdy przedmiot jest generowany agentem. */
   readonly agentPolicy: SubjectAgentPolicy;
   /**

@@ -6,7 +6,7 @@ import type { DynamicTopicData, LessonExerciseDraft } from "../../types";
 import { poolCoverage, validateLessonExercise, validatePool } from "../../pool-validation";
 import { renderCalculationPrompt, computeCalculationAnswer } from "../../calculation";
 import type { CalculationSpec } from "@learning/contracts";
-import { legacyMessages, type LessonRuleIssue } from "../../rules/catalog";
+import { messagesOf, type LessonRuleIssue } from "../../rules/catalog";
 import { schoolSubject } from "./module";
 
 const MATERIAL =
@@ -74,7 +74,7 @@ describe("school calculation validation", () => {
   it("checks quote membership at the pool hook with material", () => {
     const forged = calculationDraft(scale, { sourceRefs: [{ quote: "Skala mapy określa stosunek odległości." }] });
     expect(validateLessonExercise(forged, schoolSubject, topic)).toEqual([]);
-    expect(legacyMessages(schoolSubject.validatePoolExtra!([forged], { material: MATERIAL }).get(0) ?? []).some((error) => error.includes("sourceRefs"))).toBe(true);
+    expect(messagesOf(schoolSubject.validatePoolExtra!([forged], { material: MATERIAL }).get(0) ?? []).some((error) => error.includes("sourceRefs"))).toBe(true);
   });
   it("allows numeric variants in a shared template family and deduplicates across family IDs", () => {
     const a = calculationDraft();
@@ -94,13 +94,13 @@ describe("school calculation validation", () => {
     { calculation: { ...scale, unit: "km" } },
   ] as const)("rejects inconsistent calculation template family %j", (overrides) => {
     const result = schoolSubject.validatePoolExtra!([calculationDraft(), calculationDraft(scale, overrides)], { material: MATERIAL });
-    expect(legacyMessages(result.get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
+    expect(messagesOf(result.get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
   });
   it("requires a common conversion input unit in a template family", () => {
     const conversion: CalculationSpec = { kind: "unit_conversion", params: { value: 2, fromUnit: "km" }, unit: "m", templateFamilyId: "units" };
     const a = calculationDraft(conversion);
     const b = calculationDraft({ ...conversion, params: { value: 3, fromUnit: "cm" } });
-    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
+    expect(messagesOf(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? []).some((error) => error.includes("templateFamilyId"))).toBe(true);
   });
   it("counts calculations as independent while retaining the school pool minima", () => {
     const gaps = poolCoverage([calculationDraft()], [dynamicData.objectives[0]!.id], schoolSubject.poolMinimums!);
@@ -192,7 +192,7 @@ describe("przedmiot school", () => {
   it("odrzuca cytat spoza materiału, a cytat rodzica przepuszcza", () => {
     const forged = openDraft({ sourceRefs: [{ quote: "Rośliny jedzą słońce na śniadanie." }] });
     const extra = schoolSubject.validatePoolExtra!([forged], { material: MATERIAL });
-    expect(legacyMessages(extra.get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
+    expect(messagesOf(extra.get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
 
     const parent = openDraft({ sourceRefs: [{ quote: "Rośliny jedzą słońce na śniadanie.", parentAdded: true }] });
     expect(schoolSubject.validatePoolExtra!([parent], { material: MATERIAL }).size).toBe(0);
@@ -202,7 +202,7 @@ describe("przedmiot school", () => {
     const spaced = openDraft({ sourceRefs: [{ quote: "przy  udziale\nświatła, wytwarza cukry" }] });
     expect(schoolSubject.validatePoolExtra!([spaced], { material: MATERIAL }).size).toBe(0);
     const recased = openDraft({ sourceRefs: [{ quote: "Przy udziale światła, wytwarza cukry" }] });
-    expect(legacyMessages(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
+    expect(messagesOf(schoolSubject.validatePoolExtra!([recased], { material: MATERIAL }).get(0) ?? []).some((e) => e.includes("sourceRefs"))).toBe(true);
   });
 
   it("wymaga elementów wymaganych i formy dla odpowiedzi otwartej", () => {
@@ -220,7 +220,7 @@ describe("przedmiot school", () => {
     const a = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const b = openDraft({ familyId: "fam", prompt: "Wyjaśnij fotosyntezę.", answer: "Inny wzorzec odpowiedzi, wytwarza cukry.", focus: ["cukry"] });
     const extra = schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL });
-    expect(legacyMessages(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
+    expect(messagesOf(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
   });
   it("rodzina sformułowań przechodzi PEŁNĄ walidację puli (regresja deduplikacji)", () => {
     const topic = schoolSubject.buildDynamicTopic!(dynamicData);
@@ -244,16 +244,16 @@ describe("przedmiot school", () => {
     const a = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const b = openDraft({ familyId: "fam", prompt: "Co to jest fotosynteza?" });
     const extra = schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL });
-    expect(legacyMessages(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
+    expect(messagesOf(extra.get(1) ?? []).some((e) => e.includes("familyId"))).toBe(true);
     // Różnica samej wielkości liter to nadal to samo pytanie (w odróżnieniu od cytatów).
     const lower = openDraft({ familyId: "fam", prompt: "co to jest  FOTOSYNTEZA?" });
-    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, lower], { material: MATERIAL }).get(1) ?? []).some((e) => e.includes("powiela"))).toBe(true);
+    expect(messagesOf(schoolSubject.validatePoolExtra!([a, lower], { material: MATERIAL }).get(1) ?? []).some((e) => e.includes("powiela"))).toBe(true);
   });
 
   it("za krótki cytat nie uziemia ćwiczenia", () => {
     const ex = openDraft({ sourceRefs: [{ quote: "966" }] });
     const extra = schoolSubject.validatePoolExtra!([ex], { material: MATERIAL });
-    expect(legacyMessages(extra.get(0) ?? []).some((e) => e.includes("za krótki"))).toBe(true);
+    expect(messagesOf(extra.get(0) ?? []).some((e) => e.includes("za krótki"))).toBe(true);
   });
 
   it("expectedForm na typie zamkniętym jest odrzucane", () => {
@@ -320,7 +320,7 @@ describe("słowa kluczowe (lesson_keywords)", () => {
 
   it("wymaga rodziny pytań otwartych w tym samym zagadnieniu", () => {
     const extra = schoolSubject.validatePoolExtra!([openDraft({ familyId: "inna" }), keywordsDraft()], { material: MATERIAL });
-    expect(legacyMessages(extra.get(1) ?? []).some((error) => error.includes("brak rodziny"))).toBe(true);
+    expect(messagesOf(extra.get(1) ?? []).some((error) => error.includes("brak rodziny"))).toBe(true);
   });
 
   it("wymaga pojęć kluczowych z odpowiedzi wzorcowej albo materiału, a dystraktory sprawdza rodzic", () => {
@@ -329,7 +329,7 @@ describe("słowa kluczowe (lesson_keywords)", () => {
       answer: "chlorofil, cukry",
     });
     const extra = schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL });
-    expect(legacyMessages(extra.get(1) ?? []).some((error) => error.includes("chlorofil"))).toBe(true);
+    expect(messagesOf(extra.get(1) ?? []).some((error) => error.includes("chlorofil"))).toBe(true);
   });
 
   it("nie łączy słów kluczowych z rodziną pytań w kontroli spójności rodziny", () => {
@@ -578,7 +578,7 @@ describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
     const pl = "familyId: ćwiczenie z rodziny „fam” różni się odpowiedzią wzorcową lub elementami wymaganymi od reszty rodziny";
     expect(issues.map((issue) => issue.pl)).toEqual([pl, pl]);
     // Rodzic i model dostają ten komunikat raz, jak przed rozdzieleniem reguł.
-    expect(legacyMessages(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? [])).toEqual([pl]);
+    expect(messagesOf(schoolSubject.validatePoolExtra!([a, b], { material: MATERIAL }).get(1) ?? [])).toEqual([pl]);
   });
 
   it("rodzina: różnica tylko w odpowiedzi albo tylko w elementach daje jedną regułę", () => {

@@ -5,4 +5,6 @@
  * walidatory i katalogi importują stałe stąd. Wypełniany w kolejnych zadaniach
  * (limity kontraktu zostają w `@learning/contracts`).
  */
-export {};
+
+/** Najkrótsze polecenie rozdziału niosące polskie zdanie-bodziec (znaki po przycięciu). */
+export const MIN_STIMULUS_INSTRUCTION_LENGTH = 12;

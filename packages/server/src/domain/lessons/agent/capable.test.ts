@@ -3,6 +3,7 @@ import type { DynamicObjectiveKind, LessonExerciseDraft } from "../types";
 import { historyLikeSubject } from "../testing/history-like-subject";
 import { agentTestSubject, withAgentPolicy } from "../testing/agent-test-subject";
 import { agentObjectivesOf } from "./capable";
+import { messagesOf } from "../rules/catalog";
 
 describe("agentObjectivesOf", () => {
   const topic = historyLikeSubject.topics[0]!;
@@ -48,7 +49,7 @@ describe("agentTestSubject", () => {
 
   it("validatePoolExtra wymaga rodziny pytania otwartego dla słów kluczowych", () => {
     const keywords = draft({ exerciseType: "lesson_keywords", familyId: "f" });
-    expect(agentTestSubject.validatePoolExtra!([keywords], { material: "" }).get(0)).toEqual([
+    expect(agentTestSubject.validatePoolExtra!([keywords], { material: "" }).get(0)?.map((issue) => issue.pl)).toEqual([
       "keywords without open-answer family",
     ]);
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f" })], { material: "" }).size).toBe(0);
@@ -62,7 +63,7 @@ describe("agentTestSubject", () => {
       { material: "" },
     );
     expect(result.kept.map((kept) => kept.acceptedAnswers)).toEqual([["a"]]);
-    expect(result.rejected.flatMap((rejected) => rejected.issues)).toEqual(["refine reject"]);
+    expect(result.rejected.flatMap((rejected) => messagesOf(rejected.issues))).toEqual(["refine reject"]);
   });
 
   it("withAgentPolicy nadpisuje wybrane pola polityki", () => {

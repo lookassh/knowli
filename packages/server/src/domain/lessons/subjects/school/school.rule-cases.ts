@@ -1,8 +1,7 @@
 import { MIN_SOURCE_QUOTE_LENGTH, type CalculationSpec } from "@learning/contracts";
 import { computeCalculationAnswer, renderCalculationPrompt } from "../../calculation";
-import type { LessonRuleIssue } from "../../rules/catalog";
 import { registerRuleCases } from "../../testing/rule-cases";
-import type { AgentObjective, LegacyIssue, LessonExerciseDraft, LessonTopic } from "../../types";
+import type { AgentObjective, LessonExerciseDraft, LessonTopic } from "../../types";
 import { schoolSubject } from "./module";
 
 /**
@@ -92,16 +91,11 @@ function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExer
   };
 }
 
-/** Zgłoszenia reguł z haka (napisy okresu przejściowego pomijamy — szkoła ich nie zwraca). */
-function ruleIssues(items: readonly LegacyIssue[]): LessonRuleIssue[] {
-  return items.filter((item): item is LessonRuleIssue => typeof item !== "string");
-}
-
-const exercise = (draft: LessonExerciseDraft) => () => ruleIssues(schoolSubject.validateExercise(draft, topic));
+const exercise = (draft: LessonExerciseDraft) => () => schoolSubject.validateExercise(draft, topic);
 const pool = (drafts: readonly LessonExerciseDraft[]) => () =>
-  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flatMap(ruleIssues);
+  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flat();
 const gate = (draft: LessonExerciseDraft) => () =>
-  ruleIssues(schoolSubject.agentPolicy.exerciseGate!(draft, objective, { material: MATERIAL }).map((finding) => finding.issue));
+  schoolSubject.agentPolicy.exerciseGate!(draft, objective, { material: MATERIAL }).map((finding) => finding.issue);
 
 const family = openDraft({ familyId: "def" });
 
