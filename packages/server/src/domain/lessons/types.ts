@@ -145,7 +145,7 @@ export interface RawPlanObjective {
 
 /**
  * Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, a do
- * modelu tekst zgłoszenia (`found ?? pl`).
+ * modelu powód z id reguły zgłoszenia (`formatRuleReason`).
  */
 export interface AgentGateFinding {
   readonly code: string;
@@ -171,18 +171,12 @@ export interface SubjectAgentPolicy {
   /** Typy sprawdzane kontrolą otwartą: rozwiązujący + grader (etap 2b). Brak = pusta lista. */
   readonly openAnswerCheckTypes?: readonly LessonExerciseType[];
   /**
-   * Szablony odrzuceń dla modelu (po angielsku). Pola sędziego podpowiedzi i kontroli otwartej
-   * są wymagane tylko wtedy, gdy przedmiot ma niepustą odpowiednią listę typów.
+   * Dopiski przedmiotu do opisów reguł silnika (spec katalogu reguł §2.1; po angielsku, dla
+   * modelu): id reguły rdzenia albo lekcji → zdania doklejane do jej opisu (`describeRule`), np.
+   * `lesson.leak` — jak zmienić ujawnione zdanie w tym przedmiocie. Klucz spoza katalogów silnika
+   * odrzuca `validateSubject`.
    */
-  readonly rejectionTexts: {
-    readonly leakVictim: string;
-    readonly leakSource: string;
-    readonly hintUnsupported?: string;
-    readonly hintLanguage?: string;
-    readonly hintReveals?: string;
-    readonly openMissing?: string;
-    readonly openWrong?: string;
-  };
+  readonly ruleNotes?: Partial<Record<string, string>>;
   requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
   /**
    * Oczyszczenie kandydata agenta przed kontrolami: `removed` — nazwy usuniętych pól,

@@ -94,10 +94,10 @@ describe("materializeRawExercise — kod liczy odpowiedź i treść", () => {
   it("zły kształt list typów liczonych → reguła kształtu pola", () => {
     expect(issuesOf({ ...MATCH, pairs: [null] })).toEqual({
       exerciseType: "lesson_match",
-      issues: [["shape.pairs", "pairs[0]", "pairs[0]: expected {left, right}, got null"]],
+      issues: [["shape.pairs", "pairs[0]", "expected {left, right}, got null"]],
     });
     expect(issuesOf({ ...GROUP, groupItems: [{ text: "pies" }] }).issues).toEqual([
-      ["shape.group_items", "groupItems[0].groupId", "groupItems[0].groupId: expected a string, got nothing"],
+      ["shape.group_items", "groupItems[0].groupId", "expected a string, got nothing"],
     ]);
     expect(issuesOf({ ...KEYWORDS, keywordOptions: [null] }).issues[0]![0]).toBe("shape.keyword_options");
     expect(issuesOf({ ...CLOZE, gapAnswers: [1] }).issues[0]![0]).toBe("shape.gap_answers");
@@ -106,7 +106,7 @@ describe("materializeRawExercise — kod liczy odpowiedź i treść", () => {
   it("luki bez tekstu → cloze.text_required; tekst innego typu → shape.text_field", () => {
     expect(issuesOf({ ...CLOZE, clozeText: undefined }).issues).toEqual([["cloze.text_required", "clozeText", "clozeText is missing"]]);
     expect(issuesOf({ ...CLOZE, clozeText: 5 }).issues).toEqual([
-      ["shape.text_field", "clozeText", "clozeText: expected a string or null, got a number"],
+      ["shape.text_field", "clozeText", "expected a string or null, got a number"],
     ]);
   });
 

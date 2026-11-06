@@ -1,6 +1,7 @@
 import {
   admitBatch,
   precheckBatch,
+  rejectionOf,
   removeExercise,
   submitExamples,
   type AdmitEntry,
@@ -21,6 +22,7 @@ import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import { materializeRawExercise } from "../../../domain/lessons/raw-materialize";
 import { foreignObjectiveIssues, rawShapeIssues } from "../../../domain/lessons/raw-shape";
 import type { LessonRuleIssue } from "../../../domain/lessons/rules/catalog";
+import { formatRuleReason } from "../../../domain/lessons/rules/rule-reason";
 import type { LessonExerciseDraft, LessonTopic, SchoolCriteria } from "../../../domain/lessons/types";
 import type {
   GraderInput,
@@ -143,13 +145,13 @@ function rawExerciseType(raw: unknown): string {
   return typeof type === "string" ? type : "unknown";
 }
 
-/** Odrzucenie kształtu; do Task 7 `reasons` to `found ?? pl` każdego zgłoszenia. */
+/** Odrzucenie kształtu: zgłoszenia reguł `shape.*` i powody `[id] pole: found`. */
 function shapeRejection(
   exerciseType: string,
   code: "shape_malformed" | "shape_objective",
   issues: readonly LessonRuleIssue[],
 ): ParsedRecord {
-  return { ok: false, exerciseType, rejection: { kind: "shape", code, reasons: issues.map((issue) => issue.found ?? issue.pl) } };
+  return { ok: false, exerciseType, rejection: rejectionOf("shape", code, issues) };
 }
 
 function isStringList(value: unknown): value is readonly string[] {
@@ -554,7 +556,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
       logRejection(draft.exerciseType, entry.rejected);
       return { index, errors: entry.rejected.reasons };
     }
-    const notes = [...entry.sanitized, ...(entry.unchecked ? ["unchecked"] : [])];
+    // Noty reguł (usunięta podpowiedź, usunięte warianty) w formacie powodów; pełny format wyniku dochodzi z księgą reguł.
+    const notes = [...entry.sanitized, ...(entry.unchecked ? ["unchecked"] : []), ...entry.notes.map(formatRuleReason)];
     return notes.length === 0 ? { index, accepted: entry.accepted } : { index, accepted: entry.accepted, note: notes.join(", ") };
   }
 

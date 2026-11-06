@@ -4,7 +4,10 @@ import { baseNormalizer } from "../../normalize";
 import { createProductionSubjectRegistry } from "..";
 import { schoolAgentPolicy } from "./agent-policy";
 import { validateLessonExercise } from "../../pool-validation";
+import { describeRule, ruleOf, type RuleId, type RuleTextContext } from "../../rules/catalog";
 import { schoolSubject } from "./module";
+
+const TEXT_CTX: RuleTextContext = { answerMaxLength: 600, groundingRequired: true };
 
 const objective: AgentObjective = {
   id: "school.dx.geografia",
@@ -60,38 +63,47 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     }
   });
 
-  it("każdy zarejestrowany przedmiot: niepusta lista kontroli ma komplet tekstów odrzuceń, a sędzia podpowiedzi wymaga materiału", () => {
+  it("każdy zarejestrowany przedmiot: sędzia podpowiedzi wymaga materiału i dopisku, a żaden typ nie jest w obu listach wariantów i kontroli otwartej", () => {
     const policies = createProductionSubjectRegistry()
       .listSubjects()
       .map((subject) => [subject.id, subject.agentPolicy] as const);
     // Szkoła ma obie listy: niezmiennik nie jest pusty.
     expect(policies.map(([id]) => id)).toContain(schoolSubject.id);
     for (const [id, policy] of policies) {
-      const texts = policy.rejectionTexts;
       if ((policy.hintJudgeTypes ?? []).length > 0) {
         expect(policy.checkerNeedsMaterial, id).toBe(true);
-        for (const text of [texts.hintUnsupported, texts.hintLanguage, texts.hintReveals]) expect(text?.length ?? 0, id).toBeGreaterThan(0);
+        expect(policy.ruleNotes?.["check.hint_judge"]?.length ?? 0, id).toBeGreaterThan(0);
       }
-      if ((policy.openAnswerCheckTypes ?? []).length > 0) {
-        for (const text of [texts.openMissing, texts.openWrong]) expect(text?.length ?? 0, id).toBeGreaterThan(0);
-      }
+      // Ocena przyjęta tylko dzięki usuniętemu wariantowi staje się `unavailable` (spec katalogu
+      // reguł §5.3); dziś żaden przedmiot nie łączy obu kontroli w jednym typie.
+      const open = new Set(policy.openAnswerCheckTypes ?? []);
+      expect(policy.variantCheckTypes.filter((type) => open.has(type)), id).toEqual([]);
     }
   });
 
-  it("teksty odrzuceń wskazują, co poprawić, i nie pozwalają wyrzucić wymaganych elementów", () => {
-    const texts = schoolAgentPolicy.rejectionTexts;
-    expect(texts.hintUnsupported).toContain("set hint to null");
-    expect(texts.hintLanguage).toContain("not correct Polish");
-    expect(texts.hintReveals).toContain("Hint at the reasoning, not the content");
-    expect(texts.openMissing).toContain("supplementaryElements");
-    expect(texts.openMissing).toContain("Do not drop elements the question genuinely requires");
-    expect(texts.openWrong).toContain("commonErrors");
+  it("dopisek sędziego i opis kontroli otwartej wskazują, co poprawić, i nie pozwalają wyrzucić wymaganych elementów", () => {
+    const notes = schoolAgentPolicy.ruleNotes ?? {};
+    expect(notes["check.hint_judge"]).toContain("set it to null");
+    expect(notes["check.hint_judge"]).toContain("not correct Polish");
+    expect(notes["check.hint_judge"]).toContain("hint at the reasoning, not the content");
+    const open = describeRule(ruleOf(schoolSubject, "check.open_answer" as RuleId)!, TEXT_CTX, notes["check.open_answer"]);
+    expect(open).toContain("supplementaryElements");
+    expect(open).toContain("“any two”");
+    expect(open).toContain("do not drop elements the question genuinely requires");
+    expect(open).toContain("commonErrors");
+    expect(open).toContain(notes["check.open_answer"]!);
   });
 
-  it("leakVictim nie wspomina pokoju i podpowiada inny fakt lub inne sformułowanie", () => {
-    expect(schoolAgentPolicy.rejectionTexts.leakVictim).not.toContain("room");
-    expect(schoolAgentPolicy.rejectionTexts.leakVictim).toContain("ask about a different fact of the material or phrase the question differently");
-    expect(schoolAgentPolicy.rejectionTexts.leakSource.length).toBeGreaterThan(0);
+  it("dopisek lesson.leak nie wspomina pokoju, podpowiada inny fakt lub inne sformułowanie i trafia do opisu reguły", () => {
+    const leak = schoolAgentPolicy.ruleNotes?.["lesson.leak"] ?? "";
+    expect(leak).not.toContain("room");
+    expect(leak).toContain("ask about a different fact of the material or phrase the question differently");
+    expect(describeRule(ruleOf(schoolSubject, "lesson.leak" as RuleId)!, TEXT_CTX, leak)).toContain(leak);
+    expect(schoolAgentPolicy.ruleNotes?.["lesson.leak_source"]?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("szkoła nie dopisuje nic do check.blind_solve (zdanie źródłowe dotyczy przedmiotów angielskich)", () => {
+    expect(schoolAgentPolicy.ruleNotes?.["check.blind_solve"]).toBeUndefined();
   });
 
   it("nie ma wymaganych typów, braków ani planu", () => {

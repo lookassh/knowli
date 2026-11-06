@@ -4,13 +4,19 @@ import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "./subjects
 import { historyLikeSubject } from "./testing/history-like-subject";
 import type { SubjectModule } from "./types";
 
-// Katalogi silnika z jedną regułą każdy — do testu kolizji id przedmiotu z rdzeniem
-// i lekcją (pozostałe testy pliku nie zależą od katalogów silnika).
-vi.mock("./rules/core-rules", () => ({
-  CORE_RULES: { "core.fixture": { field: "answer", kind: "reject", description: "Core fixture." } },
+// Prawdziwe katalogi silnika z dodatkową regułą każdy — do testu kolizji id przedmiotu z
+// rdzeniem i lekcją; dopiski `ruleNotes` przedmiotów produkcyjnych dotyczą prawdziwych reguł.
+vi.mock("./rules/core-rules", async (importOriginal) => ({
+  CORE_RULES: {
+    ...(await importOriginal<typeof import("./rules/core-rules")>()).CORE_RULES,
+    "core.fixture": { field: "answer", kind: "reject", description: "Core fixture." },
+  },
 }));
-vi.mock("./rules/lesson-rules", () => ({
-  LESSON_RULES: { "lesson.fixture": { field: "exercise", kind: "reject", description: "Lesson fixture." } },
+vi.mock("./rules/lesson-rules", async (importOriginal) => ({
+  LESSON_RULES: {
+    ...(await importOriginal<typeof import("./rules/lesson-rules")>()).LESSON_RULES,
+    "lesson.fixture": { field: "exercise", kind: "reject", description: "Lesson fixture." },
+  },
 }));
 
 /** Rekurencyjnie zdejmuje `readonly` — do mutowalnych kopii testowych. */
@@ -249,5 +255,21 @@ describe("validateSubject — katalog reguł przedmiotu", () => {
 
   it("przyjmuje własne id reguł przedmiotu", () => {
     expect(validateSubject({ ...cloneSubject(), rules: { "test_history.fixture": rule } })).toEqual([]);
+  });
+
+  it("dopiski ruleNotes: przyjmuje reguły rdzenia i lekcji, odrzuca id spoza katalogów silnika (także regułę przedmiotu)", () => {
+    const withNotes = (ruleNotes: Partial<Record<string, string>>): SubjectModule => {
+      const base = cloneSubject();
+      return { ...base, rules: { "test_history.fixture": rule }, agentPolicy: { ...base.agentPolicy, ruleNotes } };
+    };
+    expect(validateSubject(withNotes({ "core.fixture": "Core note.", "lesson.leak": "Leak note.", "check.blind_solve": "Solver note." }))).toEqual([]);
+    expect(ruleErrors(withNotes({ "lesson.unknown": "x", "test_history.fixture": "y" }))).toEqual([
+      "Przedmiot: dopisek ruleNotes do „lesson.unknown”, który nie jest regułą rdzenia ani lekcji",
+      "Przedmiot: dopisek ruleNotes do „test_history.fixture”, który nie jest regułą rdzenia ani lekcji",
+    ]);
+  });
+
+  it("dopiski ruleNotes przedmiotów produkcyjnych dotyczą reguł silnika", () => {
+    for (const subject of PRODUCTION_SUBJECTS) expect(ruleErrors(subject), subject.id).toEqual([]);
   });
 });

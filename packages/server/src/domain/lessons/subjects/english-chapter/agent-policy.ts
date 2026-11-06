@@ -36,6 +36,11 @@ const BLIND_SOLVE_TYPES: readonly LessonExerciseType[] = [
 /** Typy, których warianty odpowiedzi sprawdza niezależny model. */
 const VARIANT_CHECK_TYPES: readonly LessonExerciseType[] = ["lesson_open_answer", "lesson_gap"];
 
+/** Dopisek do ślepego rozwiązania (spec katalogu reguł §3): polskie zdanie źródłowe wskazuje jedno sformułowanie. */
+const BLIND_SOLVE_NOTE =
+  "The Polish source sentence must point to one English wording (pronoun, tense, word order); " +
+  "put common equivalent word orders into acceptedAnswers right away.";
+
 /** Wymagane typy per rodzaj zagadnienia: przeciw szablonowaniu i dla słuchania. */
 const REQUIRED_TYPES: Readonly<Record<DynamicObjectiveKind, readonly (readonly LessonExerciseType[])[]>> = {
   words: [["lesson_match"], ["lesson_listen_choice"], ["lesson_cloze", "lesson_group"]],
@@ -164,9 +169,10 @@ export const chapterAgentPolicy: SubjectAgentPolicy = {
   checkerNeedsMaterial: false,
   independentReserve: 1,
   slack: 2,
-  rejectionTexts: {
-    leakVictim: "An independent answer must be a NEW sentence nobody showed before — change the room, object or place.",
-    leakSource: "Use a different sentence.",
+  ruleNotes: {
+    "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — change the room, object or place.",
+    "lesson.leak_source": "Use a different sentence.",
+    "check.blind_solve": BLIND_SOLVE_NOTE,
   },
   requiredTypes(objective: AgentObjective) {
     return objective.kind === undefined ? [] : REQUIRED_TYPES[objective.kind];

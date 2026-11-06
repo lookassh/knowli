@@ -78,23 +78,16 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
   independentReserve: 1,
   slack: 2,
   promptNotes: PROMPT_NOTES,
-  rejectionTexts: {
-    leakVictim:
+  ruleNotes: {
+    "lesson.leak":
       "An independent answer must not be visible earlier — ask about a different fact of the material or phrase the question differently.",
-    leakSource: "Use a different fact or phrase the question differently.",
-    hintUnsupported:
-      "The hint states something the material does not support. Rewrite the hint using only facts from the material, or set hint to null.",
-    hintLanguage: "The hint is not correct Polish. Fix the wording, or set hint to null.",
-    hintReveals:
-      "The hint gives away the answer or a required element in other words. Hint at the reasoning, not the content, or set hint to null.",
-    openMissing:
-      "A correct answer that follows the question was not accepted: it lacks required elements the question does not actually demand. " +
-      "Make requiredElements match what the question asks (for “any two”, require what every valid choice satisfies and move specific examples to supplementaryElements), " +
-      "or make the question ask for exactly those elements. Do not drop elements the question genuinely requires; " +
-      "if the answer below is wrong according to the material, make the question more precise.",
-    openWrong:
-      "An answer based on the material was graded as containing errors. Check that the model answer and the criteria agree with the material; " +
-      "if the answer below is wrong according to the material, make the question more precise or add the mistake to commonErrors.",
+    "lesson.leak_source": "Use a different fact or phrase the question differently.",
+    // Dzisiejsze teksty sędziego podpowiedzi (unsupported, language, reveals) w jednym dopisku.
+    "check.hint_judge":
+      "If the hint states something the material does not support, rewrite it using only facts from the material. " +
+      "If it is not correct Polish, fix the wording. If it gives away the answer or a required element in other words, " +
+      "hint at the reasoning, not the content. When the hint cannot be fixed, set it to null.",
+    "check.open_answer": "The solvers see the material, and the grader checks both answers against the material.",
   },
   sanitize(draft: LessonExerciseDraft, ctx) {
     const removed: string[] = [];

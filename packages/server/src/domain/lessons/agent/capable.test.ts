@@ -44,7 +44,7 @@ describe("agentTestSubject", () => {
   it("ma typy keywords i listen_choice oraz zaślepkę polityki", () => {
     expect(agentTestSubject.exerciseTypes).toEqual(expect.arrayContaining(["lesson_keywords", "lesson_listen_choice"]));
     expect(agentTestSubject.agentPolicy.blindSolveTypes).toEqual(agentTestSubject.exerciseTypes);
-    expect(agentTestSubject.agentPolicy.rejectionTexts).toEqual({ leakVictim: "leak victim", leakSource: "leak source" });
+    expect(agentTestSubject.agentPolicy.ruleNotes).toEqual({ "lesson.leak": "leak victim", "lesson.leak_source": "leak source" });
   });
 
   it("validatePoolExtra wymaga rodziny pytania otwartego dla słów kluczowych", () => {

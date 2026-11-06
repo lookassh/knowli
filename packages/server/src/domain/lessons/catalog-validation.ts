@@ -88,6 +88,12 @@ function validateSubjectRules(module: SubjectModule, errors: string[]): void {
       errors.push(`Przedmiot: id reguły „${id}” koliduje z katalogiem reguł silnika`);
     }
   }
+  // Dopiski przedmiotu dotyczą wyłącznie reguł silnika (własne reguły przedmiot opisuje sam).
+  for (const id of Object.keys(module.agentPolicy?.ruleNotes ?? {})) {
+    if (!ENGINE_CATALOGS.some((catalog) => Object.hasOwn(catalog, id))) {
+      errors.push(`Przedmiot: dopisek ruleNotes do „${id}”, który nie jest regułą rdzenia ani lekcji`);
+    }
+  }
 }
 
 function validateTopic(

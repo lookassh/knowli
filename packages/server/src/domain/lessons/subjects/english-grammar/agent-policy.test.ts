@@ -16,8 +16,8 @@ describe("grammarAgentPolicy", () => {
   it("nie ma sędziego podpowiedzi ani kontroli otwartej (zachowanie jak w 2a)", () => {
     expect(grammarAgentPolicy.hintJudgeTypes).toBeUndefined();
     expect(grammarAgentPolicy.openAnswerCheckTypes).toBeUndefined();
-    for (const key of ["hintUnsupported", "hintLanguage", "hintReveals", "openMissing", "openWrong"] as const) {
-      expect(grammarAgentPolicy.rejectionTexts[key]).toBeUndefined();
+    for (const key of ["check.hint_judge", "check.open_answer"]) {
+      expect(grammarAgentPolicy.ruleNotes?.[key]).toBeUndefined();
     }
   });
 
@@ -55,8 +55,13 @@ describe("grammarAgentPolicy", () => {
     expect(grammarAgentPolicy.planGate).toBeUndefined();
   });
 
-  it("leakVictim podpowiada zmianę podmiotu, czasownika lub dopełnienia", () => {
-    expect(grammarAgentPolicy.rejectionTexts.leakVictim).toContain("use a different subject, verb or object");
-    expect(grammarAgentPolicy.rejectionTexts.leakSource).toBe("Use a different sentence.");
+  it("dopiski ujawnień podpowiadają zmianę podmiotu, czasownika lub dopełnienia", () => {
+    expect(grammarAgentPolicy.ruleNotes?.["lesson.leak"]).toContain("use a different subject, verb or object");
+    expect(grammarAgentPolicy.ruleNotes?.["lesson.leak_source"]).toBe("Use a different sentence.");
+  });
+
+  it("dopisek check.blind_solve: polskie zdanie źródłowe wskazuje jedno sformułowanie, szyki w acceptedAnswers", () => {
+    expect(grammarAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("(pronoun, tense, word order)");
+    expect(grammarAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("acceptedAnswers");
   });
 });

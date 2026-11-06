@@ -145,14 +145,14 @@ export function listFieldIssues(record: Readonly<Record<string, unknown>>, field
     return [entry.issue({
       field,
       pl,
-      found: `${field}: expected a list of ${itemsText(entry.item)} or null, got ${kindOf(value)}`,
+      found: `expected a list of ${itemsText(entry.item)} or null, got ${kindOf(value)}`,
     })];
   }
   for (const [index, element] of value.entries()) {
     const problem = itemProblem(element, entry.item);
     if (problem !== null) {
       const path = `${field}[${index}]${problem.path}`;
-      return [entry.issue({ field: path, pl, found: `${path}: ${problem.found}` })];
+      return [entry.issue({ field: path, pl, found: problem.found })];
     }
   }
   return [];
@@ -165,7 +165,7 @@ export function textFieldIssues(record: Readonly<Record<string, unknown>>, field
   return [shapeIssue("shape.text_field", {
     field,
     pl: `${field}: pole tekstowe musi być napisem`,
-    found: `${field}: expected a string or null, got ${kindOf(value)}`,
+    found: `expected a string or null, got ${kindOf(value)}`,
   })];
 }
 
@@ -183,7 +183,7 @@ export function rawRecordIssues(raw: unknown): LessonRuleIssue[] {
       : [shapeIssue("shape.record", {
         field,
         pl: `${field}: wymagany napis`,
-        found: `${field}: expected a string, got ${kindOf(raw[field])}`,
+        found: `expected a string, got ${kindOf(raw[field])}`,
       })],
   );
 }
@@ -200,7 +200,7 @@ export function rawShapeIssues(raw: unknown): LessonRuleIssue[] {
   if (typeof raw.answer !== "string") {
     issues.push(shapeIssue("shape.answer", {
       pl: "answer: odpowiedź musi być napisem",
-      found: `answer: expected a string, got ${kindOf(raw.answer)}`,
+      found: `expected a string, got ${kindOf(raw.answer)}`,
     }));
   }
   for (const { field } of RAW_TEXT_FIELDS) issues.push(...textFieldIssues(raw, field));
@@ -209,7 +209,7 @@ export function rawShapeIssues(raw: unknown): LessonRuleIssue[] {
   if (calculation !== null && calculation !== undefined && !isObject(calculation)) {
     issues.push(shapeIssue("shape.calculation", {
       pl: "calculation: oczekiwano obiektu specyfikacji obliczenia",
-      found: `calculation: expected an object {kind, unit, params, templateFamilyId}, got ${kindOf(calculation)}`,
+      found: `expected an object {kind, unit, params, templateFamilyId}, got ${kindOf(calculation)}`,
     }));
   }
   return issues;

@@ -238,7 +238,7 @@ describe("submit — parsowanie i wynik dla modelu", () => {
     expect(tools.checker.solveCalls[0]!.items).toHaveLength(1);
   });
 
-  it("kształt: powody to found zgłoszeń shape.* (pole i otrzymany typ), kod shape_malformed; obce zagadnienie z found reguły", async () => {
+  it("kształt: powody [id] pole: found zgłoszeń shape.* (otrzymany typ), kod shape_malformed; obce zagadnienie z regułą shape.objective_id", async () => {
     const tools = setup();
     const outcome = await tools.tools.submit({
       exercises: [
@@ -249,10 +249,10 @@ describe("submit — parsowanie i wynik dla modelu", () => {
       ],
     });
     expect(outcome.results).toEqual([
-      { index: 0, errors: ["options[0]: expected {id, text}, got a string"] },
-      { index: 1, errors: ["focus: expected a list of strings or null, got a string", "sourceRefs[0]: expected {quote}, got null"] },
-      { index: 2, errors: ["pairs[0]: expected {left, right}, got an array"] },
-      { index: 3, errors: [`objectiveId must be "${A}" (this objective), not "${B}"`] },
+      { index: 0, errors: ["[shape.options] options[0]: expected {id, text}, got a string"] },
+      { index: 1, errors: ["[shape.focus] focus: expected a list of strings or null, got a string", "[shape.source_refs] sourceRefs[0]: expected {quote}, got null"] },
+      { index: 2, errors: ["[shape.pairs] pairs[0]: expected {left, right}, got an array"] },
+      { index: 3, errors: [`[shape.objective_id] objectiveId: objectiveId must be "${A}" (this objective), not "${B}"`] },
     ]);
     expect(tools.rejections.map((entry) => [entry.code, entry.exerciseType])).toEqual([
       ["shape_malformed", "lesson_choice"],
@@ -399,7 +399,7 @@ describe("submit — checker", () => {
     const outcome = await tools.tools.submit({ exercises: [choice(A, 1), choice(A, 2), choice(A, 3)] });
     expect(outcome.results[0]).toEqual({ index: 0, accepted: "ex1" });
     expect(outcome.results[1]).toEqual({ index: 1, accepted: "ex2", note: "unchecked" });
-    expect(outcome.results[2]).toEqual({ index: 2, errors: [expect.stringContaining("independent solver")] });
+    expect(outcome.results[2]).toEqual({ index: 2, errors: [expect.stringMatching(/^\[check\.blind_solve\] answer: the solver answered "coś innego"/u)] });
     expect(tools.rejections.map((entry) => entry.code)).toEqual(["blind_mismatch"]);
   });
 
@@ -412,11 +412,16 @@ describe("submit — checker", () => {
     ]);
   });
 
-  it("odrzucony wariant → variant_rejected", async () => {
+  it("odrzucony wariant: przyjęte bez wariantu, z notą check.variants; kod variant_rejected już nie powstaje", async () => {
     const tools = setup({ checker: { judge: () => false } });
     const outcome = await tools.tools.submit({ exercises: [gapWithVariant] });
-    expect(outcome.results[0]).toEqual({ index: 0, errors: [expect.stringContaining("dziewięćset sześćdziesiąt sześć")] });
-    expect(tools.rejections.map((entry) => entry.code)).toEqual(["variant_rejected"]);
+    expect(outcome.results[0]).toEqual({
+      index: 0,
+      accepted: "ex1",
+      note: '[check.variants] acceptedAnswers[0]: variant "dziewięćset sześćdziesiąt sześć" removed: not equivalent to the answer "966"',
+    });
+    expect(tools.rejections).toEqual([]);
+    expect(poolOf(tools.state(), A)[0]!.draft.acceptedAnswers).toEqual([]);
   });
 
   it("termin checkera (fake timers): po checkerTimeoutMs pozycje unchecked, zegary zdjęte", async () => {
@@ -647,9 +652,11 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     hintJudgeTypes: schoolAgentPolicy.hintJudgeTypes!,
     openAnswerCheckTypes: schoolAgentPolicy.openAnswerCheckTypes!,
     checkerNeedsMaterial: true,
-    rejectionTexts: schoolAgentPolicy.rejectionTexts,
+    ruleNotes: schoolAgentPolicy.ruleNotes!,
   });
-  const texts = schoolAgentPolicy.rejectionTexts;
+  // Początki powodów reguł kontroli (spec katalogu reguł §4.1): kontrola otwarta (braki) i sędzia (bez podstaw w materiale).
+  const OPEN_MISSING = "[check.open_answer] requiredElements: a correct answer that follows the question was not accepted";
+  const HINT_UNSUPPORTED = "[check.hint_judge] hint: the hint judge found the hint not supported by the material";
   const ELEMENTS = [
     { id: "e1", text: "Wisła" },
     { id: "e2", text: "płynie przez Kraków" },
@@ -688,6 +695,17 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     const outcome = await tools.tools.submit({ exercises: [schoolOpen(1, { hint: "   " })] });
     expect(tools.checker.hintCalls).toHaveLength(0);
     expect(outcome.results).toEqual([{ index: 0, accepted: "ex1" }]);
+  });
+
+  it("hint removed by sanitize skips judgeHints: podpowiedź zdradzająca odpowiedź znika przed sędzią, a nota nazywa regułę", async () => {
+    const grader = correctGrader();
+    const sanitizing = withAgentPolicy(school, { ...school.agentPolicy, sanitize: schoolAgentPolicy.sanitize! });
+    const tools = setup({ subject: sanitizing, grader });
+    const outcome = await tools.tools.submit({ exercises: [schoolOpen(1, { hint: "To jest odpowiedź wzorcowa." })] });
+    expect(tools.checker.hintCalls).toHaveLength(0);
+    expect(tools.stats.hintChecks ?? 0).toBe(0);
+    expect(outcome.results).toEqual([{ index: 0, accepted: "ex1", note: expect.stringMatching(/^hint, \[hint\.reveals_words\] hint: hint removed: /u) }]);
+    expect(poolOf(tools.state(), A)[0]!.draft).not.toHaveProperty("hint");
   });
 
   it("grammar with grader makes no open calls: przedmiot bez list etapu 2b nie woła sędziego, rozwiązującego ani gradera", async () => {
@@ -756,7 +774,7 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     const tools = setup({ subject: school, grader, checker: { solveOpen: () => ["odpowiedź wzorcowa 1", "Tylko Wisła"] } });
     const outcome = await tools.tools.submit({ exercises: [schoolOpen(1)] });
     const errors = (outcome.results[0] as { readonly errors: readonly string[] }).errors;
-    expect(errors[0]).toContain(texts.openMissing!);
+    expect(errors[0]).toContain(OPEN_MISSING);
     expect(errors[0]).toContain('"Tylko Wisła"');
     expect(errors[0]).toContain('"płynie przez Kraków"');
     expect(tools.rejections).toEqual([expect.objectContaining({ kind: "open", code: "open_not_accepted" })]);
@@ -771,7 +789,7 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
       exercises: [schoolOpen(1, { hint: "Pomyśl o rzekach." }), schoolOpen(2, { hint: BAD_HINT })],
     });
     expect(outcome.results[0]).toEqual({ index: 0, accepted: "ex1", note: "unchecked" });
-    expect(outcome.results[1]).toEqual({ index: 1, errors: [expect.stringContaining(texts.hintUnsupported!)] });
+    expect(outcome.results[1]).toEqual({ index: 1, errors: [expect.stringContaining(HINT_UNSUPPORTED)] });
     expect(tools.rejections.map((entry) => [entry.kind, entry.code])).toEqual([["hint", "hint_unsupported"]]);
     expect(tools.stats).toMatchObject({ hintChecks: 2, openChecks: 2, openUnavailable: 2 });
     expect(tools.stats.hintUnavailable ?? 0).toBe(0);
@@ -857,7 +875,7 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     const grader = correctGrader();
     const tools = setup({ subject: school, grader, checker: { judgeHint: judgeBadHint } });
     const first = await tools.tools.submit({ exercises: [schoolOpen(1, { hint: BAD_HINT })] });
-    expect(first.results[0]).toEqual({ index: 0, errors: [expect.stringContaining(texts.hintUnsupported!)] });
+    expect(first.results[0]).toEqual({ index: 0, errors: [expect.stringContaining(HINT_UNSUPPORTED)] });
     expect(tools.checker.openCalls).toHaveLength(1);
     const requests = grader.requests.length;
     expect(requests).toBe(2);

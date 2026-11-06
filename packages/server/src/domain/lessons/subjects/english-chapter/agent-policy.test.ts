@@ -44,8 +44,8 @@ describe("chapterAgentPolicy — wartości i typy", () => {
   it("nie ma sędziego podpowiedzi ani kontroli otwartej (zachowanie jak w 2a)", () => {
     expect(chapterAgentPolicy.hintJudgeTypes).toBeUndefined();
     expect(chapterAgentPolicy.openAnswerCheckTypes).toBeUndefined();
-    for (const key of ["hintUnsupported", "hintLanguage", "hintReveals", "openMissing", "openWrong"] as const) {
-      expect(chapterAgentPolicy.rejectionTexts[key]).toBeUndefined();
+    for (const key of ["check.hint_judge", "check.open_answer"]) {
+      expect(chapterAgentPolicy.ruleNotes?.[key]).toBeUndefined();
     }
   });
 
@@ -73,12 +73,17 @@ describe("chapterAgentPolicy — wartości i typy", () => {
     expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
   });
 
-  it("leakSource ma ustaloną treść", () => {
-    expect(chapterAgentPolicy.rejectionTexts.leakSource).toBe("Use a different sentence.");
+  it("dopisek lesson.leak_source ma ustaloną treść", () => {
+    expect(chapterAgentPolicy.ruleNotes?.["lesson.leak_source"]).toBe("Use a different sentence.");
   });
 
-  it("leakVictim podpowiada zmianę pokoju, przedmiotu lub miejsca", () => {
-    expect(chapterAgentPolicy.rejectionTexts.leakVictim).toContain("change the room, object or place");
+  it("dopisek lesson.leak podpowiada zmianę pokoju, przedmiotu lub miejsca", () => {
+    expect(chapterAgentPolicy.ruleNotes?.["lesson.leak"]).toContain("change the room, object or place");
+  });
+
+  it("dopisek check.blind_solve: polskie zdanie źródłowe wskazuje jedno sformułowanie, szyki w acceptedAnswers", () => {
+    expect(chapterAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("(pronoun, tense, word order)");
+    expect(chapterAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("acceptedAnswers");
   });
 });
 

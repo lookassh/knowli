@@ -55,18 +55,18 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
     [null, "exercise", "the exercise is null, not an object"],
     ["x", "exercise", "the exercise is a string, not an object"],
     [[CHOICE], "exercise", "the exercise is an array, not an object"],
-    [{ ...CHOICE, exerciseType: 5 }, "exerciseType", "exerciseType: expected a string, got a number"],
-    [{ ...CHOICE, objectiveId: undefined }, "objectiveId", "objectiveId: expected a string, got nothing"],
+    [{ ...CHOICE, exerciseType: 5 }, "exerciseType", "expected a string, got a number"],
+    [{ ...CHOICE, objectiveId: undefined }, "objectiveId", "expected a string, got nothing"],
   ])("shape.record: %j", (raw, field, found) => {
     expect(rawShapeIssues(raw).map((issue) => [issue.rule, issue.field, issue.found])).toEqual([["shape.record", field, found]]);
   });
 
   it("shape.answer i shape.text_field: napis albo null", () => {
-    expect(onlyIssue({ answer: null })).toEqual({ rule: "shape.answer", field: "answer", found: "answer: expected a string, got null" });
+    expect(onlyIssue({ answer: null })).toEqual({ rule: "shape.answer", field: "answer", found: "expected a string, got null" });
     expect(onlyIssue({ stem: 5 })).toEqual({
       rule: "shape.text_field",
       field: "stem",
-      found: "stem: expected a string or null, got a number",
+      found: "expected a string or null, got a number",
     });
     expect(onlyIssue({ familyId: ["def"] })).toMatchObject({ rule: "shape.text_field", field: "familyId" });
     // Poza strażnikiem: zły typ wyjaśnienia i tonu sanityzuje szkic (nota), nie kształt.
@@ -77,32 +77,32 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
     expect(onlyIssue({ requiredElements: [null] })).toEqual({
       rule: "shape.required_elements",
       field: "requiredElements[0]",
-      found: "requiredElements[0]: expected {id, text}, got null",
+      found: "expected {id, text}, got null",
     });
     expect(onlyIssue({ sourceRefs: [null] })).toEqual({
       rule: "shape.source_refs",
       field: "sourceRefs[0]",
-      found: "sourceRefs[0]: expected {quote}, got null",
+      found: "expected {quote}, got null",
     });
     expect(onlyIssue({ sourceRefs: ["quote"] })).toEqual({
       rule: "shape.source_refs",
       field: "sourceRefs[0]",
-      found: "sourceRefs[0]: expected {quote}, got a string",
+      found: "expected {quote}, got a string",
     });
     expect(onlyIssue({ pairs: [["a", "b"]] })).toEqual({
       rule: "shape.pairs",
       field: "pairs[0]",
-      found: "pairs[0]: expected {left, right}, got an array",
+      found: "expected {left, right}, got an array",
     });
     expect(onlyIssue({ calculation: "x" })).toEqual({
       rule: "shape.calculation",
       field: "calculation",
-      found: "calculation: expected an object {kind, unit, params, templateFamilyId}, got a string",
+      found: "expected an object {kind, unit, params, templateFamilyId}, got a string",
     });
     expect(onlyIssue({ options: ["Warszawa"] })).toEqual({
       rule: "shape.options",
       field: "options[0]",
-      found: "options[0]: expected {id, text}, got a string",
+      found: "expected {id, text}, got a string",
     });
   });
 
@@ -114,17 +114,17 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
     expect(onlyIssue({ options: [{ id: "a", text: "plays" }, { id: "b" }] })).toEqual({
       rule: "shape.options",
       field: "options[1].text",
-      found: "options[1].text: expected a string, got nothing",
+      found: "expected a string, got nothing",
     });
     expect(onlyIssue({ noticeSegments: [["She", "plays"], ["He", null]] })).toEqual({
       rule: "shape.notice_segments",
       field: "noticeSegments[1][1]",
-      found: "noticeSegments[1][1]: expected a string, got null",
+      found: "expected a string, got null",
     });
     expect(onlyIssue({ focus: "plays" })).toEqual({
       rule: "shape.focus",
       field: "focus",
-      found: "focus: expected a list of strings or null, got a string",
+      found: "expected a list of strings or null, got a string",
     });
   });
 
@@ -154,7 +154,7 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
 
   it("found jest przycięty: długi klucz obiektu nie rozpycha komunikatu", () => {
     const [issue] = rawShapeIssues({ ...CHOICE, answer: { ["x".repeat(500)]: 1 } });
-    expect(issue!.found).toBe("answer: expected a string, got an object");
+    expect(issue!.found).toBe("expected a string, got an object");
   });
 });
 

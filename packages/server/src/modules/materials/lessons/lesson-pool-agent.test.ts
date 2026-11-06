@@ -1003,7 +1003,7 @@ describe("runLessonPoolAgent — grader kontroli otwartej (etap 2b)", () => {
     hintJudgeTypes: schoolAgentPolicy.hintJudgeTypes!,
     openAnswerCheckTypes: schoolAgentPolicy.openAnswerCheckTypes!,
     checkerNeedsMaterial: true,
-    rejectionTexts: schoolAgentPolicy.rejectionTexts,
+    ruleNotes: schoolAgentPolicy.ruleNotes!,
   });
   const ELEMENTS = [
     { id: "e1", text: "Wisła" },
