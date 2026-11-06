@@ -20,9 +20,20 @@ interface Variant {
   readonly voiceTones: boolean;
 }
 
-function contextFor(subject: SubjectModule, exerciseTypes: readonly LessonExerciseType[], variant: Variant): RuleBookContext {
+/** Tematy przedmiotu w macierzy: katalog (każdy temat) albo jeden temat dynamiczny. */
+function topicIdsOf(subject: SubjectModule): readonly string[] {
+  return subject.topics.length > 0 ? subject.topics.map((topic) => topic.id) : ["dynamic"];
+}
+
+function contextFor(
+  subject: SubjectModule,
+  exerciseTypes: readonly LessonExerciseType[],
+  variant: Variant,
+  topicId: string = topicIdsOf(subject)[0]!,
+): RuleBookContext {
   const usesV3Payload = subject.usesV3Payload === true;
   return {
+    topicId,
     exerciseTypes,
     text: { answerMaxLength: usesV3Payload ? MAX_LESSON_ANSWER_LENGTH : MAX_TEXT_LENGTH, groundingRequired: subject.sourceQuotes === true },
     policy: subject.agentPolicy,
@@ -63,14 +74,16 @@ const VARIANTS: readonly Variant[] = [
   { listenChoice: false, voiceTones: false },
 ];
 
-/** Konteksty macierzy: każdy typ przedmiotu osobno i wszystkie naraz, w każdym wariancie. */
+/** Konteksty macierzy: każdy typ przedmiotu osobno i wszystkie naraz, w każdym wariancie i temacie. */
 function matrix(subject: SubjectModule): { readonly name: string; readonly ctx: RuleBookContext }[] {
   const typeSets: (readonly LessonExerciseType[])[] = [...subject.exerciseTypes.map((type) => [type]), subject.exerciseTypes];
-  return typeSets.flatMap((types) =>
-    VARIANTS.map((variant) => ({
-      name: `${types.length === 1 ? types[0] : "all"} listen=${variant.listenChoice} tone=${variant.voiceTones}`,
-      ctx: contextFor(subject, types, variant),
-    })),
+  return topicIdsOf(subject).flatMap((topicId) =>
+    typeSets.flatMap((types) =>
+      VARIANTS.map((variant) => ({
+        name: `${topicId} ${types.length === 1 ? types[0] : "all"} listen=${variant.listenChoice} tone=${variant.voiceTones}`,
+        ctx: contextFor(subject, types, variant, topicId),
+      })),
+    ),
   );
 }
 
@@ -230,5 +243,21 @@ describe("frazy kluczowe nowych opisów reguł", () => {
     for (const line of lines) {
       expect(line.text).toContain(phrase);
     }
+  });
+});
+
+describe("księga reguł — reguły jednego tematu", () => {
+  const grammar = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_grammar")!;
+  const idsIn = (topicId: string) =>
+    idsOf(lessonRuleBook(grammar, contextFor(grammar, grammar.exerciseTypes, VARIANTS[0]!, topicId)));
+
+  it("reguły `to be` tylko w temacie to_be, reguły luk Present Simple tylko poza nim", () => {
+    const toBe = idsIn("to_be");
+    const presentSimple = idsIn("present_simple");
+    expect(toBe.filter((id) => id.startsWith("grammar.be_")).length).toBeGreaterThan(10);
+    expect(presentSimple.filter((id) => id.startsWith("grammar.be_"))).toEqual([]);
+    expect(presentSimple).toEqual(expect.arrayContaining(["grammar.gap_operator_mismatch", "grammar.gap_present_simple_form"]));
+    expect(toBe).not.toContain("grammar.gap_operator_mismatch");
+    expect(toBe).not.toContain("grammar.gap_present_simple_form");
   });
 });

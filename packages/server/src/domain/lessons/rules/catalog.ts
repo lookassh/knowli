@@ -59,6 +59,12 @@ export interface LessonRule {
   readonly internalReason?: string;
   /** Grupa priorytetu w księdze reguł (`RULE_PRIORITY`); brak = zwykła kolejność po id. */
   readonly priority?: RulePriority;
+  /**
+   * W prompcie tylko id reguły, bez opisu (opis dostaje model w wyniku narzędzia, gdy złamie regułę):
+   * kształt rekordu (`shape.*`, ten sam kształt opisuje schemat narzędzia) i reguły, które tylko powtarzają
+   * listę pól karty typu. Budżet długości promptu (Task 8b planu katalogu reguł).
+   */
+  readonly promptBrief?: true;
 }
 
 export type RuleCatalog = Readonly<Record<string, LessonRule>>;
@@ -97,6 +103,11 @@ export interface RuleBookContext {
    * (`subject.poolDeduplication ?? "answer"`); wypełnia go wejście agenta (Task 8a).
    */
   readonly deduplication: PoolDeduplication;
+  /**
+   * Id tematu lekcji: reguły jednego tematu przedmiotu (np. formy `to be`) trafiają do księgi tylko
+   * w nim. Warunek na id tematu żyje w katalogu przedmiotu, nigdy w silniku.
+   */
+  readonly topicId: string;
 }
 
 /** Id reguły: literał `obszar.nazwa` z co najmniej jedną kropką, tylko `[a-z0-9_]` w segmentach. */

@@ -18,15 +18,18 @@ import { expectedAnswerCount, solverView } from "../../../domain/lessons/agent/s
 import type { LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { validateSchoolVerdict, type SchoolVerdict } from "../../../domain/lessons/evaluate";
+import { familyBase } from "../../../domain/lessons/keyword-families";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import { materializeRawExercise } from "../../../domain/lessons/raw-materialize";
 import { foreignObjectiveIssues, rawShapeIssues } from "../../../domain/lessons/raw-shape";
-import type { LessonRuleIssue } from "../../../domain/lessons/rules/catalog";
+import { clip, describeRule, ruleOf, type LessonRuleIssue, type RuleId } from "../../../domain/lessons/rules/catalog";
+import { ruleTextContextOf } from "../../../domain/lessons/rules/rule-book";
 import { formatRuleReason } from "../../../domain/lessons/rules/rule-reason";
 import type { LessonExerciseDraft, LessonTopic, SchoolCriteria } from "../../../domain/lessons/types";
 import type {
   GraderInput,
   LessonAgentToolOutcome,
+  LessonAgentToolResult,
   LessonExerciseCheckerProvider,
   LessonObjectiveAgentTools,
   RunCostSink,
@@ -54,12 +57,16 @@ import { sanitizeFreshLessonDraft } from "./lesson-pool-acceptance";
  * lekcji, budżet i zamknięcie. Teksty dla modelu są po angielsku.
  */
 
-/** Wpis odrzucenia dla kierownika: `code` bez treści (logi), `detail` z treścią tylko w pamięci wyniku. */
+/**
+ * Wpis odrzucenia dla kierownika: `code`, `ruleIds` i `exerciseType` bez treści (logi), `detail` z
+ * treścią (powody dla modelu) tylko w pamięci wyniku (sonda zapisuje go poza repozytorium).
+ */
 export interface RejectionLogEntry {
   readonly objectiveId: string;
   readonly exerciseType: string;
   readonly kind: Rejection["kind"];
   readonly code: string;
+  readonly ruleIds: readonly string[];
   readonly detail: string;
 }
 
@@ -86,6 +93,12 @@ export interface ObjectiveToolsStats {
   readonly openUnavailable: number;
   readonly graderErrors: number;
   readonly graderInvalidVerdicts: number;
+  /** Przyjęte z podpowiedzią usuniętą przez regułę `hint.reveals_words` (spec katalogu reguł §5.1). */
+  readonly hintsRemoved: number;
+  /** Warianty usunięte przez kontrolę wariantów (`check.variants`, §5.3). */
+  readonly variantsRemoved: number;
+  /** Cytaty zastąpione dokładnym fragmentem materiału (§5.2). */
+  readonly quotesSnapped: number;
 }
 
 export interface ObjectiveToolsArgs {
@@ -131,7 +144,7 @@ const CHECKER_TIMEOUT_REASON = "checker_timeout";
 const GRADER_TIMEOUT_REASON = "grader_timeout";
 const GRADER_STAGE_TIMEOUT_REASON = "grader_stage_timeout";
 
-type ToolResult = LessonAgentToolOutcome["results"][number];
+type ToolResult = LessonAgentToolResult;
 type ExamplesOutcome = NonNullable<LessonAgentToolOutcome["examples"]>;
 
 type ParsedRecord =
@@ -141,8 +154,68 @@ type ParsedRecord =
 const noop = () => undefined;
 
 function rawExerciseType(raw: unknown): string {
+  return exerciseTypeOf(raw) ?? "unknown";
+}
+
+/** `exerciseType` surowego rekordu, gdy jest napisem (echo w wyniku dla modelu). */
+function exerciseTypeOf(raw: unknown): string | null {
   const type = raw !== null && typeof raw === "object" ? (raw as { exerciseType?: unknown }).exerciseType : undefined;
-  return typeof type === "string" ? type : "unknown";
+  return typeof type === "string" ? type : null;
+}
+
+/** Najwyżej tyle powodów odrzucenia na ćwiczenie w wyniku dla modelu; reszta jako `+N more`. */
+const MAX_REASONS = 6;
+
+/** Długość echa bodźca w wyniku dla modelu (spec katalogu reguł §4.1). */
+const STIMULUS_ECHO_LENGTH = 40;
+
+/** Pola bodźca w kolejności: pierwsze niepuste trafia do echa w wyniku. */
+const STIMULUS_FIELDS = ["stem", "statement", "prompt", "clozeText", "instructionPl", "familyId"] as const;
+
+/** Reguła, której nota oznacza usuniętą podpowiedź pytania otwartego (licznik `hintsRemoved`). */
+const HINT_REMOVED_RULE = "hint.reveals_words";
+
+/**
+ * Początek bodźca surowego rekordu (ok. 40 znaków treści modelu, jedna linia), żeby model wiedział,
+ * którego ćwiczenia dotyczy wynik; rachunek — slug rodziny; brak bodźca — pusty napis.
+ */
+function stimulusOf(raw: unknown): string {
+  if (raw === null || typeof raw !== "object") return "";
+  const record = raw as Record<string, unknown>;
+  const calculation = record.calculation;
+  const family = calculation !== null && typeof calculation === "object" ? (calculation as { templateFamilyId?: unknown }).templateFamilyId : undefined;
+  const text = [...STIMULUS_FIELDS.map((field) => record[field]), family].find(
+    (value): value is string => typeof value === "string" && value.trim() !== "",
+  );
+  return text === undefined ? "" : clip(text.trim(), STIMULUS_ECHO_LENGTH, { quote: false });
+}
+
+/** Echo ćwiczenia w wyniku: typ i początek bodźca z surowego rekordu. */
+function echoOf(raw: unknown): { readonly exerciseType: string | null; readonly stimulus: string } {
+  return { exerciseType: exerciseTypeOf(raw), stimulus: stimulusOf(raw) };
+}
+
+/** Powody dla modelu: najwyżej `MAX_REASONS`, dalej jeden wpis `+N more`. */
+function cappedReasons(reasons: readonly string[]): string[] {
+  const shown = reasons.slice(0, MAX_REASONS);
+  return reasons.length > MAX_REASONS ? [...shown, `+${reasons.length - MAX_REASONS} more`] : shown;
+}
+
+/**
+ * Id reguł pokazanych powodów odrzucenia (do mapy opisów): powody odpowiadają zgłoszeniom pozycja po
+ * pozycji (`rejectionOf`), więc to reguły pierwszych `MAX_REASONS` zgłoszeń; inaczej wszystkie id odrzucenia.
+ */
+function shownRuleIds(rejection: Rejection): readonly string[] {
+  if (rejection.reasons.length !== rejection.issues.length) return rejection.ruleIds;
+  return [...new Set(rejection.issues.slice(0, MAX_REASONS).map((issue) => issue.rule as string))];
+}
+
+/** Wynik zbudowany dla modelu i skutki, które `submit` wykona dopiero po podmianie stanu. */
+interface BuiltResult {
+  readonly result: ToolResult;
+  /** Id reguł, których opisy należą się modelowi w tym wyniku. */
+  readonly ruleIds: readonly string[];
+  readonly rejection?: RejectionLogEntry;
 }
 
 /** Odrzucenie kształtu: zgłoszenia reguł `shape.*` i powody `[id] pole: found`. */
@@ -220,8 +293,8 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     args.onRefusal?.(code);
     const message = REFUSAL_TEXT[code];
     const results: ToolResult[] = Array.isArray(exercises)
-      ? exercises.map((_raw, index) => ({ index, errors: [message] }))
-      : [{ index: 0, errors: [message] }];
+      ? exercises.map((raw, index) => ({ index, ...echoOf(raw), errors: [message] }))
+      : [{ index: 0, exerciseType: null, stimulus: "", errors: [message] }];
     return {
       results,
       ...(examples === undefined ? {} : { examples: { accepted: 0, errors: [message] } }),
@@ -541,24 +614,58 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     return { checks, hintUnavailable, openUnavailable };
   }
 
-  function logRejection(exerciseType: string, rejection: Rejection): void {
-    args.onRejection({
-      objectiveId,
-      exerciseType,
-      kind: rejection.kind,
-      code: rejection.code,
-      detail: rejection.reasons.join("; "),
-    });
+  // Opisy reguł wysłane już modelowi w tym zagadnieniu: każdy id najwyżej raz (spec katalogu reguł §4.1).
+  const describedRules = new Set<string>();
+  const textContext = ruleTextContextOf(ctx.subject);
+
+  /** Tekst dla modelu bez sufiksu runu w slugach rodzin (model pisał slug bez sufiksu, `familyBase`). */
+  const withoutRunSuffix = (text: string): string =>
+    args.familyScope === null ? text : text.replace(/[A-Za-z0-9_-]+/g, (token) => familyBase(token, args.familyScope));
+
+  /** Odrzucenie jako wynik dla modelu i wpis dziennika (bez skutków ubocznych). */
+  function rejectedResult(index: number, raw: unknown, exerciseType: string, rejection: Rejection): BuiltResult {
+    const detail = rejection.reasons.map(withoutRunSuffix);
+    return {
+      result: { index, ...echoOf(raw), errors: cappedReasons(detail) },
+      ruleIds: shownRuleIds(rejection),
+      rejection: {
+        objectiveId,
+        exerciseType,
+        kind: rejection.kind,
+        code: rejection.code,
+        ruleIds: rejection.ruleIds,
+        detail: detail.join("; "),
+      },
+    };
   }
 
-  function admittedResult(index: number, entry: AdmitEntry, draft: LessonExerciseDraft): ToolResult {
-    if ("rejected" in entry) {
-      logRejection(draft.exerciseType, entry.rejected);
-      return { index, errors: entry.rejected.reasons };
+  /** Wynik przyjęcia z notami: oczyszczenia reguł (`[id] pole: found`), pola usunięte bez reguły i brak kontroli. */
+  function acceptedResult(index: number, raw: unknown, entry: Extract<AdmitEntry, { accepted: string }>): BuiltResult {
+    const noted = new Set(entry.notes.map((issue) => issue.field));
+    const notes = [
+      ...entry.notes.map((issue) => withoutRunSuffix(formatRuleReason(issue))),
+      ...entry.sanitized.filter((field) => !noted.has(field)).map((field) => `${field} removed`),
+      ...(entry.unchecked ? ["unchecked: a check by another model was unavailable; accepted without it"] : []),
+    ];
+    return {
+      result: { index, ...echoOf(raw), accepted: entry.accepted, ...(notes.length === 0 ? {} : { notes }) },
+      ruleIds: [...new Set(entry.notes.map((issue) => issue.rule as string))],
+    };
+  }
+
+  /**
+   * Mapa opisów reguł wyniku: reguły jeszcze nieopisane w zagadnieniu, z dopiskiem przedmiotu. Czysta —
+   * pamięć `describedRules` uzupełnia `submit` dopiero po podmianie stanu.
+   */
+  function rulesMap(built: readonly BuiltResult[]): Record<string, string> {
+    const notes = ctx.subject.agentPolicy.ruleNotes ?? {};
+    const rules: Record<string, string> = {};
+    for (const id of built.flatMap((item) => item.ruleIds)) {
+      if (describedRules.has(id) || Object.hasOwn(rules, id)) continue;
+      const rule = ruleOf(ctx.subject, id as RuleId);
+      if (rule !== undefined) rules[id] = describeRule(rule, textContext, notes[id]);
     }
-    // Noty reguł (usunięta podpowiedź, usunięte warianty) w formacie powodów; pełny format wyniku dochodzi z księgą reguł.
-    const notes = [...entry.sanitized, ...(entry.unchecked ? ["unchecked"] : []), ...entry.notes.map(formatRuleReason)];
-    return notes.length === 0 ? { index, accepted: entry.accepted } : { index, accepted: entry.accepted, note: notes.join(", ") };
+    return rules;
   }
 
   async function submit(raw: unknown): Promise<LessonAgentToolOutcome> {
@@ -570,7 +677,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     if (args.cost.exhausted()) return refuse("refused_budget", exercises, examples);
     if (!Array.isArray(exercises)) {
       return {
-        results: [{ index: 0, errors: ["exercises must be an array"] }],
+        results: [{ index: 0, exerciseType: null, stimulus: "", errors: ["exercises must be an array"] }],
         ...(examples === undefined ? {} : { examples: { accepted: 0, errors: ["examples were not processed because exercises must be an array"] } }),
         ...statusOf(args.getState()),
       };
@@ -604,48 +711,57 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
 
     // SEKCJA KRYTYCZNA: od odczytu stanu do podmiany NIE MA żadnego `await` — inne zagadnienia
     // zmieniają wspólny stan wyłącznie między naszymi `await`, więc przyjęcie widzi bieżący stan
-    // i nie nadpisuje cudzych zmian. Nie dopisuj tu operacji asynchronicznych.
+    // i nie nadpisuje cudzych zmian. Nie dopisuj tu operacji asynchronicznych. Wynik dla modelu
+    // powstaje PRZED podmianą stanu: wyjątek formatowania zostawia stan (i pamięć opisów) bez zmian.
     const current = args.getState();
     const examplesStep = ownExamples ? submitExamples(current, objectiveId, examples, ctx) : undefined;
     const admitted = admitBatch(examplesStep?.state ?? current, objectiveId, prechecked, checks, ctx);
-    args.setState(admitted.state);
-    // Koniec sekcji krytycznej.
-
-    const acceptedEntries = admitted.results.filter((entry) => "accepted" in entry);
-    args.onStats?.({
-      accepted: acceptedEntries.length,
-      checkUnavailable: acceptedEntries.filter((entry) => "accepted" in entry && entry.unchecked).length,
-    });
-
-    const results = parsed.map((record, index): ToolResult => {
-      if (!record.ok) {
-        logRejection(record.exerciseType, record.rejection);
-        return { index, errors: record.rejection.reasons };
-      }
+    const built = parsed.map((record, index): BuiltResult => {
+      const raw: unknown = exercises[index];
+      if (!record.ok) return rejectedResult(index, raw, record.exerciseType, record.rejection);
       const draftIndex = draftIndexOf.get(index)!;
-      return admittedResult(index, admitted.results[draftIndex]!, drafts[draftIndex]!);
+      const entry = admitted.results[draftIndex]!;
+      return "rejected" in entry
+        ? rejectedResult(index, raw, drafts[draftIndex]!.exerciseType, entry.rejected)
+        : acceptedResult(index, raw, entry);
     });
+    const rules = rulesMap(built);
     let examplesOutcome: ExamplesOutcome | undefined;
     if (examplesStep !== undefined) examplesOutcome = { accepted: examplesStep.accepted, errors: examplesStep.errors };
     else if (examples !== undefined) examplesOutcome = { accepted: 0, errors: ["examples are fixed by the plan"] };
-    return {
-      results,
+    const outcome: LessonAgentToolOutcome = {
+      results: built.map((item) => item.result),
+      ...(Object.keys(rules).length === 0 ? {} : { rules }),
       ...(examplesOutcome === undefined ? {} : { examples: examplesOutcome }),
       ...statusOf(admitted.state),
     };
+    args.setState(admitted.state);
+    for (const id of Object.keys(rules)) describedRules.add(id);
+    // Koniec sekcji krytycznej.
+
+    for (const item of built) if (item.rejection !== undefined) args.onRejection(item.rejection);
+    const acceptedEntries = admitted.results.filter((entry): entry is Extract<AdmitEntry, { accepted: string }> => "accepted" in entry);
+    args.onStats?.({
+      accepted: acceptedEntries.length,
+      checkUnavailable: acceptedEntries.filter((entry) => entry.unchecked).length,
+      hintsRemoved: acceptedEntries.filter((entry) => entry.notes.some((issue) => issue.rule === HINT_REMOVED_RULE)).length,
+      variantsRemoved: acceptedEntries.reduce((sum, entry) => sum + entry.removedVariants.length, 0),
+      quotesSnapped: acceptedEntries.reduce((sum, entry) => sum + entry.quotesSnapped, 0),
+    });
+    return outcome;
   }
 
   async function remove(id: unknown): Promise<LessonAgentToolOutcome & { readonly removed: readonly string[] }> {
     if (isClosed()) {
       args.onRefusal?.("refused_closed");
-      return { results: [{ index: 0, errors: [REFUSAL_TEXT.refused_closed] }], removed: [], ...statusOf(args.getState()) };
+      return { results: [{ index: 0, exerciseType: null, stimulus: "", errors: [REFUSAL_TEXT.refused_closed] }], removed: [], ...statusOf(args.getState()) };
     }
     const text = String(id);
     // Synchronicznie: odczyt i podmiana stanu bez `await` pomiędzy.
     const outcome = removeExercise(args.getState(), objectiveId, text, ctx);
     if (outcome.removed.length === 0) {
       return {
-        results: [{ index: 0, errors: [`there is no exercise "${text}" in this objective's pool`] }],
+        results: [{ index: 0, exerciseType: null, stimulus: "", errors: [`there is no exercise "${text}" in this objective's pool`] }],
         removed: [],
         ...statusOf(outcome.state),
       };

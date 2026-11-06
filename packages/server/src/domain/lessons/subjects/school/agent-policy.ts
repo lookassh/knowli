@@ -30,11 +30,6 @@ const OPEN_CHECK_TYPE: LessonExerciseType = "lesson_open_answer";
 
 const normalizer = baseNormalizer;
 
-/** Dopisek dla podagenta: odpowiednik `sanitize` (podpowiedź poza pytaniem otwartym i tak jest usuwana). */
-const PROMPT_NOTES: readonly string[] = [
-  "Hint only for lesson_open_answer: the hint field must be null for every other exercise type.",
-];
-
 const TARGET_LABELS: Readonly<Record<HintRevealing["target"], string>> = {
   answer: "the answer",
   acceptedAnswer: "the accepted variant",
@@ -77,17 +72,14 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
   checkerNeedsMaterial: true,
   independentReserve: 1,
   slack: 2,
-  promptNotes: PROMPT_NOTES,
   ruleNotes: {
-    "lesson.leak":
-      "An independent answer must not be visible earlier — ask about a different fact of the material or phrase the question differently.",
+    "lesson.leak": "If it leaks, ask about a different fact of the material or phrase the question differently.",
     "lesson.leak_source": "Use a different fact or phrase the question differently.",
     // Dzisiejsze teksty sędziego podpowiedzi (unsupported, language, reveals) w jednym dopisku.
     "check.hint_judge":
-      "If the hint states something the material does not support, rewrite it using only facts from the material. " +
-      "If it is not correct Polish, fix the wording. If it gives away the answer or a required element in other words, " +
-      "hint at the reasoning, not the content. When the hint cannot be fixed, set it to null.",
-    "check.open_answer": "The solvers see the material, and the grader checks both answers against the material.",
+      "Unsupported: use only facts from the material; not correct Polish: fix the wording; gives the content away: " +
+      "hint at the reasoning, not the content; if it cannot be fixed, set it to null.",
+    "check.open_answer": "The solvers see the material and the grader checks both answers against it.",
   },
   sanitize(draft: LessonExerciseDraft, ctx) {
     const removed: string[] = [];

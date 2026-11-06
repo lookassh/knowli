@@ -1,3 +1,4 @@
+import { MAX_LESSON_ANSWER_LENGTH, MAX_LESSON_TEXT_LENGTH } from "@learning/contracts";
 import type { LessonExerciseType, SubjectModule } from "../types";
 import {
   describeRule,
@@ -6,6 +7,7 @@ import {
   type LessonRule,
   type RuleBookContext,
   type RuleCatalog,
+  type RuleTextContext,
 } from "./catalog";
 import { LESSON_RULES } from "./lesson-rules";
 import { subjectFeatures, TYPE_CARDS } from "./type-cards";
@@ -32,6 +34,8 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
 export interface RuleLine {
   readonly id: string;
   readonly text: string;
+  /** Reguła z `promptBrief`: renderer promptu wymienia tylko id (opis trafia do wyniku narzędzia). */
+  readonly brief?: true;
 }
 
 export interface TypeBlock {
@@ -117,7 +121,11 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
   }
   placed.sort(byPriorityThenId);
 
-  const line = ({ id, rule }: PlacedRule): RuleLine => ({ id, text: describeRule(rule, ctx.text, notes[id]) });
+  const line = ({ id, rule }: PlacedRule): RuleLine => ({
+    id,
+    text: describeRule(rule, ctx.text, notes[id]),
+    ...(rule.promptBrief === true ? { brief: true as const } : {}),
+  });
   const section = (name: "general" | "lesson" | "checks"): RuleLine[] =>
     placed.filter((entry) => entry.placement.section === name).map(line);
 
@@ -138,6 +146,41 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
   });
 
   return { general: section("general"), types, lesson: section("lesson"), checks: section("checks") };
+}
+
+/**
+ * Limity i flagi przedmiotu do tekstów opisów reguł — te same, którymi posługuje się walidacja:
+ * odpowiedź przedmiotu z payloadem v3 ma limit kontraktu odpowiedzi, pozostałe limit tekstu.
+ */
+export function ruleTextContextOf(subject: Pick<SubjectModule, "usesV3Payload" | "sourceQuotes">): RuleTextContext {
+  return {
+    answerMaxLength: subject.usesV3Payload === true ? MAX_LESSON_ANSWER_LENGTH : MAX_LESSON_TEXT_LENGTH,
+    groundingRequired: subject.sourceQuotes === true,
+  };
+}
+
+/**
+ * Pełny kontekst księgi reguł przedmiotu dla zagadnienia tematu `topicId`: `exerciseTypes` — typy dozwolone w
+ * zagadnieniu, `listenChoice` — czy `lesson_listen_choice` jest dostępny zagadnieniu (nie: czy
+ * zostało miejsce w przydziale). Pozostałe pola pochodzą z przedmiotu.
+ */
+export function ruleBookContextFor(
+  subject: SubjectModule,
+  topicId: string,
+  exerciseTypes: readonly LessonExerciseType[],
+  listenChoice: boolean,
+): RuleBookContext {
+  return {
+    topicId,
+    exerciseTypes,
+    text: ruleTextContextOf(subject),
+    policy: subject.agentPolicy,
+    listenChoice,
+    voiceTones: subject.ttsForPrompts === true,
+    exerciseExplanations: subject.exerciseExplanations,
+    usesV3Payload: subject.usesV3Payload === true,
+    deduplication: subject.poolDeduplication ?? "answer",
+  };
 }
 
 /** Przykład w JSON: `exerciseType`, zastępczy `objectiveId`, potem pola karty. */

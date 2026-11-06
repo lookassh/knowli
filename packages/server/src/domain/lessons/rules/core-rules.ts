@@ -70,6 +70,7 @@ function listShapeRule(
     field,
     kind: "reject",
     ...scope,
+    promptBrief: true,
     description: `${field}, when present, is a list of ${items}; null means the field is absent.`,
   };
 }
@@ -122,8 +123,8 @@ export const CORE_RULES = {
     field: "exercise",
     kind: "reject",
     description:
-      "Every field has the type and the allowed values of the tool schema (enums such as questionType and expectedForm " +
-      "take only the listed values), and the exercise has no fields outside the schema.",
+      "Every field has the type and allowed values of the tool schema (enums take only the listed values), and the " +
+      "exercise has no fields outside the schema.",
   },
 
   // Kształt surowego rekordu agenta (`raw-shape.ts`, spec §4.3): przed
@@ -131,16 +132,19 @@ export const CORE_RULES = {
   "shape.record": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     description: "Each exercise is a JSON object whose exerciseType and objectiveId are strings.",
   },
   "shape.objective_id": {
     field: "objectiveId",
     kind: "reject",
+    promptBrief: true,
     description: "Submit only exercises of your own objective: objectiveId is exactly the id of the objective you work on.",
   },
   "shape.answer": {
     field: "answer",
     kind: "reject",
+    promptBrief: true,
     description:
       "answer is a string in every exercise type except lesson_calculation, lesson_keywords, lesson_match, lesson_group " +
       "and lesson_cloze, whose answer the code computes.",
@@ -148,6 +152,7 @@ export const CORE_RULES = {
   "shape.text_field": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     description:
       "Text fields (instructionPl, stem, statement, prompt, hint, transformId, correctOption, clozeText, questionType, " +
       "expectedForm, familyId, visualSubject) are strings, or null when they do not apply.",
@@ -155,6 +160,7 @@ export const CORE_RULES = {
   "shape.calculation": {
     field: "calculation",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation"],
     priority: "calculation_shape",
     description: "calculation, when present, is an object {kind, unit, params, templateFamilyId}.",
@@ -264,6 +270,7 @@ export const CORE_RULES = {
   "fields.type_specific": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     description:
       "Type-specific fields stay on their type: calculation on lesson_calculation, keywordOptions and keyOptionIds on " +
       "lesson_keywords, pairs and extraRight on lesson_match, groups and groupItems on lesson_group, clozeText, " +
@@ -277,6 +284,7 @@ export const CORE_RULES = {
   "focus.empty": {
     field: "focus",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"],
     description: "Free-text types (lesson_gap, lesson_error_fix, lesson_transform, lesson_open_answer) list the checked words of the answer in focus.",
   },
@@ -315,12 +323,14 @@ export const CORE_RULES = {
   "choice.stem_required": {
     field: "stem",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_choice"],
     description: "lesson_choice has the sentence or question in stem.",
   },
   "short_answer.prompt_required": {
     field: "prompt",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_short_answer"],
     description: "lesson_short_answer has the question in prompt (or in stem).",
   },
@@ -340,6 +350,7 @@ export const CORE_RULES = {
   "options.correct_unknown": {
     field: "correctOption",
     kind: "reject",
+    promptBrief: true,
     types: CHOICE_TYPES,
     description: "correctOption is the id of one of the options.",
   },
@@ -348,12 +359,14 @@ export const CORE_RULES = {
   "listen.instruction_not_allowed": {
     field: "instructionPl",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_listen_choice"],
     description: "lesson_listen_choice has a fixed instruction, so instructionPl is left out.",
   },
   "listen.hint_not_allowed": {
     field: "hint",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_listen_choice"],
     description: "lesson_listen_choice has no hint, because the child hears the sentence and a hint would give the answer away.",
   },
@@ -397,6 +410,7 @@ export const CORE_RULES = {
   "notice.segments_required": {
     field: "noticeSegments",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_notice"],
     description: "lesson_notice carries its sentences, split into word segments, in noticeSegments.",
   },
@@ -423,6 +437,7 @@ export const CORE_RULES = {
   "notice.correct_required": {
     field: "correctOption",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_notice"],
     description: "correctOption of lesson_notice is the word the child points at.",
   },
@@ -444,6 +459,7 @@ export const CORE_RULES = {
   "order.items_join": {
     field: "items",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_order"],
     description: "The items of lesson_order joined with spaces in their order give the answer (after normalization).",
   },
@@ -471,6 +487,7 @@ export const CORE_RULES = {
   "error_fix.statement_required": {
     field: "statement",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_error_fix"],
     description: "lesson_error_fix has the sentence with the mistake in statement.",
   },
@@ -483,6 +500,7 @@ export const CORE_RULES = {
   "transform.statement_required": {
     field: "statement",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_transform"],
     description: "lesson_transform has the sentence to transform in statement.",
   },
@@ -495,6 +513,7 @@ export const CORE_RULES = {
   "open.prompt_required": {
     field: "prompt",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_open_answer"],
     description: "lesson_open_answer has the question in prompt.",
   },
@@ -649,6 +668,7 @@ export const CORE_RULES = {
   "cloze.text_required": {
     field: "clozeText",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_cloze"],
     description: "lesson_cloze carries its text with gaps in clozeText.",
   },
@@ -662,6 +682,7 @@ export const CORE_RULES = {
   "cloze.answers_count": {
     field: "gapAnswers",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_cloze"],
     description: "gapAnswers has exactly one word for each gap of clozeText, in text order.",
   },

@@ -564,8 +564,9 @@ describe("uzupełnij tekst (lesson_cloze)", () => {
     expect(validatePool([clozeDraft(), other], schoolSubject, topic).valid).toHaveLength(2);
   });
 
-  it("prompt generatora opisuje luki z bankiem słów", () => {
-    expect(schoolSubject.prompts.fieldRules).toContain("lesson_cloze");
+  it("prompt generatora opisuje luki z bankiem słów (semantyka typu w typeRules, bez reguł egzekwowanych)", () => {
+    expect(schoolSubject.prompts.typeRules?.lesson_cloze).toContain("2 to 4 short sentences close to the parent material");
+    expect(schoolSubject.prompts.fieldRules).not.toContain("lesson_cloze");
   });
 });
 

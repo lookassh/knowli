@@ -28,7 +28,10 @@ describe("recordingAgent", () => {
     const log: AgentSubmission[] = [];
     const exercises = [{ exerciseType: "lesson_choice", answer: "a" }, { exerciseType: "lesson_open_answer", answer: "b" }];
     const tools: LessonObjectiveAgentTools = {
-      submit: async () => outcome([{ index: 0, accepted: "ex-1" }, { index: 1, errors: ["the hint gives away the answer"] }]),
+      submit: async () => outcome([
+        { index: 0, exerciseType: "lesson_choice", stimulus: "a", accepted: "ex-1", notes: ["[check.variants] acceptedAnswers[0]: removed"] },
+        { index: 1, exerciseType: "lesson_open_answer", stimulus: "b", errors: ["[check.hint_judge] hint: gives the answer away"] },
+      ]),
       remove: async () => ({ ...outcome([]), removed: [] }),
       shouldStop: () => false,
     };
@@ -36,14 +39,14 @@ describe("recordingAgent", () => {
     await recordingAgent(fakeAgent({ exercises }), log).runObjective(input, tools, { record: () => undefined }, new AbortController().signal);
 
     expect(log).toEqual([
-      { objective: "rivers", call: 1, index: 0, exerciseType: "lesson_choice", accepted: "ex-1", exercise: exercises[0] },
-      { objective: "rivers", call: 1, index: 1, exerciseType: "lesson_open_answer", errors: ["the hint gives away the answer"], exercise: exercises[1] },
+      { objective: "rivers", call: 1, index: 0, exerciseType: "lesson_choice", accepted: "ex-1", notes: ["[check.variants] acceptedAnswers[0]: removed"], exercise: exercises[0] },
+      { objective: "rivers", call: 1, index: 1, exerciseType: "lesson_open_answer", errors: ["[check.hint_judge] hint: gives the answer away"], exercise: exercises[1] },
     ]);
   });
 
   it("nie zmienia wyniku narzędzia ani pozostałych narzędzi", async () => {
     const log: AgentSubmission[] = [];
-    const expected = outcome([{ index: 0, errors: ["x"] }]);
+    const expected = outcome([{ index: 0, exerciseType: null, stimulus: "", errors: ["x"] }]);
     let seen: LessonAgentToolOutcome | undefined;
     const agent = {
       ...fakeAgent({ exercises: [{}] }),

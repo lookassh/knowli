@@ -12,7 +12,7 @@ export type AgentSubmission = {
   readonly index: number;
   readonly exerciseType: string | null;
   readonly exercise: unknown;
-} & ({ readonly accepted: string; readonly note?: string } | { readonly errors: readonly string[] });
+} & ({ readonly accepted: string; readonly notes?: readonly string[] } | { readonly errors: readonly string[] });
 
 const slugOf = (objectiveId: string) => objectiveId.split(".").at(-1) ?? objectiveId;
 
@@ -41,7 +41,7 @@ export function recordingAgent(agent: LessonPoolAgentProvider, log: AgentSubmiss
                 ? (exercise as { exerciseType: string }).exerciseType
                 : null;
             log.push("accepted" in result
-              ? { objective, call: current, index: result.index, exerciseType, accepted: result.accepted, ...(result.note === undefined ? {} : { note: result.note }), exercise }
+              ? { objective, call: current, index: result.index, exerciseType, accepted: result.accepted, ...(result.notes === undefined ? {} : { notes: result.notes }), exercise }
               : { objective, call: current, index: result.index, exerciseType, errors: result.errors, exercise });
           }
           return outcome;

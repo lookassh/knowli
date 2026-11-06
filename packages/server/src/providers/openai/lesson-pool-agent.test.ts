@@ -71,6 +71,7 @@ const POOL: LessonPoolInput = {
   countPerObjective: 6,
   stageCounts: { guided: 2, productive: 2, independent: 2 },
   graderAvailable: false,
+  ruleBook: { general: [{ id: "field.empty", text: "EMPTY-RULE." }], types: [], lesson: [], checks: [] },
 };
 
 function agentInput(overrides: Partial<LessonObjectiveAgentInput> = {}): LessonObjectiveAgentInput {
@@ -79,14 +80,23 @@ function agentInput(overrides: Partial<LessonObjectiveAgentInput> = {}): LessonO
     objective: { id: "subject.topic.animals", title: "Zwierzęta", cards: [{ title: "Słowa", body: "cat — kot" }], examplesFromPlan: false, index: 0, existingCount: 0 },
     otherObjectives: [],
     cardSentences: [],
-    targets: { guided: 2, productive: 2, independent: 3, requiredTypes: [], targetCount: 6, listenAllowance: 0, maxExercises: 8 },
+    targets: {
+      guided: 2,
+      productive: 2,
+      independent: 3,
+      requiredTypes: [],
+      targetCount: 6,
+      listenAllowance: 0,
+      maxExercises: 8,
+      publicationMinima: { guided: 3, productive: 4, independent: 2 },
+    },
     maxSteps: 8,
     ...overrides,
   };
 }
 
 const OUTCOME: LessonAgentToolOutcome = {
-  results: [{ index: 0, accepted: "ex1" }],
+  results: [{ index: 0, exerciseType: "lesson_match", stimulus: "Połącz słowo z tłumaczeniem.", accepted: "ex1" }],
   counts: { guided: 1, productive: 0, independent: 0, outsideStages: 0, total: 1 },
   missing: ["productive: 0 of 2"],
   complete: false,
@@ -152,13 +162,19 @@ describe("openRouterCostOf", () => {
 });
 
 describe("objectiveInstructions (dopisek przepływu narzędzi)", () => {
-  it("dopisuje promptNotes przedmiotu; bez nich nie ma reguły o podpowiedzi (gramatyka zachowuje hint)", () => {
-    const noted = objectiveInstructions(agentInput({ promptNotes: ["NOTE-ONE about hints.", "NOTE-TWO."] }));
-    expect(noted).toContain("NOTE-ONE about hints.");
-    expect(noted).toContain("NOTE-TWO.");
-    const plain = objectiveInstructions(agentInput());
-    expect(plain).not.toContain("NOTE-ONE");
-    expect(plain).not.toContain("Hint only for lesson_open_answer");
+  it("składa prompt z księgą reguł, trybem narzędzi bez zdań potoku i minimami publikacji w Target", () => {
+    const text = objectiveInstructions(agentInput());
+    expect(text).toContain("[field.empty] EMPTY-RULE.");
+    expect(text).toContain('TOOL MODE: deliver exercises ONLY by calling submit_exercises, with objectiveId "subject.topic.animals"');
+    expect(text).not.toContain("ignore the instruction above to answer with JSON text");
+    expect(text).toContain(
+      "Publication minima of the complete objective pool (exercises already in the lesson count too): 3 guided, 4 productive and 2 independent.",
+    );
+    expect(text).toContain("each problem is named as [rule id] field: what is wrong");
+    const distinct = objectiveInstructions(
+      agentInput({ targets: { ...agentInput().targets, publicationMinima: { guided: 3, productive: 2, independent: 2, distinctOpenAnswers: 2 } } }),
+    );
+    expect(distinct).toContain("2 independent, including 2 lesson_open_answer questions with DIFFERENT model answers (one family counts once).");
   });
 });
 

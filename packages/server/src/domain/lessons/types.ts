@@ -202,11 +202,6 @@ export interface SubjectAgentPolicy {
   /** Słowa i ramy do pokrycia przez plan (lista dla modelu planera). */
   planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
   planGate?(plan: readonly RawPlanObjective[], material: string): string[];
-  /**
-   * Dopiski przedmiotu do instrukcji podagenta zagadnienia (po angielsku, dla modelu), np. szkoła:
-   * podpowiedź tylko przy pytaniu otwartym. Brak = bez dopisków (gramatyka zachowuje `hint`).
-   */
-  readonly promptNotes?: readonly string[];
 }
 /** Normalizator odpowiedzi przedmiotu. */
 export interface AnswerNormalizer {
@@ -220,15 +215,15 @@ export interface SubjectPromptProfile {
   readonly gradingRole: string; // co ocenia model (zastosowanie celu, nie styl)
   readonly almostDefinition: string; // kiedy werdykt „almost”
   /**
-   * Reguły semantyki pól ćwiczeń doklejane do promptu generacji po ogólnym
-   * opisie pól przez adapter (dziedzinowe, np. „hint = bezokolicznik”).
-   * Opcjonalne: przedmiot bez reguł pól pomija pole.
+   * Semantyka pól ćwiczeń doklejana do promptu generacji (dziedzinowa, np. „hint =
+   * bezokolicznik”) — wyłącznie wskazówki, których kod nie sprawdza; reguły
+   * egzekwowane opisuje katalog reguł (spec katalogu reguł §3). Opcjonalne.
    */
   readonly fieldRules?: string;
   /**
    * Semantyka typów z własną ścisłą gałęzią schematu puli (pary, grupy, luki):
-   * adapter składa blok z części strukturalnej (pola, limity) i tego opisu.
-   * Brak reguły typu = sama część strukturalna.
+   * księga reguł dokłada ją do bloku typu obok karty typu (pola, przykład) i
+   * reguł typu. Bez reguł egzekwowanych przez kod.
    */
   readonly typeRules?: Partial<Record<"lesson_match" | "lesson_group" | "lesson_cloze", string>>;
   /**

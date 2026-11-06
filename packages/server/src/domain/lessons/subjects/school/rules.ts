@@ -54,12 +54,13 @@ export const SCHOOL_RULES = defineRules({
     field: "exercise",
     kind: "reject",
     description:
-      "questionType, requiredElements, supplementaryElements, commonErrors and expectedForm belong only to lesson_open_answer, " +
-      "and familyId only to lesson_open_answer and lesson_keywords; leave them out of other exercise types.",
+      "questionType, requiredElements, supplementaryElements, commonErrors and expectedForm are set only on " +
+      "lesson_open_answer, and familyId only on lesson_open_answer and lesson_keywords.",
   },
   "school.calculation_params_required": {
     field: "calculation",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation"],
     description: "lesson_calculation carries the calculation parameters in calculation.",
   },
@@ -72,24 +73,28 @@ export const SCHOOL_RULES = defineRules({
   "school.calculation_answer_computed": {
     field: "answer",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation"],
     description: "The answer of lesson_calculation equals the result the code computes from calculation.",
   },
   "school.calculation_prompt_template": {
     field: "prompt",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation"],
     description: "The prompt of lesson_calculation equals the template the code renders from calculation.",
   },
   "school.computed_lists_empty": {
     field: "exercise",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_calculation", "lesson_keywords"],
     description: "lesson_calculation and lesson_keywords have empty acceptedAnswers and focus.",
   },
   "school.keywords_family_required": {
     field: "familyId",
     kind: "reject",
+    promptBrief: true,
     types: ["lesson_keywords"],
     priority: "family",
     description: "lesson_keywords names in familyId the family of open questions it precedes.",
@@ -131,9 +136,8 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_keywords"],
     priority: "family",
     description:
-      "When the lesson_open_answer with the familyId of a lesson_keywords is rejected in the same call and the objective " +
-      "has no other open question of that familyId, the keywords are rejected too; send them with a valid open question " +
-      "or after it is accepted.",
+      "When the lesson_open_answer of its familyId is rejected in the same call and the objective has no other open " +
+      "question of that familyId, the keywords are rejected too; send them with a valid open question or after it is accepted.",
   },
   "school.keyword_not_in_answer": {
     field: "keyOptionIds",
@@ -155,11 +159,10 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_open_answer"],
     priority: "hint",
     description:
-      "Every lesson_open_answer should get a short hint (recommended) that points to the reasoning or to where in the " +
-      "material to look; leave hint null only when no such hint is possible. The hint is removed and the exercise is " +
-      "accepted without it when, for the answer, an accepted variant or a required element, it contains all of its " +
-      "content words (one or two words) or at least half of them, rounded up (more words), in any word form; words of " +
-      "the question and function words do not count.",
+      "Every lesson_open_answer should get a short hint (recommended) pointing to the reasoning or to where in the " +
+      "material to look; leave hint null only when no such hint is possible. The hint is removed (the exercise stays) " +
+      "when, in any word form, it contains all content words (one or two) or at least half of them, rounded up (more), " +
+      "of the answer, an accepted variant or a required element; question words and function words do not count.",
   },
 });
 

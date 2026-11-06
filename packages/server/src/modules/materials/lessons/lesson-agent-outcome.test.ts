@@ -425,7 +425,7 @@ describe("outcomeObjectivesOf", () => {
 });
 
 describe("mergeAttemptIntoProgress", () => {
-  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, detail: "treść" });
+  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, ruleIds: ["lesson.leak"], detail: "treść" });
 
   it("pula: wznowione zastępuje wpis, complete zostaje; wydatek, histogram i usunięcia sumowane", () => {
     const start = progressWith({

@@ -1,4 +1,20 @@
+import {
+  MAX_ACCEPTED_ANSWERS,
+  MAX_CLOZE_GAPS,
+  MAX_LESSON_ANSWER_LENGTH,
+  MAX_LESSON_TEXT_LENGTH,
+  MAX_MATCH_PAIRS,
+  MAX_OPTIONS,
+  MAX_ORDER_ITEMS,
+  MAX_REQUIRED_ELEMENTS,
+  MIN_CLOZE_GAPS,
+  MIN_MATCH_PAIRS,
+  MIN_OPTIONS,
+  MIN_ORDER_ITEMS,
+  MIN_REQUIRED_ELEMENTS,
+} from "@learning/contracts";
 import { describe, expect, it } from "vitest";
+import { MAX_CARD_EXAMPLES } from "../../domain/lessons/agent/admission";
 import type { LessonPoolInput } from "../../ports/ai";
 import { lessonPoolJsonSchema, voiceToneProperty } from "./lesson-pool-schema";
 
@@ -20,6 +36,7 @@ const input: LessonPoolInput = {
   countPerObjective: 3,
   stageCounts: { guided: 1, productive: 1, independent: 1 },
   graderAvailable: false,
+  ruleBook: { general: [], types: [], lesson: [], checks: [] },
 };
 
 describe("lessonPoolJsonSchema", () => {
@@ -50,7 +67,9 @@ describe("lessonPoolJsonSchema", () => {
     for (const kind of kinds) {
       expect(kind.additionalProperties).toBe(false);
       expect(kind.properties.params.additionalProperties).toBe(false);
-      expect(kind.required.sort()).toEqual(Object.keys(kind.properties).sort());
+      // `tolerance` jest opcjonalne (brak = 0, spec katalogu reguł §3); pozostałe pola wymagane.
+      expect(kind.required.sort()).toEqual(Object.keys(kind.properties).filter((key) => key !== "tolerance").sort());
+      expect(kind.properties).toHaveProperty("tolerance");
     }
     expect(branches[0].properties.exerciseType.enum).toEqual(["lesson_gap"]);
   });
@@ -223,7 +242,7 @@ describe("lessonPoolJsonSchema — wyjaśnienie błędu (explanationPl)", () => 
         expect(branch.required).not.toContain("explanationPl");
         continue;
       }
-      expect(branch.properties.explanationPl).toEqual({ type: ["string", "null"] });
+      expect(branch.properties.explanationPl).toEqual({ type: ["null", "string"], minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
       expect(branch.required).toContain("explanationPl");
       expect(branch.required.sort()).toEqual(Object.keys(branch.properties).sort());
     }
@@ -247,7 +266,7 @@ describe("lessonPoolJsonSchema — wyjaśnienie błędu (explanationPl)", () => 
         continue;
       }
       expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
-      expect(branch.properties.explanationPl).toEqual({ type: ["string", "null"] });
+      expect(branch.properties.explanationPl).toEqual({ type: ["null", "string"], minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
       expect(branch.required).toEqual(expect.arrayContaining(["voiceTone", "explanationPl"]));
       // ścisła gałąź: wymagane są dokładnie wszystkie pola, bez duplikatów
       expect(new Set(branch.required).size).toBe(branch.required.length);
@@ -285,5 +304,43 @@ describe("lessonPoolJsonSchema — cytaty w gałęziach pary/grupy/luki zależą
     const branch = dedicated(true)[type];
     expect(branch.properties.sourceRefs).toMatchObject({ type: "array", minItems: 1, maxItems: 3 });
     expect(branch.properties.sourceRefs.items.properties.quote).toMatchObject({ minLength: 10, maxLength: 600 });
+  });
+});
+
+describe("lessonPoolJsonSchema — limity ze stałych walidacji (spec katalogu reguł §3)", () => {
+  const schema = lessonPoolJsonSchema({
+    ...input,
+    exerciseTypes: ["lesson_choice", "lesson_order", "lesson_open_answer", "lesson_match", "lesson_cloze", "lesson_calculation"],
+    objectives: [{ ...input.objectives[0]!, exerciseTypes: ["lesson_choice", "lesson_order", "lesson_open_answer", "lesson_match", "lesson_cloze", "lesson_calculation"] }],
+  }) as any;
+  const branchOf = (type: string) =>
+    schema.properties.exercises.items.anyOf.find((branch: any) => branch.properties.exerciseType.enum.includes(type));
+
+  it("napisy mają minLength 1 i maxLength ze stałych kontraktu", () => {
+    const regular = branchOf("lesson_choice").properties;
+    for (const field of ["instructionPl", "stem", "statement", "prompt", "hint"]) {
+      expect(regular[field], field).toMatchObject({ type: ["null", "string"], minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
+    }
+    expect(regular.answer).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_ANSWER_LENGTH });
+    expect(regular.acceptedAnswers.items).toEqual({ type: "string", minLength: 1, maxLength: MAX_LESSON_ANSWER_LENGTH });
+    expect(regular.focus.items).toMatchObject({ minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
+    expect(branchOf("lesson_match").properties.instructionPl).toMatchObject({ minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
+  });
+
+  it("listy mają minItems/maxItems równe stałym walidacji", () => {
+    const regular = branchOf("lesson_choice").properties;
+    expect(regular.acceptedAnswers.maxItems).toBe(MAX_ACCEPTED_ANSWERS);
+    expect(regular.options).toMatchObject({ minItems: MIN_OPTIONS, maxItems: MAX_OPTIONS });
+    expect(regular.items).toMatchObject({ minItems: MIN_ORDER_ITEMS, maxItems: MAX_ORDER_ITEMS });
+    expect(regular.requiredElements).toMatchObject({ minItems: MIN_REQUIRED_ELEMENTS, maxItems: MAX_REQUIRED_ELEMENTS });
+    expect(branchOf("lesson_match").properties.pairs).toMatchObject({ minItems: MIN_MATCH_PAIRS, maxItems: MAX_MATCH_PAIRS });
+    expect(branchOf("lesson_cloze").properties.gapAnswers).toMatchObject({ minItems: MIN_CLOZE_GAPS, maxItems: MAX_CLOZE_GAPS });
+    expect(schema.properties.examples.items.properties.examples).toMatchObject({ maxItems: MAX_CARD_EXAMPLES });
+  });
+
+  it("tolerance rachunku leży poza required", () => {
+    for (const kind of branchOf("lesson_calculation").properties.calculation.anyOf) {
+      expect(kind.required).not.toContain("tolerance");
+    }
   });
 });

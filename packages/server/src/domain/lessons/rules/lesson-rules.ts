@@ -42,8 +42,8 @@ export const LESSON_RULES = {
     field: "exercise",
     kind: "reject",
     description:
-      "An objective holds at most its exercise limit (the target count plus the listening allowance plus a small slack); " +
-      "remove an exercise of this objective before submitting another.",
+      "An objective holds at most its exercise limit (target count plus listening allowance plus a small slack); remove " +
+      "one of its exercises before submitting another.",
   },
   "lesson.limit_listen": {
     field: "exerciseType",
@@ -59,17 +59,16 @@ export const LESSON_RULES = {
     field: "answer",
     kind: "reject",
     description:
-      "The answer of an independent exercise (and each accepted variant) must not be visible to the child earlier in the " +
-      "lesson: it differs from the answer and the sentence of every guided or productive exercise, from every card " +
-      "example and from the answer of an earlier independent exercise. Questions of one open-question family may share " +
-      "their model answer.",
+      "The answer of an independent exercise (and each accepted variant) must not appear earlier in the lesson: it differs " +
+      "from the answer and sentence of every guided or productive exercise, from every card example and from earlier " +
+      "independent answers. Questions of one open-question family may share their model answer.",
   },
   "lesson.leak_source": {
     field: "answer",
     kind: "reject",
     description:
-      "An exercise must not show the child the answer of an independent exercise placed later in the lesson (an exercise " +
-      "of this or another objective, also one already in the lesson): its answer or full sentence must differ from it.",
+      "An exercise must not show the answer of a later independent exercise of this or another objective (also one " +
+      "already in the lesson): its answer and full sentence differ from it.",
   },
   // Kontrole innymi modelami (checker, sędzia podpowiedzi, grader).
   "check.blind_solve": {
@@ -77,18 +76,18 @@ export const LESSON_RULES = {
     kind: "reject",
     when: (ctx) => ctx.policy.blindSolveTypes.some((type) => ctx.exerciseTypes.includes(type)),
     description:
-      "An independent solver answers the exercise seeing only the child's view (instruction, stimulus, options, word " +
-      "blocks and word bank, and the material only when the subject's checker needs it), never the key; its answer must " +
-      "match the answer or an accepted variant. The comparison ignores letter case, punctuation and contracted forms; " +
-      "pairs, groups and cloze gaps are compared position by position. Make the exercise have exactly one solution.",
+      "An independent solver sees only the child's view (instruction, stimulus, options, word blocks, word bank; the " +
+      "material only when the subject's checker needs it), never the key; its answer must match the answer or an accepted " +
+      "variant, ignoring letter case, punctuation and contracted forms; pairs, groups and cloze gaps are compared position " +
+      "by position. Make the exercise have exactly one solution.",
   },
   "check.variants": {
     field: "acceptedAnswers",
     kind: "sanitize",
     when: (ctx) => ctx.policy.variantCheckTypes.some((type) => ctx.exerciseTypes.includes(type)),
     description:
-      "Another model checks every accepted variant against the answer; a variant that is not equivalent to it is removed " +
-      "from acceptedAnswers (the exercise stays) and the result notes the removal.",
+      "Another model checks every acceptedAnswers variant; a variant not equivalent to the answer is removed (the " +
+      "exercise stays) and the result notes the removal.",
   },
   "check.hint_judge": {
     field: "hint",
@@ -96,23 +95,20 @@ export const LESSON_RULES = {
     priority: "hint",
     when: (ctx) => (ctx.policy.hintJudgeTypes ?? []).some((type) => ctx.exerciseTypes.includes(type)),
     description:
-      "Another model judges the meaning of every non-empty hint: it must be supported by the material, be correct in the " +
-      "language of the lesson's instructions and must not give away the answer or a required element in other words " +
-      "(a paraphrase counts, not only shared words). A rejected hint rejects the exercise: fix the hint (null only if no " +
-      "safe hint exists).",
+      "Another model judges every non-empty hint: it must follow from the material, be correct in the language of the " +
+      "instructions and not give away the answer or a required element, even in other words. A rejected hint rejects the " +
+      "exercise: fix the hint (null only if no safe hint exists).",
   },
   "check.open_answer": {
     field: "requiredElements",
     kind: "reject",
     when: (ctx) => (ctx.policy.openAnswerCheckTypes ?? []).some((type) => ctx.exerciseTypes.includes(type)),
     description:
-      "Two independent solvers answer the open question from the child's view, and a grader grades both answers against " +
-      "requiredElements; each must be accepted. When a correct answer that follows the question lacks required elements " +
-      "the question does not actually demand, make requiredElements match what the question asks (for “any two”, require " +
-      "what every valid choice satisfies and move specific examples to supplementaryElements) or make the question ask " +
-      "for exactly those elements; do not drop elements the question genuinely requires. When an answer based on the " +
-      "material is graded as containing errors, check that the model answer and the criteria agree with the material; " +
-      "if the solver's answer is wrong according to the material, make the question more precise or add the mistake to " +
-      "commonErrors.",
+      "Two independent solvers answer the open question from the child's view and a grader grades both answers against " +
+      "requiredElements; both must be accepted. If a correct answer lacks elements the question does not demand, make " +
+      "requiredElements match the question (for “any two”, require what every valid choice satisfies and move examples to " +
+      "supplementaryElements) or make the question ask for them; do not drop elements the question genuinely requires. " +
+      "If an answer based on the material is graded wrong, check the model answer and criteria against the material, then " +
+      "make the question more precise or add the mistake to commonErrors.",
   },
 } as const satisfies RuleCatalog;

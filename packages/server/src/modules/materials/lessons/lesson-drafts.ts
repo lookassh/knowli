@@ -36,6 +36,7 @@ import { keywordsAnswer } from "../../../domain/lessons/pool-validation";
 import { hasLenientRawShape } from "../../../domain/lessons/raw-shape";
 import { familyRunSuffix, withoutOrphanKeywords } from "../../../domain/lessons/keyword-families";
 import { messagesOf } from "../../../domain/lessons/rules/catalog";
+import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rules/rule-book";
 import {
   lessonExerciseStimulus,
   lessonIdentityOptionsOf,
@@ -520,11 +521,14 @@ export function listenChoiceAllowance(
   objective: { id: string; exerciseTypes: readonly string[] },
   present: readonly LessonExerciseStimulus[],
 ): number {
-  if (!subject.ttsForFeedbackSentence || !subject.exerciseTypes.includes("lesson_listen_choice") || !objective.exerciseTypes.includes("lesson_listen_choice")) {
-    return 0;
-  }
+  if (!listenChoiceAvailable(subject, objective)) return 0;
   const listened = present.filter((exercise) => exercise.objectiveId === objective.id && exercise.exerciseType === "lesson_listen_choice").length;
   return Math.max(0, LISTEN_CHOICE_PER_OBJECTIVE - listened);
+}
+
+/** Czy cel może mieć ćwiczenia `lesson_listen_choice`: przedmiot nagrywa zdania, a typ leży na liście przedmiotu i celu. */
+function listenChoiceAvailable(subject: SubjectModule, objective: { exerciseTypes: readonly string[] }): boolean {
+  return subject.ttsForFeedbackSentence && subject.exerciseTypes.includes("lesson_listen_choice") && objective.exerciseTypes.includes("lesson_listen_choice");
 }
 
 /** Czysta reguła rodzin słów kluczowych żyje w domenie (używa jej też agent puli); reeksport dla obecnych wywołujących. */
@@ -564,6 +568,11 @@ export function buildPoolInput(
   const withInterests = interestsRule !== undefined && interests !== undefined && interests.length > 0;
   const objective = topic.objectives.find((o) => o.id === objectiveId)!;
   const listenAllowance = listenChoiceAllowance(subject, objective, []);
+  // Księga reguł: typy celu (bez wyboru ze słuchu, gdy cel go nie dostaje — prompt go wtedy nie wymienia)
+  // i dostępność typu słuchowego, nie wolne miejsce w przydziale (reguły puli dotyczą też istniejących zdań).
+  const listenChoice = listenChoiceAvailable(subject, objective);
+  const ruleTypes = objective.exerciseTypes.filter((type) => listenChoice || type !== "lesson_listen_choice");
+  const ruleBook = lessonRuleBook(subject, ruleBookContextFor(subject, topic.id, ruleTypes, listenChoice));
   return {
     subjectId: subject.id,
     subjectTitle: subject.titlePl,
@@ -602,6 +611,7 @@ export function buildPoolInput(
     voiceTones: subject.ttsForPrompts === true,
     exerciseExplanations: subject.exerciseExplanations,
     ...(options.avoidSentences !== undefined && options.avoidSentences.length > 0 ? { avoidSentences: [...options.avoidSentences] } : {}),
+    ruleBook,
   };
 }
 

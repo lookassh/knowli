@@ -631,7 +631,7 @@ export function admitBatch(
 }
 
 /** Najwyżej tyle przykładów kart na zagadnienie. */
-const MAX_EXAMPLES = 3;
+export const MAX_CARD_EXAMPLES = 3;
 
 /**
  * Przykłady kart zagadnienia od modelu (§3.4): linie przycięte, niepuste,
@@ -687,8 +687,8 @@ export function submitExamples(
       errors.push(...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`));
       return;
     }
-    if (kept.length >= MAX_EXAMPLES) {
-      errors.push(`${label}: an objective has at most ${MAX_EXAMPLES} card examples; this line was ignored`);
+    if (kept.length >= MAX_CARD_EXAMPLES) {
+      errors.push(`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`);
       return;
     }
     kept.push(text);
