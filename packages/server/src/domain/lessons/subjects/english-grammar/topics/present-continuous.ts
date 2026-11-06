@@ -302,7 +302,7 @@ const nowOrUsuallyMore: LearningObjective = {
   errorCategories: ["continuous_for_habit", "simple_for_now", "be_plus_simple"],
   hints: {
     continuous_for_habit: `${NOW_OR_USUALLY} Every day, on Mondays, codziennie — to zwykle, wtedy don't/doesn't albo Do/Does: She doesn't watch TV on Mondays.`,
-    simple_for_now: `${NOW_OR_USUALLY} Now, Look!, teraz — to teraz, wtedy am not/isn't/aren't albo Am/Is/Are + -ing: Are you playing football now?`,
+    simple_for_now: `${NOW_OR_USUALLY} Now, Look!, teraz — to teraz, wtedy am not/isn't/aren't albo Am/Is/Are + -ing: Are you playing football right now?`,
     be_plus_simple: `${NOW_OR_USUALLY} Gdy coś dzieje się zwykle, nie ma am/is/are: She doesn't watch TV on Mondays. Do you play football on Saturdays?`,
   },
   exerciseTypes: [

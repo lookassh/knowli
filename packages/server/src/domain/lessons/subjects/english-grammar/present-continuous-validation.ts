@@ -1194,20 +1194,40 @@ function isNumberedAuxiliary(token: string): boolean {
   return BE_FORMS.has(token) || token === "do" || token === "does";
 }
 
+/** Czy token ma własną liczbę orzeczenia: am/is/are, do/does, forma -ing albo Present Simple. */
+function isVerbToken(token: string): boolean {
+  return isNumberedAuxiliary(token) || ingBaseOf(token) !== undefined || presentSimpleBaseOf(token) !== undefined;
+}
+
+/**
+ * Rzeczownik `tokens[index]` w podmiocie złożonym z „and” („the cat and the fish are”, „the fish and
+ * the cat are”) — liczbę mnogą ustala „and”. „Tom is reading and the fish …” to dwa zdania składowe:
+ * przed „and” stoi orzeczenie (poza am/is/are, do/does otwierającymi pytanie).
+ */
+function inCompoundSubject(tokens: readonly string[], index: number, opener: number): boolean {
+  if (tokens[index + 1] === "and") return true;
+  const window = tokens.slice(Math.max(0, index - 3), index);
+  const determiner = window.findLastIndex((token) => BE_DETERMINERS.has(token) || Object.hasOwn(NUMBER_WORD_BE_FORM, token));
+  const start = determiner >= 0 ? index - window.length + determiner : index;
+  if (tokens[start - 1] !== "and") return false;
+  const from = isNumberedAuxiliary(tokens[opener] ?? "") ? opener + 1 : 0;
+  return tokens.slice(from, start - 1).every((token) => !isVerbToken(token));
+}
+
 /**
  * Rzeczownik z `NUMBERLESS_NOUNS` jako podmiot bez słowa ustalającego liczbę: tuż przed am/is/are,
  * do/does albo formą Present Simple albo po am/is/are, do/does otwierających pytanie („Is the sheep
- * eating?”). „Tom is feeding the fish.” — dopełnienie, nie podmiot.
+ * eating?”), poza podmiotem złożonym z „and”. „Tom is feeding the fish.” — dopełnienie, nie podmiot.
  */
 function numberlessSubjectIn(text: string): string | undefined {
   for (const tokens of text.split(SENTENCE_BOUNDARY).map(tenseTokens)) {
     const opener = tokens[0] === "what" ? 1 : 0;
     for (const [index, token] of tokens.entries()) {
       if (!NUMBERLESS_NOUNS.has(token) || numberlessNounBeForm(tokens, index) !== undefined) continue;
+      if (inCompoundSubject(tokens, index, opener)) continue;
       const next = tokens[index + 1] ?? "";
       const verbAfter = isNumberedAuxiliary(next) || presentSimpleBaseOf(next) !== undefined;
-      const inverted = index > opener && isNumberedAuxiliary(tokens[opener]!) && tokens.slice(opener + 1, index)
-        .every((previous) => !isNumberedAuxiliary(previous) && ingBaseOf(previous) === undefined && presentSimpleBaseOf(previous) === undefined);
+      const inverted = index > opener && isNumberedAuxiliary(tokens[opener]!) && tokens.slice(opener + 1, index).every((previous) => !isVerbToken(previous));
       if (verbAfter || inverted) return token;
     }
   }
@@ -1215,11 +1235,25 @@ function numberlessSubjectIn(text: string): string | undefined {
 }
 
 /**
+ * Typy, w których dziecko samo wybiera albo pisze formę po fish / sheep / deer; w klockach i przekształceniu
+ * formę daje ćwiczenie (klocek, zdanie wyjściowe).
+ */
+const NUMBERLESS_SUBJECT_TYPES: ReadonlySet<string> = new Set([
+  "lesson_gap",
+  "lesson_choice",
+  "lesson_listen_choice",
+  "lesson_short_answer",
+  "lesson_error_fix",
+  "lesson_open_answer",
+]);
+
+/**
  * Klucz z podmiotem fish / sheep / deer bez słowa ustalającego liczbę (krytycy końcowi A i C, Task 16):
  * „Look! The fish ___ (eat).” ma dwa poprawne klucze (is eating / are eating), więc temat odrzuca taki
  * podmiot; wspólna heurystyka „to be” zostaje bez zmian.
  */
 function validateNumberlessSubjects(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  if (!NUMBERLESS_SUBJECT_TYPES.has(ex.exerciseType)) return;
   for (const { field, text } of sentenceAnswersOf(ex)) {
     const sentence = wholeSentenceOf(ex, text);
     const noun = numberlessSubjectIn(sentence);

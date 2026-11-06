@@ -962,3 +962,26 @@ describe("Task 16 — dwie poprawne odpowiedzi po krytykach końcowych", () => {
     expect(validate(pcGap("affirmative", "Look! Two fish ___ (eat).", "is eating"))).toEqual(["grammar.pc_be_form_subject"]);
   });
 });
+
+describe("Task 16 — zakres reguły rzeczowników bez liczby (fish, sheep, deer)", () => {
+  const RULE = "grammar.pc_numberless_subject";
+
+  it("nie zgłasza się, gdy liczbę ustala już ćwiczenie: klocki, przekształcenie, podmiot złożony", () => {
+    expect(validate({ ...pcOrder("affirmative", "The sheep are eating grass"), instructionPl: "Patrz! Owce jedzą. Ułóż zdanie." })).not.toContain(RULE);
+    expect(validate(pcTransform("negative", "to_negative", "The sheep are eating grass right now.", "The sheep aren't eating grass right now."))).not.toContain(RULE);
+    expect(validate(pcTransform("questions", "to_question", "The fish are eating now.", "Are the fish eating now?"))).not.toContain(RULE);
+    expect(validate(pcGap("affirmative", "Look! The cat and the fish ___ (eat).", "are eating"))).toEqual([]);
+    expect(validate(pcGap("affirmative", "Look! The fish and the cat ___ (eat).", "are eating"))).toEqual([]);
+    expect(validate(pcChoice("questions", "___ the cat and the fish eating now?", "Are", "Is"))).toEqual([]);
+  });
+
+  it("zgłasza się w luce, wyborze, wyborze ze słuchu, poprawianiu błędu i tłumaczeniu", () => {
+    expect(validate(pcGap("affirmative", "Look! The fish ___ (eat).", "are eating"))).toEqual([RULE]);
+    expect(validate(pcChoice("affirmative", "Look! The sheep ___ grass.", "are eating", "eat"))).toContain(RULE);
+    expect(validate({ ...pcChoice("affirmative", "The sheep ___ eating grass now.", "are", "is"), exerciseType: "lesson_listen_choice" })).toEqual([RULE]);
+    expect(validate(pcErrorFix("affirmative", "Look! The sheep is eat grass.", "Look! The sheep is eating grass."))).toContain(RULE);
+    expect(validate(pcTranslation("affirmative", "Patrz! Owce jedzą trawę.", "Look! The sheep are eating grass."))).toEqual([RULE]);
+    // Zdanie z „and” między zdaniami składowymi to nie podmiot złożony.
+    expect(validate(pcGap("affirmative", "Look! Tom is reading and the fish ___ (eat).", "are eating"))).toContain(RULE);
+  });
+});

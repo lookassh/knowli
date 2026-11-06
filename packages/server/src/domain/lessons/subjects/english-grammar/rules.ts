@@ -341,13 +341,16 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     when: inPresentContinuous,
     field: "answer",
     kind: "reject",
+    types: ["lesson_gap", "lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_error_fix", "lesson_open_answer"],
     description:
       "In the present_continuous topic fish, sheep and deer are the same in the singular and the plural, so in a key, an " +
-      "accepted answer or the correct option (with the stem around it when it fills a gap) such a noun never stands right " +
+      "accepted answer or the correct option (with the stem around it when it fills a gap) of a lesson_gap, lesson_choice, " +
+      "lesson_listen_choice, lesson_short_answer, lesson_error_fix or lesson_open_answer such a noun never stands right " +
       "before am, is, are, do, does or a present simple verb, or after the am, is, are, do or does that opens a question " +
       "(Is the sheep eating?), unless a number word (a, an, one, this, that, each, every, these, those, many, two to ten) " +
-      "stands among the three words before it: otherwise both is and are (eats and eat) are correct. Look! The fish ___ (eat). " +
-      "is wrong; Look! Two fish ___ (eat). → are eating is fine.",
+      "stands among the three words before it or the noun is part of a subject joined by and (the cat and the fish are): " +
+      "otherwise both is and are (eats and eat) are correct. Look! The fish ___ (eat). is wrong; Look! Two fish ___ (eat). → " +
+      "are eating is fine. In lesson_order and lesson_transform the tiles or the statement give the form.",
   },
   "grammar.pc_s_contraction": {
     when: inPresentContinuous,
