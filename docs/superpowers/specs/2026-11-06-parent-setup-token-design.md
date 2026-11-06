@@ -15,7 +15,7 @@ i przejąć panel rodzica (postępy dzieci, usuwanie profili).
   `Services.parentSetupToken`.
 - Przypadek użycia `setupParentWithToken` (`family/auth.ts`): brak kodu →
   `setup_disabled` (403); błędny kod → `invalid_setup_token` (403) i porażka
-  w limicie prób logowania (5 w 15 min, wspólny z loginem); porównanie skrótów
+  w limicie prób logowania (5 w 15 min, wspólny z loginem; po ustawieniu PIN-u setup od razu zwraca `already_configured`, więc nie blokuje logowania); porównanie skrótów
   sha256 przez `timingSafeEqual`; poprawny kod → dotychczasowy `setupParent`.
 - `setupParent` zostaje operacją zaufaną (testy integracyjne, skrypty); jedynym
   wywołującym HTTP jest router (`auth.setup`), który woła `setupParentWithToken`.

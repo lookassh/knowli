@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import {
 import { E2E_SETUP_TOKEN } from "./helpers/parent-session";
+import {
   ApiErrorSchema,
   AttemptDtoSchema,
   DisclosureDtoSchema,

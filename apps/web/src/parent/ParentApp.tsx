@@ -96,7 +96,7 @@ export default function ParentApp() {
   useAuthExpiredHandler(toLogin);
 
   const login = useCallback(
-    async (secret: string, setupFirst: boolean, setupToken: string) => {
+    async (secret: string, setupFirst: boolean, setupToken = "") => {
       if (setupFirst) {
         // pierwsze uruchomienie tworzy PIN i od razu nim loguje; po nieudanym
         // logowaniu ponowna próba zastaje PIN już zapisany — wtedy tylko logujemy

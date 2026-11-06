@@ -168,6 +168,10 @@ describe("auth i profile dzieci (integracja)", () => {
     await setupParentWithToken(services, "pin-setup", "kod-konfiguracji-1234");
     expect(await isParentSetupRequired(services)).toBe(false);
     await expectAppError(setupParentWithToken(services, "inny-pin", "kod-konfiguracji-1234"), "already_configured");
+    // po konfiguracji zgadywanie kodu nie zużywa limitu logowania rodzica
+    for (let i = 0; i < 6; i++) {
+      await expectAppError(setupParentWithToken(services, "inny-pin", `zly-${i}`), "already_configured");
+    }
     await expect(loginParent(services, "pin-setup")).resolves.toMatchObject({ token: expect.any(String) });
   });
 
