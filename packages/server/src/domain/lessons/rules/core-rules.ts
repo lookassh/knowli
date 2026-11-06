@@ -324,7 +324,7 @@ export const CORE_RULES = {
     field: "acceptedAnswers",
     kind: "reject",
     promptBrief: true,
-    description: "No acceptedAnswers variant is blank.",
+    description: "No acceptedAnswers variant is blank or punctuation only.",
   },
   "variants.duplicate": {
     field: "acceptedAnswers",
