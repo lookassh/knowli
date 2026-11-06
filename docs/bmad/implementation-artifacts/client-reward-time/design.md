@@ -178,7 +178,7 @@ Nie obiecujemy ukończenia zewnętrznego wywołania po zabiciu procesu. Cena upr
 
 ## 9. Punkty i przykłady
 
-`approvedMilliseconds = unionDuration(activeIntervalsOfTasksNotExcludedByLlm)`
+`approvedMilliseconds = min(unionDuration(activeIntervalsOfTasksNotExcludedByLlm), serverSessionDurationMs)` — czas sesji z serwera (pierwsze wydanie zadania → koniec sesji) ogranicza raport klienta (#305).
 
 `totalMs = previousRemainderMs + approvedMilliseconds`
 
