@@ -1154,6 +1154,82 @@ describe("agent puli lekcji (integracja)", () => {
         expectSummaryWithoutContent(row.agent_checkpoint, 4);
       });
 
+      it("błąd przejściowy bazy w ostatniej próbie przy przyjętym zagadnieniu → queued, następne przejęcie zapisuje część bez wywołań modelu (#319)", async () => {
+        const held = gate();
+        const { services, agent } = await agentWorld({ objectives: { negative: [held.step] } });
+        const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        // Ostatnia automatyczna próba.
+        await pool.query("update learning_app.generation_runs set attempts = 2 where id = $1", [runId]);
+        const running = executeLessonGeneration(services, runId);
+        await untilSettled(runId, OBJECTIVE);
+        await held.reached;
+        // Zapis postępu z zagadnieniem B pada na przejściowym błędzie Postgresa (serialization_failure).
+        await pool.query(`create or replace function learning_app.test_fail_checkpoint() returns trigger language plpgsql as $$
+          begin
+            if new.agent_checkpoint -> 'objectives' ? '${NEGATIVE}' then
+              raise exception 'test: checkpoint write failed' using errcode = '40001';
+            end if;
+            return new;
+          end $$`);
+        await pool.query(`create trigger test_fail_checkpoint before update on learning_app.generation_runs
+          for each row execute function learning_app.test_fail_checkpoint()`);
+        try {
+          held.open();
+          await running;
+        } finally {
+          await pool.query("drop trigger if exists test_fail_checkpoint on learning_app.generation_runs");
+          await pool.query("drop function if exists learning_app.test_fail_checkpoint()");
+        }
+
+        const requeued = await fullRun(runId);
+        expect(requeued.state).toBe("queued");
+        expect(requeued.attempts).toBe(3);
+        const saved = parseLessonAgentProgress(requeued.agent_checkpoint, runId)!;
+        expect(saved.objectives[OBJECTIVE]!.exercises.length).toBeGreaterThan(0);
+        const calls = agent.calls.length;
+
+        await dueNow(runId);
+        await executeLessonGeneration(services, runId);
+
+        const row = await fullRun(runId);
+        expect(row.state).toBe("succeeded");
+        expect(row.attempts).toBe(4);
+        expect(agent.calls).toHaveLength(calls);
+        const version = await versionOf(runId);
+        expect(await draftObjectives(version.id)).toEqual([OBJECTIVE]);
+        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
+      });
+
+      it("przejęcie po wyczerpaniu prób: przejściowa awaria zapisu części → failed attempts_exhausted, bez kolejnego ponowienia", async () => {
+        const { services, agent } = await agentWorld({ objectives: { negative: [never()] } });
+        const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        await pool.query("update learning_app.generation_runs set attempts = 2 where id = $1", [runId]);
+        const shutdown = new AbortController();
+        const running = executeLessonGeneration(services, runId, { signal: shutdown.signal });
+        await untilSettled(runId, OBJECTIVE);
+        shutdown.abort();
+        await running;
+        expect((await fullRun(runId)).state).toBe("queued");
+        const calls = agent.calls.length;
+
+        await pool.query(`create or replace function learning_app.test_fail_edit_number() returns trigger language plpgsql as $$
+          begin raise exception 'test: final write failed' using errcode = '40001'; end $$`);
+        await pool.query(`create trigger test_fail_edit_number before update of edit_number on learning_app.deck_versions
+          for each row execute function learning_app.test_fail_edit_number()`);
+        try {
+          await executeLessonGeneration(services, runId);
+        } finally {
+          await pool.query("drop trigger if exists test_fail_edit_number on learning_app.deck_versions");
+          await pool.query("drop function if exists learning_app.test_fail_edit_number()");
+        }
+
+        const row = await fullRun(runId);
+        expect(row.state).toBe("failed");
+        expect(row.error_code).toBe("attempts_exhausted");
+        expect(row.attempts).toBe(4);
+        expect(agent.calls).toHaveLength(calls);
+      });
+
       it("budżet wyczerpany przy błędzie przejściowym innego zagadnienia → zapis części bez ponowienia", async () => {
         // Krok kosztuje 0,01 USD, budżet runu 0,025: próba 1 wydaje 0,02 (A gotowe, B przejściowy → ponowienie),
         // w próbie 2 przejściowy błąd B przekracza budżet — kolejna próba nic by nie wydała.
