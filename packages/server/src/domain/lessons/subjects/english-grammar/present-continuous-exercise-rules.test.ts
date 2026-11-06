@@ -187,3 +187,46 @@ describe("validatePresentContinuousExercise — „Posłuchaj i wybierz”", () 
     expectRule(pcListenChoice("affirmative", "The dogs ___ running now.", "is", "are"), "grammar.pc_be_form_subject");
   });
 });
+
+function pcOrder(objective: Objective, items: readonly string[], instructionPl = "Cicho! Tom czyta. Ułóż zdanie."): LessonExerciseDraft {
+  return {
+    exerciseType: "lesson_order",
+    objectiveId: `english_grammar.present_continuous.${objective}`,
+    instructionPl,
+    items: items.map((text, index) => ({ id: `w${index}`, text })),
+    answer: items.join(" "),
+    acceptedAnswers: [],
+    focus: [],
+  };
+}
+
+describe("validatePresentContinuousExercise — rozsypanka bez przestawialnego wskaźnika czasu", () => {
+  const rules = (ex: LessonExerciseDraft): string[] => validate(ex).filter((rule) => rule === "grammar.pc_order_movable_marker");
+
+  it("wskaźnik, który może stać na początku albo na końcu zdania, odrzuca rozsypankę", () => {
+    expect(rules(pcOrder("affirmative", ["Tom", "is", "reading", "a", "book", "now"]))).toEqual(["grammar.pc_order_movable_marker"]);
+    expect(rules(pcOrder("questions", ["Is", "Tom", "reading", "now"]))).toEqual(["grammar.pc_order_movable_marker"]);
+    expect(rules(pcOrder("affirmative", ["Tom", "is", "reading", "right now"]))).toEqual(["grammar.pc_order_movable_marker"]);
+    // Wskaźniki „zwykle” odrzuca w tych celach też `pc_usually_marker`; tu tylko przestawialność.
+    for (const marker of ["every day", "on Mondays", "usually", "sometimes", "often", "twice a week"]) {
+      expect(rules(pcOrder("affirmative", ["Ola", "reads", "comics", marker])), marker).toEqual(["grammar.pc_order_movable_marker"]);
+    }
+  });
+
+  it("wskaźnik rozbity na kilka klocków też się liczy", () => {
+    expect(rules(pcOrder("affirmative", ["Tom", "is", "reading", "at", "the", "moment"]))).toEqual(["grammar.pc_order_movable_marker"]);
+    expect(rules(pcOrder("affirmative", ["Ola", "reads", "every", "day"]))).toEqual(["grammar.pc_order_movable_marker"]);
+  });
+
+  it("always i never stoją tylko między podmiotem a czasownikiem, a wykrzyknienie tylko na początku — nie są przestawialne", () => {
+    expect(rules(pcOrder("affirmative", ["Ola", "always", "reads", "comics"]))).toEqual([]);
+    expect(rules(pcOrder("affirmative", ["Ola", "never", "plays", "tennis"]))).toEqual([]);
+    expect(rules(pcOrder("affirmative", ["Look", "Tom", "is", "running"]))).toEqual([]);
+  });
+
+  it("bez wskaźnika w klockach (czas ze scenki w poleceniu) rozsypanka przechodzi", () => {
+    expect(validate(pcOrder("affirmative", ["Tom", "is", "reading", "a", "book"]))).toEqual([]);
+    expect(validate(pcOrder("questions", ["Is", "Tom", "reading", "a", "book"]))).toEqual([]);
+    expect(rules(pcOrder("affirmative", ["Tom", "knows", "Ola"]))).toEqual([]);
+  });
+});

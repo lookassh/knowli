@@ -139,4 +139,5 @@ registerRuleCases([
   { rule: "grammar.pc_transform_key_statement", violation: check(transform("negative", "to_negative", "Tom is playing right now.", "Ola isn't playing right now.")) },
   { rule: "grammar.pc_transform_polarity", violation: check(transform("negative", "to_negative", "He isn't playing now.", "He isn't playing now!")) },
   { rule: "grammar.pc_listen_choice_options", violation: check(choice("affirmative", "___ playing football now.", "He's", "He", "lesson_listen_choice")) },
+  { rule: "grammar.pc_order_movable_marker", violation: check(order("affirmative", "Tom is reading a book now")) },
 ]);

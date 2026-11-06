@@ -30,7 +30,7 @@ import {
   TRANSFORM_POLARITY,
   type BePolarity,
 } from "./be-agreement";
-import { isIngMisspellingOf, validateErrorFix, validateListenChoiceOptions, validateNotice, validateTransformShape } from "./present-continuous-exercise-rules";
+import { isIngMisspellingOf, validateErrorFix, validateListenChoiceOptions, validateNotice, validateOrderMarkers, validateTransformShape } from "./present-continuous-exercise-rules";
 import {
   CLAUSE_CONJUNCTIONS,
   gapContextTexts,
@@ -1646,6 +1646,7 @@ export function validatePresentContinuousExercise(draft: LessonExerciseDraft): L
   validateTranslationKeys(ex, errors);
   if (ex.exerciseType === "lesson_notice") validateNotice(ex, errors);
   if (ex.exerciseType === "lesson_listen_choice") validateListenChoiceOptions(ex, errors);
+  if (ex.exerciseType === "lesson_order") validateOrderMarkers(ex, errors);
   // Reguła luki na formę be i reguła zdania mogą zgłosić tę samą niezgodność formy z podmiotem (`found` się różni).
   const seen = new Set<string>();
   return errors.filter((issue) => {

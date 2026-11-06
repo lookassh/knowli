@@ -8,11 +8,12 @@ import { BE_FORMS } from "./be-agreement";
 import { ingBaseOf, presentSimpleBaseOf, SENTENCE_BOUNDARY, tenseTokens } from "./present-continuous-tense-choice";
 import { presentSimpleForms } from "./present-simple-forms";
 import { grammarIssue, MAX_ERROR_FIX_REGION_TOKENS } from "./rules";
+import { movableTimeMarkers } from "./time-markers";
 
 /**
  * Reguły typów ćwiczeń tematu Present Continuous: poprawianie błędu (design
  * „Present Continuous” §6.3), kształt przekształcenia, „Wskaż słowo” (§6.5)
- * i „Posłuchaj i wybierz” (§6.6). Wydzielone z `present-continuous-validation.ts`,
+ * „Posłuchaj i wybierz” (§6.6) i rozsypanka. Wydzielone z `present-continuous-validation.ts`,
  * który je woła; ten plik nie importuje walidatora tematu (bez cyklu). Zgłoszenia reguł
  * `grammar.pc_*` katalogu gramatyki (`rules.ts`).
  */
@@ -411,6 +412,22 @@ export function validateListenChoiceOptions(ex: LessonExerciseDraft, errors: Les
     errors.push(grammarIssue("grammar.pc_listen_choice_options", {
       pl: "options: w „Posłuchaj i wybierz” opcje to para is / are, isn't / aren't albo Is / Are (nie „He's” / „He”)",
       found: `options ${clip((ex.options ?? []).map((option) => option.text).join(" / "))} are not is / are, isn't / aren't or Is / Are`,
+    }));
+  }
+}
+
+/**
+ * Rozsypanka (sonda 2, ślepa ocena): klocek ze wskaźnikiem czasu, który może stać na początku albo na końcu
+ * zdania (`movableTimeMarkers`, także wskaźnik rozbity na kilka klocków), daje kilka poprawnych szyków
+ * („Tom is reading a book now” / „Now Tom is reading a book”) — czas ustala scenka w poleceniu.
+ */
+export function validateOrderMarkers(ex: LessonExerciseDraft, errors: LessonRuleIssue[]): void {
+  const tiles = (ex.items ?? []).map((item) => item.text).join(" ");
+  const markers = movableTimeMarkers(tiles);
+  if (markers.length > 0) {
+    errors.push(grammarIssue("grammar.pc_order_movable_marker", {
+      pl: `items: wskaźnik czasu „${markers.join("”, „")}” w klockach może stać na początku albo na końcu zdania, więc poprawny byłby więcej niż jeden szyk — czas pokaż scenką w poleceniu (Cicho! Dziadek śpi. Ułóż zdanie.)`,
+      found: `items ${clip(tiles)} hold the movable time marker ${markers.map((marker) => clip(marker)).join(", ")}`,
     }));
   }
 }

@@ -340,3 +340,22 @@ export function scanTimeMarkers(text: string, lang: "en" | "pl", options: { read
   const strongNow = nowMarkers.some((entry) => !BARE_NOW_MARKERS.has(entry));
   return { groups, nowMarkers, strongNow, forbidden: findForbidden(tokens) };
 }
+
+/**
+ * Przysłówki częstotliwości, które w zdaniu dziecka stoją tylko między podmiotem a czasownikiem (Ola always
+ * reads, nie „Always Ola reads”; „never” na początku wymaga inwersji). usually, often i sometimes mogą stać też
+ * na początku albo na końcu zdania („Sometimes Ola reads.”, „Ola reads comics often.”), więc są przestawialne.
+ */
+export const FIXED_POSITION_ADVERBS: ReadonlySet<string> = new Set(["always", "never"]);
+
+/**
+ * Angielskie wskaźniki czasu tekstu, które mogą stać na początku albo na końcu zdania (now, at the moment,
+ * every day, on Mondays, usually…): frazy list „teraz” i „zwykle” bez wykrzyknień (stoją tylko na początku)
+ * i bez `FIXED_POSITION_ADVERBS`; wpisy w kolejności list.
+ */
+export function movableTimeMarkers(text: string): string[] {
+  const tokens = normalizeTokens(text);
+  return [...PATTERNS.en.now, ...PATTERNS.en.usually]
+    .filter((phrase) => phrase.kind === "anywhere" && !FIXED_POSITION_ADVERBS.has(phrase.entry) && matchesAnywhere(tokens, phrase))
+    .map((phrase) => phrase.entry);
+}

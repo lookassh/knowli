@@ -619,6 +619,18 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     types: ["lesson_listen_choice"],
     description: "In the present_continuous topic the options of a lesson_listen_choice are exactly is / are, isn't / aren't, or Is / Are.",
   },
+  "grammar.pc_order_movable_marker": {
+    when: inPresentContinuous,
+    field: "items",
+    kind: "reject",
+    types: ["lesson_order"],
+    description:
+      "In the present_continuous topic the items of a lesson_order never hold a time marker that can stand at the start or at " +
+      "the end of the sentence, also split over several items: every now or usually marker except the exclamations (Look!, " +
+      "Shh!...) and always and never, which stand only between the subject and the verb. Such a marker gives more than one " +
+      "correct order (Tom is reading a book now / Now Tom is reading a book), so the time comes from a Polish scene in " +
+      "instructionPl (Cicho! Dziadek śpi. Ułóż zdanie.).",
+  },
 });
 
 /** Reguła luk Present Simple: walidator sprawdza ją poza tematami „to be” i Present Continuous. */

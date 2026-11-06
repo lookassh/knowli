@@ -280,7 +280,7 @@ describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
     ["tłumaczenie w celu 1", pcTranslation("affirmative", "Tata teraz gotuje obiad.", "Dad is cooking dinner now.")],
     ["pytanie z imieniem", pcOrder("questions", "Is Ola reading?")],
     ["pytanie z przeczeniem ze skrótem", pcOrder("questions", "Aren't they playing?")],
-    ["pytanie z przeczeniem i imieniem", pcOrder("questions", "Isn't Ola reading now?")],
+    ["pytanie z przeczeniem i imieniem", pcOrder("questions", "Isn't Ola reading?")],
     ["What + podmiot w liczbie mnogiej + doing", pcOrder("questions", "What are the children doing?")],
     ["dwa zdania z różnymi podmiotami", pcTranslation("affirmative", "Teraz mama gotuje, a tata czyta.", "Mum is cooking and Dad is reading now.")],
     ["podmiot złożony w drugim zdaniu", pcTranslation("affirmative", "Teraz mama gotuje, a Tom i Ola grają.", "Mum is cooking and Tom and Ola are playing now.")],
@@ -292,9 +292,9 @@ describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
     ["wybór Is/Are przy imieniu", pcChoice("questions", "___ Ola reading a book?", "Is", "Are")],
     ["podmiot złożony z określnikami", pcTranslation("affirmative", "Kot i pies teraz śpią.", "The cat and the dog are sleeping now.")],
     ["podmiot złożony z zaimkiem dzierżawczym", pcTranslation("affirmative", "Tom i jego siostra teraz grają.", "Tom and his sister are playing now.")],
-    ["podmiot złożony „The boy and the girl”", pcOrder("affirmative", "The boy and the girl are playing now.")],
-    ["podmiot złożony „Ola and her mum”", pcOrder("affirmative", "Ola and her mum are cooking now.")],
-    ["podmiot złożony „She and her friend”", pcOrder("affirmative", "She and her friend are playing now.")],
+    ["podmiot złożony „The boy and the girl”", pcOrder("affirmative", "The boy and the girl are playing.")],
+    ["podmiot złożony „Ola and her mum”", pcOrder("affirmative", "Ola and her mum are cooking.")],
+    ["podmiot złożony „She and her friend”", pcOrder("affirmative", "She and her friend are playing.")],
     ["podmiot złożony po „Look!”", pcTranslation("affirmative", "Patrz! Kot i pies śpią.", "Look! The cat and the dog are sleeping.")],
     ["wybór z podmiotem złożonym", pcChoice("affirmative", "The cat and the dog ___ now.", "are sleeping", "is sleeping")],
     ["wybór formy be bez dwuznaczności", pcSentence("lesson_choice", "questions", "Is", {
@@ -303,7 +303,7 @@ describe("validatePresentContinuousExercise — całe zdania, poprawne", () => {
       correctOption: "a",
     })],
     ["wybór po „No” z dystraktorem innej osoby", pcChoice("questions", "Is she reading? No, she ___.", "isn't", "aren't")],
-    ["czasownik pogody", pcOrder("questions", "Is it raining now?")],
+    ["czasownik pogody", pcOrder("questions", "Is it raining?")],
     ["czasownik pogody w wyborze", pcChoice("questions", "___ it snowing now?", "Is", "Are")],
   ];
   it.each(ok)("%s", (_name, ex) => {
@@ -597,8 +597,8 @@ describe("„going to” + czasownik (przyszłość) odrzuca ćwiczenie w każdy
   });
 
   it("„going to” + miejsce zostaje Present Continuous", () => {
-    expect(validate(pcOrder("affirmative", "Tom is going to school now."))).toEqual([]);
-    expect(validate(pcOrder("affirmative", "Dad is going to work now."))).toEqual([]);
+    expect(validate(pcOrder("affirmative", "Tom is going to school."))).toEqual([]);
+    expect(validate(pcOrder("affirmative", "Dad is going to work."))).toEqual([]);
   });
 });
 
@@ -607,7 +607,7 @@ describe("„be” jako łącznik w zdaniu z kluczem (bez reguły -ing po nim)",
     ["wybór po zdaniu „This is Ola.”", pcChoice("affirmative", "This is Ola. She ___ a book now.", "is reading", "are reading")],
     ["wybór po zdaniu „It is sunny.”", pcChoice("affirmative", "It is sunny. The children ___ football now.", "are playing", "is playing")],
     ["wybór po zdaniu „Dad is tired.”", pcChoice("affirmative", "Dad is tired. He ___ now.", "is sleeping", "are sleeping")],
-    ["kolejność z łącznikiem i Present Continuous", pcOrder("affirmative", "It is sunny and we are playing now.")],
+    ["kolejność z łącznikiem i Present Continuous", pcOrder("affirmative", "It is sunny and we are playing.")],
     ["tłumaczenie z łącznikiem", pcTranslation("affirmative", "Patrz! Mama jest w kuchni i gotuje obiad.", "Look! Mum is in the kitchen and she is cooking dinner.")],
     ["cel 3: tłumaczenie z łącznikiem", pcTranslation("negative", "Tata jest w ogrodzie i w tej chwili nie gotuje.", "Dad is in the garden and he isn't cooking at the moment.")],
   ];

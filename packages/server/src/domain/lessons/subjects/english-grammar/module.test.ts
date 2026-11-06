@@ -628,6 +628,10 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     const [stem, answer] = GAP_BY_OBJECTIVE[objective];
     return gap(objective, instructionPl, `${prefix}${stem}`, answer);
   };
+  const order = (objective: string, instructionPl: string, answer: string): LessonExerciseDraft =>
+    draft(objective, "lesson_order", answer, { instructionPl, items: answer.split(" ").map((text, index) => ({ id: `w${index}`, text })) });
+  /** Cele z rozsypanką (§3.1): twierdzenia i pytania. */
+  const ORDER_BY_OBJECTIVE: readonly [Objective, string][] = [["affirmative", "Grandpa is sleeping on the sofa"], ["questions", "Is Grandpa sleeping on the sofa"]];
   /** Brak wskaźnika „teraz”: w celach form `pc_now_marker_missing`, w celach porównania `pc_tense_marker_missing`. */
   const missingMarker = (objective: Objective): string => (tenseChoice(objective) ? "grammar.pc_tense_marker_missing" : "grammar.pc_now_marker_missing");
   type Quoted = [quoted: string, exercise: LessonExerciseDraft, expected: true | string];
@@ -645,6 +649,16 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ...inEvery("(Cicho! Dziadek śpi. Uzupełnij zdanie.)", (objective) => [objectiveGap(objective, "Cicho! Dziadek śpi. Uzupełnij zdanie."), true]),
     ...inEvery("never Teraz uzupełnij zdanie.", (objective) => [objectiveGap(objective, "Teraz uzupełnij zdanie."), missingMarker(objective)]),
     ...inEvery("never Cicho, dziadek śpi.", (objective) => [objectiveGap(objective, "Cicho, dziadek śpi. Uzupełnij zdanie."), missingMarker(objective)]),
+    ...ORDER_BY_OBJECTIVE.map(([objective, answer]): Quoted => [
+      "(Cicho! Dziadek śpi. Ułóż zdanie.)",
+      order(objective, "Cicho! Dziadek śpi. Ułóż zdanie.", answer),
+      true,
+    ]),
+    ...ORDER_BY_OBJECTIVE.map(([objective]): Quoted => [
+      "Tom is reading a book now / Now Tom is reading a book",
+      order(objective, "Cicho! Tom czyta. Ułóż zdanie.", "Tom is reading a book now"),
+      "grammar.pc_order_movable_marker",
+    ]),
     ...inEvery("This is Ola., It is sunny.", (objective) => [objectiveGap(objective, "Patrz! Uzupełnij zdanie.", "This is Ola. It is sunny. "), true]),
     ...inEvery("never The door is open.", (objective) => [
       translation(objective, "Patrz! Drzwi są otwarte.", "Look! The door is open."),
