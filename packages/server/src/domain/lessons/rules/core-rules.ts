@@ -359,7 +359,6 @@ export const CORE_RULES = {
   "listen.instruction_not_allowed": {
     field: "instructionPl",
     kind: "reject",
-    promptBrief: true,
     types: ["lesson_listen_choice"],
     description: "lesson_listen_choice has a fixed instruction, so instructionPl is left out.",
   },

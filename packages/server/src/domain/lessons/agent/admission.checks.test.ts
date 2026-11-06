@@ -547,7 +547,7 @@ describe("precheckBatch i admitBatch — sanityzacja szkoły (spec katalogu regu
     expect(prechecked[0]).toMatchObject({ pass: true, sanitized: ["hint"], quotesSnapped: 1 });
     const notes = (prechecked[0] as { notes: readonly LessonRuleIssue[] }).notes;
     expect(notes.map(formatRuleReason)).toEqual([
-      '[hint.reveals_words] hint: hint removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
+      '[hint.reveals_words] hint: removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
     ]);
     const admitted = admitBatch(state(), OBJECTIVE, prechecked, [NA_CHECKS], context);
     expect(admitted.results[0]).toEqual({ accepted: "ex1", sanitized: ["hint"], unchecked: false, notes, removedVariants: [], quotesSnapped: 1 });

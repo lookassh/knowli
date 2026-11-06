@@ -153,6 +153,13 @@ export const SCHOOL_RULES = defineRules({
     description:
       "Calculations of one templateFamilyId in an objective share the calculation kind, the result unit and the input unit; only the numbers change.",
   },
+  "school.hint_open_answer_only": {
+    field: "hint",
+    kind: "sanitize",
+    // Typy szkoły poza pytaniem otwartym i kartą (literały: `module.ts` importuje ten plik; zgodność pilnuje test).
+    types: ["lesson_choice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze", "lesson_gap", "lesson_calculation", "lesson_keywords"],
+    description: "hint is used only on lesson_open_answer; on other types it is removed and the result notes it.",
+  },
   "hint.reveals_words": {
     field: "hint",
     kind: "sanitize",

@@ -41,7 +41,15 @@ function hintRemovedNote(revealing: HintRevealing): LessonRuleIssue {
   const words = revealing.words.map((word) => clip(word)).join(", ");
   return schoolIssue("hint.reveals_words", {
     pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
-    found: `hint removed: shares ${words} with ${TARGET_LABELS[revealing.target]} ${clip(revealing.text)}`,
+    found: `removed: shares ${words} with ${TARGET_LABELS[revealing.target]} ${clip(revealing.text)}`,
+  });
+}
+
+/** Nota reguły `school.hint_open_answer_only`: podpowiedź poza pytaniem otwartym usunięta. */
+function hintOutsideOpenNote(exerciseType: LessonExerciseType): LessonRuleIssue {
+  return schoolIssue("school.hint_open_answer_only", {
+    pl: "hint: podpowiedź poza pytaniem otwartym została usunięta",
+    found: `removed: ${exerciseType} takes no hint, only lesson_open_answer does`,
   });
 }
 
@@ -86,14 +94,14 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
     const notes: LessonRuleIssue[] = [];
     let current = draft;
     if (current.hint !== undefined) {
-      // Poza pytaniem otwartym podpowiedź zawsze odpada (bez noty, jak dotąd); w pytaniu
+      // Poza pytaniem otwartym podpowiedź zawsze odpada (nota `school.hint_open_answer_only`); w pytaniu
       // otwartym — tylko gdy zdradza odpowiedź, wariant albo element wymagany.
       const revealing = current.exerciseType === HINT_TYPE ? hintRevealing(current.hint, current, normalizer) : null;
       if (current.exerciseType !== HINT_TYPE || revealing !== null) {
         const { hint: _hint, ...rest } = current;
         current = rest;
         removed.push("hint");
-        if (revealing !== null) notes.push(hintRemovedNote(revealing));
+        notes.push(revealing !== null ? hintRemovedNote(revealing) : hintOutsideOpenNote(current.exerciseType));
       }
     }
     const snapped = snappedQuotes(current, ctx.material);

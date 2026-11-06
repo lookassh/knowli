@@ -8,7 +8,7 @@ import { materializeRawExercise } from "../../raw-materialize";
 import { renderCalculationPrompt, computeCalculationAnswer } from "../../calculation";
 import type { CalculationSpec } from "@learning/contracts";
 import { messagesOf, type LessonRuleIssue } from "../../rules/catalog";
-import { schoolSubject } from "./module";
+import { SCHOOL_EXERCISE_TYPES, schoolSubject } from "./module";
 
 const MATERIAL =
   "Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. " +
@@ -562,6 +562,13 @@ describe("uzupełnij tekst (lesson_cloze)", () => {
     expect(validatePool([clozeDraft(), clozeDraft({ extraWords: ["azot"] })], schoolSubject, topic).valid).toHaveLength(1);
     const other = clozeDraft({ gapAnswers: ["dwutlenek węgla", "wodę", "skrobia"], extraWords: ["tlen"], answer: "dwutlenek węgla, wodę, skrobia" });
     expect(validatePool([clozeDraft(), other], schoolSubject, topic).valid).toHaveLength(2);
+  });
+
+  it("reguła podpowiedzi tylko w pytaniu otwartym obejmuje wszystkie inne typy szkoły; profil promptów jej nie powtarza", () => {
+    expect([...(schoolSubject.rules["school.hint_open_answer_only"]?.types ?? [])].sort()).toEqual(
+      SCHOOL_EXERCISE_TYPES.filter((type) => type !== "lesson_open_answer" && type !== "lesson_card").sort(),
+    );
+    expect(schoolSubject.prompts.fieldRules).not.toContain("hint");
   });
 
   it("prompt generatora opisuje luki z bankiem słów (semantyka typu w typeRules, bez reguł egzekwowanych)", () => {

@@ -22,9 +22,10 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
  * - `checks` — kontrole innymi modelami (reguły lekcji z obszaru `check`);
  * - `lesson` — pozostałe reguły lekcji (cała pula, limity, ujawnienia);
  * - `types` — blok każdego dozwolonego typu (karta typu, reguła typu przedmiotu i
- *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu);
+ *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu, oraz reguły `inEachTypeBlock`
+ *   w bloku każdego swojego typu);
  * - `general` — reguły rdzenia i przedmiotu bez typów albo wspólne kilku typom
- *   zagadnienia (opis wtedy sam wymienia typy), więc żaden opis się nie powtarza.
+ *   zagadnienia (opis wtedy sam wymienia typy). Poza regułami `inEachTypeBlock` żaden opis się nie powtarza.
  *
  * W każdej sekcji najpierw reguły grup `RULE_PRIORITY` (w kolejności grup), potem
  * reszta po id. Reguły `internal` nigdy nie trafiają do księgi. Opis z dopiskiem
@@ -67,7 +68,9 @@ const CARD_TYPE: LessonExerciseType = "lesson_card";
 /** Stała kolejność bloków typów: kolejność kart. */
 const TYPE_ORDER = Object.keys(TYPE_CARDS) as LessonExerciseType[];
 
-type Placement = { readonly section: "general" | "lesson" | "checks" } | { readonly section: "type"; readonly type: LessonExerciseType };
+type Placement =
+  | { readonly section: "general" | "lesson" | "checks" }
+  | { readonly section: "type"; readonly types: readonly LessonExerciseType[] };
 
 interface PlacedRule {
   readonly id: string;
@@ -82,14 +85,18 @@ function matches(rule: LessonRule, allowed: readonly LessonExerciseType[], ctx: 
   return rule.when === undefined || rule.when(ctx);
 }
 
-/** Sekcja reguły: lekcja i kontrole po katalogu, reszta do bloku jedynego pasującego typu albo ogólnych. */
+/**
+ * Sekcja reguły: lekcja i kontrole po katalogu, reszta do bloku jedynego pasującego typu (albo każdego
+ * pasującego, gdy reguła ma `inEachTypeBlock`) albo ogólnych.
+ */
 function placementOf(id: string, rule: LessonRule, catalog: RuleCatalog, blockTypes: readonly LessonExerciseType[]): Placement {
   if (catalog === LESSON_RULES) {
     return { section: id.split(".")[0] === CHECK_AREA ? "checks" : "lesson" };
   }
   const matching = rule.types?.filter((type) => blockTypes.includes(type)) ?? [];
-  const only = matching[0];
-  return rule.types !== undefined && matching.length === 1 && only !== undefined ? { section: "type", type: only } : { section: "general" };
+  if (rule.types === undefined || matching.length === 0) return { section: "general" };
+  if (matching.length === 1 || rule.inEachTypeBlock === true) return { section: "type", types: matching };
+  return { section: "general" };
 }
 
 /** Pozycja grupy priorytetu; reguły bez grupy po wszystkich grupach. */
@@ -140,7 +147,7 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
       ...(example === undefined ? {} : { example: exampleJson(example) }),
       ...(subjectRule === undefined || subjectRule === "" ? {} : { subjectRule }),
       rules: placed
-        .filter((entry) => entry.placement.section === "type" && entry.placement.type === type)
+        .filter((entry) => entry.placement.section === "type" && entry.placement.types.includes(type))
         .map(line),
     };
   });

@@ -35,8 +35,7 @@ export const schoolPrompts: SubjectPromptProfile = {
     "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej. " +
     "lesson_gap: stem to zdanie z materiału z luką po fakcie (data, nazwa, pojęcie). " +
     "lesson_choice: stem to pytanie, options to krótkie odpowiedzi. " +
-    "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności. " +
-    "Podpowiedź (hint) tylko w lesson_open_answer: w pozostałych typach hint jest null.",
+    "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności.",
   // Semantyka typów z własną gałęzią schematu (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
     lesson_match:

@@ -22,5 +22,13 @@ function listen(stem: string, texts: readonly [string, string]): LessonExerciseD
 }
 
 registerRuleCases([
-  { rule: "english.listen_sibilant_merge", violation: () => listenChoiceSibilantErrors(listen("She ___ snakes.", ["like", "likes"])) },
+  {
+    rule: "english.listen_sibilant_merge",
+    violation: () => listenChoiceSibilantErrors(listen("She ___ snakes.", ["like", "likes"])),
+    // Wyjątki z opisu reguły: sylabiczne -es i zmiana samogłoski są słyszalne także przed sybilantem.
+    boundary: () => [
+      ...listenChoiceSibilantErrors(listen("___ she play tennis?", ["Does", "Do"])),
+      ...listenChoiceSibilantErrors(listen("He ___ soccer.", ["watches", "watch"])),
+    ],
+  },
 ]);

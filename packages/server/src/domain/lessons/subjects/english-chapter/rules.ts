@@ -19,8 +19,11 @@ export const CHAPTER_RULES = defineRules({
     field: "instructionPl",
     kind: "reject",
     types: ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"],
+    // W ogólnych przeczyłoby kartom typów bez polecenia (wybór ze słuchu): stoi w blokach swoich typów.
+    inEachTypeBlock: true,
     description:
-      "instructionPl carries the Polish stimulus sentence the child translates: a Polish sentence followed by the task " +
+      "In lesson_choice, lesson_gap, lesson_order and lesson_cloze, instructionPl carries the Polish stimulus sentence the " +
+      "child translates: a Polish sentence followed by the task " +
       `(for example "Dziś pada deszcz. Wybierz słowo."), at least ${MIN_STIMULUS_INSTRUCTION_LENGTH} characters long. ` +
       "A bare generic task such as \"Wybierz słowo\" or \"Uzupełnij tekst\" is not enough.",
     limit: "MIN_STIMULUS_INSTRUCTION_LENGTH",

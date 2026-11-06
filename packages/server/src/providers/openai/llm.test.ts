@@ -428,12 +428,13 @@ describe("lessonSystemPrompt i lessonPoolJsonSchema — wyjaśnienie błędu (ex
     const on = { ...INPUT, exerciseExplanations: true };
     const prompt = lessonSystemPrompt(on);
     expect(prompt).toContain("explanationPl");
-    expect(prompt).toContain("a Polish sentence for a child of about 8");
+    expect(prompt).toContain("explanationPl: for every exercise except lesson_calculation, return a Polish sentence for a child of about 8");
     expect(prompt).toContain("why the correct answer is correct");
     // Jedno zdanie, limit długości i znaczniki sprawdzają reguły `explanation.*` z księgi reguł.
     expect(prompt).not.toContain("at most 120 characters");
     expect((lessonPoolJsonSchema(on) as any).properties.exercises.items.required).toContain("explanationPl");
     expect(lessonSystemPrompt(INPUT)).not.toContain("explanationPl");
+    expect(lessonSystemPrompt(INPUT)).not.toContain("for every exercise except lesson_calculation");
     expect(JSON.stringify(lessonPoolJsonSchema(INPUT))).not.toContain("explanationPl");
   });
 });
@@ -485,6 +486,9 @@ describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
   it("pool prompt and schema carry the tone rule and field only when voiceTones is true", () => {
     const on = { ...INPUT, voiceTones: true };
     expect(lessonSystemPrompt(on)).toContain(RULE);
+    // Ręczna wskazówka (spec katalogu reguł §3): ton dla każdego ćwiczenia poza rachunkiem.
+    expect(lessonSystemPrompt(on)).toContain("Return voiceTone for every exercise except lesson_calculation (null when no tone fits).");
+    expect(lessonSystemPrompt(INPUT)).not.toContain("Return voiceTone");
     // Pytania nie są szeptane: reguła ćwiczeń w ogóle nie wspomina `mysterious`.
     expect(lessonSystemPrompt(on)).not.toContain("mysterious");
     expect((lessonPoolJsonSchema(on) as any).properties.exercises.items.required).toContain("voiceTone");

@@ -65,6 +65,12 @@ export interface LessonRule {
    * listę pól karty typu. Budżet długości promptu (Task 8b planu katalogu reguł).
    */
   readonly promptBrief?: true;
+  /**
+   * Reguła kilku typów, która w księdze stoi w bloku każdego pasującego typu zagadnienia zamiast w
+   * regułach ogólnych (np. polskie zdanie-bodziec w `instructionPl` tylko części typów: w ogólnych
+   * przeczyłaby karcie typu bez polecenia).
+   */
+  readonly inEachTypeBlock?: true;
 }
 
 export type RuleCatalog = Readonly<Record<string, LessonRule>>;

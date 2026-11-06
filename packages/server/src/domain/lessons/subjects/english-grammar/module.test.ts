@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ruleOf, type RuleBookContext, type RuleId } from "../../rules/catalog";
+import { listenChoiceSibilantErrors } from "../english/listen-audibility";
 import { englishGrammarSubject } from "./module";
 import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
@@ -265,7 +266,24 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
   });
 
   it("sybilant zaraz za luką przy opcjach różnych o -s opisuje reguła wspólnego fragmentu angielskiego", () => {
-    expect(ruleText("english.listen_sibilant_merge")).toMatch(/final -s or -es.*s, z or sh sound/s);
+    const rule = ruleText("english.listen_sibilant_merge");
+    expect(rule).toMatch(/-s ending that adds no syllable.*right after the gap.*s, z or sh sound/s);
+    // Opis nie jest ostrzejszy niż sprawdzenie: wyjątki, które przyjmuje walidator, są w opisie.
+    expect(rule).toContain("watch/watches");
+    expect(rule).toContain("do/does");
+    for (const [stem, options] of [["___ she play tennis?", ["Does", "Do"]], ["He ___ soccer.", ["watches", "watch"]]] as const) {
+      const draft: LessonExerciseDraft = {
+        exerciseType: "lesson_listen_choice",
+        objectiveId: "english_grammar.present_simple.question",
+        stem,
+        options: options.map((text, index) => ({ id: String(index), text })),
+        correctOption: "0",
+        answer: options[0],
+        acceptedAnswers: [],
+        focus: [options[0]],
+      };
+      expect(listenChoiceSibilantErrors(draft), stem).toEqual([]);
+    }
     expect(englishGrammarPrompts.fieldRules).not.toContain("snakes");
   });
 });

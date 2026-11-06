@@ -47,8 +47,8 @@ reguł promptu i do mapy `rules` wyniku narzędzia; **karta** — `TYPE_CARDS` (
 | „sourceRefs is REQUIRED for EVERY exercise … 1-3 quotes copied EXACTLY … at most 600 characters” | reguły `school.quote_required`, `school.quote_in_material`, `school.quote_too_short`, `field.count`, `shape.source_refs`; „najkrótszy fragment” — wskazówka w `fieldRules` szkoły |
 | „Field rules for this subject: …” | wskazówka (oczyszczone `fieldRules`, tabela 1.4) |
 | reguła tematów zdań (`interestsRule`) | wskazówka (bez zmian) |
-| ton lektora: dobór tonu | wskazówka; „never on lesson_calculation” — reguła `voice_tone.not_allowed` |
-| `explanationPl`: dla 8-latka, dlaczego odpowiedź jest poprawna, pasuje po „Nie pamiętam”, bez pochwał i imion, przykłady z ćwiczenia, null bez reguły | wskazówka |
+| ton lektora: dobór tonu, „Return voiceTone for every exercise except lesson_calculation (null when no tone fits)” | wskazówka (zdanie zostaje, poprawka przeglądu Task 8b); zakaz tonu w rachunku sprawdza też reguła `voice_tone.not_allowed` |
+| `explanationPl`: „for every exercise except lesson_calculation, return …”, dla 8-latka, dlaczego odpowiedź jest poprawna, pasuje po „Nie pamiętam”, bez pochwał i imion, przykłady z ćwiczenia, null bez reguły | wskazówka (z „for every exercise except lesson_calculation”, poprawka przeglądu) |
 | `explanationPl`: dokładnie jedno zdanie, ≤ 120 znaków, bez `*`, `_` i nowych linii, nie przy rachunku | reguły `explanation.one_sentence`, `explanation.max_length`, `explanation.markup`, `explanation.line_break`, `explanation.empty`, `explanation.not_allowed` |
 | „Return strict JSON of the shape {"exercises": …, "examples": …}” | usunięte bez odpowiednika (kształt `examples` to pole narzędzia) |
 | lista pól ćwiczenia (stem, statement, prompt, hint, transformId, noticeSegments, visualSubject, answer, acceptedAnswers, focus, options, correctOption, items) | karty typów (pola per typ i przykład); reguły `shape.*`, `fields.type_specific` |
@@ -78,7 +78,7 @@ reguł promptu i do mapy `rules` wyniku narzędzia; **karta** — `TYPE_CARDS` (
 | przykłady kart (ustalone albo 1–3 od modelu) | wskazówka (bez zmian) |
 | zadanie, zagadnienie, karty, zdania kart, inne zagadnienia | wskazówka (bez zmian) |
 | `Target`: etapy, wymagane typy, liczba w etapach, dodatek słuchowy, limit, „Vary sentences …” | wskazówka; dochodzi zdanie minimów publikacji ze stałych |
-| `promptNotes` przedmiotu (szkoła: „Hint only for lesson_open_answer …”) | usunięte z portu i polityki; zdanie szkoły przeszło do `fieldRules` szkoły (sanityzacja usuwa taką podpowiedź po cichu, bez wpisu w katalogu) |
+| `promptNotes` przedmiotu (szkoła: „Hint only for lesson_open_answer …”) | usunięte z portu i polityki; reguła `school.hint_open_answer_only` (`sanitize`, typy szkoły poza pytaniem otwartym; sanityzacja daje notę `[school.hint_open_answer_only] hint: removed: …`) |
 | WORKFLOW: jedno wywołanie, poprawki, `remove_exercise`, decyzja przy innej odpowiedzi rozwiązującego | wskazówka; opis kontroli zastąpiony odwołaniem do RULES i formatu powodu `[rule id] field: what is wrong` z mapą `rules` |
 
 ### 1.3. Reguły egzekwowane z `typeRules`
@@ -114,8 +114,8 @@ reguł promptu i do mapy `rules` wyniku narzędzia; **karta** — `TYPE_CARDS` (
 | gramatyka | „Expanded contractions are NOT new acceptedAnswers variants …” | reguła `variants.duplicate` |
 | gramatyka | `to_be`: hint „be”, forma zgodna z podmiotem, bez do/does, sama forma w luce, odpowiedź o „you” jako „I” | reguły `grammar.be_gap_hint`, `grammar.be_form_subject`, `grammar.be_no_do_does`, `grammar.be_answer_not_be_form`, `grammar.be_short_answer_you` (tylko w temacie `to_be`) |
 | gramatyka | piktogram: forma be w bodźcu zgodna z obrazkiem, `visualSubject` tylko przy wyborze | reguły `grammar.visual_stem_be_form`, `visual.choice_only` |
-| gramatyka | wybór ze słuchu: jedna luka `___`, dokładnie jedna poprawna, bez opcji równoważnych, bez apostrofu, sybilant po luce (przykłady), bez `instructionPl`/`hint`/`visualSubject` | reguły `listen.gap_count`, `check.blind_solve`, `listen.options_equivalent`, `listen.option_apostrophe`, `english.listen_sibilant_merge`, `listen.instruction_not_allowed`, `listen.hint_not_allowed`, `visual.choice_only`; przykłady sybilantów usunięte (opis reguły) |
-| rozdział | „For lesson_choice, lesson_gap, lesson_order and lesson_cloze the meaning stimulus lives in instructionPl …”, „Never use a bare instruction …” | reguła `chapter.instruction_stimulus`; przykłady polskich zdań zostają jako wskazówka |
+| gramatyka | wybór ze słuchu: jedna luka `___`, dokładnie jedna poprawna, bez opcji równoważnych, bez apostrofu, sybilant po luce (przykłady i wyjątek Do/Does, watch/watches), bez `instructionPl`/`hint`/`visualSubject` | reguły `listen.gap_count`, `check.blind_solve`, `listen.options_equivalent`, `listen.option_apostrophe`, `english.listen_sibilant_merge` (opis jak sprawdzenie `differsByMergingS`: końcówka bez sylaby, przykłady, wyjątki watch/watches, dance/dances, do/does, say/says), `listen.instruction_not_allowed` (z pełnym opisem), `listen.hint_not_allowed`, `visual.choice_only` |
+| rozdział | „For lesson_choice, lesson_gap, lesson_order and lesson_cloze the meaning stimulus lives in instructionPl …”, „Never use a bare instruction …” | reguła `chapter.instruction_stimulus` (opis wymienia cztery typy; `inEachTypeBlock` — w blokach tych typów, nie w ogólnych); przykłady polskich zdań zostają jako wskazówka |
 | rozdział | „hint is always null” | reguła `chapter.hint_not_allowed` |
 | rozdział | `lesson_choice`: „exactly one gap written as ___”, „all words of the chapter” | reguły `chapter.stem_single_gap`, `chapter.word_outside_material` |
 | rozdział | wybór ze słuchu: bodziec to nagranie (bez polecenia, podpowiedzi, piktogramu), jedna luka, bez apostrofu i formy pełnej obok skrótu, sybilant | reguły `listen.*`, `english.listen_sibilant_merge`, `visual.choice_only` |
@@ -129,23 +129,23 @@ reguł promptu i do mapy `rules` wyniku narzędzia; **karta** — `TYPE_CARDS` (
 
 ## 2. Asercje treści promptu w testach
 
-Liczba asercji (`grep -cE 'toContain|toMatch'`, także `toMatchObject` w tym samym wzorcu), przed (HEAD
+Liczba asercji po poprawkach przeglądu (`grep -cE 'toContain|toMatch'`, także `toMatchObject` w tym samym wzorcu), przed (HEAD
 `2ca25cf2`) → po:
 
 | Plik | Przed | Po |
 |---|---:|---:|
-| `providers/openai/llm.test.ts` | 211 | 153 |
+| `providers/openai/llm.test.ts` | 211 | 156 |
 | `providers/openai/lesson-pool-agent.test.ts` | 53 | 55 |
 | `providers/openai/lesson-pool-prompt.test.ts` (nowy) | 0 | 11 |
 | `modules/materials/lessons/lesson-pool-agent.test.ts` | 25 | 29 |
 | `modules/materials/lessons/lesson-pool-agent-tools.test.ts` | 18 | 24 |
-| `domain/lessons/subjects/english-grammar/module.test.ts` | 28 | 30 |
+| `domain/lessons/subjects/english-grammar/module.test.ts` | 28 | 32 |
 | `domain/lessons/subjects/english-chapter/module.test.ts` | 53 | 55 |
-| `domain/lessons/subjects/school/module.test.ts` | 11 | 12 |
+| `domain/lessons/subjects/school/module.test.ts` | 11 | 13 |
 | `providers/fake-lesson-agent.test.ts` | 1 | 1 |
 | `providers/lesson-agent-env.test.ts` | 2 | 2 |
 | `tests/probes/probe-submissions.test.ts` | 1 | 1 |
-| **razem** | **403** | **373** |
+| **razem** | **403** | **379** |
 
 Nowy `lesson-pool-prompt.test.ts` sprawdza w pętli każdą regułę księgi trzech przedmiotów (po id i
 opisie), więc liczba wierszy asercji zaniża pokrycie. Usunięte albo zmienione asercje (108 wierszy):
@@ -167,7 +167,7 @@ opisie), więc liczba wierszy asercji zaniża pokrycie. Usunięte albo zmienione
 | rozdział słuch „each option is a word or phrase from the chapter material, as in lesson_choice” | „each a word or phrase from the chapter material, as in lesson_choice” |
 | gramatyka `to_be` `/am, is or are matching the subject/`, `/never use do or does/`, `/only the form itself/` | `/gap answers are am, is or are/`, `/short answers repeat the form/`; `ruleText("grammar.be_form_subject")`, `("grammar.be_no_do_does")`, `("grammar.be_answer_not_be_form")`; bramka tematu `when` |
 | gramatyka słuch `/exactly one gap/`, `/never offer an equivalent/i`, `/apostrophe/`, `/instructionPl.*hint.*visualSubject/s` | reguły `listen.gap_count`, `listen.options_equivalent`, `listen.option_apostrophe`, `listen.instruction_not_allowed`, `listen.hint_not_allowed` (`ruleText`) |
-| gramatyka sybilant (3 asercje: regex, „This does not apply …”, „never He ___ snakes …”) | `ruleText("english.listen_sibilant_merge")` `/final -s or -es.*s, z or sh sound/s`; `fieldRules` bez „snakes”; wyjątek Do/Does usunięty: reguła opisuje sprawdzenie |
+| gramatyka sybilant (3 asercje: regex, „This does not apply …”, „never He ___ snakes …”) | `ruleText("english.listen_sibilant_merge")` `/-s ending that adds no syllable.*right after the gap.*s, z or sh sound/s`, zawiera „watch/watches” i „do/does”; walidator przyjmuje „___ she play tennis?” z Do/Does i watch/watches; `fieldRules` bez „snakes” |
 | szkoła `fieldRules` zawiera „lesson_cloze” | `typeRules.lesson_cloze` „2 to 4 short sentences close to the parent material”; `fieldRules` nie zawiera |
 | adapter `promptNotes` (4 asercje NOTE-ONE/NOTE-TWO/„Hint only …”) | usunięte (pole usunięte); nowy test `objectiveInstructions`: księga reguł, TOOL MODE bez JSON, minima publikacji, format powodu; kierownik: wejście bez `promptNotes`, z księgą i minimami |
 | „Return at most 2 exercises per objective in this batch”, „never exceed this batch …”, „Minima publikacji …”, „nie przekraczaj …” (szkoła) | `not.toContain` na liście zdań potoku (`llm.test.ts` i `lesson-pool-prompt.test.ts`); „Calculations never replace the publication minima in Target.” |

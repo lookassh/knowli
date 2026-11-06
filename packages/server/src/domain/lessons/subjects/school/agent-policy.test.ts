@@ -146,7 +146,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
         rule: "hint.reveals_words",
         field: "hint",
         pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
-        found: 'hint removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
+        found: 'removed: shares "wiślana" with the answer "Mierzeja Wiślana"',
       },
     ]);
   });
@@ -160,7 +160,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
     }));
     expect(result.removed).toEqual(["hint"]);
     // „pas” ma 3 litery, więc nie jest słowem treściowym.
-    expect(result.notes?.[0]?.found).toBe('hint removed: shares "piaszczysty" with the required element "piaszczysty pas"');
+    expect(result.notes?.[0]?.found).toBe('removed: shares "piaszczysty" with the required element "piaszczysty pas"');
   });
 
   it("zostawia podpowiedź kierującą rozumowaniem i brak podpowiedzi", () => {
@@ -169,10 +169,17 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
     expect(sanitize(draft({}))).toMatchObject({ removed: [], notes: [] });
   });
 
-  it("typ inny niż pytanie otwarte: dzisiejsze usunięcie bez noty", () => {
+  it("typ inny niż pytanie otwarte: usunięcie jak dotąd, z notą reguły school.hint_open_answer_only", () => {
     const result = sanitize(draft({ exerciseType: "lesson_gap", hint: "Mierzeja Wiślana" }));
     expect(result.removed).toEqual(["hint"]);
-    expect(result.notes).toEqual([]);
+    expect(result.notes).toEqual([
+      {
+        rule: "school.hint_open_answer_only",
+        field: "hint",
+        pl: "hint: podpowiedź poza pytaniem otwartym została usunięta",
+        found: "removed: lesson_gap takes no hint, only lesson_open_answer does",
+      },
+    ]);
   });
 
   it("bramka szkoły nie zwraca ustaleń (podpowiedź nie odrzuca już ćwiczenia)", () => {

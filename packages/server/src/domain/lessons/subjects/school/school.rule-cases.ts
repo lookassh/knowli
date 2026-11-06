@@ -149,6 +149,18 @@ registerRuleCases([
     violation: pool([calculationDraft(), calculationDraft({ ...scale, unit: "km" })]),
   },
   {
+    rule: "school.hint_open_answer_only",
+    violation: sanitizeNotes({
+      exerciseType: "lesson_gap",
+      objectiveId: OBJECTIVE_ID,
+      stem: "Rośliny wytwarzają cukry w procesie ___.",
+      answer: "fotosyntezy",
+      acceptedAnswers: [],
+      focus: ["fotosyntezy"],
+      hint: "proces",
+    }),
+  },
+  {
     rule: "hint.reveals_words",
     violation: sanitizeNotes(
       openDraft({ answer: "Mierzeja Wiślana", requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }], hint: "Przykładem jest Mierzeja Wiślana" }),

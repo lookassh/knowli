@@ -366,7 +366,7 @@ describe("submit — checker", () => {
     const schoolLike = withAgentPolicy(subject, { sanitize: schoolAgentPolicy.sanitize });
     const tools = setup({ subject: schoolLike });
     const outcome = await tools.tools.submit({ exercises: [{ ...choice(A, 1), hint: "ZNACZNIK-PODPOWIEDZI" }] });
-    expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1", notes: ["hint removed"] }]);
+    expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1", notes: [expect.stringMatching(/^\[school\.hint_open_answer_only\] hint: removed: /u)] }]);
     expect(JSON.stringify(tools.checker.solveCalls)).not.toContain("ZNACZNIK-PODPOWIEDZI");
     expect(poolOf(tools.state(), A)[0]!.draft).not.toHaveProperty("hint");
   });
@@ -721,7 +721,7 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     const outcome = await tools.tools.submit({ exercises: [schoolOpen(1, { hint: "To jest odpowiedź wzorcowa." })] });
     expect(tools.checker.hintCalls).toHaveLength(0);
     expect(tools.stats.hintChecks ?? 0).toBe(0);
-    expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1", notes: [expect.stringMatching(/^\[hint\.reveals_words\] hint: hint removed: /u)] }]);
+    expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1", notes: [expect.stringMatching(/^\[hint\.reveals_words\] hint: removed: shares /u)] }]);
     expect(poolOf(tools.state(), A)[0]!.draft).not.toHaveProperty("hint");
   });
 
@@ -1083,10 +1083,10 @@ describe("wynik dla modelu — format z katalogu reguł (spec katalogu reguł §
       ],
     });
     expect(outcome.results.map((result) => ("accepted" in result ? result.notes : undefined))).toEqual([
-      [expect.stringMatching(/^\[hint\.reveals_words\] hint: hint removed: /u)],
-      ["hint removed"],
+      [expect.stringMatching(/^\[hint\.reveals_words\] hint: removed: shares /u)],
+      [expect.stringMatching(/^\[school\.hint_open_answer_only\] hint: removed: lesson_choice takes no hint/u)],
     ]);
-    expect(Object.keys(outcome.rules ?? {})).toEqual(["hint.reveals_words"]);
+    expect(Object.keys(outcome.rules ?? {}).sort()).toEqual(["hint.reveals_words", "school.hint_open_answer_only"]);
     expect(tools.stats.hintsRemoved).toBe(1);
   });
 

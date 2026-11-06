@@ -93,12 +93,19 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
   const ruleById = new Map(rulesOf(subject));
   const internalIds = rulesOf(subject).filter(([, rule]) => rule.kind === "internal").map(([id]) => id);
 
-  it("zawiera dokładnie pasujące reguły reject/sanitize, każdą raz, bez internal", () => {
+  it("zawiera dokładnie pasujące reguły reject/sanitize, każdą raz (inEachTypeBlock raz na blok), bez internal", () => {
     expect(internalIds.length).toBeGreaterThan(0);
     for (const { name, ctx } of matrix(subject)) {
-      const ids = idsOf(lessonRuleBook(subject, ctx));
-      expect(new Set(ids).size, name).toBe(ids.length);
-      expect([...ids].sort(), name).toEqual(expectedIds(subject, ctx).sort());
+      const book = lessonRuleBook(subject, ctx);
+      const ids = idsOf(book);
+      const repeated = (id: string) => ruleById.get(id)!.inEachTypeBlock === true;
+      expect(new Set(ids.filter((id) => !repeated(id))).size, name).toBe(ids.filter((id) => !repeated(id)).length);
+      for (const id of new Set(ids.filter(repeated))) {
+        const blocks = book.types.filter((block) => block.rules.some((line) => line.id === id)).map((block) => block.type);
+        expect(blocks, `${name}: ${id}`).toEqual(book.types.map((block) => block.type).filter((type) => ruleById.get(id)!.types!.includes(type)));
+        expect(ids.filter((other) => other === id).length, `${name}: ${id}`).toBe(blocks.length);
+      }
+      expect([...new Set(ids)].sort(), name).toEqual(expectedIds(subject, ctx).sort());
       expect(ids.filter((id) => internalIds.includes(id)), name).toEqual([]);
     }
   });
@@ -145,9 +152,11 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
       for (const block of book.types) {
         expect(block.summary).toBe(TYPE_CARDS[block.type].summary);
         expect(JSON.parse(block.example!), `${name}: ${block.type}`).toMatchObject({ exerciseType: block.type, objectiveId: EXAMPLE_OBJECTIVE_ID });
-        // Reguła w bloku typu dotyczy wyłącznie tego typu spośród typów zagadnienia.
+        // Reguła w bloku typu dotyczy wyłącznie tego typu spośród typów zagadnienia (albo stoi w bloku każdego swojego typu).
         for (const line of block.rules) {
-          expect(ruleById.get(line.id)!.types!.filter((type) => types.includes(type)), `${name}: ${line.id}`).toEqual([block.type]);
+          const rule = ruleById.get(line.id)!;
+          if (rule.inEachTypeBlock === true) expect(rule.types, `${name}: ${line.id}`).toContain(block.type);
+          else expect(rule.types!.filter((type) => types.includes(type)), `${name}: ${line.id}`).toEqual([block.type]);
         }
       }
     }
@@ -259,5 +268,22 @@ describe("księga reguł — reguły jednego tematu", () => {
     expect(presentSimple).toEqual(expect.arrayContaining(["grammar.gap_operator_mismatch", "grammar.gap_present_simple_form"]));
     expect(toBe).not.toContain("grammar.gap_operator_mismatch");
     expect(toBe).not.toContain("grammar.gap_present_simple_form");
+  });
+});
+
+describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)", () => {
+  const chapter = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
+  const book = lessonRuleBook(chapter, contextFor(chapter, chapter.exerciseTypes, VARIANTS[0]!));
+  const blockOf = (type: LessonExerciseType) => book.types.find((block) => block.type === type)!.rules.map((line) => line.id);
+
+  it("polskie zdanie-bodziec rozdziału: w blokach wyboru, luki, układanki i tekstu z lukami, nie w ogólnych ani w wyborze ze słuchu", () => {
+    for (const type of ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"] as const) {
+      expect(blockOf(type), type).toContain("chapter.instruction_stimulus");
+    }
+    expect(book.general.map((line) => line.id)).not.toContain("chapter.instruction_stimulus");
+    expect(blockOf("lesson_listen_choice")).not.toContain("chapter.instruction_stimulus");
+    // Zakaz polecenia w wyborze ze słuchu ma pełny opis (nie tylko id), więc prompt nie przeczy sobie.
+    const listen = book.types.find((block) => block.type === "lesson_listen_choice")!.rules.find((line) => line.id === "listen.instruction_not_allowed");
+    expect(listen?.brief).toBeUndefined();
   });
 });
