@@ -75,11 +75,16 @@ describe("lessonExerciseIdentity", () => {
     // Inne słowa nadal dają inne ćwiczenie; interpunkcja w środku zostaje.
     expect(lessonExerciseIdentity(choice("Is it a cat?"))).not.toBe(lessonExerciseIdentity(choice("It is a cat.")));
     expect(lessonExerciseIdentity(choice("Yes, it is."))).not.toBe(lessonExerciseIdentity(choice("Yes it is.")));
+    const withInstruction = { instructionIsStimulus: true } as const;
+    expect(lessonExerciseIdentity(exercise({ instructionPl: "To jest kot." }), withInstruction))
+      .toBe(lessonExerciseIdentity(exercise({ instructionPl: "To jest kot" }), withInstruction));
   });
 
   it("keeps the stored stimulus (criteria of match/group/cloze) unchanged by the dedup folding", () => {
     const cloze = exercise({ exerciseType: "lesson_cloze", clozeText: "It’s a ___.", gapAnswers: ["cat."] });
     expect(lessonExerciseStimulus(cloze)).toBe(JSON.stringify(["it’s a ___.", ["cat."]]));
+    const match = exercise({ exerciseType: "lesson_match", pairs: [{ id: "p", left: "Don’t!", right: "Nie." }] });
+    expect(lessonExerciseStimulus(match)).toBe(JSON.stringify(["don’t!=nie."]));
   });
 
   it("uses the displayed question as the short-answer stimulus before a legacy stem", () => {
