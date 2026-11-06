@@ -69,10 +69,11 @@ describe("school calculation validation", () => {
     expect(validateLessonExercise(calculationDraft(scale, { calculation: invalid }), schoolSubject, topic).some((error) => error.includes("calculation"))).toBe(true);
     expect(validateLessonExercise(calculationDraft(scale, { calculation: { ...scale, tolerance: 8 } }), schoolSubject, topic).some((error) => error.includes("calculation"))).toBe(true);
   });
-  it("wstrzyknięty wynik rachunku przechodzi materializację bez zmian, a odrzuca go walidacja szkoły", () => {
-    // Gałąź rachunku w schemacie modelu nie ma `answer` ani `prompt`; rekord z nimi (fake, testy) jest gotowy.
+  it("wstrzyknięty wynik rachunku: materializacja liczy odpowiedź i treść od nowa, walidacja szkoły ją przyjmuje", () => {
     const injected = calculationDraft(scale, { answer: "999 km", prompt: "Nowe fakty geograficzne" });
-    expect(materializeRawExercise(injected)).toEqual({ ok: true, record: injected });
+    const result = materializeRawExercise(injected);
+    expect(result).toMatchObject({ ok: true, record: { answer: "750 m", prompt: renderCalculationPrompt(scale) } });
+    // Bez materializacji wstrzyknięty wynik odrzucają reguły szkoły.
     const rules = validateLessonExerciseIssues(injected, schoolSubject, topic, { agent: true }).map((issue) => issue.rule);
     expect(rules).toEqual(expect.arrayContaining(["school.calculation_answer_computed", "school.calculation_prompt_template"]));
   });

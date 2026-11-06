@@ -24,9 +24,14 @@ type ShapeRuleId = Extract<keyof typeof CORE_RULES, `shape.${string}`>;
 /** Kształt elementu listy: napis, lista napisów albo obiekt z polami-napisami (pola dodatkowe dozwolone). */
 export type RawItemShape = "string" | "string_list" | readonly string[];
 
+/** Szczegóły zgłoszenia przekazywane fabryce. */
+type ShapeDetails = { readonly field?: string; readonly pl: string; readonly found?: string };
+
 export interface RawListField {
   readonly field: string;
   readonly rule: ShapeRuleId;
+  /** Zgłoszenie reguły pola: fabryka z literałem id (zgodność z `rule` pilnuje test). */
+  readonly issue: (details: ShapeDetails) => LessonRuleIssue;
   readonly item: RawItemShape;
   /** Pole sprawdza też łagodny strażnik (dzisiejszy schemat kształtu). */
   readonly guarded: boolean;
@@ -34,23 +39,23 @@ export interface RawListField {
 
 /** Pola listowe rekordu agenta; `guarded: false` — pola v3, które dziś filtruje `toExerciseDraft`. */
 export const RAW_LIST_FIELDS: readonly RawListField[] = [
-  { field: "acceptedAnswers", rule: "shape.accepted_answers", item: "string", guarded: true },
-  { field: "focus", rule: "shape.focus", item: "string", guarded: true },
-  { field: "options", rule: "shape.options", item: ["id", "text"], guarded: true },
-  { field: "items", rule: "shape.items", item: ["id", "text"], guarded: true },
-  { field: "keywordOptions", rule: "shape.keyword_options", item: ["id", "text"], guarded: true },
-  { field: "keyOptionIds", rule: "shape.key_option_ids", item: "string", guarded: true },
-  { field: "noticeSegments", rule: "shape.notice_segments", item: "string_list", guarded: true },
-  { field: "pairs", rule: "shape.pairs", item: ["left", "right"], guarded: true },
-  { field: "extraRight", rule: "shape.extra_right", item: "string", guarded: true },
-  { field: "groups", rule: "shape.groups", item: ["id", "label"], guarded: true },
-  { field: "groupItems", rule: "shape.group_items", item: ["text", "groupId"], guarded: true },
-  { field: "gapAnswers", rule: "shape.gap_answers", item: "string", guarded: true },
-  { field: "extraWords", rule: "shape.extra_words", item: "string", guarded: true },
-  { field: "requiredElements", rule: "shape.required_elements", item: ["id", "text"], guarded: false },
-  { field: "supplementaryElements", rule: "shape.supplementary_elements", item: "string", guarded: false },
-  { field: "commonErrors", rule: "shape.common_errors", item: "string", guarded: false },
-  { field: "sourceRefs", rule: "shape.source_refs", item: ["quote"], guarded: false },
+  { field: "acceptedAnswers", rule: "shape.accepted_answers", issue: (details) => shapeIssue("shape.accepted_answers", details), item: "string", guarded: true },
+  { field: "focus", rule: "shape.focus", issue: (details) => shapeIssue("shape.focus", details), item: "string", guarded: true },
+  { field: "options", rule: "shape.options", issue: (details) => shapeIssue("shape.options", details), item: ["id", "text"], guarded: true },
+  { field: "items", rule: "shape.items", issue: (details) => shapeIssue("shape.items", details), item: ["id", "text"], guarded: true },
+  { field: "keywordOptions", rule: "shape.keyword_options", issue: (details) => shapeIssue("shape.keyword_options", details), item: ["id", "text"], guarded: true },
+  { field: "keyOptionIds", rule: "shape.key_option_ids", issue: (details) => shapeIssue("shape.key_option_ids", details), item: "string", guarded: true },
+  { field: "noticeSegments", rule: "shape.notice_segments", issue: (details) => shapeIssue("shape.notice_segments", details), item: "string_list", guarded: true },
+  { field: "pairs", rule: "shape.pairs", issue: (details) => shapeIssue("shape.pairs", details), item: ["left", "right"], guarded: true },
+  { field: "extraRight", rule: "shape.extra_right", issue: (details) => shapeIssue("shape.extra_right", details), item: "string", guarded: true },
+  { field: "groups", rule: "shape.groups", issue: (details) => shapeIssue("shape.groups", details), item: ["id", "label"], guarded: true },
+  { field: "groupItems", rule: "shape.group_items", issue: (details) => shapeIssue("shape.group_items", details), item: ["text", "groupId"], guarded: true },
+  { field: "gapAnswers", rule: "shape.gap_answers", issue: (details) => shapeIssue("shape.gap_answers", details), item: "string", guarded: true },
+  { field: "extraWords", rule: "shape.extra_words", issue: (details) => shapeIssue("shape.extra_words", details), item: "string", guarded: true },
+  { field: "requiredElements", rule: "shape.required_elements", issue: (details) => shapeIssue("shape.required_elements", details), item: ["id", "text"], guarded: false },
+  { field: "supplementaryElements", rule: "shape.supplementary_elements", issue: (details) => shapeIssue("shape.supplementary_elements", details), item: "string", guarded: false },
+  { field: "commonErrors", rule: "shape.common_errors", issue: (details) => shapeIssue("shape.common_errors", details), item: "string", guarded: false },
+  { field: "sourceRefs", rule: "shape.source_refs", issue: (details) => shapeIssue("shape.source_refs", details), item: ["quote"], guarded: false },
 ];
 
 /**
@@ -137,7 +142,7 @@ export function listFieldIssues(record: Readonly<Record<string, unknown>>, field
   if (entry === undefined || value === null || value === undefined) return [];
   const pl = `${field}: oczekiwano ${itemTextPl(entry.item)}`;
   if (!Array.isArray(value)) {
-    return [shapeIssue(entry.rule, {
+    return [entry.issue({
       field,
       pl,
       found: `${field}: expected a list of ${itemsText(entry.item)} or null, got ${kindOf(value)}`,
@@ -147,7 +152,7 @@ export function listFieldIssues(record: Readonly<Record<string, unknown>>, field
     const problem = itemProblem(element, entry.item);
     if (problem !== null) {
       const path = `${field}[${index}]${problem.path}`;
-      return [shapeIssue(entry.rule, { field: path, pl, found: `${path}: ${problem.found}` })];
+      return [entry.issue({ field: path, pl, found: `${path}: ${problem.found}` })];
     }
   }
   return [];

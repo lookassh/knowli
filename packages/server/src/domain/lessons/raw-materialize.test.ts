@@ -150,15 +150,37 @@ describe("materializeRawExercise — kod liczy odpowiedź i treść", () => {
   });
 });
 
-describe("materializeRawExercise — przejście bez zmian", () => {
-  it("rekord typu liczonego z napisem answer przechodzi bez zmian (wstrzyknięty wynik odrzuca potem walidacja)", () => {
+describe("materializeRawExercise — rekord z odpowiedzią", () => {
+  const EXTRA = { hint: "Podpowiedź.", prompt: "Model prompt.", familyId: "fam", explanationPl: "Wyjaśnienie błędu.", acceptedAnswers: ["x"], focus: ["x"] };
+
+  it("zgodna odpowiedź: zostają pola materializacji i explanationPl, reszta znika", () => {
+    const match = materialized({ ...MATCH, ...EXTRA, answer: "cat, dog, cow", voiceTone: "gentle" });
+    expect(match).toEqual({ ...materialized(MATCH), voiceTone: "gentle", explanationPl: EXTRA.explanationPl });
+    const calculation = materialized({ ...CALCULATION, ...EXTRA, answer: "750 m", instructionPl: "Model.", voiceTone: "gentle" });
+    expect(calculation).toEqual({ ...materialized(CALCULATION), explanationPl: EXTRA.explanationPl });
+    const keywords = materialized({ ...KEYWORDS, ...EXTRA, answer: "cukry, światło", instructionPl: "Model." });
+    expect(keywords).toEqual({ ...materialized(KEYWORDS), familyId: "fam", explanationPl: EXTRA.explanationPl });
+    for (const record of [match, calculation, keywords]) expect(record).not.toHaveProperty("hint");
+  });
+
+  it("zgodna odpowiedź bez list domyślnych: materializacja ich nie dopisuje (rekordy fake'a)", () => {
+    const ready = { exerciseType: "lesson_match", objectiveId: "o", instructionPl: "Połącz.", pairs: MATCH.pairs, answer: "cat, dog, cow", focus: [] };
+    expect(materialized(ready)).toEqual(ready);
+  });
+
+  it("inna odpowiedź (także wstrzyknięta): materializacja jak bez answer, bez explanationPl", () => {
     for (const raw of COMPUTED) {
-      const ready = { ...raw, answer: "zmyślona", prompt: "Nowe fakty" };
-      expect(materializeRawExercise(ready)).toEqual({ ok: true, record: ready });
-      expect(materialized(ready)).toBe(ready);
+      const injected = { ...raw, ...EXTRA, familyId: (raw as { familyId?: string }).familyId, answer: "zmyślona" };
+      expect(materialized(injected)).toEqual(materialized(raw));
     }
   });
 
+  it("zgodna odpowiedź nie omija kształtu: zły element listy dalej daje zgłoszenie", () => {
+    expect(issuesOf({ ...MATCH, answer: "cat, dog, cow", pairs: [...MATCH.pairs, null] }).issues[0]![0]).toBe("shape.pairs");
+  });
+});
+
+describe("materializeRawExercise — przejście bez zmian", () => {
   it("inne typy i obcy exerciseType przechodzą bez zmian; nie-obiekt → shape.record", () => {
     const gap = { exerciseType: "lesson_gap", objectiveId: "o", answer: "x" };
     expect(materialized(gap)).toBe(gap);
@@ -195,7 +217,9 @@ describe("materializeRawExercise — dowolny JSON (własność)", () => {
   it("nigdy nie rzuca; odrzucenie ma zgłoszenia z regułą, polem i found", () => {
     const bases = COMPUTED.map((raw) => ({ ...raw }) as Record<string, unknown>);
     for (let seed = 1; seed <= 1000; seed += 1) {
-      const raw = randomJson(seed, { base: bases[seed % bases.length]! });
+      // Co drugie ziarno: rachunek z losowo zmienioną specyfikacją albo jej parametrami (granice kalkulatora).
+      const spec = seed % 4 === 0 ? randomJson(seed, { base: SPEC }) : { ...SPEC, params: randomJson(seed, { base: SPEC.params }) };
+      const raw = seed % 2 === 0 ? { ...CALCULATION, calculation: spec } : randomJson(seed, { base: bases[seed % bases.length]! });
       const result = materializeRawExercise(raw);
       if (!result.ok) {
         expect(result.issues.length).toBeGreaterThan(0);

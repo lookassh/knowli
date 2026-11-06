@@ -12,8 +12,11 @@ import { CORE_RULES } from "./rules/core-rules";
  * podaje `answer` — kod dopisuje polecenie (wspólne albo domyślne), treść
  * rachunku i kanoniczną odpowiedź, zanim rekord trafi do kształtu i walidacji.
  *
- * - Idempotencja: rekord z napisem `answer` przechodzi bez zmian (fake agenta i
- *   testy wysyłają rekordy gotowe); wstrzyknięty wynik odrzuca walidacja.
+ * - Idempotencja (rozstrzygnięcie kontrolera): rekord, którego `answer` równa się
+ *   odpowiedzi liczonej przez kod, przechodzi jako wynik materializacji z jego
+ *   `explanationPl` (fake agenta i testy wysyłają rekordy gotowe z wyjaśnieniem);
+ *   pola, których materializacja nie wydaje, znikają. Inny `answer` (także
+ *   wstrzyknięty) — materializacja jak bez `answer`.
  * - Pola, których materializacja dziś nie przenosi (np. `explanationPl` par i
  *   grup, ton rachunku), pomija dalej: zmiana treści dla dziecka wymagałaby
  *   decyzji właściciela (test).
@@ -197,13 +200,29 @@ const MATERIALIZERS: ReadonlyMap<string, Materializer> = new Map([
 ]);
 
 /**
+ * Rekord gotowy (odpowiedź zgodna z liczoną): wynik materializacji bez pustych list,
+ * których rekord nie miał (np. `extraRight`), i z wyjaśnieniem błędu rekordu.
+ */
+function passedThrough(record: Record<string, unknown>, materialized: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(materialized)) {
+    const added = record[key] === undefined && Array.isArray(value) && value.length === 0;
+    if (!added) out[key] = value;
+  }
+  if (record.explanationPl !== undefined) out.explanationPl = record.explanationPl;
+  return out;
+}
+
+/**
  * Surowy rekord agenta → rekord do kształtu i walidacji. Nie-obiekt daje
- * `shape.record`; typ spoza liczonych i rekord z napisem `answer` przechodzą bez zmian.
+ * `shape.record`; typ spoza liczonych przechodzi bez zmian.
  */
 export function materializeRawExercise(raw: unknown): RawMaterialization {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return fail("unknown", rawRecordIssues(raw));
   const record = raw as Record<string, unknown>;
   const materializer = typeof record.exerciseType === "string" ? MATERIALIZERS.get(record.exerciseType) : undefined;
-  if (materializer === undefined || typeof record.answer === "string") return { ok: true, record };
-  return materializer(record);
+  if (materializer === undefined) return { ok: true, record };
+  const result = materializer(record);
+  if (!result.ok || typeof record.answer !== "string" || record.answer !== result.record.answer) return result;
+  return { ok: true, record: passedThrough(record, result.record) };
 }

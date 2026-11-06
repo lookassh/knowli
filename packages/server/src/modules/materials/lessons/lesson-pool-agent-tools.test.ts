@@ -272,8 +272,9 @@ describe("submit — parsowanie i wynik dla modelu", () => {
         extraRight: [],
       }],
     });
-    // Odrzucenie lub przyjęcie zależy od reguł przedmiotu; kształt i materializacja przechodzą.
-    expect(tools.rejections.map((entry) => entry.code)).not.toContain("shape_malformed");
+    // Bez materializacji rekord bez `answer` padłby na kształcie (`shape.answer`); tu dociera do reguł
+    // ćwiczenia, a przedmiot testowy nie wspiera par (odpowiedź liczoną sprawdza `raw-materialize.test.ts`).
+    expect(tools.rejections.map((entry) => entry.code)).toEqual(["rule_exercise"]);
   });
 
   it("examples: \"x\" → błąd przykładów; przykłady z planu są ignorowane z notą", async () => {
@@ -461,7 +462,7 @@ describe("submit — budżet", () => {
     ]);
     expect(tools.state()).toBe(before);
     expect(tools.checker.solveCalls).toHaveLength(0);
-    expect(tools.rejections).toEqual([]);
+    expect(tools.rejections.map((entry) => [entry.code, entry.detail])).toEqual([]);
     expect(tools.refusals).toEqual(["refused_budget"]);
     expect(tools.tools.shouldStop()).toBe(true);
   });
@@ -542,7 +543,7 @@ describe("zamknięcie narzędzi", () => {
       ],
     });
     expect(tools.state()).toBe(before);
-    expect(tools.rejections).toEqual([]);
+    expect(tools.rejections.map((entry) => [entry.code, entry.detail])).toEqual([]);
     expect(tools.refusals).toEqual(["refused_closed"]);
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { foreignObjectiveIssues, hasLenientRawShape, RAW_LIST_FIELDS, RAW_TEXT_FIELDS, rawShapeIssues } from "./raw-shape";
+import { CORE_RULES } from "./rules/core-rules";
 import { randomJson } from "./testing/random-json";
 
 /** Poprawny kształtowo rekord wyboru (kontrakt i reguły puli to osobne sprawdzenia). */
@@ -125,6 +126,12 @@ describe("rawShapeIssues — kształt rekordu agenta (spec katalogu reguł §4.3
       field: "focus",
       found: "focus: expected a list of strings or null, got a string",
     });
+  });
+
+  it("fabryka wpisu tabeli zgłasza regułę z jego `rule`; opis shape.text_field wymienia każde pole tekstowe", () => {
+    for (const entry of RAW_LIST_FIELDS) expect(entry.issue({ pl: "p", found: "f" }).rule).toBe(entry.rule);
+    const description = CORE_RULES["shape.text_field"].description;
+    for (const { field } of RAW_TEXT_FIELDS) expect(description).toContain(field);
   });
 
   describe.each(RAW_LIST_FIELDS)("pole listowe $field", (entry) => {

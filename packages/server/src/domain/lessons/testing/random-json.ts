@@ -21,9 +21,13 @@ const KEYS = [
   "exerciseType", "objectiveId", "answer", "options", "items", "pairs", "groups", "groupItems", "calculation",
   "kind", "unit", "params", "tolerance", "templateFamilyId", "sourceRefs", "quote", "id", "text", "left", "right",
   "label", "groupId", "keywordOptions", "keyOptionIds", "gapAnswers", "extraWords", "clozeText", "noticeSegments",
+  "scaleDenominator", "mapDistanceCm", "upperHeightM", "lowerHeightM", "value", "fromUnit",
 ];
-const STRINGS = ["", "x", "lesson_calculation", "lesson_match", "lesson_group", "lesson_cloze", "lesson_keywords", "scale_distance", "m", "___"];
-const NUMBERS = [0, -1, 1, 0.5, 1e21, -1e-7, 25000, Number.MAX_SAFE_INTEGER];
+const STRINGS = [
+  "", "x", "lesson_calculation", "lesson_match", "lesson_group", "lesson_cloze", "lesson_keywords",
+  "scale_distance", "height_difference", "unit_conversion", "m", "km", "cm", "map-scale", "___",
+];
+const NUMBERS = [0, -1, 1, 0.5, 3, 1e21, -1e-7, 25000, 1000000, 1000000000, 0.001, Number.MAX_SAFE_INTEGER];
 
 function value(next: () => number, depth: number): unknown {
   const pick = <T>(list: readonly T[]): T => list[Math.floor(next() * list.length)]!;
