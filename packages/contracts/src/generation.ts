@@ -106,5 +106,7 @@ export const GenerationDtoSchema = z.object({
   attempts: z.number().int().nonnegative(),
   errorCode: z.string().nullable(),
   rejectedCount: z.number().int().nonnegative().nullable().optional(),
+  /** Run zestawu słówek utknął w `running` (ponad 10 minut od przejęcia, #299) — panel pokazuje „Ponów”; brak pola — nie utknął. */
+  stalled: z.boolean().optional(),
 });
 export type GenerationDto = z.infer<typeof GenerationDtoSchema>;

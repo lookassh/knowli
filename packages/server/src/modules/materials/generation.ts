@@ -15,6 +15,7 @@ import type { Executor, Tx } from "../../db/client";
 import type { LlmGenerateDeckInput } from "../../ports/ai";
 import {
   claimQueuedRun,
+  deckRunStalled,
   enqueueGenerationRun,
   isStoryRunInput,
   lessonStoryRunFilter,
@@ -251,10 +252,11 @@ async function insertGenerationDraft(
 }
 
 export async function readGeneration(services: Services, runId: string): Promise<GenerationDto> {
-  const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
-  if (!run) {
+  const row = (await services.db.select({ run: generationRuns, stalled: deckRunStalled }).from(generationRuns).where(eq(generationRuns.id, runId)))[0];
+  if (!row) {
     throw new AppError("not_found");
   }
+  const { run } = row;
   let deckId: string | null = null;
   if (run.deckVersionId) {
     deckId =
@@ -273,6 +275,7 @@ export async function readGeneration(services: Services, runId: string): Promise
     attempts: run.attempts,
     errorCode: run.errorCode ?? null,
     rejectedCount: run.rejectedCount ?? null,
+    ...(row.stalled ? { stalled: true } : {}),
   };
 }
 
@@ -280,7 +283,7 @@ export async function readGeneration(services: Services, runId: string): Promise
  * Ręczne ponowienie po porażce (lub odblokowanie runu utkwionego w running
  * po awarii workera). Resetuje budżet prób; nie rusza runów zakończonych.
  * Zwraca id runu do śledzenia: zwykle ten sam, a dla runu historyjki
- * w `running` — id nowego runu, który go zastępuje.
+ * albo utkniętego runu zestawu w `running` — id nowego runu, który go zastępuje.
  */
 export async function retryGeneration(services: Services, runId: string): Promise<{ runId: string }> {
   const run = (await services.db.select().from(generationRuns).where(eq(generationRuns.id, runId)))[0];
@@ -368,10 +371,13 @@ export async function retryGeneration(services: Services, runId: string): Promis
     }
     if (run.kind === "deck") {
       // Taka sama kolejność blokad jak zapis wyniku: wersja, potem run.
-      await tx.select({ id: deckVersions.id }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update");
-      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
-      if (!current || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
+      const version = (await tx.select({ state: deckVersions.state }).from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
+      const locked = (await tx.select({ run: generationRuns, stalled: deckRunStalled }).from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      const current = locked?.run;
+      if (!version || version.state === "published" || !current || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
       if (current.state === "running") {
+        // zdrowy run w toku: drugie wywołanie modelu byłoby opłacone na darmo
+        if (!locked.stalled) throw new AppError("conflict");
         // `running` (np. po awarii workera, #299): jak przy historyjce stary run
         // zostaje `superseded`, a nowy run z pełnym budżetem prób i tym samym
         // wejściem zajmuje jego miejsce; spóźniony worker nie przejdzie

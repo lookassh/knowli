@@ -547,7 +547,14 @@ describe("trwałe generowanie zestawu (integracja)", () => {
     };
     const oldWorker = executeGeneration(services, runId);
     await deckEntered;
-    expect((await readGeneration(services, runId)).state).toBe("running");
+    const healthy = await readGeneration(services, runId);
+    expect(healthy.state).toBe("running");
+    expect(healthy.stalled).toBeUndefined();
+    // zdrowy run w toku: „Ponów” nie zleca drugiego płatnego wywołania modelu
+    await expect(retryGeneration(services, runId)).rejects.toMatchObject({ code: "conflict" });
+    // od przejęcia minęło ponad 10 minut (np. worker padł) — run jest utknięty
+    await pool.query("update learning_app.generation_runs set claimed_at = now() - interval '11 minutes' where id = $1", [runId]);
+    expect((await readGeneration(services, runId)).stalled).toBe(true);
 
     const retried = await retryGeneration(services, runId);
     expect(retried.runId).not.toBe(runId);

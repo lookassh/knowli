@@ -104,8 +104,8 @@ export function DeckGenerationOutcome({ generation, onRetry, source, onOpenSourc
   const linkedSource = generation.errorCode === "no_source_items" ? source : undefined;
   return (
     <>
-      {/* run utkwiony w `running` (np. po awarii workera) — „Ponów” zastępuje go nowym runem (#299) */}
-      {generation.state === "running" && (
+      {/* run utknięty w `running` (długo po przejęciu, np. po awarii workera) — „Ponów” zastępuje go nowym runem (#299) */}
+      {generation.state === "running" && generation.stalled === true && (
         <Stack gap="xs" align="flex-start" data-testid="generation-stalled">
           <Text size="sm">{messages.decks.stalledGenerationHint}</Text>
           <Button size="md" variant="default" data-testid="retry-stalled-generation" leftSection={<ParentIcon name="refresh" />} onClick={onRetry}>

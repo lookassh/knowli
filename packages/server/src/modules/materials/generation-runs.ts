@@ -73,6 +73,14 @@ export async function findEnqueuedRun(
   return null;
 }
 
+/**
+ * Run `deck` w `running` dłużej niż 10 minut od przejęcia (`claimed_at`, czas
+ * bazy) uznajemy za utknięty, np. po awarii workera (#299): dopiero wtedy
+ * „Ponów” go zastępuje, więc rodzic nie opłaci drugiego wywołania modelu
+ * w trakcie zdrowego runu (wywołanie modelu zestawu trwa zwykle kilkadziesiąt sekund).
+ */
+export const deckRunStalled = sql<boolean>`(${generationRuns.kind} = 'deck' and ${generationRuns.state} = 'running' and (${generationRuns.claimedAt} is null or ${generationRuns.claimedAt} <= now() - interval '10 minutes'))`;
+
 export async function markRun(
   db: Executor,
   clock: Clock,
@@ -230,7 +238,7 @@ export async function supersedeFailedLessonStoryRuns(db: Executor, deckVersionId
 export async function claimQueuedRun(db: Executor, runId: string, expectedEditNumber?: number, now?: Date): Promise<number | null> {
   const claimed = await db
     .update(generationRuns)
-    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1` })
+    .set({ state: "running", attempts: sql`${generationRuns.attempts} + 1`, claimedAt: sql`now()` })
     .where(and(
       eq(generationRuns.id, runId),
       eq(generationRuns.state, "queued"),
