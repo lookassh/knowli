@@ -235,14 +235,20 @@ function rawLead(text: string): string {
     .replace(/^[^\p{L}\p{N}]+/u, "");
 }
 
-/** Koniec zdania (`.`, `!`, `?`, opcjonalnie cudzysłów) i odstęp; po nim zaczyna się następne zdanie. */
-const SENTENCE_END = /[.!?]+["'”“’»)]*\s+/gu;
+/** Znaki zamykające po końcu zdania (cudzysłów, nawias), np. `."` w „He said "Look!" Then…”. */
+const CLOSING_MARKS = new Set(['"', "'", "”", "“", "’", "»", ")"]);
 
-/** Początki zdań surowego tekstu: cały tekst i reszta po każdym końcu zdania (małe litery, bez wiodącej interpunkcji). */
+/**
+ * Początki zdań surowego tekstu: cały tekst i reszta po każdym końcu zdania (`.`, `!`, `?`,
+ * opcjonalnie znaki zamykające, potem odstęp), małymi literami, bez wiodącej interpunkcji.
+ * Pętla zamiast jednego wyrażenia `[.!?]+…\s+`: to cofało się kwadratowo na ciągach `!!!…`.
+ */
 function sentenceLeads(text: string): string[] {
   const leads = [rawLead(text)];
-  for (const end of text.matchAll(SENTENCE_END)) {
-    leads.push(rawLead(text.slice(end.index + end[0].length)));
+  for (const gap of text.matchAll(/\s+/gu)) {
+    let end = gap.index - 1;
+    while (end >= 0 && CLOSING_MARKS.has(text.charAt(end))) end -= 1;
+    if (end >= 0 && ".!?".includes(text.charAt(end))) leads.push(rawLead(text.slice(gap.index + gap[0].length)));
   }
   return leads;
 }

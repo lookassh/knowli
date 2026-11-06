@@ -144,8 +144,8 @@ export function verbGroupsIn(tokens: readonly string[]): VerbGroup[] {
 /** Wybór „now / usually” (§5.5): wybór z opcjami dokładnie „now” i „usually”. */
 export function isNowUsuallyChoice(ex: LessonExerciseDraft): boolean {
   if (ex.exerciseType !== "lesson_choice" || ex.options?.length !== 2) return false;
-  const texts = ex.options.map((option) => normalizeTokens(option.text).join(" ")).sort();
-  return texts[0] === "now" && texts[1] === "usually";
+  const texts = ex.options.map((option) => normalizeTokens(option.text).join(" "));
+  return texts.includes("now") && texts.includes("usually");
 }
 
 /**

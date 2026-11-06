@@ -197,4 +197,13 @@ describe("scanTimeMarkers — wskaźniki „teraz” i goły „now” (standard
       expect(scan(text, lang).strongNow, text).toBe(true);
     }
   });
+
+  it("wykrzyknienie na początku kolejnego zdania, także po cudzysłowie zamykającym", () => {
+    expect(scan(`Tom says "Hi." Look! Ola is reading.`, "en").nowMarkers).toEqual(["Look!"]);
+    expect(scan("Ola is reading.	Listen! The baby is crying.", "en").nowMarkers).toEqual(["Listen!"]);
+  });
+
+  it("długi ciąg wykrzykników bez odstępu nie spowalnia skanu (CodeQL: wielomianowe wyrażenie)", () => {
+    expect(scan(`Tom is reading${"!".repeat(50_000)}x`, "en").nowMarkers).toEqual([]);
+  });
 });
