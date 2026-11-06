@@ -9,12 +9,18 @@ import {
   PC_FORBIDDEN_MARKERS,
   PC_GUIDANCE,
   PC_NOW_MARKERS,
+  PC_EXPLANATION_SCENE_EXAMPLE,
+  PC_NOW_OR_USUALLY_GUIDANCE,
+  PC_NOW_OR_USUALLY_MORE_GUIDANCE,
   PC_STATE_VERB_LIST,
+  PC_TENSE_CHOICE_GUIDANCE,
   PC_USUALLY_MARKERS,
   PC_VERB_LISTS,
 } from "./present-continuous-guidance";
+import { TENSE_CHOICE_OBJECTIVES } from "./present-continuous-tense-choice";
+import { PC_FORM_OBJECTIVES } from "./present-continuous-validation";
 import { lessonRuleBook, ruleBookContextFor } from "../../rules/rule-book";
-import { explanationTextErrors } from "../../exercise-explanation";
+import { explanationIssues, explanationTextErrors } from "../../exercise-explanation";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
@@ -90,9 +96,9 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect((englishGrammarPrompts.fieldRules ?? "").split(/(?<=\.) (?=[A-Z])/)).toMatchInlineSnapshot(`
       [
         "For lesson_open_answer, prompt is the source sentence in the prompt language to translate; answer and acceptedAnswers are in the answer language.",
-        "Example: prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null; keep the gap answer short, at most the verb with an auxiliary (never a full sentence with a subject).",
+        "For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null; keep the gap answer short, at most the verb with an auxiliary (never a full sentence with a subject).",
         "In those objectives an operator-only answer (do, does, don't, doesn't, do not, does not) may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do.",
-        "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
+        "In those objectives a translation looks like prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
         "For objectives whose id contains ".to_be." the checked verb is 'to be': gap answers are am, is or are, in negatives am not, is not, are not, isn't or aren't.",
       ]
     `);
@@ -467,6 +473,12 @@ describe("fieldRules — zawężenie Present Simple, bez tematu present_continuo
     expect(rules.slice(0, header)).not.toMatch(/lesson_gap set hint|operator/);
   });
 
+  it("przykład tłumaczenia w Present Simple stoi w bloku celów '.present_simple.' (w PC to zdanie byłoby odrzucone)", () => {
+    const example = rules.indexOf("Ona codziennie gra w piłkę.");
+    expect(example).toBeGreaterThan(rules.indexOf(PS_HEADER));
+    expect(example).toBeLessThan(rules.indexOf('For objectives whose id contains ".to_be."'));
+  });
+
   it("fieldRules nie mają reguł tematu present_continuous — opisuje go katalog reguł (Task 18)", () => {
     expect(rules).not.toContain("present_continuous");
     expect(rules).not.toMatch(/Look!|tomorrow|Kiedy to się dzieje/);
@@ -481,18 +493,32 @@ function ruleBookLines(topicId: string, objectiveId: string): { id: string; text
   return [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat();
 }
 
-describe("księga reguł — temat present_continuous (spec katalogu reguł §3, Task 18)", () => {
-  const PC_TEXTS = [PC_GUIDANCE, PC_VERB_LISTS, PC_STATE_VERB_LIST, PC_NOW_MARKERS, PC_USUALLY_MARKERS, PC_FORBIDDEN_MARKERS].map((text) => text.trim());
+describe("księga reguł — temat present_continuous (spec katalogu reguł §3, Task 18, fala 2 Task 19)", () => {
+  /** Listy i wskazówki całego tematu: w księdze każdego celu PC dokładnie raz. */
+  const PC_TOPIC_TEXTS = [PC_GUIDANCE, PC_VERB_LISTS, PC_STATE_VERB_LIST, PC_NOW_MARKERS, PC_USUALLY_MARKERS, PC_FORBIDDEN_MARKERS].map((text) => text.trim());
+  /** Wskazówki celów porównania i pojedynczych celów porównania — tylko w księgach swoich celów. */
+  const PC_OBJECTIVE_TEXTS: [text: string, inObjective: (objective: string) => boolean][] = [
+    [PC_TENSE_CHOICE_GUIDANCE.trim(), (objective) => TENSE_CHOICE_OBJECTIVES.has(objective)],
+    [PC_NOW_OR_USUALLY_GUIDANCE.trim(), (objective) => objective === "now_or_usually"],
+    [PC_NOW_OR_USUALLY_MORE_GUIDANCE.trim(), (objective) => objective === "now_or_usually_more"],
+  ];
+  const PC_TEXTS = [...PC_TOPIC_TEXTS, ...PC_OBJECTIVE_TEXTS.map(([text]) => text)];
+  const occurrences = (text: string, fragment: string): number => text.split(fragment).length - 1;
+  const pcTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")!;
 
-  it("w każdym zagadnieniu PC księga ma reguły PC, listy ze stałych i wskazówki; w PS i „to be” — żadnej", () => {
+  it("w każdym zagadnieniu PC księga ma reguły PC, listy i wskazówki tematu raz, wskazówki celów tylko w swoich celach; w PS i „to be” — żadnej", () => {
     for (const topic of englishGrammarSubject.topics) {
       for (const objective of topic.objectives) {
         const lines = ruleBookLines(topic.id, objective.id);
         const text = lines.map((line) => line.text).join(" ");
         const pcRules = lines.filter((line) => line.id.startsWith("grammar.pc_"));
+        const last = objective.id.split(".").at(-1)!;
         if (topic.id === "present_continuous") {
           expect(pcRules.length, objective.id).toBeGreaterThan(0);
-          for (const fragment of PC_TEXTS) expect(text, `${objective.id}: ${fragment.slice(0, 40)}`).toContain(fragment);
+          for (const fragment of PC_TOPIC_TEXTS) expect(occurrences(text, fragment), `${objective.id}: ${fragment.slice(0, 40)}`).toBe(1);
+          for (const [fragment, inObjective] of PC_OBJECTIVE_TEXTS) {
+            expect(occurrences(text, fragment), `${objective.id}: ${fragment.slice(0, 40)}`).toBe(inObjective(last) ? 1 : 0);
+          }
         } else {
           expect(pcRules, objective.id).toEqual([]);
           for (const fragment of PC_TEXTS) expect(text, `${objective.id}: ${fragment.slice(0, 40)}`).not.toContain(fragment);
@@ -502,23 +528,68 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     }
   });
 
+  it("reguły jednego celu albo grupy celów trafiają tylko do księgi tych celów (zbiory celów walidatora)", () => {
+    const pcForms = (objective: string): boolean => PC_FORM_OBJECTIVES.has(objective);
+    const tenseChoice = (objective: string): boolean => TENSE_CHOICE_OBJECTIVES.has(objective);
+    const scoped: [id: string, inObjective: (objective: string) => boolean][] = [
+      ["grammar.pc_forbidden_marker", () => true],
+      ["grammar.pc_now_marker_bare", () => true],
+      ["grammar.pc_now_marker_missing", pcForms],
+      ["grammar.pc_usually_marker", pcForms],
+      ["grammar.pc_state_verb_ing", pcForms],
+      ["grammar.pc_translation_now_marker", pcForms],
+      ["grammar.pc_choice_distractor_correct", (objective) => pcForms(objective) && objective !== "ing_spelling"],
+      ["grammar.pc_ing_spelling_distractor", (objective) => objective === "ing_spelling"],
+      ["grammar.pc_collocation_in_ing_spelling", (objective) => objective === "ing_spelling"],
+      ["grammar.pc_tense_marker_missing", tenseChoice],
+      ["grammar.pc_tense_markers_mixed", tenseChoice],
+      ["grammar.pc_tense_marker_mismatch", tenseChoice],
+      ["grammar.pc_tense_choice_distractor", tenseChoice],
+      ["grammar.pc_tense_choice_gap_question", tenseChoice],
+      ["grammar.pc_state_verb_tense_choice", tenseChoice],
+      ["grammar.pc_ing_without_be", tenseChoice],
+      ["grammar.pc_tense_form_missing", tenseChoice],
+      ["grammar.pc_now_usually_key", (objective) => objective === "now_or_usually"],
+      ["grammar.pc_now_or_usually_question", (objective) => objective === "now_or_usually"],
+      ["grammar.pc_now_or_usually_negative", (objective) => objective === "now_or_usually"],
+      ["grammar.pc_tense_choice_question_type", (objective) => objective === "now_or_usually_more"],
+    ];
+    for (const objective of pcTopic.objectives) {
+      const ids = ruleBookLines(pcTopic.id, objective.id).map((line) => line.id);
+      const last = objective.id.split(".").at(-1)!;
+      for (const [id, inObjective] of scoped) expect(ids.includes(id), `${last}: ${id}`).toBe(inObjective(last));
+    }
+  });
+
+  it("„tense-choice objectives” mają definicję przy każdym użyciu w księdze celu PC", () => {
+    for (const objective of pcTopic.objectives) {
+      const text = ruleBookLines(pcTopic.id, objective.id).map((line) => line.text).join(" ");
+      expect(occurrences(text, "tense-choice objectives"), objective.id)
+        .toBe(occurrences(text, "tense-choice objectives (now_or_usually and now_or_usually_more)"));
+    }
+  });
+
   it("listy i wskazówki mają kluczowe fragmenty dawnego bloku `fieldRules` (spec §7.2)", () => {
     const text = PC_TEXTS.join(" ");
     for (const fragment of ["Look!", "every day", "tomorrow", "play", "swim", "Kiedy to się dzieje?", "travel",
       "never write the refrain teraz czy zwykle", "never use teraz, właśnie, zawsze or zwykle as words of the task itself",
       "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt", "never Cicho, dziadek śpi.",
       // Ślepa ocena sondy (Task 18): wyjaśnienie z formą z innego zdania, kopia przykładu karty, tłumaczenie bez wariantu „at the moment”.
-      "explanationPl names only verb forms that stand in this exercise", "Never copy an example from the objective's cards",
+      "explanationPl is exactly one sentence", "it names only verb forms that stand in this exercise", "Never copy an example from the objective's cards",
       "lists the other now markers the sentence allows as acceptedAnswers"]) {
       expect(text, fragment).toContain(fragment);
     }
-    // Dydaktyka w dopisku jednej reguły; listy przy regułach, które je sprawdzają.
-    expect(ruleText("grammar.pc_tense_marker_missing").endsWith(PC_GUIDANCE)).toBe(true);
+    // Dydaktyka tematu w dopisku reguły całego tematu, dydaktyka celów porównania przy regułach tych celów;
+    // listy przy regułach, które je sprawdzają (w celach porównania przy ich regułach).
+    expect(ruleText("grammar.pc_forbidden_marker").endsWith(PC_FORBIDDEN_MARKERS + PC_GUIDANCE)).toBe(true);
+    expect(ruleText("grammar.pc_tense_marker_missing").endsWith(PC_NOW_MARKERS + PC_USUALLY_MARKERS + PC_TENSE_CHOICE_GUIDANCE)).toBe(true);
+    expect(ruleText("grammar.pc_now_or_usually_question").endsWith(PC_NOW_OR_USUALLY_GUIDANCE)).toBe(true);
+    expect(ruleText("grammar.pc_tense_choice_question_type").endsWith(PC_NOW_OR_USUALLY_MORE_GUIDANCE)).toBe(true);
     expect(ruleText("grammar.pc_ing_rule_not_allowed").endsWith(PC_VERB_LISTS)).toBe(true);
     expect(ruleText("grammar.pc_state_verb_ing").endsWith(PC_STATE_VERB_LIST)).toBe(true);
+    expect(ruleText("grammar.pc_state_verb_tense_choice").endsWith(PC_STATE_VERB_LIST)).toBe(true);
     expect(ruleText("grammar.pc_now_marker_missing").endsWith(PC_NOW_MARKERS)).toBe(true);
     expect(ruleText("grammar.pc_usually_marker").endsWith(PC_USUALLY_MARKERS)).toBe(true);
-    expect(ruleText("grammar.pc_forbidden_marker").endsWith(PC_FORBIDDEN_MARKERS)).toBe(true);
   });
 
   const PC = "english_grammar.present_continuous";
@@ -551,13 +622,21 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ["(reads / is reading)", choice("now_or_usually", "Cicho! Ola czyta. Wybierz dobrą formę.", "Ola ___ a comic.", "is reading", "reads"), true],
     ["Grandpa ___ on the sofa.", choice("now_or_usually", "Cicho! Dziadek śpi. Wybierz dobrą formę.", "Grandpa ___ on the sofa.", "is sleeping", "sleeps"), true],
     [
-      "(Ola is at the tennis club.)",
-      draft("now_or_usually_more", "lesson_choice", "Does Ola play tennis on Saturdays?", {
+      "(Ola is in a tennis club. → Does Ola play tennis on Mondays?)",
+      draft("now_or_usually_more", "lesson_choice", "Does Ola play tennis on Mondays?", {
         instructionPl: "Wybierz dobre pytanie.",
-        stem: "Ola is at the tennis club.",
-        options: [{ id: "a", text: "Does Ola play tennis on Saturdays?" }, { id: "b", text: "Is Ola playing tennis on Saturdays?" }],
+        stem: "Ola is in a tennis club.",
+        options: [{ id: "a", text: "Does Ola play tennis on Mondays?" }, { id: "b", text: "Is Ola playing tennis on Mondays?" }],
         correctOption: "a",
       }),
+      true,
+    ],
+    [
+      "(Ola isn't dancing on Fridays. → Ola doesn't dance on Fridays.)",
+      {
+        ...draft("now_or_usually_more", "lesson_error_fix", "Ola doesn't dance on Fridays.", { instructionPl: "Popraw błąd w zdaniu.", statement: "Ola isn't dancing on Fridays." }),
+        focus: ["doesn't", "dance"],
+      },
       true,
     ],
     ["Ola is reading a comic. → now", choice("now_or_usually", "Kiedy to się dzieje?", "Ola is reading a comic.", "now", "usually"), true],
@@ -567,8 +646,8 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     ["This is Ola.", gap("affirmative", "Uzupełnij zdanie.", "This is Ola. She ___ (read) a book now.", "is reading"), true],
     ["It is sunny.", gap("affirmative", "Uzupełnij zdanie.", "It is sunny. The children ___ (play) in the park now.", "are playing"), true],
     ["never The door is open.", translation("affirmative", "Drzwi są teraz otwarte.", "The door is open now."), "grammar.pc_ing_after_be"],
-    // Fala 1 Task 19 (standard „Środek”): w celach porównania goły „teraz” nie wystarcza — wskazówkę poprawia fala 2.
-    ["Ola is reading now.", translation("now_or_usually", "Ola teraz czyta.", "Ola is reading now."), "grammar.pc_now_marker_bare"],
+    // Standard „Środek” (fala 1 Task 19): przykład kart celu porównania ma mocny wskaźnik „teraz”.
+    ["Look! Ola is reading.", translation("now_or_usually", "Patrz! Ola czyta.", "Look! Ola is reading."), true],
     ["Ola reads comics every day.", translation("now_or_usually", "Ola codziennie czyta komiksy.", "Ola reads comics every day."), true],
     [
       "for She is cooking now. it says is cooking",
@@ -593,9 +672,26 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     }
   });
 
-  it("wzór wyjaśnienia ze wskazówek ma dokładnie jedno zdanie, więc nie jest odrzucany przez explanationTextErrors", () => {
-    expect(PC_GUIDANCE).toContain(`(${PC_EXPLANATION_EXAMPLE})`);
-    expect(explanationTextErrors(PC_EXPLANATION_EXAMPLE)).toEqual([]);
+  it("wzory wyjaśnienia ze wskazówek mają dokładnie jedno zdanie, więc nie są odrzucane przez explanationTextErrors", () => {
+    for (const example of [PC_EXPLANATION_EXAMPLE, PC_EXPLANATION_SCENE_EXAMPLE]) {
+      expect(PC_TENSE_CHOICE_GUIDANCE).toContain(example);
+      expect(explanationTextErrors(example)).toEqual([]);
+    }
+  });
+
+  it("scenka-wykrzyknienie w wyjaśnieniu w cudzysłowie nie kończy zdania (bez cudzysłowu wyjaśnienie odpada)", () => {
+    const rules = (text: string) => explanationIssues(text).map((issue) => issue.rule);
+    expect(rules("Look! mówi, że to dzieje się teraz, więc Ola is reading.")).toEqual(["explanation.one_sentence"]);
+    for (const scene of ["„Look!”", "„Cicho!”", "„Gdzie jest tata?”"]) {
+      expect(PC_GUIDANCE).toContain(scene);
+      expect(rules(`${scene} mówi, że to dzieje się teraz, więc Ola is reading.`), scene).toEqual([]);
+    }
+    // Całe ćwiczenie celu porównania z wyjaśnieniem ze scenką przechodzi walidację puli.
+    const withExplanation: LessonExerciseDraft = {
+      ...choice("now_or_usually", "Cicho! Dziadek śpi. Wybierz dobrą formę.", "Grandpa ___ on the sofa.", "is sleeping", "sleeps"),
+      explanationPl: PC_EXPLANATION_SCENE_EXAMPLE,
+    };
+    expect(validateLessonExercise(withExplanation, englishGrammarSubject, presentContinuousV1)).toEqual([]);
   });
 
   it("kolokacje z listy są dozwolone przez regułę czasowników stanu (§5.3)", () => {

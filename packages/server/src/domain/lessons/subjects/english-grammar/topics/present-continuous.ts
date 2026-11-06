@@ -95,7 +95,7 @@ const nowOrUsually: LearningObjective = {
   titlePl: "Teraz czy zwykle? (po Present Simple)",
   descriptionEn:
     "Choosing between the present simple for things that happen usually, regularly or every day (Ola reads every day.) " +
-    "and the present continuous for things happening right now, at this moment (Ola is reading now.), in affirmative sentences only. " +
+    "and the present continuous for things happening right now, at this moment (Look! Ola is reading.), in affirmative sentences only. " +
     "One kind of exercise checks the meaning of a form instead: a lesson_choice with options exactly 'now' and 'usually', " +
     "whose stimulus is an affirmative present simple or present continuous sentence with no time marker at all (Ola is reading a book.); " +
     "the key follows from the tense of the sentence (present continuous → now, present simple → usually). " +
@@ -271,8 +271,8 @@ const nowOrUsuallyMore: LearningObjective = {
   descriptionEn:
     "Choosing between the present simple and the present continuous in negatives and questions: " +
     "don't/doesn't + base verb for things that do not happen usually versus am not/isn't/aren't + -ing for things not happening right now " +
-    "(She doesn't watch TV on Mondays. / She isn't watching TV now.); Do/Does + subject + base verb to ask about habits " +
-    "versus Am/Is/Are + subject + -ing to ask about right now (Do you play football on Saturdays? / Are you playing football now?). " +
+    "(She doesn't watch TV on Mondays. / She isn't watching TV right now.); Do/Does + subject + base verb to ask about habits " +
+    "versus Am/Is/Are + subject + -ing to ask about right now (Do you play football on Saturdays? / Are you playing football right now?). " +
     tenseChoiceVerdict(
       "In every exercise",
       "doesn't eats, a question without do or does, a wrong -ing spelling, am/is/are without -ing or a missing am/is/are when the context is now, " +

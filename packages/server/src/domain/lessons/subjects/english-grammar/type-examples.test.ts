@@ -3,6 +3,7 @@ import { GAP_VERB_BRACKET } from "../../feedback-sentence-text";
 import { normalizeTokens } from "../../normalize";
 import type { LessonTopic } from "../../types";
 import { englishGrammarSubject } from "./module";
+import { scanTimeMarkers } from "./time-markers";
 import { grammarTypeExamples } from "./type-examples";
 
 /**
@@ -71,5 +72,23 @@ describe("przykłady typów tematu present_continuous", () => {
       ),
     );
     expect(repeated).toEqual([]);
+  });
+
+  // Fala 2 Task 19 (krytyk B): przykłady uczą tego, co przyjmuje walidator, a model je kopiuje.
+  const example = (objective: string, type: string): Readonly<Record<string, unknown>> =>
+    grammarTypeExamples({ topicId, objectiveId: `english_grammar.present_continuous.${objective}` })![type as "lesson_choice"]!;
+
+  it("now_or_usually_more: poprawianie błędu to Present Continuous ze wskaźnikiem „zwykle” → Present Simple (Present Simple z now bywa poprawny)", () => {
+    const fix = example("now_or_usually_more", "lesson_error_fix");
+    expect([...scanTimeMarkers(String(fix.statement), "en").groups]).toEqual(["usually"]);
+    expect(String(fix.statement)).toMatch(/\b(?:is|are|isn't|aren't) \w+ing\b/u);
+    expect(String(fix.answer)).toMatch(/\b(?:do|does|don't|doesn't) \w+\b/u);
+    expect(String(fix.answer)).not.toMatch(/\w+ing\b/u);
+  });
+
+  it("negative i questions: wybór ma też dystraktor z do/does (dziecko myli operatory czasów)", () => {
+    const texts = (objective: string) => (example(objective, "lesson_choice").options as { text: string }[]).map((option) => option.text);
+    expect(texts("negative")).toContain("don't");
+    expect(texts("questions")).toContain("Do");
   });
 });

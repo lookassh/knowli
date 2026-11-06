@@ -318,7 +318,7 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     },
     lesson_listen_choice: {
       exerciseType: "lesson_listen_choice",
-      stem: "My sister ___ walking the dog.",
+      stem: "My sister ___ walking the dog now.",
       options: [{ id: "a", text: "is" }, { id: "b", text: "are" }],
       correctOption: "a",
       answer: "is",
@@ -327,7 +327,8 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     },
     lesson_order: {
       exerciseType: "lesson_order",
-      instructionPl: "Ułóż zdanie.",
+      // Scenka w poleceniu zamiast klocka „now”: klocek dałby kilka poprawnych szyków („We are now drinking milk”).
+      instructionPl: "Popatrz na nas! Ułóż zdanie.",
       items: [{ id: "a", text: "We" }, { id: "b", text: "are" }, { id: "c", text: "drinking" }, { id: "d", text: "milk" }],
       answer: "We are drinking milk",
       acceptedAnswers: [],
@@ -399,8 +400,8 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     lesson_choice: {
       exerciseType: "lesson_choice",
       instructionPl: "Wybierz poprawną formę.",
-      stem: "The children ___ sleeping now.",
-      options: [{ id: "a", text: "aren't" }, { id: "b", text: "isn't" }],
+      stem: "The children ___ sleeping right now.",
+      options: [{ id: "a", text: "aren't" }, { id: "b", text: "isn't" }, { id: "c", text: "don't" }],
       correctOption: "a",
       answer: "aren't",
       acceptedAnswers: [],
@@ -408,7 +409,7 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     },
     lesson_listen_choice: {
       exerciseType: "lesson_listen_choice",
-      stem: "The baby ___ crying now.",
+      stem: "The baby ___ crying right now.",
       options: [{ id: "a", text: "isn't" }, { id: "b", text: "aren't" }],
       correctOption: "a",
       answer: "isn't",
@@ -445,7 +446,7 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
       instructionPl: "Przetłumacz na angielski.",
       prompt: "Mój brat w tym momencie nie pracuje.",
       answer: "My brother isn't working at the moment.",
-      acceptedAnswers: ["My brother isn't working now.", "My brother isn't working right now."],
+      acceptedAnswers: ["My brother isn't working now.", "My brother isn't working right now.", "At the moment my brother isn't working."],
       focus: ["isn't", "working"],
     },
   },
@@ -453,8 +454,8 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     lesson_choice: {
       exerciseType: "lesson_choice",
       instructionPl: "Wybierz poprawną formę.",
-      stem: "___ your friends waiting for the bus?",
-      options: [{ id: "a", text: "Are" }, { id: "b", text: "Is" }],
+      stem: "___ your friends waiting for the bus now?",
+      options: [{ id: "a", text: "Are" }, { id: "b", text: "Is" }, { id: "c", text: "Do" }],
       correctOption: "a",
       answer: "Are",
       acceptedAnswers: [],
@@ -553,7 +554,7 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     lesson_choice: {
       exerciseType: "lesson_choice",
       instructionPl: "Wybierz dobre pytanie.",
-      stem: "Tom is at the swimming pool.",
+      stem: "Tom is in a swimming club.",
       options: [{ id: "a", text: "Does Tom swim on Fridays?" }, { id: "b", text: "Is Tom swimming on Fridays?" }],
       correctOption: "a",
       answer: "Does Tom swim on Fridays?",
@@ -571,10 +572,10 @@ const PRESENT_CONTINUOUS_EXAMPLES: Readonly<Record<PresentContinuousObjective, T
     lesson_error_fix: {
       exerciseType: "lesson_error_fix",
       instructionPl: "Popraw błąd w zdaniu.",
-      statement: "We don't eat ice cream right now.",
-      answer: "We aren't eating ice cream right now.",
+      statement: "Tom isn't playing tennis on Mondays.",
+      answer: "Tom doesn't play tennis on Mondays.",
       acceptedAnswers: [],
-      focus: ["aren't", "eating"],
+      focus: ["doesn't", "play"],
     },
     lesson_open_answer: {
       exerciseType: "lesson_open_answer",

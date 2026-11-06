@@ -4,7 +4,10 @@ import {
   PC_FORBIDDEN_MARKERS,
   PC_GUIDANCE,
   PC_NOW_MARKERS,
+  PC_NOW_OR_USUALLY_GUIDANCE,
+  PC_NOW_OR_USUALLY_MORE_GUIDANCE,
   PC_STATE_VERB_LIST,
+  PC_TENSE_CHOICE_GUIDANCE,
   PC_USUALLY_MARKERS,
   PC_VERB_LISTS,
 } from "./present-continuous-guidance";
@@ -35,6 +38,20 @@ const PRESENT_CONTINUOUS_TOPIC = "present_continuous";
 /** Reguła tematu Present Continuous trafia do księgi reguł tylko w tym temacie. */
 const inPresentContinuous = (ctx: RuleBookContext): boolean => ctx.topicId === PRESENT_CONTINUOUS_TOPIC;
 
+/**
+ * Reguła wybranych celów Present Continuous (ostatni segment id zagadnienia) trafia do księgi tylko w nich. Zbiory
+ * celów są te same co w walidatorze, który zgłasza regułę tylko w tych celach (`PC_FORM_OBJECTIVES`,
+ * `TENSE_CHOICE_OBJECTIVES`; pilnuje test modułu), więc w innych celach jej opis byłby szumem promptu.
+ */
+const inPcObjectives = (...objectives: readonly string[]) => (ctx: RuleBookContext): boolean =>
+  inPresentContinuous(ctx) && objectives.includes(ctx.objectiveId.split(".").at(-1) ?? "");
+
+/** Cele form Present Continuous (1, 3, 4, 5): walidator sprawdza w nich kontekst „teraz”. */
+const inPcForms = inPcObjectives("affirmative", "negative", "questions", "ing_spelling");
+
+/** Cele porównania (2, 6): walidator sprawdza w nich wybór czasu. */
+const inTenseChoice = inPcObjectives("now_or_usually", "now_or_usually_more");
+
 /** Najwięcej tokenów po każdej stronie obszaru różnicy `error_fix` (§6.3). */
 export const MAX_ERROR_FIX_REGION_TOKENS = 3;
 
@@ -43,7 +60,8 @@ export const MAX_ERROR_FIX_REGION_TOKENS = 3;
  * tematu (`present-continuous-validation.ts` i pliki, które woła) zgłasza je przez
  * `grammarIssue`. Jedna reguła na jedno sprawdzenie. Listy ze stałych walidatora i dydaktyka
  * tematu (kod jej nie sprawdza) są dopiskami opisów (`present-continuous-guidance.ts`), więc
- * trafiają do promptu tylko w tym temacie.
+ * trafiają do promptu tylko w tym temacie; reguły, które walidator zgłasza tylko w części celów, i ich dopiski
+ * trafiają tylko do ksiąg tych celów (`inPcObjectives`).
  */
 const PRESENT_CONTINUOUS_RULES = defineRules({
   "grammar.pc_gap_hint": {
@@ -59,7 +77,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     kind: "reject",
     description:
       "In the present_continuous topic no field uses a future or ambiguous time marker (tomorrow, tonight, next week, today, " +
-      "on Monday, jutro, dzisiaj...), in English or Polish." + PC_FORBIDDEN_MARKERS,
+      "on Monday, jutro, dzisiaj...), in English or Polish." + PC_FORBIDDEN_MARKERS + PC_GUIDANCE,
   },
   "grammar.pc_going_to_future": {
     when: inPresentContinuous,
@@ -70,7 +88,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "the gap; going to + a place is fine.",
   },
   "grammar.pc_usually_marker": {
-    when: inPresentContinuous,
+    when: inPcForms,
     field: "exercise",
     kind: "reject",
     description:
@@ -78,7 +96,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "codziennie, zwykle...): the action happens right now." + PC_USUALLY_MARKERS,
   },
   "grammar.pc_now_marker_missing": {
-    when: inPresentContinuous,
+    when: inPcForms,
     field: "exercise",
     kind: "reject",
     description:
@@ -115,7 +133,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     description: "In the present_continuous topic no sentence uses being (He is being silly).",
   },
   "grammar.pc_state_verb_ing": {
-    when: inPresentContinuous,
+    when: inPcForms,
     field: "answer",
     kind: "reject",
     description:
@@ -123,12 +141,12 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "the -ing form (liking, knowing, wanting...); having breakfast and looking at style collocations are fine." + PC_STATE_VERB_LIST,
   },
   "grammar.pc_state_verb_tense_choice": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "exercise",
     kind: "reject",
     description:
       "In the now_or_usually and now_or_usually_more objectives no English text uses a state verb in any form (likes, has, " +
-      "wants...), except the having and looking collocations and Look!.",
+      "wants...), except the having and looking collocations and Look!." + PC_STATE_VERB_LIST,
   },
   "grammar.pc_be_form_subject": {
     when: inPresentContinuous,
@@ -204,7 +222,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "contrast); any of them in now_or_usually_more." + PC_VERB_LISTS,
   },
   "grammar.pc_collocation_in_ing_spelling": {
-    when: inPresentContinuous,
+    when: inPcObjectives("ing_spelling"),
     field: "answer",
     kind: "reject",
     description: "In the ing_spelling objective the key never uses a having or looking collocation, which practises no spelling rule.",
@@ -325,7 +343,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "that's, there's, where's or who's: write the full is.",
   },
   "grammar.pc_translation_now_marker": {
-    when: inPresentContinuous,
+    when: inPcForms,
     field: "prompt",
     kind: "reject",
     types: ["lesson_open_answer"],
@@ -355,13 +373,13 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "Ola is reading right now., Ola is reading at the moment.; the marker may stand elsewhere in the sentence).",
   },
   "grammar.pc_ing_without_be": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "answer",
     kind: "reject",
     description: "In the now_or_usually and now_or_usually_more objectives an -ing form in a key is always preceded by am, is or are.",
   },
   "grammar.pc_tense_form_missing": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "answer",
     kind: "reject",
     description:
@@ -369,21 +387,21 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "verb from the topic's verb table.",
   },
   "grammar.pc_now_usually_stem_marker": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "stem",
     kind: "reject",
     types: ["lesson_choice"],
     description: "In the now / usually meaning check the stem has no time marker: the tense of the sentence alone decides.",
   },
   "grammar.pc_now_usually_instruction": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "instructionPl",
     kind: "reject",
     types: ["lesson_choice"],
     description: "In the now / usually meaning check instructionPl never reveals the answer with a marker or a scene of one group.",
   },
   "grammar.pc_now_usually_stem_shape": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "stem",
     kind: "reject",
     types: ["lesson_choice"],
@@ -392,14 +410,14 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "without a gap, a question or not.",
   },
   "grammar.pc_now_usually_key": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "correctOption",
     kind: "reject",
     types: ["lesson_choice"],
     description: "In the now / usually meaning check the correct option is now for a present continuous stem and usually for a present simple stem.",
   },
   "grammar.pc_tense_choice_gap_question": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "stem",
     kind: "reject",
     types: ["lesson_choice", "lesson_listen_choice"],
@@ -408,7 +426,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "as whole-sentence options (Do you play...? / Are you playing...?).",
   },
   "grammar.pc_tense_choice_distractor": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "options",
     kind: "reject",
     types: ["lesson_choice"],
@@ -417,7 +435,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "subject as well as the key.",
   },
   "grammar.pc_choice_distractor_correct": {
-    when: inPresentContinuous,
+    when: inPcObjectives("affirmative", "negative", "questions"),
     field: "options",
     kind: "reject",
     types: ["lesson_choice"],
@@ -432,7 +450,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "played, read).",
   },
   "grammar.pc_ing_spelling_distractor": {
-    when: inPresentContinuous,
+    when: inPcObjectives("ing_spelling"),
     field: "options",
     kind: "reject",
     types: ["lesson_choice"],
@@ -442,25 +460,26 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "tense is a second correct answer.",
   },
   "grammar.pc_now_or_usually_question": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "exercise",
     kind: "reject",
-    description: "In the now_or_usually objective there are no questions: they belong to now_or_usually_more.",
+    description: "In the now_or_usually objective there are no questions: they belong to now_or_usually_more." + PC_NOW_OR_USUALLY_GUIDANCE,
   },
   "grammar.pc_now_or_usually_negative": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually"),
     field: "answer",
     kind: "reject",
     description: "In the now_or_usually objective answers are affirmative: negatives belong to now_or_usually_more.",
   },
   "grammar.pc_tense_choice_question_type": {
-    when: inPresentContinuous,
+    when: inPcObjectives("now_or_usually_more"),
     field: "exercise",
     kind: "reject",
-    description: "In the now_or_usually_more objective questions appear only in lesson_choice and lesson_open_answer.",
+    description:
+      "In the now_or_usually_more objective questions appear only in lesson_choice and lesson_open_answer." + PC_NOW_OR_USUALLY_MORE_GUIDANCE,
   },
   "grammar.pc_tense_marker_missing": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "exercise",
     kind: "reject",
     description:
@@ -470,10 +489,11 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "parts of its sentence without their own verb and verbless exclamations before it (Look!, Shh!) count, never a sentence or " +
       "clause with its own verb (Tom plays every day. Ola ___ (read).); a marker only in the answer, an accepted answer or one " +
       "option does not count, and the options count only when every option has a marker of the same group. A translation's " +
-      "Polish prompt (or a scene in instructionPl) holds the group of its key." + PC_GUIDANCE,
+      "Polish prompt (or a scene in instructionPl) holds the group of its key." + PC_NOW_MARKERS + PC_USUALLY_MARKERS +
+      PC_TENSE_CHOICE_GUIDANCE,
   },
   "grammar.pc_tense_markers_mixed": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "exercise",
     kind: "reject",
     description:
@@ -481,7 +501,7 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
       "options), all belong to one group: now or usually, never both.",
   },
   "grammar.pc_tense_marker_mismatch": {
-    when: inPresentContinuous,
+    when: inTenseChoice,
     field: "answer",
     kind: "reject",
     description:
@@ -520,7 +540,8 @@ const PRESENT_CONTINUOUS_RULES = defineRules({
     description:
       "In the present_continuous topic the difference of a lesson_error_fix is the mistake the objective practises: a missing " +
       "am/is/are, a verb without -ing after am/is/are or a wrong am/is/are; a wrong -ing spelling in ing_spelling; the present " +
-      "simple swapped with the present continuous of the same verb in the tense-choice objectives.",
+      "simple swapped with the present continuous of the same verb in the tense-choice objectives (now_or_usually and " +
+      "now_or_usually_more).",
   },
   "grammar.pc_error_fix_do_ing": {
     when: inPresentContinuous,
