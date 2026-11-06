@@ -191,16 +191,18 @@ describe("księga reguł — przykłady kolejności", () => {
  * którego księga ją zawiera (albo tylko wskazanych przedmiotów — dopiski).
  */
 const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; readonly phrase: string; readonly subjects?: readonly string[] }[] = [
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "Give every lesson_open_answer a short hint" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "should get a short hint (recommended)" },
   { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "null only when" },
+  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "at least half of them, rounded up" },
+  { point: "1. podpowiedź pytania otwartego", rule: "check.hint_judge", phrase: "null only if no safe hint exists" },
   { point: "2. tolerancja rachunku", rule: "calculation.tolerance", phrase: "out or set it to zero" },
   { point: "3. rodzina rachunku", rule: "calculation.family_slug", phrase: "scale-distance-km" },
   { point: "4. pusty napis", rule: "field.empty", phrase: "does not apply is null" },
   { point: "5. pola pytania otwartego szkoły", rule: "school.open_required_fields", phrase: "non-empty questionType" },
   { point: "5. pola pytania otwartego szkoły", rule: "school.open_required_fields", phrase: "supplementaryElements (at most" },
   { point: "6. rodzina pytań", rule: "school.family_answer_differs", phrase: "character for character" },
-  { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of ids" },
-  { point: "6. słowa kluczowe z pytaniem", rule: "school.keywords_family_rejected", phrase: "send both in the same call" },
+  { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of requiredElements ids" },
+  { point: "6. słowa kluczowe z pytaniem", rule: "school.keywords_family_rejected", phrase: "the keywords are rejected too" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "one continuous fragment" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },

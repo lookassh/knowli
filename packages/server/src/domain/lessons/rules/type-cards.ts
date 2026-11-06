@@ -93,7 +93,9 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
       "gap ___ or the question), options {id, text}, correctOption (the id of the correct option) and answer (its text).",
     example: (features) => {
       const language = languageOf(features);
-      if (language === "en") {
+      // Jedno rozwiązanie bez klucza (ślepe rozwiązanie): przy poleceniu-bodźcu wybór wskazuje polskie zdanie,
+      // bez bodźca opcje to formy jednego czasownika, z których do zdania pasuje gramatycznie tylko jedna.
+      if (language === "en" && features.instructionIsStimulus) {
         return grounded(features, {
           exerciseType: "lesson_choice",
           instructionPl: instruction(features, "Dziś pada deszcz.", "Wybierz słowo."),
@@ -104,6 +106,18 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
           acceptedAnswers: [],
           focus: [],
         }, "raining — pada deszcz");
+      }
+      if (language === "en") {
+        return grounded(features, {
+          exerciseType: "lesson_choice",
+          instructionPl: "Wybierz poprawną formę.",
+          stem: "He ___ football every day.",
+          options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
+          correctOption: "a",
+          answer: "plays",
+          acceptedAnswers: [],
+          focus: [],
+        }, "He plays football every day.");
       }
       if (language === "pl") {
         return grounded(features, {
@@ -178,6 +192,8 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
           exerciseType: "lesson_gap",
           instructionPl: instruction(features, "Ona lubi koty.", "Uzupełnij lukę."),
           stem: "She ___ cats.",
+          // Bez polecenia-bodźca jedno rozwiązanie wskazuje forma podstawowa czasownika w podpowiedzi.
+          ...(features.instructionIsStimulus ? {} : { hint: "like" }),
           answer: "likes",
           acceptedAnswers: [],
           focus: ["likes"],

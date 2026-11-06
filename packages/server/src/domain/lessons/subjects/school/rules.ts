@@ -40,9 +40,9 @@ export const SCHOOL_RULES = defineRules({
     kind: "reject",
     types: ["lesson_open_answer"],
     description:
-      `lesson_open_answer needs a non-empty questionType, expectedForm and ${MIN_REQUIRED_ELEMENTS}–${MAX_REQUIRED_ELEMENTS} ` +
-      `requiredElements {id, text}; the optional supplementaryElements (at most ${MAX_SUPPLEMENTARY_ELEMENTS}) and commonErrors ` +
-      `(at most ${MAX_COMMON_ERRORS}) only add to them.`,
+      `lesson_open_answer needs a non-empty questionType and expectedForm and ${MIN_REQUIRED_ELEMENTS}–${MAX_REQUIRED_ELEMENTS} ` +
+      `requiredElements {id, text}; supplementaryElements (at most ${MAX_SUPPLEMENTARY_ELEMENTS}) and commonErrors ` +
+      `(at most ${MAX_COMMON_ERRORS}) are optional additions and never replace requiredElements.`,
   },
   "school.element_ids_unique": {
     field: "requiredElements",
@@ -115,8 +115,8 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_open_answer"],
     priority: "family",
     description:
-      "Members of one question family (same objective and familyId) share the same requiredElements: the same set of ids " +
-      "(keep their texts identical too).",
+      "Members of one question family (same objective and familyId) share the same set of requiredElements ids; their " +
+      "texts should match too.",
   },
   "school.keywords_family_missing": {
     field: "familyId",
@@ -131,8 +131,9 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_keywords"],
     priority: "family",
     description:
-      "lesson_keywords is accepted only together with its lesson_open_answer: send both in the same call, because when " +
-      "that open question is rejected (or has no familyId), its keywords are rejected too.",
+      "When the lesson_open_answer with the familyId of a lesson_keywords is rejected in the same call and the objective " +
+      "has no other open question of that familyId, the keywords are rejected too; send them with a valid open question " +
+      "or after it is accepted.",
   },
   "school.keyword_not_in_answer": {
     field: "keyOptionIds",
@@ -154,10 +155,11 @@ export const SCHOOL_RULES = defineRules({
     types: ["lesson_open_answer"],
     priority: "hint",
     description:
-      "Give every lesson_open_answer a short hint that points to the reasoning or to where in the material to look; set " +
-      "hint to null only when no such hint is possible. The hint must not contain the answer, an accepted variant or the " +
-      "text of a required element, nor most of their content words in any word form (words of the question and function " +
-      "words do not count); such a hint is removed and the exercise is accepted without it.",
+      "Every lesson_open_answer should get a short hint (recommended) that points to the reasoning or to where in the " +
+      "material to look; leave hint null only when no such hint is possible. The hint is removed and the exercise is " +
+      "accepted without it when, for the answer, an accepted variant or a required element, it contains all of its " +
+      "content words (one or two words) or at least half of them, rounded up (more words), in any word form; words of " +
+      "the question and function words do not count.",
   },
 });
 

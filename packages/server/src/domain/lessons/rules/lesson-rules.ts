@@ -98,7 +98,8 @@ export const LESSON_RULES = {
     description:
       "Another model judges the meaning of every non-empty hint: it must be supported by the material, be correct in the " +
       "language of the lesson's instructions and must not give away the answer or a required element in other words " +
-      "(a paraphrase counts, not only shared words). A rejected hint rejects the exercise: fix the hint or set it to null.",
+      "(a paraphrase counts, not only shared words). A rejected hint rejects the exercise: fix the hint (null only if no " +
+      "safe hint exists).",
   },
   "check.open_answer": {
     field: "requiredElements",

@@ -5,7 +5,7 @@ import { rawShapeIssues } from "../raw-shape";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../types";
 import type { LessonRuleIssue } from "./catalog";
-import { subjectFeatures, TYPE_CARDS } from "./type-cards";
+import { subjectFeatures, TYPE_CARDS, type SubjectFeatures } from "./type-cards";
 
 /**
  * Karty typów (spec katalogu reguł §2.1): przykład każdej karty przechodzi drogę
@@ -103,11 +103,42 @@ describe("karty typów", () => {
       expect(card.example?.(features)).toEqual(card.example?.({ ...features }));
     }
     // Polecenie z bodźcem tylko przy `instructionIsStimulus`; cytat tylko przy uziemieniu.
-    expect(TYPE_CARDS.lesson_choice.example?.(features)).toMatchObject({ instructionPl: "Wybierz słowo." });
+    expect(TYPE_CARDS.lesson_choice.example?.(features)).toMatchObject({ instructionPl: "Wybierz poprawną formę." });
     expect(TYPE_CARDS.lesson_choice.example?.({ ...features, instructionIsStimulus: true }))
       .toMatchObject({ instructionPl: "Dziś pada deszcz. Wybierz słowo." });
     expect(TYPE_CARDS.lesson_gap.example?.(features)).not.toHaveProperty("sourceRefs");
     expect(TYPE_CARDS.lesson_gap.example?.({ ...features, groundingRequired: true })).toHaveProperty("sourceRefs");
+  });
+
+  /**
+   * Przykład wyboru i luki rozwiązuje ślepy rozwiązujący (gramatyka i rozdział), więc bodziec
+   * ma wskazywać jedno rozwiązanie: z poleceniem-bodźcem robi to polskie zdanie, bez niego opcje
+   * wyboru to formy jednego czasownika (pasuje gramatycznie tylko jedna), a luka ma w podpowiedzi
+   * formę podstawową czasownika z odpowiedzi.
+   */
+  it("angielskie przykłady wyboru i luki mają bodziec wskazujący jedno rozwiązanie", () => {
+    const exampleOf = (type: LessonExerciseType, features: SubjectFeatures) =>
+      TYPE_CARDS[type].example?.(features) as unknown as LessonExerciseDraft;
+    const plain: SubjectFeatures = { groundingRequired: false, usesV3Payload: false, answerLocale: "en-GB", instructionIsStimulus: false };
+    const choice = exampleOf("lesson_choice", plain);
+    const texts = choice.options!.map((option) => option.text);
+    const base = [...texts].sort((a, b) => a.length - b.length)[0]!;
+    expect(new Set(texts).size).toBe(texts.length);
+    expect(texts.every((text) => text.startsWith(base)), "opcje to formy jednego czasownika").toBe(true);
+    expect(texts.filter((text) => text === choice.answer)).toHaveLength(1);
+    const gap = exampleOf("lesson_gap", plain);
+    expect(gap.hint, "luka bez bodźca ma formę podstawową w podpowiedzi").toBeDefined();
+    expect(gap.answer.startsWith(gap.hint!) && gap.answer !== gap.hint).toBe(true);
+
+    const stimulus = { ...plain, instructionIsStimulus: true };
+    for (const type of ["lesson_choice", "lesson_gap"] as const) {
+      const example = exampleOf(type, stimulus);
+      const task = exampleOf(type, plain);
+      // Polskie zdanie-bodziec przed poleceniem; podpowiedzi przy bodźcu nie ma (rozdział jej nie przyjmuje).
+      expect(example.instructionPl!.split(". ").length, type).toBeGreaterThan(1);
+      expect(example).not.toHaveProperty("hint");
+      expect(task.instructionPl!.split(". ")).toHaveLength(1);
+    }
   });
 
   it("język odpowiedzi bez treści przykładów nie daje przykładu", () => {
