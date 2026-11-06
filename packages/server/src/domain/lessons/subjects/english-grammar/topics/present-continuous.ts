@@ -288,11 +288,11 @@ const nowOrUsuallyMore: LearningObjective = {
     },
     {
       title: "Pytania",
-      body: "Do you play football on Saturdays? — zwykle. Are you playing football now? — teraz.",
+      body: "Do you play football on Saturdays? — zwykle. Are you playing football right now? — teraz.",
     },
     {
       title: "Przeczenia",
-      body: "She doesn't watch TV on Mondays. — zwykle. She isn't watching TV now. — teraz.",
+      body: "She doesn't watch TV on Mondays. — zwykle. She isn't watching TV right now. — teraz.",
     },
     {
       title: "Przykłady z lekcji",

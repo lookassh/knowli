@@ -30,8 +30,8 @@ Objective: Teraz czy zwykle? Przeczenia i pytania
 
 Cards:
 [Jak pytasz?] Pytasz o to, co dzieje się zwykle → Do / Does. Pytasz o to, co dzieje się teraz → Am / Is / Are.
-[Pytania] Do you play football on Saturdays? — zwykle. Are you playing football now? — teraz.
-[Przeczenia] She doesn't watch TV on Mondays. — zwykle. She isn't watching TV now. — teraz.
+[Pytania] Do you play football on Saturdays? — zwykle. Are you playing football right now? — teraz.
+[Przeczenia] She doesn't watch TV on Mondays. — zwykle. She isn't watching TV right now. — teraz.
 [Przykłady z lekcji] Przy każdym przykładzie zapytaj siebie: teraz czy zwykle? {{examples}}
 
 Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): none
