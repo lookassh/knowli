@@ -7,7 +7,7 @@ import { validateEnglishGrammarExercise } from "./validators";
 type Objective = "affirmative" | "now_or_usually" | "negative" | "questions" | "ing_spelling" | "now_or_usually_more";
 
 function validate(ex: LessonExerciseDraft): string[] {
-  return validateEnglishGrammarExercise(ex, presentContinuousV1);
+  return validateEnglishGrammarExercise(ex, presentContinuousV1).map((issue) => issue.pl);
 }
 
 function expectPrefix(ex: LessonExerciseDraft, prefix: string): void {

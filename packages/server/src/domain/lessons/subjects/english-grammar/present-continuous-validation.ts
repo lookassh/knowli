@@ -22,7 +22,8 @@ import {
   bePronounNearGap,
   beStemContext,
   beSubjectTokensBefore,
-  checkBePolarity,
+  BE_POLARITY_PL,
+  bePolarityViolations,
   expectedBeFormNearGap,
   looksPlural,
   TRANSFORM_POLARITY,
@@ -113,6 +114,11 @@ export function stripGapVerb(stem: string): { stem: string; verb?: string; negat
 
 function objectiveOf(ex: LessonExerciseDraft): string {
   return ex.objectiveId.split(".").at(-1) ?? "";
+}
+
+/** Komunikaty biegunowości formy „to be” z prefiksem pola. */
+function checkBePolarity(polarity: BePolarity, negative: boolean, marker: string | undefined, label: string, errors: string[]): void {
+  for (const violation of bePolarityViolations(polarity, negative, marker)) errors.push(`${label}: ${BE_POLARITY_PL[violation]}`);
 }
 
 function polarityOf(ex: LessonExerciseDraft, objective: string): BePolarity {

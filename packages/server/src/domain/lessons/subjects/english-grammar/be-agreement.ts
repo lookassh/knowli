@@ -211,23 +211,31 @@ export const TRANSFORM_POLARITY: Readonly<Record<string, BePolarity>> = {
   to_question: "any",
 };
 
-export function checkBePolarity(
+/** Złamanie biegunowości formy „to be” (wspólne dla tematów „to be” i Present Continuous). */
+export type BePolarityViolation = "yes_negative" | "no_affirmative" | "negated" | "not_negated";
+
+/** Komunikat dla rodzica (po polsku) dla złamania biegunowości; wołający dopisuje przed nim pole. */
+export const BE_POLARITY_PL: Readonly<Record<BePolarityViolation, string>> = {
+  yes_negative: "odpowiedź po „Yes” nie może być przeczeniem",
+  no_affirmative: "odpowiedź po „No” musi być przeczeniem",
+  negated: "forma przecząca nie pasuje do celu twierdzącego",
+  not_negated: "brak przeczenia (not) wymaganego przez cel",
+};
+
+/**
+ * Złamania biegunowości formy „to be”: znacznik Yes/No niezgodny z przeczeniem
+ * i biegunowość niezgodna z wymaganą (cel albo przekształcenie). Zgłoszenia
+ * reguł składa wołający, bo każdy temat ma własne reguły katalogu.
+ */
+export function bePolarityViolations(
   polarity: BePolarity,
   effectiveNegative: boolean,
   marker: string | undefined,
-  field: string,
-  errors: string[],
-): void {
-  if (marker === "yes" && effectiveNegative) {
-    errors.push(`${field}: odpowiedź po „Yes” nie może być przeczeniem`);
-  }
-  if (marker === "no" && !effectiveNegative) {
-    errors.push(`${field}: odpowiedź po „No” musi być przeczeniem`);
-  }
-  if (polarity === "affirmative" && effectiveNegative) {
-    errors.push(`${field}: forma przecząca nie pasuje do celu twierdzącego`);
-  }
-  if (polarity === "negative" && !effectiveNegative) {
-    errors.push(`${field}: brak przeczenia (not) wymaganego przez cel`);
-  }
+): BePolarityViolation[] {
+  const violations: BePolarityViolation[] = [];
+  if (marker === "yes" && effectiveNegative) violations.push("yes_negative");
+  if (marker === "no" && !effectiveNegative) violations.push("no_affirmative");
+  if (polarity === "affirmative" && effectiveNegative) violations.push("negated");
+  if (polarity === "negative" && !effectiveNegative) violations.push("not_negated");
+  return violations;
 }

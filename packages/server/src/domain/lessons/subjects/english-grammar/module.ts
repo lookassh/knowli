@@ -7,6 +7,7 @@ import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1 } from "./topics/to-be";
 import { presentContinuousV1 } from "./topics/present-continuous";
+import { GRAMMAR_RULES } from "./rules";
 
 /**
  * Przedmiot `english_grammar` jako wtyczka silnika lekcji (design „Przedmiot
@@ -50,4 +51,5 @@ export const englishGrammarSubject: SubjectModule = {
   lessonStory: true,
   // Polityka agenta puli: typy ślepe i teksty odrzuceń, bez bramek i planu.
   agentPolicy: grammarAgentPolicy,
+  rules: GRAMMAR_RULES,
 };

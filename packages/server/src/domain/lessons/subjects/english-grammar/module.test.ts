@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ruleOf, type RuleBookContext, type RuleId } from "../../rules/catalog";
+import { listenChoiceSibilantErrors } from "../english/listen-audibility";
 import { englishGrammarSubject } from "./module";
 import { englishGrammarPrompts, PRESENT_CONTINUOUS_EXPLANATION_EXAMPLE, PRESENT_CONTINUOUS_PROMPT_EXAMPLES, presentContinuousFieldRules } from "./prompts";
 import { explanationTextErrors } from "../../exercise-explanation";
@@ -11,6 +13,14 @@ import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { validateSubject } from "../../catalog-validation";
 import type { LessonExerciseDraft } from "../../types";
 import { stateVerbIn } from "../english/ing-forms";
+
+
+/** Opis reguły katalogu (rdzeń, lekcja albo przedmiot) — tekst, który dostaje model w księdze reguł. */
+function ruleText(id: string): string {
+  const rule = ruleOf(englishGrammarSubject, id as RuleId);
+  if (rule === undefined) throw new Error(`brak reguły ${id}`);
+  return typeof rule.description === "string" ? rule.description : rule.description({ answerMaxLength: 120, groundingRequired: false });
+}
 
 describe("englishGrammarSubject — spójność katalogu", () => {
   it("validateSubject zwraca pustą listę (katalog poprawny)", () => {
@@ -69,23 +79,10 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     expect((englishGrammarPrompts.fieldRules ?? "").split(/(?<=\.) (?=[A-Z])/)).toMatchInlineSnapshot(`
       [
         "For lesson_open_answer, prompt is the source sentence in the prompt language to translate; answer and acceptedAnswers are in the answer language.",
-        "Example: prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' Never repeat the canonical answer or any accepted answer as the prompt stimulus.",
-        "For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null; the gap answer must be a present simple form of that base verb (plays, doesn't play) — keep it short, at most the verb with an auxiliary (never a full sentence with a subject).",
+        "Example: prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap (hint "play" for answer "plays", hint "study" for answer "studies"), or leave hint null; keep the gap answer short, at most the verb with an auxiliary (never a full sentence with a subject).",
         "In those objectives an operator-only answer (do, does, don't, doesn't, do not, does not) may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do.",
         "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support.",
-        "Expanded contractions are NOT new acceptedAnswers variants: after normalization "does not play" equals "doesn't play", so never list the expanded form of the canonical answer in acceptedAnswers.",
-        "For objectives whose id contains ".to_be." the checked verb is 'to be': set the lesson_gap hint to "be" (or leave it null) and make the gap answer am, is or are matching the subject (I -> am; he, she, it -> is; you, we, they -> are), in negatives am not, is not, are not, isn't or aren't. 'To be' questions swap the subject and the form (Is she happy?, Are they ready?) and never use do or does; short answers repeat the form (Yes, she is. / No, they aren't.).",
-        "Keep 'to be' sentences very short and concrete, reusing a small set of subjects and words from the material so the only new thing is the form of 'to be'.",
-        "In a lesson_gap for 'to be', the answer is only the form itself (am, is, are, isn't, aren't, am not, is not, are not, or not when the form already stands in the sentence) — never a full short answer such as 'No, she is not', which the sentence around the gap already supplies.",
-        "Short answers to questions about 'you' answer as 'I': Are you ready? -> Yes, I am.",
-        "Picture choice (only for objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set visualSubject to who is pictured (boy or man = he, girl or woman = she, group = they, dog = it); then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture.",
-        "In such exercises the be form in the stem must match the pictured subject, and never set visualSubject on other exercise types. lesson_listen_choice (listening choice): a narrator reads the full sentence aloud and the child picks the word that fills the gap, so use it only when the checked form SOUNDS different. stem is one short natural sentence of at most 12 words with exactly one gap written as ___ (two or more underscores) standing on the objective's checked element; 2 or 3 options that differ AUDIBLY in that element (play / plays, don't / doesn't, Do / Does, is / are, isn't / aren't) and exactly one is correct.",
-        "Never offer an equivalent option (a full form and a contraction of the same form, such as does not and doesn't, or is not and isn't) and never start an option with an apostrophe.",
-        "Do not check a difference that exists only in spelling.",
-        "When the options differ only by an -s ending that adds no syllable (like / likes, go / goes, study / studies, he / he's), the word right after the gap must not begin with an s, z or sh sound (snakes, soccer, school, zoo, shoes, city): in connected speech the ending merges into that sound and both forms sound the same.",
-        "Write He ___ dinosaurs. or She ___ football., never He ___ snakes. or She ___ soccer.",
-        "This does not apply to Do / Does or watch / watches, which sound different anyway (___ she play tennis? is fine).",
-        "Never set instructionPl, hint or visualSubject on a lesson_listen_choice exercise: the recording is the whole stimulus and the child sees only the gap sentence and the options.",
+        "For objectives whose id contains ".to_be." the checked verb is 'to be': gap answers are am, is or are, in negatives am not, is not, are not, isn't or aren't.",
         "For objectives whose id contains '.present_continuous.' (an action happening right now, at this moment) everything until the sentence 'End of present continuous rules.' applies only to them; there objectives are named by the last part of their id (negative means english_grammar.present_continuous.negative), and now_or_usually and now_or_usually_more are the tense-choice objectives.",
         "Verbs: in affirmative, now_or_usually, negative and questions use only these verbs, which add -ing without spelling changes: play, read, jump, fix, do, go, walk, talk, eat, drink, sleep, cook, paint, draw, sing, watch, listen, wait, work, study, climb, cry, fly, carry, ask, open, help, wash, clean, brush, call, kick, throw, catch, pull, push, build, wear, laugh, learn, buy, bring, send, fall, turn, pick, stay, count, try, hurry, rain, snow — also in the brackets of a gap and when the answer is in the present simple.",
         "In ing_spelling every exercise practises one spelling rule with these verbs: drop the final e: make, write, ride, dance, smile, bake, take, come, give, drive, skate, close, use, move, share, save, wave, shine; double the last consonant: run, swim, sit, get, stop, shop, hop, clap, dig, jog, put, cut, hit, chat, skip, drop, win; ie becomes y: lie, tie; a verb from the first list only as a contrast in lesson_choice.",
@@ -134,12 +131,23 @@ describe("englishGrammarSubject — spójność katalogu", () => {
     `);
   });
 
-  it("fieldRules definiują reguły tematu to_be dla generacji puli", () => {
+  it("fieldRules opisują temat to_be, a jego sprawdzane formy opisują reguły katalogu tylko w tym temacie", () => {
     const rules = englishGrammarPrompts.fieldRules ?? "";
     expect(rules).toContain(".to_be.");
-    expect(rules).toMatch(/am, is or are matching the subject/);
-    expect(rules).toMatch(/never use do or does/);
-    expect(rules).toMatch(/only the form itself/);
+    expect(rules).toMatch(/gap answers are am, is or are/);
+    // Wskazówki tematu i wyboru obrazka w opisach reguł tego tematu (prompt tylko w temacie „to be”).
+    expect(rules).not.toMatch(/short answers repeat the form|Picture choice/);
+    expect(ruleText("grammar.be_form_subject")).toMatch(/short answers repeat the form/);
+    expect(ruleText("grammar.visual_answer_pronoun")).toContain("Picture choice (only in objectives whose id contains '.affirmative_forms')");
+    for (const id of ["grammar.visual_answer_pronoun", "grammar.visual_option_pronoun", "grammar.visual_stem_pronoun", "grammar.visual_stem_be_form"]) {
+      expect(englishGrammarSubject.rules[id]?.when?.({ topicId: "present_simple" } as RuleBookContext), id).toBe(false);
+    }
+    // Dawne zdania profilu przeszły do opisów reguł (spec katalogu reguł §3).
+    expect(ruleText("grammar.be_form_subject")).toContain("agrees with the subject next to the gap");
+    expect(ruleText("grammar.be_no_do_does")).toContain("do not use do or does");
+    expect(ruleText("grammar.be_answer_not_be_form")).toContain("is a form of be");
+    expect(englishGrammarSubject.rules["grammar.be_no_do_does"]?.when?.({ topicId: "to_be" } as RuleBookContext)).toBe(true);
+    expect(englishGrammarSubject.rules["grammar.be_no_do_does"]?.when?.({ topicId: "present_simple" } as RuleBookContext)).toBe(false);
   });
 
   it("tylko gramatyka przyjmuje tematy zdań: reguła ma kluczowe zakazy, inne przedmioty jej nie mają (#197)", () => {
@@ -351,22 +359,40 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     });
   });
 
-  it("fieldRules opisują regułę typu: jedna luka, słyszalna różnica, bez równoważnych opcji i bez instructionPl", () => {
-    const rules = englishGrammarPrompts.fieldRules ?? "";
-    expect(rules).toContain("lesson_listen_choice");
+  it("blok typu opisuje sens wyboru ze słuchu (słyszalna różnica, jedna poprawna), a ograniczenia typu niesie katalog reguł", () => {
+    const rules = englishGrammarPrompts.typeRules?.lesson_listen_choice ?? "";
+    // Blok Present Continuous ma własne zdania o wyborze ze słuchu w swoim temacie.
+    expect((englishGrammarPrompts.fieldRules ?? "").replace(presentContinuousFieldRules(), "")).not.toContain("lesson_listen_choice");
     expect(rules).toMatch(/at most 12 words/);
-    expect(rules).toMatch(/exactly one gap/);
     expect(rules).toMatch(/audibly/i);
-    expect(rules).toMatch(/never offer an equivalent/i);
-    expect(rules).toMatch(/apostrophe/);
-    expect(rules).toMatch(/instructionPl.*hint.*visualSubject/s);
+    expect(rules).toContain("exactly one is correct");
+    expect(ruleText("listen.gap_count")).toContain("exactly one gap");
+    expect(ruleText("listen.options_equivalent")).toContain("not equivalent");
+    expect(ruleText("listen.option_apostrophe")).toContain("apostrophe");
+    expect(ruleText("listen.instruction_not_allowed")).toContain("instructionPl");
+    expect(ruleText("listen.hint_not_allowed")).toContain("no hint");
   });
 
-  it("fieldRules zabraniają sybilantu zaraz za luką przy opcjach różnych o -s (końcówka zlewa się w mowie)", () => {
-    const rules = englishGrammarPrompts.fieldRules ?? "";
-    expect(rules).toMatch(/-s ending that adds no syllable.*right after the gap.*s, z or sh sound/s);
-    expect(rules).toContain("This does not apply to Do / Does or watch / watches");
-    expect(rules).toContain("never He ___ snakes. or She ___ soccer.");
+  it("sybilant zaraz za luką przy opcjach różnych o -s opisuje reguła wspólnego fragmentu angielskiego", () => {
+    const rule = ruleText("english.listen_sibilant_merge");
+    expect(rule).toMatch(/-s ending that adds no syllable.*right after the gap.*s, z or sh sound/s);
+    // Opis nie jest ostrzejszy niż sprawdzenie: wyjątki, które przyjmuje walidator, są w opisie.
+    expect(rule).toContain("watch/watches");
+    expect(rule).toContain("do/does");
+    for (const [stem, options] of [["___ she play tennis?", ["Does", "Do"]], ["He ___ soccer.", ["watches", "watch"]]] as const) {
+      const draft: LessonExerciseDraft = {
+        exerciseType: "lesson_listen_choice",
+        objectiveId: "english_grammar.present_simple.question",
+        stem,
+        options: options.map((text, index) => ({ id: String(index), text })),
+        correctOption: "0",
+        answer: options[0],
+        acceptedAnswers: [],
+        focus: [options[0]],
+      };
+      expect(listenChoiceSibilantErrors(draft), stem).toEqual([]);
+    }
+    expect(englishGrammarPrompts.fieldRules).not.toContain("snakes");
   });
 });
 
@@ -465,11 +491,11 @@ describe("fieldRules — temat present_continuous i zawężenie Present Simple (
 
   it("reguły luki Present Simple, hint jako bezokolicznik i operator dotyczą tylko celów '.present_simple.' (§7.1)", () => {
     // Jedno zdanie od nagłówka do formy odpowiedzi: model nie czyta reguły jako ogólnej dla przedmiotu.
-    expect(rules).toMatch(/For objectives whose id contains '\.present_simple\.'[^.]*present simple form of that base verb/);
+    expect(rules).toMatch(/For objectives whose id contains '\.present_simple\.'[^.]*BASE FORM[^.]*or leave hint null; keep the gap answer short/);
     const header = rules.indexOf(PS_HEADER);
     const toBe = rules.indexOf('For objectives whose id contains ".to_be."');
     expect(header).toBeGreaterThanOrEqual(0);
-    for (const fragment of ["BASE FORM (infinitive)", "present simple form of that base verb", "operator-only answer"]) {
+    for (const fragment of ["BASE FORM (infinitive)", "keep the gap answer short", "In those objectives an operator-only answer"]) {
       expect(rules.indexOf(fragment), fragment).toBeGreaterThan(header);
       expect(rules.indexOf(fragment), fragment).toBeLessThan(toBe);
     }

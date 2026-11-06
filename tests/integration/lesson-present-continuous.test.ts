@@ -9,14 +9,12 @@ import {
   publishLessonDraft,
   readLessonDeck,
   startSession,
-  type LessonAgentDeps,
   type Services,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import { finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
-  FakeExerciseChecker,
   FakeLessonPoolAgent,
   type FakeLessonPoolAgentOptions,
 } from "../../packages/server/src/providers/fake-lesson-agent";
@@ -27,7 +25,7 @@ import { presentContinuousV1 } from "../../packages/server/src/domain/lessons/su
 
 /**
  * Temat Present Continuous od generowania do sesji dziecka (design „Present Continuous” §11.2) na
- * obecnej ścieżce agenta puli: `english_grammar` na liście przedmiotów agenta, fake agenta zgłasza
+ * ścieżce agenta puli (jedyny generator lekcji, #281): fake agenta zgłasza
  * ręcznie napisane ćwiczenia celów 1 i 2 (uniwersalny generator fake tworzy ćwiczenia, które
  * walidator tematu odrzuca), checker niedostępny. Dane fikcyjne.
  */
@@ -153,19 +151,11 @@ interface AgentWorld {
 }
 
 /** Jak `agentWorld` w `lesson-agent-generation.test.ts`: fake agenta ze scenariuszem, checker niedostępny. */
-async function agentWorld(subjects: string[], agentOptions: FakeLessonPoolAgentOptions): Promise<AgentWorld> {
-  const fakes = await fakeGeneration();
+async function agentWorld(agentOptions: FakeLessonPoolAgentOptions): Promise<AgentWorld> {
+  const fakes = await fakeGeneration({ agent: agentOptions });
   cleanup.push(fakes.dispose);
-  const agent = new FakeLessonPoolAgent({ fromLlm: fakes.llm, ...agentOptions });
-  const lessonAgent: LessonAgentDeps = {
-    subjects: new Set(subjects),
-    agent,
-    checker: new FakeExerciseChecker({ unavailable: true }),
-    policy: {},
-  };
   fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 20 };
-  fakes.deps.lessonAgent = lessonAgent;
-  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps }), agent };
+  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps }), agent: fakes.agent };
 }
 
 interface IssuedTask {
@@ -181,7 +171,7 @@ async function objectiveOfTask(task: TaskDto): Promise<string> {
 
 describe("lekcja Present Continuous — generowanie, szkic, publikacja, sesja dziecka", () => {
   it("agent przyjmuje wszystkie ćwiczenia, publikacja przechodzi, sesja wydaje karty celu 1, ćwiczenie celu 2 i zdanie luki bez nawiasu", async () => {
-    const { services, agent } = await agentWorld(["english_grammar"], SCRIPT);
+    const { services, agent } = await agentWorld(SCRIPT);
     const { runId, deckId } = await createLesson(services, {
       subjectId: "english_grammar",
       topicId: "present_continuous",

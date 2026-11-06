@@ -32,7 +32,7 @@ function pcGap(objective: Objective, stem: string, answer: string, extra: Partia
 }
 
 function validate(ex: LessonExerciseDraft): string[] {
-  return validateEnglishGrammarExercise(ex, presentContinuousV1);
+  return validateEnglishGrammarExercise(ex, presentContinuousV1).map((issue) => issue.pl);
 }
 
 function expectPrefix(ex: LessonExerciseDraft, prefix: string): void {
