@@ -72,6 +72,12 @@ describe("Polish calculation answer parser", () => {
     ["\u2212250 m", 250, "m"],
   ] as const)("keeps the sign of %j", (text, magnitude, unit) => {
     expect(evaluateCalculationAnswer(text, exactly(magnitude, unit))).toBe("incorrect");
+    expect(evaluateCalculationAnswer(text.replace(/[-−]/, ""), exactly(magnitude, unit))).toBe("correct");
+  });
+
+  it("parses repeated thousands separators", () => {
+    const spec: CalculationSpec = { ...scale, params: { mapDistanceCm: 123456.7, scaleDenominator: 1000 }, tolerance: 0 };
+    expect(evaluateCalculationAnswer("+1 234 567 M", spec)).toBe("correct");
   });
 
   it.each(["1,2,3", "12 34", "750 m bo tak", "NaN", "Infinity", "1e3", "1.234", "1.5", "1,", ",5", "1,1234567890", "750 mm", "", " ", "--1", "1 2345", "1\n234", "750 m\nbo tak",

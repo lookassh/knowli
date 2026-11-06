@@ -14,7 +14,7 @@ import {
 } from "@learning/contracts";
 import type { Services } from "../../../config";
 import type { Tx } from "../../../db/client";
-import { attempts, deckVersions, eventExposures, itemRevisions, learningEvents, learningSessions, sessionTasks } from "../../../db/schema";
+import { attempts, deckVersions, eventExposures, learningEvents, learningSessions, sessionTasks } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { fillCloze } from "../../../domain/lessons/cloze";
 import { assignmentText } from "../../../domain/lessons/evaluate";
