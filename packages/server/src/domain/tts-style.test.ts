@@ -28,7 +28,9 @@ describe("sentenceCount", () => {
     expect(sentenceCount('Zdanie "There is a ... in the ..." mówi, gdzie jest przedmiot.')).toBe(1);
     expect(sentenceCount("Zdanie «There's a … in the …» mówi, gdzie jest przedmiot.")).toBe(1);
     expect(sentenceCount("Zdanie „There's a … in the …” mówi, gdzie jest przedmiot. Pasuje tu sowa.")).toBe(2);
-    expect(sentenceCount("Cisza… Słychać sowę. „Ile? Dwa… Trzy.")).toBe(4);
+    expect(sentenceCount("Zdanie „There's a .... in the ....” mówi, gdzie jest przedmiot.")).toBe(1);
+    expect(sentenceCount("Tekst „niedomknięty… Druga część.")).toBe(2);
+    expect(sentenceCount("„Cisza… Słychać sowę. Potem sowa.”")).toBe(3);
   });
 
   it("nie dzieli na kropce w środku wyrazu lub liczby", () => {

@@ -17,17 +17,23 @@ const ABBREVIATION_DOT = /(?<![\p{L}\d])(np|itp|itd|tzn|tzw|tj|m\.in|p\.n\.e|n\.
 const QUOTE_CLOSER: Record<string, string> = { "„": "”", "\"": "\"", "«": "»" };
 
 /**
- * Wielokropek wewnątrz cudzysłowu („…”, "…", «…») to luka ramy, a nie koniec zdania. Skan jednoprzebiegowy
- * (regex z `[^”]*` dla niedomkniętego cudzysłowu miałby kwadratowy czas); niedomknięty cudzysłów
- * neutralizuje resztę tekstu, co tylko zaniża liczbę zdań.
+ * Wielokropek wewnątrz domkniętego cudzysłowu („…”, "…", «…») to luka ramy, a nie koniec zdania — chyba że po
+ * nim zaczyna się wielką literą nowe zdanie („Cisza… Słychać sowę.”). Skan jednoprzebiegowy (regex z `[^”]*`
+ * miałby kwadratowy czas przy niedomkniętym cudzysłowie); niedomknięty cudzysłów niczego nie maskuje.
  */
 function maskQuotedEllipsis(text: string): string {
   let closer: string | undefined;
   let masked = "";
-  for (const char of text.replace(/\.{3}/g, "…")) {
-    if (closer === undefined) closer = QUOTE_CLOSER[char];
-    else if (char === closer) closer = undefined;
-    masked += closer !== undefined && char === "…" ? "\uE001" : char;
+  let quoteStart = 0;
+  for (const char of text.replace(/\.{3,}/g, "…")) {
+    if (closer === undefined) {
+      closer = QUOTE_CLOSER[char];
+      quoteStart = masked.length;
+    } else if (char === closer) {
+      closer = undefined;
+      masked = masked.slice(0, quoteStart) + masked.slice(quoteStart).replace(/…(?!\s\p{Lu})/gu, "\uE001");
+    }
+    masked += char;
   }
   return masked;
 }
