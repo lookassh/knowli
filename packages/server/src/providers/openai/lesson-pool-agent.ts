@@ -502,9 +502,11 @@ export function packetInstructions(input: LessonPacketInput): string {
     `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective, with objectiveId "${objective.id}" in every exercise. ` +
       "The instruction and the visible context must determine one answer: a child who knows the rule can reach only the key. " +
       "Put every other correct wording into acceptedAnswers, and the form with a contraction and the full form as separate variants. " +
-      "Every exercise uses a different sentence." +
+      "Every exercise uses a different sentence. " +
+      "The child can read the cards during the exercises, so never ask for a word form or sentence the cards show (e.g. a spelling exercise on a verb the card spells out): use other words and other sentences. " +
+      "A hint never equals the answer. In a translation, the source sentence names the time (e.g. a time word) so that only the practised form is correct." +
       (input.withExamples
-        ? " Also return 1-3 short card examples of this objective (plain sentences the child sees on the card); they must never be the answer of an exercise."
+        ? " Also return 1-3 short card examples of this objective (plain sentences the child sees on the card); they must never be the answer of an exercise and use subjects and verbs that none of your exercises uses."
         : ""),
   );
   return parts.join("\n\n");

@@ -186,6 +186,7 @@ Rozstrzygnięcia: brak równoważnego wariantu (np. formy ze skrótem) = `ok` (o
 Liczone na biegu potwierdzającym, łącznie z 9 przebiegów przebiegu bazowego (3 tematy × 3) i 9 przebiegów agenta, osobno dla każdego sędziego; bramka przechodzi, gdy przechodzi u obu. Progi i porównania liczone na odsetku z próbki; przedział Wilsona tylko w raporcie.
 
 1. **Progi bezwzględne przebiegu bazowego per klasa** (bez sumowania): W1 ≤ 1%, W2 ≤ 1%, W3 ≤ 1%, W4–W9 ≤ 3%.
+   **Decyzja właściciela 2026-11-07 po rundzie 0** (sędzia 1, PS/PC): W4 i W6 tylko porównaniem z agentem (pkt 2), odsetek bezwzględny w raporcie bez progu — próg 3% nie spełnia żaden wariant (agent W4 10,8%, W6 23,0%; ok. 1/3 W6 to formy wypisane na kartach katalogu, których strojenie nie zmienia — osobne zgłoszenie). Jedna runda strojenia promptu paczki przeciw W6, potem bieg potwierdzający; rubryka bez zmian.
 2. **Porównanie z agentem** w każdej klasie: przebieg bazowy ≤ agent + 2 pp.
 2a. **Temat wstrzymany osobno**: na samym „to be” (3 przebiegi) przebieg bazowy nie ma żadnej klasy powyżej 3% (także W1–W3), żeby agregacja z tematami strojenia nie maskowała tematu spoza strojenia.
 3. **Minimum publikacji** (`poolCoverage` z `lessonPoolMinimums`, bez braków w żadnym zagadnieniu) w 3 z 3 przebiegów każdego tematu.
