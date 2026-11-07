@@ -1239,3 +1239,19 @@ describe("submit — własność: losowy JSON (generator z ziarnem, spec katalog
     expect(bare(ok.results)).toEqual([{ index: 0, accepted: "ex1" }]);
   });
 });
+
+describe("parseLessonRecord", () => {
+  it("rejects a malformed record and an exercise of another objective", async () => {
+    const { parseLessonRecord } = await import("./lesson-pool-agent-tools");
+    const { englishGrammarSubject } = await import("../../../domain/lessons/subjects/english-grammar/module");
+    const malformed = parseLessonRecord("not a record", "o", englishGrammarSubject, null);
+    expect(malformed.ok === false && malformed.rejection.code).toBe("shape_malformed");
+    const foreign = parseLessonRecord(
+      { exerciseType: "lesson_gap", objectiveId: "other", stem: "She ___ happy.", answer: "is", acceptedAnswers: [], focus: [] },
+      "o",
+      englishGrammarSubject,
+      null,
+    );
+    expect(foreign.ok === false && foreign.rejection.code).toBe("shape_objective");
+  });
+});

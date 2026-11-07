@@ -25,7 +25,7 @@ import { foreignObjectiveIssues, rawShapeIssues } from "../../../domain/lessons/
 import { clip, describeRule, ruleOf, type LessonRuleIssue, type RuleId } from "../../../domain/lessons/rules/catalog";
 import { ruleTextContextOf } from "../../../domain/lessons/rules/rule-book";
 import { formatRuleReason } from "../../../domain/lessons/rules/rule-reason";
-import type { LessonExerciseDraft, LessonTopic, SchoolCriteria } from "../../../domain/lessons/types";
+import type { LessonExerciseDraft, LessonTopic, SchoolCriteria, SubjectModule } from "../../../domain/lessons/types";
 import type {
   GraderInput,
   LessonAgentToolOutcome,
@@ -147,7 +147,7 @@ const GRADER_STAGE_TIMEOUT_REASON = "grader_stage_timeout";
 type ToolResult = LessonAgentToolResult;
 type ExamplesOutcome = NonNullable<LessonAgentToolOutcome["examples"]>;
 
-type ParsedRecord =
+export type ParsedRecord =
   | { readonly ok: true; readonly draft: LessonExerciseDraft; readonly notes: readonly LessonRuleIssue[] }
   | { readonly ok: false; readonly exerciseType: string; readonly rejection: Rejection };
 
@@ -227,6 +227,24 @@ function shapeRejection(
   return { ok: false, exerciseType, rejection: rejectionOf("shape", code, issues) };
 }
 
+/**
+ * Surowy rekord → szkic (spec katalogu reguł §4.3): materializacja typów liczonych przez kod,
+ * kształt rekordu i zagadnienie. Zgłoszenia materializacji i kształtu mają kod `shape_malformed`,
+ * obce zagadnienie `shape_objective`. Noty wspólnej sanityzacji (usunięte wyjaśnienie) trafiają do
+ * wyniku przyjęcia razem z notami przyjmowania. Wspólne dla agenta i przebiegu bazowego (etap 2).
+ */
+export function parseLessonRecord(raw: unknown, objectiveId: string, subject: SubjectModule, familyScope: string | null): ParsedRecord {
+  const materialized = materializeRawExercise(raw);
+  if (!materialized.ok) return shapeRejection(materialized.exerciseType, "shape_malformed", materialized.issues);
+  const shapeIssues = rawShapeIssues(materialized.record);
+  if (shapeIssues.length > 0) return shapeRejection(rawExerciseType(raw), "shape_malformed", shapeIssues);
+  const draft = toExerciseDraft(materialized.record);
+  const foreign = foreignObjectiveIssues(draft.objectiveId, objectiveId);
+  if (foreign.length > 0) return shapeRejection(draft.exerciseType, "shape_objective", foreign);
+  const sanitized = sanitizeFreshLessonDraft(draft, subject, familyScope);
+  return { ok: true, draft: stripParentAddedFlags([sanitized.draft])[0]!, notes: sanitized.explanationNotes };
+}
+
 function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -302,23 +320,7 @@ export function createObjectiveTools(args: ObjectiveToolsArgs): { tools: LessonO
     };
   }
 
-  /**
-   * Surowy rekord → szkic (spec katalogu reguł §4.3): materializacja typów liczonych przez kod,
-   * kształt rekordu i zagadnienie. Zgłoszenia materializacji i kształtu mają kod `shape_malformed`,
-   * obce zagadnienie `shape_objective`. Noty wspólnej sanityzacji (usunięte wyjaśnienie) trafiają do
-   * wyniku przyjęcia razem z notami przyjmowania.
-   */
-  function parseRecord(raw: unknown): ParsedRecord {
-    const materialized = materializeRawExercise(raw);
-    if (!materialized.ok) return shapeRejection(materialized.exerciseType, "shape_malformed", materialized.issues);
-    const shapeIssues = rawShapeIssues(materialized.record);
-    if (shapeIssues.length > 0) return shapeRejection(rawExerciseType(raw), "shape_malformed", shapeIssues);
-    const draft = toExerciseDraft(materialized.record);
-    const foreign = foreignObjectiveIssues(draft.objectiveId, objectiveId);
-    if (foreign.length > 0) return shapeRejection(draft.exerciseType, "shape_objective", foreign);
-    const sanitized = sanitizeFreshLessonDraft(draft, ctx.subject, args.familyScope);
-    return { ok: true, draft: stripParentAddedFlags([sanitized.draft])[0]!, notes: sanitized.explanationNotes };
-  }
+  const parseRecord = (raw: unknown): ParsedRecord => parseLessonRecord(raw, objectiveId, ctx.subject, args.familyScope);
 
   /**
    * Wspólna osłona wywołań checkera i gradera (§7.2): miejsce w semaforze, po jego zajęciu budżet,
