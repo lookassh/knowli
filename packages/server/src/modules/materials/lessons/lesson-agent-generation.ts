@@ -453,7 +453,7 @@ export async function executeLessonAgentGeneration(
       `[lesson-agent] run=${runId} start mode=${mode} attempt=${attempts} resumed=${Object.keys(begin.objectives).length} pool=${input.poolSize} remainingMs=${remainingMs}`,
     );
     // Stan kontroli etapu 2b (sędzia podpowiedzi, kontrola otwarta z graderem): jedna linia, bez treści.
-    console.log(agentCheckStartLine(runId, subject, agentDeps.grader !== undefined));
+    if (subject.baselinePool !== true) console.log(agentCheckStartLine(runId, subject, agentDeps.grader !== undefined));
     // Kopia robocza do zapisów w trakcie; scalenie wyniku liczy się od `begin` (inaczej wydatek i histogram dwa razy).
     let working = begin;
     const runWithHooks: LessonPoolAgentRunInput = {

@@ -3,9 +3,9 @@ import { NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, notes } from ".
 
 /**
  * Temat „to be” (drugi temat katalogu `english_grammar`).
- * Pięć celów w kolejności nauki dla dziecka, które dopiero poznaje angielski:
- * najpierw rozpoznanie, która osoba łączy się z am/is/are, potem skróty,
- * przeczenia, pytania przez inwersję i krótkie odpowiedzi. Karty są krótkie,
+ * Cele w kolejności nauki dla dziecka, które dopiero poznaje angielski:
+ * najpierw rozpoznanie, która osoba łączy się z am/is/are, potem (tylko wersja 1)
+ * skróty, przeczenia, pytania przez inwersję i krótkie odpowiedzi; wersja 2 (#369) nie ma skrótów. Karty są krótkie,
  * dzielą formy na trzy grupy osób i podają jedną strategię („najpierw osoba,
  * potem forma”) zamiast definicji gramatycznej. `{{examples}}` w karcie to
  * miejsce na przykłady z materiału lekcji.

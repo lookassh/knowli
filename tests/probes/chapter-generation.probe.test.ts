@@ -283,6 +283,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     const subjectKind = subjectEnv;
     const materialPath = resolveOutsideRepoPath(materialEnv, "UMIEM_PROBE_MATERIAL");
     if (materialPath === undefined && subjectKind !== "grammar") throw new Error("UMIEM_PROBE_MATERIAL jest wymagany dla chapter i school");
+    const grammarTopicId = process.env.UMIEM_PROBE_GRAMMAR_TOPIC?.trim() || "present_simple";
+    // Wbudowany materiał jest w Present Simple: inny temat bez własnego materiału nie byłby porównywalny z bramką.
+    if (materialPath === undefined && subjectKind === "grammar" && grammarTopicId !== "present_simple") {
+      throw new Error(`UMIEM_PROBE_MATERIAL jest wymagany dla tematu ${grammarTopicId}`);
+    }
     const dumpPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_DUMP, "UMIEM_PROBE_DUMP");
     const poolDumpPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_POOL_DUMP_OUT, "UMIEM_PROBE_POOL_DUMP_OUT");
     const outDir = resolveOutsideRepoPath(process.env.UMIEM_PROBE_OUT_DIR, "UMIEM_PROBE_OUT_DIR");
@@ -290,6 +295,11 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     if (outDir === undefined) throw new Error("UMIEM_PROBE_OUT_DIR jest wymagany (katalog wyników poza repozytorium)");
     if (costsPath === undefined) throw new Error("UMIEM_PROBE_COSTS jest wymagany (rejestr kosztów costs.json poza repozytorium)");
     if (poolDumpPath !== undefined && existsSync(poolDumpPath)) throw new Error(`${poolDumpPath} już istnieje — zrzut płatnego generowania nie jest nadpisywany`);
+    // Zrzut „+N” w osobnym katalogu źródła arkusza (`baseline-r1` → `baseline-add-r1/dump.json`), oceniany jako osobny wariant.
+    const addDumpPath = poolDumpPath === undefined
+      ? undefined
+      : join(dirname(dirname(poolDumpPath)), basename(dirname(poolDumpPath)).replace(/(-r\d+)?$/u, (run) => `-add${run}`), "dump.json");
+    if (addDumpPath !== undefined && existsSync(addDumpPath)) throw new Error(`${addDumpPath} już istnieje — zrzut płatnego generowania nie jest nadpisywany`);
     const addCountEnv = process.env.UMIEM_PROBE_ADD_COUNT?.trim() || undefined;
     const addCount = addCountEnv === undefined ? undefined : Number(addCountEnv);
 
@@ -323,6 +333,9 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       ...(subjectKind === "school" ? { objectives: base.llm.model } : {}),
     };
 
+    // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
+    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: lessonAgent.grader !== undefined, variant: variantOf(subjectKind) };
+
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
         ? initCostLedger(costsPath, costCapFromEnv(process.env.UMIEM_PROBE_COSTS_CAP_USD))
@@ -347,7 +360,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions, () => currentRun) } },
     });
 
-    const grammarTopicId = process.env.UMIEM_PROBE_GRAMMAR_TOPIC?.trim() || "present_simple";
     const titleOf = { chapter: "Angielski — rozdział", school: "szkoła (Geografia)", grammar: `Angielski — gramatyka (${grammarTopicId})` } as const;
     line("");
     line(`=== Próba generowania agentem puli: ${titleOf[subjectKind]} ===`);
@@ -575,6 +587,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).
       if (poolDumpPath !== undefined) {
         const poolDump = await poolDumpOf(draft, material, {
+          ...sheetFields,
           probe: "chapter-generation",
           at: new Date().toISOString(),
           subjectKind,
@@ -641,11 +654,13 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         };
         line(`„+${addCount}” (${slugOf(objectiveId)}): stan=${addRun.state}${addRun.errorCode ? ` kod=${addRun.errorCode}` : ""}; ` +
           `dodane ćwiczenia=${after - before}; próby=${add.attempts}`);
-        if (afterDraft && poolDumpPath !== undefined) {
+        if (afterDraft && addDumpPath !== undefined) {
           // Do arkusza ślepej oceny tylko ćwiczenia dodane przez „+N” (bez powtórzenia szkicu z pierwszego zrzutu).
-          const known = new Set(draft.exercises.map((exercise) => JSON.stringify(exercise)));
-          const addDumpPath = poolDumpPath.replace(/\.json$/u, "") + "-add.json";
-          const addDump = await poolDumpOf({ ...afterDraft, exercises: afterDraft.exercises.filter((exercise) => !known.has(JSON.stringify(exercise))) }, material, {
+          const known = new Set(draft.exercises.map((exercise) => exercise.revisionId));
+          mkdirSync(dirname(addDumpPath), { recursive: true });
+          const addDump = await poolDumpOf({ ...afterDraft, exercises: afterDraft.exercises.filter((exercise) => !known.has(exercise.revisionId)) }, material, {
+            ...sheetFields,
+            variant: `${variantOf(subjectKind)}-add`,
             probe: "chapter-generation",
             at: new Date().toISOString(),
             subjectKind,
@@ -686,3 +701,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     }, settleLate, (settleError) => line(`UWAGA: rozliczenie spóźnionych wywołań nie powiodło się (${errorClassOf(settleError)})`));
   });
 });
+
+/** Wariant generatora przedmiotu w zrzucie arkusza: gramatyka — przebieg bazowy (etap 4 #358), reszta — agent. */
+function variantOf(subjectKind: "chapter" | "school" | "grammar"): "baseline" | "agent" {
+  return subjectKind === "grammar" ? "baseline" : "agent";
+}

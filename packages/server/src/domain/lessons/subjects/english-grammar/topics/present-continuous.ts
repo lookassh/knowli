@@ -1,5 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
-import { NUMBERLESS_SUBJECT_NOTE, notes } from "../teaching-notes";
+import { NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Continuous (trzeci temat katalogu `english_grammar`, design
@@ -27,8 +27,8 @@ import { NUMBERLESS_SUBJECT_NOTE, notes } from "../teaching-notes";
 const PREFIX = "english_grammar.present_continuous";
 
 /**
- * Dydaktyka tematu dla generatora paczek (`generationNotesEn`, etap 4 #358): siedem wskazówek z dawnych opisów
- * reguł (`present-continuous-guidance.ts`) przy tych samych zagadnieniach, i pułapki z usuniętych heurystyk.
+ * Dydaktyka tematu dla generatora paczek (`generationNotesEn`, etap 4 #358): wskazówki z modułu sondy etapu 2
+ * (spec etapu 4 §8) przy tych samych zagadnieniach i pułapki z usuniętych heurystyk.
  * Kod jej nie sprawdza.
  */
 const PC_TOPIC_NOTES = notes(
@@ -244,7 +244,7 @@ const negative: LearningObjective = {
 
 const questions: LearningObjective = {
   id: `${PREFIX}.questions`,
-  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES),
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES, SHORT_ANSWER_CONTRACTION_NOTE),
   titlePl: "Pytania i krótkie odpowiedzi",
   descriptionEn:
     "Present continuous yes/no questions put am, is or are before the subject, followed by the verb with -ing " +

@@ -164,7 +164,7 @@ function fakeExercise(
         ],
       };
     case "lesson_gap":
-      // bez `hint`: unikamy reguły przedmiotu wiążącej odpowiedź z czasownikiem.
+      // bez `hint`: odpowiedź fake'a nie jest formą żadnego czasownika.
       return { ...base, stem: `___ here (${answer}).` };
     case "lesson_error_fix":
       return { ...base, statement: `${answer}x wrong.` };
@@ -548,10 +548,10 @@ export function fakeObjectiveExercises(
   return input.objective.examplesFromPlan ? { exercises } : { exercises, examples: generated.examples };
 }
 
-/** Odpowiedź (token `materialWord`) występuje jako osobne słowo w którymś ze zdań do unikania. */
-function avoidedToken(answer: string, avoid: readonly string[]): boolean {
-  const word = new RegExp(`(^|[^\\p{L}\\p{N}])${answer}([^\\p{L}\\p{N}]|$)`, "u");
-  return avoid.some((sentence) => word.test(sentence.toLowerCase()));
+/** Tekst występuje jako osobne słowo (tokeny liter i cyfr) w którymś ze zdań. */
+function avoidedToken(text: string, sentences: readonly string[]): boolean {
+  const word = text.toLowerCase();
+  return sentences.some((sentence) => sentence.toLowerCase().split(/[^\p{L}\p{N}]+/u).includes(word));
 }
 
 /**

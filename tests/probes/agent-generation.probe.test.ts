@@ -74,9 +74,8 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers
  *   kroki, koszt, wynik kontroli końcowej); istniejący plik nie jest nadpisywany;
  * - `UMIEM_PROBE_COSTS` — rejestr `costs.json` (musi istnieć; nowy zakłada `UMIEM_PROBE_COSTS_INIT=1`
  *   z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD; limit istniejącego rejestru się nie zmienia).
- * - `UMIEM_PROBE_AGENT_VARIANT` (etap 2 epiku #358) — `agent` albo `baseline` (przebieg bazowy
- *   `runLessonBaselinePool`); domyślnie wariant produkcyjny przedmiotu (gramatyka — `baseline`, od etapu 4
- *   tylko on; rozdział i szkoła — `agent`). Rejestr zawsze produkcyjny. Przebieg kontrolny etapu 4 idzie
+ * - wariant (etap 2 epiku #358) wynika z przedmiotu: gramatyka (`baselinePool`) — przebieg bazowy
+ *   `runLessonBaselinePool`, rozdział i szkoła — agent; rejestr produkcyjny. Przebieg kontrolny etapu 4 idzie
  *   ścieżką workera (`chapter-generation.probe.test.ts`).
  *   `graderAvailable` zawsze `true` (od etapu 3 generowanie lekcji wymaga gradera).
  * Wszystkie ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`). Na konsolę idą
@@ -248,8 +247,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
 
     const registry = createProductionSubjectRegistry();
     const subject = registry.getSubject(SUBJECT_IDS[subjectKind])!;
-    const variant = probeVariantOf(process.env.UMIEM_PROBE_AGENT_VARIANT, subject.baselinePool === true);
-    if (variant === "agent" && subject.baselinePool === true) throw new Error("gramatyka generuje się przebiegiem bazowym (UMIEM_PROBE_AGENT_VARIANT=baseline)");
+    const variant = subject.baselinePool === true ? "baseline" : "agent";
     const objectivesDump = objectivesDumpPath === undefined ? undefined : readObjectivesDump(objectivesDumpPath);
     if (objectivesDump !== undefined && objectivesDump.subjectId !== subject.id) {
       throw new Error(`zrzut zagadnień jest dla ${objectivesDump.subjectId}, próba dla ${subject.id}`);
@@ -462,9 +460,3 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
   });
 });
 
-/** Wariant sondy z env; brak = wariant produkcyjny przedmiotu. */
-function probeVariantOf(raw: string | undefined, baseline: boolean): "agent" | "baseline" {
-  const value = raw?.trim() || (baseline ? "baseline" : "agent");
-  if (value === "agent" || value === "baseline") return value;
-  throw new Error("UMIEM_PROBE_AGENT_VARIANT: agent | baseline");
-}

@@ -352,6 +352,11 @@ test("approved lesson survives reload and support without duplicate or independe
       steps += 1;
     }
     expect(completedGuidedTaskIds).toHaveLength(2);
+    // Slot słuchowy może wypaść także zaraz po drugim zadaniu (pula przebiegu bazowego ma go w każdym celu z typem słuchowym).
+    while (task.prompt.kind === "lesson_listen_choice" && steps < 12) {
+      ({ nextTask: task } = await answerGuided(kid, task));
+      steps += 1;
+    }
     expect(["lesson_choice", "lesson_order", "lesson_short_answer"]).toContain(task.prompt.kind);
     const sessionId = task.sessionId;
     const difficultyTaskId = task.taskId;

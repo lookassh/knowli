@@ -345,7 +345,7 @@ export async function runLessonBaselinePool(
     }
     // Przykłady kart po ćwiczeniach wszystkich zagadnień: linia ujawniająca odpowiedź odpada, ćwiczenie zostaje.
     for (const outcome of outcomes) {
-      if (outcome.failure === undefined) state = submitExamples(state, outcome.objective.id, Array.isArray(outcome.examples) ? outcome.examples : [], ctx).state;
+      if (!examplesFixed && outcome.failure === undefined) state = submitExamples(state, outcome.objective.id, Array.isArray(outcome.examples) ? outcome.examples : [], ctx).state;
     }
 
     const settledList: SettledObjective[] = outcomes.map((outcome) => {

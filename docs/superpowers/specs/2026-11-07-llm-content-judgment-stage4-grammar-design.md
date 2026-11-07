@@ -181,7 +181,7 @@ Sonda: wariant `baseline` woła produkcyjny rejestr przedmiotów; `agent` zostaj
 
 ## 12. Testy
 
-- `lesson-baseline-pool.test.ts`: status z `lessonAgentLimits`, wpis bez `fixed`, `ruleIds` przy `lesson_pool`, wznowienie (`fixed`, `skipObjectives`, `initialExamples`), dogenerowanie (jedno zagadnienie, paczki z `addModePlan` bez podnoszenia, bez notice i przykładów, szkic i historyjka jako źródła ujawnień i zdania do unikania), nieobsługiwane źródła zagadnień.
+- `lesson-baseline-pool.test.ts`: status z `lessonAgentLimits`, wpis bez `fixed`, `ruleIds` przy `lesson_pool`, wznowienie (`fixed`, `skipObjectives`, `initialExamples`), dogenerowanie (jedno zagadnienie, paczki z `addModePlan` bez podnoszenia, bez notice i przykładów, szkic jako źródło ujawnień i zdań do unikania, historyjka jako źródło ujawnień (jak u agenta)), nieobsługiwane źródła zagadnień.
 - `packet-plan.test.ts`: zapas 3; plan dogenerowania.
 - Worker (`lesson-agent-generation`): przedmiot z `baselinePool` idzie przebiegiem bazowym, bez pola — agentem; integracyjnie na fake'ach: nowa lekcja gramatyki, wznowienie z punktu kontrolnego (także zapisanego przez agenta), dogenerowanie zagadnienia szkicu, kontrola końcowa nie tnie przyjętych.
 - Moduł gramatyki: bez walidatora i reguł; `to_be` v2 bez `contractions`, v1 bez zmian; notatki tylko w prompcie paczki, nie w wejściu gradera.

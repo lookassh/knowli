@@ -48,7 +48,7 @@ export function packetPlan(subject: SubjectModule, objective: LearningObjective,
 
 /**
  * Paczki z gotowych celów etapów (pula: z {@link packetPlan}; „dodaj N”: braki etapów + N bez podnoszenia
- * do minimum). Etap z celem 0 nie ma paczek; słuchanie tylko, gdy cel dopuszcza typ.
+ * do minimum). Etap z celem 0 i typ z udziałem 0 nie mają paczek; słuchanie tylko, gdy cel dopuszcza typ.
  */
 export function packetPlanForTargets(objective: LearningObjective, targets: StageCounts, withNotice: boolean, listenAllowance: number): PacketPlan {
   const types = objective.exerciseTypes;
@@ -62,7 +62,8 @@ export function packetPlanForTargets(objective: LearningObjective, targets: Stag
     stageTypes.forEach((type, index) => {
       // Reszta podziału do wcześniejszych typów (kolejność katalogu zagadnienia).
       const share = Math.floor(targets[stage] / stageTypes.length) + (index < targets[stage] % stageTypes.length ? 1 : 0);
-      packets.push({ type, share, count: share + PACKET_RESERVE });
+      // Typ bez udziału (cel etapu mniejszy niż liczba typów, zwykle w „dodaj N”) nie zamawia samego zapasu.
+      if (share > 0) packets.push({ type, share, count: share + PACKET_RESERVE });
     });
   }
   if (listen > 0) packets.push({ type: "lesson_listen_choice", share: listen, count: listen });

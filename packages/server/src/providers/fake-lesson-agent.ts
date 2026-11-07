@@ -42,14 +42,10 @@ export type FakeAgentStep =
   | { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } };
 
 /**
- * Krok scenariusza paczki przebiegu bazowego (`generatePacket`): awaria, wstrzymanie albo gotowy wynik.
- * Kolejne wywołania paczek celu biorą kolejne kroki; po ich końcu — generator ({@link fakePacketExercises}).
+ * Krok scenariusza paczki przebiegu bazowego (`generatePacket`): awaria. Kolejne wywołania paczek celu biorą
+ * kolejne kroki; po ich końcu — generator ({@link fakePacketExercises}).
  */
-export type FakePacketStep =
-  | { throw: Error }
-  | { gate: Promise<void>; onReached?: () => void }
-  | { hang: true }
-  | { packet: { exercises: unknown[]; examples?: unknown[] } };
+export type FakePacketStep = { throw: Error };
 
 /** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
 export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
@@ -400,7 +396,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
   }
 
   /**
-   * Paczka przebiegu bazowego: scenariusz z `packets` albo generator ({@link fakePacketExercises}) w nowym
+   * Paczka przebiegu bazowego: awaria ze scenariusza `packets` albo generator ({@link fakePacketExercises}) w nowym
    * paśmie numeracji. Opóźnienie jak krok generatora (`delayMs`, `FAKE_SLOW_MARKER` w każdej paczce — biegną
    * równolegle); koszt zapisany przed wynikiem jako `packet_generate`.
    */
@@ -418,20 +414,8 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
       if (ms > 0) await sleepUnlessAborted(ms, signal);
       this.recordStep(cost, "packet_generate");
       const step = this.options.packets?.[slug]?.[call];
-      if (step === undefined) return fakePacketExercises(input, band);
-      if ("throw" in step) throw step.throw;
-      if ("packet" in step) return step.packet;
-      if ("gate" in step) {
-        step.onReached?.();
-        const abort = rejectOnAbort(signal);
-        try {
-          await Promise.race([step.gate, abort.promise]);
-        } finally {
-          abort.dispose();
-        }
-        return fakePacketExercises(input, band);
-      }
-      return rejectOnAbort(signal).promise;
+      if (step !== undefined) throw step.throw;
+      return fakePacketExercises(input, band);
     });
   }
 

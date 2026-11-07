@@ -55,5 +55,8 @@ describe("packetPlan", () => {
       { type: "lesson_open_answer", share: 1, count: 4 },
       { type: "lesson_listen_choice", share: 1, count: 1 },
     ]);
+    // Cel etapu mniejszy niż liczba typów: typ bez udziału nie zamawia samego zapasu.
+    const one = packetPlanForTargets(objective("present_continuous.affirmative"), { guided: 1, productive: 0, independent: 0 }, false, 0);
+    expect(one.packets).toEqual([{ type: "lesson_choice", share: 1, count: 4 }]);
   });
 });
