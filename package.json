@@ -15,6 +15,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "probe:chapter": "vitest run --config vitest.probe.config.ts tests/probes/chapter-generation.probe.test.ts",
     "probe:agent": "vitest run --config vitest.probe.config.ts tests/probes/agent-generation.probe.test.ts",
+    "probe:gold": "vitest run --config vitest.probe.config.ts tests/probes/closed-check-gold.probe.test.ts",
+    "probe:judge": "vitest run --config vitest.probe.config.ts tests/probes/blind/auto-judge.probe.test.ts",
     "probe:grading": "vitest run --config vitest.probe.config.ts tests/probes/grading.probe.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:shards": "node scripts/run-e2e-shards.cjs",
