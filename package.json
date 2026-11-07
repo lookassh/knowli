@@ -15,6 +15,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "probe:chapter": "vitest run --config vitest.probe.config.ts tests/probes/chapter-generation.probe.test.ts",
     "probe:agent": "vitest run --config vitest.probe.config.ts tests/probes/agent-generation.probe.test.ts",
+    "probe:grading": "vitest run --config vitest.probe.config.ts tests/probes/grading.probe.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:shards": "node scripts/run-e2e-shards.cjs",
     "build": "node apps/web/node_modules/next/dist/bin/next build apps/web",

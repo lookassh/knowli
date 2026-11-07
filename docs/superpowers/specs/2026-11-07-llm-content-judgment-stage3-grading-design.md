@@ -225,6 +225,53 @@ Przekroczony próg: najpierw zmieniamy prompt `grader-v2` albo model gradera i p
 
 **Koszt:** ok. 30 wywołań gradera w pierwszym przejściu (dopasowania bez modelu i powtórzenia z cache nie wołają modelu), Gemini 3.8 Flash przez OpenRouter: szacunek ≤ 0,05 USD na przebieg; limit rejestru kosztów 0,20 USD (do trzech przebiegów przy poprawkach promptu). **Płatny przebieg wymaga zgody właściciela.**
 
+## 12a. Wynik odbioru (2026-11-07)
+
+Przebieg `pnpm probe:grading` na `google/gemini-3.8-flash` przez OpenRouter: **0 naruszeń progów 1–5**, 35 wywołań gradera, koszt 0,044 USD (rejestr: 0,097 z 0,20 USD — dwa wcześniejsze przebiegi przerwał błąd harnessu sondy, nie oceny). Wszystkie powtórki przyszły z cache z tym samym wynikiem; para A ma cztery osobne wiersze cache.
+
+Obserwacja: #18 („She reads a book now.”), #19 („She isn't reading a book now.”) i #25 („Does she play?”) model ocenił jako błąd poza celem (`other`), czyli nieocenione z pokazaniem poprawnej odpowiedzi i ponowieniem — bez sukcesu, więc zgodnie z progami, ale to słabszy dowód niż błąd celu. Nie zmieniamy promptu bez dowodu z produkcji (§8 zbiorczego); wyzwalacz można policzyć ręcznym zapytaniem po `model_other`.
+
+| # | klasa | oczekiwanie | wynik (werdykt, ocena, feedback) | wywołania | powtórka |
+|---|---|---|---|---|---|
+| 1 | inne poprawne sformułowanie | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 2 | polecenie niewykonane | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 3 | błąd w ćwiczonej formie | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 4 | błąd w ćwiczonej formie | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 5 | literówka poza focus | pass | pass (minor_typo, correct, lesson_almost) | 0 | cache pass |
+| 6 | literówka w focus | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 7 | błąd w ćwiczonej formie (stara rewizja) | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 8 | inne poprawne sformułowanie (stara rewizja) | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 9 | literówka poza focus (stara rewizja) | pass | pass (model_almost, correct, lesson_almost) | 1 | cache pass |
+| 10 | skrót niegramatyczny | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 11 | skrót niegramatyczny | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 12 | skrót niegramatyczny | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 13 | inne poprawne sformułowanie (para A) | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 14 | skrót niegramatyczny (para A) | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 14r | skrót niegramatyczny (para A, odwrotna kolejność) | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 13r | inne poprawne sformułowanie (para A, odwrotna kolejność) | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 15 | błąd w ćwiczonej formie: fałszywe rozwinięcie He's (para B) | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 16 | inne poprawne sformułowanie (para B) | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 17 | poprawny skrót | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 18 | błąd w ćwiczonej formie | fail | fail (model_other, unassessed, incorrect) | 1 | cache fail |
+| 19 | negacja zmieniająca sens | fail | fail (model_other, unassessed, incorrect) | 1 | cache fail |
+| 20 | wariant ze skrótem dopisany przez rodzica | pass | pass (exact, correct, great) | 0 | cache pass |
+| 21 | poprawny skrót | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 22 | negacja zmieniająca sens | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 23 | poprawna inną formą | off_target | off_target (model_off_target, unassessed, lesson_precision_hint) | 1 | cache off_target |
+| 24 | błąd w ćwiczonej formie | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 25 | odpowiedź częściowa | fail | fail (model_other, unassessed, incorrect) | 1 | cache fail |
+| 26 | pisownia amerykańska | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 27 | alternatywny szyk | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 28 | zła kolejność | fail | fail (model_incorrect, incorrect, incorrect) | 1 | cache fail |
+| 29 | inne poprawne sformułowanie | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 30 | negacja zmieniająca sens | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 31 | błąd w ćwiczonej formie | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+| 32 | pisownia amerykańska | pass | pass (minor_typo, correct, lesson_almost) | 0 | cache pass |
+| 33 | alternatywny szyk w krokach procesu | pass | pass (model_correct, correct, great) | 1 | cache pass |
+| 34 | zła kolejność | fail | fail (model_incorrect, incorrect, incorrect) | 1 | cache fail |
+| 35 | zła kolejność | fail | fail (model_incorrect, incorrect, incorrect) | 1 | cache fail |
+| 36 | polecenie niewykonane (pełna forma zamiast skrótu) | fail | fail (model_incorrect, incorrect, lesson_hint) | 1 | cache fail |
+
 ## 13. Ryzyka
 
 - **Więcej wywołań modelu:** odpowiedzi ze skrótem wobec opublikowanych kluczy bez wariantów skrótowych idą teraz do gradera. Koszt mały (limit 150), cache dzieli werdykt na identyczne odpowiedzi.
