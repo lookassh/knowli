@@ -220,6 +220,12 @@ describe("runLessonBaselinePool", () => {
     expect(config.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(2);
   });
 
+  it("aborts the run on a code error instead of failing the objective", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const buggy = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new TypeError("bug") : undefined) });
+    await expect(run(buggy)).rejects.toThrow(TypeError);
+  });
+
   it("waits retryAfterMs (capped) before retrying a rate limit", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.useFakeTimers();

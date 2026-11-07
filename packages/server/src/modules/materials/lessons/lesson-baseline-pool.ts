@@ -164,7 +164,6 @@ export async function runLessonBaselinePool(
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
     const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
     const avoidSentences = avoidSentencesFor({ examples: {}, exercises: [], subject, cardSentences });
-    const objectiveSlots = new Semaphore(policy.concurrency);
     // Równoległość żądań: generowanie jak zagadnienia agenta, kontrola jak checker agenta; budżet sprawdzany po zajęciu miejsca.
     const generatorSlots = new Semaphore(policy.concurrency);
     const checkerSlots = new Semaphore(policy.checkerConcurrency);
@@ -253,6 +252,8 @@ export async function runLessonBaselinePool(
         return { kind: "done", drafts: passed, examples: generated.examples };
       } catch (error) {
         if (signal.aborted) throw signal.reason;
+        // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run (jak u agenta).
+        if (!(error instanceof GenerationProviderError)) throw error;
         return { kind: "failed", error };
       }
     };
@@ -280,7 +281,7 @@ export async function runLessonBaselinePool(
       return { objective, plan, packets, examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
     };
 
-    const outcomes = await Promise.all(objectives.map((objective, index) => objectiveSlots.run(() => runObjective(objective, index))));
+    const outcomes = await Promise.all(objectives.map(runObjective));
     signal.throwIfAborted();
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka; kandydat łamiący walidację odpada.
