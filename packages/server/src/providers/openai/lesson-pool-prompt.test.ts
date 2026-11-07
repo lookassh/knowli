@@ -230,6 +230,10 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
       timeoutMs: 90_000,
     });
     const prompt = packetInstructions(input);
+    // Dydaktyka celu z katalogu (etap 4 #358) stoi zaraz po opisie celu, a bez notatek wiersza nie ma.
+    expect(prompt).toContain(`Teaching notes: ${objective.generationNotesEn}`);
+    const plain = packetInput({ subject: englishGrammarSubject, topic, objective: { ...objective, generationNotesEn: undefined }, type: "lesson_choice", count: 4, withExamples: false, material: "", graderAvailable: true, avoidSentences: [], timeoutMs: 90_000 });
+    expect(packetInstructions(plain)).not.toContain("Teaching notes:");
     expect(prompt).not.toContain("the tool checks");
     expect(prompt).not.toMatch(/\blesson_gap —/u);
     await expect(prompt).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.english_grammar_present_continuous.txt");

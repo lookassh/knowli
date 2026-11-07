@@ -50,6 +50,11 @@ export interface LearningObjective {
   readonly id: string; // "english_grammar.present_simple.third_person_s"
   readonly titlePl: string; // „-s w 3. osobie”
   readonly descriptionEn: string; // opis dla promptów generacji i oceny
+  /**
+   * Dydaktyka dla generatora paczek (zwykły tekst po angielsku, etap 4 #358): tylko prompt paczki,
+   * nigdy model oceniający ani migawka celu. Brak = bez notatek.
+   */
+  readonly generationNotesEn?: string;
   readonly cards: readonly {
     readonly title: string;
     readonly body: string;

@@ -1,4 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
+import { NUMBERLESS_SUBJECT_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Continuous (trzeci temat katalogu `english_grammar`, design
@@ -24,6 +25,56 @@ import type { LearningObjective, LessonTopic } from "../../../types";
  */
 
 const PREFIX = "english_grammar.present_continuous";
+
+/**
+ * Dydaktyka tematu dla generatora paczek (`generationNotesEn`, etap 4 #358): siedem wskazówek z dawnych opisów
+ * reguł (`present-continuous-guidance.ts`) przy tych samych zagadnieniach, i pułapki z usuniętych heurystyk.
+ * Kod jej nie sprawdza.
+ */
+const PC_TOPIC_NOTES = notes(
+  "Teaching hints for the present_continuous topic: the child learns WHEN to use the tense, so every exercise makes the " +
+    "time of the action clear with a marker or a scene. Polish often uses one verb for both (Ola czyta), so the marker or the " +
+    "scene decides, never the Polish verb. " +
+    "A short Polish scene in instructionPl is a good context: its own short sentence before the task (Cicho! Dziadek śpi. " +
+    "Uzupełnij zdanie.); never use teraz, właśnie, zawsze or zwykle as words of the task " +
+    "itself (never Teraz uzupełnij zdanie.), because there they are no marker. " +
+    "A context sentence may use is or are without a verb (This is Ola., It is sunny.), but never a verb used as an " +
+    "adjective after is (never The door is open.). " +
+    "explanationPl is exactly one sentence: an exclamation or a question of the scene stands in quotes („Look!”, „Cicho!”, " +
+    "„Gdzie jest tata?”), so it ends no sentence; it names only verb forms that stand in this exercise (is cooking for a " +
+    "sentence with cooking, never another verb such as is reading). " +
+    "The examples of the objective (shown to the child on its cards) follow the rules of its exercises, with the same markers. " +
+    "Never copy an example from the objective's cards into an exercise: change at least the subject, the verb or the object. " +
+    "Polish appears only in instructionPl, explanationPl and the lesson_open_answer prompt; stems, statements, options and answers " +
+    "are in English (Polish names such as Ola are fine).",
+  "A present continuous sentence with a future time word (today, tonight, tomorrow, next week, on Monday) talks about the future, " +
+    "so these exercises never use one.",
+  NUMBERLESS_SUBJECT_NOTE,
+);
+
+/** Tłumaczenia w celach form (1, 3, 4, 5): dawny dopisek reguły tłumaczeń (tylko paczki tłumaczeń; tekst sam to zaznacza). */
+const PC_FORMS_TRANSLATION_NOTES =
+  "A translation carries the Polish now marker into English (teraz → now, w tej chwili → at the moment, Patrz! → Look!; in a " +
+  "negative never a bare teraz) and lists the other now markers the sentence allows as acceptedAnswers, never a variant " +
+  "without a marker.";
+
+/** Dydaktyka celów porównania (2 i 6). */
+const PC_TENSE_CHOICE_NOTES =
+  "Teaching hints for the tense-choice objectives (now_or_usually and now_or_usually_more): every exercise makes clear whether " +
+  "the action is happening right now or happens usually, and the child infers the time from a situation, not from a marker " +
+  "word. At least half of the lesson_gap, lesson_error_fix and gap lesson_choice exercises carry the time only in a short " +
+  "Polish scene in instructionPl and have no English time marker in the stem or statement: now — Cicho! Dziadek śpi. " +
+  "Wybierz dobrą formę. with the stem Grandpa ___ on the sofa.; usually — Tata codziennie myje auto. Popraw błąd w zdaniu. " +
+  "with Dad is washing the car. → Dad washes the car.; other scenes: Gdzie jest tata? / Ola codziennie gra w piłkę. The " +
+  "other exercises may put an English marker into the sentence (Look!, right now, every day); never write the refrain teraz " +
+  "czy zwykle in an instruction, because it has markers of both groups. Their lesson_choice options are the same verb in the two tenses " +
+  "(reads / is reading), and each stem is a different frame with its own object or place (Ola ___ a comic., Grandpa ___ on the sofa.). " +
+  "explanationPl also names the marker or the scene (Every day mówi, że to zwykle, więc Ola reads. / „Cicho!” mówi, że dziadek śpi w tej chwili, więc Grandpa is sleeping.). " +
+  "A translation carries the marker of its Polish sentence into English: a scene or a strong now marker (Patrz! → Look!, " +
+  "w tej chwili → at the moment, never a bare teraz) or a usually marker (codziennie → every day), and lists the other now " +
+  "markers the sentence allows as acceptedAnswers. " +
+  "The examples of the objective are a pair with the same verb (Look! Ola is reading. / Ola reads comics every day.).";
+
 
 /**
  * Zdanie o mieszaniu czasów w historyjce (spec §9): tylko w opisach celów
@@ -54,6 +105,7 @@ function tenseChoiceVerdict(contextScope: string, formExamples: string, hybridEx
 
 const affirmative: LearningObjective = {
   id: `${PREFIX}.affirmative`,
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES),
   titlePl: "Teraz: am/is/are + -ing",
   descriptionEn:
     "The present continuous describes an action happening right now, at this moment: am, is or are matching the subject " +
@@ -92,6 +144,13 @@ const affirmative: LearningObjective = {
 
 const nowOrUsually: LearningObjective = {
   id: `${PREFIX}.now_or_usually`,
+  generationNotesEn: notes(
+    PC_TOPIC_NOTES,
+    PC_TENSE_CHOICE_NOTES,
+    "now_or_usually also checks meaning: a lesson_choice with options exactly now and usually, instructionPl exactly " +
+      "Kiedy to się dzieje? and a stem without a marker (Ola is reading a comic. → now; Ola reads comics. → usually); a present " +
+      "simple stem there has a general plural object (Ola reads comics., not Ola reads a comic.).",
+  ),
   titlePl: "Teraz czy zwykle? (po Present Simple)",
   descriptionEn:
     "Choosing between the present simple for things that happen usually, regularly or every day (Ola reads every day.) " +
@@ -141,6 +200,11 @@ const nowOrUsually: LearningObjective = {
 
 const negative: LearningObjective = {
   id: `${PREFIX}.negative`,
+  generationNotesEn: notes(
+    PC_TOPIC_NOTES,
+    PC_FORMS_TRANSLATION_NOTES,
+    "In a negative a bare now can be read as nowadays: give a negative a strong now marker (right now, at the moment) or a scene.",
+  ),
   titlePl: "Przeczenie: isn't / aren't + -ing",
   descriptionEn:
     "Present continuous negatives for actions not happening right now: am not, isn't or aren't matching the subject " +
@@ -180,6 +244,7 @@ const negative: LearningObjective = {
 
 const questions: LearningObjective = {
   id: `${PREFIX}.questions`,
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES),
   titlePl: "Pytania i krótkie odpowiedzi",
   descriptionEn:
     "Present continuous yes/no questions put am, is or are before the subject, followed by the verb with -ing " +
@@ -227,6 +292,7 @@ const questions: LearningObjective = {
 
 const ingSpelling: LearningObjective = {
   id: `${PREFIX}.ing_spelling`,
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES),
   titlePl: "Pisownia -ing",
   descriptionEn:
     "Spelling of the -ing form (British spelling): most verbs just add -ing (play → playing, read → reading, jump → jumping); " +
@@ -267,6 +333,16 @@ const ingSpelling: LearningObjective = {
 
 const nowOrUsuallyMore: LearningObjective = {
   id: `${PREFIX}.now_or_usually_more`,
+  generationNotesEn: notes(
+    PC_TOPIC_NOTES,
+    PC_TENSE_CHOICE_NOTES,
+    "In now_or_usually_more a choice between whole questions has instructionPl exactly Wybierz poprawne pytanie. (no time and " +
+      "no scene in it), as its stem a short English context sentence without a gap about the same person or thing as the question " +
+      "that fits the key's time and never suggests the other one (Ola is in a tennis club. → Does Ola play tennis on Mondays?), " +
+      "and the time marker in both options. A lesson_error_fix there puts the present continuous into the statement and the " +
+      "present simple into the answer, with the usually marker in the statement or in a Polish scene in instructionPl (Ola isn't " +
+      "dancing on Fridays. → Ola doesn't dance on Fridays.), because the present simple with now is often correct English (nowadays).",
+  ),
   titlePl: "Teraz czy zwykle? Przeczenia i pytania",
   descriptionEn:
     "Choosing between the present simple and the present continuous in negatives and questions: " +

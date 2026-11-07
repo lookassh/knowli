@@ -771,3 +771,26 @@ describe("księga reguł — temat present_continuous (spec katalogu reguł §3,
     }
   });
 });
+
+describe("englishGrammarSubject — notatki dydaktyczne dla generatora paczek (etap 4 #358)", () => {
+  const notesOf = (topicId: string, slug: string) =>
+    englishGrammarSubject.topics.filter((topic) => topic.id === topicId).flatMap((topic) => topic.objectives).find((objective) => objective.id.endsWith(`.${slug}`))!.generationNotesEn ?? "";
+
+  it("wskazówki stoją przy tych samych zagadnieniach co dawne opisy reguł", () => {
+    for (const slug of ["affirmative", "now_or_usually", "negative", "questions", "ing_spelling", "now_or_usually_more"]) {
+      expect(notesOf("present_continuous", slug)).toContain("Teaching hints for the present_continuous topic");
+      expect(notesOf("present_continuous", slug)).toContain("future time word");
+    }
+    for (const slug of ["affirmative", "negative", "questions", "ing_spelling"]) expect(notesOf("present_continuous", slug)).toContain("A translation carries the Polish now marker");
+    for (const slug of ["now_or_usually", "now_or_usually_more"]) expect(notesOf("present_continuous", slug)).toContain("Teaching hints for the tense-choice objectives");
+    expect(notesOf("present_continuous", "now_or_usually")).toContain("now_or_usually also checks meaning");
+    expect(notesOf("present_continuous", "now_or_usually_more")).toContain("Wybierz poprawne pytanie.");
+    expect(notesOf("present_continuous", "negative")).toContain("bare now can be read as nowadays");
+    expect(notesOf("present_continuous", "affirmative")).toContain("never a verb used as an adjective after is");
+    for (const slug of ["affirmative_forms", "negative_forms", "questions", "short_answers"]) expect(notesOf("to_be", slug)).toContain("'To be' questions swap");
+    expect(notesOf("to_be", "affirmative_forms")).toContain("Picture choice");
+    expect(notesOf("to_be", "questions")).not.toContain("Picture choice");
+    for (const topicId of ["to_be", "present_simple"]) expect(notesOf(topicId, "short_answers")).toContain("never ends with a contraction");
+    expect(notesOf("present_simple", "third_person_s")).toContain("fish, sheep, deer");
+  });
+});

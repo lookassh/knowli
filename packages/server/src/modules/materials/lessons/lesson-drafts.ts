@@ -594,6 +594,7 @@ export function buildPoolInput(
       {
         id: objective.id,
         descriptionEn: objective.descriptionEn,
+        ...(objective.generationNotesEn === undefined ? {} : { generationNotesEn: objective.generationNotesEn }),
         exerciseTypes: [...objective.exerciseTypes],
         errorCategories: [...objective.errorCategories],
       },

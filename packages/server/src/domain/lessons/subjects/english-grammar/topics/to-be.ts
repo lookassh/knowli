@@ -1,4 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
+import { NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat „to be” (drugi temat katalogu `english_grammar`).
@@ -25,8 +26,23 @@ import type { LearningObjective, LessonTopic } from "../../../types";
 
 const PREFIX = "english_grammar.to_be";
 
+/** Dydaktyka tematu dla generatora paczek (`generationNotesEn`, etap 4 #358); kod jej nie sprawdza. */
+const TO_BE_NOTES = notes(
+  "'To be' questions swap the subject and the form (Is she happy?, Are they ready?); short answers repeat the form " +
+    "(Yes, she is. / No, they aren't.). Keep 'to be' sentences very short and concrete, reusing a small set of subjects " +
+    "and words from the material so the only new thing is the form of 'to be'.",
+  NUMBERLESS_SUBJECT_NOTE,
+);
+
+
 const affirmativeForms: LearningObjective = {
   id: `${PREFIX}.affirmative_forms`,
+  generationNotesEn: notes(
+    TO_BE_NOTES,
+    "Picture choice: some lesson_choice exercises set visualSubject to who is pictured; then the stem is a sentence frame with " +
+      "the pronoun missing (___ is happy. / ___ are happy.) and the options are pronouns (He, She, It, They), so the child picks " +
+      "the pronoun for the picture.",
+  ),
   titlePl: "Zdania twierdzące: am / is / are",
   descriptionEn:
     "The present forms of the verb 'to be': I am; he, she and it is; you, we and they are. " +
@@ -69,6 +85,7 @@ const affirmativeForms: LearningObjective = {
 
 const contractions: LearningObjective = {
   id: `${PREFIX}.contractions`,
+  generationNotesEn: TO_BE_NOTES,
   titlePl: "Skróty: I'm, he's, they're",
   descriptionEn:
     "Contractions of 'to be': I'm (I am), you're (you are), he's, she's and it's (is), we're and they're (are). " +
@@ -105,6 +122,7 @@ const contractions: LearningObjective = {
 
 const negativeForms: LearningObjective = {
   id: `${PREFIX}.negative_forms`,
+  generationNotesEn: TO_BE_NOTES,
   titlePl: "Przeczenia: isn't / aren't / I'm not",
   descriptionEn:
     "Negatives of 'to be': add not after am, is or are (I am not, she is not, they are not). " +
@@ -143,6 +161,7 @@ const negativeForms: LearningObjective = {
 
 const questions: LearningObjective = {
   id: `${PREFIX}.questions`,
+  generationNotesEn: TO_BE_NOTES,
   titlePl: "Pytania: Is she…? Are they…?",
   descriptionEn:
     "Questions with 'to be' swap the subject and the verb form: She is happy. becomes Is she happy? " +
@@ -182,6 +201,7 @@ const questions: LearningObjective = {
 
 const shortAnswers: LearningObjective = {
   id: `${PREFIX}.short_answers`,
+  generationNotesEn: notes(TO_BE_NOTES, SHORT_ANSWER_CONTRACTION_NOTE),
   titlePl: "Krótkie odpowiedzi: Yes, I am / No, he isn't",
   descriptionEn:
     "Short answers to 'to be' questions repeat the same form of the verb: Is she ready? Yes, she is. " +
