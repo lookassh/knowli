@@ -32,6 +32,7 @@ import {
   type LessonTaskPlan,
   type ObjectivePrecisionSnapshot,
   type ObjectiveProgressSnapshot,
+  GRADER_DEPENDENT_TYPES,
 } from "../../../domain/lessons/scheduler";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
 import { renderCard } from "../../../domain/lessons/card";
@@ -75,9 +76,6 @@ const STORY_TASK_TYPES: string[] = [...LESSON_STORY_TASK_TYPES];
  * i działają przed delegacją — tu żyje wyłącznie to, co w lekcjach inne niż w
  * słówkach. Vocabulary pozostaje nietknięte.
  */
-
-/** Domyślny limit wywołań modelu na sesję, gdy grader niekonfigurowany (zadanie 15). */
-const GRADER_CALLS_PER_SESSION_FALLBACK = 20;
 
 /** Kontekst sesji lekcji: pola wspólne + lekcyjne (bezpieczne rozszerzenie). */
 export interface LessonSessionContext extends SessionContextShape {
@@ -729,8 +727,8 @@ function planLessonTaskFromSnapshot(
     testWindowOpen: snapshot.testWindowOpen,
     graderAvailable: graderAvailable(services),
     graderCallsLeft: Math.max(0,
-      (services.grader?.maxCallsPerSession ?? GRADER_CALLS_PER_SESSION_FALLBACK) - snapshot.sessionContext.graderCalls -
-      plannedPrefix.filter((slot) => slot.exerciseType === "lesson_error_fix" || slot.exerciseType === "lesson_transform" || slot.exerciseType === "lesson_open_answer").length,
+      (services.grader?.maxCallsPerSession ?? 0) - snapshot.sessionContext.graderCalls -
+      plannedPrefix.filter((slot) => GRADER_DEPENDENT_TYPES.has(slot.exerciseType)).length,
     ),
     precisionHistory: snapshot.precisionHistory,
     policy: DEFAULT_LESSON_POLICY,

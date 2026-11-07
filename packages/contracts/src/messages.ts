@@ -1142,7 +1142,7 @@ export const messages = {
       provider_refusal: "Usługa nie przygotowała ćwiczeń dla tego materiału.",
       provider_incomplete: "Odpowiedź usługi była niepełna. Możesz ponowić próbę.",
       provider_output: "Usługa zwróciła nieprawidłowy wynik. Możesz ponowić próbę.",
-      lesson_agent_unavailable: "Generowanie lekcji wymaga klucza OpenRouter w konfiguracji serwera. Po dodaniu klucza ponów generowanie.",
+      lesson_agent_unavailable: "Generowanie lekcji wymaga klucza OpenRouter i modelu oceniającego w konfiguracji serwera. Po uzupełnieniu konfiguracji ponów generowanie.",
     } as Record<string, string>,
     stalledGenerationHint: "Jeśli generowanie się zatrzymało, możesz je ponowić.",
     retryGeneration: "Ponów generowanie",

@@ -38,7 +38,8 @@ export const CONFIG_DEFAULTS = {
   UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1",
   UMIEM_GRADER_MODEL: "google/gemini-3.8-flash",
   UMIEM_GRADER_TIMEOUT_MS: "8000",
-  UMIEM_GRADER_MAX_CALLS_PER_SESSION: "20",
+  // Największy budżet sesji (100 zadań) z zapasem na ponowienia po nieocenionych (etap 3 #360).
+  UMIEM_GRADER_MAX_CALLS_PER_SESSION: "150",
   UMIEM_SESSION_ACTIVITY_TIMEOUT_MS: "60000",
 
   // ── Obrazy (OpenAI, klucz OPENAI_API_KEY) ──

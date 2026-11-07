@@ -26,6 +26,7 @@ import { letterGroups } from "../domain/pronunciation-fragments";
 import { FUNCTION_WORDS } from "../domain/lessons/subjects/english/function-words";
 import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
 import { normalizeTokens } from "../domain/lessons/normalize";
+import { CONFIG_DEFAULTS } from "../config-defaults";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -572,7 +573,7 @@ export function fakeGraderDeps(
 ): { provider: FakeAnswerGrader; maxCallsPerSession: number; timeoutMs: number } {
   return {
     provider: options.provider ?? new FakeAnswerGrader(),
-    maxCallsPerSession: options.maxCallsPerSession ?? 20,
+    maxCallsPerSession: options.maxCallsPerSession ?? Number(CONFIG_DEFAULTS.UMIEM_GRADER_MAX_CALLS_PER_SESSION),
     timeoutMs: options.timeoutMs ?? 8000,
   };
 }
