@@ -38,7 +38,7 @@ Cards:
 [Po Does forma podstawowa] Po Does czasownik jest bez -s: Does he play? — nie „Does he plays?”.
 [Przykłady z lekcji] Zobacz pytania z naszych słówek: {{examples}}
 
-Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): none
+Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): Przy I, you, we, they czasownik zostaje bez zmian | I play, you work, we live. | he plays, she works, it runs. | goes, watches, washes, fixes. | I don't play, he doesn't play. | Pytanie zaczynamy od Do lub Does | Do you play? | Does she play? | Does he play? | Yes, I do. | No, I don't. | Yes, he does. | No, she doesn't. | she doesn't play, does he play? | Does she go?
 
 Other objectives of the lesson (do not test them):
 - Zdanie twierdzące: I, you, we, they: Forma podstawowa: Przy I, you, we, they czasownik zostaje bez zmian: I play, you work, we live. / Przykłady z lekcji: Zobacz, jak to działa na naszych słówkach: {{examples}}

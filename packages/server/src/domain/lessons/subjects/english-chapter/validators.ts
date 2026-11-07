@@ -6,7 +6,7 @@ import { listenChoiceSibilantErrors } from "../english/listen-audibility";
 import { englishNormalizer } from "../english/normalizer";
 import { checkElement, materialLexicon, type ElementCheck } from "./lexicon";
 import { chapterIssue } from "./rules";
-import { trimTrailing } from "./text";
+import { trimTrailing } from "../english/text";
 
 /**
  * Reguły przedmiotu `english_chapter` (design „Angielski — rozdział” §4.1, §4.4):
