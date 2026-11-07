@@ -1178,6 +1178,8 @@ export class LearningSessionController {
       this.#setLearning({ feedback: null });
       return;
     }
+    this.#activity?.pause("technical_wait");
+    this.#saveActivityDraft();
     this.#setLearning({ busy: true, transitioning: true, pendingChoiceId: null });
     await this.#loadNext(this.#epoch, screen.session.sessionId);
   }
@@ -1431,6 +1433,9 @@ export class LearningSessionController {
     };
     // Drugie podejście tego samego zadania: pomiar trwa dalej bez zmiany zadania.
     this.#emit();
+    // Wynik na ekranie kończy oczekiwanie techniczne: czytanie i namysł to praca.
+    this.#activity?.resultShown();
+    this.#saveActivityDraft();
     // Zakończona próba: następne zadanie i jego obrazy pobieramy już teraz,
     // w czasie oglądania feedbacku — klik „Dalej” nie czeka na sieć (przy
     // retry zadanie zostaje to samo, więc nie ma czego pobierać).
