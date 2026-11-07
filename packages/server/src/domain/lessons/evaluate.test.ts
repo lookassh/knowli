@@ -144,12 +144,13 @@ describe("evaluateChoice / evaluateSequence (typy zamknięte)", () => {
     expect(evaluateChoice("o1", key)).toBe(false);
   });
 
-  it("sequence: ta sama długość i kolejność co key.itemIds", () => {
+  it("sequence: klucz → true, inna kolejność → false, nie-permutacja → null", () => {
     const key = writtenKey({ exerciseType: "lesson_order", itemIds: ["a", "b", "c"] });
     expect(evaluateSequence(["a", "b", "c"], key)).toBe(true);
     expect(evaluateSequence(["a", "c", "b"], key)).toBe(false); // zła kolejność
-    expect(evaluateSequence(["a", "b"], key)).toBe(false); // brakujący
-    expect(evaluateSequence(["a", "b", "c", "d"], key)).toBe(false); // nadmiarowy
+    expect(evaluateSequence(["a", "b"], key)).toBeNull(); // brakujący
+    expect(evaluateSequence(["a", "b", "c", "d"], key)).toBeNull(); // nadmiarowy
+    expect(evaluateSequence(["a", "a", "c"], key)).toBeNull(); // powtórzony klocek bez itemValues
   });
 
   it("sequence: klocki o tym samym tekście są zamienne (#298)", () => {
@@ -160,8 +161,8 @@ describe("evaluateChoice / evaluateSequence (typy zamknięte)", () => {
     });
     expect(evaluateSequence(["t2", "c", "s", "t1", "d"], key)).toBe(true); // zamienione identyczne klocki
     expect(evaluateSequence(["t1", "d", "s", "t2", "c"], key)).toBe(false); // inna kolejność słów
-    expect(evaluateSequence(["t1", "c", "s", "t1", "d"], key)).toBe(false); // ten sam klocek dwa razy
-    expect(evaluateSequence(["t1", "c", "s", "x", "d"], key)).toBe(false); // obcy klocek
+    expect(evaluateSequence(["t1", "c", "s", "t1", "d"], key)).toBeNull(); // ten sam klocek dwa razy
+    expect(evaluateSequence(["t1", "c", "s", "x", "d"], key)).toBeNull(); // obcy klocek
   });
 
   it("keywords: poprawne tylko gdy każde wybrane pojęcie jest kluczowe, zakres wyborów nieoceniany", () => {

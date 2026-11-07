@@ -337,11 +337,11 @@ function gradeLessonAnswer(
   }
 
   if (input.modality === "sequence") {
-    const correct = evaluateSequence(input.itemIds, key);
-    if (correct) {
+    // Klucz ocenia kod; inną kolejność wydanych klocków — cache i model (etap 3 #360).
+    if (evaluateSequence(input.itemIds, key)) {
       return { grade: { outcome: "correct", verdict: "closed_correct" }, feedback: { kind: "great" }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_correct" } };
     }
-    return { grade: { outcome: "incorrect", verdict: "closed_incorrect" }, feedback: { kind: "incorrect", correctText }, exposures: [key.targetKey], details: { objectiveId, verdict: "closed_incorrect" } };
+    return { grade: { outcome: "unevaluated", reason: "technical", verdict: "unavailable" }, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
   }
 
   // Poprawka identyczna z oryginałem: bez oceny i modelu (trener precyzji).
@@ -476,13 +476,15 @@ export function buildGraderInput(
   task: TaskRow,
   key: LessonTaskAnswerKey,
   childAnswer: string,
+  blocks?: readonly string[],
 ): GraderInput {
   const { subject, topic, objective } = resolveObjective(services, key);
   const prompt = task.publicPrompt as { instructionPl?: string; stem?: string; statement?: string; prompt?: string; stemWithGap?: string } | null;
   return lessonGraderInput({
     subject,
     topic,
-    objective,
+    objective: { descriptionEn: objective.descriptionEn, errorCategories: allowedCategoriesFor(services, key) },
+    ...(blocks ? { blocks } : {}),
     instruction: prompt?.instructionPl ?? "",
     stimulus: prompt?.stem ?? prompt?.stemWithGap ?? prompt?.statement ?? prompt?.prompt ?? null,
     answer: key.answer,
@@ -492,10 +494,14 @@ export function buildGraderInput(
   });
 }
 
-/** Kategorie dozwolone w werdykcie dla tego celu (do `validateVerdict`). */
+/**
+ * Kategorie dozwolone w werdykcie (prompt i `validateVerdict` z jednego źródła). Rozsypanka
+ * dostaje bazową `wrong_order` — bez niej zła kolejność wracałaby jako `other` (nieoceniona).
+ */
 function allowedCategoriesFor(services: Services, key: LessonTaskAnswerKey): readonly string[] {
   const { objective } = resolveObjective(services, key);
-  return objective.errorCategories;
+  const categories = objective.errorCategories;
+  return key.exerciseType === "lesson_order" && !categories.includes("wrong_order") ? [...categories, "wrong_order"] : categories;
 }
 
 /** Szablon podpowiedzi kategorii celu (po polsku); null, gdy kategoria nieznana. */
@@ -906,6 +912,10 @@ async function startLessonAttempt(
   if (valid.modality === "assignment" && evaluateAssignment(valid.assignments, key) === null) {
     return { kind: "conflict", error: new AppError("validation", { message: "assignments do not match the task" }) };
   }
+  // Rozsypanka spoza wydanych klocków (brak, obcy albo powtórzony klocek): też błąd klienta.
+  if (valid.modality === "sequence" && evaluateSequence(valid.itemIds, key) === null) {
+    return { kind: "conflict", error: new AppError("validation", { message: "blocks do not match the task" }) };
+  }
   // Poprawka („Skróć odpowiedź”): tylko tekst albo „Dalej”; „Nie pamiętam” przy
   // własnej odpowiedzi na ekranie ujawniałoby wzorzec bez sensu dydaktycznego.
   if (key.revisionOf && valid.modality !== "text" && valid.modality !== "skip") {
@@ -1130,7 +1140,7 @@ async function finalizeLessonAttempt(
   valid: Extract<AttemptInput, { modality: LessonModality }>,
   precomputed?: LessonGradeResult,
 ): Promise<AttemptDto> {
-  const { task, session, itemId, policy, key, frozen, attemptNumber, requestHash, receivedAt } = start;
+  const { task, session, itemId, policy, key, frozen, receivedAt } = start;
   const mockTest = session.mode === "mock_test";
   const graded = precomputed
     ?? noStimulusGrade(key, frozen.assistance, valid.modality)
@@ -1147,33 +1157,7 @@ async function finalizeLessonAttempt(
   } satisfies LessonQualificationContext);
   const effectiveQualification = precisionTrainerQualification(task, qualification);
 
-  const answer =
-    valid.modality === "text"
-      ? textAnswerOf(valid.text, start.answerSource)
-      : valid.modality === "choice"
-        ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
-        : valid.modality === "sequence" || valid.modality === "selection"
-          ? { itemIds: valid.itemIds }
-          : valid.modality === "assignment"
-            ? { assignments: valid.assignments }
-            : null;
-
-  const attemptId = randomUUID();
-  await tx.insert(attempts).values({
-    id: attemptId,
-    childId: task.childId,
-    taskId: task.id,
-    itemRevisionId: task.itemRevisionId,
-    clientAttemptId: valid.clientAttemptId,
-    requestHash,
-    attemptNumber,
-    modality: valid.modality,
-    state: "processing",
-    answer,
-    context: frozen as unknown as Record<string, unknown>,
-    policyId: session.policyId,
-    receivedAt,
-  });
+  const attemptId = await reserveProcessingAttempt(tx, start, valid);
 
   // Oceny: skip nie tworzy ocen (jak słówka); pozostałe modalności tworzą jedną
   // ocenę celu (skill=objective) z `details` i kwalifikacją.
@@ -1373,17 +1357,22 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     const result = noStimulusGrade(started.key, started.frozen.assistance, typed.modality)
       ?? gradeLessonAnswer(typed, started.task, started.key, services, skipsFormCheck(started.answerSource));
 
-    // Tylko niedopasowana odpowiedź TEKSTOWA eskaluje do zapisanego werdyktu / modelu.
-    const needsModel = typed.modality === "text" && started.key.exerciseType !== "lesson_calculation" && result.grade.verdict === "unavailable";
+    // Niedopasowana odpowiedź tekstowa i inna kolejność klocków eskalują do zapisanego werdyktu / modelu.
+    const needsModel = (typed.modality === "sequence" || (typed.modality === "text" && started.key.exerciseType !== "lesson_calculation")) &&
+      result.grade.verdict === "unavailable";
     if (!needsModel) {
       const dto = await finalizeLessonAttempt(tx, services, started, typed, result);
       return { kind: "done" as const, dto };
     }
 
-    const childAnswer = typed.text;
+    // Rozsypanka: odpowiedź to klocki w kolejności dziecka, a jedynym wzorcem jest klucz
+    // ułożony z klocków (`acceptedAnswers` rozsypanki nie biorą udziału w ocenie).
+    const blocks = typed.modality === "sequence" ? typed.itemIds.map((id) => started.key.itemValues?.[id] ?? "") : undefined;
+    if (blocks) started.key = { ...started.key, answer: correctTextFor(started.key), acceptedAnswers: [] };
+    const childAnswer = blocks ? blocks.join(" ") : (typed as Extract<AttemptInput, { modality: "text" }>).text;
     const normalizedAnswer = normalizedAnswerKey(childAnswer);
     // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
-    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer) : null;
+    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks) : null;
     const promptVersion = services.grader
       ? (services.grader.provider.promptVersionForInput?.(earlyInput!) ?? services.grader.provider.promptVersion)
       : undefined;
@@ -1417,14 +1406,15 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
 
     // Rezerwacja: inkrement graderCalls + wstawienie próby `processing` w tej transakcji.
     await incrementGraderCalls(tx, started.session.id, sessionContext);
-    const attemptId = await reserveProcessingAttempt(tx, started, typed, childAnswer);
+    const attemptId = await reserveProcessingAttempt(tx, started, typed);
     return {
       kind: "grade" as const,
       start: started,
       attemptId,
       childAnswer,
       normalizedAnswer,
-      promptVersion: grader.provider.promptVersion,
+      graderInput: earlyInput!,
+      promptVersion: promptVersion!,
       graderModel: grader.provider.model,
       timeoutMs: grader.timeoutMs,
     };
@@ -1437,12 +1427,10 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
 
   // Wywołanie modelu POZA transakcją (deadline). Awaria/timeout/odrzucenie → brak werdyktu.
   const grader = services.grader!;
-  const graderInput = buildGraderInput(services, phase1.start.task, phase1.start.key, phase1.childAnswer);
+  const { graderInput } = phase1;
   const allowed = allowedCategoriesFor(services, phase1.start.key);
   let verdict: GraderVerdict | null = null;
   let schoolVerdict: SchoolVerdict | null = null;
-  const effectivePromptVersion =
-    grader.provider.promptVersionForInput?.(graderInput) ?? grader.provider.promptVersion;
   try {
     const signal = AbortSignal.timeout(phase1.timeoutMs);
     // Koszt oceny należy do sesji i dziecka (spec kosztów §4.1); zakres tylko wokół wywołania modelu.
@@ -1470,7 +1458,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     return finalizeGradedAttempt(tx, services, phase1.start, phase1.attemptId, {
       childAnswer: phase1.childAnswer,
       normalizedAnswer: phase1.normalizedAnswer,
-      promptVersion: effectivePromptVersion,
+      promptVersion: phase1.promptVersion,
       graderModel: phase1.graderModel,
       verdict,
       ...(schoolVerdict ? { schoolVerdict } : {}),
@@ -1505,13 +1493,26 @@ async function incrementGraderCalls(tx: Tx, sessionId: string, context: LessonSe
   await tx.update(learningSessions).set({ context: next }).where(eq(learningSessions.id, sessionId));
 }
 
-/** Rezerwuje próbę `processing` dla ścieżki modelu (finalizowana w fazie 2). */
+/**
+ * Wstawia próbę `processing` (zapis odpowiedzi wg modalności). Ścieżka deterministyczna
+ * finalizuje ją w tej samej transakcji, ścieżka modelu — w fazie 2.
+ */
 async function reserveProcessingAttempt(
   tx: Tx,
   start: LessonAttemptStart,
-  valid: Extract<AttemptInput, { modality: "text" }>,
-  childAnswer: string,
+  valid: Extract<AttemptInput, { modality: LessonModality }>,
 ): Promise<string> {
+  const key = start.key;
+  const answer =
+    valid.modality === "text"
+      ? textAnswerOf(valid.text, start.answerSource)
+      : valid.modality === "choice"
+        ? { optionId: valid.optionId, optionText: key.optionValues?.[valid.optionId] ?? key.segmentValues?.[valid.optionId] ?? "" }
+        : valid.modality === "sequence" || valid.modality === "selection"
+          ? { itemIds: valid.itemIds }
+          : valid.modality === "assignment"
+            ? { assignments: valid.assignments }
+            : null;
   const attemptId = randomUUID();
   await tx.insert(attempts).values({
     id: attemptId,
@@ -1521,9 +1522,9 @@ async function reserveProcessingAttempt(
     clientAttemptId: valid.clientAttemptId,
     requestHash: start.requestHash,
     attemptNumber: start.attemptNumber,
-    modality: "text",
+    modality: valid.modality,
     state: "processing",
-    answer: textAnswerOf(childAnswer, start.answerSource),
+    answer,
     context: start.frozen as unknown as Record<string, unknown>,
     policyId: start.session.policyId,
     receivedAt: start.receivedAt,
@@ -1695,7 +1696,8 @@ async function finalizeGradedAttempt(
     await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt, lessonContext);
   }
 
-  const taskState = nextLessonTaskState("text", result.grade, mockTest);
+  const modality = reserved.modality as LessonModality;
+  const taskState = nextLessonTaskState(modality, result.grade, mockTest);
   let finalTaskState: string = task.state;
   if (taskState !== "issued") {
     const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });
@@ -1722,8 +1724,6 @@ async function finalizeGradedAttempt(
     return dtoOf(fresh, freshTask.state);
   }
 
-  // finalizeGradedAttempt is only reached for an accepted textual response;
-  // an unavailable grader changes mastery, not whether the child did the work.
   // Aktywność sesji rozlicza wyłącznie raport FE na końcu sesji.
   const stepId = feedback === null ? null : await discloseLessonFeedback(tx, task, itemId, feedback, receivedAt);
   await sealFeedbackSentenceAudio(tx, task, itemId, feedback, receivedAt, services.clock.now());
@@ -1731,7 +1731,7 @@ async function finalizeGradedAttempt(
     attemptId,
     taskId: task.id,
     state: "completed",
-    modality: "text",
+    modality,
     feedback,
     taskState: finalTaskState as AttemptDto["taskState"],
     stepId,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  acceptVerdictAsVariant,
   completePresentation,
   createChild,
   createServices,
@@ -381,6 +382,93 @@ describe("etap 3 (#360): bez rozwijania skrótów i wynik „bez ćwiczonej form
     const { dto } = await world.answerTransform(0, "she isn't at home");
     expect(grader.callCount).toBe(0);
     expect(dto.feedback?.kind).toBe("great");
+  });
+});
+
+describe("etap 3 (#360): rozsypanka przez model oceniający", () => {
+  async function orderTask(services: Services, clock: Clock) {
+    const { session } = await newLesson(services, clock);
+    const task = await issueUntil(services, session.sessionId, "lesson_order");
+    const key = await answerKeyOf(task.taskId);
+    const ids = key.itemIds as string[];
+    return { session, task, ids, other: [ids[2]!, ids[0]!, ids[1]!] };
+  }
+  const sequence = (services: Services, taskId: string, itemIds: string[], clientAttemptId = randomUUID()) =>
+    submitAttempt(services, { taskId, clientAttemptId, modality: "sequence", itemIds });
+
+  it("klucz zalicza bez modelu", async () => {
+    const grader = new FakeAnswerGrader();
+    const { services, clock } = graderServices(grader);
+    const { task, ids } = await orderTask(services, clock);
+    expect((await sequence(services, task.taskId, ids)).feedback?.kind).toBe("great");
+    expect(grader.callCount).toBe(0);
+  });
+
+  it("inna kolejność → model: dostaje klocki dziecka, sam klucz jako wzorzec i kategorię wrong_order", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
+    const { services, clock } = graderServices(grader);
+    const { task, other } = await orderTask(services, clock);
+    const dto = await sequence(services, task.taskId, other);
+    expect(dto.feedback?.kind).toBe("great");
+    expect(dto.taskState).toBe("answered");
+    expect(dto.modality).toBe("sequence");
+    expect(grader.callCount).toBe(1);
+    const request = grader.requests[0]!;
+    expect(request.blocks).toEqual(["football", "She", "plays"]);
+    expect(request.childAnswer).toBe("football She plays");
+    expect(request.acceptedAnswers).toEqual(["She plays football"]);
+    expect(request.objective.errorCategories.map((c) => c.code)).toContain("wrong_order");
+    const stored = await pool.query<{ answer: unknown; modality: string }>("select answer, modality from learning_app.attempts where id = $1", [dto.attemptId]);
+    expect(stored.rows[0]).toEqual({ answer: { itemIds: other }, modality: "sequence" });
+  });
+
+  it("zła kolejność (wrong_order) → błąd z kluczem ułożonym z klocków; powtórka tej samej próby bez drugiego wywołania", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "wrong_order", fragments: [], note: "x", usesTargetForm: true } });
+    const { services, clock } = graderServices(grader);
+    const { task, other } = await orderTask(services, clock);
+    const cid = randomUUID();
+    const dto = await sequence(services, task.taskId, other, cid);
+    expect(dto.feedback).toMatchObject({ kind: "incorrect", correctText: "She plays football" });
+    expect(dto.taskState).toBe("answered");
+    const again = await sequence(services, task.taskId, other, cid);
+    expect(again.attemptId).toBe(dto.attemptId);
+    expect(grader.callCount).toBe(1);
+  });
+
+  it("klocki spoza zadania → błąd walidacji bez próby", async () => {
+    const grader = new FakeAnswerGrader();
+    const { services, clock } = graderServices(grader);
+    const { task, ids } = await orderTask(services, clock);
+    await expect(sequence(services, task.taskId, [ids[0]!, ids[1]!, randomUUID()])).rejects.toMatchObject({ code: "validation" });
+    await expect(sequence(services, task.taskId, [...ids, randomUUID()])).rejects.toMatchObject({ code: "validation" });
+    expect((await pool.query("select 1 from learning_app.attempts where task_id = $1", [task.taskId])).rowCount).toBe(0);
+  });
+
+  it("bez gradera i po limicie inna kolejność jest nieoceniona, zadanie do ponowienia", async () => {
+    const noGrader = buildTestServices();
+    const first = await orderTask(noGrader.services, noGrader.clock);
+    const without = await sequence(noGrader.services, first.task.taskId, first.other);
+    expect(without.feedback?.kind).toBe("not_assessed");
+    expect(without.taskState).toBe("issued");
+
+    await truncateCoreTables();
+    const grader = new FakeAnswerGrader();
+    const limited = graderServices(grader, { maxCallsPerSession: 1 });
+    const second = await orderTask(limited.services, limited.clock);
+    await pool.query("update learning_app.learning_sessions set context = context || '{\"graderCalls\":1}'::jsonb where id = $1", [second.session.sessionId]);
+    const over = await sequence(limited.services, second.task.taskId, second.other);
+    expect(over.feedback?.kind).toBe("not_assessed");
+    expect(over.taskState).toBe("issued");
+    expect(grader.callCount).toBe(0);
+  });
+
+  it("„uznaj jako wariant” na werdykcie rozsypanki → błąd walidacji", async () => {
+    const grader = new FakeAnswerGrader();
+    const { services, clock } = graderServices(grader);
+    const { task, other } = await orderTask(services, clock);
+    await sequence(services, task.taskId, other);
+    const verdictId = (await pool.query<{ id: string }>("select id from learning_app.lesson_verdicts")).rows[0]!.id;
+    await expect(acceptVerdictAsVariant(services, verdictId)).rejects.toMatchObject({ code: "validation" });
   });
 });
 

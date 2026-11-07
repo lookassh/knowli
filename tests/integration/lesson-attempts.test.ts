@@ -188,7 +188,7 @@ describe("ocena odpowiedzi w lekcji — typy zamknięte i sekwencja", () => {
     expect(rows.some((r) => r.outcome === "incorrect")).toBe(true);
   });
 
-  it("sekwencja poprawna → great; zła kolejność → incorrect", async () => {
+  it("sekwencja poprawna → great; inna kolejność bez modelu → nieoceniona, zadanie do ponowienia (#360)", async () => {
     const { services, clock } = buildTestServices();
     const { session } = await newLesson(services, clock);
     const task = await issueUntil(services, session.sessionId, "lesson_order");
@@ -205,8 +205,8 @@ describe("ocena odpowiedzi w lekcji — typy zamknięte i sekwencja", () => {
     const key2 = await answerKeyOf(task2.taskId);
     const reversed = [...(key2.itemIds as string[])].reverse();
     const bad = await submitAttempt(services, { taskId: task2.taskId, clientAttemptId: randomUUID(), modality: "sequence", itemIds: reversed });
-    expect(bad.feedback?.kind).toBe("incorrect");
-    expect(bad.taskState).toBe("answered");
+    expect(bad.feedback?.kind).toBe("not_assessed");
+    expect(bad.taskState).toBe("issued");
   });
 });
 

@@ -541,10 +541,15 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
   // samego learning_item w bieżącym szkicu, nie do rewizji werdyktu (która może
   // należeć do opublikowanej wersji).
   const sourceRevision = (await services.db
-    .select({ itemId: itemRevisions.itemId })
+    .select({ itemId: itemRevisions.itemId, payload: itemRevisions.payload })
     .from(itemRevisions)
     .where(eq(itemRevisions.id, verdict.itemRevisionId)))[0];
   if (!sourceRevision) throw new AppError("not_found");
+  // Rozsypankę ocenia klucz ułożony z klocków, a inną kolejność — cache werdyktów; jej
+  // `acceptedAnswers` nie biorą udziału w ocenie (etap 3 #360). Przed utworzeniem szkicu.
+  if (toExerciseDraft(sourceRevision.payload).exerciseType === "lesson_order") {
+    throw new AppError("validation", { message: "rozsypanka nie ma wariantów odpowiedzi — użyj decyzji „uznaj”" });
+  }
   const itemId = sourceRevision.itemId;
   const normalized = verdict.normalizedAnswer;
 

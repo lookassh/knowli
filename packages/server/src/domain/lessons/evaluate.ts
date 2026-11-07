@@ -198,7 +198,6 @@ export function evaluateChoice(optionId: string, key: LessonAnswerKey): boolean 
   return key.correctOptionId !== undefined && optionId === key.correctOptionId;
 }
 
-/** Ocena układania z klocków: ta sama długość i kolejność co `key.itemIds`. */
 /**
  * Wybór pojęć kluczowych (`lesson_keywords`): poprawny, gdy każde wskazane
  * pojęcie jest kluczowe. Liczba wyborów spoza [min, max] nie jest oceniana
@@ -262,19 +261,20 @@ export function assignmentText(
   }).join("; ");
 }
 
-export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKey): boolean {
-  const expected = key.itemIds;
-  if (expected === undefined || expected.length !== itemIds.length) {
-    return false;
-  }
-  const values = key.itemValues;
-  if (values === undefined) {
-    return expected.every((id, i) => id === itemIds[i]);
-  }
-  // Klocki o tym samym tekście są zamienne (#298): permutacja klocków, potem tekst na każdej pozycji.
+/**
+ * Ocena układania z klocków: `true`, gdy kolejność daje klucz (klocki o tym samym
+ * tekście są zamienne, #298); `false` dla innej kolejności wydanych klocków (ocenia
+ * ją model, etap 3 #360); `null`, gdy odpowiedź nie jest permutacją wydanych klocków
+ * — błąd klienta, nie wiedzy (jak `evaluateAssignment`).
+ */
+export function evaluateSequence(itemIds: readonly string[], key: LessonAnswerKey): boolean | null {
+  const expected = key.itemIds ?? [];
   const known = new Set(expected);
-  const isPermutation = new Set(itemIds).size === itemIds.length && itemIds.every((id) => known.has(id));
-  return isPermutation && expected.every((id, i) => values[id] === values[itemIds[i]!]);
+  const isPermutation = expected.length > 0 && expected.length === itemIds.length &&
+    new Set(itemIds).size === itemIds.length && itemIds.every((id) => known.has(id));
+  if (!isPermutation) return null;
+  const values = key.itemValues;
+  return expected.every((id, i) => (values === undefined ? id === itemIds[i] : values[id] === values[itemIds[i]!]));
 }
 
 /** Schemat werdyktu modelu — nadmiarowe pola odcięte (`.strip` domyślny w zod). */
