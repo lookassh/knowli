@@ -131,7 +131,7 @@ async function reserveTransform(services: Services, sessionId: string): Promise<
 
 describe("model oceniający — mapowanie werdyktów", () => {
   it("verdict correct → great, zadanie answered, jedno wywołanie, wpis cache", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { child, session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -146,7 +146,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   });
 
   it("verdict almost → lesson_almost z fragmentami i correctText", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "almost", errorCategory: null, fragments: ["she"], note: "typo" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "almost", errorCategory: null, fragments: ["she"], note: "typo", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -158,7 +158,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   });
 
   it("verdict incorrect z kategorią celu → lesson_hint z hintPl i fragmentami", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { child, session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -180,7 +180,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   });
 
   it("verdict incorrect kategoria other → unevaluated (model_other), zadanie issued, correctText bez podpowiedzi celu", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -203,7 +203,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
   });
 
   it("kategoria spoza listy celu → odrzucona → unevaluated, bez cache", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "not_a_real_category", fragments: [], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "not_a_real_category", fragments: [], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -226,7 +226,7 @@ describe("model oceniający — mapowanie werdyktów", () => {
 
 describe("cache werdyktów i parent_decision", () => {
   it("druga identyczna odpowiedź (inne dziecko) nie woła modelu — trafia w cache", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     // JEDNA lekcja (ten sam item_revision_id) dla dwojga dzieci — klucz cache to
     // (item_revision_id, normalized_answer, prompt_version), więc cache dzieli się
@@ -253,7 +253,7 @@ describe("cache werdyktów i parent_decision", () => {
   });
 
   it("parent_decision overridden_correct nadrzędne nad zapisanym incorrect", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
@@ -279,9 +279,114 @@ describe("cache werdyktów i parent_decision", () => {
   });
 });
 
+describe("etap 3 (#360): bez rozwijania skrótów i wynik „bez ćwiczonej formy”", () => {
+  type WorldOptions = Parameters<typeof lessonWorld>[1];
+
+  /** Jedna lekcja z bogatą pulą dla `count` dzieci (wspólne rewizje = wspólny cache werdyktów). */
+  async function sharedLesson(services: Services, clock: Clock, count: number, options: WorldOptions = {}) {
+    const children: { id: string }[] = [];
+    for (let i = 0; i < count; i++) children.push(await createChild(services, { displayName: `D${i}`, avatarKey: "owl" }));
+    const lesson = await lessonWorld(pool, { childId: children[0]!.id, richPool: true, now: clock.now(), withObjectiveAssessment: true, ...options });
+    for (const child of children.slice(1)) {
+      await seedPracticing(child.id);
+      await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [child.id, lesson.deckId]);
+    }
+    const issueTransform = async (childIndex: number) => {
+      const session = await startSession(services, { childId: children[childIndex]!.id, deckId: lesson.deckId, microphoneEnabled: false });
+      return reserveTransform(services, session.sessionId);
+    };
+    const answer = (task: TaskDto, text: string) => submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text });
+    const answerTransform = async (childIndex: number, text: string) => {
+      const task = await issueTransform(childIndex);
+      return { task, dto: await answer(task, text) };
+    };
+    return { lesson, children, issueTransform, answer, answerTransform };
+  }
+
+  const verdictOf = async (attemptId: string) =>
+    (await pool.query<{ outcome: string; details: { verdict?: string } }>("select outcome, details from learning_app.assessments where attempt_id = $1", [attemptId])).rows[0]!;
+
+  it("poprawna inną formą → zadanie zamknięte, nieocenione bez postępu, pochwała z formą ćwiczoną, ekspozycja i cache", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "inna forma", usesTargetForm: false } });
+    const { services, clock } = graderServices(grader);
+    const world = await sharedLesson(services, clock, 3);
+    const progressOf = async () => (await pool.query("select status, streak from learning_app.child_objective_progress where child_id = $1", [world.children[0]!.id])).rows;
+    const firstTask = await world.issueTransform(0);
+    const progressBefore = await progressOf();
+    const first = { task: firstTask, dto: await world.answer(firstTask, "she is playing") };
+    expect(first.dto.taskState).toBe("answered");
+    expect(first.dto.feedback).toEqual({ kind: "lesson_precision_hint", hintPl: "To też dobrze! W tej lekcji ćwiczymy tak: she plays" });
+    expect(FeedbackDtoSchema.safeParse(first.dto.feedback).success).toBe(true);
+    expect(await verdictOf(first.dto.attemptId)).toMatchObject({ outcome: "unassessed", details: { verdict: "model_off_target" } });
+    expect(await progressOf()).toEqual(progressBefore);
+    const targetKey = (await answerKeyOf(first.task.taskId)).targetKey as string;
+    const exposed = await pool.query(
+      `select 1 from learning_app.event_exposures ee join learning_app.learning_events le on le.id = ee.event_id
+        where le.task_id = $1 and le.kind = 'feedback_issued' and le.sealed and ee.target_key = $2`,
+      [first.task.taskId, targetKey],
+    );
+    expect(exposed.rowCount).toBe(1);
+    expect((await pool.query("select uses_target_form from learning_app.lesson_verdicts")).rows).toEqual([{ uses_target_form: false }]);
+
+    // Ta sama odpowiedź innego dziecka: wynik z cache, bez wywołania.
+    const second = await world.answerTransform(1, "she is playing");
+    expect(grader.callCount).toBe(1);
+    expect(second.dto.taskState).toBe("answered");
+    expect(second.dto.feedback?.kind).toBe("lesson_precision_hint");
+    expect((await verdictOf(second.dto.attemptId)).details.verdict).toBe("model_off_target");
+
+    // „Uznaj” rodzica ma pierwszeństwo przed „bez ćwiczonej formy”: sukces celu.
+    await pool.query("update learning_app.lesson_verdicts set parent_decision = 'overridden_correct', parent_decided_at = now()");
+    const third = await world.answerTransform(2, "she is playing");
+    expect(grader.callCount).toBe(1);
+    expect(third.dto.feedback?.kind).toBe("great");
+    expect((await verdictOf(third.dto.attemptId)).outcome).toBe("correct");
+  });
+
+  it.each([
+    ["she's playing", "she is playing"],
+    ["she is playing", "she's playing"],
+  ])("skrót i pełna forma (%s, potem %s) mają osobne werdykty w cache", async (firstText, secondText) => {
+    const grader = new FakeAnswerGrader()
+      .onAnswer("she's playing", { raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["playing"], note: "x", usesTargetForm: true } })
+      .onAnswer("she is playing", { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "x", usesTargetForm: true } });
+    const { services, clock } = graderServices(grader);
+    const world = await sharedLesson(services, clock, 2);
+    const first = await world.answerTransform(0, firstText);
+    const second = await world.answerTransform(1, secondText);
+    expect(grader.callCount).toBe(2);
+    expect((await verdictRows()).map((row) => row.normalizedAnswer).sort()).toEqual(["she is playing", "she's playing"]);
+    const outcomeOf = (text: string) => (text === "she is playing" ? "correct" : "incorrect");
+    expect((await verdictOf(first.dto.attemptId)).outcome).toBe(outcomeOf(firstText));
+    expect((await verdictOf(second.dto.attemptId)).outcome).toBe(outcomeOf(secondText));
+  });
+
+  it("stara rewizja z focus w formie rozwiniętej: „She don't like tea.” idzie do modelu, nie jest literówką", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["don't"], note: "x", usesTargetForm: true } });
+    const { services, clock } = graderServices(grader);
+    const world = await sharedLesson(services, clock, 1, {
+      transform: { answer: "She doesn't like tea.", focus: ["does", "not"], statement: "She likes tea.", instructionPl: "Zaprzecz." },
+    });
+    const { dto } = await world.answerTransform(0, "She don't like tea.");
+    expect(grader.callCount).toBe(1);
+    expect((await verdictOf(dto.attemptId)).outcome).toBe("incorrect");
+  });
+
+  it("wariant ze skrótem dopisany przez rodzica zalicza bez modelu", async () => {
+    const grader = new FakeAnswerGrader();
+    const { services, clock } = graderServices(grader);
+    const world = await sharedLesson(services, clock, 1, {
+      transform: { answer: "She is not at home.", focus: ["is", "not"], acceptedAnswers: ["She isn't at home."], statement: "She is at home.", instructionPl: "Zaprzecz." },
+    });
+    const { dto } = await world.answerTransform(0, "she isn't at home");
+    expect(grader.callCount).toBe(0);
+    expect(dto.feedback?.kind).toBe("great");
+  });
+});
+
 describe("rezerwacja, budżet i leniwa finalizacja", () => {
   it("limit wywołań wyczerpany → unevaluated bez wywołania", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader, { maxCallsPerSession: 0 });
     const { session } = await newLesson(services, clock, true);
     // gap jest wydawalny przy limicie 0 (nie jest typem zależnym od modelu w selekcji);
@@ -294,7 +399,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
   });
 
   it("retry przy processing → ten sam wynik bez drugiego wywołania i bez inkrementu", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -308,7 +413,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
 
   it("równoległe identyczne odpowiedzi (dwoje dzieci, ta sama lekcja) → jeden wpis cache, ten sam werdykt", async () => {
     // Grader z opóźnieniem, by oba wywołania nałożyły się przed zapisem cache.
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" }, delayMs: 150 });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true }, delayMs: 150 });
     const { services, clock } = graderServices(grader);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
     const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
@@ -332,7 +437,7 @@ describe("rezerwacja, budżet i leniwa finalizacja", () => {
   it("proces padł w trakcie processing → leniwa finalizacja po 60 s → nieocenione, zadanie issued", async () => {
     // Rezerwujemy processing wprost (jak crash po inkremencie, przed finalizacją),
     // potem przesuwamy zegar o >60 s i próbujemy ponownie — leniwa finalizacja domyka.
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);
@@ -378,7 +483,7 @@ describe("brak modelu", () => {
 
 describe("prywatność — note modelu i źródło oceny poza Kid DTO", () => {
   it("komentarz note modelu nie trafia do feedbacku dziecka", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "SEKRETNY-KOMENTARZ-RODZICA" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "SEKRETNY-KOMENTARZ-RODZICA", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
     const { session } = await newLesson(services, clock, true);
     const task = await reserveTransform(services, session.sessionId);

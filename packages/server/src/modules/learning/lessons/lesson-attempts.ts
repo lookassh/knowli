@@ -53,6 +53,7 @@ import { withUsageScope } from "../../../ports/usage";
 import type { LearningObjective, LessonTopic, SchoolCriteria, SubjectModule } from "../../../domain/lessons/types";
 import { lessonGraderInput } from "../../materials";
 import { letterSegments } from "../../../domain/lessons/letter-segments";
+import { normalizeTokens } from "../../../domain/lessons/normalize";
 import {
   projectObjectiveProgress,
   lastIndependentObjectiveAt,
@@ -159,15 +160,6 @@ function toDbObjectiveStatus(status: string): string {
     default:
       return status; // needs_confirmation / needs_reconfirmation / mastered bez zmian
   }
-}
-
-/** Czy przedmiot ma normalizator (zawsze, gdy przedmiot istnieje w rejestrze). */
-function normalizerFor(services: Services, subjectId: string) {
-  const subject = services.subjects.getSubject(subjectId);
-  if (!subject) {
-    throw new AppError("internal", { message: `lesson subject missing: ${subjectId}` });
-  }
-  return subject.normalizer;
 }
 
 /** Ujawnienie `target_key` ćwiczenia dziecku PRZED wydaniem tego zadania (req 7.2). */
@@ -465,16 +457,12 @@ function resolveObjective(services: Services, key: LessonTaskAnswerKey): { subje
 }
 
 /**
- * Deterministyczny klucz cache z odpowiedzi dziecka: pierwszy wariant sekwencji
- * z normalizatora przedmiotu, tokeny złączone spacją. Ten sam materiał (ta sama
- * znormalizowana odpowiedź) trafia w ten sam wiersz niezależnie od wielkości
- * liter czy interpunkcji — co jest sensem wspólnego cache werdyktów.
+ * Klucz cache z odpowiedzi dziecka: tokeny neutralnej normalizacji złączone spacją.
+ * Wielkość liter i interpunkcja nie dzielą werdyktów, ale skrót i pełna forma albo
+ * inna pisownia dają osobne wiersze (etap 3 #360).
  */
-function normalizedAnswerKey(services: Services, key: LessonTaskAnswerKey, text: string): string {
-  const normalizer = normalizerFor(services, key.subjectId);
-  const sequences = normalizer.normalize(text).filter((seq) => seq.length > 0);
-  const first = sequences[0];
-  return first ? first.join(" ") : text.trim().toLowerCase();
+function normalizedAnswerKey(text: string): string {
+  return normalizeTokens(text).join(" ") || text.trim().toLowerCase();
 }
 
 /**
@@ -567,6 +555,14 @@ function resultFromVerdict(
   switch (grade.verdict) {
     case "model_correct":
       return { grade, feedback: { kind: "great" }, exposures: [key.targetKey], details: detailsBase };
+    case "model_off_target":
+      // Poprawna inną formą: pochwała i forma ćwiczona w lekcji (ujawnienie zapisane przed wysłaniem).
+      return {
+        grade,
+        feedback: { kind: "lesson_precision_hint", hintPl: messages.kid.lessonPracticedForm.replace("{text}", correctText) },
+        exposures: [key.targetKey],
+        details: detailsBase,
+      };
     case "model_almost":
       return {
         grade,
@@ -756,14 +752,15 @@ export type LessonTaskStateAfterAttempt = "issued" | "answered" | "skipped";
 /**
  * Przejście stanu zadania lekcji po ocenie (ruling 113): jedna oceniona
  * odpowiedź (poprawna albo błędna) kończy zadanie (`answered`); `skip` →
- * `skipped`; brak oceny (`unevaluated`) zostawia `issued` (retry / „Pomiń”).
+ * `skipped`; brak oceny (`unevaluated`) zostawia `issued` (retry / „Pomiń”),
+ * poza wynikiem „bez ćwiczonej formy”, który zamyka zadanie (etap 3 #360).
  * W KARTKÓWCE jedna odpowiedź na slot jest zawsze terminalna: `skip` → `skipped`,
  * każda inna (w tym `unevaluated` bez kary) → `answered` (nigdy retry).
  */
-function nextLessonTaskState(modality: LessonModality, outcome: SkillOutcome, mockTest = false): LessonTaskStateAfterAttempt {
+function nextLessonTaskState(modality: LessonModality, grade: ObjectiveGrade, mockTest = false): LessonTaskStateAfterAttempt {
   if (modality === "skip") return "skipped";
   if (mockTest) return "answered";
-  if (outcome === "unevaluated") return "issued";
+  if (grade.outcome === "unevaluated" && grade.verdict !== "model_off_target") return "issued";
   return "answered";
 }
 
@@ -1209,7 +1206,7 @@ async function finalizeLessonAttempt(
     }
   }
 
-  const taskState = nextLessonTaskState(valid.modality, result.grade.outcome, mockTest);
+  const taskState = nextLessonTaskState(valid.modality, result.grade, mockTest);
   let finalTaskState: string = task.state;
   if (taskState !== "issued") {
     const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });
@@ -1384,7 +1381,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     }
 
     const childAnswer = typed.text;
-    const normalizedAnswer = normalizedAnswerKey(services, started.key, childAnswer);
+    const normalizedAnswer = normalizedAnswerKey(childAnswer);
     // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
     const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer) : null;
     const promptVersion = services.grader
@@ -1698,7 +1695,7 @@ async function finalizeGradedAttempt(
     await projectAndUpsertObjective(tx, services, task, key, policy, receivedAt, lessonContext);
   }
 
-  const taskState = nextLessonTaskState("text", result.grade.outcome, mockTest);
+  const taskState = nextLessonTaskState("text", result.grade, mockTest);
   let finalTaskState: string = task.state;
   if (taskState !== "issued") {
     const [updated] = await tx.update(sessionTasks).set({ state: taskState }).where(eq(sessionTasks.id, task.id)).returning({ state: sessionTasks.state });

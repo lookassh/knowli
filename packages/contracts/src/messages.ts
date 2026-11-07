@@ -806,6 +806,8 @@ export const messages = {
     lessonShortenOriginal: "Twoja odpowiedź",
     lessonPrecisionHint: "Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii.",
     lessonPrecisionHintOffTopic: "Wiesz to! Usuń to, co nie odpowiada na pytanie.",
+    /** Odpowiedź poprawna inną formą niż ćwiczona (etap 3 #360); `{text}` = forma ćwiczona w lekcji. */
+    lessonPracticedForm: "To też dobrze! W tej lekcji ćwiczymy tak: {text}",
     lessonSegmentRedundant: "zbędne",
     lessonSegmentOffTopic: "nie na temat",
     lessonShortenLostElement: "Krócej, ale zgubiła się ważna informacja. Porównaj z poprzednią odpowiedzią.",

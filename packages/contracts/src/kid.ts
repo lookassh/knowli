@@ -768,8 +768,8 @@ export const FeedbackDtoSchema = z.object({
       ctx.addIssue({ code: "custom", path: ["correctSegments"], message: "correctSegments must compose into correctText" });
     }
   }
-  // `lesson_precision_hint` = poprawna wiedza, ale odpowiedź do skrócenia
-  // (trener precyzji); niesie szablon zachęty jak lesson_hint.
+  // `lesson_precision_hint` = odpowiedź poprawna: do skrócenia (trener precyzji)
+  // albo inną formą niż ćwiczona (etap 3 #360); niesie linię `hintPl` jak lesson_hint.
   const HINT_KINDS = ["lesson_hint", "lesson_precision_hint"];
   if (HINT_KINDS.includes(feedback.kind) && feedback.hintPl === undefined) {
     ctx.addIssue({ code: "custom", path: ["hintPl"], message: `${feedback.kind} requires hintPl` });

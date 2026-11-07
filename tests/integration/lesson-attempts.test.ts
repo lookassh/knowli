@@ -705,7 +705,7 @@ describe("review P1-5: późna finalizacja modelu nie nadpisuje zamkniętej kart
     // w tym czasie endSession utrwala NIEZMIENNY raport (slot unassessed); powrót
     // gradera (faza 2) NIE może dopisać correct ani zmienić zadania/projekcji.
     const grader = new FakeAnswerGrader();
-    grader.onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    grader.onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
     let enter!: () => void;
     let release!: () => void;
     const entered = new Promise<void>((resolve) => { enter = resolve; });

@@ -150,7 +150,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
   });
 
   it("postęp celów: status, kategorie błędów z przykładami tylko tego dziecka, drugie dziecko izolowane", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
@@ -184,7 +184,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
   });
 
   it("werdykty: lista z flagą decyzji; decyzja NIE zmienia assessments ani child_objective_progress", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s", usesTargetForm: true } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const child = await createChild(services, { displayName: "A", avatarKey: "owl" });
@@ -222,9 +222,9 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(decisionRow.parent_decided_at).not.toBeNull();
   });
 
-  it("acceptVerdictAsVariant nie dopisuje wariantu redundantnego wobec odpowiedzi kanonicznej (pełna relacja równoważności)", async () => {
+  it("acceptVerdictAsVariant porównuje bez rozwijania skrótów: pełna forma to nowy wariant, dosłowny duplikat nie (#360)", async () => {
     const services = graderServices(null);
-    // Szkic z ćwiczeniem otwartym o odpowiedzi z DWUZACZNYM skrótem („She's” → is|has).
+    // Szkic z ćwiczeniem otwartym o odpowiedzi ze skrótem („She's late.”).
     const lesson = await lessonWorld(pool, { now: new Date(), publish: false });
     await pool.query(
       `update learning_app.item_revisions set payload = $2::jsonb where id = $1`,
@@ -251,14 +251,12 @@ describe("Parent supervision API (integracja HTTP)", () => {
       return id;
     };
 
-    // Kontrola pozytywna: werdykt nie równoważny żadnej sekwencji → wariant dopisany.
-    const added = await acceptVerdictAsVariant(services, await seedVerdict("she is very late"));
+    // Pełna forma wobec klucza ze skrótem to osobny wariant (neutralna normalizacja).
+    const added = await acceptVerdictAsVariant(services, await seedVerdict("she is late"));
     expect(added.added).toBe(true);
 
-    // Werdykt równoważny DRUGIEJ sekwencji skrótu dwuznacznego: porównanie
-    // pierwszej sekwencji (stare zachowanie) dopisałoby „she has late”, a taki
-    // wariant zablokowałby publikację regułą duplikatu po normalizacji.
-    const skipped = await acceptVerdictAsVariant(services, await seedVerdict("she has late"));
+    // Dosłowny duplikat klucza (po neutralnej normalizacji) nie jest dopisywany.
+    const skipped = await acceptVerdictAsVariant(services, await seedVerdict("she's late"));
     expect(skipped.added).toBe(false);
 
     const [row] = (await pool.query<{ payload: { answer: string; acceptedAnswers: string[] } }>(
@@ -266,7 +264,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
       [lesson.revisionId],
     )).rows;
     expect(row!.payload.answer).toBe("She's late.");
-    expect(row!.payload.acceptedAnswers).toEqual(["she is very late"]);
+    expect(row!.payload.acceptedAnswers).toEqual(["she is late"]);
   });
 
   it("acceptVerdictAsVariant zachowuje explanationPl w przebudowanym payloadzie rewizji", async () => {
@@ -309,7 +307,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
     // (wcześniej `lesson_hint` bez `hintPl`, który łamał kontrakt Kid DTO; spec 2026-11-01 §4.2).
     { initial: "correct", decision: "overridden_incorrect", feedback: "incorrect", outcome: "incorrect" },
   ])("decyzja $decision działa dla przyszłej identycznej odpowiedzi bez ponownego modelu", async ({ initial, decision, feedback, outcome }) => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: initial, errorCategory: initial === "correct" ? null : "missing_ending", fragments: initial === "correct" ? [] : ["play"], note: "x" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: initial, errorCategory: initial === "correct" ? null : "missing_ending", fragments: initial === "correct" ? [] : ["play"], note: "x", usesTargetForm: true } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
@@ -336,7 +334,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
   });
 
   it("accept-as-variant dodaje wariant w szkicu; identyczna odpowiedź dopasowana deterministycznie po publikacji; idempotentne", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
     const child = await createChild(services, { displayName: "A", avatarKey: "owl" });

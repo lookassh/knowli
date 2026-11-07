@@ -344,12 +344,10 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(revisions[0]!.payload).not.toHaveProperty("instructionPl");
   });
 
-  it("wariant acceptedAnswers redundantny wobec odpowiedzi (skrót przeczenia „to be”) jest porzucany, nie zabija ćwiczenia", async () => {
+  it("wariant acceptedAnswers równy odpowiedzi po neutralnej normalizacji jest porzucany, warianty skrótowe zostają", async () => {
     const objectiveId = "english_grammar.to_be.negative_forms";
-    // Incydent prod 2026-10-26: model regularnie podaje wariant skrótowy
-    // („They're not…”) przy odpowiedzi kanonicznej „They aren't…” — po
-    // normalizacji to ten sam tekst, więc bez sanityzacji walidacja
-    // odrzucała CAŁE ćwiczenie i cel tracił ćwiczenia samodzielne.
+    // Incydent prod 2026-10-26: wariant redundantny odrzucał CAŁE ćwiczenie, więc
+    // przyjęcie go porzuca. Od etapu 3 (#360) skrót i pełna forma to osobne warianty.
     const fakes = await agentFakes({
       objectives: {
         negative_forms: [{
@@ -361,7 +359,7 @@ describe("generowanie puli lekcji (integracja)", () => {
                 instructionPl: "Przetłumacz zdanie na angielski.",
                 prompt: "Oni nie są w mojej klasie.",
                 answer: "They aren't in my class.",
-                acceptedAnswers: ["They're not in my class.", "They are not in my class."],
+                acceptedAnswers: ["They're not in my class.", "They are not in my class.", "they aren't in my class"],
                 focus: ["aren't"],
               },
             ],
@@ -390,7 +388,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     );
     expect(revisions).toHaveLength(1);
     expect(revisions[0]!.payload.answer).toBe("They aren't in my class.");
-    expect(revisions[0]!.payload.acceptedAnswers).toEqual([]);
+    expect(revisions[0]!.payload.acceptedAnswers).toEqual(["They're not in my class.", "They are not in my class."]);
     // Sanityzacja nie jest odrzuceniem: run bez kodów odrzuceń.
     await expectNoRejections(runId);
   });
