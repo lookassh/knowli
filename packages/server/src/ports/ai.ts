@@ -195,6 +195,41 @@ export interface RunCostSink {
   record(usd: number | null): void;
 }
 
+/**
+ * Wejście paczki przebiegu bazowego (spec etapu 2 §3–§4): jedno zagadnienie i jeden typ ćwiczenia.
+ * `pool` buduje moduł dla jednego typu (księga reguł bez sekcji `lesson` i `checks`); adapter
+ * tylko renderuje prompt.
+ */
+export interface LessonPacketInput {
+  readonly pool: LessonPoolInput;
+  readonly objective: Pick<LessonObjectiveAgentInput["objective"], "id" | "title" | "cards">;
+  readonly type: string;
+  readonly count: number;
+  /** Pierwsza paczka zagadnienia zwraca też 1–3 przykłady kart. */
+  readonly withExamples: boolean;
+  readonly timeoutMs: number;
+}
+
+/** Generator paczki przebiegu bazowego: surowe rekordy bez zmian (kształt i reguły sprawdza moduł). */
+export interface LessonPacketGenerator {
+  generatePacket(input: LessonPacketInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly exercises: readonly unknown[]; readonly examples?: readonly unknown[] }>;
+}
+
+/**
+ * Kontrola zadań zamkniętych (spec etapu 2 §2): widoki dziecka bez klucza i celu. Wynik per
+ * pozycja jako `unknown` (schemat i porównanie w domenie, `closed-check.ts`); przy innej liczbie
+ * wyników niż pozycji wszystkie `undefined`.
+ */
+export interface ClosedCheckInput {
+  readonly contract: "choice" | "order";
+  readonly items: readonly { readonly view: string }[];
+  readonly timeoutMs: number;
+}
+
+export interface ClosedExerciseChecker {
+  checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }>;
+}
+
 /** Wejście podagenta jednego zagadnienia lekcji (agent puli, etap 1 issue #237). */
 export interface LessonObjectiveAgentInput {
   /**

@@ -21,9 +21,14 @@ import {
 } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
+import { CHOICE_CHECK_RESULT, ORDER_CHECK_RESULT } from "../../domain/lessons/closed-check";
 import type {
+  ClosedCheckInput,
+  ClosedExerciseChecker,
   LessonAgentPlanInput,
   LessonExerciseCheckerProvider,
+  LessonPacketGenerator,
+  LessonPacketInput,
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
   HintVerdict,
@@ -41,7 +46,7 @@ import {
 } from "../usage/record-http";
 import { lessonPoolJsonSchema } from "./lesson-pool-schema";
 import { retryAfterMs } from "./retry-after";
-import { lessonSystemPrompt, lessonUserMaterial } from "./llm";
+import { EXPLANATION_RULE, fieldMeaningRule, lessonSystemPrompt, lessonUserMaterial, renderRuleBook } from "./llm";
 
 /**
  * Adaptery portów agenta puli na AI SDK (issue #237; etap 1 spec §6.1 i §8, etap 2a spec §4):
@@ -85,7 +90,7 @@ export interface AiSdkLessonAgentOptions {
   readonly fetch?: typeof fetch;
 }
 
-type AgentOperation = "agent_plan" | "agent_objective" | "check_solve" | "check_variants" | "check_hints" | "check_open";
+type AgentOperation = "agent_plan" | "agent_objective" | "check_solve" | "check_variants" | "check_hints" | "check_open" | "packet_generate" | "check_closed";
 
 /** Koszt żądania z metadanych OpenRouter; brak, nie-liczba albo wartość ujemna = nieznany (`null`), żeby nie zaniżyć rejestru. */
 export function openRouterCostOf(meta: ProviderMetadata | undefined): number | null {
@@ -470,10 +475,59 @@ function submitSchema(input: LessonObjectiveAgentInput) {
   } as Parameters<typeof jsonSchema>[0]);
 }
 
+/**
+ * Prompt systemowy paczki przebiegu bazowego (spec etapu 2 §4): rola i języki przedmiotu, jedno
+ * zagadnienie z kartami, księga reguł jednego typu (bez sekcji agenta), pola i liczba ćwiczeń.
+ * Bez narzędzi i rund naprawy — ćwiczenie łamiące regułę odpada.
+ */
+export function packetInstructions(input: LessonPacketInput): string {
+  const { pool } = input;
+  const objective = pool.objectives[0]!;
+  const parts = [
+    pool.promptProfile.generationRole,
+    `Subject: ${pool.subjectTitle} (${pool.subjectId}). Prompt language (instructions shown to the child): ${pool.promptLocale}. ` +
+      `Answer language (the canonical answer the child produces): ${pool.answerLocale}.`,
+    `Objective "${objective.id}" (${input.objective.title}): ${objective.descriptionEn} Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
+    `Cards the child sees before the exercises:\n${input.objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n")}`,
+  ];
+  if (input.type === "lesson_transform" && pool.transforms.length > 0) {
+    parts.push(`Available transforms (use transformId only from this list): ${pool.transforms.map((t) => `${t.id} (${t.instructionPl})`).join("; ")}.`);
+  }
+  if (pool.promptProfile.fieldRules !== undefined) parts.push(`Field rules for this subject: ${pool.promptProfile.fieldRules}`);
+  if ((pool.interests?.length ?? 0) > 0 && pool.promptProfile.interestsRule !== undefined) parts.push(pool.promptProfile.interestsRule);
+  if (pool.exerciseExplanations === true) parts.push(EXPLANATION_RULE);
+  parts.push(fieldMeaningRule(pool));
+  parts.push(renderRuleBook(pool.ruleBook, { packet: true }));
+  parts.push(
+    `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective, with objectiveId "${objective.id}" in every exercise. ` +
+      "The instruction and the visible context must determine one answer: a child who knows the rule can reach only the key. " +
+      "Put every other correct wording into acceptedAnswers, and the form with a contraction and the full form as separate variants. " +
+      "Every exercise uses a different sentence." +
+      (input.withExamples
+        ? " Also return 1-3 short card examples of this objective (plain sentences the child sees on the card); they must never be the answer of an exercise."
+        : ""),
+  );
+  return parts.join("\n\n");
+}
+
+/** Schemat wyniku paczki: gałąź `exercises` schematu puli (jeden typ) i — w pierwszej paczce — linie przykładów kart. */
+function packetSchema(input: LessonPacketInput) {
+  const pool = lessonPoolJsonSchema(input.pool) as { properties: { exercises: unknown; examples: { items: { properties: { examples: unknown } } } } };
+  return jsonSchema<{ exercises?: unknown; examples?: unknown }>({
+    type: "object",
+    additionalProperties: false,
+    required: input.withExamples ? ["exercises", "examples"] : ["exercises"],
+    properties: {
+      exercises: pool.properties.exercises,
+      ...(input.withExamples ? { examples: pool.properties.examples.items.properties.examples } : {}),
+    },
+  } as Parameters<typeof jsonSchema>[0]);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Agent puli
 
-export class AiSdkLessonPoolAgent implements LessonPoolAgentProvider {
+export class AiSdkLessonPoolAgent implements LessonPoolAgentProvider, LessonPacketGenerator {
   readonly name = "ai-sdk-openrouter";
   readonly model: string;
   private readonly caller: AiSdkCaller;
@@ -536,6 +590,36 @@ export class AiSdkLessonPoolAgent implements LessonPoolAgentProvider {
     const steps = result.steps.length;
     const stopReason = tools.shouldStop() ? "stopped" : steps >= input.maxSteps ? "max_steps" : "model_finished";
     return { steps, stopReason };
+  }
+
+  /** Paczka przebiegu bazowego: jedno żądanie, limit bez ponowienia (jedyne ponowienie robi przebieg). */
+  async generatePacket(
+    input: LessonPacketInput,
+    cost: RunCostSink,
+    signal: AbortSignal,
+  ): Promise<{ readonly exercises: readonly unknown[]; readonly examples?: readonly unknown[] }> {
+    const result = await this.caller.tracked(
+      "packet_generate",
+      cost,
+      signal,
+      (hooks, model) =>
+        generateText({
+          model,
+          maxRetries: 0,
+          providerOptions: this.caller.providerOptions,
+          output: Output.object({ schema: packetSchema(input) }),
+          system: packetInstructions(input),
+          prompt: lessonUserMaterial(input.pool),
+          abortSignal: signal,
+          ...hooks,
+        }),
+      { timeoutMs: input.timeoutMs, canRetry: () => false },
+    );
+    const output = (result.output ?? {}) as { exercises?: unknown; examples?: unknown };
+    return {
+      exercises: Array.isArray(output.exercises) ? output.exercises : [],
+      ...(Array.isArray(output.examples) ? { examples: output.examples } : {}),
+    };
   }
 
   async planObjectives(
@@ -606,7 +690,7 @@ function atPosition<T>(values: readonly unknown[] | undefined, index: number, va
   return valid(value) ? value : null;
 }
 
-export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
+export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider, ClosedExerciseChecker {
   readonly name = "ai-sdk-openrouter";
   readonly model: string;
   private readonly caller: AiSdkCaller;
@@ -725,6 +809,30 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
     return { verdicts: input.items.map((_item, index) => hintVerdictOf(verdicts?.[index])) };
   }
 
+  /** Kontrola zadań zamkniętych: jedno żądanie na paczkę, wynik per pozycja jako dane (werdykt liczy domena). */
+  async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }> {
+    const item = input.contract === "choice" ? CHOICE_CHECK_RESULT : ORDER_CHECK_RESULT;
+    const result = await this.caller.tracked(
+      "check_closed",
+      cost,
+      signal,
+      (hooks, model) =>
+        generateText({
+          model,
+          maxRetries: 0,
+          providerOptions: this.caller.providerOptions,
+          output: Output.object({ schema: z.object({ results: z.array(tolerant(item)) }) }),
+          system: CHECKER_DATA_RULE,
+          prompt: closedCheckPrompt(input),
+          abortSignal: signal,
+          ...hooks,
+        }),
+      { timeoutMs: input.timeoutMs, canRetry: () => false },
+    );
+    const results = sameLength(result.output.results, input.items.length);
+    return { results: input.items.map((_item, index) => results?.[index] ?? undefined) };
+  }
+
   async solveOpen(
     input: { readonly items: readonly { readonly view: string }[]; readonly material?: string },
     cost: RunCostSink,
@@ -756,6 +864,25 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider {
     const answers = sameLength(result.output.answers, input.items.length);
     return { answers: input.items.map((_item, index) => openAnswerPairOf(answers?.[index])) };
   }
+}
+
+/** Pytanie kontroli zamkniętych per kontrakt (spec etapu 2 §2); widok bez klucza i celu. */
+export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "items">): string {
+  const question =
+    input.contract === "choice"
+      ? "Each item below is an exercise for a Polish child learning English, exactly as the child sees it. For EACH item list the exact texts of ALL " +
+        "options (or, for marking a word, ALL words) that are correct for this instruction. For an item with a recording, an option is correct only " +
+        "when it gives a correct sentence that matches the recording. Return answers: [] when no option is correct, and answers: null when you cannot decide."
+      : "Each item below is a word-blocks exercise for a Polish child learning English: the instruction, the shuffled blocks and the arranged answer. " +
+        'For EACH item decide whether the arranged answer is a correct answer to the instruction: verdict "yes", "no", or "unknown" when you cannot decide.';
+  return [
+    question,
+    `There are ${input.items.length} items. Return results: one object per item, in the given order.`,
+    "",
+    "<ITEMS>",
+    jsonForBlock(input.items.map(({ view }) => ({ view }))),
+    "</ITEMS>",
+  ].join("\n");
 }
 
 /** Prompt systemowy sędziego podpowiedzi i rozwiązującego otwarte: pola pozycji pisał inny model — to dane. */

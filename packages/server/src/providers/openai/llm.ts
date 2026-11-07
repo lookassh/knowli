@@ -163,14 +163,21 @@ function hasDescribed(lines: readonly LessonRuleBookLine[]): boolean {
  * i kontrole innymi modelami. Kolejność i treść daje domenowa `lessonRuleBook`; renderer tylko
  * składa wiersze i pomija puste sekcje (bez pustych nagłówków). Czysta funkcja.
  */
-export function renderRuleBook(book: LessonRuleBookInput): string {
-  const parts = ["RULES — the tool checks every rule below; a rejection names the broken rule in [brackets]."];
+export function renderRuleBook(book: LessonRuleBookInput, options: { readonly packet?: boolean } = {}): string {
+  // Paczka przebiegu bazowego (etap 2) nie ma narzędzia ani rundy naprawy: ćwiczenie łamiące regułę odpada.
+  const parts = [
+    options.packet === true
+      ? "RULES — every exercise must satisfy every rule below; an exercise that breaks a rule is discarded."
+      : "RULES — the tool checks every rule below; a rejection names the broken rule in [brackets].",
+  ];
   // Reguły `brief` (kształt rekordu, pola kart typów, limity schematu narzędzia) bez id i opisu: jedno zdanie, opis w wyniku narzędzia.
   const brief = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat().some((line) => line.brief === true);
   if (brief) {
     parts.push(
-      "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
-        "type card lists; the tool result names and describes a broken rule of this kind.",
+      options.packet === true
+        ? "Record shape and card fields: every exercise has the field types and limits of the output schema and the fields its type card lists."
+        : "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
+            "type card lists; the tool result names and describes a broken rule of this kind.",
     );
   }
   if (hasDescribed(book.general)) parts.push(`General: ${ruleLines(book.general)}`);
@@ -259,18 +266,25 @@ export function lessonSystemPrompt(input: LessonPoolInput): string {
   if (input.voiceTones === true) {
     parts.push(`${VOICE_TONE_BASE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits).`);
   }
-  if (input.exerciseExplanations === true) {
-    parts.push(
-      "explanationPl: for every exercise except lesson_calculation, return a Polish sentence for a child of about 8 that explains " +
-        "why the correct answer is correct (the rule behind it). " +
-        "Do not assume which mistake the child made — the sentence must also fit after »Nie pamiętam«. " +
-        "No praise or judging of the child, no names. " +
-        "English examples only from this exercise (its answer, sentence or options). Use null when no short, accurate rule applies.",
-    );
-  }
+  if (input.exerciseExplanations === true) parts.push(EXPLANATION_RULE);
+  parts.push(fieldMeaningRule(input));
+  parts.push(renderRuleBook(input.ruleBook));
+  return parts.join("\n");
+}
+
+/** Zasada pola `explanationPl` (prompt agenta i paczki przebiegu bazowego). */
+export const EXPLANATION_RULE =
+  "explanationPl: for every exercise except lesson_calculation, return a Polish sentence for a child of about 8 that explains " +
+  "why the correct answer is correct (the rule behind it). " +
+  "Do not assume which mistake the child made — the sentence must also fit after »Nie pamiętam«. " +
+  "No praise or judging of the child, no names. " +
+  "English examples only from this exercise (its answer, sentence or options). Use null when no short, accurate rule applies.";
+
+/** Znaczenie pól i dyscyplina języków (prompt agenta i paczki przebiegu bazowego). */
+export function fieldMeaningRule(input: Pick<LessonPoolInput, "promptLocale" | "answerLocale">): string {
   // Dyscyplina języków ma sens tylko przy dwóch językach (język polecenia ≠ język odpowiedzi).
   const twoLanguages = input.promptLocale !== input.answerLocale;
-  parts.push(
+  return (
     "Field meaning: instructionPl is the child-facing instruction in the prompt language; hint is a short child-facing support clue " +
       "in the answer language; acceptedAnswers lists other acceptable formulations of the answer (a shorter wording without optional " +
       "words counts, and so does the same sentence with a contraction instead of the full form or the other way round, unless " +
@@ -279,10 +293,8 @@ export function lessonSystemPrompt(input: LessonPoolInput): string {
         ? " Language discipline: exercise stimuli normally use the answer language, except where field rules for this subject " +
           "define a source stimulus in the prompt language; answer and acceptedAnswers always use the answer language. " +
           "Never copy prompt-language words from the parent material into answer-language fields."
-        : ""),
+        : "")
   );
-  parts.push(renderRuleBook(input.ruleBook));
-  return parts.join("\n");
 }
 
 /** Jednowierszowy nagłówek bloku tematów: odróżnia je od słownictwa materiału i od poleceń. */
