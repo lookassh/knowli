@@ -877,6 +877,12 @@ export const messages = {
       blind_mismatch: "drugi model rozwiązał inaczej",
       variant_rejected: "niepoprawny wariant odpowiedzi",
       open_not_accepted: "odpowiedź próbna nie przeszła oceny",
+      // Przebieg bazowy gramatyki (etap 4 #358): paczki cel × typ i kontrola zadań zamkniętych.
+      shape_type: "ćwiczenie innego typu niż zamówione",
+      over_count: "więcej ćwiczeń niż zamówiono",
+      check_wrong_set: "drugi model wskazał inną odpowiedź",
+      check_unknown: "drugi model nie rozstrzygnął odpowiedzi",
+      check_order_no: "drugi model uznał ułożenie za błędne",
     } as Record<string, string>,
     agentRejectionOther: "inne powody",
     droppedObjectiveCount: "Pominięto zagadnień z modelu: {n}",
