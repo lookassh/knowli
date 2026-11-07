@@ -273,6 +273,9 @@ describe("runLessonBaselinePool", () => {
     await expect(run(generator, undefined, { target: { mode: "add", objectiveId: first, count: 2 } })).rejects.toBeInstanceOf(AppError);
     const fixed = { exerciseType: "lesson_gap" as const, objectiveId: first, stem: "x ___", answer: "y", acceptedAnswers: [], focus: [] };
     await expect(run(generator, undefined, { fixed: [fixed] })).rejects.toBeInstanceOf(AppError);
+    for (const resume of [{ skipObjectives: [first] }, { draftExamples: { [first]: ["I play."] } }, { initialExamples: { [first]: ["I play."] } }, { examplesFixed: false }, { extraExposureSources: ["I play."] }]) {
+      await expect(run(generator, undefined, resume)).rejects.toBeInstanceOf(AppError);
+    }
     expect(generator.calls).toHaveLength(0);
   });
 

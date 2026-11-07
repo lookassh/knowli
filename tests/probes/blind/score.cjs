@@ -59,10 +59,21 @@ const CLASS_APPLIES = {
 const CLASSES = Object.keys(CLASS_APPLIES);
 
 const criteriaOf = (verdict) => verdict.criterion.split("|").map((c) => c.trim()).filter(Boolean);
+const LEVELS = ["", "too_hard", "too_easy"];
+
+/** Kształt werdyktu (etap 2): `ok` bez klasy, `defect` z klasą, `level` z listy; inaczej opis błędu. */
+function verdictProblem(verdict) {
+  const value = verdict.verdict.trim();
+  if (value !== "ok" && value !== "defect") return `werdykt „${value}” spoza ok/defect`;
+  if (value === "ok" && criteriaOf(verdict).length > 0) return "ok z klasą";
+  if (value === "defect" && criteriaOf(verdict).length === 0) return "defect bez klasy";
+  if (!LEVELS.includes(verdict.level?.trim() ?? "")) return `nieznany level „${verdict.level}”`;
+  return undefined;
+}
 
 /**
  * Raport etapu 2. `groups`: `{ key, verdicts }[]` (jeden temat na grupę). Rzuca przy powtórzonym `rowId`,
- * werdykcie bez wiersza klucza, `defect` bez klasy albo klasie spoza mianownika; wiersze bez werdyktu raportuje.
+ * werdykcie bez wiersza klucza, złym kształcie werdyktu (`verdictProblem`) albo klasie spoza mianownika; wiersze bez werdyktu raportuje.
  */
 function scoreStage2(groups) {
   const keyRows = new Map();
@@ -80,9 +91,10 @@ function scoreStage2(groups) {
       const row = keyRows.get(verdict.rowId);
       if (row === undefined) throw new Error(`werdykt bez wiersza klucza: ${verdict.rowId}`);
       if (judged.has(verdict.rowId)) throw new Error(`dwa werdykty wiersza ${verdict.rowId}`);
+      const problem = verdictProblem(verdict);
+      if (problem !== undefined) throw new Error(`${problem}: ${verdict.rowId}`);
       const defect = verdict.verdict.trim() === "defect";
       const classes = defect ? criteriaOf(verdict) : [];
-      if (defect && classes.length === 0) throw new Error(`defect bez klasy: ${verdict.rowId}`);
       for (const name of classes) {
         if (!CLASS_APPLIES[name]) throw new Error(`nieznana klasa ${name} w ${verdict.rowId}`);
         if (!CLASS_APPLIES[name](row)) throw new Error(`klasa ${name} nie dotyczy typu ${row.type} (${verdict.rowId})`);
@@ -213,4 +225,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2));
 
-module.exports = { wilson, scoreStage2, agreement, parseCsv, CLASS_APPLIES };
+module.exports = { wilson, scoreStage2, agreement, parseCsv, CLASS_APPLIES, verdictProblem };

@@ -56,6 +56,13 @@ describe("score.cjs (etap 2)", () => {
     expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "defect", "K3")] }])).toThrow(/nieznana/u);
   });
 
+  it("rejects an empty or misspelled verdict, ok with a class and an unknown level", () => {
+    expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "", "W1")] }])).toThrow(/spoza ok\/defect/u);
+    expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "defekt", "W1")] }])).toThrow(/spoza ok\/defect/u);
+    expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "ok", "W1")] }])).toThrow(/ok z klasą/u);
+    expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "ok", "", "bogus")] }])).toThrow(/nieznany level/u);
+  });
+
   it("measures agreement of two judges per class", () => {
     const result = agreement(key, [verdict("tb-r001", "defect", "W3"), verdict("tb-r003", "ok")], [verdict("tb-r001", "ok"), verdict("tb-r003", "ok")]);
     expect(result.W3).toEqual({ agree: 0, n: 1, differing: ["tb-r001"] });

@@ -76,6 +76,14 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
   if (input.objectiveSource.source !== "catalog") throw new AppError("validation", { message: "baseline pool needs catalog objectives" });
   if (input.target !== undefined && input.target.mode !== "pool") throw new AppError("validation", { message: "baseline pool supports pool mode only" });
   if (input.fixed.length > 0) throw new AppError("validation", { message: "baseline pool starts without fixed exercises" });
+  // Wznowienia i przykłady z zewnątrz obsłuży dopiero etap 4 — odrzucenie zamiast cichego pominięcia.
+  const resumed =
+    input.skipObjectives.length > 0 ||
+    Object.keys(input.draftExamples).length > 0 ||
+    Object.keys(input.initialExamples ?? {}).length > 0 ||
+    input.examplesFixed !== undefined ||
+    (input.extraExposureSources?.length ?? 0) > 0;
+  if (resumed) throw new AppError("validation", { message: "baseline pool does not support resume inputs yet" });
   return { subject, topic: input.objectiveSource.topic };
 }
 

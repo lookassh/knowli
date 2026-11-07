@@ -22,8 +22,9 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "../probe-helper
  */
 
 const require = createRequire(import.meta.url);
-const { parseCsv, CLASS_APPLIES } = require("./score.cjs") as {
+const { parseCsv, CLASS_APPLIES, verdictProblem } = require("./score.cjs") as {
   parseCsv(text: string): Record<string, string>[];
+  verdictProblem(verdict: { verdict: string; criterion: string; level: string }): string | undefined;
   CLASS_APPLIES: Record<string, (row: { type: string; hasExplanation: boolean }) => boolean>;
 };
 
@@ -41,7 +42,7 @@ const VERDICTS = z.object({
 });
 type Verdict = z.infer<typeof VERDICTS>["rows"][number];
 
-/** Błędy partii: inne `rowId`, `defect` bez klasy, klasa nieznana albo spoza typu ćwiczenia. */
+/** Błędy partii: inne `rowId`, zły kształt werdyktu (jak w `score.cjs`), klasa nieznana albo spoza typu ćwiczenia. */
 function batchErrors(rows: readonly Record<string, string>[], verdicts: readonly Verdict[]): string[] {
   const expected = new Set(rows.map((row) => row.rowId));
   const got = verdicts.map((verdict) => verdict.rowId);
@@ -53,7 +54,8 @@ function batchErrors(rows: readonly Record<string, string>[], verdicts: readonly
     const exercise = JSON.parse(row.exercise!) as { exerciseType?: string; explanationPl?: unknown };
     const facts = { type: exercise.exerciseType ?? "unknown", hasExplanation: typeof exercise.explanationPl === "string" && exercise.explanationPl.trim() !== "" };
     const classes = verdict.criterion.split("|").map((name) => name.trim()).filter(Boolean);
-    if (verdict.verdict === "defect" && classes.length === 0) errors.push(`${verdict.rowId}:no_class`);
+    const problem = verdictProblem(verdict);
+    if (problem !== undefined) errors.push(`${verdict.rowId}:${problem}`);
     for (const name of classes) if (!CLASS_APPLIES[name]?.(facts)) errors.push(`${verdict.rowId}:${name}`);
   }
   return errors;
