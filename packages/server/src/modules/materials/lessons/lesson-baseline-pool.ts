@@ -281,7 +281,7 @@ export async function runLessonBaselinePool(
       return { objective, plan, packets, examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
     };
 
-    const outcomes = await Promise.all(objectives.map(runObjective));
+    const outcomes = await Promise.all(objectives.map((objective, index) => runObjective(objective, index)));
     signal.throwIfAborted();
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka; kandydat łamiący walidację odpada.

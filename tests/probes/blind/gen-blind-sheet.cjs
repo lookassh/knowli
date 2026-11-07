@@ -74,7 +74,7 @@ const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
  */
 function blindContent(exercise) {
   const content = {};
-  for (const field of Object.keys(exercise ?? {}).sort()) {
+  for (const field of Object.keys(exercise ?? {}).sort((a, b) => a.localeCompare(b))) {
     if (field === "id" || field === "revisionId" || field.endsWith("Audio")) continue;
     const value = exercise[field];
     content[field] = field === "objectiveId" ? String(value ?? "").split(".").at(-1) : value;
