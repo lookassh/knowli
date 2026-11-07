@@ -13,7 +13,7 @@ import type { LearningObjective, LessonExerciseType, SubjectModule } from "./typ
 export const PACKET_RESERVE = 2;
 
 /** Ćwiczeń `lesson_notice` (intro, poza minimum publikacji) na zagadnienie. */
-export const NOTICE_PER_OBJECTIVE = 2;
+const NOTICE_PER_OBJECTIVE = 2;
 
 export interface StageCounts {
   readonly guided: number;
@@ -25,7 +25,6 @@ export interface PacketPlan {
   readonly packets: readonly { readonly type: LessonExerciseType; readonly count: number }[];
   /** Najwięcej przyjętych ćwiczeń etapu po przycięciu. */
   readonly stageTargets: StageCounts;
-  readonly listenAllowance: number;
 }
 
 const STAGES = ["guided", "productive", "independent"] as const;
@@ -50,5 +49,5 @@ export function packetPlan(subject: SubjectModule, objective: LearningObjective,
     });
   }
   if (listenAllowance > 0 && types.includes("lesson_listen_choice")) packets.push({ type: "lesson_listen_choice", count: listenAllowance });
-  return { packets, stageTargets, listenAllowance };
+  return { packets, stageTargets };
 }
