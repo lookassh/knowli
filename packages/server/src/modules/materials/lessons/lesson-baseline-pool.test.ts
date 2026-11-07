@@ -226,6 +226,31 @@ describe("runLessonBaselinePool", () => {
     await expect(run(buggy)).rejects.toThrow(TypeError);
   });
 
+  it("starts no further paid call after a code error and rejects only when all work has stopped", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Jedno miejsce w semaforze: pozostałe 5 paczek czeka w kolejce, gdy pierwsza rzuca błąd kodu.
+    let started = 0;
+    const buggy = new FakeGenerator({ fail: () => ((started += 1) === 1 ? new TypeError("bug") : undefined) });
+    await expect(run(buggy, undefined, {}, { concurrency: 1 })).rejects.toThrow(TypeError);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(buggy.calls).toHaveLength(1);
+  });
+
+  it("does not retry a rate limit once the budget ran out during the wait", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const isFirstGap = (input: LessonPacketInput) => input.objective.id === first && input.type === "lesson_gap";
+    const generator = new FakeGenerator({
+      delay: (input) => (isFirstGap(input) ? 0 : 1_000),
+      fail: (input, attempt) => (isFirstGap(input) && attempt === 1 ? new GenerationProviderError("rate_limit", { retryAfterMs: 5_000 }) : undefined),
+    });
+    // 0,001 USD przy błędzie 429, potem trzy równoległe paczki po 0,001 w trakcie czekania — budżet 0,0025 wyczerpany przed ponowieniem.
+    const pending = run(generator, new FakeChecker(), {}, { runBudgetUsd: 0.0025, concurrency: 4 });
+    await vi.advanceTimersByTimeAsync(6_000);
+    await pending;
+    expect(generator.calls.filter(isFirstGap)).toHaveLength(1);
+  });
+
   it("waits retryAfterMs (capped) before retrying a rate limit", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.useFakeTimers();

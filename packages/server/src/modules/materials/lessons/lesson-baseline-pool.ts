@@ -138,15 +138,24 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Jedno ponowienie błędu technicznego; 429 po `retryAfterMs` (najwyżej 30 s); bez ponowienia po wyczerpaniu budżetu. */
-async function withRetry<T>(call: () => Promise<T>, signal: AbortSignal, exhausted: () => boolean): Promise<T> {
+/** Jedno ponowienie błędu technicznego; 429 po `retryAfterMs` (najwyżej 30 s); bez ponowienia po wyczerpaniu budżetu (także w trakcie czekania). */
+async function withRetry<T>(call: () => Promise<T>, signal: AbortSignal, exhausted: () => boolean): Promise<T | typeof STOPPED> {
   try {
     return await call();
   } catch (error) {
     if (signal.aborted || !(error instanceof GenerationProviderError) || !RETRIED.has(error.kind) || exhausted()) throw error;
     if (error.kind === "rate_limit") await pause(Math.min(error.retryAfterMs ?? 1_000, MAX_RATE_LIMIT_WAIT_MS), signal);
+    if (exhausted()) return STOPPED;
     return call();
   }
+}
+
+/** Jak `Promise.all`, ale odrzuca dopiero po zakończeniu wszystkich zadań — żadne wywołanie nie zostaje w tle. */
+async function allSettledOrThrow<T>(tasks: readonly Promise<T>[]): Promise<T[]> {
+  const results = await Promise.allSettled(tasks);
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed !== undefined) throw failed.reason;
+  return results.map((result) => (result as PromiseFulfilledResult<T>).value);
 }
 
 export async function runLessonBaselinePool(
@@ -158,7 +167,9 @@ export async function runLessonBaselinePool(
   signal.throwIfAborted();
   const policy: LessonAgentPolicy = { ...DEFAULT_LESSON_AGENT_POLICY, ...deps.policy };
   const cost = new RunCostMeter(input.initialSpentUsd, policy.runBudgetUsd, policy.unknownCallEstimateUsd, input.onSpend);
-  const runDeadline = deadlineSignal(signal, policy.runTimeoutMs, RUN_TIMEOUT_REASON);
+  // Błąd kodu w jednej paczce zatrzymuje pozostałe (bez nowych płatnych wywołań), zanim run zgłosi błąd.
+  const crash = new AbortController();
+  const runDeadline = deadlineSignal(AbortSignal.any([signal, crash.signal]), policy.runTimeoutMs, RUN_TIMEOUT_REASON);
   const stats = emptyLessonPoolAgentStats();
   const rejections: RejectionLogEntry[] = [];
   const reject = (objectiveId: string, exerciseType: string, kind: RejectionLogEntry["kind"], code: string, ruleIds: readonly string[] = []) => {
@@ -185,6 +196,8 @@ export async function runLessonBaselinePool(
         } catch (error) {
           if (signal.aborted) throw signal.reason;
           if (runDeadline.signal.aborted) return STOPPED;
+          // Przed zwolnieniem miejsca w semaforze — czekające wywołanie widzi już przerwanie.
+          if (!(error instanceof GenerationProviderError)) crash.abort(error);
           throw error;
         }
       });
@@ -261,7 +274,10 @@ export async function runLessonBaselinePool(
       } catch (error) {
         if (signal.aborted) throw signal.reason;
         // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run (jak u agenta).
-        if (!(error instanceof GenerationProviderError)) throw error;
+        if (!(error instanceof GenerationProviderError)) {
+          crash.abort(error);
+          throw error;
+        }
         return { kind: "failed", error };
       }
     };
@@ -280,7 +296,7 @@ export async function runLessonBaselinePool(
           spent += cost.spentUsd - before;
         },
       };
-      const outcomes = await Promise.all(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, packetIndex === 0, sink)));
+      const outcomes = await allSettledOrThrow(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, packetIndex === 0, sink)));
       const failed = outcomes.find((outcome) => outcome.kind === "failed");
       if (failed !== undefined) {
         return { objective, plan, packets: [], examples: undefined, failure: agentFailureOf(failed.error), calls, spentUsd: spent };
@@ -289,7 +305,7 @@ export async function runLessonBaselinePool(
       return { objective, plan, packets, examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
     };
 
-    const outcomes = await Promise.all(objectives.map((objective, index) => runObjective(objective, index)));
+    const outcomes = await allSettledOrThrow(objectives.map((objective, index) => runObjective(objective, index)));
     signal.throwIfAborted();
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka; kandydat łamiący walidację odpada.
