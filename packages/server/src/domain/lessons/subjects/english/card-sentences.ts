@@ -1,13 +1,13 @@
 import { trimTrailing } from "./text";
 
 /**
- * Kolejne podziały linii karty na części: „ — ” i „ / ” (słówko — tłumaczenie /
- * przykład), etykieta „: ” („Na przykład: …”), „; ” i granica zdań po `.?!`
+ * Kolejne podziały linii karty na części: „ — ”, „ / ” i „ → ” (słówko — tłumaczenie /
+ * przykład, zdanie → przekształcenie), etykieta „: ” („Na przykład: …”), „; ” i granica zdań po `.?!`
  * (także z cudzysłowem zamykającym za znakiem: „There is a bed.” „I like it.”).
  * Separatory dopasowują sam znak z otoczeniem w lookaroundach (bez `\s+`),
  * więc długi ciąg spacji nie wywołuje nawrotów; spacje części obcina `trim()`.
  */
-const CARD_PART_SEPARATORS: readonly RegExp[] = [/(?<=\s)[—/](?=\s)/u, /:(?=\s)/u, /;(?=\s)/u, /(?<=[.?!][”“"»]?)(?=\s)/u];
+const CARD_PART_SEPARATORS: readonly RegExp[] = [/(?<=\s)[—/→](?=\s)/u, /:(?=\s)/u, /;(?=\s)/u, /(?<=[.?!][”“"»]?)(?=\s)/u];
 /** Punktor albo numeracja na początku części: „- ”, „• ”, „* ”, „1. ”, „1) ”. */
 const CARD_BULLET = /^(?:[-•*]|\d+[.)])\s+/u;
 /** Cudzysłowy na początku zdania; na końcu obcina je `trimTrailing` (liniowo, bez `[…]+$`). */
@@ -34,7 +34,7 @@ function cleanCardPart(part: string): string {
  * Teksty z treści kart, które dziecko widzi jako gotowe rozwiązania
  * (`SubjectModule.cardExposureTexts` rozdziału i gramatyki): zdania angielskie
  * z przykładów kart. Karta to polskie wyjaśnienie z przykładami angielskimi
- * (rama rozdziału: `objectivesRules`; gramatyka: przykłady w tekście), więc linie dzielą się kolejno po „ — ” i „ / ”, po
+ * (rama rozdziału: `objectivesRules`; gramatyka: przykłady w tekście), więc linie dzielą się kolejno po „ — ”, „ / ” i „ → ”, po
  * etykiecie „: ” („Na przykład: …”), po „; ” i na granicach zdań po `.?!`;
  * z każdej części odpada punktor lub numeracja („- ”, „• ”, „* ”, „1. ”, „1) ”)
  * i cudzysłowy na obu brzegach („…”, "…", «…»). Część zostaje, gdy jest

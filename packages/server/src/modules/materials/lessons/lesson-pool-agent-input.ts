@@ -1,6 +1,7 @@
 import type { ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
 import { allExamples, orderedEntries, orderedLesson, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
+import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE, lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
 import type { AgentObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonObjectiveAgentInput, LlmLessonStageCounts } from "../../../ports/ai";
@@ -51,9 +52,16 @@ function agentStageCounts(subject: SubjectModule, objective: AgentObjective, tar
   return { ...split, independent };
 }
 
+/** Przykłady bez zdań z treści kart — te idą na koniec listy zdań do unikania. */
+function withoutTexts(examples: Record<string, string[]>, texts: readonly string[]): Record<string, string[]> {
+  const drop = new Set(texts);
+  return Object.fromEntries(Object.entries(examples).map(([id, lines]) => [id, lines.filter((line) => !drop.has(line))]));
+}
+
 export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObjectiveAgentInput {
   const { subject, topic, state, objective, limits } = args;
   const examples = allExamples(state);
+  const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
   const stages = args.promptTargets?.stages ?? agentStageCounts(subject, objective, limits.targetCount);
   const targetCount = args.promptTargets === undefined ? limits.targetCount : stages.guided + stages.productive + stages.independent;
   const base = buildPoolInput(
@@ -65,7 +73,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     args.instruction,
     args.graderAvailable,
     args.interests,
-    { avoidSentences: avoidSentencesFor({ examples, exercises: orderedLesson(state), subject }) },
+    { avoidSentences: avoidSentencesFor({ examples: withoutTexts(examples, cardSentences), exercises: orderedLesson(state), subject, cardSentences }) },
   );
   // Ten sam podział w prompcie co w `targets`; liczba ćwiczeń = suma etapów (prompt: „podział obejmuje N ćwiczeń”).
   const pool = { ...base, stageCounts: stages, countPerObjective: stages.guided + stages.productive + stages.independent };

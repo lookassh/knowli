@@ -53,6 +53,15 @@ describe("englishCardSentences — zdania z kart widoczne jako gotowe rozwiązan
     ]);
   });
 
+  it("części po „ → ” osobno (zdanie → przekształcenie); słówka po strzałce odpadają (#328)", () => {
+    expect(englishCardSentences([{ body: "She is happy. → Is she happy? Is she ready? → Yes, she is.\nplay → playing" }])).toEqual([
+      "She is happy.",
+      "Is she happy?",
+      "Is she ready?",
+      "Yes, she is.",
+    ]);
+  });
+
   it("apostrof typograficzny → ', duplikaty usunięte", () => {
     expect(englishCardSentences([{ body: "There’s a bed." }, { body: "There's a bed." }])).toEqual(["There's a bed."]);
   });

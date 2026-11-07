@@ -48,6 +48,14 @@ describe("cardExposureSources", () => {
       expect.arrayContaining(["Dad cooks dinner every day.", "Dad is cooking now.", "Tom rides his bike every day."]),
     );
     expect(Object.values(sources).flat().some((text) => text.includes("{{"))).toBe(false);
+    // Świadomy koszt (#328): ekstraktor dzieli prozę kart po znakach, więc przechodzą też krótkie formy
+    // („Do / Does.” → „Does.”) i polskie frazy bez diakrytyków. Odpowiedź samodzielna gramatyki to angielskie zdanie.
+    expect(sources["english_grammar.present_continuous.now_or_usually_more"]).toEqual(expect.arrayContaining(["Does.", "teraz."]));
+    expect(sources["english_grammar.present_continuous.now_or_usually"]).toContain("Tom jedzie na rowerze");
+    const toBe = cardExposureSources(englishGrammarSubject, englishGrammarSubject.topics.find((item) => item.id === "to_be")!);
+    // Zdania po „→” (przekształcenia i krótkie odpowiedzi) też są źródłami.
+    expect(toBe["english_grammar.to_be.questions"]).toEqual(expect.arrayContaining(["Is she happy?", "Are they ready?"]));
+    expect(toBe["english_grammar.to_be.short_answers"]).toEqual(expect.arrayContaining(["Yes, I am.", "No, they aren't."]));
     for (const topic of englishGrammarSubject.topics) expect(Object.keys(cardExposureSources(englishGrammarSubject, topic)).length).toBeGreaterThan(0);
   });
 });
