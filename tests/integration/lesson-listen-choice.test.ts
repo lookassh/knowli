@@ -6,7 +6,7 @@ import {
 } from "@learning/server";
 import type { LessonDraftDto, TaskDto } from "@learning/contracts";
 import { lessonWorld, type LessonWorldOptions } from "../fixtures/lesson-world";
-import { buildTestServices, ManualClock, rejectionCodesOf, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
+import { agentGrammarRegistry, buildTestServices, ManualClock, rejectionCodesOf, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { markTtsReady } from "./school-lesson-audio-helpers";
 import type { FakeAgentStep, FakeObjectiveScript } from "../../packages/server/src/providers/fake-lesson-agent";
@@ -63,7 +63,7 @@ async function generationWithScripts() {
   const scripts: Record<string, FakeObjectiveScript> = {};
   const fakes = await fakeGeneration({ agent: { generate: {}, objectives: scripts } });
   cleanup.push(fakes.dispose);
-  const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+  const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: agentGrammarRegistry() });
   return { services, scripts, agent: fakes.agent };
 }
 

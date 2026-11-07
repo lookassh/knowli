@@ -1,4 +1,4 @@
-import type { LessonObjectiveAgentTools, LessonPoolAgentProvider } from "../../packages/server/src/ports/ai";
+import type { LessonObjectiveAgentTools, LessonPacketGenerator, LessonPoolAgentProvider } from "../../packages/server/src/ports/ai";
 
 /**
  * Jedno ćwiczenie wysłane przez agenta puli w `submit` i odpowiedź walidacji, którą model dostał
@@ -21,12 +21,18 @@ const slugOf = (objectiveId: string) => objectiveId.split(".").at(-1) ?? objecti
 /**
  * Agent puli, który zapisuje do `log` każde wysłane ćwiczenie z wynikiem narzędzia (próba
  * `chapter-generation.probe.test.ts`: przyczyny odrzuceń nie trafiają do punktu kontrolnego ani
- * dziennika). Wynik narzędzia i pozostałe narzędzia przechodzą bez zmian.
+ * dziennika). Wynik narzędzia i pozostałe narzędzia przechodzą bez zmian; paczki przebiegu bazowego
+ * (`generatePacket`, gramatyka) przechodzą bez zapisu — ich odrzucenia są w zrzucie runu.
  */
-export function recordingAgent(agent: LessonPoolAgentProvider, log: AgentSubmission[], currentRun: () => string = () => "main"): LessonPoolAgentProvider {
+export function recordingAgent(
+  agent: LessonPoolAgentProvider & LessonPacketGenerator,
+  log: AgentSubmission[],
+  currentRun: () => string = () => "main",
+): LessonPoolAgentProvider & LessonPacketGenerator {
   return {
     name: agent.name,
     model: agent.model,
+    generatePacket: (input, cost, signal) => agent.generatePacket(input, cost, signal),
     planObjectives: (input, tools, cost, signal) => agent.planObjectives(input, tools, cost, signal),
     runObjective: (input, tools, cost, signal) => {
       const objective = slugOf(input.objective.id);

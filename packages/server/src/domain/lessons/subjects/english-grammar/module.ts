@@ -53,7 +53,8 @@ export const englishGrammarSubject: SubjectModule = {
   exerciseExplanations: true,
   // Sesja kończy się krótką historyjką z pytaniami o treść (reguły w `prompts.storyRules`).
   lessonStory: true,
-  // Polityka agenta puli: typy ślepe i teksty odrzuceń, bez bramek i planu.
+  // Generowanie przebiegiem bazowym (etap 4 #358); z polityki agenta tylko pola wspólne (`SubjectModule.baselinePool`).
+  baselinePool: true,
   agentPolicy: grammarAgentPolicy,
   rules: GRAMMAR_RULES,
 };

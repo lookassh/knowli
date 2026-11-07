@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LessonAgentToolOutcome, LessonObjectiveAgentInput, LessonObjectiveAgentTools, LessonPoolAgentProvider } from "../../packages/server/src/ports/ai";
+import type { LessonAgentToolOutcome, LessonObjectiveAgentInput, LessonObjectiveAgentTools, LessonPacketGenerator, LessonPoolAgentProvider } from "../../packages/server/src/ports/ai";
 import { cleanupCounters, recordingAgent, submissionMetrics, type AgentSubmission } from "./probe-submissions";
 
 const outcome = (results: LessonAgentToolOutcome["results"]): LessonAgentToolOutcome => ({
@@ -9,7 +9,7 @@ const outcome = (results: LessonAgentToolOutcome["results"]): LessonAgentToolOut
   complete: false,
 });
 
-function fakeAgent(submitted: { exercises: unknown[] }): LessonPoolAgentProvider {
+function fakeAgent(submitted: { exercises: unknown[] }): LessonPoolAgentProvider & LessonPacketGenerator {
   return {
     name: "fake",
     model: "fake-model",
@@ -18,7 +18,7 @@ function fakeAgent(submitted: { exercises: unknown[] }): LessonPoolAgentProvider
       return { steps: 1, stopReason: "model_finished" };
     },
     planObjectives: async () => ({ steps: 0, stopReason: "model_finished" }),
-  } as unknown as LessonPoolAgentProvider;
+  } as unknown as LessonPoolAgentProvider & LessonPacketGenerator;
 }
 
 const input = { objective: { id: "deck.topic.rivers" } } as unknown as LessonObjectiveAgentInput;
@@ -55,7 +55,7 @@ describe("recordingAgent", () => {
         expect(tools.shouldStop()).toBe(true);
         return { steps: 1, stopReason: "stopped" as const };
       },
-    } as unknown as LessonPoolAgentProvider;
+    } as unknown as LessonPoolAgentProvider & LessonPacketGenerator;
     const tools: LessonObjectiveAgentTools = {
       submit: async () => expected,
       remove: async () => ({ ...outcome([]), removed: [] }),

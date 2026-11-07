@@ -12,7 +12,7 @@ import {
   type Services,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
-import { finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { agentGrammarRegistry, finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import {
   FakeLessonPoolAgent,
@@ -156,7 +156,7 @@ async function agentWorld(agentOptions: FakeLessonPoolAgentOptions): Promise<Age
   const fakes = await fakeGeneration({ agent: agentOptions });
   cleanup.push(fakes.dispose);
   fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 20 };
-  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps }), agent: fakes.agent };
+  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: agentGrammarRegistry() }), agent: fakes.agent };
 }
 
 interface IssuedTask {

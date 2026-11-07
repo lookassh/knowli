@@ -10,6 +10,7 @@ import {
   createServices,
   createSubjectRegistry,
   editLessonDraft,
+  agentGrammarSubject,
   englishGrammarSubject,
   executeLessonGeneration,
   historyLikeSubject,
@@ -25,7 +26,7 @@ import {
 } from "@learning/server";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonCommand, LessonDraftDto } from "@learning/contracts";
-import { testDatabase } from "./helpers";
+import { agentGrammarRegistry, testDatabase } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { messages } from "@learning/contracts";
@@ -73,7 +74,7 @@ function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Servi
     clock,
     media: fakes.settings,
     generation: fakes.deps,
-    subjects: createSubjectRegistry([englishGrammarSubject, historyLikeSubject]),
+    subjects: createSubjectRegistry([agentGrammarSubject, historyLikeSubject]),
   });
 }
 
@@ -309,7 +310,7 @@ describe("agent puli lekcji (integracja)", () => {
     }
 
     function servicesWith(fakes: FakeGeneration, generation: GenerationDeps, clock: ManualClock): Services {
-      return createServices({ db: testDatabase().db, clock, media: fakes.settings, generation });
+      return createServices({ subjects: agentGrammarRegistry(), db: testDatabase().db, clock, media: fakes.settings, generation });
     }
 
     /** Scenariusz fake'a agenta; zagadnienia bez scenariusza generuje pętla generatora (`generate: {}`). */
@@ -2489,6 +2490,85 @@ describe("agent puli lekcji (integracja)", () => {
         expect(await objectiveExerciseCount(draft.id, OBJECTIVE)).toBeGreaterThanOrEqual(objectiveBefore + 4);
         expect(await revisionIds(draft.id)).toEqual(expect.arrayContaining(revisionsBefore));
       });
+    });
+  });
+
+  describe("gramatyka przebiegiem bazowym na ścieżce workera (etap 4 #358)", () => {
+    const disposers: Array<() => Promise<void>> = [];
+    const THIRD = "english_grammar.present_simple.third_person_s";
+    const QUESTION = "english_grammar.present_simple.question";
+
+    beforeEach(async () => {
+      await pool.query(
+        `truncate learning_app.generation_runs, learning_app.revision_assets, learning_app.media_assets,
+                learning_app.item_revision_skills, learning_app.item_revisions, learning_app.skill_versions,
+                learning_app.learning_items, learning_app.deck_versions, learning_app.decks cascade`,
+      );
+    });
+
+    afterEach(async () => {
+      for (const dispose of disposers.splice(0)) await dispose();
+    });
+
+    async function grammarWorld(agentOptions: FakeLessonPoolAgentOptions = {}) {
+      const fakes = await fakeGeneration({ agent: { stepCostUsd: 0.01, ...agentOptions } });
+      disposers.push(fakes.dispose);
+      const services = createServices({
+        db: testDatabase().db,
+        clock: new ManualClock(),
+        media: fakes.settings,
+        generation: fakes.deps,
+        subjects: createSubjectRegistry([englishGrammarSubject]),
+      });
+      return { services, agent: fakes.agent };
+    }
+
+    const both = (): LessonCommand => command({ objectiveIds: [THIRD, QUESTION], poolSize: 24 });
+    const stateOf = async (runId: string) => (await query<{ state: string; attempts: number }>("select state, attempts from learning_app.generation_runs where id = $1", [runId]))[0]!;
+
+    it("nowa lekcja: paczki zamiast agenta, szkic bez luk", async () => {
+      const { services, agent } = await grammarWorld();
+      const { runId, deckId } = await createLesson(services, both());
+      await executeLessonGeneration(services, runId);
+      expect((await stateOf(runId)).state).toBe("succeeded");
+      expect(agent.calls).toHaveLength(0);
+      expect(agent.packetCalls.length).toBeGreaterThan(0);
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      expect(draft.generationGaps ?? []).toEqual([]);
+      expect(new Set(draft.exercises.map((item) => item.objectiveId))).toEqual(new Set([THIRD, QUESTION]));
+    });
+
+    it("wznowienie: przejściowa porażka paczki → queued; druga próba nie generuje zagadnienia gotowego", async () => {
+      // Każda paczka zagadnienia `question` i jej ponowienie w próbie 1 kończą się błędem przejściowym; potem generator.
+      const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = { question: Array.from({ length: 40 }, () => ({ throw: new GenerationProviderError("transient") })) };
+      const { services, agent } = await grammarWorld({ packets });
+      const { runId, deckId } = await createLesson(services, both());
+      await executeLessonGeneration(services, runId);
+      expect((await stateOf(runId)).state).toBe("queued");
+      packets.question = [];
+      const firstCalls = agent.packetCalls.filter((call) => call.objective.id === THIRD).length;
+      await pool.query("update learning_app.generation_runs set next_attempt_at = null where id = $1", [runId]);
+      await executeLessonGeneration(services, runId);
+      expect(await stateOf(runId)).toMatchObject({ state: "succeeded", attempts: 2 });
+      expect(agent.packetCalls.filter((call) => call.objective.id === THIRD)).toHaveLength(firstCalls);
+      const draft = (await readLessonDeck(services, deckId)).draft!;
+      expect(draft.exercises.some((item) => item.objectiveId === QUESTION)).toBe(true);
+    });
+
+    it("dogenerowanie zagadnienia szkicu idzie przebiegiem bazowym i dodaje zamówione", async () => {
+      const { services, agent } = await grammarWorld();
+      const { runId, deckId } = await createLesson(services, both());
+      await executeLessonGeneration(services, runId);
+      const before = (await readLessonDeck(services, deckId)).draft!;
+      const topUp = await regenerateObjective(services, { deckId, objectiveId: THIRD, count: 3, expectedEditNumber: before.editNumber, clientRequestId: randomUUID() });
+      const callsBefore = agent.packetCalls.length;
+      await executeLessonGeneration(services, topUp.runId);
+      expect((await stateOf(topUp.runId)).state).toBe("succeeded");
+      const added = agent.packetCalls.slice(callsBefore);
+      expect(added.length).toBeGreaterThan(0);
+      expect(added.every((call) => call.objective.id === THIRD && !call.withExamples && call.type !== "lesson_notice")).toBe(true);
+      const after = (await readLessonDeck(services, deckId)).draft!;
+      expect(after.exercises.filter((item) => item.objectiveId === THIRD).length).toBe(before.exercises.filter((item) => item.objectiveId === THIRD).length + 3);
     });
   });
 });

@@ -469,7 +469,15 @@ export interface SubjectModule {
       readonly rejectedFamilies?: ReadonlySet<string>;
     },
   ): ReadonlyMap<number, readonly LessonRuleIssue[]>;
-  /** Polityka agenta puli — każdy przedmiot jest generowany agentem. */
+  /**
+   * Przedmiot katalogowy generowany przebiegiem bazowym (etap 4 epiku #358, `runLessonBaselinePool`):
+   * paczki cel × typ i kontrola zamkniętych zamiast agenta. Brak = agent puli.
+   */
+  readonly baselinePool?: true;
+  /**
+   * Polityka agenta puli. Przedmiot z `baselinePool` korzysta z jej pól wspólnych (rezerwa etapu
+   * samodzielnego, zapas limitów zapisu, przykłady typów, dopiski reguł silnika) do etapu 5.
+   */
   readonly agentPolicy: SubjectAgentPolicy;
   /**
    * Katalog reguł przedmiotu (spec katalogu reguł §2.2): reguły jego walidatorów,
