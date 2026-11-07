@@ -26,8 +26,8 @@ export interface SanitizedFreshDraft {
  * Kolejność kroków jest częścią kontraktu: ton głosu → wyjaśnienie → puste tablice
  * → dodatki ćwiczenia słuchowego → rodziny runu → warianty redundantne. Bez
  * `stripParentAddedFlags` (woła go wywołujący). Warianty acceptedAnswers redundantne
- * wobec odpowiedzi kanonicznej (np. skrótowa forma przeczenia „to be” przy pełnej)
- * porzucamy — bez tego walidacja fazy 1 odrzucałaby całe ćwiczenie za wpis
+ * wobec odpowiedzi kanonicznej (równe po neutralnej normalizacji; skrót i pełna forma
+ * to od etapu 3 #360 osobne warianty) porzucamy — bez tego walidacja fazy 1 odrzucałaby całe ćwiczenie za wpis
  * nieznoszący informacji (odpowiedź kanoniczna jest akceptowana automatycznie).
  * Funkcja czysta.
  */

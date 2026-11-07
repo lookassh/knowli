@@ -837,8 +837,7 @@ export async function editLessonDraft(
 
     if (patch.exercises !== undefined) {
       const topic = requireTopic(services, effectiveContext);
-      // Warianty równoważne odpowiedzi po normalizacji pomijamy jak przy generacji: nie zmieniają
-      // oceny, a rozszerzenie tabeli skrótów (np. „there's”) czyni takimi warianty zapisane wcześniej.
+      // Warianty równe odpowiedzi po neutralnej normalizacji pomijamy jak przy generacji: nie zmieniają oceny.
       const exercises = patch.exercises.map((input) => withoutRedundantInputVariants(input));
       // Walidacja per ćwiczenie — zbieramy wszystkie błędy, nie przerywamy na pierwszym.
       const drafts = exercises.map(toExerciseDraft);
@@ -945,8 +944,7 @@ export async function publishLessonDraft(
     }
 
     // Pokrycie etapów ocenianych per cel.
-    // Bez wariantów równoważnych odpowiedzi (jak przy zapisie): szkic zapisany przed rozszerzeniem
-    // tabeli skrótów publikuje się bez ręcznego czyszczenia; zapisane rewizje zostają bez zmian.
+    // Bez wariantów równych odpowiedzi (jak przy zapisie); zapisane rewizje zostają bez zmian.
     const drafts: LessonExerciseDraft[] = revisions.map((r) => withoutRedundantAcceptedVariants(toExerciseDraft(r.payload)));
     const topic = requireTopic(services, context);
     const groundedPublish = splitByPoolExtra(subject, drafts, context.material);

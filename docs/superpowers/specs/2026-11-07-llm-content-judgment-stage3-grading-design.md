@@ -6,7 +6,7 @@ Ten dokument przekłada §6–§7 specu zbiorczego na konkretne zmiany w kodzie.
 
 ## 1. Zakres i granice
 
-**Moduł:** `learning/lessons` (ocena prób) i `domain/lessons/evaluate.ts` (czyste funkcje dopasowania i mapowania werdyktu). Do tego adapter gradera (`providers/openai-compatible/grader.ts`) i fake grader, rola oceniającego gramatyki (`subjects/english-grammar/prompts.ts`), nadzór rodzica (`materials/lessons/lesson-supervision.ts`), walidacja wariantów i focus (`domain/lessons/pool-validation.ts`), konfiguracja (`config.ts`, `config-defaults.ts`) i migracja `lesson_verdicts`.
+**Moduł:** `learning/lessons` (ocena prób) i `domain/lessons/evaluate.ts` (czyste funkcje dopasowania i mapowania werdyktu). Do tego adapter gradera (`providers/openai-compatible/grader.ts`) i fake grader, rola oceniającego gramatyki (`subjects/english-grammar/prompts.ts`), nadzór rodzica (`materials/lessons/lesson-supervision.ts`), walidacja wariantów (`domain/lessons/pool-validation.ts`), konfiguracja (`config.ts`, `config-defaults.ts`) i migracja `lesson_verdicts`.
 
 **Zależności:** bez nowych pakietów i bez nowych kierunków między obszarami. `learning` korzysta z `materials` przez barrel jak dziś (`lessonGraderInput`).
 
@@ -36,7 +36,7 @@ Przykład ze specu: stara rewizja z kluczem „She doesn't like tea.” i focus 
 
 Tolerancja nie wchodzi do klucza cache (klucz to sama neutralna normalizacja). Literówka w słowie spoza focus dalej zalicza bez modelu — także gdy to słowo należy do ćwiczonej formy, a autor ćwiczenia nie wpisał go do focus (istniejące zachowanie; np. focus `doesn't` przy kluczu „She doesn't like tea.” zalicza „She doesn't likes tea.”). Focus wyznacza autor ćwiczenia, kod tego nie zgaduje.
 
-**Walidacja focus przy generowaniu** (`validateFocus` → `focusCoversAnswer`) też przechodzi na neutralną normalizację (§18 zbiorczego: warianty i focus na tej samej normalizacji). Dziś rozwijanie skrótów przepuszcza focus „does not” przy kluczu „doesn't”, który po tej zmianie tracił po cichu tolerancję literówek; teraz agent dostaje odrzucenie z istniejącą regułą i poprawia focus. To jedna zmiana argumentu.
+**Walidacja focus** (`validateFocus` → `focusCoversAnswer`) zostaje bez zmian, z normalizatorem przedmiotu. Przegląd gałęzi wykazał, że neutralna walidacja blokowałaby zapis i publikację starszych szkiców z focus „does not” przy kluczu „doesn't” (decyzja właściciela z 2026-11-02: takie szkice mają się zapisywać i publikować). Taki focus jest bezpieczny: w ocenie wyłącza tylko tolerancję literówki.
 
 ## 4. Warianty na neutralnej normalizacji
 
@@ -227,7 +227,7 @@ Przekroczony próg: najpierw zmieniamy prompt `grader-v2` albo model gradera i p
 
 ## 12a. Wynik odbioru (2026-11-07)
 
-Przebieg `pnpm probe:grading` na `google/gemini-3.8-flash` przez OpenRouter: **0 naruszeń progów 1–5**, 35 wywołań gradera, koszt 0,044 USD (rejestr: 0,097 z 0,20 USD — dwa wcześniejsze przebiegi przerwał błąd harnessu sondy, nie oceny). Wszystkie powtórki przyszły z cache z tym samym wynikiem; para A ma cztery osobne wiersze cache.
+Przebieg `pnpm probe:grading` na `google/gemini-3.8-flash` przez OpenRouter: **0 naruszeń progów 1–5**, 35 wywołań gradera, koszt 0,044 USD (rejestr: 0,097 z 0,20 USD — dwa wcześniejsze przebiegi przerwał błąd harnessu sondy, nie oceny). Każda powtórka dała ten sam wynik bez wywołania modelu — z cache albo, przy #5, #20 i #32, z dopasowania (tabela pisze wtedy „cache”, choć to dopasowanie bez modelu); para A ma cztery osobne wiersze cache.
 
 Obserwacja: #18 („She reads a book now.”), #19 („She isn't reading a book now.”) i #25 („Does she play?”) model ocenił jako błąd poza celem (`other`), czyli nieocenione z pokazaniem poprawnej odpowiedzi i ponowieniem — bez sukcesu, więc zgodnie z progami, ale to słabszy dowód niż błąd celu. Nie zmieniamy promptu bez dowodu z produkcji (§8 zbiorczego); wyzwalacz można policzyć ręcznym zapytaniem po `model_other`.
 
@@ -278,4 +278,6 @@ Obserwacja: #18 („She reads a book now.”), #19 („She isn't reading a book 
 - **Model zwraca bez `usesTargetForm`:** werdykt odrzucony, odpowiedź nieoceniona bez kary. Sonda pokaże częstość.
 - **Rozsypanka bez gradera:** inny szyk jest nieoceniony zamiast błędny — mniej dowodów, bez fałszywego sukcesu (§15 zbiorczego).
 - **Focus wyznacza autor:** literówka w słowie formy ćwiczonej spoza focus zalicza bez modelu (§3) — istniejące zachowanie, poza zakresem.
-- **Synonim spoza rozdziału:** pod `grader-v2` bez sukcesu celu zamiast z sukcesem (§5) — świadomie.
+- **Synonim spoza rozdziału:** pod `grader-v2` może (zależnie od modelu) wrócić bez sukcesu celu zamiast z sukcesem (§5).
+- **Poprawny skrót bez gradera:** odpowiedź ze skrótem albo pełną formą wobec opublikowanego klucza bez takiego wariantu (także w luce, dostępnej bez gradera) jest bez gradera albo po limicie nieoceniona zamiast zaliczona — bez fałszywego sukcesu; rodzic może dopisać wariant.
+- **Pisownia amerykańska jako literówka:** „colorful” wobec „colourful” (odległość 1 poza focus) dopasowanie zalicza jako literówkę („Prawie!”), a model — jako poprawną odpowiedź (#26 i #32). Obie dają sukces; istniejące zachowanie, bez zmiany bez dowodu z produkcji.

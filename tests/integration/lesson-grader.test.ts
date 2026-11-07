@@ -422,6 +422,15 @@ describe("etap 3 (#360): rozsypanka przez model oceniający", () => {
     expect(stored.rows[0]).toEqual({ answer: { itemIds: other }, modality: "sequence" });
   });
 
+  it("inna kolejność z usesTargetForm=false nadal zalicza (klocki nie zmieniają formy)", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: false } });
+    const { services, clock } = graderServices(grader);
+    const { task, other } = await orderTask(services, clock);
+    const dto = await sequence(services, task.taskId, other);
+    expect(dto.feedback?.kind).toBe("great");
+    expect((await pool.query("select outcome from learning_app.assessments where attempt_id = $1", [dto.attemptId])).rows[0]!.outcome).toBe("correct");
+  });
+
   it("zła kolejność (wrong_order) → błąd z kluczem ułożonym z klocków; powtórka tej samej próby bez drugiego wywołania", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "wrong_order", fragments: [], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);

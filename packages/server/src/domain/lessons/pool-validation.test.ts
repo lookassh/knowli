@@ -142,8 +142,8 @@ describe("validateLessonExercise — focus", () => {
     expect(errors.some((e) => e.toLowerCase().includes("focus"))).toBe(true);
   });
 
-  it("odrzuca focus niedosłowny wobec klucza (neutralna normalizacja, etap 3 #360)", () => {
-    // „does not” nie występuje w „she doesn't like tea” bez rozwijania skrótów
+  it("przyjmuje focus dopasowany przez wariant normalizacji (skrót rozwinięty; starsze szkice dalej się zapisują)", () => {
+    // doesn't ≡ does not — w ocenie taki focus tylko wyłącza tolerancję literówki (etap 3 #360)
     const ex = draft({
       objectiveId: OBJ.negative,
       exerciseType: "lesson_open_answer",
@@ -153,8 +153,7 @@ describe("validateLessonExercise — focus", () => {
       stem: undefined,
       hint: undefined,
     });
-    expect(validateLessonExercise(ex, englishGrammarSubject, englishTopic).some((e) => e.startsWith("focus"))).toBe(true);
-    expect(validateLessonExercise({ ...ex, focus: ["doesn't"] }, englishGrammarSubject, englishTopic)).toEqual([]);
+    expect(validateLessonExercise(ex, englishGrammarSubject, englishTopic)).toEqual([]);
   });
 
   it("działa z fixture bez skrótów (focus podsekwencją)", () => {

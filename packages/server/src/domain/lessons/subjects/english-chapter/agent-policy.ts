@@ -46,7 +46,8 @@ const CLOZE_UNAMBIGUOUS_NOTE =
   "In lesson_cloze exactly one bank word fits each gap: never two gaps whose words could be swapped.";
 
 /** Dopisek do duplikatu wariantu: skrót i pełna forma to osobne warianty (etap 3 #360). */
-const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers: doesn't and does not are different variants.";
+const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
+  "unless the instruction asks for one of them.";
 
 /** Wymagane typy per rodzaj zagadnienia: przeciw szablonowaniu i dla słuchania. */
 const REQUIRED_TYPES: Readonly<Record<DynamicObjectiveKind, readonly (readonly LessonExerciseType[])[]>> = {

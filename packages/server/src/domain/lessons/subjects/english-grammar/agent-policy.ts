@@ -30,7 +30,8 @@ const BLIND_SOLVE_NOTE =
   "put common equivalent word orders into acceptedAnswers right away.";
 
 /** Dopisek do duplikatu wariantu: skrót i pełna forma to osobne warianty (etap 3 #360). */
-const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers: doesn't and does not are different variants.";
+const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
+  "unless the instruction asks for one of them.";
 
 export const grammarAgentPolicy: SubjectAgentPolicy = {
   blindSolveTypes: BLIND_SOLVE_TYPES,

@@ -625,7 +625,7 @@ export function lessonAgentSettingsFromEnv(env: Record<string, string | undefine
 export interface LessonAgentPublic {
   readonly generationService: string;
   readonly checkService: string;
-  /** Usługa oceny odpowiedzi próbnych do pytań otwartych (`host · model` gradera); brak = grader niedostępny. */
+  /** Usługa oceny odpowiedzi (`host · model` gradera); poza trybem fake zawsze obecna — bez gradera generowanie jest niedostępne. */
   readonly openCheckService?: string;
 }
 

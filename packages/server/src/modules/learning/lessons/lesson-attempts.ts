@@ -540,9 +540,11 @@ function resultFromVerdict(
   authoritativeIncorrect = false,
 ): LessonGradeResult {
   const objectiveId = key.objectiveId;
+  // Rozsypanka: klocki są dane, inny szyk nie zmienia formy (spec etapu 3 §7).
+  const effective = verdict && key.exerciseType === "lesson_order" ? { ...verdict, usesTargetForm: true } : verdict;
   const grade: ObjectiveGrade = authoritativeIncorrect
     ? { outcome: "incorrect", verdict: "model_incorrect", ...(verdict?.errorCategory && verdict.errorCategory !== "other" ? { errorCategory: verdict.errorCategory } : {}) }
-    : gradeFromVerdict(verdict);
+    : gradeFromVerdict(effective);
   const correctText = closestApprovedVariant(childAnswer, key);
 
   if (grade.verdict === "unavailable") {
@@ -565,7 +567,7 @@ function resultFromVerdict(
       // Poprawna inną formą: pochwała i forma ćwiczona w lekcji (ujawnienie zapisane przed wysłaniem).
       return {
         grade,
-        feedback: { kind: "lesson_precision_hint", hintPl: messages.kid.lessonPracticedForm.replace("{text}", correctText) },
+        feedback: { kind: "lesson_precision_hint", hintPl: messages.kid.lessonPracticedForm.replace("{text}", () => correctText) },
         exposures: [key.targetKey],
         details: detailsBase,
       };

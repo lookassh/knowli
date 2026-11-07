@@ -431,14 +431,14 @@ export type FakeGraderBehavior =
   | { raw: unknown; delayMs?: number }
   | { error: string; delayMs?: number };
 
+const FAKE_SCHOOL_PROMPT_VERSION = "fake-school-grader-v3";
+
 /**
  * Deterministyczny fake modelu oceniającego dla integracji/E2E: liczy wywołania
  * i mapuje znormalizowaną (naiwnie: lowercase + trim) odpowiedź dziecka na
  * zaprogramowany surowy werdykt. Bez zachowania → werdykt `correct`. Tryb
  * E2E może włączyć prosty routing po słowach kluczowych w odpowiedzi.
  */
-const FAKE_SCHOOL_PROMPT_VERSION = "fake-school-grader-v3";
-
 export class FakeAnswerGrader implements AnswerGraderProvider {
   readonly name = "fake-grader";
   readonly model = "fake-grader-1";

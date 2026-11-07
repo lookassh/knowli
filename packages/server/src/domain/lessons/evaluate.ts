@@ -105,8 +105,8 @@ function sequencesEqual(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((token, i) => token === b[i]);
 }
 
-/** Czy `needle` jest ciągłą, niepustą podsekwencją `haystack`. */
-function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
+/** Czy `needle` jest ciągłą, niepustą podsekwencją `haystack` (także focus w walidacji puli). */
+export function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
   if (needle.length === 0) return false;
   for (let start = 0; start + needle.length <= haystack.length; start++) {
     if (needle.every((token, k) => haystack[start + k] === token)) return true;

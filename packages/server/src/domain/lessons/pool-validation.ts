@@ -72,6 +72,7 @@ import {
 } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
 import { APOSTROPHE_VARIANTS, baseNormalizer } from "./normalize";
+import { containsRun } from "./evaluate";
 
 /** Fabryka zgłoszeń reguł rdzenia. */
 const coreIssue = issueFrom(CORE_RULES);
@@ -156,26 +157,6 @@ export function answersEquivalent(a: string, b: string, normalizer: AnswerNormal
   return false;
 }
 
-/** Czy `needle` jest ciągłą podsekwencją `haystack`. */
-function isContiguousSubsequence(haystack: readonly string[], needle: readonly string[]): boolean {
-  if (needle.length === 0 || needle.length > haystack.length) {
-    return false;
-  }
-  for (let start = 0; start + needle.length <= haystack.length; start++) {
-    let matched = true;
-    for (let k = 0; k < needle.length; k++) {
-      if (haystack[start + k] !== needle[k]) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Czy `focus` jest ciągłą podsekwencją tokenów odpowiedzi kanonicznej w DOWOLNYM
  * wariancie normalizacji — dla któregokolwiek wariantu `focus` i odpowiedzi.
@@ -189,7 +170,7 @@ function focusCoversAnswer(
   const answerVariants = normalizer.normalize(answer).filter((seq) => seq.length > 0);
   for (const answerSeq of answerVariants) {
     for (const focusSeq of focusVariants) {
-      if (isContiguousSubsequence(answerSeq, focusSeq)) {
+      if (containsRun(answerSeq, focusSeq)) {
         return true;
       }
     }
@@ -633,9 +614,10 @@ export function validateLessonExerciseIssues(
     }
   }
   validateTextFieldLengths(ex, issues);
-  // Focus i warianty bez rozwijania skrótów (etap 3 #360): skrót i pełna forma to
-  // osobne warianty, a focus stoi dosłownie w kluczu.
-  validateFocus(ex, baseNormalizer, issues);
+  // Warianty bez rozwijania skrótów (etap 3 #360): skrót i pełna forma to osobne warianty.
+  // Focus sprawdzamy jak dotąd (starsze szkice zapisują się i publikują); focus niedosłowny
+  // po neutralnej normalizacji tylko wyłącza tolerancję literówki w ocenie.
+  validateFocus(ex, normalizer, issues);
   validateByType(ex, topic, objective, normalizer, issues);
   validateAcceptedAnswers(ex, issues);
 
@@ -994,8 +976,8 @@ function confusableTexts(texts: readonly string[], normalizer?: AnswerNormalizer
   for (let i = 0; i < texts.length; i++) {
     for (let j = i + 1; j < texts.length; j++) {
       if (
-        isContiguousSubsequence(words[i]!, words[j]!) ||
-        isContiguousSubsequence(words[j]!, words[i]!) ||
+        containsRun(words[i]!, words[j]!) ||
+        containsRun(words[j]!, words[i]!) ||
         (normalizer !== undefined && answersEquivalent(texts[i]!, texts[j]!, normalizer))
       ) {
         found.push([i, j]);
@@ -1251,7 +1233,7 @@ function validateCloze(ex: LessonExerciseDraft, normalizer: AnswerNormalizer, is
   const visible = parts.map(wordsOfText);
   bank.forEach((word, index) => {
     const needle = wordsOfText(word);
-    if (visible.some((part) => isContiguousSubsequence(part, needle))) {
+    if (visible.some((part) => containsRun(part, needle))) {
       issues.push(coreIssue("cloze.bank_outside_gap", {
         pl: `clozeText: słowo „${word}” z banku występuje w tekście poza luką`,
         found: `bank word ${clip(word)} (${bankField(index)}) appears in the text outside the gaps`,
@@ -1508,7 +1490,6 @@ function validateTransform(ex: LessonExerciseDraft, topic: LessonTopic, issues: 
 }
 
 function validateAcceptedAnswers(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
-  const normalizer = baseNormalizer;
   if (ex.acceptedAnswers.length > MAX_ACCEPTED_ANSWERS) {
     issues.push(coreIssue("variants.count", {
       pl: `acceptedAnswers: więcej niż ${MAX_ACCEPTED_ANSWERS} wariantów`,
@@ -1517,11 +1498,11 @@ function validateAcceptedAnswers(ex: LessonExerciseDraft, issues: LessonRuleIssu
   }
   ex.acceptedAnswers.forEach((variant, index) => {
     const field = `acceptedAnswers[${index}]`;
-    if (variantKeys(variant, normalizer).size === 0) {
+    if (variantKeys(variant, baseNormalizer).size === 0) {
       issues.push(coreIssue("variants.empty", { field, pl: "acceptedAnswers: pusty wariant", found: "blank variant" }));
       return;
     }
-    if (answersEquivalent(variant, ex.answer, normalizer)) {
+    if (answersEquivalent(variant, ex.answer, baseNormalizer)) {
       issues.push(coreIssue("variants.duplicate", {
         field,
         pl: `acceptedAnswers: wariant „${variant}” duplikuje odpowiedź kanoniczną po normalizacji`,
