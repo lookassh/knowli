@@ -1,6 +1,6 @@
 # Etap 2: przebieg bazowy generowania i sonda gramatyki — design
 
-Wersja 3, 2026-11-07, po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, rzetelność pomiaru) i review Muse. Issue #359, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4, §4, §5, §8, §10, §11, §12, §17). Stan kodu: `main` 894a9c2c — warunek płatnych biegów spełniony: scalone PR #365 (#328) i #366 (#360). Migracja `0040` jest w `main`; ten etap nie dodaje migracji.
+Wersja 3, 2026-11-07, po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, rzetelność pomiaru) i review Muse. **Zatwierdzona przez właściciela 2026-11-07** (progi §9, modele §8, limit 0,60 USD na lekcję, temat wstrzymany „to be”, podział paczek §3.1). Zgoda na płatne biegi — osobno. Issue #359, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4, §4, §5, §8, §10, §11, §12, §17). Stan kodu: `main` 894a9c2c — warunek płatnych biegów spełniony: scalone PR #365 (#328) i #366 (#360). Migracja `0040` jest w `main`; ten etap nie dodaje migracji.
 
 ## 1. Cel i granice
 
