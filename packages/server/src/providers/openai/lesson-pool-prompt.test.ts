@@ -210,3 +210,33 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
     expect(prompt.length).toBeLessThanOrEqual(Math.floor(PROMPT_LENGTH_BEFORE[subjectId]! * PROMPT_BUDGET_FACTOR));
   });
 });
+
+describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => {
+  it("paczka PC affirmative × lesson_choice z przykładami kart i obie kontrole", async () => {
+    const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
+    const { closedCheckPrompt, packetInstructions } = await import("./lesson-pool-agent");
+    const topic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")!;
+    const objective = topic.objectives.find((candidate) => candidate.id === "english_grammar.present_continuous.affirmative")!;
+    const input = packetInput({
+      subject: englishGrammarSubject,
+      topic,
+      objective,
+      type: "lesson_choice",
+      count: 4,
+      withExamples: true,
+      material: "",
+      graderAvailable: true,
+      avoidSentences: [],
+      timeoutMs: 90_000,
+    });
+    const prompt = packetInstructions(input);
+    expect(prompt).not.toContain("the tool checks");
+    expect(prompt).not.toMatch(/\blesson_gap —/u);
+    await expect(prompt).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.english_grammar_present_continuous.txt");
+    const check = [
+      closedCheckPrompt({ contract: "choice", items: [{ view: "She ___ reading.\nOptions: are | is" }] }),
+      closedCheckPrompt({ contract: "order", items: [{ view: "Ułóż zdanie.\nWord blocks (shuffled): is | reading | She\nArranged answer: She is reading." }] }),
+    ].join("\n\n----\n\n");
+    await expect(check).toMatchFileSnapshot("./__snapshots__/lesson-closed-check-prompt.txt");
+  });
+});

@@ -3,17 +3,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { graderConfigured } from "../../packages/server/src/config";
-import { withConfigDefaults } from "../../packages/server/src/config-defaults";
 import { agentObjectivesOf } from "../../packages/server/src/domain/lessons/agent/capable";
 import { allExamples, createLessonAgentState, orderedLesson, withExamples, withPool, type LessonAgentState } from "../../packages/server/src/domain/lessons/agent/state";
 import { lessonInvariantCheck } from "../../packages/server/src/domain/lessons/agent/status";
 import { cardExposureSources } from "../../packages/server/src/domain/lessons/card-exposure-sources";
 import { findExposureLeaks } from "../../packages/server/src/domain/lessons/exposure-leaks";
+import { lessonPoolMinimums } from "../../packages/server/src/domain/lessons/lesson-coverage";
 import { defaultPoolSize } from "../../packages/server/src/domain/lessons/lesson-policy";
-import { validatePool } from "../../packages/server/src/domain/lessons/pool-validation";
+import { baseNormalizer } from "../../packages/server/src/domain/lessons/normalize";
+import { poolCoverage, validatePool } from "../../packages/server/src/domain/lessons/pool-validation";
+import { createSubjectRegistry } from "../../packages/server/src/domain/lessons/registry";
 import { createProductionSubjectRegistry } from "../../packages/server/src/domain/lessons/subjects";
 import type { DynamicObjectiveKind, DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../packages/server/src/domain/lessons/types";
+import { runLessonBaselinePool } from "../../packages/server/src/modules/materials/lessons/lesson-baseline-pool";
 import { mergeExamples } from "../../packages/server/src/modules/materials/lessons/lesson-drafts";
 import {
   runLessonPoolAgent,
@@ -21,8 +23,7 @@ import {
   type LessonPoolAgentResult,
 } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent";
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
-import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, RunCostSink } from "../../packages/server/src/ports/ai";
-import { endpointKeyFromEnv, isSecureOpenRouterEndpoint } from "../../packages/server/src/providers/openrouter-key";
+import type { ClosedExerciseChecker, LessonExerciseCheckerProvider, LessonPacketGenerator, LessonPoolAgentProvider, RunCostSink } from "../../packages/server/src/ports/ai";
 import { AiSdkExerciseChecker, AiSdkLessonPoolAgent, OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
 import {
   appendProvisionalCostEntry,
@@ -35,7 +36,9 @@ import {
   settleCostEntry,
   sha256File,
 } from "./probe-costs";
-import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
+import { grammarPlainSubject, probeVariantOf } from "./grammar-plain-subject";
+import { pcPoolStats } from "./present-continuous-stats";
+import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers";
 
 /**
  * Próba agenta puli lekcji na PRAWDZIWYCH modelach (`pnpm probe:agent`; etap 1 issue #237,
@@ -74,6 +77,10 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  *   kroki, koszt, wynik kontroli końcowej); istniejący plik nie jest nadpisywany;
  * - `UMIEM_PROBE_COSTS` — rejestr `costs.json` (musi istnieć; nowy zakłada `UMIEM_PROBE_COSTS_INIT=1`
  *   z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD; limit istniejącego rejestru się nie zmienia).
+ * - `UMIEM_PROBE_AGENT_VARIANT` (etap 2 epiku #358, spec etapu 2 §5) — `agent` (domyślnie, rejestr
+ *   produkcyjny), `agent_plain` (agent na module gramatyki bez heurystyk językowych, `grammar-plain-subject.ts`)
+ *   albo `baseline` (przebieg bazowy `runLessonBaselinePool` na tym samym module); dwa ostatnie tylko dla gramatyki.
+ *   `graderAvailable` zawsze `true` (od etapu 3 generowanie lekcji wymaga gradera).
  * Wszystkie ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`). Na konsolę idą
  * wyłącznie liczby, statusy i człony identyfikatorów zagadnień — treść ćwiczeń, materiału,
  * kart i `detail` odrzuceń tylko w zrzucie poza repozytorium.
@@ -85,12 +92,8 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  */
 
 loadDotEnv();
-const llmBaseUrl = process.env.UMIEM_LLM_BASE_URL?.trim() || undefined;
 // Próba woła wyłącznie https OpenRouter, więc klucz generatora tylko wtedy, gdy i on tam wskazuje.
-const apiKey =
-  process.env.OPENROUTER_API_KEY?.trim() ||
-  (isSecureOpenRouterEndpoint(llmBaseUrl) ? endpointKeyFromEnv(process.env, "UMIEM_LLM", llmBaseUrl)?.trim() : undefined) ||
-  undefined;
+const apiKey = probeApiKey();
 const materialEnv = process.env.UMIEM_PROBE_AGENT_MATERIAL?.trim() || undefined;
 const objectivesDumpEnv = process.env.UMIEM_PROBE_AGENT_OBJECTIVES_DUMP?.trim() || undefined;
 const enabled = apiKey !== undefined && (materialEnv !== undefined || objectivesDumpEnv !== undefined);
@@ -178,16 +181,17 @@ class ProbeMeter {
   }
 }
 
-function meteredAgent(inner: LessonPoolAgentProvider, meter: ProbeMeter): LessonPoolAgentProvider {
+function meteredAgent(inner: LessonPoolAgentProvider & LessonPacketGenerator, meter: ProbeMeter): LessonPoolAgentProvider & LessonPacketGenerator {
   return {
     name: inner.name,
     model: inner.model,
     runObjective: (input, tools, cost, signal) => inner.runObjective(input, tools, meter.sink("generator", cost), signal),
     planObjectives: (input, tools, cost, signal) => inner.planObjectives(input, tools, meter.sink("generator", cost), signal),
+    generatePacket: (input, cost, signal) => inner.generatePacket(input, meter.sink("generator", cost), signal),
   };
 }
 
-function meteredChecker(inner: LessonExerciseCheckerProvider, meter: ProbeMeter): LessonExerciseCheckerProvider {
+function meteredChecker(inner: LessonExerciseCheckerProvider & ClosedExerciseChecker, meter: ProbeMeter): LessonExerciseCheckerProvider & ClosedExerciseChecker {
   return {
     name: inner.name,
     model: inner.model,
@@ -195,7 +199,18 @@ function meteredChecker(inner: LessonExerciseCheckerProvider, meter: ProbeMeter)
     judgeVariants: (input, cost, signal) => inner.judgeVariants(input, meter.sink("checker", cost), signal),
     judgeHints: (input, cost, signal) => inner.judgeHints(input, meter.sink("checker", cost), signal),
     solveOpen: (input, cost, signal) => inner.solveOpen(input, meter.sink("checker", cost), signal),
+    checkClosed: (input, cost, signal) => inner.checkClosed(input, meter.sink("checker", cost), signal),
   };
+}
+
+/** Różnorodność zagadnienia: odsetek różnych odpowiedzi (neutralna normalizacja) wśród jego ćwiczeń. */
+function diversityOf(exercises: readonly LessonExerciseDraft[]): Record<string, number> {
+  const byObjective = new Map<string, string[]>();
+  for (const draft of exercises) {
+    const key = baseNormalizer.normalize(draft.answer)[0]!.join(" ");
+    byObjective.set(draft.objectiveId, [...(byObjective.get(draft.objectiveId) ?? []), key]);
+  }
+  return Object.fromEntries([...byObjective].map(([id, keys]) => [slugOf(id), Number((new Set(keys).size / keys.length).toFixed(3))]));
 }
 
 /** Stan lekcji odtworzony z wyniku kierownika (pule i przykłady zagadnień) do niezależnej kontroli końcowej. */
@@ -233,7 +248,10 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     if (dumpPath !== undefined && existsSync(dumpPath)) throw new Error(`${dumpPath} już istnieje — zrzut płatnej próby nie jest nadpisywany`);
     if (subjectKind !== "chapter" && objectivesDumpPath === undefined) throw new Error("grammar i school wymagają UMIEM_PROBE_AGENT_OBJECTIVES_DUMP");
 
-    const subject = createProductionSubjectRegistry().getSubject(SUBJECT_IDS[subjectKind])!;
+    const variant = probeVariantOf(process.env.UMIEM_PROBE_AGENT_VARIANT);
+    if (variant !== "agent" && subjectKind !== "grammar") throw new Error("UMIEM_PROBE_AGENT_VARIANT agent_plain i baseline tylko dla gramatyki");
+    const registry = variant === "agent" ? createProductionSubjectRegistry() : createSubjectRegistry([grammarPlainSubject()]);
+    const subject = registry.getSubject(SUBJECT_IDS[subjectKind])!;
     const objectivesDump = objectivesDumpPath === undefined ? undefined : readObjectivesDump(objectivesDumpPath);
     if (objectivesDump !== undefined && objectivesDump.subjectId !== subject.id) {
       throw new Error(`zrzut zagadnień jest dla ${objectivesDump.subjectId}, próba dla ${subject.id}`);
@@ -251,8 +269,8 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     const effort = (process.env.UMIEM_PROBE_AGENT_REASONING?.trim() || "low").toLowerCase();
     // Dane idą wyłącznie do OpenRouter po https (adres stały, sprawdzony tą samą funkcją co w probe:chapter).
     const host = probeEndpointHost(OPENROUTER_BASE_URL, "OpenRouter", undefined);
-    // Jak potok: preferencja typów otwartych zależy od obecności modelu oceniającego w konfiguracji.
-    const graderAvailable = graderConfigured(withConfigDefaults(process.env));
+    // Od etapu 3 generowanie lekcji wymaga gradera (`lessonAgentPublicFromEnv`), więc wszystkie warianty jak z graderem.
+    const graderAvailable = true;
 
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
@@ -261,7 +279,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     assertWithinCostCap(ledger, runBudgetUsd, `agent ${subjectKind}`);
     if (dumpPath !== undefined) mkdirSync(dirname(dumpPath), { recursive: true });
     const inputLabel = objectivesDumpPath !== undefined ? basename(objectivesDumpPath) : basename(materialPath!);
-    const costEntry = { probe: `agent:${subjectKind}`, dump: inputLabel };
+    const costEntry = { probe: `agent:${subjectKind}:${variant}`, dump: inputLabel };
 
     const openrouter = createOpenRouter({ apiKey, baseURL: OPENROUTER_BASE_URL });
     const meter = new ProbeMeter();
@@ -269,7 +287,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     const checker = meteredChecker(new AiSdkExerciseChecker({ apiKey: "", model: solverId, effort: "low", languageModel: openrouter.chat(solverId, { usage: { include: true } }) }), meter);
 
     line("");
-    line(`=== Próba agenta puli [${subjectKind}, zagadnienia=${objectiveSource.source}] ===`);
+    line(`=== Próba agenta puli [${subjectKind}, wariant=${variant}, zagadnienia=${objectiveSource.source}] ===`);
     line(
       `model=${modelId} reasoning=${effort} checker=${solverId} host=${host} pula=${poolSize} materiał=${material.length} znaków grader=${graderAvailable}; ` +
         `budżet runu=${runBudgetUsd.toFixed(2)} USD, termin=${(runTimeoutMs / 1000).toFixed(0)} s, wydane dotąd=${ledger.spentUsd.toFixed(4)} z ${ledger.capUsd} USD`,
@@ -281,30 +299,26 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     let result: LessonPoolAgentResult | undefined;
     let failure: unknown;
     try {
-      result = await runLessonPoolAgent(
-        {
-          agent,
-          checker,
-          subjects: createProductionSubjectRegistry(),
-          policy: { runBudgetUsd, runTimeoutMs },
-        },
-        {
-          runId: randomUUID(),
-          subjectId: subject.id,
-          deckId: randomUUID(),
-          objectiveSource,
-          topicTitle,
-          material,
-          poolSize,
-          graderAvailable,
-          fixed: [],
-          draftExamples: {},
-          skipObjectives: [],
-          familyScope: null,
-          initialSpentUsd: 0,
-        },
-        new AbortController().signal,
-      );
+      const runInput = {
+        runId: randomUUID(),
+        subjectId: subject.id,
+        deckId: randomUUID(),
+        objectiveSource,
+        topicTitle,
+        material,
+        poolSize,
+        graderAvailable,
+        fixed: [],
+        draftExamples: {},
+        skipObjectives: [],
+        familyScope: null,
+        initialSpentUsd: 0,
+      };
+      const policy = { runBudgetUsd, runTimeoutMs };
+      result =
+        variant === "baseline"
+          ? await runLessonBaselinePool({ generator: agent, checker, subjects: registry, policy }, runInput, new AbortController().signal)
+          : await runLessonPoolAgent({ agent, checker, subjects: registry, policy }, runInput, new AbortController().signal);
     } catch (error) {
       failure = error;
     } finally {
@@ -325,7 +339,10 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     const header = {
       schema: "agent-generation-probe/v1",
       source: "agent",
+      variant,
       at: new Date().toISOString(),
+      // Fikcyjny materiał fixture'u: arkusz ślepej oceny kopiuje go do katalogu sędziego (zrzut poza repozytorium).
+      material,
       subjectKind,
       subjectId: subject.id,
       objectiveSource: objectiveSource.source,
@@ -360,6 +377,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     let finalCheck: Record<string, unknown> = {};
     let exercises: { id: string; draft: LessonExerciseDraft }[] = [];
     let counts = { invariant: 0, hardCoverage: 0, hardGeneration: 0, softCoverage: 0, poolRejected: 0, extraRejected: 0 };
+    let publication: ReturnType<typeof poolCoverage> = [];
     if (topic !== undefined) {
       const state = finalState(subject, topic, kinds, result);
       const lesson = orderedLesson(state);
@@ -379,16 +397,23 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
         extraRejected: extra.length,
       };
       exercises = lesson.map((draft, index) => ({ id: `ex${index + 1}`, draft }));
+      // Minimum publikacji (bramka §9 pkt 3): pokrycie z minimami przedmiotu, bez rezerwy agenta.
+      publication = poolCoverage(lesson, objectiveOrder, lessonPoolMinimums(subject));
       finalCheck = {
         ...counts,
         invariantViolations: invariant,
         leaks: { coverage, generation },
         validatePool: { valid: pool.valid.length, rejected: pool.rejected.map((item) => ({ index: lesson.indexOf(item.exercise), errors: item.errors })) },
         validatePoolExtra: extra.map(([index, errors]) => ({ index, errors })),
+        publication,
+        ...(topic.id === "present_continuous" ? { sceneShare: pcPoolStats(lesson, result.rejections) } : {}),
+        countsByType: lesson.reduce<Record<string, number>>((acc, draft) => ({ ...acc, [draft.exerciseType]: (acc[draft.exerciseType] ?? 0) + 1 }), {}),
+        diversity: diversityOf(lesson),
       };
       line(
         `Kontrola końcowa: ćwiczeń=${lesson.length}; niezmiennik=${counts.invariant}; twarde ujawnienia coverage=${counts.hardCoverage}, generation=${counts.hardGeneration} ` +
-          `(różnica trybów ${counts.hardGeneration - counts.hardCoverage}); miękkie coverage=${counts.softCoverage}; validatePool odrzucone=${counts.poolRejected}; validatePoolExtra=${counts.extraRejected}`,
+          `(różnica trybów ${counts.hardGeneration - counts.hardCoverage}); miękkie coverage=${counts.softCoverage}; validatePool odrzucone=${counts.poolRejected}; validatePoolExtra=${counts.extraRejected}; ` +
+          `braki minimum publikacji=${publication.length}`,
       );
     }
 

@@ -1,0 +1,1506 @@
+{
+ "note": "Ćwiczenia wzorcowe kontroli zadań zamkniętych (spec etapu 2 §6), fikcyjne. wrong_key powstały mechanicznie z correct (jednorazowo, regułą §6); błędność słuchania i rozsypanki potwierdził autor.",
+ "cases": [
+  {
+   "id": "c-choice-1",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "Look! The dog ___ in the garden.",
+    "options": [
+     {
+      "id": "a",
+      "text": "is running"
+     },
+     {
+      "id": "b",
+      "text": "are running"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "is running"
+   }
+  },
+  {
+   "id": "c-choice-2",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "Listen! The girls ___ a song now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "are singing"
+     },
+     {
+      "id": "b",
+      "text": "is singing"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "are singing"
+   }
+  },
+  {
+   "id": "c-choice-3",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.negative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "The cats ___ sleeping right now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "aren't"
+     },
+     {
+      "id": "b",
+      "text": "isn't"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "aren't"
+   }
+  },
+  {
+   "id": "c-listen-1",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Look! Dad ___ cooking dinner.",
+    "options": [
+     {
+      "id": "a",
+      "text": "is"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "is"
+   }
+  },
+  {
+   "id": "c-listen-2",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.negative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "The boys ___ playing now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "aren't"
+     },
+     {
+      "id": "b",
+      "text": "isn't"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "aren't"
+   }
+  },
+  {
+   "id": "c-listen-3",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "___ Mum reading a book?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "b",
+      "text": "Are"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Is"
+   }
+  },
+  {
+   "id": "c-short-1",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is Ola drawing a picture?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, she is."
+     },
+     {
+      "id": "b",
+      "text": "Yes, she does."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, she is."
+   }
+  },
+  {
+   "id": "c-short-2",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Are the boys playing football?",
+    "options": [
+     {
+      "id": "a",
+      "text": "No, they aren't."
+     },
+     {
+      "id": "b",
+      "text": "No, they don't."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "No, they aren't."
+   }
+  },
+  {
+   "id": "c-short-3",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is the cat sleeping?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, it is."
+     },
+     {
+      "id": "b",
+      "text": "Yes, it does."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, it is."
+   }
+  },
+  {
+   "id": "c-notice-1",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Grandma",
+      "is",
+      "baking",
+      "a",
+      "cake."
+     ],
+     [
+      "The",
+      "kitchen",
+      "is",
+      "warm."
+     ]
+    ],
+    "correctOption": "baking",
+    "answer": "baking"
+   }
+  },
+  {
+   "id": "c-notice-2",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "The",
+      "boys",
+      "are",
+      "swimming",
+      "now."
+     ],
+     [
+      "The",
+      "water",
+      "is",
+      "cold."
+     ]
+    ],
+    "correctOption": "swimming",
+    "answer": "swimming"
+   }
+  },
+  {
+   "id": "c-notice-3",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Look!",
+      "Kasia",
+      "is",
+      "riding",
+      "her",
+      "bike."
+     ],
+     [
+      "Her",
+      "bike",
+      "is",
+      "red."
+     ]
+    ],
+    "correctOption": "riding",
+    "answer": "riding"
+   }
+  },
+  {
+   "id": "c-order-1",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Tom"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "c",
+      "text": "reading"
+     },
+     {
+      "id": "d",
+      "text": "a book"
+     }
+    ],
+    "answer": "Tom is reading a book"
+   }
+  },
+  {
+   "id": "c-order-2",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "The children"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     },
+     {
+      "id": "c",
+      "text": "playing"
+     },
+     {
+      "id": "d",
+      "text": "in the park"
+     }
+    ],
+    "answer": "The children are playing in the park"
+   }
+  },
+  {
+   "id": "c-order-3",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "My mum"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "c",
+      "text": "cooking"
+     },
+     {
+      "id": "d",
+      "text": "dinner"
+     }
+    ],
+    "answer": "My mum is cooking dinner"
+   }
+  },
+  {
+   "id": "c-order-4",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "We"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     },
+     {
+      "id": "c",
+      "text": "watching"
+     },
+     {
+      "id": "d",
+      "text": "TV"
+     }
+    ],
+    "answer": "We are watching TV"
+   }
+  },
+  {
+   "id": "c-order-5",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "b",
+      "text": "Ola"
+     },
+     {
+      "id": "c",
+      "text": "sleeping"
+     }
+    ],
+    "answer": "Is Ola sleeping"
+   }
+  },
+  {
+   "id": "c-order-6",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Are"
+     },
+     {
+      "id": "b",
+      "text": "the dogs"
+     },
+     {
+      "id": "c",
+      "text": "barking"
+     }
+    ],
+    "answer": "Are the dogs barking"
+   }
+  },
+  {
+   "id": "c-order-7",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "b",
+      "text": "Dad"
+     },
+     {
+      "id": "c",
+      "text": "washing"
+     },
+     {
+      "id": "d",
+      "text": "the car"
+     }
+    ],
+    "answer": "Is Dad washing the car"
+   }
+  },
+  {
+   "id": "c-order-8",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Tom"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "c",
+      "text": "reading"
+     },
+     {
+      "id": "d",
+      "text": "now"
+     }
+    ],
+    "answer": "Tom is reading now"
+   }
+  },
+  {
+   "id": "c-order-9",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "The cat"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "c",
+      "text": "sleeping"
+     },
+     {
+      "id": "d",
+      "text": "now"
+     }
+    ],
+    "answer": "The cat is sleeping now"
+   }
+  },
+  {
+   "id": "c-order-10",
+   "class": "correct",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Ola"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "c",
+      "text": "drawing"
+     },
+     {
+      "id": "d",
+      "text": "right now"
+     }
+    ],
+    "answer": "Ola is drawing right now"
+   }
+  },
+  {
+   "id": "w-choice-1",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "Look! The dog ___ in the garden.",
+    "options": [
+     {
+      "id": "a",
+      "text": "is running"
+     },
+     {
+      "id": "b",
+      "text": "are running"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "are running"
+   }
+  },
+  {
+   "id": "w-choice-2",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "Listen! The girls ___ a song now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "are singing"
+     },
+     {
+      "id": "b",
+      "text": "is singing"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "is singing"
+   }
+  },
+  {
+   "id": "w-choice-3",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.negative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "The cats ___ sleeping right now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "aren't"
+     },
+     {
+      "id": "b",
+      "text": "isn't"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "isn't"
+   }
+  },
+  {
+   "id": "w-listen-1",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Look! Dad ___ cooking dinner.",
+    "options": [
+     {
+      "id": "a",
+      "text": "is"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "are"
+   }
+  },
+  {
+   "id": "w-listen-2",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.negative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "The boys ___ playing now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "aren't"
+     },
+     {
+      "id": "b",
+      "text": "isn't"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "isn't"
+   }
+  },
+  {
+   "id": "w-listen-3",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_listen_choice",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "___ Mum reading a book?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "b",
+      "text": "Are"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "Are"
+   }
+  },
+  {
+   "id": "w-short-1",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is Ola drawing a picture?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, she is."
+     },
+     {
+      "id": "b",
+      "text": "Yes, she does."
+     }
+    ],
+    "correctOption": "b",
+    "answer": "Yes, she does."
+   }
+  },
+  {
+   "id": "w-short-2",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Are the boys playing football?",
+    "options": [
+     {
+      "id": "a",
+      "text": "No, they aren't."
+     },
+     {
+      "id": "b",
+      "text": "No, they don't."
+     }
+    ],
+    "correctOption": "b",
+    "answer": "No, they don't."
+   }
+  },
+  {
+   "id": "w-short-3",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is the cat sleeping?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, it is."
+     },
+     {
+      "id": "b",
+      "text": "Yes, it does."
+     }
+    ],
+    "correctOption": "b",
+    "answer": "Yes, it does."
+   }
+  },
+  {
+   "id": "w-notice-1",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Grandma",
+      "is",
+      "baking",
+      "a",
+      "cake."
+     ],
+     [
+      "The",
+      "kitchen",
+      "is",
+      "warm."
+     ]
+    ],
+    "correctOption": "Grandma",
+    "answer": "Grandma"
+   }
+  },
+  {
+   "id": "w-notice-2",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "The",
+      "boys",
+      "are",
+      "swimming",
+      "now."
+     ],
+     [
+      "The",
+      "water",
+      "is",
+      "cold."
+     ]
+    ],
+    "correctOption": "boys",
+    "answer": "boys"
+   }
+  },
+  {
+   "id": "w-notice-3",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Look!",
+      "Kasia",
+      "is",
+      "riding",
+      "her",
+      "bike."
+     ],
+     [
+      "Her",
+      "bike",
+      "is",
+      "red."
+     ]
+    ],
+    "correctOption": "Look!",
+    "answer": "Look!"
+   }
+  },
+  {
+   "id": "w-order-1",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Tom"
+     },
+     {
+      "id": "c",
+      "text": "reading"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "d",
+      "text": "a book"
+     }
+    ],
+    "answer": "Tom reading is a book"
+   }
+  },
+  {
+   "id": "w-order-2",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "The children"
+     },
+     {
+      "id": "c",
+      "text": "playing"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     },
+     {
+      "id": "d",
+      "text": "in the park"
+     }
+    ],
+    "answer": "The children playing are in the park"
+   }
+  },
+  {
+   "id": "w-order-3",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "My mum"
+     },
+     {
+      "id": "c",
+      "text": "cooking"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "d",
+      "text": "dinner"
+     }
+    ],
+    "answer": "My mum cooking is dinner"
+   }
+  },
+  {
+   "id": "w-order-4",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "We"
+     },
+     {
+      "id": "c",
+      "text": "watching"
+     },
+     {
+      "id": "b",
+      "text": "are"
+     },
+     {
+      "id": "d",
+      "text": "TV"
+     }
+    ],
+    "answer": "We watching are TV"
+   }
+  },
+  {
+   "id": "w-order-5",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "c",
+      "text": "sleeping"
+     },
+     {
+      "id": "b",
+      "text": "Ola"
+     }
+    ],
+    "answer": "Is sleeping Ola"
+   }
+  },
+  {
+   "id": "w-order-6",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Are"
+     },
+     {
+      "id": "c",
+      "text": "barking"
+     },
+     {
+      "id": "b",
+      "text": "the dogs"
+     }
+    ],
+    "answer": "Are barking the dogs"
+   }
+  },
+  {
+   "id": "w-order-7",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż pytanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Is"
+     },
+     {
+      "id": "c",
+      "text": "washing"
+     },
+     {
+      "id": "b",
+      "text": "Dad"
+     },
+     {
+      "id": "d",
+      "text": "the car"
+     }
+    ],
+    "answer": "Is washing Dad the car"
+   }
+  },
+  {
+   "id": "w-order-8",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Tom"
+     },
+     {
+      "id": "c",
+      "text": "reading"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "d",
+      "text": "now"
+     }
+    ],
+    "answer": "Tom reading is now"
+   }
+  },
+  {
+   "id": "w-order-9",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "The cat"
+     },
+     {
+      "id": "c",
+      "text": "sleeping"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "d",
+      "text": "now"
+     }
+    ],
+    "answer": "The cat sleeping is now"
+   }
+  },
+  {
+   "id": "w-order-10",
+   "class": "wrong_key",
+   "draft": {
+    "exerciseType": "lesson_order",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Ułóż zdanie.",
+    "items": [
+     {
+      "id": "a",
+      "text": "Ola"
+     },
+     {
+      "id": "c",
+      "text": "drawing"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     },
+     {
+      "id": "d",
+      "text": "right now"
+     }
+    ],
+    "answer": "Ola drawing is right now"
+   }
+  },
+  {
+   "id": "s-choice-1",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "The baby ___ now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "is sleeping"
+     },
+     {
+      "id": "b",
+      "text": "is crying"
+     },
+     {
+      "id": "c",
+      "text": "are sleeping"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "is sleeping"
+   }
+  },
+  {
+   "id": "s-choice-2",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "My friends ___ football now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "are playing"
+     },
+     {
+      "id": "b",
+      "text": "are watching"
+     },
+     {
+      "id": "c",
+      "text": "is playing"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "are playing"
+   }
+  },
+  {
+   "id": "s-choice-3",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.negative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "Tom ___ playing now.",
+    "options": [
+     {
+      "id": "a",
+      "text": "isn't"
+     },
+     {
+      "id": "b",
+      "text": "is"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "isn't"
+   }
+  },
+  {
+   "id": "s-choice-4",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_choice",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz poprawną formę.",
+    "stem": "___ they eating lunch?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Are"
+     },
+     {
+      "id": "b",
+      "text": "Aren't"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Are"
+   }
+  },
+  {
+   "id": "s-short-1",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is Ola drawing a picture?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, she is."
+     },
+     {
+      "id": "b",
+      "text": "No, she isn't."
+     },
+     {
+      "id": "c",
+      "text": "Yes, she does."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, she is."
+   }
+  },
+  {
+   "id": "s-short-2",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Are the boys playing?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, they are."
+     },
+     {
+      "id": "b",
+      "text": "No, they aren't."
+     },
+     {
+      "id": "c",
+      "text": "Yes, they do."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, they are."
+   }
+  },
+  {
+   "id": "s-short-3",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Is your dad cooking?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, he is."
+     },
+     {
+      "id": "b",
+      "text": "No, he isn't."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, he is."
+   }
+  },
+  {
+   "id": "s-short-4",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_short_answer",
+    "objectiveId": "english_grammar.present_continuous.questions",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wybierz krótką odpowiedź.",
+    "prompt": "Are you reading?",
+    "options": [
+     {
+      "id": "a",
+      "text": "Yes, I am."
+     },
+     {
+      "id": "b",
+      "text": "No, I'm not."
+     },
+     {
+      "id": "c",
+      "text": "Yes, I do."
+     }
+    ],
+    "correctOption": "a",
+    "answer": "Yes, I am."
+   }
+  },
+  {
+   "id": "s-notice-1",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Mum",
+      "is",
+      "cooking",
+      "and",
+      "singing."
+     ],
+     [
+      "The",
+      "soup",
+      "is",
+      "hot."
+     ]
+    ],
+    "correctOption": "cooking",
+    "answer": "cooking"
+   }
+  },
+  {
+   "id": "s-notice-2",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "The",
+      "kids",
+      "are",
+      "running"
+     ],
+     [
+      "and",
+      "jumping",
+      "now."
+     ]
+    ],
+    "correctOption": "running",
+    "answer": "running"
+   }
+  },
+  {
+   "id": "s-notice-3",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Dad",
+      "is",
+      "reading."
+     ],
+     [
+      "Ola",
+      "is",
+      "writing."
+     ]
+    ],
+    "correctOption": "reading",
+    "answer": "reading"
+   }
+  },
+  {
+   "id": "s-notice-4",
+   "class": "second_correct",
+   "draft": {
+    "exerciseType": "lesson_notice",
+    "objectiveId": "english_grammar.present_continuous.affirmative",
+    "acceptedAnswers": [],
+    "focus": [],
+    "instructionPl": "Wskaż czasownik z -ing.",
+    "noticeSegments": [
+     [
+      "Look!",
+      "The",
+      "birds",
+      "are",
+      "flying",
+      "and",
+      "singing."
+     ],
+     [
+      "The",
+      "sky",
+      "is",
+      "blue."
+     ]
+    ],
+    "correctOption": "flying",
+    "answer": "flying"
+   }
+  }
+ ]
+}

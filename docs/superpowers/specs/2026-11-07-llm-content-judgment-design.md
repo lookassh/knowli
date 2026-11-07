@@ -30,7 +30,7 @@ Zasady:
 - **Historia, postęp, samodzielność, prywatność i obsługa awarii** zostają odpowiedzialnością kodu, bez zmiany zasad.
 - **Koszt.** Akceptujemy większy koszt mocnego modelu, jeśli daje poprawne ćwiczenia, sprawiedliwe ocenianie i prostszy system. Nie optymalizujemy tokenów kosztem własnego silnika językowego. Koszt i czas mierzymy i oceniamy w kontekście rodzinnej aplikacji edukacyjnej.
 
-**Zamrożenie.** Do usunięcia heurystyk nie dodajemy nowych heurystyk językowych i nie poprawiamy istniejących (AGENTS.md). Jeśli na bramce etapu 4 lub 5 przedmiot zostaje na agencie (§11), zamrożenie heurystyk tego przedmiotu zostaje zdjęte.
+**Zamrożenie.** Do usunięcia heurystyk nie dodajemy nowych heurystyk językowych i nie poprawiamy istniejących (AGENTS.md). Jeśli na bramce etapu 4 lub 5 przedmiot zostaje na agencie (§11), zamrożenie heurystyk tego przedmiotu zostaje zdjęte. Przy „nie” na bramce po etapie 2 zamrożenie heurystyk gramatyki znika, a niepodłączony kod etapu 2 jest usuwany w PR, który zapisuje tę decyzję.
 
 ## 3. Stan obecny (mapa z 2026-11-07)
 
@@ -142,7 +142,7 @@ Ręczna edycja i publikacja szkicu przez rodzica przechodzi przez walidację str
 Każdy etap: osobna sesja, własny spec, plan, przegląd trzech krytyków i PR scalany przez właściciela.
 
 1. **Ten spec** (PR dokumentacyjny).
-2. **Przebieg bazowy i sonda gramatyki.** Warunek wstępny: scalone #328. Zakres: przebieg z §4–§5 napisany raz, w kodzie aplikacji (`modules/materials/lessons/` i adapter), bez podłączenia do workera, tylko dla typów gramatyki. Schemat kontroli i porównanie jako czyste funkcje domeny z testami. Sonda woła ten kod, jak dziś `agent-generation.probe.test.ts` woła `runLessonPoolAgent`, i nie ma własnych reguł. Do tego nowa zamrożona rubryka ślepej oceny, ćwiczenia wzorcowe dla kontroli zamkniętych i sonda §12.1. Warstwy z §8 ocenia się tylko wtedy, gdy przebieg bazowy przekroczy próg, i tylko na tych samych paczkach. Kończy się decyzją właściciela na bramce.
+2. **Przebieg bazowy i sonda gramatyki.** Warunek wstępny: scalone #328. Zakres: przebieg z §4–§5 napisany raz, w kodzie aplikacji (`modules/materials/lessons/` i adapter), bez podłączenia do workera, tylko dla typów gramatyki. Schemat kontroli i porównanie jako czyste funkcje domeny z testami. Sonda woła ten kod, jak dziś `agent-generation.probe.test.ts` woła `runLessonPoolAgent`, i nie ma własnych reguł. Do tego nowa zamrożona rubryka ślepej oceny, ćwiczenia wzorcowe dla kontroli zamkniętych i sonda §12.1. Warstwy z §8 ocenia się tylko wtedy, gdy przebieg bazowy przekroczy próg, i tylko na tych samych paczkach. Kończy się decyzją właściciela na bramce po etapie 2 (§12.2); przy „nie” zamrożenie heurystyk gramatyki znika, a niepodłączony kod etapu 2 jest usuwany w PR zapisującym decyzję.
 3. **Ocena odpowiedzi** (równolegle z etapem 2): §6 i §7. Odbiór na próbkach §12.3 przez pełną ścieżkę oceny.
 4. **Gramatyka na przebiegu bazowym** — wymaga ukończenia etapów 2 i 3 (usunięcie heurystyk nie może wyprzedzić nowej oceny odpowiedzi). Na starcie sprawdzić, że na produkcji nadal nie ma lekcji PC. Podłączenie przebiegu z etapu 2 do workera dla gramatyki, tylko warstwy uzasadnione w etapie 2, usunięcie heurystyk gramatyki i agenta dla gramatyki, Present Continuous jako pilot. Rozdział i szkoła zostają na agencie do etapu 5.
 5. **Rozdział i szkoła na przebiegu bazowym** — z własną sondą i bramką (przebieg bazowy kontra agent; agent w rozdziale daje dziś 0 ujawnień). Kontrakty match, group, cloze i keywords (§5); planista rozdziału jako jedno wywołanie ze schematem; kontrole szkoły zostają tylko z dowodem (§8); usunięcie pętli agenta. Wariant awaryjny: przedmiot, w którym przebieg bazowy przegrywa, zostaje na agencie, a zamrożenie jego heurystyk zostaje zdjęte.
@@ -156,7 +156,7 @@ Każdy etap: osobna sesja, własny spec, plan, przegląd trzech krytyków i PR s
 - **Ćwiczenia wzorcowe dla kontroli zamkniętych** (kontrola przechodzi przez nie bez generatora), z etykietami nadanymi według polityki tego specu i zatwierdzonymi w specu etapu 2, w trzech klasach: błędny klucz (także w rozsypance), druga poprawna odpowiedź (typy z opcjami), poprawne ćwiczenie (w tym rozsypanka, w której inny szyk też jest poprawny, np. przestawialny wskaźnik „now” — to nie jest wada). Co najmniej 10 przypadków na klasę.
 - **Miary:** ślepa ocena rubryką (błędny klucz osobno w zadaniach zamkniętych i tekstowych, druga poprawna odpowiedź w zadaniu zamkniętym, dwuznaczne zadanie tekstowe, poza zakresem, zdradzona odpowiedź, wadliwe wyjaśnienie, opcje nie do odróżnienia ze słuchu; różnorodność, poziom), `sceneShare` w celach porównania, minimum publikacji, koszt i czas runu, rozmiar kodu i rodzaje wywołań (§10).
 
-### 12.2 Bramka etapu 4 (decyzja właściciela)
+### 12.2 Bramka po etapie 2 (decyzja właściciela; od niej zależy etap 4)
 
 - **progi bezwzględne per klasa** (bez sumowania klas), łącznie z 3 przebiegów, z licznikiem i mianownikiem — propozycja do zatwierdzenia przed płatnym przebiegiem: błędny klucz ≤ 1% (osobno zamknięte i tekstowe), zadanie zamknięte z drugą poprawną odpowiedzią ≤ 1%, każda pozostała klasa ≤ 3%;
 - porównanie z agentem w każdej klasie osobno: przebieg bazowy ≤ agent + 2 pp;
@@ -224,7 +224,7 @@ Progi (do zatwierdzenia w specu etapu 3):
 ## 17. Zgłoszenia
 
 - **#328** — warunek wstępny sondy etapu 2.
-- **#288** — rozwiązują etapy 3 (wynik „bez ćwiczonej formy”) i 4 (generowanie z jednoznacznym kontekstem; kontrola dwuznaczności tylko jako warstwa z §8); zamknąć po etapie 3.
+- **#288** — rozwiązują etapy 3 (wynik „bez ćwiczonej formy”) i 4 (generowanie z jednoznacznym kontekstem; kontrola dwuznaczności tylko jako warstwa z §8); zamknąć po etapie 4.
 - **#280** — zakres dydaktyczny w opisach celów, bez reguł w kodzie; wraca po etapie 4.
 - **#279** — niezależne; do czasu wdrożenia stały odbiorca.
 

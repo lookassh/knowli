@@ -1,0 +1,13 @@
+{
+  "subjectId": "english_grammar",
+  "topicId": "to_be",
+  "topicVersion": 1,
+  "topicTitle": "To be",
+  "material": "Unit 2 — My family and friends (fragment podręcznika A1, fikcyjny)\n\nWords: mum, dad, sister, brother, grandma, friend, teacher, cat, dog, happy, sad, tired, hungry, tall, small, at home, at school, in the garden, ready, late.\nNouns: family, house, garden, school, park, room, kitchen.\n\nDialogue: Hello! I am Kasia. I'm eight. This is my brother Tomek. He is ten and he's tall. My mum is a teacher. She is at school now. Our dog is small and our cats are hungry.\n\nQuestions: Is your sister at home? Yes, she is. Are you tired? No, I'm not. Are the children in the garden? Yes, they are. Is Dad late? No, he isn't. We aren't sad, we are happy!",
+  "objectives": [
+    { "id": "english_grammar.to_be.affirmative_forms", "title": "Zdania twierdzące: am / is / are", "cards": [] },
+    { "id": "english_grammar.to_be.negative_forms", "title": "Przeczenia: isn't / aren't / I'm not", "cards": [] },
+    { "id": "english_grammar.to_be.questions", "title": "Pytania: Is she…? Are they…?", "cards": [] },
+    { "id": "english_grammar.to_be.short_answers", "title": "Krótkie odpowiedzi: Yes, I am / No, he isn't", "cards": [] }
+  ]
+}
