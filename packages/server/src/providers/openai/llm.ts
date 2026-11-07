@@ -273,7 +273,8 @@ export function lessonSystemPrompt(input: LessonPoolInput): string {
   parts.push(
     "Field meaning: instructionPl is the child-facing instruction in the prompt language; hint is a short child-facing support clue " +
       "in the answer language; acceptedAnswers lists other acceptable formulations of the answer (a shorter wording without optional " +
-      "words counts; the same words with other spelling of contractions or other capitalization do not)." +
+      "words counts, and so does the same sentence with a contraction instead of the full form or the other way round, unless " +
+      "the instruction asks for one of them; other capitalization does not)." +
       (twoLanguages
         ? " Language discipline: exercise stimuli normally use the answer language, except where field rules for this subject " +
           "define a source stimulus in the prompt language; answer and acceptedAnswers always use the answer language. " +

@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { englishNormalizer } from "./subjects/english/normalizer";
-import { historyLikeSubject } from "./testing/history-like-subject";
 import {
   TYPO_TOLERANCE,
   buildAnswerSegments,
@@ -20,8 +18,6 @@ import {
   type LessonAnswerKey,
 } from "./evaluate";
 
-const historyNormalizer = historyLikeSubject.normalizer;
-
 function writtenKey(partial: Partial<LessonAnswerKey> = {}): LessonAnswerKey {
   return {
     exerciseType: "lesson_gap",
@@ -33,29 +29,49 @@ function writtenKey(partial: Partial<LessonAnswerKey> = {}): LessonAnswerKey {
   };
 }
 
-describe("matchLessonAnswer — exact (po normalizacji przedmiotu)", () => {
+describe("matchLessonAnswer — exact (neutralna normalizacja)", () => {
   it("odpowiedź kanoniczna → exact", () => {
-    const r = matchLessonAnswer("He doesn't play football", writtenKey(), englishNormalizer);
+    const r = matchLessonAnswer("He doesn't play football", writtenKey());
     expect(r.kind).toBe("exact");
   });
 
-  it("rozwinięcie skrótu i interpunkcja/wielkość liter nie przeszkadzają → exact", () => {
-    const r = matchLessonAnswer("he does not play football.", writtenKey(), englishNormalizer);
-    expect(r.kind).toBe("exact");
+  it("interpunkcja i wielkość liter nie przeszkadzają → exact", () => {
+    expect(matchLessonAnswer("he doesn't play football.", writtenKey()).kind).toBe("exact");
+  });
+
+  it("skróty nie są rozwijane: pełna forma wobec klucza ze skrótem → no_match (ocenia model)", () => {
+    expect(matchLessonAnswer("he does not play football.", writtenKey()).kind).toBe("no_match");
+  });
+
+  it("niegramatyczne skróty i fałszywe rozwinięcia nie zaliczają bez modelu (#360)", () => {
+    const cases: [string, string, string][] = [
+      ["Yes, she's.", "Yes, she is.", "is"],
+      ["Yes, I'm.", "Yes, I am.", "am"],
+      ["Yes, they're.", "Yes, they are.", "are"],
+      ["He has running.", "He's running.", "running"],
+    ];
+    for (const [answer, key, focus] of cases) {
+      expect(matchLessonAnswer(answer, writtenKey({ answer: key, focus: [focus] })).kind, answer).toBe("no_match");
+    }
+  });
+
+  it("skrót obecny w wariantach → exact", () => {
+    const key = writtenKey({ answer: "She is not at home.", acceptedAnswers: ["She isn't at home."], focus: ["is", "not"] });
+    expect(matchLessonAnswer("she isn't at home", key).kind).toBe("exact");
   });
 
   it("exact na zatwierdzonym wariancie, nie tylko na kanonicznej", () => {
     const key = writtenKey({ answer: "He plays football", acceptedAnswers: ["He plays soccer"], focus: ["plays"] });
-    expect(matchLessonAnswer("he plays soccer", key, englishNormalizer).kind).toBe("exact");
+    expect(matchLessonAnswer("he plays soccer", key).kind).toBe("exact");
   });
 
-  it("niezależność od języka: fixture historyczny, exact mimo wielkości liter", () => {
+  it("niezależność od języka: polski tekst, exact mimo wielkości liter", () => {
     const key = writtenKey({ answer: "Mieszko I", acceptedAnswers: [], focus: ["mieszko", "i"] });
-    expect(matchLessonAnswer("mieszko i", key, historyNormalizer).kind).toBe("exact");
+    expect(matchLessonAnswer("mieszko i", key).kind).toBe("exact");
   });
 
   it("pusta odpowiedź → no_match", () => {
-    expect(matchLessonAnswer("   ", writtenKey(), englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("   ", writtenKey()).kind).toBe("no_match");
   });
 });
 
@@ -63,39 +79,55 @@ describe("matchLessonAnswer — tolerancja drobnej literówki poza focus", () =>
   const key = writtenKey({ answer: "She doesn't like milk", focus: ["doesn't", "like"] });
 
   it("literówka poza focus (milk→milc) → minor_typo z tokenem milc", () => {
-    const r = matchLessonAnswer("She doesn't like milc", key, englishNormalizer);
+    const r = matchLessonAnswer("She doesn't like milc", key);
     expect(r.kind).toBe("minor_typo");
     if (r.kind === "minor_typo") expect(r.typoToken).toBe("milc");
   });
 
   it("literówka W focus (doesn't→dosen't) → no_match", () => {
-    expect(matchLessonAnswer("She dosen't like milk", key, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("She dosen't like milk", key).kind).toBe("no_match");
   });
 
   it("dwie literówki w różnych tokenach → no_match", () => {
-    expect(matchLessonAnswer("She doesn't likk milc", key, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("She doesn't likk milc", key).kind).toBe("no_match");
   });
 
   it("inna liczba tokenów → no_match", () => {
-    expect(matchLessonAnswer("She doesn't like the milk", key, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("She doesn't like the milk", key).kind).toBe("no_match");
   });
 
   it("pusty focus → tolerancja wyłączona (no_match)", () => {
     const noFocus = writtenKey({ answer: "milk", acceptedAnswers: [], focus: [] });
-    expect(matchLessonAnswer("milc", noFocus, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("milc", noFocus).kind).toBe("no_match");
   });
 
   it("token > 6 znaków z OSA 2 → minor_typo", () => {
     const k = writtenKey({ answer: "He plays football", focus: ["plays"] });
     // football (8) → futball: 1 delete + 1 subst = OSA 2
-    const r = matchLessonAnswer("He plays futball", k, englishNormalizer);
+    const r = matchLessonAnswer("He plays futball", k);
     expect(r.kind).toBe("minor_typo");
   });
 
   it("token ≤ 6 znaków z OSA 2 → no_match", () => {
     const k = writtenKey({ answer: "He likes milk", focus: ["likes"] });
     // milk (4) → malc: 2 substytucje = OSA 2 na krótkim tokenie
-    expect(matchLessonAnswer("He likes malc", k, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("He likes malc", k).kind).toBe("no_match");
+  });
+
+  it("focus dosłowny: literówka w słowie formy objętym focus → no_match", () => {
+    expect(matchLessonAnswer("She doesn't likes milk", key).kind).toBe("no_match");
+  });
+
+  it("stara rewizja z focus w formie rozwiniętej: bez tolerancji literówki", () => {
+    const old = writtenKey({ answer: "She doesn't like tea.", focus: ["does", "not"] });
+    expect(matchLessonAnswer("She don't like tea.", old).kind).toBe("no_match");
+    expect(matchLessonAnswer("She doesn't like tee.", old).kind).toBe("no_match");
+  });
+
+  it("focus dosłowny w jednym wariancie, a w drugim nie: tolerancja tylko wobec pierwszego", () => {
+    const k = writtenKey({ answer: "She does not like tea.", acceptedAnswers: ["She doesn't like tea."], focus: ["does", "not"] });
+    expect(matchLessonAnswer("She does not like tee.", k).kind).toBe("minor_typo");
+    expect(matchLessonAnswer("She don't like tea.", k).kind).toBe("no_match");
   });
 
   it("progi są nazwanymi stałymi, nie magią", () => {
@@ -112,12 +144,13 @@ describe("evaluateChoice / evaluateSequence (typy zamknięte)", () => {
     expect(evaluateChoice("o1", key)).toBe(false);
   });
 
-  it("sequence: ta sama długość i kolejność co key.itemIds", () => {
+  it("sequence: klucz → true, inna kolejność → false, nie-permutacja → null", () => {
     const key = writtenKey({ exerciseType: "lesson_order", itemIds: ["a", "b", "c"] });
     expect(evaluateSequence(["a", "b", "c"], key)).toBe(true);
     expect(evaluateSequence(["a", "c", "b"], key)).toBe(false); // zła kolejność
-    expect(evaluateSequence(["a", "b"], key)).toBe(false); // brakujący
-    expect(evaluateSequence(["a", "b", "c", "d"], key)).toBe(false); // nadmiarowy
+    expect(evaluateSequence(["a", "b"], key)).toBeNull(); // brakujący
+    expect(evaluateSequence(["a", "b", "c", "d"], key)).toBeNull(); // nadmiarowy
+    expect(evaluateSequence(["a", "a", "c"], key)).toBeNull(); // powtórzony klocek bez itemValues
   });
 
   it("sequence: klocki o tym samym tekście są zamienne (#298)", () => {
@@ -128,8 +161,8 @@ describe("evaluateChoice / evaluateSequence (typy zamknięte)", () => {
     });
     expect(evaluateSequence(["t2", "c", "s", "t1", "d"], key)).toBe(true); // zamienione identyczne klocki
     expect(evaluateSequence(["t1", "d", "s", "t2", "c"], key)).toBe(false); // inna kolejność słów
-    expect(evaluateSequence(["t1", "c", "s", "t1", "d"], key)).toBe(false); // ten sam klocek dwa razy
-    expect(evaluateSequence(["t1", "c", "s", "x", "d"], key)).toBe(false); // obcy klocek
+    expect(evaluateSequence(["t1", "c", "s", "t1", "d"], key)).toBeNull(); // ten sam klocek dwa razy
+    expect(evaluateSequence(["t1", "c", "s", "x", "d"], key)).toBeNull(); // obcy klocek
   });
 
   it("keywords: poprawne tylko gdy każde wybrane pojęcie jest kluczowe, zakres wyborów nieoceniany", () => {
@@ -148,70 +181,76 @@ describe("validateVerdict — walidacja werdyktu modelu (Zod)", () => {
   const ctx = { allowedCategories: ["wrong_verb_form", "missing_ending"] as const, childAnswer: "He play football" };
 
   it("poprawny incorrect z kategorią celu i fragmentem obecnym w odpowiedzi", () => {
-    const v = validateVerdict({ verdict: "incorrect", errorCategory: "wrong_verb_form", fragments: ["play"], note: "brak -s" }, ctx);
+    const v = validateVerdict({ verdict: "incorrect", errorCategory: "wrong_verb_form", fragments: ["play"], note: "brak -s", usesTargetForm: true }, ctx);
     expect(v).not.toBeNull();
     expect(v?.verdict).toBe("incorrect");
   });
 
   it("kategoria spoza listy → null", () => {
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: "banana", fragments: ["play"], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: "banana", fragments: ["play"], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("kategoria other jest dozwolona", () => {
-    const v = validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "" }, ctx);
+    const v = validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "", usesTargetForm: true }, ctx);
     expect(v).not.toBeNull();
   });
 
   it("correct z kategorią → null", () => {
-    expect(validateVerdict({ verdict: "correct", errorCategory: "wrong_verb_form", fragments: [], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "correct", errorCategory: "wrong_verb_form", fragments: [], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("correct z fragmentem → null", () => {
-    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: ["play"], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: ["play"], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("correct czysty → ok", () => {
-    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "ok" }, ctx)).not.toBeNull();
+    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true }, ctx)).not.toBeNull();
   });
 
   it("incorrect bez kategorii (null) → null", () => {
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: null, fragments: ["play"], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: null, fragments: ["play"], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("fragment nieobecny w odpowiedzi → null", () => {
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["swims"], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["swims"], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("fragment z inną wielkością liter → odrzucony (porównanie z rozróżnieniem wielkości)", () => {
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["Play"], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["Play"], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("5 fragmentów (> 4) → null", () => {
     expect(
-      validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["H", "e", "p", "l", "a"], note: "" }, ctx),
+      validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["H", "e", "p", "l", "a"], note: "", usesTargetForm: true }, ctx),
     ).toBeNull();
   });
 
   it("note > 300 → null (odrzucenie, nie obcięcie)", () => {
     const note = "x".repeat(301);
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note, usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("brak pola verdict → null", () => {
-    expect(validateVerdict({ errorCategory: null, fragments: [], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ errorCategory: null, fragments: [], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("verdict spoza listy → null", () => {
-    expect(validateVerdict({ verdict: "maybe", errorCategory: null, fragments: [], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "maybe", errorCategory: null, fragments: [], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("nadmiarowe pole ignorowane, ale nie przekazywane dalej", () => {
     const v = validateVerdict(
-      { verdict: "almost", errorCategory: null, fragments: ["play"], note: "", extra: "ignore" } as unknown,
+      { verdict: "almost", errorCategory: null, fragments: ["play"], note: "", usesTargetForm: true, extra: "ignore" } as unknown,
       ctx,
     );
     expect(v).not.toBeNull();
-    expect(v && Object.keys(v).sort()).toEqual(["errorCategory", "fragments", "note", "verdict"]);
+    expect(v && Object.keys(v).sort()).toEqual(["errorCategory", "fragments", "note", "usesTargetForm", "verdict"]);
+  });
+
+  it("brak albo zły typ usesTargetForm (grader-v2) → null", () => {
+    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "", usesTargetForm: "yes" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "", usesTargetForm: false }, ctx)?.usesTargetForm).toBe(false);
   });
 
   it("wejście nie-obiekt → null", () => {
@@ -221,11 +260,11 @@ describe("validateVerdict — walidacja werdyktu modelu (Zod)", () => {
   });
 
   it("pusty fragment → null", () => {
-    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: [""], note: "" }, ctx)).toBeNull();
+    expect(validateVerdict({ verdict: "incorrect", errorCategory: "other", fragments: [""], note: "", usesTargetForm: true }, ctx)).toBeNull();
   });
 
   it("almost z kategorią celu jest WERDYKTEM POPRAWNYM pod względem kształtu (walidacja go nie odrzuca; ocenę rozstrzyga gradeFromVerdict)", () => {
-    const v = validateVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "" }, ctx);
+    const v = validateVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "", usesTargetForm: true }, ctx);
     expect(v).not.toBeNull();
     expect(v?.errorCategory).toBe("missing_ending");
   });
@@ -248,21 +287,21 @@ describe("gradeFromMatch / gradeFromVerdict — mapowanie na ocenę celu (tabela
   });
 
   it("werdykt correct → correct/model_correct", () => {
-    expect(gradeFromVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "" })).toEqual({
+    expect(gradeFromVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "", usesTargetForm: true })).toEqual({
       outcome: "correct",
       verdict: "model_correct",
     });
   });
 
   it("werdykt almost bez kategorii (błąd poza celem / drobna nieścisłość) → correct/model_almost", () => {
-    expect(gradeFromVerdict({ verdict: "almost", errorCategory: null, fragments: [], note: "" })).toEqual({
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: null, fragments: [], note: "", usesTargetForm: true })).toEqual({
       outcome: "correct",
       verdict: "model_almost",
     });
   });
 
   it("werdykt almost z kategorią other (błąd poza sprawdzanym elementem) → nadal correct/model_almost", () => {
-    expect(gradeFromVerdict({ verdict: "almost", errorCategory: "other", fragments: ["play"], note: "" })).toEqual({
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: "other", fragments: ["play"], note: "", usesTargetForm: true })).toEqual({
       outcome: "correct",
       verdict: "model_almost",
     });
@@ -273,21 +312,35 @@ describe("gradeFromMatch / gradeFromVerdict — mapowanie na ocenę celu (tabela
     // Spójne z tolerancją literówki (literówka nie może dotyczyć focusa) — tu też
     // błąd na sprawdzanym elemencie nie może dać sukcesu reguły (wymóg 6.4/6.9).
     expect(
-      gradeFromVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "" }),
+      gradeFromVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "", usesTargetForm: true }),
     ).toEqual({ outcome: "incorrect", verdict: "model_incorrect", errorCategory: "missing_ending" });
   });
 
   it("werdykt incorrect z kategorią celu → incorrect/model_incorrect + errorCategory", () => {
     expect(
-      gradeFromVerdict({ verdict: "incorrect", errorCategory: "wrong_verb_form", fragments: ["play"], note: "" }),
+      gradeFromVerdict({ verdict: "incorrect", errorCategory: "wrong_verb_form", fragments: ["play"], note: "", usesTargetForm: true }),
     ).toEqual({ outcome: "incorrect", verdict: "model_incorrect", errorCategory: "wrong_verb_form" });
   });
 
   it("werdykt incorrect z kategorią other → unevaluated/model_other", () => {
-    expect(gradeFromVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "" })).toEqual({
+    expect(gradeFromVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "", usesTargetForm: true })).toEqual({
       outcome: "unevaluated",
       verdict: "model_other",
     });
+  });
+
+  it("bez ćwiczonej formy: correct albo almost poza celem z usesTargetForm=false → model_off_target (#360)", () => {
+    const offTarget = { outcome: "unevaluated", verdict: "model_off_target" };
+    expect(gradeFromVerdict({ verdict: "correct", errorCategory: null, fragments: [], note: "", usesTargetForm: false })).toEqual(offTarget);
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: null, fragments: [], note: "", usesTargetForm: false })).toEqual(offTarget);
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: "other", fragments: ["play"], note: "", usesTargetForm: false })).toEqual(offTarget);
+  });
+
+  it("błąd celu i other nie zależą od usesTargetForm", () => {
+    expect(gradeFromVerdict({ verdict: "almost", errorCategory: "missing_ending", fragments: ["play"], note: "", usesTargetForm: false }))
+      .toEqual({ outcome: "incorrect", verdict: "model_incorrect", errorCategory: "missing_ending" });
+    expect(gradeFromVerdict({ verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "", usesTargetForm: false }))
+      .toEqual({ outcome: "unevaluated", verdict: "model_other" });
   });
 
   it("brak oceny (null) → unevaluated + technical + unavailable", () => {
@@ -298,12 +351,12 @@ describe("gradeFromMatch / gradeFromVerdict — mapowanie na ocenę celu (tabela
 describe("closestApprovedVariant — najbliższy zatwierdzony wariant (oryginalny zapis)", () => {
   it("zwraca wariant o najmniejszej odległości tokenowej, oryginalny zapis", () => {
     const key = writtenKey({ answer: "He plays football", acceptedAnswers: ["He plays soccer"], focus: ["plays"] });
-    expect(closestApprovedVariant("He plays socer", key, englishNormalizer)).toBe("He plays soccer");
+    expect(closestApprovedVariant("He plays socer", key)).toBe("He plays soccer");
   });
 
   it("remis → pierwszy w kolejności answer, ...acceptedAnswers", () => {
     const key = writtenKey({ answer: "abd", acceptedAnswers: ["abe"], focus: ["x"] });
-    expect(closestApprovedVariant("abc", key, englishNormalizer)).toBe("abd");
+    expect(closestApprovedVariant("abc", key)).toBe("abd");
   });
 });
 
@@ -582,31 +635,32 @@ describe("assignmentText", () => {
   });
 });
 
-describe("matchLessonAnswer — Present Continuous (przypięte zachowanie normalizatora)", () => {
+describe("matchLessonAnswer — Present Continuous (neutralna normalizacja)", () => {
   const pcKey = (answer: string, focus: readonly string[]) => writtenKey({ answer, focus });
 
-  it("klucz „He is playing now.” zalicza skrót, małe litery i wersaliki bez kropki", () => {
+  it("klucz „He is playing now.” zalicza małe litery i wersaliki bez kropki; skrót ocenia model", () => {
     const key = pcKey("He is playing now.", ["is", "playing"]);
-    for (const answer of ["He's playing now.", "he is playing now", "HE IS PLAYING NOW"]) {
-      expect(matchLessonAnswer(answer, key, englishNormalizer).kind, answer).toBe("exact");
+    for (const answer of ["he is playing now", "HE IS PLAYING NOW"]) {
+      expect(matchLessonAnswer(answer, key).kind, answer).toBe("exact");
     }
+    expect(matchLessonAnswer("He's playing now.", key).kind).toBe("no_match");
   });
 
-  it("klucz „isn't watching” zalicza „is not watching” i „isnt watching”, ale nie samo „watching”", () => {
+  it("klucz „isn't watching” nie zalicza bez modelu „is not watching”, „isnt watching” ani „watching”", () => {
     const key = pcKey("isn't watching", ["isn't", "watching"]);
-    expect(matchLessonAnswer("is not watching", key, englishNormalizer).kind).toBe("exact");
-    expect(matchLessonAnswer("isnt watching", key, englishNormalizer).kind).toBe("exact");
-    expect(matchLessonAnswer("watching", key, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("is not watching", key).kind).toBe("no_match");
+    expect(matchLessonAnswer("isnt watching", key).kind).toBe("no_match");
+    expect(matchLessonAnswer("watching", key).kind).toBe("no_match");
   });
 
   it("klucz „is playing” nie zalicza samego „playing”", () => {
-    expect(matchLessonAnswer("playing", pcKey("is playing", ["is", "playing"]), englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("playing", pcKey("is playing", ["is", "playing"])).kind).toBe("no_match");
   });
 
   it("skrót po rzeczowniku „Mum's” nie dopasowuje się deterministycznie", () => {
     // Normalizator nie rozwija „Mum's” (rzeczownik), więc taka odpowiedź trafia do
     // modelu oceniającego, gdy jest skonfigurowany (spec Present Continuous §6.3).
     const key = pcKey("Mum is cooking now.", ["is", "cooking"]);
-    expect(matchLessonAnswer("Mum's cooking now.", key, englishNormalizer).kind).toBe("no_match");
+    expect(matchLessonAnswer("Mum's cooking now.", key).kind).toBe("no_match");
   });
 });

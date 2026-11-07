@@ -142,8 +142,8 @@ describe("validateLessonExercise — focus", () => {
     expect(errors.some((e) => e.toLowerCase().includes("focus"))).toBe(true);
   });
 
-  it("przyjmuje focus dopasowany przez wariant normalizacji (skrót rozwinięty)", () => {
-    // doesn't ≡ does not — focus „does not” jest podsekwencją rozwiniętego wariantu
+  it("przyjmuje focus dopasowany przez wariant normalizacji (skrót rozwinięty; starsze szkice dalej się zapisują)", () => {
+    // doesn't ≡ does not — w ocenie taki focus tylko wyłącza tolerancję literówki (etap 3 #360)
     const ex = draft({
       objectiveId: OBJ.negative,
       exerciseType: "lesson_open_answer",
@@ -517,7 +517,7 @@ describe("validateLessonExercise — error_fix i transform", () => {
           objectiveId: OBJ.negative,
           answer: "she doesn't play",
           acceptedAnswers: [],
-          focus: ["does", "not"],
+          focus: ["doesn't"],
           statement: "She plays.",
           transformId: "to_negative",
         },
@@ -604,36 +604,40 @@ describe("withoutRedundantAcceptedVariants", () => {
     });
   }
 
-  it("porzuca wariant skrótowy równoważny odpowiedzi kanonicznej (przeczenia „to be”)", () => {
+  it("zachowuje wariant skrótowy (skróty nie są rozwijane, etap 3 #360)", () => {
     const sanitized = withoutRedundantAcceptedVariants(
       openAnswer({ acceptedAnswers: ["They're not in my class."] }),
-      englishGrammarSubject.normalizer,
     );
-    expect(sanitized.acceptedAnswers).toEqual([]);
+    expect(sanitized.acceptedAnswers).toEqual(["They're not in my class."]);
     expect(sanitized.answer).toBe("They aren't in my class.");
+  });
+
+  it("wariant skrótowy nie łamie reguły variants.duplicate; dosłowny duplikat łamie", () => {
+    const errors = (variant: string) =>
+      validateLessonExercise(openAnswer({ acceptedAnswers: [variant] }), englishGrammarSubject, englishTopic)
+        .filter((e) => e.startsWith("acceptedAnswers"));
+    expect(errors("They're not in my class.")).toEqual([]);
+    expect(errors("they aren't in my class")).not.toEqual([]);
   });
 
   it("porzuca tylko redundantne warianty, różne zachowuje", () => {
     const sanitized = withoutRedundantAcceptedVariants(
       draft({ acceptedAnswers: ["Plays", "does play on Mondays"] }),
-      englishGrammarSubject.normalizer,
     );
     expect(sanitized.acceptedAnswers).toEqual(["does play on Mondays"]);
   });
 
   it("zwraca tę samą instancję, gdy nie ma wariantów redundantnych", () => {
     const ex = draft({ acceptedAnswers: ["does play on Mondays"] });
-    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer)).toBe(ex);
+    expect(withoutRedundantAcceptedVariants(ex)).toBe(ex);
   });
 
   it("zwraca tę samą instancję dla pustych acceptedAnswers", () => {
     const ex = draft({ acceptedAnswers: [] });
-    expect(withoutRedundantAcceptedVariants(ex, englishGrammarSubject.normalizer)).toBe(ex);
+    expect(withoutRedundantAcceptedVariants(ex)).toBe(ex);
   });
 
-  it("porzuca wariant dzielący jedną sekwencję z odpowiedzią przez skrót dwuznaczny ('s → is|has)", () => {
-    // „She's late.” rozwija się do [she is late, she has late] — wspólne
-    // „she is late” z odpowiedzią kanoniczną czyni wariant redundantnym.
+  it("zachowuje wariant ze skrótem dwuznacznym ('s) — porównanie bez rozwijania", () => {
     const sanitized = withoutRedundantAcceptedVariants(
       openAnswer({
         objectiveId: "english_grammar.to_be.affirmative_forms",
@@ -642,38 +646,18 @@ describe("withoutRedundantAcceptedVariants", () => {
         acceptedAnswers: ["She's late."],
         focus: ["late"],
       }),
-      englishGrammarSubject.normalizer,
     );
-    expect(sanitized.acceptedAnswers).toEqual([]);
-  });
-
-  it("porzuca wariant dzielący NIE-pierwszą sekwencję odpowiedzi (regresja „tylko pierwsza sekwencja”)", () => {
-    // Odpowiedź rozwija się do [she is late, she has late]; wariant dzieli DRUGĄ
-    // sekwencję — porównanie samych pierwszych sekwencji (klasa błędu
-    // acceptVerdictAsVariant z WR-01) zostawiłoby ten redundantny wariant.
-    const sanitized = withoutRedundantAcceptedVariants(
-      openAnswer({
-        objectiveId: "english_grammar.to_be.affirmative_forms",
-        prompt: "Ona jest spóźniona.",
-        answer: "She's late.",
-        acceptedAnswers: ["she has late"],
-        focus: ["late"],
-      }),
-      englishGrammarSubject.normalizer,
-    );
-    expect(sanitized.acceptedAnswers).toEqual([]);
+    expect(sanitized.acceptedAnswers).toEqual(["She's late."]);
   });
 
   it("porzuca wariant różniący się tylko wielkością liter i interpunkcją", () => {
     const sanitized = withoutRedundantAcceptedVariants(
       openAnswer({ acceptedAnswers: ["they aren't in my class"] }),
-      englishGrammarSubject.normalizer,
     );
     expect(sanitized.acceptedAnswers).toEqual([]);
   });
 
-  it("zachowuje wariant skrótowy, gdy nie dzieli żadnej sekwencji z odpowiedzią", () => {
-    // „He isn't late.” → [he is not late] — brak wspólnej sekwencji z [he is late].
+  it("zachowuje wariant o innej treści", () => {
     const sanitized = withoutRedundantAcceptedVariants(
       openAnswer({
         prompt: "Czy on jest spóźniony?",
@@ -681,7 +665,6 @@ describe("withoutRedundantAcceptedVariants", () => {
         acceptedAnswers: ["He isn't late."],
         focus: ["late"],
       }),
-      englishGrammarSubject.normalizer,
     );
     expect(sanitized.acceptedAnswers).toEqual(["He isn't late."]);
   });

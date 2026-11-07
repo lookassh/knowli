@@ -23,11 +23,16 @@ export interface AvoidSentencesInput {
   /** Szkic i wcześniejsze partie przebiegu (już jako szkice ćwiczeń). */
   readonly exercises: readonly LessonExerciseDraft[];
   readonly subject: LeakSubject;
+  /**
+   * Zdania z treści kart (`cardExposureSources`): na końcu listy, bo podagent dostaje je w całości osobno
+   * (`cardSentences`), a przy limicie ważniejsze są rozwiązania ćwiczeń (#328).
+   */
+  readonly cardSentences?: readonly string[];
 }
 
 /**
  * Priorytet: wszystkie przykłady kart, potem rozwiązania ćwiczeń niesamodzielnych,
- * potem samodzielnych (w obu grupach najnowsze pierwsze); deduplikacja po
+ * potem samodzielnych (w obu grupach najnowsze pierwsze), na końcu zdania z treści kart; deduplikacja po
  * `answersEquivalent`; limit 60 pozycji i 4000 znaków łącznie (pozycja
  * przekraczająca limit znaków jest pomijana, kolejne krótsze mogą się zmieścić).
  */
@@ -39,6 +44,7 @@ export function avoidSentencesFor(input: AvoidSentencesInput): string[] {
     ...Object.values(input.examples).flat(),
     ...newestFirst.filter((exercise) => stageOf(exercise.exerciseType) !== "independent").map((exercise) => exerciseExposureText(subject, exercise)),
     ...newestFirst.filter((exercise) => stageOf(exercise.exerciseType) === "independent").map((exercise) => exerciseExposureText(subject, exercise)),
+    ...(input.cardSentences ?? []),
   ];
   const kept: string[] = [];
   let chars = 0;

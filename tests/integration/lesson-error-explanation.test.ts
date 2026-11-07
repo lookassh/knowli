@@ -399,7 +399,7 @@ const choiceWrong: Answer = (task, key) => ({
 });
 const text = (value: string): Answer => () => ({ modality: "text", text: value });
 const dontRemember: Answer = () => ({ modality: "dont_remember" });
-const missingEndingGrader = () => new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s" } });
+const missingEndingGrader = () => new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s", usesTargetForm: true } });
 
 describe("sesja — wyjaśnienie w feedbacku po błędzie", () => {
   it("błędny wybór → incorrect z wyjaśnieniem, jego nagraniem i nagraniem zdania; jedno audio_issued; samodzielność jak bez wyjaśnienia", async () => {
@@ -484,7 +484,7 @@ describe("sesja — wyjaśnienie w feedbacku po błędzie", () => {
   });
 
   describe("nadpisanie rodzica „niepoprawne” werdyktu kategorii other (model_incorrect bez szablonu)", () => {
-    const otherGrader = () => new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "off topic" } });
+    const otherGrader = () => new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: ["play"], note: "off topic", usesTargetForm: true } });
 
     async function overriddenRetry(explanations?: Scenario["explanations"]) {
       const played = await play({

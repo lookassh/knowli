@@ -1,5 +1,6 @@
 import type { LessonExerciseType, SubjectModule } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
+import { englishCardSentences } from "../english/card-sentences";
 import { grammarAgentPolicy } from "./agent-policy";
 import { ENGLISH_GRAMMAR_ERROR_CATEGORIES } from "./error-categories";
 import { englishGrammarPrompts } from "./prompts";
@@ -42,6 +43,9 @@ export const englishGrammarSubject: SubjectModule = {
   prompts: englishGrammarPrompts,
   poolDeduplication: "exercise",
   validateExercise: validateEnglishGrammarExercise,
+  // Zdania angielskie z kart są gotowymi rozwiązaniami (#328): źródło ujawnień przy generowaniu puli.
+  // Polskie fragmenty bez diakrytyków też przechodzą, ale nie zrównają się z angielską odpowiedzią.
+  cardExposureTexts: englishCardSentences,
   // Gramatyka ćwiczy zastosowanie reguły; audio odpowiedzi ujawniałoby rozwiązanie.
   ttsForAnswers: false,
   ttsForPrompts: false,

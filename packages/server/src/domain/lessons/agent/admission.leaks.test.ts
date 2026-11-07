@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { cardExposureSources } from "../card-exposure-sources";
 import { englishNormalizer } from "../subjects/english/normalizer";
+import { englishGrammarSubject } from "../subjects/english-grammar/module";
 import { A, B, contextFor, gap, naChecks, open, stateWith, subject } from "../testing/agent-admission-fixtures";
 import type { LessonExerciseDraft } from "../types";
-import { admitBatch, precheckBatch, submitExamples, type AdmitEntry } from "./admission";
-import { poolOf, type LessonAgentState } from "./state";
+import { admitBatch, precheckBatch, submitExamples, type AdmitEntry, type AgentCheckContext } from "./admission";
+import { agentObjectivesOf } from "./capable";
+import { createLessonAgentState, poolOf, type LessonAgentState } from "./state";
 
 const ctx = contextFor();
 
@@ -37,6 +40,40 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
   it("stałe źródło (fixedSources) innego zagadnienia też ujawnia: leak_victim", () => {
     const state = stateWith({ fixedSources: { [B]: ["w 966 roku"] } });
     expect(rejectionOf(submit(state, A, [open(A, "Kiedy?", "w 966 roku")]).results[0]).code).toBe("leak_victim");
+  });
+
+  it("gramatyka (#328): zdanie z karty jako klucz tłumaczenia odpada (lesson.leak), nowe zdanie przechodzi", () => {
+    const topic = englishGrammarSubject.topics.find((item) => item.id === "present_continuous")!;
+    const objectiveId = "english_grammar.present_continuous.affirmative";
+    // Zdanie z karty innego zagadnienia („Teraz czy zwykle?”): źródła ujawnień obejmują całą lekcję.
+    const state = createLessonAgentState({
+      topic,
+      objectives: agentObjectivesOf(topic),
+      fixed: [],
+      examples: {},
+      fixedSources: cardExposureSources(englishGrammarSubject, topic),
+    });
+    const grammarCtx: AgentCheckContext = {
+      subject: englishGrammarSubject,
+      material: "",
+      limits: new Map([[objectiveId, { targetCount: 8, listenAllowance: 2, maxExercises: 12 }]]),
+    };
+    // Odpowiedź i warianty „teraz” jak w poprawnym tłumaczeniu celu (reguły Present Continuous przechodzą).
+    const translation = (prompt: string, subjectVerb: string, rest: string): LessonExerciseDraft => ({
+      exerciseType: "lesson_open_answer",
+      objectiveId,
+      instructionPl: "Przetłumacz na angielski.",
+      prompt,
+      answer: `${subjectVerb}${rest} now.`,
+      acceptedAnswers: [`${subjectVerb}${rest} right now.`, `${subjectVerb}${rest} at the moment.`],
+      focus: subjectVerb.split(" ").slice(1),
+    });
+    const drafts = [translation("Tata teraz gotuje.", "Dad is cooking", ""), translation("Ola teraz czyta książkę.", "Ola is reading", " a book")];
+    const result = admitBatch(state, objectiveId, precheckBatch(state, objectiveId, drafts, grammarCtx), naChecks(drafts.length), grammarCtx);
+    const rejection = rejectionOf(result.results[0]);
+    expect(rejection).toMatchObject({ kind: "leak", code: "leak_victim", ruleIds: ["lesson.leak"] });
+    expect(rejection.reasons[0]).toContain('the card example "Dad is cooking now."');
+    expect(result.results[1]).toHaveProperty("accepted");
   });
 
   it("niesamodzielny kandydat ujawniający przyjęte samodzielne: leak_source z identyfikatorem ofiary", () => {
@@ -173,7 +210,7 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
       const siblings = submitEn(state, A, [member(2, "f1", "It's a spider"), member(3, "f1")]);
       expect(siblings.results.map((entry) => ("accepted" in entry ? "accepted" : rejectionOf(entry).code))).toEqual(["accepted", "accepted"]);
       expect(poolOf(siblings.state, A)).toHaveLength(3);
-      const outsider = { ...member(4), prompt: "Pytanie spoza rodziny: co to jest?", answer: "It's a spider" };
+      const outsider = open(A, "Pytanie spoza rodziny: co to jest?", "It's a spider");
       expect(rejectionOf(submitEn(siblings.state, A, [outsider]).results[0]).code).toBe("leak_victim");
     });
 

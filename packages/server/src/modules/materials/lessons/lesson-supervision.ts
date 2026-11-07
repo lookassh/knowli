@@ -23,6 +23,7 @@ import {
 } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { mapObjectiveStatus } from "../../../domain/lessons/progress-status";
+import { baseNormalizer } from "../../../domain/lessons/normalize";
 import { answersEquivalent } from "../../../domain/lessons/pool-validation";
 import type { LearningObjective, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
@@ -411,8 +412,8 @@ export async function lessonObjectiveProgress(
 }
 
 /**
- * Werdykty modelu dla ćwiczeń tej lekcji (opublikowana + edytowalna wersja),
- * najnowsze najpierw, z flagą decyzji rodzica. `childAnswer` to
+ * Werdykty modelu bieżących wersji promptu dla ćwiczeń tej lekcji (opublikowana +
+ * edytowalna wersja), najnowsze najpierw, z flagą decyzji rodzica. `childAnswer` to
  * `normalized_answer` (materiał wspólny, bez kolumn dziecka). Bez sekretów.
  */
 export async function listLessonVerdicts(services: Services, deckId: string): Promise<LessonVerdictDto[]> {
@@ -432,10 +433,14 @@ export async function listLessonVerdicts(services: Services, deckId: string): Pr
   const objectiveByRevision = new Map(revisionRows.map((r) => [r.id, toExerciseDraft(r.payload).objectiveId]));
   const revisionIds = revisionRows.map((r) => r.id);
 
+  // Tylko werdykty bieżących wersji promptu: starsze zostają historią, decyzje na nich
+  // nie działają pod nową wersją (etap 3 #360). Bez gradera cache nie jest czytany.
+  const promptVersions = services.grader?.provider.promptVersions ?? [];
+  if (promptVersions.length === 0) return [];
   const rows = await services.db
     .select()
     .from(lessonVerdicts)
-    .where(inArray(lessonVerdicts.itemRevisionId, revisionIds))
+    .where(and(inArray(lessonVerdicts.itemRevisionId, revisionIds), inArray(lessonVerdicts.promptVersion, [...promptVersions])))
     .orderBy(desc(lessonVerdicts.createdAt), desc(lessonVerdicts.id));
 
   return rows.map((row) => ({
@@ -540,10 +545,15 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
   // samego learning_item w bieżącym szkicu, nie do rewizji werdyktu (która może
   // należeć do opublikowanej wersji).
   const sourceRevision = (await services.db
-    .select({ itemId: itemRevisions.itemId })
+    .select({ itemId: itemRevisions.itemId, payload: itemRevisions.payload })
     .from(itemRevisions)
     .where(eq(itemRevisions.id, verdict.itemRevisionId)))[0];
   if (!sourceRevision) throw new AppError("not_found");
+  // Rozsypankę ocenia klucz ułożony z klocków, a inną kolejność — cache werdyktów; jej
+  // `acceptedAnswers` nie biorą udziału w ocenie (etap 3 #360). Przed utworzeniem szkicu.
+  if (toExerciseDraft(sourceRevision.payload).exerciseType === "lesson_order") {
+    throw new AppError("validation", { message: "rozsypanka nie ma wariantów odpowiedzi — użyj decyzji „uznaj”" });
+  }
   const itemId = sourceRevision.itemId;
   const normalized = verdict.normalizedAnswer;
 
@@ -577,13 +587,10 @@ export async function acceptVerdictAsVariant(services: Services, verdictId: stri
     }
 
     const draft = toExerciseDraft(target.payload);
-    // Pełna relacja równoważności (każda wspólna sekwencja normalizacji — ta sama
-    // co `validateAcceptedAnswers` i sanityzacja generacji). Porównanie samej
-    // pierwszej sekwencji dopisywało wariant redundantny wobec odpowiedzi
-    // kanonicznej, gdy równoważność tkwiła w dalszej sekwencji skrótu
-    // dwuznacznego („She's…” → is|has), i twardo blokowało publikację szkicu.
+    // Ta sama relacja co `validateAcceptedAnswers` (neutralna normalizacja, etap 3):
+    // wariant ze skrótem wobec pełnej formy jest nowym wariantem.
     const alreadyPresent = [draft.answer, ...draft.acceptedAnswers].some(
-      (v) => answersEquivalent(v, normalized, subject.normalizer),
+      (v) => answersEquivalent(v, normalized, baseNormalizer),
     );
     if (alreadyPresent) {
       return { deckVersionId: draftVersionId!, added: false };

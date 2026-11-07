@@ -97,5 +97,13 @@ describe("lessonGraderInput", () => {
     const input = lessonGraderInput({ ...args, schoolCriteria: undefined, answerText: "x".repeat(300) });
     expect(input.school).toBeUndefined();
     expect(input.childAnswer).toHaveLength(200);
+    expect(input.blocks).toBeUndefined();
+  });
+
+  it("arranged blocks (lesson_order) keep the order and cut to 600 (#360)", () => {
+    const input = lessonGraderInput({ ...args, schoolCriteria: undefined, answerText: "x".repeat(700), blocks: ["b", "a"] });
+    expect(input.blocks).toEqual(["b", "a"]);
+    expect(input.childAnswer).toHaveLength(600);
+    expect(input.school).toBeUndefined();
   });
 });

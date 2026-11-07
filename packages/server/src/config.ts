@@ -374,7 +374,7 @@ export function lessonSpeechFromEnv(env: Record<string, string | undefined>, usa
 
 /** Domyślne limity gradera (design „Model oceniający”). */
 export const DEFAULT_GRADER_TIMEOUT_MS = 8000;
-export const DEFAULT_GRADER_MAX_CALLS_PER_SESSION = 20;
+export const DEFAULT_GRADER_MAX_CALLS_PER_SESSION = Number(CONFIG_DEFAULTS.UMIEM_GRADER_MAX_CALLS_PER_SESSION);
 
 /** Termin asynchronicznej oceny; zostawia zapas przed finalizacją po 120 s. */
 export const DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS = 60_000;
@@ -625,7 +625,7 @@ export function lessonAgentSettingsFromEnv(env: Record<string, string | undefine
 export interface LessonAgentPublic {
   readonly generationService: string;
   readonly checkService: string;
-  /** Usługa oceny odpowiedzi próbnych do pytań otwartych (`host · model` gradera); brak = grader niedostępny. */
+  /** Usługa oceny odpowiedzi (`host · model` gradera); poza trybem fake zawsze obecna — bez gradera generowanie jest niedostępne. */
   readonly openCheckService?: string;
 }
 
@@ -657,10 +657,12 @@ export function lessonAgentPublicFromEnv(env: Record<string, string | undefined>
     return undefined;
   }
   if (apiKey === undefined) return undefined;
+  // Lekcje bez gradera oceniałyby tylko klucz: generowanie wymaga pełnej konfiguracji UMIEM_GRADER_* (etap 3 #360).
   const openCheckService = openCheckServiceLabel(env);
+  if (openCheckService === undefined) return undefined;
   return {
     generationService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_MODEL")}`,
     checkService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_CHECKER_MODEL")}`,
-    ...(openCheckService ? { openCheckService } : {}),
+    openCheckService,
   };
 }

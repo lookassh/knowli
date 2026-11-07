@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { createLessonAgentState, withPool } from "../../../domain/lessons/agent/state";
+import { AVOID_SENTENCES_MAX_ITEMS } from "../../../domain/lessons/avoid-sentences";
+import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import type { LessonExerciseDraft } from "../../../domain/lessons/types";
 import { lessonAgentLimits } from "./lesson-pool-agent";
@@ -58,5 +60,18 @@ describe("objectiveAgentInput — pozycja i liczba ćwiczeń zagadnienia", () =>
     expect(inputFor(state, 1).objective).toMatchObject({ index: 1, existingCount: 4 });
     expect(inputFor(state, 0).objective).toMatchObject({ index: 0, existingCount: 1 });
     expect(inputFor(state, 2).objective).toMatchObject({ index: 2, existingCount: 0 });
+  });
+});
+
+describe("objectiveAgentInput — zdania kart na liście do unikania (#328)", () => {
+  it("zdania kart na końcu: przy limicie lista niesie rozwiązania ćwiczeń, a zdania kart zostają w `cardSentences`", () => {
+    const empty = createLessonAgentState({ topic: TOPIC, objectives: OBJECTIVES, fixed: [], examples: {}, fixedSources: cardExposureSources(englishGrammarSubject, TOPIC) });
+    expect(inputFor(empty, 0).pool.avoidSentences).toContain("Do you play?");
+    const pool = Array.from({ length: AVOID_SENTENCES_MAX_ITEMS }, (_, index) => ({ id: `ex${index + 1}`, draft: draft(OBJECTIVES[1]!.id, `I have ${index + 1} cats.`) }));
+    const full = withPool(empty, OBJECTIVES[1]!.id, pool);
+    const input = inputFor(full, 0);
+    expect(input.pool.avoidSentences).toHaveLength(AVOID_SENTENCES_MAX_ITEMS);
+    expect(input.pool.avoidSentences).not.toContain("Do you play?");
+    expect(input.cardSentences).toContain("Do you play?");
   });
 });

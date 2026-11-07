@@ -375,7 +375,7 @@ describe("kartkówka lekcji — raport, ekspozycje, omówienie", () => {
   });
 
   it("ocena modelem w kartkówce: wynik ukryty, ale assessment zapisany", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
     const { services } = graderServices(grader);
     const child = await createChild(services, { displayName: "L", avatarKey: "owl" });
     const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, testDate: "2026-10-20" });
