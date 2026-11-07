@@ -173,7 +173,7 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
       const siblings = submitEn(state, A, [member(2, "f1", "It's a spider"), member(3, "f1")]);
       expect(siblings.results.map((entry) => ("accepted" in entry ? "accepted" : rejectionOf(entry).code))).toEqual(["accepted", "accepted"]);
       expect(poolOf(siblings.state, A)).toHaveLength(3);
-      const outsider = { ...member(4), prompt: "Pytanie spoza rodziny: co to jest?", answer: "It's a spider" };
+      const outsider = open(A, "Pytanie spoza rodziny: co to jest?", "It's a spider");
       expect(rejectionOf(submitEn(siblings.state, A, [outsider]).results[0]).code).toBe("leak_victim");
     });
 

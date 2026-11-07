@@ -631,9 +631,9 @@ async function loadCurrentLessonRevisions(tx: Tx, versionId: string): Promise<Cu
  * (bez `id`) dostają nowy learning_item i skill_version. Usunięte znikają wraz
  * z powiązaniami. `target_key` z `lessonExerciseTargetKey` (domyślnie `computeTargetKey(answer, answerLocale)`).
  */
-/** Ćwiczenie z patcha rodzica bez wariantów `acceptedAnswers` równoważnych odpowiedzi kanonicznej. */
-function withoutRedundantInputVariants(input: LessonExerciseInput, subject: SubjectModule): LessonExerciseInput {
-  const kept = withoutRedundantAcceptedVariants(toExerciseDraft(input), subject.normalizer).acceptedAnswers;
+/** Ćwiczenie z patcha rodzica bez wariantów `acceptedAnswers` równych odpowiedzi kanonicznej (neutralna normalizacja). */
+function withoutRedundantInputVariants(input: LessonExerciseInput): LessonExerciseInput {
+  const kept = withoutRedundantAcceptedVariants(toExerciseDraft(input)).acceptedAnswers;
   return kept.length === input.acceptedAnswers.length ? input : { ...input, acceptedAnswers: [...kept] };
 }
 
@@ -839,7 +839,7 @@ export async function editLessonDraft(
       const topic = requireTopic(services, effectiveContext);
       // Warianty równoważne odpowiedzi po normalizacji pomijamy jak przy generacji: nie zmieniają
       // oceny, a rozszerzenie tabeli skrótów (np. „there's”) czyni takimi warianty zapisane wcześniej.
-      const exercises = patch.exercises.map((input) => withoutRedundantInputVariants(input, subject));
+      const exercises = patch.exercises.map((input) => withoutRedundantInputVariants(input));
       // Walidacja per ćwiczenie — zbieramy wszystkie błędy, nie przerywamy na pierwszym.
       const drafts = exercises.map(toExerciseDraft);
       const grounded = splitByPoolExtra(subject, drafts, context.material);
@@ -947,7 +947,7 @@ export async function publishLessonDraft(
     // Pokrycie etapów ocenianych per cel.
     // Bez wariantów równoważnych odpowiedzi (jak przy zapisie): szkic zapisany przed rozszerzeniem
     // tabeli skrótów publikuje się bez ręcznego czyszczenia; zapisane rewizje zostają bez zmian.
-    const drafts: LessonExerciseDraft[] = revisions.map((r) => withoutRedundantAcceptedVariants(toExerciseDraft(r.payload), subject.normalizer));
+    const drafts: LessonExerciseDraft[] = revisions.map((r) => withoutRedundantAcceptedVariants(toExerciseDraft(r.payload)));
     const topic = requireTopic(services, context);
     const groundedPublish = splitByPoolExtra(subject, drafts, context.material);
     const invalid = [...groundedPublish.extraRejected, ...validatePool(groundedPublish.kept, subject, topic).rejected];

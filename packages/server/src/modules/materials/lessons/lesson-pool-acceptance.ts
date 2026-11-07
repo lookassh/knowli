@@ -42,7 +42,7 @@ export function sanitizeFreshLessonDraft(
   // Ćwiczenie słuchowe nie ma polecenia, podpowiedzi ani piktogramu: dodatek modelu usuwamy, nie odrzucamy ćwiczenia.
   const stripped = stripListenChoiceExtras(withoutEmptyOptionalArrays(explained));
   const scoped = familyScope === null ? stripped : scopeFamiliesToRun(stripped, familyScope);
-  const sanitized = withoutRedundantAcceptedVariants(scoped, subject.normalizer);
+  const sanitized = withoutRedundantAcceptedVariants(scoped);
   return {
     draft: sanitized,
     explanationNotes,
