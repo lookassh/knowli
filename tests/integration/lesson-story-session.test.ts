@@ -11,6 +11,7 @@ import {
   endSession,
   englishGrammarSubject,
   FakeAnswerGrader,
+  fakeGraderDeps,
   listLessonVerdicts,
   nextTask,
   readAttempt,
@@ -772,7 +773,8 @@ describe("historyjka — wydanie na koniec sesji", () => {
     expect(strip(await progressSnapshot(session.childId))).toEqual(before);
     // Nadzór werdyktów rodzica nie pokazuje odpowiedzi na pytania historyjki.
     const optionTexts = new Set(STORY_FIXTURE.questions.flatMap((question) => question.options.map((option) => option.text)));
-    const verdicts = await listLessonVerdicts(services, lesson.deckId);
+    // Z graderem w usługach — bez niego lista jest zawsze pusta (bieżące wersje promptu).
+    const verdicts = await listLessonVerdicts({ ...services, grader: fakeGraderDeps() }, lesson.deckId);
     expect(verdicts.filter((verdict) => optionTexts.has(verdict.childAnswer))).toEqual([]);
     for (const question of questions) expect(await assessmentCountOf(question.taskId)).toBe(0);
   });

@@ -412,8 +412,8 @@ export async function lessonObjectiveProgress(
 }
 
 /**
- * Werdykty modelu dla ćwiczeń tej lekcji (opublikowana + edytowalna wersja),
- * najnowsze najpierw, z flagą decyzji rodzica. `childAnswer` to
+ * Werdykty modelu bieżących wersji promptu dla ćwiczeń tej lekcji (opublikowana +
+ * edytowalna wersja), najnowsze najpierw, z flagą decyzji rodzica. `childAnswer` to
  * `normalized_answer` (materiał wspólny, bez kolumn dziecka). Bez sekretów.
  */
 export async function listLessonVerdicts(services: Services, deckId: string): Promise<LessonVerdictDto[]> {
@@ -433,10 +433,14 @@ export async function listLessonVerdicts(services: Services, deckId: string): Pr
   const objectiveByRevision = new Map(revisionRows.map((r) => [r.id, toExerciseDraft(r.payload).objectiveId]));
   const revisionIds = revisionRows.map((r) => r.id);
 
+  // Tylko werdykty bieżących wersji promptu: starsze zostają historią, decyzje na nich
+  // nie działają pod nową wersją (etap 3 #360). Bez gradera cache nie jest czytany.
+  const promptVersions = services.grader?.provider.promptVersions ?? [];
+  if (promptVersions.length === 0) return [];
   const rows = await services.db
     .select()
     .from(lessonVerdicts)
-    .where(inArray(lessonVerdicts.itemRevisionId, revisionIds))
+    .where(and(inArray(lessonVerdicts.itemRevisionId, revisionIds), inArray(lessonVerdicts.promptVersion, [...promptVersions])))
     .orderBy(desc(lessonVerdicts.createdAt), desc(lessonVerdicts.id));
 
   return rows.map((row) => ({

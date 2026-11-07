@@ -183,6 +183,26 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(examplesJoined).not.toContain("bbbmarker");
   });
 
+  it("lista werdyktów pokazuje tylko bieżące wersje promptu; bez gradera jest pusta (#360)", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
+    const services = graderServices(grader);
+    const cookie = await parentCookie(services);
+    const child = await createChild(services, { displayName: "A", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true, withObjectiveAssessment: true, now: new Date() });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const task = await issueUntil(services, session.sessionId, "lesson_transform");
+    await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
+    await pool.query(
+      `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
+       select gen_random_uuid(), item_revision_id, 'stary werdykt', 'fake-grader-v1', grader_model, 'correct' from learning_app.lesson_verdicts`,
+    );
+    const list = LessonVerdictDtoSchema.array().parse(await (await call(services, "GET", `lessons/${lesson.deckId}/verdicts`, { cookie })).json());
+    expect(list.map((verdict) => verdict.childAnswer)).toEqual(["she play"]);
+    const withoutGrader = graderServices(null);
+    const empty = await call(withoutGrader, "GET", `lessons/${lesson.deckId}/verdicts`, { cookie });
+    expect(await empty.json()).toEqual([]);
+  });
+
   it("werdykty: lista z flagą decyzji; decyzja NIE zmienia assessments ani child_objective_progress", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s", usesTargetForm: true } });
     const services = graderServices(grader);
