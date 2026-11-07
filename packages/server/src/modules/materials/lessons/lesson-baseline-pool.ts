@@ -1,12 +1,10 @@
 import { AppError } from "../../../errors";
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
-import { submitExamples, type AgentCheckContext, type ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
-import { createLessonAgentState, orderedEntries, poolOf, takeIds, withPool, type LessonAgentState } from "../../../domain/lessons/agent/state";
-import { lessonInvariantCheck, objectiveStatus } from "../../../domain/lessons/agent/status";
-import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
-import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
+import { lessonRulesStep, snapshotOf, submitExamples } from "../../../domain/lessons/agent/admission";
+import { orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
+import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { closedCheckContract, closedCheckItem, closedCheckVerdict } from "../../../domain/lessons/closed-check";
-import { bucketOf, packetPlan, type PacketBucket, type PacketPlan, type StageCounts } from "../../../domain/lessons/packet-plan";
+import { bucketOf, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type { AgentObjective, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -14,8 +12,11 @@ import type { ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, R
 import { GenerationProviderError, type GenerationProviderErrorKind } from "../../../ports/generation-error";
 import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { buildPoolInput, listenChoiceAllowance, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
+import { lessonAvoidSentences } from "./lesson-pool-agent-input";
 import {
   emptyLessonPoolAgentStats,
+  objectivesToRun,
+  poolStartState,
   slugOf,
   type LessonPoolAgentResult,
   type LessonPoolAgentRunInput,
@@ -36,7 +37,8 @@ import { parseLessonRecord, type RejectionLogEntry } from "./lesson-pool-agent-t
  * zagadnienia paczki cel × typ (jedno wywołanie generatora na paczkę), walidacja struktury, jedna
  * kontrola zadań zamkniętych na paczkę i — po wszystkich zagadnieniach — jedna walidacja puli w
  * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Te same typy wejścia i wyniku
- * co `runLessonPoolAgent`. Niepodłączony do workera (etap 4). Bez bazy i identyfikatorów przedmiotów.
+ * co `runLessonPoolAgent`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Worker
+ * woła go dla przedmiotu z `baselinePool`. Bez bazy i identyfikatorów przedmiotów.
  */
 
 export interface LessonBaselineDeps {
@@ -72,19 +74,15 @@ interface ObjectiveOutcome {
 function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput): { subject: SubjectModule; topic: LessonTopic } {
   const subject = deps.subjects.getSubject(input.subjectId);
   if (subject === undefined) throw new AppError("validation", { message: `unknown subject ${input.subjectId}` });
-  // Etap 2: tylko pula tematu katalogowego od zera (rozdział, szkoła i „dodaj N” zostają na agencie).
+  // Tylko zagadnienia z katalogu (rozdział i szkoła zostają na agencie).
   if (input.objectiveSource.source !== "catalog") throw new AppError("validation", { message: "baseline pool needs catalog objectives" });
-  if (input.target !== undefined && input.target.mode !== "pool") throw new AppError("validation", { message: "baseline pool supports pool mode only" });
-  if (input.fixed.length > 0) throw new AppError("validation", { message: "baseline pool starts without fixed exercises" });
-  // Wznowienia i przykłady z zewnątrz obsłuży dopiero etap 4 — odrzucenie zamiast cichego pominięcia.
-  const resumed =
-    input.skipObjectives.length > 0 ||
-    Object.keys(input.draftExamples).length > 0 ||
-    Object.keys(input.initialExamples ?? {}).length > 0 ||
-    input.examplesFixed !== undefined ||
-    (input.extraExposureSources?.length ?? 0) > 0;
-  if (resumed) throw new AppError("validation", { message: "baseline pool does not support resume inputs yet" });
-  return { subject, topic: input.objectiveSource.topic };
+  const topic = input.objectiveSource.topic;
+  const target = input.target;
+  if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
+    // Przed wywołaniami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
+    throw new AppError("validation", { message: `unknown objective ${target.objectiveId}` });
+  }
+  return { subject, topic };
 }
 
 /**
@@ -181,8 +179,12 @@ export async function runLessonBaselinePool(
     signal.throwIfAborted();
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
-    const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
-    const avoidSentences = avoidSentencesFor({ examples: {}, exercises: [], subject, cardSentences });
+    // Stan startowy jak u agenta: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
+    // limity zapisu (`lessonAgentLimits`; `maxExercises` nie działa — przyjmowanie nie woła kroku limitów).
+    const start = poolStartState({ subject, topic, objectives, input, planExamples: {} });
+    const { ctx, addMode, promptTargets } = start;
+    const avoidSentences = lessonAvoidSentences(subject, topic, start.state);
+    const examplesFixed = input.examplesFixed ?? false;
     // Równoległość żądań: generowanie jak zagadnienia agenta, kontrola jak checker agenta; budżet sprawdzany po zajęciu miejsca.
     const generatorSlots = new Semaphore(policy.concurrency);
     const checkerSlots = new Semaphore(policy.checkerConcurrency);
@@ -282,10 +284,14 @@ export async function runLessonBaselinePool(
       }
     };
 
-    const runObjective = async (objective: AgentObjective, index: number): Promise<ObjectiveOutcome> => {
-      const catalogObjective = topic.objectives.find((item) => item.id === objective.id)!;
-      const split: StageCounts = poolStageCounts(subject, catalogObjective.exerciseTypes, counts[index]!);
-      const plan = packetPlan(subject, catalogObjective, split, listenChoiceAllowance(subject, catalogObjective, []));
+    const runObjective = async (objective: AgentObjective): Promise<ObjectiveOutcome> => {
+      const position = topic.objectives.findIndex((item) => item.id === objective.id);
+      const catalogObjective = topic.objectives[position]!;
+      // „Dodaj N”: liczby z braków etapów + N, bez podnoszenia do minimum i bez notice; pula: cele etapów z `packetPlan`.
+      const plan =
+        promptTargets !== undefined
+          ? packetPlanForTargets(catalogObjective, promptTargets.stages, false, promptTargets.listenAllowance)
+          : packetPlan(subject, catalogObjective, poolStageCounts(subject, catalogObjective.exerciseTypes, counts[position]!), listenChoiceAllowance(subject, catalogObjective, []));
       let calls = 0;
       let spent = 0;
       const sink: RunCostSink = {
@@ -296,7 +302,7 @@ export async function runLessonBaselinePool(
           spent += cost.spentUsd - before;
         },
       };
-      const outcomes = await allSettledOrThrow(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, packetIndex === 0, sink)));
+      const outcomes = await allSettledOrThrow(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, !examplesFixed && packetIndex === 0, sink)));
       const failed = outcomes.find((outcome) => outcome.kind === "failed");
       if (failed !== undefined) {
         return { objective, plan, packets: [], examples: undefined, failure: agentFailureOf(failed.error), calls, spentUsd: spent };
@@ -305,16 +311,14 @@ export async function runLessonBaselinePool(
       return { objective, plan, packets, examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
     };
 
-    const outcomes = await allSettledOrThrow(objectives.map((objective, index) => runObjective(objective, index)));
+    const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
 
-    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka; kandydat łamiący walidację odpada.
+    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka, krokami 3–4 przyjmowania agenta
+    // (kandydat odpada także, gdy czyni nową ofiarą inne ćwiczenie, również `fixed`).
     // Najpierw udział każdej paczki, potem zapasy w tej samej kolejności — zapas pierwszego typu nie wypycha drugiego.
-    const limits = new Map<string, ObjectiveAgentLimits>(
-      outcomes.map((outcome) => [outcome.objective.id, { targetCount: 0, listenAllowance: outcome.plan.caps.listen, maxExercises: Number.POSITIVE_INFINITY }]),
-    );
-    const ctx: AgentCheckContext = { subject, material: input.material, limits };
-    let state: LessonAgentState = createLessonAgentState({ topic, objectives, fixed: [], examples: {}, fixedSources: cardExposureSources(subject, topic) });
+    let state: LessonAgentState = start.state;
+    let before = snapshotOf(state, ctx);
     const overflow = new Map<string, number>();
     for (const outcome of outcomes) {
       const id = outcome.objective.id;
@@ -328,13 +332,13 @@ export async function runLessonBaselinePool(
           overflow.set(id, (overflow.get(id) ?? 0) + 1);
           continue;
         }
-        const taken = takeIds(state, 1);
-        const next = withPool(taken.state, id, [...poolOf(taken.state, id), { id: taken.ids[0]!, draft }]);
-        if (lessonInvariantCheck(next, ctx).length > 0) {
-          reject(id, draft.exerciseType, "lesson", "lesson_pool");
+        const step = lessonRulesStep(state, id, draft, before, ctx);
+        if (!step.ok) {
+          reject(id, draft.exerciseType, step.rejection.kind, step.rejection.code, step.rejection.ruleIds);
           continue;
         }
-        state = next;
+        state = step.state;
+        before = step.snapshot;
         used[bucket] += 1;
         stats.accepted += 1;
       }
@@ -346,8 +350,9 @@ export async function runLessonBaselinePool(
 
     const settledList: SettledObjective[] = outcomes.map((outcome) => {
       const id = outcome.objective.id;
-      const status = objectiveStatus(state, id, ctx);
-      const exercises = orderedEntries(state).filter((entry) => entry.objectiveId === id).map((entry) => entry.draft);
+      const status = objectiveStatusFor(state, id, ctx, addMode);
+      // Tylko ćwiczenia tej próby (bez `fixed`), jak `poolExercises` agenta.
+      const exercises = orderedEntries(state).filter((entry) => entry.objectiveId === id && entry.id !== null).map((entry) => entry.draft);
       const base = {
         objectiveId: id,
         missing: status.missing,

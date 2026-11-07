@@ -248,7 +248,7 @@ function poolExercises(state: LessonAgentState, objectiveId: string): LessonExer
 }
 
 /** Limity przyjmowania i liczby promptu zagadnienia w trybie „dodaj N” (§6.4). */
-interface AddModePlan {
+export interface AddModePlan {
   readonly limits: ObjectiveAgentLimits;
   readonly promptTargets: { readonly stages: LlmLessonStageCounts; readonly listenAllowance: number };
 }
@@ -400,6 +400,56 @@ export async function runLessonPoolAgent(
   }
 }
 
+/**
+ * Stan startowy kierownika (pula i „dodaj N”): limity zagadnień, stan lekcji z `fixed`, przykładami
+ * (przykłady planu wygrywają z początkowymi) i stałymi źródłami ujawnień, a w trybie „dodaj N” —
+ * limity i liczby promptu zagadnienia z {@link addModePlan}. Wspólne z przebiegiem bazowym.
+ */
+export function poolStartState(args: {
+  readonly subject: SubjectModule;
+  readonly topic: LessonTopic;
+  readonly objectives: readonly AgentObjective[];
+  readonly input: LessonPoolAgentRunInput;
+  readonly planExamples: Readonly<Record<string, readonly string[]>>;
+}): {
+  state: LessonAgentState;
+  ctx: AgentCheckContext;
+  addMode?: { readonly remaining: number };
+  promptTargets?: AddModePlan["promptTargets"];
+} {
+  const { subject, topic, objectives, input } = args;
+  const limits = new Map(lessonAgentLimits(subject, topic, input.poolSize));
+  const ctx: AgentCheckContext = { subject, material: input.material, limits };
+  const addTarget = input.target?.mode === "add" ? input.target : undefined;
+  const extraSources = input.extraExposureSources ?? [];
+  const state = createLessonAgentState({
+    topic,
+    objectives,
+    fixed: input.fixed,
+    // Przykłady planu wygrywają z początkowymi per zagadnienie.
+    examples: { ...input.initialExamples, ...args.planExamples },
+    fixedSources: mergeExamples(
+      mergeExamples(cardExposureSources(subject, topic), input.draftExamples),
+      extraSources.length === 0 ? {} : { [EXTRA_SOURCES_KEY]: extraSources },
+    ),
+  });
+  if (addTarget === undefined) return { state, ctx };
+  // Tryb „dodaj N”: braki etapów na starcie (nie zależą od `targetCount`, więc wystarczą limity puli w ctx),
+  // potem limity zagadnienia ustawiane raz.
+  const objective = topic.objectives.find((item) => item.id === addTarget.objectiveId)!;
+  const plan = addModePlan(subject, objective, input.fixed, addTarget.count, objectiveStatus(state, addTarget.objectiveId, ctx));
+  limits.set(addTarget.objectiveId, plan.limits);
+  return { state, ctx, addMode: { remaining: addTarget.count }, promptTargets: plan.promptTargets };
+}
+
+/** Zagadnienia do wygenerowania: w puli bez pominiętych (`skipObjectives`), w „dodaj N” tylko cel. */
+export function objectivesToRun(objectives: readonly AgentObjective[], input: LessonPoolAgentRunInput): AgentObjective[] {
+  const target = input.target;
+  if (target?.mode === "add") return objectives.filter((objective) => objective.id === target.objectiveId);
+  const skipped = new Set(input.skipObjectives);
+  return objectives.filter((objective) => !skipped.has(objective.id));
+}
+
 interface SuperviseArgs {
   readonly deps: LessonPoolAgentDeps;
   readonly input: LessonPoolAgentRunInput;
@@ -430,33 +480,9 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
   const { deps, input, subject, topic, objectives, policy, cost } = args;
   const examplesFixed = input.examplesFixed ?? input.objectiveSource.source === "planner";
 
-  const limits = new Map(lessonAgentLimits(subject, topic, input.poolSize));
-  const ctx: AgentCheckContext = { subject, material: input.material, limits };
-  const addTarget = input.target?.mode === "add" ? input.target : undefined;
-  const addMode = addTarget === undefined ? undefined : { remaining: addTarget.count };
-
-  const extraSources = input.extraExposureSources ?? [];
-  let state = createLessonAgentState({
-    topic,
-    objectives,
-    fixed: input.fixed,
-    // Przykłady planu wygrywają z początkowymi per zagadnienie.
-    examples: { ...input.initialExamples, ...args.planExamples },
-    fixedSources: mergeExamples(
-      mergeExamples(cardExposureSources(subject, topic), input.draftExamples),
-      extraSources.length === 0 ? {} : { [EXTRA_SOURCES_KEY]: extraSources },
-    ),
-  });
-  // Tryb „dodaj N”: braki etapów na starcie (nie zależą od `targetCount`, więc wystarczą limity puli w ctx),
-  // potem limity zagadnienia ustawiane raz.
-  let promptTargets: AddModePlan["promptTargets"] | undefined;
-  if (addTarget !== undefined) {
-    const objective = topic.objectives.find((item) => item.id === addTarget.objectiveId)!;
-    const start = objectiveStatus(state, addTarget.objectiveId, ctx);
-    const plan = addModePlan(subject, objective, input.fixed, addTarget.count, start);
-    limits.set(addTarget.objectiveId, plan.limits);
-    promptTargets = plan.promptTargets;
-  }
+  const start = poolStartState({ subject, topic, objectives, input, planExamples: args.planExamples });
+  const { ctx, addMode, promptTargets } = start;
+  let state = start.state;
   const getState = () => state;
   const setState = (next: LessonAgentState) => {
     state = next;
@@ -570,7 +596,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
             topic,
             state,
             objective,
-            limits: limits.get(objective.id)!,
+            limits: ctx.limits.get(objective.id)!,
             material: input.material,
             ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
             ...(input.interests === undefined ? {} : { interests: input.interests }),
@@ -644,10 +670,7 @@ async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPool
     return settled;
   };
 
-  const skipped = new Set(input.skipObjectives);
-  const toRun = objectives.filter((objective) =>
-    addTarget === undefined ? !skipped.has(objective.id) : objective.id === addTarget.objectiveId,
-  );
+  const toRun = objectivesToRun(objectives, input);
   await Promise.all(toRun.map((objective) => objectiveSemaphore.run(() => runOne(objective)).catch(fail)));
   await hooks;
   if (failure !== undefined) throw failure.error;
