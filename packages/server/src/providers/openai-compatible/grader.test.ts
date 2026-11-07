@@ -169,10 +169,28 @@ describe("createOpenAiCompatibleGrader", () => {
     expect(system).toContain("confusedConcepts");
   });
 
-  it("promptVersion jest stałą adaptera", () => {
+  it("promptVersion jest stałą adaptera; promptVersions to bieżące wersje lekcji i szkoły", () => {
     const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
-    expect(typeof grader.promptVersion).toBe("string");
-    expect(grader.promptVersion.length).toBeGreaterThan(0);
+    expect(grader.promptVersion).toBe("grader-v2");
+    expect(grader.promptVersions).toEqual(["grader-v2", "school-grader-v3"]);
+  });
+
+  it("grader-v2: definicja poprawności i usesTargetForm w prompcie; linia rozsypanki tylko przy blocks (#360)", async () => {
+    const { calls, fetchImpl } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    const messagesOf = (i: number) => (JSON.parse(calls[i]!.init.body) as { messages: { role: string; content: string }[] }).messages;
+    await grader.grade(input, AbortSignal.timeout(1000));
+    await grader.grade({ ...input, blocks: ["Tom", "is", "reading", "now"], childAnswer: "Tom is reading now" }, AbortSignal.timeout(1000));
+    const [plainSystem, plainUser] = messagesOf(0).map((m) => m.content);
+    const [blocksSystem, blocksUser] = messagesOf(1).map((m) => m.content);
+    expect(plainSystem).toContain("The answer is correct when it does what the instruction asks");
+    expect(plainSystem).toContain("`usesTargetForm` is true when the answer uses the form practised by the learning objective");
+    expect(plainSystem).toContain('"usesTargetForm": boolean');
+    expect(plainSystem).not.toContain("put the given blocks in this order");
+    expect(plainUser).not.toContain('"blocks"');
+    expect(blocksSystem).toContain("put the given blocks in this order");
+    expect(blocksSystem).toContain("there is no 'almost'");
+    expect(blocksUser).toContain('"blocks":["Tom","is","reading","now"]');
   });
 });
 

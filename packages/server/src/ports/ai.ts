@@ -543,6 +543,12 @@ export interface GraderInput {
    */
   readonly childAnswer: string;
   /**
+   * Rozsypanka (etap 3 #360): klocki w kolejności ułożonej przez dziecko. Obecność
+   * dokłada do promptu lekcji linię o ułożonej kolejności; `childAnswer` to te same
+   * klocki złączone spacją (tekst wyłącznie z ćwiczenia, limit 600 znaków).
+   */
+  readonly blocks?: readonly string[];
+  /**
    * Dane ścieżki szkolnej (Etap 2): elementy wymagane ćwiczenia, forma i cytaty
    * źródłowe. Obecność przełącza adapter na werdykt dwuwymiarowy i prompt
    * `school-grader-v3` (design §9.1); brak = dotychczasowy werdykt v1.
@@ -569,6 +575,8 @@ export interface AnswerGraderProvider {
   readonly name: string;
   readonly model: string;
   readonly promptVersion: string;
+  /** Wszystkie bieżące wersje promptu (lekcje i szkoła) — panel werdyktów pokazuje tylko je. */
+  readonly promptVersions: readonly string[];
   /** Wersja promptu dla konkretnego wejścia (szkoła/grupa); brak = `promptVersion`. */
   promptVersionForInput?(input: GraderInput): string;
   /**

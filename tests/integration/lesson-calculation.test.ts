@@ -181,7 +181,7 @@ async function reachCalculation(activeServices: typeof services, childId: string
 
 async function calculationWorld(withGrader = true) {
   const grade = vi.fn(async () => { throw new Error("calculation must never invoke the grader"); });
-  const activeServices = createServices({ db, clock: new ManualClock(), ...(withGrader ? { grader: { provider: { name: "throwing", model: "throwing", promptVersion: "calculation-test-v1", grade }, maxCallsPerSession: 20, timeoutMs: 1000 } } : {}) });
+  const activeServices = createServices({ db, clock: new ManualClock(), ...(withGrader ? { grader: { provider: { name: "throwing", model: "throwing", promptVersion: "calculation-test-v1", promptVersions: ["calculation-test-v1"], grade }, maxCallsPerSession: 20, timeoutMs: 1000 } } : {}) });
   const child = await createChild(activeServices, { displayName: "Rachunki", avatarKey: "owl" });
   const { deckId, versionId } = await seedDraft();
   const draft = await editLessonDraft(activeServices, versionId, { expectedEditNumber: 1, exercises: [calculationExercise(), ...publishablePool().filter((ex) => ex.exerciseType !== "lesson_calculation")] });

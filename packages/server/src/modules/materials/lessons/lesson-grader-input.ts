@@ -73,8 +73,10 @@ export function lessonGraderInput(args: {
   readonly acceptedAnswers: readonly string[];
   readonly schoolCriteria: SchoolCriteria | undefined;
   readonly answerText: string;
+  /** Rozsypanka: klocki w kolejności dziecka (`GraderInput.blocks`). */
+  readonly blocks?: readonly string[];
 }): GraderInput {
-  const { subject, topic, objective, instruction, stimulus, answer, acceptedAnswers, schoolCriteria, answerText } = args;
+  const { subject, topic, objective, instruction, stimulus, answer, acceptedAnswers, schoolCriteria, answerText, blocks } = args;
   const labels = lessonCategoryLabels(subject, topic);
   const school = schoolCriteria
     ? {
@@ -98,8 +100,9 @@ export function lessonGraderInput(args: {
       errorCategories: objective.errorCategories.map((code) => ({ code, label: labels.get(code) ?? code })),
     },
     acceptedAnswers: [answer, ...acceptedAnswers],
-    // Limit ścieżki szkolnej 600 znaków (odpowiedzi otwarte), lekcje bez zmian 200.
-    childAnswer: answerText.slice(0, school ? 600 : 200),
+    // 600 znaków: odpowiedzi otwarte szkoły i ułożone klocki (tekst ćwiczenia); pozostałe lekcje 200.
+    childAnswer: answerText.slice(0, school || blocks ? 600 : 200),
+    ...(blocks ? { blocks: [...blocks] } : {}),
     ...(school ? { school } : {}),
   };
 }
