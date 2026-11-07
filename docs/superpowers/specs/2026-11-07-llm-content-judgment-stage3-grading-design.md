@@ -1,6 +1,6 @@
 # Etap 3: ocena odpowiedzi dziecka w lekcjach — design
 
-Wersja 2, 2026-11-07, po przeglądzie trzech krytyków (prostota, poprawność danych, sprawiedliwość oceny). Issue #360, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` w wersji 4 (§6, §7, §12.3, §13, §16). Stan kodu: `origin/main` c1e0620b.
+Wersja 2, 2026-11-07, po przeglądzie trzech krytyków (prostota, poprawność danych, sprawiedliwość oceny). Zatwierdzona przez właściciela 2026-11-07 („tak na 1–3”): progi §12, odstępstwo §6 (bez `usesTargetForm` w DTO rodzica) i płatny przebieg próbek z limitem 0,20 USD. Issue #360, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` w wersji 4 (§6, §7, §12.3, §13, §16). Stan kodu: `origin/main` c1e0620b.
 
 Ten dokument przekłada §6–§7 specu zbiorczego na konkretne zmiany w kodzie. Nie dodaje nowych zasad: tam, gdzie spec zbiorczy coś rozstrzyga, ten dokument tylko wskazuje miejsce w kodzie. Kryterium prostoty (§10 zbiorczego) obowiązuje: każda zmiana ma albo usuwać kod rozumiejący język, albo realizować wynik „bez ćwiczonej formy” i rozsypankę przez model. Jedno świadome odstępstwo od specu zbiorczego, do zatwierdzenia przez właściciela, opisuje §6 (flaga w DTO rodzica).
 

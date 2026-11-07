@@ -375,8 +375,7 @@ function gradeLessonAnswer(
   }
 
   // text: luka / error_fix / transform / open_answer → dopasowanie deterministyczne
-  const normalizer = normalizerFor(services, key.subjectId);
-  const match = matchLessonAnswer(input.text, key, normalizer);
+  const match = matchLessonAnswer(input.text, key);
   const grade = gradeFromMatch(match);
   if (grade === null) {
     // brak dopasowania, brak modelu w tym zadaniu → nieocenione (technical)
@@ -388,7 +387,7 @@ function gradeLessonAnswer(
     };
   }
   if (match.kind === "minor_typo") {
-    const variant = closestApprovedVariant(input.text, key, normalizer);
+    const variant = closestApprovedVariant(input.text, key);
     const segments = buildAnswerSegments(input.text, [match.typoToken]);
     const feedback: FeedbackDto = {
       kind: "lesson_almost",
@@ -550,8 +549,7 @@ function resultFromVerdict(
   const grade: ObjectiveGrade = authoritativeIncorrect
     ? { outcome: "incorrect", verdict: "model_incorrect", ...(verdict?.errorCategory && verdict.errorCategory !== "other" ? { errorCategory: verdict.errorCategory } : {}) }
     : gradeFromVerdict(verdict);
-  const normalizer = normalizerFor(services, key.subjectId);
-  const correctText = closestApprovedVariant(childAnswer, key, normalizer);
+  const correctText = closestApprovedVariant(childAnswer, key);
 
   if (grade.verdict === "unavailable") {
     return { grade, feedback: { kind: "not_assessed" }, exposures: [], details: { objectiveId, verdict: "unavailable" } };
@@ -724,12 +722,14 @@ function verdictFromCacheRow(row: LessonVerdictRow): GraderVerdict {
     errorCategory: row.errorCategory,
     fragments: row.fragments ?? [],
     note: row.note ?? "",
+    usesTargetForm: row.usesTargetForm ?? true,
   };
   switch (row.parentDecision) {
     case "overridden_correct":
-      return { verdict: "correct", errorCategory: null, fragments: [], note: stored.note };
+      // „uznaj” = sukces celu, także gdy model stwierdził inną formę
+      return { verdict: "correct", errorCategory: null, fragments: [], note: stored.note, usesTargetForm: true };
     case "overridden_incorrect":
-      return { verdict: "incorrect", errorCategory: stored.errorCategory ?? "other", fragments: stored.fragments, note: stored.note };
+      return { verdict: "incorrect", errorCategory: stored.errorCategory ?? "other", fragments: stored.fragments, note: stored.note, usesTargetForm: true };
     default:
       return stored;
   }
@@ -1637,6 +1637,7 @@ async function finalizeGradedAttempt(
         errorCategory: args.verdict.errorCategory,
         fragments: [...args.verdict.fragments],
         note: args.verdict.note,
+        usesTargetForm: args.verdict.usesTargetForm,
         createdAt: receivedAt,
       })
       .onConflictDoNothing({

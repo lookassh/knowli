@@ -1,8 +1,8 @@
 /**
- * Ocena odpowiedzi lekcji (design „Ocena”, „Model oceniający”). Czysta domena:
- * subject-agnostyczna — działa z dowolnym `AnswerNormalizer` (angielski,
- * fixture historyczny). Silnik nie importuje `subjects/`; test (`evaluate.test`)
- * może importować `englishNormalizer`, bo jest wykluczony z testu architektury.
+ * Ocena odpowiedzi lekcji (design „Ocena”, „Model oceniający”). Czysta domena,
+ * niezależna od przedmiotu: dopasowanie używa neutralnej normalizacji
+ * (`normalizeTokens`) bez rozwijania skrótów — skrót zalicza się bez modelu tylko
+ * wtedy, gdy dokładnie ta forma jest w kluczu albo wariantach (etap 3, #360).
  *
  * Ścieżka deterministyczna: `matchLessonAnswer` (exact → minor_typo → no_match)
  * i typy zamknięte. Ścieżka modelu: `validateVerdict` (Zod) + `gradeFromVerdict`.
@@ -11,7 +11,8 @@
 import { z } from "zod";
 import type { OutcomeReason, SkillOutcome } from "../types";
 import { editDistance } from "../text-distance";
-import type { AnswerNormalizer, LessonExerciseType } from "./types";
+import { normalizeTokens } from "./normalize";
+import type { LessonExerciseType } from "./types";
 
 /** Klucz odpowiedzi ćwiczenia (design „Ocena”, `LessonAnswerKey`). */
 export interface LessonAnswerKey {
@@ -62,6 +63,8 @@ export interface GraderVerdict {
   readonly errorCategory: string | null;
   readonly fragments: readonly string[];
   readonly note: string;
+  /** Czy odpowiedź używa formy ćwiczonej w celu (`grader-v2`); `false` przy poprawnej = „bez ćwiczonej formy”. */
+  readonly usesTargetForm: boolean;
 }
 
 /** Kontekst walidacji werdyktu: kategorie celu i surowa odpowiedź dziecka. */
@@ -81,6 +84,7 @@ export interface ObjectiveGrade {
     | "model_almost"
     | "model_incorrect"
     | "model_other"
+    | "model_off_target"
     | "unavailable"
     | "closed_correct"
     | "closed_incorrect"
@@ -97,23 +101,17 @@ function casefoldStable(text: string): boolean {
   return [...text.toLowerCase()].length === [...text].length;
 }
 
-/** Pierwsze dopasowanie w zbiorze sekwencji po obu stronach → exact. */
 function sequencesEqual(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((token, i) => token === b[i]);
 }
 
-/**
- * Zbiór tokenów „w focus”: każdy token z każdego wariantu znormalizowanego
- * `focus`. Token odpowiedzi jest „w focus”, jeśli należy do tego zbioru.
- */
-function focusTokenSet(focus: readonly string[], normalizer: AnswerNormalizer): Set<string> {
-  const set = new Set<string>();
-  for (const variant of normalizer.normalize(focus.join(" "))) {
-    for (const token of variant) {
-      set.add(token);
-    }
+/** Czy `needle` jest ciągłą, niepustą podsekwencją `haystack`. */
+function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length === 0) return false;
+  for (let start = 0; start + needle.length <= haystack.length; start++) {
+    if (needle.every((token, k) => haystack[start + k] === token)) return true;
   }
-  return set;
+  return false;
 }
 
 /** Maksymalny dozwolony OSA dla danego tokenu wg jego długości (punkty kodowe). */
@@ -124,51 +122,33 @@ function typoThresholdFor(token: string): number {
 }
 
 /**
- * Dopasowanie odpowiedzi do klucza (design „Ocena”):
- * 1. normalizacja odpowiedzi i wszystkich wariantów normalizatorem przedmiotu,
- * 2. równość dowolnych dwóch sekwencji → exact,
- * 3. sekwencja wariantu tej samej długości różniąca się DOKŁADNIE jednym
- *    tokenem spoza focus, z OSA w progu → minor_typo (token = zapis dziecka),
+ * Dopasowanie odpowiedzi do klucza (design „Ocena”, etap 3 §2–§3):
+ * 1. neutralna normalizacja odpowiedzi i wariantów (bez rozwijania skrótów),
+ * 2. równość z dowolnym wariantem → exact,
+ * 3. wariant tej samej długości różniący się DOKŁADNIE jednym tokenem spoza
+ *    focus, z OSA w progu → minor_typo (token = zapis dziecka) — tylko wobec
+ *    wariantu, w którym focus występuje dosłownie (ciągiem tokenów),
  * 4. w przeciwnym razie no_match.
- * Pusty focus wyłącza tolerancję literówki (brak informacji o elemencie
- * sprawdzanym — bezpieczny domyślny wybór).
+ * Pusty albo niedosłowny focus wyłącza tolerancję literówki (brak pewności,
+ * które słowa są sprawdzane — bezpieczny domyślny wybór).
  */
-export function matchLessonAnswer(
-  answer: string,
-  key: LessonAnswerKey,
-  normalizer: AnswerNormalizer,
-): MatchResult {
-  const answerVariants = normalizer.normalize(answer).filter((seq) => seq.length > 0);
-  if (answerVariants.length === 0) {
+export function matchLessonAnswer(answer: string, key: LessonAnswerKey): MatchResult {
+  const answerTokens = normalizeTokens(answer);
+  if (answerTokens.length === 0) {
     return { kind: "no_match" };
   }
-  const variants = [key.answer, ...key.acceptedAnswers];
-  const normalizedVariants = variants.map((variant) => ({
-    original: variant,
-    sequences: normalizer.normalize(variant),
-  }));
+  const variants = [key.answer, ...key.acceptedAnswers].map((original) => ({ original, tokens: normalizeTokens(original) }));
 
-  // (2) exact
-  for (const variant of normalizedVariants) {
-    for (const vSeq of variant.sequences) {
-      if (answerVariants.some((aSeq) => sequencesEqual(aSeq, vSeq))) {
-        return { kind: "exact", variant: variant.original };
-      }
-    }
-  }
+  const exact = variants.find((variant) => sequencesEqual(answerTokens, variant.tokens));
+  if (exact) return { kind: "exact", variant: exact.original };
 
-  // (3) minor_typo — wyłączone dla pustego focus
-  if (key.focus.length > 0) {
-    const focusSet = focusTokenSet(key.focus, normalizer);
-    for (const variant of normalizedVariants) {
-      for (const vSeq of variant.sequences) {
-        for (const aSeq of answerVariants) {
-          const typo = singleTypoToken(aSeq, vSeq, focusSet);
-          if (typo !== null) {
-            return { kind: "minor_typo", variant: variant.original, typoToken: typo };
-          }
-        }
-      }
+  const focusTokens = normalizeTokens(key.focus.join(" "));
+  const focusSet = new Set(focusTokens);
+  for (const variant of variants) {
+    if (!containsRun(variant.tokens, focusTokens)) continue;
+    const typo = singleTypoToken(answerTokens, variant.tokens, focusSet);
+    if (typo !== null) {
+      return { kind: "minor_typo", variant: variant.original, typoToken: typo };
     }
   }
 
@@ -303,6 +283,7 @@ const verdictSchema = z.object({
   errorCategory: z.string().nullable(),
   fragments: z.array(z.string().min(1)).max(MAX_FRAGMENTS),
   note: z.string().max(MAX_NOTE_LENGTH),
+  usesTargetForm: z.boolean(),
 });
 
 /**
@@ -318,7 +299,7 @@ export function validateVerdict(raw: unknown, ctx: VerdictContext): GraderVerdic
   if (!parsed.success) {
     return null;
   }
-  const { verdict, errorCategory, fragments, note } = parsed.data;
+  const { verdict, errorCategory, fragments, note, usesTargetForm } = parsed.data;
 
   if (errorCategory !== null) {
     const allowed = errorCategory === "other" || ctx.allowedCategories.includes(errorCategory);
@@ -341,7 +322,7 @@ export function validateVerdict(raw: unknown, ctx: VerdictContext): GraderVerdic
     }
   }
 
-  return { verdict, errorCategory, fragments, note };
+  return { verdict, errorCategory, fragments, note, usesTargetForm };
 }
 
 
@@ -587,6 +568,11 @@ export function gradeFromVerdict(verdict: GraderVerdict | null): ObjectiveGrade 
   if (verdict === null) {
     return { outcome: "unevaluated", reason: "technical", verdict: "unavailable" };
   }
+  const outsideRule = verdict.errorCategory === null || verdict.errorCategory === "other";
+  // Poprawna inną formą, na którą pozwala polecenie: bez kary i bez sukcesu celu (etap 3 §5).
+  if (!verdict.usesTargetForm && (verdict.verdict === "correct" || (verdict.verdict === "almost" && outsideRule))) {
+    return { outcome: "unevaluated", verdict: "model_off_target" };
+  }
   switch (verdict.verdict) {
     case "correct":
       return { outcome: "correct", verdict: "model_correct" };
@@ -633,26 +619,15 @@ function tokenDistance(a: readonly string[], b: readonly string[]): number {
  * Najbliższy zatwierdzony wariant (najmniejsza odległość tokenowa; przy równej
  * odległości pierwszy w kolejności `answer, ...acceptedAnswers`). Zwraca
  * ORYGINALNY zapis wariantu (nie znormalizowany) — to on jest pokazywany
- * dziecku jako „poprawna odpowiedź”. Odległość liczona po najbliższej parze
- * sekwencji (odpowiedź × wariant) z normalizatora.
+ * dziecku jako „poprawna odpowiedź”. Odległość po neutralnej normalizacji.
  */
-export function closestApprovedVariant(
-  answer: string,
-  key: LessonAnswerKey,
-  normalizer: AnswerNormalizer,
-): string {
-  const answerSequences = normalizer.normalize(answer);
+export function closestApprovedVariant(answer: string, key: LessonAnswerKey): string {
+  const answerTokens = normalizeTokens(answer);
   const variants = [key.answer, ...key.acceptedAnswers];
   let best = variants[0];
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const variant of variants) {
-    const variantSequences = normalizer.normalize(variant);
-    let variantBest = Number.POSITIVE_INFINITY;
-    for (const aSeq of answerSequences) {
-      for (const vSeq of variantSequences) {
-        variantBest = Math.min(variantBest, tokenDistance(aSeq, vSeq));
-      }
-    }
+    const variantBest = tokenDistance(answerTokens, normalizeTokens(variant));
     if (variantBest < bestDistance) {
       bestDistance = variantBest;
       best = variant;
