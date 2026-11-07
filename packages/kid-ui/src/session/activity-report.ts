@@ -317,10 +317,28 @@ export class SessionActivityReporter {
       this.#state.lastActivityAtMs = Math.max(this.#state.lastActivityAtMs, now);
     }
     this.#closeActiveAt(nowOffset, true);
-    if (this.#state.pendingPause === null) {
+    const pending = this.#state.pendingPause;
+    if (pending?.kind === "technical_wait" && kind !== "technical_wait") {
+      // Tło/blur w trakcie oczekiwania na werdykt: od teraz to pauza tego rodzaju,
+      // żeby wynik, który przyjdzie w tle, nie wznowił pomiaru (`resultShown`).
+      const task = this.#currentTask();
+      if (task && nowOffset > pending.fromMs) task.pauses.push({ kind: pending.kind, fromMs: pending.fromMs, toMs: nowOffset });
+      this.#state.pendingPause = { kind, fromMs: nowOffset };
+    } else if (pending === null) {
       this.#state.pendingPause = { kind, fromMs: nowOffset };
     }
     this.#state.lastEventAtMs = now;
+  }
+
+  /**
+   * Pokazanie wyniku odpowiedzi kończy oczekiwanie techniczne: czytanie
+   * werdyktu i namysł przed kolejną próbą to praca, jak pokazanie zadania
+   * (z tym samym progiem bezczynności). Pauzy tła/blur/offline nie wznawia.
+   */
+  resultShown(): void {
+    const pending = this.#state.pendingPause;
+    if (pending !== null && pending.kind !== "technical_wait") return;
+    this.#activityEvent();
   }
 
   /**

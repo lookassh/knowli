@@ -223,6 +223,65 @@ describe("SessionActivityReporter", () => {
     expect(report.activeMs).toBe(10_000);
   });
 
+  it("counts reading the result and the retry after a technical wait for the verdict", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    clock.advanceMs(5_000);
+    reporter.recordInteraction();
+    reporter.pause("technical_wait");
+    clock.advanceMs(500);
+    reporter.resultShown();
+    // Dziecko czyta „Spróbuj jeszcze raz” i myśli nad drugą próbą.
+    clock.advanceMs(8_000);
+    reporter.recordInteraction();
+    reporter.pause("technical_wait");
+    clock.advanceMs(500);
+    reporter.resultShown();
+    clock.advanceMs(4_000);
+    reporter.pause("technical_wait");
+    clock.advanceMs(300);
+    reporter.taskShown(TASK_B, "recall");
+    const task = reporter.freeze().tasks[0]!;
+    expect(task.activeIntervals).toEqual([[0, 5_000], [5_500, 13_500], [14_000, 18_000]]);
+    expect(task.pauses).toEqual([
+      { kind: "technical_wait", fromMs: 5_000, toMs: 5_500 },
+      { kind: "technical_wait", fromMs: 13_500, toMs: 14_000 },
+      { kind: "technical_wait", fromMs: 18_000, toMs: 18_300 },
+    ]);
+  });
+
+  it("caps an unattended result with the idle threshold", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    clock.advanceMs(5_000);
+    reporter.pause("technical_wait");
+    clock.advanceMs(1_000);
+    reporter.resultShown();
+    clock.advanceMs(SESSION_ACTIVITY_IDLE_MS + 300_000);
+    expect(reporter.freeze().activeMs).toBe(5_000 + SESSION_ACTIVITY_IDLE_MS);
+  });
+
+  it("does not resume on a result that arrives while the app is in the background", () => {
+    const clock = new ManualClock();
+    const reporter = new SessionActivityReporter(clock);
+    reporter.taskShown(TASK_A, "recall");
+    clock.advanceMs(5_000);
+    reporter.pause("technical_wait");
+    clock.advanceMs(500);
+    reporter.pause("background");
+    clock.advanceMs(500);
+    reporter.resultShown();
+    clock.advanceMs(30_000);
+    const report = reporter.freeze();
+    expect(report.activeMs).toBe(5_000);
+    expect(report.tasks[0]!.pauses).toEqual([
+      { kind: "technical_wait", fromMs: 5_000, toMs: 5_500 },
+      { kind: "background", fromMs: 5_500, toMs: 36_000 },
+    ]);
+  });
+
   it("splits non-overlapping intervals across consecutive tasks", () => {
     const clock = new ManualClock();
     const reporter = new SessionActivityReporter(clock);

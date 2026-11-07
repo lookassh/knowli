@@ -2168,6 +2168,23 @@ describe("LearningSessionController", () => {
     expect(harness.media.playUrls).toEqual(["https://media.test/88888888-8888-4888-8888-888888888888"]);
   });
 
+  it("liczy czytanie wyniku jako aktywność, a przejście do następnego zadania jako oczekiwanie", async () => {
+    const harness = await startAtTask(baseState(), taskDto("t1", { kind: "recall", prompt: "czwartek" }));
+    const draft = () => {
+      const saved = harness.activityDrafts.load("55555555-5555-5555-5555-555555555555");
+      return saved && "state" in saved ? saved.state : null;
+    };
+    await harness.controller.answerText("Thursday");
+    expect(harness.controller.getScreen()).toMatchObject({ feedback: { retry: false } });
+    expect(draft()).toMatchObject({ pendingPause: null, activeStartMs: expect.any(Number) });
+    let releaseNext!: () => void;
+    harness.state.nextTaskGate = new Promise<void>((resolve) => { releaseNext = resolve; });
+    const continuing = harness.controller.continueLearning();
+    expect(draft()).toMatchObject({ pendingPause: { kind: "technical_wait" }, activeStartMs: null });
+    releaseNext();
+    await continuing;
+  });
+
   it("po przeładowaniu poluje na oczekującą próbę zamiast pozwolić nagrać drugi raz", async () => {
     const pendingTask = { ...taskDto("pending-task", { kind: "picture_recall", visual: { kind: "number", count: 3 } }), pendingAttemptId: "66666666-6666-4666-8666-666666666666" };
     const state = baseState();
@@ -2186,6 +2203,8 @@ describe("LearningSessionController", () => {
     releaseAttempt();
     await starting;
     expect(harness.controller.getScreen()).toMatchObject({ kind: "learning", feedback: { attemptId: pendingTask.pendingAttemptId }, busy: false, processing: false });
+    const shownDraft = harness.activityDrafts.load("55555555-5555-5555-5555-555555555555");
+    expect(shownDraft && "state" in shownDraft && shownDraft.state.pendingPause).toBeNull();
     expect(state.speechSubmissions).toHaveLength(0);
     expect(state.submissions).toHaveLength(0);
   });
