@@ -1,6 +1,6 @@
 # Treść językową ocenia model, strukturę — kod: uproszczenie generowania i oceniania lekcji — design
 
-Wersja 2, 2026-11-07 (po przeglądzie trzech krytyków: technika, dydaktyka, zakres i ryzyko — zmiany w §16). Wersja 1: kierunek zaakceptowany przez właściciela w czacie 2026-11-07 po przeglądzie Codexa i Claude'a, sekcje przebiegu, oceny, gradera i etapów zaakceptowane osobno. Stan kodu: `origin/main` 2d3a5336.
+Wersja 3, 2026-11-07 (po uwagach Codexa do scalonej wersji 2 — zmiany w §17; zaakceptowane przez właściciela). Wersja 2: po przeglądzie trzech krytyków (technika, dydaktyka, zakres i ryzyko — zmiany w §16). Wersja 1: kierunek zaakceptowany przez właściciela w czacie 2026-11-07 po przeglądzie Codexa i Claude'a, sekcje przebiegu, oceny, gradera i etapów zaakceptowane osobno. Stan kodu: `origin/main` 2d3a5336.
 Spec zbiorczy: ustala zasadę, kontrakty, etapy i bramki. Każdy etap 2–5 dostaje na starcie własny szczegółowy spec, plan i przegląd trzech krytyków.
 Powiązane: #237 (agent puli), #279 (poziom materiału), #280 (Present Continuous v2), #288 (dwuznaczne ćwiczenia Present Simple), #328 (zdania z kart w ujawnieniach), #253 (agent dla zestawów słówek).
 
@@ -43,7 +43,7 @@ Model generuje pozycje (`providers/openai/llm.ts:509-555`); kontrole po generowa
 
 - Kod po ID / przypisaniu / kolejności: choice, listen_choice, short_answer, notice, keywords (dowolny podzbiór klucza w [min, max]), match, group, cloze, order (`domain/lessons/evaluate.ts`). Historyjka: osobna ścieżka bez oceny celu (`lesson-story-attempts.ts`). Rachunki: `calculation.ts`, nieparsowalne → nieocenione.
 - Tekst (gap, error_fix, transform, open_answer): `matchLessonAnswer` (normalizacja, rozwijanie skrótów angielskich, jedna literówka poza `focus`, w `focus` bez tolerancji) → cache `lesson_verdicts` → grader (`lesson-attempts.ts:1380+`). Dokładne dopasowanie zalicza bez modelu.
-- **Skróty „'s”.** `english/contractions.ts:79-86` rozwija he's/she's/it's/that's/what's/where's/there's do „is” albo „has”, więc klucz „He's running.” zalicza „He has running.”. Chroni przed tym tylko reguła PC `grammar.pc_s_contraction` (`english-grammar/rules.ts:357`).
+- **Skróty w odpowiedzi dziecka.** `englishNormalizer` rozwija skróty po obu stronach dopasowania (`english/contractions.ts`, np. he's → „is” albo „has” w :79-86), więc dokładne dopasowanie zalicza bez modelu odpowiedzi niegramatyczne. Potwierdzone wywołaniem `matchLessonAnswer` (2026-11-07): klucz „Yes, she is.” zalicza „Yes, she's.”, „Yes, I am.” — „Yes, I'm.”, „Yes, they are.” — „Yes, they're.”, a klucz „He's running.” — „He has running.”. Reguła PC `grammar.pc_s_contraction` (`english-grammar/rules.ts:357`) chroni tylko klucze PC przed „'s” i nie obejmuje skrótów na końcu zdania.
 - **`lesson_order` ignoruje `acceptedAnswers`** (`evaluateSequence`), choć prompty agenta gramatyki i rozdziału każą tam wpisywać równoważne szyki, a solver je przyjmuje; nikt ich nie sprawdza (order nie jest w `variantCheckTypes`).
 - Grader: brak konfiguracji, limit (`UMIEM_GRADER_MAX_CALLS_PER_SESSION`, domyślnie 20, sprawdzany względem stałej z env, `lesson-attempts.ts:1414`) albo awaria → nieocenione. Typy zależne od gradera są zdefiniowane w trzech miejscach (`scheduler.ts:151-155` bez `lesson_gap`, `lesson-sessions.ts:733`, `lesson-shorten.ts:39`). Panel rodzica nie ma flagi dostępności gradera; DTO katalogu jest `.strict()` (`contracts/src/lessons.ts:158`).
 - Nieocenione (zweryfikowane): nie zmienia serii ani projekcji opanowania, zadanie w treningu zostaje do ponowienia (ponowienie jest już niesamodzielne), na kartkówce próba jest zamykana bez oceny wiedzy.
@@ -83,11 +83,11 @@ Dwa wywołania tego samego modelu kontroli, bo ślepe rozwiązanie nie może wid
 
 ### 5.1 Wywołanie ślepe (bez klucza)
 
-Model dostaje widok dziecka (bez klucza, wariantów i wyjaśnień), opis celu i jego zakresu, a w przedmiocie z `checkerNeedsMaterial` (szkoła) materiał lekcji. Dla każdego ćwiczenia zwraca jedno z trzech:
+Model dostaje **wyłącznie to, co widzi albo słyszy dziecko**: widok ćwiczenia (bez klucza, wariantów i wyjaśnień), w `lesson_listen_choice` transkrypcję nagrania („bodziec + poprawna opcja”), a w przedmiocie z `checkerNeedsMaterial` (szkoła) materiał lekcji, który dziecko poznało. **Nie dostaje opisu celu ani zakresu** — cel („Present Simple”) naprowadzałby na ćwiczoną formę i ukrywał inną poprawną odpowiedź („Ona czyta książkę.” → także „She is reading a book.”). Dla każdego ćwiczenia zwraca jedno z trzech:
 
 - **`answers`:**
   - typy zamknięte — **komplet** poprawnych odpowiedzi: opcje (wybór jednokrotny, słuchanie, krótka odpowiedź), zbiór pojęć (słowa kluczowe — z pytaniem sparowanej odpowiedzi otwartej w widoku), przypisania (dopasowanie, grupowanie, luki z banku), para zdanie + pozycja (wskazanie);
-  - rozsypanka i typy tekstowe — jedna albo dwie własne odpowiedzi (jak dziś `solveOpen`), bez wymogu kompletu.
+  - rozsypanka i typy tekstowe — do trzech **różnych** poprawnych odpowiedzi, z poleceniem szukania także innych form i czasów, które pasują do tego, co widzi dziecko; bez wymogu kompletu.
 - **`none`** — żadna odpowiedź nie jest poprawna; jedno zdanie powodu.
 - **`unsure`** — model nie umie rozstrzygnąć; jedno zdanie powodu.
 
@@ -95,14 +95,14 @@ Odpowiedzi zamknięte model podaje tekstami, nie ID (widok ukrywa ID; klocki i o
 
 ### 5.2 Wywołanie z kluczem
 
-Model dostaje widok, klucz, warianty generatora, odpowiedzi ze ślepego wywołania, wyjaśnienie błędu (`explanationPl`, gdy jest) oraz opis celu i zakresu. Dla każdego ćwiczenia zwraca:
+Model dostaje widok (w słuchaniu z transkrypcją nagrania), klucz, warianty generatora, odpowiedzi ze ślepego wywołania, wyjaśnienie błędu (`explanationPl`, gdy jest) oraz opis celu i zakresu. Dopiero tu ocenia się dwie osobne rzeczy: „odpowiada na polecenie widoczne dziecku” (`correct`) i „ćwiczy wskazany cel” (`exercisesObjective`). Dla każdego ćwiczenia zwraca:
 
 - **`keyCorrect`** — klucz jest poprawną odpowiedzią na to, co widzi dziecko;
 - **ocenę każdego kandydata** (warianty generatora i odpowiedzi ślepe): `correct` i `exercisesObjective` (np. „She is reading” w ćwiczeniu na Present Simple: poprawne, celu nie ćwiczy);
 - **`inScope`** — ćwiczenie mieści się w zakresie celu (np. bez znaczenia przyszłego, bez czasownika ze zmianą pisowni w celu, który jej jeszcze nie uczy); przy `false` jedno zdanie powodu;
-- **`revealsAnswer`** — polecenie, bodziec albo podpowiedź zdradza odpowiedź (wszystkie przedmioty; w szkole obok dzisiejszego `judgeHints` do czasu etapu 5);
+- **`revealsAnswer`** — polecenie, bodziec albo podpowiedź zdradza odpowiedź ponad to, co zakłada typ ćwiczenia (wszystkie przedmioty; w szkole obok dzisiejszego `judgeHints` do czasu etapu 5). Zamierzony bodziec się nie liczy: nagranie w słuchaniu i zdanie we „Wskaż słowo” z założenia zawierają odpowiedź;
 - **`explanationConsistent`** — wyjaśnienie zgadza się z kluczem i nazywa to, z czego wynika odpowiedź (wskaźnik albo scenkę);
-- **`audible`** (tylko `lesson_listen_choice`, z transkrypcją nagrania „bodziec + poprawna opcja” w widoku) — słuchacz odróżni poprawną opcję od każdego dystraktora.
+- **`audible`** (tylko `lesson_listen_choice`) — słuchacz odróżni poprawną opcję od każdego dystraktora.
 
 ### 5.3 Porównanie kodem
 
@@ -112,7 +112,7 @@ Model dostaje widok, klucz, warianty generatora, odpowiedzi ze ślepego wywołan
 | Rozsypanka i tekstowe | `keyCorrect`; żaden kandydat nie jest `correct` z `exercisesObjective = false` (inaczej ćwiczenie jest dwuznaczne) |
 | Każdy typ | `inScope`, nie `revealsAnswer`, `explanationConsistent` (gdy jest wyjaśnienie), `audible` (słuchanie); brak `none` i `unsure` |
 
-**Warianty.** Do `acceptedAnswers` typów tekstowych trafiają wyłącznie kandydaci ocenieni jako `correct` i `exercisesObjective`; warianty generatora bez takiej oceny są usuwane. Rozsypanka nie przechowuje wariantów (§6). Odpowiedź dziecka spoza wariantów oceni model oceniający przy pierwszej próbie, z zapisem w cache.
+**Warianty.** Do `acceptedAnswers` typów tekstowych trafiają wyłącznie kandydaci ocenieni jako `correct` i `exercisesObjective`; warianty generatora bez takiej oceny są usuwane. Generator dopisuje do wariantów formy ze skrótami (She's reading, isn't), bo dopasowanie odpowiedzi dziecka nie rozwija skrótów (§6). Rozsypanka nie przechowuje wariantów (§6). Odpowiedź dziecka spoza wariantów oceni model oceniający przy pierwszej próbie, z zapisem w cache.
 
 Każda niespełniona przesłanka to wada → naprawa (§4 krok 5). Schemat obu wywołań i porównanie powstają w etapie 2 jako czyste funkcje domeny z testami jednostkowymi w docelowym miejscu; etap 4 ich nie zmienia bez nowej sondy.
 
@@ -130,8 +130,9 @@ Kod ocenia wszystko, co ma jednoznaczny klucz; model oceniający tylko tam, gdzi
 | Słówka (9 typów), rachunki, pytania do historyjki | kod | bez zmian |
 | choice, listen_choice, short_answer, notice, keywords, match, group, cloze | kod, po ID / przypisaniu | bez zmian |
 | `lesson_order` | kod: klucz → zaliczenie; inny szyk z dokładnie wydanych klocków → cache → model oceniający | **inny szyk ocenia model** zamiast automatycznego błędu |
-| gap, error_fix, transform, open_answer | znany wariant → zaliczenie; inaczej cache → model oceniający | nowy wynik „ćwiczenie dwuznaczne” (niżej) |
+| gap, error_fix, transform, open_answer | znany wariant → zaliczenie; inaczej cache → model oceniający | dopasowanie bez rozwijania skrótów; nowy wynik „ćwiczenie dwuznaczne” (niżej) |
 
+- **Dopasowanie bez rozwijania skrótów.** Dokładne dopasowanie odpowiedzi dziecka (`matchLessonAnswer`) używa wyłącznie neutralnej normalizacji: wielkość liter, interpunkcja, ujednolicone apostrofy, spacje i jedna literówka poza `focus`. Skrót zalicza się tylko wtedy, gdy dokładnie ta forma stoi w kluczu albo w wariantach (warianty ze skrótami dopisuje generowanie, §5.3); każdą inną odpowiedź ze skrótem ocenia cache i model oceniający. Dziś normalizator zalicza w ten sposób „Yes, she's.”, „Yes, I'm.” i „He has running.” (§3.3), także w opublikowanych lekcjach — zmiana działa dla wszystkich rewizji, bo dotyczy oceny, nie materiału. Rozwijanie skrótów zostaje w porównaniach ujawnień i duplikatów, gdzie nadmiarowe wykrycie jest bezpieczne.
 - **Rozsypanka.** `acceptedAnswers` rozsypanki przestają być używane i generowane (dziś ich nikt nie sprawdza, a ocena ich nie czyta). Inny szyk ułożony dokładnie z wydanych klocków ocenia model oceniający (rzadkie, tanie, z cache); kod nadal sprawdza, że dziecko użyło dokładnie wydanych klocków.
 - **Ćwiczenie dwuznaczne.** Werdykt modelu oceniającego dostaje pole `usesTargetForm`. Odpowiedź poprawna dla tego, co widzi dziecko, ale bez ćwiczonej formy (np. „She is reading a book” w tłumaczeniu na Present Simple bez wskaźnika „zwykle”, #288):
   - wynik **nieoceniony** z powodem „ćwiczenie dwuznaczne” — bez kary i bez sukcesu celu (seria i projekcja bez zmian, na kartkówce próba zamknięta bez oceny wiedzy), zadanie nie wraca do ponowienia;
@@ -139,6 +140,7 @@ Kod ocenia wszystko, co ma jednoznaczny klucz; model oceniający tylko tam, gdzi
   - ćwiczenie dostaje oznaczenie dla rodzica w panelu (do poprawy albo usunięcia w nowym szkicu).
 - **Wersja promptu modelu oceniającego** rośnie (nowy klucz cache); stare werdykty zostają historią, a decyzje rodzica (`parent_decision`) przechodzą na nową wersję dla tej samej rewizji i odpowiedzi.
 - **Bez zmian:** ocena szkolna (wiedza i precyzja, kryteria z materiału), cache werdyktów, decyzja rodzica nadpisująca werdykt, mapowanie pozostałych werdyktów, brak tolerancji literówek w tokenach `focus`.
+- **Oznaczenie „ćwiczenie dwuznaczne” powstaje tylko z werdyktu modelu oceniającego**, więc obejmuje typy tekstowe i rozsypankę. Zamknięte ćwiczenia opublikowanych lekcji (ocena po ID) nie dostają automatycznego oznaczenia — §12.
 - **Bez wyjątku pisowni.** Wersja 1 specu wprowadzała cel „wymagana pisownia” oceniany samym kodem. Po przeglądzie (§16) wyjątek wypada: tokeny `focus` już dziś nie tolerują literówek, a grader (teraz wymagany, §7) przypisuje kategorię błędu `spelling`, więc wyjątek oszczędzałby tylko wywołanie modelu, a odbierał kategorię błędu i ocenę parafraz.
 
 ## 7. Model oceniający: dostępność i limit
@@ -153,12 +155,9 @@ Kod ocenia wszystko, co ma jednoznaczny klucz; model oceniający tylko tam, gdzi
 
 ## 8. Co zostaje w kodzie, co znika
 
-**Zostaje** (ok. 7,5 tys. linii kontroli strukturalnych, m.in. `pool-validation.ts`, `rules/core-rules.ts`, `exposure-leaks.ts`, `lesson-coverage.ts`, `calculation.ts`, `catalog-validation.ts`): schematy, wymagane pola, ID i relacje; klucz zgodny z opcjami i klockami; liczba zadań i pokrycie celów; identyczne duplikaty; ujawnienia (zdania z kart, odpowiedzi samodzielnych sprawdzeń); rachunki; normalizatory oceny (`english/contractions.ts`, `english/normalizer.ts`); zasady samodzielności, postępu i historii; limity kosztu, timeouty, anulowanie, ponowienia; idempotencja, transakcje, niezmienność opublikowanego materiału; prywatność i obsługa błędów usług. Punktów, czasu, harmonogramu powtórek ani decyzji o samodzielności nie przenosimy do LLM.
+**Zostaje** (ok. 7,5 tys. linii kontroli strukturalnych, m.in. `pool-validation.ts`, `rules/core-rules.ts`, `exposure-leaks.ts`, `lesson-coverage.ts`, `calculation.ts`, `catalog-validation.ts`): schematy, wymagane pola, ID i relacje; klucz zgodny z opcjami i klockami; liczba zadań i pokrycie celów; identyczne duplikaty; ujawnienia (zdania z kart, odpowiedzi samodzielnych sprawdzeń); rachunki; neutralna normalizacja dopasowania odpowiedzi dziecka (§6) oraz rozwijanie skrótów (`english/contractions.ts`, `english/normalizer.ts`) wyłącznie w porównaniach ujawnień i duplikatów; zasady samodzielności, postępu i historii; limity kosztu, timeouty, anulowanie, ponowienia; idempotencja, transakcje, niezmienność opublikowanego materiału; prywatność i obsługa błędów usług. Punktów, czasu, harmonogramu powtórek ani decyzji o samodzielności nie przenosimy do LLM.
 
-**Nowe reguły strukturalne** (format, nie rozumienie języka):
-
-- klucz, warianty i poprawna opcja w przedmiotach angielskich nie zawierają wieloznacznych skrótów z zamkniętej listy normalizatora (he's, she's, it's, that's, what's, where's, there's, who's oraz 'd) — przeniesienie `grammar.pc_s_contraction` na cały angielski, bo normalizator rozwija je do „is” albo „has”;
-- `lesson_notice`: słowo `correctOption` występuje w zdaniu dokładnie raz.
+**Nowa reguła strukturalna** (format, nie rozumienie języka): `lesson_notice` — słowo `correctOption` występuje w zdaniu dokładnie raz. Reguła skrótów „'s” z wersji 2 wypada: przy dopasowaniu bez rozwijania skrótów (§6) klucz ze skrótem jest bezpieczny, a `grammar.pc_s_contraction` znika razem z heurystykami PC.
 
 **Znika** (ok. 4,7 tys. linii heurystyk + 830 linii ich opisów):
 
@@ -174,15 +173,15 @@ Usunięcie dotyczy heurystyk językowych; walidacja struktury i reguły działan
 Każdy etap: osobna sesja, własny spec, plan, przegląd trzech krytyków i PR scalany przez właściciela.
 
 1. **Ten spec** (PR dokumentacyjny).
-2. **Kontrakt kontroli i sonda generowania** (płatna, za zgodą właściciela; ok. 2,5 USD z limitem w rejestrze kosztów sondy). Warunek wstępny: scalone #328 (zdania z kart w ujawnieniach — reguła ujawnień, dotyczy też produkcyjnych lekcji PS i „to be”; bez niej porównanie faworyzuje B). Zakres: schemat obu wywołań kontroli i porównanie z §5 jako czyste funkcje domeny z testami; orkiestracja przebiegu B jako prototyp w `tests/probes`; nowa, zamrożona przed przebiegiem wersja rubryki ślepej oceny; sonda §11.
-3. **Ocena odpowiedzi i ścieżka rodzica** — rozsypanka przez model oceniający, wynik „ćwiczenie dwuznaczne” z oznaczeniem dla rodzica, nowa wersja promptu z przeniesieniem decyzji rodzica, dostępność i limit (§7), reguła skrótów „'s” jako strukturalna, podział walidatorów przedmiotów i ścieżka rodzica (§8). Odbiór: próbki odpowiedzi z §11.3 z etykietami spisanymi przed przebiegiem i progami (mały płatny przebieg modelu oceniającego). Nie zależy od sondy generowania — może iść równolegle z etapem 2.
+2. **Kontrakt kontroli i sonda generowania** (płatna, za zgodą właściciela; ok. 2,5 USD z limitem w rejestrze kosztów sondy). Warunek wstępny: scalone #328 (zdania z kart w ujawnieniach — reguła ujawnień, dotyczy też produkcyjnych lekcji PS i „to be”; bez niej porównanie faworyzuje B). Zakres: schemat obu wywołań kontroli i porównanie z §5 jako czyste funkcje domeny z testami; orkiestracja przebiegu B jako prototyp w `tests/probes`; nowa, zamrożona przed przebiegiem wersja rubryki ślepej oceny; progi bezwzględne §11.2 zatwierdzone przez właściciela przed płatnym przebiegiem; sonda §11.
+3. **Ocena odpowiedzi i ścieżka rodzica** — dopasowanie bez rozwijania skrótów (§6), rozsypanka przez model oceniający, wynik „ćwiczenie dwuznaczne” z oznaczeniem dla rodzica, nowa wersja promptu z przeniesieniem decyzji rodzica, dostępność i limit (§7), podział walidatorów przedmiotów i ścieżka rodzica (§8). Odbiór: próbki odpowiedzi z §11.3 przez **pełną ścieżkę oceny** (dopasowanie → cache → model oceniający), także na starych rewizjach z kluczami ze skrótami, z etykietami spisanymi przed przebiegiem i progami bezwzględnymi (mały płatny przebieg modelu oceniającego). Nie zależy od sondy generowania — może iść równolegle z etapem 2.
 4. **Przebieg B dla `english_grammar`** — po bramce etapu 2. Na starcie sprawdzić, że na produkcji nadal nie ma lekcji PC (§12). Zakres: przebieg z §4 w kodzie aplikacji na funkcjach z etapu 2, dydaktyka w opisach celów, usunięcie heurystyk gramatyki, nowe terminy i format punktu kontrolnego, dogenerowanie celu przebiegiem B, wydzielenie strukturalnej części `agent/admission.ts` dla obu systemów, `agentPolicy` opcjonalne dla przedmiotu na B, etykiety nowych kodów odrzuceń (`rejectedReasons`), tekst usług w panelu zależny od przedmiotu (`checkService`). Present Continuous jest pilotem. Rozdział i szkoła zostają na agencie (fail-open), gramatyka jest na B (fail-closed): dwa systemy do etapu 5.
 5. **`english_chapter` i `school` na przebiegu B** — z własną sondą i bramką (fixture rozdziału i szkoły, porównanie z agentem, który w rozdziale daje dziś 0 ujawnień). Planista rozdziału jako jedno wywołanie, ocena sędziego podpowiedzi i kontroli otwartej w szkole, usunięcie heurystyk rozdziału i szkoły oraz pętli agenta. **Wariant awaryjny:** przedmiot, w którym B przegrywa na bramce, zostaje na agencie, a zamrożenie jego heurystyk zostaje zdjęte; pętla agenta zostaje wtedy tylko dla niego.
 
 ## 10. Prywatność, koszty, integracje
 
 - **Generator** dostaje to samo co dziś (materiał, polecenie rodzica, karty, zdania do unikania, tematy zdań) plus opis celu (wspólna treść katalogu). Nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
-- **Kontrola paczki** dostaje widok dziecka, opis celu, w wywołaniu z kluczem także klucz, warianty, odpowiedzi ślepe i wyjaśnienie, a w szkole materiał — nigdy polecenie rodzica, tematy zdań, karty ani dane dziecka. Nowy przepływ (opis celu, wyjaśnienie) opisać w panelu (`checkService`) i w `docs/architecture.md` §19.17 w etapie 4.
+- **Kontrola paczki** dostaje w wywołaniu ślepym tylko widok dziecka (w słuchaniu z transkrypcją nagrania), w wywołaniu z kluczem także opis celu, klucz, warianty, odpowiedzi ślepe i wyjaśnienie, a w szkole materiał — nigdy polecenie rodzica, tematy zdań, karty ani dane dziecka. Nowy przepływ (opis celu, wyjaśnienie) opisać w panelu (`checkService`) i w `docs/architecture.md` §19.17 w etapie 4.
 - **Dzienniki:** powody `none` / `unsure` / `inScope`, ocena kandydatów i prompt naprawy zawierają treść ćwiczeń — nie trafiają do dzienników `[lesson-agent]` ani do `detail` w punkcie kontrolnym (jak dziś `detail` odrzuceń).
 - **Model oceniający** — bez nowych danych; nowe pole werdyktu i reguła to tekst promptu.
 - **Koszty:** nowe nazwy operacji (generowanie paczki, kontrola ślepa, kontrola z kluczem, naprawa) w `provider_usage_events` i §23 w etapie 4; dzisiejsze `agent_objective`, `check_solve`, `check_variants` stają się historyczne jak `lesson_pool`. Liczba wywołań zapisu w `usage-recording.architecture.test.ts` się zmieni.
@@ -194,12 +193,13 @@ Każdy etap: osobna sesja, własny spec, plan, przegląd trzech krytyków i PR s
 
 - **Materiały** (fikcyjne, w repo): „to be”, Present Simple, Present Continuous. Rozdział i szkoła — sonda etapu 5. Rachunki nie potrzebują sondy (kod deterministyczny, testy jednostkowe).
 - **Przebiegi:** prototyp B i dzisiejszy agent, po 3 przebiegi na temat (ok. 18 runów).
-- **Wady wzorcowe:** fixture celowo wadliwych ćwiczeń z historii PC (spec PC §16.9–16.13): goły „now” w przeczeniu, przestawialny wskaźnik w rozsypance, „doesn't watching” z dwiema poprawkami, dystraktor w innym poprawnym czasie, dwie formy -ing w „Wskaż słowo”, „Look! Tom is eating bread and drinks milk.”, „The fish ___”, skrót „he's” w kluczu, znaczenie przyszłe; obok ćwiczenia poprawne. Kontrola paczki (§5) przechodzi przez nie bez generatora; wykrycie liczone osobno dla każdej klasy.
+- **Wady wzorcowe:** fixture celowo wadliwych ćwiczeń z historii PC (spec PC §16.9–16.13): goły „now” w przeczeniu, przestawialny wskaźnik w rozsypance, „doesn't watching” z dwiema poprawkami, dystraktor w innym poprawnym czasie, dwie formy -ing w „Wskaż słowo”, „Look! Tom is eating bread and drinks milk.”, „The fish ___”, znaczenie przyszłe oraz ćwiczenia, w których czas rozstrzyga dopiero ukryty cel (np. tłumaczenie „Ona czyta książkę.” w celu Present Simple, luka „She ___ (sit) on the sofa.” — kontrola musi zgłosić dwuznaczność); obok ćwiczenia poprawne. Kontrola paczki (§5) przechodzi przez nie bez generatora; wykrycie liczone osobno dla każdej klasy.
 - **Miary:** ślepa ocena rubryką (wadliwy klucz, dwuznaczność, poza zakresem, zdradzona odpowiedź, wadliwe wyjaśnienie; różnorodność, poziom), ścisła miara scenek `sceneShare` w celach porównania, odsetek odrzuceń osobno dla ćwiczeń ze scenką i ze wskaźnikiem, spełnienie minimum publikacji, koszt runu, czas na cel i na run.
 
 ### 11.2 Bramka etapu 4 (decyzja właściciela na wynikach)
 
-- wady z rubryki na przyjęte ćwiczenie, per temat, łącznie z 3 przebiegów: B ≤ agent + 2 pp;
+- **progi bezwzględne per klasa wad** (bez sumowania klas), na przyjęte ćwiczenie, per temat, łącznie z 3 przebiegów — propozycja do zatwierdzenia przez właściciela w specu etapu 2, przed płatnym przebiegiem: błędny klucz ≤ 1%, ćwiczenie zamknięte z drugą poprawną odpowiedzią (niesprawiedliwa ocena dziecka) ≤ 1%, każda pozostała klasa (dwuznaczne tekstowe, poza zakresem, zdradzona odpowiedź, wadliwe wyjaśnienie) ≤ 3%;
+- porównanie z agentem w każdej klasie osobno: B ≤ agent + 2 pp;
 - minimum publikacji spełnione w 3 z 3 przebiegów B dla każdego tematu;
 - każda klasa wad wzorcowych wykryta w ≥ 80% przypadków, poprawne ćwiczenia wzorcowe odrzucone w ≤ 10%;
 - maksymalny koszt runu B ≤ 1 USD, czas mieści się w terminie runu;
@@ -209,19 +209,19 @@ Stary zestaw testów heurystyk nie jest argumentem za ich zachowaniem; sama popr
 
 ### 11.3 Etap 3: próbki odpowiedzi
 
-Etykiety wzorcowe spisane przed przebiegiem, dla gramatyki i rozdziału: inne poprawne sformułowanie, poprawna odpowiedź inną formą (dwuznaczność → „ćwiczenie dwuznaczne”), alternatywny szyk w rozsypance, odpowiedź częściowa, negacja zmieniająca sens, poprawna gramatyka bez wykonania polecenia, błąd w ćwiczonej formie, literówka w tokenie `focus` i poza nim, skrót „'s” (He has running, Yes, she's.), pisownia amerykańska. Próg zgodności werdyktów ustala spec etapu 3.
+Etykiety wzorcowe spisane przed przebiegiem, dla gramatyki i rozdziału: inne poprawne sformułowanie, poprawna odpowiedź inną formą (dwuznaczność → „ćwiczenie dwuznaczne”), alternatywny szyk w rozsypance, odpowiedź częściowa, negacja zmieniająca sens, poprawna gramatyka bez wykonania polecenia, błąd w ćwiczonej formie, literówka w tokenie `focus` i poza nim, skróty (He has running wobec klucza „He's running.”, Yes, she's., Yes, I'm., Yes, they're., poprawne She's reading), pisownia amerykańska. Próbki przechodzą pełną ścieżkę oceny (dopasowanie → cache → model oceniający), także na starych rewizjach. Progi bezwzględne (propozycja do zatwierdzenia w specu etapu 3): zero poprawnych odpowiedzi ocenionych jako błędne i zero zaliczonych odpowiedzi z klas „negacja zmieniająca sens”, „błąd w ćwiczonej formie” i „skrót niegramatyczny”; dla pozostałych klas próg ustala spec etapu 3.
 
 ## 12. Zgodność z istniejącymi danymi
 
 - Opublikowane lekcje, szkice i historia prób się nie zmieniają; zmiana oceny dotyczy nowych prób.
 - **Present Continuous nie ma na produkcji żadnych wygenerowanych lekcji, szkiców ani runów** (właściciel, 2026-11-07): usunięcie heurystyk PC nie wymaga ścieżki zgodności, a PC jest pilotem. Do etapu 4 błędów heurystyk PC nie poprawiamy; #280 czeka na etap 4. Etap 4 sprawdza ten stan na starcie.
-- Present Simple i „to be” mają lekcje na produkcji: ich opublikowane ćwiczenia zostają; wynik „ćwiczenie dwuznaczne” i model oceniający dla rozsypanki działają także dla nich (dwuznaczne ćwiczenia zamknięte w tych lekcjach poprawia rodzic po oznaczeniu).
+- Present Simple i „to be” mają lekcje na produkcji: ich opublikowane ćwiczenia zostają; dopasowanie bez rozwijania skrótów, wynik „ćwiczenie dwuznaczne” i model oceniający dla rozsypanki działają także dla nich. **Zamknięte ćwiczenia tych lekcji nie dostają automatycznego oznaczenia** (ocena po ID nie woła modelu): dwuznaczne zostają do ręcznego przeglądu rodzica albo do ponownego wygenerowania lekcji po etapie 4. Jednorazowe sprawdzenie opublikowanych lekcji kontrolą z etapu 2 jest możliwe jako osobna decyzja właściciela, poza zakresem tego specu.
 - Zapisane warianty rozsypanek w istniejących lekcjach przestają mieć znaczenie (§6).
 - **Runy w toku** przy wdrożeniu etapu 4/5: punkt kontrolny dostaje wyróżnik formatu; run ze starym formatem jest anulowany i ponawiany od nowa z zachowanym wydatkiem (dziś `parseLessonAgentProgress` z `salvageLessonAgentSpend` robi to po cichu — etap 4 czyni to jawnym).
 
 ## 13. Ryzyka
 
-- **Kontrola ma ten sam ślepy punkt co generator.** Mitygacja: inna rodzina modelu, wywołanie ślepe bez klucza, wady wzorcowe w sondzie z progiem wykrycia per klasa, wynik „ćwiczenie dwuznaczne” z produkcji jako sygnał zwrotny dla rodzica. Przegląd rodzica (ok. 85 ćwiczeń w puli) nie jest główną ochroną.
+- **Kontrola ma ten sam ślepy punkt co generator.** Mitygacja: inna rodzina modelu, wywołanie ślepe bez klucza i bez opisu celu, wady wzorcowe w sondzie z progiem wykrycia per klasa, wynik „ćwiczenie dwuznaczne” z produkcji jako sygnał zwrotny dla rodzica. Przegląd rodzica (ok. 85 ćwiczeń w puli) nie jest główną ochroną.
 - **Dydaktyka tylko w prompcie może dryfować** (np. proporcja scenek). Mierzy to sonda; `inScope` łapie wyjście poza zakres; wymuszenie w kodzie wraca tylko dla klasy błędów, którą kontrola wielokrotnie przepuszcza.
 - **Fail-closed odbiera trudne ćwiczenia** (scenki). Mierzy to odsetek odrzuceń per rodzaj w sondzie.
 - **Więcej wywołań i czas** (ok. 30 paczek × 3–5 wywołań na lekcję z sześcioma celami) — paczki równolegle, terminy z pomiaru.
@@ -261,3 +261,13 @@ Zmiany względem wersji 1 (krytycy: A — technika, B — dydaktyka i sprawiedli
 - **Etap 3 z własnym odbiorem na próbkach odpowiedzi** (C W1). **Limit: jedna definicja typów, zapis w kontekście sesji, sufit dla wywołań spoza planu** (A11). **`lessonGenerationAvailable` z powodem w kontrakcie, bez blokady w trybie fake** (A12). **Stały odbiorca do #279** (B W8, C W7). **Zakres etapu 4, obowiązki dokumentacyjne, zgłoszenia, sprawdzenie stanu PC na produkcji** (A13–A15, C W6, C D1–D4, B D1).
 
 Odrzucone: opcjonalna kontrola modelem przy ręcznej publikacji szkicu przez rodzica (B D2 — rodzic jest zatwierdzającym, dodatkowa ścieżka bez potrzeby); `sceneShare` ≥ 30% jako warunek bramki (B W6 — właściciel zdecydował 2026-11-06, że minimum scenek należy do #280; zostaje miarą); zamknięta lista kodów zakresu w katalogu (B K2 — wystarcza `inScope` z jednym zdaniem powodu); warianty tylko z przecięcia generatora i kontroli (B W1 — zastąpione oceną kandydatów w wywołaniu z kluczem).
+
+## 17. Uwagi Codexa do wersji 2 (wersja 3)
+
+Pięć uwag do scalonej wersji 2 (PR #357), przyjętych przez właściciela 2026-11-07:
+
+- **P1 — normalizator zalicza błędy przed modelem oceniającym.** Potwierdzone wywołaniem `matchLessonAnswer`: „Yes, she's.”, „Yes, I'm.”, „Yes, they're.” wobec pełnych kluczy i „He has running.” wobec klucza „He's running.” dają `exact`. Zakaz „'s” w nowych kluczach (wersja 2) tego nie naprawiał. Zmiana szersza niż propozycja: dopasowanie odpowiedzi dziecka przestaje rozwijać skróty (§6), formy ze skrótami stają się sprawdzonymi wariantami (§5.3), reguła strukturalna „'s” wypada (§8), a odbiór etapu 3 idzie przez pełną ścieżkę oceny, także na starych rewizjach (§11.3).
+- **P2 — ślepa kontrola widziała cel.** Wywołanie ślepe dostaje tylko to, co widzi dziecko, i szuka także odpowiedzi w innych formach; cel i zakres ocenia wywołanie z kluczem, rozdzielając „odpowiada na polecenie” od „ćwiczy cel” (§5.1–§5.2). Wady wzorcowe obejmują ćwiczenia, w których czas rozstrzyga tylko ukryty cel (§11.1).
+- **P3 — słuchanie.** Transkrypcja nagrania trafia do obu wywołań; `revealsAnswer` nie liczy zamierzonego bodźca (nagranie w słuchaniu, zdanie we „Wskaż słowo”) (§5.1–§5.2).
+- **P4 — brak źródła oznaczeń dla starych ćwiczeń zamkniętych.** Obietnica oznaczenia usunięta: zamknięte ćwiczenia opublikowanych lekcji zostają do ręcznego przeglądu albo ponownego wygenerowania (§6, §12).
+- **P5 — bramka tylko względna.** Dodane progi bezwzględne per klasa wad, bez sumowania klas, zatwierdzane przed płatnym przebiegiem (§11.2); w etapie 3 progi bezwzględne na próbkach odpowiedzi (§11.3).
