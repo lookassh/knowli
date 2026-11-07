@@ -193,7 +193,7 @@ Progi (do zatwierdzenia w specu etapu 3):
 
 - Opublikowane lekcje, szkice i historia prób się nie zmieniają; zmiana oceny dotyczy nowych prób, także w opublikowanych lekcjach.
 - Opublikowane rewizje mogą nie mieć wariantów ze skrótem (dotychczasowe porównanie wariantów je usuwało), więc po etapie 3 takie odpowiedzi ocenia model; rodzic może dopisać wariant w nowym szkicu.
-- **Present Continuous nie ma na produkcji żadnych lekcji, szkiców ani runów** (właściciel, 2026-11-07): usunięcie heurystyk PC nie wymaga ścieżki zgodności. Do etapu 4 błędów heurystyk PC nie poprawiamy; #280 czeka na etap 4.
+- **Present Continuous nie ma na produkcji żadnych lekcji, szkiców ani runów** (właściciel, 2026-11-07; potwierdzone zapytaniem na bazie produkcyjnej na starcie etapu 4 — także 0 runów w toku): usunięcie heurystyk PC nie wymaga ścieżki zgodności. Do etapu 4 błędów heurystyk PC nie poprawiamy; #280 czeka na etap 4.
 - Present Simple i „to be” mają lekcje na produkcji. Zamknięte ćwiczenia tych lekcji nie dostają automatycznego oznaczenia (ocena po ID nie woła modelu): dwuznaczne zostają do ręcznego przeglądu albo ponownego wygenerowania lekcji po etapie 4.
 - Runy w toku przy wdrożeniu etapu 4/5 są anulowane istniejącym anulowaniem; rodzic ponawia je przez „Ponów” (#299).
 
@@ -224,7 +224,7 @@ Progi (do zatwierdzenia w specu etapu 3):
 ## 17. Zgłoszenia
 
 - **#328** — warunek wstępny sondy etapu 2.
-- **#288** — rozwiązują etapy 3 (wynik „bez ćwiczonej formy”) i 4 (generowanie z jednoznacznym kontekstem; kontrola dwuznaczności tylko jako warstwa z §8); zamknąć po etapie 4.
+- **#288** — rozwiązują etapy 3 (wynik „bez ćwiczonej formy”) i 4 (generowanie z jednoznacznym kontekstem; kontrola dwuznaczności tylko jako warstwa z §8); zamknięte PR-em etapu 4.
 - **#280** — zakres dydaktyczny w opisach celów, bez reguł w kodzie; wraca po etapie 4.
 - **#279** — niezależne; do czasu wdrożenia stały odbiorca.
 
