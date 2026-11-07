@@ -345,6 +345,8 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
       source: "agent",
       variant,
       at: new Date().toISOString(),
+      // Fikcyjny materiał fixture'u: arkusz ślepej oceny kopiuje go do katalogu sędziego (zrzut poza repozytorium).
+      material,
       subjectKind,
       subjectId: subject.id,
       objectiveSource: objectiveSource.source,
