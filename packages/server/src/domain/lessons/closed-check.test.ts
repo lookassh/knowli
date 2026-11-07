@@ -67,23 +67,19 @@ describe("closedCheckContract", () => {
 
 describe("closedCheckItem", () => {
   it("shows the child view without key, hint, explanation or objective title", () => {
-    const item = closedCheckItem(choice, topic)!;
-    expect(item.contract).toBe("choice");
-    expect(item.view).toContain("She ___ reading.");
-    expect(item.view).not.toContain("She → is");
-    expect(item.view).not.toContain("be\n");
-    const untitled = closedCheckItem({ ...choice, instructionPl: undefined }, topic)!;
-    expect(untitled.view).not.toContain("Teraz");
+    const view = closedCheckItem(choice, topic)!;
+    expect(view).toContain("She ___ reading.");
+    expect(view).not.toContain("She → is");
+    expect(view).not.toContain("be\n");
+    expect(closedCheckItem({ ...choice, instructionPl: undefined }, topic)!).not.toContain("Teraz");
   });
 
   it("adds the transcript of the recording to listen_choice", () => {
-    expect(closedCheckItem(listen, topic)!.view).toContain("Recording (transcript): They are playing.");
+    expect(closedCheckItem(listen, topic)).toContain("Recording (transcript): They are playing.");
   });
 
   it("adds the arranged key to order", () => {
-    const item = closedCheckItem(order, topic)!;
-    expect(item.contract).toBe("order");
-    expect(item.view).toContain("Arranged answer: Tom is reading now.");
+    expect(closedCheckItem(order, topic)).toContain("Arranged answer: Tom is reading now.");
   });
 
   it("returns null for text types", () => {

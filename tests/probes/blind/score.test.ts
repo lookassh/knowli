@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const { wilson, scoreStage2, agreement } = require("./score.cjs") as {
   wilson(defects: number, n: number): { low: number; high: number };
-  scoreStage2(groups: readonly { key: unknown; verdicts: readonly Record<string, string>[] }[]): { report: Record<string, Record<string, { defects: number; n: number; perRun: { min: number; max: number } }>>; missing: string[]; levels: number };
+  scoreStage2(groups: readonly { key: unknown; verdicts: readonly Record<string, string>[] }[]): { report: Record<string, Record<string, { defects: number; n: number; perRun: { min: number; max: number } }>>; missing: string[]; levels: Record<string, number> };
   agreement(key: unknown, a: readonly Record<string, string>[], b: readonly Record<string, string>[]): Record<string, { agree: number; n: number; differing: string[] }>;
 };
 
@@ -30,13 +30,23 @@ describe("score.cjs (etap 2)", () => {
   it("counts class denominators per variant from the exercise type", () => {
     const { report, missing, levels } = scoreStage2([{ key, verdicts: [verdict("tb-r001", "defect", "W3"), verdict("tb-r002", "ok", "", "too_easy")] }]);
     expect(missing).toEqual(["tb-r003"]);
-    expect(levels).toBe(1);
+    expect(levels).toEqual({ "baseline @tb too_easy": 1 });
     expect(report.baseline!.W1).toMatchObject({ defects: 0, n: 2 });
-    expect(report.baseline!.W3).toMatchObject({ defects: 1, n: 1, perRun: { min: 1, max: 1 } });
+    // Dwa przebiegi bazowe (r1, r2); W3 ma wiersz tylko w r1, więc min = 0.
+    expect(report.baseline!.W3).toMatchObject({ defects: 1, n: 1, perRun: { min: 0, max: 1 } });
     expect(report.baseline!.W8).toMatchObject({ defects: 0, n: 1 });
     expect(report.baseline!.W7).toMatchObject({ n: 1 });
     expect(report["baseline @tb"]!.W1!.n).toBe(2);
     expect(report["baseline #lesson_choice"]!.W3!.defects).toBe(1);
+  });
+
+  it("treats the same source name in two topics as two runs", () => {
+    const other = { prefix: "ps", rows: [{ rowId: "ps-r001", model: "baseline-r1", index: 0, type: "lesson_choice", hasExplanation: false }] };
+    const { report } = scoreStage2([
+      { key, verdicts: [verdict("tb-r001", "defect", "W1"), verdict("tb-r002", "ok"), verdict("tb-r003", "ok")] },
+      { key: other, verdicts: [verdict("ps-r001", "ok")] },
+    ]);
+    expect(report.baseline!.W1).toMatchObject({ defects: 1, n: 3, perRun: { min: 0, max: 1 } });
   });
 
   it("rejects a repeated row, a defect without a class and a class outside its denominator", () => {

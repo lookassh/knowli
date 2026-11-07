@@ -16,7 +16,6 @@ import { createTestRecorder } from "../usage/test-recorder";
 import {
   AiSdkExerciseChecker,
   AiSdkLessonPoolAgent,
-  closedCheckPrompt,
   objectiveInstructions,
   objectiveUserPrompt,
   OPENROUTER_BASE_URL,
@@ -1368,8 +1367,4 @@ describe("przebieg bazowy: generatePacket i checkClosed (etap 2, MockLanguageMod
     expect(second.results).toEqual([undefined, undefined]);
   });
 
-  it("closedCheckPrompt: pytanie rozsypanki o ułożony klucz", () => {
-    expect(closedCheckPrompt({ contract: "order", items: [{ view: "X" }] })).toContain('verdict "yes", "no", or "unknown"');
-    expect(closedCheckPrompt({ contract: "choice", items: [{ view: "X" }] })).toContain("answers: null");
-  });
 });

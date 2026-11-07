@@ -21,33 +21,41 @@ export interface StageCounts {
   readonly independent: number;
 }
 
+/** Limit przyjęcia per „kubełek”: etap oceniany, `lesson_notice` (intro) albo słuchanie (poza ścieżką etapów). */
+export type PacketBucket = keyof StageCounts | "intro" | "listen";
+
 export interface PacketPlan {
-  readonly packets: readonly { readonly type: LessonExerciseType; readonly count: number }[];
-  /** Najwięcej przyjętych ćwiczeń etapu po przycięciu. */
-  readonly stageTargets: StageCounts;
+  /** `share` — udział paczki w limicie kubełka (przyjmowany najpierw), `count` — zamówienie z zapasem. */
+  readonly packets: readonly { readonly type: LessonExerciseType; readonly share: number; readonly count: number }[];
+  readonly caps: Readonly<Record<PacketBucket, number>>;
 }
 
 const STAGES = ["guided", "productive", "independent"] as const;
 
+export function bucketOf(type: LessonExerciseType): PacketBucket {
+  return outsideStagePath(type) ? "listen" : (stageOf(type) as PacketBucket);
+}
+
 export function packetPlan(subject: SubjectModule, objective: LearningObjective, stageSplit: StageCounts, listenAllowance: number): PacketPlan {
   const minimums = lessonPoolMinimums(subject);
-  const stageTargets: StageCounts = {
+  const targets: StageCounts = {
     guided: Math.max(stageSplit.guided, minimums.guided),
     productive: Math.max(stageSplit.productive, minimums.productive),
     independent: Math.max(stageSplit.independent, minimums.independent + subject.agentPolicy.independentReserve),
   };
   const types = objective.exerciseTypes;
-  const packets: { type: LessonExerciseType; count: number }[] = [];
-  if (types.includes("lesson_notice")) packets.push({ type: "lesson_notice", count: NOTICE_PER_OBJECTIVE });
+  const notice = types.includes("lesson_notice") ? NOTICE_PER_OBJECTIVE : 0;
+  const listen = types.includes("lesson_listen_choice") ? listenAllowance : 0;
+  const packets: { type: LessonExerciseType; share: number; count: number }[] = [];
+  if (notice > 0) packets.push({ type: "lesson_notice", share: notice, count: notice });
   for (const stage of STAGES) {
     const stageTypes = types.filter((type) => !outsideStagePath(type) && stageOf(type) === stage);
-    const target = stageTargets[stage];
     stageTypes.forEach((type, index) => {
       // Reszta podziału do wcześniejszych typów (kolejność katalogu zagadnienia).
-      const share = Math.floor(target / stageTypes.length) + (index < target % stageTypes.length ? 1 : 0);
-      packets.push({ type, count: share + PACKET_RESERVE });
+      const share = Math.floor(targets[stage] / stageTypes.length) + (index < targets[stage] % stageTypes.length ? 1 : 0);
+      packets.push({ type, share, count: share + PACKET_RESERVE });
     });
   }
-  if (listenAllowance > 0 && types.includes("lesson_listen_choice")) packets.push({ type: "lesson_listen_choice", count: listenAllowance });
-  return { packets, stageTargets };
+  if (listen > 0) packets.push({ type: "lesson_listen_choice", share: listen, count: listen });
+  return { packets, caps: { ...targets, intro: notice, listen } };
 }

@@ -830,7 +830,7 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider, Clos
       { timeoutMs: input.timeoutMs, canRetry: () => false },
     );
     const results = sameLength(result.output.results, input.items.length);
-    return { results: input.items.map((_item, index) => results?.[index] ?? undefined) };
+    return { results: input.items.map((_item, index) => results?.[index]) };
   }
 
   async solveOpen(

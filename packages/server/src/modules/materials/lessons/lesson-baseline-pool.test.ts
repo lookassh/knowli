@@ -35,6 +35,7 @@ function raw(type: string, objectiveId: string, n: number): Record<string, unkno
       options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a" };
   }
   if (type === "lesson_gap") return { ...common, exerciseType: type, instructionPl: "Uzupełnij.", stem: `${name} ___ a book.`, answer: "reads", hint: "read", focus: ["reads"] };
+  if (type === "lesson_error_fix") return { ...common, exerciseType: type, instructionPl: "Popraw błąd.", statement: `${name} play the piano.`, answer: `${name} plays the piano.`, focus: ["plays"] };
   return { ...common, exerciseType: "lesson_open_answer", instructionPl: "Przetłumacz.", prompt: `${name} pływa w jeziorze.`, answer: `${name} swims in the lake.`, focus: ["swims"] };
 }
 
@@ -54,7 +55,7 @@ class FakeGenerator implements LessonPacketGenerator {
     const error = this.options.fail?.(input, attempt);
     if (error !== undefined) throw error;
     const offset = input.objective.id === first ? 0 : 100;
-    const typeOffset = { lesson_choice: 0, lesson_gap: 30, lesson_open_answer: 60 }[input.type] ?? 90;
+    const typeOffset = { lesson_choice: 0, lesson_gap: 30, lesson_open_answer: 60, lesson_error_fix: 200 }[input.type] ?? 90;
     const exercises: unknown[] = Array.from({ length: input.count + (this.options.extra ?? 0) }, (_, i) => raw(input.type, input.objective.id, offset + typeOffset + i));
     return { exercises, ...(input.withExamples ? { examples: [...(this.options.examples ?? ["I play football."])] } : {}) };
   }
@@ -181,6 +182,26 @@ describe("runLessonBaselinePool", () => {
     const counts = result.objectives[0]!.exercises.reduce<Record<string, number>>((acc, draft) => ({ ...acc, [draft.exerciseType]: (acc[draft.exerciseType] ?? 0) + 1 }), {});
     expect(counts).toEqual({ lesson_choice: 4, lesson_gap: 4, lesson_open_answer: 3 });
     expect(result.rejections.some((entry) => entry.code === "lesson_pool")).toBe(false);
+  });
+
+  it("fills each packet's share before any reserve, so the first type of a stage does not crowd out the second", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const mixed: LessonTopic = { ...topic, objectives: topic.objectives.map((objective) => ({ ...objective, exerciseTypes: [...TYPES, "lesson_error_fix"] })) };
+    const result = await run(new FakeGenerator(), undefined, { objectiveSource: { source: "catalog", topic: mixed } });
+    const types = result.objectives[0]!.exercises.map((draft) => draft.exerciseType);
+    // Productive 4 = gap 2 + error_fix 2 (udziały), choć gap ma zapas.
+    expect(types.filter((type) => type === "lesson_gap")).toHaveLength(2);
+    expect(types.filter((type) => type === "lesson_error_fix")).toHaveLength(2);
+  });
+
+  it("does not retry a refusal and does not retry once the budget is spent", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const refusal = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new GenerationProviderError("refusal") : undefined) });
+    await run(refusal);
+    expect(refusal.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(2);
+    const spent = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new GenerationProviderError("transient") : undefined) });
+    await run(spent, new FakeChecker(), {}, { runBudgetUsd: 0.001, concurrency: 1 });
+    expect(spent.calls.filter((call) => call.type === "lesson_gap").length).toBeLessThanOrEqual(1);
   });
 
   it("retries technical errors once and fails the objective after the second error", async () => {

@@ -31,9 +31,8 @@ export function closedCheckContract(type: LessonExerciseType): ClosedCheckContra
  * naprowadzałby na ćwiczoną formę), w słuchaniu z transkrypcją nagrania, w rozsypance z ułożonym
  * kluczem. `null` dla typu bez kontroli albo słuchania bez zdania nagrania.
  */
-export function closedCheckItem(draft: LessonExerciseDraft, topic: LessonTopic): { contract: ClosedCheckContract; view: string } | null {
-  const contract = closedCheckContract(draft.exerciseType);
-  if (contract === null) return null;
+export function closedCheckItem(draft: LessonExerciseDraft, topic: LessonTopic): string | null {
+  if (closedCheckContract(draft.exerciseType) === null) return null;
   const untitled: LessonTopic = { ...topic, objectives: topic.objectives.map((objective) => ({ ...objective, titlePl: "" })) };
   const lines = [solverView(draft, untitled)];
   if (draft.exerciseType === "lesson_listen_choice") {
@@ -42,7 +41,7 @@ export function closedCheckItem(draft: LessonExerciseDraft, topic: LessonTopic):
     lines.push(`Recording (transcript): ${sentence}`);
   }
   if (draft.exerciseType === "lesson_order") lines.push(`Arranged answer: ${draft.answer}`);
-  return { contract, view: lines.join("\n") };
+  return lines.join("\n");
 }
 
 /** Wynik wyboru: komplet poprawnych tekstów; `[]` = żadna, `null` = nie wiem. */

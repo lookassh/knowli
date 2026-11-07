@@ -8,11 +8,10 @@ import type { LessonExerciseDraft, LessonTopic } from "../../packages/server/src
 import { parseLessonRecord } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-tools";
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
 import type { RunCostSink } from "../../packages/server/src/ports/ai";
-import { endpointKeyFromEnv, isSecureOpenRouterEndpoint } from "../../packages/server/src/providers/openrouter-key";
 import { AiSdkExerciseChecker, OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
 import { grammarPlainSubject } from "./grammar-plain-subject";
 import { appendProvisionalCostEntry, assertWithinCostCap, costCapFromEnv, initCostLedger, readCostLedger, settleCostEntry } from "./probe-costs";
-import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
+import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers";
 
 /**
  * Ćwiczenia wzorcowe kontroli zadań zamkniętych (spec etapu 2 §6). Część bez sieci (w `pnpm check`):
@@ -71,13 +70,10 @@ describe("ćwiczenia wzorcowe kontroli zamkniętych (bez sieci)", () => {
   });
 });
 
-loadDotEnv();
-const llmBaseUrl = process.env.UMIEM_LLM_BASE_URL?.trim() || undefined;
-const apiKey =
-  process.env.OPENROUTER_API_KEY?.trim() ||
-  (isSecureOpenRouterEndpoint(llmBaseUrl) ? endpointKeyFromEnv(process.env, "UMIEM_LLM", llmBaseUrl)?.trim() : undefined) ||
-  undefined;
-const paid = process.env.UMIEM_PROBE_GOLD === "1" && apiKey !== undefined;
+// `.env` tylko przy płatnym biegu: część bez sieci jest w `pnpm check` i nie może zmieniać `process.env` innych testów.
+if (process.env.UMIEM_PROBE_GOLD === "1") loadDotEnv();
+const apiKey = process.env.UMIEM_PROBE_GOLD === "1" ? probeApiKey() : undefined;
+const paid = apiKey !== undefined;
 
 describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płatne)", () => {
   it("detects every wrong key, ≥80% second correct answers and rejects ≤10% correct exercises", async () => {
@@ -87,6 +83,13 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
     if (costsPath === undefined) throw new Error("UMIEM_PROBE_COSTS jest wymagany");
     const dumpPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_GOLD_DUMP, "UMIEM_PROBE_GOLD_DUMP");
     if (dumpPath !== undefined && existsSync(dumpPath)) throw new Error(`${dumpPath} już istnieje`);
+    const cases = GOLD.cases.map((entry) => ({ entry, draft: draftOf(entry) }));
+    const checker = new AiSdkExerciseChecker({
+      apiKey: "",
+      model,
+      effort: "low",
+      languageModel: createOpenRouter({ apiKey, baseURL: OPENROUTER_BASE_URL }).chat(model, { usage: { include: true } }),
+    });
     const reserveUsd = 0.2;
     const ledger = process.env.UMIEM_PROBE_COSTS_INIT === "1" ? initCostLedger(costsPath, costCapFromEnv(process.env.UMIEM_PROBE_COSTS_CAP_USD)) : readCostLedger(costsPath);
     assertWithinCostCap(ledger, reserveUsd, "gold");
@@ -94,13 +97,6 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
     let spent = 0;
     let unknown = 0;
     const sink: RunCostSink = { record: (usd) => (usd === null ? (unknown += 1) : (spent += usd)) };
-    const checker = new AiSdkExerciseChecker({
-      apiKey: "",
-      model,
-      effort: "low",
-      languageModel: createOpenRouter({ apiKey, baseURL: OPENROUTER_BASE_URL }).chat(model, { usage: { include: true } }),
-    });
-    const cases = GOLD.cases.map((entry) => ({ entry, draft: draftOf(entry) }));
     const tally: Record<GoldCase["class"], { rejected: number; total: number }[]> = { correct: [], wrong_key: [], second_correct: [] };
     const verdicts: { repetition: number; id: string; pass: boolean; code?: string }[] = [];
     try {
@@ -111,7 +107,7 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
         for (const type of types) {
           const packet = cases.filter((item) => item.draft.exerciseType === type);
           const contract = closedCheckContract(type)!;
-          const items = packet.map((item) => ({ view: closedCheckItem(item.draft, topic)!.view }));
+          const items = packet.map((item) => ({ view: closedCheckItem(item.draft, topic)! }));
           const { results } = await checker.checkClosed({ contract, items, timeoutMs: DEFAULT_LESSON_AGENT_POLICY.checkerTimeoutMs }, sink, new AbortController().signal);
           packet.forEach((item, index) => {
             const verdict = closedCheckVerdict(item.draft, results[index], subject.normalizer);

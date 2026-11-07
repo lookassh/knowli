@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { endpointKeyFromEnv, isSecureOpenRouterEndpoint } from "../../packages/server/src/providers/openrouter-key";
 
 /** Wspólne narzędzia prób na prawdziwych providerach (`*.probe.test.ts`); nie jest testem. */
 
@@ -87,6 +88,15 @@ function isInside(root: string, path: string): boolean {
  * Ścieżka z zmiennej `name` (rozwiązana) albo błąd, gdy leży w repozytorium; brak zmiennej = `undefined`.
  * Dotyczy zrzutów surowego wyjścia modelu i danych z materiału podręcznika: nie mogą trafić do checkoutu.
  */
+/**
+ * Klucz OpenRouter sond: `OPENROUTER_API_KEY`, a bez niego `UMIEM_LLM_API_KEY` tylko wtedy, gdy `UMIEM_LLM_BASE_URL`
+ * to https OpenRouter (ta sama reguła co `endpointKeyFromEnv`) — sondy wołają wyłącznie https OpenRouter.
+ */
+export function probeApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const baseUrl = env.UMIEM_LLM_BASE_URL?.trim() || undefined;
+  return env.OPENROUTER_API_KEY?.trim() || (isSecureOpenRouterEndpoint(baseUrl) ? endpointKeyFromEnv(env, "UMIEM_LLM", baseUrl)?.trim() : undefined) || undefined;
+}
+
 export function resolveOutsideRepoPath(raw: string | undefined, name: string): string | undefined {
   if (raw === undefined || raw.trim() === "") return undefined;
   const resolved = resolve(raw);

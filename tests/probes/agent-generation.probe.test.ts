@@ -24,7 +24,6 @@ import {
 } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent";
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
 import type { ClosedExerciseChecker, LessonExerciseCheckerProvider, LessonPacketGenerator, LessonPoolAgentProvider, RunCostSink } from "../../packages/server/src/ports/ai";
-import { endpointKeyFromEnv, isSecureOpenRouterEndpoint } from "../../packages/server/src/providers/openrouter-key";
 import { AiSdkExerciseChecker, AiSdkLessonPoolAgent, OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
 import {
   appendProvisionalCostEntry,
@@ -38,7 +37,8 @@ import {
   sha256File,
 } from "./probe-costs";
 import { grammarPlainSubject, probeVariantOf } from "./grammar-plain-subject";
-import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
+import { pcPoolStats } from "./present-continuous-stats";
+import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers";
 
 /**
  * Próba agenta puli lekcji na PRAWDZIWYCH modelach (`pnpm probe:agent`; etap 1 issue #237,
@@ -92,12 +92,8 @@ import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
  */
 
 loadDotEnv();
-const llmBaseUrl = process.env.UMIEM_LLM_BASE_URL?.trim() || undefined;
 // Próba woła wyłącznie https OpenRouter, więc klucz generatora tylko wtedy, gdy i on tam wskazuje.
-const apiKey =
-  process.env.OPENROUTER_API_KEY?.trim() ||
-  (isSecureOpenRouterEndpoint(llmBaseUrl) ? endpointKeyFromEnv(process.env, "UMIEM_LLM", llmBaseUrl)?.trim() : undefined) ||
-  undefined;
+const apiKey = probeApiKey();
 const materialEnv = process.env.UMIEM_PROBE_AGENT_MATERIAL?.trim() || undefined;
 const objectivesDumpEnv = process.env.UMIEM_PROBE_AGENT_OBJECTIVES_DUMP?.trim() || undefined;
 const enabled = apiKey !== undefined && (materialEnv !== undefined || objectivesDumpEnv !== undefined);
@@ -410,6 +406,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
         validatePool: { valid: pool.valid.length, rejected: pool.rejected.map((item) => ({ index: lesson.indexOf(item.exercise), errors: item.errors })) },
         validatePoolExtra: extra.map(([index, errors]) => ({ index, errors })),
         publication,
+        ...(topic.id === "present_continuous" ? { sceneShare: pcPoolStats(lesson, result.rejections) } : {}),
         countsByType: lesson.reduce<Record<string, number>>((acc, draft) => ({ ...acc, [draft.exerciseType]: (acc[draft.exerciseType] ?? 0) + 1 }), {}),
         diversity: diversityOf(lesson),
       };

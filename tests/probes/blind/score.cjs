@@ -2,8 +2,8 @@
 // Użycie: node tests/probes/blind/score.cjs <key.json> <verdicts.csv> [<verdicts.csv> ...] [<key.json> <verdicts.csv> ...]
 //   — każdy key.json zaczyna grupę (temat); następne pliki CSV należą do niej. Jeden sędzia na wywołanie.
 //   Gdy klucz ma typy ćwiczeń (arkusz etapu 2), dochodzi raport klas W1–W9: wady / mianownik, odsetek i przedział
-//   Wilsona 95% per wariant (źródło `<wariant>-rN`), temat i typ, z licznikami per przebieg (min–max).
-// Zgodność dwóch sędziów: node tests/probes/blind/score.cjs --agree <key.json> <verdicts A.csv> <verdicts B.csv>
+//   Wilsona 95% per wariant (źródło `<wariant>-rN`), temat i typ, z licznikami per przebieg (min–max; przebieg = temat + źródło).
+// Zgodność dwóch sędziów: node tests/probes/blind/score.cjs --agree <key.json> <A1.csv[,A2.csv…]> <B1.csv[,B2.csv…]>
 const fs = require("fs");
 
 function parseCsv(text) {
@@ -92,33 +92,40 @@ function scoreStage2(groups) {
   }
   const missing = [...keyRows.keys()].filter((rowId) => !judged.has(rowId));
   const variantOf = (model) => model.replace(/-r\d+$/u, "");
+  // Przebieg = temat + katalog źródła (ten sam `baseline-r1` w trzech tematach to trzy przebiegi).
+  const runOf = (rowId) => `${topics.get(rowId)}/${keyRows.get(rowId).model}`;
+  const runsOfVariant = {};
+  for (const [rowId, row] of keyRows) (runsOfVariant[variantOf(row.model)] ??= new Set()).add(runOf(rowId));
   const cells = {};
-  const add = (scope, name, row, defect) => {
-    const cell = ((cells[scope] ??= {})[name] ??= { defects: 0, n: 0, runs: {} });
+  const add = (scope, variant, name, rowId, defect) => {
+    const cell = ((cells[scope] ??= {})[name] ??= { defects: 0, n: 0, runs: {}, variant });
     cell.n += 1;
     if (defect) cell.defects += 1;
-    const run = (cell.runs[row.model] ??= { defects: 0, n: 0 });
-    run.n += 1;
-    if (defect) run.defects += 1;
+    cell.runs[runOf(rowId)] = (cell.runs[runOf(rowId)] ?? 0) + (defect ? 1 : 0);
   };
-  let levels = 0;
+  const levels = {};
   for (const [rowId, verdict] of judged) {
     const row = keyRows.get(rowId);
-    if (verdict.level !== "") levels += 1;
     const variant = variantOf(row.model);
+    if (verdict.level !== "") {
+      const key = `${variant} @${topics.get(rowId)} ${verdict.level}`;
+      levels[key] = (levels[key] ?? 0) + 1;
+    }
     for (const name of CLASSES) {
       if (!CLASS_APPLIES[name](row)) continue;
       const defect = verdict.classes.includes(name);
-      add(`${variant}`, name, row, defect);
-      add(`${variant} @${topics.get(rowId)}`, name, row, defect);
-      add(`${variant} #${row.type}`, name, row, defect);
+      add(`${variant}`, variant, name, rowId, defect);
+      add(`${variant} @${topics.get(rowId)}`, variant, name, rowId, defect);
+      add(`${variant} #${row.type}`, variant, name, rowId, defect);
     }
   }
   const report = {};
   for (const [scope, byClass] of Object.entries(cells)) {
     report[scope] = Object.fromEntries(
       Object.entries(byClass).map(([name, cell]) => {
-        const perRun = Object.values(cell.runs).map((run) => run.defects);
+        // Przebiegi wariantu bez wierszy w komórce liczą się jako 0 wad (min nie pomija pustych przebiegów zakresu).
+        const scopeRuns = scope.includes(" @") ? [...runsOfVariant[cell.variant]].filter((run) => run.startsWith(`${scope.split(" @")[1]}/`)) : [...runsOfVariant[cell.variant]];
+        const perRun = scopeRuns.map((run) => cell.runs[run] ?? 0);
         return [name, { defects: cell.defects, n: cell.n, rate: cell.n === 0 ? 0 : cell.defects / cell.n, wilson: wilson(cell.defects, cell.n), perRun: { min: Math.min(...perRun), max: Math.max(...perRun) } }];
       }),
     );
@@ -177,12 +184,13 @@ function main(argv) {
   const read = (arg, name) => fs.readFileSync(probePath(arg, name), "utf8");
   if (argv[0] === "--agree") {
     const [, keyArg, aArg, bArg] = argv;
-    const result = agreement(JSON.parse(read(keyArg, "key.json")), parseCsv(read(aArg, "verdicts A")), parseCsv(read(bArg, "verdicts B")));
+    const many = (list, name) => list.split(",").flatMap((file) => parseCsv(read(file, name)));
+    const result = agreement(JSON.parse(read(keyArg, "key.json")), many(aArg, "verdicts A"), many(bArg, "verdicts B"));
     for (const [name, cell] of Object.entries(result)) console.log(`${name} zgodność ${(100 * cell.agree).toFixed(1)}% (n=${cell.n}) różne: ${cell.differing.join(",") || "-"}`);
     return;
   }
   const groups = [];
-  for (const arg of argv) {
+  for (const arg of argv.filter((value) => value !== "--allow-missing")) {
     if (arg.endsWith(".json")) groups.push({ key: JSON.parse(read(arg, "key.json")), verdicts: [] });
     else if (groups.length === 0) throw new Error("pierwszy argument to key.json");
     else groups.at(-1).verdicts.push(...parseCsv(read(arg, "verdicts.csv")));
@@ -193,8 +201,9 @@ function main(argv) {
     return;
   }
   const { report, missing, levels } = scoreStage2(groups);
-  if (missing.length > 0) console.log(`wiersze bez werdyktu (${missing.length}): ${missing.join(",")}`);
-  console.log(`uwagi poziomu (level): ${levels}`);
+  // Wiersze bez werdyktu wypadłyby z mianowników: bramka liczy się tylko z kompletnej oceny.
+  if (missing.length > 0 && !argv.includes("--allow-missing")) throw new Error(`wiersze bez werdyktu (${missing.length}): ${missing.join(",")}`);
+  console.log(`uwagi poziomu (level): ${JSON.stringify(levels)}`);
   const pct = (value) => `${(100 * value).toFixed(1)}%`;
   for (const [scope, byClass] of Object.entries(report).sort(([a], [b]) => a.localeCompare(b, "en"))) {
     const cellsText = Object.entries(byClass).map(([name, cell]) => `${name} ${cell.defects}/${cell.n} ${pct(cell.rate)} [${pct(cell.wilson.low)}–${pct(cell.wilson.high)}] przebieg ${cell.perRun.min}–${cell.perRun.max}`);

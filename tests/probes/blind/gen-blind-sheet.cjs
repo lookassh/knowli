@@ -1,14 +1,18 @@
 // Ślepy arkusz porównania generatorów: ćwiczenia wszystkich źródeł jednej lekcji, wymieszane.
-// Użycie: node tests/probes/blind/gen-blind-sheet.cjs <katalog lekcji POZA repozytorium: podkatalog per źródło z dump.json> <seed> [prefiks wierszy]
-// Wynik: <katalog>\blind\sheet.csv i <katalog>\blind\key.json (rowId → źródło, indeks, typ, wyjaśnienie) oraz
-// <katalog>\judge\ — jedyny katalog dla sędziego: sheet.csv, material.txt (gdy zrzut ma materiał), rubric-stage2.md.
+// Użycie: node tests/probes/blind/gen-blind-sheet.cjs <katalog lekcji POZA repozytorium: podkatalog per źródło z dump.json> <seed> [prefiks wierszy] [katalog sędziego]
+// Wynik: <katalog>\blind\sheet.csv i <katalog>\blind\key.json (rowId → źródło, indeks, typ, wyjaśnienie; istniejący klucz nie jest
+// nadpisywany) oraz katalog sędziego (domyślnie <katalog>\judge; dla ślepoty podaj neutralną ścieżkę POZA drzewem tematu) —
+// jedyny katalog dla sędziego: sheet.csv, material.txt (gdy zrzut ma materiał), rubric-stage2.md.
+// Zrzuty jednego arkusza muszą mieć te same modele, wysiłek, wejście, pulę i grader, a nazwa katalogu `<wariant>-rN` — pole `variant`.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { probePath } = require("./paths.cjs");
 
-const [, , lessonDirArg, seed = "gen-compare", prefix = ""] = process.argv;
+const [, , lessonDirArg, seed = "gen-compare", prefix = "", judgeDirArg] = process.argv;
 const lessonDir = probePath(lessonDirArg, "katalog lekcji");
+const judgeDir = judgeDirArg === undefined ? path.join(lessonDir, "judge") : probePath(judgeDirArg, "katalog sędziego");
+if (fs.existsSync(path.join(lessonDir, "blind", "key.json"))) throw new Error(`${path.join(lessonDir, "blind", "key.json")} już istnieje — klucz ocenionego arkusza nie jest nadpisywany`);
 // `readdirSync` nie gwarantuje kolejności — sortujemy, żeby ten sam seed dawał ten sam arkusz na każdym systemie.
 const candidates = fs
   .readdirSync(lessonDir)
@@ -28,6 +32,8 @@ function rng(seedText) {
 }
 
 const rows = [];
+const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize", "graderAvailable"];
+let reference;
 for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
   // Zrzut nieudanej próby (`{ ...header, errors }`) nie ma ćwiczeń — pomijamy źródło, reszta arkusza powstaje.
@@ -36,6 +42,11 @@ for (const model of candidates) {
     continue;
   }
   models.push(model);
+  // Uczciwość porównania: te same modele i wejście we wszystkich źródłach arkusza, wariant zgodny z katalogiem.
+  if (dump.variant !== undefined && model.replace(/-r\d+$/u, "") !== dump.variant) throw new Error(`${model}: katalog nie pasuje do wariantu ${dump.variant}`);
+  const config = JSON.stringify([...SAME_FIELDS.map((field) => dump[field]), dump.input?.sha256]);
+  if (reference === undefined) reference = { model, config };
+  else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${SAME_FIELDS.join(", ")}, input)`);
   if (material === undefined && typeof dump.material === "string") material = dump.material;
   const objectives = new Map((dump.objectives ?? []).map((objective) => [String(objective.id).split(".").at(-1), objective]));
   dump.exercises.forEach((exercise, index) => {
@@ -84,7 +95,6 @@ const outDir = path.join(lessonDir, "blind");
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, "sheet.csv"), `${lines.join("\n")}\n`);
 fs.writeFileSync(path.join(outDir, "key.json"), JSON.stringify(key, null, 1));
-const judgeDir = path.join(lessonDir, "judge");
 fs.mkdirSync(judgeDir, { recursive: true });
 fs.writeFileSync(path.join(judgeDir, "sheet.csv"), `${lines.join("\n")}\n`);
 fs.copyFileSync(path.join(__dirname, "rubric-stage2.md"), path.join(judgeDir, "rubric-stage2.md"));

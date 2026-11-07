@@ -6,17 +6,17 @@ import { lessonInvariantCheck, objectiveStatus } from "../../../domain/lessons/a
 import { avoidSentencesFor } from "../../../domain/lessons/avoid-sentences";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { closedCheckContract, closedCheckItem, closedCheckVerdict } from "../../../domain/lessons/closed-check";
-import { packetPlan, type PacketPlan, type StageCounts } from "../../../domain/lessons/packet-plan";
+import { bucketOf, packetPlan, type PacketBucket, type PacketPlan, type StageCounts } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
-import { outsideStagePath, stageOf } from "../../../domain/lessons/stages";
 import type { AgentObjective, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../../../ports/ai";
-import { GenerationProviderError } from "../../../ports/generation-error";
+import { GenerationProviderError, type GenerationProviderErrorKind } from "../../../ports/generation-error";
 import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { buildPoolInput, listenChoiceAllowance, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import {
   emptyLessonPoolAgentStats,
+  slugOf,
   type LessonPoolAgentResult,
   type LessonPoolAgentRunInput,
   type SettledObjective,
@@ -61,15 +61,12 @@ type PacketOutcome =
 interface ObjectiveOutcome {
   readonly objective: AgentObjective;
   readonly plan: PacketPlan;
-  readonly drafts: readonly LessonExerciseDraft[];
+  /** Ćwiczenia po kontrolach, per paczka planu (ten sam indeks). */
+  readonly packets: readonly (readonly LessonExerciseDraft[])[];
   readonly examples: unknown;
   readonly failure?: AgentFailure;
   readonly calls: number;
   readonly spentUsd: number;
-}
-
-function slugOf(objectiveId: string): string {
-  return objectiveId.slice(objectiveId.lastIndexOf(".") + 1);
 }
 
 function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput): { subject: SubjectModule; topic: LessonTopic } {
@@ -115,31 +112,33 @@ export function packetInput(args: {
   };
 }
 
-/** Jedno ponowienie błędu technicznego dostawcy (bez błędu konfiguracji); 429 po `retryAfterMs`, najwyżej 30 s. */
-async function withRetry<T>(call: () => Promise<T>, signal: AbortSignal): Promise<T> {
+/** Błędy techniczne z jednym ponowieniem (spec etapu 2 §3.2); błąd konfiguracji i pozostałe — bez ponowienia. */
+const RETRIED: ReadonlySet<GenerationProviderErrorKind> = new Set(["rate_limit", "transient", "timeout", "output"]);
+
+/** Czekanie przerywane sygnałem (zegar zdejmowany także przy przerwaniu). */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason as Error);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Jedno ponowienie błędu technicznego; 429 po `retryAfterMs` (najwyżej 30 s); bez ponowienia po wyczerpaniu budżetu. */
+async function withRetry<T>(call: () => Promise<T>, signal: AbortSignal, exhausted: () => boolean): Promise<T> {
   try {
     return await call();
   } catch (error) {
-    if (signal.aborted || !(error instanceof GenerationProviderError) || error.kind === "configuration") throw error;
-    if (error.kind === "rate_limit") {
-      const wait = Math.min(error.retryAfterMs ?? 1_000, MAX_RATE_LIMIT_WAIT_MS);
-      await untilAborted(new Promise((resolve) => setTimeout(resolve, wait)), signal);
-    }
+    if (signal.aborted || !(error instanceof GenerationProviderError) || !RETRIED.has(error.kind) || exhausted()) throw error;
+    if (error.kind === "rate_limit") await pause(Math.min(error.retryAfterMs ?? 1_000, MAX_RATE_LIMIT_WAIT_MS), signal);
     return call();
   }
-}
-
-/** Limit przyjęcia zagadnienia per „kubełek”: etap oceniany, słuchanie albo notice (spec etapu 2 §3.1). */
-function bucketOf(type: LessonExerciseType): "guided" | "productive" | "independent" | "listen" | "intro" {
-  if (outsideStagePath(type)) return "listen";
-  const stage = stageOf(type);
-  return stage === "intro" ? "intro" : stage;
-}
-
-function capsOf(plan: PacketPlan): Record<ReturnType<typeof bucketOf>, number> {
-  const notice = plan.packets.find((packet) => packet.type === "lesson_notice")?.count ?? 0;
-  const listen = plan.packets.find((packet) => packet.type === "lesson_listen_choice")?.count ?? 0;
-  return { ...plan.stageTargets, intro: notice, listen };
 }
 
 export async function runLessonBaselinePool(
@@ -165,19 +164,23 @@ export async function runLessonBaselinePool(
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
     const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
     const avoidSentences = avoidSentencesFor({ examples: {}, exercises: [], subject, cardSentences });
-    const semaphore = new Semaphore(policy.concurrency);
+    const objectiveSlots = new Semaphore(policy.concurrency);
+    // Równoległość żądań: generowanie jak zagadnienia agenta, kontrola jak checker agenta; budżet sprawdzany po zajęciu miejsca.
+    const generatorSlots = new Semaphore(policy.concurrency);
+    const checkerSlots = new Semaphore(policy.checkerConcurrency);
 
-    /** Wywołanie modelu z budżetem, terminem runu i jednym ponowieniem; koszt do licznika zagadnienia. */
-    const callModel = async <T>(sink: RunCostSink, call: (sink: RunCostSink) => Promise<T>): Promise<T | typeof STOPPED> => {
-      if (cost.exhausted() || runDeadline.signal.aborted) return STOPPED;
-      try {
-        return await withRetry(() => untilAborted(call(sink), runDeadline.signal), runDeadline.signal);
-      } catch (error) {
-        if (signal.aborted) throw signal.reason;
-        if (runDeadline.signal.aborted) return STOPPED;
-        throw error;
-      }
-    };
+    /** Wywołanie modelu z miejscem w semaforze, budżetem, terminem runu i jednym ponowieniem. */
+    const callModel = <T>(slots: Semaphore, call: () => Promise<T>): Promise<T | typeof STOPPED> =>
+      slots.run(async () => {
+        if (cost.exhausted() || runDeadline.signal.aborted) return STOPPED;
+        try {
+          return await withRetry(() => untilAborted(call(), runDeadline.signal), runDeadline.signal, () => cost.exhausted());
+        } catch (error) {
+          if (signal.aborted) throw signal.reason;
+          if (runDeadline.signal.aborted) return STOPPED;
+          throw error;
+        }
+      });
 
     const runPacket = async (
       catalogObjective: LearningObjective,
@@ -200,7 +203,7 @@ export async function runLessonBaselinePool(
         timeoutMs: policy.callTimeoutMs,
       });
       try {
-        const generated = await callModel(sink, (s) => deps.generator.generatePacket(request, s, runDeadline.signal));
+        const generated = await callModel(generatorSlots, () => deps.generator.generatePacket(request, sink, runDeadline.signal));
         if (generated === STOPPED) return { kind: "stopped" };
         const objectiveId = catalogObjective.id;
         const valid: LessonExerciseDraft[] = [];
@@ -228,19 +231,22 @@ export async function runLessonBaselinePool(
           valid.push(draft);
         }
         const contract = closedCheckContract(packet.type);
-        if (contract === null || valid.length === 0) return { kind: "done", drafts: valid, examples: generated.examples };
-        const items = valid.map((draft) => closedCheckItem(draft, topic));
-        const views = items.flatMap((item) => (item === null ? [] : [{ view: item.view }]));
-        const checked = await callModel(sink, (s) =>
-          deps.checker.checkClosed({ contract, items: views, timeoutMs: policy.checkerTimeoutMs }, s, runDeadline.signal),
+        if (contract === null) return { kind: "done", drafts: valid, examples: generated.examples };
+        // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą: wyniki odpowiadają pozycjom 1:1.
+        const checkable = valid.flatMap((draft) => {
+          const view = closedCheckItem(draft, topic);
+          if (view === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
+          return view === null ? [] : [{ draft, view }];
+        });
+        if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
+        const checked = await callModel(checkerSlots, () =>
+          deps.checker.checkClosed({ contract, items: checkable.map(({ view }) => ({ view })), timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
         );
         if (checked === STOPPED) return { kind: "stopped" };
         stats.checkerCalls += 1;
         const passed: LessonExerciseDraft[] = [];
-        let view = 0;
-        valid.forEach((draft, index) => {
-          const result = items[index] === null ? undefined : checked.results[view++];
-          const verdict = items[index] === null ? ({ pass: false, code: "check_unknown" } as const) : closedCheckVerdict(draft, result, subject.normalizer);
+        checkable.forEach(({ draft }, index) => {
+          const verdict = closedCheckVerdict(draft, checked.results[index], subject.normalizer);
           if (verdict.pass) passed.push(draft);
           else reject(objectiveId, draft.exerciseType, "blind", verdict.code);
         });
@@ -268,27 +274,30 @@ export async function runLessonBaselinePool(
       const outcomes = await Promise.all(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, packetIndex === 0, sink)));
       const failed = outcomes.find((outcome) => outcome.kind === "failed");
       if (failed !== undefined) {
-        return { objective, plan, drafts: [], examples: undefined, failure: agentFailureOf(failed.error), calls, spentUsd: spent };
+        return { objective, plan, packets: [], examples: undefined, failure: agentFailureOf(failed.error), calls, spentUsd: spent };
       }
-      const done = outcomes.flatMap((outcome) => (outcome.kind === "done" ? [outcome] : []));
-      return { objective, plan, drafts: done.flatMap((outcome) => outcome.drafts), examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
+      const packets = outcomes.map((outcome) => (outcome.kind === "done" ? outcome.drafts : []));
+      return { objective, plan, packets, examples: outcomes[0]?.kind === "done" ? outcomes[0].examples : undefined, calls, spentUsd: spent };
     };
 
-    const outcomes = await Promise.all(objectives.map((objective, index) => semaphore.run(() => runObjective(objective, index))));
+    const outcomes = await Promise.all(objectives.map((objective, index) => objectiveSlots.run(() => runObjective(objective, index))));
     signal.throwIfAborted();
 
-    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem etapu; kandydat łamiący walidację odpada.
+    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka; kandydat łamiący walidację odpada.
+    // Najpierw udział każdej paczki, potem zapasy w tej samej kolejności — zapas pierwszego typu nie wypycha drugiego.
     const limits = new Map<string, ObjectiveAgentLimits>(
-      outcomes.map((outcome) => [outcome.objective.id, { targetCount: 0, listenAllowance: capsOf(outcome.plan).listen, maxExercises: Number.POSITIVE_INFINITY }]),
+      outcomes.map((outcome) => [outcome.objective.id, { targetCount: 0, listenAllowance: outcome.plan.caps.listen, maxExercises: Number.POSITIVE_INFINITY }]),
     );
     const ctx: AgentCheckContext = { subject, material: input.material, limits };
     let state: LessonAgentState = createLessonAgentState({ topic, objectives, fixed: [], examples: {}, fixedSources: cardExposureSources(subject, topic) });
     const overflow = new Map<string, number>();
     for (const outcome of outcomes) {
       const id = outcome.objective.id;
-      const caps = capsOf(outcome.plan);
-      const used: Record<keyof typeof caps, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0 };
-      for (const draft of outcome.drafts) {
+      const caps = outcome.plan.caps;
+      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0 };
+      const shares = outcome.packets.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
+      const reserves = outcome.packets.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
+      for (const draft of [...shares.flat(), ...reserves.flat()]) {
         const bucket = bucketOf(draft.exerciseType);
         if (used[bucket] >= caps[bucket]) {
           overflow.set(id, (overflow.get(id) ?? 0) + 1);
@@ -304,7 +313,10 @@ export async function runLessonBaselinePool(
         used[bucket] += 1;
         stats.accepted += 1;
       }
-      if (outcome.failure === undefined) state = submitExamples(state, id, Array.isArray(outcome.examples) ? outcome.examples : [], ctx).state;
+    }
+    // Przykłady kart po ćwiczeniach wszystkich zagadnień: linia ujawniająca odpowiedź odpada, ćwiczenie zostaje.
+    for (const outcome of outcomes) {
+      if (outcome.failure === undefined) state = submitExamples(state, outcome.objective.id, Array.isArray(outcome.examples) ? outcome.examples : [], ctx).state;
     }
 
     const settledList: SettledObjective[] = outcomes.map((outcome) => {
