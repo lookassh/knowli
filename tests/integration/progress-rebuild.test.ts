@@ -188,7 +188,7 @@ describe("rebuildProgress — cele lekcji (child_objective_progress)", () => {
   });
 
   it("odbudowuje child_objective_progress z ocen objective; dry-run bez zapisu, apply idempotentny, słówka nietknięte", async () => {
-    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } });
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } });
     const { services: base, clock } = buildTestServices();
     const services = createServices({
       db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,

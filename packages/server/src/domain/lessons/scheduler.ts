@@ -147,8 +147,8 @@ export type LessonTaskPlan =
       readonly pairedWith?: { readonly itemId: string; readonly itemRevisionId: string };
     };
 
-/** Typy wymagające modelu-oceniającego (otwarta/wytwórcza ocena). */
-const GRADER_DEPENDENT_TYPES: ReadonlySet<LessonExerciseType> = new Set<LessonExerciseType>([
+/** Typy wymagające modelu-oceniającego (otwarta/wytwórcza ocena); luka i rozsypanka są poza zbiorem. */
+export const GRADER_DEPENDENT_TYPES: ReadonlySet<string> = new Set<LessonExerciseType>([
   "lesson_error_fix",
   "lesson_transform",
   "lesson_open_answer",

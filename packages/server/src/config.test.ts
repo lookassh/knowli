@@ -97,7 +97,7 @@ describe("graderFromEnv", () => {
     const grader = graderFromEnv({ ...base });
     expect(grader).toBeDefined();
     expect(grader!.provider.model).toBe("cheap-1");
-    expect(grader!.maxCallsPerSession).toBe(20);
+    expect(grader!.maxCallsPerSession).toBe(150);
     expect(grader!.timeoutMs).toBe(8000);
   });
 
@@ -385,13 +385,19 @@ describe("lessonAgentSettingsFromEnv", () => {
 
 describe("lessonAgentPublicFromEnv", () => {
   const KEY = { OPENROUTER_API_KEY: "sk-or-v1-x" };
+  const grader = { UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_GRADER_MODEL: "cheap-1", UMIEM_GRADER_API_KEY: "secret" };
 
-  it("nazwy usług przy kluczu OpenRouter", () => {
-    expect(lessonAgentPublicFromEnv({ ...KEY })).toEqual({
+  it("nazwy usług przy kluczu OpenRouter i graderze", () => {
+    expect(lessonAgentPublicFromEnv({ ...KEY, ...grader })).toEqual({
       generationService: "openrouter.ai · google/gemini-3.8-flash",
       checkService: "openrouter.ai · deepseek/deepseek-v4.1-flash-1017",
+      openCheckService: "openrouter.ai · cheap-1",
     });
-    expect(lessonAgentPublicFromEnv({ ...KEY, UMIEM_LESSON_AGENT_MODEL: "x/y" })?.generationService).toBe("openrouter.ai · x/y");
+    expect(lessonAgentPublicFromEnv({ ...KEY, ...grader, UMIEM_LESSON_AGENT_MODEL: "x/y" })?.generationService).toBe("openrouter.ai · x/y");
+  });
+
+  it("domyślna konfiguracja z kluczem OpenRouter włącza generowanie (grader z tego samego klucza)", () => {
+    expect(lessonAgentPublicFromEnv(withConfigDefaults(KEY))?.openCheckService).toBe("openrouter.ai · google/gemini-3.8-flash");
   });
 
   it("pozostawione UMIEM_LESSON_AGENT_SUBJECTS nie zmienia wyniku", () => {
@@ -422,7 +428,6 @@ describe("lessonAgentPublicFromEnv", () => {
   });
 
   describe("openCheckService (usługa oceny odpowiedzi próbnych)", () => {
-    const grader = { UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_GRADER_MODEL: "cheap-1", UMIEM_GRADER_API_KEY: "secret" };
 
     it("z graderem: host · model, bez klucza", () => {
       const result = lessonAgentPublicFromEnv({ ...KEY, ...grader });
@@ -436,16 +441,15 @@ describe("lessonAgentPublicFromEnv", () => {
       expect(lessonAgentPublicFromEnv(env)?.openCheckService).toBe("openrouter.ai · m/1");
     });
 
-    it("bez gradera → brak pola", () => {
-      expect(lessonAgentPublicFromEnv({ ...KEY })).not.toHaveProperty("openCheckService");
+    it("bez gradera → generowanie niedostępne (#360)", () => {
+      expect(lessonAgentPublicFromEnv({ ...KEY })).toBeUndefined();
     });
 
-    it("niepełna konfiguracja gradera → brak pola i bez wyjątku", () => {
+    it("niepełna konfiguracja gradera → generowanie niedostępne, bez wyjątku", () => {
       const env = { ...KEY, UMIEM_GRADER_API_KEY: "secret", UMIEM_GRADER_MODEL: "cheap-1" };
-      let result: ReturnType<typeof lessonAgentPublicFromEnv>;
+      let result: ReturnType<typeof lessonAgentPublicFromEnv> = { generationService: "x", checkService: "y" };
       expect(() => { result = lessonAgentPublicFromEnv(env); }).not.toThrow();
-      expect(result!).toBeDefined();
-      expect(result!).not.toHaveProperty("openCheckService");
+      expect(result).toBeUndefined();
     });
 
     it("tryb fake → brak pola", () => {

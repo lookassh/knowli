@@ -26,6 +26,7 @@ import { letterGroups } from "../domain/pronunciation-fragments";
 import { FUNCTION_WORDS } from "../domain/lessons/subjects/english/function-words";
 import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
 import { normalizeTokens } from "../domain/lessons/normalize";
+import { CONFIG_DEFAULTS } from "../config-defaults";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -430,6 +431,8 @@ export type FakeGraderBehavior =
   | { raw: unknown; delayMs?: number }
   | { error: string; delayMs?: number };
 
+const FAKE_SCHOOL_PROMPT_VERSION = "fake-school-grader-v3";
+
 /**
  * Deterministyczny fake modelu oceniającego dla integracji/E2E: liczy wywołania
  * i mapuje znormalizowaną (naiwnie: lowercase + trim) odpowiedź dziecka na
@@ -441,6 +444,9 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   readonly model = "fake-grader-1";
   readonly promptVersion: string;
   readonly requests: GraderInput[] = [];
+  get promptVersions(): readonly string[] {
+    return [this.promptVersion, FAKE_SCHOOL_PROMPT_VERSION];
+  }
   #byAnswer = new Map<string, FakeGraderBehavior>();
   #default: FakeGraderBehavior | null = null;
   #keywordRouting = false;
@@ -448,7 +454,7 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
 
   /** `costUsd` to koszt zgłaszany do `RunCostSink` raz na wywołanie (testy budżetu agenta); `null` = nieznany. */
   constructor(options: { promptVersion?: string; keywordRouting?: boolean; costUsd?: number | null } = {}) {
-    this.promptVersion = options.promptVersion ?? "fake-grader-v1";
+    this.promptVersion = options.promptVersion ?? "fake-grader-v2";
     this.#keywordRouting = options.keywordRouting ?? false;
     this.#costUsd = options.costUsd === undefined ? 0.0005 : options.costUsd;
   }
@@ -466,7 +472,7 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   }
 
   promptVersionForInput(input: GraderInput): string {
-    return input.school ? "fake-school-grader-v3" : this.promptVersion;
+    return input.school ? FAKE_SCHOOL_PROMPT_VERSION : this.promptVersion;
   }
 
   get callCount(): number {
@@ -547,18 +553,18 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
 
   #keywordVerdict(input: GraderInput): FakeGraderBehavior {
     if (!this.#keywordRouting) {
-      return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+      return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } };
     }
     const answer = input.childAnswer;
     const firstToken = answer.trim().split(/\s+/)[0] ?? answer;
     if (/almost/i.test(answer)) {
-      return { raw: { verdict: "almost", errorCategory: null, fragments: [firstToken], note: "almost" } };
+      return { raw: { verdict: "almost", errorCategory: null, fragments: [firstToken], note: "almost", usesTargetForm: true } };
     }
     if (/wrong/i.test(answer)) {
       const category = input.objective.errorCategories[0]?.code ?? "other";
-      return { raw: { verdict: "incorrect", errorCategory: category, fragments: [firstToken], note: "wrong" } };
+      return { raw: { verdict: "incorrect", errorCategory: category, fragments: [firstToken], note: "wrong", usesTargetForm: true } };
     }
-    return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok" } };
+    return { raw: { verdict: "correct", errorCategory: null, fragments: [], note: "ok", usesTargetForm: true } };
   }
 }
 /** Zależności gradera na fake'u — do integracji i trybu UMIEM_FAKE_PROVIDERS. */
@@ -567,7 +573,7 @@ export function fakeGraderDeps(
 ): { provider: FakeAnswerGrader; maxCallsPerSession: number; timeoutMs: number } {
   return {
     provider: options.provider ?? new FakeAnswerGrader(),
-    maxCallsPerSession: options.maxCallsPerSession ?? 20,
+    maxCallsPerSession: options.maxCallsPerSession ?? Number(CONFIG_DEFAULTS.UMIEM_GRADER_MAX_CALLS_PER_SESSION),
     timeoutMs: options.timeoutMs ?? 8000,
   };
 }

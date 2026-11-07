@@ -253,14 +253,14 @@ const WITH_AUDIO: Array<{ name: string; kind: string; scenario: Scenario }> = [
     name: "luka „prawie” (werdykt modelu)", kind: "lesson_almost",
     scenario: {
       type: "lesson_gap", withPriorSuccess: true, answer: text("gose"),
-      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "almost", errorCategory: null, fragments: ["gose"], note: "typo" } })),
+      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "almost", errorCategory: null, fragments: ["gose"], note: "typo", usesTargetForm: true } })),
     },
   },
   {
     name: "werdykt modelu model_incorrect", kind: "lesson_hint",
     scenario: {
       type: "lesson_transform", withPriorSuccess: true, answer: text("she play"),
-      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s" } })),
+      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "brak -s", usesTargetForm: true } })),
     },
   },
 ];
@@ -411,7 +411,7 @@ describe("feedback lekcji bez nagrania zdania", () => {
   it("model_other (zadanie zostaje issued) — incorrect z correctText bez nagrania; ponowienie bez wsparcia model_audio", async () => {
     const { services, attempt, task } = await play({
       type: "lesson_transform", withPriorSuccess: true, answer: text("she play"),
-      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic" } })),
+      services: () => graderServices(new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "other", fragments: [], note: "off topic", usesTargetForm: true } })),
     }, "ready");
     expect(attempt.feedback?.kind).toBe("incorrect");
     expect(attempt.feedback?.correctText).toBeTruthy();

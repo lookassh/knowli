@@ -13,6 +13,7 @@ import {
   shouldOfferShorten,
   type SchoolAssessmentDetails,
 } from "../../../domain/lessons/precision-trainer";
+import { GRADER_DEPENDENT_TYPES } from "../../../domain/lessons/scheduler";
 import { readLessonTrainingSessionPlan } from "../../../domain/training-session-plan";
 import { writeSealedEvent } from "../events";
 import { lessonSessionContextOf, lessonTaskCounts } from "./lesson-sessions";
@@ -35,8 +36,6 @@ export interface RevisionOf {
 
 type TaskRow = typeof sessionTasks.$inferSelect;
 
-/** Typy oceniane modelem (jak rezerwacja wywołań przy budowie planu). */
-const GRADER_TYPES: ReadonlySet<string> = new Set(["lesson_error_fix", "lesson_transform", "lesson_open_answer"]);
 type SessionRow = typeof learningSessions.$inferSelect;
 
 interface GradeShape {
@@ -135,7 +134,7 @@ export async function offerShortenFollowUp(
     const plan = readLessonTrainingSessionPlan(session.trainingPlan);
     // Tylko niewydane sloty spoza historyjki: indeks `counts.planned` obejmuje też
     // wydane zadania historyjki, więc liczymy z `unissuedPlanSlots` (ruling 1).
-    reservedForPlan = plan ? unissuedPlanSlots(plan, counts).regular.filter((slot) => GRADER_TYPES.has(slot.exerciseType)).length : 0;
+    reservedForPlan = plan ? unissuedPlanSlots(plan, counts).regular.filter((slot) => GRADER_DEPENDENT_TYPES.has(slot.exerciseType)).length : 0;
   } catch {
     reservedForPlan = 0;
   }

@@ -67,6 +67,12 @@ export interface LessonWorldOptions {
    */
   transformVariants?: readonly string[];
   /**
+   * Nadpisanie klucza ćwiczenia `lesson_transform` bogatej puli (etap 3 #360: stare
+   * rewizje z focus w formie rozwiniętej, klucze ze skrótem). `target_key` liczony
+   * z nadpisanej odpowiedzi. Wymaga `richPool`.
+   */
+  transform?: { answer: string; focus: readonly string[]; acceptedAnswers?: readonly string[]; statement?: string; instructionPl?: string };
+  /**
    * Wyjaśnienie błędu (`explanationPl`, spec 2026-11-01) w payloadzie KAŻDEJ rewizji
    * wersji przed publikacją: `text` domyślnie, `textByType` per typ ćwiczenia;
    * `audio` dosiewa nagranie `explanation_audio` (`ready`/`pending`) jak `withFeedbackAudio`.
@@ -208,9 +214,9 @@ export async function lessonWorld(sourcePool: Pool, options: LessonWorldOptions 
     );
     // Publikacja: state=published wymaga published_at; lesson_context niezmienny po publikacji.
     if (options.richPool) {
-      await seedRichPool(pool, { deckId, versionId }, options.transformVariants ?? []);
-    } else if (options.transformVariants !== undefined) {
-      throw new Error("transformVariants wymaga richPool");
+      await seedRichPool(pool, { deckId, versionId }, options.transformVariants ?? [], options.transform);
+    } else if (options.transformVariants !== undefined || options.transform !== undefined) {
+      throw new Error("transformVariants i transform wymagają richPool");
     }
     if (options.editorReady) {
       await seedEditorPool(pool, { deckId, versionId });
@@ -370,7 +376,12 @@ export const RICH_KEYS = {
  * payload_version 2 i PRAWDZIWY `target_key`. Pozwala testom wydawania zadań
  * zobaczyć kartę → notice → ćwiczenie oraz ekspozycje per typ.
  */
-async function seedRichPool(pool: Pool, version: { deckId: string; versionId: string }, transformVariants: readonly string[]): Promise<void> {
+async function seedRichPool(
+  pool: Pool,
+  version: { deckId: string; versionId: string },
+  transformVariants: readonly string[],
+  transform?: LessonWorldOptions["transform"],
+): Promise<void> {
   const objectiveId = "english_grammar.present_simple.third_person_s";
   const exercises: { position: number; payload: Record<string, unknown>; answer: string }[] = [
     {
@@ -441,17 +452,17 @@ async function seedRichPool(pool: Pool, version: { deckId: string; versionId: st
     },
     {
       position: 5,
-      answer: RICH_ANSWERS.transform,
+      answer: transform?.answer ?? RICH_ANSWERS.transform,
       payload: {
         exerciseType: "lesson_transform",
         objectiveId,
-        instructionPl: "Zamień na twierdzenie.",
-        statement: "Does she play?",
-        answer: RICH_ANSWERS.transform,
-        acceptedAnswers: [RICH_ANSWERS.transform, ...transformVariants],
+        instructionPl: transform?.instructionPl ?? "Zamień na twierdzenie.",
+        statement: transform?.statement ?? "Does she play?",
+        answer: transform?.answer ?? RICH_ANSWERS.transform,
+        acceptedAnswers: transform ? [...(transform.acceptedAnswers ?? [])] : [RICH_ANSWERS.transform, ...transformVariants],
         // odpowiedź dwuwyrazowa, element sprawdzany to tylko „plays” — literówka
         // w „she” jest POZA focus, więc dopasowanie daje minor_typo (lesson_almost).
-        focus: ["plays"],
+        focus: transform ? [...transform.focus] : ["plays"],
       },
     },
     {

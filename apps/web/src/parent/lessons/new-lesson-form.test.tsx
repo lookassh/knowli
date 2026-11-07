@@ -524,7 +524,7 @@ describe("NewLessonForm", () => {
 
     it("komunikat o niedostępnym generowaniu: tylko przy lessonGenerationAvailable false", () => {
       expect(messages.lessons.generationErrors.lesson_agent_unavailable).toBe(
-        "Generowanie lekcji wymaga klucza OpenRouter w konfiguracji serwera. Po dodaniu klucza ponów generowanie.",
+        "Generowanie lekcji wymaga klucza OpenRouter i modelu oceniającego w konfiguracji serwera. Po uzupełnieniu konfiguracji ponów generowanie.",
       );
       const off = renderWithCatalog(grammar, { available: false });
       expect(off).toContain('data-testid="lesson-generation-unavailable"');

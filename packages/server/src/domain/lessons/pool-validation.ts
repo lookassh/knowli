@@ -71,7 +71,8 @@ import {
   type LessonExerciseIdentityOptions,
 } from "./exercise-identity";
 import type { PoolMinimums } from "./lesson-policy";
-import { APOSTROPHE_VARIANTS } from "./normalize";
+import { APOSTROPHE_VARIANTS, baseNormalizer } from "./normalize";
+import { containsRun } from "./evaluate";
 
 /** Fabryka zgłoszeń reguł rdzenia. */
 const coreIssue = issueFrom(CORE_RULES);
@@ -156,26 +157,6 @@ export function answersEquivalent(a: string, b: string, normalizer: AnswerNormal
   return false;
 }
 
-/** Czy `needle` jest ciągłą podsekwencją `haystack`. */
-function isContiguousSubsequence(haystack: readonly string[], needle: readonly string[]): boolean {
-  if (needle.length === 0 || needle.length > haystack.length) {
-    return false;
-  }
-  for (let start = 0; start + needle.length <= haystack.length; start++) {
-    let matched = true;
-    for (let k = 0; k < needle.length; k++) {
-      if (haystack[start + k] !== needle[k]) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Czy `focus` jest ciągłą podsekwencją tokenów odpowiedzi kanonicznej w DOWOLNYM
  * wariancie normalizacji — dla któregokolwiek wariantu `focus` i odpowiedzi.
@@ -189,7 +170,7 @@ function focusCoversAnswer(
   const answerVariants = normalizer.normalize(answer).filter((seq) => seq.length > 0);
   for (const answerSeq of answerVariants) {
     for (const focusSeq of focusVariants) {
-      if (isContiguousSubsequence(answerSeq, focusSeq)) {
+      if (containsRun(answerSeq, focusSeq)) {
         return true;
       }
     }
@@ -633,9 +614,12 @@ export function validateLessonExerciseIssues(
     }
   }
   validateTextFieldLengths(ex, issues);
+  // Warianty bez rozwijania skrótów (etap 3 #360): skrót i pełna forma to osobne warianty.
+  // Focus sprawdzamy jak dotąd (starsze szkice zapisują się i publikują); focus niedosłowny
+  // po neutralnej normalizacji tylko wyłącza tolerancję literówki w ocenie.
   validateFocus(ex, normalizer, issues);
   validateByType(ex, topic, objective, normalizer, issues);
-  validateAcceptedAnswers(ex, normalizer, issues);
+  validateAcceptedAnswers(ex, issues);
 
   // Reguły specyficzne dla przedmiotu.
   issues.push(...subject.validateExercise(ex, topic));
@@ -992,8 +976,8 @@ function confusableTexts(texts: readonly string[], normalizer?: AnswerNormalizer
   for (let i = 0; i < texts.length; i++) {
     for (let j = i + 1; j < texts.length; j++) {
       if (
-        isContiguousSubsequence(words[i]!, words[j]!) ||
-        isContiguousSubsequence(words[j]!, words[i]!) ||
+        containsRun(words[i]!, words[j]!) ||
+        containsRun(words[j]!, words[i]!) ||
         (normalizer !== undefined && answersEquivalent(texts[i]!, texts[j]!, normalizer))
       ) {
         found.push([i, j]);
@@ -1249,7 +1233,7 @@ function validateCloze(ex: LessonExerciseDraft, normalizer: AnswerNormalizer, is
   const visible = parts.map(wordsOfText);
   bank.forEach((word, index) => {
     const needle = wordsOfText(word);
-    if (visible.some((part) => isContiguousSubsequence(part, needle))) {
+    if (visible.some((part) => containsRun(part, needle))) {
       issues.push(coreIssue("cloze.bank_outside_gap", {
         pl: `clozeText: słowo „${word}” z banku występuje w tekście poza luką`,
         found: `bank word ${clip(word)} (${bankField(index)}) appears in the text outside the gaps`,
@@ -1505,11 +1489,7 @@ function validateTransform(ex: LessonExerciseDraft, topic: LessonTopic, issues: 
   }
 }
 
-function validateAcceptedAnswers(
-  ex: LessonExerciseDraft,
-  normalizer: AnswerNormalizer,
-  issues: LessonRuleIssue[],
-): void {
+function validateAcceptedAnswers(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
   if (ex.acceptedAnswers.length > MAX_ACCEPTED_ANSWERS) {
     issues.push(coreIssue("variants.count", {
       pl: `acceptedAnswers: więcej niż ${MAX_ACCEPTED_ANSWERS} wariantów`,
@@ -1518,11 +1498,11 @@ function validateAcceptedAnswers(
   }
   ex.acceptedAnswers.forEach((variant, index) => {
     const field = `acceptedAnswers[${index}]`;
-    if (variantKeys(variant, normalizer).size === 0) {
+    if (variantKeys(variant, baseNormalizer).size === 0) {
       issues.push(coreIssue("variants.empty", { field, pl: "acceptedAnswers: pusty wariant", found: "blank variant" }));
       return;
     }
-    if (answersEquivalent(variant, ex.answer, normalizer)) {
+    if (answersEquivalent(variant, ex.answer, baseNormalizer)) {
       issues.push(coreIssue("variants.duplicate", {
         field,
         pl: `acceptedAnswers: wariant „${variant}” duplikuje odpowiedź kanoniczną po normalizacji`,
@@ -1533,26 +1513,16 @@ function validateAcceptedAnswers(
 }
 
 /**
- * Kopia ćwiczenia bez wariantów `acceptedAnswers` redundantnych wobec odpowiedzi
- * kanonicznej (równoważnych po normalizatorze przedmiotu — dokładnie ta sama
- * relacja co reguła `validateAcceptedAnswers`). Generacja porzuca takie warianty
- * przy przyjęciu puli zamiast tracić CAŁE ćwiczenie: odpowiedź kanoniczna jest
- * akceptowana automatycznie, więc wariant równoważny nie zmienia werdyktu
- * deterministycznego. Uwaga: przy skrócie dwuznacznym („She's” → is|has) wariant
- * dzielący JEDNĄ sekwencję z odpowiedzią niesie też dodatkowe sekwencje — taki
- * wpis i tak nigdy nie mógł zostać zapisany (reguła walidacji odrzucałaby całe
- * ćwiczenie), więc porzucenie go jest ściśle lepsze od utraty ćwiczenia
- * (incydent prod 2026-10-26: przeczenia „to be” traciły wszystkie ćwiczenia
- * samodzielne, bo model konsekwentnie podawał wariant skrótowy — „They're not…”
- * przy odpowiedzi „They aren't…”). Walidacja pozostaje egzekwatorem przy edycji
- * i publikacji. Ćwiczenie bez wariantów redundantnych zwracane bez kopii.
+ * Kopia ćwiczenia bez wariantów `acceptedAnswers` równych odpowiedzi kanonicznej
+ * po neutralnej normalizacji — ta sama relacja co reguła `variants.duplicate`.
+ * Przyjęcie puli, zapis i publikacja szkicu porzucają taki wariant zamiast tracić
+ * całe ćwiczenie (odpowiedź kanoniczna i tak jest akceptowana). Wariant ze skrótem
+ * zostaje: skrót i pełna forma to osobne odpowiedzi (etap 3 #360). Ćwiczenie bez
+ * wariantów redundantnych zwracane bez kopii.
  */
-export function withoutRedundantAcceptedVariants(
-  ex: LessonExerciseDraft,
-  normalizer: AnswerNormalizer,
-): LessonExerciseDraft {
+export function withoutRedundantAcceptedVariants(ex: LessonExerciseDraft): LessonExerciseDraft {
   if (ex.acceptedAnswers.length === 0) return ex;
-  const kept = ex.acceptedAnswers.filter((variant) => !answersEquivalent(variant, ex.answer, normalizer));
+  const kept = ex.acceptedAnswers.filter((variant) => !answersEquivalent(variant, ex.answer, baseNormalizer));
   return kept.length === ex.acceptedAnswers.length ? ex : { ...ex, acceptedAnswers: kept };
 }
 

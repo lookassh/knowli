@@ -233,10 +233,10 @@ odpowiedzi szkoły w agencie puli (sekcja „Agent puli lekcji”, etap 2b).
 | Autoryzacja | `Authorization: Bearer {UMIEM_GRADER_API_KEY}` | sekret tylko w adapterze; nigdy w logach, DTO ani promptach |
 | Model | `UMIEM_GRADER_MODEL` | tani model wystarcza (ocena jednej reguły, nie generacja) |
 | Timeout | `UMIEM_GRADER_TIMEOUT_MS` (domyślnie 8000) | `AbortSignal.timeout`; przerwanie = „nieocenione", nie zawieszenie |
-| Budżet | `UMIEM_GRADER_MAX_CALLS_PER_SESSION` (domyślnie 20) | księgowany w `learning_sessions.context.graderCalls`; po wyczerpaniu selektor przechodzi na typy zamknięte |
+| Budżet | `UMIEM_GRADER_MAX_CALLS_PER_SESSION` (domyślnie 150) | księgowany w `learning_sessions.context.graderCalls`; po wyczerpaniu selektor przechodzi na typy zamknięte |
 | Env | `UMIEM_GRADER_BASE_URL`, `UMIEM_GRADER_API_KEY`, `UMIEM_GRADER_MODEL` | BASE_URL i MODEL z domyślnej konfiguracji (OpenRouter, `google/gemini-3.8-flash`); włączony z własnym `UMIEM_GRADER_API_KEY` albo z `OPENROUTER_API_KEY` (tylko https OpenRouter); bez domyślnych (testy) wszystkie trzy albo żadna; `https://` wymagane poza `NODE_ENV` test/development; brak = ocena dowolnych odpowiedzi wyłączona |
 
-Werdykt modelu (`{verdict, errorCategory, fragments, note}`) jest surowym JSON —
+Werdykt modelu (`{verdict, errorCategory, fragments, note, usesTargetForm}`, prompt `grader-v2`) jest surowym JSON —
 walidację robi domena (`validateVerdict`): kategoria musi należeć do celu lub być
 `other`, każdy `fragment` jest dokładnym podciągiem odpowiedzi dziecka. Zwalidowany
 werdykt zapisuje się do wspólnego cache `lesson_verdicts` z kluczem

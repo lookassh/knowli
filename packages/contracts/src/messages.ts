@@ -806,6 +806,8 @@ export const messages = {
     lessonShortenOriginal: "Twoja odpowiedź",
     lessonPrecisionHint: "Wiesz to! Teraz spróbuj powiedzieć to krócej, bez dodatkowych historii.",
     lessonPrecisionHintOffTopic: "Wiesz to! Usuń to, co nie odpowiada na pytanie.",
+    /** Odpowiedź poprawna inną formą niż ćwiczona (etap 3 #360); `{text}` = forma ćwiczona w lekcji. */
+    lessonPracticedForm: "To też dobrze! W tej lekcji ćwiczymy tak: {text}",
     lessonSegmentRedundant: "zbędne",
     lessonSegmentOffTopic: "nie na temat",
     lessonShortenLostElement: "Krócej, ale zgubiła się ważna informacja. Porównaj z poprzednią odpowiedzią.",
@@ -1140,7 +1142,7 @@ export const messages = {
       provider_refusal: "Usługa nie przygotowała ćwiczeń dla tego materiału.",
       provider_incomplete: "Odpowiedź usługi była niepełna. Możesz ponowić próbę.",
       provider_output: "Usługa zwróciła nieprawidłowy wynik. Możesz ponowić próbę.",
-      lesson_agent_unavailable: "Generowanie lekcji wymaga klucza OpenRouter w konfiguracji serwera. Po dodaniu klucza ponów generowanie.",
+      lesson_agent_unavailable: "Generowanie lekcji wymaga klucza OpenRouter i modelu oceniającego w konfiguracji serwera. Po uzupełnieniu konfiguracji ponów generowanie.",
     } as Record<string, string>,
     stalledGenerationHint: "Jeśli generowanie się zatrzymało, możesz je ponowić.",
     retryGeneration: "Ponów generowanie",

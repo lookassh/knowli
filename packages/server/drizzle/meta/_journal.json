@@ -281,6 +281,13 @@
       "when": 1794390000000,
       "tag": "0039_generation_run_claimed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794490000000,
+      "tag": "0040_lesson_verdicts_uses_target_form",
+      "breakpoints": true
     }
   ]
 }

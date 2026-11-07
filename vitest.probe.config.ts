@@ -17,7 +17,9 @@ import { loadDotEnv } from "./tests/probes/probe-helpers";
 //
 // .env wczytany przed decyzją (bez nadpisywania środowiska) — tak samo jak w plikach prób.
 loadDotEnv();
-const enabled = Boolean(process.env.UMIEM_PROBE_MATERIAL?.trim()) || process.env.UMIEM_PROBE_SUBJECT?.trim() === "grammar";
+// Sonda oceny odpowiedzi (`pnpm probe:grading`, etap 3 #360) też potrzebuje bazy: `UMIEM_PROBE_GRADING=1`.
+const enabled = Boolean(process.env.UMIEM_PROBE_MATERIAL?.trim()) || process.env.UMIEM_PROBE_SUBJECT?.trim() === "grammar" ||
+  process.env.UMIEM_PROBE_GRADING === "1";
 
 export default defineConfig({
   resolve: {

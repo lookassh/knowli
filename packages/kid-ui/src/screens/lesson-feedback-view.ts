@@ -13,8 +13,9 @@ import { messages, type FeedbackDto, type SpellingDiffSegmentDto } from "@learni
  *   z nagraniem (`explanationAudioAssetId`), tekst pokazuje wiersz wyjaśnienia
  *   w doku (z „Posłuchaj wyjaśnienia”), a nie treść karty.
  * - `lesson_precision_hint` → odpowiedź poprawna, ale rozwlekła (trener
- *   precyzji): „Świetnie!” + zachęta do skrócenia (`hintPl`); ton sukcesu,
- *   bez segmentów i bez poprawnej odpowiedzi (dziecko odpowiedziało dobrze).
+ *   precyzji) albo poprawna inną formą niż ćwiczona (etap 3 #360):
+ *   „Świetnie!” + linia `hintPl` (zachęta do skrócenia albo forma ćwiczona);
+ *   ton sukcesu, bez segmentów i bez osobnej poprawnej odpowiedzi.
  * - `not_assessed` → komunikat techniczny bez sugerowania błędu, bez segmentów
  *   i bez poprawnej odpowiedzi; ton neutralny, `technical=true` (widok daje
  *   „Spróbuj jeszcze raz” / „Dalej”).

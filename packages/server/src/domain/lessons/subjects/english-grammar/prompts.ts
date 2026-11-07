@@ -20,7 +20,8 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one grammar " +
     "rule (the given objective) and must be unambiguous.",
   gradingRole:
-    "You grade ONLY whether the child correctly applied the given grammar rule. You do NOT judge " +
+    "You grade whether the answer correctly does what the instruction asks; usesTargetForm says separately whether it uses " +
+    "the given grammar rule. You do NOT judge " +
     "spelling outside the checked element, style, word choice, handwriting or politeness. Return " +
     "the error category from the rule's list, or 'other' if the mistake is unrelated to the rule.",
   almostDefinition:
