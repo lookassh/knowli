@@ -24,7 +24,8 @@ import { LessonExerciseInputSchema, messages, type LessonDraftDto, type TaskDto 
 import { lessonPoolMinimums } from "../../packages/server/src/domain/lessons/lesson-coverage";
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import { englishChapterSubject } from "../../packages/server/src/domain/lessons/subjects/english-chapter/module";
-import { chapterCardExposureTexts, normalizeChapterExposureText } from "../../packages/server/src/domain/lessons/subjects/english-chapter/exposure";
+import { normalizeChapterExposureText } from "../../packages/server/src/domain/lessons/subjects/english-chapter/exposure";
+import { englishCardSentences } from "../../packages/server/src/domain/lessons/subjects/english/card-sentences";
 import type { LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
 import type { FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
 import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
@@ -409,7 +410,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
       // „Where is the box?” nie trafia na kartę, więc odrzuca je wyłącznie dopasowanie wariantu do przykładu
       // „Where's the box?”, a nie zdanie karty (#237).
       const { runId, draft } = await generateChapter(services, BOX_MATERIAL, "Pudełko");
-      const cardTexts = chapterCardExposureTexts(draft.dynamicTopic!.objectives.flatMap((objective) => objective.cards));
+      const cardTexts = englishCardSentences(draft.dynamicTopic!.objectives.flatMap((objective) => objective.cards));
       expect(cardTexts.length).toBeGreaterThan(0);
       expect(cardTexts.map((text) => normalizeChapterExposureText(text))).not.toContain("Where is the box");
       expect(draft.exercises.some((exercise) => exercise.answer === "Where is the box?")).toBe(false);

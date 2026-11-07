@@ -9,7 +9,8 @@ import type {
 } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { chapterAgentPolicy } from "./agent-policy";
-import { chapterCardExposureTexts, chapterExposureText, normalizeChapterExposureText } from "./exposure";
+import { englishCardSentences } from "../english/card-sentences";
+import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterPrompts } from "./prompts";
 import { refineChapterPool, validateChapterExercise } from "./validators";
 import { CHAPTER_RULES } from "./rules";
@@ -87,7 +88,7 @@ export const englishChapterSubject: SubjectModule = {
   // Ta sama normalizacja dla ćwiczeń i przykładów kart (jeden klucz zdania).
   normalizeExposureText: normalizeChapterExposureText,
   // Zdania z kart rozdziału są gotowymi rozwiązaniami: źródło ujawnień przy generowaniu puli.
-  cardExposureTexts: chapterCardExposureTexts,
+  cardExposureTexts: englishCardSentences,
   refineGeneratedPool: refineChapterPool,
   // Polityka agenta puli: bramki słów i ram kart, wymagane typy i pokrycie materiału przez plan.
   agentPolicy: chapterAgentPolicy,

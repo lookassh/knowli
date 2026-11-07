@@ -5,7 +5,7 @@
  * `lexicon.ts`; tutaj czytamy wyłącznie to, co rodzic wkleił do materiału.
  */
 
-import { trimTrailing } from "./text";
+import { trimTrailing } from "../english/text";
 
 export interface MaterialLexicon {
   /** Słowa angielskie z linii „en — pl”, w kolejności materiału. */

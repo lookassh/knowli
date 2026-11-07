@@ -50,6 +50,24 @@ describe("avoidSentencesFor", () => {
     expect(result).toEqual(["Where's the cat?", "Where is the dog"]);
   });
 
+  it("zdania z treści kart na końcu: przy limicie wypadają przed rozwiązaniami ćwiczeń (#328)", () => {
+    const result = avoidSentencesFor({
+      examples: { [A]: ["I have the bed."] },
+      exercises: [translation("Where is the cat?")],
+      subject: englishChapterSubject,
+      cardSentences: ["There is a lamp."],
+    });
+    expect(result).toEqual(["I have the bed.", "Where is the cat", "There is a lamp."]);
+    const full = avoidSentencesFor({
+      examples: {},
+      exercises: Array.from({ length: AVOID_SENTENCES_MAX_ITEMS }, (_, index) => translation(`I have ${index + 1} cats.`)),
+      subject: englishChapterSubject,
+      cardSentences: ["There is a lamp."],
+    });
+    expect(full).toHaveLength(AVOID_SENTENCES_MAX_ITEMS);
+    expect(full).not.toContain("There is a lamp.");
+  });
+
   it("pomija puste teksty i kartę (bez rozwiązania)", () => {
     const result = avoidSentencesFor({
       examples: { [A]: ["  ", "I have the bed."] },

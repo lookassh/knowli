@@ -229,9 +229,9 @@ describe("generowanie puli lekcji (integracja)", () => {
     // Profil promptu przedmiotu niesie reguły pól (semantyka hint) do podagenta zagadnienia.
     const agentInput = fakes.agent.calls[0]!.input;
     expect(agentInput.pool.promptProfile.fieldRules).toContain("BASE FORM");
-    // Gramatyka nie ma haka zdań kart (#237): pełna generacja nie dostaje zdań do unikania.
-    expect(agentInput.pool).not.toHaveProperty("avoidSentences");
-    expect(agentInput.cardSentences).toEqual([]);
+    // Zdania kart gramatyki są źródłami ujawnień (#328): podagent dostaje je jako zdania do unikania.
+    expect(agentInput.pool.avoidSentences).toContain("he plays, she works, it runs.");
+    expect(agentInput.cardSentences).toContain("he plays, she works, it runs.");
 
     const versionId = run.deckVersionId!;
     const [version] = await query<{ state: string; lesson_context: { examples: Record<string, string[]> } }>(

@@ -41,7 +41,7 @@ Cards:
 [Najpierw osoba, potem forma] Zatrzymaj się przy osobie i dopiero dobierz formę: She → is, They → are, I → am.
 [Przykłady z lekcji] Zobacz, jak to działa: {{examples}}
 
-Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): none
+Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): am. | I'm znaczy I am, he's znaczy he is, a they're znaczy they are. | I am not, she is not, they are not. | isn't, are not | aren't. | am not, czyli I'm not. | Popatrz na przeczenia | She is happy. | Is she happy? | They are ready. | Are they ready? | Is she ready? | Yes, she is. | No, they aren't. | Yes, she is | i kropka. | Are you ready? | Yes, I am. | No, I'm not.
 
 Other objectives of the lesson (do not test them):
 - Skróty: I'm, he's, they're: Skrót to ta sama forma: I'm znaczy I am, he's znaczy he is, a they're znaczy they are. Znak ' pokazuje miejsce brakującej litery. / Uwaga na it's: It's (z apostrofem) znaczy it is. / Przykłady z lekcji: Zobacz skróty w zdaniach: {{examples}}
