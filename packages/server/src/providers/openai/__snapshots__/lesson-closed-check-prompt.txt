@@ -1,0 +1,15 @@
+Each item below is an exercise for a Polish child learning English, exactly as the child sees it. For EACH item list the exact texts of ALL options (or, for marking a word, ALL words) that are correct for this instruction. For an item with a recording, an option is correct only when it gives a correct sentence that matches the recording. Return answers: [] when no option is correct, and answers: null when you cannot decide.
+There are 1 items. Return results: one object per item, in the given order.
+
+<ITEMS>
+[{"view":"She ___ reading.\nOptions: are | is"}]
+</ITEMS>
+
+----
+
+Each item below is a word-blocks exercise for a Polish child learning English: the instruction, the shuffled blocks and the arranged answer. For EACH item decide whether the arranged answer is a correct answer to the instruction: verdict "yes", "no", or "unknown" when you cannot decide.
+There are 1 items. Return results: one object per item, in the given order.
+
+<ITEMS>
+[{"view":"Ułóż zdanie.\nWord blocks (shuffled): is | reading | She\nArranged answer: She is reading."}]
+</ITEMS>

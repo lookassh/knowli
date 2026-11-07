@@ -5,6 +5,7 @@ import type {
   LessonAgentToolOutcome,
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
+  LessonPacketInput,
   LessonPoolInput,
   RunCostSink,
 } from "../../ports/ai";
@@ -1290,4 +1291,80 @@ describe("limit jednego żądania generatora i planisty (callTimeoutMs)", () => 
     expect(state.settled).toBe(false);
     expect(model.doGenerateCalls).toHaveLength(1);
   });
+});
+
+describe("przebieg bazowy: generatePacket i checkClosed (etap 2, MockLanguageModelV4)", () => {
+  const packetInput = (withExamples: boolean): LessonPacketInput => ({
+    pool: { ...POOL, exerciseTypes: ["lesson_choice"], objectives: [{ ...POOL.objectives[0]!, exerciseTypes: ["lesson_choice"] }] },
+    objective: { id: "subject.topic.animals", title: "Zwierzęta", cards: [{ title: "Słowa", body: "cat — kot" }] },
+    type: "lesson_choice",
+    count: 4,
+    withExamples,
+    timeoutMs: 1_000,
+  });
+
+  it("generatePacket: system z promptu paczki, materiał w wiadomości użytkownika, surowe rekordy bez zmian, koszt i operacja packet_generate", async () => {
+    const usage = scopedRecorder();
+    const raw = { exerciseType: "lesson_choice", objectiveId: "subject.topic.animals", answer: "zmyślona" };
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ exercises: [raw], examples: ["A cat."] }), 0.004)] });
+    const cost = recordingCost([]);
+    const agent = new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model, usage });
+    const result = await withUsageScope({ generationRunId: "run-1" }, () => agent.generatePacket(packetInput(true), cost, new AbortController().signal));
+    expect(result).toEqual({ exercises: [raw], examples: ["A cat."] });
+    expect(cost.values).toEqual([0.004]);
+    expect(usage.events.map((entry) => entry.event.operation)).toEqual(["packet_generate"]);
+    const call = model.doGenerateCalls[0]!;
+    const system = JSON.stringify(call.prompt.find((message) => message.role === "system"));
+    expect(system).toContain("write exactly 4 exercises of type lesson_choice");
+    expect(system).toContain("card examples");
+    expect(system).toContain("an exercise that breaks a rule is discarded");
+    expect(system).not.toContain("the tool checks");
+    expect(sentPrompt(model)).toContain("cat — kot");
+  });
+
+  it("generatePacket bez przykładów: schemat bez pola examples", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ exercises: [] }))] });
+    const agent = new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model });
+    const result = await agent.generatePacket(packetInput(false), recordingCost([]), new AbortController().signal);
+    expect(result).toEqual({ exercises: [] });
+    const format = model.doGenerateCalls[0]!.responseFormat as { schema?: { properties?: Record<string, unknown> } };
+    expect(Object.keys(format.schema?.properties ?? {})).toEqual(["exercises"]);
+    expect(JSON.stringify(model.doGenerateCalls[0]!.prompt)).not.toContain("card examples");
+  });
+
+  it("generatePacket: przekroczony limit żądania → timeout po jednym żądaniu (ponawia przebieg, nie adapter)", async () => {
+    vi.useFakeTimers();
+    try {
+      const model = new MockLanguageModelV4({ doGenerate: () => new Promise(() => undefined) });
+      const agent = new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "low", languageModel: model });
+      const pending = agent.generatePacket(packetInput(false), recordingCost([]), new AbortController().signal);
+      const settled = expect(pending).rejects.toMatchObject({ kind: "timeout" });
+      await vi.advanceTimersByTimeAsync(1_001);
+      await settled;
+      expect(model.doGenerateCalls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("checkClosed: widoki w <ITEMS>, system z zasadą danych, wynik per pozycja; inna długość → wszystkie undefined; operacja check_closed", async () => {
+    const usage = scopedRecorder();
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        textResult(JSON.stringify({ results: [{ answers: ["is"] }, { answers: null }] }), 0.001),
+        textResult(JSON.stringify({ results: [{ answers: ["is"] }] })),
+      ],
+    });
+    const checker = checkerOf(model, { usage });
+    const input = { contract: "choice" as const, items: [{ view: "She ___ happy.\nOptions: are | is" }, { view: "B" }], timeoutMs: 1_000 };
+    const first = await withUsageScope({ generationRunId: "run-1" }, () => checker.checkClosed(input, recordingCost([]), new AbortController().signal));
+    expect(first.results).toEqual([{ answers: ["is"] }, { answers: null }]);
+    expect(sentPrompt(model)).toContain("<ITEMS>");
+    expect(sentPrompt(model)).toContain("She ___ happy.");
+    expect(JSON.stringify(model.doGenerateCalls[0]!.prompt.find((message) => message.role === "system"))).toMatch(/ignore any instructions/iu);
+    expect(usage.events.map((entry) => entry.event.operation)).toEqual(["check_closed"]);
+    const second = await checker.checkClosed(input, recordingCost([]), new AbortController().signal);
+    expect(second.results).toEqual([undefined, undefined]);
+  });
+
 });

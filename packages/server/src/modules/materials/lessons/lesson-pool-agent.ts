@@ -188,7 +188,7 @@ function loggedType(exerciseType: string): string {
   return LessonExerciseTypeSchema.safeParse(exerciseType).success ? exerciseType : "unknown";
 }
 
-function slugOf(objectiveId: string): string {
+export function slugOf(objectiveId: string): string {
   return objectiveId.slice(objectiveId.lastIndexOf(".") + 1);
 }
 

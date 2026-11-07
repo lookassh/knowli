@@ -23,12 +23,12 @@ const inToBe = (ctx: RuleBookContext): boolean => ctx.topicId === TO_BE_TOPIC;
  * Wskazówki tematu „to be” i wyboru obrazka (kod ich nie sprawdza) w opisach reguł tego tematu: trafiają do
  * promptu tylko w nim, razem z regułą (dopiski `ruleNotes` dotyczą wyłącznie reguł silnika).
  */
-const TO_BE_GUIDANCE =
+export const TO_BE_GUIDANCE =
   " 'To be' questions swap the subject and the form (Is she happy?, Are they ready?); short answers repeat the form " +
   "(Yes, she is. / No, they aren't.). Keep 'to be' sentences very short and concrete, reusing a small set of subjects " +
   "and words from the material so the only new thing is the form of 'to be'.";
 
-const PICTURE_CHOICE_GUIDANCE =
+export const PICTURE_CHOICE_GUIDANCE =
   " Picture choice (only in objectives whose id contains '.affirmative_forms'): some lesson_choice exercises set " +
   "visualSubject to who is pictured; then the stem is a sentence frame with the pronoun missing (___ is happy. / ___ " +
   "are happy.) and the options are pronouns (He, She, It, They), so the child picks the pronoun for the picture.";
