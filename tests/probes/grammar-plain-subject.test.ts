@@ -62,10 +62,11 @@ describe("grammarPlainSubject (sonda etapu 2)", () => {
     expect(() => probeVariantOf("other")).toThrow();
   });
 
-  it("the to-be fixture lists exactly the catalog objectives of to_be v1", () => {
+  it("the to-be fixture lists the catalog objectives of to_be v1 without contractions (owner decision 2026-11-07)", () => {
     const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures", "to-be-objectives.json"), "utf8")) as { topicId: string; topicVersion: number; objectives: { id: string }[] };
     const topic = englishGrammarSubject.topics.find((candidate) => candidate.id === fixture.topicId && candidate.version === fixture.topicVersion)!;
-    expect(fixture.objectives.map((objective) => objective.id)).toEqual(topic.objectives.map((objective) => objective.id));
+    const expected = topic.objectives.map((objective) => objective.id).filter((id) => id !== "english_grammar.to_be.contractions");
+    expect(fixture.objectives.map((objective) => objective.id)).toEqual(expected);
   });
 
   it("writes agent vs agent_plain prompts for every objective when UMIEM_PROBE_PROMPT_DIFF_OUT is set", () => {
