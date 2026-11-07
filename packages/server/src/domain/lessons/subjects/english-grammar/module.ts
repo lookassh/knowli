@@ -6,7 +6,7 @@ import { ENGLISH_GRAMMAR_ERROR_CATEGORIES } from "./error-categories";
 import { englishGrammarPrompts } from "./prompts";
 import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
-import { toBeV1 } from "./topics/to-be";
+import { toBeV1, toBeV2 } from "./topics/to-be";
 import { presentContinuousV1 } from "./topics/present-continuous";
 import { GRAMMAR_RULES } from "./rules";
 
@@ -39,7 +39,7 @@ export const englishGrammarSubject: SubjectModule = {
   exerciseTypes: ALL_EXERCISE_TYPES,
   errorCategories: ENGLISH_GRAMMAR_ERROR_CATEGORIES,
   normalizer: englishNormalizer,
-  topics: [presentSimpleV1, toBeV1, presentContinuousV1],
+  topics: [presentSimpleV1, toBeV1, toBeV2, presentContinuousV1],
   prompts: englishGrammarPrompts,
   poolDeduplication: "exercise",
   validateExercise: validateEnglishGrammarExercise,

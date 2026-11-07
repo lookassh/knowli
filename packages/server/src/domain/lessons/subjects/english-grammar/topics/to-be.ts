@@ -263,3 +263,14 @@ export const toBeV1: LessonTopic = {
     shortAnswers,
   ],
 };
+
+/**
+ * Wersja 2 (#369, decyzja właściciela 2026-11-07): bez zagadnienia `contractions` — skrót i pełna forma są
+ * obie poprawne, więc skrót nie jest osobną umiejętnością. Te same obiekty zagadnień co wersja 1; wersja 1
+ * zostaje dla opublikowanych lekcji, które ją przypinają.
+ */
+export const toBeV2: LessonTopic = {
+  ...toBeV1,
+  version: 2,
+  objectives: toBeV1.objectives.filter((objective) => objective !== contractions),
+};

@@ -322,15 +322,15 @@ describe("englishGrammarSubject — wybór ze słuchu (#198)", () => {
     expect(validateLessonExercise(draft, englishGrammarSubject, toBeV1)).toEqual([]);
   });
 
-  it("wersje tematów bez zmian", () => {
-    expect(presentSimpleV1.version).toBe(1);
-    expect(toBeV1.version).toBe(1);
-    expect(presentContinuousV1.version).toBe(1);
-    expect(Object.fromEntries(englishGrammarSubject.topics.map((topic) => [topic.id, topic.version]))).toEqual({
-      present_simple: 1,
-      to_be: 1,
-      present_continuous: 1,
-    });
+  it("wersje tematów: to_be ma wersję 2 bez zagadnienia skrótów, wersja 1 zostaje dla opublikowanych lekcji (#369)", () => {
+    expect(englishGrammarSubject.topics.map((topic) => `${topic.id}@${topic.version}`)).toEqual(["present_simple@1", "to_be@1", "to_be@2", "present_continuous@1"]);
+    const registry = createProductionSubjectRegistry();
+    const contractions = "english_grammar.to_be.contractions";
+    expect(registry.getTopic("english_grammar", "to_be", 1)?.objectives.map((objective) => objective.id)).toContain(contractions);
+    expect(registry.getTopic("english_grammar", "to_be", 2)?.objectives.map((objective) => objective.id)).toEqual(
+      toBeV1.objectives.map((objective) => objective.id).filter((id) => id !== contractions),
+    );
+    expect(registry.getLatestTopic("english_grammar", "to_be")?.version).toBe(2);
   });
 
   it("blok typu opisuje sens wyboru ze słuchu (słyszalna różnica, jedna poprawna), a ograniczenia typu niesie katalog reguł", () => {
