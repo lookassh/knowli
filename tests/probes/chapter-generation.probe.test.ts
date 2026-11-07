@@ -76,11 +76,14 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  * - `UMIEM_PROBE_MATERIAL` — plik z materiałem (wymagany dla `chapter` i `school`; dla
  *   `grammar` opcjonalny — bez niego krótki wbudowany materiał zdań w Present Simple);
  * - `UMIEM_PROBE_SUBJECT` — `chapter` (domyślnie), `school` (Geografia) albo `grammar`
- *   (`english_grammar`, temat `present_simple` z katalogu, wszystkie jego zagadnienia);
+ *   (`english_grammar`, temat `UMIEM_PROBE_GRAMMAR_TOPIC` z katalogu — domyślnie `present_simple`, także
+ *   `present_continuous`, `to_be`; najnowsza wersja tematu, wszystkie jego zagadnienia);
  * - `UMIEM_PROBE_POOL_SIZE` — wielkość puli (domyślnie 60, jak w panelu);
  * - `UMIEM_PROBE_TOPIC` — tytuł tematu (domyślnie „Unit 1” / „Mapa”; gramatyka: z katalogu);
  * - `UMIEM_PROBE_ADD_COUNT` — po udanym runie „+N” (`regenerateObjective`) z tą liczbą dla
- *   pierwszego zagadnienia: osobny wpis tymczasowy rejestru i raport `addedExercises`; „+N”
+ *   zagadnienia `UMIEM_PROBE_ADD_OBJECTIVE` (ostatni człon id, np. `short_answers`; domyślnie pierwsze);
+ *   ćwiczenia dodane przez „+N” trafiają do drugiego zrzutu w formacie arkusza (`…-add.json` obok
+ *   `UMIEM_PROBE_POOL_DUMP_OUT`): osobny wpis tymczasowy rejestru i raport `addedExercises`; „+N”
  *   zakończone inaczej niż `succeeded` to porażka próby (po zapisie wyników), a gdy główny run
  *   się nie udał, plik wyników dostaje `add: { skipped }`;
  * - `UMIEM_PROBE_OUT_DIR` — katalog wyników poza repozytorium (wymagany): plik
@@ -344,7 +347,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions, () => currentRun) } },
     });
 
-    const titleOf = { chapter: "Angielski — rozdział", school: "szkoła (Geografia)", grammar: "Angielski — gramatyka (Present Simple)" } as const;
+    const grammarTopicId = process.env.UMIEM_PROBE_GRAMMAR_TOPIC?.trim() || "present_simple";
+    const titleOf = { chapter: "Angielski — rozdział", school: "szkoła (Geografia)", grammar: `Angielski — gramatyka (${grammarTopicId})` } as const;
     line("");
     line(`=== Próba generowania agentem puli: ${titleOf[subjectKind]} ===`);
     line(`modele=${JSON.stringify(models)} hosty=${preflight.hosts.join(", ")} pula=${poolSize} materiał=${material.length} znaków; ` +
@@ -509,8 +513,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         const clientRequestId = randomUUID();
         if (subjectKind === "grammar") {
           const subject = createProductionSubjectRegistry().getSubject("english_grammar");
-          const topic = subject?.topics.filter((candidate) => candidate.id === "present_simple").sort((a, b) => b.version - a.version)[0];
-          if (topic === undefined) throw new Error("Katalog english_grammar nie ma tematu present_simple");
+          const topic = subject?.topics.filter((candidate) => candidate.id === grammarTopicId).sort((a, b) => b.version - a.version)[0];
+          if (topic === undefined) throw new Error(`Katalog english_grammar nie ma tematu ${grammarTopicId}`);
           ({ runId, deckId } = await createLesson(services, {
             subjectId: "english_grammar",
             topicId: topic.id,
@@ -591,8 +595,10 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         line(`„+${addCount}” pominięte: główny run nie zakończył się sukcesem`);
       }
       if (addCount !== undefined && run.state === "succeeded") {
-        const objectiveId = draft.dynamicTopic?.objectives[0]?.id ?? draft.objectiveIds[0];
-        if (objectiveId === undefined) throw new Error("Szkic bez zagadnień — „+N” niemożliwe");
+        const addSlug = process.env.UMIEM_PROBE_ADD_OBJECTIVE?.trim();
+        const objectiveIds = draft.dynamicTopic?.objectives.map((objective) => objective.id) ?? draft.objectiveIds;
+        const objectiveId = addSlug === undefined ? objectiveIds[0] : objectiveIds.find((id) => slugOf(id) === addSlug);
+        if (objectiveId === undefined) throw new Error(`Szkic bez zagadnienia ${addSlug ?? "(pierwszego)"} — „+N” niemożliwe`);
         const before = draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length;
         assertWithinCostCap(readCostLedger(costsPath), runBudgetUsd, `„+${addCount}”`);
         currentRun = "add";
@@ -635,6 +641,22 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         };
         line(`„+${addCount}” (${slugOf(objectiveId)}): stan=${addRun.state}${addRun.errorCode ? ` kod=${addRun.errorCode}` : ""}; ` +
           `dodane ćwiczenia=${after - before}; próby=${add.attempts}`);
+        if (afterDraft && poolDumpPath !== undefined) {
+          // Do arkusza ślepej oceny tylko ćwiczenia dodane przez „+N” (bez powtórzenia szkicu z pierwszego zrzutu).
+          const known = new Set(draft.exercises.map((exercise) => JSON.stringify(exercise)));
+          const addDumpPath = poolDumpPath.replace(/\.json$/u, "") + "-add.json";
+          const addDump = await poolDumpOf({ ...afterDraft, exercises: afterDraft.exercises.filter((exercise) => !known.has(JSON.stringify(exercise))) }, material, {
+            probe: "chapter-generation",
+            at: new Date().toISOString(),
+            subjectKind,
+            materialSha256: materialPath === undefined ? null : sha256File(materialPath),
+            models,
+            runState: addRun.state,
+            phase: "exercises added by +N",
+          });
+          writeFileSync(addDumpPath, `${JSON.stringify(addDump, null, 2)}\n`, "utf8");
+          line(`Zrzut ćwiczeń „+N” (${(addDump.exercises as unknown[]).length}): ${addDumpPath}`);
+        }
         if (afterDraft) draft = afterDraft;
       }
 

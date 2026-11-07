@@ -491,7 +491,7 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
     expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(8);
     for (const file of SCANNED) expect(() => read(file), file).not.toThrow();
     expect([...vocabulary.factories]).toEqual(
-      expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "englishIssue", "chapterIssue", "grammarIssue", "schoolIssue"]),
+      expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "englishIssue", "chapterIssue", "schoolIssue"]),
     );
     expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "exerciseGate", "formatRuleReason"]));
     expect([...vocabulary.textHooks].sort()).toEqual(["objectiveGaps", "planGate"]);
