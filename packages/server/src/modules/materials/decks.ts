@@ -140,9 +140,11 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
           decisionState: revisionAssets.state,
           assetId: revisionAssets.assetId,
           assetState: mediaAssets.state,
+          assetErrorCode: generationRuns.errorCode,
         })
         .from(revisionAssets)
         .leftJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+        .leftJoin(generationRuns, eq(generationRuns.assetId, revisionAssets.assetId))
         .where(inArray(revisionAssets.itemRevisionId, revisionIds))
     : [];
 
@@ -172,6 +174,7 @@ async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> 
               ? "failed"
               : "pending",
       assetId: a.assetId,
+      errorCode: a.assetState === "failed" ? a.assetErrorCode ?? null : null,
     }]),
   };
 }

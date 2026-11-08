@@ -152,6 +152,8 @@ export const messages = {
     publishMediaPending: "Nagrania i obrazki jeszcze się przygotowują. Opublikuj ponownie, gdy będą gotowe.",
     // Podsumowanie przy pasku publikacji przed kliknięciem (issue #397); serwer pozostaje autorytetem.
     publishMediaSummary: "W przygotowaniu: {pending} · Nieudane: {failed}. Publikacja będzie możliwa, gdy media będą gotowe.",
+    // Terminalna awaria wolumenu (#385) ma własny komunikat, a nie sugestię błędu providera.
+    publishMediaStorageFailed: "Nie udało się zapisać mediów na serwerze (brak miejsca albo brak dostępu do wolumenu). Zwolnij miejsce albo sprawdź uprawnienia dysku, a potem ponów generację.",
     promptLabel: "Czego ma się nauczyć?",
     promptPlaceholder: "np. angielskie dni tygodnia",
     vocabularyFormatLabel: "Rodzaj zestawu",

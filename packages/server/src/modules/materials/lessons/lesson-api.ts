@@ -25,6 +25,7 @@ import {
   childProfiles,
   deckVersions,
   decks,
+  generationRuns,
   itemRevisionSkills,
   itemRevisions,
   learningItems,
@@ -319,9 +320,11 @@ async function readLessonDraftDto(
           decisionState: revisionAssets.state,
           assetId: revisionAssets.assetId,
           assetState: mediaAssets.state,
+          assetErrorCode: generationRuns.errorCode,
         })
         .from(revisionAssets)
         .leftJoin(mediaAssets, eq(mediaAssets.id, revisionAssets.assetId))
+        .leftJoin(generationRuns, eq(generationRuns.assetId, revisionAssets.assetId))
         // Nagranie pytania (`prompt_audio`) nie jest decyzją rodzica ani warunkiem publikacji.
         .where(and(inArray(revisionAssets.itemRevisionId, revisionIds), eq(revisionAssets.role, "target_audio")))
     : [];
@@ -428,6 +431,7 @@ async function readLessonDraftDto(
               ? "failed"
               : "pending",
       assetId: a.assetId,
+      errorCode: a.assetState === "failed" ? a.assetErrorCode ?? null : null,
     }]),
     ...(audio.cards.length > 0 ? { cardAudio: audio.cards } : {}),
     // Nagranie lektora historyjki; brak pola = lekcja bez historyjki (albo bez nagrania).

@@ -48,9 +48,9 @@ const deck = {
 
 interface Calls { requests: Array<{ method: string; path: string }> }
 
-async function openEditor(page: Page): Promise<Calls> {
+async function openEditor(page: Page, initialDeck: typeof deck = deck): Promise<Calls> {
   const calls: Calls = { requests: [] };
-  let current = structuredClone(deck);
+  let current = structuredClone(initialDeck);
   await page.route("**/api/v1/parent/**", (route) => {
     const method = route.request().method();
     const path = new URL(route.request().url()).pathname;
@@ -137,6 +137,18 @@ test("pasek publikacji pokazuje media w przygotowaniu i nieudane przed kliknięc
     messages.decks.publishMediaSummary.replace("{pending}", "1").replace("{failed}", "1"),
   );
   // informacja, nie klientowa blokada: o publikacji nadal decyduje serwer po kliknięciu
+  await expect(page.getByTestId("publish-deck")).toBeEnabled();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("awaria wolumenu mediów ma własny komunikat przy pasku publikacji (#385)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const storageDeck = structuredClone(deck);
+  storageDeck.draft.assets = storageDeck.draft.assets.map((assetRow) => assetRow.state === "failed"
+    ? { ...assetRow, assetId: asset(9), errorCode: "media_storage" }
+    : assetRow) as typeof storageDeck.draft.assets;
+  await openEditor(page, storageDeck);
+  await expect(page.getByTestId("publish-media-summary")).toHaveText(messages.decks.publishMediaStorageFailed);
   await expect(page.getByTestId("publish-deck")).toBeEnabled();
   await expectNoHorizontalOverflow(page);
 });

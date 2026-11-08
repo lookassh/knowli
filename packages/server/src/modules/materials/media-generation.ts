@@ -275,6 +275,13 @@ export async function executeMediaAsset(services: Services, assetId: string, sig
       await requeueAbortedMediaAsset(services, assetId, leaseToken);
       return;
     }
+    // Błąd zapisu na wolumenie jest terminalny (#385): ponowienie zapłaciłoby
+    // providerowi za generację, której nadal nie da się zapisać. Rodzic może
+    // ponowić ręcznie po naprawie dysku (nowy zasób przez uzgodnienie).
+    if (errorCodeOf(error) === "media_storage") {
+      await failMediaAsset(services, assetId, leaseToken, "media_storage");
+      return;
+    }
     if (attempts !== null && attempts >= MAX_AUTOMATIC_ATTEMPTS) {
       await failMediaAsset(services, assetId, leaseToken, "attempts_exhausted");
       return;

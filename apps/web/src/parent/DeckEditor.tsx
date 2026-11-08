@@ -73,14 +73,18 @@ export function deckPollInterval(deck: DeckDto | undefined): number | false {
  * publikacji (#397). Tylko informacja przed kliknięciem — o publikacji nadal
  * decyduje serwer (promocja powiązań approved w transakcji publikacji).
  */
-export function draftMediaCounts(draft: DraftDto | null | undefined): { pending: number; failed: number } {
+export function draftMediaCounts(draft: DraftDto | null | undefined): { pending: number; failed: number; storageFailed: number } {
   let pending = 0;
   let failed = 0;
+  let storageFailed = 0;
   for (const asset of draft?.assets ?? []) {
     if (asset.state === "pending") pending += 1;
-    else if (asset.state === "failed") failed += 1;
+    else if (asset.state === "failed") {
+      failed += 1;
+      if (asset.errorCode === "media_storage") storageFailed += 1;
+    }
   }
-  return { pending, failed };
+  return { pending, failed, storageFailed };
 }
 
 /** Kolor odznaki stanu medium (zmienne --pp-status-* z motywu). */
@@ -807,11 +811,13 @@ export default function DeckEditor({
   const publishBlocked = editable && (isDirty || (draft?.items.length ?? 0) === 0);
   // #397: stan mediów szkicu widoczny przed kliknięciem; przycisk zostaje aktywny, bo autorytetem jest serwer
   const mediaCounts = draftMediaCounts(draft);
-  const mediaSummary = editable && mediaCounts.pending + mediaCounts.failed > 0
-    ? messages.decks.publishMediaSummary
-        .replace("{pending}", String(mediaCounts.pending))
-        .replace("{failed}", String(mediaCounts.failed))
-    : null;
+  const mediaSummary = editable && mediaCounts.storageFailed > 0
+    ? messages.decks.publishMediaStorageFailed
+    : editable && mediaCounts.pending + mediaCounts.failed > 0
+      ? messages.decks.publishMediaSummary
+          .replace("{pending}", String(mediaCounts.pending))
+          .replace("{failed}", String(mediaCounts.failed))
+      : null;
   const showActionBar = editable || (deck?.state === "published" && !draft);
   const itemCount = form?.items.length ?? 0;
   const errorAlert = <EditorErrorText error={error ?? ""} />;
