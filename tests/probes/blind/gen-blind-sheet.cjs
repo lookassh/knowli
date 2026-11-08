@@ -101,7 +101,9 @@ rows.forEach((row, position) => {
   const rowId = `${prefix ? `${prefix}-` : ""}r${String(position + 1).padStart(3, "0")}`;
   lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise, row.subject))), "", "", "", ""].join(","));
   const hasExplanation = typeof row.exercise?.explanationPl === "string" && row.exercise.explanationPl.trim() !== "";
-  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation });
+  // Rodzina pytania otwartego (zagadnienie + familyId) do liczenia W2+W4 na rodzinę (decyzja o kontrolach 2b, spec v2.4).
+  const family = row.exercise?.exerciseType === "lesson_open_answer" && row.exercise.familyId ? `${String(row.exercise.objectiveId ?? "").split(".").at(-1)}|${row.exercise.familyId}` : undefined;
+  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation, ...(family ? { family } : {}) });
 });
 
 const outDir = path.join(lessonDir, "blind");

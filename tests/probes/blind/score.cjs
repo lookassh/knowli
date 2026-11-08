@@ -132,6 +132,21 @@ function scoreStage2(groups) {
       add(`${variant} #${row.type}`, variant, name, rowId, defect);
     }
   }
+  // W2+W4 pytań otwartych na rodzinę (przebieg + zagadnienie + familyId; bez rodziny — sam wiersz): rodzina wadliwa,
+  // gdy wadliwy jest którykolwiek członek. Raport obok wierszy dla decyzji o kontrolach 2b (spec v2.4); próg zostaje na wierszach.
+  const familyDefects = new Map();
+  for (const [rowId, verdict] of judged) {
+    const row = keyRows.get(rowId);
+    if (row.type !== "lesson_open_answer") continue;
+    const id = `${variantOf(row.model)}\u0000${runOf(rowId)}\u0000${row.family ?? rowId}`;
+    familyDefects.set(id, (familyDefects.get(id) ?? false) || verdict.classes.includes("W2") || verdict.classes.includes("W4"));
+  }
+  const openFamilies = {};
+  for (const [id, defect] of familyDefects) {
+    const cell = (openFamilies[id.split("\u0000")[0]] ??= { defects: 0, n: 0 });
+    cell.n += 1;
+    if (defect) cell.defects += 1;
+  }
   const report = {};
   for (const [scope, byClass] of Object.entries(cells)) {
     report[scope] = Object.fromEntries(
@@ -143,7 +158,7 @@ function scoreStage2(groups) {
       }),
     );
   }
-  return { report, missing, levels };
+  return { report, missing, levels, openFamilies };
 }
 
 /** Zgodność dwóch sędziów per klasa: odsetek wierszy (z mianownika klasy), na których obaj zgodnie wskazali albo nie wskazali klasy. */
@@ -213,7 +228,7 @@ function main(argv) {
     for (const group of groups) legacy(group.key, group.verdicts);
     return;
   }
-  const { report, missing, levels } = scoreStage2(groups);
+  const { report, missing, levels, openFamilies } = scoreStage2(groups);
   // Wiersze bez werdyktu wypadłyby z mianowników: bramka liczy się tylko z kompletnej oceny.
   if (missing.length > 0 && !argv.includes("--allow-missing")) throw new Error(`wiersze bez werdyktu (${missing.length}): ${missing.join(",")}`);
   console.log(`uwagi poziomu (level): ${JSON.stringify(levels)}`);
@@ -221,6 +236,9 @@ function main(argv) {
   for (const [scope, byClass] of Object.entries(report).sort(([a], [b]) => a.localeCompare(b, "en"))) {
     const cellsText = Object.entries(byClass).map(([name, cell]) => `${name} ${cell.defects}/${cell.n} ${pct(cell.rate)} [${pct(cell.wilson.low)}–${pct(cell.wilson.high)}] przebieg ${cell.perRun.min}–${cell.perRun.max}`);
     console.log(`${scope}: ${cellsText.join(" | ")}`);
+  }
+  for (const [variant, cell] of Object.entries(openFamilies).sort(([a], [b]) => a.localeCompare(b, "en"))) {
+    console.log(`${variant}: rodziny pytań otwartych z W2|W4 ${cell.defects}/${cell.n}`);
   }
 }
 

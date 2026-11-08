@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const { wilson, scoreStage2, agreement } = require("./score.cjs") as {
   wilson(defects: number, n: number): { low: number; high: number };
-  scoreStage2(groups: readonly { key: unknown; verdicts: readonly Record<string, string>[] }[]): { report: Record<string, Record<string, { defects: number; n: number; perRun: { min: number; max: number } }>>; missing: string[]; levels: Record<string, number> };
+  scoreStage2(groups: readonly { key: unknown; verdicts: readonly Record<string, string>[] }[]): {
+    report: Record<string, Record<string, { defects: number; n: number; perRun: { min: number; max: number } }>>;
+    missing: string[];
+    levels: Record<string, number>;
+    openFamilies: Record<string, { defects: number; n: number }>;
+  };
   agreement(key: unknown, a: readonly Record<string, string>[], b: readonly Record<string, string>[]): Record<string, { agree: number; n: number; differing: string[] }>;
 };
 
@@ -76,6 +81,27 @@ describe("score.cjs (etap 2)", () => {
     expect(report.baseline!.W3).toMatchObject({ defects: 1, n: 1 });
     expect(report.baseline!.W6h).toBeUndefined();
     expect(() => scoreStage2([{ key: school, verdicts: [verdict("sc-r002", "defect", "W6h")] }])).toThrow();
+  });
+
+  it("counts W2+W4 of open answers per question family (a defective member marks the family)", () => {
+    const school = {
+      prefix: "sf",
+      rows: [
+        { rowId: "sf-r001", model: "baseline-r1", index: 0, type: "lesson_open_answer", hasExplanation: false, family: "rzeki|f1" },
+        { rowId: "sf-r002", model: "baseline-r1", index: 1, type: "lesson_open_answer", hasExplanation: false, family: "rzeki|f1" },
+        { rowId: "sf-r003", model: "baseline-r1", index: 2, type: "lesson_open_answer", hasExplanation: false, family: "rzeki|f2" },
+        { rowId: "sf-r004", model: "baseline-r2", index: 0, type: "lesson_open_answer", hasExplanation: false, family: "rzeki|f1" },
+        { rowId: "sf-r005", model: "agent-r1", index: 0, type: "lesson_open_answer", hasExplanation: false },
+        { rowId: "sf-r006", model: "agent-r1", index: 1, type: "lesson_keywords", hasExplanation: false },
+      ],
+    };
+    const { openFamilies, report } = scoreStage2([{
+      key: school,
+      verdicts: [verdict("sf-r001", "defect", "W2"), verdict("sf-r002", "defect", "W4"), verdict("sf-r003", "ok"), verdict("sf-r004", "ok"), verdict("sf-r005", "defect", "W4"), verdict("sf-r006", "ok")],
+    }]);
+    // Ta sama rodzina w innym przebiegu (baseline-r2) to osobna rodzina; wiersze dalej liczą się osobno.
+    expect(openFamilies).toEqual({ baseline: { defects: 1, n: 3 }, agent: { defects: 1, n: 1 } });
+    expect(report.baseline!.W2).toMatchObject({ defects: 1, n: 4 });
   });
 
   it("measures agreement of two judges per class", () => {
