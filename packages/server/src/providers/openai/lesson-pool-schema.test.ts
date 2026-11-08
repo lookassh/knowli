@@ -109,31 +109,44 @@ describe("lessonPoolJsonSchema", () => {
     expect(schema.properties.examples.items.properties.objectiveId.enum).toEqual(["objective-a"]);
   });
 
-  it("keeps a type-specific field only in a branch with its type, and at most 16 nullable fields in one-type branches", () => {
-    const branchOf = (types: string[]) => (lessonPoolJsonSchema({
+  it("keeps a type-specific field only in a branch with its type, and at most 16 union fields in a packet schema", () => {
+    const exercisesOf = (types: string[], extra: Partial<LessonPoolInput> = {}) => (lessonPoolJsonSchema({
       ...input,
       exerciseTypes: types,
       objectives: [{ ...input.objectives[0]!, exerciseTypes: types }],
       voiceTones: true,
       exerciseExplanations: true,
-    }) as any).properties.exercises.items;
+      ...extra,
+    }) as any).properties.exercises;
+    const branchOf = (types: string[]) => exercisesOf(types).items;
     const transform = branchOf(["lesson_transform"]);
     expect(transform.properties.transformId).toEqual({ anyOf: [{ type: "string", enum: ["to_negative"] }, { type: "null" }] });
     expect(transform.properties).not.toHaveProperty("options");
     expect(transform.properties).not.toHaveProperty("questionType");
+    // Bez przekształceń tematu `transformId` może być tylko `null` (jak dawne `enum: [null]`).
+    expect(exercisesOf(["lesson_transform"], { transforms: [] }).items.properties.transformId).toEqual({ type: "null" });
     const open = branchOf(["lesson_open_answer"]);
     expect(Object.keys(open.properties)).toEqual(expect.arrayContaining(["questionType", "requiredElements", "supplementaryElements", "commonErrors", "expectedForm", "familyId"]));
     expect(open.properties).not.toHaveProperty("options");
     expect(open.properties).not.toHaveProperty("items");
     expect(branchOf(["lesson_notice"]).properties).toHaveProperty("correctOption");
     expect(branchOf(["lesson_choice"]).properties).toHaveProperty("visualSubject");
+    // Anthropic: najwyżej 16 pól z unią (tablica typów albo anyOf) w całym schemacie paczki — liczone rekurencyjnie.
+    const unions = (node: unknown): number => {
+      if (Array.isArray(node)) return node.reduce((sum: number, item) => sum + unions(item), 0);
+      if (node === null || typeof node !== "object") return 0;
+      const record = node as Record<string, unknown>;
+      return (Array.isArray(record.type) || record.anyOf !== undefined ? 1 : 0) +
+        Object.values(record).reduce((sum: number, value) => sum + unions(value), 0);
+    };
     const regular = ["lesson_choice", "lesson_gap", "lesson_transform", "lesson_open_answer", "lesson_order", "lesson_notice", "lesson_short_answer", "lesson_error_fix", "lesson_listen_choice"];
     for (const type of regular) {
-      const branch = branchOf([type]);
-      const unions = Object.values(branch.properties as Record<string, any>).filter((field) => Array.isArray(field.type) || field.anyOf !== undefined);
-      expect(unions.length, type).toBeLessThanOrEqual(16);
-      expect(branch.required.sort(), type).toEqual(Object.keys(branch.properties).sort());
+      const exercises = exercisesOf([type]);
+      expect(unions(exercises), type).toBeLessThanOrEqual(16);
+      expect(exercises.items.required.sort(), type).toEqual(Object.keys(exercises.items.properties).sort());
     }
+    // Paczka pytań otwartych szkoły ze słowami kluczowymi (towarzysz) i obowiązkowymi cytatami: dokładnie na limicie.
+    expect(unions(exercisesOf(["lesson_open_answer", "lesson_keywords"], { groundingRequired: true }))).toBeLessThanOrEqual(16);
   });
 
   it("uses complete strict branches to pair each objective with its allowed exercise types", () => {

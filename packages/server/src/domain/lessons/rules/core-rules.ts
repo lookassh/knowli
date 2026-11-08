@@ -75,8 +75,8 @@ function listShapeRule(
   };
 }
 
-/** Typy z wyborem z listy opcji. */
-const CHOICE_TYPES: readonly LessonExerciseType[] = ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"];
+/** Typy z wyborem z listy opcji (też pola schematu paczki w adapterze). */
+export const CHOICE_TYPES: readonly LessonExerciseType[] = ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"];
 
 /** Pola v3 pytania otwartego: tylko przedmioty z payloadem v3. */
 const V3_OPEN_SCOPE = { types: ["lesson_open_answer"], when: (ctx) => ctx.usesV3Payload } as const satisfies Pick<LessonRule, "types" | "when">;

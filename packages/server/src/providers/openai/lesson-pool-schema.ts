@@ -1,3 +1,4 @@
+import { CHOICE_TYPES } from "../../domain/lessons/rules/core-rules";
 import {
   LessonVoiceToneSchema,
   MAX_ACCEPTED_ANSWERS,
@@ -124,8 +125,8 @@ const TYPE_SPECIFIC_FIELDS: Readonly<Record<string, readonly string[]>> = {
   transformId: ["lesson_transform"],
   noticeSegments: ["lesson_notice"],
   visualSubject: ["lesson_choice"],
-  options: ["lesson_choice", "lesson_short_answer", "lesson_listen_choice"],
-  correctOption: ["lesson_choice", "lesson_short_answer", "lesson_listen_choice", "lesson_notice"],
+  options: CHOICE_TYPES,
+  correctOption: [...CHOICE_TYPES, "lesson_notice"],
   items: ["lesson_order"],
   questionType: ["lesson_open_answer"],
   requiredElements: ["lesson_open_answer"],
@@ -152,35 +153,35 @@ function lessonExerciseProperties(
   allowedTypes: string[],
 ): Record<string, unknown> {
   return {
-      exerciseType: { type: "string", enum: allowedTypes },
-      objectiveId: { type: "string", enum: [objective.id] },
-      // Limit odpowiedzi przedmiotu (jak `answer.max_length` w księdze reguł), nie stały limit kontraktu.
-      answer: text(input.answerMaxLength),
-      acceptedAnswers: list(text(input.answerMaxLength), undefined, MAX_ACCEPTED_ANSWERS),
-      focus: { type: "array", items: text() },
-      instructionPl: nullableText(),
-      stem: nullableText(),
-      statement: nullableText(),
-      prompt: nullableText(),
-      hint: nullableText(),
-      transformId: nullableEnum(input.transforms.map((transform) => transform.id)),
-      noticeSegments: nullableList(list(text(), MIN_NOTICE_SEGMENTS, MAX_NOTICE_SEGMENTS), MIN_NOTICE_SENTENCES, MAX_NOTICE_SENTENCES),
-      visualSubject: nullableEnum(["boy", "girl", "man", "woman", "group", "dog"]),
-      options: nullableList(idTextItem(), MIN_OPTIONS, MAX_OPTIONS),
-      correctOption: { type: ["null", "string"], minLength: 1 },
-      items: nullableList(idTextItem(), MIN_ORDER_ITEMS, MAX_ORDER_ITEMS),
-      questionType: nullableEnum(["definition", "enumeration", "cause", "comparison", "fact", "process"]),
-      requiredElements: nullableList(idTextItem(MAX_LESSON_TEXT_LENGTH, MAX_ELEMENT_ID_LENGTH), MIN_REQUIRED_ELEMENTS, MAX_REQUIRED_ELEMENTS),
-      supplementaryElements: nullableList(text(), undefined, MAX_SUPPLEMENTARY_ELEMENTS),
-      commonErrors: nullableList(text(), undefined, MAX_COMMON_ERRORS),
-      expectedForm: nullableEnum(["short", "one_sentence", "explanation", "list"]),
-      familyId: nullableText(MAX_FAMILY_ID_LENGTH),
-      // Przy uziemieniu tablica cytatów musi być NIEPUSTA już w schemacie: bez
-      // minItems model w ok. połowie odpowiedzi zwracał `[]` dla większości ćwiczeń
-      // (sonda na prawdziwym LLM), a walidacja odrzucała je potem jako nieuziemione.
-      sourceRefs: input.groundingRequired
-        ? list(quoteItems, MIN_SOURCE_REFS, MAX_SOURCE_REFS)
-        : nullableList(quoteItems, undefined, MAX_SOURCE_REFS),
+    exerciseType: { type: "string", enum: allowedTypes },
+    objectiveId: { type: "string", enum: [objective.id] },
+    // Limit odpowiedzi przedmiotu (jak `answer.max_length` w księdze reguł), nie stały limit kontraktu.
+    answer: text(input.answerMaxLength),
+    acceptedAnswers: list(text(input.answerMaxLength), undefined, MAX_ACCEPTED_ANSWERS),
+    focus: { type: "array", items: text() },
+    instructionPl: nullableText(),
+    stem: nullableText(),
+    statement: nullableText(),
+    prompt: nullableText(),
+    hint: nullableText(),
+    transformId: nullableEnum(input.transforms.map((transform) => transform.id)),
+    noticeSegments: nullableList(list(text(), MIN_NOTICE_SEGMENTS, MAX_NOTICE_SEGMENTS), MIN_NOTICE_SENTENCES, MAX_NOTICE_SENTENCES),
+    visualSubject: nullableEnum(["boy", "girl", "man", "woman", "group", "dog"]),
+    options: nullableList(idTextItem(), MIN_OPTIONS, MAX_OPTIONS),
+    correctOption: { type: ["null", "string"], minLength: 1 },
+    items: nullableList(idTextItem(), MIN_ORDER_ITEMS, MAX_ORDER_ITEMS),
+    questionType: nullableEnum(["definition", "enumeration", "cause", "comparison", "fact", "process"]),
+    requiredElements: nullableList(idTextItem(MAX_LESSON_TEXT_LENGTH, MAX_ELEMENT_ID_LENGTH), MIN_REQUIRED_ELEMENTS, MAX_REQUIRED_ELEMENTS),
+    supplementaryElements: nullableList(text(), undefined, MAX_SUPPLEMENTARY_ELEMENTS),
+    commonErrors: nullableList(text(), undefined, MAX_COMMON_ERRORS),
+    expectedForm: nullableEnum(["short", "one_sentence", "explanation", "list"]),
+    familyId: nullableText(MAX_FAMILY_ID_LENGTH),
+    // Przy uziemieniu tablica cytatów musi być NIEPUSTA już w schemacie: bez
+    // minItems model w ok. połowie odpowiedzi zwracał `[]` dla większości ćwiczeń
+    // (sonda na prawdziwym LLM), a walidacja odrzucała je potem jako nieuziemione.
+    sourceRefs: input.groundingRequired
+      ? list(quoteItems, MIN_SOURCE_REFS, MAX_SOURCE_REFS)
+      : nullableList(quoteItems, undefined, MAX_SOURCE_REFS),
   };
 }
 
