@@ -316,7 +316,7 @@ describe("lessonSystemPrompt i lessonUserMaterial — składanie promptu puli", 
     const schema = lessonPoolJsonSchema(INPUT) as {
       additionalProperties: boolean;
       properties: {
-        exercises: { items: { additionalProperties: boolean; required: string[]; properties: { exerciseType: { enum: string[] }; objectiveId: { enum: string[] }; transformId: { enum: Array<string | null> } } } };
+        exercises: { items: { additionalProperties: boolean; required: string[]; properties: { exerciseType: { enum: string[] }; objectiveId: { enum: string[] }; transformId: unknown } } };
         examples: { type: string; items: { properties: { objectiveId: { enum: string[] } } } };
       };
     };
@@ -327,7 +327,7 @@ describe("lessonSystemPrompt i lessonUserMaterial — składanie promptu puli", 
     // wydaje silnik deterministycznie, walidacja puli zawsze by go odrzuciła).
     expect(exercise.properties.exerciseType.enum).toEqual(["lesson_choice", "lesson_gap"]);
     expect(exercise.properties.objectiveId.enum).toEqual(["english_grammar.present_simple.third_person_s"]);
-    expect(exercise.properties.transformId.enum).toEqual([null, "to_question"]);
+    expect(exercise.properties).not.toHaveProperty("transformId");
     // Wszystkie pola ćwiczenia dokładnie w required (strict mode, opcjonalne jako nullable).
     expect([...exercise.required].sort()).toEqual(
       [...Object.keys(exercise.properties)].sort(),
@@ -554,7 +554,7 @@ describe("createOpenAiLlmProvider — ton lektora (stage B)", () => {
     const off = bodyAt(fetchMock, 1);
     const card = on.response_format.json_schema.schema.properties.objectives.items.properties.cards.items;
     expect(card.required).toEqual(["title", "body", "voiceTone"]);
-    expect(card.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle", "mysterious"] });
+    expect(card.properties.voiceTone).toEqual({ anyOf: [{ type: "string", enum: ["cheerful", "curious", "gentle", "mysterious"] }, { type: "null" }] });
     expect(systemOf(on)).toContain(RULE);
     expect(systemOf(on)).toContain("curiosities/riddles such as »Czy wiesz, że…« with at least two sentences");
     expect(systemOf(off)).not.toContain("voiceTone");
