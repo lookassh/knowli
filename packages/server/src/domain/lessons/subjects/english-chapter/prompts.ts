@@ -14,7 +14,7 @@ export const CHAPTER_MIN_OBJECTIVES = 3;
 export const CHAPTER_MAX_OBJECTIVES = 6;
 
 /** Słowa funkcyjne dozwolone obok materiału — lista dla generatora. */
-const CHAPTER_FUNCTION_WORDS = "I, you, he, she, my, a, the, is, are, do, can, and, in, on, this, what, today, very";
+const CHAPTER_FUNCTION_WORDS = "I, you, he, she, my, a, the, is, are, do, and, in, on, this, what, today, very";
 
 export const englishChapterPrompts: SubjectPromptProfile = {
   generationRole:
@@ -22,7 +22,9 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "The parent pasted one textbook chapter: its word lists, phrases and sentence frames (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...). Build every exercise ONLY from the English words, phrases and frames of that " +
     `material, plus basic function words (${CHAPTER_FUNCTION_WORDS}). ` +
-    "Never introduce English vocabulary that is not in the material. " +
+    "Never introduce English vocabulary that is not in the material; a plural of a material word is the same word, so use " +
+    "it where English needs it (e.g. countable foods after like: 'I like apples.', 'Do you like carrots?', never 'I like apple' " +
+    "or 'I like an apple'). " +
     "Never use people's names, or numbers and other words that are not in the material (e.g. there, have got, let's, look, " +
     "unless the material has them); use I, you, he, she, we or they instead of a name. " +
     "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one objective; closed types have " +
@@ -51,12 +53,19 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "is never a function word alone. " +
     "Here the cards are the child's word list: exercises on the card words are expected (the card teaches the word); only " +
     "never use a card example sentence as an answer. The objective's other exercises are written separately and never see " +
-    "the card examples, so make every card example longer than any exercise sentence: it joins the frame or word with two " +
-    "material words by 'and' (e.g. 'There's a lamp and a sofa in the living room.'); an exercise sentence never joins two " +
-    "words by 'and'. In explanationPl a Polish word keeps its correct case (e.g. '„kitchen” oznacza kuchnię'). " +
+    "the card examples, so make every card example longer than any exercise sentence: it puts two material words joined by " +
+    "'and' after the verb or as describing words ('I'm wearing a coat and a hat.', 'There's a lamp and a sofa in the " +
+    "kitchen.', 'It's cold and windy.'), never two things before is or 's ('Where's the lamp and the chair?' is wrong). " +
+    "Here 'and' replaces a new subject or verb: a card example keeps this objective's frame (a 'words' objective uses a " +
+    "chapter frame or 'This is') and only material and function words, never see, eat or have. An exercise sentence " +
+    "never joins two words by 'and'. A fixed question without a slot (e.g. What's the weather like?) stands whole on " +
+    "the card: never make it the whole solved sentence; pair it with its answer and check that part " +
+    "('What's the weather like? ___.' → 'It's windy'). In explanationPl a Polish word keeps its correct case (e.g. '„kitchen” oznacza kuchnię'). " +
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
     "Polish stimulus sentences in instructionPl read naturally, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +
+    "English 'it' for a thing has no Polish pronoun: 'Jest pod oknem.' or 'Gdzie jest lampa? Jest pod oknem.', never " +
+    "'Ona/Ono/To jest pod oknem.' (ona = she, to jest = this is); the Polish sentence keeps the English number. " +
     "lesson_choice: stem is a short English sentence; 2 or 3 options, exactly one correct for the Polish sentence. " +
     "Distractors must be plausible: the same category as the " +
     "correct option, taken from the material (another colour for a colour, another clothes item for clothes, another " +
@@ -69,9 +78,10 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "(not two spellings of the same word). " +
     "Distractors are plausible: the same category as the correct option, taken from the material. " +
     "lesson_gap: answer is the missing chapter word or phrase and focus is that checked word. Vary the answers: no more than 2 lesson_gap exercises of one " +
-    "objective may have the same answer. In an objective built on a sentence frame (e.g. I'm wearing (a) ...) vary " +
-    "which part of the frame the gap checks: the frame's key word (wearing, like), or a short phrase that holds the key " +
-    "word together with a function word ('I'm wearing', 'are you wearing' — never a function word alone). " +
+    "objective may have the same answer; a contraction and its full form are the same answer (Where's = Where is), " +
+    "so never ask for one of them. In an objective built on a sentence frame (e.g. I'm wearing (a) ...) vary " +
+    "which part of the frame the gap checks: the frame's key word (wearing, like), or a short phrase with it ('I'm wearing', " +
+    "'Put on' — never a function word alone). " +
     "lesson_order: items are the words of one English sentence built on a chapter frame, in the correct order " +
     "(4 to 7 items), and the sentence has exactly one correct word order — no parts " +
     "that could move, such as today at the start or at the end. " +
@@ -93,7 +103,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
       "on the left, no weather answer may be an extra item).",
     lesson_group:
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
-      "weather); group labels are in Polish and items are English words from the chapter. Otherwise return fewer exercises or none.",
+      "weather); group labels are in Polish and do not overlap (no item fits two labels); every item is a word of THIS " +
+    "objective's cards. Otherwise return fewer exercises or none.",
     lesson_cloze:
       "Use 2 or 3 short sentences built on the chapter's frames. instructionPl gives the Polish meaning of the whole text, " +
       "then a short command, like a workbook: 'W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.' " +
