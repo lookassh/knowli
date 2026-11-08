@@ -82,8 +82,8 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  * - `UMIEM_PROBE_TOPIC` — tytuł tematu (domyślnie „Unit 1” / „Mapa”; gramatyka: z katalogu);
  * - `UMIEM_PROBE_ADD_COUNT` — po udanym runie „+N” (`regenerateObjective`) z tą liczbą dla
  *   zagadnienia `UMIEM_PROBE_ADD_OBJECTIVE` (ostatni człon id, np. `short_answers`; domyślnie pierwsze);
- *   ćwiczenia dodane przez „+N” trafiają do drugiego zrzutu w formacie arkusza (`…-add.json` obok
- *   `UMIEM_PROBE_POOL_DUMP_OUT`): osobny wpis tymczasowy rejestru i raport `addedExercises`; „+N”
+ *   ćwiczenia dodane przez „+N” trafiają do drugiego zrzutu w formacie arkusza (katalog `<wariant>-add-rN`
+ *   obok katalogu `UMIEM_PROBE_POOL_DUMP_OUT`, np. `baseline-r1` → `baseline-add-r1/dump.json`): osobny wpis tymczasowy rejestru i raport `addedExercises`; „+N”
  *   zakończone inaczej niż `succeeded` to porażka próby (po zapisie wyników), a gdy główny run
  *   się nie udał, plik wyników dostaje `add: { skipped }`;
  * - `UMIEM_PROBE_OUT_DIR` — katalog wyników poza repozytorium (wymagany): plik

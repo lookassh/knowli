@@ -437,6 +437,14 @@ describe("englishGrammarSubject — notatki dydaktyczne dla generatora paczek (e
     for (const topicId of ["to_be", "present_simple"]) expect(notesOf(topicId, "short_answers")).toContain("never ends with a contraction");
     expect(notesOf("present_simple", "third_person_s")).toContain("fish, sheep, deer");
   });
+
+  it("pułapki z przebiegu kontrolnego: zaimek krótkiej odpowiedzi i pytanie w szyku zdania jako błędna opcja", () => {
+    const shortAnswers = [["to_be", "short_answers"], ["present_simple", "short_answers"], ["present_continuous", "questions"]] as const;
+    for (const [topicId, slug] of shortAnswers) expect(notesOf(topicId, slug)).toContain("an animal or a thing (the dog, the ball) → it");
+    const questions = [["to_be", "questions"], ["present_simple", "question"], ["present_continuous", "questions"]] as const;
+    for (const [topicId, slug] of questions) expect(notesOf(topicId, slug)).toContain("statement word order with a question mark");
+    expect(notesOf("to_be", "affirmative_forms")).not.toContain("→ it");
+  });
 });
 
 describe("englishGrammarSubject — bez heurystyk językowych (etap 4 #358)", () => {

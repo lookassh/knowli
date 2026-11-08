@@ -1,5 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
-import { NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, notes } from "../teaching-notes";
+import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Continuous (trzeci temat katalogu `english_grammar`, design
@@ -244,7 +244,7 @@ const negative: LearningObjective = {
 
 const questions: LearningObjective = {
   id: `${PREFIX}.questions`,
-  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES, SHORT_ANSWER_CONTRACTION_NOTE),
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, QUESTION_DISTRACTOR_NOTE),
   titlePl: "Pytania i krótkie odpowiedzi",
   descriptionEn:
     "Present continuous yes/no questions put am, is or are before the subject, followed by the verb with -ing " +
