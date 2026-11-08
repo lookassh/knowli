@@ -132,11 +132,6 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
         expect(catalog.subjects.find((s) => s.id === "school")!.checkServiceIncludesMaterial).toBe(true);
         expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
       });
-
-      it("bez openCheckService w konfiguracji agenta: bez pola", () => {
-        const catalog = withOpen();
-        expect(catalog.subjects.find((s) => s.id === "school")).not.toHaveProperty("openCheckService");
-      });
     });
   });
 

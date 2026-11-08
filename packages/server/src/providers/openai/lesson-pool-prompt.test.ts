@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { agentObjectivesOf } from "../../domain/lessons/agent/capable";
-import { createLessonAgentState } from "../../domain/lessons/agent/state";
-import { cardExposureSources } from "../../domain/lessons/card-exposure-sources";
 import { englishChapterSubject } from "../../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../domain/lessons/topic-resolution";
-import type { LessonTopic, SubjectModule } from "../../domain/lessons/types";
+import type { LessonTopic } from "../../domain/lessons/types";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../../modules/materials/lessons/lesson-drafts";
-import { lessonAgentLimits } from "../../modules/materials/lessons/lesson-pool-agent";
-import { objectiveAgentInput } from "../../modules/materials/lessons/lesson-pool-agent-input";
-import type { LessonObjectiveAgentInput } from "../../ports/ai";
 import { FakeLlmProvider } from "../fake";
 
 /**
@@ -29,42 +23,8 @@ const SCHOOL_MATERIAL = [
   "Bałtyk jest morzem śródlądowym. Hel to półwysep.",
 ].join("\n");
 
-interface PromptFixture {
-  readonly subject: SubjectModule;
-  readonly topic: LessonTopic;
-  readonly input: LessonObjectiveAgentInput;
-}
-
-function fixtureFor(args: {
-  subject: SubjectModule;
-  topic: LessonTopic;
-  material: string;
-  objectiveId: string;
-  examples?: Readonly<Record<string, readonly string[]>>;
-  examplesFixed?: boolean;
-}): PromptFixture {
-  const { subject, topic } = args;
-  const limits = lessonAgentLimits(subject, topic, 0);
-  const objectives = agentObjectivesOf(topic);
-  const state = createLessonAgentState({ topic, objectives, fixed: [], examples: args.examples ?? {}, fixedSources: cardExposureSources(subject, topic) });
-  const objective = objectives.find((candidate) => candidate.id === args.objectiveId)!;
-  const input = objectiveAgentInput({
-    subject,
-    topic,
-    state,
-    objective,
-    limits: limits.get(objective.id)!,
-    material: args.material,
-    graderAvailable: true,
-    examplesFixed: args.examplesFixed ?? false,
-    maxSteps: 8,
-    callTimeoutMs: 90_000,
-  });
-  return { subject, topic, input };
-}
-
-async function fixtures(): Promise<Record<string, PromptFixture>> {
-  // Gramatyka generuje się przebiegiem bazowym (etap 4 #358): prompt agenta mają tylko szkoła i rozdział.
+/** Tematy dynamiczne szkoły i rozdziału jak z etapu zagadnień trybu fake. */
+async function fixtures(): Promise<Record<"school" | "english_chapter", LessonTopic>> {
   const { objectives } = await new FakeLlmProvider().generateLessonObjectives({
     subjectTitle: schoolSubject.titlePl,
     topicTitle: "Polska",
@@ -74,10 +34,9 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
   const built = buildDynamicTopicData(objectives, schoolSubject.id, "42", "Polska", (objective) =>
     validateDynamicTopicData(schoolSubject, { titlePl: "Polska", objectives: [objective] }),
   );
-  const schoolTopic = schoolSubject.buildDynamicTopic!(withSubjectObjectiveKinds(schoolSubject, built.data!));
-  const school = fixtureFor({ subject: schoolSubject, topic: schoolTopic, material: SCHOOL_MATERIAL, objectiveId: schoolTopic.objectives[0]!.id });
+  const school = schoolSubject.buildDynamicTopic!(withSubjectObjectiveKinds(schoolSubject, built.data!));
 
-  // Zagadnienia jak z etapu zagadnień trybu fake (dwa zagadnienia słów i rama), przykłady ustalone.
+  // Dwa zagadnienia słów i rama.
   const chapterObjectives = [
     { kind: "words", body: "coat, boots", example: "coat" },
     { kind: "words", body: "scarf, gloves", example: "scarf" },
@@ -93,22 +52,11 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
     ],
     examples: [example],
   }));
-  const data = buildDynamicTopicData(chapterObjectives, englishChapterSubject.id, "42", "Unit 1").data!;
-  const examples = Object.fromEntries(data.objectives.map((objective, index) => [objective.id, chapterObjectives[index]!.examples]));
-  const chapterTopic = englishChapterSubject.buildDynamicTopic!(data);
-  const chapter = fixtureFor({
-    subject: englishChapterSubject,
-    topic: chapterTopic,
-    material: CHAPTER_MATERIAL,
-    objectiveId: chapterTopic.objectives[0]!.id,
-    examples,
-    examplesFixed: true,
-  });
+  const chapter = englishChapterSubject.buildDynamicTopic!(buildDynamicTopicData(chapterObjectives, englishChapterSubject.id, "42", "Unit 1").data!);
   return { school, english_chapter: chapter };
 }
 
 const FIXTURES = await fixtures();
-// Szkoła (etap 5b) i rozdział (5a) nie przechodzą przez agenta — migawki promptu podagenta usunięte.
 describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => {
   it("paczka PC affirmative × lesson_choice z przykładami kart i obie kontrole", async () => {
     const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
@@ -160,7 +108,7 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
   it("paczka rozdziału: zagadnienie słów × lesson_cloze (etap 5a #362)", async () => {
     const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
     const { packetInstructions } = await import("./lesson-pool-agent");
-    const { topic } = FIXTURES.english_chapter!;
+    const topic = FIXTURES.english_chapter;
     const objective = topic.objectives[0]!;
     expect(objective.exerciseTypes).toContain("lesson_cloze");
     const input = packetInput({
@@ -181,7 +129,7 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
   it("paczka szkoły: pytania otwarte z keywords tej samej odpowiedzi (etap 5b, wariant A)", async () => {
     const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
     const { packetInstructions } = await import("./lesson-pool-agent");
-    const { topic, input: base } = FIXTURES.school!;
+    const topic = FIXTURES.school;
     const objective = topic.objectives[0]!;
     const input = packetInput({
       subject: schoolSubject,
@@ -191,14 +139,17 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
       companion: "lesson_keywords",
       count: 5,
       withExamples: false,
-      material: base.pool.material,
+      material: SCHOOL_MATERIAL,
       graderAvailable: true,
       avoidSentences: [],
       timeoutMs: 90_000,
     });
     expect(input.pool.exerciseTypes).toEqual(["lesson_open_answer", "lesson_keywords"]);
     const prompt = packetInstructions(input);
-    expect(prompt).toContain("Write it in the same response as the lesson_open_answer exercises");
+    expect(prompt).toContain("plus at most one lesson_keywords for one family of these questions (it does not count toward the 5)");
+    // Zdania o skrótach i tłumaczeniu tylko przy odpowiedzi po angielsku.
+    expect(prompt).not.toContain("contraction and the full form are both correct");
+    expect(prompt).not.toContain("in a translation");
     await expect(prompt).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.school_open_answer.txt");
   });
 });

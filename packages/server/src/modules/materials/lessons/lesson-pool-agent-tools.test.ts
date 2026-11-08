@@ -743,7 +743,6 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1" }]);
   });
 
-
   it("grammar with grader makes no open calls: przedmiot bez list etapu 2b nie woła sędziego, rozwiązującego ani gradera", async () => {
     const grader = correctGrader();
     const tools = setup({ grader, checker: { solve: () => ["odpowiedź wzorcowa 1"] } });
@@ -1115,7 +1114,6 @@ describe("wynik dla modelu — format z katalogu reguł (spec katalogu reguł §
     expect(tools.stats.variantsRemoved).toBe(2);
     expect(tools.stats.hintsRemoved ?? 0).toBe(0);
   });
-
 
   it("licznik quotesSnapped: cytat zastąpiony dokładnym fragmentem materiału", async () => {
     const material = "Mieszko I przyjął chrzest w 966 roku.";

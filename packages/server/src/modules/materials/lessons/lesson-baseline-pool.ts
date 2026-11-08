@@ -4,7 +4,7 @@ import { lessonRulesStep, snapshotOf, submitExamples } from "../../../domain/les
 import { orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../../../domain/lessons/closed-check";
-import { bucketOf, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
+import { bucketOf, KEYWORDS_PER_OBJECTIVE, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type { AgentObjective, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -256,9 +256,11 @@ export async function runLessonBaselinePool(
             reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(issues.map((issue) => issue.rule))]);
             continue;
           }
-          // Towarzysz paczki (keywords) poza zamówioną liczbą; limit na zagadnienie daje kubełek w walidacji puli.
+          // Towarzysz paczki (keywords) poza zamówioną liczbą; limit na zagadnienie daje kubełek w walidacji puli,
+          // a do kontroli idzie najwyżej jeden zapasowy ponad niego (koszt pozycji z materiałem).
           if (draft.exerciseType === packet.companion) {
-            companions.push(draft);
+            if (companions.length >= KEYWORDS_PER_OBJECTIVE + 1) reject(objectiveId, draft.exerciseType, "limit", "over_count");
+            else companions.push(draft);
             continue;
           }
           if (valid.length >= packet.count) {
@@ -292,13 +294,21 @@ export async function runLessonBaselinePool(
         });
         if (checkable.length === 0) return { kind: "done", drafts: unchecked, examples: generated.examples };
         const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
-        const checked = await callModel(checkerSlots, () =>
-          deps.checker.checkClosed(
-            { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.agentPolicy.checkerNeedsMaterial ? { material: input.material } : {}) },
-            sink,
-            runDeadline.signal,
-          ),
-        );
+        let checked;
+        try {
+          checked = await callModel(checkerSlots, () =>
+            deps.checker.checkClosed(
+              { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.agentPolicy.checkerNeedsMaterial ? { material: input.material } : {}) },
+              sink,
+              runDeadline.signal,
+            ),
+          );
+        } catch (error) {
+          if (signal.aborted || !(error instanceof GenerationProviderError) || unchecked.length === 0) throw error;
+          // Awaria kontroli opcjonalnych keywords nie zabiera paczce pytań otwartych (bez kontroli).
+          for (const { draft } of checkable) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
+          return { kind: "done", drafts: unchecked, examples: generated.examples };
+        }
         if (checked === STOPPED) return { kind: "stopped" };
         stats.checkerCalls += 1;
         const passed: LessonExerciseDraft[] = [...unchecked];

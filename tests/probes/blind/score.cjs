@@ -53,8 +53,6 @@ const CLASS_APPLIES = {
   W4: (row) => TEXT.includes(row.type),
   W5: () => true,
   W6: () => true,
-  // Zdradzenie przez podpowiedź pytania otwartego (szkoła); mianownik: pytania otwarte z podpowiedzią (`hasHint` klucza).
-  W6h: (row) => row.type === "lesson_open_answer" && row.hasHint === true,
   W7: (row) => row.hasExplanation === true,
   W8: (row) => row.type === "lesson_listen_choice",
   W9: () => true,

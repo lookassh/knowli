@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { AgentObjective, LessonExerciseDraft } from "../../types";
-import { createProductionSubjectRegistry } from "..";
 import { schoolAgentPolicy } from "./agent-policy";
 import { validateLessonExercise } from "../../pool-validation";
 import { describeRule, ruleOf, type RuleId, type RuleTextContext } from "../../rules/catalog";
@@ -27,7 +26,6 @@ describe("schoolAgentPolicy — wartości i typy", () => {
   it("jest polityką przedmiotu szkolnego", () => {
     expect(schoolSubject.agentPolicy).toBe(schoolAgentPolicy);
   });
-
 
   it("ma zapas samodzielnych 1 i luz 2, a checker dostaje materiał", () => {
     expect(schoolAgentPolicy.independentReserve).toBe(1);
@@ -57,24 +55,6 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolSubject.baselinePool).toBe(true);
   });
 
-  it("każdy zarejestrowany przedmiot: sędzia podpowiedzi wymaga materiału i dopisku, a żaden typ nie jest w obu listach wariantów i kontroli otwartej", () => {
-    const policies = createProductionSubjectRegistry()
-      .listSubjects()
-      .map((subject) => [subject.id, subject.agentPolicy] as const);
-    expect(policies.map(([id]) => id)).toContain(schoolSubject.id);
-    for (const [id, policy] of policies) {
-      if ((policy.hintJudgeTypes ?? []).length > 0) {
-        expect(policy.checkerNeedsMaterial, id).toBe(true);
-        expect(policy.ruleNotes?.["check.hint_judge"]?.length ?? 0, id).toBeGreaterThan(0);
-      }
-      // Ocena przyjęta tylko dzięki usuniętemu wariantowi staje się `unavailable` (spec katalogu
-      // reguł §5.3); dziś żaden przedmiot nie łączy obu kontroli w jednym typie.
-      const open = new Set(policy.openAnswerCheckTypes ?? []);
-      expect(policy.variantCheckTypes.filter((type) => open.has(type)), id).toEqual([]);
-    }
-  });
-
-
   it("dopisek lesson.leak nie wspomina pokoju, podpowiada inny fakt lub inne sformułowanie i trafia do opisu reguły", () => {
     const leak = schoolAgentPolicy.ruleNotes?.["lesson.leak"] ?? "";
     expect(leak).not.toContain("room");
@@ -102,6 +82,7 @@ describe("schoolAgentPolicy.sanitize", () => {
     expect(result.removed).toEqual(["hint"]);
     expect(result.draft).not.toHaveProperty("hint");
     expect(result.draft.exerciseType).toBe(exerciseType);
+    expect(result.notes?.map((note) => [note.rule, note.found])).toEqual([["school.hint_open_answer_only", `removed: ${exerciseType} takes no hint in school`]]);
   });
 
   it("usuwa podpowiedź także przy pytaniu otwartym (szkoła nie generuje podpowiedzi, etap 5b)", () => {
@@ -127,15 +108,6 @@ describe("schoolAgentPolicy.sanitize", () => {
 });
 
 describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () => {
-
-
-
-  it("typ inny niż pytanie otwarte: ta sama nota reguły school.hint_open_answer_only", () => {
-    const result = sanitize(draft({ exerciseType: "lesson_gap", hint: "Mierzeja Wiślana" }));
-    expect(result.removed).toEqual(["hint"]);
-    expect(result.notes?.map((note) => [note.rule, note.found])).toEqual([["school.hint_open_answer_only", "removed: lesson_gap takes no hint in school"]]);
-  });
-
   it("bramka szkoły nie zwraca ustaleń (podpowiedź nie odrzuca już ćwiczenia)", () => {
     const findings = schoolAgentPolicy.exerciseGate?.(draft({ hint: "Przykładem jest Mierzeja Wiślana" }), objective, { material: MATERIAL }) ?? [];
     expect(findings).toEqual([]);

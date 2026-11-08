@@ -367,7 +367,7 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
     .map((other) => `- ${other.title}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
     .join("\n");
   const required = targets.requiredTypes.map((group) => group.join(" or ")).join("; ") || "none";
-  // Słowa kluczowe dotyczą przyjętego pytania otwartego (kaskada `school.keywords_family_rejected`): w kolejnym wywołaniu.
+  // Słowa kluczowe dotyczą przyjętego pytania otwartego swojej rodziny (`school.keywords_family_missing`).
   const keywords = input.pool.objectives.some((candidate) => candidate.exerciseTypes.includes("lesson_keywords"));
   return [
     lessonSystemPrompt(input.pool),
@@ -440,13 +440,22 @@ export function packetInstructions(input: LessonPacketInput): string {
   if (pool.exerciseExplanations === true) parts.push(EXPLANATION_RULE);
   parts.push(fieldMeaningRule(pool));
   parts.push(renderRuleBook(pool.ruleBook, { packet: true }));
+  // Zdania o skrótach i tłumaczeniu dotyczą tylko odpowiedzi po angielsku (gramatyka, rozdział); szkoła ich nie dostaje (etap 5b).
+  const english = pool.answerLocale.startsWith("en");
+  // Towarzysz paczki (keywords szkoły przy pytaniach otwartych) poza zamówioną liczbą.
+  const companion = pool.exerciseTypes.find((type) => type !== input.type);
   parts.push(
-    `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective, with objectiveId "${objective.id}" in every exercise. ` +
+    `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective` +
+      (companion === undefined ? "" : `, plus at most one ${companion} for one family of these questions (it does not count toward the ${input.count})`) +
+      `, with objectiveId "${objective.id}" in every exercise. ` +
       "The instruction and the visible context must determine one answer: a child who knows the rule can reach only the key. " +
-      "Put every other correct wording into acceptedAnswers. A contraction and the full form are both correct: never ask for one of them, accept both. " +
-      "Every exercise uses a different sentence. " +
-      "The child can read the cards during the exercises, so never ask for a word form or sentence the cards show (e.g. a spelling exercise on a verb the card spells out): use other words and other sentences. " +
-      "Write each exercise (in a translation: the Polish sentence together with its English key) so that for a child aged 8-10 there is exactly one correct answer, in the practised form." +
+      "Put every other correct wording into acceptedAnswers." +
+      (english ? " A contraction and the full form are both correct: never ask for one of them, accept both." : "") +
+      " Every exercise uses a different sentence. " +
+      "The child can read the cards during the exercises, so never ask for a word form or sentence the cards show (e.g. a spelling exercise on a verb the card spells out): use other words and other sentences." +
+      (english
+        ? " Write each exercise (in a translation: the Polish sentence together with its English key) so that for a child aged 8-10 there is exactly one correct answer, in the practised form."
+        : "") +
       (input.withExamples
         ? " Also return 1-3 short card examples of this objective (plain sentences the child sees on the card); they must never be the answer of an exercise and use subjects and verbs that none of your exercises uses."
         : ""),

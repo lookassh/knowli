@@ -97,44 +97,44 @@
   {
    "id": "c-keywords-2",
    "class": "correct",
-   "familyPrompt": "Jakie zadania ma korzeń?",
+   "familyPrompt": "Co owady przenoszą z kwiatu na kwiat i jak nazywa się to zjawisko?",
    "draft": {
-    "objectiveId": "school.dgold.czesci",
+    "objectiveId": "school.dgold.rozwoj",
     "exerciseType": "lesson_keywords",
     "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
     "acceptedAnswers": [],
     "focus": [],
-    "familyId": "korzen-zadania",
+    "familyId": "pylek-zjawisko",
     "keywordOptions": [
      {
       "id": "k1",
-      "text": "utrzymuje roślinę w glebie"
+      "text": "pyłek"
      },
      {
       "id": "k2",
-      "text": "pobiera wodę z gleby"
+      "text": "zapylenie"
      },
      {
       "id": "k3",
-      "text": "ustawia liście do światła"
+      "text": "kiełkowanie"
      },
      {
       "id": "k4",
-      "text": "wytwarza pokarm z wody"
+      "text": "chlorofil"
      },
      {
       "id": "k5",
-      "text": "przenosi pyłek"
+      "text": "korzeń"
      }
     ],
     "keyOptionIds": [
      "k1",
      "k2"
     ],
-    "answer": "utrzymuje roślinę w glebie, pobiera wodę z gleby",
+    "answer": "pyłek, zapylenie",
     "sourceRefs": [
      {
-      "quote": "Utrzymuje roślinę w glebie, żeby wiatr jej nie przewrócił. Korzeń pobiera z gleby wodę"
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat – to zapylenie."
      }
     ]
    }
@@ -187,40 +187,44 @@
   {
    "id": "c-keywords-4",
    "class": "correct",
-   "familyPrompt": "Jakie zadania ma łodyga?",
+   "familyPrompt": "Co korzeń pobiera z gleby?",
    "draft": {
     "objectiveId": "school.dgold.czesci",
     "exerciseType": "lesson_keywords",
     "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
     "acceptedAnswers": [],
     "focus": [],
-    "familyId": "lodyga-zadania",
+    "familyId": "korzen-pobiera",
     "keywordOptions": [
      {
       "id": "k1",
-      "text": "podtrzymuje liście i kwiaty"
+      "text": "woda"
      },
      {
       "id": "k2",
-      "text": "przewodzi wodę do liści"
+      "text": "sole mineralne"
      },
      {
       "id": "k3",
-      "text": "pobiera wodę z gleby"
+      "text": "tlen"
      },
      {
       "id": "k4",
-      "text": "wydziela tlen"
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "k5",
+      "text": "pyłek"
      }
     ],
     "keyOptionIds": [
      "k1",
      "k2"
     ],
-    "answer": "podtrzymuje liście i kwiaty, przewodzi wodę do liści",
+    "answer": "woda, sole mineralne",
     "sourceRefs": [
      {
-      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści"
+      "quote": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne."
      }
     ]
    }
@@ -462,29 +466,33 @@
    "id": "c-order-4",
    "class": "correct",
    "draft": {
-    "objectiveId": "school.dgold.czesci",
+    "objectiveId": "school.dgold.rozwoj",
     "exerciseType": "lesson_order",
-    "instructionPl": "Ułóż w kolejności drogę wody w roślinie.",
+    "instructionPl": "Ułóż w kolejności etapy wzrostu rośliny od nasienia do kwiatu.",
     "acceptedAnswers": [],
     "focus": [],
     "items": [
      {
       "id": "a",
-      "text": "korzeń pobiera wodę z gleby"
+      "text": "nasiono pęcznieje, bo wchłania wodę"
      },
      {
       "id": "b",
-      "text": "łodyga przewodzi wodę do liści"
+      "text": "z nasienia wyrasta korzeń"
      },
      {
       "id": "c",
-      "text": "woda wyparowuje przez aparaty szparkowe"
+      "text": "roślina wytwarza kolejne liście"
+     },
+     {
+      "id": "d",
+      "text": "dorosła roślina zakwita"
      }
     ],
-    "answer": "korzeń pobiera wodę z gleby łodyga przewodzi wodę do liści woda wyparowuje przez aparaty szparkowe",
+    "answer": "nasiono pęcznieje, bo wchłania wodę z nasienia wyrasta korzeń roślina wytwarza kolejne liście dorosła roślina zakwita",
     "sourceRefs": [
      {
-      "quote": "Łodyga przewodzi wodę z korzenia do liści"
+      "quote": "Nasiono pęcznieje, bo wchłania wodę."
      }
     ]
    }
@@ -754,45 +762,45 @@
   {
    "id": "w-keywords-2",
    "class": "wrong_key",
-   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „ustawia liście do światła”.",
-   "familyPrompt": "Jakie zadania ma korzeń?",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „kiełkowanie”.",
+   "familyPrompt": "Co owady przenoszą z kwiatu na kwiat i jak nazywa się to zjawisko?",
    "draft": {
-    "objectiveId": "school.dgold.czesci",
+    "objectiveId": "school.dgold.rozwoj",
     "exerciseType": "lesson_keywords",
     "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
     "acceptedAnswers": [],
     "focus": [],
-    "familyId": "korzen-zadania",
+    "familyId": "pylek-zjawisko",
     "keywordOptions": [
      {
       "id": "k1",
-      "text": "utrzymuje roślinę w glebie"
+      "text": "pyłek"
      },
      {
       "id": "k2",
-      "text": "pobiera wodę z gleby"
+      "text": "zapylenie"
      },
      {
       "id": "k3",
-      "text": "ustawia liście do światła"
+      "text": "kiełkowanie"
      },
      {
       "id": "k4",
-      "text": "wytwarza pokarm z wody"
+      "text": "chlorofil"
      },
      {
       "id": "k5",
-      "text": "przenosi pyłek"
+      "text": "korzeń"
      }
     ],
     "keyOptionIds": [
      "k1",
      "k3"
     ],
-    "answer": "utrzymuje roślinę w glebie, ustawia liście do światła",
+    "answer": "pyłek, kiełkowanie",
     "sourceRefs": [
      {
-      "quote": "Utrzymuje roślinę w glebie, żeby wiatr jej nie przewrócił. Korzeń pobiera z gleby wodę"
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat – to zapylenie."
      }
     ]
    }
@@ -846,41 +854,45 @@
   {
    "id": "w-keywords-4",
    "class": "wrong_key",
-   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „pobiera wodę z gleby”.",
-   "familyPrompt": "Jakie zadania ma łodyga?",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „tlen”.",
+   "familyPrompt": "Co korzeń pobiera z gleby?",
    "draft": {
     "objectiveId": "school.dgold.czesci",
     "exerciseType": "lesson_keywords",
     "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
     "acceptedAnswers": [],
     "focus": [],
-    "familyId": "lodyga-zadania",
+    "familyId": "korzen-pobiera",
     "keywordOptions": [
      {
       "id": "k1",
-      "text": "podtrzymuje liście i kwiaty"
+      "text": "woda"
      },
      {
       "id": "k2",
-      "text": "przewodzi wodę do liści"
+      "text": "sole mineralne"
      },
      {
       "id": "k3",
-      "text": "pobiera wodę z gleby"
+      "text": "tlen"
      },
      {
       "id": "k4",
-      "text": "wydziela tlen"
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "k5",
+      "text": "pyłek"
      }
     ],
     "keyOptionIds": [
      "k1",
      "k3"
     ],
-    "answer": "podtrzymuje liście i kwiaty, pobiera wodę z gleby",
+    "answer": "woda, tlen",
     "sourceRefs": [
      {
-      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści"
+      "quote": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne."
      }
     ]
    }
@@ -1128,31 +1140,35 @@
   {
    "id": "w-order-4",
    "class": "wrong_key",
-   "note": "Zamienione sąsiednie klocki 2 i 3 („łodyga przewodzi wodę do liści” / „woda wyparowuje przez aparaty szparkowe”); kolejność błędna według materiału (autor potwierdza).",
+   "note": "Zamienione sąsiednie klocki 2 i 3 („z nasienia wyrasta korzeń” / „roślina wytwarza kolejne liście”); kolejność błędna według materiału (autor potwierdza).",
    "draft": {
-    "objectiveId": "school.dgold.czesci",
+    "objectiveId": "school.dgold.rozwoj",
     "exerciseType": "lesson_order",
-    "instructionPl": "Ułóż w kolejności drogę wody w roślinie.",
+    "instructionPl": "Ułóż w kolejności etapy wzrostu rośliny od nasienia do kwiatu.",
     "acceptedAnswers": [],
     "focus": [],
     "items": [
      {
       "id": "a",
-      "text": "korzeń pobiera wodę z gleby"
+      "text": "nasiono pęcznieje, bo wchłania wodę"
      },
      {
       "id": "c",
-      "text": "woda wyparowuje przez aparaty szparkowe"
+      "text": "roślina wytwarza kolejne liście"
      },
      {
       "id": "b",
-      "text": "łodyga przewodzi wodę do liści"
+      "text": "z nasienia wyrasta korzeń"
+     },
+     {
+      "id": "d",
+      "text": "dorosła roślina zakwita"
      }
     ],
-    "answer": "korzeń pobiera wodę z gleby woda wyparowuje przez aparaty szparkowe łodyga przewodzi wodę do liści",
+    "answer": "nasiono pęcznieje, bo wchłania wodę roślina wytwarza kolejne liście z nasienia wyrasta korzeń dorosła roślina zakwita",
     "sourceRefs": [
      {
-      "quote": "Łodyga przewodzi wodę z korzenia do liści"
+      "quote": "Nasiono pęcznieje, bo wchłania wodę."
      }
     ]
    }
@@ -1386,45 +1402,45 @@
   {
    "id": "s-keywords-1",
    "class": "second_correct",
-   "familyPrompt": "Jakie zadania ma łodyga?",
-   "justification": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła.",
+   "familyPrompt": "Jakie części ma większość roślin?",
+   "justification": "Większość roślin, które znamy z ogrodu i łąki, ma korzeń, łodygę, liście i kwiaty. – „liście” to też część, którą odpowiedź musi wymienić.",
    "draft": {
     "objectiveId": "school.dgold.czesci",
     "exerciseType": "lesson_keywords",
     "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
     "acceptedAnswers": [],
     "focus": [],
-    "familyId": "lodyga-zadania-2",
+    "familyId": "czesci-rosliny",
     "keywordOptions": [
      {
       "id": "k1",
-      "text": "podtrzymuje liście i kwiaty"
+      "text": "korzeń"
      },
      {
       "id": "k2",
-      "text": "przewodzi wodę do liści"
+      "text": "łodyga"
      },
      {
       "id": "k3",
-      "text": "ustawia liście do światła"
+      "text": "liście"
      },
      {
       "id": "k4",
-      "text": "pobiera wodę z gleby"
+      "text": "pyłek"
      },
      {
       "id": "k5",
-      "text": "wytwarza pokarm"
+      "text": "tlen"
      }
     ],
     "keyOptionIds": [
      "k1",
      "k2"
     ],
-    "answer": "podtrzymuje liście i kwiaty, przewodzi wodę do liści",
+    "answer": "korzeń, łodyga",
     "sourceRefs": [
      {
-      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła."
+      "quote": "Większość roślin, które znamy z ogrodu i łąki, ma korzeń, łodygę, liście i kwiaty."
      }
     ]
    }
@@ -1753,7 +1769,7 @@
    "draft": {
     "objectiveId": "school.dgold.rozwoj",
     "exerciseType": "lesson_match",
-    "instructionPl": "Połącz pojęcie z jego znaczeniem.",
+    "instructionPl": "Połącz pojęcie z informacją o nim.",
     "acceptedAnswers": [],
     "focus": [],
     "pairs": [

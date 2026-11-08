@@ -153,7 +153,7 @@ describe("przedmiot school", () => {
     expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("Calculations never replace the publication minima in Target.");
     expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("outside the stage split");
     // Etap 5b: dydaktyka dawnych kontroli w polach przedmiotu, bez instrukcji podpowiedzi.
-    expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("never a concept the question itself names");
+    expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("never a term the question itself names");
     expect(schoolSubject.prompts.typeRules?.lesson_open_answer).toContain("never drop an element the question genuinely requires");
     expect(schoolSubject.prompts.typeRules?.lesson_open_answer).toContain("never refer to the text");
     expect(schoolSubject.prompts.typeRules?.lesson_cloze).toContain("never two gaps whose words could be swapped");

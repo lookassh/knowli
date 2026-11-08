@@ -35,8 +35,9 @@ function rng(seedText) {
 }
 
 const rows = [];
-// `graderAvailable` poza porównaniem: agent szkoły biegnie z graderem kontroli 2b, przebieg bazowy po 5b bez (spec etapu 5 §7.1).
 const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize"];
+// `graderAvailable` poza porównaniem tylko w szkole: agent biegnie z graderem kontroli 2b, przebieg bazowy po 5b bez (spec etapu 5 §7.1).
+const sameFieldsOf = (dump) => (dump.subjectId === "school" ? SAME_FIELDS : [...SAME_FIELDS, "graderAvailable"]);
 let reference;
 for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
@@ -49,9 +50,10 @@ for (const model of candidates) {
   // Uczciwość porównania: te same modele i wejście we wszystkich źródłach arkusza, wariant zgodny z katalogiem.
   if (dump.variant !== undefined && model.replace(/-r\d+$/u, "") !== dump.variant) throw new Error(`${model}: katalog nie pasuje do wariantu ${dump.variant}`);
   // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` zrzutu `probe:agent`.
-  const config = JSON.stringify([...SAME_FIELDS.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
+  const fields = sameFieldsOf(dump);
+  const config = JSON.stringify([...fields.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
   if (reference === undefined) reference = { model, config };
-  else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${SAME_FIELDS.join(", ")}, input)`);
+  else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${fields.join(", ")}, input)`);
   if (material === undefined && typeof dump.material === "string") material = dump.material;
   const objectives = new Map((dump.objectives ?? []).map((objective) => [String(objective.id).split(".").at(-1), objective]));
   // Keywords oceniane razem z pytaniem swojej rodziny (inny, przetasowany wiersz): pierwsze pytanie otwarte tego zagadnienia i `familyId`.
@@ -79,12 +81,14 @@ const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
 /**
  * Treść ćwiczenia bez metadanych zdradzających źródło: bez `id` (`ex<N>` agenta, UUID potoku), `revisionId` i pól
  * `*Audio`, temat w `objectiveId` obcięty do członu zagadnienia, klucze w porządku alfabetycznym (ten sam szkic
- * w innej kolejności pól daje tę samą komórkę).
+ * w innej kolejności pól daje tę samą komórkę). Bez `hint` pytania otwartego szkoły: dziecko go nie widzi, a ma go
+ * tylko ramię agenta (przebieg bazowy szkoły nie generuje podpowiedzi), więc zdradzałby źródło wiersza (etap 5b).
  */
-function blindContent(exercise) {
+function blindContent(exercise, subject) {
   const content = {};
+  const hiddenHint = subject === "school" && exercise?.exerciseType === "lesson_open_answer";
   for (const field of Object.keys(exercise ?? {}).sort((a, b) => a.localeCompare(b))) {
-    if (field === "id" || field === "revisionId" || field.endsWith("Audio")) continue;
+    if (field === "id" || field === "revisionId" || field.endsWith("Audio") || (hiddenHint && field === "hint")) continue;
     const value = exercise[field];
     content[field] = field === "objectiveId" ? String(value ?? "").split(".").at(-1) : value;
   }
@@ -95,10 +99,9 @@ const lines = [header.join(",")];
 const key = { seed, prefix, models, rows: [] };
 rows.forEach((row, position) => {
   const rowId = `${prefix ? `${prefix}-` : ""}r${String(position + 1).padStart(3, "0")}`;
-  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise))), "", "", "", ""].join(","));
+  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise, row.subject))), "", "", "", ""].join(","));
   const hasExplanation = typeof row.exercise?.explanationPl === "string" && row.exercise.explanationPl.trim() !== "";
-  const hasHint = typeof row.exercise?.hint === "string" && row.exercise.hint.trim() !== "";
-  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation, hasHint });
+  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation });
 });
 
 const outDir = path.join(lessonDir, "blind");

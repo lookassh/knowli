@@ -64,14 +64,14 @@ function grounded(features: SubjectFeatures, record: Record<string, unknown>, ..
 
 /** Wspólny „materiał” polskich przykładów (zdania cytowane w `sourceRefs`). */
 const PL_RIVER = "Wisła jest najdłuższą rzeką w Polsce.";
-const PL_SEA = "Wisła uchodzi do Morza Bałtyckiego.";
+const PL_SEA = "Wisła płynie z Beskidów do Morza Bałtyckiego.";
 const PL_MOUNTAINS = "Najwyższe góry Polski to Tatry.";
 const PL_CAPITAL = "Stolicą Polski jest Warszawa.";
 const PL_CAPITAL_RIVER = "Przez Warszawę płynie Wisła.";
 const PL_WATER_CYCLE = "Woda paruje, skrapla się w chmurach i spada jako deszcz.";
 const PL_SCALE = "Odległość w terenie to odległość na mapie pomnożona przez mianownik skali.";
 /** Rodzina pytania otwartego i jego słów kluczowych w przykładach. */
-const PL_FAMILY = "wisla-morze";
+const PL_FAMILY = "wisla-bieg";
 
 export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
   lesson_card: {
@@ -271,14 +271,14 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
       if (language === "pl") {
         const record: Record<string, unknown> = {
           exerciseType: "lesson_open_answer",
-          prompt: "Do jakiego morza uchodzi Wisła?",
-          answer: "Wisła uchodzi do Morza Bałtyckiego.",
+          prompt: "Skąd i dokąd płynie Wisła?",
+          answer: "Wisła płynie z Beskidów do Morza Bałtyckiego.",
           acceptedAnswers: [],
           focus: ["Morza", "Bałtyckiego"],
           ...(features.usesV3Payload
             ? {
                 questionType: "fact",
-                requiredElements: [{ id: "e1", text: "Morze Bałtyckie" }],
+                requiredElements: [{ id: "e1", text: "Beskidy" }, { id: "e2", text: "Morze Bałtyckie" }],
                 expectedForm: "one_sentence",
                 familyId: PL_FAMILY,
               }
@@ -317,10 +317,10 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         ? grounded(features, {
             exerciseType: "lesson_keywords",
             familyId: PL_FAMILY,
-            // Klucz z elementów wymaganych rodziny, nigdy pojęcie podane w pytaniu (tu: „Wisła”).
+            // Klucz = pojęcia z elementów wymaganych rodziny (dwa), nigdy pojęcie podane w pytaniu (tu: „Wisła”).
             keywordOptions: [
-            { id: "k1", text: "Morze Bałtyckie" },
-            { id: "k2", text: "ujście" },
+            { id: "k1", text: "Beskidy" },
+            { id: "k2", text: "Morze Bałtyckie" },
             { id: "k3", text: "Tatry" },
             { id: "k4", text: "Odra" },
             ],

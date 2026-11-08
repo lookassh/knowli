@@ -711,6 +711,30 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
     expect(openOf(exercises)).toBe(openOf(exercisesOf(without)));
   });
 
+  it("a checker failure on the keywords keeps the packet's open questions (keywords: check_unknown)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const failing: ClosedExerciseChecker = {
+      checkClosed: async () => {
+        throw new GenerationProviderError("refusal");
+      },
+    };
+    const result = await kwRun(new KwGenerator(() => [keywords("f0")]), failing);
+    const exercises = exercisesOf(result);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    const rejected = result.objectives.flatMap((objective) => objective.rejections).find((entry) => entry.exerciseType === "lesson_keywords");
+    expect(rejected).toMatchObject({ code: "check_unknown" });
+  });
+
+  it("sends at most one spare keywords to the check; further ones are over_count", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => ["f0", "f1", "f2", "f3"].map((family) => keywords(family))), checker);
+    expect(checker.calls.flatMap((call) => call.items).filter(({ view }) => view.includes("Question:"))).toHaveLength(2);
+    const overCount = result.objectives.flatMap((objective) => objective.rejections).filter((entry) => entry.exerciseType === "lesson_keywords" && entry.code === "over_count");
+    expect(overCount).toHaveLength(2);
+  });
+
   it("keeps keywords with their family after run scoping", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const result = await kwRun(new KwGenerator(() => [keywords("f0")]), kwChecker(), { familyScope: "r1" });

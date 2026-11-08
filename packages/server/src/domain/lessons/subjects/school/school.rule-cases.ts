@@ -84,8 +84,7 @@ function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExer
 }
 
 const exercise = (draft: LessonExerciseDraft) => () => schoolSubject.validateExercise(draft, topic);
-const pool = (drafts: readonly LessonExerciseDraft[], rejectedFamilies?: ReadonlySet<string>) => () =>
-  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL, ...(rejectedFamilies ? { rejectedFamilies } : {}) }).values()].flat();
+const pool = (drafts: readonly LessonExerciseDraft[]) => () => [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flat();
 const sanitizeNotes = (draft: LessonExerciseDraft) => () =>
   schoolSubject.agentPolicy.sanitize!(draft, { material: MATERIAL }).notes ?? [];
 

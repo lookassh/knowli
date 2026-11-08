@@ -22,9 +22,9 @@ export const schoolPrompts: SubjectPromptProfile = {
     "Wszystkie pola tekstowe są po polsku (prompt language = answer language). " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
-    "Gdy materiał zawiera pary łatwo mylonych pojęć " +
+    "Gdy zagadnienie, dla którego piszesz, obejmuje parę łatwo mylonych pojęć z materiału " +
     "(np. południk/równoleżnik, wysokość względna/bezwzględna), dodaj co najmniej jedno pytanie porównawcze " +
-    "(questionType: comparison) wymieniające obie nazwy tej pary. requiredElements to pojedyncze informacje, " +
+    "(questionType: comparison) wymieniające obie nazwy tej pary; pary innych zagadnień pomiń. requiredElements to pojedyncze informacje, " +
     "które poprawna odpowiedź musi zawierać; każdy element " +
     "jest jedną informacją, nie całym zdaniem wzorca. supplementaryElements: informacje poprawne, ale niewymagane. " +
     "commonErrors: typowe błędne stwierdzenia dzieci w tym pytaniu. expectedForm: short (sam fakt/data/nazwa), " +
@@ -33,41 +33,55 @@ export const schoolPrompts: SubjectPromptProfile = {
     "twórz rodziny 2-3 sformułowań dla najważniejszych pytań otwartych. " +
     "sourceRefs: wybierz najkrótszy fragment materiału, który uzasadnia ćwiczenie i z którego wynika pytanie i odpowiedź. " +
     "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej. " +
-    "lesson_gap: stem to zdanie z materiału z luką po fakcie (data, nazwa, pojęcie). " +
+    "lesson_gap: stem to zdanie z materiału z luką po fakcie (data, nazwa, pojęcie), nigdy zdanie karty z luką. " +
     "lesson_choice: stem to pytanie, options to krótkie odpowiedzi. " +
     "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
-    // Etap 5b: dydaktyka dawnych kontroli 2b i ślepego rozwiązania (sekcja `checks` księgi, której przebieg bazowy nie czyta).
+    // Etap 5b: dydaktyka dawnych kontroli 2b i ślepego rozwiązania (sekcja `checks` księgi, której przebieg bazowy nie czyta)
+    // oraz doprecyzowania wspólnej końcówki paczki, pisanej pod przedmioty angielskie (strojenie tylko w polach przedmiotu, spec §7.7).
     lesson_open_answer:
       "The child answers without the material: never refer to the text (e.g. 'according to the text', 'in the second " +
       "paragraph'). requiredElements are what every correct answer to this exact question contains: for a question " +
-      "with free choice (e.g. 'name any two'), require what every valid choice satisfies and put the examples into " +
-      "supplementaryElements, or make the question ask for the specific items; never drop an element the question " +
-      "genuinely requires.",
-    lesson_choice: "Exactly one option is correct according to the material.",
+      "with free choice (e.g. 'name any two') or a why/what-jobs question to which the material gives several reasons " +
+      "or jobs, require what every valid choice satisfies and put the examples into supplementaryElements, or make the " +
+      "question ask for the specific items; never drop an element the question genuinely requires. 'Every exercise uses a different sentence' applies between question families: " +
+      "write the ordered questions as at least two families with different model answers; members of one family share " +
+      "the model answer and requiredElements and differ only in the question wording. The cards explain the facts of " +
+      "this objective: ask about these facts in your own question wording, never as a card sentence with a gap. " +
+      "Leave hint null.",
+    lesson_choice:
+      "Exactly one option is correct according to the material. Every other option is false according to the material " +
+      "(e.g. the job of another part, another date or another person), not merely less complete. When the material " +
+      "lists several items with the asked feature, put only one of them among the options.",
     lesson_calculation:
-      "Use only a method explicitly taught in the material: sourceRefs quote the method, not a vaguely related fact; " +
-      "when the material teaches no supported method, return no calculations, even when more are ordered. Numbers may vary as abstract examples " +
-      "of that method; never invent named places, measurements of real objects or new facts. Calculations never " +
-      "replace the publication minima in Target. Variants of one method and units share templateFamilyId with " +
-      "different parameters; never repeat existing parameters.",
+      "Only three methods are supported: map scale distance (scale_distance), the difference of two heights in metres " +
+      "(height_difference) and converting cm, m and km (unit_conversion). Use one only when the material explicitly " +
+      "teaches that method: sourceRefs quote the method, not a vaguely related fact. Any other method (e.g. years " +
+      "between two dates, money, time) is not supported: return no calculations, even when more are ordered. Numbers " +
+      "may vary as abstract examples of that method; never invent named places, measurements of real objects or new " +
+      "facts. Calculations never replace the publication minima in Target. Variants of one method and units share " +
+      "templateFamilyId with different parameters; never repeat existing parameters.",
     lesson_keywords:
-      "An optional precision trainer outside the stage split: at most one per objective. Write it in the same response " +
-      "as the lesson_open_answer exercises, for one family of those open questions (the same objectiveId and familyId). " +
-      "keyOptionIds are the concepts a precise answer to that question must use, taken from its requiredElements; never " +
-      "a concept the question itself names. The other options are real concepts of the material that this answer does " +
-      "not need. Never put the answer sentence or a definition into keywordOptions; skip it when the open answer has " +
-      "fewer than two essential concepts.",
+      "An optional precision trainer outside the stage split: at most one per objective. Besides the ordered " +
+      "lesson_open_answer exercises (it does not count toward their number) you may add one lesson_keywords in the same " +
+      "response, for one family of those open questions (the same objectiveId and familyId) whose requiredElements " +
+      "contain at least two separate terms; otherwise add none. Each keywordOptions text is a term of 1–3 words from the " +
+      "material (a name, concept, date or number), never a phrase with a verb, a sentence or a definition. keyOptionIds " +
+      "are the terms of that family's requiredElements; never a term the question itself names. Every other option is a " +
+      "real term from another part of the material (another part, process, person or event), so that no correct answer " +
+      "to this question uses it.",
     lesson_match:
       "left is a concept, place or cause, right is its definition, feature or effect, both taken from the parent material. " +
       "The extraRight texts come from the material. Use it when the material pairs concepts with definitions, places " +
-      "with features or causes with effects. Skip it when the material has no such pairs.",
+      "with features or causes with effects. Skip it when the material has no such pairs. Each right text fits only its " +
+      "own left text and each extraRight text fits none of the left texts, according to the material.",
     lesson_group:
-      "Use it when the material classifies things (e.g. mammals/birds, lowlands/uplands). " +
-      "Skip it when the material has no such classification.",
+      "Use it only when the material itself names the groups and says which items belong to each (e.g. a list under " +
+      "each heading). Never classify by knowledge outside the material, and leave out every item that the material " +
+      "places in two groups or in none. Skip it when the material has no such classification.",
     lesson_cloze:
-      "Write 2 to 4 short sentences close to the parent material (vocabulary for a child of about 8). " +
+      "Write 2 to 4 short sentences close to the parent material (vocabulary for a child aged 8–12). " +
       "Gap words are concepts, names or numbers from the material, never conjunctions, prepositions or words guessable " +
       "from grammar alone. Distractors come from the same material and category. Exactly one bank word fits each gap: " +
       "never two gaps whose words could be swapped.",

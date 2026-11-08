@@ -222,7 +222,7 @@ describe("przyjmowanie paczki — kody i powody odrzuceń (spec katalogu reguł 
   });
 });
 
-describe("przyjmowanie paczki — kaskada słów kluczowych szkoły (spec katalogu reguł §4.4)", () => {
+describe("przyjmowanie paczki — słowa kluczowe szkoły po pytaniu otwartym swojej rodziny", () => {
   const OBJECTIVE = "school.ddeck.fotosynteza";
   const QUOTE = "wytwarza cukry";
   const material = `Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, ${QUOTE}.`;
@@ -272,12 +272,12 @@ describe("przyjmowanie paczki — kaskada słów kluczowych szkoły (spec katalo
     return "rejected" in entry ? entry.rejected.ruleIds : [];
   };
 
-  it("szkice kaskady są poprawne razem (bez odrzucenia rodziny)", () => {
+  it("słowa kluczowe przed pytaniem rodziny w paczce przechodzą (przetwarzane na końcu)", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft, openDraft()], context);
     expect(prechecked.map(codeOf)).toEqual(["pass", "pass"]);
   });
 
-  it("bez rodziny w lekcji i bez jej odrzucenia: zwykłe school.keywords_family_missing", () => {
+  it("bez rodziny w lekcji: school.keywords_family_missing", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft], context);
     expect(ruleIdsOf(prechecked[0])).toEqual(["school.keywords_family_missing"]);
   });

@@ -584,7 +584,6 @@ describe("precheckBatch i admitBatch — sanityzacja szkoły (spec katalogu regu
     ...overrides,
   });
 
-
   it("podpowiedź kierująca rozumowaniem zostaje, a ćwiczenie bez not", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer({ hint: "Pomyśl o pasie lądu nad Bałtykiem." })], context);
     expect(prechecked[0]).toMatchObject({ pass: true, sanitized: [], notes: [], draft: { hint: "Pomyśl o pasie lądu nad Bałtykiem." } });

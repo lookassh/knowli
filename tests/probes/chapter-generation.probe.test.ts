@@ -80,7 +80,7 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  *   `present_continuous`, `to_be`; najnowsza wersja tematu, wszystkie jego zagadnienia);
  * - `UMIEM_PROBE_POOL_SIZE` — wielkość puli (domyślnie 60, jak w panelu);
  * - `UMIEM_PROBE_TOPIC` — tytuł tematu (domyślnie „Unit 1” / „Mapa”; gramatyka: z katalogu);
- * - `UMIEM_PROBE_SCHOOL_SUBJECT` — tytuł przedmiotu szkoły (domyślnie „Geografia”); w zrzucie `subjectTitlePl`;
+ * - `UMIEM_PROBE_SCHOOL_SUBJECT` — tytuł przedmiotu szkoły (domyślnie „Geografia”); w zrzucie `subjectTitlePl` i `topicTitlePl`;
  * - `UMIEM_PROBE_ADD_COUNT` — po udanym runie „+N” (`regenerateObjective`) z tą liczbą dla
  *   zagadnienia `UMIEM_PROBE_ADD_OBJECTIVE` (ostatni człon id, np. `short_answers`; domyślnie pierwsze);
  *   ćwiczenia dodane przez „+N” trafiają do drugiego zrzutu w formacie arkusza (katalog `<wariant>-add-rN`
@@ -115,6 +115,7 @@ loadDotEnv();
 const materialEnv = process.env.UMIEM_PROBE_MATERIAL?.trim() || undefined;
 const subjectEnv = process.env.UMIEM_PROBE_SUBJECT?.trim() || "chapter";
 const schoolSubjectTitle = process.env.UMIEM_PROBE_SCHOOL_SUBJECT?.trim() || "Geografia";
+const topicTitlePl = process.env.UMIEM_PROBE_TOPIC ?? (subjectEnv === "school" ? "Mapa" : "Unit 1");
 const enabled = Boolean(materialEnv) || subjectEnv === "grammar";
 
 /** Krótki materiał gramatyki (Present Simple), gdy próba nie dostała pliku — tekst własny, nie z podręcznika. */
@@ -337,7 +338,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     };
 
     // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
-    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: lessonAgent.grader !== undefined, variant: variantOf(subjectKind), ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle } : {}) };
+    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: lessonAgent.grader !== undefined, variant: variantOf(subjectKind), ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
 
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
@@ -539,7 +540,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
             clientRequestId,
           }));
         } else {
-          const topicTitlePl = process.env.UMIEM_PROBE_TOPIC ?? (subjectKind === "school" ? "Mapa" : "Unit 1");
           ({ runId, deckId } = subjectKind === "school"
             ? await createSchoolLesson(services, { subjectTitlePl: schoolSubjectTitle, topicTitlePl, material, poolSize, clientRequestId })
             : await createLessonFromMaterial(services, { subjectId: "english_chapter", topicTitlePl, material, poolSize, clientRequestId }));
@@ -566,7 +566,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       for (const cost of runCosts(events, runBudgetUsd, estimates).filter((entry) => entry.runId === runId)) {
         line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} (z szacunkiem wywołań bez kosztu ${cost.agentEstimatedUsd.toFixed(4)}) ` +
           `z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
-          `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; wywołań ${cost.calls}, bez usage.cost ${cost.unknownCostCalls}`);
+          `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; lekcja=${(cost.agentUsd + cost.lessonObjectivesUsd).toFixed(4)} USD; ` +
+          `wywołań ${cost.calls}, bez usage.cost ${cost.unknownCostCalls}`);
       }
 
       const deck = await readLessonDeck(services, deckId);
