@@ -50,8 +50,10 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "fills the frame alone is checked only when the child also writes or arranges the frame. The checked part " +
     "is never a function word alone. " +
     "Here the cards are the child's word list: exercises on the card words are expected (the card teaches the word); only " +
-    "never use a card example sentence as an answer. Card examples use this objective's frame or words together with other " +
-    "material words than your exercises use. " +
+    "never use a card example sentence as an answer. The objective's other exercises are written separately and never see " +
+    "the card examples, so make every card example longer than any exercise sentence: it joins the frame or word with two " +
+    "material words by 'and' (e.g. 'There's a lamp and a sofa in the living room.'); an exercise sentence never joins two " +
+    "words by 'and'. In explanationPl a Polish word keeps its correct case (e.g. '„kitchen” oznacza kuchnię'). " +
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
     "Polish stimulus sentences in instructionPl read naturally, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +
@@ -78,8 +80,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "chapter words; acceptedAnswers are other correct translations built from chapter words. focus is the run of the " +
     "answer's words that holds the checked word or the frame part. Never repeat the answer or an accepted answer in the prompt. " +
     "The other exercises of the lesson are written separately and an answer equal to any of their sentences or to a card " +
-    "example is discarded: build each answer from this objective's frame or word together with two other chapter words " +
-    "in a combination unlikely elsewhere (e.g. 'Mam na sobie żółte kozaki i zielony szalik.'), every answer different.",
+    "example is discarded: build each answer from this objective's frame or word together with one more chapter word that the other " +
+    "sentences rarely add (a colour, a place, a day; e.g. 'Mam na sobie żółte kozaki.'), every answer different.",
   // Semantyka typów z własną gałęzią schematu (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
     lesson_match:
@@ -106,8 +108,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "Set kind for every objective: 'words' — a group of 4 to 12 related English words and phrases from the material " +
     "(e.g. clothes, weather, days of the week); 'frame' — one sentence frame from the material (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...), where the checked part is the construction and words of the 'words' objectives " +
-    "only fill it. Every word of the material word lists and every sentence frame appears on the cards of some objective. Every word belongs mainly to one objective. Cards (2 to 4): for 'words' a list of lines 'English word — " +
-    "Polish meaning', split across the cards; for 'frame' the pattern with 1 to 3 English examples from the material " +
+    "only fill it. Every word of the material word lists and every sentence frame appears on the cards of some objective. Every word belongs mainly to one objective. Cards: 2 to 4 per objective, never just one: for 'words' a list of lines 'English word — " +
+    "Polish meaning', split across at least two cards; for 'frame' one card with the pattern and one with the examples: the pattern with 1 to 3 English examples from the material " +
     "WITHOUT their Polish translations (the pattern may be explained in Polish). No card contains a Polish sentence " +
     "together with its English translation — translating sentences is the child's exercise.",
 };
