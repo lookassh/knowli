@@ -23,6 +23,11 @@ const MIME_BY_EXT: Record<string, string> = {
 // storageKey ma zawsze postać "xx/hash.ext" — odrzucamy wszystko inne.
 const KEY_PATTERN = /^[0-9a-f]{2}\/[0-9a-f]{64}\.(mp3|wav|png|jpg|webp)$/;
 
+/** Jedyny właściciel kształtu klucza lokalnego wolumenu (także raport sierot). */
+export function isMediaStorageKey(storageKey: string): boolean {
+  return KEY_PATTERN.test(storageKey);
+}
+
 // Plik tymczasowy starszy niż to został po awarii procesu (żywy zapis trwa sekundy).
 const STALE_TMP_MS = 60 * 60 * 1000;
 

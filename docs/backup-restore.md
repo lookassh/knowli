@@ -63,6 +63,26 @@ wersje z liczbą elementów, sumy SHA256 trzech pierwszych audio oraz postęp
 każdego dziecka w każdym zestawie — identyczność obu zrzutów oznacza pełny
 powrót danych (profile, wersje, historia, media).
 
+## Raport osieroconych blobów mediów (dry-run, #386)
+
+Przegrany CAS przy finalizacji zasobu może zostawić na wolumenie blob bez
+wiersza w `media_assets`. Raport zestawia pliki o kształcie klucza z dysku
+(`MEDIA_ROOT`) z kluczami osiągalnymi z bazy i wypisuje wyłącznie liczby:
+ile blobów jest na dysku, ile z nich ma powiązanie, ile sierot jest po
+okresie karencji (domyślnie 7 dni), ile jest młodszych oraz sumy bajtów.
+Niczego nie usuwa ani nie modyfikuje; kasowanie to osobna decyzja na
+podstawie kolejnych raportów.
+
+```bash
+pnpm media:orphan-report                      # karencja domyślna: 7 dni
+pnpm media:orphan-report -- --min-age-days 30  # inna karencja
+```
+
+Wymaga `DATABASE_URL` i `MEDIA_ROOT` (domyślnie `./data/media`) w środowisku,
+jak proces workera. Sierota młodsza niż karencja jest raportowana osobno:
+zapis blobu wyprzedza transakcję zapisującą `storage_key`, więc młody plik
+może jeszcze należeć do finalizującej się generacji.
+
 ## Wynik weryfikacji z zadania 11
 
 Próba przeprowadzona 2026-10-08 na tym repozytorium (Docker 29.7.2,
