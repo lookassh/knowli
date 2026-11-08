@@ -134,7 +134,7 @@ describe("koszty przebiegu agenta puli", () => {
   ];
 
   it("isAgentRunOperation: kroki agenta i kontrole liczą się do budżetu runu, etap zagadnień i historyjka nie", () => {
-    for (const operation of ["agent_plan", "agent_objective", "check_solve", "check_variants", "check_grade"]) expect(isAgentRunOperation(operation), operation).toBe(true);
+    for (const operation of ["agent_plan", "agent_objective", "packet_generate", "check_closed", "check_solve", "check_variants", "check_grade"]) expect(isAgentRunOperation(operation), operation).toBe(true);
     for (const operation of ["lesson_objectives", "lesson_story", undefined]) expect(isAgentRunOperation(operation), String(operation)).toBe(false);
   });
 

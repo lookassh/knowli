@@ -55,9 +55,9 @@ export interface OperationCost {
   unknownCostCalls: number;
 }
 
-/** Operacje liczone do budżetu runu agenta: kroki agenta (`agent_*`) i kontrole (`check_*`, także `check_grade`). */
+/** Operacje liczone do budżetu runu: kroki agenta (`agent_*`), paczki przebiegu bazowego (`packet_*`) i kontrole (`check_*`, także `check_grade`). */
 export function isAgentRunOperation(operation: string | undefined): boolean {
-  return operation !== undefined && (operation.startsWith("agent_") || operation.startsWith("check_"));
+  return operation !== undefined && (operation.startsWith("agent_") || operation.startsWith("packet_") || operation.startsWith("check_"));
 }
 
 function hasCost(event: ProbeCostEvent): boolean {
@@ -97,7 +97,7 @@ function estimateOf(event: ProbeCostEvent, estimates: AgentCostEstimates): numbe
 
 export interface RunCost {
   runId: string | null;
-  /** Suma zmierzonych `agent_*` i `check_*`. */
+  /** Suma zmierzonych `agent_*`, `packet_*` i `check_*`. */
   agentUsd: number;
   /** `agentUsd` plus szacunek za wywołania `agent_*`/`check_*` bez `usage.cost` — to porównujemy z budżetem runu. */
   agentEstimatedUsd: number;
