@@ -450,6 +450,37 @@ describe("englishGrammarSubject — notatki dydaktyczne dla generatora paczek (e
   });
 });
 
+describe("englishGrammarSubject — cele pisowni: generator omija formy z kart (#370)", () => {
+  it("notatki celów pisowni każą omijać czasowniki, których formy wypisują karty", () => {
+    const cases = [
+      {
+        topicId: "present_simple",
+        slug: "spelling_es_ies",
+        notesEnumeration: "forms of go, watch, wash, fix, study and fly",
+        cardSnippets: ["goes, watches, washes, fixes", "study → studies, fly → flies"],
+        cardForms: ["goes", "watches", "washes", "fixes", "studies", "flies"],
+      },
+      {
+        topicId: "present_continuous",
+        slug: "ing_spelling",
+        notesEnumeration: "-ing forms of play, read, jump, cook, make, write, lie, tie, run, swim, sit, fix and snow",
+        cardSnippets: ["play → playing, read → reading, jump → jumping", "make → making, write → writing", "lie → lying, tie → tying", "run → running, swim → swimming, sit → sitting", "play → playing, fix → fixing, snow → snowing", "cook → cooking"],
+        cardForms: ["playing", "reading", "jumping", "cooking", "making", "writing", "lying", "tying", "running", "swimming", "sitting", "fixing", "snowing"],
+      },
+    ] as const;
+    for (const { topicId, slug, notesEnumeration, cardSnippets, cardForms } of cases) {
+      const objective = englishGrammarSubject.topics.filter((topic) => topic.id === topicId).flatMap((topic) => topic.objectives).find((candidate) => candidate.id.endsWith(`.${slug}`))!;
+      const cards = objective.cards.map((card) => card.body).join("\n");
+      // Wyliczenia form na kartach są przypięte dosłownie: edycja wyliczenia na karcie oblewa test i wymaga aktualizacji listy w notatce.
+      for (const snippet of cardSnippets) expect(cards).toContain(snippet);
+      for (const form of cardForms) expect(cards).toContain(form);
+      const notes = objective.generationNotesEn ?? "";
+      expect(notes).toContain("never use these verbs in an exercise of this objective");
+      expect(notes).toContain(notesEnumeration);
+    }
+  });
+});
+
 describe("englishGrammarSubject — bez heurystyk językowych (etap 4 #358)", () => {
   it("edycja i publikacja szkicu sprawdzają tylko strukturę: treść odrzucana dawniej przez walidator gramatyki przechodzi", () => {
     // Dawniej `grammar.be_gap_hint` (podpowiedź „to be” inna niż be) i `grammar.gap_present_simple_form`.

@@ -2,7 +2,7 @@
 // Użycie: node tests/probes/blind/gen-blind-sheet.cjs <katalog lekcji POZA repozytorium: podkatalog per źródło z dump.json> <seed> [prefiks wierszy] [katalog sędziego]
 // Wynik: <katalog>\blind\sheet.csv i <katalog>\blind\key.json (rowId → źródło, indeks, typ, wyjaśnienie; istniejący klucz nie jest
 // nadpisywany) oraz katalog sędziego (domyślnie <katalog>\judge; dla ślepoty podaj neutralną ścieżkę POZA drzewem tematu) —
-// jedyny katalog dla sędziego: sheet.csv, material.txt (gdy zrzut ma materiał), rubric-stage2.md.
+// jedyny katalog dla sędziego: sheet.csv, material.txt (gdy zrzut ma materiał), rubric-stage2-v2.md.
 // Zrzuty jednego arkusza muszą mieć te same modele, wysiłek, wejście, pulę i grader, a nazwa katalogu `<wariant>-rN` — pole `variant`.
 const fs = require("fs");
 const path = require("path");
@@ -97,6 +97,6 @@ fs.writeFileSync(path.join(outDir, "sheet.csv"), `${lines.join("\n")}\n`);
 fs.writeFileSync(path.join(outDir, "key.json"), JSON.stringify(key, null, 1));
 fs.mkdirSync(judgeDir, { recursive: true });
 fs.writeFileSync(path.join(judgeDir, "sheet.csv"), `${lines.join("\n")}\n`);
-fs.copyFileSync(path.join(__dirname, "rubric-stage2.md"), path.join(judgeDir, "rubric-stage2.md"));
+fs.copyFileSync(path.join(__dirname, "rubric-stage2-v2.md"), path.join(judgeDir, "rubric-stage2-v2.md"));
 if (material !== undefined) fs.writeFileSync(path.join(judgeDir, "material.txt"), `${material}\n`);
 console.log(`models=${models.length} rows=${rows.length} → ${outDir}, sędzia: ${judgeDir}`);
