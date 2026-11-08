@@ -367,12 +367,17 @@ export async function runLessonBaselinePool(
           ? { ...base, status: "failed", failure: outcome.failure }
           : { ...base, status: status.complete ? "complete" : "incomplete" };
       const codes = new Map<string, number>();
-      for (const entry of base.rejections) codes.set(entry.code, (codes.get(entry.code) ?? 0) + 1);
-      // Dziennik bez treści: liczby, kody i człon identyfikatora zagadnienia.
+      const rules = new Map<string, number>();
+      for (const entry of base.rejections) {
+        codes.set(entry.code, (codes.get(entry.code) ?? 0) + 1);
+        for (const rule of entry.ruleIds) rules.set(`${entry.exerciseType}/${rule}`, (rules.get(`${entry.exerciseType}/${rule}`) ?? 0) + 1);
+      }
+      const counted = (counts: Map<string, number>) => (counts.size === 0 ? "-" : [...counts].map(([key, count]) => `${key}:${count}`).join(","));
+      // Dziennik bez treści: liczby, kody, typ z identyfikatorem reguły i człon identyfikatora zagadnienia.
       console.log(
         `[lesson-baseline] run=${input.runId} obj=${slugOf(id)} status=${settled.status}${outcome.failure === undefined ? "" : ` error=${outcome.failure.errorCode}`} ` +
           `ordered=${outcome.plan.packets.reduce((sum, packet) => sum + packet.count, 0)} accepted=${exercises.length} overflow=${overflow.get(id) ?? 0} ` +
-          `rejected=${codes.size === 0 ? "-" : [...codes].map(([code, count]) => `${code}:${count}`).join(",")} calls=${outcome.calls} costUsd=${outcome.spentUsd.toFixed(4)}`,
+          `rejected=${counted(codes)} rules=${counted(rules)} calls=${outcome.calls} costUsd=${outcome.spentUsd.toFixed(4)}`,
       );
       return settled;
     });

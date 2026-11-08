@@ -160,7 +160,8 @@ describe("runLessonBaselinePool", () => {
   });
 
   it("drops a later duplicate stimulus and a card example that reveals an open answer", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
     // Pierwsza odpowiedź otwarta pierwszego zagadnienia to zdanie o „Kuba60” (n = 60).
     const leaky = await run(new FakeGenerator({ examples: ["Kuba60 swims in the lake.", "I play football."] }));
     expect(leaky.objectives[0]!.examples).toEqual(["I play football."]);
@@ -176,7 +177,10 @@ describe("runLessonBaselinePool", () => {
     };
     const twinned = await run(twin);
     expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap", detail: "" })]);
-    expect(twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds.length).toBeGreaterThan(0);
+    const ruleIds = twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds;
+    expect(ruleIds.length).toBeGreaterThan(0);
+    // Dziennik podaje identyfikatory reguł odrzuceń z typem ćwiczenia (bez treści).
+    expect(logs.some((line) => line.includes(` rules=${ruleIds.map((rule) => `lesson_gap/${rule}:1`).join(",")} `))).toBe(true);
   });
 
   it("keeps only the stage target and never lets overflow remove other exercises", async () => {
