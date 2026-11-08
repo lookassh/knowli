@@ -1,5 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
-import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, notes } from "../teaching-notes";
+import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat „to be” (drugi temat katalogu `english_grammar`).
@@ -201,7 +201,7 @@ const questions: LearningObjective = {
 
 const shortAnswers: LearningObjective = {
   id: `${PREFIX}.short_answers`,
-  generationNotesEn: notes(TO_BE_NOTES, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE),
+  generationNotesEn: notes(TO_BE_NOTES, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE),
   titlePl: "Krótkie odpowiedzi: Yes, I am / No, he isn't",
   descriptionEn:
     "Short answers to 'to be' questions repeat the same form of the verb: Is she ready? Yes, she is. " +

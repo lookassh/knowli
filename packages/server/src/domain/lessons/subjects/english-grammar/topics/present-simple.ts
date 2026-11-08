@@ -1,5 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
-import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, notes } from "../teaching-notes";
+import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Simple (design „Przedmiot i katalog”, requirements 1.4).
@@ -198,7 +198,7 @@ const question: LearningObjective = {
 
 const shortAnswers: LearningObjective = {
   id: `${PREFIX}.short_answers`,
-  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE),
+  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE),
   titlePl: "Krótkie odpowiedzi",
   descriptionEn:
     "Short answers repeat the auxiliary: Yes, I do / No, I don't; Yes, he does / No, he doesn't.",

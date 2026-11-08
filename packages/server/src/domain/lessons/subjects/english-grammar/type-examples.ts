@@ -72,7 +72,7 @@ const TO_BE_EXAMPLES = withTypes<ToBeObjective>({
     lesson_short_answer: { instructionPl: "Wybierz krótką odpowiedź.", prompt: "Is she your sister?", options: [{ id: "a", text: "Yes, she is." }, { id: "b", text: "Yes, she does." }], correctOption: "a", answer: "Yes, she is." },
     lesson_choice: { instructionPl: "Wybierz poprawną odpowiedź.", stem: "Are you at school?", options: [{ id: "a", text: "No, I'm not." }, { id: "b", text: "No, you aren't." }], correctOption: "a", answer: "No, I'm not." },
     lesson_gap: { instructionPl: "Uzupełnij krótką odpowiedź.", stem: "Is he at home? Yes, he ___.", hint: "be", answer: "is", focus: ["is"] },
-    lesson_open_answer: { instructionPl: "Przetłumacz krótką odpowiedź na angielski.", prompt: "Czy oni są w parku? Nie, nie są.", answer: "No, they aren't.", focus: ["aren't"] },
+    lesson_open_answer: { instructionPl: "Przetłumacz pytanie i krótką odpowiedź na angielski.", prompt: "Czy oni są w parku? Nie, nie są.", answer: "Are they in the park? No, they aren't.", focus: ["they", "aren't"] },
   },
 });
 
