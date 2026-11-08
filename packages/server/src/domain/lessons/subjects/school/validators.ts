@@ -24,27 +24,6 @@ function normalizeForPromptComparison(text: string): string {
   return text.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("pl-PL");
 }
 
-/** Słowa tekstu po NFC i małymi literami (litery i cyfry). */
-function wordsOf(text: string): string[] {
-  return text.normalize("NFC").toLocaleLowerCase("pl-PL").match(/[\p{L}\p{N}]+/gu) ?? [];
-}
-
-/**
- * Czy pojęcie występuje w tekście z tolerancją polskiej odmiany: każde słowo
- * pojęcia ma w tekście słowo o tym samym początku (słowo bez dwóch ostatnich
- * liter, co najmniej 4 znaki; krótsze słowa muszą wystąpić w całości).
- * „światło” pasuje do „światła”, „cukry” do „cukrów”. Heurystyka uziemienia,
- * nie ocena — rodzic i tak zatwierdza pojęcia.
- */
-function termOccursIn(term: string, words: readonly string[]): boolean {
-  const termWords = wordsOf(term);
-  return termWords.length > 0 && termWords.every((word) => {
-    if (word.length <= 4) return words.includes(word);
-    const stem = word.slice(0, Math.max(4, word.length - 2));
-    return words.some((candidate) => candidate.startsWith(stem));
-  });
-}
-
 /** Posortowane identyfikatory elementów wymaganych (porównanie rodziny). */
 function elementIdsOf(ex: LessonExerciseDraft): string {
   return (ex.requiredElements ?? []).map((el) => el.id).sort((a, b) => a.localeCompare(b)).join(",");
@@ -197,13 +176,10 @@ export function validateSchoolExercise(ex: LessonExerciseDraft, _topic: LessonTo
  * być fragmentem materiału (po normalizacji typograficznej, `quote-normalize.ts`),
  * (2) ćwiczenia jednej rodziny pytań (cel + familyId) muszą mieć tę samą
  * odpowiedź wzorcową i ten sam zbiór identyfikatorów elementów wymaganych.
- * `rejectedFamilies` (tylko przyjmowanie agenta) to `familyId` pytań otwartych
- * odrzuconych w bieżącym wywołaniu: słowa kluczowe takiej brakującej rodziny
- * dostają osobną regułę kaskady zamiast „brak rodziny”.
  */
 export function validateSchoolPool(
   drafts: readonly LessonExerciseDraft[],
-  ctx: { readonly material: string; readonly rejectedFamilies?: ReadonlySet<string> },
+  ctx: { readonly material: string },
 ): ReadonlyMap<number, readonly LessonRuleIssue[]> {
   const errors = new Map<number, LessonRuleIssue[]>();
   const push = (index: number, issue: LessonRuleIssue) => {
@@ -280,37 +256,17 @@ export function validateSchoolPool(
     }
   }
 
-  // Słowa kluczowe: rodzina pytań otwartych musi istnieć w tym samym celu, a
-  // każde pojęcie kluczowe występuje w jej odpowiedzi wzorcowej albo w materiale
-  // (dobór dystraktorów sprawdza rodzic).
+  // Słowa kluczowe: rodzina pytań otwartych musi istnieć w tym samym celu (dobór pojęć
+  // ocenia kontrola zamkniętych z pytaniem rodziny i rodzic; heurystykę odmiany usunął etap 5b).
   drafts.forEach((ex, index) => {
     if (ex.exerciseType !== KEYWORDS_TYPE || !ex.familyId) return;
     const familyIndexes = families.get(JSON.stringify([ex.objectiveId, ex.familyId])) ?? [];
     const family = familyIndexes[0] === undefined ? undefined : drafts[familyIndexes[0]];
-    if (!family && ctx.rejectedFamilies?.has(ex.familyId) === true) {
-      push(index, schoolIssue("school.keywords_family_rejected", {
-        pl: "familyId: pytanie otwarte tej rodziny odpadło w tym samym wywołaniu",
-        found: `the lesson_open_answer with familyId ${clip(ex.familyId)} was rejected in this call; submit these keywords again together with the corrected open question`,
-      }));
-      return;
-    }
     if (!family) {
       push(index, schoolIssue("school.keywords_family_missing", {
         pl: `familyId: brak rodziny pytań otwartych „${ex.familyId}” w tym zagadnieniu`,
         found: `no lesson_open_answer with familyId ${clip(ex.familyId)} in this objective`,
       }));
-      return;
-    }
-    const haystack = [...wordsOf(family.answer), ...wordsOf(ctx.material)];
-    const textById = new Map((ex.keywordOptions ?? []).map((option) => [option.id, option.text] as const));
-    for (const id of ex.keyOptionIds ?? []) {
-      const term = textById.get(id);
-      if (term !== undefined && !termOccursIn(term, haystack)) {
-        push(index, schoolIssue("school.keyword_not_in_answer", {
-          pl: `keyOptionIds: pojęcie kluczowe „${term}” nie występuje w odpowiedzi wzorcowej ani w materiale`,
-          found: `key term ${clip(term)} (option ${clip(id)}) occurs neither in the family's model answer nor in the material`,
-        }));
-      }
     }
   });
 

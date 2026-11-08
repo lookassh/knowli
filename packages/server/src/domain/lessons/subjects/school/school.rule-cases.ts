@@ -132,18 +132,6 @@ registerRuleCases([
     ]),
   },
   { rule: "school.keywords_family_missing", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()]) },
-  // Kaskada: pytanie otwarte rodziny „def” odpadło w tym samym wywołaniu agenta.
-  { rule: "school.keywords_family_rejected", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()], new Set(["def"])) },
-  {
-    rule: "school.keyword_not_in_answer",
-    violation: pool([
-      family,
-      keywordsDraft({
-        keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
-        answer: "chlorofil, cukry",
-      }),
-    ]),
-  },
   {
     rule: "school.calculation_family_mismatch",
     violation: pool([calculationDraft(), calculationDraft({ ...scale, unit: "km" })]),

@@ -266,4 +266,28 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
     });
     await expect(packetInstructions(input)).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.english_chapter_words_cloze.txt");
   });
+
+  it("paczka szkoły: pytania otwarte z keywords tej samej odpowiedzi (etap 5b, wariant A)", async () => {
+    const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
+    const { packetInstructions } = await import("./lesson-pool-agent");
+    const { topic, input: base } = FIXTURES.school!;
+    const objective = topic.objectives[0]!;
+    const input = packetInput({
+      subject: schoolSubject,
+      topic,
+      objective,
+      type: "lesson_open_answer",
+      companion: "lesson_keywords",
+      count: 5,
+      withExamples: false,
+      material: base.pool.material,
+      graderAvailable: true,
+      avoidSentences: [],
+      timeoutMs: 90_000,
+    });
+    expect(input.pool.exerciseTypes).toEqual(["lesson_open_answer", "lesson_keywords"]);
+    const prompt = packetInstructions(input);
+    expect(prompt).toContain("Write it in the same response as the lesson_open_answer exercises");
+    await expect(prompt).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.school_open_answer.txt");
+  });
 });

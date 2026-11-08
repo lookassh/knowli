@@ -132,22 +132,6 @@ export const SCHOOL_RULES = defineRules({
     priority: "family",
     description: "lesson_keywords needs a lesson_open_answer with the same familyId in the same objective.",
   },
-  "school.keywords_family_rejected": {
-    field: "familyId",
-    kind: "reject",
-    types: ["lesson_keywords"],
-    priority: "family",
-    description:
-      "When the lesson_open_answer of its familyId is rejected in the same call and the objective has no other open " +
-      "question of that familyId, the keywords are rejected too; so send lesson_keywords only in a later call, after its " +
-      "open question was accepted.",
-  },
-  "school.keyword_not_in_answer": {
-    field: "keyOptionIds",
-    kind: "reject",
-    types: ["lesson_keywords"],
-    description: "Every key term occurs in the model answer of its question family or in the material (inflected forms count).",
-  },
   "school.calculation_family_mismatch": {
     field: "calculation",
     kind: "reject",

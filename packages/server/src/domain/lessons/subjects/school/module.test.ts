@@ -339,30 +339,12 @@ describe("słowa kluczowe (lesson_keywords)", () => {
     expect(messagesOf(extra.get(1) ?? []).some((error) => error.includes("brak rodziny"))).toBe(true);
   });
 
-  it("wymaga pojęć kluczowych z odpowiedzi wzorcowej albo materiału, a dystraktory sprawdza rodzic", () => {
+  it("przyjmuje pojęcie kluczowe spoza odpowiedzi wzorcowej i materiału (bez heurystyki odmiany, etap 5b)", () => {
     const outside = keywordsDraft({
       keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
       answer: "chlorofil, cukry",
     });
-    const extra = schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL });
-    expect(messagesOf(extra.get(1) ?? []).some((error) => error.includes("chlorofil"))).toBe(true);
-  });
-
-  it("kaskada: słowa kluczowe rodziny odrzuconej w tym wywołaniu dostają osobną regułę, a bez takiej rodziny — „brak rodziny”", () => {
-    const issuesOf = (drafts: readonly LessonExerciseDraft[], rejectedFamilies?: ReadonlySet<string>) =>
-      [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL, ...(rejectedFamilies ? { rejectedFamilies } : {}) }).entries()]
-        .map(([index, issues]) => [index, issues.map((issue) => issue.rule)] as const);
-    expect(issuesOf([keywordsDraft(), keywordsDraft({ familyId: "inna" })], new Set(["def"]))).toEqual([
-      [0, ["school.keywords_family_rejected"]],
-      [1, ["school.keywords_family_missing"]],
-    ]);
-    const [rejected] = schoolSubject.validatePoolExtra!([keywordsDraft()], { material: MATERIAL, rejectedFamilies: new Set(["def"]) }).get(0) ?? [];
-    expect(rejected).toMatchObject({ field: "familyId", pl: "familyId: pytanie otwarte tej rodziny odpadło w tym samym wywołaniu" });
-    expect(rejected!.found).toContain('familyId "def" was rejected in this call');
-    // Rodzina obecna w lekcji: kaskada nie dotyczy, nawet gdy slug jest na liście odrzuconych.
-    expect(issuesOf([family, keywordsDraft()], new Set(["def"]))).toEqual([]);
-    // Bez `rejectedFamilies` (edycja i publikacja rodzica) — dzisiejsza reguła.
-    expect(issuesOf([keywordsDraft()])).toEqual([[0, ["school.keywords_family_missing"]]]);
+    expect(schoolSubject.validatePoolExtra!([family, outside], { material: MATERIAL }).size).toBe(0);
   });
 
   it("nie łączy słów kluczowych z rodziną pytań w kontroli spójności rodziny", () => {
@@ -643,16 +625,9 @@ describe("zgłoszenia reguł szkoły (found dla modelu agenta)", () => {
     ]);
   });
 
-  it("found pozostałych reguł puli: długość cytatu, pojęcie kluczowe", () => {
+  it("found pozostałych reguł puli: długość cytatu", () => {
     expect(issuesAt([openDraft({ sourceRefs: [{ quote: "966" }] })], 0).map((issue) => [issue.rule, issue.field, issue.found])).toEqual([
       ["school.quote_too_short", "sourceRefs[0].quote", 'quote 0 "966" has 3 characters, minimum 10'],
-    ]);
-    const outside = keywordsDraft({
-      keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
-      answer: "chlorofil, cukry",
-    });
-    expect(issuesAt([openDraft({ familyId: "def" }), outside], 1).map((issue) => issue.found)).toEqual([
-      `key term "chlorofil" (option "k1") occurs neither in the family's model answer nor in the material`,
     ]);
   });
 

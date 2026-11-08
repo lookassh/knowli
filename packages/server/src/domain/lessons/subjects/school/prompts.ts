@@ -45,10 +45,12 @@ export const schoolPrompts: SubjectPromptProfile = {
       "replace the publication minima in Target. Variants of one method and units share templateFamilyId with " +
       "different parameters; never repeat existing parameters.",
     lesson_keywords:
-      "An optional precision trainer outside the stage split: at most one per objective, for a lesson_open_answer " +
-      "family of this objective. keyOptionIds are the concepts a precise answer to that question must use; the other " +
-      "options are real concepts of the material that this answer does not need. Never put the answer sentence or a " +
-      "definition into keywordOptions; skip it when the open answer has fewer than two essential concepts.",
+      "An optional precision trainer outside the stage split: at most one per objective. Write it in the same response " +
+      "as the lesson_open_answer exercises, for one family of those open questions (the same objectiveId and familyId). " +
+      "keyOptionIds are the concepts a precise answer to that question must use, taken from its requiredElements; never " +
+      "a concept the question itself names. The other options are real concepts of the material that this answer does " +
+      "not need. Never put the answer sentence or a definition into keywordOptions; skip it when the open answer has " +
+      "fewer than two essential concepts.",
     lesson_match:
       "left is a concept, place or cause, right is its definition, feature or effect, both taken from the parent material. " +
       "The extraRight texts come from the material. Use it when the material pairs concepts with definitions, places " +

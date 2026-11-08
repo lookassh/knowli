@@ -5,6 +5,7 @@ import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { lessonInvariantCheck } from "../../../domain/lessons/agent/status";
 import type { LessonExerciseDraft } from "../../../domain/lessons/types";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { ClosedCheckInput, ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../../../ports/ai";
 import { GenerationProviderError } from "../../../ports/generation-error";
@@ -577,5 +578,146 @@ describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a
     );
     expect(result.objectives[0]!.exercises.filter((draft) => draft.exerciseType === "lesson_open_answer")).toHaveLength(3);
     expect(result.rejections.filter((entry) => entry.code === "rule_exercise")).toHaveLength(0);
+  });
+});
+
+describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)", () => {
+  /** Przedmiot jak szkoła (payload v3, typy szkoły), bez walidatorów przedmiotu poza regułą rodzin keywords. */
+  const kwSubject: SubjectModule = {
+    ...schoolSubject,
+    id: "kw_test",
+    validateExercise: () => [],
+    validatePoolExtra: (drafts) => {
+      const families = new Set(drafts.filter((d) => d.exerciseType === "lesson_open_answer").map((d) => `${d.objectiveId}|${d.familyId}`));
+      const issues = new Map<number, { rule: string; field: string; pl: string; found: string }[]>();
+      drafts.forEach((d, index) => {
+        if (d.exerciseType === "lesson_keywords" && !families.has(`${d.objectiveId}|${d.familyId}`)) {
+          issues.set(index, [{ rule: "school.keywords_family_missing", field: "familyId", pl: "brak rodziny", found: "no family" }]);
+        }
+      });
+      return issues as never;
+    },
+    agentPolicy: { ...schoolSubject.agentPolicy, sanitize: undefined },
+  };
+  const kwTopic = {
+    titlePl: "Rośliny",
+    objectives: [{ id: "kw_test.d1.plants", titlePl: "Części rośliny", descriptionEn: "Plant parts.", cards: [{ title: "Pojęcia", body: "korzeń — pobiera wodę" }] }],
+  };
+  const objectiveId = kwTopic.objectives[0]!.id;
+
+  const open = (n: number) => ({
+    objectiveId,
+    exerciseType: "lesson_open_answer",
+    instructionPl: "Odpowiedz.",
+    prompt: `Pytanie ${n}: co robi korzeń?`,
+    answer: `Korzeń ${n} pobiera wodę.`,
+    acceptedAnswers: [],
+    focus: ["pobiera wodę"],
+    familyId: `f${n}`,
+  });
+  const keywords = (familyId: string, tag = "") => ({
+    objectiveId,
+    exerciseType: "lesson_keywords",
+    instructionPl: `Wskaż pojęcia${tag}.`,
+    answer: "korzeń, woda",
+    acceptedAnswers: [],
+    focus: [],
+    familyId,
+    keywordOptions: [{ id: "k1", text: `korzeń${tag}` }, { id: "k2", text: `woda${tag}` }, { id: "k3", text: `liść${tag}` }, { id: "k4", text: `kwiat${tag}` }],
+    keyOptionIds: ["k1", "k2"],
+  });
+
+  class KwGenerator implements LessonPacketGenerator {
+    readonly calls: LessonPacketInput[] = [];
+    constructor(private readonly companions: (count: number) => unknown[]) {}
+    async generatePacket(input: LessonPacketInput, cost: RunCostSink): Promise<{ exercises: unknown[] }> {
+      this.calls.push(input);
+      cost.record(0.001);
+      if (input.type !== "lesson_open_answer") return { exercises: [] };
+      return { exercises: [...this.companions(input.count), ...Array.from({ length: input.count }, (_, i) => open(i))] };
+    }
+  }
+
+  /** Kontrola: keywords z tagiem „-bad” dostają dodatkowe pojęcie (zły komplet), pozostałe — klucz. */
+  function kwChecker(): ClosedExerciseChecker & { calls: ClosedCheckInput[] } {
+    const calls: ClosedCheckInput[] = [];
+    return {
+      calls,
+      checkClosed: async (input, cost) => {
+        calls.push(input);
+        cost.record(0.0005);
+        return {
+          results: input.items.map(({ view }) =>
+            view.includes("-bad") ? { answers: ["korzeń-bad", "woda-bad", "liść-bad"] } : { answers: ["korzeń", "woda"] },
+          ),
+        };
+      },
+    };
+  }
+
+  const kwRun = (generator: LessonPacketGenerator, checker: ClosedExerciseChecker, input: Partial<LessonPoolAgentRunInput> = {}) =>
+    runLessonBaselinePool(
+      { generator, checker, subjects: { getSubject: (id: string) => (id === kwSubject.id ? kwSubject : undefined) } },
+      runInput({ subjectId: kwSubject.id, objectiveSource: { source: "input", dynamicTopic: kwTopic }, ...input }),
+      new AbortController().signal,
+    );
+
+  const exercisesOf = (result: Awaited<ReturnType<typeof kwRun>>) => result.objectives.flatMap((objective) => objective.exercises);
+
+  it("checks keywords with the family question and admits them after the objective's other exercises", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Rodzina ostatniego pytania udziału, keywords pierwsze w odpowiedzi modelu.
+    const generator = new KwGenerator((count) => [keywords(`f${count - 4}`)]);
+    const checker = kwChecker();
+    const result = await kwRun(generator, checker);
+    const openPacket = generator.calls.find((call) => call.type === "lesson_open_answer")!;
+    expect(openPacket.pool.exerciseTypes).toEqual(["lesson_open_answer", "lesson_keywords"]);
+    const exercises = exercisesOf(result);
+    expect(exercises.at(-1)?.exerciseType).toBe("lesson_keywords");
+    expect(exercises.filter((draft) => draft.exerciseType === "lesson_open_answer").length).toBeGreaterThan(0);
+    const item = checker.calls.flatMap((call) => call.items).find(({ view }) => view.includes("Question:"))!;
+    expect(item.view).toContain(`Question: Pytanie ${openPacket.count - 4}: co robi korzeń?`);
+  });
+
+  it("rejects keywords without a valid family question by the family rule and keeps the open questions", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => [keywords("missing")]), checker);
+    const exercises = exercisesOf(result);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    expect(checker.calls.flatMap((call) => call.items).some(({ view }) => view.includes("Question:"))).toBe(false);
+    const rejected = result.objectives.flatMap((objective) => objective.rejections).find((entry) => entry.exerciseType === "lesson_keywords");
+    expect(rejected).toMatchObject({ code: "rule_exercise", ruleIds: ["school.keywords_family_missing"] });
+  });
+
+  it("checks both keywords and admits the first one that passes", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => [keywords("f0", "-bad"), keywords("f1")]), checker);
+    expect(checker.calls.flatMap((call) => call.items).filter(({ view }) => view.includes("Question:"))).toHaveLength(2);
+    const admitted = exercisesOf(result).filter((draft) => draft.exerciseType === "lesson_keywords");
+    expect(admitted).toHaveLength(1);
+    expect(admitted[0]!.familyId).toBe("f1");
+  });
+
+  it("admits at most one keywords per objective and keeps them out of the independent bucket", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await kwRun(new KwGenerator(() => [keywords("f0"), keywords("f1")]), kwChecker());
+    const exercises = exercisesOf(result);
+    expect(exercises.filter((draft) => draft.exerciseType === "lesson_keywords")).toHaveLength(1);
+    const without = await kwRun(new KwGenerator(() => []), kwChecker());
+    const openOf = (list: readonly LessonExerciseDraft[]) => list.filter((draft) => draft.exerciseType === "lesson_open_answer").length;
+    expect(openOf(exercises)).toBe(openOf(exercisesOf(without)));
+  });
+
+  it("keeps keywords with their family after run scoping", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await kwRun(new KwGenerator(() => [keywords("f0")]), kwChecker(), { familyScope: "r1" });
+    const exercises = exercisesOf(result);
+    const kw = exercises.find((draft) => draft.exerciseType === "lesson_keywords");
+    expect(kw).toBeDefined();
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer" && draft.familyId === kw!.familyId)).toBe(true);
+    expect(kw!.familyId).not.toBe("f0");
   });
 });

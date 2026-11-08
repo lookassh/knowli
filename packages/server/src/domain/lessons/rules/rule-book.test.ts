@@ -223,7 +223,6 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
   { point: "5. pola pytania otwartego szkoły", rule: "school.open_required_fields", phrase: "supplementaryElements (at most" },
   { point: "6. rodzina pytań", rule: "school.family_answer_differs", phrase: "character for character" },
   { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of requiredElements ids" },
-  { point: "6. słowa kluczowe z pytaniem", rule: "school.keywords_family_rejected", phrase: "the keywords are rejected too" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "one continuous fragment" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },

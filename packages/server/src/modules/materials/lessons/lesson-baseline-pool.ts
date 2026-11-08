@@ -97,6 +97,8 @@ export function packetInput(args: {
   readonly topic: LessonTopic;
   readonly objective: LearningObjective;
   readonly type: LessonExerciseType;
+  /** Typ zamawiany w tej samej paczce (keywords przy pytaniach otwartych, spec etapu 5 §5.1). */
+  readonly companion?: LessonExerciseType;
   readonly count: number;
   readonly withExamples: boolean;
   readonly material: string;
@@ -106,13 +108,14 @@ export function packetInput(args: {
   readonly avoidSentences: readonly string[];
   readonly timeoutMs: number;
 }): LessonPacketInput {
-  const single = { ...args.objective, exerciseTypes: [args.type] };
+  const types = args.companion === undefined ? [args.type] : [args.type, args.companion];
+  const single = { ...args.objective, exerciseTypes: types };
   const topic = { ...args.topic, objectives: args.topic.objectives.map((objective) => (objective.id === single.id ? single : objective)) };
   const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.graderAvailable, args.interests, {
     avoidSentences: args.avoidSentences,
   });
   return {
-    pool: { ...pool, exerciseTypes: [args.type], ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
+    pool: { ...pool, exerciseTypes: types, ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
     objective: { id: single.id, title: single.titlePl, cards: single.cards.map((card) => ({ title: card.title, body: card.body })) },
     type: args.type,
     count: args.count,
@@ -219,6 +222,7 @@ export async function runLessonBaselinePool(
         topic,
         objective: catalogObjective,
         type: packet.type,
+        ...(packet.companion === undefined ? {} : { companion: packet.companion }),
         count: packet.count,
         withExamples,
         material: input.material,
@@ -233,6 +237,7 @@ export async function runLessonBaselinePool(
         if (generated === STOPPED) return { kind: "stopped" };
         const objectiveId = catalogObjective.id;
         const valid: LessonExerciseDraft[] = [];
+        const companions: LessonExerciseDraft[] = [];
         for (const raw of generated.exercises) {
           stats.submitted += 1;
           const parsed = parseLessonRecord(raw, objectiveId, subject, input.familyScope);
@@ -242,7 +247,7 @@ export async function runLessonBaselinePool(
           }
           // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
           const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
-          if (draft.exerciseType !== packet.type) {
+          if (draft.exerciseType !== packet.type && draft.exerciseType !== packet.companion) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
             continue;
           }
@@ -251,22 +256,41 @@ export async function runLessonBaselinePool(
             reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(issues.map((issue) => issue.rule))]);
             continue;
           }
+          // Towarzysz paczki (keywords) poza zamówioną liczbą; limit na zagadnienie daje kubełek w walidacji puli.
+          if (draft.exerciseType === packet.companion) {
+            companions.push(draft);
+            continue;
+          }
           if (valid.length >= packet.count) {
             reject(objectiveId, draft.exerciseType, "limit", "over_count");
             continue;
           }
           valid.push(draft);
         }
-        const contract = closedCheckContract(packet.type);
-        if (contract === null) return { kind: "done", drafts: valid, examples: generated.examples };
+        // Keywords sprawdza się z pytaniem swojej rodziny z tej paczki; bez niego odpadają regułą rodzin przedmiotu.
+        const familyPrompts = new Map<string, string>();
+        for (const draft of valid) {
+          if (draft.familyId !== undefined && !familyPrompts.has(draft.familyId)) familyPrompts.set(draft.familyId, draft.prompt ?? "");
+        }
+        const withFamily = companions.filter((draft) => {
+          if (draft.familyId !== undefined && familyPrompts.has(draft.familyId)) return true;
+          const ruleIds = (subject.validatePoolExtra?.([draft], { material: input.material }).get(0) ?? []).map((issue) => issue.rule);
+          reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(ruleIds)]);
+          return false;
+        });
+        // Kontrakt per ćwiczenie: typ bez kontroli (pytanie otwarte) przechodzi bez zmian; w paczce jest najwyżej jeden kontrakt.
+        const unchecked = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) === null);
+        const toCheck = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) !== null);
+        const contract = toCheck.length === 0 ? null : closedCheckContract(toCheck[0]!.exerciseType);
+        if (contract === null) return { kind: "done", drafts: unchecked, examples: generated.examples };
         // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą; ćwiczenie z przypisaniem
         // to jedna pozycja na pole, a jego werdykt bierze swój wycinek wyników.
-        const checkable = valid.flatMap((draft) => {
-          const views = closedCheckItems(draft, topic);
+        const checkable = toCheck.flatMap((draft) => {
+          const views = closedCheckItems(draft, topic, draft.familyId === undefined ? undefined : familyPrompts.get(draft.familyId));
           if (views === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
           return views === null ? [] : [{ draft, views }];
         });
-        if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
+        if (checkable.length === 0) return { kind: "done", drafts: unchecked, examples: generated.examples };
         const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
         const checked = await callModel(checkerSlots, () =>
           deps.checker.checkClosed(
@@ -277,7 +301,7 @@ export async function runLessonBaselinePool(
         );
         if (checked === STOPPED) return { kind: "stopped" };
         stats.checkerCalls += 1;
-        const passed: LessonExerciseDraft[] = [];
+        const passed: LessonExerciseDraft[] = [...unchecked];
         let offset = 0;
         for (const { draft, views } of checkable) {
           const verdict = closedCheckVerdict(draft, checked.results.slice(offset, offset + views.length), subject.normalizer);
@@ -336,10 +360,14 @@ export async function runLessonBaselinePool(
     for (const outcome of outcomes) {
       const id = outcome.objective.id;
       const caps = outcome.plan.caps;
-      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0 };
-      const shares = outcome.packets.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
-      const reserves = outcome.packets.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
-      for (const draft of [...shares.flat(), ...reserves.flat()]) {
+      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0, keywords: 0 };
+      // Towarzysze paczek (keywords) na końcu zagadnienia: po udziałach i zapasach, więc ich rodzina pytań jest już przyjęta.
+      const isCompanion = (draft: LessonExerciseDraft, index: number) => draft.exerciseType === outcome.plan.packets[index]!.companion;
+      const own = outcome.packets.map((drafts, index) => drafts.filter((draft) => !isCompanion(draft, index)));
+      const shares = own.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
+      const reserves = own.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
+      const tails = outcome.packets.map((drafts, index) => drafts.filter((draft) => isCompanion(draft, index)));
+      for (const draft of [...shares.flat(), ...reserves.flat(), ...tails.flat()]) {
         const bucket = bucketOf(draft.exerciseType);
         if (used[bucket] >= caps[bucket]) {
           overflow.set(id, (overflow.get(id) ?? 0) + 1);

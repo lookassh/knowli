@@ -550,8 +550,7 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider, Close
         results: input.items.map((item) => {
           if (this.options.closed === "unknown") return { answers: null };
           if (input.contract === "order") return { verdict: "yes" };
-          const answer = fakeClosedAnswer(item.view);
-          return { answers: answer === null ? null : [answer] };
+          return { answers: fakeClosedAnswer(item.view) };
         }),
       };
     });
