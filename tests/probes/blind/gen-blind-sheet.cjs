@@ -10,7 +10,9 @@ const crypto = require("crypto");
 const { probePath } = require("./paths.cjs");
 
 const [, , lessonDirArg, seed = "gen-compare", prefix = "", judgeDirArg, rubricName = "rubric-stage2-v2.md"] = process.argv;
-if (!/^rubric-[a-z0-9-]+\.md$/u.test(rubricName) || !fs.existsSync(path.join(__dirname, rubricName))) throw new Error(`nieznana rubryka ${rubricName}`);
+// Rubryka tylko z listingu tego katalogu, nie ze ścieżki z argumentu.
+const rubricFile = fs.readdirSync(__dirname).find((name) => /^rubric-[a-z0-9-]+\.md$/u.test(name) && name === rubricName);
+if (rubricFile === undefined) throw new Error(`nieznana rubryka ${rubricName}`);
 const lessonDir = probePath(lessonDirArg, "katalog lekcji");
 const judgeDir = judgeDirArg === undefined ? path.join(lessonDir, "judge") : probePath(judgeDirArg, "katalog sędziego");
 if (fs.existsSync(path.join(lessonDir, "blind", "key.json"))) throw new Error(`${path.join(lessonDir, "blind", "key.json")} już istnieje — klucz ocenionego arkusza nie jest nadpisywany`);
@@ -99,6 +101,6 @@ fs.writeFileSync(path.join(outDir, "sheet.csv"), `${lines.join("\n")}\n`);
 fs.writeFileSync(path.join(outDir, "key.json"), JSON.stringify(key, null, 1));
 fs.mkdirSync(judgeDir, { recursive: true });
 fs.writeFileSync(path.join(judgeDir, "sheet.csv"), `${lines.join("\n")}\n`);
-fs.copyFileSync(path.join(__dirname, rubricName), path.join(judgeDir, "rubric.md"));
+fs.copyFileSync(path.join(__dirname, rubricFile), path.join(judgeDir, "rubric.md"));
 if (material !== undefined) fs.writeFileSync(path.join(judgeDir, "material.txt"), `${material}\n`);
 console.log(`models=${models.length} rows=${rows.length} → ${outDir}, sędzia: ${judgeDir}`);

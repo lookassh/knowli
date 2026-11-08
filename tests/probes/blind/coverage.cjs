@@ -4,6 +4,8 @@
 // alternatywa występuje (bez wielkości liter, na granicach słów) w kartach albo w polach ćwiczeń szkicu.
 // Ujawnienia: `exposureLeaks` zrzutu (raport szkicu w trybie pokrycia) — każde > 0 to błąd ścieżki zapisu.
 const fs = require("fs");
+const path = require("path");
+const { probePath } = require("./paths.cjs");
 
 /** Pozycje formularza: lista alternatyw, puste linie pominięte. */
 function parseForms(text) {
@@ -46,11 +48,15 @@ function coverageOf(forms, dump) {
 }
 
 if (require.main === module) {
-  const [, , formsPath, ...dumps] = process.argv;
-  if (formsPath === undefined || dumps.length === 0) throw new Error("użycie: coverage.cjs <forms.txt> <dump.json>…");
-  const forms = parseForms(fs.readFileSync(formsPath, "utf8"));
+  const [, , formsArg, ...dumpArgs] = process.argv;
+  if (formsArg === undefined || dumpArgs.length === 0) throw new Error("użycie: coverage.cjs <forms.txt> <dump.json>…");
+  // Formy tylko z fixture'ów sondy (nazwa z listingu katalogu), zrzuty tylko poza repozytorium.
+  const fixtures = path.join(__dirname, "..", "fixtures");
+  const formsName = fs.readdirSync(fixtures).find((name) => name.endsWith("-forms.txt") && name === path.basename(formsArg));
+  if (formsName === undefined) throw new Error(`nieznany plik form ${formsArg} (tylko tests/probes/fixtures/*-forms.txt)`);
+  const forms = parseForms(fs.readFileSync(path.join(fixtures, formsName), "utf8"));
   let leaks = 0;
-  for (const dumpPath of dumps) {
+  for (const dumpPath of dumpArgs.map((arg) => probePath(arg, "zrzut"))) {
     const result = coverageOf(forms, JSON.parse(fs.readFileSync(dumpPath, "utf8")));
     leaks += result.leaks;
     console.log(`${dumpPath}: braki ${result.missing.length}/${result.total}${result.missing.length > 0 ? ` (${result.missing.join(", ")})` : ""}; ujawnienia ${result.leaks}`);
