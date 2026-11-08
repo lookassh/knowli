@@ -12,6 +12,7 @@ import {
   MAX_DECK_COVER_BYTES,
   MULTIPART_OVERHEAD_BYTES,
   agentGrammarSubject,
+  agentSchoolSubject,
   createProductionSubjectRegistry,
   createSubjectRegistry,
   englishGrammarSubject,
@@ -25,14 +26,13 @@ import { parseLessonAgentProgress } from "../../packages/server/src/modules/mate
 import { currentPoolId, workerDatabaseUrl } from "../integration-worker-databases";
 
 /**
- * Rejestr produkcyjny z gramatyką na agencie puli (`agentGrammarSubject`): testy, które scenariuszują
- * `runObjective` albo zakładają kształt wyniku fake'a agenta, do etapu 5 (#362). Produkcja generuje
- * gramatykę przebiegiem bazowym.
+ * Rejestr produkcyjny z gramatyką i szkołą na agencie puli (`agentGrammarSubject`, `agentSchoolSubject` z kontrolami
+ * 2b): testy, które scenariuszują `runObjective` albo zakładają kształt wyniku fake'a agenta, do etapu 5c (#362).
+ * Produkcja generuje oba przedmioty przebiegiem bazowym.
  */
 export function agentGrammarRegistry() {
-  return createSubjectRegistry(
-    createProductionSubjectRegistry().listSubjects().map((subject) => (subject.id === agentGrammarSubject.id ? agentGrammarSubject : subject)),
-  );
+  const onAgent = new Map([agentGrammarSubject, agentSchoolSubject].map((subject) => [subject.id, subject] as const));
+  return createSubjectRegistry(createProductionSubjectRegistry().listSubjects().map((subject) => onAgent.get(subject.id) ?? subject));
 }
 
 type Pool = ReturnType<typeof createDatabase>["pool"];

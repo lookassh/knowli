@@ -191,10 +191,10 @@ Zasady:
 - **Prywatność i domyślni odbiorcy.** Każda lekcja idzie domyślnie do dwóch usług
   OpenRouter: generatora (`google/gemini-3.8-flash`: materiał, polecenie rodzica,
   karty, zdania do unikania, tematy zdań) i checkera innej rodziny
-  (`deepseek/deepseek-v4.1-flash-1017`: widok ćwiczenia, odpowiedź i warianty, a w
-  szkole także materiał i podpowiedź), a w szkole przy pełnym `UMIEM_GRADER_*` w
-  workerze także do usługi gradera (pytanie, kryteria, cytaty, odpowiedź próbna
-  modelu). Etap zagadnień szkoły i rozdziału (od etapu 5a) wysyła materiał i
+  (`deepseek/deepseek-v4.1-flash-1017`: widok ćwiczenia bez klucza, w keywords pytanie
+  otwarte rodziny, a w szkole także materiał lekcji). Od etapu 5b szkoła generuje się
+  przebiegiem bazowym bez podpowiedzi i bez kontroli 2b, więc grader w workerze nie
+  dostaje już odpowiedzi próbnych żadnego przedmiotu produkcyjnego. Etap zagadnień szkoły i rozdziału (od etapu 5a) wysyła materiał i
   polecenie rodzica do usługi `UMIEM_LLM_*` — może to być inny dostawca niż
   generator; panel pokazuje ją w `generationServices`. Nigdy imię, rok
   urodzenia, identyfikatory ani odpowiedzi dziecka.
@@ -205,7 +205,7 @@ Zasady:
   Instancja z LLM i TTS na `api.openai.com` i bez klucza OpenRouter nie wygeneruje
   już żadnej lekcji (słówka, TTS i ilustracje działają jak dotąd); wycofanie
   to `git revert` PR etapu 3 PR 2 (bez migracji bazy).
-- **Kontrole modelem w szkole (etap 2b).** W szkole checker sprawdza też
+- **Kontrole modelem w szkole (etap 2b; historyczne od etapu 5b — szkoła ich nie deklaruje, kod znika w 5c).** W szkole checker sprawdzał też
   podpowiedzi pytań otwartych (fakty spoza materiału, polszczyzna, odpowiedź
   podana innymi słowami) i pisze dwie różne poprawne odpowiedzi na każde pytanie
   otwarte, które ocenia prawdziwy grader. Wymaga to `UMIEM_GRADER_*` także w

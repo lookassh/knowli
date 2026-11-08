@@ -33,7 +33,7 @@ describe("fakePacketExercises for the chapter", () => {
           const views = closedCheckItems(draft, topic);
           if (views === null) continue;
           const results = views.map((view) =>
-            type === "lesson_order" ? { verdict: "yes" } : { answers: [fakeClosedAnswer(view)] },
+            type === "lesson_order" ? { verdict: "yes" } : { answers: fakeClosedAnswer(view) },
           );
           expect(closedCheckVerdict(draft, results, subject.normalizer)).toEqual({ pass: true });
         }

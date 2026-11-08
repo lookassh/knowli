@@ -6,8 +6,7 @@ import { materializeRawExercise } from "../../../domain/lessons/raw-materialize"
 import { rawShapeIssues } from "../../../domain/lessons/raw-shape";
 import { clip, defineRules, describeRule, issueFrom, ruleOf, type RuleId } from "../../../domain/lessons/rules/catalog";
 import { ruleTextContextOf } from "../../../domain/lessons/rules/rule-book";
-import { schoolAgentPolicy } from "../../../domain/lessons/subjects/school/agent-policy";
-import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
+import { agentSchoolPolicy as schoolAgentPolicy, agentSchoolSubject as schoolSubject } from "../../../domain/lessons/testing/agent-school-subject";
 import { randomJson } from "../../../domain/lessons/testing/random-json";
 import {
   A,
@@ -744,17 +743,6 @@ describe("submit — sędzia podpowiedzi i kontrola otwarta (etap 2b, szkoła)",
     expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1" }]);
   });
 
-  it("hint removed by sanitize skips judgeHints: podpowiedź zdradzająca odpowiedź znika przed sędzią, a nota nazywa regułę", async () => {
-    const grader = correctGrader();
-    const sanitizing = withAgentPolicy(school, { ...school.agentPolicy, sanitize: schoolAgentPolicy.sanitize! });
-    const tools = setup({ subject: sanitizing, grader });
-    const outcome = await tools.tools.submit({ exercises: [schoolOpen(1, { hint: "To jest odpowiedź wzorcowa." })] });
-    expect(tools.checker.hintCalls).toHaveLength(0);
-    expect(tools.stats.hintChecks ?? 0).toBe(0);
-    expect(bare(outcome.results)).toEqual([{ index: 0, accepted: "ex1", notes: [expect.stringMatching(/^\[hint\.reveals_words\] hint: removed: shares /u)] }]);
-    expect(poolOf(tools.state(), A)[0]!.draft).not.toHaveProperty("hint");
-  });
-
   it("grammar with grader makes no open calls: przedmiot bez list etapu 2b nie woła sędziego, rozwiązującego ani gradera", async () => {
     const grader = correctGrader();
     const tools = setup({ grader, checker: { solve: () => ["odpowiedź wzorcowa 1"] } });
@@ -1125,24 +1113,6 @@ describe("wynik dla modelu — format z katalogu reguł (spec katalogu reguł §
     expect(Object.keys(outcome.rules ?? {})).toEqual(["check.variants"]);
     expect(tools.stats.variantsRemoved).toBe(2);
     expect(tools.stats.hintsRemoved ?? 0).toBe(0);
-  });
-
-  it("licznik hintsRemoved: usunięta podpowiedź pytania otwartego (nota hint.reveals_words); cicha poza nim się nie liczy", async () => {
-    // Katalog szkoły: nota hint.reveals_words ma opis reguły w mapie `rules`.
-    const sanitizing = { ...withAgentPolicy(subject, { sanitize: schoolAgentPolicy.sanitize!, blindSolveTypes: [], variantCheckTypes: [] }), rules: { ...subject.rules, ...schoolSubject.rules } };
-    const tools = setup({ subject: sanitizing });
-    const outcome = await tools.tools.submit({
-      exercises: [
-        { ...open(A, "Pytanie otwarte numer 1?", "odpowiedź wzorcowa 1"), hint: "To jest odpowiedź wzorcowa." },
-        { ...choice(A, 2), hint: "ZNACZNIK" },
-      ],
-    });
-    expect(outcome.results.map((result) => ("accepted" in result ? result.notes : undefined))).toEqual([
-      [expect.stringMatching(/^\[hint\.reveals_words\] hint: removed: shares /u)],
-      [expect.stringMatching(/^\[school\.hint_open_answer_only\] hint: removed: lesson_choice takes no hint/u)],
-    ]);
-    expect(Object.keys(outcome.rules ?? {}).sort()).toEqual(["hint.reveals_words", "school.hint_open_answer_only"]);
-    expect(tools.stats.hintsRemoved).toBe(1);
   });
 
   it("licznik quotesSnapped: cytat zastąpiony dokładnym fragmentem materiału", async () => {

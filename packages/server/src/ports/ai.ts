@@ -226,6 +226,8 @@ export interface ClosedCheckInput {
   readonly contract: "choice" | "order";
   readonly items: readonly { readonly view: string }[];
   readonly timeoutMs: number;
+  /** Materiał lekcji — tylko przedmiot z `agentPolicy.checkerNeedsMaterial` (szkoła, etap 5b §5.2). */
+  readonly material?: string;
 }
 
 export interface ClosedExerciseChecker {

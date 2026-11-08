@@ -173,6 +173,7 @@ const STIMULUS_ECHO_LENGTH = 40;
 const STIMULUS_FIELDS = ["stem", "statement", "prompt", "clozeText", "instructionPl", "familyId"] as const;
 
 /** Reguła, której nota oznacza usuniętą podpowiedź pytania otwartego (licznik `hintsRemoved`). */
+// shortcut: reguły nie ma od etapu 5b, więc licznik daje 0; kontrakt `cleanupCounts` i panel tracą go razem z agentem w 5c.
 const HINT_REMOVED_RULE = "hint.reveals_words";
 
 /**

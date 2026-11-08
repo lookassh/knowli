@@ -436,14 +436,7 @@ export interface SubjectModule {
    */
   validatePoolExtra?(
     drafts: readonly LessonExerciseDraft[],
-    ctx: {
-      readonly material: string;
-      /**
-       * Tylko przyjmowanie agenta: `familyId` pytań otwartych odrzuconych w bieżącym
-       * wywołaniu (kaskada słów kluczowych). Edycja i publikacja rodzica go nie podają.
-       */
-      readonly rejectedFamilies?: ReadonlySet<string>;
-    },
+    ctx: { readonly material: string },
   ): ReadonlyMap<number, readonly LessonRuleIssue[]>;
   /**
    * Przedmiot katalogowy generowany przebiegiem bazowym (etap 4 epiku #358, `runLessonBaselinePool`):

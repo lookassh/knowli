@@ -4,7 +4,7 @@ import { lessonRulesStep, snapshotOf, submitExamples } from "../../../domain/les
 import { orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../../../domain/lessons/closed-check";
-import { bucketOf, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
+import { bucketOf, KEYWORDS_PER_OBJECTIVE, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type { AgentObjective, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -97,6 +97,8 @@ export function packetInput(args: {
   readonly topic: LessonTopic;
   readonly objective: LearningObjective;
   readonly type: LessonExerciseType;
+  /** Typ zamawiany w tej samej paczce (keywords przy pytaniach otwartych, spec etapu 5 §5.1). */
+  readonly companion?: LessonExerciseType;
   readonly count: number;
   readonly withExamples: boolean;
   readonly material: string;
@@ -106,13 +108,14 @@ export function packetInput(args: {
   readonly avoidSentences: readonly string[];
   readonly timeoutMs: number;
 }): LessonPacketInput {
-  const single = { ...args.objective, exerciseTypes: [args.type] };
+  const types = args.companion === undefined ? [args.type] : [args.type, args.companion];
+  const single = { ...args.objective, exerciseTypes: types };
   const topic = { ...args.topic, objectives: args.topic.objectives.map((objective) => (objective.id === single.id ? single : objective)) };
   const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.graderAvailable, args.interests, {
     avoidSentences: args.avoidSentences,
   });
   return {
-    pool: { ...pool, exerciseTypes: [args.type], ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
+    pool: { ...pool, exerciseTypes: types, ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
     objective: { id: single.id, title: single.titlePl, cards: single.cards.map((card) => ({ title: card.title, body: card.body })) },
     type: args.type,
     count: args.count,
@@ -157,6 +160,17 @@ async function allSettledOrThrow<T>(tasks: readonly Promise<T>[]): Promise<T[]> 
   const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
   if (failed !== undefined) throw failed.reason;
   return results.map((result) => (result as PromiseFulfilledResult<T>).value);
+}
+
+/** Stabilnie: najpierw pierwszy członek każdej rodziny (`familyId`), potem drugi itd.; ćwiczenia bez rodziny jak pierwsi. */
+function familiesFirst(drafts: readonly LessonExerciseDraft[]): LessonExerciseDraft[] {
+  const seen = new Map<string, number>();
+  const ranked = drafts.map((draft, index) => {
+    const rank = draft.familyId === undefined ? 0 : (seen.get(draft.familyId) ?? 0);
+    if (draft.familyId !== undefined) seen.set(draft.familyId, rank + 1);
+    return { draft, index, rank };
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map(({ draft }) => draft);
 }
 
 export async function runLessonBaselinePool(
@@ -219,6 +233,7 @@ export async function runLessonBaselinePool(
         topic,
         objective: catalogObjective,
         type: packet.type,
+        ...(packet.companion === undefined ? {} : { companion: packet.companion }),
         count: packet.count,
         withExamples,
         material: input.material,
@@ -233,6 +248,7 @@ export async function runLessonBaselinePool(
         if (generated === STOPPED) return { kind: "stopped" };
         const objectiveId = catalogObjective.id;
         const valid: LessonExerciseDraft[] = [];
+        const companions: LessonExerciseDraft[] = [];
         for (const raw of generated.exercises) {
           stats.submitted += 1;
           const parsed = parseLessonRecord(raw, objectiveId, subject, input.familyScope);
@@ -242,7 +258,7 @@ export async function runLessonBaselinePool(
           }
           // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
           const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
-          if (draft.exerciseType !== packet.type) {
+          if (draft.exerciseType !== packet.type && draft.exerciseType !== packet.companion) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
             continue;
           }
@@ -251,29 +267,63 @@ export async function runLessonBaselinePool(
             reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(issues.map((issue) => issue.rule))]);
             continue;
           }
+          // Towarzysz paczki (keywords) poza zamówioną liczbą; limit na zagadnienie daje kubełek w walidacji puli,
+          // a do kontroli idzie najwyżej jeden zapasowy ponad niego (koszt pozycji z materiałem).
+          if (draft.exerciseType === packet.companion) {
+            if (companions.length >= KEYWORDS_PER_OBJECTIVE + 1) reject(objectiveId, draft.exerciseType, "limit", "over_count");
+            else companions.push(draft);
+            continue;
+          }
           if (valid.length >= packet.count) {
             reject(objectiveId, draft.exerciseType, "limit", "over_count");
             continue;
           }
           valid.push(draft);
         }
-        const contract = closedCheckContract(packet.type);
-        if (contract === null) return { kind: "done", drafts: valid, examples: generated.examples };
+        // Keywords sprawdza się z pytaniem swojej rodziny z tej paczki; bez niego odpadają regułą rodzin przedmiotu.
+        const familyPrompts = new Map<string, string>();
+        for (const draft of valid) {
+          if (draft.familyId !== undefined && !familyPrompts.has(draft.familyId)) familyPrompts.set(draft.familyId, draft.prompt ?? "");
+        }
+        const withFamily = companions.filter((draft) => {
+          if (draft.familyId !== undefined && familyPrompts.has(draft.familyId)) return true;
+          const ruleIds = (subject.validatePoolExtra?.([draft], { material: input.material }).get(0) ?? []).map((issue) => issue.rule);
+          reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(ruleIds)]);
+          return false;
+        });
+        // Kontrakt per ćwiczenie: typ bez kontroli (pytanie otwarte) przechodzi bez zmian; w paczce jest najwyżej jeden kontrakt.
+        const unchecked = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) === null);
+        const toCheck = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) !== null);
+        const contract = toCheck.length === 0 ? null : closedCheckContract(toCheck[0]!.exerciseType);
+        if (contract === null) return { kind: "done", drafts: unchecked, examples: generated.examples };
         // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą; ćwiczenie z przypisaniem
         // to jedna pozycja na pole, a jego werdykt bierze swój wycinek wyników.
-        const checkable = valid.flatMap((draft) => {
-          const views = closedCheckItems(draft, topic);
+        const checkable = toCheck.flatMap((draft) => {
+          const views = closedCheckItems(draft, topic, draft.familyId === undefined ? undefined : familyPrompts.get(draft.familyId));
           if (views === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
           return views === null ? [] : [{ draft, views }];
         });
-        if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
+        if (checkable.length === 0) return { kind: "done", drafts: unchecked, examples: generated.examples };
         const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
-        const checked = await callModel(checkerSlots, () =>
-          deps.checker.checkClosed({ contract, items, timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
-        );
-        if (checked === STOPPED) return { kind: "stopped" };
+        let checked;
+        try {
+          checked = await callModel(checkerSlots, () =>
+            deps.checker.checkClosed(
+              { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.agentPolicy.checkerNeedsMaterial ? { material: input.material } : {}) },
+              sink,
+              runDeadline.signal,
+            ),
+          );
+        } catch (error) {
+          if (signal.aborted || !(error instanceof GenerationProviderError) || unchecked.length === 0) throw error;
+          // Awaria kontroli opcjonalnych keywords nie zabiera paczce pytań otwartych (bez kontroli).
+          for (const { draft } of checkable) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
+          return { kind: "done", drafts: unchecked, examples: generated.examples };
+        }
+        // Budżet albo termin przed kontrolą: opłacone pytania otwarte (bez kontroli) zostają, keywords nie.
+        if (checked === STOPPED) return unchecked.length === 0 ? { kind: "stopped" } : { kind: "done", drafts: unchecked, examples: generated.examples };
         stats.checkerCalls += 1;
-        const passed: LessonExerciseDraft[] = [];
+        const passed: LessonExerciseDraft[] = [...unchecked];
         let offset = 0;
         for (const { draft, views } of checkable) {
           const verdict = closedCheckVerdict(draft, checked.results.slice(offset, offset + views.length), subject.normalizer);
@@ -332,10 +382,15 @@ export async function runLessonBaselinePool(
     for (const outcome of outcomes) {
       const id = outcome.objective.id;
       const caps = outcome.plan.caps;
-      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0 };
-      const shares = outcome.packets.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
-      const reserves = outcome.packets.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
-      for (const draft of [...shares.flat(), ...reserves.flat()]) {
+      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0, keywords: 0 };
+      // Towarzysze paczek (keywords) na końcu zagadnienia: po udziałach i zapasach, więc ich rodzina pytań jest już przyjęta.
+      const isCompanion = (draft: LessonExerciseDraft, index: number) => draft.exerciseType === outcome.plan.packets[index]!.companion;
+      // Rodziny pytań najpierw pierwszymi członkami: model pisze rodziny po kolei, a udział etapu brałby jedną rodzinę.
+      const own = outcome.packets.map((drafts, index) => familiesFirst(drafts.filter((draft) => !isCompanion(draft, index))));
+      const shares = own.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
+      const reserves = own.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
+      const tails = outcome.packets.map((drafts, index) => drafts.filter((draft) => isCompanion(draft, index)));
+      for (const draft of [...shares.flat(), ...reserves.flat(), ...tails.flat()]) {
         const bucket = bucketOf(draft.exerciseType);
         if (used[bucket] >= caps[bucket]) {
           overflow.set(id, (overflow.get(id) ?? 0) + 1);

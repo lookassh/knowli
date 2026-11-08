@@ -123,21 +123,14 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
           lessonAgentPublic: { ...agent, ...(openCheckService ? { openCheckService } : {}) },
         }));
 
-      it("szkoła: pole w DTO", () => {
+      it("żaden przedmiot produkcyjny bez kontroli otwartej (szkoła od etapu 5b): bez pola, generowanie dostępne", () => {
         const catalog = withOpen(OPEN);
-        expect(catalog.subjects.find((s) => s.id === "school")!.openCheckService).toBe(OPEN);
+        expect(catalog.lessonGenerationAvailable).toBe(true);
+        for (const id of ["school", "english_grammar", "english_chapter"]) {
+          expect(catalog.subjects.find((s) => s.id === id)).not.toHaveProperty("openCheckService");
+        }
+        expect(catalog.subjects.find((s) => s.id === "school")!.checkServiceIncludesMaterial).toBe(true);
         expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
-      });
-
-      it("gramatyka i rozdział (puste openAnswerCheckTypes): bez pola", () => {
-        const catalog = withOpen(OPEN);
-        expect(catalog.subjects.find((s) => s.id === "english_grammar")).not.toHaveProperty("openCheckService");
-        expect(catalog.subjects.find((s) => s.id === "english_chapter")).not.toHaveProperty("openCheckService");
-      });
-
-      it("bez openCheckService w konfiguracji agenta: bez pola", () => {
-        const catalog = withOpen();
-        expect(catalog.subjects.find((s) => s.id === "school")).not.toHaveProperty("openCheckService");
       });
     });
   });

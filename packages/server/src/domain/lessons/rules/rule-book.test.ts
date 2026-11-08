@@ -181,17 +181,17 @@ describe("księga reguł — przykłady kolejności", () => {
   const book = lessonRuleBook(school, contextFor(school, school.exerciseTypes, { listenChoice: false, voiceTones: true }));
   const block = (type: LessonExerciseType) => book.types.find((entry) => entry.type === type)!.rules.map((line) => line.id);
 
-  it("pytanie otwarte zaczyna się od podpowiedzi, potem rodzina", () => {
-    expect(block("lesson_open_answer").slice(0, 4)).toEqual([
-      "hint.reveals_words",
+  it("pytanie otwarte zaczyna się od rodziny (szkoła bez podpowiedzi, etap 5b)", () => {
+    expect(block("lesson_open_answer").slice(0, 3)).toEqual([
       "school.family_answer_differs",
       "school.family_elements_differ",
       "school.family_prompt_repeated",
     ]);
   });
 
-  it("ogólne zaczynają się od cytatów, rachunek od kształtu rachunku", () => {
-    expect(book.general.slice(0, 3).map((line) => line.id)).toEqual([
+  it("ogólne zaczynają się od braku podpowiedzi i cytatów, rachunek od kształtu rachunku", () => {
+    expect(book.general.slice(0, 4).map((line) => line.id)).toEqual([
+      "school.hint_open_answer_only",
       "school.quote_in_material",
       "school.quote_required",
       "school.quote_too_short",
@@ -199,8 +199,8 @@ describe("księga reguł — przykłady kolejności", () => {
     expect(block("lesson_calculation").slice(0, 3)).toEqual(["calculation.family_slug", "calculation.params", "calculation.tolerance"]);
   });
 
-  it("kontrole: sędzia podpowiedzi przed pozostałymi", () => {
-    expect(book.checks.map((line) => line.id)).toEqual(["check.hint_judge", "check.blind_solve", "check.open_answer", "check.variants"]);
+  it("kontrole szkoły bez sędziego podpowiedzi i kontroli otwartej (etap 5b)", () => {
+    expect(book.checks.map((line) => line.id)).toEqual(["check.blind_solve", "check.variants"]);
   });
 });
 
@@ -210,12 +210,7 @@ describe("księga reguł — przykłady kolejności", () => {
  * którego księga ją zawiera (albo tylko wskazanych przedmiotów — dopiski).
  */
 const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; readonly phrase: string; readonly subjects?: readonly string[] }[] = [
-  // Przegląd końcowy (I3, M1): podpowiedź opcjonalna, nigdy nie opisuje odpowiedzi, próg słów bez „rounded up”.
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "short hint whenever the material allows a safe one" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "never names or describes the answer, even indirectly" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "it must contain fewer than half" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "Words that also appear in the question" },
-  { point: "1. podpowiedź pytania otwartego", rule: "check.hint_judge", phrase: "null only if no safe hint exists" },
+  { point: "1. szkoła bez podpowiedzi (etap 5b)", rule: "school.hint_open_answer_only", phrase: "School exercises have no hint" },
   { point: "2. tolerancja rachunku", rule: "calculation.tolerance", phrase: "out or set it to zero" },
   { point: "3. rodzina rachunku", rule: "calculation.family_slug", phrase: "scale-distance-km" },
   { point: "4. pusty napis", rule: "field.empty", phrase: "does not apply is null" },
@@ -223,12 +218,10 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
   { point: "5. pola pytania otwartego szkoły", rule: "school.open_required_fields", phrase: "supplementaryElements (at most" },
   { point: "6. rodzina pytań", rule: "school.family_answer_differs", phrase: "character for character" },
   { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of requiredElements ids" },
-  { point: "6. słowa kluczowe z pytaniem", rule: "school.keywords_family_rejected", phrase: "the keywords are rejected too" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "one continuous fragment" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "card example" },
-  { point: "9. „dowolne dwa”", rule: "check.open_answer", phrase: "any two" },
   { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "child's view" },
   { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "position by position" },
   {

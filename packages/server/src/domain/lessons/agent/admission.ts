@@ -145,19 +145,13 @@ export interface LessonSnapshot {
 
 type LessonRules = Omit<LessonSnapshot, "leaked">;
 
-/** Rodziny pytań otwartych odrzuconych w bieżącym wywołaniu (kaskada słów kluczowych przedmiotu). */
-type RejectedFamilies = ReadonlySet<string>;
-
-const NO_REJECTED_FAMILIES: RejectedFamilies = new Set();
-
-function lessonRules(state: LessonAgentState, ctx: AgentCheckContext, rejectedFamilies: RejectedFamilies = NO_REJECTED_FAMILIES): LessonRules {
+function lessonRules(state: LessonAgentState, ctx: AgentCheckContext): LessonRules {
   const entries = orderedEntries(state);
   const lesson = entries.map((entry) => entry.draft);
   const pool = validatePoolIssues(lesson, ctx.subject, state.topic, { existingExercises: [], agent: true });
   const poolRejected = new Map(pool.rejected.map((item) => [item.exercise, item.issues] as const));
   const extraRejected = new Map<LessonExerciseDraft, readonly LessonRuleIssue[]>();
-  const extraCtx = rejectedFamilies.size === 0 ? { material: ctx.material } : { material: ctx.material, rejectedFamilies };
-  for (const [index, issues] of ctx.subject.validatePoolExtra?.(lesson, extraCtx) ?? []) {
+  for (const [index, issues] of ctx.subject.validatePoolExtra?.(lesson, { material: ctx.material }) ?? []) {
     const draft = lesson[index];
     if (draft !== undefined && issues.length > 0) extraRejected.set(draft, issues);
   }
@@ -199,11 +193,6 @@ function processingOrder(keywords: readonly boolean[]): number[] {
 
 function isKeywords(draft: LessonExerciseDraft): boolean {
   return draft.exerciseType === "lesson_keywords";
-}
-
-/** Rodzina odrzuconego kandydata, której słowa kluczowe z tej samej paczki dostają regułę kaskady. */
-function openFamilyOf(draft: LessonExerciseDraft): string | undefined {
-  return draft.exerciseType === "lesson_open_answer" && draft.familyId ? draft.familyId : undefined;
 }
 
 function objectiveOf(state: LessonAgentState, objectiveId: string): AgentObjective {
@@ -324,7 +313,6 @@ function deterministicSteps(
   draft: LessonExerciseDraft,
   before: LessonSnapshot,
   ctx: AgentCheckContext,
-  rejectedFamilies: RejectedFamilies,
 ): StepOutcome {
   if (draft.objectiveId !== objectiveId) throw new Error(`draft objective ${draft.objectiveId} differs from ${objectiveId}`);
   const objective = objectiveOf(state, objectiveId);
@@ -356,7 +344,7 @@ function deterministicSteps(
   // 2. Reguły ćwiczenia i bramka przedmiotu.
   const exerciseRejected = exerciseRejection(draft, objective, state, ctx);
   if (exerciseRejected !== undefined) return { ok: false, rejection: exerciseRejected };
-  return lessonRulesStep(state, objectiveId, draft, before, ctx, rejectedFamilies);
+  return lessonRulesStep(state, objectiveId, draft, before, ctx);
 }
 
 /**
@@ -369,7 +357,6 @@ export function lessonRulesStep(
   draft: LessonExerciseDraft,
   before: LessonSnapshot,
   ctx: AgentCheckContext,
-  rejectedFamilies: RejectedFamilies = NO_REJECTED_FAMILIES,
 ): StepOutcome {
   const pool = poolOf(state, objectiveId);
   // Kandydat jako własny obiekt (ochronnie): porównania zbiorów po referencji odróżniają go od
@@ -381,7 +368,7 @@ export function lessonRulesStep(
   const next = withPool(taken.state, objectiveId, [...pool, entry]);
 
   // 3. Reguły lekcji: kandydat odrzucony albo nowe odrzucenie innego ćwiczenia.
-  const rules = lessonRules(next, ctx, rejectedFamilies);
+  const rules = lessonRules(next, ctx);
   const ownPoolIssues = rules.poolRejected.get(candidate);
   if (ownPoolIssues !== undefined) return reject("lesson", "lesson_pool", ownPoolIssues);
   const ownExtraIssues = rules.extraRejected.get(candidate);
@@ -408,9 +395,8 @@ function reject(kind: Rejection["kind"], code: string, issues: readonly LessonRu
 /**
  * Sanityzacja i kroki 1–4 dla paczki (§3.3) na roboczej kopii stanu: kolejni
  * kandydaci są do niej dokładani, więc duplikat w paczce odpada już tutaj.
- * Słowa kluczowe idą na końcu paczki; wyniki w indeksach wejścia. Rodziny
- * pytań otwartych odrzuconych wcześniej w paczce dostają słowa kluczowe jako
- * kaskadę (`rejectedFamilies` w `validatePoolExtra`). Stan wejściowy się nie zmienia.
+ * Słowa kluczowe idą na końcu paczki (po pytaniach otwartych swojej rodziny);
+ * wyniki w indeksach wejścia. Stan wejściowy się nie zmienia.
  */
 export function precheckBatch(
   state: LessonAgentState,
@@ -419,20 +405,14 @@ export function precheckBatch(
   ctx: AgentCheckContext,
 ): PrecheckEntry[] {
   const results: PrecheckEntry[] = new Array(drafts.length);
-  const rejectedFamilies = new Set<string>();
   let working = state;
   let before = snapshotOf(state, ctx);
   for (const index of processingOrder(drafts.map(isKeywords))) {
     const draft = drafts[index]!;
-    const rejectWith = (rejection: Rejection) => {
-      const family = openFamilyOf(draft);
-      if (family !== undefined) rejectedFamilies.add(family);
-      results[index] = { pass: false, rejection };
-    };
     const sanitized = sanitizeCandidate(draft, ctx);
-    const outcome = deterministicSteps(working, objectiveId, sanitized.draft, before, ctx, rejectedFamilies);
+    const outcome = deterministicSteps(working, objectiveId, sanitized.draft, before, ctx);
     if (!outcome.ok) {
-      rejectWith(outcome.rejection);
+      results[index] = { pass: false, rejection: outcome.rejection };
       continue;
     }
     working = outcome.state;
@@ -614,8 +594,6 @@ export function admitBatch(
   }
   const results: AdmitEntry[] = new Array(prechecked.length);
   const order = processingOrder(prechecked.map((entry) => entry.pass && isKeywords(entry.draft)));
-  // Rodziny pytań otwartych odrzuconych tutaj; odrzucone w `precheckBatch` odrzuciły tam już swoje słowa kluczowe.
-  const rejectedFamilies = new Set<string>();
   let current = state;
   let before = snapshotOf(state, ctx);
   for (const index of order) {
@@ -632,11 +610,9 @@ export function admitBatch(
     const added = solverVariantOf(cleaned, removed, check, ctx);
     const draft = added === undefined ? cleaned : { ...cleaned, acceptedAnswers: [...cleaned.acceptedAnswers, added] };
     const rejectWith = (rejection: Rejection) => {
-      const family = openFamilyOf(draft);
-      if (family !== undefined) rejectedFamilies.add(family);
       results[index] = { rejected: rejection };
     };
-    let outcome = removed.length === 0 && added === undefined ? deterministicSteps(current, objectiveId, draft, before, ctx, rejectedFamilies) : undefined;
+    let outcome = removed.length === 0 && added === undefined ? deterministicSteps(current, objectiveId, draft, before, ctx) : undefined;
     if (outcome !== undefined && !outcome.ok) {
       rejectWith(outcome.rejection);
       continue;
@@ -646,7 +622,7 @@ export function admitBatch(
       rejectWith(checked.rejection);
       continue;
     }
-    outcome ??= deterministicSteps(current, objectiveId, draft, before, ctx, rejectedFamilies);
+    outcome ??= deterministicSteps(current, objectiveId, draft, before, ctx);
     if (!outcome.ok) {
       // Dopisany wariant nie przeszedł walidacji (duplikat, limit, ujawnienie): rozjazd liczy się jak bez niego.
       const mismatch = added === undefined ? undefined : checkerSteps(cleaned, removed, check, ctx);

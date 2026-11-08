@@ -222,7 +222,7 @@ describe("przyjmowanie paczki — kody i powody odrzuceń (spec katalogu reguł 
   });
 });
 
-describe("przyjmowanie paczki — kaskada słów kluczowych szkoły (spec katalogu reguł §4.4)", () => {
+describe("przyjmowanie paczki — słowa kluczowe szkoły po pytaniu otwartym swojej rodziny", () => {
   const OBJECTIVE = "school.ddeck.fotosynteza";
   const QUOTE = "wytwarza cukry";
   const material = `Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, ${QUOTE}.`;
@@ -272,27 +272,12 @@ describe("przyjmowanie paczki — kaskada słów kluczowych szkoły (spec katalo
     return "rejected" in entry ? entry.rejected.ruleIds : [];
   };
 
-  it("szkice kaskady są poprawne razem (bez odrzucenia rodziny)", () => {
+  it("słowa kluczowe przed pytaniem rodziny w paczce przechodzą (przetwarzane na końcu)", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft, openDraft()], context);
     expect(prechecked.map(codeOf)).toEqual(["pass", "pass"]);
   });
 
-  it("pytanie otwarte odrzucone w precheck: słowa kluczowe z tej paczki dostają school.keywords_family_rejected", () => {
-    const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft, openDraft({ questionType: undefined })], context);
-    expect(prechecked.map(codeOf)).toEqual(["lesson_extra", "rule_exercise"]);
-    expect(ruleIdsOf(prechecked[0])).toEqual(["school.keywords_family_rejected"]);
-  });
-
-  it("pytanie otwarte odrzucone przez kontrolę otwartą w admit: słowa kluczowe też dostają regułę kaskady", () => {
-    const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft, openDraft()], context);
-    const failed = { answer: "zła", knowledge: "incorrect", missing: [], wrong: ["zła"] } as const;
-    const checks = [NA_CHECKS, { ...NA_CHECKS, open: { kind: "done", value: { answers: [failed, failed] } } } as const];
-    const admitted = admitBatch(state(), OBJECTIVE, prechecked, checks, context);
-    expect(admitted.results.map(codeOf)).toEqual(["lesson_extra", "open_not_accepted"]);
-    expect(ruleIdsOf(admitted.results[0])).toEqual(["school.keywords_family_rejected"]);
-  });
-
-  it("bez rodziny w lekcji i bez jej odrzucenia: zwykłe school.keywords_family_missing", () => {
+  it("bez rodziny w lekcji: school.keywords_family_missing", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft], context);
     expect(ruleIdsOf(prechecked[0])).toEqual(["school.keywords_family_missing"]);
   });

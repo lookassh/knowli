@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AgentObjective, LessonExerciseDraft } from "../../types";
-import { baseNormalizer } from "../../normalize";
-import { createProductionSubjectRegistry } from "..";
 import { schoolAgentPolicy } from "./agent-policy";
 import { validateLessonExercise } from "../../pool-validation";
 import { describeRule, ruleOf, type RuleId, type RuleTextContext } from "../../rules/catalog";
 import { schoolSubject } from "./module";
-
-/** Druga część noty usuniętej podpowiedzi: ćwiczenie zostaje w puli bez podpowiedzi (co dalej). */
-const HINT_NEXT_STEP = "; the exercise is in the pool without a hint (to give it a safe hint, remove_exercise it and submit it again)";
 
 const TEXT_CTX: RuleTextContext = { answerMaxLength: 600, groundingRequired: true };
 
@@ -32,11 +27,6 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolSubject.agentPolicy).toBe(schoolAgentPolicy);
   });
 
-  it("bramka podpowiedzi używa normalizatora przedmiotu (skrót `baseNormalizer` w polityce)", () => {
-    // Polityka nie importuje modułu (cykl), więc normalizator jest wpisany wprost — musi być tym samym.
-    expect(schoolSubject.normalizer).toBe(baseNormalizer);
-  });
-
   it("ma zapas samodzielnych 1 i luz 2, a checker dostaje materiał", () => {
     expect(schoolAgentPolicy.independentReserve).toBe(1);
     expect(schoolAgentPolicy.slack).toBe(2);
@@ -57,44 +47,12 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolAgentPolicy.variantCheckTypes).toEqual(["lesson_gap"]);
   });
 
-  it("sędzia podpowiedzi i kontrola otwarta dotyczą wyłącznie pytania otwartego", () => {
-    expect(schoolAgentPolicy.hintJudgeTypes).toEqual(["lesson_open_answer"]);
-    expect(schoolAgentPolicy.openAnswerCheckTypes).toEqual(["lesson_open_answer"]);
-    const subjectTypes = new Set<string>(schoolSubject.exerciseTypes);
-    for (const type of [...(schoolAgentPolicy.hintJudgeTypes ?? []), ...(schoolAgentPolicy.openAnswerCheckTypes ?? [])]) {
-      expect(subjectTypes.has(type)).toBe(true);
-    }
-  });
-
-  it("każdy zarejestrowany przedmiot: sędzia podpowiedzi wymaga materiału i dopisku, a żaden typ nie jest w obu listach wariantów i kontroli otwartej", () => {
-    const policies = createProductionSubjectRegistry()
-      .listSubjects()
-      .map((subject) => [subject.id, subject.agentPolicy] as const);
-    // Szkoła ma obie listy: niezmiennik nie jest pusty.
-    expect(policies.map(([id]) => id)).toContain(schoolSubject.id);
-    for (const [id, policy] of policies) {
-      if ((policy.hintJudgeTypes ?? []).length > 0) {
-        expect(policy.checkerNeedsMaterial, id).toBe(true);
-        expect(policy.ruleNotes?.["check.hint_judge"]?.length ?? 0, id).toBeGreaterThan(0);
-      }
-      // Ocena przyjęta tylko dzięki usuniętemu wariantowi staje się `unavailable` (spec katalogu
-      // reguł §5.3); dziś żaden przedmiot nie łączy obu kontroli w jednym typie.
-      const open = new Set(policy.openAnswerCheckTypes ?? []);
-      expect(policy.variantCheckTypes.filter((type) => open.has(type)), id).toEqual([]);
-    }
-  });
-
-  it("dopisek sędziego i opis kontroli otwartej wskazują, co poprawić, i nie pozwalają wyrzucić wymaganych elementów", () => {
-    const notes = schoolAgentPolicy.ruleNotes ?? {};
-    expect(notes["check.hint_judge"]).toContain("set it to null");
-    expect(notes["check.hint_judge"]).toContain("not correct Polish");
-    expect(notes["check.hint_judge"]).toContain("hint at the reasoning, not the content");
-    const open = describeRule(ruleOf(schoolSubject, "check.open_answer" as RuleId)!, TEXT_CTX, notes["check.open_answer"]);
-    expect(open).toContain("supplementaryElements");
-    expect(open).toContain("“any two”");
-    expect(open).toContain("do not drop elements the question genuinely requires");
-    expect(open).toContain("commonErrors");
-    expect(open).toContain(notes["check.open_answer"]!);
+  it("szkoła nie deklaruje kontroli 2b (przebieg bazowy, etap 5b; kod 2b usuwa etap 5c)", () => {
+    expect(schoolAgentPolicy.hintJudgeTypes).toBeUndefined();
+    expect(schoolAgentPolicy.openAnswerCheckTypes).toBeUndefined();
+    expect(schoolAgentPolicy.ruleNotes?.["check.hint_judge"]).toBeUndefined();
+    expect(schoolAgentPolicy.ruleNotes?.["check.open_answer"]).toBeUndefined();
+    expect(schoolSubject.baselinePool).toBe(true);
   });
 
   it("dopisek lesson.leak nie wspomina pokoju, podpowiada inny fakt lub inne sformułowanie i trafia do opisu reguły", () => {
@@ -124,12 +82,21 @@ describe("schoolAgentPolicy.sanitize", () => {
     expect(result.removed).toEqual(["hint"]);
     expect(result.draft).not.toHaveProperty("hint");
     expect(result.draft.exerciseType).toBe(exerciseType);
+    expect(result.notes?.map((note) => [note.rule, note.found])).toEqual([["school.hint_open_answer_only", `removed: ${exerciseType} takes no hint in school`]]);
   });
 
-  it("zostawia podpowiedź przy pytaniu otwartym", () => {
+  it("usuwa podpowiedź także przy pytaniu otwartym (szkoła nie generuje podpowiedzi, etap 5b)", () => {
     const result = sanitize(draft({ hint: "Pomyśl o rzekach." }));
-    expect(result.removed).toEqual([]);
-    expect(result.draft.hint).toBe("Pomyśl o rzekach.");
+    expect(result.removed).toEqual(["hint"]);
+    expect(result.draft).not.toHaveProperty("hint");
+    expect(result.notes).toEqual([
+      {
+        rule: "school.hint_open_answer_only",
+        field: "hint",
+        pl: "hint: szkoła nie generuje podpowiedzi — podpowiedź została usunięta",
+        found: "removed: lesson_open_answer takes no hint in school",
+      },
+    ]);
   });
 
   it("niezmienione ćwiczenie zwraca puste removed", () => {
@@ -141,51 +108,6 @@ describe("schoolAgentPolicy.sanitize", () => {
 });
 
 describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () => {
-  it("podpowiedź zdradzająca odpowiedź: usunięta z notą reguły z celem i słowami", () => {
-    const result = sanitize(draft({ prompt: "Podaj przykład mierzei.", hint: "Przykładem jest Mierzeja Wiślana" }));
-    expect(result.draft).not.toHaveProperty("hint");
-    expect(result.removed).toEqual(["hint"]);
-    expect(result.notes).toEqual([
-      {
-        rule: "hint.reveals_words",
-        field: "hint",
-        pl: "hint: podpowiedź zdradzała odpowiedź albo element wymagany i została usunięta",
-        found: `removed: shares "wiślana" with the answer "Mierzeja Wiślana"${HINT_NEXT_STEP}`,
-      },
-    ]);
-  });
-
-  it("nota wskazuje element wymagany", () => {
-    const result = sanitize(draft({
-      prompt: "Czym jest mierzeja?",
-      answer: "To pas lądu oddzielający zalew od morza.",
-      requiredElements: [{ id: "e1", text: "piaszczysty pas" }],
-      hint: "Pomyśl o piaszczystym pasie",
-    }));
-    expect(result.removed).toEqual(["hint"]);
-    // „pas” ma 3 litery, więc nie jest słowem treściowym.
-    expect(result.notes?.[0]?.found).toBe(`removed: shares "piaszczysty" with the required element "piaszczysty pas"${HINT_NEXT_STEP}`);
-  });
-
-  it("zostawia podpowiedź kierującą rozumowaniem i brak podpowiedzi", () => {
-    expect(sanitize(draft({ hint: "Pomyśl o piaszczystym pasie lądu." }))).toMatchObject({ removed: [], notes: [] });
-    expect(sanitize(draft({ hint: "Pomyśl o piaszczystym pasie lądu." })).draft.hint).toBe("Pomyśl o piaszczystym pasie lądu.");
-    expect(sanitize(draft({}))).toMatchObject({ removed: [], notes: [] });
-  });
-
-  it("typ inny niż pytanie otwarte: usunięcie jak dotąd, z notą reguły school.hint_open_answer_only", () => {
-    const result = sanitize(draft({ exerciseType: "lesson_gap", hint: "Mierzeja Wiślana" }));
-    expect(result.removed).toEqual(["hint"]);
-    expect(result.notes).toEqual([
-      {
-        rule: "school.hint_open_answer_only",
-        field: "hint",
-        pl: "hint: podpowiedź poza pytaniem otwartym została usunięta",
-        found: "removed: lesson_gap takes no hint, only lesson_open_answer does",
-      },
-    ]);
-  });
-
   it("bramka szkoły nie zwraca ustaleń (podpowiedź nie odrzuca już ćwiczenia)", () => {
     const findings = schoolAgentPolicy.exerciseGate?.(draft({ hint: "Przykładem jest Mierzeja Wiślana" }), objective, { material: MATERIAL }) ?? [];
     expect(findings).toEqual([]);

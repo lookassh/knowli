@@ -326,13 +326,41 @@ export function fakePacketExercises(input: LessonPacketInput, offset: number): {
     return answer;
   };
   const type = input.type as LessonExerciseType;
+  // Rachunki: materiał fake'a nie uczy metody obliczeń, więc paczka jest pusta (jak każe `typeRules` szkoły).
+  if (type === "lesson_calculation") return { exercises: [], ...(input.withExamples ? { examples: [`Example for ${objectiveId}.`] } : {}) };
   const exercises = Array.from({ length: input.count }, (_unused, index) => {
     const answer = nextAnswer();
     return type === LISTEN_CHOICE_TYPE
       ? fakeListenChoice(objectiveId, `Listen and choose: ___ (${offset + index + 1}).`, answer, FAKE_LISTEN_DISTRACTORS.find((word) => word !== answer)!)
       : fakeExercise(type, objectiveId, answer, pool, offset + index);
   });
+  // Keywords przy pytaniach otwartych (etap 5b, wariant A): rodzina pierwszego pytania i jedno ćwiczenie keywords.
+  if (type === "lesson_open_answer" && pool.exerciseTypes.includes("lesson_keywords") && exercises.length > 0) {
+    const familyId = `fam-${offset}`;
+    exercises[0] = { ...exercises[0]!, familyId };
+    exercises.push(fakeKeywords(objectiveId, familyId, [nextAnswer(), nextAnswer(), nextAnswer(), nextAnswer()], pool.material));
+  }
   return { exercises: withFakeExplanations(exercises, pool), ...(input.withExamples ? { examples: [`Example for ${objectiveId}.`] } : {}) };
+}
+
+/** Dopisek dystraktora keywords fake'a: kontrola fake'a wskazuje pojęcia bez niego (klucz = dwa pierwsze pojęcia). */
+const FAKE_KEYWORD_DISTRACTOR = " (inne)";
+
+/** Keywords fake'a: dwa pierwsze słowa kluczowe, dwa ostatnie z dopiskiem dystraktora; cytat jak w pytaniach szkoły. */
+function fakeKeywords(objectiveId: string, familyId: string, words: readonly string[], material: string): Record<string, unknown> {
+  const options = words.map((word, index) => ({ id: `k${index + 1}`, text: index < 2 ? word : `${word}${FAKE_KEYWORD_DISTRACTOR}` }));
+  return {
+    exerciseType: "lesson_keywords",
+    objectiveId,
+    instructionPl: "Wskaż pojęcia potrzebne w odpowiedzi.",
+    answer: "",
+    acceptedAnswers: [],
+    focus: [],
+    familyId,
+    keywordOptions: options,
+    keyOptionIds: ["k1", "k2"],
+    sourceRefs: [{ quote: material.trim().slice(0, 120) }],
+  };
 }
 
 /** Pozycja pola w liście widoku `prefix` (lewe strony par, elementy grup). */
@@ -353,10 +381,20 @@ function fieldAnswer(lines: readonly string[], field: string, options: readonly 
 /**
  * Klucz ćwiczenia fake'a odczytany z widoku kontroli zamkniętych (model nie zna klucza, ale konwencję
  * fake'a tak): słuchanie — opcja ze zdania nagrania; notice — pierwsze słowo pierwszego zdania;
- * wybór — opcja będąca przedrostkiem drugiej (dystraktor `<odpowiedź>x`), inaczej pierwsza.
+ * wybór — opcja będąca przedrostkiem drugiej (dystraktor `<odpowiedź>x`), inaczej pierwsza; keywords —
+ * pojęcia bez dopisku dystraktora. Wynik to komplet tekstów albo `null` (nie wiem).
  */
-export function fakeClosedAnswer(view: string): string | null {
+export function fakeClosedAnswer(view: string): string[] | null {
   const lines = view.split("\n");
+  const concepts = lines.find((line) => line.startsWith("Concepts: "));
+  if (concepts !== undefined && lines.some((line) => line.startsWith("Question: "))) {
+    return concepts.slice("Concepts: ".length).split(" | ").filter((text) => !text.endsWith(FAKE_KEYWORD_DISTRACTOR));
+  }
+  const single = fakeSingleAnswer(lines);
+  return single === null ? null : [single];
+}
+
+function fakeSingleAnswer(lines: readonly string[]): string | null {
   const options = lines.find((line) => line.startsWith("Options: "))?.slice("Options: ".length).split(" | ") ?? [];
   const field = lines.find((line) => line.startsWith("Field: "))?.slice("Field: ".length).split(" (judge")[0];
   if (field !== undefined) return fieldAnswer(lines, field, options);

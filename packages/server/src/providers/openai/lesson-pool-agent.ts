@@ -367,7 +367,7 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
     .map((other) => `- ${other.title}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
     .join("\n");
   const required = targets.requiredTypes.map((group) => group.join(" or ")).join("; ") || "none";
-  // Słowa kluczowe dotyczą przyjętego pytania otwartego (kaskada `school.keywords_family_rejected`): w kolejnym wywołaniu.
+  // Słowa kluczowe dotyczą przyjętego pytania otwartego swojej rodziny (`school.keywords_family_missing`).
   const keywords = input.pool.objectives.some((candidate) => candidate.exerciseTypes.includes("lesson_keywords"));
   return [
     lessonSystemPrompt(input.pool),
@@ -440,13 +440,22 @@ export function packetInstructions(input: LessonPacketInput): string {
   if (pool.exerciseExplanations === true) parts.push(EXPLANATION_RULE);
   parts.push(fieldMeaningRule(pool));
   parts.push(renderRuleBook(pool.ruleBook, { packet: true }));
+  // Zdania o skrótach i tłumaczeniu dotyczą tylko odpowiedzi po angielsku (gramatyka, rozdział); szkoła ich nie dostaje (etap 5b).
+  const english = pool.answerLocale.startsWith("en");
+  // Towarzysz paczki (keywords szkoły przy pytaniach otwartych) poza zamówioną liczbą.
+  const companion = pool.exerciseTypes.find((type) => type !== input.type);
   parts.push(
-    `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective, with objectiveId "${objective.id}" in every exercise. ` +
+    `YOUR JOB: write exactly ${input.count} exercises of type ${input.type} for this objective` +
+      (companion === undefined ? "" : `, plus at most one ${companion} for one family of these questions (it does not count toward the ${input.count})`) +
+      `, with objectiveId "${objective.id}" in every exercise. ` +
       "The instruction and the visible context must determine one answer: a child who knows the rule can reach only the key. " +
-      "Put every other correct wording into acceptedAnswers. A contraction and the full form are both correct: never ask for one of them, accept both. " +
-      "Every exercise uses a different sentence. " +
-      "The child can read the cards during the exercises, so never ask for a word form or sentence the cards show (e.g. a spelling exercise on a verb the card spells out): use other words and other sentences. " +
-      "Write each exercise (in a translation: the Polish sentence together with its English key) so that for a child aged 8-10 there is exactly one correct answer, in the practised form." +
+      "Put every other correct wording into acceptedAnswers." +
+      (english ? " A contraction and the full form are both correct: never ask for one of them, accept both." : "") +
+      " Every exercise uses a different sentence. " +
+      "The child can read the cards during the exercises, so never ask for a word form or sentence the cards show (e.g. a spelling exercise on a verb the card spells out): use other words and other sentences." +
+      (english
+        ? " Write each exercise (in a translation: the Polish sentence together with its English key) so that for a child aged 8-10 there is exactly one correct answer, in the practised form."
+        : "") +
       (input.withExamples
         ? " Also return 1-3 short card examples of this objective (plain sentences the child sees on the card); they must never be the answer of an exercise and use subjects and verbs that none of your exercises uses."
         : ""),
@@ -776,17 +785,20 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider, Clos
 }
 
 /** Pytanie kontroli zamkniętych per kontrakt (spec etapu 2 §2); widok bez klucza i celu. */
-export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "items">): string {
+export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "items" | "material">): string {
+  // Z materiałem (szkoła): ćwiczenia nie są z angielskiego, a poprawność wynika z materiału; bez niego tekst bajt w bajt jak w gramatyce.
+  const learner = input.material === undefined ? "a Polish child learning English" : "a Polish child, based on the lesson material below";
   const question =
     input.contract === "choice"
-      ? "Each item below is an exercise for a Polish child learning English, exactly as the child sees it. For EACH item list the exact texts of ALL " +
+      ? `Each item below is an exercise for ${learner}, exactly as the child sees it. For EACH item list the exact texts of ALL ` +
         "options (or, for marking a word, ALL words) that are correct for this instruction. For an item with a recording, an option is correct only " +
         "when it gives a correct sentence that matches the recording. Return answers: [] when no option is correct, and answers: null when you cannot decide."
-      : "Each item below is a word-blocks exercise for a Polish child learning English: the instruction, the shuffled blocks and the arranged answer. " +
+      : `Each item below is a word-blocks exercise for ${learner}: the instruction, the shuffled blocks and the arranged answer. ` +
         'For EACH item decide whether the arranged answer is a correct answer to the instruction: verdict "yes", "no", or "unknown" when you cannot decide.';
   return [
     question,
     `There are ${input.items.length} items. Return results: one object per item, in the given order.`,
+    ...materialBlock(input.material),
     "",
     "<ITEMS>",
     jsonForBlock(input.items.map(({ view }) => ({ view }))),
