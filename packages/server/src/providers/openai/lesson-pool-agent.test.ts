@@ -271,37 +271,6 @@ describe("AiSdkLessonPoolAgent (MockLanguageModelV4, bez sieci)", () => {
     expect(cost.values).toEqual([null]);
     expect(model.doGenerateCalls).toHaveLength(1);
   });
-
-  it("brak usage.cost w metadanych → koszt null; planista oddaje surową propozycję do propose", async () => {
-    const plan = { objectives: [{ slug: "animals", titlePl: "Zwierzęta", descriptionEn: "Animals", kind: "words", cards: [], examples: [] }] };
-    const model = new MockLanguageModelV4({ doGenerate: [toolCallResult("propose_objectives", plan, null), textResult("ok")] });
-    const proposals: unknown[] = [];
-    let accepted = false;
-    const cost = recordingCost([]);
-    const result = await new AiSdkLessonPoolAgent({ apiKey: "", model: "test-model", effort: "medium", languageModel: model }).planObjectives(
-      {
-        subjectTitle: "Subject",
-        topicTitle: "Unit 1",
-        material: "cat — kot",
-        generationRole: "role",
-        objectiveCount: { min: 3, max: 6 },
-        maxSteps: 8,
-      },
-      {
-        propose: async (raw) => {
-          proposals.push(raw);
-          accepted = true;
-          return { ok: true, errors: [] };
-        },
-        shouldStop: () => accepted,
-      },
-      cost,
-      new AbortController().signal,
-    );
-    expect(result).toEqual({ steps: 1 });
-    expect(proposals).toEqual([plan]);
-    expect(cost.values).toEqual([null]);
-  });
 });
 
 describe("AiSdkExerciseChecker (MockLanguageModelV4, bez sieci)", () => {
@@ -680,14 +649,6 @@ function scopedRecorder() {
 
 const SOLVE_INPUT = { items: [{ view: "A", expectedAnswers: 1 }] };
 const JUDGE_INPUT = { items: [{ view: "A", answer: "I am", variants: ["I'm"] }] };
-const PLAN_INPUT = {
-  subjectTitle: "Subject",
-  topicTitle: "Unit 1",
-  material: "cat — kot",
-  generationRole: "role",
-  objectiveCount: { min: 3, max: 6 },
-  maxSteps: 8,
-};
 
 function chatCompletion(content: string, cost = 0.0042) {
   return {
@@ -802,37 +763,13 @@ describe("mapowanie błędów (toGenerationProviderError, spec §4)", () => {
     });
     await expect(new AiSdkLessonPoolAgent(agentOptions(objectiveModel)).runObjective(agentInput(), tools, recordingCost([]), signal)).rejects.toBe(bug);
     expect(objectiveModel.doGenerateCalls).toHaveLength(1);
-
-    const planModel = new MockLanguageModelV4({ doGenerate: [toolCallResult("propose_objectives", { objectives: [] }), textResult("never reached")] });
-    await expect(
-      new AiSdkLessonPoolAgent(agentOptions(planModel)).planObjectives(
-        PLAN_INPUT,
-        {
-          propose: async () => {
-            throw bug;
-          },
-          shouldStop: () => false,
-        },
-        recordingCost([]),
-        signal,
-      ),
-    ).rejects.toBe(bug);
-    expect(planModel.doGenerateCalls).toHaveLength(1);
   });
 
-  it("adapter rzuca zmapowany błąd z wywołania modelu (agent, planista, checker)", async () => {
+  it("adapter rzuca zmapowany błąd z wywołania modelu (agent, checker)", async () => {
     const signal = new AbortController().signal;
     await expect(
       new AiSdkLessonPoolAgent(agentOptions(throwingModel(() => apiError(401)))).runObjective(agentInput(), fakeTools([]).tools, recordingCost([]), signal),
     ).rejects.toMatchObject({ name: "GenerationProviderError", kind: "configuration", status: 401 });
-    await expect(
-      new AiSdkLessonPoolAgent(agentOptions(throwingModel(() => apiError(503)))).planObjectives(
-        PLAN_INPUT,
-        { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
-        recordingCost([]),
-        signal,
-      ),
-    ).rejects.toMatchObject({ kind: "transient", status: 503 });
     await expect(new AiSdkExerciseChecker(agentOptions(throwingModel(() => apiError(422)))).judgeVariants(JUDGE_INPUT, recordingCost([]), signal)).rejects.toMatchObject({
       kind: "output",
       status: 422,
@@ -858,13 +795,6 @@ describe("koszty żądań (UsageRecorder i RunCostSink, spec §4)", () => {
         doGenerate: [toolCallResult("submit_exercises", { exercises: [RAW_MATCH] }, 0.01), textResult("done", 0.002)],
       });
       await new AiSdkLessonPoolAgent(agentOptions(objectiveModel, { usage })).runObjective(agentInput(), fakeTools([]).tools, recordingCost([]), signal);
-      const planModel = new MockLanguageModelV4({ doGenerate: [textResult("no plan", 0.003)] });
-      await new AiSdkLessonPoolAgent(agentOptions(planModel, { usage })).planObjectives(
-        PLAN_INPUT,
-        { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
-        recordingCost([]),
-        signal,
-      );
       const solveModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ answers: [["a"]] }), 0.004)] });
       await new AiSdkExerciseChecker(agentOptions(solveModel, { usage })).solve(SOLVE_INPUT, recordingCost([]), signal);
       const judgeModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ equivalent: [[true]] }), 0.005)] });
@@ -885,7 +815,6 @@ describe("koszty żądań (UsageRecorder i RunCostSink, spec §4)", () => {
     expect(usage.events.map((entry) => entry.event)).toEqual([
       ok("agent_objective", 0.01),
       ok("agent_objective", 0.002),
-      ok("agent_plan", 0.003),
       ok("check_solve", 0.004),
       ok("check_variants", 0.005),
     ]);
@@ -941,15 +870,15 @@ describe("koszty żądań (UsageRecorder i RunCostSink, spec §4)", () => {
     const usage = createTestRecorder();
     const cost = recordingCost([]);
     await expect(
-      new AiSdkLessonPoolAgent(agentOptions(throwingModel(() => apiError(undefined, { isRetryable: true })), { usage })).planObjectives(
-        PLAN_INPUT,
-        { propose: async () => ({ ok: true, errors: [] }), shouldStop: () => false },
+      new AiSdkLessonPoolAgent(agentOptions(throwingModel(() => apiError(undefined, { isRetryable: true })), { usage })).runObjective(
+        agentInput(),
+        fakeTools([]).tools,
         cost,
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ kind: "transient" });
     expect(cost.values).toEqual([null]);
-    expect(usage.events).toEqual([{ feature: "lesson_generation", operation: "agent_plan", provider: "openrouter", model: "test-model", outcome: "failed" }]);
+    expect(usage.events).toEqual([{ feature: "lesson_generation", operation: "agent_objective", provider: "openrouter", model: "test-model", outcome: "failed" }]);
   });
 
   it("przerwanie w trakcie żądania: signal.reason, RunCostSink null, porażka transportu", async () => {
@@ -1137,7 +1066,7 @@ describe("adaptery nic nie logują", () => {
   });
 });
 
-describe("limit jednego żądania generatora i planisty (callTimeoutMs)", () => {
+describe("limit jednego żądania generatora (callTimeoutMs)", () => {
   const LIMIT_MS = 1_000;
 
   afterEach(() => {
@@ -1256,30 +1185,6 @@ describe("limit jednego żądania generatora i planisty (callTimeoutMs)", () => 
     ).rejects.toBe(reason);
     expect(model.doGenerateCalls).toHaveLength(1);
     expect(cost.values).toEqual([null]);
-  });
-
-  it("planista: zawieszone żądanie ponowione raz, potem plan", async () => {
-    vi.useFakeTimers();
-    const plan = { objectives: [] };
-    const model = hangingModel([1], [toolCallResult("propose_objectives", plan, 0.003)]);
-    const cost = recordingCost([]);
-    let accepted = false;
-    const run = new AiSdkLessonPoolAgent(agentOptions(model)).planObjectives(
-      { ...PLAN_INPUT, callTimeoutMs: LIMIT_MS },
-      {
-        propose: async () => {
-          accepted = true;
-          return { ok: true, errors: [] };
-        },
-        shouldStop: () => accepted,
-      },
-      cost,
-      new AbortController().signal,
-    );
-    await vi.advanceTimersByTimeAsync(LIMIT_MS);
-    await expect(run).resolves.toEqual({ steps: 1 });
-    expect(model.doGenerateCalls).toHaveLength(2);
-    expect(cost.values).toEqual([null, 0.003]);
   });
 
   it("bez callTimeoutMs żądanie nie ma limitu (checker i dotychczasowe wejścia)", async () => {

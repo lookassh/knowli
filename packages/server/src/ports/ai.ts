@@ -165,6 +165,8 @@ export interface LessonObjectivesInput {
   readonly generationRole: string;
   /** Czy karty zagadnień niosą `voiceTone` (przedmiot z `ttsForPrompts`); bez flagi schemat i prompt nie mają pola. */
   readonly voiceTones?: boolean;
+  /** Reguły zagadnień przedmiotu (rozdział): schemat wymaga wtedy `kind`, a prompt bierze liczbę i format kart z reguł. */
+  readonly objectivesRules?: string;
 }
 
 /**
@@ -327,22 +329,6 @@ export interface LessonObjectiveAgentTools {
   shouldStop(): boolean;
 }
 
-/** Wejście planowania zagadnień lekcji (przedmioty z tematem dynamicznym). */
-export interface LessonAgentPlanInput {
-  readonly subjectTitle: string;
-  readonly topicTitle: string;
-  readonly material: string;
-  readonly instruction?: string;
-  readonly generationRole: string;
-  readonly objectivesRules?: string;
-  /** Dozwolona liczba zagadnień planu (3–6). */
-  readonly objectiveCount: { readonly min: number; readonly max: number };
-  readonly coverage?: { readonly words: readonly string[]; readonly frames: readonly string[] };
-  readonly maxSteps: number;
-  /** Jak w {@link LessonObjectiveAgentInput.callTimeoutMs}. */
-  readonly callTimeoutMs?: number;
-}
-
 /**
  * Agent puli ćwiczeń (etap 1 issue #237): model w pętli wywołuje narzędzia, a serwer waliduje każdy
  * wynik. Kontrakt adapterów: surowe rekordy materializuje (rachunki, słowa kluczowe, pary/grupy/luki) przed `submit`
@@ -359,15 +345,6 @@ export interface LessonPoolAgentProvider {
     cost: RunCostSink,
     signal: AbortSignal,
   ): Promise<{ readonly steps: number; readonly stopReason: "stopped" | "max_steps" | "model_finished" }>;
-  planObjectives(
-    input: LessonAgentPlanInput,
-    tools: {
-      propose(raw: unknown): Promise<{ readonly ok: boolean; readonly errors: readonly string[] }>;
-      shouldStop(): boolean;
-    },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly steps: number }>;
 }
 
 /**

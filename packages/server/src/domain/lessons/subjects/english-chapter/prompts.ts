@@ -1,4 +1,3 @@
-import { AGENT_PLAN_MAX_OBJECTIVES, AGENT_PLAN_MIN_OBJECTIVES } from "../../agent/plan";
 import type { SubjectPromptProfile } from "../../types";
 
 /**
@@ -9,6 +8,10 @@ import type { SubjectPromptProfile } from "../../types";
  * rozdziału (walidacja słownikowa odrzuca resztę); polskie zdanie-bodziec
  * stoi w `instructionPl`, bo kartkówka usuwa `hint`.
  */
+/** Liczba zagadnień rozdziału (tylko tekst reguł zagadnień; kod zostawia wspólny limit 8). */
+export const CHAPTER_MIN_OBJECTIVES = 3;
+export const CHAPTER_MAX_OBJECTIVES = 6;
+
 /** Słowa funkcyjne dozwolone obok materiału — lista dla generatora. */
 const CHAPTER_FUNCTION_WORDS = "I, you, he, she, my, a, the, is, are, do, can, and, in, on, this, what, today, very";
 
@@ -87,7 +90,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
       "different class.",
   },
   objectivesRules:
-    `Split the chapter into ${AGENT_PLAN_MIN_OBJECTIVES} to ${AGENT_PLAN_MAX_OBJECTIVES} objectives, so that every objective comes up within two or three short sessions. ` +
+    `Split the chapter into ${CHAPTER_MIN_OBJECTIVES} to ${CHAPTER_MAX_OBJECTIVES} objectives, so that every objective comes up within two or three short sessions. ` +
     "Set kind for every objective: 'words' — a group of 4 to 12 related English words and phrases from the material " +
     "(e.g. clothes, weather, days of the week); 'frame' — one sentence frame from the material (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...), where the checked part is the construction and words of the 'words' objectives " +

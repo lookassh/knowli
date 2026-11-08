@@ -96,6 +96,35 @@ describe("createOpenAiLlmProvider — opcje pośrednika z konfiguracji", () => {
   });
 });
 
+describe("createOpenAiLlmProvider.generateLessonObjectives — reguły zagadnień przedmiotu (etap 5a)", () => {
+  async function sentBody(input: typeof OBJECTIVES_REQUEST & { objectivesRules?: string }) {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ objectives: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonObjectives(input);
+    return JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as Record<string, any>;
+  }
+
+  it("requires kind and puts the subject rules in place of the generic count and card format", async () => {
+    const body = await sentBody({ ...OBJECTIVES_REQUEST, objectivesRules: "CHAPTER-RULES 3 to 6." });
+    const item = body.response_format.json_schema.schema.properties.objectives.items;
+    expect(item.required).toContain("kind");
+    expect(item.properties.kind).toEqual({ type: "string", enum: ["words", "frame"] });
+    const system: string = body.messages[0].content;
+    expect(system).toContain("CHAPTER-RULES 3 to 6.");
+    expect(system).not.toContain("2-8");
+    expect(system).not.toContain("Polish explanation cards");
+    expect(system).toContain("NEVER add facts");
+  });
+
+  it("keeps the schema and prompt without subject rules", async () => {
+    const body = await sentBody(OBJECTIVES_REQUEST);
+    const item = body.response_format.json_schema.schema.properties.objectives.items;
+    expect(item.required).not.toContain("kind");
+    expect(item.properties).not.toHaveProperty("kind");
+    expect(body.messages[0].content).toContain("Split the parent material into 2-8 learnable objectives");
+  });
+});
+
 describe("createOpenAiLlmProvider.generateLessonObjectives — błędy wspólnej koperty żądań lekcji", () => {
   it("nie ponawia HTTP 400, nie ujawnia body i klasyfikuje konfigurację", async () => {
     const fetchMock = vi.fn(async () => new Response("secret provider body", { status: 400 }));

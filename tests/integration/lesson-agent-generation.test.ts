@@ -2347,7 +2347,6 @@ describe("agent puli lekcji (integracja)", () => {
           expectUnavailable(await fullRun(runId));
           expect(await checkpointText(runId)).toBe(checkpointBefore);
           expect(world.agent.calls).toEqual([]);
-          expect(world.agent.planCalls).toEqual([]);
           expect(world.fakes.llm.objectiveRequests).toEqual([]);
           expect(world.fakes.llm.storyRequests).toEqual([]);
           const after = await versionOf(runId);

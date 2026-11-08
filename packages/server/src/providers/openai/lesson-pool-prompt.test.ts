@@ -15,7 +15,6 @@ import { kindsOf, lessonAgentLimits } from "../../modules/materials/lessons/less
 import { objectiveAgentInput } from "../../modules/materials/lessons/lesson-pool-agent-input";
 import type { LessonObjectiveAgentInput } from "../../ports/ai";
 import { FakeLlmProvider } from "../fake";
-import { fakePlanFromCoverage } from "../fake-lesson-agent";
 import { objectiveInstructions } from "./lesson-pool-agent";
 import { repeatText } from "./llm";
 
@@ -85,17 +84,24 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
   const schoolTopic = schoolSubject.buildDynamicTopic!(withSubjectObjectiveKinds(schoolSubject, built.data!));
   const school = fixtureFor({ subject: schoolSubject, topic: schoolTopic, material: SCHOOL_MATERIAL, objectiveId: schoolTopic.objectives[0]!.id });
 
-  const plan = fakePlanFromCoverage({
-    subjectTitle: englishChapterSubject.titlePl,
-    topicTitle: "Unit 1",
-    material: CHAPTER_MATERIAL,
-    generationRole: "",
-    objectiveCount: { min: 3, max: 6 },
-    coverage: englishChapterSubject.agentPolicy.planCoverage!(CHAPTER_MATERIAL),
-    maxSteps: 8,
-  });
-  const data = buildDynamicTopicData(plan.objectives, englishChapterSubject.id, "42", "Unit 1").data!;
-  const examples = Object.fromEntries(data.objectives.map((objective, index) => [objective.id, plan.objectives[index]!.examples as string[]]));
+  // Zagadnienia jak z etapu zagadnień trybu fake (dwa zagadnienia słów i rama), przykłady ustalone.
+  const chapterObjectives = [
+    { kind: "words", body: "coat, boots", example: "coat" },
+    { kind: "words", body: "scarf, gloves", example: "scarf" },
+    { kind: "frame", body: "I am wearing …\nPut on your …", example: "I am wearing …" },
+  ].map(({ kind, body, example }, index) => ({
+    slug: `part_${index + 1}`,
+    titlePl: `Część ${index + 1}`,
+    descriptionEn: `Part ${index + 1} of Unit 1.`,
+    kind,
+    cards: [
+      { title: kind === "words" ? "Words" : "Frames", body },
+      { title: "Topic", body: "Unit 1" },
+    ],
+    examples: [example],
+  }));
+  const data = buildDynamicTopicData(chapterObjectives, englishChapterSubject.id, "42", "Unit 1").data!;
+  const examples = Object.fromEntries(data.objectives.map((objective, index) => [objective.id, chapterObjectives[index]!.examples]));
   const chapterTopic = englishChapterSubject.buildDynamicTopic!(data);
   const chapter = fixtureFor({
     subject: englishChapterSubject,

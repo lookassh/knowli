@@ -22,14 +22,8 @@ import {
 import { scopeFamiliesToRun, type LessonRunInput } from "./lesson-drafts";
 import { emptyLessonPoolAgentStats, type LessonPoolAgentResult, type SettledObjective } from "./lesson-pool-agent";
 
-/** Przedmioty wg cech, nie identyfikatorów: katalog, dynamiczny z planerem (rozdział), dynamiczny bez (szkoła). */
+/** Przedmioty wg cech, nie identyfikatorów: katalog i dynamiczny (rozdział, szkoła). */
 const catalog: SubjectModule = fixtureSubject;
-const planner: SubjectModule = {
-  ...fixtureSubject,
-  id: "test_planner",
-  buildDynamicTopic: () => topic,
-  agentPolicy: { ...fixtureSubject.agentPolicy, planCoverage: () => ({ words: [], frames: [] }) },
-};
 const dynamic: SubjectModule = { ...fixtureSubject, id: "test_dynamic", buildDynamicTopic: () => topic };
 
 const runTopic: DynamicTopicData = { titlePl: "Run", objectives: [] };
@@ -153,7 +147,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       titlePl: "Temat",
       objectives: [B, A].map((id) => ({ id, titlePl: id, descriptionEn: id, cards: [] })),
     };
-    const fromTopic = agentInput(lessonAgentRunInputFor(args({ subject: planner, progress: { ...progress, dynamicTopic } })));
+    const fromTopic = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, progress: { ...progress, dynamicTopic } })));
     expect(fromTopic.fixed).toEqual([choiceB, choiceA]);
     expect(fromTopic.skipObjectives).toEqual([B, A]);
   });
@@ -178,7 +172,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       planExamples: { [A]: ["Plan A."], [B]: ["Plan B."] },
       objectives: { [A]: { status: "complete", exercises: [choiceA], examples: ["Plan A."] } },
     });
-    const value = agentInput(lessonAgentRunInputFor(args({ subject: planner, progress })));
+    const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, progress })));
     expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: checkpointTopic });
     expect(value.examplesFixed).toBe(true);
     expect(value.initialExamples).toEqual({ [A]: ["Plan A."], [B]: ["Plan B."] });
@@ -204,15 +198,15 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
   describe("pierwszeństwo objectiveSource", () => {
     it("1: temat w punkcie kontrolnym wygrywa z tematem runu", () => {
       const value = agentInput(lessonAgentRunInputFor(args({
-        subject: planner,
+        subject: dynamic,
         input: runInput({ dynamicTopic: runTopic }),
         progress: progressWith({ dynamicTopic: checkpointTopic }),
       })));
       expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: checkpointTopic });
     });
 
-    it("2: temat dynamiczny runu wygrywa z planerem", () => {
-      const value = agentInput(lessonAgentRunInputFor(args({ subject: planner, input: runInput({ dynamicTopic: runTopic }) })));
+    it("2: temat dynamiczny runu wygrywa z etapem zagadnień", () => {
+      const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, input: runInput({ dynamicTopic: runTopic }) })));
       expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: runTopic });
       expect(value.examplesFixed).toBe(false);
     });
@@ -223,13 +217,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       expect(() => lessonAgentRunInputFor(withoutTopic)).toThrow(AppError);
     });
 
-    it("4: przedmiot z planerem (planCoverage) → planner, examplesFixed: true", () => {
-      const value = agentInput(lessonAgentRunInputFor(args({ subject: planner })));
-      expect(value.objectiveSource).toEqual({ source: "planner" });
-      expect(value.examplesFixed).toBe(true);
-    });
-
-    it("5: pozostałe dynamiczne → etap zagadnień, potem input z jego wyniku", () => {
+    it("4: dynamiczne → etap zagadnień, potem input z jego wyniku", () => {
       expect(lessonAgentRunInputFor(args({ subject: dynamic }))).toEqual({ needsObjectives: true });
       const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, schoolTopic })));
       expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: schoolTopic });
@@ -288,39 +276,23 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
     expect(lessonAgentRunInputFor(args({ input: runInput({ regenerate }), draft, progress }))).toEqual({ nothingToAdd: true });
   });
 
-  it("źródło: temat runu, potem temat szkicu, potem katalog; nigdy planer", () => {
-    const withRun = agentInput(lessonAgentRunInputFor(args({ subject: planner, input: runInput({ regenerate, dynamicTopic: runTopic }), draft: { ...draft, dynamicTopic: draftTopic } })));
+  it("źródło: temat runu, potem temat szkicu, potem katalog", () => {
+    const withRun = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, input: runInput({ regenerate, dynamicTopic: runTopic }), draft: { ...draft, dynamicTopic: draftTopic } })));
     expect(withRun.objectiveSource).toEqual({ source: "input", dynamicTopic: runTopic });
-    const withDraft = agentInput(lessonAgentRunInputFor(args({ subject: planner, input: runInput({ regenerate }), draft: { ...draft, dynamicTopic: draftTopic } })));
+    const withDraft = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, input: runInput({ regenerate }), draft: { ...draft, dynamicTopic: draftTopic } })));
     expect(withDraft.objectiveSource).toEqual({ source: "input", dynamicTopic: draftTopic });
-    expect(() => lessonAgentRunInputFor(args({ subject: planner, input: runInput({ regenerate }), draft }))).toThrow(AppError);
+    expect(() => lessonAgentRunInputFor(args({ subject: dynamic, input: runInput({ regenerate }), draft }))).toThrow(AppError);
   });
 });
 
 describe("lessonAgentRunOutcome", () => {
-  const base = { planStatus: "not_needed" as const, objectives: [], accepted: 0, budgetExhausted: false, attempts: 1, maxAttempts: 3 };
+  const base = { objectives: [], accepted: 0, budgetExhausted: false, attempts: 1, maxAttempts: 3 };
   const transient = { errorCode: "provider_unavailable", retryable: true, retryAfterMs: 2000 };
   const permanent = { errorCode: "provider_refused", retryable: false };
 
   it("wiersz 1: budżet wyczerpany → finalize przy ≥ 1 przyjętym, inaczej failed/validation", () => {
     expect(lessonAgentRunOutcome({ ...base, budgetExhausted: true, accepted: 1 })).toEqual({ kind: "finalize" });
     expect(lessonAgentRunOutcome({ ...base, budgetExhausted: true })).toEqual({ kind: "failed", errorCode: "validation" });
-  });
-
-  it("wiersz 2: plan_failed przejściowy przy wolnych próbach → requeue z retryAfterMs", () => {
-    expect(lessonAgentRunOutcome({ ...base, planStatus: "plan_failed", planFailure: transient })).toEqual({
-      kind: "requeue",
-      errorCode: "provider_unavailable",
-      retryAfterMs: 2000,
-    });
-  });
-
-  it("wiersz 3: plan_failed trwały albo bez prób → failed z kodem planu", () => {
-    expect(lessonAgentRunOutcome({ ...base, planStatus: "plan_failed", planFailure: permanent })).toEqual({ kind: "failed", errorCode: "provider_refused" });
-    expect(lessonAgentRunOutcome({ ...base, planStatus: "plan_failed", planFailure: transient, attempts: 3 })).toEqual({
-      kind: "failed",
-      errorCode: "provider_unavailable",
-    });
   });
 
   it("wiersz 4: zagadnienie failed z retryable przy wolnych próbach → requeue (najdłuższe retryAfterMs)", () => {
@@ -398,7 +370,6 @@ function settled(
 
 function attemptResult(objectives: SettledObjective[], overrides: Partial<LessonPoolAgentResult> = {}): LessonPoolAgentResult {
   return {
-    planStatus: "not_needed",
     objectives,
     stats: emptyLessonPoolAgentStats(),
     rejections: [],

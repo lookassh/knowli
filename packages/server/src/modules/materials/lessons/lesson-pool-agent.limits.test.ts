@@ -295,7 +295,6 @@ describe("runLessonPoolAgent — terminy i przerwanie", () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(2000);
     const result = await run;
-    expect(result.planStatus).toBe("not_needed");
     expect(result.objectives.map((objective) => [objective.objectiveId, objective.status])).toEqual([
       [A, "incomplete"],
       [B, "incomplete"],

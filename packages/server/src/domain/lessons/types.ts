@@ -138,16 +138,6 @@ export interface AgentObjective {
   readonly exerciseTypes: readonly LessonExerciseType[];
 }
 
-/** Zagadnienie surowego planu agenta (przed nadaniem pełnych identyfikatorów). */
-export interface RawPlanObjective {
-  slug: string;
-  titlePl: string;
-  descriptionEn: string;
-  kind: DynamicObjectiveKind;
-  cards: { title: string; body: string }[];
-  examples: string[];
-}
-
 /**
  * Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, a do
  * modelu powód z id reguły zgłoszenia (`formatRuleReason`).
@@ -210,9 +200,6 @@ export interface SubjectAgentPolicy {
     ctx: { material: string },
   ): readonly AgentGateFinding[];
   objectiveGaps?(pool: readonly LessonExerciseDraft[], objective: AgentObjective, ctx: { material: string }): string[];
-  /** Słowa i ramy do pokrycia przez plan (lista dla modelu planera). */
-  planCoverage?(material: string): { readonly words: readonly string[]; readonly frames: readonly string[] };
-  planGate?(plan: readonly RawPlanObjective[], material: string): string[];
 }
 /** Przykładowe rekordy agenta według typu (`SubjectAgentPolicy.typeExamples`). */
 export type TypeExamples = Partial<Record<LessonExerciseType, Readonly<Record<string, unknown>>>>;

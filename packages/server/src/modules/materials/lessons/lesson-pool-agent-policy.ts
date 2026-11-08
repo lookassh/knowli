@@ -9,7 +9,6 @@ import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
  */
 export interface LessonAgentPolicy {
   readonly maxStepsPerObjective: number;
-  readonly planMaxSteps: number;
   /** Najwyżej tylu podagentów naraz. */
   readonly concurrency: number;
   /** Miejsca semafora checkera: jedno na wywołanie `solve` albo `judgeVariants`. */
@@ -37,7 +36,6 @@ export interface LessonAgentPolicy {
 
 export const DEFAULT_LESSON_AGENT_POLICY: LessonAgentPolicy = {
   maxStepsPerObjective: 8,
-  planMaxSteps: 8,
   concurrency: 4,
   checkerConcurrency: 4,
   checkerTimeoutMs: 90_000,

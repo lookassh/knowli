@@ -46,13 +46,11 @@ describe("grammarAgentPolicy", () => {
     }
   });
 
-  it("nie ma sanitize, bramek, braków ani planu", () => {
+  it("nie ma sanitize, bramek ani braków", () => {
     expect(grammarAgentPolicy.sanitize).toBeUndefined();
     expect(grammarAgentPolicy.exerciseGate).toBeUndefined();
     expect(grammarAgentPolicy.requiredTypes).toBeUndefined();
     expect(grammarAgentPolicy.objectiveGaps).toBeUndefined();
-    expect(grammarAgentPolicy.planCoverage).toBeUndefined();
-    expect(grammarAgentPolicy.planGate).toBeUndefined();
   });
 
   it("przykłady typów: w tematach „to be” i Present Continuous każdy cel ma przykład każdego swojego typu, poza nimi przykłady kart", () => {

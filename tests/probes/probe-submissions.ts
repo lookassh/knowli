@@ -33,7 +33,6 @@ export function recordingAgent(
     name: agent.name,
     model: agent.model,
     generatePacket: (input, cost, signal) => agent.generatePacket(input, cost, signal),
-    planObjectives: (input, tools, cost, signal) => agent.planObjectives(input, tools, cost, signal),
     runObjective: (input, tools, cost, signal) => {
       const objective = slugOf(input.objective.id);
       const run = currentRun();

@@ -27,7 +27,6 @@ import { kindsOf, lessonAgentLimits } from "../modules/materials/lessons/lesson-
 import { objectiveAgentInput } from "../modules/materials/lessons/lesson-pool-agent-input";
 import { sanitizeFreshLessonDraft } from "../modules/materials/lessons/lesson-pool-acceptance";
 import { FakeLlmProvider } from "./fake";
-import { fakePlanFromCoverage } from "./fake-lesson-agent";
 import { fakeObjectiveExercises } from "./fake-lesson-pool";
 
 /**
@@ -111,21 +110,44 @@ async function schoolLesson(): Promise<Lesson> {
   return lessonOf({ subject: schoolSubject, topic: schoolSubject.buildDynamicTopic!(data), material: SCHOOL_MATERIAL, examplesFixed: false });
 }
 
-/** Rozdział z planem fake'a z pokrycia (jak planista trybu fake): przykłady kart z planu. */
-function chapterLesson(material: string, poolSize = 0): Lesson {
-  const plan = fakePlanFromCoverage({
-    subjectTitle: englishChapterSubject.titlePl,
-    topicTitle: "Unit 1",
-    material,
-    generationRole: "",
-    objectiveCount: { min: 3, max: 6 },
-    coverage: englishChapterSubject.agentPolicy.planCoverage!(material),
-    maxSteps: 8,
-  });
-  const built = buildDynamicTopicData(plan.objectives, englishChapterSubject.id, "42", "Unit 1");
+/**
+ * Zagadnienia rozdziału jak z etapu zagadnień trybu fake: „Część N” z kartą słów (albo ram) i kartą tematu,
+ * a jedyny przykład to pierwszy element grupy. Pusta grupa (materiał bez list) → karta i przykład z tytułem tematu.
+ */
+function chapterObjectives(groups: readonly { kind: "words" | "frame"; items: readonly string[] }[]): Record<string, unknown>[] {
+  return groups.map((group, index) => ({
+    slug: `part_${index + 1}`,
+    titlePl: `Część ${index + 1}`,
+    descriptionEn: `Part ${index + 1} of Unit 1.`,
+    kind: group.kind,
+    cards: [
+      {
+        title: group.kind === "words" ? "Words" : "Frames",
+        body: group.items.length > 0 ? group.items.join(group.kind === "words" ? ", " : "\n") : "Unit 1",
+      },
+      { title: "Topic", body: "Unit 1" },
+    ],
+    examples: [group.items[0] ?? "Unit 1"],
+  }));
+}
+
+/** Podział materiału ze Słowa:/Zwroty: na dwa zagadnienia słów i ramę. */
+const LIST_GROUPS = [
+  { kind: "words", items: ["coat", "boots"] },
+  { kind: "words", items: ["scarf", "gloves"] },
+  { kind: "frame", items: ["I am wearing …", "Put on your …"] },
+] as const;
+
+/** Materiał bez list (puste pokrycie): trzy zagadnienia słów z kartą tematu. */
+const NO_LIST_GROUPS = [0, 1, 2].map(() => ({ kind: "words" as const, items: [] }));
+
+/** Rozdział z zagadnień fake'a: przykłady kart z etapu zagadnień, ustalone. */
+function chapterLesson(material: string, groups: Parameters<typeof chapterObjectives>[0] = LIST_GROUPS, poolSize = 0): Lesson {
+  const objectives = chapterObjectives(groups);
+  const built = buildDynamicTopicData(objectives, englishChapterSubject.id, "42", "Unit 1");
   const data = built.data!;
   const examples = Object.fromEntries(
-    data.objectives.map((objective, index) => [objective.id, plan.objectives[index]!.examples as string[]]),
+    data.objectives.map((objective, index) => [objective.id, objectives[index]!.examples as string[]]),
   );
   return lessonOf({
     subject: englishChapterSubject,
@@ -264,7 +286,7 @@ describe("fakeObjectiveExercises — zagadnienia jednej lekcji nie ujawniają so
 
 describe("fakeObjectiveExercises — idempotencja materializacji (spec katalogu reguł §4.3)", () => {
   it("rekordy wszystkich typów fake'a: dwa przebiegi materializacji dają ten sam rekord", async () => {
-    const lessons = [grammarLesson(), await schoolLesson(), chapterLesson(CHAPTER_MATERIAL), chapterLesson(WEAR_MATERIAL)];
+    const lessons = [grammarLesson(), await schoolLesson(), chapterLesson(CHAPTER_MATERIAL), chapterLesson(WEAR_MATERIAL, NO_LIST_GROUPS)];
     const types = new Set<string>();
     for (const lesson of lessons) {
       for (const input of inputsOf(lesson, emptyState(lesson))) {
@@ -283,7 +305,7 @@ describe("fakeObjectiveExercises — idempotencja materializacji (spec katalogu 
 
 describe("fakeObjectiveExercises — rozdział zna zagadnienie", () => {
   it.each([0, 40])("rozdział `words` i `frame` na materiale ze Słowa:/Zwroty: (pula %i)", (poolSize) => {
-    const lesson = chapterLesson(CHAPTER_MATERIAL, poolSize);
+    const lesson = chapterLesson(CHAPTER_MATERIAL, LIST_GROUPS, poolSize);
     expect(lesson.objectives.map((objective) => objective.kind)).toEqual(["words", "words", "frame"]);
     const { state, rejected, inputs } = generateLesson(lesson);
     expect(rejected).toEqual([]);
@@ -314,7 +336,7 @@ describe("fakeObjectiveExercises — rozdział zna zagadnienie", () => {
     ["WEAR_MATERIAL", WEAR_MATERIAL],
     ["CARD_MATERIAL", CARD_MATERIAL],
   ])("rozdział na małym materiale (%s) — tłumaczenia trzech zagadnień rozłączne", (_name, material) => {
-    const lesson = chapterLesson(material);
+    const lesson = chapterLesson(material, NO_LIST_GROUPS);
     expect(lesson.objectives).toHaveLength(3);
     const { state, rejected } = generateLesson(lesson);
     expect(rejected).toEqual([]);

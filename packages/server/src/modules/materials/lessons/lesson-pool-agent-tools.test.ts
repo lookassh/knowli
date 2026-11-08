@@ -123,7 +123,6 @@ describe("polityka agenta i licznik kosztu", () => {
   it("wartości domyślne z planu etapu 1", () => {
     expect(DEFAULT_LESSON_AGENT_POLICY).toEqual({
       maxStepsPerObjective: 8,
-      planMaxSteps: 8,
       concurrency: 4,
       checkerConcurrency: 4,
       checkerTimeoutMs: 90_000,

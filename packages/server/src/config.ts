@@ -574,7 +574,6 @@ export function lessonAgentPolicyFromEnv(env: Record<string, string | undefined>
   const maxSteps = int("UMIEM_LESSON_AGENT_MAX_STEPS");
   return {
     maxStepsPerObjective: maxSteps,
-    planMaxSteps: maxSteps,
     concurrency: int("UMIEM_LESSON_AGENT_CONCURRENCY"),
     checkerConcurrency: int("UMIEM_LESSON_AGENT_CHECKER_CONCURRENCY"),
     objectiveTimeoutMs: int("UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS"),

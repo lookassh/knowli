@@ -110,16 +110,6 @@ const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
       expression: '`card words not used in any exercise yet: ${uncovered.join(", ")}`',
       reason: "luka zagadnienia dla statusu narzędzia (`missing`), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
     },
-    {
-      fn: "planGate",
-      expression: '`material words on no card: ${uncoveredWords.join(", ")}`',
-      reason: "bramka planu dla planisty (słowa materiału bez karty), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
-    },
-    {
-      fn: "planGate",
-      expression: '`material frames on no card: ${uncoveredFrames.join(" | ")}`',
-      reason: "bramka planu dla planisty (ramy materiału bez karty), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
-    },
   ],
   [TOOLS_FILE]: [
     {
@@ -494,7 +484,7 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
       expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "englishIssue", "chapterIssue", "schoolIssue"]),
     );
     expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "exerciseGate", "formatRuleReason"]));
-    expect([...vocabulary.textHooks].sort()).toEqual(["objectiveGaps", "planGate"]);
+    expect([...vocabulary.textHooks].sort()).toEqual(["objectiveGaps"]);
   });
 
   it("w ujściach zgłoszeń nie ma napisów ani spreadów spoza fabryk (poza wyjątkami)", () => {

@@ -112,7 +112,6 @@ describe("runLessonBaselinePool", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const generator = new FakeGenerator();
     const result = await run(generator);
-    expect(result.planStatus).toBe("not_needed");
     expect(result.objectives.map((objective) => [objective.objectiveId, objective.status])).toEqual([[first, "complete"], [second, "complete"]]);
     // Cele etapów 4 / 4 / 3: pula 20 na 2 cele = 10 na cel, podział agenta 4 / 4 / 2, independent podniesiony do minimum z rezerwą.
     const types = result.objectives[0]!.exercises.map((draft) => draft.exerciseType);
@@ -301,7 +300,7 @@ describe("runLessonBaselinePool", () => {
 
   it("rejects inputs the baseline does not support", async () => {
     const generator = new FakeGenerator();
-    await expect(run(generator, undefined, { objectiveSource: { source: "planner" } })).rejects.toBeInstanceOf(AppError);
+    await expect(run(generator, undefined, { objectiveSource: { source: "input", dynamicTopic: { titlePl: "Temat", objectives: [] } } })).rejects.toBeInstanceOf(AppError);
     await expect(run(generator, undefined, { target: { mode: "add", objectiveId: "english_grammar.present_simple.nope", count: 2 } })).rejects.toBeInstanceOf(AppError);
     expect(generator.calls).toHaveLength(0);
   });

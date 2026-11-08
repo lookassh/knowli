@@ -103,15 +103,14 @@ function catalogSource(topic: LessonTopic | undefined, objectiveIds: readonly st
 
 /**
  * Źródło zagadnień pełnej generacji (§7.1), pierwsza pasująca reguła: temat w punkcie kontrolnym →
- * `input`; temat dynamiczny runu → `input`; przedmiot bez tematów dynamicznych → `catalog`; przedmiot z
- * planerem (`agentPolicy.planCoverage`) → `planner`; pozostałe dynamiczne → `input` z etapu zagadnień.
+ * `input`; temat dynamiczny runu → `input`; przedmiot bez tematów dynamicznych → `catalog`; pozostałe
+ * dynamiczne (rozdział, szkoła) → `input` z etapu zagadnień.
  */
 function poolSource(args: LessonAgentRunInputArgs): AgentObjectiveSource | { readonly needsObjectives: true } {
   const { progress, input, subject } = args;
   if (progress?.dynamicTopic !== undefined) return { source: "input", dynamicTopic: progress.dynamicTopic };
   if (input.dynamicTopic !== undefined) return { source: "input", dynamicTopic: input.dynamicTopic };
   if (subject.buildDynamicTopic === undefined) return catalogSource(args.catalogTopic, input.objectiveIds);
-  if (subject.agentPolicy.planCoverage !== undefined) return { source: "planner" };
   if (args.schoolTopic !== undefined) return { source: "input", dynamicTopic: args.schoolTopic };
   return { needsObjectives: true };
 }
@@ -182,7 +181,7 @@ export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAge
     fixed: complete.flatMap(([, entry]) => entry.exercises),
     skipObjectives: complete.map(([objectiveId]) => objectiveId),
     initialExamples,
-    examplesFixed: hasPlanExamples(progress) || objectiveSource.source === "planner",
+    examplesFixed: hasPlanExamples(progress),
     target: { mode: "pool" },
   };
 }
@@ -203,8 +202,6 @@ export interface LessonAgentOutcomeObjective {
  * `result.spentUsd >= policy.runBudgetUsd`. Opóźnienie `requeue` liczy wołający (`lessonRetryDelayMs`).
  */
 export function lessonAgentRunOutcome(args: {
-  readonly planStatus: LessonPoolAgentResult["planStatus"];
-  readonly planFailure?: LessonPoolAgentResult["planFailure"];
   readonly objectives: readonly LessonAgentOutcomeObjective[];
   readonly accepted: number;
   readonly budgetExhausted: boolean;
@@ -214,14 +211,6 @@ export function lessonAgentRunOutcome(args: {
   const attemptsLeft = args.attempts < args.maxAttempts;
   // 1: budżet wyczerpany — kolejna próba nic by nie wydała.
   if (args.budgetExhausted) return args.accepted >= 1 ? { kind: "finalize" } : { kind: "failed", errorCode: "validation" };
-  if (args.planStatus === "plan_failed") {
-    const failure = args.planFailure;
-    // 2–3: porażka planu — przejściowa ponawiana, inaczej kod planu.
-    if (failure?.retryable === true && attemptsLeft) {
-      return { kind: "requeue", errorCode: failure.errorCode, ...(failure.retryAfterMs === undefined ? {} : { retryAfterMs: failure.retryAfterMs }) };
-    }
-    return { kind: "failed", errorCode: failure?.errorCode ?? "validation" };
-  }
   // 4: przejściowa porażka zagadnienia — kod pierwszego, najdłuższe `retryAfterMs` dostawcy.
   const retryable = args.objectives.flatMap((objective) =>
     objective.status === "failed" && objective.failure?.retryable === true ? [objective.failure] : [],

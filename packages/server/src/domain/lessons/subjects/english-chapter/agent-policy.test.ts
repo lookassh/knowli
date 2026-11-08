@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentObjective, LessonExerciseDraft, RawPlanObjective } from "../../types";
+import type { AgentObjective, LessonExerciseDraft } from "../../types";
 import { chapterAgentPolicy } from "./agent-policy";
 import { englishChapterSubject } from "./module";
 
@@ -264,41 +264,5 @@ describe("objectiveGaps", () => {
     const pool = [draft({ stem: "I sleep in a ___.", answer: "bed" }), draft({ stem: "A ___ is on.", answer: "lamp" })];
     expect(chapterAgentPolicy.objectiveGaps!(pool, objective(), { material: MATERIAL })).toEqual([]);
     expect(chapterAgentPolicy.objectiveGaps!([], frameObjective, { material: MATERIAL })).toEqual([]);
-  });
-});
-
-describe("planCoverage i planGate", () => {
-  function plan(bodies: string[]): RawPlanObjective[] {
-    return bodies.map((body, index) => ({
-      slug: `o${index}`,
-      titlePl: "T",
-      descriptionEn: "D",
-      kind: "words" as const,
-      cards: [{ title: "K", body }],
-      examples: [],
-    }));
-  }
-
-  it("planCoverage podaje słowa i ramy materiału", () => {
-    expect(chapterAgentPolicy.planCoverage!(MATERIAL)).toEqual({
-      words: ["bed", "lamp"],
-      frames: ["There's a … in the …", "I'm wearing a …"],
-    });
-  });
-
-  it("planGate wskazuje niepokryte słowa i ramy", () => {
-    const errors = chapterAgentPolicy.planGate!(plan(["bed — łóżko", "There's a … in the …"]), MATERIAL);
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toContain("lamp");
-    expect(errors[1]).toContain("I'm wearing a …");
-  });
-
-  it("planGate pokrytego planu zwraca pustą listę", () => {
-    expect(chapterAgentPolicy.planGate!(plan(["bed — łóżko\nlamp — lampa", "There's a … in the …\nI'm wearing a red coat."]), MATERIAL)).toEqual([]);
-  });
-
-  it("materiał bez list nie wymaga pokrycia", () => {
-    expect(chapterAgentPolicy.planGate!(plan(["cokolwiek"]), "Tekst bez list.")).toEqual([]);
-    expect(chapterAgentPolicy.planCoverage!("Tekst bez list.")).toEqual({ words: [], frames: [] });
   });
 });

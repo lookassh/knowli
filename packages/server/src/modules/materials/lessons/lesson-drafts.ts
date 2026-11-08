@@ -1351,7 +1351,7 @@ export async function lessonRunIsCurrent(db: Executor, run: LessonRunIdentity): 
 }
 
 /**
- * Etap zagadnień przedmiotu dynamicznego bez planera (szkoła; ścieżka agenta): jedno żądanie
+ * Etap zagadnień przedmiotu dynamicznego (szkoła i rozdział — ten z `objectivesRules` i wymaganym `kind`): jedno żądanie
  * `generateLessonObjectives`, budowa i walidacja tematu jak przy zapisie. `droppedObjectiveCount` —
  * zagadnienia odrzucone przy budowie (panel rodzica).
  */
@@ -1362,6 +1362,7 @@ export async function generateDynamicObjectives(
   input: LessonRunInput,
 ): Promise<{ data: DynamicTopicData; droppedObjectiveCount: number }> {
   await control.assertCurrent();
+  const rules = subject.prompts.objectivesRules;
   const objectivesResult = await control.call((signal) =>
     llm.generateLessonObjectives(
       {
@@ -1371,14 +1372,18 @@ export async function generateDynamicObjectives(
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
         generationRole: subject.prompts.generationRole,
         voiceTones: subject.ttsForPrompts === true,
+        ...(rules === undefined ? {} : { objectivesRules: rules }),
       },
       signal,
     ),
   );
   await control.assertCurrent();
   const topicTitle = input.topicTitlePl ?? "";
-  const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) =>
-    validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }), subject.ttsForPrompts === true);
+  // Przy regułach zagadnień rodzaj jest wymagany: bez niego typy ćwiczeń brałyby po cichu rodzaj „words”.
+  const built = buildDynamicTopicData(objectivesResult.objectives, subject.id, input.deckId, topicTitle, (objective) => [
+    ...(rules !== undefined && objective.kind === undefined ? ["brak rodzaju zagadnienia (kind)"] : []),
+    ...validateDynamicTopicData(subject, { titlePl: topicTitle, objectives: [objective] }),
+  ], subject.ttsForPrompts === true);
   if (!built.data) {
     throw new AppError("validation", { message: `dynamic objectives invalid: ${built.errors.join("; ")}` });
   }

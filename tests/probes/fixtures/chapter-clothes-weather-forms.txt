@@ -1,0 +1,21 @@
+coat|coats
+hat|hats
+scarf|scarves
+boots|boot
+gloves|glove
+jumper|jumpers
+shorts
+T-shirt|T-shirts
+dress|dresses
+red
+blue
+green
+yellow
+sunny
+rainy
+windy
+cold
+hot
+I'm wearing|I am wearing
+What's the weather like|What is the weather like
+Put on your

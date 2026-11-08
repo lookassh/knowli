@@ -72,7 +72,7 @@ describe("lessonAgentDepsFromEnv", () => {
     const deps = available(lessonAgentDepsFromEnv(env, createTestRecorder()));
     expect(deps.agent).toBeInstanceOf(FakeLessonPoolAgent);
     expect(deps.checker).toBeInstanceOf(FakeExerciseChecker);
-    expect(deps.policy).toMatchObject({ maxStepsPerObjective: 5, planMaxSteps: 5, concurrency: 4 });
+    expect(deps.policy).toMatchObject({ maxStepsPerObjective: 5, concurrency: 4 });
     expect(deps).not.toHaveProperty("grader");
     const solved = await deps.checker.solve({ items: [{ view: "v", expectedAnswers: 1 }] }, { record: () => undefined }, never);
     expect(solved.answers).toEqual([null]);
@@ -107,7 +107,6 @@ describe("lessonAgentDepsFromEnv", () => {
     expect(result.objectives.every((objective) => objective.exercises.length > 0)).toBe(true);
     // record: false — worker nie gromadzi historii wywołań fake'a
     expect(agent.calls).toHaveLength(0);
-    expect(agent.planCalls).toHaveLength(0);
     // stepCostUsd: 0 — kroki fake'a nie zużywają budżetu runu (koszt znany, nie szacunek)
     expect(result.spentUsd).toBe(0);
     expect(result.unknownCostCalls).toBe(0);

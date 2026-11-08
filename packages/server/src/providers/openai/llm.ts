@@ -378,7 +378,7 @@ function fencedUserMaterial(lead: string, input: { material: string; instruction
 }
 
 /** Schema etapu zagadnień tematu dynamicznego (przedmioty z materiału rodzica). */
-function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown> {
+function lessonObjectivesJsonSchema(voiceTones: boolean, kinds: boolean): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
@@ -389,9 +389,10 @@ function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["slug", "titlePl", "descriptionEn", "cards"],
+          required: kinds ? ["slug", "titlePl", "descriptionEn", "kind", "cards"] : ["slug", "titlePl", "descriptionEn", "cards"],
           properties: {
             slug: { type: "string" },
+            ...(kinds ? { kind: { type: "string", enum: ["words", "frame"] } } : {}),
             titlePl: { type: "string" },
             descriptionEn: { type: "string" },
             cards: {
@@ -415,15 +416,32 @@ function lessonObjectivesJsonSchema(voiceTones: boolean): Record<string, unknown
 }
 
 function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
-  return (
+  const head =
     `${input.generationRole} ` +
-    `Subject: ${input.subjectTitle}. Topic: ${input.topicTitle}. ` +
+    `Subject: ${input.subjectTitle}. Topic: ${input.topicTitle}. `;
+  const voice = input.voiceTones === true ? `Each card also has ${VOICE_TONE_RULE} ` : "";
+  // Reguły zagadnień przedmiotu (rozdział) zastępują ogólną liczbę zagadnień i format kart.
+  if (input.objectivesRules !== undefined) {
+    return (
+      head +
+      "Split the parent material into learnable objectives, in teaching order. " +
+      "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
+      "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), " +
+      "kind and cards as the subject rules below say; card body at most 600 characters; NEVER add facts, words or definitions " +
+      "that are not in the material. " +
+      voice +
+      `Subject rules: ${input.objectivesRules} ` +
+      "Return strict JSON only."
+    );
+  }
+  return (
+    head +
     "Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. " +
     "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
     "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), " +
     "cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; " +
     "you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). " +
-    (input.voiceTones === true ? `Each card also has ${VOICE_TONE_RULE} ` : "") +
+    voice +
     "Return strict JSON only."
   );
 }
@@ -568,7 +586,7 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
       return { items: parsed.items ?? [] };
     },
     async generateLessonObjectives(input: LessonObjectivesInput, signal?: AbortSignal) {
-      const schema = lessonObjectivesJsonSchema(input.voiceTones === true);
+      const schema = lessonObjectivesJsonSchema(input.voiceTones === true, input.objectivesRules !== undefined);
       const system = lessonObjectivesSystemPrompt(input);
       const user = lessonUserMaterial({
         material: input.material,

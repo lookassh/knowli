@@ -852,7 +852,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect((await readGeneration(services, runId)).state).toBe("superseded");
     await executeLessonGeneration(services, runId);
     expect(fakes.agent.calls).toHaveLength(0);
-    expect(fakes.agent.planCalls).toHaveLength(0);
     const [version] = await query<{ edit_number: number; title: string }>("select edit_number, title from learning_app.deck_versions where id = $1", [queued.deckVersionId]);
     expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
   });
@@ -888,7 +887,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(result.state).toBe("queued");
     expect(result.attempts).toBe(0);
     expect(fakes.agent.calls).toHaveLength(0);
-    expect(fakes.agent.planCalls).toHaveLength(0);
   });
 
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {

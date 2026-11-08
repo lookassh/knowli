@@ -4,7 +4,6 @@ import type {
   HintVerdict,
   LessonPacketGenerator,
   LessonPacketInput,
-  LessonAgentPlanInput,
   LessonExerciseCheckerProvider,
   LessonObjectiveAgentInput,
   LessonObjectiveAgentTools,
@@ -56,29 +55,25 @@ export interface FakeLessonPoolAgentOptions {
    * wywołanie spoza listy nie ma kroków.
    */
   objectives?: Record<string, FakeObjectiveScript>;
-  /** Kolejne propozycje planu przekazywane do `propose`. */
-  plans?: unknown[];
   /** Koszt jednego kroku zapisywany w `RunCostSink`; brak = `null` (koszt nieznany). */
   stepCostUsd?: number | null;
   /**
    * Dziennik kosztów: jeden `recordResponse` na krok (jak adapter na żądanie HTTP), `provider`
-   * `"openrouter"`, operacje `agent_objective` i `agent_plan`.
+   * `"openrouter"`, operacje `agent_objective` i `packet_generate`.
    */
   usage?: UsageRecorder;
   /**
    * Pętla generatora (spec etapu 3 §5.2): zagadnienie bez scenariusza zgłasza {@link fakeObjectiveExercises}
-   * i dokłada kroki tylko dla braków z wyniku narzędzia (do `maxSteps`); planer bez `plans` — plan
-   * z pokrycia. `delayMs` opóźnia każdy krok, a `FAKE_SLOW_MARKER` w materiale — pierwszy krok
+   * i dokłada kroki tylko dla braków z wyniku narzędzia (do `maxSteps`). `delayMs` opóźnia każdy krok, a `FAKE_SLOW_MARKER` w materiale — pierwszy krok
    * zagadnienia do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał.
    */
   generate?: { delayMs?: number };
   /** Scenariusze paczek przebiegu bazowego per slug zagadnienia (kolejne wywołania — kolejne kroki). */
   packets?: Record<string, FakePacketStep[]>;
-  /** Zapis historii `calls` i `planCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
+  /** Zapis historii `calls` i `packetCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
   record?: boolean;
 }
 
-type PlanTools = Parameters<LessonPoolAgentProvider["planObjectives"]>[1];
 type SubmitInput = Parameters<LessonObjectiveAgentTools["submit"]>[0];
 type FakeStage = "guided" | "productive" | "independent";
 
@@ -213,64 +208,6 @@ function stalled(): Promise<never> {
   return new Promise<never>(() => undefined);
 }
 
-/**
- * `count` ciągłych, zrównoważonych kawałków listy po kolei (rozmiary różnią się najwyżej o 1, nadmiar
- * w pierwszych). Lista krótsza niż `count` (ale niepusta) — każdy kawałek dostaje jeden element po kolei
- * z powtórzeniem, więc żaden nie jest pusty; pusta lista daje puste kawałki.
- */
-function chunks<T>(items: readonly T[], count: number): T[][] {
-  if (items.length === 0) return Array.from({ length: count }, () => []);
-  if (items.length < count) return Array.from({ length: count }, (_unused, index) => [items[index % items.length]!]);
-  const base = Math.floor(items.length / count);
-  const extra = items.length % count;
-  let start = 0;
-  return Array.from({ length: count }, (_unused, index) => {
-    const size = base + (index < extra ? 1 : 0);
-    const chunk = items.slice(start, start + size);
-    start += size;
-    return chunk;
-  });
-}
-
-/** Nagłówki materiału (linie kończące się „:”), gdy przedmiot nie ma pokrycia planu; brak → niepuste linie. */
-function materialHeadings(material: string): string[] {
-  const lines = material.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line !== "");
-  const headings = lines.filter((line) => line.endsWith(":")).map((line) => line.slice(0, -1).trim()).filter((line) => line !== "");
-  return headings.length > 0 ? headings : lines;
-}
-
-/**
- * Deterministyczny plan generatora (`generate`): trzy zagadnienia „Część 1/2/3”. Słowa pokrycia (gdy brak —
- * nagłówki materiału) dzielone po kolei i po równo na dwa zagadnienia `words`, ramy w trzecim `frame`; bez
- * ram trzecie też jest zagadnieniem słów. Przy mniejszej liczbie słów niż zagadnień słowa się powtarzają,
- * więc każda karta ma słowo materiału. Karta „Words”/„Frames” z listą pokrywa cały materiał (bramka planu),
- * druga karta to temat (plan wymaga 2–4 kart), a jedyny przykład to pierwsze słowo albo rama.
- */
-export function fakePlanFromCoverage(input: LessonAgentPlanInput): { objectives: Record<string, unknown>[] } {
-  const coverage = input.coverage ?? { words: materialHeadings(input.material), frames: [] };
-  const fallback = input.topicTitle.trim() || "Lesson";
-  const groups: { kind: "words" | "frame"; items: readonly string[] }[] =
-    coverage.frames.length > 0
-      ? [...chunks(coverage.words, 2).map((items) => ({ kind: "words" as const, items })), { kind: "frame", items: coverage.frames }]
-      : chunks(coverage.words, 3).map((items) => ({ kind: "words" as const, items }));
-  return {
-    objectives: groups.map((group, index) => ({
-      slug: `part_${index + 1}`,
-      titlePl: `Część ${index + 1}`,
-      descriptionEn: `Part ${index + 1} of ${fallback}.`,
-      kind: group.kind,
-      cards: [
-        {
-          title: group.kind === "words" ? "Words" : "Frames",
-          body: group.items.length > 0 ? group.items.join(group.kind === "words" ? ", " : "\n") : fallback,
-        },
-        { title: "Topic", body: fallback },
-      ],
-      examples: [group.items[0] ?? fallback],
-    })),
-  };
-}
-
 /** Śledzi największą liczbę jednocześnie trwających wywołań. */
 class ConcurrencyMeter {
   private active = 0;
@@ -302,7 +239,6 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
     tools: LessonObjectiveAgentTools;
     outcomes: unknown[];
   }[] = [];
-  readonly planCalls: { input: LessonAgentPlanInput; proposals: unknown[] }[] = [];
   /** Zapis wywołań `generatePacket` (przy `record !== false`). */
   readonly packetCalls: LessonPacketInput[] = [];
   /** Kolejne pasmo numeracji paczek: każda paczka (także „+N” i wznowienie w tym procesie) ma inne odpowiedzi. */
@@ -419,27 +355,6 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
     });
   }
 
-  async planObjectives(
-    input: LessonAgentPlanInput,
-    tools: PlanTools,
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ steps: number }> {
-    const proposals: unknown[] = [];
-    if (this.options.record !== false) this.planCalls.push({ input, proposals });
-    let steps = 0;
-    const plans = this.options.plans ?? (this.options.generate !== undefined ? [fakePlanFromCoverage(input)] : []);
-    for (const plan of plans) {
-      signal.throwIfAborted();
-      if (steps >= input.maxSteps || tools.shouldStop()) break;
-      this.recordStep(cost, "agent_plan");
-      steps += 1;
-      proposals.push(plan);
-      await tools.propose(plan);
-    }
-    return { steps };
-  }
-
   /** Scenariusz wywołania; `undefined` = zagadnienie bez scenariusza (wtedy generator albo brak kroków). */
   private scriptFor(slug: string): FakeAgentStep[] | undefined {
     const script = this.options.objectives?.[slug];
@@ -450,7 +365,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
   }
 
   /** Koszt „wywołania modelu”: licznik runu i dziennik kosztów z tego samego zdarzenia (jak adapter). */
-  private recordStep(cost: RunCostSink, operation: "agent_objective" | "agent_plan" | "packet_generate"): void {
+  private recordStep(cost: RunCostSink, operation: "agent_objective" | "packet_generate"): void {
     const usd = this.options.stepCostUsd ?? null;
     cost.record(usd);
     recordResponse(

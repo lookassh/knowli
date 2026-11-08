@@ -75,7 +75,6 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
   const subject = deps.subjects.getSubject(input.subjectId);
   if (subject === undefined) throw new AppError("validation", { message: `unknown subject ${input.subjectId}` });
   const source = input.objectiveSource;
-  if (source.source === "planner") throw new AppError("validation", { message: "baseline pool needs resolved objectives" });
   if (source.source === "input" && subject.buildDynamicTopic === undefined) {
     throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
   }
@@ -395,7 +394,7 @@ export async function runLessonBaselinePool(
       await input.onObjectiveSettled?.(settled);
       signal.throwIfAborted();
     }
-    return { planStatus: "not_needed", objectives: settledList, stats, rejections, spentUsd: cost.spentUsd, unknownCostCalls: cost.unknownCalls };
+    return { objectives: settledList, stats, rejections, spentUsd: cost.spentUsd, unknownCostCalls: cost.unknownCalls };
   } finally {
     runDeadline.dispose();
   }

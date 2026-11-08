@@ -96,7 +96,6 @@ function withSpend(progress: LessonAgentProgress, spentUsd: number): Pick<Lesson
 /** Wynik kierownika z jednym rozliczonym zagadnieniem (zapis postępu w haku `onObjectiveSettled`). */
 function settledResult(settled: SettledObjective): LessonPoolAgentResult {
   return {
-    planStatus: "not_needed",
     objectives: [settled],
     stats: emptyLessonPoolAgentStats(),
     rejections: settled.rejections,
@@ -423,7 +422,6 @@ export async function executeLessonAgentGeneration(
     // Termin runu od startu runu (§7.2), jak termin finalizacji zapisu — nie od startu kontrolera.
     const remainingMs = runDeadlineAtMs - (agentDeps.finalizationReserveMs ?? AGENT_FINALIZATION_RESERVE_MS) - Date.now();
     const emptyAttempt: LessonPoolAgentResult = {
-      planStatus: "not_needed",
       objectives: [],
       stats: emptyLessonPoolAgentStats(),
       rejections: [],
@@ -432,8 +430,6 @@ export async function executeLessonAgentGeneration(
     };
     const outcomeFor = (progress: LessonAgentProgress, result: LessonPoolAgentResult): LessonAgentOutcome =>
       lessonAgentRunOutcome({
-        planStatus: result.planStatus,
-        ...(result.planFailure === undefined ? {} : { planFailure: result.planFailure }),
         objectives: outcomeObjectivesOf(progress, result),
         accepted: acceptedCount(progress),
         budgetExhausted: result.spentUsd >= budgetUsd,

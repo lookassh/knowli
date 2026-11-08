@@ -4,7 +4,6 @@ import type {
   DynamicObjectiveKind,
   LessonExerciseDraft,
   LessonExerciseType,
-  RawPlanObjective,
   SubjectAgentPolicy,
 } from "../../types";
 import { chapterExposureText } from "./exposure";
@@ -198,17 +197,5 @@ export const chapterAgentPolicy: SubjectAgentPolicy = {
       (word) => !pool.some((draft) => mentions(exerciseText(draft), word)),
     );
     return uncovered.length > 0 ? [`card words not used in any exercise yet: ${uncovered.join(", ")}`] : [];
-  },
-  planCoverage: parseMaterialLexicon,
-  planGate(plan: readonly RawPlanObjective[], material: string) {
-    const lexicon = parseMaterialLexicon(material);
-    const cardText = plan.map((objective) => objective.cards.map((card) => card.body).join("\n")).join("\n");
-    const plainCards = plainText(cardText);
-    const uncoveredWords = lexicon.words.filter((word) => !mentions(cardText, word));
-    const uncoveredFrames = lexicon.frames.filter((frame) => !plainCards.includes(frameKey(frame)));
-    const errors: string[] = [];
-    if (uncoveredWords.length > 0) errors.push(`material words on no card: ${uncoveredWords.join(", ")}`);
-    if (uncoveredFrames.length > 0) errors.push(`material frames on no card: ${uncoveredFrames.join(" | ")}`);
-    return errors;
   },
 };
