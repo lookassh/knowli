@@ -1,6 +1,6 @@
 # Etap 5: rozdział i szkoła na przebiegu bazowym, usunięcie pętli agenta — design
 
-Wersja 2.1, 2026-11-08, po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, dydaktyka i pomiar). **Zatwierdzona przez właściciela 2026-11-08** z rekomendacjami §13 (podział 5a/5b/5c, keywords w wariancie A). Zgoda na płatne biegi — osobno. Issue #362, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4: §4, §5, §8, §9, §10, §11 pkt 5, §12, §14, §16). Spece etapów 2 (v3.1) i 4 (v2.1), raport bramki w PR #367 i przebiegu kontrolnego w PR #371. Stan kodu: `main` 6de15af2. Równolegle: #372 (luki w `short_answers` gramatyki; może dotknąć `packet-plan.ts` i promptu paczki — po scaleniu tamtego PR synchronizujemy gałąź).
+Wersja 2.2, 2026-11-08 (v2.2: kolejność bramek, §14), po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, dydaktyka i pomiar). **Zatwierdzona przez właściciela 2026-11-08** z rekomendacjami §13 (podział 5a/5b/5c, keywords w wariancie A). Zgoda na płatne biegi — osobno. Issue #362, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4: §4, §5, §8, §9, §10, §11 pkt 5, §12, §14, §16). Spece etapów 2 (v3.1) i 4 (v2.1), raport bramki w PR #367 i przebiegu kontrolnego w PR #371. Stan kodu: `main` 6de15af2. Równolegle: #372 (luki w `short_answers` gramatyki; może dotknąć `packet-plan.ts` i promptu paczki — po scaleniu tamtego PR synchronizujemy gałąź).
 
 ## 1. Cel i granice
 
@@ -316,6 +316,7 @@ Przy keywords w wariancie A i szkole bez kontroli 2b. Etap zagadnień rozdziału
 
 - **v1** — pierwsza wersja.
 - **v2.1** — zatwierdzenie właściciela; sędzia 1 = skryptowy Claude Opus 5.5 przez OpenRouter (kredyt właściciela).
+- **v2.2** — decyzja właściciela z 2026-11-08 po biegu potwierdzającym rozdziału (sędzia 1 przepuszcza, sędzia 2 nie: W6 ram na kartach, W9 przykładów kart z „and” ze strojenia 2; koszt sędziego 2 ok. 0,27 USD na 100 wierszy zamiast 0,16): przed każdym płatnym strojeniem darmowy przegląd promptów przedmiotu i istniejących zrzutów przez Opusa (subagent sesji, bez OpenRoutera); PR 5a po zaliczonej bramce u sędziego 1 i poprawkach wad wskazanych przez sędziego 2, z jednym kontrolnym biegiem ocenianym tylko przez sędziego 1; w 5b rundy z sędzią 1; jedno wspólne strojenie i jeden bieg potwierdzający z sędzią 2 dla obu przedmiotów na końcu, przed scaleniem 5c (§7.5–§7.7 stosowane wtedy).
 - **v2** (trzej krytycy):
   - kontrola wielu pól jako pozycje paczki w dzisiejszym kształcie wyniku (bez nowego promptu), numery luk tylko w widoku kontroli, pola oceniane niezależnie, widok keywords z pytaniem;
   - keywords: trzy warianty do decyzji (z pytaniem otwartym w jednej paczce, osobna paczka, bez keywords), limit 1 zgodny z `typeRules`, przyjmowanie po innych ćwiczeniach zagadnienia, `familyBase` w wejściu;
