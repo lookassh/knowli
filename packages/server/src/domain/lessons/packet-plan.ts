@@ -79,13 +79,18 @@ export function packetPlanForTargets(
   for (const stage of STAGES) {
     if (targets[stage] === 0) continue;
     const stageTypes = types.filter((type) => !outsideStagePath(type) && stageOf(type) === stage);
+    // Reszta podziału do wcześniejszych typów (kolejność katalogu zagadnienia).
+    const shareOf = (index: number) => Math.floor(targets[stage] / stageTypes.length) + (index < targets[stage] % stageTypes.length ? 1 : 0);
+    // Rachunki są puste, gdy materiał nie uczy obsługiwanej metody (typeRules przedmiotu): paczka pytań
+    // otwartych tego etapu zamawia też ich udział, a limit etapu odcina nadmiar przy przyjęciu (runda 0 szkoły).
+    const calculationShare = stageTypes.includes("lesson_calculation") ? shareOf(stageTypes.indexOf("lesson_calculation")) : 0;
     stageTypes.forEach((type, index) => {
-      // Reszta podziału do wcześniejszych typów (kolejność katalogu zagadnienia).
-      const share = Math.floor(targets[stage] / stageTypes.length) + (index < targets[stage] % stageTypes.length ? 1 : 0);
+      const share = shareOf(index);
       // Typ bez udziału (cel etapu mniejszy niż liczba typów, zwykle w „dodaj N”) nie zamawia samego zapasu.
       if (share === 0) return;
       const companion = withKeywords && type === "lesson_open_answer" ? { companion: "lesson_keywords" as const } : {};
-      packets.push({ type, share, count: share + PACKET_RESERVE, ...companion });
+      const extra = type === "lesson_open_answer" ? calculationShare : 0;
+      packets.push({ type, share, count: share + extra + PACKET_RESERVE, ...companion });
     });
   }
   if (listen > 0) packets.push({ type: "lesson_listen_choice", share: listen, count: listen });

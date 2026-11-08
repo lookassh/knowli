@@ -20,6 +20,8 @@ export const schoolPrompts: SubjectPromptProfile = {
   // pytania otwartego) opisuje katalog reguł w księdze reguł promptu (spec katalogu reguł §3).
   fieldRules:
     "Wszystkie pola tekstowe są po polsku (prompt language = answer language). " +
+    "Każde ćwiczenie sprawdza fakty swojego zagadnienia (opis i karty powyżej); fakty innych zagadnień materiału " +
+    "nie trafiają do jego treści, par, grup ani kroków. " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
     "Gdy zagadnienie, dla którego piszesz, obejmuje parę łatwo mylonych pojęć z materiału " +
@@ -30,10 +32,13 @@ export const schoolPrompts: SubjectPromptProfile = {
     "commonErrors: typowe błędne stwierdzenia dzieci w tym pytaniu. expectedForm: short (sam fakt/data/nazwa), " +
     "one_sentence (tylko gdy odpowiedź da się zamknąć w jednym zdaniu), explanation, list (wyliczenie). " +
     "familyId: wspólny slug dla różnych sformułowań TEGO SAMEGO pytania; " +
-    "twórz rodziny 2-3 sformułowań dla najważniejszych pytań otwartych. " +
+    "twórz rodziny po 2 sformułowania dla najważniejszych pytań otwartych. " +
     "sourceRefs: wybierz najkrótszy fragment materiału, który uzasadnia ćwiczenie i z którego wynika pytanie i odpowiedź. " +
     "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej. " +
-    "lesson_gap: stem to zdanie z materiału z luką po fakcie (data, nazwa, pojęcie), nigdy zdanie karty z luką. " +
+    "lesson_gap: stem to zdanie o fakcie z materiału z luką po fakcie (data, nazwa, pojęcie), sformułowane " +
+    "inaczej niż zdania kart (karty też cytują materiał), nigdy zdanie karty z luką. answer i każdy wariant " +
+    "w acceptedAnswers wstawione w lukę dają poprawne gramatycznie zdanie (ten sam przypadek i liczba co luka, " +
+    "bez powtórzenia słowa stojącego tuż przed albo za luką). " +
     "lesson_choice: stem to pytanie, options to krótkie odpowiedzi. " +
     "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
@@ -46,7 +51,8 @@ export const schoolPrompts: SubjectPromptProfile = {
       "with free choice (e.g. 'name any two') or a why/what-jobs question to which the material gives several reasons " +
       "or jobs, require what every valid choice satisfies and put the examples into supplementaryElements, or make the " +
       "question ask for the specific items; never drop an element the question genuinely requires. 'Every exercise uses a different sentence' applies between question families: " +
-      "write the ordered questions as at least two families with different model answers; members of one family share " +
+      "write the ordered questions as at least three families with different model answers, at most two questions per " +
+      "family, each about a different fact of this objective; members of one family share " +
       "the model answer and requiredElements and differ only in the question wording. The cards explain the facts of " +
       "this objective: ask about these facts in your own question wording, never as a card sentence with a gap. " +
       "Leave hint null.",

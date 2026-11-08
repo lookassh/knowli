@@ -84,6 +84,17 @@ describe("keywords companion (stage 5b, variant A)", () => {
     expect(add.caps.keywords).toBe(0);
   });
 
+  it("the open answer packet also orders the calculation share (calculations stay empty when the material teaches no method)", () => {
+    const plan = packetPlan(schoolSubject, school, { guided: 4, productive: 4, independent: 4 }, 0);
+    const open = plan.packets.find((packet) => packet.type === "lesson_open_answer")!;
+    const calc = plan.packets.find((packet) => packet.type === "lesson_calculation")!;
+    expect([open.share, calc.share]).toEqual([2, 2]);
+    expect(open.count).toBe(open.share + calc.share + PACKET_RESERVE);
+    expect(calc.count).toBe(calc.share + PACKET_RESERVE);
+    // Limit etapu bez zmian: nadmiar pytań otwartych odpada przy przyjęciu, gdy rachunki zajmą swój udział.
+    expect(plan.caps.independent).toBe(4);
+  });
+
   it("keywords have their own bucket", () => {
     expect(bucketOf("lesson_keywords")).toBe("keywords");
     expect(bucketOf("lesson_listen_choice")).toBe("listen");
