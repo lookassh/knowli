@@ -4,6 +4,20 @@ import type { NextConfig } from "next";
 const e2e = process.env.UMIEM_E2E === "1";
 
 const nextConfig: NextConfig = {
+  // Obrona w głąb (#399): nosniff na każdej odpowiedzi (panel, media, API)
+  // oraz zakaz osadzania aplikacji w ramkach. To świadomie NIE jest pełne
+  // CSP — wyłącznie dyrektywa frame-ancestors.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
   transpilePackages: ["@learning/contracts", "@learning/server", "@learning/kid-ui"],
   experimental: {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks"],

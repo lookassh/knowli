@@ -407,6 +407,58 @@ describe("przyjmowanie odpowiedzi (integracja)", () => {
     expect(read.state).toBe("completed");
   });
 
+  it("obcy optionId jest odrzucany kodem validation bez zapisu próby i oceny (#379)", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
+    const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });
+
+    let task: TaskDto | null = null;
+    for (let step = 0; step < 16 && task === null; step++) {
+      const next = await nextTask(services, session.sessionId);
+      if (!next) break;
+      if (next.exerciseType === "exposure") {
+        await completePresentation(services, { taskId: next.taskId });
+        continue;
+      }
+      const options = await promptOptions(next.taskId);
+      if (["listening", "reading", "reverse_recognition", "picture_recognition"].includes(next.exerciseType) && options.length > 0) {
+        task = next;
+      } else {
+        await submitCorrect(services, next);
+      }
+    }
+    expect(task).not.toBeNull();
+    const options = await promptOptions(task!.taskId);
+    const foreignOptionId = randomUUID();
+    expect(options.map((o) => o.id)).not.toContain(foreignOptionId);
+
+    await expectAppError(
+      submitAttempt(services, { taskId: task!.taskId, clientAttemptId: randomUUID(), modality: "choice", optionId: foreignOptionId }),
+      "validation",
+    );
+    expect(await attemptRows(task!.taskId)).toEqual([]);
+    const gradeCount = (
+      await query<{ count: number }>(
+        `select count(*)::int as count from learning_app.assessments a
+           join learning_app.attempts t on t.id = a.attempt_id where t.task_id = $1`,
+        [task!.taskId],
+      )
+    )[0]!;
+    expect(gradeCount.count).toBe(0);
+    expect((await taskRow(task!.taskId)).state).toBe("issued");
+
+    // poprawna opcja i idempotentny retry działają jak dotąd
+    const key = await answerKeyOf(task!.taskId);
+    const clientAttemptId = randomUUID();
+    const first = await submitAttempt(services, {
+      taskId: task!.taskId, clientAttemptId, modality: "choice", optionId: key.correct_option_id!,
+    });
+    const retry = await submitAttempt(services, {
+      taskId: task!.taskId, clientAttemptId, modality: "choice", optionId: key.correct_option_id!,
+    });
+    expect(retry.attemptId).toBe(first.attemptId);
+    expect((await attemptRows(task!.taskId)).length).toBe(1);
+  });
+
   it("pierwszy błąd zostawia zadanie issued, drugi kończy jako answered i kieruje do wsparcia", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 4));
     const session = await startLegacyTrainingSession(services, { childId, deckId, microphoneEnabled: false });

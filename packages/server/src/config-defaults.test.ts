@@ -53,6 +53,20 @@ describe("withConfigDefaults", () => {
     expect(withConfigDefaults({ UMIEM_LLM_MODEL: "openai/gpt-4o-mini" }).UMIEM_LLM_REASONING).toBeUndefined();
     expect(withConfigDefaults({ UMIEM_GRADER_MODEL: "openai/gpt-4o-mini" }).UMIEM_GRADER_REASONING).toBeUndefined();
   });
+
+  it("grader OpenRouter: domyślnie data_collection=deny, jawna wartość wygrywa, inny endpoint bez pola (#378)", () => {
+    const fresh = withConfigDefaults(KEYS);
+    expect(fresh.UMIEM_GRADER_PROVIDER_DATA_COLLECTION).toBe("deny");
+    expect(chatRequestExtrasFromEnv(fresh, "UMIEM_GRADER")).toMatchObject({ provider: { data_collection: "deny" } });
+    expect(withConfigDefaults({ UMIEM_GRADER_MODEL: "openai/gpt-4o-mini" }).UMIEM_GRADER_PROVIDER_DATA_COLLECTION).toBe("deny");
+    expect(withConfigDefaults({ UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "allow" }).UMIEM_GRADER_PROVIDER_DATA_COLLECTION).toBe("allow");
+    expect(chatRequestExtrasFromEnv(withConfigDefaults({ UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "allow" }), "UMIEM_GRADER"))
+      .toMatchObject({ provider: { data_collection: "allow" } });
+    expect(withConfigDefaults({ UMIEM_GRADER_PROVIDER_DATA_COLLECTION: "deny" }).UMIEM_GRADER_PROVIDER_DATA_COLLECTION).toBe("deny");
+    const other = withConfigDefaults({ UMIEM_GRADER_BASE_URL: "https://grader.example/v1" });
+    expect(other.UMIEM_GRADER_PROVIDER_DATA_COLLECTION).toBeUndefined();
+    expect(chatRequestExtrasFromEnv(other, "UMIEM_GRADER")).toEqual({});
+  });
 });
 
 describe("złożenie produkcyjne: domyślne + .env z samymi kluczami", () => {

@@ -156,7 +156,7 @@
 
 .pp-prog-skill {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 56px;
+  grid-template-columns: 200px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 6px 0;
@@ -188,6 +188,17 @@
   text-align: right;
   font-size: 14px;
   color: var(--pp-prog-muted);
+}
+
+.pp-prog-skill-val {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.pp-prog-skill-needs {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .pp-prog-skill-val strong {

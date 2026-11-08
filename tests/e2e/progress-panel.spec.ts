@@ -87,7 +87,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
     // auto-load po wejściu: karty pojawiają się bez przycisku
     // paski opanowania czytają segmenty z etykiety aria
     const listeningBar = page.getByTestId("progress-skill-listening");
-    await expect(listeningBar).toHaveAttribute("aria-label", "1 z 2: opanowane 1, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 0");
+    await expect(listeningBar).toHaveAttribute("aria-label", "Opanowane 1 z 2, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 0");
+    // #396: główna liczba to tylko mastered (reading: 1 mastered + 1 do potwierdzenia, nie 2/2)
+    await expect(page.getByTestId("progress-skill-value-reading")).toContainText("1/2");
+    await expect(page.getByTestId("progress-skill-value-reading")).toContainText("+1 do potwierdzenia");
     const listeningSegments = listeningBar.locator(":scope > span");
     await expect.poll(async () => (await listeningSegments.nth(2).boundingBox())?.width).toBe(0);
     await expect.poll(async () => (await listeningSegments.nth(3).boundingBox())?.width).toBe(0);
@@ -95,9 +98,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 1024
       const bar = await listeningBar.boundingBox();
       const first = await listeningSegments.nth(0).boundingBox();
       const second = await listeningSegments.nth(1).boundingBox();
-      return Math.round((first?.width ?? 0) + (second?.width ?? 0) - (bar?.width ?? 0));
+      // +0 normalizuje -0 z Math.round(-0.x), które Object.is odróżnia od 0
+      return Math.round((first?.width ?? 0) + (second?.width ?? 0) - (bar?.width ?? 0)) + 0;
     }).toBe(0);
-    await expect(page.getByTestId("progress-skill-recall")).toHaveAttribute("aria-label", "0 z 2: opanowane 0, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 1");
+    await expect(page.getByTestId("progress-skill-recall")).toHaveAttribute("aria-label", "Opanowane 0 z 2, do potwierdzenia 1, w trakcie nauki 0, nie sprawdzono 1");
     await expect(page.getByTestId("progress-skills")).toContainText("Opanowane (potwierdzone po przerwie)");
     if (viewport.width === 390) {
       await expect(page.getByTestId("progress-picture-note")).toContainText("Wcześniejsze wyniki zostają zachowane");
@@ -202,4 +206,63 @@ test("wygaśnięcie sesji podczas ładowania Postępów wraca do ekranu logowani
   await page.goto("/parent");
   await page.getByTestId("tab-progress").click();
   await expect(page.getByTestId("auth-secret")).toBeVisible({ timeout: 10_000 });
+});
+
+const lessonDeckId = "00000000-0000-4000-8000-000000000007";
+
+test("opublikowana lekcja pierwsza na liście nie trafia do Postępów (#377)", async ({ page }) => {
+  await page.route("**/api/v1/parent/**", async (route) => {
+    const url = new URL(route.request().url());
+    let body: unknown;
+    if (url.pathname.endsWith("/login")) body = { authenticated: true, setupRequired: false };
+    else if (url.pathname.endsWith("/children")) body = [{ id: childId, displayName: "Ala", avatarKey: "star" }];
+    else if (url.pathname.endsWith("/decks")) body = [
+      // lekcja pierwsza: domyślny wybór nie może na nią wpaść
+      { deckId: lessonDeckId, title: "Present Simple", state: "published", kind: "lesson", editableVersionId: null, publishedVersionId: lessonDeckId },
+      // brak kind znaczy vocabulary
+      { deckId, title: "Dni tygodnia", state: "published", editableVersionId: null, publishedVersionId: deckId },
+    ];
+    else if (url.pathname.endsWith("/progress")) {
+      if (url.searchParams.get("deckId") !== deckId) {
+        await route.fulfill({ status: 400, json: { code: "deck_kind_mismatch", message: "zły rodzaj zestawu" } });
+        return;
+      }
+      body = report;
+    }
+    else if (url.pathname.endsWith("/mock-tests")) body = [];
+    else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/parent");
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("progress-heading")).toContainText("Dni tygodnia — Ala");
+  await expect(page.getByTestId("api-error")).toHaveCount(0);
+  const deckSelect = page.getByTestId("progress-deck");
+  await expect(deckSelect).toHaveValue(deckId);
+  await expect(deckSelect.locator("option")).toHaveCount(1);
+  await expect(deckSelect).not.toContainText("Present Simple");
+});
+
+test("same opublikowane lekcje: wskazówka do nadzoru lekcji zamiast błędu (#377)", async ({ page }) => {
+  await page.route("**/api/v1/parent/**", async (route) => {
+    const url = new URL(route.request().url());
+    let body: unknown;
+    if (url.pathname.endsWith("/login")) body = { authenticated: true, setupRequired: false };
+    else if (url.pathname.endsWith("/children")) body = [{ id: childId, displayName: "Ala", avatarKey: "star" }];
+    else if (url.pathname.endsWith("/decks")) body = [
+      { deckId: lessonDeckId, title: "Present Simple", state: "published", kind: "lesson", editableVersionId: null, publishedVersionId: lessonDeckId },
+    ];
+    else if (url.pathname.endsWith("/progress")) {
+      await route.fulfill({ status: 400, json: { code: "deck_kind_mismatch", message: "zły rodzaj zestawu" } });
+      return;
+    }
+    else if (url.pathname.endsWith("/mock-tests")) body = [];
+    else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/parent");
+  await page.getByTestId("tab-progress").click();
+  await expect(page.getByTestId("progress-empty")).toContainText("nadzorze lekcji");
+  await expect(page.getByTestId("api-error")).toHaveCount(0);
+  await expect(page.getByTestId("progress-deck")).toHaveCount(0);
 });

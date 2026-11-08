@@ -179,6 +179,8 @@ test("parent supervises objective progress and model verdicts: changes a decisio
   // Werdykt modelu z akcjami.
   await expect(page.getByTestId(`verdict-${VERDICT_ID}`)).toContainText("he play");
   await expect(page.getByTestId(`verdict-value-${VERDICT_ID}`)).toHaveText("Błędna");
+  await expect(page.getByTestId("verdict-decision-scope-note")).toContainText("kolejnej identycznej odpowiedzi");
+  await expect(page.getByTestId("verdict-decision-scope-note")).toContainText("Nie zmienia zapisanej próby ani postępu dziecka");
 
   // Zmiana decyzji: „Uznaj za poprawne" → oznaczenie werdyktu zmienionego.
   await page.getByTestId(`verdict-correct-${VERDICT_ID}`).click();

@@ -110,6 +110,7 @@ export function EditorAssignments({
 export function EditorActionBar({
   error,
   blockedReason,
+  mediaSummary,
   editable,
   isDirty,
   busy,
@@ -122,6 +123,8 @@ export function EditorActionBar({
 }: {
   error: string | null;
   blockedReason: string | null;
+  /** Podsumowanie mediów przed publikacją (informacja, nie blokada kliknięcia); tylko edytor słówek. */
+  mediaSummary?: string | null;
   editable: boolean;
   isDirty: boolean;
   busy: boolean;
@@ -137,6 +140,9 @@ export function EditorActionBar({
       <div className="pp-editor-bar-in">
         <div className="pp-editor-bar-status">
           {error && <EditorErrorText error={error} />}
+          {mediaSummary && (
+            <Text size="sm" className="pp-editor-bar-note" data-testid="publish-media-summary">{mediaSummary}</Text>
+          )}
           {blockedReason && (
             <Text size="sm" className="pp-editor-bar-note" data-testid="publish-blocked-reason">{blockedReason}</Text>
           )}

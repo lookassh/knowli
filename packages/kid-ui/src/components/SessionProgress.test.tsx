@@ -39,11 +39,13 @@ describe("SessionProgress", () => {
     expect(screen.getByTestId("kid-remaining").textContent).toBe("Jeszcze 2 i historyjka!");
   });
 
-  it("default label stays Jeszcze N i koniec!", () => {
+  it("default label stays Jeszcze N i koniec! and updates its live region", () => {
     const { rerender } = renderKid(<SessionProgress remaining={3} total={6} done={3} />);
     expect(screen.getByTestId("kid-remaining").textContent).toBe("Jeszcze 3 i koniec!");
-    rerender(<SessionProgress remaining={3} total={6} done={3} closingStory={false} />);
-    expect(screen.getByTestId("kid-remaining").textContent).toBe("Jeszcze 3 i koniec!");
+    expect(screen.getByRole("status")).toBe(screen.getByTestId("kid-remaining"));
+    rerender(<SessionProgress remaining={2} total={6} done={4} closingStory={false} />);
+    expect(screen.getByRole("status").textContent).toBe("Jeszcze 2 i koniec!");
+    expect(screen.getByTestId("kid-remaining").textContent).toBe("Jeszcze 2 i koniec!");
   });
 
   it("drops a hidden star when a streak milestone is reached", () => {

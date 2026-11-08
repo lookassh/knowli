@@ -596,6 +596,15 @@ export async function startAttempt(
     throw new AppError("validation", { message: "attempt modality does not match exercise" });
   }
 
+  // Obcy optionId to błąd klienta, nie błąd wiedzy: odrzucamy przed zapisem
+  // próby/oceny, zamiast trwale zapisywać samodzielny błąd (#379).
+  if (valid.modality === "choice") {
+    const options = (task.publicPrompt.options as { id: string }[] | undefined) ?? [];
+    if (!options.some((option) => option.id === valid.optionId)) {
+      throw new AppError("validation", { message: "optionId does not belong to this task" });
+    }
+  }
+
   // świeża próba processing (audio) nie uruchamia drugiej analizy — klient
   // dostaje ten sam rekord do odpytywania (arch §9.2a)
   const processing = taskAttempts.find(

@@ -128,7 +128,6 @@ function SkillsCard({ progress }: { progress: ProgressDto }) {
               data-testid={`progress-skill-${row.skill}`}
               role="img"
               aria-label={fill(messages.progress.skillBarAria, {
-                known: row.known,
                 total: row.total,
                 mastered: row.segments.mastered,
                 needs: row.segments.needsConfirmation,
@@ -141,7 +140,12 @@ function SkillsCard({ progress }: { progress: ProgressDto }) {
               <span data-tone="practicing" style={{ width: `${pct(row.segments.practicing)}%` }} />
               <span data-tone="none" style={{ width: `${pct(row.segments.notAssessed)}%` }} />
             </span>
-            <span className="pp-prog-skill-val"><strong>{row.known}</strong>/{row.total}</span>
+            <span className="pp-prog-skill-val" data-testid={`progress-skill-value-${row.skill}`}>
+              <span><strong>{row.known}</strong>/{row.total}</span>
+              {row.segments.needsConfirmation > 0 && (
+                <span className="pp-prog-skill-needs">{fill(messages.progress.skillNeedsNote, { n: row.segments.needsConfirmation })}</span>
+              )}
+            </span>
           </div>
         );
       })}
@@ -194,7 +198,16 @@ export default function ProgressPanel({
   childrenList: ChildDto[];
   decks: DeckSummaryDto[];
 }) {
-  const published = useMemo(() => decks.filter((deck) => deck.publishedVersionId !== null), [decks]);
+  // Postępy dotyczą wyłącznie słówek (#377): progress.get odrzuca lekcje
+  // (deck_kind_mismatch), a brak kind znaczy vocabulary.
+  const published = useMemo(
+    () => decks.filter((deck) => deck.publishedVersionId !== null && deck.kind !== "lesson"),
+    [decks],
+  );
+  const hasPublishedLessons = useMemo(
+    () => decks.some((deck) => deck.publishedVersionId !== null && deck.kind === "lesson"),
+    [decks],
+  );
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
   const [deckId, setDeckId] = useState(published[0]?.deckId ?? "");
 
@@ -218,7 +231,9 @@ export default function ProgressPanel({
     return (
       <Stack gap="md">
         <Title order={1} fz={26}>{messages.progress.title}</Title>
-        <Text>{messages.progress.empty}</Text>
+        <Text data-testid="progress-empty">
+          {childrenList.length > 0 && hasPublishedLessons ? messages.progress.lessonsOnly : messages.progress.empty}
+        </Text>
       </Stack>
     );
   }
