@@ -14,7 +14,7 @@ Jeden modularny monolit w jednym repozytorium, dwa procesy wykonawcze i jedna ba
 
 - **web:** Next.js — panel rodzica, host interfejsu dziecka i API;
 - **worker:** Node.js — generowanie treści, ilustracji i TTS;
-- **db:** PostgreSQL — dane aplikacji i trwała kolejka Graphile Worker.
+- **db:** PostgreSQL — dane aplikacji; trwała praca workera żyje w tabelach aplikacji `generation_runs` i `media_assets`.
 
 Web i worker korzystają z tego samego kodu serwerowego oraz schematu bazy. To nie są niezależne mikroserwisy. Wdrożenie odbywa się jednym projektem Docker Compose w Coolify. Web i worker mogą być zbudowane z jednego obrazu z innym poleceniem startowym.
 
@@ -39,7 +39,7 @@ To jawne doprecyzowanie SPEC §27: „jeden deploy aplikacji” oznacza wspólne
 | Dane panelu rodzica | TanStack Query przez `@orpc/tanstack-query` (odczyty jako zapytania, polecenia jako mutacje, globalna obsługa 401) |
 | Baza i zapytania | PostgreSQL, Drizzle ORM, sterownik pg |
 | Migracje | Drizzle Kit generujący SQL do przeglądu i zatwierdzenia |
-| Kolejka | Graphile Worker w tej samej instancji PostgreSQL, własny schemat narzędzia |
+| Kolejka | Własny polling workera po tabelach `generation_runs`/`media_assets` w tej samej instancji PostgreSQL; claim CAS runów (`queued → running`) i lease zasobów (`lease_token`/`lease_until`) |
 | Pliki | Prywatny trwały wolumen /data/media; interfejs MediaStore |
 | Testy domeny | Vitest, zegar podawany jako argument |
 | Testy integracji | Vitest + rzeczywisty PostgreSQL przez Docker/Testcontainers |
@@ -86,7 +86,7 @@ MediaRecorder, odtwarzacz i lokalne ustawienia są za adapterami platformowymi. 
 
 ### Responsywny układ Kid UI
 
-Kid UI używa stałego motywu nocnego: `KidThemeProvider` wymusza `dark`, a tokeny `--kid-*` w `styles.css` mają tę samą paletę niezależnie od `prefers-color-scheme` systemu. Rozdzielenie tych ustawień powodowało ciemny tekst na ciemnych opcjach przy jasnym motywie laptopa. Regresję pokrywa `kid-answer-contrast.spec.ts`, mierząc kontrast opcji i wpisanego tekstu w luce dla obu motywów systemu. Zmiana pozostaje w warstwie prezentacji `packages/kid-ui`, bez nowych zależności, transakcji ani wpływu na API → MCP → skill.
+Kid UI używa stałego motywu nocnego: `KidThemeProvider` osadza własny motyw w `div.kid-theme` (`data-kid-theme="night"`, bez biblioteki UI), a tokeny `--kid-*` w `styles.css` mają tę samą paletę niezależnie od `prefers-color-scheme` systemu. Rozdzielenie tych ustawień powodowało ciemny tekst na ciemnych opcjach przy jasnym motywie laptopa. Regresję pokrywa `kid-answer-contrast.spec.ts`, mierząc kontrast opcji i wpisanego tekstu w luce dla obu motywów systemu. Zmiana pozostaje w warstwie prezentacji `packages/kid-ui`, bez nowych zależności, transakcji ani wpływu na API → MCP → skill.
 
 Przenośny `@learning/kid-ui` używa wspólnej ramy `KidPage` oraz prezentacji zadania `ExerciseFrame`. `KidPage` ma dwa jawne tryby: `session` ogranicza zadanie do aktualnie widocznego prostokąta, odczytywanego z `visualViewport` z fallbackiem do `100dvh`; `flow` zachowuje naturalną wysokość i przewijanie dla profili, wyboru zestawów i długich podsumowań. Zmiana rozmiaru, orientacji lub widocznego viewportu nie kluczuje ponownie drzewa zadania. Host dziecka udostępnia ustawienie viewportu na trasach Kid Mode, bez wpływu na wspólny layout i panel rodzica.
 
@@ -141,7 +141,7 @@ Zestaw może zostać wycofany bez fizycznego usuwania jego rewizji. Usunięcie e
 ## 7. Przygotowanie i publikowanie zestawu
 
 1. POST rodzica przyjmuje prompt i klucz idempotencji; tworzy deck, draft oraz generation_run.
-2. Ta sama transakcja rejestruje zadanie w Graphile Worker przez SQL na tej samej sesji bazy. Nie ma luki „zapisano rekord, lecz nie wysłano zadania”.
+2. Ta sama transakcja zapisuje `generation_run` w stanie `queued` (`enqueueGenerationRun`); wiersz runu jest samym zleceniem, które worker znajduje pollingiem. Nie ma osobnego wysłania zadania do zewnętrznej kolejki ani mechanizmu outbox poza tym zapisem.
 3. Worker wywołuje LLM, waliduje JSON, zapisuje elementy i proponowane warianty odpowiedzi. Nie publikuje. Po sukcesie generacji draft przechodzi w stan review — szkic kompletny, oczekujący na przegląd rodzica; stany draft i review są równie edytowalne, a indeks one_editable_version_per_deck obejmuje oba.
 4. Osobne, współdzielone zadania zasobów przygotowują wymagane TTS oraz sensowne ilustracje object/action. Kolory, liczby i sekwencje to dane do deterministycznego renderowania.
 5. Rodzic przegląda treść oraz zasoby. Po każdej edycji reconcileDraftAssets porównuje wymagane fingerprinty ze stanem powiązań: zachowuje zgodne, odłącza niezgodne i w tej samej transakcji rezerwuje/zleca brakujące. Zmiana tytułu nie unieważnia zadań audio. Po zmianie tekstu zmienia się fingerprint audio; stary plik nie jest podpinany do nowej treści.
@@ -161,7 +161,7 @@ Domyślne ograniczenia MVP: maksymalnie 100 elementów na zestaw (generator domy
 
 ## 8. Zadania w tle i zasoby
 
-Graphile Worker wykonuje zadania co najmniej raz. job_key nie zastępuje trwałej idempotencji aplikacji. Dla generowania treści generation_run jest związany z draftem i expected_edit_number; dla TTS/obrazu wiąże się wyłącznie z asset_id, bez deck_version_id i numeru edycji. Jeden run zasobu może obsłużyć wiele szkiców.
+Worker w pętli pollingowej (`createWorkerLoop`, domyślnie co 2 s — `WORKER_POLL_MS`) wybiera należną pracę z `generation_runs`/`media_assets` (`runDueGenerationWork` w `processDueWork`) i przejmuje runy treści atomowym claimem CAS `queued → running` (`claimQueuedRun`); zasoby chroni dodatkowo lease. Ponowne przeloty i wygaśnięcie lease mogą wykonać tę samą pracę więcej niż raz, więc konieczna jest trwała idempotencja aplikacji (klucze dedupe, fingerprinty, CAS finalizacji); nie zastępuje jej żaden zewnętrzny system kolejkowy. Dla generowania treści generation_run jest związany z draftem i expected_edit_number; dla TTS/obrazu wiąże się wyłącznie z asset_id, bez deck_version_id i numeru edycji. Jeden run zasobu może obsłużyć wiele szkiców.
 
 Fingerprint TTS obejmuje dokładny tekst, locale, provider, model, głos i parametry, w tym instrukcję stylu wypowiedzi przekazywaną w `instructions` (profil stylu przy adapterze, `UMIEM_TTS_STYLE`; szczegóły w `docs/superpowers/specs/2026-10-30-tts-voice-style-design.md`); nie utożsamiamy go z target_key ekspozycji. Fingerprint obrazu obejmuje prompt, provider/model, rozmiar, jakość i format; startowe domyślne ustawienia to low + WebP (high/png kosztowało ~0,17 USD za obraz przy kartach wyświetlanych w ~300 px). Pełne żądanie obrazu przewozi metadana zasobu do executora, więc faktyczne wywołanie API nie może się rozjechać z fingerprintem. media_assets ma unikalność (fingerprint, generation_number). Zwykłe żądanie używa zgodnego gotowego zasobu albo dołącza do istniejącej generacji. Świadoma regeneracja tworzy nowy numer generacji i nowe asset_id, także dla tych samych ustawień. Nigdy nie zastępuje już zatwierdzonego zasobu starej wersji.
 
@@ -854,8 +854,6 @@ Agent pisze ćwiczenia zagadnienie po zagadnieniu, a kod sprawdza każde przy za
 - Next.js, ograniczenia static export: https://nextjs.org/docs/app/guides/static-exports
 - Drizzle, migracje: https://orm.drizzle.team/docs/migrations
 - Drizzle, generowanie migracji: https://orm.drizzle.team/docs/drizzle-kit-generate
-- Graphile Worker, trwałe zadania i retry: https://worker.graphile.org/docs
-- Graphile Worker, ograniczenia job_key: https://worker.graphile.org/docs/job-key
 - Capacitor, pakowanie zbudowanych zasobów web: https://capacitorjs.com/docs/getting-started
 - Azure, ocena wymowy: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-pronunciation-assessment
 

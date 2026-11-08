@@ -73,11 +73,11 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | --- | --- |
 | packages/kid-ui/src/KidApp.tsx | Główne widoki, przejścia i złożenie przenośnych ekranów |
 | packages/kid-ui/src/api/client.ts | KidApi na OpenAPILink (oRPC) z konfigurowalnym baseUrl |
-| packages/kid-ui/src/theme/KidThemeProvider.tsx | Scoped Mantine theme dla dziecięcego UI |
+| packages/kid-ui/src/theme/KidThemeProvider.tsx | Własny stały motyw nocny Kid UI ograniczony do `div.kid-theme` |
 | packages/kid-ui/src/layout/KidPage.tsx | Pomiar viewportu, skala dużego okna (CSS zoom) i hostowy podział flow/session |
 | packages/kid-ui/src/layout/css-zoom.ts | Przeliczanie pikseli ekranu na wewnętrzne pod zoomem `KidPage` (`cssZoomOf`, `toLayoutPx`) |
 | packages/kid-ui/src/layout/isomorphic-layout-effect.ts | `useIsomorphicLayoutEffect`: pomiar przed malowaniem w przeglądarce, zwykły efekt na serwerze (pomiar okna, rezerwa pod panelem wyniku) |
-| packages/kid-ui/src/layout/KidScreen.tsx | Wspólny ekran Mantine z nagłówkiem, treścią i akcjami |
+| packages/kid-ui/src/layout/KidScreen.tsx | Wspólny własny ekran Kid UI z nagłówkiem, treścią i akcjami |
 | packages/kid-ui/src/components/ | Wspólne przyciski, postęp, ikony i feedback dostępny dotykowo |
 | packages/kid-ui/src/screens/ | Ekrany profilu, talii, podsumowań, próbnych testów i przebiegu lekcji |
 | packages/kid-ui/src/exercises/ExerciseView.tsx | Wybór widoku według rodzaju ćwiczenia |
@@ -86,9 +86,9 @@ Catch-all jest wyłącznie mapą jawnie dozwolonych operacji, nie dynamicznym do
 | packages/kid-ui/src/session/ | Kontroler sesji, odczyt stanu i lokalne zdarzenia aktywności |
 | packages/kid-ui/src/media/ | Przenośne interfejsy nagrywania, odtwarzania i preferencji |
 | packages/kid-ui/src/visuals/ | Wizualizacje znaczeń i okładek |
-| packages/kid-ui/src/styles.css oraz pliki CSS Modules | Warstwa wizualna Kid UI i style własnych komponentów Mantine |
+| packages/kid-ui/src/styles.css oraz pliki CSS Modules | Warstwa wizualna Kid UI i style własnych komponentów |
 
-Uzupełnienie UI (2026-10-24): `KidThemeProvider` ogranicza nocny motyw Mantine do aplikacji dziecka; `KidPage` mierzy viewport bez zależności od Next.js (od 2026-10-30 także skaluje duże okno z myszą przez CSS `zoom`, skala 1–1,6, z jednostkami okna w tokenach `--kid-vh/--kid-dvh/--kid-svh/--kid-vw`), a `KidScreen` i `ExerciseFrame` dzielą widok na stabilne sloty. Style rodzica pozostają poza tym zakresem. Macierz Playwright obejmuje wirtualne ekrany telefonów, tabletów i desktopu; nie jest odbiorem fizycznego urządzenia. Fizyczny test Galaxy S10e/PWA pozostaje osobnym dowodem.
+Uzupełnienie UI (2026-10-24): `KidThemeProvider` ogranicza własny nocny motyw do aplikacji dziecka; `KidPage` mierzy viewport bez zależności od Next.js (od 2026-10-30 także skaluje duże okno z myszą przez CSS `zoom`, skala 1–1,6, z jednostkami okna w tokenach `--kid-vh/--kid-dvh/--kid-svh/--kid-vw`), a `KidScreen` i `ExerciseFrame` dzielą widok na stabilne sloty. Style rodzica pozostają poza tym zakresem. Macierz Playwright obejmuje wirtualne ekrany telefonów, tabletów i desktopu; nie jest odbiorem fizycznego urządzenia. Fizyczny test Galaxy S10e/PWA pozostaje osobnym dowodem.
 
 Nie importujemy tutaj next/navigation, next/image, Server Actions ani @learning/server. Zwykły img i serwerowy media URL wystarczą do ilustracji. Transport API nie jest wbudowany w komponent ćwiczenia; dostarcza go KidApp przez zależność.
 
@@ -158,7 +158,7 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/src/modules/learning/progress-rebuild.ts | Dry-run oraz transakcyjna, scoped odbudowa projekcji z historii |
 | packages/server/src/db/client.ts | Połączenie, pula i transakcje |
 | packages/server/src/db/schema.ts | Autorytatywna definicja tabel Drizzle po implementacji |
-| packages/server/src/db/queries/ | Konkretne zapytania grupowane według modułu |
+| packages/server/src/db/ready.ts | Czekanie na handshake PostgreSQL (`waitUntilDatabaseReady`) przed migracjami; konkretne zapytania żyją w modułach przypadków użycia, nie w osobnym katalogu zapytań |
 | packages/server/src/ports/ai.ts | LlmProvider, TtsProvider, SttProvider, PronunciationProvider, ImageProvider |
 | packages/server/src/ports/media.ts | MediaStore |
 | packages/server/src/providers/openai/ | Adaptery LLM i TTS; modeli nie zapisujemy w domenie |
@@ -170,11 +170,11 @@ Przypadki użycia w `packages/server/src/modules/` są pogrupowane w cztery obsz
 | packages/server/src/config.ts | Walidacja konfiguracji i zależności |
 | packages/server/drizzle/ | Migracje SQL i snapshoty Drizzle |
 | packages/server/drizzle.config.ts | Ustawienia generatora migracji |
-| apps/worker/src/main.ts | Rejestracja zadań i graceful shutdown |
+| apps/worker/src/main.ts | Start pętli pollingowej workera, serwer `/health` i graceful shutdown |
 | apps/worker/src/rebuild-progress.ts | Jednorazowe CLI odbudowy projekcji; nie uruchamia pętli workera |
 | apps/worker/src/regenerate-ui-audio.ts | Jednorazowe CLI ponownego nagrania wskazanych komunikatów Kid UI (`media:regenerate-ui-audio`) |
 | scripts/sample-tts-styles.mts | Próbki do odsłuchu stylów TTS (`eval:tts-styles`); poza bazą i mediami aplikacji |
-| apps/worker/src/tasks.ts | Powiązanie nazw Graphile z przypadkami użycia |
+| apps/worker/src/tasks.ts | Jeden przelot pollingu: `processDueWork` woła `runDueGenerationWork` po `generation_runs`/`media_assets` i okresowe czyszczenie raportów aktywności |
 | apps/worker/src/composition.ts | Składanie zależności workera |
 
 DocumentAnalysisProvider pojawi się dopiero podczas budowy source_material (nauka z dokumentów, OCR/PDF — nie mylić z tabelą `source_materials` z Etapu 2, czyli zapisanym tekstem rozdziału rodzica). Nie tworzymy pustych adapterów wszystkich przyszłych usług.
