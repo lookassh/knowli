@@ -444,6 +444,9 @@ describe("englishGrammarSubject — notatki dydaktyczne dla generatora paczek (e
     const questions = [["to_be", "questions"], ["present_simple", "question"], ["present_continuous", "questions"]] as const;
     for (const [topicId, slug] of questions) expect(notesOf(topicId, slug)).toContain("statement word order with a question mark");
     expect(notesOf("to_be", "affirmative_forms")).not.toContain("→ it");
+    // #372: tłumaczenie całej wymiany i skrót, który nie jest błędną opcją.
+    for (const topicId of ["to_be", "present_simple"]) expect(notesOf(topicId, "short_answers")).toContain("translates the whole exchange");
+    expect(notesOf("to_be", "short_answers")).toContain("never use it as a wrong option");
   });
 });
 
