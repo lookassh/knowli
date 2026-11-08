@@ -110,7 +110,7 @@ export function closedCheckItems(draft: LessonExerciseDraft, topic: LessonTopic)
     return fields.map((field) =>
       [
         view,
-        `Field: ${field.label} (judge this field on its own: the other fields do not narrow the choice)`,
+        `Field: ${field.label} (judge this field on its own: the other fields do not narrow the choice; list EVERY option a teacher would also accept for this field, not only the best one)`,
         `Options: ${field.choices.map((choice) => choice.text).join(" | ")}`,
       ].join("\n"),
     );
