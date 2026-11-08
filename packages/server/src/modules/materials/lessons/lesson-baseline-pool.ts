@@ -309,7 +309,8 @@ export async function runLessonBaselinePool(
           for (const { draft } of checkable) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
           return { kind: "done", drafts: unchecked, examples: generated.examples };
         }
-        if (checked === STOPPED) return { kind: "stopped" };
+        // Budżet albo termin przed kontrolą: opłacone pytania otwarte (bez kontroli) zostają, keywords nie.
+        if (checked === STOPPED) return unchecked.length === 0 ? { kind: "stopped" } : { kind: "done", drafts: unchecked, examples: generated.examples };
         stats.checkerCalls += 1;
         const passed: LessonExerciseDraft[] = [...unchecked];
         let offset = 0;

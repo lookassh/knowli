@@ -655,9 +655,9 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
     };
   }
 
-  const kwRun = (generator: LessonPacketGenerator, checker: ClosedExerciseChecker, input: Partial<LessonPoolAgentRunInput> = {}) =>
+  const kwRun = (generator: LessonPacketGenerator, checker: ClosedExerciseChecker, input: Partial<LessonPoolAgentRunInput> = {}, policy = {}) =>
     runLessonBaselinePool(
-      { generator, checker, subjects: { getSubject: (id: string) => (id === kwSubject.id ? kwSubject : undefined) } },
+      { generator, checker, subjects: { getSubject: (id: string) => (id === kwSubject.id ? kwSubject : undefined) }, policy },
       runInput({ subjectId: kwSubject.id, objectiveSource: { source: "input", dynamicTopic: kwTopic }, ...input }),
       new AbortController().signal,
     );
@@ -724,6 +724,22 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
     expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
     const rejected = result.objectives.flatMap((objective) => objective.rejections).find((entry) => entry.exerciseType === "lesson_keywords");
     expect(rejected).toMatchObject({ code: "check_unknown" });
+  });
+
+  it("a budget spent on the open-answer packet keeps its open questions without the keywords check", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const generator: LessonPacketGenerator = {
+      generatePacket: async (input, cost) => {
+        cost.record(input.type === "lesson_open_answer" ? 1 : 0);
+        return input.type === "lesson_open_answer" ? { exercises: [keywords("f0"), ...Array.from({ length: input.count }, (_, i) => open(i))] } : { exercises: [] };
+      },
+    };
+    const checker = kwChecker();
+    const result = await kwRun(generator, checker, {}, { runBudgetUsd: 0.5, concurrency: 1 });
+    const exercises = exercisesOf(result);
+    expect(checker.calls).toHaveLength(0);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
   });
 
   it("sends at most one spare keywords to the check; further ones are over_count", async () => {
