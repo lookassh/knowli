@@ -39,7 +39,7 @@ export interface SanitizedFreshDraft {
 }
 
 /**
- * Sanityzacja jednego świeżego ćwiczenia z wyjścia modelu (kierownik agenta puli).
+ * Sanityzacja jednego świeżego ćwiczenia z wyjścia modelu (agent puli i przebieg bazowy, przez `parseLessonRecord`).
  * Kolejność kroków jest częścią kontraktu: niezamówione pola v3 → ton głosu → wyjaśnienie → puste tablice
  * → dodatki ćwiczenia słuchowego → rodziny runu → warianty redundantne. Bez
  * `stripParentAddedFlags` (woła go wywołujący). Warianty acceptedAnswers redundantne

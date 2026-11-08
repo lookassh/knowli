@@ -101,7 +101,6 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       familyScope: `${NONCE}:run-1:5:2`,
       initialSpentUsd: 0,
       initialExamples: {},
-      examplesFixed: false,
       target: { mode: "pool" },
     });
   });
@@ -128,7 +127,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
     expect(value.skipObjectives).toEqual([A]);
     expect(value.initialExamples).toEqual({ [A]: ["Przykład A."] });
     expect(value.initialSpentUsd).toBe(0.25);
-    expect(value.examplesFixed).toBe(false);
+    expect(value).not.toHaveProperty("examplesFixed");
     expect(value.draftExamples).toEqual({});
   });
 
@@ -166,23 +165,6 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
     expect(() => lessonAgentRunInputFor(args({ input: runInput({ objectiveIds: ["nieznane"] }) }))).toThrow(AppError);
   });
 
-  it("wznowienie z planExamples → examplesFixed: true, przykłady planu dla wszystkich zagadnień", () => {
-    const progress = progressWith({
-      dynamicTopic: checkpointTopic,
-      planExamples: { [A]: ["Plan A."], [B]: ["Plan B."] },
-      objectives: { [A]: { status: "complete", exercises: [choiceA], examples: ["Plan A."] } },
-    });
-    const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, progress })));
-    expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: checkpointTopic });
-    expect(value.examplesFixed).toBe(true);
-    expect(value.initialExamples).toEqual({ [A]: ["Plan A."], [B]: ["Plan B."] });
-  });
-
-  it("puste planExamples (źródło katalogowe w punkcie kontrolnym) nie ustalają przykładów", () => {
-    const value = agentInput(lessonAgentRunInputFor(args({ progress: progressWith({ planExamples: {} }) })));
-    expect(value.examplesFixed).toBe(false);
-  });
-
   it("familyScope per próba: ten sam run, edycja i numer próby („Ponów” odroczonego runu) — inne sufiksy rodzin", () => {
     const runId = "3f2a9c1e-0000-4000-8000-000000000000";
     const first = agentInput(lessonAgentRunInputFor(args({ runId, attempts: 1, attemptNonce: NONCE })));
@@ -208,7 +190,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
     it("2: temat dynamiczny runu wygrywa z etapem zagadnień", () => {
       const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, input: runInput({ dynamicTopic: runTopic }) })));
       expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: runTopic });
-      expect(value.examplesFixed).toBe(false);
+      expect(value).not.toHaveProperty("examplesFixed");
     });
 
     it("3: przedmiot bez tematów dynamicznych → katalog (resolveLessonTopic); brak tematu → validation", () => {
@@ -221,7 +203,7 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       expect(lessonAgentRunInputFor(args({ subject: dynamic }))).toEqual({ needsObjectives: true });
       const value = agentInput(lessonAgentRunInputFor(args({ subject: dynamic, schoolTopic })));
       expect(value.objectiveSource).toEqual({ source: "input", dynamicTopic: schoolTopic });
-      expect(value.examplesFixed).toBe(false);
+      expect(value).not.toHaveProperty("examplesFixed");
     });
   });
 });
@@ -451,14 +433,13 @@ describe("mergeAttemptIntoProgress", () => {
     expect(mergeAttemptIntoProgress(second, cleaned({}), "pool").cleanupCounts).toEqual(second.cleanupCounts);
   });
 
-  it("pula: kod porażki zagadnienia i temat planu z wyniku", () => {
+  it("pula: kod porażki zagadnienia", () => {
     const merged = mergeAttemptIntoProgress(
       emptyLessonAgentProgress(),
-      attemptResult([settled(A, "failed", [], { errorCode: "provider_unavailable", retryable: true })], { dynamicTopic: runTopic }),
+      attemptResult([settled(A, "failed", [], { errorCode: "provider_unavailable", retryable: true })]),
       "pool",
     );
     expect(merged.objectives[A]).toEqual({ status: "failed", failureCode: "provider_unavailable", exercises: [], examples: [`Przykład ${A}.`] });
-    expect(merged.dynamicTopic).toEqual(runTopic);
   });
 
   it("add: dopisuje nowe ćwiczenia do wcześniejszych nowych", () => {
@@ -620,13 +601,13 @@ describe("agentRejectedReasons", () => {
       }
     }
     // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki szkoły, kontrole 2b).
-    for (const known of ["limit_full", "leak_victim", "rule_exercise", "refine", "open_not_accepted", "shape_malformed", "hint_language"]) {
+    for (const known of ["limit_full", "leak_victim", "rule_exercise", "open_not_accepted", "shape_malformed", "hint_language"]) {
       expect(codes, known).toContain(known);
     }
     // Bramka podpowiedzi szkoły już nie odrzuca (podpowiedź jest usuwana z notą), a odrzucony wariant
     // jest usuwany z notą `check.variants`; etykiety obu kodów zostają dla szkiców zapisanych wcześniej
-    // z tymi kodami w `rejectedReasons`. Tak samo bramki słów i ram rozdziału (usunięte w etapie 5a #362).
-    for (const retired of ["hint_reveals_answer", "variant_rejected", "card_word_missing", "frame_missing"]) {
+    // z tymi kodami w `rejectedReasons`. Tak samo bramki słów i ram rozdziału i hak `refineGeneratedPool` (usunięte w etapie 5a #362).
+    for (const retired of ["hint_reveals_answer", "variant_rejected", "card_word_missing", "frame_missing", "refine"]) {
       expect(codes).not.toContain(retired);
       expect(Object.hasOwn(labels, retired)).toBe(true);
     }

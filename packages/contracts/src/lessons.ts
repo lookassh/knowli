@@ -577,8 +577,8 @@ export const LessonDraftDtoSchema = z.object({
   exerciseExplanations: z.literal(true).optional(),
   rejectedCount: z.number().int().nonnegative(),
   /**
-   * Powody odrzuceń przy czyszczeniu świeżo wygenerowanej puli (przedmiot z
-   * `refineGeneratedPool`) z licznikami; tekst powodu jest dla rodzica, bez danych dziecka.
+   * Powody odrzuceń ćwiczeń przy generowaniu puli (polskie etykiety kodów odrzuceń) z licznikami;
+   * tekst powodu jest dla rodzica, bez danych dziecka.
    */
   rejectedReasons: z.record(z.string(), z.number().int().positive()).optional(),
   /**

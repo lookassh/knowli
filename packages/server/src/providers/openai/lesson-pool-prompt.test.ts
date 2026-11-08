@@ -11,12 +11,11 @@ import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../domain/lessons/topic-resolution";
 import type { LessonExerciseType, LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../../modules/materials/lessons/lesson-drafts";
-import { kindsOf, lessonAgentLimits } from "../../modules/materials/lessons/lesson-pool-agent";
+import { lessonAgentLimits } from "../../modules/materials/lessons/lesson-pool-agent";
 import { objectiveAgentInput } from "../../modules/materials/lessons/lesson-pool-agent-input";
 import type { LessonObjectiveAgentInput } from "../../ports/ai";
 import { FakeLlmProvider } from "../fake";
 import { objectiveInstructions } from "./lesson-pool-agent";
-import { repeatText } from "./llm";
 
 /**
  * Złożony prompt podagenta z księgi reguł (spec katalogu reguł §2.4 pkt 5–6, §3) na fikcyjnych
@@ -46,13 +45,12 @@ function fixtureFor(args: {
   topic: LessonTopic;
   material: string;
   objectiveId: string;
-  kinds?: ReadonlyMap<string, "words" | "frame">;
   examples?: Readonly<Record<string, readonly string[]>>;
   examplesFixed?: boolean;
 }): PromptFixture {
   const { subject, topic } = args;
   const limits = lessonAgentLimits(subject, topic, 0);
-  const objectives = agentObjectivesOf(topic, args.kinds);
+  const objectives = agentObjectivesOf(topic);
   const state = createLessonAgentState({ topic, objectives, fixed: [], examples: args.examples ?? {}, fixedSources: cardExposureSources(subject, topic) });
   const objective = objectives.find((candidate) => candidate.id === args.objectiveId)!;
   const input = objectiveAgentInput({
@@ -108,7 +106,6 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
     topic: chapterTopic,
     material: CHAPTER_MATERIAL,
     objectiveId: chapterTopic.objectives[0]!.id,
-    kinds: kindsOf(data),
     examples,
     examplesFixed: true,
   });
@@ -116,7 +113,8 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
 }
 
 const FIXTURES = await fixtures();
-const SUBJECT_IDS = ["school", "english_chapter"] as const;
+// Rozdział od etapu 5a (#362) nie przechodzi przez agenta — migawka jego promptu podagenta usunięta.
+const SUBJECT_IDS = ["school"] as const;
 
 /**
  * Budżet długości promptu per przedmiot (rozstrzygnięcie kontrolera Task 8b: ≤ 1,5 × długości sprzed
@@ -126,7 +124,6 @@ const SUBJECT_IDS = ["school", "english_chapter"] as const;
  */
 const PROMPT_LENGTH_BEFORE: Readonly<Partial<Record<(typeof SUBJECT_IDS)[number], number>>> = {
   school: 17_344,
-  english_chapter: 17_259,
 };
 const PROMPT_BUDGET_FACTOR = 1.4;
 
@@ -150,18 +147,13 @@ describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectI
   const allowed = input.pool.objectives[0]!.exerciseTypes as readonly LessonExerciseType[];
   const ctx = ruleBookContextFor(subject, topic.id, input.pool.objectives[0]!.id, allowed, allowed.includes("lesson_listen_choice"));
 
-  it("księga reguł zagadnienia jest w prompcie: reguła z opisem po id, powtórzenie z odesłaniem, reguły `brief` poza promptem", () => {
+  it("księga reguł zagadnienia jest w prompcie: reguła z opisem po id, reguły `brief` poza promptem", () => {
     const book = input.pool.ruleBook;
     const lines = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat();
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
       if (line.brief === true) expect(prompt, line.id).not.toContain(`[${line.id}]`);
-      else if (line.repeatOf === undefined) expect(prompt, line.id).toContain(`[${line.id}] ${line.text}`);
-      else expect(prompt, line.id).toContain(`[${line.id}] ${repeatText(line.repeatOf)}`);
-    }
-    // Pełny opis reguły powtarzanej w blokach typów stoi w prompcie raz.
-    for (const line of lines.filter((candidate) => candidate.repeatOf !== undefined)) {
-      expect(prompt.split(`[${line.id}] ${line.text}`).length - 1, line.id).toBe(1);
+      else expect(prompt, line.id).toContain(`[${line.id}] ${line.text}`);
     }
     for (const block of book.types) {
       expect(prompt).toContain(`${block.type} — ${block.summary}`);

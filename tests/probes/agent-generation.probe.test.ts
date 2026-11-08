@@ -208,10 +208,10 @@ function diversityOf(exercises: readonly LessonExerciseDraft[]): Record<string, 
 }
 
 /** Stan lekcji odtworzony z wyniku kierownika (pule i przykłady zagadnień) do niezależnej kontroli końcowej. */
-function finalState(subject: SubjectModule, topic: LessonTopic, kinds: ReadonlyMap<string, DynamicObjectiveKind>, result: LessonPoolAgentResult): LessonAgentState {
+function finalState(subject: SubjectModule, topic: LessonTopic, result: LessonPoolAgentResult): LessonAgentState {
   let state = createLessonAgentState({
     topic,
-    objectives: agentObjectivesOf(topic, kinds),
+    objectives: agentObjectivesOf(topic),
     fixed: [],
     examples: {},
     fixedSources: mergeExamples(cardExposureSources(subject, topic), {}),
@@ -222,10 +222,6 @@ function finalState(subject: SubjectModule, topic: LessonTopic, kinds: ReadonlyM
     state = withExamples(state, settled.objectiveId, settled.examples);
   }
   return state;
-}
-
-function kindsOf(data: DynamicTopicData | undefined): Map<string, DynamicObjectiveKind> {
-  return new Map((data?.objectives ?? []).flatMap((objective) => (objective.kind === undefined ? [] : [[objective.id, objective.kind] as const])));
 }
 
 describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", () => {
@@ -357,8 +353,9 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
       throw failure;
     }
 
-    const topic = result.dynamicTopic !== undefined ? subject.buildDynamicTopic!(result.dynamicTopic) : fromDump.topic;
-    const kinds = kindsOf(result.dynamicTopic ?? (objectiveSource.source === "input" ? objectiveSource.dynamicTopic : undefined));
+    const topic = fromDump.topic;
+    // Rodzaj zagadnienia tylko do zrzutu (format wejścia kolejnej próby).
+    const dumpKinds = new Map(objectiveSource.source === "input" ? objectiveSource.dynamicTopic.objectives.map((objective) => [objective.id, objective.kind] as const) : []);
     line(`Przebieg: czas=${(durationMs / 1000).toFixed(0)} s; ` +
       `wydane wg kierownika=${result.spentUsd.toFixed(4)} USD (bez kosztu: ${result.unknownCostCalls})`);
     line(`Statystyki: ${JSON.stringify(result.stats)}`);
@@ -372,7 +369,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     let counts = { invariant: 0, hardCoverage: 0, hardGeneration: 0, softCoverage: 0, poolRejected: 0, extraRejected: 0 };
     let publication: ReturnType<typeof poolCoverage> = [];
     if (topic !== undefined) {
-      const state = finalState(subject, topic, kinds, result);
+      const state = finalState(subject, topic, result);
       const lesson = orderedLesson(state);
       const examples = allExamples(state);
       const objectiveOrder = state.objectives.map((objective) => objective.id);
@@ -425,7 +422,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
             id: objective.id,
             title: objective.titlePl,
             titlePl: objective.titlePl,
-            kind: kinds.get(objective.id) ?? null,
+            kind: dumpKinds.get(objective.id) ?? null,
             descriptionEn: objective.descriptionEn,
             card: objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n"),
             cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),

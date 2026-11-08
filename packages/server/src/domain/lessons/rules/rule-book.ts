@@ -22,11 +22,9 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
  * - `checks` — kontrole innymi modelami (reguły lekcji z obszaru `check`);
  * - `lesson` — pozostałe reguły lekcji (cała pula, limity, ujawnienia);
  * - `types` — blok każdego dozwolonego typu (karta typu, reguła typu przedmiotu i
- *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu, oraz reguły `inEachTypeBlock`
- *   w bloku każdego swojego typu);
+ *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu);
  * - `general` — reguły rdzenia i przedmiotu bez typów albo wspólne kilku typom
- *   zagadnienia (opis wtedy sam wymienia typy). Poza regułami `inEachTypeBlock` żaden opis się nie powtarza,
- *   a te w kolejnych blokach mają `repeatOf` (renderer odsyła do pierwszego bloku).
+ *   zagadnienia (opis wtedy sam wymienia typy). Żaden opis się nie powtarza.
  *
  * W każdej sekcji najpierw reguły grup `RULE_PRIORITY` (w kolejności grup), potem
  * reszta po id. Reguły `internal` nigdy nie trafiają do księgi. Opis z dopiskiem
@@ -38,11 +36,6 @@ export interface RuleLine {
   readonly text: string;
   /** Reguła z `promptBrief`: renderer promptu jej nie wymienia (opis trafia do wyniku narzędzia). */
   readonly brief?: true;
-  /**
-   * Reguła `inEachTypeBlock` opisana już w bloku wcześniejszego typu: renderer odsyła do niego zamiast
-   * powtarzać pełny opis (`text` zostaje pełny).
-   */
-  readonly repeatOf?: LessonExerciseType;
 }
 
 export interface TypeBlock {
@@ -76,7 +69,7 @@ const TYPE_ORDER = Object.keys(TYPE_CARDS) as LessonExerciseType[];
 
 type Placement =
   | { readonly section: "general" | "lesson" | "checks" }
-  | { readonly section: "type"; readonly types: readonly LessonExerciseType[] };
+  | { readonly section: "type"; readonly type: LessonExerciseType };
 
 interface PlacedRule {
   readonly id: string;
@@ -92,17 +85,14 @@ function matches(rule: LessonRule, allowed: readonly LessonExerciseType[], ctx: 
 }
 
 /**
- * Sekcja reguły: lekcja i kontrole po katalogu, reszta do bloku jedynego pasującego typu (albo każdego
- * pasującego, gdy reguła ma `inEachTypeBlock`) albo ogólnych.
+ * Sekcja reguły: lekcja i kontrole po katalogu, reszta do bloku jedynego pasującego typu albo ogólnych.
  */
 function placementOf(id: string, rule: LessonRule, catalog: RuleCatalog, blockTypes: readonly LessonExerciseType[]): Placement {
   if (catalog === LESSON_RULES) {
     return { section: id.split(".")[0] === CHECK_AREA ? "checks" : "lesson" };
   }
   const matching = rule.types?.filter((type) => blockTypes.includes(type)) ?? [];
-  if (rule.types === undefined || matching.length === 0) return { section: "general" };
-  if (matching.length === 1 || rule.inEachTypeBlock === true) return { section: "type", types: matching };
-  return { section: "general" };
+  return matching.length === 1 ? { section: "type", type: matching[0]! } : { section: "general" };
 }
 
 /** Pozycja grupy priorytetu; reguły bez grupy po wszystkich grupach. */
@@ -142,13 +132,6 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
   const section = (name: "general" | "lesson" | "checks"): RuleLine[] =>
     placed.filter((entry) => entry.placement.section === name).map(line);
 
-  // Pierwszy blok typu z pełnym opisem reguły `inEachTypeBlock`; kolejne bloki odsyłają do niego.
-  const firstBlockOf = new Map<string, LessonExerciseType>();
-  const typeLine = (entry: PlacedRule, type: LessonExerciseType): RuleLine => {
-    const first = firstBlockOf.get(entry.id);
-    if (first === undefined) firstBlockOf.set(entry.id, type);
-    return first === undefined ? line(entry) : { ...line(entry), repeatOf: first };
-  };
   const types = blockTypes.map((type): TypeBlock => {
     const card = TYPE_CARDS[type];
     const example = typeExample(subject, ctx, type);
@@ -159,8 +142,8 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
       ...(example === undefined ? {} : { example: exampleJson(example) }),
       ...(subjectRule === undefined || subjectRule === "" ? {} : { subjectRule }),
       rules: placed
-        .filter((entry) => entry.placement.section === "type" && entry.placement.types.includes(type))
-        .map((entry) => typeLine(entry, type)),
+        .filter((entry) => entry.placement.section === "type" && entry.placement.type === type)
+        .map(line),
     };
   });
 

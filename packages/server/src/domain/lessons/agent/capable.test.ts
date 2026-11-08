@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { DynamicObjectiveKind, LessonExerciseDraft } from "../types";
+import type { LessonExerciseDraft } from "../types";
 import { historyLikeSubject } from "../testing/history-like-subject";
 import { agentTestSubject, withAgentPolicy } from "../testing/agent-test-subject";
 import { agentObjectivesOf } from "./capable";
-import { messagesOf } from "../rules/catalog";
 
 describe("agentObjectivesOf", () => {
   const topic = historyLikeSubject.topics[0]!;
@@ -19,15 +18,6 @@ describe("agentObjectivesOf", () => {
       exerciseTypes: topic.objectives[0]!.exerciseTypes,
     });
     expect(objectives[0]).not.toHaveProperty("kind");
-  });
-
-  it("bierze rodzaj zagadnienia z mapy i pomija go, gdy mapa go nie zna", () => {
-    const [first, second] = topic.objectives;
-    const kinds = new Map<string, DynamicObjectiveKind>([[second!.id, "frame"]]);
-    const objectives = agentObjectivesOf(topic, kinds);
-    expect(objectives[0]).not.toHaveProperty("kind");
-    expect(objectives[1]!.kind).toBe("frame");
-    expect(objectives[0]!.id).toBe(first!.id);
   });
 });
 
@@ -55,15 +45,6 @@ describe("agentTestSubject", () => {
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f" })], { material: "" }).size).toBe(0);
     // Rodzina innego zagadnienia nie wystarcza (jak w szkole i `withoutOrphanKeywords`).
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f", objectiveId: "other" })], { material: "" }).size).toBe(1);
-  });
-
-  it("refineGeneratedPool usuwa wariant DROP i odrzuca REFINE-REJECT", () => {
-    const result = agentTestSubject.refineGeneratedPool!(
-      [draft({ acceptedAnswers: ["a", "DROP"] }), draft({ answer: "REFINE-REJECT" })],
-      { material: "" },
-    );
-    expect(result.kept.map((kept) => kept.acceptedAnswers)).toEqual([["a"]]);
-    expect(result.rejected.flatMap((rejected) => messagesOf(rejected.issues))).toEqual(["refine reject"]);
   });
 
   it("withAgentPolicy nadpisuje wybrane pola polityki", () => {

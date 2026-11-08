@@ -182,7 +182,7 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     expect((await readLessonDeck(services, deckId)).published).not.toBeNull();
   });
 
-  it("wznowienie z punktu kontrolnego w formacie agenta: bez etapu zagadnień, gotowe zagadnienie zostaje, przykłady planu zostają", async () => {
+  it("wznowienie z punktu kontrolnego w formacie agenta: bez etapu zagadnień, gotowe zagadnienie zostaje z przykładami, niegotowe dostaje nowe przykłady", async () => {
     const { fakes, services } = await chapterWorld();
     const { runId, deckId } = await createLessonFromMaterial(services, {
       subjectId: "english_chapter",
@@ -221,13 +221,12 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
         answer: "I have boots.", acceptedAnswers: [], focus: ["boots"],
       },
     ];
-    const planExamples = { [CLOTHES]: ["This is my coat."], [WEARING]: ["Put on your scarf."] };
+    const clothesExamples = ["This is my coat."];
     await pool.query("update learning_app.generation_runs set agent_checkpoint = $1::jsonb where id = $2", [
       JSON.stringify({
         ...emptyLessonAgentProgress(),
         dynamicTopic,
-        planExamples,
-        objectives: { [CLOTHES]: { status: "complete", exercises: clothes, examples: planExamples[CLOTHES] } },
+        objectives: { [CLOTHES]: { status: "complete", exercises: clothes, examples: clothesExamples } },
       }),
       runId,
     ]);
@@ -235,11 +234,12 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
 
-    // Temat z punktu kontrolnego: bez etapu zagadnień; paczki tylko dla zagadnienia niegotowego, bez przykładów (ustalone planem).
+    // Temat z punktu kontrolnego: bez etapu zagadnień; paczki tylko dla zagadnienia niegotowego, przykłady kart z jego pierwszej paczki.
     expect(fakes.llm.objectiveRequests).toHaveLength(0);
     expect(fakes.agent.calls).toHaveLength(0);
     expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
-    expect(fakes.agent.packetCalls.every((call) => call.objective.id === WEARING && !call.withExamples)).toBe(true);
+    expect(fakes.agent.packetCalls.every((call) => call.objective.id === WEARING)).toBe(true);
+    expect(fakes.agent.packetCalls.filter((call) => call.withExamples)).toHaveLength(1);
 
     const draft = (await readLessonDeck(services, deckId)).draft!;
     // DTO rodzica nie niesie `descriptionEn`; kontekst wersji ma temat z punktu kontrolnego bez zmian.
@@ -253,7 +253,9 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     const answersOf = (objectiveId: string) => draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).map((exercise) => exercise.answer);
     expect(answersOf(CLOTHES)).toEqual(clothes.map((exercise) => exercise.answer));
     expect(answersOf(WEARING).length).toBeGreaterThan(0);
-    expect(draft.examples).toEqual(planExamples);
+    // Gotowe zagadnienie zachowuje przykłady z punktu kontrolnego, niegotowe dostaje nowe.
+    expect(draft.examples[CLOTHES]).toEqual(clothesExamples);
+    expect(draft.examples[WEARING]!.length).toBeGreaterThan(0);
   });
 
   it("„+N” na zagadnieniu rozdziału: przebieg bazowy dopisuje dokładnie N ćwiczeń tego zagadnienia", async () => {

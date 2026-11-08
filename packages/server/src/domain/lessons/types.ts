@@ -132,8 +132,6 @@ export interface AgentObjective {
   readonly id: string;
   readonly titlePl: string;
   readonly descriptionEn: string;
-  /** Rodzaj zagadnienia (`words` | `frame`), gdy przedmiot go używa. */
-  readonly kind?: DynamicObjectiveKind;
   readonly cards: readonly { readonly title: string; readonly body: string }[];
   readonly exerciseTypes: readonly LessonExerciseType[];
 }
@@ -403,20 +401,6 @@ export interface SubjectModule {
    * powtarzać. Tylko generowanie; brak = karty nie ujawniają rozwiązań.
    */
   cardExposureTexts?(cards: readonly { readonly body: string }[]): string[];
-  /**
-   * Walidacja i czyszczenie WYŁĄCZNIE świeżo wygenerowanych ćwiczeń (wyjście
-   * modelu, także dogenerowanie): odrzuca ćwiczenie z powodem albo zwraca je
-   * w `kept` już bez pojedynczych wadliwych elementów (np. wariantów odpowiedzi).
-   * Nie działa przy edycji rodzica ani publikacji — w odróżnieniu od
-   * `validatePoolExtra`, która obowiązuje zawsze. Powody są zliczane dla rodzica.
-   */
-  refineGeneratedPool?(
-    drafts: readonly LessonExerciseDraft[],
-    ctx: { material: string },
-  ): {
-    kept: LessonExerciseDraft[];
-    rejected: { exercise: LessonExerciseDraft; issues: readonly LessonRuleIssue[] }[];
-  };
   /** Błędy specyficzne dla przedmiotu (pusta lista = poprawne). */
   validateExercise(ex: LessonExerciseDraft, topic: LessonTopic): readonly LessonRuleIssue[];
   readonly ttsForAnswers: boolean; // czy generować audio odpowiedzi kanonicznej

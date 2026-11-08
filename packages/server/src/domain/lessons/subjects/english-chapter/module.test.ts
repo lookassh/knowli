@@ -83,7 +83,6 @@ describe("przedmiot english_chapter", () => {
     ]);
     expect(englishChapterSubject.validateExercise).toBe(validateChapterExercise);
     expect(englishChapterSubject.baselinePool).toBe(true);
-    expect(englishChapterSubject.refineGeneratedPool).toBeUndefined();
     expect(englishChapterSubject.exposureText).toBe(chapterExposureText);
     expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
   });

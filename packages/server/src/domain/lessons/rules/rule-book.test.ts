@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_TEXT_LENGTH } from "../pool-validation";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseType, SubjectModule } from "../types";
-import { defineRules, describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
 import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, typeExample, type RuleBook, type RuleLine } from "./rule-book";
 import { TYPE_CARDS } from "./type-cards";
 
@@ -96,19 +96,12 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
   const ruleById = new Map(rulesOf(subject));
   const internalIds = rulesOf(subject).filter(([, rule]) => rule.kind === "internal").map(([id]) => id);
 
-  it("zawiera dokładnie pasujące reguły reject/sanitize, każdą raz (inEachTypeBlock raz na blok), bez internal", () => {
+  it("zawiera dokładnie pasujące reguły reject/sanitize, każdą raz, bez internal", () => {
     expect(internalIds.length).toBeGreaterThan(0);
     for (const { name, ctx } of matrix(subject)) {
-      const book = lessonRuleBook(subject, ctx);
-      const ids = idsOf(book);
-      const repeated = (id: string) => ruleById.get(id)!.inEachTypeBlock === true;
-      expect(new Set(ids.filter((id) => !repeated(id))).size, name).toBe(ids.filter((id) => !repeated(id)).length);
-      for (const id of new Set(ids.filter(repeated))) {
-        const blocks = book.types.filter((block) => block.rules.some((line) => line.id === id)).map((block) => block.type);
-        expect(blocks, `${name}: ${id}`).toEqual(book.types.map((block) => block.type).filter((type) => ruleById.get(id)!.types!.includes(type)));
-        expect(ids.filter((other) => other === id).length, `${name}: ${id}`).toBe(blocks.length);
-      }
-      expect([...new Set(ids)].sort(), name).toEqual(expectedIds(subject, ctx).sort());
+      const ids = idsOf(lessonRuleBook(subject, ctx));
+      expect(new Set(ids).size, name).toBe(ids.length);
+      expect([...ids].sort(), name).toEqual(expectedIds(subject, ctx).sort());
       expect(ids.filter((id) => internalIds.includes(id)), name).toEqual([]);
     }
   });
@@ -158,11 +151,9 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
         // Przykład przedmiotu dla zagadnienia ma pierwszeństwo przed przykładem karty.
         expect(JSON.parse(block.example!), `${name}: ${block.type}`)
           .toEqual({ ...typeExample(subject, ctx, block.type), objectiveId: EXAMPLE_OBJECTIVE_ID });
-        // Reguła w bloku typu dotyczy wyłącznie tego typu spośród typów zagadnienia (albo stoi w bloku każdego swojego typu).
+        // Reguła w bloku typu dotyczy wyłącznie tego typu spośród typów zagadnienia.
         for (const line of block.rules) {
-          const rule = ruleById.get(line.id)!;
-          if (rule.inEachTypeBlock === true) expect(rule.types, `${name}: ${line.id}`).toContain(block.type);
-          else expect(rule.types!.filter((type) => types.includes(type)), `${name}: ${line.id}`).toEqual([block.type]);
+          expect(ruleById.get(line.id)!.types!.filter((type) => types.includes(type)), `${name}: ${line.id}`).toEqual([block.type]);
         }
       }
     }
@@ -244,7 +235,7 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
     point: "10. ślepe rozwiązanie (dopisek)",
     rule: "check.blind_solve",
     phrase: "put common equivalent word orders into acceptedAnswers",
-    subjects: ["english_grammar", "english_chapter"],
+    subjects: ["english_grammar"],
   },
 ];
 
@@ -263,46 +254,13 @@ describe("frazy kluczowe nowych opisów reguł", () => {
   });
 });
 
-describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)", () => {
-  // Od etapu 5a (#362) żaden przedmiot produkcyjny nie ma takiej reguły: mechanizm na kopii rozdziału z regułą testową.
-  const production = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
-  const chapter: SubjectModule = {
-    ...production,
-    rules: defineRules({
-      ...production.rules,
-      "test.each_block": {
-        field: "instructionPl",
-        kind: "reject",
-        types: ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"],
-        inEachTypeBlock: true,
-        description: "Test rule repeated in the block of each of its types.",
-      },
-    }),
-  };
+describe("księga reguł — rozdział", () => {
+  const chapter = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
   const book = lessonRuleBook(chapter, contextFor(chapter, chapter.exerciseTypes, VARIANTS[0]!));
-  const blockOf = (type: LessonExerciseType) => book.types.find((block) => block.type === type)!.rules.map((line) => line.id);
 
-  it("reguła w blokach wyboru, luki, układanki i tekstu z lukami, nie w ogólnych ani w wyborze ze słuchu", () => {
-    for (const type of ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"] as const) {
-      expect(blockOf(type), type).toContain("test.each_block");
-    }
-    expect(book.general.map((line) => line.id)).not.toContain("test.each_block");
-    expect(blockOf("lesson_listen_choice")).not.toContain("test.each_block");
-    // Zakaz polecenia w wyborze ze słuchu ma pełny opis (nie tylko id), więc prompt nie przeczy sobie.
+  it("zakaz polecenia w wyborze ze słuchu ma pełny opis (nie tylko id)", () => {
     const listen = book.types.find((block) => block.type === "lesson_listen_choice")!.rules.find((line) => line.id === "listen.instruction_not_allowed");
-    expect(listen?.brief).toBeUndefined();
-  });
-
-  it("pełny opis w pierwszym bloku, w kolejnych odesłanie do niego (repeatOf), tekst linii bez zmian", () => {
-    const lines = book.types.flatMap((block) =>
-      block.rules.filter((line) => line.id === "test.each_block").map((line) => ({ type: block.type, line })),
-    );
-    expect(lines.length).toBeGreaterThan(1);
-    const [first, ...rest] = lines;
-    expect(first!.line.repeatOf).toBeUndefined();
-    for (const { line } of rest) {
-      expect(line.repeatOf).toBe(first!.type);
-      expect(line.text).toBe(first!.line.text);
-    }
+    expect(listen).toBeDefined();
+    expect(listen!.brief).toBeUndefined();
   });
 });

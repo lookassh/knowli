@@ -16,6 +16,11 @@ describe("coverage.cjs (etap 5)", () => {
     expect(coverageOf(forms, dump)).toEqual({ total: 3, missing: ["hat"], leaks: 0 });
   });
 
+  it("ignores identifiers and Polish child-facing fields", () => {
+    const dump = { objectives: [], exercises: [{ id: "hat-1", objectiveId: "english_chapter.d1.boots", instructionPl: "Mam na sobie hat.", prompt: "I'm wearing", answer: "x" }] };
+    expect(coverageOf(forms, dump).missing).toEqual(["hat", "boots", "I'm wearing"]);
+  });
+
   it("accepts any alternative and typographic apostrophes, and counts leaks from the dump", () => {
     const dump = { objectives: [{ cards: [{ title: "Słowa", body: "hats — kapelusze" }] }], exercises: [{ pairs: [{ left: "boot", right: "but" }] }, { answer: "I’m wearing a hat." }], exposureLeaks: [{}] };
     expect(coverageOf(forms, dump)).toEqual({ total: 3, missing: [], leaks: 1 });

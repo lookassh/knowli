@@ -48,6 +48,9 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "word of THIS objective's cards, at least two in pairs and groups; when the cards show a sentence frame, the solved " +
     "sentence uses THIS objective's frame and the checked part may be the frame or the word filling it. The checked part " +
     "is never a function word alone. " +
+    "Here the cards are the child's word list: exercises on the card words are expected (the card teaches the word); only " +
+    "never use a card example sentence as an answer. Card examples use this objective's frame or words together with other " +
+    "material words than your exercises use. " +
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
     "Polish stimulus sentences in instructionPl read naturally, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +
@@ -85,7 +88,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
       "on the left, no weather answer may be an extra item).",
     lesson_group:
       "Use it only when the objective's words split naturally into 2 or 3 categories (e.g. clothes for hot and cold " +
-      "weather); group labels are in Polish and items are English words from the chapter. Skip it otherwise.",
+      "weather); group labels are in Polish and items are English words from the chapter. Otherwise return fewer exercises or none.",
     lesson_cloze:
       "Use 2 or 3 short sentences built on the chapter's frames. instructionPl gives the Polish meaning of the whole text, " +
       "then a short command, like a workbook: 'W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.' " +
@@ -100,7 +103,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "Set kind for every objective: 'words' — a group of 4 to 12 related English words and phrases from the material " +
     "(e.g. clothes, weather, days of the week); 'frame' — one sentence frame from the material (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...), where the checked part is the construction and words of the 'words' objectives " +
-    "only fill it. Every word belongs mainly to one objective. Cards (2 to 4): for 'words' a list of lines 'English word — " +
+    "only fill it. Every word of the material word lists and every sentence frame appears on the cards of some objective. Every word belongs mainly to one objective. Cards (2 to 4): for 'words' a list of lines 'English word — " +
     "Polish meaning', split across the cards; for 'frame' the pattern with 1 to 3 English examples from the material " +
     "WITHOUT their Polish translations (the pattern may be explained in Polish). No card contains a Polish sentence " +
     "together with its English translation — translating sentences is the child's exercise.",

@@ -133,12 +133,12 @@ function independentReservation(input: LessonPoolInput): string {
 
 /**
  * Wiersze reguł jednej sekcji księgi: `[id] opis`, oddzielone spacją; reguły `brief` pomija (opisuje je wynik
- * narzędzia), a powtórzenie reguły z wcześniejszego bloku typu (`repeatOf`) odsyła do tamtego bloku.
+ * narzędzia).
  */
 function ruleLines(lines: readonly LessonRuleBookLine[]): string {
   return lines
     .filter((line) => line.brief !== true)
-    .map((line) => (line.repeatOf === undefined ? `[${line.id}] ${line.text}` : `[${line.id}] ${repeatText(line.repeatOf)}`))
+    .map((line) => `[${line.id}] ${line.text}`)
     .join(" ");
 }
 
@@ -146,11 +146,6 @@ function ruleLines(lines: readonly LessonRuleBookLine[]): string {
 export const EXAMPLES_NOTE =
   "Each Example shows only the record format: never copy its words or sentences; take the content from this " +
   "lesson's material and objective.";
-
-/** Tekst powtórzonej reguły w kolejnym bloku typu: odesłanie do bloku z pełnym opisem. */
-export function repeatText(type: string): string {
-  return `As in the ${type} block.`;
-}
 
 /** Czy sekcja ma choć jedną regułę z opisem (bez pustych nagłówków). */
 function hasDescribed(lines: readonly LessonRuleBookLine[]): boolean {
@@ -415,6 +410,11 @@ function lessonObjectivesJsonSchema(voiceTones: boolean, kinds: boolean): Record
   };
 }
 
+/** Pola zagadnienia wspólne obu wariantów promptu zagadnień. */
+const OBJECTIVE_FIELDS =
+  "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
+  "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), ";
+
 function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
   const head =
     `${input.generationRole} ` +
@@ -425,8 +425,7 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
     return (
       head +
       "Split the parent material into learnable objectives, in teaching order. " +
-      "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
-      "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), " +
+      OBJECTIVE_FIELDS +
       "kind and cards as the subject rules below say; card body at most 600 characters; NEVER add facts, words or definitions " +
       "that are not in the material. " +
       voice +
@@ -437,8 +436,7 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
   return (
     head +
     "Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. " +
-    "For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), " +
-    "descriptionEn (one English sentence describing exactly what the child must know, based only on the material), " +
+    OBJECTIVE_FIELDS +
     "cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; " +
     "you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). " +
     voice +

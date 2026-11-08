@@ -40,15 +40,10 @@ function completeEntries(progress: LessonAgentProgress | undefined, objectiveOrd
   });
 }
 
-/** Zagadnienia źródła w kolejności lekcji; planer jeszcze ich nie zna. */
+/** Zagadnienia źródła w kolejności lekcji. */
 function objectiveOrderOf(source: AgentObjectiveSource): string[] {
-  if (source.source === "catalog") return source.topic.objectives.map((objective) => objective.id);
-  if (source.source === "input") return source.dynamicTopic.objectives.map((objective) => objective.id);
-  return [];
-}
-
-function hasPlanExamples(progress: LessonAgentProgress | undefined): boolean {
-  return progress?.planExamples !== undefined && Object.keys(progress.planExamples).length > 0;
+  const objectives = source.source === "catalog" ? source.topic.objectives : source.dynamicTopic.objectives;
+  return objectives.map((objective) => objective.id);
 }
 
 export type LessonAgentRunInputArgs = {
@@ -172,16 +167,13 @@ export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAge
   const objectiveSource = poolSource(args);
   if ("needsObjectives" in objectiveSource) return objectiveSource;
   const complete = completeEntries(progress, objectiveOrderOf(objectiveSource));
-  // Przykłady planu dla wszystkich zagadnień (ustalone), własne przykłady tylko zagadnień `complete`.
-  const initialExamples: Record<string, string[]> = { ...progress?.planExamples };
-  for (const [objectiveId, entry] of complete) initialExamples[objectiveId] = [...entry.examples];
+  // Przykłady tylko zagadnień `complete`; pozostałe dostają nowe z pierwszej paczki.
   return {
     ...common,
     objectiveSource,
     fixed: complete.flatMap(([, entry]) => entry.exercises),
     skipObjectives: complete.map(([objectiveId]) => objectiveId),
-    initialExamples,
-    examplesFixed: hasPlanExamples(progress),
+    initialExamples: Object.fromEntries(complete.map(([objectiveId, entry]) => [objectiveId, [...entry.examples]])),
     target: { mode: "pool" },
   };
 }
@@ -283,10 +275,8 @@ export function mergeAttemptIntoProgress(
     if (delta > 0) cleanupCounts[key] = (cleanupCounts[key] ?? 0) + delta;
   }
   const attemptSpentUsd = Math.max(0, result.spentUsd - progress.budgetSpentUsd);
-  const dynamicTopic = progress.dynamicTopic ?? result.dynamicTopic;
   return {
     ...progress,
-    ...(dynamicTopic === undefined ? {} : { dynamicTopic }),
     objectives,
     budgetSpentUsd: progress.budgetSpentUsd + attemptSpentUsd,
     totalSpentUsd: progress.totalSpentUsd + attemptSpentUsd,

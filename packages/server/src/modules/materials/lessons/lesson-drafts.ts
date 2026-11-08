@@ -97,7 +97,7 @@ export interface LessonContext {
   dynamicTopic?: DynamicTopicData;
   /** Licznik ćwiczeń odrzuconych przy walidacji (dla panelu rodzica). */
   rejectedCount: number;
-  /** Powody odrzuceń z czyszczenia świeżej puli (`refineGeneratedPool`) z licznikami; bez danych dziecka. */
+  /** Powody odrzuceń ćwiczeń przy generowaniu puli (polskie etykiety kodów) z licznikami; bez danych dziecka. */
   rejectedReasons?: Record<string, number>;
   /** Oczyszczenia agenta puli przy przyjmowaniu (`hintsRemoved`, `variantsRemoved`, `quotesSnapped`), sumowane między przebiegami; same liczby. */
   cleanupCounts?: Record<string, number>;

@@ -23,7 +23,7 @@ import {
   toExerciseDraft,
   withSubjectObjectiveKinds,
 } from "../modules/materials/lessons/lesson-drafts";
-import { kindsOf, lessonAgentLimits } from "../modules/materials/lessons/lesson-pool-agent";
+import { lessonAgentLimits } from "../modules/materials/lessons/lesson-pool-agent";
 import { objectiveAgentInput } from "../modules/materials/lessons/lesson-pool-agent-input";
 import { sanitizeFreshLessonDraft } from "../modules/materials/lessons/lesson-pool-acceptance";
 import { FakeLlmProvider } from "./fake";
@@ -71,7 +71,6 @@ function lessonOf(args: {
   subject: SubjectModule;
   topic: LessonTopic;
   material: string;
-  kinds?: ReadonlyMap<string, "words" | "frame">;
   examples?: Readonly<Record<string, readonly string[]>>;
   examplesFixed: boolean;
   poolSize?: number;
@@ -80,7 +79,7 @@ function lessonOf(args: {
   return {
     subject: args.subject,
     topic: args.topic,
-    objectives: agentObjectivesOf(args.topic, args.kinds),
+    objectives: agentObjectivesOf(args.topic),
     material: args.material,
     examples: args.examples ?? {},
     examplesFixed: args.examplesFixed,
@@ -147,7 +146,6 @@ function chapterLesson(material: string, groups: Parameters<typeof chapterObject
     subject: englishChapterSubject,
     topic: englishChapterSubject.buildDynamicTopic!(data),
     material,
-    kinds: kindsOf(data),
     examples,
     examplesFixed: true,
   });

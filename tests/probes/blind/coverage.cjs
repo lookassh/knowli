@@ -29,10 +29,18 @@ function strings(value) {
   return [];
 }
 
-/** Braki pokrycia jednego zrzutu: pozycje bez żadnej alternatywy w kartach i ćwiczeniach. */
+/** Pola ćwiczenia poza pomiarem: identyfikatory (slug zagadnienia) i polskie teksty dla dziecka (spec §7.5 pkt 6). */
+const SKIPPED_FIELDS = new Set(["id", "revisionId", "objectiveId", "instructionPl", "prompt", "explanationPl", "hint"]);
+
+/** Angielskie pola ćwiczenia (bez identyfikatorów i polskich tekstów). */
+function englishFields(exercise) {
+  return Object.entries(exercise ?? {}).filter(([field]) => !SKIPPED_FIELDS.has(field)).flatMap(([, value]) => strings(value));
+}
+
+/** Braki pokrycia jednego zrzutu: pozycje bez żadnej alternatywy w kartach i angielskich polach ćwiczeń. */
 function coverageOf(forms, dump) {
   const cards = (dump.objectives ?? []).flatMap((objective) => [objective.card ?? "", ...strings(objective.cards ?? [])]);
-  const haystack = [...cards, ...strings(dump.exercises ?? [])].join("\n").toLowerCase().replace(/[’‘]/gu, "'");
+  const haystack = [...cards, ...(dump.exercises ?? []).flatMap(englishFields)].join("\n").toLowerCase().replace(/[’‘]/gu, "'");
   const missing = forms.filter((alternatives) => !alternatives.some((form) => mentions(haystack, form.replace(/[’‘]/gu, "'"))));
   return { total: forms.length, missing: missing.map((alternatives) => alternatives[0]), leaks: (dump.exposureLeaks ?? []).length };
 }

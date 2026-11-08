@@ -47,17 +47,8 @@ describe("chapterAgentPolicy — wartości i typy", () => {
     expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
   });
 
-  it("dopisek lesson.leak_source ma ustaloną treść", () => {
-    expect(chapterAgentPolicy.ruleNotes?.["lesson.leak_source"]).toBe("Use a different sentence.");
-  });
-
-  it("dopisek lesson.leak podpowiada zmianę pokoju, przedmiotu lub miejsca", () => {
-    expect(chapterAgentPolicy.ruleNotes?.["lesson.leak"]).toContain("change the room, object or place");
-  });
-
-  it("dopisek check.blind_solve: polskie zdanie źródłowe wskazuje jedno sformułowanie, szyki w acceptedAnswers", () => {
-    expect(chapterAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("(pronoun, tense, word order)");
-    expect(chapterAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("acceptedAnswers");
+  it("jedyny dopisek reguły to duplikat wariantu (prompt paczki nie ma sekcji lekcji ani kontroli)", () => {
+    expect(Object.keys(chapterAgentPolicy.ruleNotes ?? {})).toEqual(["variants.duplicate"]);
   });
 });
 

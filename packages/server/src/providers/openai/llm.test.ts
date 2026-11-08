@@ -220,7 +220,7 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
       {
         type: "lesson_gap",
         summary: "GAP-SUMMARY.",
-        rules: [{ id: "gap.marker_count", text: "GAP-MARKER.", brief: true }, { id: "chapter.instruction_stimulus", text: "STIMULUS.", repeatOf: "lesson_choice" }],
+        rules: [{ id: "gap.marker_count", text: "GAP-MARKER.", brief: true }],
       },
     ],
     lesson: [{ id: "lesson.leak", text: "LESSON-LEAK." }],
@@ -239,7 +239,6 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
       "  CHOICE-SUBJECT.",
       "  [options.count] OPTIONS-COUNT.",
       "lesson_gap — GAP-SUMMARY.",
-      "  [chapter.instruction_stimulus] As in the lesson_choice block.",
       "Lesson: [lesson.leak] LESSON-LEAK.",
       "Checks by another model: [check.blind_solve] CHECK-BLIND.",
     ].join("\n"));
@@ -251,9 +250,9 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
     expect(renderRuleBook(BOOK).split(EXAMPLES_NOTE)).toHaveLength(2);
   });
 
-  it("reguły brief: bez id i opisu (opis w wyniku narzędzia), bez pustego wiersza bloku; powtórzenie bez opisu", () => {
+  it("reguły brief: bez id i opisu (opis w wyniku narzędzia), bez pustego wiersza bloku", () => {
     const text = renderRuleBook(BOOK);
-    for (const hidden of ["SHAPE-RECORD.", "STEM-REQUIRED.", "GAP-MARKER.", "[shape.record]", "[choice.stem_required]", "[gap.marker_count]", "STIMULUS."]) {
+    for (const hidden of ["SHAPE-RECORD.", "STEM-REQUIRED.", "GAP-MARKER.", "[shape.record]", "[choice.stem_required]", "[gap.marker_count]"]) {
       expect(text).not.toContain(hidden);
     }
     expect(text).not.toMatch(/\n {2}\n|\n {2}$/);

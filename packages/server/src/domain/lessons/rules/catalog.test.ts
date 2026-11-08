@@ -330,7 +330,6 @@ const INTERNAL_RULES: Readonly<Record<string, string>> = {
   "match.answer_computed": "odpowiedź lesson_match wylicza kod z pairs; agent jej nie wysyła",
   "group.answer_computed": "odpowiedź lesson_group wylicza kod z groups; agent jej nie wysyła",
   "cloze.answer_computed": "odpowiedź lesson_cloze wylicza kod z gapAnswers; agent jej nie wysyła",
-  "lesson.refine_unnamed": "bezpiecznik kontraktu haka refineGeneratedPool: przedmioty produkcyjne zawsze nazywają regułę",
 };
 
 describe("gwarancje katalogów produkcyjnych", () => {

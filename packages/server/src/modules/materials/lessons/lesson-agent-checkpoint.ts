@@ -27,7 +27,6 @@ export type LessonAgentProgress = {
   readonly kind: "progress";
   readonly dynamicTopic?: DynamicTopicData;
   readonly droppedObjectiveCount?: number;
-  readonly planExamples?: Record<string, string[]>;
   readonly objectives: Record<string, LessonAgentObjectiveProgress>;
   /** Wydatek liczony do budżetu runu; zerowany przez „Ponów” rodzica. */
   readonly budgetSpentUsd: number;
@@ -87,7 +86,7 @@ const progressSchema = z.object({
   kind: z.literal("progress"),
   dynamicTopic: dynamicTopicSchema.optional(),
   droppedObjectiveCount: count.optional(),
-  planExamples: z.record(z.string(), z.array(z.string())).optional(),
+  // Bez `planExamples` (planista usunięty w etapie 5a): z.object pomija ten klucz starych punktów kontrolnych.
   objectives: z.record(z.string(), z.object({
     status: z.enum(["complete", "incomplete", "failed"]),
     failureCode: z.string().optional(),
@@ -147,7 +146,6 @@ export function parseLessonAgentProgress(value: unknown, runId?: string): Lesson
     kind: "progress",
     ...(data.dynamicTopic === undefined ? {} : { dynamicTopic: data.dynamicTopic as DynamicTopicData }),
     ...(data.droppedObjectiveCount === undefined ? {} : { droppedObjectiveCount: data.droppedObjectiveCount }),
-    ...(data.planExamples === undefined ? {} : { planExamples: data.planExamples }),
     objectives,
     budgetSpentUsd: data.budgetSpentUsd,
     totalSpentUsd: data.totalSpentUsd,

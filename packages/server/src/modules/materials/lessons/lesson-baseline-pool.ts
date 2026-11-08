@@ -179,13 +179,13 @@ export async function runLessonBaselinePool(
   };
   try {
     const dynamicTopic = input.objectiveSource.source === "input" ? input.objectiveSource.dynamicTopic : undefined;
-    await input.onObjectivesResolved?.({ ...(dynamicTopic === undefined ? {} : { dynamicTopic }), planExamples: {}, spentUsd: cost.spentUsd });
+    await input.onObjectivesResolved?.({ ...(dynamicTopic === undefined ? {} : { dynamicTopic }), spentUsd: cost.spentUsd });
     signal.throwIfAborted();
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
     // Stan startowy jak u agenta: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
     // limity zapisu (`lessonAgentLimits`; `maxExercises` nie działa — przyjmowanie nie woła kroku limitów).
-    const start = poolStartState({ subject, topic, objectives, input, planExamples: {} });
+    const start = poolStartState({ subject, topic, objectives, input });
     const { ctx, addMode, promptTargets } = start;
     const avoidSentences = lessonAvoidSentences(subject, topic, start.state);
     const examplesFixed = input.examplesFixed ?? false;

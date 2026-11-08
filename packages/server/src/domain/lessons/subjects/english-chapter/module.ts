@@ -79,7 +79,7 @@ export const englishChapterSubject: SubjectModule = {
   // To samo zdanie z innym polskim bodźcem to inne ćwiczenie; krótkie odpowiedzi się powtarzają.
   poolDeduplication: "exercise",
   poolMinimums: { guided: 3, productive: 3, independent: 2 },
-  // Zgodność z materiałem sprawdza słownik rozdziału, nie cytaty.
+  // Bez cytatów `sourceRefs` w ćwiczeniach.
   sourceQuotes: false,
   // Tytuł przedmiotu zestawu to stałe „Angielski — rozdział”.
   materialSubjectTitle: "fixed",

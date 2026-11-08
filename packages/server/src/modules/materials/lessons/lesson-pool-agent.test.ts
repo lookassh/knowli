@@ -379,146 +379,12 @@ describe("runLessonPoolAgent — przedmiot i źródło zagadnień", () => {
       runInput({ subjectId: school.id, objectiveSource: { source: "input", dynamicTopic }, material: "Wisła i Odra." }),
       never,
     );
-    expect(result.dynamicTopic).toBeUndefined();
     expect(result.objectives[0]!.examples).toEqual(["Wisła płynie przez Warszawę."]);
     const counts = objectiveBatchCounts(0, 2, school);
     expect(agent.calls.map((call) => call.input.targets.targetCount)).toEqual(counts);
     expect(counts[0]).toBeGreaterThanOrEqual(8);
   });
 
-  it("zdanie karty rozdziału jest stałym źródłem: tłumaczenie z tą odpowiedzią → leak_victim", async () => {
-    const chapter = withAgentPolicy(englishChapterSubject, { blindSolveTypes: [], variantCheckTypes: [] });
-    const objectiveId = `${chapter.id}.d42.room`;
-    const dynamicTopic: DynamicTopicData = {
-      titlePl: "Pokój",
-      objectives: [
-        {
-          id: objectiveId,
-          titlePl: "Mój pokój",
-          descriptionEn: "Things in my room.",
-          kind: "words",
-          cards: [
-            { title: "Zdanie", body: "There is a bed in my room." },
-            { title: "Słowa", body: "łóżko, pokój" },
-          ],
-        },
-      ],
-    };
-    const translation = {
-      exerciseType: "lesson_open_answer",
-      objectiveId,
-      instructionPl: "Przetłumacz na angielski.",
-      prompt: "W moim pokoju jest łóżko.",
-      answer: "There is a bed in my room",
-      acceptedAnswers: [],
-      focus: ["bed"],
-    };
-    const { agent, deps } = setup({ subjects: [chapter], agent: { objectives: { room: [{ submit: { exercises: [translation] } }] } } });
-    const result = await runLessonPoolAgent(
-      deps,
-      runInput({ subjectId: chapter.id, objectiveSource: { source: "input", dynamicTopic }, material: "There is a bed in my room. I like my bed." }),
-      never,
-    );
-    expect(agent.calls[0]!.input.cardSentences).toContain("There is a bed in my room.");
-    expect(result.rejections.map((entry) => entry.code)).toEqual(["leak_victim"]);
-    expect(result.objectives[0]!.exercises).toEqual([]);
-  });
-});
-
-const chapter = withAgentPolicy(englishChapterSubject, { blindSolveTypes: [], variantCheckTypes: [] });
-
-describe("runLessonPoolAgent — rozdział", () => {
-  it("materiał rozdziału bez list: zagadnienia z wejścia complete przy pełnych scenariuszach", async () => {
-    const material = "I have a coat. I have boots. She has a dress. We have a skirt. I can see a hat and a scarf.";
-    const words = ["coat", "boots", "dress", "skirt", "hat", "scarf"];
-    const slugs = ["clothes_a", "clothes_b", "clothes_c"];
-    const idOf = (slug: string) => `${chapter.id}.d42.${slug}`;
-    let number = 0;
-    const script = (slug: string, offset: number): FakeAgentStep[] => {
-      const objectiveId = idOf(slug);
-      const exercises: Record<string, unknown>[] = [];
-      for (let i = 0; i < 3; i++) {
-        number += 1;
-        const answer = words[(offset + i) % words.length]!;
-        const other = words[(offset + i + 1) % words.length]!;
-        exercises.push({
-          exerciseType: "lesson_choice",
-          objectiveId,
-          instructionPl: `Zdanie numer ${number} ma lukę. Wybierz słowo.`,
-          stem: "I can see the ___.",
-          answer,
-          options: [
-            { id: "a", text: answer },
-            { id: "b", text: other },
-          ],
-          correctOption: "a",
-          acceptedAnswers: [],
-          focus: [],
-        });
-      }
-      for (let i = 0; i < 3; i++) {
-        number += 1;
-        const answer = words[(offset + i) % words.length]!;
-        exercises.push({
-          exerciseType: "lesson_gap",
-          objectiveId,
-          instructionPl: `Zdanie numer ${number} ma lukę. Wpisz brakujące słowo.`,
-          stem: "I have the ___.",
-          answer,
-          acceptedAnswers: [],
-          focus: [answer],
-        });
-      }
-      for (let i = 0; i < 3; i++) {
-        number += 1;
-        const first = words[offset]!;
-        const second = words[(offset + i + 1) % words.length]!;
-        exercises.push({
-          exerciseType: "lesson_open_answer",
-          objectiveId,
-          instructionPl: "Przetłumacz na angielski.",
-          prompt: `Przetłumacz zdanie numer ${number}.`,
-          answer: `We have the ${first} and the ${second}`,
-          acceptedAnswers: [],
-          focus: [first],
-        });
-      }
-      return [{ submit: { exercises } }];
-    };
-    const dynamicTopic: DynamicTopicData = {
-      titlePl: "Unit 1",
-      objectives: slugs.map((slug) => ({
-        id: idOf(slug),
-        titlePl: `Zagadnienie ${slug}`,
-        descriptionEn: `Objective ${slug}.`,
-        kind: "words" as const,
-        cards: [
-          { title: "Słowa", body: "Słowa o ubraniach." },
-          { title: "Ćwiczymy", body: "Ćwiczymy zdania z tymi słowami." },
-        ],
-      })),
-    };
-    const agent = new FakeLessonPoolAgent({
-      objectives: { clothes_a: script("clothes_a", 0), clothes_b: script("clothes_b", 1), clothes_c: script("clothes_c", 2) },
-    });
-    const { deps } = setup({ agentProvider: agent, subjects: [chapter] });
-    const result = await runLessonPoolAgent(
-      deps,
-      runInput({
-        subjectId: chapter.id,
-        objectiveSource: { source: "input", dynamicTopic },
-        material,
-        topicTitle: "Unit 1",
-        examplesFixed: true,
-        initialExamples: Object.fromEntries(slugs.map((slug, index) => [idOf(slug), [`I like my ${words[index]}.`]])),
-      }),
-      never,
-    );
-    expect(result.rejections.map((entry) => `${entry.code}: ${entry.detail}`)).toEqual([]);
-    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status, objective.missing])).toEqual(
-      slugs.map((slug) => [idOf(slug), "complete", []]),
-    );
-  });
 });
 
 describe("runLessonPoolAgent — hak onObjectiveSettled", () => {
@@ -618,41 +484,6 @@ function schoolDynamicTopic(subjectId: string): DynamicTopicData {
   };
 }
 
-/** Rozdział z jednym zagadnieniem `room`, którego karty NIE zawierają zdania „There is a bed in my room.”. */
-const roomChapter = withAgentPolicy(englishChapterSubject, { blindSolveTypes: [], variantCheckTypes: [] });
-const ROOM_ID = `${roomChapter.id}.d42.room`;
-const roomTopic: DynamicTopicData = {
-  titlePl: "Pokój",
-  objectives: [
-    {
-      id: ROOM_ID,
-      titlePl: "Mój pokój",
-      descriptionEn: "Things in my room.",
-      kind: "words",
-      cards: [{ title: "Słowa", body: "łóżko, pokój" }],
-    },
-  ],
-};
-/** Tłumaczenie (ćwiczenie samodzielne), którego odpowiedzią jest zdanie „There is a bed in my room”. */
-const bedTranslation = {
-  exerciseType: "lesson_open_answer",
-  objectiveId: ROOM_ID,
-  instructionPl: "Przetłumacz na angielski.",
-  prompt: "W moim pokoju jest łóżko.",
-  answer: "There is a bed in my room",
-  acceptedAnswers: [],
-  focus: ["bed"],
-};
-
-function roomInput(overrides: Partial<LessonPoolAgentRunInput> = {}): LessonPoolAgentRunInput {
-  return runInput({
-    subjectId: roomChapter.id,
-    objectiveSource: { source: "input", dynamicTopic: roomTopic },
-    material: "There is a bed in my room. I like my bed.",
-    ...overrides,
-  });
-}
-
 describe("runLessonPoolAgent — hak zagadnień, przykłady początkowe i porażki (etap 2a)", () => {
   it("onObjectivesResolved: katalog (bez dynamicTopic) i wejście", async () => {
     const catalog = setup();
@@ -667,7 +498,7 @@ describe("runLessonPoolAgent — hak zagadnień, przykłady początkowe i poraż
       }),
       never,
     );
-    expect(catalogSeen).toEqual([{ calls: 0, resolved: { planExamples: {}, spentUsd: 0.2 } }]);
+    expect(catalogSeen).toEqual([{ calls: 0, resolved: { spentUsd: 0.2 } }]);
     expect(catalog.agent.calls).toHaveLength(2);
 
     const school = withAgentPolicy(schoolSubject, { blindSolveTypes: [], variantCheckTypes: [] });
@@ -685,7 +516,7 @@ describe("runLessonPoolAgent — hak zagadnień, przykłady początkowe i poraż
       }),
       never,
     );
-    expect(inputSeen).toEqual([{ calls: 0, resolved: { dynamicTopic, planExamples: {}, spentUsd: 0 } }]);
+    expect(inputSeen).toEqual([{ calls: 0, resolved: { dynamicTopic, spentUsd: 0 } }]);
     expect(input.agent.calls).toHaveLength(2);
   });
 
@@ -719,11 +550,11 @@ describe("runLessonPoolAgent — hak zagadnień, przykłady początkowe i poraż
     expect(statusResult.objectives[0]).toMatchObject({ objectiveId: A, status: "complete", missing: [], examples: ["Przykład początkowy."] });
     expect(status.agent.calls[0]!.input.cardSentences).toContain("Przykład początkowy.");
 
-    // Ujawnienie: przykład początkowy rozwiązuje tłumaczenie zdania (karta go nie zawiera).
-    const leak = setup({ subjects: [roomChapter], agent: { objectives: { room: [{ submit: { exercises: [bedTranslation] } }] } } });
+    // Ujawnienie: przykład początkowy rozwiązuje pytanie samodzielne (karta go nie zawiera).
+    const leak = setup({ agent: { objectives: { [SLUG_A]: [{ submit: { exercises: [open(A, "Kto?", "Mieszko I")] } }] } } });
     const leakResult = await runLessonPoolAgent(
       leak.deps,
-      roomInput({ initialExamples: { [ROOM_ID]: ["There is a bed in my room."] } }),
+      runInput({ skipObjectives: [B], initialExamples: { [A]: ["Mieszko I"] } }),
       never,
     );
     expect(leakResult.rejections.map((entry) => entry.code)).toEqual(["leak_victim"]);
@@ -756,17 +587,17 @@ describe("runLessonPoolAgent — hak zagadnień, przykłady początkowe i poraż
 
   it("extraExposureSources odrzucają ćwiczenie samodzielne z tym zdaniem", async () => {
     const runWith = async (overrides: Partial<LessonPoolAgentRunInput>) => {
-      const { agent, deps } = setup({ subjects: [roomChapter], agent: { objectives: { room: [{ submit: { exercises: [bedTranslation] } }] } } });
-      return { agent, result: await runLessonPoolAgent(deps, roomInput(overrides), never) };
+      const { agent, deps } = setup({ agent: { objectives: { [SLUG_A]: [{ submit: { exercises: [open(A, "Kto?", "Mieszko I")] } }] } } });
+      return { agent, result: await runLessonPoolAgent(deps, runInput({ skipObjectives: [B], ...overrides }), never) };
     };
     // Bez stałych zdań to samo ćwiczenie jest przyjmowane.
     const control = await runWith({});
     expect(control.result.objectives[0]!.exercises).toHaveLength(1);
 
-    const story = await runWith({ extraExposureSources: ["There is a bed in my room."] });
+    const story = await runWith({ extraExposureSources: ["Mieszko I"] });
     expect(story.result.rejections.map((entry) => entry.code)).toEqual(["leak_victim"]);
     expect(story.result.objectives[0]!.exercises).toEqual([]);
-    expect(story.agent.calls[0]!.input.cardSentences).toContain("There is a bed in my room.");
+    expect(story.agent.calls[0]!.input.cardSentences).toContain("Mieszko I");
   });
 
   it("failure niesie retryable", async () => {

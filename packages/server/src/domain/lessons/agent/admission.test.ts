@@ -446,36 +446,8 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
   });
 });
 
-describe("przyjmowanie paczki — sanityzacja i refine", () => {
-  it("odpowiedź REFINE-REJECT: refine z powodem przedmiotu", () => {
-    const result = submit(stateWith(), A, [{ ...choice(A, 1), answer: "REFINE-REJECT" }]);
-    const rejection = { kind: "rule", code: "refine", reasons: ["[test.issue] exercise"], issues: [testIssue("refine reject")], ruleIds: ["test.issue"] };
-    expect(result.prechecked[0]).toEqual({ pass: false, rejection });
-    expect(result.results[0]).toEqual({ rejected: rejection });
-  });
-
-  it("refine odrzucający bez zgłoszeń (błąd kontraktu haka): odrzucenie z regułą bezpiecznika, bez wyjątku", () => {
-    const silent = withAgentPolicy({ ...subject, refineGeneratedPool: () => ({ kept: [], rejected: [] }) }, subject.agentPolicy);
-    const [entry] = precheckBatch(stateWith(), A, [choice(A, 1)], contextFor({ subject: silent }));
-    expect(entry).toMatchObject({
-      pass: false,
-      rejection: {
-        kind: "rule",
-        code: "refine",
-        ruleIds: ["lesson.refine_unnamed"],
-        reasons: ["[lesson.refine_unnamed] exercise: the subject rejected this exercise without naming a rule"],
-      },
-    });
-  });
-
-  it("wariant DROP usunięty w szkicu z precheckBatch; do puli trafia oczyszczony szkic", () => {
-    const draft = { ...open(A, "Kiedy?", "w 966 roku"), acceptedAnswers: ["966", "DROP"] };
-    const result = submit(stateWith(), A, [draft]);
-    expect(result.prechecked[0]).toMatchObject({ pass: true, draft: { acceptedAnswers: ["966"] } });
-    expect(poolOf(result.state, A)[0]!.draft.acceptedAnswers).toEqual(["966"]);
-  });
-
-  it("agentPolicy.sanitize działa przed refine, a usunięte pola wracają w sanitized", () => {
+describe("przyjmowanie paczki — sanityzacja", () => {
+  it("agentPolicy.sanitize oczyszcza szkic, a usunięte pola wracają w sanitized", () => {
     const sanitizing = withAgentPolicy(subject, {
       sanitize: (draft) => {
         const { hint, ...rest } = draft;
@@ -493,9 +465,9 @@ describe("zgodność precheckBatch i admitBatch na tym samym stanie", () => {
   const fixtures: [string, () => LessonAgentState, readonly LessonExerciseDraft[]][] = [
     ["mieszana paczka z duplikatem", () => stateWith(), [choice(A, 1), gap(A, "Chrzest w roku ___.", "966"), choice(A, 1), open(A, "Kiedy?", "w 966 roku")]],
     [
-      "słowa kluczowe, sierota i refine",
+      "słowa kluczowe i sierota",
       () => stateWith({ fixed: [open(A, "Kto?", "Mieszko I", "f0")] }),
-      [keywords(A, "f2", 1), keywords(A, "f0", 2), open(A, "Kiedy?", "w 966 roku", "f2"), keywords(A, "f9", 3), { ...choice(A, 5), answer: "REFINE-REJECT" }],
+      [keywords(A, "f2", 1), keywords(A, "f0", 2), open(A, "Kiedy?", "w 966 roku", "f2"), keywords(A, "f9", 3)],
     ],
     [
       "ujawnienia i limit słuchowy",

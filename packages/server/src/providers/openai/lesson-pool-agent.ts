@@ -364,7 +364,7 @@ function publicationMinima(minima: LessonObjectiveAgentInput["targets"]["publica
 export function objectiveInstructions(input: LessonObjectiveAgentInput): string {
   const { objective, targets } = input;
   const others = input.otherObjectives
-    .map((other) => `- ${other.title}${other.kind ? ` (${other.kind})` : ""}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
+    .map((other) => `- ${other.title}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
     .join("\n");
   const required = targets.requiredTypes.map((group) => group.join(" or ")).join("; ") || "none";
   // Słowa kluczowe dotyczą przyjętego pytania otwartego (kaskada `school.keywords_family_rejected`): w kolejnym wywołaniu.
@@ -376,7 +376,7 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
         ? "Card examples are fixed by the lesson plan: do not send them."
         : "Also send 1-3 short card examples of this objective (plain sentences the child sees on the card) in the examples field of submit_exercises; they must never be the answer of an exercise."),
     "YOUR JOB: write the exercises of ONE objective of the lesson and nothing else.",
-    `Objective: ${objective.title}${objective.kind ? ` (kind: ${objective.kind})` : ""}`,
+    `Objective: ${objective.title}`,
     `Cards:\n${objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n")}`,
     `Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): ${input.cardSentences.join(" | ") || "none"}`,
     `Other objectives of the lesson (do not test them):\n${others || "none"}`,

@@ -23,15 +23,6 @@ const BLIND_SOLVE_TYPES: readonly LessonExerciseType[] = [
 
 const VARIANT_CHECK_TYPES: readonly LessonExerciseType[] = ["lesson_open_answer", "lesson_gap"];
 
-/** Dopisek do ślepego rozwiązania (spec katalogu reguł §3): polskie zdanie źródłowe wskazuje jedno sformułowanie. */
-const BLIND_SOLVE_NOTE =
-  "The Polish source sentence must point to one English wording (pronoun, tense, word order); " +
-  "put common equivalent word orders into acceptedAnswers right away.";
-
-/** Jednoznaczność luk z bankiem. */
-const CLOZE_UNAMBIGUOUS_NOTE =
-  "In lesson_cloze exactly one bank word fits each gap: never two gaps whose words could be swapped.";
-
 /** Dopisek do duplikatu wariantu: skrót i pełna forma to osobne warianty (etap 3 #360). */
 const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
   "unless the instruction asks for one of them.";
@@ -43,9 +34,6 @@ export const chapterAgentPolicy: SubjectAgentPolicy = {
   independentReserve: 1,
   slack: 2,
   ruleNotes: {
-    "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — change the room, object or place.",
-    "lesson.leak_source": "Use a different sentence.",
-    "check.blind_solve": `${BLIND_SOLVE_NOTE} ${CLOZE_UNAMBIGUOUS_NOTE}`,
     "variants.duplicate": CONTRACTIONS_NOTE,
   },
   sanitize(draft) {

@@ -1,5 +1,5 @@
 {
- "note": "Ćwiczenia wzorcowe kontroli zamkniętych rozdziału (spec etapu 5 §7.3), fikcyjne. wrong_key powstały mechanicznie z correct (jednorazowo); błędność cloze i rozsypanki po mutacji potwierdził autor. second_correct: cel pasujący do drugiego pola (match: buty/kozaki, podkoszulek/koszulka, chłodno/zimno; group: orange to kolor i owoc, milk to napój i śniadanie, lamp stoi w kuchni i w sypialni; cloze bez polskiego zdania: zamienne luki i słowo banku pasujące do luki).",
+ "note": "Ćwiczenia wzorcowe kontroli zamkniętych rozdziału (spec etapu 5 §7.3), fikcyjne. wrong_key powstały mechanicznie z correct (jednorazowo); błędność cloze i rozsypanki po mutacji potwierdził autor. second_correct: cel pasujący do drugiego pola (match: buty/kozaki, podkoszulek/koszulka, czapka/kapelusz; group: orange to kolor i owoc, milk to napój i śniadanie, lamp stoi w kuchni i w sypialni; cloze: zamienne luki bez polskiego zdania, słowo banku pasujące do luki — także przy polskim zdaniu, które jej nie rozstrzyga, s-cloze-2). Słuchanie nie ma przypadków błędnego klucza: transkrypcja nagrania powstaje z klucza, więc po zamianie klucza ćwiczenie jest spójne (spec etapu 2 §6).",
  "subject": "english_chapter",
  "dynamicTopic": {
   "titlePl": "Ubrania, pogoda i dom",
@@ -1138,25 +1138,25 @@
     "acceptedAnswers": [],
     "focus": [],
     "exerciseType": "lesson_match",
-    "instructionPl": "Połącz pogodę z polskimi słowami.",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
     "pairs": [
      {
-      "left": "cold",
-      "right": "zimno"
+      "left": "hat",
+      "right": "kapelusz"
      },
      {
-      "left": "hot",
-      "right": "gorąco"
+      "left": "scarf",
+      "right": "szalik"
      },
      {
-      "left": "windy",
-      "right": "wietrznie"
+      "left": "gloves",
+      "right": "rękawiczki"
      }
     ],
     "extraRight": [
-     "chłodno"
+     "czapka"
     ],
-    "answer": "cold, hot, windy"
+    "answer": "hat, scarf, gloves"
    }
   },
   {
@@ -1311,7 +1311,7 @@
     "acceptedAnswers": [],
     "focus": [],
     "exerciseType": "lesson_cloze",
-    "instructionPl": "Uzupełnij tekst.",
+    "instructionPl": "Jest zimno. Załóż coś ciepłego. Uzupełnij tekst.",
     "clozeText": "It's ___. Put on your ___.",
     "gapAnswers": [
      "cold",

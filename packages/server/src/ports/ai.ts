@@ -127,8 +127,6 @@ export interface LessonRuleBookLine {
   readonly text: string;
   /** Tylko id w prompcie (kształt rekordu, powtórzenie listy pól karty typu); opis model dostaje w wyniku narzędzia. */
   readonly brief?: boolean;
-  /** Reguła opisana już w bloku tego typu (`inEachTypeBlock`): renderer odsyła do niego zamiast powtarzać opis. */
-  readonly repeatOf?: string;
 }
 
 /** Blok typu ćwiczenia w księdze reguł: karta typu, semantyka typu przedmiotu i reguły tylko tego typu. */
@@ -245,7 +243,6 @@ export interface LessonObjectiveAgentInput {
   readonly objective: {
     readonly id: string;
     readonly title: string;
-    readonly kind?: "words" | "frame";
     readonly cards: readonly { readonly title: string; readonly body: string }[];
     /** `false` = model dostarcza przykłady zagadnienia przez `submit`; `true` = przykłady ustalone (plan albo wznowienie). */
     readonly examplesFromPlan: boolean;
@@ -259,7 +256,6 @@ export interface LessonObjectiveAgentInput {
   };
   readonly otherObjectives: readonly {
     readonly title: string;
-    readonly kind?: "words" | "frame";
     readonly cards: string;
   }[];
   /** Przykłady i zdania kart lekcji, których nie wolno użyć jako odpowiedzi samodzielnych. */
