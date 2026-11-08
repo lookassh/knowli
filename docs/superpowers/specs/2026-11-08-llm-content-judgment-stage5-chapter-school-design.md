@@ -14,7 +14,7 @@ Poza zakresem: zestawy słówek (w tym `english/material-phrase.ts` i `english/i
 
 | PR | Zakres | Bramka | Gdy bramka nie przejdzie (§8) |
 |---|---|---|---|
-| **5a** | `english_chapter`: kontrola match, group, cloze (§3); etap zagadnień jednym wywołaniem (§4.1); przebieg bazowy dla tematu dynamicznego; oczyszczenie przedmiotu w kroku struktury (§4.4); `baselinePool: true`; usunięcie heurystyk rozdziału i haka `refineGeneratedPool` | rozdziału (§7.5) | zostaje tylko kontrola match, group, cloze (potrzebna szkole); reszta PR wraca, rozdział zostaje na agencie |
+| **5a** | `english_chapter`: kontrola match, group, cloze (§3); etap zagadnień jednym wywołaniem (§4.1); przebieg bazowy dla tematu dynamicznego; oczyszczenie przedmiotu w kroku struktury (§4.4); `baselinePool: true`; usunięcie heurystyk rozdziału (sam hak `refineGeneratedPool` i haki bramek agenta w typach — w 5c, używa ich przedmiot testowy agenta) | rozdziału (§7.5) | zostaje tylko kontrola match, group, cloze (potrzebna szkole); reszta PR wraca, rozdział zostaje na agencie |
 | **5b** | `school`: keywords (§5.1); materiał w kontroli zamkniętych; oczyszczenie szkoły w kroku struktury; `baselinePool: true`; usunięcie `hint-gate.ts`, `termOccursIn` i kontroli 2b (§5.3) | szkoły (§7.6) | szkoła zostaje na agencie |
 | **5c** | usunięcie pętli agenta (§6), mechaniczny PR po obu bramkach | — (testy) | gdy przedmiot został na agencie: plan wyjścia z dwóch generatorów (§8) |
 
@@ -62,7 +62,7 @@ Dziś planista rozdziału to pętla do 8 kroków (`planAgentObjectives`, narzęd
 
 ### 4.3 Co znika w rozdziale
 
-- `chapter.instruction_stimulus` (lista ogólnych poleceń i wyrażenie „zdanie, potem polecenie”), `chapter.word_outside_material`, `chapter.function_words_only` (słownik `lexicon.ts`) i cały `refineChapterPool` razem z hakiem `SubjectModule.refineGeneratedPool` i regułą `lesson.refine_unnamed` (żaden przedmiot nie ma już odrzuceń w tym haku);
+- `chapter.instruction_stimulus` (lista ogólnych poleceń i wyrażenie „zdanie, potem polecenie”), `chapter.word_outside_material`, `chapter.function_words_only` (słownik `lexicon.ts`) i cały `refineChapterPool` (hak `SubjectModule.refineGeneratedPool` i regułę `lesson.refine_unnamed` usuwa 5c — do tego czasu używa ich przedmiot testowy agenta);
 - bramki agenta `exerciseGate` (`card_word_missing`, `frame_missing`), `objectiveGaps`, `planGate`, `planCoverage` z `material-lexicon.ts`; fake'i dostają własne proste dane zamiast słownika;
 - `requiredTypes`: plan paczek zamawia każdy typ zagadnienia, minimum publikacji typów nie wymaga; sonda raportuje typy bez progu;
 - `english/listen-audibility.ts` i `english/rules.ts` — bez warunku (AGENTS.md: zamrożone do usunięcia w etapie 5; w gramatyce W8 0/54 po usunięciu); wysokie W8 w sondzie to sygnał do zmiany promptu, nie do zachowania heurystyki;
@@ -74,7 +74,7 @@ Zostają reguły strukturalne: `chapter.stem_single_gap`, `chapter.translation_i
 
 ### 4.4 Oczyszczenie w kroku struktury
 
-Agent czyści ćwiczenie przed przyjęciem (`agentPolicy.sanitize`, `refineGeneratedPool`, `admission.ts:234-240`); przebieg bazowy tego nie woła. W 5a wywołanie `sanitize` przedmiotu przechodzi do `sanitizeFreshLessonDraft` (wołanego już przez `parseLessonRecord` w obu ścieżkach) i znika z przyjmowania agenta — jedno miejsce dla obu generatorów. Gramatyka nie ma `sanitize`, więc jej przebieg się nie zmienia. Treść:
+Agent czyści ćwiczenie przed przyjęciem (`agentPolicy.sanitize`, `refineGeneratedPool`, `admission.ts:234-240`); przebieg bazowy tego nie woła. W 5a przebieg bazowy woła `sanitize` przedmiotu zaraz po `parseLessonRecord`; przyjmowanie agenta zachowuje swoje wywołanie do 5c (agent szkoły na produkcji bez zmian), a 5c zostawia jedno miejsce. Gramatyka nie ma `sanitize`, więc jej przebieg się nie zmienia. Treść:
 
 - ogólnie dla przedmiotów bez `usesV3Payload`: usunięcie pól payloadu v3 (dziś robi to `refineChapterPool`) — w `sanitizeFreshLessonDraft`, bez kodu przedmiotu;
 - rozdział: wstawienie brakującego stałego polecenia tłumaczenia („Przetłumacz na angielski.”) — przed walidacją, inaczej `chapter.translation_instruction_required` odrzuci tłumaczenia; wariantów `acceptedAnswers` ze słowami spoza materiału już nie usuwamy (słownik znika);
@@ -229,7 +229,7 @@ Gdy przedmiot przegra bramkę (po strojeniu albo w biegu potwierdzającym) i wł
 | Plik | Linie | Zostaje (kto używa) | Znika | PR |
 |---|---:|---|---:|---|
 | `domain/lessons/agent/admission.ts` | 783 | `lessonRulesStep`, `snapshotOf`, `submitExamples`, `removeExercise` (kontrola końcowa), `lessonRules`, `lessonLeaks`, `rejectionOf` | ok. 450: oczyszczenie, kroki deterministyczne agenta, `precheckBatch`, `admitBatch`, kroki checkera, ustalenia podpowiedzi, kontroli otwartej i wariantów | 5a (oczyszczenie), 5b (2b), 5c |
-| `domain/lessons/agent/status.ts` | 293 | status i limity zagadnienia, kontrola końcowa | ok. 15: haki `requiredTypes`, `objectiveGaps` | 5a |
+| `domain/lessons/agent/status.ts` | 293 | status i limity zagadnienia, kontrola końcowa | ok. 15: haki `requiredTypes`, `objectiveGaps` | 5c |
 | `domain/lessons/agent/solver.ts` | 252 | `solverView` | ok. 88: ślepe rozwiązanie | 5c |
 | `domain/lessons/agent/plan.ts` | 83 | — (stałe do `english-chapter/prompts.ts`) | 83 | 5a |
 | `domain/lessons/agent/state.ts`, `capable.ts` | 160 + 26 | całe | 0 | — |
