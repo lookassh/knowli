@@ -137,7 +137,9 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.typeRules?.lesson_match).toContain("never a valid answer to any listed question");
     expect(prompts.typeRules?.lesson_match).not.toContain("another answer to the same kind of question");
     // Karty: wzór ramy z angielskimi przykładami bez tłumaczeń; żadna karta nie niesie pary zdań polskie → angielskie.
-    expect(prompts.objectivesRules).toContain("for 'frame' the pattern with 1 to 3 English examples from the material WITHOUT their Polish translations");
+    expect(prompts.objectivesRules).toContain("the pattern with 1 to 3 English examples from the material WITHOUT their Polish translations");
+    // Strojenie 2 bramki 5a: zagadnienie z jedną kartą odpadało w etapie zagadnień (zakres 2–4).
+    expect(prompts.objectivesRules).toContain("2 to 4 per objective, never just one");
     expect(prompts.objectivesRules).toContain("No card contains a Polish sentence together with its English translation");
     expect(prompts.objectivesRules).not.toContain("and their Polish meaning");
     expect(prompts.gradingRole).toContain("at most 'almost'");
