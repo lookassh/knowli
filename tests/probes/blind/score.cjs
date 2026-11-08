@@ -44,7 +44,7 @@ function wilson(defects, n) {
 
 const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order"];
 const TEXT = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
-/** Mianowniki klas rubryki etapu 2 (`rubric-stage2.md`, spec etapu 2 §7). */
+/** Mianowniki klas rubryki etapu 2 (`rubric-stage2-v2.md`, spec etapu 2 §7). */
 const CLASS_APPLIES = {
   W1: (row) => CLOSED.includes(row.type),
   W2: (row) => TEXT.includes(row.type),
