@@ -1,10 +1,6 @@
 import type { LessonObjectiveAgentInput, LessonPacketInput, LessonPoolInput } from "../ports/ai";
 import { stageOf } from "../domain/lessons/stages";
-import { objectiveCardWords, objectiveFrames } from "../domain/lessons/subjects/english-chapter/agent-policy";
-import { checkElement, materialLexicon } from "../domain/lessons/subjects/english-chapter/lexicon";
-import { mentions, parseMaterialLexicon } from "../domain/lessons/subjects/english-chapter/material-lexicon";
 import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
-import { TRANSLATION_INSTRUCTION } from "../domain/lessons/subjects/english-chapter/validators";
 import { schoolSubject } from "../domain/lessons/subjects/school/module";
 import type { LessonExerciseType } from "../domain/lessons/types";
 
@@ -51,21 +47,6 @@ const FAKE_STAGE_TYPES: Record<FakeStage, readonly string[]> = {
   productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
   independent: ["lesson_open_answer"],
 };
-
-/**
- * Słowa treści materiału rozdziału w kolejności występowania, bez powtórzeń:
- * wyłącznie takie, które przechodzą walidację słownikową przedmiotu (są
- * w słowniku materiału i nie są słowami funkcyjnymi), więc ćwiczenia fake'a
- * nie są odrzucane przez `refineGeneratedPool`.
- */
-function chapterContentWords(material: string): string[] {
-  const lexicon = materialLexicon(material);
-  const words: string[] = [];
-  for (const token of material.normalize("NFC").toLowerCase().match(/\p{L}{3,}/gu) ?? []) {
-    if (!words.includes(token) && checkElement(token, lexicon).ok) words.push(token);
-  }
-  return words;
-}
 
 /** Zdanie do porównania z `avoidSentences`: małe litery, bez spacji na brzegach i bez końcowej kropki. */
 function avoidKey(sentence: string): string {
@@ -145,7 +126,8 @@ function fakeExercise(
       return {
         ...base,
         focus: [],
-        stem: `Wybierz poprawną odpowiedź (${sequence + 1}).`,
+        // Rozdział wymaga jednej luki w zdaniu wyboru (`chapter.stem_single_gap`).
+        stem: input.subjectId === englishChapterSubject.id ? `___ here (${sequence + 1}).` : `Wybierz poprawną odpowiedź (${sequence + 1}).`,
         options: [
           { id: "a", text: answer },
           { id: "b", text: `${answer}x` },
@@ -173,6 +155,37 @@ function fakeExercise(
         ...base,
         transformId: input.transforms[0]?.id ?? "unknown_transform",
         statement: `Przekształć zdanie (${sequence + 1}).`,
+      };
+    // Przypisania (rozdział, szkoła): klucz i-tego pola to i-ta opcja po sortowaniu, dystraktory sortują się na końcu
+    // („z…”), a element grupy k (w kolejności widoku) należy do grupy k mod n — konwencję czyta `fakeClosedAnswer`.
+    case "lesson_match": {
+      const lefts = [answer, `pair${sequence}b`, `pair${sequence}c`];
+      return {
+        ...base,
+        focus: [],
+        answer: lefts.join(", "),
+        pairs: lefts.map((left, index) => ({ left, right: `${"abc"[index]}${sequence}` })),
+        extraRight: [`z${sequence}`],
+      };
+    }
+    case "lesson_group": {
+      const items = [answer, `item${sequence}b`, `item${sequence}c`, `item${sequence}d`].sort((a, b) => a.localeCompare(b, "en"));
+      return {
+        ...base,
+        focus: [],
+        answer: "Grupa A / Grupa B",
+        groups: [{ id: "g1", label: "Grupa A" }, { id: "g2", label: "Grupa B" }],
+        groupItems: items.map((text, index) => ({ text, groupId: index % 2 === 0 ? "g1" : "g2" })),
+      };
+    }
+    case "lesson_cloze":
+      return {
+        ...base,
+        focus: [],
+        answer: `a${sequence}, b${sequence}`,
+        clozeText: `First ___ and then ___ (${sequence + 1}).`,
+        gapAnswers: [`a${sequence}`, `b${sequence}`],
+        extraWords: [`z${sequence}`],
       };
     case "lesson_notice":
       return {
@@ -204,17 +217,6 @@ interface StepRequest {
 
 /** Typy, które generator potrafi zbudować poprawnie dla gramatyki i szkoły. */
 const STAGED_TYPES: ReadonlySet<string> = new Set([...STAGES.flatMap((stage) => FAKE_STAGE_TYPES[stage]), "lesson_notice", LISTEN_CHOICE_TYPE]);
-/** Typy, które generator potrafi zbudować poprawnie dla rozdziału (bramki słów i ram zagadnienia). */
-const CHAPTER_TYPES: ReadonlySet<string> = new Set([
-  "lesson_match",
-  "lesson_cloze",
-  "lesson_order",
-  "lesson_choice",
-  "lesson_gap",
-  "lesson_open_answer",
-  LISTEN_CHOICE_TYPE,
-]);
-
 function stageOfType(type: string): FakeStage | undefined {
   const stage = stageOf(type as LessonExerciseType);
   return stage === "intro" || type === LISTEN_CHOICE_TYPE ? undefined : stage;
@@ -277,250 +279,6 @@ function stagedObjectiveExercises(input: LessonObjectiveAgentInput, offset: numb
   return { exercises, examples: [`Example for ${objectiveId}.`] };
 }
 
-/** Wyrazy, po których rama nie dostaje „the” przed wstawionym słowem („Put on your coat”). */
-const DETERMINERS: ReadonlySet<string> = new Set(["a", "an", "the", "my", "your", "his", "her", "its", "our", "their", "this", "that", "some"]);
-const ELLIPSIS = /…|\.\.\./gu;
-
-/**
- * Zdanie z ramy: pierwszy wielokropek dostaje `phrase`, kolejne — `filler`; przed słowem bez
- * określnika w ramie stoi „the”. Stała część ramy zostaje bez zmian, więc bramka ramy ją znajdzie.
- */
-function fillFrame(frame: string, phrase: string, filler: string): string {
-  let first = true;
-  return frame.replace(ELLIPSIS, (_match: string, at: number) => {
-    const before = frame.slice(0, at).trim().split(/\s+/u).at(-1)?.toLowerCase() ?? "";
-    const words = first ? phrase : filler;
-    first = false;
-    return DETERMINERS.has(before) ? words : `the ${words}`;
-  });
-}
-
-function asSentence(text: string): string {
-  const trimmed = text.trim();
-  return /[.!?]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-/** Końcowa interpunkcja zdania; pętla zamiast `/[.!?…]+$/` (wyrażenie z nawrotami, S8786). */
-const FINAL_PUNCTUATION: ReadonlySet<string> = new Set([".", "!", "?", "…"]);
-
-function withoutFinalPunctuation(text: string): string {
-  let result = text.trim();
-  while (result.length > 0 && FINAL_PUNCTUATION.has(result.at(-1)!)) result = result.slice(0, -1);
-  return result.trim();
-}
-
-/** Słowa bez powtórzeń i bez par zawartych jedno w drugim (pary, opcje i bank luk muszą się różnić). */
-function distinct(words: readonly string[]): string[] {
-  const result: string[] = [];
-  for (const word of words) if (result.every((kept) => !confusable(kept, word))) result.push(word);
-  return result;
-}
-
-function confusable(a: string, b: string): boolean {
-  const [x, y] = [a.toLowerCase(), b.toLowerCase()];
-  return x.includes(y) || y.includes(x);
-}
-
-/** Lista od pozycji `start` po kolei z zawinięciem. */
-function rotated<T>(items: readonly T[], start: number): T[] {
-  return items.map((_item, index) => items[(start + index) % items.length]!);
-}
-
-/** Słownik zagadnienia rozdziału: słowa materiału, słowa kart (zagadnienie słów) i ramy kart (zagadnienie ramy). */
-interface ChapterVocabulary {
-  readonly words: readonly string[];
-  /** Słowa sprawdzane: słowa kart zagadnienia słów, a bez nich słowa materiału. */
-  readonly focus: readonly string[];
-  readonly cardWords: readonly string[];
-  readonly frames: readonly string[];
-  /** Słowo w dalszych wielokropkach ramy (poza bankiem luk). */
-  readonly filler: string;
-}
-
-function chapterVocabulary(input: LessonObjectiveAgentInput): ChapterVocabulary {
-  const material = input.pool.material;
-  const lexicon = materialLexicon(material);
-  const listed = parseMaterialLexicon(material).words.filter((word) => checkElement(word, lexicon).ok);
-  const words = distinct(listed.length > 0 ? listed : chapterContentWords(material));
-  const cards = { cards: input.objective.cards };
-  const cardWords = input.objective.kind === "words" ? objectiveCardWords(cards, material).filter((word) => words.includes(word)) : [];
-  const frames = input.objective.kind === "frame" ? objectiveFrames(cards, material) : [];
-  return { words, focus: cardWords.length > 0 ? cardWords : words, cardWords, frames, filler: words.at(-1) ?? "" };
-}
-
-/**
- * Rozdział (Rozstrzygnięcie 3): słowa z kart zagadnienia słów, w zagadnieniu ramy zdania z ramą kart,
- * po jednym ćwiczeniu każdego wymaganego typu, słowa kart w parach. Tłumaczenia przeplatane po
- * zagadnieniach (`i = k · liczba zagadnień + index`), więc zagadnienia jednej lekcji ich nie dzielą.
- */
-function chapterObjectiveExercises(input: LessonObjectiveAgentInput, offset: number, request: StepRequest, allowed: ReadonlySet<string>) {
-  const vocabulary = chapterVocabulary(input);
-  const { words, focus, frames, filler } = vocabulary;
-  const objectiveId = input.objective.id;
-  const exercises: Record<string, unknown>[] = [];
-  if (words.length === 0) return { exercises, examples: [] };
-
-  const frameAt = (k: number): string | undefined => (frames.length === 0 ? undefined : frames[k % frames.length]);
-  const gapStem = (k: number, plain: string): string => {
-    const frame = frameAt(k);
-    return frame === undefined ? plain : asSentence(fillFrame(frame, "___", filler));
-  };
-  const sentenceWith = (k: number, phrase: string, plain: string): string => {
-    const frame = frameAt(k);
-    return withoutFinalPunctuation(frame === undefined ? plain : fillFrame(frame, phrase, filler));
-  };
-  const others = (answer: string): string[] => words.filter((word) => !confusable(word, answer));
-
-  const avoid = new Set([...(input.pool.avoidSentences ?? []), ...input.cardSentences].map(avoidKey));
-  const used = new Set<string>();
-  const objectiveCount = input.otherObjectives.length + 1;
-  const position = input.objective.index;
-  // Numer tłumaczenia w zagadnieniu (rośnie z przesunięciem kroku), przeplatany po zagadnieniach lekcji.
-  let k = Math.max(0, offset - position * 1000);
-
-  const translation = (): { sentence: string; focus: string } => {
-    const candidate = (number: number): { sentence: string; focus: string } => {
-      let first: string;
-      let second: string | undefined;
-      if (vocabulary.cardWords.length > 0) {
-        // Słowo kart tego zagadnienia (bramka), drugie z reszty materiału przesunięte o pozycję zagadnienia.
-        first = vocabulary.cardWords[number % vocabulary.cardWords.length]!;
-        const rest = others(first);
-        second = rest.length === 0 ? undefined : rest[(Math.floor(number / vocabulary.cardWords.length) + position) % rest.length];
-      } else {
-        const n = words.length;
-        const i = number * objectiveCount + position;
-        if (n < 2) {
-          first = words[0]!;
-        } else {
-          // Para (pierwsze, przesunięcie drugiego) jest różnowartościowa dla p < n·(n−1).
-          const p = i % (n * (n - 1));
-          first = words[p % n]!;
-          second = words[(p % n + 1 + Math.floor(p / n)) % n];
-        }
-      }
-      const phrase = second === undefined ? first : `${first} and the ${second}`;
-      return { sentence: sentenceWith(number, phrase, `We have the ${phrase}`), focus: first };
-    };
-    let result = candidate(k);
-    // Pętla kończy się: kandydatów jest skończenie wiele, a zbiory do unikania są skończone.
-    for (let guard = 0; guard < words.length * words.length + avoid.size + used.size + 1; guard++) {
-      const key = avoidKey(result.sentence);
-      if (!avoid.has(key) && !used.has(key)) break;
-      k += 1;
-      result = candidate(k);
-    }
-    k += 1;
-    used.add(avoidKey(result.sentence));
-    return result;
-  };
-
-  const build = (type: string, sequence: number): Record<string, unknown> | undefined => {
-    const number = sequence + 1;
-    const answer = focus[sequence % focus.length]!;
-    const base = { exerciseType: type, objectiveId, acceptedAnswers: [] as string[] };
-    switch (type) {
-      case "lesson_choice": {
-        const options = [answer, ...others(answer)].slice(0, 3);
-        if (options.length < 2) return undefined;
-        return {
-          ...base,
-          instructionPl: `Zdanie numer ${number} ma lukę. Wybierz słowo.`,
-          stem: gapStem(sequence, "I can see the ___."),
-          answer,
-          focus: [],
-          options: options.map((text, index) => ({ id: String.fromCharCode(97 + index), text })),
-          correctOption: "a",
-        };
-      }
-      case "lesson_gap":
-        return {
-          ...base,
-          instructionPl: `Zdanie numer ${number} ma lukę. Wpisz brakujące słowo.`,
-          stem: gapStem(sequence, "I have the ___."),
-          answer,
-          focus: [answer],
-        };
-      case "lesson_order": {
-        const sentence = sentenceWith(sequence, answer, `I have the ${answer}`);
-        const tokens = sentence.split(/\s+/u);
-        const unique = (parts: readonly string[]) => new Set(parts.map((part) => part.toLowerCase())).size === parts.length;
-        // Powtórzone słowo w klockach daje fałszywy błąd oceny: wtedy trzy klocki (początek, środek, koniec).
-        const items = unique(tokens) ? tokens : [tokens[0]!, tokens.slice(1, -1).join(" "), tokens.at(-1)!];
-        if (items.length < 3 || !unique(items)) return undefined;
-        return {
-          ...base,
-          instructionPl: `Zdanie numer ${number}: ułóż zdanie z klocków.`,
-          answer: items.join(" "),
-          focus: [],
-          items: items.map((text, index) => ({ id: `i${index + 1}`, text })),
-        };
-      }
-      case "lesson_cloze": {
-        const frame = frameAt(sequence);
-        // Słowa banku nie mogą stać w widocznym tekście (rama, słowo dalszych wielokropków); w zagadnieniu
-        // słów `frame` nie ma, więc pierwsza luka to zawsze sprawdzane słowo kart.
-        const withFiller = frame !== undefined && (frame.match(ELLIPSIS) ?? []).length > 1;
-        const bankable = (word: string) => frame === undefined || (!mentions(frame, word) && !(withFiller && confusable(word, filler)));
-        const bank = distinct([answer, ...rotated(words, words.indexOf(answer) + 1)].filter(bankable)).slice(0, 3);
-        if (bank.length < 3) return undefined;
-        const sentence = frame === undefined ? "I have the ___." : asSentence(fillFrame(frame, "___", filler));
-        return {
-          ...base,
-          instructionPl: `Zdanie numer ${number} ma luki. Uzupełnij tekst.`,
-          clozeText: `${sentence} ${sentence}`,
-          gapAnswers: [bank[0]!, bank[1]!],
-          extraWords: [bank[2]!],
-          answer: `${bank[0]}, ${bank[1]}`,
-          focus: [],
-        };
-      }
-      case "lesson_match": {
-        // Słowa kart najpierw (bramka par: co najmniej dwa słowa kart), potem reszta materiału.
-        const lefts = distinct([...rotated(focus, sequence), ...words]).slice(0, 5);
-        if (lefts.length < 3) return undefined;
-        return {
-          ...base,
-          instructionPl: "Połącz słowa w pary.",
-          pairs: lefts.map((left, index) => ({ left, right: `tłumaczenie ${index + 1}` })),
-          answer: lefts.join(", "),
-          focus: [],
-        };
-      }
-      case LISTEN_CHOICE_TYPE: {
-        const other = others(answer)[0];
-        if (other === undefined) return undefined;
-        return fakeListenChoice(objectiveId, gapStem(sequence, sequence % 2 === 0 ? "I can see the ___." : "I have the ___."), answer, other);
-      }
-      case "lesson_open_answer": {
-        const result = translation();
-        return {
-          ...base,
-          instructionPl: TRANSLATION_INSTRUCTION,
-          prompt: `Przetłumacz zdanie numer ${number}.`,
-          answer: result.sentence,
-          focus: [result.focus],
-        };
-      }
-      default:
-        return undefined;
-    }
-  };
-
-  const push = (type: string) => {
-    const exercise = build(type, offset + exercises.length);
-    if (exercise !== undefined) exercises.push(exercise);
-  };
-  for (const stage of STAGES) for (const type of stageTypes(stage, request, allowed)) push(type);
-  if (allowed.has(LISTEN_CHOICE_TYPE)) for (let i = 0; i < request.listen; i++) push(LISTEN_CHOICE_TYPE);
-
-  const examples =
-    frames.length > 0
-      ? frames.slice(0, 3).map((frame, index) => asSentence(fillFrame(frame, focus[index % focus.length]!, filler)))
-      : focus.slice(0, 3).map((word) => `I have the ${word}.`);
-  return { exercises, examples };
-}
-
 /**
  * Zgłoszenie jednego kroku podagenta zagadnienia `input.objective` (rekordy gotowe; materializacja
  * narzędzi przepuszcza je bez zmian). Numeracja i dobór odpowiedzi od `offset`
@@ -539,11 +297,8 @@ export function fakeObjectiveExercises(
 ): { exercises: unknown[]; examples?: string[] } {
   const pool = input.pool;
   const allowed = new Set(pool.objectives.find((objective) => objective.id === input.objective.id)?.exerciseTypes ?? []);
-  const chapter = pool.subjectId === englishChapterSubject.id;
-  const request = stepRequest(input, counts, requiredTypes, allowed, chapter ? CHAPTER_TYPES : STAGED_TYPES);
-  const generated = chapter
-    ? chapterObjectiveExercises(input, offset, request, allowed)
-    : stagedObjectiveExercises(input, offset, request, allowed);
+  const request = stepRequest(input, counts, requiredTypes, allowed, STAGED_TYPES);
+  const generated = stagedObjectiveExercises(input, offset, request, allowed);
   const exercises = withFakeExplanations(generated.exercises, pool);
   return input.objective.examplesFromPlan ? { exercises } : { exercises, examples: generated.examples };
 }
@@ -580,6 +335,21 @@ export function fakePacketExercises(input: LessonPacketInput, offset: number): {
   return { exercises: withFakeExplanations(exercises, pool), ...(input.withExamples ? { examples: [`Example for ${objectiveId}.`] } : {}) };
 }
 
+/** Pozycja pola w liście widoku `prefix` (lewe strony par, elementy grup). */
+function indexIn(lines: readonly string[], prefix: string, field: string): number {
+  return lines.find((line) => line.startsWith(prefix))?.slice(prefix.length).split(" | ").indexOf(field) ?? -1;
+}
+
+/** Klucz pola przypisania według konwencji `fakeExercise` (luka i para — i-ta opcja, grupa — k mod liczba grup). */
+function fieldAnswer(lines: readonly string[], field: string, options: readonly string[]): string | null {
+  const gap = /^gap (\d+)$/u.exec(field);
+  if (gap !== null) return options[Number(gap[1]) - 1] ?? null;
+  const pair = indexIn(lines, "Left (in this order): ", field);
+  if (pair >= 0) return options[pair] ?? null;
+  const item = indexIn(lines, "Items (in this order): ", field);
+  return item >= 0 ? (options[item % options.length] ?? null) : null;
+}
+
 /**
  * Klucz ćwiczenia fake'a odczytany z widoku kontroli zamkniętych (model nie zna klucza, ale konwencję
  * fake'a tak): słuchanie — opcja ze zdania nagrania; notice — pierwsze słowo pierwszego zdania;
@@ -588,6 +358,8 @@ export function fakePacketExercises(input: LessonPacketInput, offset: number): {
 export function fakeClosedAnswer(view: string): string | null {
   const lines = view.split("\n");
   const options = lines.find((line) => line.startsWith("Options: "))?.slice("Options: ".length).split(" | ") ?? [];
+  const field = lines.find((line) => line.startsWith("Field: "))?.slice("Field: ".length).split(" (judge")[0];
+  if (field !== undefined) return fieldAnswer(lines, field, options);
   const transcript = lines.find((line) => line.startsWith("Recording (transcript): "));
   if (transcript !== undefined) return options.find((option) => avoidedToken(option.toLowerCase(), [transcript])) ?? null;
   const sentence = lines.find((line) => line.startsWith("Sentence 1: "));

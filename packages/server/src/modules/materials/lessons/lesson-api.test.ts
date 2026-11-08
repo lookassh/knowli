@@ -94,9 +94,9 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
       expect(grammar.generationServices).toEqual(["openrouter.ai · agent-model", "openrouter.ai · llm"]);
       expect(grammar.checkService).toBe("openrouter.ai · checker-model");
       expect(grammar.checkServiceIncludesMaterial).toBe(false);
-      // rozdział: planer z polityki zastępuje etap zagadnień — usługa UMIEM_LLM nie dostaje materiału
+      // rozdział: etap zagadnień z materiału idzie do usługi UMIEM_LLM, jak w szkole
       const chapter = catalog.subjects.find((s) => s.id === "english_chapter")!;
-      expect(chapter.generationServices).toEqual(["openrouter.ai · agent-model"]);
+      expect(chapter.generationServices).toEqual(["openrouter.ai · agent-model", "openrouter.ai · llm"]);
       expect(chapter.checkServiceIncludesMaterial).toBe(false);
     });
 

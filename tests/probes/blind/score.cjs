@@ -42,13 +42,14 @@ function wilson(defects, n) {
   return { low: Math.max(0, (centre - margin) / denominator), high: Math.min(1, (centre + margin) / denominator) };
 }
 
-const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order"];
+// Etap 5 (`rubric-stage5.md`): także ćwiczenia z przypisaniem rozdziału (match, group, cloze).
+const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze"];
 const TEXT = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
-/** Mianowniki klas rubryki etapu 2 (`rubric-stage2-v2.md`, spec etapu 2 §7). */
+/** Mianowniki klas rubryk etapu 2 i 5 (`rubric-stage2-v2.md`, `rubric-stage5.md`; spec etapu 2 §7, etapu 5 §7.4). */
 const CLASS_APPLIES = {
   W1: (row) => CLOSED.includes(row.type),
   W2: (row) => TEXT.includes(row.type),
-  W3: (row) => ["lesson_choice", "lesson_short_answer", "lesson_notice"].includes(row.type),
+  W3: (row) => ["lesson_choice", "lesson_short_answer", "lesson_notice", "lesson_match", "lesson_group", "lesson_cloze"].includes(row.type),
   W4: (row) => TEXT.includes(row.type),
   W5: () => true,
   W6: () => true,

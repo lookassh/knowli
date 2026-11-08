@@ -6,8 +6,6 @@
  * (limity kontraktu zostają w `@learning/contracts`).
  */
 
-/** Najkrótsze polecenie rozdziału niosące polskie zdanie-bodziec (znaki po przycięciu). */
-export const MIN_STIMULUS_INSTRUCTION_LENGTH = 12;
 
 /**
  * Liczba wariantów `acceptedAnswers` i zakresy `lesson_notice`: jedno źródło z kontraktem

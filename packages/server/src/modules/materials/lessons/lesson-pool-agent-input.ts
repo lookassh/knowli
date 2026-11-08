@@ -95,7 +95,6 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     objective: {
       id: objective.id,
       title: objective.titlePl,
-      ...(objective.kind === undefined ? {} : { kind: objective.kind }),
       cards: objective.cards,
       examplesFromPlan: args.examplesFixed,
       index: state.objectives.findIndex((item) => item.id === objective.id),
@@ -103,7 +102,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     },
     otherObjectives: state.objectives
       .filter((other) => other.id !== objective.id)
-      .map((other) => ({ title: other.titlePl, ...(other.kind === undefined ? {} : { kind: other.kind }), cards: cardsText(other) })),
+      .map((other) => ({ title: other.titlePl, cards: cardsText(other) })),
     cardSentences: [...new Set(Object.values(examples).flat())],
     targets: {
       ...stages,

@@ -155,7 +155,8 @@ function slugifyTitle(title: string, fallback: string): string {
 
 /**
  * Deterministyczne zagadnienia fake: z nagłówków „Zagadnienie N:” materiału
- * (format opracowań rodzica) albo jedno zagadnienie z początku materiału.
+ * (format opracowań rodzica), przy regułach zagadnień rozdziału — z sekcji „Słowa:”/„Zwroty:” z rodzajem,
+ * albo jedno zagadnienie z początku materiału.
  * Karty buduje z fragmentów materiału, więc cytaty ćwiczeń mają pokrycie.
  */
 function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unknown>[] {
@@ -168,9 +169,21 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
       const end = i + 1 < headings.length ? (headings[i + 1]!.index ?? input.material.length) : input.material.length;
       sections.push({ title: match[1]!.trim(), body: input.material.slice(start, end).trim() });
     });
-  } else {
-    sections.push({ title: input.topicTitle, body: input.material.trim() });
+  } else if (input.objectivesRules !== undefined) {
+    // Rozdział: sekcje materiału po nagłówkach „Słowa:”, „Zwroty:” (etap zagadnień z regułami przedmiotu).
+    let current: { title: string; lines: string[] } | undefined;
+    const parts: { title: string; lines: string[] }[] = [];
+    for (const raw of input.material.split(/\r?\n/u)) {
+      const line = raw.trim();
+      if (line === "") continue;
+      if (line.endsWith(":") && !line.includes(" — ")) {
+        current = { title: line.slice(0, -1).trim(), lines: [] };
+        parts.push(current);
+      } else if (current !== undefined) current.lines.push(line);
+    }
+    for (const part of parts) if (part.lines.length > 0) sections.push({ title: part.title, body: part.lines.join(". ") });
   }
+  if (sections.length === 0) sections.push({ title: input.topicTitle, body: input.material.trim() });
   const objectives = sections.map((section, i) => {
     const sentences = section.body.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
     const first = (sentences[0] ?? section.title).slice(0, 280);
@@ -179,6 +192,8 @@ function fakeLessonObjectives(input: LessonObjectivesInput): Record<string, unkn
       slug: slugifyTitle(section.title, `zagadnienie_${i + 1}`),
       titlePl: section.title.slice(0, 120),
       descriptionEn: `School objective: ${section.title}`,
+      // Reguły zagadnień (rozdział) wymagają rodzaju: sekcja zwrotów albo ram to rama zdaniowa.
+      ...(input.objectivesRules === undefined ? {} : { kind: /zwroty|ramy/iu.test(section.title) ? "frame" : "words" }),
       cards: [
         { title: "Wyjaśnienie", body: first },
         { title: "Do zapamiętania", body: second },

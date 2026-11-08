@@ -3,7 +3,6 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createDatabase,
   completePresentation,
-  computeTargetKey,
   createChild,
   createLesson,
   createLessonDraftFromPublished,
@@ -38,7 +37,6 @@ import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
 import type { LessonAgentToolOutcome, LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
 import { lessonExerciseIdentity } from "../../packages/server/src/domain/lessons/exercise-identity";
-import { testIssue } from "../../packages/server/src/domain/lessons/testing/test-issue";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
 import type { FakeAgentStep, FakeLessonPoolAgent, FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
@@ -392,76 +390,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(revisions[0]!.payload.acceptedAnswers).toEqual(["They're not in my class.", "They are not in my class."]);
     // Sanityzacja nie jest odrzuceniem: run bez kodów odrzuceń.
     await expectNoRejections(runId);
-  });
-
-  it("hak czyszczenia świeżej puli odrzuca przy generowaniu, ale nie działa przy edycji rodzica", async () => {
-    const refineCalls: number[] = [];
-    const refiningSubject = {
-      ...agentGrammarSubject,
-      refineGeneratedPool: (drafts: readonly LessonExerciseDraft[], ctx: { material: string }) => {
-        refineCalls.push(drafts.length);
-        expect(ctx.material).toContain("plays football");
-        const kept = drafts.filter((draft) => draft.answer !== "banned");
-        return {
-          kept,
-          rejected: drafts.filter((draft) => draft.answer === "banned")
-            .map((exercise) => ({ exercise, issues: [testIssue("słowo spoza materiału: banned")] })),
-        };
-      },
-      exposureText: (draft: LessonExerciseDraft) => `Zdanie: ${draft.answer}.`,
-    } as typeof englishGrammarSubject;
-    const objectiveId = "english_grammar.present_simple.third_person_s";
-    const choice = (answer: string, wrong: string, stem: string) => ({
-      exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz.", stem, answer, acceptedAnswers: [], focus: [],
-      options: [{ id: "a", text: answer }, { id: "b", text: wrong }], correctOption: "a",
-    });
-    const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{ submit: { exercises: [
-          choice("plays", "play", "She ___ football."),
-          choice("banned", "ban", "He ___ it."),
-          choice("banned", "ban", "They ___ it?"),
-        ] } }],
-      },
-    });
-    const services = createServices({
-      db: testDatabase().db,
-      clock: new ManualClock(),
-      media: fakes.settings,
-      generation: fakes.deps,
-      subjects: createSubjectRegistry([agentGrammarSubject, refiningSubject, historyLikeSubject].map((subject, index) =>
-        index === 1 ? { ...subject, id: "english_grammar_refined" } : subject)),
-    });
-
-    const { runId, deckId } = await createLesson(services, command({ subjectId: "english_grammar_refined" }));
-    await executeLessonGeneration(services, runId);
-    expect((await readGeneration(services, runId)).state).toBe("succeeded");
-    // Przy generowaniu hak odrzuca oba ćwiczenia ze słowem spoza materiału (kod `refine`).
-    expect(refineCalls.length).toBeGreaterThan(0);
-    expect(await rejectionCodesOf(runId)).toEqual({ refine: 2 });
-    const first = await readLessonDeck(services, deckId);
-    expect(first.draft!.rejectedReasons).toEqual({ [labels.refine!]: 2 });
-    expect(first.draft!.exercises.map((exercise) => exercise.answer)).toEqual(["plays"]);
-    const [stored] = await query<{ target_key: string }>(
-      "select target_key from learning_app.item_revisions where deck_version_id = $1", [first.draft!.id],
-    );
-    expect(stored!.target_key).toBe(computeTargetKey("Zdanie: plays.", "en-GB"));
-
-    // Edycja rodzica nie przechodzi przez hak: słowo spoza „materiału” zostaje, a klucz ekspozycji liczy exposureText.
-    const callsBeforeEdit = refineCalls.length;
-    const kept = first.draft!.exercises.map(({ revisionId: _revisionId, ...exercise }) => exercise);
-    const edited = await editLessonDraft(services, first.draft!.id, {
-      expectedEditNumber: first.draft!.editNumber,
-      exercises: [...kept, choice("banned", "ban", "I ___ it.")],
-    });
-    expect(refineCalls).toHaveLength(callsBeforeEdit);
-    expect(edited.exercises.map((exercise) => exercise.answer)).toContain("banned");
-    const keys = await query<{ target_key: string }>(
-      "select target_key from learning_app.item_revisions where deck_version_id = $1", [edited.id],
-    );
-    expect(keys.map((row) => row.target_key)).toContain(computeTargetKey("Zdanie: banned.", "en-GB"));
-    expect(keys.map((row) => row.target_key)).not.toContain(computeTargetKey("banned", "en-GB"));
-    expect(edited.rejectedReasons).toEqual({ [labels.refine!]: 2 });
   });
 
   it.each(["options", "acceptedAnswers", "focus"])("zły KSZTAŁT %s nie wywraca runu: poprawne zapisane, błędny odrzucony, run terminalny (P2-7)", async (malformedField) => {
@@ -852,7 +780,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect((await readGeneration(services, runId)).state).toBe("superseded");
     await executeLessonGeneration(services, runId);
     expect(fakes.agent.calls).toHaveLength(0);
-    expect(fakes.agent.planCalls).toHaveLength(0);
     const [version] = await query<{ edit_number: number; title: string }>("select edit_number, title from learning_app.deck_versions where id = $1", [queued.deckVersionId]);
     expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
   });
@@ -888,7 +815,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(result.state).toBe("queued");
     expect(result.attempts).toBe(0);
     expect(fakes.agent.calls).toHaveLength(0);
-    expect(fakes.agent.planCalls).toHaveLength(0);
   });
 
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {

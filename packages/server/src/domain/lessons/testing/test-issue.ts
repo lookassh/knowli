@@ -2,7 +2,7 @@ import { defineRules, issueFrom, type LessonRuleIssue } from "../rules/catalog";
 
 /**
  * Zgłoszenie reguły dla testów haków przedmiotów, które zwracają tylko tekst
- * (bramki, `validatePoolExtra`, `refineGeneratedPool` podstawione w testach):
+ * (bramki i `validatePoolExtra` podstawione w testach):
  * jedna reguła pomocnicza, `pl` i `found` podane wprost.
  */
 const TEST_RULES = defineRules({

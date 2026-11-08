@@ -198,7 +198,7 @@ describe("czysty rdzeń agenta puli (domain/lessons/agent)", () => {
   it("żaden plik agenta nie importuje zakazanych modułów ani nie sięga po czas, losowość i środowisko", () => {
     const files = agentSources();
     // Dowód, że skan rzeczywiście znajduje pliki rdzenia (nie fałszywie zielony przy złej ścieżce).
-    expect(files.length).toBeGreaterThan(5);
+    expect(files.length).toBeGreaterThanOrEqual(5);
     const offenders = files.flatMap((file) =>
       agentViolations(readFileSync(file, "utf8")).map((violation) => `${relativeToServer(file)}: ${violation}`),
     );

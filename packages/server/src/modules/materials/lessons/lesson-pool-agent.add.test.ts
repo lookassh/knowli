@@ -123,29 +123,6 @@ describe("runLessonPoolAgent — tryb „dodaj N”: zakres i walidacja", () => 
     expect(settled.map((objective) => objective.objectiveId)).toEqual([B]);
   });
 
-  it("planner w trybie add → validation bez wywołań", async () => {
-    const school = withAgentPolicy(schoolSubject, { blindSolveTypes: [], variantCheckTypes: [] });
-    const { agent, checker, deps } = setup({ subjects: [school] });
-    const resolved = vi.fn(async () => undefined);
-    const error = await runLessonPoolAgent(
-      deps,
-      runInput({
-        subjectId: school.id,
-        objectiveSource: { source: "planner" },
-        fixed: [],
-        target: { mode: "add", objectiveId: `${school.id}.d42.rzeki`, count: 2 },
-        onObjectivesResolved: resolved,
-      }),
-      never,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(AppError);
-    expect((error as AppError).code).toBe("validation");
-    expect(agent.planCalls).toEqual([]);
-    expect(agent.calls).toEqual([]);
-    expect(checker.solveCalls).toEqual([]);
-    expect(resolved).not.toHaveBeenCalled();
-  });
-
   it("nieznane zagadnienie → validation", async () => {
     const { agent, deps } = setup({ agent: { objectives: { [SLUG_A]: [{ submit: { exercises: [extra(A, 1)] } }] } } });
     const resolved = vi.fn(async () => undefined);

@@ -313,14 +313,14 @@ describe("lessonAgentSettingsFromEnv", () => {
       provider: { require_parameters: true }, checkerProvider: { require_parameters: true },
     });
     expect(settings.policy).toEqual({
-      maxStepsPerObjective: 8, planMaxSteps: 8, concurrency: 4, checkerConcurrency: 4,
+      maxStepsPerObjective: 8, concurrency: 4, checkerConcurrency: 4,
       objectiveTimeoutMs: 300_000, checkerTimeoutMs: 90_000, callTimeoutMs: 90_000, runBudgetUsd: 1,
     });
     const tuned = lessonAgentSettingsFromEnv(base({
       UMIEM_LESSON_AGENT_MAX_STEPS: "5", UMIEM_LESSON_AGENT_CONCURRENCY: "2", UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "0.25",
       UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS: "45000",
     }))!;
-    expect(tuned.policy).toMatchObject({ maxStepsPerObjective: 5, planMaxSteps: 5, concurrency: 2, runBudgetUsd: 0.25, callTimeoutMs: 45_000 });
+    expect(tuned.policy).toMatchObject({ maxStepsPerObjective: 5, concurrency: 2, runBudgetUsd: 0.25, callTimeoutMs: 45_000 });
   });
 
   it("działa na surowym env, bez withConfigDefaults", () => {

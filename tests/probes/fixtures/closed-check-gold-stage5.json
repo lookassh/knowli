@@ -1,0 +1,1347 @@
+{
+ "note": "Ćwiczenia wzorcowe kontroli zamkniętych rozdziału (spec etapu 5 §7.3), fikcyjne. wrong_key powstały mechanicznie z correct (jednorazowo); błędność cloze i rozsypanki po mutacji potwierdził autor. second_correct: cel pasujący do drugiego pola (match: buty/kozaki, podkoszulek/koszulka, czapka/kapelusz; group: orange to kolor i owoc, milk to napój i śniadanie, lamp stoi w kuchni i w sypialni; cloze: zamienne luki bez polskiego zdania, słowo banku pasujące do luki — także przy polskim zdaniu, które jej nie rozstrzyga, s-cloze-2). Słuchanie nie ma przypadków błędnego klucza: transkrypcja nagrania powstaje z klucza, więc po zamianie klucza ćwiczenie jest spójne (spec etapu 2 §6).",
+ "subject": "english_chapter",
+ "dynamicTopic": {
+  "titlePl": "Ubrania, pogoda i dom",
+  "objectives": [
+   {
+    "id": "english_chapter.dgold.clothes",
+    "titlePl": "Ubrania, kolory i pogoda",
+    "descriptionEn": "Clothes, colours and weather words.",
+    "kind": "words",
+    "cards": [
+     {
+      "title": "Słowa",
+      "body": "coat — płaszcz\nhat — kapelusz\nscarf — szalik"
+     },
+     {
+      "title": "Pogoda",
+      "body": "sunny — słonecznie\nrainy — deszczowo"
+     }
+    ]
+   },
+   {
+    "id": "english_chapter.dgold.wearing",
+    "titlePl": "I'm wearing …",
+    "descriptionEn": "The frames I'm wearing (a) …, What's the weather like? It's …, Put on your …",
+    "kind": "frame",
+    "cards": [
+     {
+      "title": "Rama",
+      "body": "I'm wearing (a) …"
+     },
+     {
+      "title": "Pogoda",
+      "body": "What's the weather like? It's …"
+     }
+    ]
+   },
+   {
+    "id": "english_chapter.dgold.food",
+    "titlePl": "Jedzenie",
+    "descriptionEn": "Food, drinks and colours.",
+    "kind": "words",
+    "cards": [
+     {
+      "title": "Słowa",
+      "body": "apple — jabłko\nmilk — mleko"
+     },
+     {
+      "title": "Kolory",
+      "body": "red — czerwony"
+     }
+    ]
+   },
+   {
+    "id": "english_chapter.dgold.rooms",
+    "titlePl": "Dom",
+    "descriptionEn": "Rooms, furniture and where things are.",
+    "kind": "words",
+    "cards": [
+     {
+      "title": "Pokoje",
+      "body": "kitchen — kuchnia\nbedroom — sypialnia"
+     },
+     {
+      "title": "Gdzie",
+      "body": "in — w\non — na\nunder — pod"
+     }
+    ]
+   }
+  ]
+ },
+ "material": "Unit 3: What are you wearing?\n\nSłowa:\ncoat — płaszcz\nhat — kapelusz\nscarf — szalik\nboots — kozaki\ngloves — rękawiczki\njumper — sweter\nshorts — krótkie spodenki\nT-shirt — koszulka\ndress — sukienka\nred — czerwony\nblue — niebieski\ngreen — zielony\nyellow — żółty\nsunny — słonecznie\nrainy — deszczowo\nwindy — wietrznie\ncold — zimno\nhot — gorąco\n\nZwroty:\nI'm wearing (a) …\nWhat's the weather like? It's …\nPut on your …\n\nUnit 5: My house\n\nSłowa:\nhouse — dom\nkitchen — kuchnia\nbedroom — sypialnia\nbathroom — łazienka\nliving room — salon\ngarden — ogród\nbed — łóżko\nsofa — kanapa\ntable — stół\nchair — krzesło\nlamp — lampa\nwindow — okno\ndoor — drzwi\ncupboard — szafka\nin — w\non — na\nunder — pod\nnext to — obok\n\nZwroty:\nThere's a … in the …\nWhere's the …? It's … the …\n\nUnit 6: Food I like\n\nSłowa:\napple — jabłko\nbanana — banan\norange — pomarańcza\nbread — chleb\ncheese — ser\nmilk — mleko\njuice — sok\negg — jajko\ncarrot — marchewka\ntomato — pomidor\npizza — pizza\nsoup — zupa\ncake — ciasto\nice cream — lody\nbreakfast — śniadanie\nlunch — obiad\ndinner — kolacja\n\nZwroty:\nI like …\nI don't like …\nDo you like …? Yes, I do. / No, I don't.\n",
+ "cases": [
+  {
+   "id": "c-match-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "coat",
+      "right": "płaszcz"
+     },
+     {
+      "left": "hat",
+      "right": "kapelusz"
+     },
+     {
+      "left": "scarf",
+      "right": "szalik"
+     }
+    ],
+    "extraRight": [
+     "sukienka"
+    ],
+    "answer": "coat, hat, scarf"
+   }
+  },
+  {
+   "id": "c-match-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "boots",
+      "right": "kozaki"
+     },
+     {
+      "left": "gloves",
+      "right": "rękawiczki"
+     },
+     {
+      "left": "jumper",
+      "right": "sweter"
+     },
+     {
+      "left": "dress",
+      "right": "sukienka"
+     }
+    ],
+    "answer": "boots, gloves, jumper, dress"
+   }
+  },
+  {
+   "id": "c-match-3",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz kolory z ich nazwami.",
+    "pairs": [
+     {
+      "left": "red",
+      "right": "czerwony"
+     },
+     {
+      "left": "blue",
+      "right": "niebieski"
+     },
+     {
+      "left": "green",
+      "right": "zielony"
+     }
+    ],
+    "extraRight": [
+     "żółty"
+    ],
+    "answer": "red, blue, green"
+   }
+  },
+  {
+   "id": "c-match-4",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz pokoje z ich nazwami.",
+    "pairs": [
+     {
+      "left": "kitchen",
+      "right": "kuchnia"
+     },
+     {
+      "left": "bedroom",
+      "right": "sypialnia"
+     },
+     {
+      "left": "bathroom",
+      "right": "łazienka"
+     }
+    ],
+    "extraRight": [
+     "ogród"
+    ],
+    "answer": "kitchen, bedroom, bathroom"
+   }
+  },
+  {
+   "id": "c-group-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na ubrania i pogodę.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Ubrania"
+     },
+     {
+      "id": "g2",
+      "label": "Pogoda"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "coat",
+      "groupId": "g1"
+     },
+     {
+      "text": "scarf",
+      "groupId": "g1"
+     },
+     {
+      "text": "sunny",
+      "groupId": "g2"
+     },
+     {
+      "text": "rainy",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Ubrania / Pogoda"
+   }
+  },
+  {
+   "id": "c-group-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na ubrania i kolory.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Ubrania"
+     },
+     {
+      "id": "g2",
+      "label": "Kolory"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "hat",
+      "groupId": "g1"
+     },
+     {
+      "text": "dress",
+      "groupId": "g1"
+     },
+     {
+      "text": "red",
+      "groupId": "g2"
+     },
+     {
+      "text": "yellow",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Ubrania / Kolory"
+   }
+  },
+  {
+   "id": "c-group-3",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na pokoje i meble.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Pokoje"
+     },
+     {
+      "id": "g2",
+      "label": "Meble"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "kitchen",
+      "groupId": "g1"
+     },
+     {
+      "text": "bedroom",
+      "groupId": "g1"
+     },
+     {
+      "text": "sofa",
+      "groupId": "g2"
+     },
+     {
+      "text": "chair",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Pokoje / Meble"
+   }
+  },
+  {
+   "id": "c-group-4",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel ubrania: na zimno i na gorąco.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Na zimno"
+     },
+     {
+      "id": "g2",
+      "label": "Na gorąco"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "gloves",
+      "groupId": "g1"
+     },
+     {
+      "text": "scarf",
+      "groupId": "g1"
+     },
+     {
+      "text": "shorts",
+      "groupId": "g2"
+     },
+     {
+      "text": "T-shirt",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Na zimno / Na gorąco"
+   }
+  },
+  {
+   "id": "c-cloze-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Mam na sobie czerwony płaszcz i niebieski kapelusz. Uzupełnij tekst.",
+    "clozeText": "I'm wearing a ___ coat. I'm wearing a ___ hat.",
+    "gapAnswers": [
+     "red",
+     "blue"
+    ],
+    "extraWords": [
+     "green"
+    ],
+    "answer": "red, blue"
+   }
+  },
+  {
+   "id": "c-cloze-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Mam na sobie kozaki. Dziś jest zimno. Uzupełnij tekst.",
+    "clozeText": "I'm wearing ___. Today it's ___.",
+    "gapAnswers": [
+     "boots",
+     "cold"
+    ],
+    "extraWords": [
+     "hot"
+    ],
+    "answer": "boots, cold"
+   }
+  },
+  {
+   "id": "c-cloze-3",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Jaka jest pogoda? Jest deszczowo. Załóż płaszcz. Uzupełnij tekst.",
+    "clozeText": "What's the weather like? It's ___. Put on your ___.",
+    "gapAnswers": [
+     "rainy",
+     "coat"
+    ],
+    "extraWords": [
+     "dress"
+    ],
+    "answer": "rainy, coat"
+   }
+  },
+  {
+   "id": "c-cloze-4",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Lampa jest na stole. Kot jest pod łóżkiem. Uzupełnij tekst.",
+    "clozeText": "The lamp is ___ the table. The cat is ___ the bed.",
+    "gapAnswers": [
+     "on",
+     "under"
+    ],
+    "extraWords": [
+     "next to"
+    ],
+    "answer": "on, under"
+   }
+  },
+  {
+   "id": "c-choice-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Mam na sobie szalik. Wybierz słowo.",
+    "stem": "I'm wearing a ___.",
+    "options": [
+     {
+      "id": "a",
+      "text": "scarf"
+     },
+     {
+      "id": "b",
+      "text": "coat"
+     },
+     {
+      "id": "c",
+      "text": "hat"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "scarf"
+   }
+  },
+  {
+   "id": "c-choice-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Jest słonecznie. Wybierz słowo.",
+    "stem": "It's ___.",
+    "options": [
+     {
+      "id": "a",
+      "text": "rainy"
+     },
+     {
+      "id": "b",
+      "text": "sunny"
+     },
+     {
+      "id": "c",
+      "text": "windy"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "sunny"
+   }
+  },
+  {
+   "id": "c-listen-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_listen_choice",
+    "stem": "I'm wearing a ___ coat.",
+    "options": [
+     {
+      "id": "a",
+      "text": "red"
+     },
+     {
+      "id": "b",
+      "text": "blue"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "red"
+   }
+  },
+  {
+   "id": "c-listen-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_listen_choice",
+    "stem": "The sofa is in the ___.",
+    "options": [
+     {
+      "id": "a",
+      "text": "kitchen"
+     },
+     {
+      "id": "b",
+      "text": "living room"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "living room"
+   }
+  },
+  {
+   "id": "c-order-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż zdanie: Mam na sobie zielony płaszcz.",
+    "items": [
+     {
+      "id": "1",
+      "text": "I'm"
+     },
+     {
+      "id": "2",
+      "text": "wearing"
+     },
+     {
+      "id": "3",
+      "text": "a"
+     },
+     {
+      "id": "4",
+      "text": "green"
+     },
+     {
+      "id": "5",
+      "text": "coat"
+     }
+    ],
+    "answer": "I'm wearing a green coat"
+   }
+  },
+  {
+   "id": "c-order-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż zdanie: Załóż swoje rękawiczki.",
+    "items": [
+     {
+      "id": "1",
+      "text": "Put"
+     },
+     {
+      "id": "2",
+      "text": "on"
+     },
+     {
+      "id": "3",
+      "text": "your"
+     },
+     {
+      "id": "4",
+      "text": "gloves"
+     }
+    ],
+    "answer": "Put on your gloves"
+   }
+  },
+  {
+   "id": "w-match-1",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "coat",
+      "right": "kapelusz"
+     },
+     {
+      "left": "hat",
+      "right": "płaszcz"
+     },
+     {
+      "left": "scarf",
+      "right": "szalik"
+     }
+    ],
+    "extraRight": [
+     "sukienka"
+    ],
+    "answer": "coat, hat, scarf"
+   }
+  },
+  {
+   "id": "w-match-2",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "boots",
+      "right": "rękawiczki"
+     },
+     {
+      "left": "gloves",
+      "right": "kozaki"
+     },
+     {
+      "left": "jumper",
+      "right": "sweter"
+     },
+     {
+      "left": "dress",
+      "right": "sukienka"
+     }
+    ],
+    "answer": "boots, gloves, jumper, dress"
+   }
+  },
+  {
+   "id": "w-match-3",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz kolory z ich nazwami.",
+    "pairs": [
+     {
+      "left": "red",
+      "right": "niebieski"
+     },
+     {
+      "left": "blue",
+      "right": "czerwony"
+     },
+     {
+      "left": "green",
+      "right": "zielony"
+     }
+    ],
+    "extraRight": [
+     "żółty"
+    ],
+    "answer": "red, blue, green"
+   }
+  },
+  {
+   "id": "w-match-4",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz pokoje z ich nazwami.",
+    "pairs": [
+     {
+      "left": "kitchen",
+      "right": "sypialnia"
+     },
+     {
+      "left": "bedroom",
+      "right": "kuchnia"
+     },
+     {
+      "left": "bathroom",
+      "right": "łazienka"
+     }
+    ],
+    "extraRight": [
+     "ogród"
+    ],
+    "answer": "kitchen, bedroom, bathroom"
+   }
+  },
+  {
+   "id": "w-group-1",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na ubrania i pogodę.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Ubrania"
+     },
+     {
+      "id": "g2",
+      "label": "Pogoda"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "coat",
+      "groupId": "g2"
+     },
+     {
+      "text": "scarf",
+      "groupId": "g1"
+     },
+     {
+      "text": "sunny",
+      "groupId": "g1"
+     },
+     {
+      "text": "rainy",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Ubrania / Pogoda"
+   }
+  },
+  {
+   "id": "w-group-2",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na ubrania i kolory.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Ubrania"
+     },
+     {
+      "id": "g2",
+      "label": "Kolory"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "hat",
+      "groupId": "g2"
+     },
+     {
+      "text": "dress",
+      "groupId": "g1"
+     },
+     {
+      "text": "red",
+      "groupId": "g1"
+     },
+     {
+      "text": "yellow",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Ubrania / Kolory"
+   }
+  },
+  {
+   "id": "w-group-3",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na pokoje i meble.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Pokoje"
+     },
+     {
+      "id": "g2",
+      "label": "Meble"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "kitchen",
+      "groupId": "g2"
+     },
+     {
+      "text": "bedroom",
+      "groupId": "g1"
+     },
+     {
+      "text": "sofa",
+      "groupId": "g1"
+     },
+     {
+      "text": "chair",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Pokoje / Meble"
+   }
+  },
+  {
+   "id": "w-group-4",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel ubrania: na zimno i na gorąco.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Na zimno"
+     },
+     {
+      "id": "g2",
+      "label": "Na gorąco"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "gloves",
+      "groupId": "g2"
+     },
+     {
+      "text": "scarf",
+      "groupId": "g1"
+     },
+     {
+      "text": "shorts",
+      "groupId": "g1"
+     },
+     {
+      "text": "T-shirt",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Na zimno / Na gorąco"
+   }
+  },
+  {
+   "id": "w-cloze-1",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Mam na sobie czerwony płaszcz i niebieski kapelusz. Uzupełnij tekst.",
+    "clozeText": "I'm wearing a ___ coat. I'm wearing a ___ hat.",
+    "gapAnswers": [
+     "blue",
+     "red"
+    ],
+    "extraWords": [
+     "green"
+    ],
+    "answer": "blue, red"
+   }
+  },
+  {
+   "id": "w-cloze-2",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Mam na sobie kozaki. Dziś jest zimno. Uzupełnij tekst.",
+    "clozeText": "I'm wearing ___. Today it's ___.",
+    "gapAnswers": [
+     "cold",
+     "boots"
+    ],
+    "extraWords": [
+     "hot"
+    ],
+    "answer": "cold, boots"
+   }
+  },
+  {
+   "id": "w-cloze-3",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Jaka jest pogoda? Jest deszczowo. Załóż płaszcz. Uzupełnij tekst.",
+    "clozeText": "What's the weather like? It's ___. Put on your ___.",
+    "gapAnswers": [
+     "coat",
+     "rainy"
+    ],
+    "extraWords": [
+     "dress"
+    ],
+    "answer": "coat, rainy"
+   }
+  },
+  {
+   "id": "w-cloze-4",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Lampa jest na stole. Kot jest pod łóżkiem. Uzupełnij tekst.",
+    "clozeText": "The lamp is ___ the table. The cat is ___ the bed.",
+    "gapAnswers": [
+     "under",
+     "on"
+    ],
+    "extraWords": [
+     "next to"
+    ],
+    "answer": "under, on"
+   }
+  },
+  {
+   "id": "w-choice-1",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Mam na sobie szalik. Wybierz słowo.",
+    "stem": "I'm wearing a ___.",
+    "options": [
+     {
+      "id": "a",
+      "text": "scarf"
+     },
+     {
+      "id": "b",
+      "text": "coat"
+     },
+     {
+      "id": "c",
+      "text": "hat"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "coat"
+   }
+  },
+  {
+   "id": "w-choice-2",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Jest słonecznie. Wybierz słowo.",
+    "stem": "It's ___.",
+    "options": [
+     {
+      "id": "a",
+      "text": "rainy"
+     },
+     {
+      "id": "b",
+      "text": "sunny"
+     },
+     {
+      "id": "c",
+      "text": "windy"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "rainy"
+   }
+  },
+  {
+   "id": "w-order-1",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż zdanie: Mam na sobie zielony płaszcz.",
+    "items": [
+     {
+      "id": "1",
+      "text": "I'm"
+     },
+     {
+      "id": "2",
+      "text": "a"
+     },
+     {
+      "id": "3",
+      "text": "wearing"
+     },
+     {
+      "id": "4",
+      "text": "green"
+     },
+     {
+      "id": "5",
+      "text": "coat"
+     }
+    ],
+    "answer": "I'm a wearing green coat"
+   }
+  },
+  {
+   "id": "w-order-2",
+   "class": "wrong_key",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż zdanie: Załóż swoje rękawiczki.",
+    "items": [
+     {
+      "id": "1",
+      "text": "Put"
+     },
+     {
+      "id": "2",
+      "text": "your"
+     },
+     {
+      "id": "3",
+      "text": "on"
+     },
+     {
+      "id": "4",
+      "text": "gloves"
+     }
+    ],
+    "answer": "Put your on gloves"
+   }
+  },
+  {
+   "id": "s-match-1",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "coat",
+      "right": "płaszcz"
+     },
+     {
+      "left": "boots",
+      "right": "kozaki"
+     },
+     {
+      "left": "jumper",
+      "right": "sweter"
+     }
+    ],
+    "extraRight": [
+     "buty"
+    ],
+    "answer": "coat, boots, jumper"
+   }
+  },
+  {
+   "id": "s-match-2",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "T-shirt",
+      "right": "koszulka"
+     },
+     {
+      "left": "dress",
+      "right": "sukienka"
+     },
+     {
+      "left": "hat",
+      "right": "kapelusz"
+     }
+    ],
+    "extraRight": [
+     "podkoszulek"
+    ],
+    "answer": "T-shirt, dress, hat"
+   }
+  },
+  {
+   "id": "s-match-3",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.clothes",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz angielskie słowa z polskimi.",
+    "pairs": [
+     {
+      "left": "hat",
+      "right": "kapelusz"
+     },
+     {
+      "left": "scarf",
+      "right": "szalik"
+     },
+     {
+      "left": "gloves",
+      "right": "rękawiczki"
+     }
+    ],
+    "extraRight": [
+     "czapka"
+    ],
+    "answer": "hat, scarf, gloves"
+   }
+  },
+  {
+   "id": "s-group-1",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.food",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na kolory i owoce.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Kolory"
+     },
+     {
+      "id": "g2",
+      "label": "Owoce"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "red",
+      "groupId": "g1"
+     },
+     {
+      "text": "blue",
+      "groupId": "g1"
+     },
+     {
+      "text": "apple",
+      "groupId": "g2"
+     },
+     {
+      "text": "banana",
+      "groupId": "g2"
+     },
+     {
+      "text": "orange",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Kolory / Owoce"
+   }
+  },
+  {
+   "id": "s-group-2",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.food",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel słowa na śniadanie i napoje.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Śniadanie"
+     },
+     {
+      "id": "g2",
+      "label": "Napoje"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "bread",
+      "groupId": "g1"
+     },
+     {
+      "text": "egg",
+      "groupId": "g1"
+     },
+     {
+      "text": "juice",
+      "groupId": "g2"
+     },
+     {
+      "text": "milk",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Śniadanie / Napoje"
+   }
+  },
+  {
+   "id": "s-group-3",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel rzeczy na kuchnię i sypialnię.",
+    "groups": [
+     {
+      "id": "g1",
+      "label": "W kuchni"
+     },
+     {
+      "id": "g2",
+      "label": "W sypialni"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "table",
+      "groupId": "g1"
+     },
+     {
+      "text": "cupboard",
+      "groupId": "g1"
+     },
+     {
+      "text": "bed",
+      "groupId": "g2"
+     },
+     {
+      "text": "lamp",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "W kuchni / W sypialni"
+   }
+  },
+  {
+   "id": "s-cloze-1",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst.",
+    "clozeText": "I'm wearing a ___ and a ___.",
+    "gapAnswers": [
+     "coat",
+     "hat"
+    ],
+    "extraWords": [
+     "scarf"
+    ],
+    "answer": "coat, hat"
+   }
+  },
+  {
+   "id": "s-cloze-2",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.wearing",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Jest zimno. Załóż coś ciepłego. Uzupełnij tekst.",
+    "clozeText": "It's ___. Put on your ___.",
+    "gapAnswers": [
+     "cold",
+     "scarf"
+    ],
+    "extraWords": [
+     "gloves"
+    ],
+    "answer": "cold, scarf"
+   }
+  },
+  {
+   "id": "s-cloze-3",
+   "class": "second_correct",
+   "draft": {
+    "objectiveId": "english_chapter.dgold.rooms",
+    "acceptedAnswers": [],
+    "focus": [],
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst.",
+    "clozeText": "The lamp is ___ the sofa. The sofa is in the ___.",
+    "gapAnswers": [
+     "next to",
+     "living room"
+    ],
+    "extraWords": [
+     "on"
+    ],
+    "answer": "next to, living room"
+   }
+  }
+ ]
+}

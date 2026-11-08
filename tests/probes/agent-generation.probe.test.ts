@@ -43,7 +43,7 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers
  * `runLessonPoolAgent` (kierownik, rdzeń domenowy i polityka przedmiotu), a z modelami łączy
  * go produkcyjny adapter portów na AI SDK (`providers/openai/lesson-pool-agent.ts`). Bez bazy.
  *
- * KOSZTY: każde uruchomienie to płatne wywołania OpenRouter (podagenci zagadnień, planista,
+ * KOSZTY: każde uruchomienie to płatne wywołania OpenRouter (podagenci zagadnień albo paczki,
  * checker). Przed płatnym przebiegiem wymagana zgoda właściciela. Run ma budżet
  * `UMIEM_PROBE_AGENT_BUDGET_USD` (domyślnie budżet polityki agenta, 1,00 USD; spec §9.5: 0,40 na
  * przebieg) — kierownik przestaje przyjmować pracę po jego wyczerpaniu, ale żądania w locie
@@ -53,22 +53,20 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers
  * polityki za każde żądanie bez kosztu (flaga `estimated`).
  *
  * Pomijana bez klucza (`OPENROUTER_API_KEY` z .env, a bez niego `UMIEM_LLM_API_KEY`, gdy
- * `UMIEM_LLM_BASE_URL` to https OpenRouter — ta sama reguła co `endpointKeyFromEnv`) albo bez wejścia (`UMIEM_PROBE_AGENT_MATERIAL`
- * lub `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP`). Zmienne:
- * - `UMIEM_PROBE_AGENT_SUBJECT` — `chapter` (domyślnie; planista + bramki rozdziału), `grammar`
- *   albo `school`; gramatyka i szkoła wymagają zrzutu zagadnień;
- * - `UMIEM_PROBE_AGENT_MATERIAL` — plik materiału (rozdział z planistą; przy zrzucie nadpisuje
- *   jego materiał);
+ * `UMIEM_LLM_BASE_URL` to https OpenRouter — ta sama reguła co `endpointKeyFromEnv`) albo bez zrzutu
+ * zagadnień (`UMIEM_PROBE_AGENT_OBJECTIVES_DUMP`). Zmienne:
+ * - `UMIEM_PROBE_AGENT_SUBJECT` — `chapter` (domyślnie), `grammar` albo `school`; zagadnienia
+ *   każdego przedmiotu pochodzą ze zrzutu;
+ * - `UMIEM_PROBE_AGENT_MATERIAL` — plik materiału (nadpisuje materiał zrzutu);
  * - `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP` — zrzut zagadnień `probe:chapter`
  *   (`UMIEM_PROBE_POOL_DUMP_OUT`): zagadnienia z kartami `{ title, body }[]`, materiał i temat;
  *   zagadnienia przechodzą do kierownika jako źródło `input` (temat dynamiczny) albo `catalog`
  *   (gramatyka). Przykłady kart dostarcza wtedy model przez `submit`, jak w potoku;
  * - `UMIEM_PROBE_AGENT_MODEL` (domyślnie DeepSeek V4.1 Flash), `UMIEM_PROBE_AGENT_REASONING`
  *   (`low`), `UMIEM_PROBE_AGENT_SOLVER_MODEL` (checker; domyślnie inna rodzina niż generator),
- *   `UMIEM_PROBE_AGENT_TOPIC` (tytuł tematu planisty, domyślnie ze zrzutu albo „Unit 1”);
+ *   `UMIEM_PROBE_AGENT_TOPIC` (tytuł tematu, domyślnie ze zrzutu);
  * - `UMIEM_PROBE_AGENT_TIMEOUT_MS` — termin runu (domyślnie polityki), `UMIEM_PROBE_AGENT_BUDGET_USD`,
- *   `UMIEM_PROBE_AGENT_POOL_SIZE` (domyślnie `defaultPoolSize` liczby zagadnień, jak potok;
- *   planista: liczba nieznana przed planem → podstawa 60);
+ *   `UMIEM_PROBE_AGENT_POOL_SIZE` (domyślnie `defaultPoolSize` liczby zagadnień, jak potok);
  * - `UMIEM_PROBE_AGENT_DUMP` — `dump.json` (źródło `agent`) w formacie
  *   `blind/gen-blind-sheet.cjs` (+ `objectives[].status`, `rejections[].detail`, statystyki,
  *   kroki, koszt, wynik kontroli końcowej); istniejący plik nie jest nadpisywany;
@@ -93,7 +91,7 @@ loadDotEnv();
 const apiKey = probeApiKey();
 const materialEnv = process.env.UMIEM_PROBE_AGENT_MATERIAL?.trim() || undefined;
 const objectivesDumpEnv = process.env.UMIEM_PROBE_AGENT_OBJECTIVES_DUMP?.trim() || undefined;
-const enabled = apiKey !== undefined && (materialEnv !== undefined || objectivesDumpEnv !== undefined);
+const enabled = apiKey !== undefined && objectivesDumpEnv !== undefined;
 
 const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-1017";
 const DEFAULT_SOLVER_FOR_GOOGLE = "deepseek/deepseek-v4.1-flash-1017";
@@ -183,7 +181,6 @@ function meteredAgent(inner: LessonPoolAgentProvider & LessonPacketGenerator, me
     name: inner.name,
     model: inner.model,
     runObjective: (input, tools, cost, signal) => inner.runObjective(input, tools, meter.sink("generator", cost), signal),
-    planObjectives: (input, tools, cost, signal) => inner.planObjectives(input, tools, meter.sink("generator", cost), signal),
     generatePacket: (input, cost, signal) => inner.generatePacket(input, meter.sink("generator", cost), signal),
   };
 }
@@ -211,10 +208,10 @@ function diversityOf(exercises: readonly LessonExerciseDraft[]): Record<string, 
 }
 
 /** Stan lekcji odtworzony z wyniku kierownika (pule i przykłady zagadnień) do niezależnej kontroli końcowej. */
-function finalState(subject: SubjectModule, topic: LessonTopic, kinds: ReadonlyMap<string, DynamicObjectiveKind>, result: LessonPoolAgentResult): LessonAgentState {
+function finalState(subject: SubjectModule, topic: LessonTopic, result: LessonPoolAgentResult): LessonAgentState {
   let state = createLessonAgentState({
     topic,
-    objectives: agentObjectivesOf(topic, kinds),
+    objectives: agentObjectivesOf(topic),
     fixed: [],
     examples: {},
     fixedSources: mergeExamples(cardExposureSources(subject, topic), {}),
@@ -225,10 +222,6 @@ function finalState(subject: SubjectModule, topic: LessonTopic, kinds: ReadonlyM
     state = withExamples(state, settled.objectiveId, settled.examples);
   }
   return state;
-}
-
-function kindsOf(data: DynamicTopicData | undefined): Map<string, DynamicObjectiveKind> {
-  return new Map((data?.objectives ?? []).flatMap((objective) => (objective.kind === undefined ? [] : [[objective.id, objective.kind] as const])));
 }
 
 describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", () => {
@@ -243,20 +236,20 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     const costsPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_COSTS, "UMIEM_PROBE_COSTS");
     if (costsPath === undefined) throw new Error("UMIEM_PROBE_COSTS jest wymagany (rejestr kosztów costs.json poza repozytorium)");
     if (dumpPath !== undefined && existsSync(dumpPath)) throw new Error(`${dumpPath} już istnieje — zrzut płatnej próby nie jest nadpisywany`);
-    if (subjectKind !== "chapter" && objectivesDumpPath === undefined) throw new Error("grammar i school wymagają UMIEM_PROBE_AGENT_OBJECTIVES_DUMP");
+    if (objectivesDumpPath === undefined) throw new Error("UMIEM_PROBE_AGENT_OBJECTIVES_DUMP jest wymagany (zagadnienia każdego przedmiotu ze zrzutu)");
 
     const registry = createProductionSubjectRegistry();
     const subject = registry.getSubject(SUBJECT_IDS[subjectKind])!;
     const variant = subject.baselinePool === true ? "baseline" : "agent";
-    const objectivesDump = objectivesDumpPath === undefined ? undefined : readObjectivesDump(objectivesDumpPath);
-    if (objectivesDump !== undefined && objectivesDump.subjectId !== subject.id) {
+    const objectivesDump = readObjectivesDump(objectivesDumpPath);
+    if (objectivesDump.subjectId !== subject.id) {
       throw new Error(`zrzut zagadnień jest dla ${objectivesDump.subjectId}, próba dla ${subject.id}`);
     }
-    const material = materialPath !== undefined ? readFileSync(materialPath, "utf8") : objectivesDump!.material;
-    const fromDump = objectivesDump === undefined ? undefined : sourceFromDump(subject, objectivesDump);
-    const objectiveSource: AgentObjectiveSource = fromDump?.source ?? { source: "planner" };
-    const topicTitle = process.env.UMIEM_PROBE_AGENT_TOPIC?.trim() || objectivesDump?.topicTitle || "Unit 1";
-    const poolSize = Number(process.env.UMIEM_PROBE_AGENT_POOL_SIZE ?? defaultPoolSize(fromDump?.topic.objectives.length ?? 0));
+    const material = materialPath !== undefined ? readFileSync(materialPath, "utf8") : objectivesDump.material;
+    const fromDump = sourceFromDump(subject, objectivesDump);
+    const objectiveSource: AgentObjectiveSource = fromDump.source;
+    const topicTitle = process.env.UMIEM_PROBE_AGENT_TOPIC?.trim() || objectivesDump.topicTitle;
+    const poolSize = Number(process.env.UMIEM_PROBE_AGENT_POOL_SIZE ?? defaultPoolSize(fromDump.topic.objectives.length));
     const runBudgetUsd = Number(process.env.UMIEM_PROBE_AGENT_BUDGET_USD ?? DEFAULT_LESSON_AGENT_POLICY.runBudgetUsd);
     const runTimeoutMs = Number(process.env.UMIEM_PROBE_AGENT_TIMEOUT_MS ?? DEFAULT_LESSON_AGENT_POLICY.runTimeoutMs);
     if (!(poolSize > 0) || !(runBudgetUsd > 0) || !(runTimeoutMs > 0)) throw new Error("UMIEM_PROBE_AGENT_POOL_SIZE, _BUDGET_USD i _TIMEOUT_MS muszą być dodatnie");
@@ -274,7 +267,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
         : readCostLedger(costsPath);
     assertWithinCostCap(ledger, runBudgetUsd, `agent ${subjectKind}`);
     if (dumpPath !== undefined) mkdirSync(dirname(dumpPath), { recursive: true });
-    const inputLabel = objectivesDumpPath !== undefined ? basename(objectivesDumpPath) : basename(materialPath!);
+    const inputLabel = basename(objectivesDumpPath);
     const costEntry = { probe: `agent:${subjectKind}:${variant}`, dump: inputLabel };
 
     const openrouter = createOpenRouter({ apiKey, baseURL: OPENROUTER_BASE_URL });
@@ -342,7 +335,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
       subjectKind,
       subjectId: subject.id,
       objectiveSource: objectiveSource.source,
-      input: objectivesDumpPath !== undefined ? { file: basename(objectivesDumpPath), sha256: sha256File(objectivesDumpPath) } : { file: basename(materialPath!), sha256: sha256File(materialPath!) },
+      input: { file: basename(objectivesDumpPath), sha256: sha256File(objectivesDumpPath) },
       modelId,
       effort,
       solverId,
@@ -360,9 +353,10 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
       throw failure;
     }
 
-    const topic = result.dynamicTopic !== undefined ? subject.buildDynamicTopic!(result.dynamicTopic) : fromDump?.topic;
-    const kinds = kindsOf(result.dynamicTopic ?? (objectiveSource.source === "input" ? objectiveSource.dynamicTopic : undefined));
-    line(`Przebieg: plan=${result.planStatus}${result.planFailure ? ` kod=${result.planFailure.errorCode}` : ""}; czas=${(durationMs / 1000).toFixed(0)} s; ` +
+    const topic = fromDump.topic;
+    // Rodzaj zagadnienia tylko do zrzutu (format wejścia kolejnej próby).
+    const dumpKinds = new Map(objectiveSource.source === "input" ? objectiveSource.dynamicTopic.objectives.map((objective) => [objective.id, objective.kind] as const) : []);
+    line(`Przebieg: czas=${(durationMs / 1000).toFixed(0)} s; ` +
       `wydane wg kierownika=${result.spentUsd.toFixed(4)} USD (bez kosztu: ${result.unknownCostCalls})`);
     line(`Statystyki: ${JSON.stringify(result.stats)}`);
     for (const settled of result.objectives) {
@@ -375,7 +369,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     let counts = { invariant: 0, hardCoverage: 0, hardGeneration: 0, softCoverage: 0, poolRejected: 0, extraRejected: 0 };
     let publication: ReturnType<typeof poolCoverage> = [];
     if (topic !== undefined) {
-      const state = finalState(subject, topic, kinds, result);
+      const state = finalState(subject, topic, result);
       const lesson = orderedLesson(state);
       const examples = allExamples(state);
       const objectiveOrder = state.objectives.map((objective) => objective.id);
@@ -416,8 +410,6 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
       const byId = new Map(result.objectives.map((settled) => [settled.objectiveId, settled]));
       const dump = {
         ...header,
-        planStatus: result.planStatus,
-        ...(result.planFailure ? { planFailure: result.planFailure } : {}),
         errors: [],
         spentUsd: result.spentUsd,
         unknownCostCalls: result.unknownCostCalls,
@@ -430,7 +422,7 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
             id: objective.id,
             title: objective.titlePl,
             titlePl: objective.titlePl,
-            kind: kinds.get(objective.id) ?? null,
+            kind: dumpKinds.get(objective.id) ?? null,
             descriptionEn: objective.descriptionEn,
             card: objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n"),
             cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
@@ -449,7 +441,6 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     }
 
     // Kryteria spec §9.5 (liczby w asercjach; treść tylko w zrzucie).
-    expect(result.planStatus).not.toBe("plan_failed");
     expect(topic).toBeDefined();
     expect(result.objectives.map((settled) => settled.objectiveId)).toEqual(topic!.objectives.map((objective) => objective.id));
     expect(result.objectives.every((settled) => ["complete", "incomplete", "failed"].includes(settled.status))).toBe(true);

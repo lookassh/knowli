@@ -25,7 +25,6 @@ import { CHOICE_CHECK_RESULT, ORDER_CHECK_RESULT } from "../../domain/lessons/cl
 import type {
   ClosedCheckInput,
   ClosedExerciseChecker,
-  LessonAgentPlanInput,
   LessonExerciseCheckerProvider,
   LessonPacketGenerator,
   LessonPacketInput,
@@ -90,7 +89,7 @@ export interface AiSdkLessonAgentOptions {
   readonly fetch?: typeof fetch;
 }
 
-type AgentOperation = "agent_plan" | "agent_objective" | "check_solve" | "check_variants" | "check_hints" | "check_open" | "packet_generate" | "check_closed";
+type AgentOperation = "agent_objective" | "check_solve" | "check_variants" | "check_hints" | "check_open" | "packet_generate" | "check_closed";
 
 /** Koszt żądania z metadanych OpenRouter; brak, nie-liczba albo wartość ujemna = nieznany (`null`), żeby nie zaniżyć rejestru. */
 export function openRouterCostOf(meta: ProviderMetadata | undefined): number | null {
@@ -365,7 +364,7 @@ function publicationMinima(minima: LessonObjectiveAgentInput["targets"]["publica
 export function objectiveInstructions(input: LessonObjectiveAgentInput): string {
   const { objective, targets } = input;
   const others = input.otherObjectives
-    .map((other) => `- ${other.title}${other.kind ? ` (${other.kind})` : ""}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
+    .map((other) => `- ${other.title}: ${other.cards.replace(/\n/gu, " / ").slice(0, 400)}`)
     .join("\n");
   const required = targets.requiredTypes.map((group) => group.join(" or ")).join("; ") || "none";
   // Słowa kluczowe dotyczą przyjętego pytania otwartego (kaskada `school.keywords_family_rejected`): w kolejnym wywołaniu.
@@ -377,7 +376,7 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
         ? "Card examples are fixed by the lesson plan: do not send them."
         : "Also send 1-3 short card examples of this objective (plain sentences the child sees on the card) in the examples field of submit_exercises; they must never be the answer of an exercise."),
     "YOUR JOB: write the exercises of ONE objective of the lesson and nothing else.",
-    `Objective: ${objective.title}${objective.kind ? ` (kind: ${objective.kind})` : ""}`,
+    `Objective: ${objective.title}`,
     `Cards:\n${objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n")}`,
     `Card examples and card sentences of the lesson (the child sees them; never use them as independent answers): ${input.cardSentences.join(" | ") || "none"}`,
     `Other objectives of the lesson (do not test them):\n${others || "none"}`,
@@ -401,64 +400,6 @@ export function objectiveInstructions(input: LessonObjectiveAgentInput): string 
 /** Wiadomość użytkownika podagenta: materiał, polecenie, tematy zdań i zdania do unikania jak u generatora. */
 export function objectiveUserPrompt(input: LessonObjectiveAgentInput): string {
   return `Write the exercises of the objective "${input.objective.title}".\n\n${lessonUserMaterial(input.pool)}`;
-}
-
-/** Instrukcje planisty (z PoC `plannerInstructions`), liczby z wejścia. */
-export function plannerInstructions(input: LessonAgentPlanInput): string {
-  const { min, max } = input.objectiveCount;
-  return [
-    input.generationRole,
-    input.objectivesRules ?? "",
-    `Plan the lesson "${input.topicTitle}" (${input.subjectTitle}) by calling propose_objectives once with ${min}-${max} objectives; ` +
-      `up to ${max} objectives when coverage needs it. ` +
-      "Each objective has 2-4 cards and examples: 1-3 short example sentences from the material, shown to the child on the card. " +
-      "If the tool reports errors (for example uncovered words or frames), call it again with a fixed plan.",
-    ...(input.coverage === undefined
-      ? []
-      : [
-          "Every word of the material word lists and every sentence frame must appear on the cards of some objective " +
-            "(words on 'words' cards as 'English — Polish' lines; frames on 'frame' cards). A story section becomes its own objective.",
-          `Material words (${input.coverage.words.length}): ${input.coverage.words.join(", ")}`,
-          `Material frames (${input.coverage.frames.length}): ${input.coverage.frames.join(" | ")}`,
-        ]),
-  ]
-    .filter((part) => part !== "")
-    .join("\n\n");
-}
-
-/** Schemat `propose_objectives` bez walidacji SDK: błędy kształtu zwraca `propose` kierownika. */
-function planSchema(input: LessonAgentPlanInput) {
-  const text = { type: "string" } as const;
-  return jsonSchema<unknown>({
-    type: "object",
-    additionalProperties: false,
-    required: ["objectives"],
-    properties: {
-      objectives: {
-        type: "array",
-        minItems: input.objectiveCount.min,
-        maxItems: input.objectiveCount.max,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: ["slug", "titlePl", "descriptionEn", "kind", "cards", "examples"],
-          properties: {
-            slug: { type: "string", description: "ascii snake_case" },
-            titlePl: text,
-            descriptionEn: text,
-            kind: { type: "string", enum: ["words", "frame"] },
-            cards: {
-              type: "array",
-              minItems: 2,
-              maxItems: 4,
-              items: { type: "object", additionalProperties: false, required: ["title", "body"], properties: { title: text, body: text } },
-            },
-            examples: { type: "array", maxItems: 3, items: text },
-          },
-        },
-      },
-    },
-  });
 }
 
 /** Schemat `submit_exercises`: gałąź `exercises` schematu puli i — gdy model dostarcza przykłady — linie z gałęzi `examples`. */
@@ -623,41 +564,6 @@ export class AiSdkLessonPoolAgent implements LessonPoolAgentProvider, LessonPack
       exercises: Array.isArray(output.exercises) ? output.exercises : [],
       ...(Array.isArray(output.examples) ? { examples: output.examples } : {}),
     };
-  }
-
-  async planObjectives(
-    input: LessonAgentPlanInput,
-    tools: { propose(raw: unknown): Promise<{ readonly ok: boolean; readonly errors: readonly string[] }>; shouldStop(): boolean },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly steps: number }> {
-    signal.throwIfAborted();
-    if (tools.shouldStop()) return { steps: 0 };
-    const guard = toolFailureGuard();
-    const propose = tool({
-      description: "Propose the lesson objectives with cards and card examples. Rejected (with reasons) when the plan breaks a rule.",
-      inputSchema: planSchema(input),
-      execute: (raw, options) => guard.run(() => untilAborted(tools.propose(raw), options.abortSignal)),
-    });
-    const result = await this.caller.tracked("agent_plan", cost, signal, (hooks, model) =>
-      new ToolLoopAgent({
-        model,
-        instructions: plannerInstructions(input),
-        tools: { propose_objectives: propose },
-        stopWhen: [isStepCount(input.maxSteps), () => tools.shouldStop(), guard.failed],
-        maxRetries: 0,
-        providerOptions: this.caller.providerOptions,
-        ...hooks,
-      }).generate({
-        prompt: `Plan the lesson "${input.topicTitle}" from this material.\n\n${lessonUserMaterial({ material: input.material, ...(input.instruction === undefined ? {} : { instruction: input.instruction }) })}`,
-        abortSignal: signal,
-      }).then((value) => {
-        guard.rethrow();
-        return value;
-      }),
-      callLimitOf(input.callTimeoutMs, tools),
-    );
-    return { steps: result.steps.length };
   }
 }
 

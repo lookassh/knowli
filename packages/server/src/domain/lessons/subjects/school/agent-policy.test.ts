@@ -112,11 +112,9 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(note).not.toContain("Polish source sentence");
   });
 
-  it("nie ma wymaganych typów, braków ani planu", () => {
+  it("nie ma wymaganych typów ani braków", () => {
     expect(schoolAgentPolicy.requiredTypes).toBeUndefined();
     expect(schoolAgentPolicy.objectiveGaps).toBeUndefined();
-    expect(schoolAgentPolicy.planCoverage).toBeUndefined();
-    expect(schoolAgentPolicy.planGate).toBeUndefined();
   });
 });
 

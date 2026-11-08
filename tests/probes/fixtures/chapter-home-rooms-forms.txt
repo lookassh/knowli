@@ -1,0 +1,18 @@
+house|houses
+kitchen|kitchens
+bedroom|bedrooms
+bathroom|bathrooms
+living room|living rooms
+garden|gardens
+bed|beds
+sofa|sofas
+table|tables
+chair|chairs
+lamp|lamps
+window|windows
+door|doors
+cupboard|cupboards
+under
+next to
+There's a|There is a
+Where's the|Where is the

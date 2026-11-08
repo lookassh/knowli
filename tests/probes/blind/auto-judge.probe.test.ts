@@ -11,14 +11,14 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "../probe-helper
 
 /**
  * Automatyczny sędzia ślepej oceny etapu 2 (spec etapu 2 §7), z innej rodziny modeli niż generator i
- * kontrola. Czyta WYŁĄCZNIE katalog sędziego z `gen-blind-sheet.cjs` (`sheet.csv`, `rubric-stage2-v2.md`,
+ * kontrola. Czyta WYŁĄCZNIE katalog sędziego z `gen-blind-sheet.cjs` (`sheet.csv`, `rubric.md` albo dawniej `rubric-stage2-v2.md`/`rubric-stage2.md`,
  * `material.txt`) — rubryka dosłownie z pliku, więc jej zamrożenie obejmuje kryteria sędziego. Partie po
  * 25 wierszy; partia z innym zestawem `rowId` albo klasą spoza W1–W9 / spoza typu ćwiczenia ma jedno
  * ponowienie, potem bieg kończy się błędem. PŁATNE: tylko z `UMIEM_PROBE_JUDGE_DIR`, kluczem OpenRouter i
  * zgodą właściciela. Zmienne: `UMIEM_PROBE_JUDGE_MODEL` (wymagany), `UMIEM_PROBE_JUDGE_OUT` (verdicts.csv
  * poza repozytorium, nie nadpisywany), `UMIEM_PROBE_COSTS` (rejestr), `UMIEM_PROBE_JUDGE_BUDGET_USD`
  * (rezerwa wpisu tymczasowego, domyślnie 2), `UMIEM_PROBE_JUDGE_UNKNOWN_CALL_USD` (szacunek żądania bez
- * kosztu, domyślnie 0,06). Na konsolę tylko liczby.
+ * kosztu, domyślnie 0,06). Na konsolę tylko liczby i komunikat błędu żądania dostawcy (bez treści wierszy).
  */
 
 const require = createRequire(import.meta.url);
@@ -75,7 +75,10 @@ describe.skipIf(apiKey === undefined || judgeDirEnv === undefined)("automatyczny
     const model = process.env.UMIEM_PROBE_JUDGE_MODEL?.trim();
     if (!model || outPath === undefined || costsPath === undefined) throw new Error("UMIEM_PROBE_JUDGE_MODEL, UMIEM_PROBE_JUDGE_OUT i UMIEM_PROBE_COSTS są wymagane");
     if (existsSync(outPath)) throw new Error(`${outPath} już istnieje`);
-    const rubric = readFileSync(join(judgeDir, "rubric-stage2-v2.md"), "utf8");
+    // `rubric.md` od etapu 5 (kopia wybranej rubryki); starsze katalogi sędziego mają nazwę rubryki.
+    const rubricPath = ["rubric.md", "rubric-stage2-v2.md", "rubric-stage2.md"].map((name) => join(judgeDir, name)).find((path) => existsSync(path));
+    if (rubricPath === undefined) throw new Error("brak rubryki w katalogu sędziego");
+    const rubric = readFileSync(rubricPath, "utf8");
     const material = existsSync(join(judgeDir, "material.txt")) ? readFileSync(join(judgeDir, "material.txt"), "utf8") : "";
     const rows = parseCsv(readFileSync(join(judgeDir, "sheet.csv"), "utf8"));
     const reserveUsd = Number(process.env.UMIEM_PROBE_JUDGE_BUDGET_USD ?? 2);
@@ -110,9 +113,10 @@ describe.skipIf(apiKey === undefined || judgeDirEnv === undefined)("automatyczny
             if (cost === null) unknown += 1;
             else spent += cost;
             if (batchErrors(batch, result.output.rows).length === 0) accepted = result.output.rows;
-          } catch {
+          } catch (error) {
             // Odpowiedź niezgodna ze schematem albo błąd żądania: koszt nieznany (szacunek), próba się nie liczy.
             unknown += 1;
+            console.log(`partia od wiersza ${start + 1}, próba ${attempt}: ${error instanceof Error ? `${error.name}: ${error.message.slice(0, 300)}` : "błąd"}`);
           }
         }
         if (accepted === undefined) throw new Error(`partia od wiersza ${start + 1}: zły kształt werdyktów po ponowieniu`);

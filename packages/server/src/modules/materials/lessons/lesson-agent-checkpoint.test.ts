@@ -83,7 +83,6 @@ function progress(overrides: Partial<LessonAgentProgress> = {}): LessonAgentProg
       objectives: [{ id: OBJECTIVE, titlePl: "Końcówka -s", descriptionEn: "Third person -s", cards: [{ title: "Reguła", body: "He plays." }] }],
     },
     droppedObjectiveCount: 1,
-    planExamples: { [OBJECTIVE]: ["He plays."] },
     objectives: {
       [OBJECTIVE]: { status: "incomplete", exercises: [exercise], examples: ["He plays."] },
       "english_grammar.present_simple.negatives": { status: "failed", failureCode: "provider", exercises: [], examples: [] },
@@ -110,6 +109,11 @@ describe("punkt kontrolny agenta — odczyt i podsumowanie", () => {
     const value = progress();
     expect(parseLessonAgentProgress(stored(value), "run-1")).toEqual(value);
     expect(parseLessonAgentProgress(stored(emptyLessonAgentProgress()), "run-1")).toEqual(emptyLessonAgentProgress());
+  });
+
+  it("zgodność: punkt kontrolny sprzed etapu 5a z `planExamples` wczytuje się bez tego klucza", () => {
+    const value = progress();
+    expect(parseLessonAgentProgress({ ...(stored(value) as object), planExamples: { [OBJECTIVE]: ["He plays."] } }, "run-1")).toEqual(value);
   });
 
   it("zgodność: punkt kontrolny w dzisiejszym formacie z ćwiczeniami wszystkich typów wczytuje się bez zmian", () => {

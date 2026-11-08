@@ -27,7 +27,7 @@ function endsWithDoubledConsonant(stem: string): boolean {
  * słownika: nadmiarowe formy („dresse”) są nieszkodliwe, bo słowo modelu
  * musi trafić w formę wyprowadzoną z materiału.
  */
-export function stemsOf(token: string): readonly string[] {
+function stemsOf(token: string): readonly string[] {
   const stems: string[] = [];
   const add = (stem: string) => {
     if ([...stem].length >= MIN_STEM_LENGTH) stems.push(stem);

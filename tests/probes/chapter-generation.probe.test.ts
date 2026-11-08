@@ -241,7 +241,7 @@ async function poolDumpOf(draft: LessonDraftDto, material: string, meta: Record<
   const { topicTitle, objectives } = await draftObjectives(draft);
   return {
     schema: "lesson-pool-dump/v1",
-    source: "agent",
+    source: typeof meta.variant === "string" ? meta.variant : "agent",
     ...meta,
     subjectId: draft.subjectId,
     topicId: draft.topicId,
@@ -330,7 +330,8 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       generator: lessonAgent.agent.model,
       checker: env.UMIEM_LESSON_AGENT_CHECKER_MODEL ?? null,
       grader: lessonAgent.grader === undefined ? null : env.UMIEM_GRADER_MODEL ?? null,
-      ...(subjectKind === "school" ? { objectives: base.llm.model } : {}),
+      // Etap zagadnień (`UMIEM_LLM_*`): szkoła i od etapu 5a rozdział; bramka wymaga tego samego modelu i reasoning co generator.
+      ...(subjectKind === "grammar" ? {} : { objectives: base.llm.model, objectivesReasoning: env.UMIEM_LLM_REASONING ?? null }),
     };
 
     // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
@@ -610,7 +611,9 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       if (addCount !== undefined && run.state === "succeeded") {
         const addSlug = process.env.UMIEM_PROBE_ADD_OBJECTIVE?.trim();
         const objectiveIds = draft.dynamicTopic?.objectives.map((objective) => objective.id) ?? draft.objectiveIds;
-        const objectiveId = addSlug === undefined ? objectiveIds[0] : objectiveIds.find((id) => slugOf(id) === addSlug);
+        // Bez wskazania: pierwsze zagadnienie z luką publikacji (bramka etapu 5 §7.5 pkt 5), inaczej pierwsze.
+        const gapId = draft.coverage.find((gap) => objectiveIds.includes(gap.objectiveId))?.objectiveId;
+        const objectiveId = addSlug === undefined ? (gapId ?? objectiveIds[0]) : objectiveIds.find((id) => slugOf(id) === addSlug);
         if (objectiveId === undefined) throw new Error(`Szkic bez zagadnienia ${addSlug ?? "(pierwszego)"} — „+N” niemożliwe`);
         const before = draft.exercises.filter((exercise) => exercise.objectiveId === objectiveId).length;
         assertWithinCostCap(readCostLedger(costsPath), runBudgetUsd, `„+${addCount}”`);
@@ -702,7 +705,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
   });
 });
 
-/** Wariant generatora przedmiotu w zrzucie arkusza: gramatyka — przebieg bazowy (etap 4 #358), reszta — agent. */
+/** Wariant generatora przedmiotu w zrzucie arkusza: gramatyka (etap 4) i rozdział (etap 5a #362) — przebieg bazowy, szkoła — agent. */
 function variantOf(subjectKind: "chapter" | "school" | "grammar"): "baseline" | "agent" {
-  return subjectKind === "grammar" ? "baseline" : "agent";
+  return subjectKind === "school" ? "agent" : "baseline";
 }

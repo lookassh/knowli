@@ -85,7 +85,7 @@ Azure; wybór providera po spike'u 2026-10-29 (design §5.1–5.2).
 
 | Element | Wartość | Uwagi |
 | --- | --- | --- |
-| LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider`; zmiana modelu/endpointu przez `UMIEM_LLM_MODEL`/`UMIEM_LLM_BASE_URL` bez zmiany kodu (model trafia do logu `[lesson-story] generacja` runu historyjki, co umożliwia A/B po logach). Pulę ćwiczeń lekcji od etapu 3 PR 2 generuje agent puli (`UMIEM_LESSON_AGENT_MODEL`, sekcja „Agent puli lekcji”); `UMIEM_LLM_*` zostaje dla słówek, historyjki i etapu zagadnień szkoły |
+| LLM | OpenAI `gpt-4o-mini` | domyślny adapter `createOpenAiLlmProvider`; zmiana modelu/endpointu przez `UMIEM_LLM_MODEL`/`UMIEM_LLM_BASE_URL` bez zmiany kodu (model trafia do logu `[lesson-story] generacja` runu historyjki, co umożliwia A/B po logach). Pulę ćwiczeń lekcji od etapu 3 PR 2 generuje agent puli (`UMIEM_LESSON_AGENT_MODEL`, sekcja „Agent puli lekcji”); `UMIEM_LLM_*` zostaje dla słówek, historyjki i etapu zagadnień szkoły i rozdziału (od etapu 5a) |
 | TTS | domyślnie (`config-defaults.ts`) OpenRouter `google/gemini-3.8-flash-tts`, głos `Kore`, `wav`, styl `instructions`; wartość awaryjna kodu: OpenAI `gpt-4o-mini-tts`, mp3 | głos awaryjny `alloy` (decyzja po próbie: domyślny na start); zmiana np. na `fable` przez `UMIEM_TTS_VOICE` bez zmiany kodu. Endpoint zgodny z OpenAI Audio Speech (np. OpenRouter `https://openrouter.ai/api/v1`, `UMIEM_TTS_PROVIDER=openrouter`, wybrany model `google/gemini-3.8-flash-tts` z głosem `Kore` dla obu języków i `UMIEM_TTS_FORMAT=wav` — decyzja właściciela 2026-10-30, design szkoły §11.6 pkt 9; wcześniej `microsoft/mai-voice-2.1-flash`, odrzucony, bo na pojedynczych słowach powtarzał je (ok. 12% nagrań), urywał i doklejał szum; Gemini zwraca na OpenRouter wyłącznie PCM, które adapter przy formacie `wav` opakowuje nagłówkiem WAV; głos musi należeć do `supported_voices` modelu — `alloy` działa tylko z OpenAI) przez `UMIEM_TTS_BASE_URL`/`UMIEM_TTS_API_KEY`/`UMIEM_TTS_MODEL` (worker; własny `UMIEM_TTS_BASE_URL` innego hosta niż `https://api.openai.com` wymaga własnego `UMIEM_TTS_API_KEY` — `OPENAI_API_KEY` nie jest wysyłany do innego hosta, a `UMIEM_TTS_API_KEY` dostawcy innego niż OpenAI (`UMIEM_TTS_PROVIDER` inny niż `openai` albo klucz `sk-or-…`) bez BASE_URL innego hosta to błąd startu; od Etapu 8 adapter wysyła model z `UMIEM_TTS_MODEL`, wcześniej zawsze domyślny). Provider, model, głos, format i instrukcja wymowy wchodzą do fingerprintów: zmiana = nowe nagrania przy kolejnej edycji, katalog komunikatów interfejsu na nowo przy starcie workera. Głos per język treści: `UMIEM_TTS_VOICE_<JĘZYK>_<REGION>` nadpisuje `UMIEM_TTS_VOICE` i wchodzi do fingerprintu. Instrukcja wymowy per język `UMIEM_TTS_INSTRUCTIONS_<JĘZYK>_<REGION>` (np. `UMIEM_TTS_INSTRUCTIONS_PL_PL=Mów po polsku, z polską wymową.`) idzie polem `instructions`, nie jest czytana i wchodzi do fingerprintu tylko wtedy, gdy jest ustawiona (nagrania bez niej zachowują fingerprint); bez niej model wielojęzyczny czyta pojedyncze polskie słowa („pies”, „1410”) po angielsku. WAV (PCM 24 kHz, 16 bit, mono) zajmuje ok. 48 KB na sekundę, kilka razy więcej niż mp3: słówko ok. 50 KB, ale nagranie karty nauki (do 2000 znaków, ok. 2 min) do ok. 6 MB, a odtwarzacz Kid UI pobiera plik w całości przed startem; rośnie też wolumen mediów i backup. Web i worker muszą mieć identyczne `UMIEM_TTS_FORMAT` i `UMIEM_TTS_INSTRUCTIONS_*` (inaczej komunikaty interfejsu powstają pod innymi fingerprintami niż szuka web), a przy wdrożeniu worker aktualizuje się razem z webem albo przed nim — stary worker nie zna formatu `wav` i instrukcji. Worker wykonuje tylko zadania TTS zgodne z jego providerem i modelem; zlecone przy innej konfiguracji czekają w kolejce bez zmiany stanu (nowy endpoint nie zna starego modelu, stary worker w trakcie wdrożenia nie unieważnia nowych), a ich liczbę worker zgłasza w logu przy starcie. Publikacja i każda edycja szkicu same zlecają nagrania z bieżącą konfiguracją |
 | Ilustracje | OpenAI `gpt-image-2.5-sunburst`, `1024x1024`, quality `low`, WebP | Praca tła workera; prompt bez tekstu w obrazie. Ustawienia low+webp dobrano do ilustracji wyświetlanych w kartach dziecka (~300 px). Model można nadpisać przez `UMIEM_IMAGE_MODEL`; zmiana modelu wpływa na fingerprint i nowe generacje mediów |
 | Env | `OPENAI_API_KEY` (obrazy; klucz LLM i TTS tylko przy BASE_URL api.openai.com — domyślnie LLM i TTS biorą `OPENROUTER_API_KEY`) | worker (LLM, TTS, obrazy kart) i web (jawna propozycja okładki zestawu); zawsze tylko do `https://api.openai.com`, więc klucz OpenRouter (`sk-or-…`) w tej zmiennej to błąd startu. Opcjonalnie `UMIEM_LLM_MODEL`, `UMIEM_LLM_BASE_URL`, `UMIEM_LLM_API_KEY` nadpisują model, endpoint i klucz **samego LLM** (niezależne, z fallbackami: `gpt-4o-mini`, `https://api.openai.com/v1`, `OPENAI_API_KEY`); BASE_URL wymaga `https://` poza NODE_ENV test/development. `OPENAI_API_KEY` trafia wyłącznie do `https://api.openai.com` (od 2026-10-30, ta sama reguła co dla TTS): `UMIEM_LLM_BASE_URL` innego hosta bez własnego `UMIEM_LLM_API_KEY` kończy start workera błędem z nazwą brakującej zmiennej, a klucz OpenRouter (`sk-or-…`) w `UMIEM_LLM_API_KEY` bez BASE_URL (albo z BASE_URL na api.openai.com) też jest błędem — nie trafia do OpenAI. Wcześniej sam BASE_URL wysyłał `OPENAI_API_KEY` pod wskazany adres. Od 2026-11-01 domyślne BASE_URL i model to OpenRouter (sekcja „Domyślna konfiguracja”), a klucz zapasowy dla endpointu OpenRouter to `OPENROUTER_API_KEY` (także dla gradera i oceny aktywności). Model LLM nie wchodzi do fingerprintów mediów — zmiana dotyczy tylko nowych generacji |
@@ -106,7 +106,7 @@ w `.env` jest ignorowana), przełącznika „powrotu do potoku” ani dawnego po
 (jedno wywołanie LLM na partię i runda pod etap). Działa WYŁĄCZNIE w procesie
 worker: web go nie składa (dostaje z env etykiety usług dla panelu rodzica i
 liczy `lessonGenerationAvailable`). `UMIEM_LLM_*` nadal obsługuje słówka, etap
-zagadnień szkoły i historyjkę lekcji. Adapter (AI SDK)
+zagadnień szkoły i rozdziału (od etapu 5a) oraz historyjkę lekcji. Adapter (AI SDK)
 mówi wyłącznie z OpenRouter (`https://openrouter.ai/api/v1`): generator i
 checker (drugi model, który rozwiązuje ćwiczenia na próbę i ocenia warianty
 odpowiedzi, a w szkole także podpowiedzi) to osobne wywołania z własnym modelem
@@ -178,8 +178,8 @@ Zasady:
   (rezerwowo `UMIEM_FAKE_DELAY_MS`); `FAKE_SLOW_MARKER` w materiale wstrzymuje
   pierwszy krok każdego zagadnienia o 3 s.
 - **Koszty.** Każde żądanie agenta i checkera trafia do dziennika kosztów
-  (`feature = lesson_generation`, `provider = openrouter`, operacje `agent_plan`,
-  `agent_objective`, `check_solve`, `check_variants`, w szkole `check_hints`,
+  (`feature = lesson_generation`, `provider = openrouter`, operacje `agent_objective`
+  (`agent_plan` historyczne — planista usunięty w etapie 5a #362), `check_solve`, `check_variants`, w szkole `check_hints`,
   `check_open`; `docs/architecture.md` §23). Wywołania gradera kontroli
   otwartych odpowiedzi zapisują `lesson_generation` / `check_grade` (dostawca z
   `UMIEM_GRADER_BASE_URL`).
@@ -194,7 +194,10 @@ Zasady:
   (`deepseek/deepseek-v4.1-flash-1017`: widok ćwiczenia, odpowiedź i warianty, a w
   szkole także materiał i podpowiedź), a w szkole przy pełnym `UMIEM_GRADER_*` w
   workerze także do usługi gradera (pytanie, kryteria, cytaty, odpowiedź próbna
-  modelu); nigdy imię, rok urodzenia, identyfikatory ani odpowiedzi dziecka.
+  modelu). Etap zagadnień szkoły i rozdziału (od etapu 5a) wysyła materiał i
+  polecenie rodzica do usługi `UMIEM_LLM_*` — może to być inny dostawca niż
+  generator; panel pokazuje ją w `generationServices`. Nigdy imię, rok
+  urodzenia, identyfikatory ani odpowiedzi dziecka.
   Adapter nie loguje treści ani body błędów dostawcy; klucz tylko w adapterze.
   Panel rodzica informuje, do których usług trafia lekcja (formularz lekcji i
   strona źródła).

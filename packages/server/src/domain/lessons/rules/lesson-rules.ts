@@ -55,15 +55,6 @@ export const LESSON_RULES = {
       "An objective holds at most its listening allowance of lesson_listen_choice exercises (its pool and the exercises " +
       "already in the lesson count together); once it is used up, submit other exercise types.",
   },
-  // Bezpiecznik haka przedmiotu (`refineGeneratedPool`): odrzucenie bez nazwanej reguły.
-  "lesson.refine_unnamed": {
-    field: "exercise",
-    kind: "internal",
-    description: "The subject rejected the exercise without naming a rule; write a different exercise.",
-    internalReason:
-      "Safeguard: every subject's refineGeneratedPool names the broken rule (hook contract); an unnamed rejection is a " +
-      "subject bug, so the agent gets this generic reason instead of a failed objective.",
-  },
   // Ujawnienia rozwiązań (tryb `generation`: równoważność po normalizatorze przedmiotu, także warianty).
   "lesson.leak": {
     field: "answer",

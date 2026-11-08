@@ -9,7 +9,7 @@ import { createProductionSubjectRegistry, PRODUCTION_SUBJECTS } from "../index";
 import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { ruleOf, type RuleId } from "../../rules/catalog";
 import { englishChapterSubject } from "./module";
-import { refineChapterPool, validateChapterExercise } from "./validators";
+import { validateChapterExercise } from "./validators";
 
 const WEATHER = "english_chapter.ddeck.weather";
 const WEARING = "english_chapter.ddeck.wearing";
@@ -82,7 +82,7 @@ describe("przedmiot english_chapter", () => {
       { code: "spelling", labelPl: "Pisownia" },
     ]);
     expect(englishChapterSubject.validateExercise).toBe(validateChapterExercise);
-    expect(englishChapterSubject.refineGeneratedPool).toBe(refineChapterPool);
+    expect(englishChapterSubject.baselinePool).toBe(true);
     expect(englishChapterSubject.exposureText).toBe(chapterExposureText);
     expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
   });
@@ -100,7 +100,7 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.objectivesRules).toContain("3 to 6 objectives");
     expect(prompts.objectivesRules).toContain("'words'");
     expect(prompts.objectivesRules).toContain("'frame'");
-    // Prompt mówi, co odrzuca walidacja słownikowa (review Task 5).
+    // Słowa materiału: od etapu 5a tylko tekst promptu (bez walidacji słownikowej).
     expect(prompts.generationRole).toContain("Never use people's names, or numbers and other words that are not in the material");
     expect(prompts.generationRole).toContain("closed types have exactly one correct option");
     // focus tłumaczenia: ciągłość sprawdza reguła rdzenia, profil mówi, który fragment wybrać.
@@ -120,12 +120,11 @@ describe("przedmiot english_chapter", () => {
     // Pola v3, słowa funkcyjne i powtórzone słowo banku sprawdzają reguły z katalogu.
     expect(prompts.fieldRules).not.toContain("sourceRefs are ALWAYS null");
     expect(prompts.typeRules?.lesson_cloze).not.toContain("appears nowhere else in the text");
-    expect(ruleText("chapter.function_words_only")).toContain("not only function words");
     // Tłumaczenie zawsze ma stałe polecenie (próba: model zwracał null, dziecko widziało tylko tytuł zagadnienia).
     expect(prompts.fieldRules).toContain("lesson_open_answer: instructionPl is exactly 'Przetłumacz na angielski.'");
     expect(ruleText("chapter.translation_instruction_required")).toContain("instructionPl");
-    // Polskie zdanie-bodziec w poleceniu: regułę opisuje katalog, profil daje przykłady naturalnych zdań.
-    expect(ruleText("chapter.instruction_stimulus")).toContain("instructionPl carries the Polish stimulus sentence");
+    // Polskie zdanie-bodziec w poleceniu: od etapu 5a tylko tekst profilu (kod go nie sprawdza).
+    expect(prompts.fieldRules).toContain("instructionPl starts with the Polish sentence the child translates");
     expect(prompts.typeRules?.lesson_cloze).toContain("instructionPl gives the Polish meaning of the whole text, then a short command");
     expect(prompts.typeRules?.lesson_cloze).toContain("W poniedziałek pada deszcz. W środę wieje wiatr. Uzupełnij tekst.");
     // Tekst z lukami: 2–3 krótkie zdania mieszczące się w limicie polecenia (liczbę podaje reguła field.max_length).
@@ -138,7 +137,9 @@ describe("przedmiot english_chapter", () => {
     expect(prompts.typeRules?.lesson_match).toContain("never a valid answer to any listed question");
     expect(prompts.typeRules?.lesson_match).not.toContain("another answer to the same kind of question");
     // Karty: wzór ramy z angielskimi przykładami bez tłumaczeń; żadna karta nie niesie pary zdań polskie → angielskie.
-    expect(prompts.objectivesRules).toContain("for 'frame' the pattern with 1 to 3 English examples from the material WITHOUT their Polish translations");
+    expect(prompts.objectivesRules).toContain("the pattern with 1 to 3 English examples from the material WITHOUT their Polish translations");
+    // Strojenie 2 bramki 5a: zagadnienie z jedną kartą odpadało w etapie zagadnień (zakres 2–4).
+    expect(prompts.objectivesRules).toContain("2 to 4 per objective, never just one");
     expect(prompts.objectivesRules).toContain("No card contains a Polish sentence together with its English translation");
     expect(prompts.objectivesRules).not.toContain("and their Polish meaning");
     expect(prompts.gradingRole).toContain("at most 'almost'");
@@ -271,8 +272,6 @@ describe("pula rozdziału przechodzi walidację silnika", () => {
     const { valid, rejected } = validatePool(weatherPool, englishChapterSubject, topic);
     expect(rejected).toEqual([]);
     expect(valid).toHaveLength(weatherPool.length);
-    const material = "It's raining. It's sunny. It's windy. Today. T-shirt, shorts, boots, coat, my";
-    expect(refineChapterPool(weatherPool, { material }).rejected).toEqual([]);
     expect(poolCoverage(valid, [WEATHER], englishChapterSubject.poolMinimums!)).toEqual([]);
   });
 });

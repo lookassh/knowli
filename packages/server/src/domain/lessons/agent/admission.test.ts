@@ -20,7 +20,7 @@ import { schoolSubject } from "../subjects/school/module";
 import { testIssue } from "../testing/test-issue";
 import { withAgentPolicy } from "../testing/agent-test-subject";
 import { NA_CHECKS } from "../testing/agent-admission-fixtures";
-import type { DynamicObjectiveKind, DynamicTopicData, LessonExerciseDraft } from "../types";
+import type { DynamicTopicData, LessonExerciseDraft } from "../types";
 import { admitBatch, precheckBatch, removeExercise, type AdmitEntry, type AgentCheckContext, type PrecheckEntry } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { createLessonAgentState, orderedLesson, poolOf, type LessonAgentState } from "./state";
@@ -444,64 +444,10 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
     const result = submit(withText.state, WEATHER, [listenWeather], chapterCtx);
     expect(result.results[0]).toMatchObject({ rejected: { kind: "lesson", code: "lesson_pool" } });
   });
-
-  it("pusty napis w polu opcjonalnym i naruszenie bramki rozdziału: jedno odrzucenie z field.empty i ustaleniem bramki (kod bramki)", () => {
-    // Prawdziwa polityka rozdziału: luka zagadnienia „words” sprawdza słowo spoza kart tego zagadnienia.
-    const lexicon = ["Pogoda:", "raining — pada deszcz", "sunny — słonecznie", "windy — wietrznie", "Ubrania:", "coat — płaszcz", "Zwroty:", "I'm wearing (a) …"].join("\n");
-    const gatedCtx: AgentCheckContext = { ...chapterCtx, subject: englishChapterSubject, material: lexicon };
-    const offCard: LessonExerciseDraft = {
-      exerciseType: "lesson_gap",
-      objectiveId: WEATHER,
-      instructionPl: "Mam na sobie płaszcz. Uzupełnij zdanie.",
-      stem: "I'm wearing a ___.",
-      answer: "coat",
-      acceptedAnswers: [],
-      focus: ["coat"],
-    };
-    // Rodzaj zagadnienia z planu: bramka słów kart działa tylko dla „words”.
-    const kinds = new Map<string, DynamicObjectiveKind>([[WEATHER, "words"], [WEARING, "frame"]]);
-    const kindState = () =>
-      createLessonAgentState({ topic: chapterTopic, objectives: agentObjectivesOf(chapterTopic, kinds), fixed: [], examples: {}, fixedSources: {} });
-    expect(codeOf(submit(kindState(), WEATHER, [offCard], gatedCtx).results[0])).toBe("card_word_missing");
-    const result = submit(kindState(), WEATHER, [{ ...offCard, hint: "" }], gatedCtx);
-    const entry = result.results[0]!;
-    if (!("rejected" in entry)) throw new Error("expected rejection");
-    expect(entry.rejected).toMatchObject({ kind: "rule", code: "card_word_missing", ruleIds: ["field.empty", "chapter.card_word_missing"] });
-    expect(entry.rejected.reasons[0]).toMatch(/^\[field\.empty\] hint/u);
-    expect(entry.rejected.reasons[1]).toMatch(/^\[chapter\.card_word_missing\] answer: the checked answer must contain a word of THIS objective's cards/u);
-  });
 });
 
-describe("przyjmowanie paczki — sanityzacja i refine", () => {
-  it("odpowiedź REFINE-REJECT: refine z powodem przedmiotu", () => {
-    const result = submit(stateWith(), A, [{ ...choice(A, 1), answer: "REFINE-REJECT" }]);
-    const rejection = { kind: "rule", code: "refine", reasons: ["[test.issue] exercise"], issues: [testIssue("refine reject")], ruleIds: ["test.issue"] };
-    expect(result.prechecked[0]).toEqual({ pass: false, rejection });
-    expect(result.results[0]).toEqual({ rejected: rejection });
-  });
-
-  it("refine odrzucający bez zgłoszeń (błąd kontraktu haka): odrzucenie z regułą bezpiecznika, bez wyjątku", () => {
-    const silent = withAgentPolicy({ ...subject, refineGeneratedPool: () => ({ kept: [], rejected: [] }) }, subject.agentPolicy);
-    const [entry] = precheckBatch(stateWith(), A, [choice(A, 1)], contextFor({ subject: silent }));
-    expect(entry).toMatchObject({
-      pass: false,
-      rejection: {
-        kind: "rule",
-        code: "refine",
-        ruleIds: ["lesson.refine_unnamed"],
-        reasons: ["[lesson.refine_unnamed] exercise: the subject rejected this exercise without naming a rule"],
-      },
-    });
-  });
-
-  it("wariant DROP usunięty w szkicu z precheckBatch; do puli trafia oczyszczony szkic", () => {
-    const draft = { ...open(A, "Kiedy?", "w 966 roku"), acceptedAnswers: ["966", "DROP"] };
-    const result = submit(stateWith(), A, [draft]);
-    expect(result.prechecked[0]).toMatchObject({ pass: true, draft: { acceptedAnswers: ["966"] } });
-    expect(poolOf(result.state, A)[0]!.draft.acceptedAnswers).toEqual(["966"]);
-  });
-
-  it("agentPolicy.sanitize działa przed refine, a usunięte pola wracają w sanitized", () => {
+describe("przyjmowanie paczki — sanityzacja", () => {
+  it("agentPolicy.sanitize oczyszcza szkic, a usunięte pola wracają w sanitized", () => {
     const sanitizing = withAgentPolicy(subject, {
       sanitize: (draft) => {
         const { hint, ...rest } = draft;
@@ -519,9 +465,9 @@ describe("zgodność precheckBatch i admitBatch na tym samym stanie", () => {
   const fixtures: [string, () => LessonAgentState, readonly LessonExerciseDraft[]][] = [
     ["mieszana paczka z duplikatem", () => stateWith(), [choice(A, 1), gap(A, "Chrzest w roku ___.", "966"), choice(A, 1), open(A, "Kiedy?", "w 966 roku")]],
     [
-      "słowa kluczowe, sierota i refine",
+      "słowa kluczowe i sierota",
       () => stateWith({ fixed: [open(A, "Kto?", "Mieszko I", "f0")] }),
-      [keywords(A, "f2", 1), keywords(A, "f0", 2), open(A, "Kiedy?", "w 966 roku", "f2"), keywords(A, "f9", 3), { ...choice(A, 5), answer: "REFINE-REJECT" }],
+      [keywords(A, "f2", 1), keywords(A, "f0", 2), open(A, "Kiedy?", "w 966 roku", "f2"), keywords(A, "f9", 3)],
     ],
     [
       "ujawnienia i limit słuchowy",

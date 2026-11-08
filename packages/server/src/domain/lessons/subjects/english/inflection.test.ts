@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formsOf, stemsOf } from "./inflection";
+import { formsOf } from "./inflection";
 
-describe("stemsOf — prosta odmiana angielska", () => {
+describe("formsOf — prosta odmiana angielska (rdzenie)", () => {
   it.each([
     ["boots", ["boot"]],
     ["raining", ["rain", "raine"]],
@@ -14,23 +14,23 @@ describe("stemsOf — prosta odmiana angielska", () => {
     ["boxes", ["box", "boxe"]],
     ["tom's", ["tom"]],
   ])("„%s” → %j", (token, stems) => {
-    expect(stemsOf(token)).toEqual(stems);
+    expect(formsOf(token)).toEqual([token, ...stems]);
   });
 
   it("nie odcina -s po podwójnym s ani w dopełniaczu", () => {
-    expect(stemsOf("dress")).toEqual([]);
-    expect(stemsOf("tom's")).not.toContain("tom'");
+    expect(formsOf("dress")).toEqual(["dress"]);
+    expect(formsOf("tom's")).not.toContain("tom'");
   });
 
   it("pomija rdzenie krótsze niż 3 znaki", () => {
-    expect(stemsOf("wing")).toEqual([]);
-    expect(stemsOf("red")).toEqual([]);
-    expect(stemsOf("ones")).toEqual(["one"]);
+    expect(formsOf("wing")).toEqual(["wing"]);
+    expect(formsOf("red")).toEqual(["red"]);
+    expect(formsOf("ones")).toEqual(["ones", "one"]);
   });
 
   it("słowo bez końcówki nie ma rdzeni", () => {
-    expect(stemsOf("category")).toEqual([]);
-    expect(stemsOf("coat")).toEqual([]);
+    expect(formsOf("category")).toEqual(["category"]);
+    expect(formsOf("coat")).toEqual(["coat"]);
   });
 });
 
@@ -42,7 +42,6 @@ describe("formsOf — formy porównania tokenu", () => {
   });
 
   it("rdzeń będący słowem funkcyjnym się nie liczy (thing → the, shed → she, noted → not)", () => {
-    expect(stemsOf("thing")).toEqual(["the"]);
     expect(formsOf("thing")).toEqual(["thing"]);
     expect(formsOf("shed")).toEqual(["shed"]);
     expect(formsOf("noted")).toEqual(["noted", "note"]);

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { SubjectModule } from "../../../domain/lessons/types";
 import { toExerciseDraft } from "./lesson-drafts";
-import { sanitizeFreshLessonDraft } from "./lesson-pool-acceptance";
+import { sanitizeFreshLessonDraft, UNSOLICITED_V3_FIELDS } from "./lesson-pool-acceptance";
 
 const OBJECTIVE_ID = "english_grammar.present_simple.third_person_s";
 
@@ -53,10 +54,23 @@ describe("sanitizeFreshLessonDraft (wspólna sanityzacja świeżego ćwiczenia)"
   });
 
   it("familyScope dopisuje sufiks runu do rodziny; null jej nie rusza", () => {
+    // Rodziny to pole v3: tylko przedmiot z `usesV3Payload` (szkoła) je zachowuje.
     const draft = draftOf({ ...choiceRaw("plays"), familyId: "f1" });
-    expect(sanitizeFreshLessonDraft(draft, englishGrammarSubject, null).draft.familyId).toBe("f1");
-    expect(sanitizeFreshLessonDraft(draft, englishGrammarSubject, "3f2a9c1e-0000-4000-8000-000000000000").draft.familyId)
+    expect(sanitizeFreshLessonDraft(draft, schoolSubject, null).draft.familyId).toBe("f1");
+    expect(sanitizeFreshLessonDraft(draft, schoolSubject, "3f2a9c1e-0000-4000-8000-000000000000").draft.familyId)
       .toBe("f1-r3f2a9c");
+  });
+
+  it("usuwa niezamówione pola v3 (bez calculation) w rozdziale i gramatyce, a w szkole je zostawia", () => {
+    const draft = draftOf({ ...choiceRaw("plays"), sourceRefs: [{ quote: "She plays." }], familyId: "f1", questionType: "fact" });
+    for (const subject of [englishChapterSubject, englishGrammarSubject]) {
+      const out = sanitizeFreshLessonDraft(draft, subject, null).draft;
+      for (const field of UNSOLICITED_V3_FIELDS) expect(out, `${subject.id}: ${field}`).not.toHaveProperty(field);
+    }
+    const school = sanitizeFreshLessonDraft(draft, schoolSubject, null).draft;
+    expect(school.sourceRefs).toEqual([{ quote: "She plays." }]);
+    expect(school.questionType).toBe("fact");
+    expect(UNSOLICITED_V3_FIELDS).not.toContain("calculation");
   });
 
   it("usuwa i zlicza wariant redundantny wobec odpowiedzi kanonicznej", () => {

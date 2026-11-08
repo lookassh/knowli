@@ -129,15 +129,6 @@ describe("admitBatch — warianty odrzucone przez checker (spec katalogu reguł 
     expect(poolOf(result.state, A)[0]!.draft.acceptedAnswers).toEqual([]);
   });
 
-  it("indeksy wyników odpowiadają wariantom szkicu po refine (DROP usunięty w precheck)", () => {
-    const draft = { ...open(A, "Kiedy?", "w 966 roku"), acceptedAnswers: ["DROP", "966", "w X wieku"] };
-    const prechecked = precheckBatch(stateWith(), A, [draft], ctx);
-    expect(prechecked[0]).toMatchObject({ pass: true, draft: { acceptedAnswers: ["966", "w X wieku"] } });
-    const result = admitBatch(stateWith(), A, prechecked, [variantsDone([false, true])], ctx);
-    expect(acceptedOf(result.results[0]).removedVariants).toEqual(["966"]);
-    expect(poolOf(result.state, A)[0]!.draft.acceptedAnswers).toEqual(["w X wieku"]);
-  });
-
   it("rozwiązujący odpowiedział usuniętym wariantem: blind_mismatch z powodem o usuniętym wariancie", () => {
     const draft = { ...open(A, "Kiedy?", "w 966 roku"), acceptedAnswers: ["966"] };
     const result = submitWith(stateWith(), A, [draft], [variantsDone([false], { solve: { kind: "done", value: ["966"] } })]);

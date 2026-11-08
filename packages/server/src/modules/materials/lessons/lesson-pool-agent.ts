@@ -16,7 +16,6 @@ import { outsideStagePath } from "../../../domain/lessons/stages";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type {
   AgentObjective,
-  DynamicObjectiveKind,
   DynamicTopicData,
   LessonExerciseDraft,
   LessonTopic,
@@ -28,7 +27,6 @@ import { AgentCheckRun, CHECK_COUNTER_KEYS, type AgentCheckGrader, type CheckCou
 import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import { objectiveAgentInput } from "./lesson-pool-agent-input";
-import { planAgentObjectives } from "./lesson-pool-agent-plan";
 import {
   agentFailureOf,
   DEFAULT_LESSON_AGENT_POLICY,
@@ -43,7 +41,7 @@ import { createObjectiveTools, type ObjectiveToolsStats, type RejectionLogEntry 
 
 /**
  * Kierownik agenta puli lekcji (spec etapu 1 §7, etapu 2a §6): rozwiązuje
- * zagadnienia (plan, katalog albo dane wejścia), woła hak planu, uruchamia
+ * zagadnienia (katalog albo dane wejścia), woła hak tematu, uruchamia
  * podagentów zagadnień równolegle na wspólnym stanie lekcji, zamyka każde
  * zagadnienie, woła hak zapisu szeregowo i kończy kontrolą końcową. Bez bazy i
  * bez identyfikatorów przedmiotów.
@@ -53,7 +51,6 @@ export type { AgentFailure };
 
 /** Źródło zagadnień — unia rozłączna (każdy wariant niesie swoje dane). */
 export type AgentObjectiveSource =
-  | { readonly source: "planner" }
   | { readonly source: "catalog"; readonly topic: LessonTopic }
   | { readonly source: "input"; readonly dynamicTopic: DynamicTopicData };
 
@@ -82,12 +79,10 @@ export interface SettledObjective {
   readonly rejections: readonly RejectionLogEntry[];
 }
 
-/** Wynik rozwiązania zagadnień dla haka planu (spec etapu 2a §6.1). */
+/** Wynik rozwiązania zagadnień dla haka tematu (spec etapu 2a §6.1). */
 export interface ResolvedObjectives {
-  /** Temat planu (`planner`) albo temat wejścia (`input`); brak przy katalogu. */
+  /** Temat wejścia (`input`); brak przy katalogu. */
   readonly dynamicTopic?: DynamicTopicData;
-  /** Przykłady kart z planu; `{}` poza źródłem `planner`. */
-  readonly planExamples: Readonly<Record<string, readonly string[]>>;
   readonly spentUsd: number;
 }
 
@@ -114,19 +109,19 @@ export interface LessonPoolAgentRunInput {
    */
   readonly onSpend?: (spentUsd: number) => void;
   /**
-   * Przykłady kart wstawiane do stanu jak przykłady planu (liczą się do statusu i są źródłami
-   * ujawnień), np. z punktu kontrolnego albo szkicu; przykłady planu wygrywają per zagadnienie.
+   * Przykłady kart wstawiane do stanu (liczą się do statusu i są źródłami ujawnień), np. z punktu
+   * kontrolnego albo szkicu.
    */
   readonly initialExamples?: Readonly<Record<string, readonly string[]>>;
-  /** `true` = `submit` ignoruje przykłady (ustalone); brak = `objectiveSource.source === "planner"`. */
+  /** `true` = `submit` ignoruje przykłady (ustalone, np. ze szkicu w trybie „dodaj N”); brak = `false`. */
   readonly examplesFixed?: boolean;
   /** Stałe źródła ujawnień spoza zagadnień (np. zdania historyjki szkicu). */
   readonly extraExposureSources?: readonly string[];
   /** Brak = `{ mode: "pool" }`. W trybie `add` `skipObjectives` nie ma znaczenia: działa tylko `objectiveId`. */
   readonly target?: LessonPoolAgentTarget;
   /**
-   * Wołany raz, po przyjęciu planu (`planner`) albo od razu po rozwiązaniu tematu (`catalog`/`input`),
-   * przed podagentami; błąd przerywa run jak błąd `onObjectiveSettled`. Nie jest wołany przy `plan_failed`.
+   * Wołany raz, od razu po rozwiązaniu tematu (`catalog`/`input`), przed podagentami; błąd przerywa run
+   * jak błąd `onObjectiveSettled`.
    */
   readonly onObjectivesResolved?: (resolved: ResolvedObjectives) => Promise<void>;
   /**
@@ -156,9 +151,6 @@ export type LessonPoolAgentStats = {
 } & Record<CheckCounterKey, number>;
 
 export interface LessonPoolAgentResult {
-  readonly planStatus: "accepted" | "plan_failed" | "not_needed";
-  readonly planFailure?: AgentFailure;
-  readonly dynamicTopic?: DynamicTopicData;
   /** Zagadnienia uruchomione w tym runie (bez pominiętych), w kolejności lekcji. */
   readonly objectives: readonly SettledObjective[];
   readonly stats: LessonPoolAgentStats;
@@ -218,22 +210,11 @@ function resolveSubject(deps: LessonPoolAgentDeps, input: LessonPoolAgentRunInpu
   }
   const target = input.target;
   if (target?.mode === "add") {
-    // Dogenerowanie dotyczy zagadnienia istniejącego szkicu: plan stworzyłby nowe zagadnienia.
-    if (input.objectiveSource.source === "planner") {
-      throw new AppError("validation", { message: "add mode needs catalog or input objectives, not a plan" });
-    }
     if (!Number.isInteger(target.count) || target.count < 1) {
       throw new AppError("validation", { message: "add mode count must be a positive integer" });
     }
   }
   return subject;
-}
-
-/** Rodzaje zagadnień tematu dynamicznego (rozdział) do `agentObjectivesOf`. */
-export function kindsOf(data: DynamicTopicData | undefined): Map<string, DynamicObjectiveKind> {
-  const kinds = new Map<string, DynamicObjectiveKind>();
-  for (const objective of data?.objectives ?? []) if (objective.kind !== undefined) kinds.set(objective.id, objective.kind);
-  return kinds;
 }
 
 function formatCodes(codes: ReadonlyMap<string, number>): string {
@@ -320,77 +301,34 @@ export async function runLessonPoolAgent(
   const runDeadline = deadlineSignal(signal, policy.runTimeoutMs, RUN_TIMEOUT_REASON);
   try {
     const source = input.objectiveSource;
-    let topic: LessonTopic;
-    let dynamicTopic: DynamicTopicData | undefined;
-    let planExamples: Readonly<Record<string, readonly string[]>> = {};
-    if (source.source === "planner") {
-      const planStartUsd = cost.spentUsd;
-      const plan = await planAgentObjectives({
-        agent: deps.agent,
-        subject,
-        deckId: input.deckId,
-        topicTitle: input.topicTitle,
-        material: input.material,
-        ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
-        cost,
-        maxSteps: policy.planMaxSteps,
-        callTimeoutMs: policy.callTimeoutMs,
-        signal: runDeadline.signal,
-      });
-      if (signal.aborted) throw signal.reason;
-      console.log(
-        `[lesson-agent] run=${input.runId} plan status=${plan.status}${plan.status === "plan_failed" ? ` error=${plan.failure.errorCode}` : ""} steps=${plan.steps} costUsd=${(cost.spentUsd - planStartUsd).toFixed(4)}`,
-      );
-      if (plan.status === "plan_failed") {
-        return {
-          planStatus: "plan_failed",
-          planFailure: plan.failure,
-          objectives: [],
-          stats: emptyLessonPoolAgentStats(),
-          rejections: [],
-          spentUsd: cost.spentUsd,
-          unknownCostCalls: cost.unknownCalls,
-        };
-      }
-      dynamicTopic = plan.dynamicTopic;
-      planExamples = plan.examples;
-      topic = subject.buildDynamicTopic!(plan.dynamicTopic);
-    } else if (source.source === "catalog") {
-      topic = source.topic;
-    } else {
-      topic = subject.buildDynamicTopic!(source.dynamicTopic);
-    }
-    const resolvedTopic = dynamicTopic ?? (source.source === "input" ? source.dynamicTopic : undefined);
+    const resolvedTopic = source.source === "input" ? source.dynamicTopic : undefined;
+    const topic: LessonTopic = source.source === "catalog" ? source.topic : subject.buildDynamicTopic!(source.dynamicTopic);
     const target = input.target;
     if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
-      // Przed hakiem planu i podagentami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
+      // Przed hakiem tematu i podagentami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
       throw new AppError("validation", { message: `unknown objective ${target.objectiveId}` });
     }
     if (input.onObjectivesResolved !== undefined) {
-      // Przed podagentami: ścieżka zapisuje temat, przykłady planu i wydatek (punkt kontrolny).
+      // Przed podagentami: ścieżka zapisuje temat i wydatek (punkt kontrolny).
       await input.onObjectivesResolved({
         ...(resolvedTopic === undefined ? {} : { dynamicTopic: resolvedTopic }),
-        planExamples,
         spentUsd: cost.spentUsd,
       });
       if (signal.aborted) throw signal.reason;
     }
-    const objectives = agentObjectivesOf(topic, kindsOf(resolvedTopic));
+    const objectives = agentObjectivesOf(topic);
     const result = await superviseObjectives({
       deps,
       input,
       subject,
       topic,
       objectives,
-      planExamples,
       policy,
       cost,
       runSignal: signal,
       runDeadline: runDeadline.signal,
     });
     return {
-      planStatus: source.source === "planner" ? "accepted" : "not_needed",
-      ...(dynamicTopic === undefined ? {} : { dynamicTopic }),
       ...result,
       spentUsd: cost.spentUsd,
       unknownCostCalls: cost.unknownCalls,
@@ -402,7 +340,7 @@ export async function runLessonPoolAgent(
 
 /**
  * Stan startowy kierownika (pula i „dodaj N”): limity zagadnień, stan lekcji z `fixed`, przykładami
- * (przykłady planu wygrywają z początkowymi) i stałymi źródłami ujawnień, a w trybie „dodaj N” —
+ * początkowymi i stałymi źródłami ujawnień, a w trybie „dodaj N” —
  * limity i liczby promptu zagadnienia z {@link addModePlan}. Wspólne z przebiegiem bazowym.
  */
 export function poolStartState(args: {
@@ -410,7 +348,6 @@ export function poolStartState(args: {
   readonly topic: LessonTopic;
   readonly objectives: readonly AgentObjective[];
   readonly input: LessonPoolAgentRunInput;
-  readonly planExamples: Readonly<Record<string, readonly string[]>>;
 }): {
   state: LessonAgentState;
   ctx: AgentCheckContext;
@@ -426,8 +363,7 @@ export function poolStartState(args: {
     topic,
     objectives,
     fixed: input.fixed,
-    // Przykłady planu wygrywają z początkowymi per zagadnienie.
-    examples: { ...input.initialExamples, ...args.planExamples },
+    examples: input.initialExamples ?? {},
     fixedSources: mergeExamples(
       mergeExamples(cardExposureSources(subject, topic), input.draftExamples),
       extraSources.length === 0 ? {} : { [EXTRA_SOURCES_KEY]: extraSources },
@@ -456,7 +392,6 @@ interface SuperviseArgs {
   readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly objectives: readonly AgentObjective[];
-  readonly planExamples: Readonly<Record<string, readonly string[]>>;
   readonly policy: LessonAgentPolicy;
   readonly cost: RunCostMeter;
   readonly runSignal: AbortSignal;
@@ -478,9 +413,9 @@ interface ObjectiveTrack {
 /** Podagenci zagadnień, zamknięcie, hak zapisu i kontrola końcowa (§7.1 pkt 3–7). */
 async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPoolAgentResult, "objectives" | "stats" | "rejections">> {
   const { deps, input, subject, topic, objectives, policy, cost } = args;
-  const examplesFixed = input.examplesFixed ?? input.objectiveSource.source === "planner";
+  const examplesFixed = input.examplesFixed ?? false;
 
-  const start = poolStartState({ subject, topic, objectives, input, planExamples: args.planExamples });
+  const start = poolStartState({ subject, topic, objectives, input });
   const { ctx, addMode, promptTargets } = start;
   let state = start.state;
   const getState = () => state;

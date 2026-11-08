@@ -218,42 +218,23 @@ function limitsOf(ctx: AgentCheckContext, objectiveId: string): ObjectiveAgentLi
   return limits;
 }
 
-/** Sanityzacja polityki, potem `refineGeneratedPool` przedmiotu (może odrzucić albo oczyścić szkic). */
+/** Sanityzacja polityki przedmiotu (oczyszcza szkic przed kontrolami). */
 function sanitizeCandidate(
   draft: LessonExerciseDraft,
   ctx: AgentCheckContext,
-):
-  | {
-      ok: true;
-      draft: LessonExerciseDraft;
-      sanitized: readonly string[];
-      notes: readonly LessonRuleIssue[];
-      quotesSnapped: number;
-    }
-  | { ok: false; rejection: Rejection } {
+): {
+  draft: LessonExerciseDraft;
+  sanitized: readonly string[];
+  notes: readonly LessonRuleIssue[];
+  quotesSnapped: number;
+} {
   const sanitizedResult = ctx.subject.agentPolicy.sanitize?.(draft, { material: ctx.material }) ?? { draft, removed: [] };
-  const clean = {
+  return {
+    draft: sanitizedResult.draft,
     sanitized: sanitizedResult.removed,
     notes: sanitizedResult.notes ?? [],
     quotesSnapped: sanitizedResult.quotesSnapped ?? 0,
   };
-  const refine = ctx.subject.refineGeneratedPool;
-  if (refine === undefined) return { ok: true, draft: sanitizedResult.draft, ...clean };
-  const refined = refine([sanitizedResult.draft], { material: ctx.material });
-  const kept = refined.kept[0];
-  if (refined.rejected.length > 0 || kept === undefined) {
-    const named = refined.rejected.flatMap((item) => item.issues);
-    // Kontrakt haka: odrzucenie nazywa złamaną regułę przedmiotu. Bez niej (błąd przedmiotu) zagadnienie nie
-    // pada na wyjątku: ćwiczenie odpada z ogólnym powodem bezpiecznika.
-    const issues = named.length > 0
-      ? named
-      : [lessonIssue("lesson.refine_unnamed", {
-          pl: "ćwiczenie odrzucone przez regułę przedmiotu",
-          found: "the subject rejected this exercise without naming a rule",
-        })];
-    return { ok: false, rejection: rejectionOf("rule", "refine", issues) };
-  }
-  return { ok: true, draft: kept, ...clean };
 }
 
 function entryLabel(entry: OrderedLessonEntry | undefined): string {
@@ -449,10 +430,6 @@ export function precheckBatch(
       results[index] = { pass: false, rejection };
     };
     const sanitized = sanitizeCandidate(draft, ctx);
-    if (!sanitized.ok) {
-      rejectWith(sanitized.rejection);
-      continue;
-    }
     const outcome = deterministicSteps(working, objectiveId, sanitized.draft, before, ctx, rejectedFamilies);
     if (!outcome.ok) {
       rejectWith(outcome.rejection);

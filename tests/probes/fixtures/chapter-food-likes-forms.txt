@@ -1,0 +1,20 @@
+apple|apples
+banana|bananas
+orange|oranges
+bread
+cheese
+milk
+juice
+egg|eggs
+carrot|carrots
+tomato|tomatoes
+pizza
+soup
+cake|cakes
+ice cream
+breakfast
+lunch
+dinner
+I like
+I don't like|I do not like
+Do you like

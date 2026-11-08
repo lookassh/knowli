@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { PRODUCTION_SUBJECTS } from "../subjects";
-import "../subjects/english/english.rule-cases";
 import "../subjects/english-chapter/chapter.rule-cases";
 import "../subjects/school/school.rule-cases";
 import { allRuleCases, type RuleCase } from "../testing/rule-cases";

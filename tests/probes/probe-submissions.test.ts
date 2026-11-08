@@ -17,7 +17,6 @@ function fakeAgent(submitted: { exercises: unknown[] }): LessonPoolAgentProvider
       await tools.submit(submitted);
       return { steps: 1, stopReason: "model_finished" };
     },
-    planObjectives: async () => ({ steps: 0, stopReason: "model_finished" }),
   } as unknown as LessonPoolAgentProvider & LessonPacketGenerator;
 }
 

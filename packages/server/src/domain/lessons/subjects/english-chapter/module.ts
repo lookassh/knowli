@@ -12,7 +12,7 @@ import { chapterAgentPolicy } from "./agent-policy";
 import { englishCardSentences } from "../english/card-sentences";
 import { chapterExposureText, normalizeChapterExposureText } from "./exposure";
 import { englishChapterPrompts } from "./prompts";
-import { refineChapterPool, validateChapterExercise } from "./validators";
+import { validateChapterExercise } from "./validators";
 import { CHAPTER_RULES } from "./rules";
 
 /**
@@ -79,7 +79,7 @@ export const englishChapterSubject: SubjectModule = {
   // To samo zdanie z innym polskim bodźcem to inne ćwiczenie; krótkie odpowiedzi się powtarzają.
   poolDeduplication: "exercise",
   poolMinimums: { guided: 3, productive: 3, independent: 2 },
-  // Zgodność z materiałem sprawdza słownik rozdziału, nie cytaty.
+  // Bez cytatów `sourceRefs` w ćwiczeniach.
   sourceQuotes: false,
   // Tytuł przedmiotu zestawu to stałe „Angielski — rozdział”.
   materialSubjectTitle: "fixed",
@@ -89,8 +89,9 @@ export const englishChapterSubject: SubjectModule = {
   normalizeExposureText: normalizeChapterExposureText,
   // Zdania z kart rozdziału są gotowymi rozwiązaniami: źródło ujawnień przy generowaniu puli.
   cardExposureTexts: englishCardSentences,
-  refineGeneratedPool: refineChapterPool,
-  // Polityka agenta puli: bramki słów i ram kart, wymagane typy i pokrycie materiału przez plan.
+  // Generowanie przebiegiem bazowym (etap 5a #362): paczki, kontrola zamkniętych, jedna walidacja puli.
+  baselinePool: true,
+  // Polityka generowania: rezerwa, noty reguł, oczyszczenie świeżego wyjścia modelu.
   agentPolicy: chapterAgentPolicy,
   rules: CHAPTER_RULES,
   validateExercise: validateChapterExercise,

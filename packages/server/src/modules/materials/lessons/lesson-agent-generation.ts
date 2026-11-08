@@ -52,7 +52,6 @@ import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { runLessonBaselinePool } from "./lesson-baseline-pool";
 import {
   emptyLessonPoolAgentStats,
-  kindsOf,
   lessonAgentLimits,
   runLessonPoolAgent,
   type LessonPoolAgentResult,
@@ -96,7 +95,6 @@ function withSpend(progress: LessonAgentProgress, spentUsd: number): Pick<Lesson
 /** Wynik kierownika z jednym rozliczonym zagadnieniem (zapis postępu w haku `onObjectiveSettled`). */
 function settledResult(settled: SettledObjective): LessonPoolAgentResult {
   return {
-    planStatus: "not_needed",
     objectives: [settled],
     stats: emptyLessonPoolAgentStats(),
     rejections: settled.rejections,
@@ -105,13 +103,12 @@ function settledResult(settled: SettledObjective): LessonPoolAgentResult {
   };
 }
 
-/** Nowe przykłady kart pełnej generacji: własne przykłady zagadnienia z postępu, inaczej przykłady planu. */
+/** Nowe przykłady kart pełnej generacji: własne przykłady zagadnień z postępu. */
 function newExamplesOf(progress: LessonAgentProgress, objectiveOrder: readonly string[]): Record<string, string[]> {
   const examples: Record<string, string[]> = {};
   for (const objectiveId of objectiveOrder) {
     const own = progress.objectives[objectiveId]?.examples ?? [];
-    const list = own.length > 0 ? own : (progress.planExamples?.[objectiveId] ?? []);
-    if (list.length > 0) examples[objectiveId] = [...list];
+    if (own.length > 0) examples[objectiveId] = [...own];
   }
   return examples;
 }
@@ -271,7 +268,7 @@ export async function executeLessonAgentGeneration(
     const lessonOrder = topic.objectives.map((objective) => objective.id);
     const accepted = acceptedInLessonOrder(progress, mode === "add" ? [addObjectiveId!] : lessonOrder);
     const newExamples = mode === "add" ? {} : newExamplesOf(progress, lessonOrder);
-    const agentObjectives = agentObjectivesOf(topic, kindsOf(dynamicTopic));
+    const agentObjectives = agentObjectivesOf(topic);
     const limits = lessonAgentLimits(subject, topic, input.poolSize);
     const check = finalLessonCheck({
       subject,
@@ -423,7 +420,6 @@ export async function executeLessonAgentGeneration(
     // Termin runu od startu runu (§7.2), jak termin finalizacji zapisu — nie od startu kontrolera.
     const remainingMs = runDeadlineAtMs - (agentDeps.finalizationReserveMs ?? AGENT_FINALIZATION_RESERVE_MS) - Date.now();
     const emptyAttempt: LessonPoolAgentResult = {
-      planStatus: "not_needed",
       objectives: [],
       stats: emptyLessonPoolAgentStats(),
       rejections: [],
@@ -432,8 +428,6 @@ export async function executeLessonAgentGeneration(
     };
     const outcomeFor = (progress: LessonAgentProgress, result: LessonPoolAgentResult): LessonAgentOutcome =>
       lessonAgentRunOutcome({
-        planStatus: result.planStatus,
-        ...(result.planFailure === undefined ? {} : { planFailure: result.planFailure }),
         objectives: outcomeObjectivesOf(progress, result),
         accepted: acceptedCount(progress),
         budgetExhausted: result.spentUsd >= budgetUsd,
@@ -462,11 +456,9 @@ export async function executeLessonAgentGeneration(
         liveSpentUsd = spentUsd;
       },
       onObjectivesResolved: async (resolved) => {
-        const planExamples = Object.fromEntries(Object.entries(resolved.planExamples).map(([id, list]) => [id, [...list]]));
         working = {
           ...working,
           ...(resolved.dynamicTopic === undefined ? {} : { dynamicTopic: resolved.dynamicTopic }),
-          ...(Object.keys(planExamples).length === 0 ? {} : { planExamples }),
           ...withSpend(working, resolved.spentUsd),
         };
         await save(working);
@@ -494,11 +486,10 @@ export async function executeLessonAgentGeneration(
           ),
     );
     const merged = mergeAttemptIntoProgress(begin, result, mode, addObjectiveId);
-    // Temat i przykłady planu zna tylko kopia robocza (hak planu), nie wynik kierownika.
+    // Temat zna tylko kopia robocza (hak tematu), nie wynik kierownika.
     const progress: LessonAgentProgress = {
       ...merged,
       ...(merged.dynamicTopic === undefined && working.dynamicTopic !== undefined ? { dynamicTopic: working.dynamicTopic } : {}),
-      ...(working.planExamples === undefined ? {} : { planExamples: working.planExamples }),
     };
     latest = progress;
     return { progress, outcome: outcomeFor(progress, result) };
