@@ -87,8 +87,8 @@ export function selectOrphanMediaBlobs(input: {
       youngOrphanBytes += blob.byteCount;
     }
   }
-  orphanStorageKeys.sort();
-  eligibleStorageKeys.sort();
+  orphanStorageKeys.sort((a, b) => a.localeCompare(b));
+  eligibleStorageKeys.sort((a, b) => a.localeCompare(b));
 
   let missingReferencedCount = 0;
   for (const storageKey of referenced) {
