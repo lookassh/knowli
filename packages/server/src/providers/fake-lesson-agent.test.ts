@@ -7,11 +7,10 @@ import type {
 } from "../ports/ai";
 import { agentObjectivesOf } from "../domain/lessons/agent/capable";
 import { createLessonAgentState } from "../domain/lessons/agent/state";
-import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../domain/lessons/topic-resolution";
-import type { DynamicTopicData, SubjectModule } from "../domain/lessons/types";
+import type { SubjectModule } from "../domain/lessons/types";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../modules/materials/lessons/lesson-drafts";
 import { lessonAgentLimits, runLessonPoolAgent, type LessonPoolAgentRunInput } from "../modules/materials/lessons/lesson-pool-agent";
 import { objectiveAgentInput } from "../modules/materials/lessons/lesson-pool-agent-input";
@@ -69,31 +68,6 @@ function makeTools(
 }
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** Temat rozdziału jak z etapu zagadnień: zagadnienia „Część N” z kartą słów albo ram i kartą tematu. */
-function chapterTopic(groups: { kind: "words" | "frame"; body: string }[]): DynamicTopicData {
-  return {
-    titlePl: "Unit 1",
-    objectives: groups.map((group, index) => ({
-      id: `${englishChapterSubject.id}.d42.part_${index + 1}`,
-      titlePl: `Część ${index + 1}`,
-      descriptionEn: `Part ${index + 1} of Unit 1.`,
-      kind: group.kind,
-      cards: [
-        { title: group.kind === "words" ? "Words" : "Frames", body: group.body },
-        { title: "Topic", body: "Unit 1" },
-      ],
-    })),
-  };
-}
-
-const CHAPTER_LISTS = ["Słowa:", "coat — płaszcz", "boots — buty", "scarf — szalik", "gloves — rękawiczki", "Zwroty:", "I am wearing …", "Put on your …"].join("\n");
-const chapterListsTopic = () =>
-  chapterTopic([
-    { kind: "words", body: "coat, boots" },
-    { kind: "words", body: "scarf, gloves" },
-    { kind: "frame", body: "I am wearing …\nPut on your …" },
-  ]);
 
 describe("FakeLessonPoolAgent", () => {
   it("wykonuje kroki zagadnienia po slugu i kończy jako model_finished", async () => {
@@ -635,23 +609,6 @@ describe("FakeLessonPoolAgent — generator z prawdziwym kierownikiem (checker n
     vi.restoreAllMocks();
   });
 
-  it("rozdział (wejście z etapu zagadnień) ≥ 1", async () => {
-    const { agent, deps } = setup(englishChapterSubject);
-    const result = await runLessonPoolAgent(
-      deps,
-      runInput({
-        subjectId: englishChapterSubject.id,
-        objectiveSource: { source: "input", dynamicTopic: chapterListsTopic() },
-        material: CHAPTER_LISTS,
-      }),
-      never,
-    );
-    // Generator zgłosił ćwiczenia każdego zagadnienia (wynik narzędzia zapisany po `submit`).
-    expect(agent.calls).toHaveLength(3);
-    expect(agent.calls.every((call) => call.outcomes.length > 0)).toBe(true);
-    expect(accepted(result)).toBeGreaterThanOrEqual(1);
-  });
-
   it("gramatyka (katalog) ≥ 1", async () => {
     const topic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_simple")!;
     const { agent, deps } = setup(englishGrammarSubject);
@@ -929,15 +886,6 @@ describe("FakeLessonPoolAgent — generator (pętla kroków, etap 3 PR 2)", () =
     it("gramatyka (katalog)", async () => {
       const { result } = await run(englishGrammarSubject, { objectiveSource: { source: "catalog", topic: GRAMMAR_TOPIC }, topicTitle: GRAMMAR_TOPIC.titlePl });
       expect(result.objectives).toHaveLength(GRAMMAR_TOPIC.objectives.length);
-    });
-
-    const plain = "I wear a coat. I wear boots. She wears a dress. We wear a skirt.";
-    it.each([
-      ["Słowa:/Zwroty:", CHAPTER_LISTS, chapterListsTopic()],
-      ["bez sekcji", plain, chapterTopic([0, 1, 2].map(() => ({ kind: "words" as const, body: plain })))],
-    ])("rozdział (wejście, %s)", async (_name, material, dynamicTopic) => {
-      const { result } = await run(englishChapterSubject, { objectiveSource: { source: "input", dynamicTopic }, material, poolSize: 40 });
-      expect(result.objectives).toHaveLength(3);
     });
 
     it("szkoła (wejście z fake generateLessonObjectives)", async () => {

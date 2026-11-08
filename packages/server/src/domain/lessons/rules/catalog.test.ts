@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { PRODUCTION_SUBJECTS } from "../subjects";
-import { ENGLISH_RULES } from "../subjects/english/rules";
 import {
   clip,
   defineRules,
@@ -244,10 +243,9 @@ describe("opisy reguł bez literałów liczb", () => {
       "rules/core-rules.ts",
       "rules/lesson-rules.ts",
       "subjects/english-chapter/rules.ts",
-      "subjects/english/rules.ts",
       "subjects/school/rules.ts",
     ]);
-    // Skan widzi wpis każdej reguły produkcyjnej (wspólny fragment angielski raz, w swoim pliku).
+    // Skan widzi wpis każdej reguły produkcyjnej.
     expect(scanned.reduce((sum, result) => sum + result.entries, 0)).toBe(productionRulesById().size);
   });
 
@@ -278,15 +276,14 @@ describe("opisy reguł bez literałów liczb", () => {
   });
 });
 
-/** Katalogi produkcyjne z nazwą: rdzeń, lekcja, wspólny fragment angielski i przedmioty. */
+/** Katalogi produkcyjne z nazwą: rdzeń, lekcja i przedmioty. */
 const PRODUCTION_CATALOGS: readonly { readonly name: string; readonly catalog: RuleCatalog }[] = [
   { name: "core", catalog: CORE_RULES },
   { name: "lesson", catalog: LESSON_RULES },
-  { name: "english", catalog: ENGLISH_RULES },
   ...PRODUCTION_SUBJECTS.map((subject) => ({ name: subject.id, catalog: subject.rules })),
 ];
 
-/** Reguły po id; wspólny wpis kilku katalogów (fragment angielski) liczy się raz. */
+/** Reguły po id; wspólny wpis kilku katalogów liczy się raz. */
 function productionRulesById(): Map<string, LessonRule> {
   const rules = new Map<string, LessonRule>();
   for (const { catalog } of PRODUCTION_CATALOGS) {

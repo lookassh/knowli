@@ -178,8 +178,8 @@ Zasady:
   (rezerwowo `UMIEM_FAKE_DELAY_MS`); `FAKE_SLOW_MARKER` w materiale wstrzymuje
   pierwszy krok każdego zagadnienia o 3 s.
 - **Koszty.** Każde żądanie agenta i checkera trafia do dziennika kosztów
-  (`feature = lesson_generation`, `provider = openrouter`, operacje `agent_plan`,
-  `agent_objective`, `check_solve`, `check_variants`, w szkole `check_hints`,
+  (`feature = lesson_generation`, `provider = openrouter`, operacje `agent_objective`
+  (`agent_plan` historyczne — planista usunięty w etapie 5a #362), `check_solve`, `check_variants`, w szkole `check_hints`,
   `check_open`; `docs/architecture.md` §23). Wywołania gradera kontroli
   otwartych odpowiedzi zapisują `lesson_generation` / `check_grade` (dostawca z
   `UMIEM_GRADER_BASE_URL`).

@@ -238,4 +238,25 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
     ].join("\n\n----\n\n");
     await expect(check).toMatchFileSnapshot("./__snapshots__/lesson-closed-check-prompt.txt");
   });
+
+  it("paczka rozdziału: zagadnienie słów × lesson_cloze (etap 5a #362)", async () => {
+    const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
+    const { packetInstructions } = await import("./lesson-pool-agent");
+    const { topic } = FIXTURES.english_chapter!;
+    const objective = topic.objectives[0]!;
+    expect(objective.exerciseTypes).toContain("lesson_cloze");
+    const input = packetInput({
+      subject: englishChapterSubject,
+      topic,
+      objective,
+      type: "lesson_cloze",
+      count: 4,
+      withExamples: true,
+      material: CHAPTER_MATERIAL,
+      graderAvailable: true,
+      avoidSentences: [],
+      timeoutMs: 90_000,
+    });
+    await expect(packetInstructions(input)).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.english_chapter_words_cloze.txt");
+  });
 });

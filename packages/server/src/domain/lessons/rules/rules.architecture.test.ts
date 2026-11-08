@@ -58,7 +58,7 @@ function sourceFilesUnder(dir: string): string[] {
 }
 
 /** Pliki przedmiotów z hakami walidacji i przyjmowania. */
-const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|hint-gate|quote-normalize|listen-audibility)\.ts$/;
+const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|hint-gate|quote-normalize)\.ts$/;
 
 /** Pliki walidatorów i przyjmowania agenta objęte zakazem napisów w zgłoszeniach. */
 const SCANNED: readonly string[] = [
@@ -103,13 +103,6 @@ const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
     // Linia przykładu ujawnia rozwiązanie: powód z fabryki (`formatRuleReason`) z etykietą i cytatem linii.
     examplesText("...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`)"),
     examplesText("`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`"),
-  ],
-  "domain/lessons/subjects/english-chapter/agent-policy.ts": [
-    {
-      fn: "objectiveGaps",
-      expression: '`card words not used in any exercise yet: ${uncovered.join(", ")}`',
-      reason: "luka zagadnienia dla statusu narzędzia (`missing`), nie odrzucenie ćwiczenia; hak ma typ `string[]`",
-    },
   ],
   [TOOLS_FILE]: [
     {
@@ -478,10 +471,10 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
   const violations = SCANNED.flatMap((file) => sinkViolations(file, read(file), vocabulary));
 
   it("skan widzi pliki, fabryki i źródła zgłoszeń (nie jest fałszywie zielony)", () => {
-    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(8);
+    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(7);
     for (const file of SCANNED) expect(() => read(file), file).not.toThrow();
     expect([...vocabulary.factories]).toEqual(
-      expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "englishIssue", "chapterIssue", "schoolIssue"]),
+      expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "chapterIssue", "schoolIssue"]),
     );
     expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "exerciseGate", "formatRuleReason"]));
     expect([...vocabulary.textHooks].sort()).toEqual(["objectiveGaps"]);

@@ -5,8 +5,9 @@ import type { SubjectPromptProfile } from "../../types";
  * §4.2–§4.5). Fragmenty są po angielsku, bo trafiają do modelu; treści dla
  * dziecka (polecenia, polskie zdania, etykiety) model pisze po polsku.
  * Ćwiczenia budowane są wyłącznie ze słów i ram zdaniowych wklejonego
- * rozdziału (walidacja słownikowa odrzuca resztę); polskie zdanie-bodziec
- * stoi w `instructionPl`, bo kartkówka usuwa `hint`.
+ * rozdziału, a polskie zdanie-bodziec stoi w `instructionPl`, bo kartkówka
+ * usuwa `hint`. Od etapu 5a (#362) tego nie sprawdza kod (bez słownika
+ * materiału) — dydaktykę niesie wyłącznie ten tekst.
  */
 /** Liczba zagadnień rozdziału (tylko tekst reguł zagadnień; kod zostawia wspólny limit 8). */
 export const CHAPTER_MIN_OBJECTIVES = 3;
@@ -21,7 +22,7 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "The parent pasted one textbook chapter: its word lists, phrases and sentence frames (e.g. I'm wearing (a) ..., " +
     "What's the weather like? It's ...). Build every exercise ONLY from the English words, phrases and frames of that " +
     `material, plus basic function words (${CHAPTER_FUNCTION_WORDS}). ` +
-    "Never introduce English vocabulary that is not in the material: exercises with other words are discarded. " +
+    "Never introduce English vocabulary that is not in the material. " +
     "Never use people's names, or numbers and other words that are not in the material (e.g. there, have got, let's, look, " +
     "unless the material has them); use I, you, he, she, we or they instead of a name. " +
     "Keep sentences short, concrete and age-appropriate. Each exercise checks exactly one objective; closed types have " +
@@ -37,11 +38,16 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "mistake outside it (for example a minor typo in another word), or when the child used a correct synonym from outside " +
     "the chapter. A mistake in the checked word itself is never 'almost' — it is 'incorrect' with category spelling " +
     "(misspelt word) or wrong_word (a different word).",
-  // Wyłącznie wskazówki, których kod nie sprawdza; reguły egzekwowane (polskie zdanie-bodziec, słowa
-  // materiału, luki, podpowiedź, wybór ze słuchu, warianty) opisuje katalog reguł w księdze reguł
-  // promptu (spec katalogu reguł §3).
+  // Wskazówki, których kod nie sprawdza (od etapu 5a także polskie zdanie-bodziec, słowa i ramy zagadnienia);
+  // reguły strukturalne (luki, podpowiedź, klocki, warianty) opisuje katalog reguł w księdze reguł promptu.
   fieldRules:
     "Child-facing texts are in Polish: instructionPl, the prompt of lesson_open_answer, Polish meanings and group labels. " +
+    "In lesson_choice, lesson_gap, lesson_order and lesson_cloze, instructionPl starts with the Polish sentence the child " +
+    "translates, then the task; a bare task such as 'Wybierz słowo' is not enough. " +
+    "When the cards list words, the checked part (gap word, correct option, answer, left sides of pairs, group items) is a " +
+    "word of THIS objective's cards, at least two in pairs and groups; when the cards show a sentence frame, the solved " +
+    "sentence uses THIS objective's frame and the checked part may be the frame or the word filling it. The checked part " +
+    "is never a function word alone. " +
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
     "Polish stimulus sentences in instructionPl read naturally, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +

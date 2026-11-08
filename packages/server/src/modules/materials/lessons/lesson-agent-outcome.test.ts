@@ -619,14 +619,14 @@ describe("agentRejectedReasons", () => {
         for (const match of text.matchAll(pattern)) codes.add(match[1]!);
       }
     }
-    // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki rozdziału i szkoły, kontrole 2b).
-    for (const known of ["limit_full", "leak_victim", "rule_exercise", "refine", "open_not_accepted", "shape_malformed", "card_word_missing", "hint_language"]) {
+    // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki szkoły, kontrole 2b).
+    for (const known of ["limit_full", "leak_victim", "rule_exercise", "refine", "open_not_accepted", "shape_malformed", "hint_language"]) {
       expect(codes, known).toContain(known);
     }
     // Bramka podpowiedzi szkoły już nie odrzuca (podpowiedź jest usuwana z notą), a odrzucony wariant
     // jest usuwany z notą `check.variants`; etykiety obu kodów zostają dla szkiców zapisanych wcześniej
-    // z tymi kodami w `rejectedReasons`.
-    for (const retired of ["hint_reveals_answer", "variant_rejected"]) {
+    // z tymi kodami w `rejectedReasons`. Tak samo bramki słów i ram rozdziału (usunięte w etapie 5a #362).
+    for (const retired of ["hint_reveals_answer", "variant_rejected", "card_word_missing", "frame_missing"]) {
       expect(codes).not.toContain(retired);
       expect(Object.hasOwn(labels, retired)).toBe(true);
     }

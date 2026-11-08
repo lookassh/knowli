@@ -657,7 +657,7 @@ describe("źródła — tabela i przypadki użycia (integracja)", () => {
         });
         await executeLessonGeneration(world, regeneration.runId);
         expect((await readGeneration(world, regeneration.runId)).state).toBe("succeeded");
-        expect(fakes.agent.calls.at(-1)!.input.pool.material).toBe(CHAPTER_TEXT);
+        expect(fakes.agent.packetCalls.at(-1)!.pool.material).toBe(CHAPTER_TEXT);
         expect(await readLessonDeck(world, deckId)).not.toHaveProperty("source");
       } finally {
         await fakes.dispose();

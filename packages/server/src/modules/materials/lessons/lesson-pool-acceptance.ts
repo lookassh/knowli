@@ -1,6 +1,6 @@
 import { explanationRemovalNotes } from "../../../domain/lessons/exercise-explanation";
 import { stripListenChoiceExtras } from "../../../domain/lessons/material-creation";
-import { withoutRedundantAcceptedVariants } from "../../../domain/lessons/pool-validation";
+import { V3_EXERCISE_FIELDS, withoutRedundantAcceptedVariants, type V3ExerciseField } from "../../../domain/lessons/pool-validation";
 import type { LessonRuleIssue } from "../../../domain/lessons/rules/catalog";
 import type { LessonExerciseDraft, SubjectModule } from "../../../domain/lessons/types";
 import {
@@ -9,6 +9,23 @@ import {
   withoutInvalidExplanation,
   withoutVoiceToneUnlessAllowed,
 } from "./lesson-drafts";
+
+/**
+ * Pola v3 (przedmioty szkolne), których przedmiot bez `usesV3Payload` nie żąda: prompt każe zwracać dla nich
+ * null, ale prawdziwy model potrafi wypełnić je dla całej partii, a walidacja ogólna odrzuca takie ćwiczenie
+ * w całości. To niepożądany dodatek modelu, nie dane rodzica, więc na świeżym wyjściu go usuwamy (dawniej
+ * tylko rozdział, od etapu 5a #362 każdy przedmiot bez v3). Bez `calculation`: specyfikacja rachunku to inny
+ * typ ćwiczenia, który ma zostać odrzucony, a nie po cichu naprawiony.
+ */
+export const UNSOLICITED_V3_FIELDS: readonly Exclude<V3ExerciseField, "calculation">[] =
+  V3_EXERCISE_FIELDS.filter((field): field is Exclude<V3ExerciseField, "calculation"> => field !== "calculation");
+
+function withoutUnsolicitedV3Fields(draft: LessonExerciseDraft, subject: SubjectModule): LessonExerciseDraft {
+  if (subject.usesV3Payload === true || UNSOLICITED_V3_FIELDS.every((field) => draft[field] === undefined)) return draft;
+  const copy: Partial<Record<keyof LessonExerciseDraft, unknown>> = { ...draft };
+  for (const field of UNSOLICITED_V3_FIELDS) delete copy[field];
+  return copy as unknown as LessonExerciseDraft;
+}
 
 export interface SanitizedFreshDraft {
   readonly draft: LessonExerciseDraft;
@@ -23,7 +40,7 @@ export interface SanitizedFreshDraft {
 
 /**
  * Sanityzacja jednego świeżego ćwiczenia z wyjścia modelu (kierownik agenta puli).
- * Kolejność kroków jest częścią kontraktu: ton głosu → wyjaśnienie → puste tablice
+ * Kolejność kroków jest częścią kontraktu: niezamówione pola v3 → ton głosu → wyjaśnienie → puste tablice
  * → dodatki ćwiczenia słuchowego → rodziny runu → warianty redundantne. Bez
  * `stripParentAddedFlags` (woła go wywołujący). Warianty acceptedAnswers redundantne
  * wobec odpowiedzi kanonicznej (równe po neutralnej normalizacji; skrót i pełna forma
@@ -36,7 +53,7 @@ export function sanitizeFreshLessonDraft(
   subject: SubjectModule,
   familyScope: string | null,
 ): SanitizedFreshDraft {
-  const toned = withoutVoiceToneUnlessAllowed(draft, subject);
+  const toned = withoutVoiceToneUnlessAllowed(withoutUnsolicitedV3Fields(draft, subject), subject);
   const explained = withoutInvalidExplanation(toned, subject);
   const explanationNotes = explained === toned || toned.explanationPl === undefined ? [] : explanationRemovalNotes(toned.explanationPl, subject);
   // Ćwiczenie słuchowe nie ma polecenia, podpowiedzi ani piktogramu: dodatek modelu usuwamy, nie odrzucamy ćwiczenia.

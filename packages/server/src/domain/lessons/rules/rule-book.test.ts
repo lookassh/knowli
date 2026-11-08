@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_TEXT_LENGTH } from "../pool-validation";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseType, SubjectModule } from "../types";
-import { describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { defineRules, describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
 import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, typeExample, type RuleBook, type RuleLine } from "./rule-book";
 import { TYPE_CARDS } from "./type-cards";
 
@@ -264,16 +264,30 @@ describe("frazy kluczowe nowych opisów reguł", () => {
 });
 
 describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)", () => {
-  const chapter = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
+  // Od etapu 5a (#362) żaden przedmiot produkcyjny nie ma takiej reguły: mechanizm na kopii rozdziału z regułą testową.
+  const production = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
+  const chapter: SubjectModule = {
+    ...production,
+    rules: defineRules({
+      ...production.rules,
+      "test.each_block": {
+        field: "instructionPl",
+        kind: "reject",
+        types: ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"],
+        inEachTypeBlock: true,
+        description: "Test rule repeated in the block of each of its types.",
+      },
+    }),
+  };
   const book = lessonRuleBook(chapter, contextFor(chapter, chapter.exerciseTypes, VARIANTS[0]!));
   const blockOf = (type: LessonExerciseType) => book.types.find((block) => block.type === type)!.rules.map((line) => line.id);
 
-  it("polskie zdanie-bodziec rozdziału: w blokach wyboru, luki, układanki i tekstu z lukami, nie w ogólnych ani w wyborze ze słuchu", () => {
+  it("reguła w blokach wyboru, luki, układanki i tekstu z lukami, nie w ogólnych ani w wyborze ze słuchu", () => {
     for (const type of ["lesson_choice", "lesson_gap", "lesson_order", "lesson_cloze"] as const) {
-      expect(blockOf(type), type).toContain("chapter.instruction_stimulus");
+      expect(blockOf(type), type).toContain("test.each_block");
     }
-    expect(book.general.map((line) => line.id)).not.toContain("chapter.instruction_stimulus");
-    expect(blockOf("lesson_listen_choice")).not.toContain("chapter.instruction_stimulus");
+    expect(book.general.map((line) => line.id)).not.toContain("test.each_block");
+    expect(blockOf("lesson_listen_choice")).not.toContain("test.each_block");
     // Zakaz polecenia w wyborze ze słuchu ma pełny opis (nie tylko id), więc prompt nie przeczy sobie.
     const listen = book.types.find((block) => block.type === "lesson_listen_choice")!.rules.find((line) => line.id === "listen.instruction_not_allowed");
     expect(listen?.brief).toBeUndefined();
@@ -281,7 +295,7 @@ describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)",
 
   it("pełny opis w pierwszym bloku, w kolejnych odesłanie do niego (repeatOf), tekst linii bez zmian", () => {
     const lines = book.types.flatMap((block) =>
-      block.rules.filter((line) => line.id === "chapter.instruction_stimulus").map((line) => ({ type: block.type, line })),
+      block.rules.filter((line) => line.id === "test.each_block").map((line) => ({ type: block.type, line })),
     );
     expect(lines.length).toBeGreaterThan(1);
     const [first, ...rest] = lines;

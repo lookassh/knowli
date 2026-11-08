@@ -32,7 +32,8 @@ import { fakeObjectiveExercises } from "./fake-lesson-pool";
 /**
  * Generator fake'a agenta puli (etap 3 PR 2 #237, spec §5.2): zgłoszenia przechodzą prawdziwe
  * przyjmowanie (`precheckBatch` na wspólnym stanie lekcji), zagadnienia nie ujawniają sobie
- * rozwiązań, a rozdział domyka wymagane typy, słowa kart i ramy zagadnienia.
+ * rozwiązań. Rozdział od etapu 5a (#362) generuje przebieg bazowy (`fakePacketExercises`,
+ * `fake-lesson-pool.chapter.test.ts`); tutaj idzie przez ogólny generator etapów.
  */
 
 /** Materiał rozdziału z sekcjami „Słowa:” i „Zwroty:” (jak `tests/integration/lesson-agent-generation.test.ts`). */
@@ -46,10 +47,6 @@ const CHAPTER_MATERIAL = [
   "I am wearing …",
   "Put on your …",
 ].join("\n");
-
-/** Małe materiały rozdziału bez sekcji (jak `tests/integration/lesson-chapter.test.ts`): puste pokrycie. */
-const WEAR_MATERIAL = "I wear a coat. I wear boots. She wears a dress. We wear a skirt.";
-const CARD_MATERIAL = "There is a bed in my room. I like my bed.";
 
 const SCHOOL_MATERIAL = [
   "Zagadnienie 1: Rzeki Polski",
@@ -138,11 +135,8 @@ const LIST_GROUPS = [
   { kind: "frame", items: ["I am wearing …", "Put on your …"] },
 ] as const;
 
-/** Materiał bez list (puste pokrycie): trzy zagadnienia słów z kartą tematu. */
-const NO_LIST_GROUPS = [0, 1, 2].map(() => ({ kind: "words" as const, items: [] }));
-
 /** Rozdział z zagadnień fake'a: przykłady kart z etapu zagadnień, ustalone. */
-function chapterLesson(material: string, groups: Parameters<typeof chapterObjectives>[0] = LIST_GROUPS, poolSize = 0): Lesson {
+function chapterLesson(material: string, groups: Parameters<typeof chapterObjectives>[0] = LIST_GROUPS): Lesson {
   const objectives = chapterObjectives(groups);
   const built = buildDynamicTopicData(objectives, englishChapterSubject.id, "42", "Unit 1");
   const data = built.data!;
@@ -156,7 +150,6 @@ function chapterLesson(material: string, groups: Parameters<typeof chapterObject
     kinds: kindsOf(data),
     examples,
     examplesFixed: true,
-    poolSize,
   });
 }
 
@@ -286,7 +279,7 @@ describe("fakeObjectiveExercises — zagadnienia jednej lekcji nie ujawniają so
 
 describe("fakeObjectiveExercises — idempotencja materializacji (spec katalogu reguł §4.3)", () => {
   it("rekordy wszystkich typów fake'a: dwa przebiegi materializacji dają ten sam rekord", async () => {
-    const lessons = [grammarLesson(), await schoolLesson(), chapterLesson(CHAPTER_MATERIAL), chapterLesson(WEAR_MATERIAL, NO_LIST_GROUPS)];
+    const lessons = [grammarLesson(), await schoolLesson(), chapterLesson(CHAPTER_MATERIAL)];
     const types = new Set<string>();
     for (const lesson of lessons) {
       for (const input of inputsOf(lesson, emptyState(lesson))) {
@@ -299,52 +292,7 @@ describe("fakeObjectiveExercises — idempotencja materializacji (spec katalogu 
         }
       }
     }
-    expect([...types].sort()).toEqual(expect.arrayContaining(["lesson_choice", "lesson_cloze", "lesson_gap", "lesson_match", "lesson_open_answer", "lesson_order"]));
-  });
-});
-
-describe("fakeObjectiveExercises — rozdział zna zagadnienie", () => {
-  it.each([0, 40])("rozdział `words` i `frame` na materiale ze Słowa:/Zwroty: (pula %i)", (poolSize) => {
-    const lesson = chapterLesson(CHAPTER_MATERIAL, LIST_GROUPS, poolSize);
-    expect(lesson.objectives.map((objective) => objective.kind)).toEqual(["words", "words", "frame"]);
-    const { state, rejected, inputs } = generateLesson(lesson);
-    expect(rejected).toEqual([]);
-    for (const input of inputs) {
-      const types = new Set(poolOf(state, input.objective.id).map((entry) => entry.draft.exerciseType));
-      expect(input.targets.requiredTypes.length).toBeGreaterThan(0);
-      for (const group of input.targets.requiredTypes) expect(group.some((type) => types.has(type as never))).toBe(true);
-      const status = objectiveStatus(state, input.objective.id, lesson.ctx);
-      expect(status.missing).toEqual([]);
-      expect(status.complete).toBe(true);
-    }
-    expectNoLeaks(lesson, state);
-  });
-
-  it("zagadnienie ramy: każde zdanie rozwiązania (poza słuchaniem i parami) zawiera ramę z kart", () => {
-    const lesson = chapterLesson(CHAPTER_MATERIAL);
-    const { state } = generateLesson(lesson);
-    const frame = lesson.objectives[2]!;
-    const sentences = poolOf(state, frame.id)
-      .map((entry) => entry.draft)
-      .filter((draft) => !["lesson_listen_choice", "lesson_match"].includes(draft.exerciseType))
-      .map((draft) => (draft.clozeText ?? draft.stem ?? draft.answer).toLowerCase());
-    expect(sentences.length).toBeGreaterThan(0);
-    for (const sentence of sentences) expect(sentence.includes("i am wearing") || sentence.includes("put on your")).toBe(true);
-  });
-
-  it.each([
-    ["WEAR_MATERIAL", WEAR_MATERIAL],
-    ["CARD_MATERIAL", CARD_MATERIAL],
-  ])("rozdział na małym materiale (%s) — tłumaczenia trzech zagadnień rozłączne", (_name, material) => {
-    const lesson = chapterLesson(material, NO_LIST_GROUPS);
-    expect(lesson.objectives).toHaveLength(3);
-    const { state, rejected } = generateLesson(lesson);
-    expect(rejected).toEqual([]);
-    const translations = lesson.objectives.map((objective) => independentKeys(lesson, state, objective.id));
-    for (const set of translations) expect(set.size).toBeGreaterThan(0);
-    expectDisjoint(translations);
-    expectNoLeaks(lesson, state);
-    for (const objective of lesson.objectives) expect(objectiveStatus(state, objective.id, lesson.ctx).complete).toBe(true);
+    expect([...types].sort()).toEqual(expect.arrayContaining(["lesson_choice", "lesson_gap", "lesson_listen_choice", "lesson_open_answer"]));
   });
 });
 
@@ -437,25 +385,5 @@ describe("fakeObjectiveExercises — flagi przedmiotu, cytaty i zdania do unikan
         expect(exercise).not.toHaveProperty("hint");
       }
     }
-  });
-
-  it("avoidSentences: zdanie z listy zastąpione innym, liczba ćwiczeń bez zmian", () => {
-    const lesson = chapterLesson(CHAPTER_MATERIAL);
-    const input = inputsOf(lesson, emptyState(lesson))[0]!;
-    const answers = (generated: { exercises: unknown[] }): string[] =>
-      generated.exercises
-        .filter((raw) => (raw as { exerciseType: string }).exerciseType === "lesson_open_answer")
-        .map((raw) => (raw as { answer: string }).answer);
-    const base = fakeObjectiveExercises(input, 0);
-    const baseAnswers = answers(base);
-    expect(baseAnswers.length).toBeGreaterThan(0);
-    const avoided = baseAnswers[0]!;
-    const replaced = fakeObjectiveExercises({ ...input, pool: { ...input.pool, avoidSentences: [`  ${avoided.toUpperCase()}.  `] } }, 0);
-    const replacedAnswers = answers(replaced);
-    expect(replaced.exercises).toHaveLength(base.exercises.length);
-    expect(replacedAnswers).toHaveLength(baseAnswers.length);
-    const normalise = (text: string): string => text.toLowerCase().trim().replace(/\.$/u, "");
-    expect(replacedAnswers.map(normalise)).not.toContain(normalise(avoided));
-    expect(new Set(replacedAnswers.map(normalise)).size).toBe(replacedAnswers.length);
   });
 });
