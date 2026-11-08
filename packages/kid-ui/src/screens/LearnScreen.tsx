@@ -84,7 +84,7 @@ export function LearnScreen({
 }) {
   const { task, offline, busy } = screen;
   const [letterDraft, setLetterDraft] = useState<{ taskId: string; letters: Record<number, string> } | null>(null);
-  // ✕ w nagłówku pyta przed zakończeniem; „Koniec” w komunikatach o błędzie audio kończy od razu.
+  // Wszystkie przyciski „Koniec” pytają przed zakończeniem sesji.
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const endButtonRef = useRef<HTMLButtonElement>(null);
   const openEndConfirm = () => {
@@ -354,11 +354,11 @@ export function LearnScreen({
             {messages.kid.processing}
           </p>
         )}
-        {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
+        {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-guidance-error-end" aria-haspopup="dialog" aria-expanded={endConfirmOpen} disabled={busy} onClick={openEndConfirm}>{messages.kid.end}</ActionButton></div>}
         {questionAudioError && <div className="kid-notice" role="alert" data-testid="kid-question-audio-error"><p>{questionAudio?.errorText}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-question-audio-retry" onClick={() => void controller.playQuestionAudio()}>{questionAudio?.retryText}</ActionButton></div>}
         {/* „Posłuchaj i wybierz”: sam komunikat — ponawia głośnik w poleceniu, a „Pomiń” jest w zadaniu. */}
         {screen.taskAudioError && listenChoice && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{messages.kid.listenStimulusFailed}</p></div>}
-        {screen.taskAudioError && !listenChoice && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.endNow()}>{messages.kid.end}</ActionButton></div>}
+        {screen.taskAudioError && !listenChoice && <div className="kid-notice" role="alert" data-testid="kid-task-audio-error"><p>{screen.taskAudioError === "blocked" ? messages.errors.picture_audio_blocked : messages.errors.picture_audio_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-retry" onClick={() => void controller.playTaskAudio()}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-task-audio-end" aria-haspopup="dialog" aria-expanded={endConfirmOpen} disabled={busy} onClick={openEndConfirm}>{messages.kid.end}</ActionButton></div>}
       </div>
 
       {offline ? (

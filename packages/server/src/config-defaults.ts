@@ -33,8 +33,8 @@ export const CONFIG_DEFAULTS = {
 
   // ── Grader i ocena aktywności sesji (web) ──
   // Połączenie i limity; włączony z UMIEM_GRADER_API_KEY albo wspólnym
-  // OPENROUTER_API_KEY. Prywatność odpowiedzi dzieci ustawia się w OpenRouter
-  // albo przez UMIEM_GRADER_PROVIDER_DATA_COLLECTION=deny.
+  // OPENROUTER_API_KEY. Prywatność odpowiedzi dzieci na endpoincie OpenRouter:
+  // domyślne UMIEM_GRADER_PROVIDER_DATA_COLLECTION=deny (poniżej, warunkowo).
   UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1",
   UMIEM_GRADER_MODEL: "google/gemini-3.8-flash",
   UMIEM_GRADER_TIMEOUT_MS: "8000",
@@ -103,6 +103,13 @@ const CONDITIONAL_DEFAULTS: readonly { name: string; value: string; when: (env: 
     name: "UMIEM_GRADER_REASONING",
     value: "low",
     when: (env) => isOpenRouterEndpoint(env.UMIEM_GRADER_BASE_URL) && env.UMIEM_GRADER_MODEL === CONFIG_DEFAULTS.UMIEM_GRADER_MODEL,
+  },
+  // Odpowiedzi dziecka (grader i ocena aktywności): domyślnie wyklucz dostawców
+  // zbierających dane, niezależnie od modelu; jawne allow w env wygrywa.
+  {
+    name: "UMIEM_GRADER_PROVIDER_DATA_COLLECTION",
+    value: "deny",
+    when: (env) => isOpenRouterEndpoint(env.UMIEM_GRADER_BASE_URL),
   },
   // Stawka obrazu dotyczy tylko domyślnego modelu, jakości i rozmiaru; po zmianie
   // obrazu bez własnej stawki koszty obrazów są `unknown`, a nie liczone starą.

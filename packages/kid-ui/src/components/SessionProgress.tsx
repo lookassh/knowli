@@ -20,7 +20,7 @@ export const PEBBLE_LIMIT = 20;
  * current, upcoming), or a slim bar for very long sessions, plus the
  * "Jeszcze N" pill once the end is near. A streak of correct answers makes
  * the row hop once and drops a star from the last done pebble. Pebbles and
- * star are decorative (aria-hidden); the pill stays the accessible text.
+ * star are decorative (aria-hidden); the pill is the accessible live-region text.
  * Only transform and opacity move; a growing `total` just adds pebbles. */
 export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0, closingStory = false }: {
   /** Label count, or null when the label is not shown yet. */
@@ -110,6 +110,8 @@ export function SessionProgress({ remaining, total = 0, done = 0, milestone = 0,
           key={remaining}
           className={`${classes.label} kid-remaining`}
           data-testid="kid-remaining"
+          role="status"
+          aria-live="polite"
           initial={kidProgressPopInitial}
           animate={kidProgressPopAnimate}
           transition={kidSpringGentle}

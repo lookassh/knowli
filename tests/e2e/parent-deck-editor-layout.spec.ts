@@ -4,9 +4,10 @@ import { messages } from "@learning/contracts";
 /**
  * Edytor zestawu na Mantine (plan 2026-10-29-parent-ui-mantine, faza 5b;
  * szkic zaakceptowany 2026-10-29): telefon bez przewijania w poziomie,
- * przypięty pasek „Zapisz zmiany / Publikuj” nad dolną nawigacją, akcje
- * mediów w menu ⋯, ustawienia zestawu zwinięte na telefonie, tryb ciemny.
- * API rodzica zaślepione w przeglądarce.
+ * przypięty pasek „Zapisz zmiany / Publikuj” nad dolną nawigacją (z podsumowaniem
+ * mediów w przygotowaniu, #397), odsłuch słówka przyciskiem w nagłówku karty
+ * (#398), pozostałe akcje mediów w menu ⋯, ustawienia zestawu zwinięte na
+ * telefonie, tryb ciemny. API rodzica zaślepione w przeglądarce.
  */
 
 const deckId = "00000000-0000-4000-8000-0000000000d1";
@@ -33,6 +34,8 @@ const draft = {
     { itemRevisionId: revision(0), role: "target_audio", state: "approved", assetId: asset(0) },
     { itemRevisionId: revision(0), role: "example_audio", state: "approved", assetId: asset(1) },
     { itemRevisionId: revision(1), role: "target_audio", state: "approved", assetId: asset(2) },
+    // jedno medium w przygotowaniu i jedno nieudane: podsumowanie przy pasku publikacji (#397)
+    { itemRevisionId: revision(1), role: "example_audio", state: "pending", assetId: null },
     { itemRevisionId: revision(2), role: "target_audio", state: "failed", assetId: null },
   ],
 };
@@ -87,9 +90,11 @@ test("telefon: pasek akcji nad dolną nawigacją, cele ≥ 44 px, bez przewijani
     // pasek jest przyklejony nad nawigacją i jej nie zasłania
     expect(bar.y + bar.height).toBeLessThanOrEqual(nav.y + 1);
     expect(bar.y + bar.height).toBeGreaterThan(viewport.height - 140);
-    for (const id of ["save-items", "publish-deck", "item-menu-0", "editor-back", "add-item"]) {
+    // item-play-2: nagłówek karty z długim słowem — głośnik (#398) nie może wypaść poza ekran
+    for (const id of ["save-items", "publish-deck", "item-menu-0", "item-play-0", "item-play-2", "editor-back", "add-item"]) {
       const box = (await page.getByTestId(id).boundingBox())!;
       expect(box.height, id).toBeGreaterThanOrEqual(44);
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
       expect(box.x + box.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
     }
 
@@ -101,17 +106,39 @@ test("telefon: pasek akcji nad dolną nawigacją, cele ≥ 44 px, bez przewijani
   }
 });
 
-test("akcje mediów są w menu ⋯ karty, odsłuch prosi o właściwy plik", async ({ page }) => {
+test("odsłuch słówka jest przyciskiem w nagłówku karty, pozostałe akcje mediów w menu ⋯", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openEditor(page);
-  await expect(page.getByTestId("item-play-0")).toHaveCount(0);
+  // #398: głośnik w nagłówku karty bez otwierania menu, cel co najmniej 44×44 px
+  const play = page.getByTestId("item-play-0");
+  await expect(play).toBeVisible();
+  await expect(play).toHaveAccessibleName(messages.decks.listenItem.replace("{n}", "1"));
+  const playBox = (await play.boundingBox())!;
+  expect(playBox.width).toBeGreaterThanOrEqual(44);
+  expect(playBox.height).toBeGreaterThanOrEqual(44);
+  // nieudane nagranie: przycisk widoczny, ale nieaktywny
+  await expect(page.getByTestId("item-play-2")).toBeDisabled();
   await page.getByTestId("item-menu-0").click();
   await expect(page.getByTestId("item-play-example-0")).toBeVisible();
   await expect(page.getByTestId("item-regen-audio-0")).toBeVisible();
+  // odsłuch słówka nie jest zduplikowany w menu — jeden przycisk w nagłówku
+  await expect(page.getByTestId("item-play-0")).toHaveCount(1);
+  await page.keyboard.press("Escape");
   const played = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/v1/media/${asset(0)}`);
   await page.getByTestId("item-play-0").click();
   await played;
   await expect(page.getByTestId("item-audio-state-2")).toContainText("nie udało");
+});
+
+test("pasek publikacji pokazuje media w przygotowaniu i nieudane przed kliknięciem (#397)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openEditor(page);
+  await expect(page.getByTestId("publish-media-summary")).toHaveText(
+    messages.decks.publishMediaSummary.replace("{pending}", "1").replace("{failed}", "1"),
+  );
+  // informacja, nie klientowa blokada: o publikacji nadal decyduje serwer po kliknięciu
+  await expect(page.getByTestId("publish-deck")).toBeEnabled();
+  await expectNoHorizontalOverflow(page);
 });
 
 test("zmiana pola pokazuje niezapisane zmiany w pasku i blokuje publikację", async ({ page }) => {

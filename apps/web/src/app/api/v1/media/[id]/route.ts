@@ -35,7 +35,10 @@ const dispatch = withApi<RouteContext>(async (_request, context) => {
       "content-type": media.mimeType,
       // awaryjny oryginał po błędzie transformacji ilustracji nie może
       // przypiąć się na rok — docelowo ten URL zwraca wariant WebP
-      "cache-control": media.immutableCache ? "public, max-age=31536000, immutable" : "public, max-age=300",
+      // typ pochodzi z bazy — przeglądarka nie może go zgadywać po treści (#399);
+      // private (nie public): współdzielone cache nie trzymają mediów po usunięciu zestawu
+      "x-content-type-options": "nosniff",
+      "cache-control": media.immutableCache ? "private, max-age=31536000, immutable" : "private, max-age=300",
       ...(media.byteCount !== null ? { "content-length": String(media.byteCount) } : {}),
     },
   });

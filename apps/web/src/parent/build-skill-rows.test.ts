@@ -51,7 +51,7 @@ describe("buildSkillRows", () => {
       item("c", { listening: "not_assessed", spelling: "mastered" }),
     ]));
     const listening = rows.find((row) => row.skill === "listening")!;
-    expect(listening).toMatchObject({ total: 3, known: 2, segments: { mastered: 1, needsConfirmation: 1, practicing: 0, notAssessed: 1 } });
+    expect(listening).toMatchObject({ total: 3, known: 1, segments: { mastered: 1, needsConfirmation: 1, practicing: 0, notAssessed: 1 } });
     const spelling = rows.find((row) => row.skill === "spelling")!;
     expect(spelling).toMatchObject({ total: 3, known: 1, segments: { mastered: 1, needsConfirmation: 0, practicing: 2, notAssessed: 0 } });
     for (const row of rows) {
@@ -59,12 +59,12 @@ describe("buildSkillRows", () => {
     }
   });
 
-  it("needs_confirmation po zmianie znaczenia nie wchodzi do znanych", () => {
+  it("needs_confirmation nie wchodzi do znanych — główna liczba to tylko mastered (#396)", () => {
     const rows = buildSkillRows(progressWith([
       item("a", { listening: "needs_confirmation" }, true),
       item("b", { listening: "needs_confirmation" }, false),
     ]));
-    expect(rows.find((row) => row.skill === "listening")).toMatchObject({ known: 1 });
+    expect(rows.find((row) => row.skill === "listening")).toMatchObject({ known: 0, segments: { mastered: 0, needsConfirmation: 2, practicing: 0, notAssessed: 0 } });
   });
 
   it("needs_reconfirmation liczy się jako bursztynowy segment do potwierdzenia", () => {

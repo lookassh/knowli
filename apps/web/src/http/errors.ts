@@ -56,6 +56,23 @@ function toApiError(code: AppErrorCode, requestId: string, details?: unknown): A
   };
 }
 
+/**
+ * Bezpieczna etykieta przyczyny do logu: kod AppError, kod błędu sterownika
+ * (np. SQLSTATE) albo nazwa klasy błędu. Nigdy treść ani sam obiekt —
+ * komunikaty i pola przyczyn mogą nieść treść żądania/SQL z parametrami
+ * (CWE-532; ta sama dyscyplina co `appErrorEncoder` w orpc/handler.ts).
+ */
+function safeCauseLabel(cause: unknown): string {
+  if (cause instanceof AppError) {
+    return cause.code;
+  }
+  if (cause instanceof Error) {
+    const code = (cause as { code?: unknown }).code;
+    return typeof code === "string" && code !== "" ? code : cause.name;
+  }
+  return "";
+}
+
 export function errorResponse(error: unknown, requestId = randomUUID()): Response {
   let appError: AppError;
   if (error instanceof AppError) {
@@ -66,10 +83,13 @@ export function errorResponse(error: unknown, requestId = randomUUID()): Respons
     const mapped = mapTriggerError(error);
     appError = mapped ?? new AppError("internal", { cause: error });
   }
-  // Log bez treści żądania: kod, requestId, komunikat przypadku użycia
-  // (własne teksty angielskie, nie SQL) i przyczyna dla korelacji.
-  console.error("[api]", appError.code, requestId, appError.message, appError.cause ?? "");
-  return Response.json(toApiError(appError.code, requestId, appError.details), {
+  const body = toApiError(appError.code, requestId, appError.details);
+  // Log wyłącznie bezpiecznych metadanych: kod, requestId, komunikat z katalogu
+  // (nigdy appError.message — własne komunikaty mogą nieść treść żądania)
+  // i etykieta przyczyny. Surowy obiekt przyczyny nie trafia do logu (#401).
+  const underlyingCause = error instanceof AppError ? error.cause : error;
+  console.error("[api]", appError.code, requestId, body.message, safeCauseLabel(underlyingCause));
+  return Response.json(body, {
     status: appError.status,
   });
 }

@@ -177,21 +177,33 @@ test("karta odsłonięcia po „Nie pamiętam” odtwarza polecenie zadania, nie
   expect(requested).not.toContain(audioIds.dont_remember);
 });
 
-test("awaria pliku dźwiękowego pokazuje ponowienie i pozwala zakończyć sesję", async ({ page }) => {
+test("awaria pliku dźwiękowego pokazuje ponowienie i wymaga potwierdzenia zakończenia sesji", async ({ page }) => {
   const fixture = pictureVocabularyFixture();
   const badAudioId = "30000000-0000-4000-8000-000000000001";
+  let badAudioRequests = 0;
   const [exposure, ...rest] = fixture.tasks;
   if (!exposure || exposure.prompt.kind !== "picture_exposure") throw new Error("picture exposure fixture missing");
   fixture.tasks = [{ ...exposure, prompt: { ...exposure.prompt, audioAssetId: badAudioId } }, ...rest];
   await installKidUiFixture(page, fixture);
-  await page.route(`**/api/v1/media/${badAudioId}`, (route) => route.fulfill({ status: 500, body: "audio unavailable" }));
+  await page.route(`**/api/v1/media/${badAudioId}`, (route) => { badAudioRequests += 1; return route.fulfill({ status: 500, body: "audio unavailable" }); });
   await page.goto("/");
   await page.getByTestId("kid-profile").click();
   await page.getByTestId("kid-deck").first().click();
   await expect(page.getByTestId("kid-task-audio-error")).toContainText("Nagranie jest chwilowo niedostępne");
   await expect(page.getByTestId("kid-task-audio-error")).toContainText("Spróbuj ponownie lub zakończ naukę.");
   await expect(page.getByTestId("kid-task-audio-retry")).toBeVisible();
-  await page.getByTestId("kid-task-audio-error").getByText("Koniec").click();
+  const requestsBeforeRetry = badAudioRequests;
+  await page.getByTestId("kid-task-audio-end").click();
+  await expect(page.getByTestId("kid-end-confirm")).toBeVisible();
+  await expect(page.getByTestId("kid-summary")).toHaveCount(0);
+  await page.getByTestId("kid-end-continue").click();
+  await expect(page.getByTestId("kid-end-confirm")).toHaveCount(0);
+  await expect(page.getByTestId("kid-task-audio-error")).toBeVisible();
+  await page.getByTestId("kid-task-audio-retry").click();
+  await expect.poll(() => badAudioRequests).toBeGreaterThan(requestsBeforeRetry);
+  await expect(page.getByTestId("kid-task-audio-error")).toBeVisible();
+  await page.getByTestId("kid-task-audio-end").click();
+  await page.getByTestId("kid-end-confirm-end").click();
   await expect(page.getByTestId("kid-summary")).toBeVisible();
 });
 
