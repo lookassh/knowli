@@ -46,7 +46,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "translates, then the task; a bare task such as 'Wybierz słowo' is not enough. " +
     "When the cards list words, the checked part (gap word, correct option, answer, left sides of pairs, group items) is a " +
     "word of THIS objective's cards, at least two in pairs and groups; when the cards show a sentence frame, the solved " +
-    "sentence uses THIS objective's frame and the checked part may be the frame or the word filling it. The checked part " +
+    "sentence uses THIS objective's frame and the checked part holds the frame (its key word or phrase); the word that " +
+    "fills the frame alone is checked only when the child also writes or arranges the frame. The checked part " +
     "is never a function word alone. " +
     "Here the cards are the child's word list: exercises on the card words are expected (the card teaches the word); only " +
     "never use a card example sentence as an answer. Card examples use this objective's frame or words together with other " +
@@ -67,16 +68,18 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "Distractors are plausible: the same category as the correct option, taken from the material. " +
     "lesson_gap: answer is the missing chapter word or phrase and focus is that checked word. Vary the answers: no more than 2 lesson_gap exercises of one " +
     "objective may have the same answer. In an objective built on a sentence frame (e.g. I'm wearing (a) ...) vary " +
-    "which part of the frame the gap checks: the frame's key word (wearing, like), a short phrase that holds the key " +
-    "word together with a function word ('I'm wearing', 'are you wearing' — never a function word alone), " +
-    "or the word that fills the frame (the clothes item, the colour, the weather word). " +
+    "which part of the frame the gap checks: the frame's key word (wearing, like), or a short phrase that holds the key " +
+    "word together with a function word ('I'm wearing', 'are you wearing' — never a function word alone). " +
     "lesson_order: items are the words of one English sentence built on a chapter frame, in the correct order " +
     "(4 to 7 items), and the sentence has exactly one correct word order — no parts " +
     "that could move, such as today at the start or at the end. " +
     "lesson_open_answer: instructionPl is exactly 'Przetłumacz na angielski.'; " +
     "prompt is a short Polish sentence to translate; answer is its English translation using only " +
     "chapter words; acceptedAnswers are other correct translations built from chapter words. focus is the run of the " +
-    "answer's words that holds the checked word or the frame part. Never repeat the answer or an accepted answer in the prompt.",
+    "answer's words that holds the checked word or the frame part. Never repeat the answer or an accepted answer in the prompt. " +
+    "The other exercises of the lesson are written separately and an answer equal to any of their sentences or to a card " +
+    "example is discarded: build each answer from this objective's frame or word together with two other chapter words " +
+    "in a combination unlikely elsewhere (e.g. 'Mam na sobie żółte kozaki i zielony szalik.'), every answer different.",
   // Semantyka typów z własną gałęzią schematu (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
     lesson_match:
