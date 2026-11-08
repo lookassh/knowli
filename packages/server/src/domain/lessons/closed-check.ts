@@ -166,6 +166,8 @@ export function closedCheckVerdict(draft: LessonExerciseDraft, results: readonly
     const choices = choicesOf(draft);
     return fieldVerdict(results[0], choices, keyChoices(draft, choices, normalizer), normalizer);
   }
+  // Ćwiczenie bez pól nie ma czego sprawdzić — nie przechodzi po cichu (dziś blokują je minima struktury).
+  if (fields.length === 0) return { pass: false, code: "check_unknown" };
   const verdicts = fields.map((field, index) => fieldVerdict(results[index], field.choices, field.key, normalizer));
   return verdicts.find((entry) => !entry.pass && entry.code === "check_unknown") ?? verdicts.find((entry) => !entry.pass) ?? { pass: true };
 }

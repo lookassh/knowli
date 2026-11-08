@@ -18,7 +18,7 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "../probe-helper
  * zgodą właściciela. Zmienne: `UMIEM_PROBE_JUDGE_MODEL` (wymagany), `UMIEM_PROBE_JUDGE_OUT` (verdicts.csv
  * poza repozytorium, nie nadpisywany), `UMIEM_PROBE_COSTS` (rejestr), `UMIEM_PROBE_JUDGE_BUDGET_USD`
  * (rezerwa wpisu tymczasowego, domyślnie 2), `UMIEM_PROBE_JUDGE_UNKNOWN_CALL_USD` (szacunek żądania bez
- * kosztu, domyślnie 0,06). Na konsolę tylko liczby.
+ * kosztu, domyślnie 0,06). Na konsolę tylko liczby i komunikat błędu żądania dostawcy (bez treści wierszy).
  */
 
 const require = createRequire(import.meta.url);

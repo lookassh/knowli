@@ -206,6 +206,10 @@ describe("closedCheckVerdict for multi-field types", () => {
     expect(verdictOf(match, [ok[0], ok[1]])).toEqual({ pass: false, code: "check_unknown" });
   });
 
+  it("an exercise without fields never passes", () => {
+    expect(verdictOf({ ...match, pairs: [], extraRight: [] }, [])).toEqual({ pass: false, code: "check_unknown" });
+  });
+
   it("group and cloze fields", () => {
     expect(verdictOf(group, [{ answers: ["Ubrania"] }, { answers: ["Ubrania"] }, { answers: ["Pogoda"] }, { answers: ["Pogoda"] }])).toEqual({ pass: true });
     expect(verdictOf(group, [{ answers: ["Ubrania", "Pogoda"] }, { answers: ["Ubrania"] }, { answers: ["Pogoda"] }, { answers: ["Pogoda"] }])).toEqual({ pass: false, code: "check_wrong_set" });

@@ -44,7 +44,9 @@ function coverageOf(forms, dump) {
   const cards = (dump.objectives ?? []).flatMap((objective) => [objective.card ?? "", ...strings(objective.cards ?? [])]);
   const haystack = [...cards, ...(dump.exercises ?? []).flatMap(englishFields)].join("\n").toLowerCase().replace(/[’‘]/gu, "'");
   const missing = forms.filter((alternatives) => !alternatives.some((form) => mentions(haystack, form.replace(/[’‘]/gu, "'"))));
-  return { total: forms.length, missing: missing.map((alternatives) => alternatives[0]), leaks: (dump.exposureLeaks ?? []).length };
+  // Zrzut bez `exposureLeaks` (np. `probe:agent`, ujawnienia w `finalCheck`) dałby fałszywe 0 — błąd zamiast liczby.
+  if (!Array.isArray(dump.exposureLeaks)) throw new Error("zrzut bez exposureLeaks — tylko zrzuty probe:chapter");
+  return { total: forms.length, missing: missing.map((alternatives) => alternatives[0]), leaks: dump.exposureLeaks.length };
 }
 
 if (require.main === module) {
