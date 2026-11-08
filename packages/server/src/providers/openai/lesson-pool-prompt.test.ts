@@ -2,26 +2,21 @@ import { describe, expect, it } from "vitest";
 import { agentObjectivesOf } from "../../domain/lessons/agent/capable";
 import { createLessonAgentState } from "../../domain/lessons/agent/state";
 import { cardExposureSources } from "../../domain/lessons/card-exposure-sources";
-import { lessonPoolMinimums } from "../../domain/lessons/lesson-coverage";
-import { ENGINE_CATALOGS, type LessonRule } from "../../domain/lessons/rules/catalog";
-import { ruleBookContextFor } from "../../domain/lessons/rules/rule-book";
 import { englishChapterSubject } from "../../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../domain/lessons/subjects/school/module";
 import { validateDynamicTopicData } from "../../domain/lessons/topic-resolution";
-import type { LessonExerciseType, LessonTopic, SubjectModule } from "../../domain/lessons/types";
+import type { LessonTopic, SubjectModule } from "../../domain/lessons/types";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../../modules/materials/lessons/lesson-drafts";
 import { lessonAgentLimits } from "../../modules/materials/lessons/lesson-pool-agent";
 import { objectiveAgentInput } from "../../modules/materials/lessons/lesson-pool-agent-input";
 import type { LessonObjectiveAgentInput } from "../../ports/ai";
 import { FakeLlmProvider } from "../fake";
-import { objectiveInstructions } from "./lesson-pool-agent";
 
 /**
- * Złożony prompt podagenta z księgi reguł (spec katalogu reguł §2.4 pkt 5–6, §3) na fikcyjnych
- * materiałach z testów, dla zagadnienia z najdłuższym promptem każdego przedmiotu: księga reguł jest
- * w prompcie, reguły typów niedozwolonych w nim nie występują, zdań potoku nie ma, `Target` niesie
- * minima publikacji, migawka per przedmiot (zmiana reguły widać w diffie PR) i budżet długości.
+ * Migawki promptów przebiegu bazowego (paczka i kontrola zamkniętych) na fikcyjnych materiałach z testów;
+ * zmiana reguły albo pola przedmiotu widać w diffie PR. Prompt podagenta agenta nie ma już przedmiotu
+ * produkcyjnego (rozdział od etapu 5a, szkoła od 5b) — znika z agentem w 5c.
  */
 
 const CHAPTER_MATERIAL = ["Słowa:", "coat — płaszcz", "boots — buty", "scarf — szalik", "gloves — rękawiczki", "Zwroty:", "I am wearing …", "Put on your …"].join("\n");
@@ -113,91 +108,7 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
 }
 
 const FIXTURES = await fixtures();
-// Rozdział od etapu 5a (#362) nie przechodzi przez agenta — migawka jego promptu podagenta usunięta.
-const SUBJECT_IDS = ["school"] as const;
-
-/**
- * Budżet długości promptu per przedmiot (rozstrzygnięcie kontrolera Task 8b: ≤ 1,5 × długości sprzed
- * katalogu reguł; po cięciach przeglądu końcowego I8 obniżony do 1,4 ×). Pomiar „przed” 2026-11-06 na HEAD
- * 2ca25cf2, te same fikstury i zagadnienia: gramatyka `present_simple.question` 14 841, szkoła `rzeki_polski`
- * 17 344, rozdział `part_1` 17 259 znaków.
- */
-const PROMPT_LENGTH_BEFORE: Readonly<Partial<Record<(typeof SUBJECT_IDS)[number], number>>> = {
-  school: 17_344,
-};
-const PROMPT_BUDGET_FACTOR = 1.4;
-
-/** Zdania potoku sprzeczne z trybem narzędzi (spec §3 „Usuwane bez odpowiednika”). */
-const REMOVED_PIPELINE_PHRASES = [
-  "Return strict JSON",
-  "no markdown",
-  "exercises per objective in this batch",
-  "160-exercise",
-  "never exceed this batch",
-];
-
-/** Reguły wszystkich katalogów przedmiotu (rdzeń, lekcja, przedmiot). */
-function rulesOf(subject: SubjectModule): [string, LessonRule][] {
-  return [...ENGINE_CATALOGS, subject.rules].flatMap((catalog) => Object.entries(catalog));
-}
-
-describe.each(SUBJECT_IDS)("prompt podagenta z księgi reguł — %s", (subjectId) => {
-  const { subject, topic, input } = FIXTURES[subjectId]!;
-  const prompt = objectiveInstructions(input);
-  const allowed = input.pool.objectives[0]!.exerciseTypes as readonly LessonExerciseType[];
-  const ctx = ruleBookContextFor(subject, topic.id, input.pool.objectives[0]!.id, allowed, allowed.includes("lesson_listen_choice"));
-
-  it("księga reguł zagadnienia jest w prompcie: reguła z opisem po id, reguły `brief` poza promptem", () => {
-    const book = input.pool.ruleBook;
-    const lines = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat();
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      if (line.brief === true) expect(prompt, line.id).not.toContain(`[${line.id}]`);
-      else expect(prompt, line.id).toContain(`[${line.id}] ${line.text}`);
-    }
-    for (const block of book.types) {
-      expect(prompt).toContain(`${block.type} — ${block.summary}`);
-      if (block.example !== undefined) expect(prompt).toContain(block.example);
-      if (block.subjectRule !== undefined) expect(prompt).toContain(block.subjectRule);
-    }
-  });
-
-  it("każda pasująca reguła reject/sanitize jest w prompcie, reguła typu niedozwolonego — nie", () => {
-    for (const [id, rule] of rulesOf(subject)) {
-      if (rule.kind === "internal") {
-        expect(prompt, id).not.toContain(`[${id}]`);
-        continue;
-      }
-      const typeMatches = rule.types === undefined || rule.types.some((type) => allowed.includes(type));
-      if (!typeMatches || rule.promptBrief === true) expect(prompt, id).not.toContain(`[${id}]`);
-      else if (rule.when === undefined || rule.when(ctx)) expect(prompt, id).toContain(`[${id}]`);
-    }
-  });
-
-  it("bez zdań potoku i bez promptNotes", () => {
-    for (const phrase of REMOVED_PIPELINE_PHRASES) expect(prompt).not.toContain(phrase);
-    expect(input).not.toHaveProperty("promptNotes");
-  });
-
-  it("Target zawiera minima publikacji ze stałych przedmiotu", () => {
-    const minima = lessonPoolMinimums(subject);
-    const target = prompt.slice(prompt.indexOf("Target:"));
-    expect(target).toContain(
-      `Publication minima of the complete objective pool (exercises already in the lesson count too): ${minima.guided} guided, ` +
-        `${minima.productive} productive and ${minima.independent} independent`,
-    );
-  });
-
-  it("migawka promptu", async () => {
-    await expect(prompt).toMatchFileSnapshot(`./__snapshots__/lesson-pool-prompt.${subjectId}.txt`);
-  });
-
-  // Tematy „to be” i Present Continuous nie mają pomiaru „przed” (migawki od przeglądu końcowego i Task 18); budżet tylko dla zmierzonych zagadnień.
-  it.runIf(PROMPT_LENGTH_BEFORE[subjectId] !== undefined)(`budżet długości: najwyżej ${PROMPT_BUDGET_FACTOR} × długości sprzed katalogu reguł`, () => {
-    expect(prompt.length).toBeLessThanOrEqual(Math.floor(PROMPT_LENGTH_BEFORE[subjectId]! * PROMPT_BUDGET_FACTOR));
-  });
-});
-
+// Szkoła (etap 5b) i rozdział (5a) nie przechodzą przez agenta — migawki promptu podagenta usunięte.
 describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => {
   it("paczka PC affirmative × lesson_choice z przykładami kart i obie kontrole", async () => {
     const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");

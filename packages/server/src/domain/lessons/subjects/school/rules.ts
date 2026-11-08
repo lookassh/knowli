@@ -144,22 +144,11 @@ export const SCHOOL_RULES = defineRules({
     field: "hint",
     kind: "sanitize",
     promptBrief: true,
-    // Typy szkoły poza pytaniem otwartym i kartą (literały: `module.ts` importuje ten plik; zgodność pilnuje test).
-    types: ["lesson_choice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze", "lesson_gap", "lesson_calculation", "lesson_keywords"],
-    description: "hint is used only on lesson_open_answer; on other types it is removed and the result notes it.",
-  },
-  "hint.reveals_words": {
-    field: "hint",
-    kind: "sanitize",
-    types: ["lesson_open_answer"],
     priority: "hint",
-    description:
-      "Give each lesson_open_answer a short hint whenever the material allows a safe one: it says where in the material " +
-      "to look (what that part is about, in the question's words) or what to think about; the hint never names or " +
-      "describes the answer, even indirectly, and stays null only when no such hint exists. The hint is " +
-      "removed (the exercise stays) when it shares words, in any word form, with the answer, an accepted variant or a " +
-      "required element: with one or two content words in such a text it may not contain all of them, with three or " +
-      "more it must contain fewer than half. Words that also appear in the question and function words do not count.",
+    // Wszystkie typy szkoły poza kartą (literały: `module.ts` importuje ten plik; zgodność pilnuje test). Od etapu 5b
+    // szkoła nie generuje podpowiedzi — dziecko nie widzi podpowiedzi pytania otwartego; rodzic może ją dopisać w edytorze.
+    types: ["lesson_choice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze", "lesson_gap", "lesson_open_answer", "lesson_calculation", "lesson_keywords"],
+    description: "School exercises have no hint: leave hint null; a hint in the output is removed and the result notes it.",
   },
 });
 

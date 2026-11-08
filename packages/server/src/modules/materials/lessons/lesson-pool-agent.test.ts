@@ -4,8 +4,7 @@ import { A, B, choice, gap, open, subject as fixtureSubject, topic } from "../..
 import { withAgentPolicy } from "../../../domain/lessons/testing/agent-test-subject";
 import { englishChapterSubject } from "../../../domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
-import { schoolAgentPolicy } from "../../../domain/lessons/subjects/school/agent-policy";
-import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
+import { agentSchoolPolicy as schoolAgentPolicy, agentSchoolSubject as schoolSubject } from "../../../domain/lessons/testing/agent-school-subject";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { LessonPoolAgentProvider } from "../../../ports/ai";
 import { GenerationProviderError } from "../../../ports/generation-error";

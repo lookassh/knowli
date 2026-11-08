@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_TEXT_LENGTH } from "../pool-validation";
-import { schoolSubject } from "../subjects/school/module";
-import { schoolAgentPolicy } from "../subjects/school/agent-policy";
+import { agentSchoolPolicy as schoolAgentPolicy, agentSchoolSubject as schoolSubject } from "../testing/agent-school-subject";
 import { englishGrammarSubject } from "../subjects/english-grammar/module";
 import { A, B, choice, contextFor, gap, NA_CHECKS, open, stateWith, subject } from "../testing/agent-admission-fixtures";
 import { withAgentPolicy } from "../testing/agent-test-subject";
@@ -585,18 +584,6 @@ describe("precheckBatch i admitBatch — sanityzacja szkoły (spec katalogu regu
     ...overrides,
   });
 
-  it("podpowiedź zdradzająca odpowiedź: ćwiczenie przechodzi bez podpowiedzi, z notą reguły", () => {
-    const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer({ hint: "Przykładem jest Mierzeja Wiślana" })], context);
-    expect(prechecked[0]).toMatchObject({ pass: true, sanitized: ["hint"], quotesSnapped: 1 });
-    const notes = (prechecked[0] as { notes: readonly LessonRuleIssue[] }).notes;
-    expect(notes.map(formatRuleReason)).toEqual([
-      '[hint.reveals_words] hint: removed: shares "wiślana" with the answer "Mierzeja Wiślana"; the exercise is in the pool ' +
-        "without a hint (to give it a safe hint, remove_exercise it and submit it again)",
-    ]);
-    const admitted = admitBatch(state(), OBJECTIVE, prechecked, [NA_CHECKS], context);
-    expect(admitted.results[0]).toEqual({ accepted: "ex1", sanitized: ["hint"], unchecked: false, notes, removedVariants: [], quotesSnapped: 1 });
-    expect(poolOf(admitted.state, OBJECTIVE)[0]!.draft).not.toHaveProperty("hint");
-  });
 
   it("podpowiedź kierująca rozumowaniem zostaje, a ćwiczenie bez not", () => {
     const prechecked = precheckBatch(state(), OBJECTIVE, [openAnswer({ hint: "Pomyśl o pasie lądu nad Bałtykiem." })], context);

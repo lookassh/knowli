@@ -146,12 +146,19 @@ describe("przedmiot school", () => {
     expect(schoolSubject.sourceQuotes).toBe(true);
     expect(schoolSubject.materialSubjectTitle).toBe("parent");
     expect(Object.keys(schoolSubject.prompts.typeRules ?? {}).sort()).toEqual(
-      ["lesson_calculation", "lesson_cloze", "lesson_group", "lesson_keywords", "lesson_match"],
+      ["lesson_calculation", "lesson_choice", "lesson_cloze", "lesson_group", "lesson_keywords", "lesson_match", "lesson_open_answer"],
     );
     expect(schoolSubject.prompts.typeRules?.lesson_match).toContain("taken from the parent material");
     // Wskazówki rachunku i słów kluczowych w blokach typów (dawniej osobne akapity adaptera).
     expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("Calculations never replace the publication minima in Target.");
     expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("outside the stage split");
+    // Etap 5b: dydaktyka dawnych kontroli w polach przedmiotu, bez instrukcji podpowiedzi.
+    expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("never a concept the question itself names");
+    expect(schoolSubject.prompts.typeRules?.lesson_open_answer).toContain("never drop an element the question genuinely requires");
+    expect(schoolSubject.prompts.typeRules?.lesson_open_answer).toContain("never refer to the text");
+    expect(schoolSubject.prompts.typeRules?.lesson_cloze).toContain("never two gaps whose words could be swapped");
+    expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("even when more are ordered");
+    expect(JSON.stringify(schoolSubject.prompts)).not.toMatch(/short hint/u);
     // Zagadnienia szkoły nie mają rodzaju ani własnych reguł etapu zagadnień.
     expect(schoolSubject.prompts.objectivesRules).toBeUndefined();
   });
@@ -551,9 +558,9 @@ describe("uzupełnij tekst (lesson_cloze)", () => {
     expect(validatePool([clozeDraft(), other], schoolSubject, topic).valid).toHaveLength(2);
   });
 
-  it("reguła podpowiedzi tylko w pytaniu otwartym obejmuje wszystkie inne typy szkoły; profil promptów jej nie powtarza", () => {
+  it("reguła podpowiedzi obejmuje wszystkie typy szkoły poza kartą (szkoła nie generuje podpowiedzi); profil promptów jej nie powtarza", () => {
     expect([...(schoolSubject.rules["school.hint_open_answer_only"]?.types ?? [])].sort()).toEqual(
-      SCHOOL_EXERCISE_TYPES.filter((type) => type !== "lesson_open_answer" && type !== "lesson_card").sort(),
+      SCHOOL_EXERCISE_TYPES.filter((type) => type !== "lesson_card").sort(),
     );
     expect(schoolSubject.prompts.fieldRules).not.toContain("hint");
   });

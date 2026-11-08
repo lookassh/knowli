@@ -148,10 +148,4 @@ registerRuleCases([
       hint: "proces",
     }),
   },
-  {
-    rule: "hint.reveals_words",
-    violation: sanitizeNotes(
-      openDraft({ answer: "Mierzeja Wiślana", requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }], hint: "Przykładem jest Mierzeja Wiślana" }),
-    ),
-  },
 ]);

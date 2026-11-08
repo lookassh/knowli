@@ -38,9 +38,17 @@ export const schoolPrompts: SubjectPromptProfile = {
     "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
+    // Etap 5b: dydaktyka dawnych kontroli 2b i ślepego rozwiązania (sekcja `checks` księgi, której przebieg bazowy nie czyta).
+    lesson_open_answer:
+      "The child answers without the material: never refer to the text (e.g. 'according to the text', 'in the second " +
+      "paragraph'). requiredElements are what every correct answer to this exact question contains: for a question " +
+      "with free choice (e.g. 'name any two'), require what every valid choice satisfies and put the examples into " +
+      "supplementaryElements, or make the question ask for the specific items; never drop an element the question " +
+      "genuinely requires.",
+    lesson_choice: "Exactly one option is correct according to the material.",
     lesson_calculation:
       "Use only a method explicitly taught in the material: sourceRefs quote the method, not a vaguely related fact; " +
-      "when the material teaches no supported method, produce no calculations. Numbers may vary as abstract examples " +
+      "when the material teaches no supported method, return no calculations, even when more are ordered. Numbers may vary as abstract examples " +
       "of that method; never invent named places, measurements of real objects or new facts. Calculations never " +
       "replace the publication minima in Target. Variants of one method and units share templateFamilyId with " +
       "different parameters; never repeat existing parameters.",
@@ -61,6 +69,7 @@ export const schoolPrompts: SubjectPromptProfile = {
     lesson_cloze:
       "Write 2 to 4 short sentences close to the parent material (vocabulary for a child of about 8). " +
       "Gap words are concepts, names or numbers from the material, never conjunctions, prepositions or words guessable " +
-      "from grammar alone. Distractors come from the same material and category.",
+      "from grammar alone. Distractors come from the same material and category. Exactly one bank word fits each gap: " +
+      "never two gaps whose words could be swapped.",
   },
 };

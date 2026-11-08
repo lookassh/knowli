@@ -272,8 +272,6 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         const record: Record<string, unknown> = {
           exerciseType: "lesson_open_answer",
           prompt: "Do jakiego morza uchodzi Wisła?",
-          // Podpowiedź wskazuje miejsce w materiale, nie treść odpowiedzi (sędzia podpowiedzi).
-          hint: "Poszukaj w materiale zdania o tym, dokąd płynie Wisła.",
           answer: "Wisła uchodzi do Morza Bałtyckiego.",
           acceptedAnswers: [],
           focus: ["Morza", "Bałtyckiego"],
@@ -319,9 +317,10 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         ? grounded(features, {
             exerciseType: "lesson_keywords",
             familyId: PL_FAMILY,
+            // Klucz z elementów wymaganych rodziny, nigdy pojęcie podane w pytaniu (tu: „Wisła”).
             keywordOptions: [
-            { id: "k1", text: "Wisła" },
-            { id: "k2", text: "Morze Bałtyckie" },
+            { id: "k1", text: "Morze Bałtyckie" },
+            { id: "k2", text: "ujście" },
             { id: "k3", text: "Tatry" },
             { id: "k4", text: "Odra" },
             ],

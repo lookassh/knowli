@@ -16,9 +16,9 @@ describe("subjectServiceInfo (komunikaty o usługach agenta puli)", () => {
       ...school, generationServices: ["openrouter.ai · a"], checkService: CHECK, checkServiceIncludesMaterial: true, openCheckService: OPEN,
     });
     expect(info.check).toBe(messages.lessons.checkServiceInfoWithMaterial.replace("{service}", CHECK));
-    // Treść jasno mówi, że to próbne odpowiedzi modelu, i zapewnia o danych dziecka.
+    // Treść mówi, co sprawdza drugi model (bez podpowiedzi i próbnych odpowiedzi od etapu 5b), i zapewnia o danych dziecka.
     expect(info.check).toBe(
-      `Podczas przygotowania lekcji drugi model (${CHECK}) rozwiązuje ćwiczenia na próbę, sprawdza podpowiedzi i pisze próbne odpowiedzi na pytania otwarte. Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.`,
+      `Podczas przygotowania lekcji drugi model (${CHECK}) sprawdza na próbę ćwiczenia zamknięte (wybór, dopasowanie, grupy, luki z bankiem, pojęcia kluczowe, kolejność). Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.`,
     );
     expect(info.openCheck).toBe(messages.lessons.openCheckServiceInfo.replace("{service}", OPEN));
     expect(info.openCheck).toContain(OPEN);

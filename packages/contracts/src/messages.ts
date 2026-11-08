@@ -1169,7 +1169,7 @@ export const messages = {
     generationServiceInfo: "Materiał lekcji trafia do usługi generującej ćwiczenia: {service}. Nie wysyłamy do niej imienia, wieku ani odpowiedzi dziecka.",
     generationServicesInfo: "Materiał lekcji trafia do usług generujących ćwiczenia: {service}. Nie wysyłamy do nich imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfo: "Gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje je na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
-    checkServiceInfoWithMaterial: "Podczas przygotowania lekcji drugi model ({service}) rozwiązuje ćwiczenia na próbę, sprawdza podpowiedzi i pisze próbne odpowiedzi na pytania otwarte. Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.",
+    checkServiceInfoWithMaterial: "Podczas przygotowania lekcji drugi model ({service}) sprawdza na próbę ćwiczenia zamknięte (wybór, dopasowanie, grupy, luki z bankiem, pojęcia kluczowe, kolejność). Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.",
     openCheckServiceInfo: "Odpowiedzi próbne do pytań otwartych ocenia usługa oceny ({service}). Dostaje pytanie, kryteria i cytaty z materiału — bez danych dziecka.",
     generationGapsAlert: {
       one: "Generowanie zakończyło się częściowo: {n} zagadnienie do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",

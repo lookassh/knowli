@@ -65,6 +65,8 @@ export const schoolSubject: SubjectModule = {
   topics: [],
   prompts: schoolPrompts,
   usesV3Payload: true,
+  // Etap 5b (#362): pula przebiegiem bazowym (paczki → oczyszczenie i struktura → kontrola zamkniętych z materiałem).
+  baselinePool: true,
   // Rodziny pytań współdzielą odpowiedź wzorcową, więc deduplikacja musi iść po tożsamości ćwiczenia.
   poolDeduplication: "exercise",
   // Każde ćwiczenie opiera się na dokładnym cytacie z materiału rodzica.
@@ -102,7 +104,7 @@ export const schoolSubject: SubjectModule = {
     };
   },
   validatePoolExtra: validateSchoolPool,
-  // Polityka agenta puli: typy ślepe, sanityzacja i bramka podpowiedzi pytań otwartych.
+  // Polityka przedmiotu: oczyszczenie (bez podpowiedzi, cytaty), materiał w kontroli zamkniętych.
   agentPolicy: schoolAgentPolicy,
   rules: SCHOOL_RULES,
 };

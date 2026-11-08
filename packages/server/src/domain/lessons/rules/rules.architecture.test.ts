@@ -58,7 +58,7 @@ function sourceFilesUnder(dir: string): string[] {
 }
 
 /** Pliki przedmiotów z hakami walidacji i przyjmowania. */
-const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|hint-gate|quote-normalize)\.ts$/;
+const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|quote-normalize)\.ts$/;
 
 /** Pliki walidatorów i przyjmowania agenta objęte zakazem napisów w zgłoszeniach. */
 const SCANNED: readonly string[] = [
@@ -471,7 +471,8 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
   const violations = SCANNED.flatMap((file) => sinkViolations(file, read(file), vocabulary));
 
   it("skan widzi pliki, fabryki i źródła zgłoszeń (nie jest fałszywie zielony)", () => {
-    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(7);
+    // Od etapu 5b bez `school/hint-gate.ts`.
+    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(6);
     for (const file of SCANNED) expect(() => read(file), file).not.toThrow();
     expect([...vocabulary.factories]).toEqual(
       expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "chapterIssue", "schoolIssue"]),
