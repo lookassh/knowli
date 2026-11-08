@@ -1,6 +1,6 @@
 # Etap 5: rozdział i szkoła na przebiegu bazowym, usunięcie pętli agenta — design
 
-Wersja 2, 2026-11-08, po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, dydaktyka i pomiar). Issue #362, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4: §4, §5, §8, §9, §10, §11 pkt 5, §12, §14, §16). Spece etapów 2 (v3.1) i 4 (v2.1), raport bramki w PR #367 i przebiegu kontrolnego w PR #371. Stan kodu: `main` 6de15af2. Równolegle: #372 (luki w `short_answers` gramatyki; może dotknąć `packet-plan.ts` i promptu paczki — po scaleniu tamtego PR synchronizujemy gałąź).
+Wersja 2.1, 2026-11-08, po przeglądzie trzech krytyków (prostota, poprawność kodu i danych, dydaktyka i pomiar). **Zatwierdzona przez właściciela 2026-11-08** z rekomendacjami §13 (podział 5a/5b/5c, keywords w wariancie A). Zgoda na płatne biegi — osobno. Issue #362, epik #358. Spec zbiorczy: `2026-11-07-llm-content-judgment-design.md` (v4: §4, §5, §8, §9, §10, §11 pkt 5, §12, §14, §16). Spece etapów 2 (v3.1) i 4 (v2.1), raport bramki w PR #367 i przebiegu kontrolnego w PR #371. Stan kodu: `main` 6de15af2. Równolegle: #372 (luki w `short_answers` gramatyki; może dotknąć `packet-plan.ts` i promptu paczki — po scaleniu tamtego PR synchronizujemy gałąź).
 
 ## 1. Cel i granice
 
@@ -127,7 +127,7 @@ Zostaje: wspólne kroki przyjmowania (`lessonRulesStep`, `submitExamples`, `snap
 - **Ramiona:** agent = worktree `main` na przypiętym SHA (dzisiejsza produkcja: agent z heurystykami i kontrolami 2b), przebieg bazowy = gałąź PR. Bez przełącznika w kodzie — dwa realne stany, jak sonda #328. Ten sam plik materiału, `UMIEM_PROBE_POOL_SIZE`, rejestr kosztów. SHA obu ramion w zrzucie.
 - **Modele** (te same w obu ramionach, pełne ID ustawione jawnie, zapisane w zrzucie; zrzut bez nich unieważnia bieg): generator i etap zagadnień `google/gemini-3.8-flash` (reasoning `low`), kontrola zamkniętych i checker agenta `deepseek/deepseek-v4.1-flash-1017` (reasoning `low`), grader szkoły w ramieniu agenta `google/gemini-3.8-flash`. Planista agenta działa na modelu agenta, etap zagadnień przebiegu bazowego na `UMIEM_LLM_*` — sonda ustawia oba na ten sam model i reasoning i dopisuje model etapu zagadnień rozdziału do zrzutu.
 - **Zmiany danych w narzędziach sondy** (bez nowych reguł): `score.cjs` — listy typów per klasa dla match, group, cloze, keywords, calculation i nowa klasa W6h (pole `hasHint` w kluczu arkusza), klasy z mianownikiem < 34 liczone jako „≤ 1 wada” w progach materiału wstrzymanego; `gen-blind-sheet.cjs` — nazwa rubryki jako argument, `graderAvailable` poza polami, które muszą być równe w ramionach szkoły (agent z graderem, przebieg bazowy po 5b bez); `probe-preflight.ts` — szkoła na gałęzi 5b bez wymogu gradera tylko wtedy, gdy kontrole 2b zostały usunięte (generowanie i tak wymaga `UMIEM_GRADER_*`); `probe:gold` — przedmiot i materiał per przypadek (dziś na sztywno gramatyka).
-- **Ślepa ocena:** nowa zamrożona rubryka `rubric-stage5.md` (§7.4). Sędzia 1: rodzina Anthropic (świeży subagent albo skryptowy sędzia Claude przez OpenRouter); sędzia 2: `openai/gpt-5.6-terra` (`probe:judge`). Obaj spoza rodzin generatora i kontroli.
+- **Ślepa ocena:** nowa zamrożona rubryka `rubric-stage5.md` (§7.4). Sędzia 1: skryptowy `anthropic/claude-opus-5.5` przez OpenRouter (`probe:judge`, kredyt właściciela — OpenRouter raportuje koszt 0, więc osobny plik rejestru i szacunek z cen tokenów; spójniejszy niż subagenci, decyzja z bramki etapu 2), w rundach strojenia i w biegu potwierdzającym; sędzia 2: `openai/gpt-5.6-terra` (`probe:judge`). Obaj spoza rodzin generatora i kontroli.
 
 ### 7.2 Materiały (fikcyjne, w repo `tests/probes/fixtures/`, kopiowane poza repo na czas biegu)
 
@@ -315,6 +315,7 @@ Przy keywords w wariancie A i szkole bez kontroli 2b. Etap zagadnień rozdziału
 ## 14. Historia
 
 - **v1** — pierwsza wersja.
+- **v2.1** — zatwierdzenie właściciela; sędzia 1 = skryptowy Claude Opus 5.5 przez OpenRouter (kredyt właściciela).
 - **v2** (trzej krytycy):
   - kontrola wielu pól jako pozycje paczki w dzisiejszym kształcie wyniku (bez nowego promptu), numery luk tylko w widoku kontroli, pola oceniane niezależnie, widok keywords z pytaniem;
   - keywords: trzy warianty do decyzji (z pytaniem otwartym w jednej paczce, osobna paczka, bez keywords), limit 1 zgodny z `typeRules`, przyjmowanie po innych ćwiczeniach zagadnienia, `familyBase` w wejściu;
