@@ -56,6 +56,11 @@
   background: var(--mantine-primary-color-light);
 }
 
+/* przycisk odsłuchu w nagłówku karty (#398): stały cel 44 px, podsumowanie słówka skraca się wielokropkiem */
+.pp-editor-item-play {
+  flex: 0 0 auto;
+}
+
 .pp-editor-item-summary {
   flex: 1 1 auto;
   min-width: 0;

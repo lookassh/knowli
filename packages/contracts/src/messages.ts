@@ -150,6 +150,8 @@ export const messages = {
     emptyPublish: "Dodaj i zapisz przynajmniej jedno słówko.",
     // Publikacja zleciła brakujące nagrania lub obrazki (issue #106).
     publishMediaPending: "Nagrania i obrazki jeszcze się przygotowują. Opublikuj ponownie, gdy będą gotowe.",
+    // Podsumowanie przy pasku publikacji przed kliknięciem (issue #397); serwer pozostaje autorytetem.
+    publishMediaSummary: "W przygotowaniu: {pending} · Nieudane: {failed}. Publikacja będzie możliwa, gdy media będą gotowe.",
     promptLabel: "Czego ma się nauczyć?",
     promptPlaceholder: "np. angielskie dni tygodnia",
     vocabularyFormatLabel: "Rodzaj zestawu",
@@ -256,6 +258,8 @@ export const messages = {
     coverSummarySet: "Okładka: ustawiona",
     unsavedChanges: "Niezapisane zmiany",
     listenExample: "Posłuchaj przykładu",
+    // przycisk głośnika w nagłówku karty słówka (issue #398)
+    listenItem: "Posłuchaj słówka {n}",
     changedMediaAfterSave: "Zmieniono — media po zapisie",
     itemActions: "Akcje słówka {n}",
     deckActions: "Więcej akcji zestawu",
@@ -306,9 +310,11 @@ export const messages = {
     childLabel: "Dziecko",
     deckLabel: "Zestaw",
     empty: "Brak opublikowanych zestawów — najpierw wygeneruj i opublikuj materiał.",
+    lessonsOnly: "Masz tylko opublikowane lekcje. Postępy lekcji znajdziesz w nadzorze lekcji — otwórz lekcję z listy zestawów.",
     loading: "Wczytuję…",
     masteryTitle: "Opanowanie",
-    skillBarAria: "{known} z {total}: opanowane {mastered}, do potwierdzenia {needs}, w trakcie nauki {practicing}, nie sprawdzono {notAssessed}",
+    skillBarAria: "Opanowane {mastered} z {total}, do potwierdzenia {needs}, w trakcie nauki {practicing}, nie sprawdzono {notAssessed}",
+    skillNeedsNote: "+{n} do potwierdzenia",
     legendMastered: "Opanowane (potwierdzone po przerwie)",
     legendNeeds: "Do potwierdzenia",
     legendPracticing: "W trakcie nauki",
@@ -972,6 +978,7 @@ export const messages = {
       overridden_incorrect: "Uznana za błędną",
     } as Record<string, string>,
     verdictChangedLater: "Werdykt zmieniony decyzją rodzica",
+    verdictDecisionScopeNote: "Decyzja rodzica obowiązuje przy kolejnej identycznej odpowiedzi. Nie zmienia zapisanej próby ani postępu dziecka.",
     verdictVariantAdded: "Dodano jako wariant ćwiczenia.",
     loadChild: "Wybierz dziecko, aby zobaczyć postęp celów.",
     exerciseTypes: {

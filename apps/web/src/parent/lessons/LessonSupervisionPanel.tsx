@@ -431,6 +431,11 @@ export default function LessonSupervisionPanel({
               })}
             </Stack>
           )}
+          {verdictsQuery.isSuccess && verdicts.length > 0 && (
+            <Text size="sm" className="pp-editor-muted" mt="sm" data-testid="verdict-decision-scope-note">
+              {messages.lessons.verdictDecisionScopeNote}
+            </Text>
+          )}
         </section>
       </Stack>
     </Paper>

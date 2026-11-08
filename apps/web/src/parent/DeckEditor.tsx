@@ -68,6 +68,21 @@ export function deckPollInterval(deck: DeckDto | undefined): number | false {
   return generating || assetsPending ? 1000 : false;
 }
 
+/**
+ * Liczby mediów szkicu w przygotowaniu i nieudanych do podsumowania przy pasku
+ * publikacji (#397). Tylko informacja przed kliknięciem — o publikacji nadal
+ * decyduje serwer (promocja powiązań approved w transakcji publikacji).
+ */
+export function draftMediaCounts(draft: DraftDto | null | undefined): { pending: number; failed: number } {
+  let pending = 0;
+  let failed = 0;
+  for (const asset of draft?.assets ?? []) {
+    if (asset.state === "pending") pending += 1;
+    else if (asset.state === "failed") failed += 1;
+  }
+  return { pending, failed };
+}
+
 /** Kolor odznaki stanu medium (zmienne --pp-status-* z motywu). */
 function mediaTone(state: string): "success" | "info" | "danger" | "neutral" {
   if (state === "approved") return "success";
@@ -790,6 +805,13 @@ export default function DeckEditor({
   };
 
   const publishBlocked = editable && (isDirty || (draft?.items.length ?? 0) === 0);
+  // #397: stan mediów szkicu widoczny przed kliknięciem; przycisk zostaje aktywny, bo autorytetem jest serwer
+  const mediaCounts = draftMediaCounts(draft);
+  const mediaSummary = editable && mediaCounts.pending + mediaCounts.failed > 0
+    ? messages.decks.publishMediaSummary
+        .replace("{pending}", String(mediaCounts.pending))
+        .replace("{failed}", String(mediaCounts.failed))
+    : null;
   const showActionBar = editable || (deck?.state === "published" && !draft);
   const itemCount = form?.items.length ?? 0;
   const errorAlert = <EditorErrorText error={error ?? ""} />;
@@ -916,7 +938,8 @@ export default function DeckEditor({
           const exampleAudio = assetOf(revisionId, "example_audio");
           const illustration = assetOf(revisionId, "illustration");
           const canOmit = editable && form.vocabularyFormat !== "picture" && illustration !== null && illustration.state !== "omitted";
-          const hasMenu = targetAudio !== null || exampleAudio !== null || editable;
+          // odsłuch słówka jest przyciskiem w nagłówku (#398); menu zostaje dla przykładu i akcji edycji
+          const hasMenu = exampleAudio !== null || editable;
           const imageReady = illustration?.state === "approved" && illustration.assetId;
           return (
             <Paper withBorder radius="lg" p="md" key={item.clientKey} data-testid={`item-card-${index}`} className="pp-editor-item" component="article">
@@ -925,6 +948,14 @@ export default function DeckEditor({
                 <Text fw={600} className="pp-editor-item-summary">
                   {item.source || "…"} → <span lang="en-GB">{item.target || "…"}</span>
                 </Text>
+                {targetAudio && (
+                  <ActionIcon variant="light" size={44} radius="md" className="pp-editor-item-play" data-testid={`item-play-${index}`}
+                    aria-label={messages.decks.listenItem.replace("{n}", String(index + 1))}
+                    disabled={!(targetAudio.state === "approved" && targetAudio.assetId)}
+                    onClick={() => targetAudio.assetId && playAsset(targetAudio.assetId)}>
+                    <ParentIcon name="volume" />
+                  </ActionIcon>
+                )}
                 {hasMenu && (
                   <Menu position="bottom-end" withinPortal>
                     <Menu.Target>
@@ -934,13 +965,6 @@ export default function DeckEditor({
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
-                      {targetAudio && (
-                        <Menu.Item leftSection={<ParentIcon name="volume" />} data-testid={`item-play-${index}`}
-                          disabled={!(targetAudio.state === "approved" && targetAudio.assetId)}
-                          onClick={() => targetAudio.assetId && playAsset(targetAudio.assetId)}>
-                          {messages.decks.listen}
-                        </Menu.Item>
-                      )}
                       {exampleAudio && (
                         <Menu.Item leftSection={<ParentIcon name="volume" />} data-testid={`item-play-example-${index}`}
                           disabled={!(exampleAudio.state === "approved" && exampleAudio.assetId)}
@@ -948,7 +972,7 @@ export default function DeckEditor({
                           {messages.decks.listenExample}
                         </Menu.Item>
                       )}
-                      {editable && (targetAudio || illustration) && <Menu.Divider />}
+                      {editable && exampleAudio && (targetAudio || illustration) && <Menu.Divider />}
                       {editable && isDirty && (targetAudio || illustration) && <Menu.Label>{messages.decks.saveBeforePublish}</Menu.Label>}
                       {editable && targetAudio && (
                         <Menu.Item leftSection={<ParentIcon name="refresh" />} data-testid={`item-regen-audio-${index}`}
@@ -1093,6 +1117,7 @@ export default function DeckEditor({
       {showActionBar && (
         <EditorActionBar
           error={error}
+          mediaSummary={mediaSummary}
           blockedReason={publishBlocked
             ? (isDirty && itemCount > 0 ? `${messages.decks.unsavedChanges} · ${messages.decks.saveBeforePublish}` : messages.decks.emptyPublish)
             : null}

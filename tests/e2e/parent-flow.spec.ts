@@ -29,7 +29,7 @@ async function playTargetAudio(page: Page, deckId: string, itemIndex: number): P
   const played = page.waitForResponse((entry) =>
     new URL(entry.url()).pathname === `/api/v1/media/${audio!.assetId}`,
   );
-  await page.getByTestId(`item-menu-${itemIndex}`).click();
+  // odsłuch jednym kliknięciem przyciskiem w nagłówku karty (#398), bez otwierania menu
   await page.getByTestId(`item-play-${itemIndex}`).click();
   const audioResponse = await played;
   expect(audioResponse.status()).toBe(200);

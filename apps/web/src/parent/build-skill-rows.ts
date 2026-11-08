@@ -15,8 +15,8 @@ export interface SkillRow {
 }
 
 /**
- * Wiersze karty „Opanowanie" liczone per pozycja: „znane" to opanowane lub
- * seria do potwierdzenia bez zmiany znaczenia (reguła dotychczasowa);
+ * Wiersze karty „Opanowanie" liczone per pozycja: „znane" (główna liczba) to wyłącznie mastered (#396);
+ * słowa do potwierdzenia panel pokazuje osobnym dopiskiem z segmentu needsConfirmation.
  * needs_reconfirmation wizualnie wraca do bursztynu „do potwierdzenia".
  */
 export function buildSkillRows(progress: ProgressDto): SkillRow[] {
@@ -33,9 +33,6 @@ export function buildSkillRows(progress: ProgressDto): SkillRow[] {
         known += 1;
       } else if (status === "needs_confirmation" || status === "needs_reconfirmation") {
         needsConfirmation += 1;
-        if (status === "needs_confirmation" && !item.meaningChanged) {
-          known += 1;
-        }
       } else if (status === "practicing") {
         practicing += 1;
       } else {
