@@ -269,7 +269,11 @@ export async function runLessonBaselinePool(
         if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
         const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
         const checked = await callModel(checkerSlots, () =>
-          deps.checker.checkClosed({ contract, items, timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
+          deps.checker.checkClosed(
+            { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.agentPolicy.checkerNeedsMaterial ? { material: input.material } : {}) },
+            sink,
+            runDeadline.signal,
+          ),
         );
         if (checked === STOPPED) return { kind: "stopped" };
         stats.checkerCalls += 1;

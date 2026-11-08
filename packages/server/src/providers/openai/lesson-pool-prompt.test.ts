@@ -231,6 +231,21 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
     await expect(check).toMatchFileSnapshot("./__snapshots__/lesson-closed-check-prompt.txt");
   });
 
+  it("kontrola z materiałem lekcji (szkoła, etap 5b): materiał przed pozycjami, bez „learning English”", async () => {
+    const { closedCheckPrompt } = await import("./lesson-pool-agent");
+    const material = "Korzeń pobiera wodę z gleby.";
+    const check = [
+      closedCheckPrompt({ contract: "choice", items: [{ view: "Co pobiera wodę z gleby?\nOptions: korzeń | liść" }], material }),
+      closedCheckPrompt({ contract: "order", items: [{ view: "Ułóż kroki.\nWord blocks (shuffled): b | a\nArranged answer: a b" }], material }),
+    ];
+    for (const prompt of check) {
+      expect(prompt).not.toContain("learning English");
+      expect(prompt.indexOf("<MATERIAL>")).toBeGreaterThan(-1);
+      expect(prompt.indexOf("<MATERIAL>")).toBeLessThan(prompt.indexOf("<ITEMS>"));
+    }
+    await expect(check.join("\n\n----\n\n")).toMatchFileSnapshot("./__snapshots__/lesson-closed-check-prompt.school.txt");
+  });
+
   it("paczka rozdziału: zagadnienie słów × lesson_cloze (etap 5a #362)", async () => {
     const { packetInput } = await import("../../modules/materials/lessons/lesson-baseline-pool");
     const { packetInstructions } = await import("./lesson-pool-agent");

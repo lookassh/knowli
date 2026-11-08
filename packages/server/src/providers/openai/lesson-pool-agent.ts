@@ -776,17 +776,20 @@ export class AiSdkExerciseChecker implements LessonExerciseCheckerProvider, Clos
 }
 
 /** Pytanie kontroli zamkniętych per kontrakt (spec etapu 2 §2); widok bez klucza i celu. */
-export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "items">): string {
+export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "items" | "material">): string {
+  // Z materiałem (szkoła): ćwiczenia nie są z angielskiego, a poprawność wynika z materiału; bez niego tekst bajt w bajt jak w gramatyce.
+  const learner = input.material === undefined ? "a Polish child learning English" : "a Polish child, based on the lesson material below";
   const question =
     input.contract === "choice"
-      ? "Each item below is an exercise for a Polish child learning English, exactly as the child sees it. For EACH item list the exact texts of ALL " +
+      ? `Each item below is an exercise for ${learner}, exactly as the child sees it. For EACH item list the exact texts of ALL ` +
         "options (or, for marking a word, ALL words) that are correct for this instruction. For an item with a recording, an option is correct only " +
         "when it gives a correct sentence that matches the recording. Return answers: [] when no option is correct, and answers: null when you cannot decide."
-      : "Each item below is a word-blocks exercise for a Polish child learning English: the instruction, the shuffled blocks and the arranged answer. " +
+      : `Each item below is a word-blocks exercise for ${learner}: the instruction, the shuffled blocks and the arranged answer. ` +
         'For EACH item decide whether the arranged answer is a correct answer to the instruction: verdict "yes", "no", or "unknown" when you cannot decide.';
   return [
     question,
     `There are ${input.items.length} items. Return results: one object per item, in the given order.`,
+    ...materialBlock(input.material),
     "",
     "<ITEMS>",
     jsonForBlock(input.items.map(({ view }) => ({ view }))),

@@ -10,7 +10,8 @@ import type { AnswerNormalizer, LessonExerciseDraft, LessonExerciseType, LessonT
  * modelu i porównanie jego wyniku z kluczem. Czyste funkcje — model nie zna klucza ani celu, a o
  * przejściu decyduje kod: wybór przechodzi tylko przy komplecie równym kluczowi, rozsypanka tylko
  * przy „yes”. Ćwiczenie z przypisaniem (match, group, cloze; spec etapu 5 §3) to jedna pozycja na
- * pole w tym samym kontrakcie wyboru: przechodzi, gdy przechodzi każde pole.
+ * pole w tym samym kontrakcie wyboru: przechodzi, gdy przechodzi każde pole. Keywords (etap 5b) to jedno pole z
+ * pytaniem rodziny i kluczem-zbiorem pojęć.
  */
 
 export type ClosedCheckContract = "choice" | "order";
@@ -24,6 +25,7 @@ const CONTRACTS: Partial<Record<LessonExerciseType, ClosedCheckContract>> = {
   lesson_match: "choice",
   lesson_group: "choice",
   lesson_cloze: "choice",
+  lesson_keywords: "choice",
 };
 
 /** Kontrakt kontroli typu; `null` = typ bez kontroli generowania (zadania tekstowe). */
@@ -80,11 +82,13 @@ function choicesOf(draft: LessonExerciseDraft): Choice[] {
   if (draft.exerciseType === "lesson_notice") {
     return (draft.noticeSegments ?? []).flat().map((text, index) => ({ key: String(index), text }));
   }
+  if (draft.exerciseType === "lesson_keywords") return (draft.keywordOptions ?? []).map((option) => ({ key: option.id, text: option.text }));
   return (draft.options ?? []).map((option) => ({ key: option.id, text: option.text }));
 }
 
 /** Klucze kandydatów równoważnych kluczowi ćwiczenia (notice: segmenty równe słowu `correctOption`). */
 function keyChoices(draft: LessonExerciseDraft, choices: readonly Choice[], normalizer: AnswerNormalizer): string[] {
+  if (draft.exerciseType === "lesson_keywords") return [...(draft.keyOptionIds ?? [])];
   if (draft.exerciseType !== "lesson_notice") return draft.correctOption === undefined ? [] : [draft.correctOption];
   return choices.filter((choice) => answersEquivalent(choice.text, draft.correctOption ?? "", normalizer)).map((choice) => choice.key);
 }
@@ -97,10 +101,11 @@ function numberedCloze(text: string): string {
 /**
  * Widoki dziecka dla kontroli: `solverView` bez tytułu celu (wstawiany przy braku `instructionPl`
  * naprowadzałby na ćwiczoną formę), w słuchaniu z transkrypcją nagrania, w rozsypance z ułożonym
- * kluczem; ćwiczenie z przypisaniem — jedna pozycja na pole z wierszem pola i jego opcjami.
- * `null` dla typu bez kontroli albo słuchania bez zdania nagrania.
+ * kluczem, w keywords z pytaniem otwartym rodziny (`familyPrompt`; widok Kid pokazuje je jako pytanie);
+ * ćwiczenie z przypisaniem — jedna pozycja na pole z wierszem pola i jego opcjami.
+ * `null` dla typu bez kontroli, słuchania bez zdania nagrania albo keywords bez pytania rodziny.
  */
-export function closedCheckItems(draft: LessonExerciseDraft, topic: LessonTopic): string[] | null {
+export function closedCheckItems(draft: LessonExerciseDraft, topic: LessonTopic, familyPrompt?: string): string[] | null {
   if (closedCheckContract(draft.exerciseType) === null) return null;
   const untitled: LessonTopic = { ...topic, objectives: topic.objectives.map((objective) => ({ ...objective, titlePl: "" })) };
   const fields = multiFields(draft);
@@ -122,6 +127,10 @@ export function closedCheckItems(draft: LessonExerciseDraft, topic: LessonTopic)
     lines.push(`Recording (transcript): ${sentence}`);
   }
   if (draft.exerciseType === "lesson_order") lines.push(`Arranged answer: ${draft.answer}`);
+  if (draft.exerciseType === "lesson_keywords") {
+    if (familyPrompt === undefined || familyPrompt.trim() === "") return null;
+    lines.push(`Question: ${familyPrompt}`);
+  }
   return [lines.join("\n")];
 }
 
@@ -133,8 +142,12 @@ export type ClosedCheckCode = "check_wrong_set" | "check_unknown" | "check_order
 
 export type ClosedCheckVerdict = { readonly pass: true } | { readonly pass: false; readonly code: ClosedCheckCode };
 
-/** Komplet pola: każdy tekst modelu ma kandydata, a przypisani kandydaci to dokładnie klucz pola. */
-function fieldVerdict(raw: unknown, choices: readonly Choice[], key: readonly string[], normalizer: AnswerNormalizer): ClosedCheckVerdict {
+/**
+ * Komplet pola: każdy tekst modelu ma kandydata, a przypisani kandydaci to dokładnie klucz pola.
+ * `wholeSet` (tylko keywords): klucz to zbiór pojęć, przechodzi zbiór równy kluczowi; inne typy mają
+ * jeden klucz (notice ze słowem w dwóch segmentach odpada).
+ */
+function fieldVerdict(raw: unknown, choices: readonly Choice[], key: readonly string[], normalizer: AnswerNormalizer, wholeSet = false): ClosedCheckVerdict {
   const parsed = CHOICE_CHECK_RESULT.safeParse(raw);
   if (!parsed.success || parsed.data.answers === null) return { pass: false, code: "check_unknown" };
   const chosen = new Set<string>();
@@ -143,7 +156,9 @@ function fieldVerdict(raw: unknown, choices: readonly Choice[], key: readonly st
     if (matches.length === 0) return { pass: false, code: "check_wrong_set" };
     for (const match of matches) chosen.add(match.key);
   }
-  const exact = key.length === 1 && chosen.size === 1 && chosen.has(key[0]!);
+  const exact = wholeSet
+    ? key.length > 0 && chosen.size === key.length && key.every((entry) => chosen.has(entry))
+    : key.length === 1 && chosen.size === 1 && chosen.has(key[0]!);
   return exact ? { pass: true } : { pass: false, code: "check_wrong_set" };
 }
 
@@ -164,7 +179,7 @@ export function closedCheckVerdict(draft: LessonExerciseDraft, results: readonly
   const fields = multiFields(draft);
   if (fields === null) {
     const choices = choicesOf(draft);
-    return fieldVerdict(results[0], choices, keyChoices(draft, choices, normalizer), normalizer);
+    return fieldVerdict(results[0], choices, keyChoices(draft, choices, normalizer), normalizer, draft.exerciseType === "lesson_keywords");
   }
   // Ćwiczenie bez pól nie ma czego sprawdzić — nie przechodzi po cichu (dziś blokują je minima struktury).
   if (fields.length === 0) return { pass: false, code: "check_unknown" };

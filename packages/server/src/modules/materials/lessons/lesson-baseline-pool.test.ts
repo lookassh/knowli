@@ -137,6 +137,23 @@ describe("runLessonBaselinePool", () => {
     expect(generator.calls[0]!.pool.exerciseTypes).toEqual(["lesson_choice"]);
   });
 
+  it("passes the lesson material to the check only when the subject needs it (stage 5b)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const plain = new FakeChecker();
+    await run(new FakeGenerator(), plain);
+    expect(plain.calls.length).toBeGreaterThan(0);
+    expect(plain.calls.every((call) => !("material" in call))).toBe(true);
+    const needsMaterial: SubjectModule = { ...subject, agentPolicy: { ...subject.agentPolicy, checkerNeedsMaterial: true } };
+    const withMaterial = new FakeChecker();
+    await runLessonBaselinePool(
+      { generator: new FakeGenerator(), checker: withMaterial, subjects: { getSubject: () => needsMaterial }, policy: {} },
+      runInput(),
+      new AbortController().signal,
+    );
+    expect(withMaterial.calls.length).toBeGreaterThan(0);
+    expect(withMaterial.calls.every((call) => call.material === "Tom plays football.")).toBe(true);
+  });
+
   it("drops records of another type, over the order and rejected by the check", async () => {
     const logs: string[] = [];
     vi.spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
