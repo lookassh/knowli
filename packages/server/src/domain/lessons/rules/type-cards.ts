@@ -68,6 +68,7 @@ const PL_SEA = "Wisła płynie z Beskidów do Morza Bałtyckiego.";
 const PL_MOUNTAINS = "Najwyższe góry Polski to Tatry.";
 const PL_CAPITAL = "Stolicą Polski jest Warszawa.";
 const PL_CAPITAL_RIVER = "Przez Warszawę płynie Wisła.";
+const PL_RIVERS_MOUNTAINS = "Przez Polskę płyną rzeki Wisła i Odra, a na południu leżą góry Tatry i Sudety.";
 const PL_WATER_CYCLE = "Woda paruje, skrapla się w chmurach i spada jako deszcz.";
 const PL_SCALE = "Odległość w terenie to odległość na mapie pomnożona przez mianownik skali.";
 /** Rodzina pytania otwartego i jego słów kluczowych w przykładach. */
@@ -130,7 +131,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         return grounded(features, {
           exerciseType: "lesson_choice",
           instructionPl: "Wybierz poprawną odpowiedź.",
-          stem: "Która rzeka jest najdłuższa w Polsce?",
+          stem: "Która polska rzeka ma większą długość niż wszystkie inne?",
           options: [{ id: "a", text: "Wisła" }, { id: "b", text: "Odra" }, { id: "c", text: "Warta" }],
           correctOption: "a",
           answer: "Wisła",
@@ -210,7 +211,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         return grounded(features, {
           exerciseType: "lesson_gap",
           instructionPl: "Uzupełnij zdanie.",
-          stem: "Najwyższe góry Polski to ___.",
+          stem: "Pasmo górskie z najwyższymi szczytami Polski to ___.",
           answer: "Tatry",
           acceptedAnswers: [],
           focus: ["Tatry"],
@@ -272,7 +273,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         const record: Record<string, unknown> = {
           exerciseType: "lesson_open_answer",
           prompt: "Skąd i dokąd płynie Wisła?",
-          answer: "Wisła płynie z Beskidów do Morza Bałtyckiego.",
+          answer: "Zaczyna się w Beskidach i wpada do Morza Bałtyckiego.",
           acceptedAnswers: [],
           focus: ["Morza", "Bałtyckiego"],
           ...(features.usesV3Payload
@@ -383,7 +384,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
             { text: "Tatry", groupId: "g2" },
             { text: "Sudety", groupId: "g2" },
           ],
-        }, PL_MOUNTAINS);
+        }, PL_RIVERS_MOUNTAINS);
       }
       return undefined;
     },
@@ -408,7 +409,7 @@ export const TYPE_CARDS: Readonly<Record<LessonExerciseType, TypeCard>> = {
         return grounded(features, {
           exerciseType: "lesson_cloze",
           instructionPl: "Uzupełnij tekst.",
-          clozeText: "Stolicą Polski jest ___. Przez stolicę płynie rzeka ___.",
+          clozeText: "Miasto ___ to stolica naszego kraju. Nad tym miastem płynie rzeka ___.",
           gapAnswers: ["Warszawa", "Wisła"],
           extraWords: ["Kraków"],
         }, PL_CAPITAL, PL_CAPITAL_RIVER);

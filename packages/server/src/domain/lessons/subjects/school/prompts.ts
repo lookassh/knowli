@@ -7,7 +7,7 @@ import type { SubjectPromptProfile } from "../../types";
  */
 export const schoolPrompts: SubjectPromptProfile = {
   generationRole:
-    "Jesteś autorem ćwiczeń do nauki przedmiotów szkolnych (historia, biologia, geografia, język polski) " +
+    "Jesteś autorem ćwiczeń do nauki przedmiotów szkolnych (przyroda, historia, biologia, geografia, język polski) " +
     "dla dzieci 8–12 lat, opartych WYŁĄCZNIE na przekazanym materiale rodzica. Nigdy nie dopisujesz faktów, " +
     "dat ani definicji spoza materiału. Każde ćwiczenie opierasz na konkretnym fragmencie materiału.",
   gradingRole:
@@ -21,10 +21,14 @@ export const schoolPrompts: SubjectPromptProfile = {
   fieldRules:
     "Wszystkie pola tekstowe są po polsku (prompt language = answer language). " +
     "Każde ćwiczenie sprawdza fakty swojego zagadnienia (opis i karty powyżej); fakty innych zagadnień materiału " +
-    "nie trafiają do jego treści, par, grup ani kroków. " +
+    "nie trafiają do jego treści, par, grup ani kroków (dystraktory — błędne opcje, extraRight, extraWords, pojęcia spoza klucza — " +
+    "mogą pochodzić z innych zagadnień materiału). " +
+    "Karty cytują materiał, a dziecko widzi je podczas ćwiczeń: pytanie, zdanie z luką, tekst z lukami, opcje, kroki " +
+    "i odpowiedź wzorcową formułuj własnymi słowami, nigdy jako zdanie albo fragment zdania karty (z luką czy bez). " +
+    "Nie pytaj o wynik ani przykład, który karta już podaje (np. obliczenie z karty); weź inne dane z materiału. " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
-    "Gdy zagadnienie, dla którego piszesz, obejmuje parę łatwo mylonych pojęć z materiału " +
+    "W lesson_open_answer: gdy zagadnienie, dla którego piszesz, obejmuje parę łatwo mylonych pojęć z materiału " +
     "(np. południk/równoleżnik, wysokość względna/bezwzględna), dodaj co najmniej jedno pytanie porównawcze " +
     "(questionType: comparison) wymieniające obie nazwy tej pary; pary innych zagadnień pomiń. requiredElements to pojedyncze informacje, " +
     "które poprawna odpowiedź musi zawierać; każdy element " +
@@ -35,12 +39,13 @@ export const schoolPrompts: SubjectPromptProfile = {
     "twórz rodziny po 2 sformułowania dla najważniejszych pytań otwartych. " +
     "sourceRefs: wybierz najkrótszy fragment materiału, który uzasadnia ćwiczenie i z którego wynika pytanie i odpowiedź. " +
     "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej. " +
-    "lesson_gap: stem to zdanie o fakcie z materiału z luką po fakcie (data, nazwa, pojęcie), sformułowane " +
-    "inaczej niż zdania kart (karty też cytują materiał), nigdy zdanie karty z luką. answer i każdy wariant " +
-    "w acceptedAnswers wstawione w lukę dają poprawne gramatycznie zdanie (ten sam przypadek i liczba co luka, " +
-    "bez powtórzenia słowa stojącego tuż przed albo za luką). " +
+    "lesson_gap: stem to zdanie o fakcie z materiału z luką po fakcie (data, nazwa, pojęcie). answer i każdy wariant " +
+    "acceptedAnswers wstawione w miejsce ___ dają poprawne zdanie: mają formę, jakiej wymagają słowa wokół luki, " +
+    "i nie powtarzają słowa stojącego przed albo za luką (np. „w ___ roku” → „966”, nie „966 roku”). " +
     "lesson_choice: stem to pytanie, options to krótkie odpowiedzi. " +
-    "lesson_order: items to etapy procesu lub wydarzenia w poprawnej kolejności.",
+    "lesson_order: items to etapy procesu albo kolejne wydarzenia tego zagadnienia w poprawnej kolejności (krótkie frazy " +
+    "z czynnością lub wydarzeniem, nigdy słowa jednego zdania ani same daty); gdy zagadnienie nie opisuje procesu ani " +
+    "ciągu wydarzeń, zwróć mniej ćwiczeń albo żadnego.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
     // Etap 5b: dydaktyka dawnych kontroli 2b i ślepego rozwiązania (sekcja `checks` księgi, której przebieg bazowy nie czyta)
@@ -50,12 +55,15 @@ export const schoolPrompts: SubjectPromptProfile = {
       "paragraph'). requiredElements are what every correct answer to this exact question contains: for a question " +
       "with free choice (e.g. 'name any two') or a why/what-jobs question to which the material gives several reasons " +
       "or jobs, require what every valid choice satisfies and put the examples into supplementaryElements, or make the " +
-      "question ask for the specific items; never drop an element the question genuinely requires. 'Every exercise uses a different sentence' applies between question families: " +
-      "write the ordered questions as at least three families with different model answers, at most two questions per " +
-      "family, each about a different fact of this objective; members of one family share " +
+      "question ask for the specific items; never drop an element the question genuinely requires. A required element " +
+      "is only what makes the answer wrong when missing; a detail a correct answer may leave out goes to " +
+      "supplementaryElements. The model answer is a full sentence in your own words, never a card or material " +
+      "sentence and never a bare term, date or name. 'Every exercise uses a different sentence' applies between question families: " +
+      "write the ordered questions as at least three families with different model answers (fewer only when this " +
+      "objective has fewer facts), at most two questions per family, every family about a different fact of this " +
+      "objective; when the facts run out, return fewer questions instead of using other objectives. Members of one family share " +
       "the model answer and requiredElements and differ only in the question wording. The cards explain the facts of " +
-      "this objective: ask about these facts in your own question wording, never as a card sentence with a gap. " +
-      "Leave hint null.",
+      "this objective: ask about these facts in your own question wording. Leave hint null.",
     lesson_choice:
       "Exactly one option is correct according to the material. Every other option is false according to the material " +
       "(e.g. the job of another part, another date or another person), not merely less complete. When the material " +
@@ -66,7 +74,7 @@ export const schoolPrompts: SubjectPromptProfile = {
       "teaches that method: sourceRefs quote the method, not a vaguely related fact. Any other method (e.g. years " +
       "between two dates, money, time) is not supported: return no calculations, even when more are ordered. Numbers " +
       "may vary as abstract examples of that method; never invent named places, measurements of real objects or new " +
-      "facts. Calculations never replace the publication minima in Target. Variants of one method and units share " +
+      "facts. Calculations never replace the ordered open questions. Variants of one method and units share " +
       "templateFamilyId with different parameters; never repeat existing parameters.",
     lesson_keywords:
       "An optional precision trainer outside the stage split: at most one per objective. Besides the ordered " +
@@ -79,13 +87,14 @@ export const schoolPrompts: SubjectPromptProfile = {
       "to this question uses it.",
     lesson_match:
       "left is a concept, place or cause, right is its definition, feature or effect, both taken from the parent material. " +
-      "The extraRight texts come from the material. Use it when the material pairs concepts with definitions, places " +
-      "with features or causes with effects. Skip it when the material has no such pairs. Each right text fits only its " +
+      "The extraRight texts come from the material. Use it only when the cards of this objective pair concepts with " +
+      "definitions, places with features or causes with effects; otherwise return fewer exercises or none, even when " +
+      "more are ordered. Each right text fits only its " +
       "own left text and each extraRight text fits none of the left texts, according to the material.",
     lesson_group:
-      "Use it only when the material itself names the groups and says which items belong to each (e.g. a list under " +
+      "Use it only when this objective's cards name the groups and says which items belong to each (e.g. a list under " +
       "each heading). Never classify by knowledge outside the material, and leave out every item that the material " +
-      "places in two groups or in none. Skip it when the material has no such classification.",
+      "places in two groups or in none. Otherwise return fewer exercises or none, even when more are ordered.",
     lesson_cloze:
       "Write 2 to 4 short sentences close to the parent material (vocabulary for a child aged 8–12). " +
       "Gap words are concepts, names or numbers from the material, never conjunctions, prepositions or words guessable " +

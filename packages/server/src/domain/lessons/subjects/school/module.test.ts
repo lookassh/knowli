@@ -150,7 +150,7 @@ describe("przedmiot school", () => {
     );
     expect(schoolSubject.prompts.typeRules?.lesson_match).toContain("taken from the parent material");
     // Wskazówki rachunku i słów kluczowych w blokach typów (dawniej osobne akapity adaptera).
-    expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("Calculations never replace the publication minima in Target.");
+    expect(schoolSubject.prompts.typeRules?.lesson_calculation).toContain("Calculations never replace the ordered open questions.");
     expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("outside the stage split");
     // Etap 5b: dydaktyka dawnych kontroli w polach przedmiotu, bez instrukcji podpowiedzi.
     expect(schoolSubject.prompts.typeRules?.lesson_keywords).toContain("never a term the question itself names");
