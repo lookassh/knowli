@@ -1,0 +1,1929 @@
+{
+ "note": "Ćwiczenia wzorcowe kontroli zamkniętych szkoły (spec etapu 5 §7.3), materiał school-plant-parts.txt, fikcyjne. wrong_key powstały mechanicznie z correct (jednorazowo): keywords — drugie kluczowe na dystraktor; choice — correctOption na opcję b; order — zamiana klocków 2 i 3 (błąd potwierdził autor); match — zamiana prawych stron dwóch pierwszych par; group — trzeci element do drugiej grupy; cloze — zamiana słów luk 1 i 2 (niezamienne, potwierdził autor). second_correct: druga odpowiedź poprawna według materiału (pole justification z cytatem); keywords z pytaniem rodziny w familyPrompt.",
+ "subject": "school",
+ "dynamicTopic": {
+  "titlePl": "Części rośliny i ich zadania",
+  "objectives": [
+   {
+    "id": "school.dgold.czesci",
+    "titlePl": "Części rośliny i ich zadania",
+    "descriptionEn": "Parts of a plant (root, stem, leaves, flower), their jobs and the edible parts of plants.",
+    "cards": [
+     {
+      "title": "Korzeń",
+      "body": "Korzeń utrzymuje roślinę w glebie i pobiera z gleby wodę z solami mineralnymi."
+     },
+     {
+      "title": "Łodyga",
+      "body": "Łodyga podtrzymuje liście i kwiaty i przewodzi wodę oraz pokarm."
+     }
+    ]
+   },
+   {
+    "id": "school.dgold.fotosynteza",
+    "titlePl": "Liście i fotosynteza",
+    "descriptionEn": "Leaves, chlorophyll, photosynthesis, oxygen and stomata.",
+    "cards": [
+     {
+      "title": "Fotosynteza",
+      "body": "W liściach roślina wytwarza pokarm z wody i dwutlenku węgla przy udziale światła."
+     },
+     {
+      "title": "Zielone liście",
+      "body": "Liście zawierają zielony barwnik. Przez drobne otwory w liściach wyparowuje woda."
+     }
+    ]
+   },
+   {
+    "id": "school.dgold.rozwoj",
+    "titlePl": "Od kwiatu do nowej rośliny",
+    "descriptionEn": "Pollination, fruit and seeds, and how a new plant grows from a seed.",
+    "cards": [
+     {
+      "title": "Zapylenie",
+      "body": "Owady przenoszą pyłek z kwiatu na kwiat. Potem z części kwiatu rozwija się owoc z nasionami."
+     },
+     {
+      "title": "Z nasienia",
+      "body": "Nasiono w wilgotnej glebie pęcznieje, wypuszcza korzeń, a potem łodyżkę z liśćmi."
+     }
+    ]
+   }
+  ]
+ },
+ "material": "Przyroda – Części rośliny i ich zadania\n\nZ czego zbudowana jest roślina:\nWiększość roślin, które znamy z ogrodu i łąki, ma korzeń, łodygę, liście i kwiaty. Z kwiatów powstają owoce, a w owocach są nasiona. Każda część rośliny ma swoje zadanie, a razem pozwalają roślinie rosnąć i rozmnażać się.\n\nKorzeń:\nKorzeń rośnie zwykle pod ziemią. Utrzymuje roślinę w glebie, żeby wiatr jej nie przewrócił. Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne. Niektóre rośliny gromadzą w korzeniu zapasy pokarmu, na przykład marchew, burak i rzodkiewka. Takie grube korzenie nazywamy korzeniami spichrzowymi.\n\nŁodyga:\nŁodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści, a pokarm z liści do innych części rośliny. Łodyga drzewa jest twarda i zdrewniała – nazywamy ją pniem. Łodygi wielu roślin zielnych, czyli roślin bez zdrewniałej łodygi, są miękkie i zielone, na przykład u stokrotki.\n\nLiście:\nLiście są zwykle zielone, bo zawierają zielony barwnik – chlorofil. W liściach roślina wytwarza pokarm z wody i dwutlenku węgla przy udziale światła słonecznego. Ten proces nazywamy fotosyntezą. Podczas fotosyntezy roślina wydziela tlen, którym oddychają ludzie i zwierzęta. Przez drobne otwory w liściach, czyli aparaty szparkowe, z rośliny wyparowuje woda.\n\nKwiat, owoc i nasiono:\nKwiat służy do rozmnażania. W kwiecie jest pyłek. Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat – to zapylenie. Po zapyleniu z części kwiatu rozwija się owoc, a w nim nasiona. Z nasienia, które trafi do ziemi, może wyrosnąć nowa roślina.\n\nJak z nasienia wyrasta roślina (kolejne etapy):\n1. Nasiono trafia do wilgotnej gleby.\n2. Nasiono pęcznieje, bo wchłania wodę.\n3. Z nasienia wyrasta korzeń.\n4. Nad ziemię wyrasta łodyżka z pierwszymi liśćmi.\n5. Roślina rośnie i wytwarza kolejne liście.\n6. Dorosła roślina zakwita.\n\nWażne pojęcia:\n- fotosynteza – wytwarzanie pokarmu w liściach z wody i dwutlenku węgla przy udziale światła,\n- chlorofil – zielony barwnik w liściach,\n- zapylenie – przeniesienie pyłku z kwiatu na kwiat,\n- pień – twarda, zdrewniała łodyga drzewa,\n- korzeń spichrzowy – gruby korzeń z zapasem pokarmu,\n- aparaty szparkowe – drobne otwory w liściach, przez które wyparowuje woda.\n\nNie myl:\nZapylenie to nie to samo co kiełkowanie. Zapylenie zachodzi w kwiecie i prowadzi do powstania owocu z nasionami. Kiełkowanie to początek wzrostu nowej rośliny z nasienia w glebie.\n\nRośliny jadalne według części, którą jemy:\n- jemy korzeń: marchew, burak, rzodkiewka,\n- jemy liście: sałata, szpinak, kapusta,\n- jemy owoc: pomidor, jabłko, ogórek.\n\nDlaczego tak się dzieje:\nGdy roślina nie dostaje wody, jej liście więdną, bo łodyga nie ma czego przewodzić. Gdy roślina stoi w ciemności, przestaje wytwarzać pokarm, bo do fotosyntezy potrzebne jest światło. Gdy nie ma owadów zapylających, kwiaty nie zamieniają się w owoce.\n",
+ "cases": [
+  {
+   "id": "c-keywords-1",
+   "class": "correct",
+   "familyPrompt": "Z czego roślina wytwarza pokarm w liściach?",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "pokarm-z-czego",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "woda"
+     },
+     {
+      "id": "k2",
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "k3",
+      "text": "tlen"
+     },
+     {
+      "id": "k4",
+      "text": "pyłek"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "woda, dwutlenek węgla",
+    "sourceRefs": [
+     {
+      "quote": "W liściach roślina wytwarza pokarm z wody i dwutlenku węgla"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-keywords-2",
+   "class": "correct",
+   "familyPrompt": "Jakie zadania ma korzeń?",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "korzen-zadania",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "utrzymuje roślinę w glebie"
+     },
+     {
+      "id": "k2",
+      "text": "pobiera wodę z gleby"
+     },
+     {
+      "id": "k3",
+      "text": "ustawia liście do światła"
+     },
+     {
+      "id": "k4",
+      "text": "wytwarza pokarm z wody"
+     },
+     {
+      "id": "k5",
+      "text": "przenosi pyłek"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "utrzymuje roślinę w glebie, pobiera wodę z gleby",
+    "sourceRefs": [
+     {
+      "quote": "Utrzymuje roślinę w glebie, żeby wiatr jej nie przewrócił. Korzeń pobiera z gleby wodę"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-keywords-3",
+   "class": "correct",
+   "familyPrompt": "Co powstaje z kwiatu po zapyleniu?",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "po-zapyleniu",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "owoc"
+     },
+     {
+      "id": "k2",
+      "text": "nasiona"
+     },
+     {
+      "id": "k3",
+      "text": "pyłek"
+     },
+     {
+      "id": "k4",
+      "text": "pień"
+     },
+     {
+      "id": "k5",
+      "text": "chlorofil"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "owoc, nasiona",
+    "sourceRefs": [
+     {
+      "quote": "Po zapyleniu z części kwiatu rozwija się owoc, a w nim nasiona."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-keywords-4",
+   "class": "correct",
+   "familyPrompt": "Jakie zadania ma łodyga?",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "lodyga-zadania",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "podtrzymuje liście i kwiaty"
+     },
+     {
+      "id": "k2",
+      "text": "przewodzi wodę do liści"
+     },
+     {
+      "id": "k3",
+      "text": "pobiera wodę z gleby"
+     },
+     {
+      "id": "k4",
+      "text": "wydziela tlen"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "podtrzymuje liście i kwiaty, przewodzi wodę do liści",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-choice-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Jak nazywa się zielony barwnik w liściach?",
+    "options": [
+     {
+      "id": "a",
+      "text": "chlorofil"
+     },
+     {
+      "id": "b",
+      "text": "pyłek"
+     },
+     {
+      "id": "c",
+      "text": "tlen"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "chlorofil",
+    "sourceRefs": [
+     {
+      "quote": "chlorofil – zielony barwnik w liściach"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-choice-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Jak nazywamy twardą, zdrewniałą łodygę drzewa?",
+    "options": [
+     {
+      "id": "a",
+      "text": "pień"
+     },
+     {
+      "id": "b",
+      "text": "korzeń"
+     },
+     {
+      "id": "c",
+      "text": "liść"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "pień",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga drzewa jest twarda i zdrewniała – nazywamy ją pniem."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-choice-3",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Do czego służy kwiat?",
+    "options": [
+     {
+      "id": "a",
+      "text": "do rozmnażania"
+     },
+     {
+      "id": "b",
+      "text": "do pobierania wody z gleby"
+     },
+     {
+      "id": "c",
+      "text": "do utrzymania rośliny w glebie"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "do rozmnażania",
+    "sourceRefs": [
+     {
+      "quote": "Kwiat służy do rozmnażania."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-choice-4",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Co roślina wydziela podczas fotosyntezy?",
+    "options": [
+     {
+      "id": "a",
+      "text": "tlen"
+     },
+     {
+      "id": "b",
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "c",
+      "text": "sole mineralne"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "tlen",
+    "sourceRefs": [
+     {
+      "quote": "Podczas fotosyntezy roślina wydziela tlen"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-order-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności pierwsze etapy wyrastania rośliny z nasienia.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "nasiono trafia do wilgotnej gleby"
+     },
+     {
+      "id": "b",
+      "text": "nasiono pęcznieje"
+     },
+     {
+      "id": "c",
+      "text": "z nasienia wyrasta korzeń"
+     },
+     {
+      "id": "d",
+      "text": "nad ziemię wyrasta łodyżka z liśćmi"
+     }
+    ],
+    "answer": "nasiono trafia do wilgotnej gleby nasiono pęcznieje z nasienia wyrasta korzeń nad ziemię wyrasta łodyżka z liśćmi",
+    "sourceRefs": [
+     {
+      "quote": "1. Nasiono trafia do wilgotnej gleby."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-order-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności dalsze etapy wzrostu rośliny.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "wyrasta łodyżka z pierwszymi liśćmi"
+     },
+     {
+      "id": "b",
+      "text": "roślina wytwarza kolejne liście"
+     },
+     {
+      "id": "c",
+      "text": "dorosła roślina zakwita"
+     }
+    ],
+    "answer": "wyrasta łodyżka z pierwszymi liśćmi roślina wytwarza kolejne liście dorosła roślina zakwita",
+    "sourceRefs": [
+     {
+      "quote": "5. Roślina rośnie i wytwarza kolejne liście."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-order-3",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności, jak z kwiatu powstaje nowa roślina.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "owady przenoszą pyłek z kwiatu na kwiat"
+     },
+     {
+      "id": "b",
+      "text": "z części kwiatu rozwija się owoc z nasionami"
+     },
+     {
+      "id": "c",
+      "text": "nasiono trafia do ziemi"
+     },
+     {
+      "id": "d",
+      "text": "z nasienia wyrasta nowa roślina"
+     }
+    ],
+    "answer": "owady przenoszą pyłek z kwiatu na kwiat z części kwiatu rozwija się owoc z nasionami nasiono trafia do ziemi z nasienia wyrasta nowa roślina",
+    "sourceRefs": [
+     {
+      "quote": "Po zapyleniu z części kwiatu rozwija się owoc, a w nim nasiona."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-order-4",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności drogę wody w roślinie.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "korzeń pobiera wodę z gleby"
+     },
+     {
+      "id": "b",
+      "text": "łodyga przewodzi wodę do liści"
+     },
+     {
+      "id": "c",
+      "text": "woda wyparowuje przez aparaty szparkowe"
+     }
+    ],
+    "answer": "korzeń pobiera wodę z gleby łodyga przewodzi wodę do liści woda wyparowuje przez aparaty szparkowe",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga przewodzi wodę z korzenia do liści"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-match-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz część rośliny z jej zadaniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "korzeń",
+      "right": "utrzymuje roślinę w glebie"
+     },
+     {
+      "left": "łodyga",
+      "right": "przewodzi wodę do liści"
+     },
+     {
+      "left": "liście",
+      "right": "wytwarzają pokarm"
+     },
+     {
+      "left": "kwiat",
+      "right": "służy do rozmnażania"
+     }
+    ],
+    "extraRight": [
+     "przenosi pyłek z kwiatu na kwiat"
+    ],
+    "answer": "korzeń, łodyga, liście, kwiat",
+    "sourceRefs": [
+     {
+      "quote": "Korzeń rośnie zwykle pod ziemią. Utrzymuje roślinę w glebie"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-match-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz pojęcie z jego znaczeniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "fotosynteza",
+      "right": "wytwarzanie pokarmu w liściach"
+     },
+     {
+      "left": "chlorofil",
+      "right": "zielony barwnik w liściach"
+     },
+     {
+      "left": "aparaty szparkowe",
+      "right": "drobne otwory w liściach"
+     }
+    ],
+    "extraRight": [
+     "przeniesienie pyłku z kwiatu na kwiat"
+    ],
+    "answer": "fotosynteza, chlorofil, aparaty szparkowe",
+    "sourceRefs": [
+     {
+      "quote": "aparaty szparkowe – drobne otwory w liściach"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-group-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Pogrupuj rośliny według części, którą jemy.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Jemy korzeń"
+     },
+     {
+      "id": "g2",
+      "label": "Jemy liście"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "marchew",
+      "groupId": "g1"
+     },
+     {
+      "text": "burak",
+      "groupId": "g1"
+     },
+     {
+      "text": "rzodkiewka",
+      "groupId": "g1"
+     },
+     {
+      "text": "sałata",
+      "groupId": "g2"
+     },
+     {
+      "text": "szpinak",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Jemy korzeń / Jemy liście",
+    "sourceRefs": [
+     {
+      "quote": "jemy korzeń: marchew, burak, rzodkiewka"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-group-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel na części rośliny i owady zapylające.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Części rośliny"
+     },
+     {
+      "id": "g2",
+      "label": "Owady zapylające"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "korzeń",
+      "groupId": "g1"
+     },
+     {
+      "text": "łodyga",
+      "groupId": "g1"
+     },
+     {
+      "text": "kwiat",
+      "groupId": "g1"
+     },
+     {
+      "text": "pszczoły",
+      "groupId": "g2"
+     },
+     {
+      "text": "motyle",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Części rośliny / Owady zapylające",
+    "sourceRefs": [
+     {
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat"
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-cloze-1",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Liście są zielone, bo zawierają ___. Podczas fotosyntezy roślina wydziela ___, którym oddychają ludzie i zwierzęta.",
+    "gapAnswers": [
+     "chlorofil",
+     "tlen"
+    ],
+    "extraWords": [
+     "pyłek"
+    ],
+    "answer": "chlorofil, tlen",
+    "sourceRefs": [
+     {
+      "quote": "Podczas fotosyntezy roślina wydziela tlen, którym oddychają ludzie i zwierzęta."
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-cloze-2",
+   "class": "correct",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Roślinę w glebie utrzymuje ___, a liście i kwiaty podtrzymuje ___.",
+    "gapAnswers": [
+     "korzeń",
+     "łodyga"
+    ],
+    "extraWords": [
+     "kwiat"
+    ],
+    "answer": "korzeń, łodyga",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga podtrzymuje liście i kwiaty"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-keywords-1",
+   "class": "wrong_key",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „tlen”.",
+   "familyPrompt": "Z czego roślina wytwarza pokarm w liściach?",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "pokarm-z-czego",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "woda"
+     },
+     {
+      "id": "k2",
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "k3",
+      "text": "tlen"
+     },
+     {
+      "id": "k4",
+      "text": "pyłek"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k3"
+    ],
+    "answer": "woda, tlen",
+    "sourceRefs": [
+     {
+      "quote": "W liściach roślina wytwarza pokarm z wody i dwutlenku węgla"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-keywords-2",
+   "class": "wrong_key",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „ustawia liście do światła”.",
+   "familyPrompt": "Jakie zadania ma korzeń?",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "korzen-zadania",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "utrzymuje roślinę w glebie"
+     },
+     {
+      "id": "k2",
+      "text": "pobiera wodę z gleby"
+     },
+     {
+      "id": "k3",
+      "text": "ustawia liście do światła"
+     },
+     {
+      "id": "k4",
+      "text": "wytwarza pokarm z wody"
+     },
+     {
+      "id": "k5",
+      "text": "przenosi pyłek"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k3"
+    ],
+    "answer": "utrzymuje roślinę w glebie, ustawia liście do światła",
+    "sourceRefs": [
+     {
+      "quote": "Utrzymuje roślinę w glebie, żeby wiatr jej nie przewrócił. Korzeń pobiera z gleby wodę"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-keywords-3",
+   "class": "wrong_key",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „pyłek”.",
+   "familyPrompt": "Co powstaje z kwiatu po zapyleniu?",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "po-zapyleniu",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "owoc"
+     },
+     {
+      "id": "k2",
+      "text": "nasiona"
+     },
+     {
+      "id": "k3",
+      "text": "pyłek"
+     },
+     {
+      "id": "k4",
+      "text": "pień"
+     },
+     {
+      "id": "k5",
+      "text": "chlorofil"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k3"
+    ],
+    "answer": "owoc, pyłek",
+    "sourceRefs": [
+     {
+      "quote": "Po zapyleniu z części kwiatu rozwija się owoc, a w nim nasiona."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-keywords-4",
+   "class": "wrong_key",
+   "note": "keyOptionIds: drugie pojęcie kluczowe zamienione na dystraktor „pobiera wodę z gleby”.",
+   "familyPrompt": "Jakie zadania ma łodyga?",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "lodyga-zadania",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "podtrzymuje liście i kwiaty"
+     },
+     {
+      "id": "k2",
+      "text": "przewodzi wodę do liści"
+     },
+     {
+      "id": "k3",
+      "text": "pobiera wodę z gleby"
+     },
+     {
+      "id": "k4",
+      "text": "wydziela tlen"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k3"
+    ],
+    "answer": "podtrzymuje liście i kwiaty, pobiera wodę z gleby",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-choice-1",
+   "class": "wrong_key",
+   "note": "correctOption zamienione na „pyłek”.",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Jak nazywa się zielony barwnik w liściach?",
+    "options": [
+     {
+      "id": "a",
+      "text": "chlorofil"
+     },
+     {
+      "id": "b",
+      "text": "pyłek"
+     },
+     {
+      "id": "c",
+      "text": "tlen"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "pyłek",
+    "sourceRefs": [
+     {
+      "quote": "chlorofil – zielony barwnik w liściach"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-choice-2",
+   "class": "wrong_key",
+   "note": "correctOption zamienione na „korzeń”.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Jak nazywamy twardą, zdrewniałą łodygę drzewa?",
+    "options": [
+     {
+      "id": "a",
+      "text": "pień"
+     },
+     {
+      "id": "b",
+      "text": "korzeń"
+     },
+     {
+      "id": "c",
+      "text": "liść"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "korzeń",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga drzewa jest twarda i zdrewniała – nazywamy ją pniem."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-choice-3",
+   "class": "wrong_key",
+   "note": "correctOption zamienione na „do pobierania wody z gleby”.",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Do czego służy kwiat?",
+    "options": [
+     {
+      "id": "a",
+      "text": "do rozmnażania"
+     },
+     {
+      "id": "b",
+      "text": "do pobierania wody z gleby"
+     },
+     {
+      "id": "c",
+      "text": "do utrzymania rośliny w glebie"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "do pobierania wody z gleby",
+    "sourceRefs": [
+     {
+      "quote": "Kwiat służy do rozmnażania."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-choice-4",
+   "class": "wrong_key",
+   "note": "correctOption zamienione na „dwutlenek węgla”.",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Co roślina wydziela podczas fotosyntezy?",
+    "options": [
+     {
+      "id": "a",
+      "text": "tlen"
+     },
+     {
+      "id": "b",
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "c",
+      "text": "sole mineralne"
+     }
+    ],
+    "correctOption": "b",
+    "answer": "dwutlenek węgla",
+    "sourceRefs": [
+     {
+      "quote": "Podczas fotosyntezy roślina wydziela tlen"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-order-1",
+   "class": "wrong_key",
+   "note": "Zamienione sąsiednie klocki 2 i 3 („nasiono pęcznieje” / „z nasienia wyrasta korzeń”); kolejność błędna według materiału (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności pierwsze etapy wyrastania rośliny z nasienia.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "nasiono trafia do wilgotnej gleby"
+     },
+     {
+      "id": "c",
+      "text": "z nasienia wyrasta korzeń"
+     },
+     {
+      "id": "b",
+      "text": "nasiono pęcznieje"
+     },
+     {
+      "id": "d",
+      "text": "nad ziemię wyrasta łodyżka z liśćmi"
+     }
+    ],
+    "answer": "nasiono trafia do wilgotnej gleby z nasienia wyrasta korzeń nasiono pęcznieje nad ziemię wyrasta łodyżka z liśćmi",
+    "sourceRefs": [
+     {
+      "quote": "1. Nasiono trafia do wilgotnej gleby."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-order-2",
+   "class": "wrong_key",
+   "note": "Zamienione sąsiednie klocki 2 i 3 („roślina wytwarza kolejne liście” / „dorosła roślina zakwita”); kolejność błędna według materiału (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności dalsze etapy wzrostu rośliny.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "wyrasta łodyżka z pierwszymi liśćmi"
+     },
+     {
+      "id": "c",
+      "text": "dorosła roślina zakwita"
+     },
+     {
+      "id": "b",
+      "text": "roślina wytwarza kolejne liście"
+     }
+    ],
+    "answer": "wyrasta łodyżka z pierwszymi liśćmi dorosła roślina zakwita roślina wytwarza kolejne liście",
+    "sourceRefs": [
+     {
+      "quote": "5. Roślina rośnie i wytwarza kolejne liście."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-order-3",
+   "class": "wrong_key",
+   "note": "Zamienione sąsiednie klocki 2 i 3 („z części kwiatu rozwija się owoc z nasionami” / „nasiono trafia do ziemi”); kolejność błędna według materiału (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności, jak z kwiatu powstaje nowa roślina.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "owady przenoszą pyłek z kwiatu na kwiat"
+     },
+     {
+      "id": "c",
+      "text": "nasiono trafia do ziemi"
+     },
+     {
+      "id": "b",
+      "text": "z części kwiatu rozwija się owoc z nasionami"
+     },
+     {
+      "id": "d",
+      "text": "z nasienia wyrasta nowa roślina"
+     }
+    ],
+    "answer": "owady przenoszą pyłek z kwiatu na kwiat nasiono trafia do ziemi z części kwiatu rozwija się owoc z nasionami z nasienia wyrasta nowa roślina",
+    "sourceRefs": [
+     {
+      "quote": "Po zapyleniu z części kwiatu rozwija się owoc, a w nim nasiona."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-order-4",
+   "class": "wrong_key",
+   "note": "Zamienione sąsiednie klocki 2 i 3 („łodyga przewodzi wodę do liści” / „woda wyparowuje przez aparaty szparkowe”); kolejność błędna według materiału (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_order",
+    "instructionPl": "Ułóż w kolejności drogę wody w roślinie.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "items": [
+     {
+      "id": "a",
+      "text": "korzeń pobiera wodę z gleby"
+     },
+     {
+      "id": "c",
+      "text": "woda wyparowuje przez aparaty szparkowe"
+     },
+     {
+      "id": "b",
+      "text": "łodyga przewodzi wodę do liści"
+     }
+    ],
+    "answer": "korzeń pobiera wodę z gleby woda wyparowuje przez aparaty szparkowe łodyga przewodzi wodę do liści",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga przewodzi wodę z korzenia do liści"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-match-1",
+   "class": "wrong_key",
+   "note": "Zamienione prawe strony par „korzeń” i „łodyga”.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz część rośliny z jej zadaniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "korzeń",
+      "right": "przewodzi wodę do liści"
+     },
+     {
+      "left": "łodyga",
+      "right": "utrzymuje roślinę w glebie"
+     },
+     {
+      "left": "liście",
+      "right": "wytwarzają pokarm"
+     },
+     {
+      "left": "kwiat",
+      "right": "służy do rozmnażania"
+     }
+    ],
+    "extraRight": [
+     "przenosi pyłek z kwiatu na kwiat"
+    ],
+    "answer": "korzeń, łodyga, liście, kwiat",
+    "sourceRefs": [
+     {
+      "quote": "Korzeń rośnie zwykle pod ziemią. Utrzymuje roślinę w glebie"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-match-2",
+   "class": "wrong_key",
+   "note": "Zamienione prawe strony par „fotosynteza” i „chlorofil”.",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz pojęcie z jego znaczeniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "fotosynteza",
+      "right": "zielony barwnik w liściach"
+     },
+     {
+      "left": "chlorofil",
+      "right": "wytwarzanie pokarmu w liściach"
+     },
+     {
+      "left": "aparaty szparkowe",
+      "right": "drobne otwory w liściach"
+     }
+    ],
+    "extraRight": [
+     "przeniesienie pyłku z kwiatu na kwiat"
+    ],
+    "answer": "fotosynteza, chlorofil, aparaty szparkowe",
+    "sourceRefs": [
+     {
+      "quote": "aparaty szparkowe – drobne otwory w liściach"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-group-1",
+   "class": "wrong_key",
+   "note": "Element „rzodkiewka” przeniesiony do innej grupy.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Pogrupuj rośliny według części, którą jemy.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Jemy korzeń"
+     },
+     {
+      "id": "g2",
+      "label": "Jemy liście"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "marchew",
+      "groupId": "g1"
+     },
+     {
+      "text": "burak",
+      "groupId": "g1"
+     },
+     {
+      "text": "rzodkiewka",
+      "groupId": "g2"
+     },
+     {
+      "text": "sałata",
+      "groupId": "g2"
+     },
+     {
+      "text": "szpinak",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Jemy korzeń / Jemy liście",
+    "sourceRefs": [
+     {
+      "quote": "jemy korzeń: marchew, burak, rzodkiewka"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-group-2",
+   "class": "wrong_key",
+   "note": "Element „kwiat” przeniesiony do innej grupy.",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel na części rośliny i owady zapylające.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Części rośliny"
+     },
+     {
+      "id": "g2",
+      "label": "Owady zapylające"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "korzeń",
+      "groupId": "g1"
+     },
+     {
+      "text": "łodyga",
+      "groupId": "g1"
+     },
+     {
+      "text": "kwiat",
+      "groupId": "g2"
+     },
+     {
+      "text": "pszczoły",
+      "groupId": "g2"
+     },
+     {
+      "text": "motyle",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Części rośliny / Owady zapylające",
+    "sourceRefs": [
+     {
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat"
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-cloze-1",
+   "class": "wrong_key",
+   "note": "Zamienione słowa luk 1 i 2; nie są zamienne (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Liście są zielone, bo zawierają ___. Podczas fotosyntezy roślina wydziela ___, którym oddychają ludzie i zwierzęta.",
+    "gapAnswers": [
+     "tlen",
+     "chlorofil"
+    ],
+    "extraWords": [
+     "pyłek"
+    ],
+    "answer": "tlen, chlorofil",
+    "sourceRefs": [
+     {
+      "quote": "Podczas fotosyntezy roślina wydziela tlen, którym oddychają ludzie i zwierzęta."
+     }
+    ]
+   }
+  },
+  {
+   "id": "w-cloze-2",
+   "class": "wrong_key",
+   "note": "Zamienione słowa luk 1 i 2; nie są zamienne (autor potwierdza).",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Roślinę w glebie utrzymuje ___, a liście i kwiaty podtrzymuje ___.",
+    "gapAnswers": [
+     "łodyga",
+     "korzeń"
+    ],
+    "extraWords": [
+     "kwiat"
+    ],
+    "answer": "łodyga, korzeń",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga podtrzymuje liście i kwiaty"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-keywords-1",
+   "class": "second_correct",
+   "familyPrompt": "Jakie zadania ma łodyga?",
+   "justification": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "lodyga-zadania-2",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "podtrzymuje liście i kwiaty"
+     },
+     {
+      "id": "k2",
+      "text": "przewodzi wodę do liści"
+     },
+     {
+      "id": "k3",
+      "text": "ustawia liście do światła"
+     },
+     {
+      "id": "k4",
+      "text": "pobiera wodę z gleby"
+     },
+     {
+      "id": "k5",
+      "text": "wytwarza pokarm"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "podtrzymuje liście i kwiaty, przewodzi wodę do liści",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła."
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-keywords-2",
+   "class": "second_correct",
+   "familyPrompt": "Co jest potrzebne roślinie do wytwarzania pokarmu w liściach?",
+   "justification": "W liściach roślina wytwarza pokarm z wody i dwutlenku węgla przy udziale światła słonecznego.",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "pokarm-potrzebne",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "woda"
+     },
+     {
+      "id": "k2",
+      "text": "dwutlenek węgla"
+     },
+     {
+      "id": "k3",
+      "text": "światło"
+     },
+     {
+      "id": "k4",
+      "text": "pyłek"
+     },
+     {
+      "id": "k5",
+      "text": "tlen"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "woda, dwutlenek węgla",
+    "sourceRefs": [
+     {
+      "quote": "W liściach roślina wytwarza pokarm z wody i dwutlenku węgla przy udziale światła słonecznego."
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-keywords-3",
+   "class": "second_correct",
+   "familyPrompt": "Kto przenosi pyłek z kwiatu na kwiat?",
+   "justification": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat – to zapylenie.",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "zapylacze",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "pszczoły"
+     },
+     {
+      "id": "k2",
+      "text": "trzmiele"
+     },
+     {
+      "id": "k3",
+      "text": "motyle"
+     },
+     {
+      "id": "k4",
+      "text": "ludzie"
+     },
+     {
+      "id": "k5",
+      "text": "korzenie"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "pszczoły, trzmiele",
+    "sourceRefs": [
+     {
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-keywords-4",
+   "class": "second_correct",
+   "familyPrompt": "Które rośliny gromadzą zapasy pokarmu w korzeniu?",
+   "justification": "Niektóre rośliny gromadzą w korzeniu zapasy pokarmu, na przykład marchew, burak i rzodkiewka.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_keywords",
+    "instructionPl": "Zaznacz pojęcia, które są potrzebne w odpowiedzi.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "familyId": "korzen-zapasy",
+    "keywordOptions": [
+     {
+      "id": "k1",
+      "text": "marchew"
+     },
+     {
+      "id": "k2",
+      "text": "burak"
+     },
+     {
+      "id": "k3",
+      "text": "rzodkiewka"
+     },
+     {
+      "id": "k4",
+      "text": "sałata"
+     },
+     {
+      "id": "k5",
+      "text": "pomidor"
+     }
+    ],
+    "keyOptionIds": [
+     "k1",
+     "k2"
+    ],
+    "answer": "marchew, burak",
+    "sourceRefs": [
+     {
+      "quote": "Niektóre rośliny gromadzą w korzeniu zapasy pokarmu"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-choice-1",
+   "class": "second_correct",
+   "justification": "Niektóre rośliny gromadzą w korzeniu zapasy pokarmu, na przykład marchew, burak i rzodkiewka.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Która roślina gromadzi zapasy pokarmu w korzeniu?",
+    "options": [
+     {
+      "id": "a",
+      "text": "marchew"
+     },
+     {
+      "id": "b",
+      "text": "burak"
+     },
+     {
+      "id": "c",
+      "text": "sałata"
+     },
+     {
+      "id": "d",
+      "text": "pomidor"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "marchew",
+    "sourceRefs": [
+     {
+      "quote": "Niektóre rośliny gromadzą w korzeniu zapasy pokarmu"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-choice-2",
+   "class": "second_correct",
+   "justification": "jemy owoc: pomidor, jabłko, ogórek.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Którą roślinę jemy ze względu na owoc?",
+    "options": [
+     {
+      "id": "a",
+      "text": "pomidor"
+     },
+     {
+      "id": "b",
+      "text": "ogórek"
+     },
+     {
+      "id": "c",
+      "text": "szpinak"
+     },
+     {
+      "id": "d",
+      "text": "marchew"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "pomidor",
+    "sourceRefs": [
+     {
+      "quote": "jemy owoc: pomidor, jabłko, ogórek"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-choice-3",
+   "class": "second_correct",
+   "justification": "Łodyga podtrzymuje liście i kwiaty i ustawia je do światła. Łodyga przewodzi wodę z korzenia do liści",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Które zadanie ma łodyga?",
+    "options": [
+     {
+      "id": "a",
+      "text": "przewodzi wodę z korzenia do liści"
+     },
+     {
+      "id": "b",
+      "text": "ustawia liście i kwiaty do światła"
+     },
+     {
+      "id": "c",
+      "text": "pobiera wodę z gleby"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "przewodzi wodę z korzenia do liści",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga przewodzi wodę z korzenia do liści"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-choice-4",
+   "class": "second_correct",
+   "justification": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_choice",
+    "instructionPl": "Wybierz poprawną odpowiedź.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "stem": "Co korzeń pobiera z gleby?",
+    "options": [
+     {
+      "id": "a",
+      "text": "wodę"
+     },
+     {
+      "id": "b",
+      "text": "sole mineralne"
+     },
+     {
+      "id": "c",
+      "text": "tlen"
+     }
+    ],
+    "correctOption": "a",
+    "answer": "wodę",
+    "sourceRefs": [
+     {
+      "quote": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne."
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-match-1",
+   "class": "second_correct",
+   "justification": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne.",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz część rośliny z jej zadaniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "korzeń",
+      "right": "utrzymuje roślinę w glebie"
+     },
+     {
+      "left": "łodyga",
+      "right": "podtrzymuje liście i kwiaty"
+     },
+     {
+      "left": "liście",
+      "right": "wytwarzają pokarm"
+     }
+    ],
+    "extraRight": [
+     "pobiera wodę z gleby"
+    ],
+    "answer": "korzeń, łodyga, liście",
+    "sourceRefs": [
+     {
+      "quote": "Korzeń pobiera z gleby wodę"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-match-2",
+   "class": "second_correct",
+   "justification": "Zapylenie zachodzi w kwiecie i prowadzi do powstania owocu z nasionami.",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_match",
+    "instructionPl": "Połącz pojęcie z jego znaczeniem.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "pairs": [
+     {
+      "left": "chlorofil",
+      "right": "zielony barwnik w liściach"
+     },
+     {
+      "left": "pień",
+      "right": "twarda, zdrewniała łodyga drzewa"
+     },
+     {
+      "left": "zapylenie",
+      "right": "przeniesienie pyłku z kwiatu na kwiat"
+     }
+    ],
+    "extraRight": [
+     "prowadzi do powstania owocu z nasionami"
+    ],
+    "answer": "chlorofil, pień, zapylenie",
+    "sourceRefs": [
+     {
+      "quote": "zapylenie – przeniesienie pyłku z kwiatu na kwiat"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-group-1",
+   "class": "second_correct",
+   "justification": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne. … W liściach roślina wytwarza pokarm z wody i dwutlenku węgla przy udziale światła słonecznego.",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel na to, co potrzebne do fotosyntezy, i to, co korzeń pobiera z gleby.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Potrzebne do fotosyntezy"
+     },
+     {
+      "id": "g2",
+      "label": "Pobiera korzeń z gleby"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "światło",
+      "groupId": "g1"
+     },
+     {
+      "text": "dwutlenek węgla",
+      "groupId": "g1"
+     },
+     {
+      "text": "woda",
+      "groupId": "g2"
+     },
+     {
+      "text": "sole mineralne",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Potrzebne do fotosyntezy / Pobiera korzeń z gleby",
+    "sourceRefs": [
+     {
+      "quote": "Korzeń pobiera z gleby wodę i rozpuszczone w niej sole mineralne."
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-group-2",
+   "class": "second_correct",
+   "justification": "Łodyga przewodzi wodę z korzenia do liści, a pokarm z liści do innych części rośliny. … W liściach roślina wytwarza pokarm z wody i dwutlenku węgla",
+   "draft": {
+    "objectiveId": "school.dgold.fotosynteza",
+    "exerciseType": "lesson_group",
+    "instructionPl": "Podziel na to, co potrzebne do fotosyntezy, i to, co przewodzi łodyga.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "groups": [
+     {
+      "id": "g1",
+      "label": "Potrzebne do fotosyntezy"
+     },
+     {
+      "id": "g2",
+      "label": "Przewodzi łodyga"
+     }
+    ],
+    "groupItems": [
+     {
+      "text": "światło",
+      "groupId": "g1"
+     },
+     {
+      "text": "dwutlenek węgla",
+      "groupId": "g1"
+     },
+     {
+      "text": "woda",
+      "groupId": "g2"
+     },
+     {
+      "text": "pokarm",
+      "groupId": "g2"
+     }
+    ],
+    "answer": "Potrzebne do fotosyntezy / Przewodzi łodyga",
+    "sourceRefs": [
+     {
+      "quote": "Łodyga przewodzi wodę z korzenia do liści, a pokarm z liści do innych części rośliny."
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-cloze-1",
+   "class": "second_correct",
+   "justification": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat – „trzmiele” pasuje do luki 1 znaczeniem i formą (mianownik l. mn.).",
+   "draft": {
+    "objectiveId": "school.dgold.rozwoj",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Pyłek z kwiatu na kwiat przenoszą pszczoły i ___. Po zapyleniu z części kwiatu rozwija się ___.",
+    "gapAnswers": [
+     "motyle",
+     "owoc"
+    ],
+    "extraWords": [
+     "trzmiele"
+    ],
+    "answer": "motyle, owoc",
+    "sourceRefs": [
+     {
+      "quote": "Pszczoły, trzmiele i motyle przenoszą pyłek z kwiatu na kwiat"
+     }
+    ]
+   }
+  },
+  {
+   "id": "s-cloze-2",
+   "class": "second_correct",
+   "justification": "Niektóre rośliny gromadzą w korzeniu zapasy pokarmu, na przykład marchew, burak i rzodkiewka. – „rzodkiewka” pasuje do luki 1 znaczeniem i formą (mianownik l. poj.).",
+   "draft": {
+    "objectiveId": "school.dgold.czesci",
+    "exerciseType": "lesson_cloze",
+    "instructionPl": "Uzupełnij tekst słowami z ramki.",
+    "acceptedAnswers": [],
+    "focus": [],
+    "clozeText": "Zapasy pokarmu w korzeniu gromadzą na przykład marchew i ___. Liście są zielone, bo zawierają ___.",
+    "gapAnswers": [
+     "burak",
+     "chlorofil"
+    ],
+    "extraWords": [
+     "rzodkiewka"
+    ],
+    "answer": "burak, chlorofil",
+    "sourceRefs": [
+     {
+      "quote": "na przykład marchew, burak i rzodkiewka"
+     }
+    ]
+   }
+  }
+ ]
+}
