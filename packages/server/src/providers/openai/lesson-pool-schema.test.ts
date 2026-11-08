@@ -101,11 +101,39 @@ describe("lessonPoolJsonSchema", () => {
     expect(schema).toMatchObject({ type: "object", additionalProperties: false, required: ["exercises", "examples"] });
     expect(item.properties.exerciseType.enum).toEqual(["lesson_choice", "lesson_gap"]);
     expect(item.properties.objectiveId.enum).toEqual(["objective-a"]);
-    expect(item.properties.transformId.enum).toEqual([null, "to_negative"]);
+    // Gałąź bez lesson_transform nie ma `transformId` (pola tylko niektórych typów, limit unii Anthropic).
+    expect(item.properties).not.toHaveProperty("transformId");
     expect(item.properties.options.type).toEqual(["null", "array"]);
     expect(item.required.sort()).toEqual(Object.keys(item.properties).sort());
     expect(item.additionalProperties).toBe(false);
     expect(schema.properties.examples.items.properties.objectiveId.enum).toEqual(["objective-a"]);
+  });
+
+  it("keeps a type-specific field only in a branch with its type, and at most 16 nullable fields in one-type branches", () => {
+    const branchOf = (types: string[]) => (lessonPoolJsonSchema({
+      ...input,
+      exerciseTypes: types,
+      objectives: [{ ...input.objectives[0]!, exerciseTypes: types }],
+      voiceTones: true,
+      exerciseExplanations: true,
+    }) as any).properties.exercises.items;
+    const transform = branchOf(["lesson_transform"]);
+    expect(transform.properties.transformId).toEqual({ anyOf: [{ type: "string", enum: ["to_negative"] }, { type: "null" }] });
+    expect(transform.properties).not.toHaveProperty("options");
+    expect(transform.properties).not.toHaveProperty("questionType");
+    const open = branchOf(["lesson_open_answer"]);
+    expect(Object.keys(open.properties)).toEqual(expect.arrayContaining(["questionType", "requiredElements", "supplementaryElements", "commonErrors", "expectedForm", "familyId"]));
+    expect(open.properties).not.toHaveProperty("options");
+    expect(open.properties).not.toHaveProperty("items");
+    expect(branchOf(["lesson_notice"]).properties).toHaveProperty("correctOption");
+    expect(branchOf(["lesson_choice"]).properties).toHaveProperty("visualSubject");
+    const regular = ["lesson_choice", "lesson_gap", "lesson_transform", "lesson_open_answer", "lesson_order", "lesson_notice", "lesson_short_answer", "lesson_error_fix", "lesson_listen_choice"];
+    for (const type of regular) {
+      const branch = branchOf([type]);
+      const unions = Object.values(branch.properties as Record<string, any>).filter((field) => Array.isArray(field.type) || field.anyOf !== undefined);
+      expect(unions.length, type).toBeLessThanOrEqual(16);
+      expect(branch.required.sort(), type).toEqual(Object.keys(branch.properties).sort());
+    }
   });
 
   it("uses complete strict branches to pair each objective with its allowed exercise types", () => {
@@ -198,8 +226,8 @@ describe("lessonPoolJsonSchema — ton lektora (stage B)", () => {
   };
 
   it("voiceToneProperty is a nullable strict enum of the contract tones; without whisper there is no mysterious", () => {
-    expect(voiceToneProperty()).toEqual({ type: ["null", "string"], enum: tones });
-    expect(voiceToneProperty({ whisper: false })).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
+    expect(voiceToneProperty()).toEqual({ anyOf: [{ type: "string", enum: tones.slice(1) }, { type: "null" }] });
+    expect(voiceToneProperty({ whisper: false })).toEqual({ anyOf: [{ type: "string", enum: ["cheerful", "curious", "gentle"] }, { type: "null" }] });
   });
 
   it("adds a required nullable voiceTone to every branch except calculation when voiceTones is true", () => {
@@ -214,7 +242,7 @@ describe("lessonPoolJsonSchema — ton lektora (stage B)", () => {
         continue;
       }
       // Pytania nie są szeptane: ćwiczenia nie dostają `mysterious`.
-      expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
+      expect(branch.properties.voiceTone).toEqual(voiceToneProperty({ whisper: false }));
       expect(branch.required).toContain("voiceTone");
       expect(branch.required.sort()).toEqual(Object.keys(branch.properties).sort());
     }
@@ -269,7 +297,7 @@ describe("lessonPoolJsonSchema — wyjaśnienie błędu (explanationPl)", () => 
         expect(branch.properties).not.toHaveProperty("explanationPl");
         continue;
       }
-      expect(branch.properties.voiceTone).toEqual({ type: ["null", "string"], enum: [null, "cheerful", "curious", "gentle"] });
+      expect(branch.properties.voiceTone).toEqual(voiceToneProperty({ whisper: false }));
       expect(branch.properties.explanationPl).toEqual({ type: ["null", "string"], minLength: 1, maxLength: MAX_LESSON_TEXT_LENGTH });
       expect(branch.required).toEqual(expect.arrayContaining(["voiceTone", "explanationPl"]));
       // ścisła gałąź: wymagane są dokładnie wszystkie pola, bez duplikatów

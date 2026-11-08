@@ -489,6 +489,14 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       tokens: {
         in: events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
         out: events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
+        // Per model: OpenRouter reports cost 0 for calls on the owner's own provider key, so cost is estimated from tokens.
+        byModel: events.reduce<Record<string, { in: number; out: number; calls: number }>>((acc, event) => {
+          const cell = (acc[event.model ?? "unknown"] ??= { in: 0, out: 0, calls: 0 });
+          cell.in += event.inputTokens ?? 0;
+          cell.out += event.outputTokens ?? 0;
+          cell.calls += 1;
+          return acc;
+        }, {}),
       },
       lessonLog: lessonLog.map((text) => text.replace(/run=[0-9a-f-]+ /u, "")),
       submissionMetrics: { main: runMetrics("main"), ...(currentRun === "main" ? {} : { [currentRun]: runMetrics(currentRun) }) },
