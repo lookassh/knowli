@@ -35,7 +35,8 @@ function rng(seedText) {
 }
 
 const rows = [];
-const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize", "graderAvailable"];
+// `graderAvailable` poza porównaniem: agent szkoły biegnie z graderem kontroli 2b, przebieg bazowy po 5b bez (spec etapu 5 §7.1).
+const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize"];
 let reference;
 for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
@@ -53,12 +54,16 @@ for (const model of candidates) {
   else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${SAME_FIELDS.join(", ")}, input)`);
   if (material === undefined && typeof dump.material === "string") material = dump.material;
   const objectives = new Map((dump.objectives ?? []).map((objective) => [String(objective.id).split(".").at(-1), objective]));
+  // Keywords oceniane razem z pytaniem swojej rodziny (inny, przetasowany wiersz): pierwsze pytanie otwarte tego zagadnienia i `familyId`.
+  const familyQuestion = (exercise) =>
+    dump.exercises.find((other) => other.exerciseType === "lesson_open_answer" && other.objectiveId === exercise.objectiveId && other.familyId === exercise.familyId)?.prompt ?? null;
   dump.exercises.forEach((exercise, index) => {
     const slug = String(exercise.objectiveId ?? "").split(".").at(-1);
     const objective = objectives.get(slug);
-    const context = objective
+    const base = objective
       ? { title: objective.title, descriptionEn: objective.descriptionEn ?? null, kind: objective.kind ?? null, card: objective.card, examples: objective.examples ?? [] }
       : null;
+    const context = exercise.exerciseType === "lesson_keywords" ? { ...base, familyQuestion: familyQuestion(exercise) } : base;
     rows.push({ model, index, subject: dump.subjectId, exercise, context });
   });
 }
@@ -92,7 +97,8 @@ rows.forEach((row, position) => {
   const rowId = `${prefix ? `${prefix}-` : ""}r${String(position + 1).padStart(3, "0")}`;
   lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise))), "", "", "", ""].join(","));
   const hasExplanation = typeof row.exercise?.explanationPl === "string" && row.exercise.explanationPl.trim() !== "";
-  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation });
+  const hasHint = typeof row.exercise?.hint === "string" && row.exercise.hint.trim() !== "";
+  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation, hasHint });
 });
 
 const outDir = path.join(lessonDir, "blind");

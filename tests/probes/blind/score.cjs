@@ -42,17 +42,19 @@ function wilson(defects, n) {
   return { low: Math.max(0, (centre - margin) / denominator), high: Math.min(1, (centre + margin) / denominator) };
 }
 
-// Etap 5 (`rubric-stage5.md`): także ćwiczenia z przypisaniem rozdziału (match, group, cloze).
-const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze"];
+// Etap 5 (`rubric-stage5.md`): także ćwiczenia z przypisaniem (match, group, cloze) i pojęcia kluczowe szkoły.
+const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze", "lesson_keywords"];
 const TEXT = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
 /** Mianowniki klas rubryk etapu 2 i 5 (`rubric-stage2-v2.md`, `rubric-stage5.md`; spec etapu 2 §7, etapu 5 §7.4). */
 const CLASS_APPLIES = {
   W1: (row) => CLOSED.includes(row.type),
   W2: (row) => TEXT.includes(row.type),
-  W3: (row) => ["lesson_choice", "lesson_short_answer", "lesson_notice", "lesson_match", "lesson_group", "lesson_cloze"].includes(row.type),
+  W3: (row) => ["lesson_choice", "lesson_short_answer", "lesson_notice", "lesson_match", "lesson_group", "lesson_cloze", "lesson_keywords"].includes(row.type),
   W4: (row) => TEXT.includes(row.type),
   W5: () => true,
   W6: () => true,
+  // Zdradzenie przez podpowiedź pytania otwartego (szkoła); mianownik: pytania otwarte z podpowiedzią (`hasHint` klucza).
+  W6h: (row) => row.type === "lesson_open_answer" && row.hasHint === true,
   W7: (row) => row.hasExplanation === true,
   W8: (row) => row.type === "lesson_listen_choice",
   W9: () => true,

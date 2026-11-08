@@ -63,6 +63,22 @@ describe("score.cjs (etap 2)", () => {
     expect(() => scoreStage2([{ key, verdicts: [verdict("tb-r001", "ok", "", "bogus")] }])).toThrow(/nieznany level/u);
   });
 
+  it("stage 5 school classes: W1 and W3 on keywords, W6h only on open answers with a hint", () => {
+    const school = {
+      prefix: "sc",
+      rows: [
+        { rowId: "sc-r001", model: "baseline-r1", index: 0, type: "lesson_keywords", hasExplanation: false, hasHint: false },
+        { rowId: "sc-r002", model: "baseline-r1", index: 1, type: "lesson_open_answer", hasExplanation: false, hasHint: true },
+        { rowId: "sc-r003", model: "baseline-r1", index: 2, type: "lesson_open_answer", hasExplanation: false, hasHint: false },
+      ],
+    };
+    const { report } = scoreStage2([{ key: school, verdicts: [verdict("sc-r001", "defect", "W1|W3"), verdict("sc-r002", "defect", "W6|W6h"), verdict("sc-r003", "ok")] }]);
+    expect(report.baseline!.W1).toMatchObject({ defects: 1, n: 1 });
+    expect(report.baseline!.W3).toMatchObject({ defects: 1, n: 1 });
+    expect(report.baseline!.W6h).toMatchObject({ defects: 1, n: 1 });
+    expect(() => scoreStage2([{ key: school, verdicts: [verdict("sc-r003", "defect", "W6h")] }])).toThrow(/nie dotyczy/u);
+  });
+
   it("measures agreement of two judges per class", () => {
     const result = agreement(key, [verdict("tb-r001", "defect", "W3"), verdict("tb-r003", "ok")], [verdict("tb-r001", "ok"), verdict("tb-r003", "ok")]);
     expect(result.W3).toEqual({ agree: 0, n: 1, differing: ["tb-r001"] });
