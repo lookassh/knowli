@@ -113,9 +113,10 @@ describe.skipIf(apiKey === undefined || judgeDirEnv === undefined)("automatyczny
             if (cost === null) unknown += 1;
             else spent += cost;
             if (batchErrors(batch, result.output.rows).length === 0) accepted = result.output.rows;
-          } catch {
+          } catch (error) {
             // Odpowiedź niezgodna ze schematem albo błąd żądania: koszt nieznany (szacunek), próba się nie liczy.
             unknown += 1;
+            console.log(`partia od wiersza ${start + 1}, próba ${attempt}: ${error instanceof Error ? `${error.name}: ${error.message.slice(0, 300)}` : "błąd"}`);
           }
         }
         if (accepted === undefined) throw new Error(`partia od wiersza ${start + 1}: zły kształt werdyktów po ponowieniu`);
