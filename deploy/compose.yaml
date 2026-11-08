@@ -15,9 +15,18 @@ x-app-env: &app-env
   DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?ustaw POSTGRES_PASSWORD w .env}@db:5432/${POSTGRES_DB:-knowli}
   MEDIA_ROOT: /data/media
 
+# Wspólny limit i rotacja logów json-file (#408): bez limitu logi rosną bez
+# końca na domowym hoście. 5 × 10 MB na usługę wystarcza do diagnostyki.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:17.11-alpine
+    logging: *default-logging
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -39,6 +48,7 @@ services:
       dockerfile: deploy/Dockerfile
       target: worker
     restart: "no"
+    logging: *default-logging
     env_file:
       - path: ../.env
         required: false
@@ -56,6 +66,8 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: web
+    logging: *default-logging
+    stop_grace_period: 60s
     restart: unless-stopped
     env_file:
       - path: ../.env
@@ -79,6 +91,8 @@ services:
       start_period: 15s
 
   worker:
+    logging: *default-logging
+    stop_grace_period: 60s
     build:
       context: ..
       dockerfile: deploy/Dockerfile
