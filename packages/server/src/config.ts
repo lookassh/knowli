@@ -1,8 +1,10 @@
 import type { Database } from "./db/client";
 import type {
   AnswerGraderProvider,
+  ClosedExerciseChecker,
   ImageProvider,
   LessonExerciseCheckerProvider,
+  LessonPacketGenerator,
   LessonPoolAgentProvider,
   LlmProvider,
   PronunciationProvider,
@@ -168,8 +170,10 @@ export function isLessonAgentAvailable(agent: GenerationDeps["lessonAgent"]): ag
 
 /** Zależności agenta puli lekcji w workerze (adapter dostawcy za portami). */
 export interface LessonAgentDeps {
-  readonly agent: LessonPoolAgentProvider;
-  readonly checker: LessonExerciseCheckerProvider;
+  /** Agent puli i generator paczek przebiegu bazowego (ten sam adapter). */
+  readonly agent: LessonPoolAgentProvider & LessonPacketGenerator;
+  /** Checker agenta i kontrola zamkniętych przebiegu bazowego (ten sam adapter). */
+  readonly checker: LessonExerciseCheckerProvider & ClosedExerciseChecker;
   /**
    * Grader kontroli otwartej (etap 2b, `UMIEM_GRADER_*`); nieobecny = kontrola otwarta nie dotyczy
    * (tryb fake zawsze bez gradera).

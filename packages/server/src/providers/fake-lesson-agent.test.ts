@@ -16,6 +16,7 @@ import type { SubjectModule } from "../domain/lessons/types";
 import { buildDynamicTopicData, withSubjectObjectiveKinds } from "../modules/materials/lessons/lesson-drafts";
 import { lessonAgentLimits, runLessonPoolAgent, type LessonPoolAgentRunInput } from "../modules/materials/lessons/lesson-pool-agent";
 import { objectiveAgentInput } from "../modules/materials/lessons/lesson-pool-agent-input";
+import { runLessonBaselinePool } from "../modules/materials/lessons/lesson-baseline-pool";
 import { FakeLlmProvider } from "./fake";
 import { FakeExerciseChecker, FakeLessonPoolAgent, fakePlanFromCoverage } from "./fake-lesson-agent";
 import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeObjectiveExercises } from "./fake-lesson-pool";
@@ -1109,5 +1110,99 @@ describe("FakeLessonPoolAgent — generator (pętla kroków, etap 3 PR 2)", () =
       const { result } = await run(schoolSubject, { objectiveSource: { source: "input", dynamicTopic }, topicTitle: "Polska", material });
       expect(result.objectives).toHaveLength(2);
     });
+  });
+});
+
+describe("fake przebiegu bazowego (etap 4 #358)", () => {
+  // Stan po etapie 4: gramatyka bez walidatora przedmiotu.
+  const grammar: SubjectModule = { ...englishGrammarSubject, validateExercise: () => [] };
+  const deps = (agent: FakeLessonPoolAgent, checker = new FakeExerciseChecker({ unavailable: true })) => ({
+    generator: agent,
+    checker,
+    subjects: { getSubject: (id: string) => (id === grammar.id ? grammar : undefined) },
+  });
+  const input = (topicId: string, overrides: Partial<LessonPoolAgentRunInput> = {}): LessonPoolAgentRunInput => {
+    const topic = grammar.topics.filter((item) => item.id === topicId).sort((a, b) => b.version - a.version)[0]!;
+    return {
+      runId: "run-fake",
+      subjectId: grammar.id,
+      deckId: "deck-fake",
+      objectiveSource: { source: "catalog", topic },
+      topicTitle: topic.titlePl,
+      material: "Tom plays football. Ola reads books. They swim every day.",
+      poolSize: 60,
+      graderAvailable: true,
+      fixed: [],
+      draftExamples: {},
+      skipObjectives: [],
+      familyScope: null,
+      initialSpentUsd: 0,
+      ...overrides,
+    };
+  };
+
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+
+  it.each(["present_simple", "present_continuous", "to_be"])("buduje kompletną lekcję %s bez odrzuceń, a „dodaj 3” dodaje 3", async (topicId) => {
+    const agent = new FakeLessonPoolAgent({ generate: {}, stepCostUsd: 0 });
+    const result = await runLessonBaselinePool(deps(agent), input(topicId), new AbortController().signal);
+    expect(result.rejections).toEqual([]);
+    expect(result.objectives.every((objective) => objective.status === "complete")).toBe(true);
+    const fixed = result.objectives.flatMap((objective) => objective.exercises);
+    const examples = Object.fromEntries(result.objectives.map((objective) => [objective.objectiveId, objective.examples]));
+    const objectiveId = result.objectives[0]!.objectiveId;
+    const added = await runLessonBaselinePool(
+      deps(agent),
+      input(topicId, { fixed, initialExamples: examples, examplesFixed: true, target: { mode: "add", objectiveId, count: 3 } }),
+      new AbortController().signal,
+    );
+    expect(added.rejections).toEqual([]);
+    expect(added.objectives[0]!.exercises).toHaveLength(3);
+  });
+
+  it("odczytuje klucz ćwiczeń fake'a z widoku kontroli", async () => {
+    const checker = new FakeExerciseChecker({ unavailable: true });
+    const views = [
+      "Wybierz.\nOptions: plays | playsx",
+      "Listen and choose: ___ (1).\nOptions: orange | plays\nRecording (transcript): Listen and choose: plays (1).",
+      "Wskaż słowo.\nSentence 1: plays one\nSentence 2: two three",
+    ];
+    const choice = await checker.checkClosed({ contract: "choice", items: views.map((view) => ({ view })), timeoutMs: 1 }, costSink(), new AbortController().signal);
+    expect(choice.results).toEqual([{ answers: ["plays"] }, { answers: ["plays"] }, { answers: ["plays"] }]);
+    const order = await checker.checkClosed({ contract: "order", items: [{ view: "x" }], timeoutMs: 1 }, costSink(), new AbortController().signal);
+    expect(order.results).toEqual([{ verdict: "yes" }]);
+    const unknown = await new FakeExerciseChecker({ closed: "unknown" }).checkClosed({ contract: "choice", items: [{ view: views[0]! }], timeoutMs: 1 }, costSink(), new AbortController().signal);
+    expect(unknown.results).toEqual([{ answers: null }]);
+  });
+
+  it("gra scenariusz paczki i zapisuje koszt jako packet_generate", async () => {
+    const recorder = createTestRecorder();
+    const agent = new FakeLessonPoolAgent({ packets: { third_person_s: [{ throw: new Error("boom") }] }, stepCostUsd: 0.01, usage: recorder });
+    const packet = { pool: { material: "Tom plays.", avoidSentences: [] }, objective: { id: "english_grammar.present_simple.third_person_s", title: "x", cards: [] }, type: "lesson_gap", count: 2, withExamples: false, timeoutMs: 1 } as unknown as Parameters<FakeLessonPoolAgent["generatePacket"]>[0];
+    const sink = costSink();
+    await expect(agent.generatePacket(packet, sink, new AbortController().signal)).rejects.toThrow("boom");
+    const second = await agent.generatePacket(packet, sink, new AbortController().signal);
+    expect(second.exercises).toHaveLength(2);
+    expect(sink.values).toEqual([0.01, 0.01]);
+    expect(recorder.events.map((event) => event.operation)).toEqual(["packet_generate", "packet_generate"]);
+  });
+
+  it("wstrzymuje każdą paczkę materiału z FAKE_SLOW_MARKER", async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = new FakeLessonPoolAgent({ generate: {} });
+      const packet = { pool: { material: `Tom plays. ${FAKE_SLOW_MARKER}`, avoidSentences: [] }, objective: { id: "english_grammar.present_simple.negative", title: "x", cards: [] }, type: "lesson_gap", count: 1, withExamples: false, timeoutMs: 1 } as unknown as Parameters<FakeLessonPoolAgent["generatePacket"]>[0];
+      let done = false;
+      const pending = agent.generatePacket(packet, costSink(), new AbortController().signal).then(() => (done = true));
+      await vi.advanceTimersByTimeAsync(FAKE_SLOW_DELAY_MS - 1);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

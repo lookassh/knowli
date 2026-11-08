@@ -304,7 +304,7 @@ function victimRejection(
   return rejectionOf("lesson", code, issues, reasons);
 }
 
-type StepOutcome =
+export type StepOutcome =
   | { readonly ok: true; readonly id: string; readonly state: LessonAgentState; readonly snapshot: LessonSnapshot }
   | { readonly ok: false; readonly rejection: Rejection };
 
@@ -375,7 +375,22 @@ function deterministicSteps(
   // 2. Reguły ćwiczenia i bramka przedmiotu.
   const exerciseRejected = exerciseRejection(draft, objective, state, ctx);
   if (exerciseRejected !== undefined) return { ok: false, rejection: exerciseRejected };
+  return lessonRulesStep(state, objectiveId, draft, before, ctx, rejectedFamilies);
+}
 
+/**
+ * Kroki 3–4 (reguły lekcji i ujawnienia) dla kandydata na bieżącym stanie: kandydat odpada, gdy sam
+ * łamie regułę albo czyni nową ofiarą inne ćwiczenie (także `fixed`). Wspólne z przebiegiem bazowym.
+ */
+export function lessonRulesStep(
+  state: LessonAgentState,
+  objectiveId: string,
+  draft: LessonExerciseDraft,
+  before: LessonSnapshot,
+  ctx: AgentCheckContext,
+  rejectedFamilies: RejectedFamilies = NO_REJECTED_FAMILIES,
+): StepOutcome {
+  const pool = poolOf(state, objectiveId);
   // Kandydat jako własny obiekt (ochronnie): porównania zbiorów po referencji odróżniają go od
   // reszty lekcji, nawet gdy wołający przekaże ten sam obiekt drugi raz.
   const candidate: LessonExerciseDraft = { ...draft };

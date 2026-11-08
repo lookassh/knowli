@@ -37,6 +37,8 @@ export interface LlmGeneratedItem {
 export interface LlmLessonObjectiveInput {
   readonly id: string;
   readonly descriptionEn: string;
+  /** Dydaktyka zagadnienia katalogu dla promptu paczki przebiegu bazowego (`LearningObjective.generationNotesEn`). */
+  readonly generationNotesEn?: string;
   readonly exerciseTypes: readonly string[];
   readonly errorCategories: readonly string[];
 }

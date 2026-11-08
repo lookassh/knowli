@@ -33,6 +33,11 @@ const BLIND_SOLVE_NOTE =
 const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
   "unless the instruction asks for one of them.";
 
+/**
+ * Od etapu 4 (#358) gramatyka generuje się przebiegiem bazowym: z tej polityki działają tylko pola wspólne
+ * (`independentReserve`, `slack` limitów zapisu, `typeExamples`, dopisek `variants.duplicate` w sekcji
+ * `general` księgi reguł); pozostałe — dla testów mechaniki agenta (`agentGrammarSubject`) do etapu 5.
+ */
 export const grammarAgentPolicy: SubjectAgentPolicy = {
   blindSolveTypes: BLIND_SOLVE_TYPES,
   variantCheckTypes: VARIANT_CHECK_TYPES,

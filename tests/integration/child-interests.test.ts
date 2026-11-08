@@ -8,6 +8,7 @@ import {
   createSubjectRegistry,
   deleteChild,
   editLessonDraft,
+  agentGrammarSubject,
   englishGrammarSubject,
   executeLessonGeneration,
   historyLikeSubject,
@@ -98,7 +99,7 @@ function lessonServices(fakes: FakeGeneration): Services {
     clock: new ManualClock(),
     media: fakes.settings,
     generation: fakes.deps,
-    subjects: createSubjectRegistry([englishGrammarSubject, historyLikeSubject]),
+    subjects: createSubjectRegistry([agentGrammarSubject, historyLikeSubject]),
   });
 }
 

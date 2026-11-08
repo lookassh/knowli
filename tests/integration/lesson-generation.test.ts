@@ -13,6 +13,7 @@ import {
   createServices,
   executeMediaAsset,
   createSubjectRegistry,
+  agentGrammarSubject,
   englishGrammarSubject,
   schoolSubject,
   editLessonDraft,
@@ -30,7 +31,7 @@ import {
   type Services,
 } from "@learning/server";
 import { messages, type LessonCommand } from "@learning/contracts";
-import { countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
+import { agentGrammarRegistry, countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
@@ -55,7 +56,7 @@ async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 
 /** Rejestr z przedmiotem produkcyjnym + fixture historii (dowód niezależności). */
 function lessonRegistry() {
-  return createSubjectRegistry([englishGrammarSubject, historyLikeSubject]);
+  return createSubjectRegistry([agentGrammarSubject, historyLikeSubject]);
 }
 
 function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Services {
@@ -396,7 +397,7 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("hak czyszczenia świeżej puli odrzuca przy generowaniu, ale nie działa przy edycji rodzica", async () => {
     const refineCalls: number[] = [];
     const refiningSubject = {
-      ...englishGrammarSubject,
+      ...agentGrammarSubject,
       refineGeneratedPool: (drafts: readonly LessonExerciseDraft[], ctx: { material: string }) => {
         refineCalls.push(drafts.length);
         expect(ctx.material).toContain("plays football");
@@ -428,7 +429,7 @@ describe("generowanie puli lekcji (integracja)", () => {
       clock: new ManualClock(),
       media: fakes.settings,
       generation: fakes.deps,
-      subjects: createSubjectRegistry([englishGrammarSubject, refiningSubject, historyLikeSubject].map((subject, index) =>
+      subjects: createSubjectRegistry([agentGrammarSubject, refiningSubject, historyLikeSubject].map((subject, index) =>
         index === 1 ? { ...subject, id: "english_grammar_refined" } : subject)),
     });
 
@@ -595,7 +596,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect((await readGeneration(services, runId)).state).toBe("running");
     const reopened = createDatabase(testDatabaseUrl());
     try {
-      const restarted = createServices({ db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+      const restarted = createServices({ subjects: agentGrammarRegistry(), db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
       const oldEdit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
       await retryGeneration(restarted, runId);
       const edit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
@@ -645,7 +646,7 @@ describe("generowanie puli lekcji (integracja)", () => {
       if (!paused && /^select/i.test(sql) && sql.includes("generation_runs")) { paused = true; enter(); await released; }
       return result;
     }) as typeof isolated.pool.query;
-    const staleServices = createServices({ db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+    const staleServices = createServices({ subjects: agentGrammarRegistry(), db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
     const { runId } = await createLesson(services, command());
     const stale = executeLessonGeneration(staleServices, runId);
     await entered;
@@ -963,7 +964,7 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("rozdział angielskiego: zestaw z materiału ma stały tytuł przedmiotu, bez nazwy od rodzica, i jest idempotentny", async () => {
     const fakes = await agentFakes();
     // rejestr produkcyjny (gramatyka, szkoła, rozdział)
-    const services = createServices({ db: testDatabase().db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const services = createServices({ subjects: agentGrammarRegistry(), db: testDatabase().db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
     const command = {
       subjectId: "english_chapter",
       topicTitlePl: "Unit 1",

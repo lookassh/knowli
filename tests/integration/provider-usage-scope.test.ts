@@ -174,11 +174,11 @@ describe("zakres kosztów materiałów", () => {
       expect(rows.length, runId).toBeGreaterThan(0);
       for (const row of rows) expect(row).toMatchObject({ scope_kind: "run", generation_run_id: runId, deck_id: deckId });
     }
-    // Koszt runu lekcji pochodzi z kroków agenta puli (generator lekcji).
+    // Koszt runu lekcji gramatyki pochodzi z paczek przebiegu bazowego (generator lekcji, etap 4 #358).
     const lessonOperations = (await pool.query<{ feature: string; operation: string | null }>(
       "select distinct feature, operation from learning_app.provider_usage_events where generation_run_id = $1", [lesson.runId],
     )).rows;
-    expect(lessonOperations).toContainEqual({ feature: "lesson_generation", operation: "agent_objective" });
+    expect(lessonOperations).toContainEqual({ feature: "lesson_generation", operation: "packet_generate" });
     // Media zestawu i lekcji (lektor, ilustracje) też niosą talię, która je zleciła.
     const all = await usageRows();
     expect(all.some((row) => row.feature === "tts")).toBe(true);

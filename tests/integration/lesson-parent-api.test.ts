@@ -29,7 +29,7 @@ import {
   type LessonDraftDto,
   type LessonExerciseInput,
 } from "@learning/contracts";
-import { finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
+import { agentGrammarRegistry, finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { EDITOR_CARD_EXAMPLE, lessonWorld, seedEditorPoolWithLeak } from "../fixtures/lesson-world";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
@@ -51,7 +51,7 @@ async function truncateDeckTables(): Promise<void> {
 
 function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Services {
   const { db } = testDatabase();
-  return createServices({ db, clock, media: fakes.settings, generation: fakes.deps });
+  return createServices({ db, clock, media: fakes.settings, generation: fakes.deps, subjects: agentGrammarRegistry() });
 }
 
 /** Request helper: path -> segments; GET has no origin requirement. */

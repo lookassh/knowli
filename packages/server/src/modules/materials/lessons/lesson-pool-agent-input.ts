@@ -58,10 +58,18 @@ function withoutTexts(examples: Record<string, string[]>, texts: readonly string
   return Object.fromEntries(Object.entries(examples).map(([id, lines]) => [id, lines.filter((line) => !drop.has(line))]));
 }
 
+/**
+ * Zdania do unikania z bieżącego stanu lekcji (#328): przykłady kart (bez zdań z treści kart), ćwiczenia
+ * lekcji i na końcu zdania kart — wspólny materiał, nigdy z historii dziecka. Wspólne z przebiegiem bazowym.
+ */
+export function lessonAvoidSentences(subject: SubjectModule, topic: LessonTopic, state: LessonAgentState): string[] {
+  const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
+  return avoidSentencesFor({ examples: withoutTexts(allExamples(state), cardSentences), exercises: orderedLesson(state), subject, cardSentences });
+}
+
 export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObjectiveAgentInput {
   const { subject, topic, state, objective, limits } = args;
   const examples = allExamples(state);
-  const cardSentences = Object.values(cardExposureSources(subject, topic)).flat();
   const stages = args.promptTargets?.stages ?? agentStageCounts(subject, objective, limits.targetCount);
   const targetCount = args.promptTargets === undefined ? limits.targetCount : stages.guided + stages.productive + stages.independent;
   const base = buildPoolInput(
@@ -73,7 +81,7 @@ export function objectiveAgentInput(args: ObjectiveAgentInputArgs): LessonObject
     args.instruction,
     args.graderAvailable,
     args.interests,
-    { avoidSentences: avoidSentencesFor({ examples: withoutTexts(examples, cardSentences), exercises: orderedLesson(state), subject, cardSentences }) },
+    { avoidSentences: lessonAvoidSentences(subject, topic, state) },
   );
   // Ten sam podział w prompcie co w `targets`; liczba ćwiczeń = suma etapów (prompt: „podział obejmuje N ćwiczeń”).
   const pool = { ...base, stageCounts: stages, countPerObjective: stages.guided + stages.productive + stages.independent };

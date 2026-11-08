@@ -1,5 +1,9 @@
 import type {
+  ClosedCheckInput,
+  ClosedExerciseChecker,
   HintVerdict,
+  LessonPacketGenerator,
+  LessonPacketInput,
   LessonAgentPlanInput,
   LessonExerciseCheckerProvider,
   LessonObjectiveAgentInput,
@@ -8,7 +12,7 @@ import type {
   RunCostSink,
 } from "../ports/ai";
 import type { UsageRecorder } from "../ports/usage";
-import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeObjectiveExercises } from "./fake-lesson-pool";
+import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeClosedAnswer, fakeObjectiveExercises, fakePacketExercises } from "./fake-lesson-pool";
 import { recordResponse } from "./usage/record-http";
 
 /**
@@ -37,6 +41,12 @@ export type FakeAgentStep =
   /** Zgłoszenie zbudowane z wejścia podagenta w czasie kroku (identyfikatory zagadnień szkoły i rozdziału zawierają `deckId`). */
   | { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } };
 
+/**
+ * Krok scenariusza paczki przebiegu bazowego (`generatePacket`): awaria. Kolejne wywołania paczek celu biorą
+ * kolejne kroki; po ich końcu — generator ({@link fakePacketExercises}).
+ */
+export type FakePacketStep = { throw: Error };
+
 /** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
 export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
 
@@ -62,6 +72,8 @@ export interface FakeLessonPoolAgentOptions {
    * zagadnienia do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał.
    */
   generate?: { delayMs?: number };
+  /** Scenariusze paczek przebiegu bazowego per slug zagadnienia (kolejne wywołania — kolejne kroki). */
+  packets?: Record<string, FakePacketStep[]>;
   /** Zapis historii `calls` i `planCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
   record?: boolean;
 }
@@ -275,7 +287,7 @@ class ConcurrencyMeter {
   }
 }
 
-export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
+export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacketGenerator {
   readonly name = "fake-lesson-agent";
   readonly model = "fake-lesson-agent-model";
   /**
@@ -291,6 +303,11 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     outcomes: unknown[];
   }[] = [];
   readonly planCalls: { input: LessonAgentPlanInput; proposals: unknown[] }[] = [];
+  /** Zapis wywołań `generatePacket` (przy `record !== false`). */
+  readonly packetCalls: LessonPacketInput[] = [];
+  /** Kolejne pasmo numeracji paczek: każda paczka (także „+N” i wznowienie w tym procesie) ma inne odpowiedzi. */
+  private packetBand = 0;
+  private readonly packetCounts = new Map<string, number>();
   private readonly meter = new ConcurrencyMeter();
   /** Liczba dotychczasowych wywołań `runObjective` per slug (wybór scenariusza z `calls`). */
   private readonly callCounts = new Map<string, number>();
@@ -378,6 +395,30 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
     if (ms > 0) await sleepUnlessAborted(ms, signal);
   }
 
+  /**
+   * Paczka przebiegu bazowego: awaria ze scenariusza `packets` albo generator ({@link fakePacketExercises}) w nowym
+   * paśmie numeracji. Opóźnienie jak krok generatora (`delayMs`, `FAKE_SLOW_MARKER` w każdej paczce — biegną
+   * równolegle); koszt zapisany przed wynikiem jako `packet_generate`.
+   */
+  async generatePacket(input: LessonPacketInput, cost: RunCostSink, signal: AbortSignal): Promise<{ exercises: unknown[]; examples?: unknown[] }> {
+    if (this.options.record !== false) this.packetCalls.push(input);
+    const slug = input.objective.id.split(".").at(-1) ?? input.objective.id;
+    const call = this.packetCounts.get(slug) ?? 0;
+    this.packetCounts.set(slug, call + 1);
+    const band = this.packetBand;
+    this.packetBand += 1000;
+    return this.meter.track(async () => {
+      signal.throwIfAborted();
+      const base = this.options.generate?.delayMs ?? 0;
+      const ms = input.pool.material.includes(FAKE_SLOW_MARKER) ? Math.max(base, FAKE_SLOW_DELAY_MS) : base;
+      if (ms > 0) await sleepUnlessAborted(ms, signal);
+      this.recordStep(cost, "packet_generate");
+      const step = this.options.packets?.[slug]?.[call];
+      if (step !== undefined) throw step.throw;
+      return fakePacketExercises(input, band);
+    });
+  }
+
   async planObjectives(
     input: LessonAgentPlanInput,
     tools: PlanTools,
@@ -409,7 +450,7 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider {
   }
 
   /** Koszt „wywołania modelu”: licznik runu i dziennik kosztów z tego samego zdarzenia (jak adapter). */
-  private recordStep(cost: RunCostSink, operation: "agent_objective" | "agent_plan"): void {
+  private recordStep(cost: RunCostSink, operation: "agent_objective" | "agent_plan" | "packet_generate"): void {
     const usd = this.options.stepCostUsd ?? null;
     cost.record(usd);
     recordResponse(
@@ -493,17 +534,20 @@ export interface FakeExerciseCheckerOptions {
   costUsd?: number | null;
   /** Wywołania czekają na tę obietnicę (testy równoległości); przerwanie sygnału przerywa oczekiwanie. */
   gate?: Promise<void>;
-  /** Kontrola niedostępna (tryb fake workera): wszystkie metody dają `null` dla każdej pozycji. */
+  /** Kontrola niedostępna (tryb fake workera): metody agenta dają `null` dla każdej pozycji (`checkClosed` jej nie dotyczy). */
   unavailable?: true;
+  /** Kontrola zamkniętych: `pass` (domyślnie) — klucz ćwiczeń fake'a z widoku, `unknown` — „nie wiem” dla każdej pozycji. */
+  closed?: "pass" | "unknown";
 }
 
-export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
+export class FakeExerciseChecker implements LessonExerciseCheckerProvider, ClosedExerciseChecker {
   readonly name = "fake-lesson-checker";
   readonly model = "fake-lesson-checker-model";
   readonly solveCalls: SolveInput[] = [];
   readonly judgeCalls: JudgeInput[] = [];
   readonly hintCalls: HintInput[] = [];
   readonly openCalls: OpenInput[] = [];
+  readonly closedCalls: ClosedCheckInput[] = [];
   private readonly meter = new ConcurrencyMeter();
 
   constructor(private readonly options: FakeExerciseCheckerOptions = {}) {}
@@ -575,6 +619,26 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider {
       if (batch) return { answers: batch };
       const solve = this.options.solveOpen ?? (() => ["A", "B"] as const);
       return { answers: input.items.map((item) => solve(item.view)) };
+    });
+  }
+
+  /**
+   * Kontrola zamkniętych przebiegu bazowego: rozsypanka `yes`, wybór — klucz ćwiczenia fake'a odczytany
+   * z widoku ({@link fakeClosedAnswer}); `closed: "unknown"` — `null` (nie wiem). Tryb `unavailable` tu nie
+   * działa: w przebiegu bazowym brak wyniku odrzuca ćwiczenie, a tryb fake workera ma budować lekcje.
+   */
+  checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
+    this.closedCalls.push(input);
+    return this.meter.track(async () => {
+      await this.admit(cost, signal);
+      return {
+        results: input.items.map((item) => {
+          if (this.options.closed === "unknown") return { answers: null };
+          if (input.contract === "order") return { verdict: "yes" };
+          const answer = fakeClosedAnswer(item.view);
+          return { answers: answer === null ? null : [answer] };
+        }),
+      };
     });
   }
 

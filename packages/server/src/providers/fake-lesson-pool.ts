@@ -1,4 +1,4 @@
-import type { LessonObjectiveAgentInput, LessonPoolInput } from "../ports/ai";
+import type { LessonObjectiveAgentInput, LessonPacketInput, LessonPoolInput } from "../ports/ai";
 import { stageOf } from "../domain/lessons/stages";
 import { objectiveCardWords, objectiveFrames } from "../domain/lessons/subjects/english-chapter/agent-policy";
 import { checkElement, materialLexicon } from "../domain/lessons/subjects/english-chapter/lexicon";
@@ -164,7 +164,7 @@ function fakeExercise(
         ],
       };
     case "lesson_gap":
-      // bez `hint`: unikamy reguły przedmiotu wiążącej odpowiedź z czasownikiem.
+      // bez `hint`: odpowiedź fake'a nie jest formą żadnego czasownika.
       return { ...base, stem: `___ here (${answer}).` };
     case "lesson_error_fix":
       return { ...base, statement: `${answer}x wrong.` };
@@ -546,4 +546,51 @@ export function fakeObjectiveExercises(
     : stagedObjectiveExercises(input, offset, request, allowed);
   const exercises = withFakeExplanations(generated.exercises, pool);
   return input.objective.examplesFromPlan ? { exercises } : { exercises, examples: generated.examples };
+}
+
+/** Tekst występuje jako osobne słowo (tokeny liter i cyfr) w którymś ze zdań. */
+function avoidedToken(text: string, sentences: readonly string[]): boolean {
+  const word = text.toLowerCase();
+  return sentences.some((sentence) => sentence.toLowerCase().split(/[^\p{L}\p{N}]+/u).includes(word));
+}
+
+/**
+ * Paczka przebiegu bazowego dla fake'a (etap 4 #358): `input.count` ćwiczeń typu paczki z odpowiedziami
+ * `materialWord` od `offset` (wołający przydziela każdej paczce osobne pasmo numeracji), z pominięciem
+ * odpowiedzi obecnych w `avoidSentences` (szkic przy „+N” po restarcie procesu); pierwsza paczka celu
+ * zwraca przykład karty.
+ */
+export function fakePacketExercises(input: LessonPacketInput, offset: number): { exercises: Record<string, unknown>[]; examples?: string[] } {
+  const pool = input.pool;
+  const objectiveId = input.objective.id;
+  const avoid = pool.avoidSentences ?? [];
+  let seq = offset;
+  const nextAnswer = (): string => {
+    let answer = materialWord(pool.material, seq++);
+    for (let guard = 0; guard < 1000 && avoidedToken(answer, avoid); guard++) answer = materialWord(pool.material, seq++);
+    return answer;
+  };
+  const type = input.type as LessonExerciseType;
+  const exercises = Array.from({ length: input.count }, (_unused, index) => {
+    const answer = nextAnswer();
+    return type === LISTEN_CHOICE_TYPE
+      ? fakeListenChoice(objectiveId, `Listen and choose: ___ (${offset + index + 1}).`, answer, FAKE_LISTEN_DISTRACTORS.find((word) => word !== answer)!)
+      : fakeExercise(type, objectiveId, answer, pool, offset + index);
+  });
+  return { exercises: withFakeExplanations(exercises, pool), ...(input.withExamples ? { examples: [`Example for ${objectiveId}.`] } : {}) };
+}
+
+/**
+ * Klucz ćwiczenia fake'a odczytany z widoku kontroli zamkniętych (model nie zna klucza, ale konwencję
+ * fake'a tak): słuchanie — opcja ze zdania nagrania; notice — pierwsze słowo pierwszego zdania;
+ * wybór — opcja będąca przedrostkiem drugiej (dystraktor `<odpowiedź>x`), inaczej pierwsza.
+ */
+export function fakeClosedAnswer(view: string): string | null {
+  const lines = view.split("\n");
+  const options = lines.find((line) => line.startsWith("Options: "))?.slice("Options: ".length).split(" | ") ?? [];
+  const transcript = lines.find((line) => line.startsWith("Recording (transcript): "));
+  if (transcript !== undefined) return options.find((option) => avoidedToken(option.toLowerCase(), [transcript])) ?? null;
+  const sentence = lines.find((line) => line.startsWith("Sentence 1: "));
+  if (sentence !== undefined) return sentence.slice("Sentence 1: ".length).split(" ")[0] ?? null;
+  return options.find((option) => options.some((other) => other !== option && other.startsWith(option))) ?? options[0] ?? null;
 }

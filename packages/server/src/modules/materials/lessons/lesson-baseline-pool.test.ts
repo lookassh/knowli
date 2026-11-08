@@ -3,11 +3,13 @@ import { AppError } from "../../../errors";
 import { createLessonAgentState, withPool } from "../../../domain/lessons/agent/state";
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { lessonInvariantCheck } from "../../../domain/lessons/agent/status";
+import type { LessonExerciseDraft } from "../../../domain/lessons/types";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import type { LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { ClosedCheckInput, ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../../../ports/ai";
 import { GenerationProviderError } from "../../../ports/generation-error";
 import { runLessonBaselinePool } from "./lesson-baseline-pool";
+import { poolStageCounts } from "./lesson-drafts";
 import type { LessonPoolAgentRunInput } from "./lesson-pool-agent";
 
 /**
@@ -42,7 +44,7 @@ function raw(type: string, objectiveId: string, n: number): Record<string, unkno
 class FakeGenerator implements LessonPacketGenerator {
   readonly calls: LessonPacketInput[] = [];
   /** Opóźnienie per typ (ms) — do sprawdzenia, że kolejność zakończenia nie zmienia wyniku. */
-  constructor(private readonly options: { delay?: (input: LessonPacketInput) => number; fail?: (input: LessonPacketInput, attempt: number) => Error | undefined; extra?: number; examples?: readonly unknown[] } = {}) {}
+  constructor(private readonly options: { delay?: (input: LessonPacketInput) => number; fail?: (input: LessonPacketInput, attempt: number) => Error | undefined; extra?: number; shift?: number; examples?: readonly unknown[] } = {}) {}
   private attempts = new Map<string, number>();
   async generatePacket(input: LessonPacketInput, cost: RunCostSink, _signal?: AbortSignal): Promise<{ exercises: unknown[]; examples?: unknown[] }> {
     this.calls.push(input);
@@ -54,7 +56,7 @@ class FakeGenerator implements LessonPacketGenerator {
     cost.record(0.001);
     const error = this.options.fail?.(input, attempt);
     if (error !== undefined) throw error;
-    const offset = input.objective.id === first ? 0 : 100;
+    const offset = (input.objective.id === first ? 0 : 100) + (this.options.shift ?? 0);
     const typeOffset = { lesson_choice: 0, lesson_gap: 30, lesson_open_answer: 60, lesson_error_fix: 200 }[input.type] ?? 90;
     const exercises: unknown[] = Array.from({ length: input.count + (this.options.extra ?? 0) }, (_, i) => raw(input.type, input.objective.id, offset + typeOffset + i));
     return { exercises, ...(input.withExamples ? { examples: [...(this.options.examples ?? ["I play football."])] } : {}) };
@@ -117,8 +119,8 @@ describe("runLessonBaselinePool", () => {
     expect(types).toEqual([...Array(4).fill("lesson_choice"), ...Array(4).fill("lesson_gap"), ...Array(3).fill("lesson_open_answer")]);
     expect(result.objectives[0]!.examples).toEqual(["I play football."]);
     expect(generator.calls.map((call) => [call.type, call.count, call.withExamples])).toEqual([
-      ["lesson_choice", 6, true], ["lesson_gap", 6, false], ["lesson_open_answer", 5, false],
-      ["lesson_choice", 6, true], ["lesson_gap", 6, false], ["lesson_open_answer", 5, false],
+      ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
+      ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
     ]);
     expect(result.stats.accepted).toBe(22);
   });
@@ -130,7 +132,7 @@ describe("runLessonBaselinePool", () => {
     await run(generator, checker);
     expect(checker.calls).toHaveLength(2);
     expect(checker.calls[0]!.contract).toBe("choice");
-    expect(checker.calls[0]!.items).toHaveLength(6);
+    expect(checker.calls[0]!.items).toHaveLength(7);
     expect(generator.calls[0]!.pool.ruleBook.lesson).toEqual([]);
     expect(generator.calls[0]!.pool.ruleBook.checks).toEqual([]);
     expect(generator.calls[0]!.pool.exerciseTypes).toEqual(["lesson_choice"]);
@@ -158,7 +160,8 @@ describe("runLessonBaselinePool", () => {
   });
 
   it("drops a later duplicate stimulus and a card example that reveals an open answer", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
     // Pierwsza odpowiedź otwarta pierwszego zagadnienia to zdanie o „Kuba60” (n = 60).
     const leaky = await run(new FakeGenerator({ examples: ["Kuba60 swims in the lake.", "I play football."] }));
     expect(leaky.objectives[0]!.examples).toEqual(["I play football."]);
@@ -173,7 +176,11 @@ describe("runLessonBaselinePool", () => {
       },
     };
     const twinned = await run(twin);
-    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap" })]);
+    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap", detail: "" })]);
+    const ruleIds = twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds;
+    expect(ruleIds.length).toBeGreaterThan(0);
+    // Dziennik podaje identyfikatory reguł odrzuceń z typem ćwiczenia (bez treści).
+    expect(logs.some((line) => line.includes(` rules=${ruleIds.map((rule) => `lesson_gap/${rule}:1`).join(",")} `))).toBe(true);
   });
 
   it("keeps only the stage target and never lets overflow remove other exercises", async () => {
@@ -288,20 +295,91 @@ describe("runLessonBaselinePool", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const checker: ClosedExerciseChecker = { checkClosed: async (input) => ({ results: input.items.map(() => undefined) }) };
     const result = await run(new FakeGenerator(), checker);
-    expect(result.rejections.filter((entry) => entry.code === "check_unknown")).toHaveLength(12);
+    expect(result.rejections.filter((entry) => entry.code === "check_unknown")).toHaveLength(14);
     expect(result.objectives.every((objective) => !objective.exercises.some((draft) => draft.exerciseType === "lesson_choice"))).toBe(true);
   });
 
   it("rejects inputs the baseline does not support", async () => {
     const generator = new FakeGenerator();
     await expect(run(generator, undefined, { objectiveSource: { source: "planner" } })).rejects.toBeInstanceOf(AppError);
-    await expect(run(generator, undefined, { target: { mode: "add", objectiveId: first, count: 2 } })).rejects.toBeInstanceOf(AppError);
-    const fixed = { exerciseType: "lesson_gap" as const, objectiveId: first, stem: "x ___", answer: "y", acceptedAnswers: [], focus: [] };
-    await expect(run(generator, undefined, { fixed: [fixed] })).rejects.toBeInstanceOf(AppError);
-    for (const resume of [{ skipObjectives: [first] }, { draftExamples: { [first]: ["I play."] } }, { initialExamples: { [first]: ["I play."] } }, { examplesFixed: false }, { extraExposureSources: ["I play."] }]) {
-      await expect(run(generator, undefined, resume)).rejects.toBeInstanceOf(AppError);
-    }
+    await expect(run(generator, undefined, { target: { mode: "add", objectiveId: "english_grammar.present_simple.nope", count: 2 } })).rejects.toBeInstanceOf(AppError);
     expect(generator.calls).toHaveLength(0);
+  });
+
+  it("counts the objective status with the write limits (target count of the pool)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Pula 40 = 20 na cel; generator oddaje po jednym ćwiczeniu mniej niż udział — minimum publikacji zostaje, cel liczbowy nie.
+    const result = await run(new FakeGenerator({ extra: -4 }), undefined, { poolSize: 40 });
+    expect(result.objectives[0]!.status).toBe("incomplete");
+    expect(result.objectives[0]!.missing).toEqual(expect.arrayContaining([expect.stringMatching(/^exercises: \d+ of 20$/u)]));
+  });
+
+  it("resumes: skips settled objectives, keeps their exercises fixed and rejects a new exercise repeating them", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const previous = await run(new FakeGenerator());
+    const fixed = previous.objectives[0]!.exercises;
+    // Drugie zagadnienie dostaje jako pierwszą odpowiedź otwartą zdanie z `fixed` (ofiara albo duplikat).
+    const inner = new FakeGenerator();
+    const repeating: LessonPacketGenerator = {
+      generatePacket: async (input, cost, signal) => {
+        const out = await inner.generatePacket(input, cost, signal);
+        if (input.type !== "lesson_open_answer") return out;
+        const copy = fixed.find((draft) => draft.exerciseType === "lesson_open_answer")!;
+        return { ...out, exercises: [{ ...copy, objectiveId: second }, ...out.exercises.slice(1)] };
+      },
+    };
+    const result = await run(repeating, undefined, { skipObjectives: [first], fixed, initialExamples: { [first]: ["I play football."] } });
+    expect(inner.calls.every((call) => call.objective.id === second)).toBe(true);
+    expect(result.objectives.map((objective) => objective.objectiveId)).toEqual([second]);
+    expect(result.rejections.filter((entry) => entry.objectiveId === second && ["lesson_pool", "leak_victim", "leak_source"].includes(entry.code))).toHaveLength(1);
+    expect(result.objectives[0]!.exercises.some((draft) => fixed.includes(draft))).toBe(false);
+  });
+
+  it("adds N exercises to one objective: packets from the add plan, no examples, draft and story as exposure sources", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const draft = await run(new FakeGenerator());
+    const fixed = draft.objectives.flatMap((objective) => objective.exercises);
+    const examples = Object.fromEntries(draft.objectives.map((objective) => [objective.objectiveId, objective.examples]));
+    const inner = new FakeGenerator({ shift: 500 });
+    const story: LessonPacketGenerator = {
+      generatePacket: async (input, cost, signal) => {
+        const out = await inner.generatePacket(input, cost, signal);
+        if (input.type !== "lesson_open_answer") return out;
+        const [head, ...rest] = out.exercises as Record<string, unknown>[];
+        return { ...out, exercises: [{ ...head!, answer: "Story line." }, ...rest] };
+      },
+    };
+    const result = await run(story, undefined, {
+      fixed,
+      initialExamples: examples,
+      examplesFixed: true,
+      extraExposureSources: ["Story line."],
+      target: { mode: "add", objectiveId: second, count: 3 },
+    });
+    const split = poolStageCounts(subject, topic.objectives[1]!.exerciseTypes, 3);
+    expect(inner.calls.every((call) => call.objective.id === second && !call.withExamples)).toBe(true);
+    expect(inner.calls.map((call) => call.type)).toEqual(
+      (["lesson_choice", "lesson_gap", "lesson_open_answer"] as const).filter((_type, index) => [split.guided, split.productive, split.independent][index]! > 0),
+    );
+    expect(inner.calls[0]!.pool.avoidSentences).toEqual(expect.arrayContaining([fixed.find((item) => item.exerciseType === "lesson_open_answer")!.answer]));
+    const added = result.objectives[0]!.exercises;
+    expect(added).toHaveLength(3);
+    expect(added.some((item) => fixed.includes(item) || item.answer === "Story line.")).toBe(false);
+    expect(result.objectives[0]!.status).toBe("complete");
+  });
+
+  it("rejects an added exercise that duplicates a later-stage draft exercise", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Szkic ma ćwiczenie samodzielne; nowe ćwiczenie etapu prowadzonego go powtarza — ofiarą byłoby `fixed`.
+    const independent: LessonExerciseDraft = { ...(raw("lesson_open_answer", second, 900) as unknown as LessonExerciseDraft) };
+    const guided: LessonExerciseDraft = { ...independent, exerciseType: "lesson_choice", stem: "___ swims in the lake.", answer: independent.answer, options: [{ id: "a", text: independent.answer }, { id: "b", text: "x" }], correctOption: "a" } as LessonExerciseDraft;
+    const generator: LessonPacketGenerator = {
+      generatePacket: async (input) => ({ exercises: input.type === "lesson_choice" ? [guided] : [] }),
+    };
+    const checker = new FakeChecker(() => ({ answers: [independent.answer] }));
+    const result = await run(generator, checker, { fixed: [independent], examplesFixed: true, target: { mode: "add", objectiveId: second, count: 3 } });
+    expect(result.objectives[0]!.exercises).toEqual([]);
+    expect(result.rejections.some((entry) => ["lesson_pool", "leak_victim", "leak_source"].includes(entry.code))).toBe(true);
   });
 
   it("calls the hooks and returns a lesson that passes the pool invariant", async () => {

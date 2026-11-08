@@ -244,7 +244,6 @@ describe("opisy reguł bez literałów liczb", () => {
       "rules/core-rules.ts",
       "rules/lesson-rules.ts",
       "subjects/english-chapter/rules.ts",
-      "subjects/english-grammar/rules.ts",
       "subjects/english/rules.ts",
       "subjects/school/rules.ts",
     ]);
@@ -340,7 +339,8 @@ const INTERNAL_RULES: Readonly<Record<string, string>> = {
 describe("gwarancje katalogów produkcyjnych", () => {
   const rules = productionRulesById();
 
-  it.each(PRODUCTION_CATALOGS.map(({ name, catalog }) => [name, catalog] as const))(
+  // Gramatyka nie ma reguł przedmiotu od etapu 4 (#358): treść językową ocenia model, kod tylko strukturę.
+  it.each(PRODUCTION_CATALOGS.filter(({ name }) => name !== "english_grammar").map(({ name, catalog }) => [name, catalog] as const))(
     "katalog %s ma co najmniej jedną regułę",
     (_name, catalog) => {
       expect(Object.keys(catalog).length).toBeGreaterThan(0);

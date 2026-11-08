@@ -12,7 +12,6 @@ import { lessonPoolMinimums } from "../../packages/server/src/domain/lessons/les
 import { defaultPoolSize } from "../../packages/server/src/domain/lessons/lesson-policy";
 import { baseNormalizer } from "../../packages/server/src/domain/lessons/normalize";
 import { poolCoverage, validatePool } from "../../packages/server/src/domain/lessons/pool-validation";
-import { createSubjectRegistry } from "../../packages/server/src/domain/lessons/registry";
 import { createProductionSubjectRegistry } from "../../packages/server/src/domain/lessons/subjects";
 import type { DynamicObjectiveKind, DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../packages/server/src/domain/lessons/types";
 import { runLessonBaselinePool } from "../../packages/server/src/modules/materials/lessons/lesson-baseline-pool";
@@ -36,8 +35,6 @@ import {
   settleCostEntry,
   sha256File,
 } from "./probe-costs";
-import { grammarPlainSubject, probeVariantOf } from "./grammar-plain-subject";
-import { pcPoolStats } from "./present-continuous-stats";
 import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers";
 
 /**
@@ -77,9 +74,9 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers
  *   kroki, koszt, wynik kontroli końcowej); istniejący plik nie jest nadpisywany;
  * - `UMIEM_PROBE_COSTS` — rejestr `costs.json` (musi istnieć; nowy zakłada `UMIEM_PROBE_COSTS_INIT=1`
  *   z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD; limit istniejącego rejestru się nie zmienia).
- * - `UMIEM_PROBE_AGENT_VARIANT` (etap 2 epiku #358, spec etapu 2 §5) — `agent` (domyślnie, rejestr
- *   produkcyjny), `agent_plain` (agent na module gramatyki bez heurystyk językowych, `grammar-plain-subject.ts`)
- *   albo `baseline` (przebieg bazowy `runLessonBaselinePool` na tym samym module); dwa ostatnie tylko dla gramatyki.
+ * - wariant (etap 2 epiku #358) wynika z przedmiotu: gramatyka (`baselinePool`) — przebieg bazowy
+ *   `runLessonBaselinePool`, rozdział i szkoła — agent; rejestr produkcyjny. Przebieg kontrolny etapu 4 idzie
+ *   ścieżką workera (`chapter-generation.probe.test.ts`).
  *   `graderAvailable` zawsze `true` (od etapu 3 generowanie lekcji wymaga gradera).
  * Wszystkie ścieżki wyłącznie poza repozytorium (`resolveOutsideRepoPath`). Na konsolę idą
  * wyłącznie liczby, statusy i człony identyfikatorów zagadnień — treść ćwiczeń, materiału,
@@ -248,10 +245,9 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     if (dumpPath !== undefined && existsSync(dumpPath)) throw new Error(`${dumpPath} już istnieje — zrzut płatnej próby nie jest nadpisywany`);
     if (subjectKind !== "chapter" && objectivesDumpPath === undefined) throw new Error("grammar i school wymagają UMIEM_PROBE_AGENT_OBJECTIVES_DUMP");
 
-    const variant = probeVariantOf(process.env.UMIEM_PROBE_AGENT_VARIANT);
-    if (variant !== "agent" && subjectKind !== "grammar") throw new Error("UMIEM_PROBE_AGENT_VARIANT agent_plain i baseline tylko dla gramatyki");
-    const registry = variant === "agent" ? createProductionSubjectRegistry() : createSubjectRegistry([grammarPlainSubject()]);
+    const registry = createProductionSubjectRegistry();
     const subject = registry.getSubject(SUBJECT_IDS[subjectKind])!;
+    const variant = subject.baselinePool === true ? "baseline" : "agent";
     const objectivesDump = objectivesDumpPath === undefined ? undefined : readObjectivesDump(objectivesDumpPath);
     if (objectivesDump !== undefined && objectivesDump.subjectId !== subject.id) {
       throw new Error(`zrzut zagadnień jest dla ${objectivesDump.subjectId}, próba dla ${subject.id}`);
@@ -406,7 +402,6 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
         validatePool: { valid: pool.valid.length, rejected: pool.rejected.map((item) => ({ index: lesson.indexOf(item.exercise), errors: item.errors })) },
         validatePoolExtra: extra.map(([index, errors]) => ({ index, errors })),
         publication,
-        ...(topic.id === "present_continuous" ? { sceneShare: pcPoolStats(lesson, result.rejections) } : {}),
         countsByType: lesson.reduce<Record<string, number>>((acc, draft) => ({ ...acc, [draft.exerciseType]: (acc[draft.exerciseType] ?? 0) + 1 }), {}),
         diversity: diversityOf(lesson),
       };
@@ -464,3 +459,4 @@ describe.skipIf(!enabled)("próba agenta puli lekcji na prawdziwych modelach", (
     expect(counts.extraRejected).toBe(0);
   });
 });
+

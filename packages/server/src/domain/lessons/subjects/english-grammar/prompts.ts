@@ -6,12 +6,10 @@ import type { SubjectPromptProfile } from "../../types";
  * odbiorcę (polskie dziecko ~8 lat, poziom początkujący); rola oceniającego
  * ogranicza ocenę do zastosowania podanej reguły; `almost` definiuje werdykt
  * „prawie” jako poprawne zastosowanie reguły z drobnym błędem poza nią.
- * `fieldRules` precyzuje semantykę `hint` — w Present Simple walidator
- * przedmiotu traktuje każdy niepusty hint `lesson_gap` jako bezokolicznik i od
- * tego sprawdza formę odpowiedzi (incydent 2026-10-13: modele wypełniały hint
- * polskimi słowami z materiału rodzica); reguły luki Present Simple są zawężone
- * do jego celów. Present Continuous nie ma tu bloku: jego reguły, listy i wskazówki są
- * opisami reguł katalogu z `when` na temat (`rules.ts`, `present-continuous-guidance.ts`).
+ * `fieldRules` to wyłącznie wskazówki dla generatora (kod ich nie sprawdza): semantyka `hint`
+ * — w Present Simple bezokolicznik (incydent 2026-10-13: modele wypełniały hint polskimi słowami
+ * z materiału rodzica), zawężona do jego celów. Dydaktyka tematów Present Continuous i „to be” jest
+ * w notatkach zagadnień katalogu (`generationNotesEn`, etap 4 #358).
  */
 export const englishGrammarPrompts: SubjectPromptProfile = {
   generationRole:
@@ -28,21 +26,21 @@ export const englishGrammarPrompts: SubjectPromptProfile = {
     "Return 'almost' when the grammar rule itself is applied correctly but there is a small, " +
     "incidental mistake outside the checked element (for example a minor typo in another word). " +
     "A mistake in the checked element is never 'almost' — it is 'incorrect'.",
-  // Wyłącznie wskazówki, których kod nie sprawdza; reguły egzekwowane (formy „to be”, piktogram,
-  // wybór ze słuchu, warianty) opisuje katalog reguł w księdze reguł promptu (spec katalogu reguł §3).
+  // Wyłącznie wskazówki, których kod nie sprawdza; reguły strukturalne (piktogram, wybór ze słuchu,
+  // warianty) opisuje katalog reguł rdzenia i lekcji w księdze reguł promptu.
   fieldRules:
     "For lesson_open_answer, prompt is the source sentence in the prompt language to translate; answer and acceptedAnswers are in the answer language. " +
     "For objectives whose id contains '.present_simple.', set the lesson_gap hint to the English BASE FORM (infinitive) of the verb that fills the gap " +
     "(hint \"play\" for answer \"plays\", hint \"study\" for answer \"studies\"), or leave hint null; " +
     "keep the gap answer short, at most the verb with an auxiliary (never a full sentence with a subject). In those objectives an operator-only answer (do, does, don't, doesn't, do not, does not) " +
     "may be used when the remaining sentence supplies the base verb; hint may then be the auxiliary base form do. " +
-    // Przykład tłumaczenia w Present Simple tylko w jego celach: w Present Continuous to zdanie byłoby odrzucone.
+    // Przykład tłumaczenia w Present Simple tylko w jego celach: w Present Continuous uczyłby złego czasu.
     "In those objectives a translation looks like prompt 'Ona codziennie gra w piłkę.' → answer 'She plays football every day.' " +
     "Never put Polish words, translations, pronouns or rule explanations in hint — the child sees hint as support. " +
     "For objectives whose id contains \".to_be.\" the checked verb is 'to be': gap answers are am, is or are, " +
     "in negatives am not, is not, are not, isn't or aren't.",
   // Semantyka typu w jego bloku (znika z typem niedozwolonym w zagadnieniu); wskazówki tematu „to be” i
-  // wyboru obrazka są dopiskami reguł tego tematu (`agentPolicy.ruleNotes`).
+  // wyboru obrazka są w notatkach zagadnień (`generationNotesEn` w `topics/to-be.ts`).
   typeRules: {
     lesson_listen_choice:
       "A narrator reads the full sentence aloud and the child picks the word that fills the gap, so use it only when the " +

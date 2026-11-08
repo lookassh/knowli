@@ -9,7 +9,7 @@ import { parseLessonRecord } from "../../packages/server/src/modules/materials/l
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
 import type { RunCostSink } from "../../packages/server/src/ports/ai";
 import { AiSdkExerciseChecker, OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
-import { grammarPlainSubject } from "./grammar-plain-subject";
+import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
 import { appendProvisionalCostEntry, assertWithinCostCap, costCapFromEnv, initCostLedger, readCostLedger, settleCostEntry } from "./probe-costs";
 import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "./probe-helpers";
 
@@ -29,7 +29,8 @@ interface GoldCase {
 }
 
 const GOLD = JSON.parse(readFileSync(join(__dirname, "fixtures", "closed-check-gold.json"), "utf8")) as { cases: GoldCase[] };
-const subject = grammarPlainSubject();
+// Moduł gramatyki od etapu 4 (#358) nie ma heurystyk językowych — ten sam stan co dawny moduł sondy.
+const subject = englishGrammarSubject;
 const topic: LessonTopic = subject.topics.find((candidate) => candidate.id === "present_continuous")!;
 const REPETITIONS = 3;
 

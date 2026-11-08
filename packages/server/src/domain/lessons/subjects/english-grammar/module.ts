@@ -4,17 +4,15 @@ import { englishCardSentences } from "../english/card-sentences";
 import { grammarAgentPolicy } from "./agent-policy";
 import { ENGLISH_GRAMMAR_ERROR_CATEGORIES } from "./error-categories";
 import { englishGrammarPrompts } from "./prompts";
-import { validateEnglishGrammarExercise } from "./validators";
 import { presentSimpleV1 } from "./topics/present-simple";
-import { toBeV1 } from "./topics/to-be";
+import { toBeV1, toBeV2 } from "./topics/to-be";
 import { presentContinuousV1 } from "./topics/present-continuous";
-import { GRAMMAR_RULES } from "./rules";
 
 /**
  * Przedmiot `english_grammar` jako wtyczka silnika lekcji (design „Przedmiot
  * i katalog”). Składa dane modułu: 10 typów ćwiczeń gramatyki, kategorie błędów,
  * normalizator skrótów, tematy Present Simple, „to be” i Present Continuous,
- * profil promptów i walidator przedmiotu. Rejestracja = ten obiekt + jeden wpis w `subjects/index.ts`.
+ * i profil promptów (bez walidatora przedmiotu i reguł: etap 4 #358). Rejestracja = ten obiekt + jeden wpis w `subjects/index.ts`.
  */
 
 /** 10 typów ćwiczeń, które wspiera gramatyka; każdy cel wybiera własny podzbiór. */
@@ -39,10 +37,11 @@ export const englishGrammarSubject: SubjectModule = {
   exerciseTypes: ALL_EXERCISE_TYPES,
   errorCategories: ENGLISH_GRAMMAR_ERROR_CATEGORIES,
   normalizer: englishNormalizer,
-  topics: [presentSimpleV1, toBeV1, presentContinuousV1],
+  topics: [presentSimpleV1, toBeV1, toBeV2, presentContinuousV1],
   prompts: englishGrammarPrompts,
   poolDeduplication: "exercise",
-  validateExercise: validateEnglishGrammarExercise,
+  // Bez walidatora przedmiotu i reguł gramatyki (etap 4 #358): treść językową ocenia model, kod — strukturę.
+  validateExercise: () => [],
   // Zdania angielskie z kart są gotowymi rozwiązaniami (#328): źródło ujawnień przy generowaniu puli.
   // Polskie fragmenty bez diakrytyków też przechodzą, ale nie zrównają się z angielską odpowiedzią.
   cardExposureTexts: englishCardSentences,
@@ -53,7 +52,8 @@ export const englishGrammarSubject: SubjectModule = {
   exerciseExplanations: true,
   // Sesja kończy się krótką historyjką z pytaniami o treść (reguły w `prompts.storyRules`).
   lessonStory: true,
-  // Polityka agenta puli: typy ślepe i teksty odrzuceń, bez bramek i planu.
+  // Generowanie przebiegiem bazowym (etap 4 #358); z polityki agenta tylko pola wspólne (`SubjectModule.baselinePool`).
+  baselinePool: true,
   agentPolicy: grammarAgentPolicy,
-  rules: GRAMMAR_RULES,
+  rules: {},
 };

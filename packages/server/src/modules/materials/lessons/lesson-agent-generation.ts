@@ -49,7 +49,16 @@ import {
 import { classifyLessonGenerationFailure, lessonRetryDelayMs } from "./lesson-generation-errors";
 import { LessonGenerationCancelledError, withLessonGenerationControl, type LessonGenerationControl } from "./lesson-generation-control";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
-import { emptyLessonPoolAgentStats, kindsOf, lessonAgentLimits, runLessonPoolAgent, type LessonPoolAgentResult, type SettledObjective } from "./lesson-pool-agent";
+import { runLessonBaselinePool } from "./lesson-baseline-pool";
+import {
+  emptyLessonPoolAgentStats,
+  kindsOf,
+  lessonAgentLimits,
+  runLessonPoolAgent,
+  type LessonPoolAgentResult,
+  type LessonPoolAgentRunInput,
+  type SettledObjective,
+} from "./lesson-pool-agent";
 import { DEFAULT_LESSON_AGENT_POLICY } from "./lesson-pool-agent-policy";
 
 /**
@@ -444,40 +453,45 @@ export async function executeLessonAgentGeneration(
       `[lesson-agent] run=${runId} start mode=${mode} attempt=${attempts} resumed=${Object.keys(begin.objectives).length} pool=${input.poolSize} remainingMs=${remainingMs}`,
     );
     // Stan kontroli etapu 2b (sędzia podpowiedzi, kontrola otwarta z graderem): jedna linia, bez treści.
-    console.log(agentCheckStartLine(runId, subject, agentDeps.grader !== undefined));
+    if (subject.baselinePool !== true) console.log(agentCheckStartLine(runId, subject, agentDeps.grader !== undefined));
     // Kopia robocza do zapisów w trakcie; scalenie wyniku liczy się od `begin` (inaczej wydatek i histogram dwa razy).
     let working = begin;
+    const runWithHooks: LessonPoolAgentRunInput = {
+      ...runInput,
+      onSpend: (spentUsd) => {
+        liveSpentUsd = spentUsd;
+      },
+      onObjectivesResolved: async (resolved) => {
+        const planExamples = Object.fromEntries(Object.entries(resolved.planExamples).map(([id, list]) => [id, [...list]]));
+        working = {
+          ...working,
+          ...(resolved.dynamicTopic === undefined ? {} : { dynamicTopic: resolved.dynamicTopic }),
+          ...(Object.keys(planExamples).length === 0 ? {} : { planExamples }),
+          ...withSpend(working, resolved.spentUsd),
+        };
+        await save(working);
+      },
+      onObjectiveSettled: async (settled) => {
+        working = mergeAttemptIntoProgress(working, settledResult(settled), mode, addObjectiveId);
+        await save(working);
+      },
+    };
+    const policy = { ...agentDeps.policy, runTimeoutMs: remainingMs };
+    // Przedmiot z `baselinePool` (gramatyka, etap 4 #358): przebieg bazowy; pozostałe — agent puli.
     const result = await control.run((agentSignal) =>
-      runLessonPoolAgent(
-        {
-          agent: agentDeps.agent,
-          checker: agentDeps.checker,
-          ...(agentDeps.grader === undefined ? {} : { grader: agentDeps.grader }),
-          subjects: services.subjects,
-          policy: { ...agentDeps.policy, runTimeoutMs: remainingMs },
-        },
-        {
-          ...runInput,
-          onSpend: (spentUsd) => {
-            liveSpentUsd = spentUsd;
-          },
-          onObjectivesResolved: async (resolved) => {
-            const planExamples = Object.fromEntries(Object.entries(resolved.planExamples).map(([id, list]) => [id, [...list]]));
-            working = {
-              ...working,
-              ...(resolved.dynamicTopic === undefined ? {} : { dynamicTopic: resolved.dynamicTopic }),
-              ...(Object.keys(planExamples).length === 0 ? {} : { planExamples }),
-              ...withSpend(working, resolved.spentUsd),
-            };
-            await save(working);
-          },
-          onObjectiveSettled: async (settled) => {
-            working = mergeAttemptIntoProgress(working, settledResult(settled), mode, addObjectiveId);
-            await save(working);
-          },
-        },
-        agentSignal,
-      ),
+      subject.baselinePool === true
+        ? runLessonBaselinePool({ generator: agentDeps.agent, checker: agentDeps.checker, subjects: services.subjects, policy }, runWithHooks, agentSignal)
+        : runLessonPoolAgent(
+            {
+              agent: agentDeps.agent,
+              checker: agentDeps.checker,
+              ...(agentDeps.grader === undefined ? {} : { grader: agentDeps.grader }),
+              subjects: services.subjects,
+              policy,
+            },
+            runWithHooks,
+            agentSignal,
+          ),
     );
     const merged = mergeAttemptIntoProgress(begin, result, mode, addObjectiveId);
     // Temat i przykłady planu zna tylko kopia robocza (hak planu), nie wynik kierownika.

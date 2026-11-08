@@ -1,4 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
+import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Simple (design „Przedmiot i katalog”, requirements 1.4).
@@ -23,6 +24,7 @@ const PREFIX = "english_grammar.present_simple";
 
 const affirmativeBase: LearningObjective = {
   id: `${PREFIX}.affirmative_base`,
+  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
   titlePl: "Zdanie twierdzące: I, you, we, they",
   descriptionEn:
     "In the present simple, the subjects I, you, we and they use the base form of the verb with no ending (I play, they live).",
@@ -54,6 +56,7 @@ const affirmativeBase: LearningObjective = {
 
 const thirdPersonS: LearningObjective = {
   id: `${PREFIX}.third_person_s`,
+  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
   titlePl: "-s w 3. osobie (he, she, it)",
   descriptionEn:
     "In the present simple, the third person singular (he, she, it) adds -s to the base verb (he plays, she works).",
@@ -85,6 +88,7 @@ const thirdPersonS: LearningObjective = {
 
 const spellingEsIes: LearningObjective = {
   id: `${PREFIX}.spelling_es_ies`,
+  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
   titlePl: "Pisownia -es oraz -ies",
   descriptionEn:
     "Third person singular adds -es after -s, -sh, -ch, -x, -o (goes, watches), and changes consonant + y to -ies (studies).",
@@ -119,6 +123,7 @@ const spellingEsIes: LearningObjective = {
 
 const negative: LearningObjective = {
   id: `${PREFIX}.negative`,
+  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
   titlePl: "Przeczenie: don't / doesn't",
   descriptionEn:
     "The present simple negative uses don't for I/you/we/they and doesn't for he/she/it, followed by the base verb (she doesn't play).",
@@ -155,6 +160,7 @@ const negative: LearningObjective = {
 
 const question: LearningObjective = {
   id: `${PREFIX}.question`,
+  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE),
   titlePl: "Pytanie: Do / Does",
   descriptionEn:
     "Present simple questions start with Do (I/you/we/they) or Does (he/she/it) + subject + base verb (Does she play?).",
@@ -192,6 +198,7 @@ const question: LearningObjective = {
 
 const shortAnswers: LearningObjective = {
   id: `${PREFIX}.short_answers`,
+  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE),
   titlePl: "Krótkie odpowiedzi",
   descriptionEn:
     "Short answers repeat the auxiliary: Yes, I do / No, I don't; Yes, he does / No, he doesn't.",
@@ -226,6 +233,7 @@ const shortAnswers: LearningObjective = {
 
 const baseFormAfterDoes: LearningObjective = {
   id: `${PREFIX}.base_form_after_does`,
+  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
   titlePl: "Forma podstawowa po does / doesn't",
   descriptionEn:
     "After does and doesn't the main verb stays in the base form with no -s (she doesn't play, does he play?).",

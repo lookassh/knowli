@@ -488,6 +488,7 @@ export function packetInstructions(input: LessonPacketInput): string {
     `Subject: ${pool.subjectTitle} (${pool.subjectId}). Prompt language (instructions shown to the child): ${pool.promptLocale}. ` +
       `Answer language (the canonical answer the child produces): ${pool.answerLocale}.`,
     `Objective "${objective.id}" (${input.objective.title}): ${objective.descriptionEn} Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
+    ...(objective.generationNotesEn === undefined ? [] : [`Teaching notes: ${objective.generationNotesEn}`]),
     `Cards the child sees before the exercises:\n${input.objective.cards.map((card) => `[${card.title}] ${card.body}`).join("\n")}`,
   ];
   if (input.type === "lesson_transform" && pool.transforms.length > 0) {

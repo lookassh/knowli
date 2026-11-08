@@ -741,15 +741,6 @@ describe("validateLessonExercise — delegacja do subject.validateExercise", () 
     const errors = validateLessonExercise(ex, fakeSubject, historyTopic);
     expect(errors).toContain("Błąd przedmiotu: X");
   });
-
-  it("prawdziwy walidator angielskiego odrzuca złą formę luki", () => {
-    const errors = validateLessonExercise(
-      draft({ answer: "played", focus: ["played"], hint: "play", stem: `She ${GAP_MARKER}.` }),
-      englishGrammarSubject,
-      englishTopic,
-    );
-    expect(errors.some((e) => e.includes("Present Simple"))).toBe(true);
-  });
 });
 
 describe("findDuplicateAnswers", () => {
@@ -1017,26 +1008,6 @@ describe("lesson_listen_choice — walidacja", () => {
       focus: ["are"],
     }));
     expect(errors.some((e) => e.includes("zdania z opcjami"))).toBe(true);
-  });
-
-  /** Błędy reguły sybilantu dla zdania i opcji (poprawna jest pierwsza). */
-  function sibilantErrorsOf(stem: string, texts: readonly string[]): string[] {
-    const errors = errorsOf(listen({
-      stem,
-      options: texts.map((text, index) => ({ id: String.fromCharCode(97 + index), text })),
-      correctOption: "a",
-      answer: texts[0]!,
-      focus: [texts[0]!],
-    }));
-    return errors.filter((e) => e.includes("różnica niesłyszalna"));
-  }
-
-  // Reguła wymowy angielskiej (`subjects/english/listen-audibility.ts`); tu — że gramatyka ją deleguje.
-  it("gramatyka odrzuca sybilant za luką; komunikat wskazuje parę opcji i wyraz, także przy trzech opcjach", () => {
-    const sibilant = sibilantErrorsOf("He ___ snakes.", ["likes", "like", "is"]);
-    expect(sibilant).toHaveLength(1);
-    expect(sibilant[0]).toContain("„likes” i „like”");
-    expect(sibilant[0]).toContain("„snakes”");
   });
 
   it("wymaga dokładnie jednej luki", () => {

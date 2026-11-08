@@ -72,17 +72,7 @@ function fixtureFor(args: {
 }
 
 async function fixtures(): Promise<Record<string, PromptFixture>> {
-  const grammarTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_simple")!;
-  const grammar = fixtureFor({ subject: englishGrammarSubject, topic: grammarTopic, material: "", objectiveId: "english_grammar.present_simple.question" });
-  // Temat „to be” ma własne reguły (`when` na temat): migawka zagadnienia z wyborem obrazka (reguły piktogramu i wskazówki tematu).
-  const toBeTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "to_be")!;
-  const grammarToBe = fixtureFor({ subject: englishGrammarSubject, topic: toBeTopic, material: "", objectiveId: "english_grammar.to_be.affirmative_forms" });
-  // Temat Present Continuous: reguły, listy i wskazówki tematu (`when` na temat) — zagadnienie z najdłuższym promptem.
-  const pcTopic = englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")!;
-  const grammarPresentContinuous = fixtureFor({ subject: englishGrammarSubject, topic: pcTopic, material: "", objectiveId: "english_grammar.present_continuous.affirmative" });
-  // Cel porównania czasów: wskazówki scenek, wybór całych pytań i reguły wyboru czasu (krytyk końcowy C, Task 16).
-  const grammarPresentContinuousMore = fixtureFor({ subject: englishGrammarSubject, topic: pcTopic, material: "", objectiveId: "english_grammar.present_continuous.now_or_usually_more" });
-
+  // Gramatyka generuje się przebiegiem bazowym (etap 4 #358): prompt agenta mają tylko szkoła i rozdział.
   const { objectives } = await new FakeLlmProvider().generateLessonObjectives({
     subjectTitle: schoolSubject.titlePl,
     topicTitle: "Polska",
@@ -116,11 +106,11 @@ async function fixtures(): Promise<Record<string, PromptFixture>> {
     examples,
     examplesFixed: true,
   });
-  return { english_grammar: grammar, english_grammar_to_be: grammarToBe, english_grammar_present_continuous: grammarPresentContinuous, english_grammar_present_continuous_more: grammarPresentContinuousMore, school, english_chapter: chapter };
+  return { school, english_chapter: chapter };
 }
 
 const FIXTURES = await fixtures();
-const SUBJECT_IDS = ["english_grammar", "english_grammar_to_be", "english_grammar_present_continuous", "english_grammar_present_continuous_more", "school", "english_chapter"] as const;
+const SUBJECT_IDS = ["school", "english_chapter"] as const;
 
 /**
  * Budżet długości promptu per przedmiot (rozstrzygnięcie kontrolera Task 8b: ≤ 1,5 × długości sprzed
@@ -129,7 +119,6 @@ const SUBJECT_IDS = ["english_grammar", "english_grammar_to_be", "english_gramma
  * 17 344, rozdział `part_1` 17 259 znaków.
  */
 const PROMPT_LENGTH_BEFORE: Readonly<Partial<Record<(typeof SUBJECT_IDS)[number], number>>> = {
-  english_grammar: 14_841,
   school: 17_344,
   english_chapter: 17_259,
 };
@@ -230,6 +219,10 @@ describe("prompt paczki i kontroli przebiegu bazowego (etap 2, migawki)", () => 
       timeoutMs: 90_000,
     });
     const prompt = packetInstructions(input);
+    // Dydaktyka celu z katalogu (etap 4 #358) stoi zaraz po opisie celu, a bez notatek wiersza nie ma.
+    expect(prompt).toContain(`Teaching notes: ${objective.generationNotesEn}`);
+    const plain = packetInput({ subject: englishGrammarSubject, topic, objective: { ...objective, generationNotesEn: undefined }, type: "lesson_choice", count: 4, withExamples: false, material: "", graderAvailable: true, avoidSentences: [], timeoutMs: 90_000 });
+    expect(packetInstructions(plain)).not.toContain("Teaching notes:");
     expect(prompt).not.toContain("the tool checks");
     expect(prompt).not.toMatch(/\blesson_gap —/u);
     await expect(prompt).toMatchFileSnapshot("./__snapshots__/lesson-packet-prompt.english_grammar_present_continuous.txt");

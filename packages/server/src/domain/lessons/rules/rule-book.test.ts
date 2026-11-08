@@ -263,22 +263,6 @@ describe("frazy kluczowe nowych opisów reguł", () => {
   });
 });
 
-describe("księga reguł — reguły jednego tematu", () => {
-  const grammar = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_grammar")!;
-  const idsIn = (topicId: string) =>
-    idsOf(lessonRuleBook(grammar, contextFor(grammar, grammar.exerciseTypes, VARIANTS[0]!, topicId)));
-
-  it("reguły `to be` tylko w temacie to_be, reguły luk Present Simple tylko poza nim", () => {
-    const toBe = idsIn("to_be");
-    const presentSimple = idsIn("present_simple");
-    expect(toBe.filter((id) => id.startsWith("grammar.be_")).length).toBeGreaterThan(10);
-    expect(presentSimple.filter((id) => id.startsWith("grammar.be_"))).toEqual([]);
-    expect(presentSimple).toEqual(expect.arrayContaining(["grammar.gap_operator_mismatch", "grammar.gap_present_simple_form"]));
-    expect(toBe).not.toContain("grammar.gap_operator_mismatch");
-    expect(toBe).not.toContain("grammar.gap_present_simple_form");
-  });
-});
-
 describe("księga reguł — reguła w blokach swoich typów (inEachTypeBlock)", () => {
   const chapter = PRODUCTION_SUBJECTS.find((subject) => subject.id === "english_chapter")!;
   const book = lessonRuleBook(chapter, contextFor(chapter, chapter.exerciseTypes, VARIANTS[0]!));

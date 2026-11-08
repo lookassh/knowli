@@ -3,7 +3,6 @@ import { GAP_VERB_BRACKET } from "../../feedback-sentence-text";
 import { normalizeTokens } from "../../normalize";
 import type { LessonTopic } from "../../types";
 import { englishGrammarSubject } from "./module";
-import { scanTimeMarkers } from "./time-markers";
 import { grammarTypeExamples } from "./type-examples";
 
 /**
@@ -80,24 +79,9 @@ describe("przykłady typów tematu present_continuous", () => {
 
   it("now_or_usually_more: poprawianie błędu to Present Continuous po scence „zwykle” → Present Simple (Present Simple z now bywa poprawny)", () => {
     const fix = example("now_or_usually_more", "lesson_error_fix");
-    expect([...scanTimeMarkers(String(fix.instructionPl), "pl", { instruction: true }).groups]).toEqual(["usually"]);
     expect(String(fix.statement)).toMatch(/\b(?:is|are|isn't|aren't) \w+ing\b/u);
     expect(String(fix.answer)).toMatch(/\b(?:do|does|don't|doesn't) \w+\b/u);
     expect(String(fix.answer)).not.toMatch(/\w+ing\b/u);
-  });
-
-  // Krytyk końcowy B (Task 16): model kopiuje przykłady, a w sondzie 2 żadne ćwiczenie celów 2 i 6 nie miało polskiej scenki.
-  it.each(["now_or_usually", "now_or_usually_more"])("%s: luka i poprawianie mają czas tylko w polskiej scence polecenia", (objective) => {
-    const groups = (["lesson_gap", "lesson_error_fix"] as const).map((type) => {
-      const ex = example(objective, type);
-      const english = [ex.stem, ex.statement].filter((text): text is string => typeof text === "string");
-      expect(english.flatMap((text) => [...scanTimeMarkers(text, "en").groups]), type).toEqual([]);
-      const scene = [...scanTimeMarkers(String(ex.instructionPl), "pl", { instruction: true }).groups];
-      expect(scene, type).toHaveLength(1);
-      return scene[0];
-    });
-    // Jedna scenka „teraz” i jedna „zwykle”.
-    expect(groups.sort()).toEqual(["now", "usually"]);
   });
 
   it("now_or_usually_more: wybór całych pytań ma polecenie bez czasu i kontekst o podmiocie pytania", () => {

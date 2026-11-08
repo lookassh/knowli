@@ -599,6 +599,16 @@ describe("agentRejectedReasons", () => {
     expect(Object.keys(reasons)).not.toContain("card_word_missing");
   });
 
+  it("kody przebiegu bazowego mają własne etykiety, nie „inne powody” (etap 4 #358)", () => {
+    expect(agentRejectedReasons({ check_wrong_set: 2, over_count: 1, check_unknown: 1, check_order_no: 1, shape_type: 1 })).toEqual({
+      "drugi model wskazał inną odpowiedź": 2,
+      "więcej ćwiczeń niż zamówiono": 1,
+      "drugi model nie rozstrzygnął odpowiedzi": 1,
+      "drugi model uznał ułożenie za błędne": 1,
+      "ćwiczenie innego typu niż zamówione": 1,
+    });
+  });
+
   it("kody o tej samej etykiecie sumuje, nieznane zbiera pod „inne powody”, zerowe pomija", () => {
     const reasons = agentRejectedReasons({ refine: 1, rule_exercise: 2, brand_new: 4, other_new: 1, blind_mismatch: 0 });
     expect(reasons).toEqual({
