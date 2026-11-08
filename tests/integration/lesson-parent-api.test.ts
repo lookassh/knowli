@@ -15,7 +15,7 @@ import {
   authorizeDisclosure,
   createSchoolLesson,
   createSubjectRegistry,
-  schoolSubject,
+  agentSchoolSubject as schoolSubject,
   executeLessonGeneration,
   readLessonDeck,
   ensureLearningPolicy,

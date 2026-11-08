@@ -10,6 +10,7 @@ export { englishGrammarSubject } from "./domain/lessons/subjects/english-grammar
 export { schoolSubject } from "./domain/lessons/subjects/school/module";
 export { historyLikeSubject } from "./domain/lessons/testing/history-like-subject";
 export { agentGrammarSubject } from "./domain/lessons/testing/agent-grammar-subject";
+export { agentSchoolSubject } from "./domain/lessons/testing/agent-school-subject";
 export { validatePool, findDuplicateAnswers, poolCoverage } from "./domain/lessons/pool-validation";
 export { DEFAULT_LESSON_POLICY, defaultPoolSize } from "./domain/lessons/lesson-policy";
 export type {

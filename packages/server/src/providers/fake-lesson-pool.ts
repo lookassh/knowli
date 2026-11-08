@@ -326,6 +326,8 @@ export function fakePacketExercises(input: LessonPacketInput, offset: number): {
     return answer;
   };
   const type = input.type as LessonExerciseType;
+  // Rachunki: materiał fake'a nie uczy metody obliczeń, więc paczka jest pusta (jak każe `typeRules` szkoły).
+  if (type === "lesson_calculation") return { exercises: [], ...(input.withExamples ? { examples: [`Example for ${objectiveId}.`] } : {}) };
   const exercises = Array.from({ length: input.count }, (_unused, index) => {
     const answer = nextAnswer();
     return type === LISTEN_CHOICE_TYPE

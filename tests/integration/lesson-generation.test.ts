@@ -14,7 +14,7 @@ import {
   createSubjectRegistry,
   agentGrammarSubject,
   englishGrammarSubject,
-  schoolSubject,
+  agentSchoolSubject as schoolSubject,
   editLessonDraft,
   executeLessonGeneration,
   historyLikeSubject,
