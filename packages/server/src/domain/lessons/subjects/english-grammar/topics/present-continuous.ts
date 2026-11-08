@@ -290,9 +290,21 @@ const questions: LearningObjective = {
   ],
 };
 
+/**
+ * Formy z kart celu pisowni (#370): dziecko właśnie przeczytało pisownię tych czasowników na kartach,
+ * więc ćwiczenie na nich nie sprawdza pisowni z pamięci. Generator dostaje jawną listę i zamienniki
+ * z tych samych grup pisowni; spójności listy z kartami pilnuje test w `module.test.ts`.
+ */
+const PC_ING_SPELLING_NOTES =
+  "The cards of this objective spell out the -ing forms of play, read, jump, cook, make, write, lie, tie, run, swim, sit, fix and snow, " +
+  "so never use these verbs in an exercise of this objective: the child has just read their spelling on the cards. " +
+  "Use other verbs of the same spelling groups: plain -ing (eat, sleep, drink, sing, walk, talk, watch, help), dropping the final -e " +
+  "(dance, ride, come, take, give, smile, close), doubling the last letter (hop, skip, clap, stop, shop, get, put, dig, hug), " +
+  "no doubling after w, x or y (draw, mix, say, stay), and -ie to -y only with die about a plant or a flower (The flower is dying.).";
+
 const ingSpelling: LearningObjective = {
   id: `${PREFIX}.ing_spelling`,
-  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES),
+  generationNotesEn: notes(PC_TOPIC_NOTES, PC_FORMS_TRANSLATION_NOTES, PC_ING_SPELLING_NOTES),
   titlePl: "Pisownia -ing",
   descriptionEn:
     "Spelling of the -ing form (British spelling): most verbs just add -ing (play → playing, read → reading, jump → jumping); " +

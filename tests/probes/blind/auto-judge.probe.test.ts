@@ -11,7 +11,7 @@ import { loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "../probe-helper
 
 /**
  * Automatyczny sędzia ślepej oceny etapu 2 (spec etapu 2 §7), z innej rodziny modeli niż generator i
- * kontrola. Czyta WYŁĄCZNIE katalog sędziego z `gen-blind-sheet.cjs` (`sheet.csv`, `rubric.md` albo dawniej `rubric-stage2.md`,
+ * kontrola. Czyta WYŁĄCZNIE katalog sędziego z `gen-blind-sheet.cjs` (`sheet.csv`, `rubric.md` albo dawniej `rubric-stage2-v2.md`/`rubric-stage2.md`,
  * `material.txt`) — rubryka dosłownie z pliku, więc jej zamrożenie obejmuje kryteria sędziego. Partie po
  * 25 wierszy; partia z innym zestawem `rowId` albo klasą spoza W1–W9 / spoza typu ćwiczenia ma jedno
  * ponowienie, potem bieg kończy się błędem. PŁATNE: tylko z `UMIEM_PROBE_JUDGE_DIR`, kluczem OpenRouter i
@@ -75,8 +75,9 @@ describe.skipIf(apiKey === undefined || judgeDirEnv === undefined)("automatyczny
     const model = process.env.UMIEM_PROBE_JUDGE_MODEL?.trim();
     if (!model || outPath === undefined || costsPath === undefined) throw new Error("UMIEM_PROBE_JUDGE_MODEL, UMIEM_PROBE_JUDGE_OUT i UMIEM_PROBE_COSTS są wymagane");
     if (existsSync(outPath)) throw new Error(`${outPath} już istnieje`);
-    // `rubric.md` od etapu 5 (kopia wybranej rubryki); starsze katalogi sędziego mają `rubric-stage2.md`.
-    const rubricPath = existsSync(join(judgeDir, "rubric.md")) ? join(judgeDir, "rubric.md") : join(judgeDir, "rubric-stage2.md");
+    // `rubric.md` od etapu 5 (kopia wybranej rubryki); starsze katalogi sędziego mają nazwę rubryki.
+    const rubricPath = ["rubric.md", "rubric-stage2-v2.md", "rubric-stage2.md"].map((name) => join(judgeDir, name)).find((path) => existsSync(path));
+    if (rubricPath === undefined) throw new Error("brak rubryki w katalogu sędziego");
     const rubric = readFileSync(rubricPath, "utf8");
     const material = existsSync(join(judgeDir, "material.txt")) ? readFileSync(join(judgeDir, "material.txt"), "utf8") : "";
     const rows = parseCsv(readFileSync(join(judgeDir, "sheet.csv"), "utf8"));

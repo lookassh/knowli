@@ -1,5 +1,5 @@
 import type { LearningObjective, LessonTopic } from "../../../types";
-import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, notes } from "../teaching-notes";
+import { NUMBERLESS_SUBJECT_NOTE, QUESTION_DISTRACTOR_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE, notes } from "../teaching-notes";
 
 /**
  * Temat Present Simple (design „Przedmiot i katalog”, requirements 1.4).
@@ -86,9 +86,20 @@ const thirdPersonS: LearningObjective = {
   ],
 };
 
+/**
+ * Formy z kart celu pisowni (#370): dziecko właśnie przeczytało pisownię tych czasowników na kartach,
+ * więc ćwiczenie na nich nie sprawdza pisowni z pamięci. Generator dostaje jawną listę i zamienniki
+ * z tych samych grup pisowni; spójności listy z kartami pilnuje test w `module.test.ts`.
+ */
+const SPELLING_ES_IES_NOTES =
+  "The cards of this objective spell out the he/she/it forms of go, watch, wash, fix, study and fly, " +
+  "so never use these verbs in an exercise of this objective: the child has just read their spelling on the cards. " +
+  "Use other verbs of the same spelling groups: -es after -s, -sh, -ch, -x, -o (kiss, miss, dress, brush, push, finish, teach, catch, mix, " +
+  "and do in 'does his homework') and consonant + y to -ies (try, carry, cry, hurry, copy, worry, dry).";
+
 const spellingEsIes: LearningObjective = {
   id: `${PREFIX}.spelling_es_ies`,
-  generationNotesEn: NUMBERLESS_SUBJECT_NOTE,
+  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SPELLING_ES_IES_NOTES),
   titlePl: "Pisownia -es oraz -ies",
   descriptionEn:
     "Third person singular adds -es after -s, -sh, -ch, -x, -o (goes, watches), and changes consonant + y to -ies (studies).",
@@ -198,7 +209,7 @@ const question: LearningObjective = {
 
 const shortAnswers: LearningObjective = {
   id: `${PREFIX}.short_answers`,
-  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE),
+  generationNotesEn: notes(NUMBERLESS_SUBJECT_NOTE, SHORT_ANSWER_CONTRACTION_NOTE, SHORT_ANSWER_PRONOUN_NOTE, SHORT_ANSWER_TRANSLATION_NOTE),
   titlePl: "Krótkie odpowiedzi",
   descriptionEn:
     "Short answers repeat the auxiliary: Yes, I do / No, I don't; Yes, he does / No, he doesn't.",

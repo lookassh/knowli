@@ -1,5 +1,5 @@
 // Ślepy arkusz porównania generatorów: ćwiczenia wszystkich źródeł jednej lekcji, wymieszane.
-// Użycie: node tests/probes/blind/gen-blind-sheet.cjs <katalog lekcji POZA repozytorium: podkatalog per źródło z dump.json> <seed> [prefiks wierszy] [katalog sędziego] [rubryka: plik w tym katalogu, domyślnie rubric-stage2.md]
+// Użycie: node tests/probes/blind/gen-blind-sheet.cjs <katalog lekcji POZA repozytorium: podkatalog per źródło z dump.json> <seed> [prefiks wierszy] [katalog sędziego] [rubryka: plik w tym katalogu, domyślnie rubric-stage2-v2.md]
 // Wynik: <katalog>\blind\sheet.csv i <katalog>\blind\key.json (rowId → źródło, indeks, typ, wyjaśnienie; istniejący klucz nie jest
 // nadpisywany) oraz katalog sędziego (domyślnie <katalog>\judge; dla ślepoty podaj neutralną ścieżkę POZA drzewem tematu) —
 // jedyny katalog dla sędziego: sheet.csv, material.txt (gdy zrzut ma materiał), rubric.md (kopia wybranej rubryki).
@@ -9,7 +9,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { probePath } = require("./paths.cjs");
 
-const [, , lessonDirArg, seed = "gen-compare", prefix = "", judgeDirArg, rubricName = "rubric-stage2.md"] = process.argv;
+const [, , lessonDirArg, seed = "gen-compare", prefix = "", judgeDirArg, rubricName = "rubric-stage2-v2.md"] = process.argv;
 if (!/^rubric-[a-z0-9-]+\.md$/u.test(rubricName) || !fs.existsSync(path.join(__dirname, rubricName))) throw new Error(`nieznana rubryka ${rubricName}`);
 const lessonDir = probePath(lessonDirArg, "katalog lekcji");
 const judgeDir = judgeDirArg === undefined ? path.join(lessonDir, "judge") : probePath(judgeDirArg, "katalog sędziego");

@@ -444,6 +444,40 @@ describe("englishGrammarSubject — notatki dydaktyczne dla generatora paczek (e
     const questions = [["to_be", "questions"], ["present_simple", "question"], ["present_continuous", "questions"]] as const;
     for (const [topicId, slug] of questions) expect(notesOf(topicId, slug)).toContain("statement word order with a question mark");
     expect(notesOf("to_be", "affirmative_forms")).not.toContain("→ it");
+    // #372: tłumaczenie całej wymiany i skrót, który nie jest błędną opcją.
+    for (const topicId of ["to_be", "present_simple"]) expect(notesOf(topicId, "short_answers")).toContain("translates the whole exchange");
+    expect(notesOf("to_be", "short_answers")).toContain("never use it as a wrong option");
+  });
+});
+
+describe("englishGrammarSubject — cele pisowni: generator omija formy z kart (#370)", () => {
+  it("notatki celów pisowni każą omijać czasowniki, których formy wypisują karty", () => {
+    const cases = [
+      {
+        topicId: "present_simple",
+        slug: "spelling_es_ies",
+        notesEnumeration: "forms of go, watch, wash, fix, study and fly",
+        cardSnippets: ["goes, watches, washes, fixes", "study → studies, fly → flies"],
+        cardForms: ["goes", "watches", "washes", "fixes", "studies", "flies"],
+      },
+      {
+        topicId: "present_continuous",
+        slug: "ing_spelling",
+        notesEnumeration: "-ing forms of play, read, jump, cook, make, write, lie, tie, run, swim, sit, fix and snow",
+        cardSnippets: ["play → playing, read → reading, jump → jumping", "make → making, write → writing", "lie → lying, tie → tying", "run → running, swim → swimming, sit → sitting", "play → playing, fix → fixing, snow → snowing", "cook → cooking"],
+        cardForms: ["playing", "reading", "jumping", "cooking", "making", "writing", "lying", "tying", "running", "swimming", "sitting", "fixing", "snowing"],
+      },
+    ] as const;
+    for (const { topicId, slug, notesEnumeration, cardSnippets, cardForms } of cases) {
+      const objective = englishGrammarSubject.topics.filter((topic) => topic.id === topicId).flatMap((topic) => topic.objectives).find((candidate) => candidate.id.endsWith(`.${slug}`))!;
+      const cards = objective.cards.map((card) => card.body).join("\n");
+      // Wyliczenia form na kartach są przypięte dosłownie: edycja wyliczenia na karcie oblewa test i wymaga aktualizacji listy w notatce.
+      for (const snippet of cardSnippets) expect(cards).toContain(snippet);
+      for (const form of cardForms) expect(cards).toContain(form);
+      const notes = objective.generationNotesEn ?? "";
+      expect(notes).toContain("never use these verbs in an exercise of this objective");
+      expect(notes).toContain(notesEnumeration);
+    }
   });
 });
 

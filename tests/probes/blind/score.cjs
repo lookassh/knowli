@@ -45,7 +45,7 @@ function wilson(defects, n) {
 // Etap 5 (`rubric-stage5.md`): także ćwiczenia z przypisaniem rozdziału (match, group, cloze).
 const CLOSED = ["lesson_choice", "lesson_listen_choice", "lesson_short_answer", "lesson_notice", "lesson_order", "lesson_match", "lesson_group", "lesson_cloze"];
 const TEXT = ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"];
-/** Mianowniki klas rubryk etapu 2 i 5 (`rubric-stage2.md`, `rubric-stage5.md`; spec etapu 2 §7, etapu 5 §7.4). */
+/** Mianowniki klas rubryk etapu 2 i 5 (`rubric-stage2-v2.md`, `rubric-stage5.md`; spec etapu 2 §7, etapu 5 §7.4). */
 const CLASS_APPLIES = {
   W1: (row) => CLOSED.includes(row.type),
   W2: (row) => TEXT.includes(row.type),
