@@ -18,10 +18,11 @@ export const SHORT_ANSWER_CONTRACTION_NOTE =
 /**
  * Bieg diagnostyczny #372 (`lesson.leak` w `short_answers`): krótkich odpowiedzi jest kilkanaście, więc tłumaczenie
  * samej odpowiedzi powtarza klucz ćwiczeń wyboru i odpada jako ujawnione; pełna wymiana ma własny klucz.
+ * shortcut: detektor przecieków gramatyki porównuje tylko `answer`, więc wymiany powtórzonej w innym typie nie widzi; strukturalne `exposureText` w #373.
  */
 export const SHORT_ANSWER_TRANSLATION_NOTE =
   "A lesson_open_answer translates the whole exchange, the question together with its short answer, never the short answer " +
-  "alone: a bare short answer repeats the key of another exercise, which gives it away.";
+  "alone: a bare short answer repeats the answer of a choice or gap exercise, which gives it away.";
 
 /** Pułapka z przebiegu kontrolnego etapu 4 (sędzia 2, W1): zaimek niezgodny z podmiotem pytania albo klucz sprzeczny z materiałem. */
 export const SHORT_ANSWER_PRONOUN_NOTE =
