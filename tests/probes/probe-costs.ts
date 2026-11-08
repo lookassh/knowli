@@ -99,7 +99,7 @@ export interface RunCost {
   runId: string | null;
   /** Suma zmierzonych `agent_*`, `packet_*` i `check_*`. */
   agentUsd: number;
-  /** `agentUsd` plus szacunek za wywołania `agent_*`/`check_*` bez `usage.cost` — to porównujemy z budżetem runu. */
+  /** `agentUsd` plus szacunek za wywołania `agent_*`/`packet_*`/`check_*` bez `usage.cost` — to porównujemy z budżetem runu. */
   agentEstimatedUsd: number;
   /** Etap zagadnień szkoły (`lesson_objectives`, UMIEM_LLM) — poza budżetem agenta. */
   lessonObjectivesUsd: number;
