@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { closedCheckContract, closedCheckItem, closedCheckVerdict } from "./closed-check";
+import { solverView } from "./agent/solver";
+import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "./closed-check";
 import { englishNormalizer } from "./subjects/english/normalizer";
 import type { LessonExerciseDraft, LessonTopic } from "./types";
 
@@ -50,7 +51,9 @@ const notice: LessonExerciseDraft = {
   correctOption: "reading",
 };
 
-const verdict = (draft: LessonExerciseDraft, raw: unknown) => closedCheckVerdict(draft, raw, englishNormalizer);
+const verdict = (draft: LessonExerciseDraft, raw: unknown) => closedCheckVerdict(draft, [raw], englishNormalizer);
+const verdictOf = (draft: LessonExerciseDraft, raws: readonly unknown[]) => closedCheckVerdict(draft, raws, englishNormalizer);
+const closedCheckItem = (draft: LessonExerciseDraft, t: LessonTopic) => closedCheckItems(draft, t)?.[0] ?? null;
 
 describe("closedCheckContract", () => {
   it("maps closed types to their contract and text types to none", () => {
@@ -59,6 +62,7 @@ describe("closedCheckContract", () => {
     expect(closedCheckContract("lesson_short_answer")).toBe("choice");
     expect(closedCheckContract("lesson_notice")).toBe("choice");
     expect(closedCheckContract("lesson_order")).toBe("order");
+    for (const type of ["lesson_match", "lesson_group", "lesson_cloze"] as const) expect(closedCheckContract(type)).toBe("choice");
     for (const type of ["lesson_gap", "lesson_error_fix", "lesson_transform", "lesson_open_answer"] as const) {
       expect(closedCheckContract(type)).toBeNull();
     }
@@ -121,5 +125,91 @@ describe("closedCheckVerdict", () => {
     expect(verdict(order, { verdict: "no" })).toEqual({ pass: false, code: "check_order_no" });
     expect(verdict(order, { verdict: "unknown" })).toEqual({ pass: false, code: "check_unknown" });
     expect(verdict(order, { answers: ["x"] })).toEqual({ pass: false, code: "check_unknown" });
+  });
+});
+
+const match: LessonExerciseDraft = {
+  ...base,
+  exerciseType: "lesson_match",
+  instructionPl: "Połącz w pary.",
+  answer: "coat, hat, scarf",
+  pairs: [{ left: "coat", right: "płaszcz" }, { left: "hat", right: "kapelusz" }, { left: "scarf", right: "szalik" }],
+  extraRight: ["but"],
+};
+
+const group: LessonExerciseDraft = {
+  ...base,
+  exerciseType: "lesson_group",
+  instructionPl: "Podziel słowa.",
+  answer: "Ubrania / Pogoda",
+  groups: [{ id: "g1", label: "Ubrania" }, { id: "g2", label: "Pogoda" }],
+  groupItems: [{ text: "sunny", groupId: "g2" }, { text: "coat", groupId: "g1" }, { text: "rainy", groupId: "g2" }, { text: "hat", groupId: "g1" }],
+};
+
+const cloze: LessonExerciseDraft = {
+  ...base,
+  exerciseType: "lesson_cloze",
+  instructionPl: "Mam czerwony płaszcz i niebieski kapelusz. Uzupełnij tekst.",
+  answer: "red, blue",
+  clozeText: "I have a ___ coat and a ____ hat.",
+  gapAnswers: ["red", "blue"],
+  extraWords: ["green"],
+};
+
+describe("closedCheckItems for multi-field types", () => {
+  it("match: one item per left side with the right column as options, without the key", () => {
+    const items = closedCheckItems(match, topic)!;
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain("Field: coat");
+    expect(items[1]).toContain("Field: hat");
+    for (const item of items) {
+      expect(item).toContain("Options: but | kapelusz | płaszcz | szalik");
+      expect(item).toMatch(/other fields/i);
+      expect(item).not.toContain("coat → płaszcz");
+      expect(item).not.toContain("Teraz");
+    }
+  });
+
+  it("group: fields in view order with group labels as options", () => {
+    const items = closedCheckItems(group, topic)!;
+    expect(items.map((item) => item.match(/Field: (\S+)/)![1])).toEqual(["coat", "hat", "rainy", "sunny"]);
+    expect(items[0]).toContain("Options: Pogoda | Ubrania");
+  });
+
+  it("cloze: gaps numbered only in the check view", () => {
+    const items = closedCheckItems(cloze, topic)!;
+    expect(items).toHaveLength(2);
+    expect(items[0]).toContain("I have a ___ (1) coat and a ___ (2) hat.");
+    expect(items[1]).toContain("Field: gap 2");
+    expect(items[0]).toContain("Options: blue | green | red");
+    expect(solverView(cloze, topic)).toContain("I have a ___ coat and a ____ hat.");
+  });
+
+  it("single-field types keep one item", () => {
+    for (const draft of [choice, listen, order, notice]) expect(closedCheckItems(draft, topic)).toHaveLength(1);
+  });
+});
+
+describe("closedCheckVerdict for multi-field types", () => {
+  const ok = [{ answers: ["płaszcz"] }, { answers: ["kapelusz"] }, { answers: ["szalik"] }];
+
+  it("passes only when every field equals its key", () => {
+    expect(verdictOf(match, ok)).toEqual({ pass: true });
+    expect(verdictOf(match, [ok[0], { answers: ["kapelusz", "but"] }, ok[2]])).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdictOf(match, [ok[0], { answers: [] }, ok[2]])).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdictOf(match, [ok[0], { answers: ["czapka"] }, ok[2]])).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdictOf(match, [{ answers: [" PŁASZCZ "] }, ok[1], ok[2]])).toEqual({ pass: true });
+  });
+
+  it("an unknown or missing field result makes the exercise unknown", () => {
+    expect(verdictOf(match, [ok[0], { answers: null }, ok[2]])).toEqual({ pass: false, code: "check_unknown" });
+    expect(verdictOf(match, [ok[0], ok[1]])).toEqual({ pass: false, code: "check_unknown" });
+  });
+
+  it("group and cloze fields", () => {
+    expect(verdictOf(group, [{ answers: ["Ubrania"] }, { answers: ["Ubrania"] }, { answers: ["Pogoda"] }, { answers: ["Pogoda"] }])).toEqual({ pass: true });
+    expect(verdictOf(group, [{ answers: ["Ubrania", "Pogoda"] }, { answers: ["Ubrania"] }, { answers: ["Pogoda"] }, { answers: ["Pogoda"] }])).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdictOf(cloze, [{ answers: ["red"] }, { answers: ["blue"] }])).toEqual({ pass: true });
+    expect(verdictOf(cloze, [{ answers: ["red", "blue"] }, { answers: ["blue"] }])).toEqual({ pass: false, code: "check_wrong_set" });
   });
 });

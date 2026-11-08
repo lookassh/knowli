@@ -3,7 +3,7 @@ import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { lessonRulesStep, snapshotOf, submitExamples } from "../../../domain/lessons/agent/admission";
 import { orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
-import { closedCheckContract, closedCheckItem, closedCheckVerdict } from "../../../domain/lessons/closed-check";
+import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../../../domain/lessons/closed-check";
 import { bucketOf, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
@@ -74,9 +74,13 @@ interface ObjectiveOutcome {
 function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput): { subject: SubjectModule; topic: LessonTopic } {
   const subject = deps.subjects.getSubject(input.subjectId);
   if (subject === undefined) throw new AppError("validation", { message: `unknown subject ${input.subjectId}` });
-  // Tylko zagadnienia z katalogu (rozdział i szkoła zostają na agencie).
-  if (input.objectiveSource.source !== "catalog") throw new AppError("validation", { message: "baseline pool needs catalog objectives" });
-  const topic = input.objectiveSource.topic;
+  const source = input.objectiveSource;
+  if (source.source === "planner") throw new AppError("validation", { message: "baseline pool needs resolved objectives" });
+  if (source.source === "input" && subject.buildDynamicTopic === undefined) {
+    throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
+  }
+  // Temat z katalogu albo dynamiczny (etap zagadnień lub punkt kontrolny), złożony jak u agenta.
+  const topic = source.source === "catalog" ? source.topic : subject.buildDynamicTopic!(source.dynamicTopic);
   const target = input.target;
   if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
     // Przed wywołaniami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
@@ -175,7 +179,8 @@ export async function runLessonBaselinePool(
     stats.rejectedByKind[kind] = (stats.rejectedByKind[kind] ?? 0) + 1;
   };
   try {
-    await input.onObjectivesResolved?.({ planExamples: {}, spentUsd: cost.spentUsd });
+    const dynamicTopic = input.objectiveSource.source === "input" ? input.objectiveSource.dynamicTopic : undefined;
+    await input.onObjectivesResolved?.({ ...(dynamicTopic === undefined ? {} : { dynamicTopic }), planExamples: {}, spentUsd: cost.spentUsd });
     signal.throwIfAborted();
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
@@ -236,7 +241,8 @@ export async function runLessonBaselinePool(
             reject(objectiveId, parsed.exerciseType, "shape", parsed.rejection.code, parsed.rejection.ruleIds);
             continue;
           }
-          const draft = parsed.draft;
+          // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
+          const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
           if (draft.exerciseType !== packet.type) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
             continue;
@@ -254,24 +260,28 @@ export async function runLessonBaselinePool(
         }
         const contract = closedCheckContract(packet.type);
         if (contract === null) return { kind: "done", drafts: valid, examples: generated.examples };
-        // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą: wyniki odpowiadają pozycjom 1:1.
+        // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą; ćwiczenie z przypisaniem
+        // to jedna pozycja na pole, a jego werdykt bierze swój wycinek wyników.
         const checkable = valid.flatMap((draft) => {
-          const view = closedCheckItem(draft, topic);
-          if (view === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
-          return view === null ? [] : [{ draft, view }];
+          const views = closedCheckItems(draft, topic);
+          if (views === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
+          return views === null ? [] : [{ draft, views }];
         });
         if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
+        const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
         const checked = await callModel(checkerSlots, () =>
-          deps.checker.checkClosed({ contract, items: checkable.map(({ view }) => ({ view })), timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
+          deps.checker.checkClosed({ contract, items, timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
         );
         if (checked === STOPPED) return { kind: "stopped" };
         stats.checkerCalls += 1;
         const passed: LessonExerciseDraft[] = [];
-        checkable.forEach(({ draft }, index) => {
-          const verdict = closedCheckVerdict(draft, checked.results[index], subject.normalizer);
+        let offset = 0;
+        for (const { draft, views } of checkable) {
+          const verdict = closedCheckVerdict(draft, checked.results.slice(offset, offset + views.length), subject.normalizer);
+          offset += views.length;
           if (verdict.pass) passed.push(draft);
           else reject(objectiveId, draft.exerciseType, "blind", verdict.code);
-        });
+        }
         return { kind: "done", drafts: passed, examples: generated.examples };
       } catch (error) {
         if (signal.aborted) throw signal.reason;

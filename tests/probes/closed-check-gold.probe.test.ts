@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { closedCheckContract, closedCheckItem, closedCheckVerdict } from "../../packages/server/src/domain/lessons/closed-check";
+import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../../packages/server/src/domain/lessons/closed-check";
 import { validateLessonExerciseIssues } from "../../packages/server/src/domain/lessons/pool-validation";
 import type { LessonExerciseDraft, LessonTopic } from "../../packages/server/src/domain/lessons/types";
 import { parseLessonRecord } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-tools";
@@ -51,7 +51,7 @@ describe("ćwiczenia wzorcowe kontroli zamkniętych (bez sieci)", () => {
     expect(new Set(GOLD.cases.map((entry) => entry.id)).size).toBe(GOLD.cases.length);
     for (const entry of GOLD.cases) {
       const draft = draftOf(entry);
-      expect(closedCheckItem(draft, topic), entry.id).not.toBeNull();
+      expect(closedCheckItems(draft, topic), entry.id).not.toBeNull();
     }
     const orders = GOLD.cases.filter((entry) => entry.class === "correct" && (entry.draft as { exerciseType: string }).exerciseType === "lesson_order");
     expect(orders).toHaveLength(10);
@@ -65,8 +65,8 @@ describe("ćwiczenia wzorcowe kontroli zamkniętych (bez sieci)", () => {
       const twin = draftOf(GOLD.cases.find((item) => item.id === entry.id.replace("c-", "w-"))!);
       const order = draft.exerciseType === "lesson_order";
       const ideal = order ? { verdict: "yes" } : { answers: [keyText(draft)] };
-      expect(closedCheckVerdict(draft, ideal, subject.normalizer).pass, entry.id).toBe(true);
-      expect(closedCheckVerdict(twin, order ? { verdict: "no" } : ideal, subject.normalizer).pass, `${entry.id} twin`).toBe(false);
+      expect(closedCheckVerdict(draft, [ideal], subject.normalizer).pass, entry.id).toBe(true);
+      expect(closedCheckVerdict(twin, [order ? { verdict: "no" } : ideal], subject.normalizer).pass, `${entry.id} twin`).toBe(false);
     }
   });
 });
@@ -108,10 +108,14 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
         for (const type of types) {
           const packet = cases.filter((item) => item.draft.exerciseType === type);
           const contract = closedCheckContract(type)!;
-          const items = packet.map((item) => ({ view: closedCheckItem(item.draft, topic)! }));
+          const views = packet.map((item) => closedCheckItems(item.draft, topic)!);
+          const items = views.flat().map((view) => ({ view }));
           const { results } = await checker.checkClosed({ contract, items, timeoutMs: DEFAULT_LESSON_AGENT_POLICY.checkerTimeoutMs }, sink, new AbortController().signal);
+          let offset = 0;
           packet.forEach((item, index) => {
-            const verdict = closedCheckVerdict(item.draft, results[index], subject.normalizer);
+            const count = views[index]!.length;
+            const verdict = closedCheckVerdict(item.draft, results.slice(offset, offset + count), subject.normalizer);
+            offset += count;
             const row = tally[item.entry.class][repetition - 1]!;
             row.total += 1;
             if (!verdict.pass) row.rejected += 1;

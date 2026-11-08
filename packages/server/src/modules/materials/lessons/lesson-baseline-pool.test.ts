@@ -396,3 +396,170 @@ describe("runLessonBaselinePool", () => {
     expect(lessonInvariantCheck(state, { subject, material: "", limits })).toEqual([]);
   });
 });
+
+describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a)", () => {
+  const LEFT = ["coat", "hat", "scarf", "boots", "dress", "shirt", "skirt", "socks"];
+  /** Przedmiot z tematem dynamicznym: zagadnienia z danych, typy card / match / gap / open_answer. */
+  const dynamicSubject: SubjectModule = {
+    ...subject,
+    id: "dynamic_test",
+    exerciseTypes: [...subject.exerciseTypes, "lesson_match"],
+    buildDynamicTopic: (data) => ({
+      id: "dynamic",
+      version: 1,
+      titlePl: data.titlePl,
+      extraErrorCategories: [],
+      transforms: [],
+      objectives: data.objectives.map((objective) => ({
+        id: objective.id,
+        titlePl: objective.titlePl,
+        descriptionEn: objective.descriptionEn,
+        cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+        errorCategories: [],
+        hints: {},
+        exerciseTypes: ["lesson_card", "lesson_match", "lesson_gap", "lesson_open_answer"],
+      })),
+    }),
+  };
+  const dynamicTopic = {
+    titlePl: "Ubrania",
+    objectives: [
+      { id: "dynamic_test.d1.clothes", titlePl: "Ubrania", descriptionEn: "Clothes words.", cards: [{ title: "Słowa", body: "coat — płaszcz" }] },
+      { id: "dynamic_test.d1.more", titlePl: "Więcej", descriptionEn: "More clothes.", cards: [{ title: "Słowa", body: "hat — kapelusz" }] },
+    ],
+  };
+  const [d1, d2] = dynamicTopic.objectives.map((objective) => objective.id) as [string, string];
+
+  function rawMatch(objectiveId: string, n: number): Record<string, unknown> {
+    const lefts = [0, 1, 2].map((i) => `${LEFT[(n + i) % LEFT.length]}${n}`);
+    return {
+      objectiveId,
+      exerciseType: "lesson_match",
+      instructionPl: "Połącz w pary.",
+      acceptedAnswers: [],
+      focus: [],
+      pairs: lefts.map((left, i) => ({ left, right: `pl ${n}-${i}` })),
+      answer: lefts.join(", "),
+    };
+  }
+
+  class DynamicGenerator implements LessonPacketGenerator {
+    readonly calls: LessonPacketInput[] = [];
+    async generatePacket(input: LessonPacketInput, cost: RunCostSink): Promise<{ exercises: unknown[]; examples?: unknown[] }> {
+      this.calls.push(input);
+      cost.record(0.001);
+      const offset = (input.objective.id === d1 ? 0 : 100) + ({ lesson_match: 0, lesson_gap: 30 }[input.type as string] ?? 60);
+      const exercises = Array.from({ length: input.count }, (_, i) =>
+        input.type === "lesson_match" ? rawMatch(input.objective.id, offset + i) : raw(input.type, input.objective.id, offset + i),
+      );
+      return { exercises, ...(input.withExamples ? { examples: [`Example ${input.objective.id}.`] } : {}) };
+    }
+  }
+
+  /** Kontrola z kluczem fake'a: prawa strona „pl n-i” należy do i-tej lewej strony ćwiczenia n. */
+  function keyChecker(corrupt: (view: string) => boolean = () => false): ClosedExerciseChecker & { calls: ClosedCheckInput[] } {
+    const calls: ClosedCheckInput[] = [];
+    return {
+      calls,
+      checkClosed: async (input, cost) => {
+        calls.push(input);
+        cost.record(0.0005);
+        return {
+          results: input.items.map(({ view }) => {
+            const left = /Field: (\S+)/u.exec(view)?.[1];
+            if (left === undefined) return { answers: ["plays"] };
+            const n = Number(/(\d+)$/u.exec(left)![1]);
+            const lefts = /Left \(in this order\): (.*)/u.exec(view)![1]!.split(" | ");
+            const right = `pl ${n}-${lefts.indexOf(left)}`;
+            return { answers: corrupt(view) ? [right, "pl x"] : [right] };
+          }),
+        };
+      },
+    };
+  }
+
+  const dynamicRun = (generator: LessonPacketGenerator, checker: ClosedExerciseChecker, input: Partial<LessonPoolAgentRunInput> = {}) =>
+    runLessonBaselinePool(
+      { generator, checker, subjects: { getSubject: (id: string) => (id === dynamicSubject.id ? dynamicSubject : undefined) } },
+      runInput({ subjectId: dynamicSubject.id, objectiveSource: { source: "input", dynamicTopic }, ...input }),
+      new AbortController().signal,
+    );
+
+  it("builds a dynamic topic and reports it to the objectives hook", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const resolved: unknown[] = [];
+    const generator = new DynamicGenerator();
+    const result = await dynamicRun(generator, keyChecker(), { onObjectivesResolved: async (value) => void resolved.push(value) });
+    expect(resolved).toEqual([expect.objectContaining({ dynamicTopic })]);
+    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status])).toEqual([[d1, "complete"], [d2, "complete"]]);
+    expect(new Set(generator.calls.map((call) => call.type))).toEqual(new Set(["lesson_match", "lesson_gap", "lesson_open_answer"]));
+  });
+
+  it("sends one check item per field and maps results back to each exercise", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Pierwsze ćwiczenie match pierwszego zagadnienia ma pole z drugą poprawną odpowiedzią.
+    const checker = keyChecker((view) => view.includes("Left (in this order): coat0 |") && view.includes("Field: coat0 "));
+    const result = await dynamicRun(new DynamicGenerator(), checker);
+    const matchCall = checker.calls.find((call) => call.items.some((item) => item.view.includes("Field:")))!;
+    expect(matchCall.contract).toBe("choice");
+    expect(matchCall.items.length % 3).toBe(0);
+    expect(result.rejections.filter((entry) => entry.code === "check_wrong_set")).toHaveLength(1);
+    expect(result.objectives[0]!.exercises.some((draft) => draft.pairs?.[0]?.left === "coat0")).toBe(false);
+    expect(result.objectives[0]!.exercises.some((draft) => draft.exerciseType === "lesson_match")).toBe(true);
+  });
+
+  it("rejects only the exercises whose field results are missing", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const inner = keyChecker();
+    const checker: ClosedExerciseChecker = {
+      checkClosed: async (input, cost, signal) => {
+        const { results } = await inner.checkClosed(input, cost, signal);
+        return { results: results.slice(0, 4) };
+      },
+    };
+    const result = await dynamicRun(new DynamicGenerator(), checker);
+    const unknown = result.rejections.filter((entry) => entry.code === "check_unknown");
+    // 4 wyniki: pierwsze ćwiczenie paczki (3 pola) ocenione, kolejne bez kompletu wyników.
+    expect(unknown.length).toBeGreaterThan(0);
+    expect(result.rejections.filter((entry) => entry.code === "check_wrong_set")).toHaveLength(0);
+    for (const objective of result.objectives) expect(objective.exercises.filter((draft) => draft.exerciseType === "lesson_match")).toHaveLength(1);
+  });
+
+  it("resumes an agent checkpoint of a dynamic topic without the examples call", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const previous = await dynamicRun(new DynamicGenerator(), keyChecker());
+    const generator = new DynamicGenerator();
+    const result = await dynamicRun(generator, keyChecker(), {
+      fixed: previous.objectives[0]!.exercises,
+      skipObjectives: [d1],
+      initialExamples: { [d1]: ["Plan example one."], [d2]: ["Plan example two."] },
+      examplesFixed: true,
+    });
+    expect(generator.calls.every((call) => call.objective.id === d2 && !call.withExamples)).toBe(true);
+    expect(result.objectives.map((objective) => objective.objectiveId)).toEqual([d2]);
+    expect(result.objectives[0]!.examples).toEqual(["Plan example two."]);
+  });
+
+  it("runs the subject's sanitize before validation", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const strict: SubjectModule = {
+      ...subject,
+      id: "strict_test",
+      validateExercise: (draft) =>
+        draft.exerciseType === "lesson_open_answer" && draft.instructionPl !== "Fixed."
+          ? [{ rule: "lesson.test", field: "instructionPl", pl: "x" } as never]
+          : [],
+      agentPolicy: {
+        ...subject.agentPolicy,
+        sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
+      },
+    };
+    const result = await runLessonBaselinePool(
+      { generator: new FakeGenerator(), checker: new FakeChecker(), subjects: { getSubject: (id: string) => (id === strict.id ? strict : undefined) } },
+      runInput({ subjectId: strict.id }),
+      new AbortController().signal,
+    );
+    expect(result.objectives[0]!.exercises.filter((draft) => draft.exerciseType === "lesson_open_answer")).toHaveLength(3);
+    expect(result.rejections.filter((entry) => entry.code === "rule_exercise")).toHaveLength(0);
+  });
+});

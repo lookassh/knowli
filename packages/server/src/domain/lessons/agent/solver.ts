@@ -17,7 +17,7 @@ const sortedTexts = (texts: readonly string[]): string[] => [...texts].sort((a, 
  * Kolejność szkicu bywa skorelowana z `groupId` (model wypisuje grupę po grupie), więc
  * pozycja zdradzałaby przypisanie.
  */
-const groupItemsInViewOrder = (draft: LessonExerciseDraft): NonNullable<LessonExerciseDraft["groupItems"]> =>
+export const groupItemsInViewOrder = (draft: LessonExerciseDraft): NonNullable<LessonExerciseDraft["groupItems"]> =>
   [...(draft.groupItems ?? [])].sort((a, b) => a.text.localeCompare(b.text, "en"));
 
 /**
