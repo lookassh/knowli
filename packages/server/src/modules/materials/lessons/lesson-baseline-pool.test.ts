@@ -751,6 +751,21 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
     expect(overCount).toHaveLength(2);
   });
 
+  it("fills the open-answer share with distinct question families before second members (round 1: one family took the whole share)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Model pisze rodziny po kolei: f0, f0, f1, f1, …
+    const pair = (n: number, member: number) => ({ ...open(n), prompt: `Pytanie ${n}.${member}: co robi korzeń?` });
+    const generator: LessonPacketGenerator = {
+      generatePacket: async (input, cost) => {
+        cost.record(0.001);
+        return input.type === "lesson_open_answer" ? { exercises: Array.from({ length: input.count }, (_, i) => pair(Math.floor(i / 2), i % 2)) } : { exercises: [] };
+      },
+    };
+    const result = await kwRun(generator, kwChecker());
+    const families = new Set(exercisesOf(result).filter((draft) => draft.exerciseType === "lesson_open_answer").map((draft) => draft.familyId));
+    expect(families.size).toBeGreaterThanOrEqual(3);
+  });
+
   it("keeps keywords with their family after run scoping", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const result = await kwRun(new KwGenerator(() => [keywords("f0")]), kwChecker(), { familyScope: "r1" });

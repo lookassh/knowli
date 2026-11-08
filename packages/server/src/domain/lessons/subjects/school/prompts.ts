@@ -24,7 +24,8 @@ export const schoolPrompts: SubjectPromptProfile = {
     "nie trafiają do jego treści, par, grup ani kroków (dystraktory — błędne opcje, extraRight, extraWords, pojęcia spoza klucza — " +
     "mogą pochodzić z innych zagadnień materiału). " +
     "Karty cytują materiał, a dziecko widzi je podczas ćwiczeń: pytanie, zdanie z luką, tekst z lukami, opcje, kroki " +
-    "i odpowiedź wzorcową formułuj własnymi słowami, nigdy jako zdanie albo fragment zdania karty (z luką czy bez). " +
+    "i odpowiedź wzorcową formułuj własnymi słowami, nigdy jako zdanie albo fragment zdania karty (z luką czy bez); " +
+    "tylko sourceRefs.quote przepisujesz z materiału znak w znak. " +
     "Nie pytaj o wynik ani przykład, który karta już podaje (np. obliczenie z karty); weź inne dane z materiału. " +
     "lesson_open_answer.prompt to pytanie do dziecka; answer to krótka odpowiedź wzorcowa " +
     "sformułowana na podstawie materiału; acceptedAnswers to inne poprawne sformułowania tej samej odpowiedzi. " +
@@ -38,12 +39,15 @@ export const schoolPrompts: SubjectPromptProfile = {
     "familyId: wspólny slug dla różnych sformułowań TEGO SAMEGO pytania; " +
     "twórz rodziny po 2 sformułowania dla najważniejszych pytań otwartych. " +
     "sourceRefs: wybierz najkrótszy fragment materiału, który uzasadnia ćwiczenie i z którego wynika pytanie i odpowiedź. " +
-    "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej. " +
-    "lesson_gap: stem to zdanie o fakcie z materiału z luką po fakcie (data, nazwa, pojęcie). answer i każdy wariant " +
-    "acceptedAnswers wstawione w miejsce ___ dają poprawne zdanie: mają formę, jakiej wymagają słowa wokół luki, " +
-    "i nie powtarzają słowa stojącego przed albo za luką (np. „w ___ roku” → „966”, nie „966 roku”). " +
+    "focus dla odpowiedzi otwartej: 1-3 kolejne słowa odpowiedzi wzorcowej, skopiowane z niej w tej samej formie. " +
+    "lesson_gap: stem to zdanie o fakcie z materiału z luką po fakcie (data, nazwa, pojęcie), ułożone tak, żeby " +
+    "odpowiedź stała w luce w formie słownikowej (np. „___ to …” albo „… to ___”); nie stawiaj luki po przyimku ani tam, " +
+    "gdzie słowo musiałoby się odmienić. answer i każdy wariant acceptedAnswers wstawione w miejsce ___ dają poprawne " +
+    "zdanie i nie powtarzają słowa stojącego przed albo za luką (np. „w ___ roku” → „966”, nie „966 roku”). " +
+    "acceptedAnswers zostaw puste, chyba że ta sama pełna odpowiedź ma inny poprawny zapis; nigdy nie dodawaj jej części. " +
     "lesson_choice: stem to pytanie, options to krótkie odpowiedzi. " +
-    "lesson_order: items to etapy procesu albo kolejne wydarzenia tego zagadnienia w poprawnej kolejności (krótkie frazy " +
+    "lesson_order: items to etapy procesu albo kolejne wydarzenia tego zagadnienia w poprawnej kolejności, którą materiał " +
+    "podaje wprost (słowami „najpierw”, „potem”, datami albo numerami; zdarzenia równoczesne nie trafiają do jednej rozsypanki; krótkie frazy " +
     "z czynnością lub wydarzeniem, nigdy słowa jednego zdania ani same daty); gdy zagadnienie nie opisuje procesu ani " +
     "ciągu wydarzeń, zwróć mniej ćwiczeń albo żadnego.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
@@ -57,7 +61,9 @@ export const schoolPrompts: SubjectPromptProfile = {
       "or jobs, require what every valid choice satisfies and put the examples into supplementaryElements, or make the " +
       "question ask for the specific items; never drop an element the question genuinely requires. A required element " +
       "is only what makes the answer wrong when missing; a detail a correct answer may leave out goes to " +
-      "supplementaryElements. The model answer is a full sentence in your own words, never a card or material " +
+      "supplementaryElements. A term the question itself names is never a required element; for a who, when or where " +
+      "question require only the asked person, date or place and put its description into supplementaryElements. " +
+      "The model answer is a full sentence in your own words, never a card or material " +
       "sentence and never a bare term, date or name. 'Every exercise uses a different sentence' applies between question families: " +
       "write the ordered questions as at least three families with different model answers (fewer only when this " +
       "objective has fewer facts), at most two questions per family, every family about a different fact of this " +

@@ -162,6 +162,17 @@ async function allSettledOrThrow<T>(tasks: readonly Promise<T>[]): Promise<T[]> 
   return results.map((result) => (result as PromiseFulfilledResult<T>).value);
 }
 
+/** Stabilnie: najpierw pierwszy członek każdej rodziny (`familyId`), potem drugi itd.; ćwiczenia bez rodziny jak pierwsi. */
+function familiesFirst(drafts: readonly LessonExerciseDraft[]): LessonExerciseDraft[] {
+  const seen = new Map<string, number>();
+  const ranked = drafts.map((draft, index) => {
+    const rank = draft.familyId === undefined ? 0 : (seen.get(draft.familyId) ?? 0);
+    if (draft.familyId !== undefined) seen.set(draft.familyId, rank + 1);
+    return { draft, index, rank };
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map(({ draft }) => draft);
+}
+
 export async function runLessonBaselinePool(
   deps: LessonBaselineDeps,
   input: LessonPoolAgentRunInput,
@@ -374,7 +385,8 @@ export async function runLessonBaselinePool(
       const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0, keywords: 0 };
       // Towarzysze paczek (keywords) na końcu zagadnienia: po udziałach i zapasach, więc ich rodzina pytań jest już przyjęta.
       const isCompanion = (draft: LessonExerciseDraft, index: number) => draft.exerciseType === outcome.plan.packets[index]!.companion;
-      const own = outcome.packets.map((drafts, index) => drafts.filter((draft) => !isCompanion(draft, index)));
+      // Rodziny pytań najpierw pierwszymi członkami: model pisze rodziny po kolei, a udział etapu brałby jedną rodzinę.
+      const own = outcome.packets.map((drafts, index) => familiesFirst(drafts.filter((draft) => !isCompanion(draft, index))));
       const shares = own.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
       const reserves = own.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
       const tails = outcome.packets.map((drafts, index) => drafts.filter((draft) => isCompanion(draft, index)));
