@@ -64,8 +64,8 @@ export const englishChapterPrompts: SubjectPromptProfile = {
     "English texts: stem, options, items, answer, acceptedAnswers, focus and bank words. " +
     "Polish stimulus sentences in instructionPl read naturally, e.g. 'Dziś pada śnieg. Wybierz słowo.', " +
     "'Mam na sobie zielony płaszcz. Wpisz brakujące słowo.', 'Ułóż zdanie: Mam na sobie różowy płaszcz.' " +
-    "English 'it' for a thing has no Polish pronoun: 'Jest pod oknem.' or 'Gdzie jest lampa? Jest pod oknem.', never " +
-    "'Ona/Ono/To jest pod oknem.' (ona = she, to jest = this is); the Polish sentence keeps the English number. " +
+    "English 'it' for a thing has no Polish pronoun: the Polish sentence starts with 'Jest …', never 'Ona/Ono/To jest …' " +
+    "(ona = she, to jest = this is); the Polish sentence keeps the English number. " +
     "lesson_choice: stem is a short English sentence; 2 or 3 options, exactly one correct for the Polish sentence. " +
     "Distractors must be plausible: the same category as the " +
     "correct option, taken from the material (another colour for a colour, another clothes item for clothes, another " +
