@@ -129,5 +129,6 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
 /** Lokalne CLI Muse Code ze środowiskiem `childEnv`; na Windows `muse` to skrypt `.cmd`, więc przez `cmd.exe /c` (argumenty bez metaznaków powłoki). */
 export function runMuse(args: string[], options: Omit<ExecFileSyncOptionsWithStringEncoding, "env" | "encoding"> = {}): string {
   const full = { ...options, env: childEnv(), encoding: "utf8" as const };
-  return process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", ...args], full) : execFileSync("muse", args, full);
+  // Lokalne narzędzie dewelopera z jego PATH (jak `pnpm`): bezwzględna ścieżka i tak pochodziłaby z tego samego PATH.
+  return process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", ...args], full) : execFileSync("muse", args, full); // NOSONAR typescript:S4036
 }

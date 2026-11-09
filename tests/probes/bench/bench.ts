@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -151,7 +151,8 @@ export function readRecords(): BenchRecord[] {
   return existsSync(RESULTS_DIR) ? readdirSync(RESULTS_DIR).filter((name) => name.endsWith(".json")).sort().map((name) => JSON.parse(readFileSync(join(RESULTS_DIR, name), "utf8")) as BenchRecord) : [];
 }
 
-const git = (...args: string[]) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }).trim();
+// `git` z PATH dewelopera, jak w pozostałych skryptach repozytorium (`scripts/*.cjs`).
+const git = (...args: string[]) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }).trim(); // NOSONAR typescript:S4036
 
 function currentMeta(label: string, reps: number): BenchMeta {
   const dirty = git("status", "--porcelain", ...CODE_PATHS) !== "";
@@ -159,10 +160,10 @@ function currentMeta(label: string, reps: number): BenchMeta {
   if (dirty) {
     // Diff śledzonych plików i treść nowych (nieśledzonych): nowy prompt w `packages` też zmienia hash.
     const hash = createHash("sha256").update(git("diff", "HEAD", ...CODE_PATHS));
-    for (const file of git("ls-files", "--others", "--exclude-standard", ...CODE_PATHS).split("\n").filter(Boolean).sort()) hash.update(file).update(readFileSync(join(REPO, file)));
+    for (const file of git("ls-files", "--others", "--exclude-standard", ...CODE_PATHS).split("\n").filter(Boolean).sort((a, b) => a.localeCompare(b, "en"))) hash.update(file).update(readFileSync(join(REPO, file)));
     diffSha256 = hash.digest("hex");
   }
-  const routing = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => ROUTING.test(entry[0]) && entry[1] !== undefined).sort());
+  const routing = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => ROUTING.test(entry[0]) && entry[1] !== undefined).sort(([a], [b]) => a.localeCompare(b, "en")));
   const env = withConfigDefaults(process.env);
   const models = Object.fromEntries(MODEL_ENV.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]!]])));
   return { label, commit: git("rev-parse", "--short", "HEAD"), dirty, diffSha256, routing, models, reps };
@@ -231,7 +232,8 @@ function run(argv: string[]): void {
   if (capUsd !== undefined && !(Number.isFinite(capUsd) && capUsd > 0)) throw new Error("--cap-usd: dodatnia liczba USD");
   const tasks = values.tasks === undefined ? SUITE : values.tasks.split(",").map((id) => taskById(id.trim()));
   const slug = judgeSlug(judge);
-  const recordPath = join(RESULTS_DIR, `${label}.${slug}.json`);
+  const recordPath = resolve(RESULTS_DIR, basename(`${label}.${slug}.json`));
+  if (dirname(recordPath) !== resolve(RESULTS_DIR)) throw new Error("rekord poza tests/probes/results");
   if (existsSync(recordPath)) throw new Error(`${recordPath} już istnieje`);
 
   const env = withConfigDefaults(process.env);
