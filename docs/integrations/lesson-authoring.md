@@ -37,28 +37,21 @@ CLI zapisuje sekret tylko do nowego pliku o prywatnych uprawnieniach i wypisuje 
 
 Przed pierwszym użyciem w czacie: „Napisz lekcję Present Continuous dla mojego dziecka” — skill każe najpierw zapytać rodzica o wiek, poziom i znane słowa.
 
-## Wystawienie `/api/mcp` w proxy Coolify (krok operacyjny)
+## Dostęp z zewnątrz
 
-Decyzja właściciela 2026-11-09 (wariant B, `docs/architecture.md` §13): z zewnątrz dostępna jest tylko ścieżka `/api/mcp`, chroniona tokenem Bearer. Panel rodzica, Kid API, media i logowanie PIN-em zostają za bramą rodzinną.
+Decyzja właściciela 2026-11-09 (wariant B, `docs/architecture.md` §13): `/api/mcp` jest osiągalne z internetu i chronione tokenem Bearer, bo connector claude.ai nie przejdzie przez VPN ani bramę rodzinną.
 
-1. W Coolify dodaj osobną regułę routera (Traefik) dla publicznej domeny lub hosta z warunkiem ``Path(`/api/mcp`)`` (dokładnie ta ścieżka), kierującą do usługi web; nie wystawiaj reguły dla `/`.
-2. Do tej reguły dołącz middleware Traefik `rateLimit` (aplikacja liczy limity dopiero po uwierzytelnieniu, więc przed sprawdzeniem tokenu chroni tylko proxy), np. w etykietach usługi:
+Stan produkcji (sprawdzony 2026-11-09): cała aplikacja jest publiczna — DNS przez Cloudflare, router Traefik w Coolify `Host(umiem.devforce.pl) && PathPrefix(/)` bez filtra IP. Narzędzia działają więc od razu po wdrożeniu, bez zmian w proxy. Sprawdzenie po wdrożeniu:
 
-   ```text
-   traefik.http.middlewares.umiem-mcp-ratelimit.ratelimit.average=30
-   traefik.http.middlewares.umiem-mcp-ratelimit.ratelimit.period=1m
-   traefik.http.middlewares.umiem-mcp-ratelimit.ratelimit.burst=10
-   traefik.http.routers.<router-mcp>.middlewares=umiem-mcp-ratelimit
-   ```
+- `curl -i -X POST https://<domena>/api/mcp` bez nagłówka → 401 z `WWW-Authenticate: Bearer`;
+- connector claude.ai z tokenem `lessons:write` widzi pięć narzędzi.
 
-   Limit jest per adres klienta; dobierz wartości tak, by nie blokowały pojedynczego agenta (60 żądań na minutę na token po stronie aplikacji).
-3. Pozostałe ścieżki publicznej domeny mają odpowiadać 404/403 albo nie mieć routera.
-4. Sprawdź z sieci spoza domu:
-   - `curl -i https://<domena>/api/mcp` bez nagłówka → 401 z `WWW-Authenticate: Bearer`;
-   - `curl -i` dla `https://<domena>/`, `https://<domena>/parent`, `https://<domena>/api/v1/parent/subjects` i dowolnej ścieżki `https://<domena>/api/v1/kid/…` → brak dostępu (nie 200);
-   - connector claude.ai widzi pięć narzędzi;
-   - seria szybkich żądań bez tokenu dostaje 429 od proxy.
-5. `UMIEM_MCP_ALLOWED_ORIGINS` zostaw pusty, chyba że klient przeglądarkowy wysyła `Origin` (wtedy dokładne originy HTTPS).
+Opcjonalne utwardzenie (nie jest warunkiem działania):
+
+- **Limit żądań przed uwierzytelnieniem.** Aplikacja liczy limity dopiero po sprawdzeniu tokenu, a zły token kosztuje jedno zapytanie do bazy po kluczu. Limit przed tokenem ustaw jako regułę Rate Limiting w Cloudflare dla ścieżki `/api/mcp` (np. kilkadziesiąt żądań na minutę na adres). Limit `rateLimit` w Traefik nie nadaje się za Cloudflare: Traefik widzi adresy Cloudflare, więc jeden licznik objąłby wszystkich klientów.
+- **Zawężenie publicznej domeny.** Wystawienie publicznie tylko `/api/mcp` (np. regułą w Cloudflare albo osobnym routerem Traefik z ``Path(`/api/mcp`)``) zamknęłoby też panel i Kid API przed internetem. To osobna decyzja o dostępie rodzinnym (`docs/architecture.md` §13): dziś panel chroni PIN, a Kid API nie ma osobnej ochrony.
+
+`UMIEM_MCP_ALLOWED_ORIGINS` zostaw pusty, chyba że klient przeglądarkowy wysyła `Origin` (wtedy dokładne originy HTTPS).
 
 ## Unieważnianie tokenu
 
