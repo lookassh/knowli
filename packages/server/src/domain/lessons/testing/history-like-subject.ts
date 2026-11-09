@@ -1,7 +1,6 @@
-import type { LearningObjective, LessonTopic, SubjectModule } from "../types";
+import type { LearningObjective, LessonExerciseType, LessonTopic, SubjectModule } from "../types";
 import { baseNormalizer } from "../normalize";
 import { defineRules } from "../rules/catalog";
-import { HISTORY_LIKE_EXERCISE_TYPES, testAgentPolicy } from "./test-agent-policy";
 
 /**
  * Fixture przedmiotu nie-językowego („history-like”) — dowód, że silnik lekcji
@@ -9,6 +8,15 @@ import { HISTORY_LIKE_EXERCISE_TYPES, testAgentPolicy } from "./test-agent-polic
  * rozwijania skrótów), własnej kategorii błędu i typów bez `lesson_transform`.
  * Przeznaczony do testów kolejnych zadań; nie jest produkcyjnym przedmiotem.
  */
+
+/** Typy ćwiczeń `historyLikeSubject`. */
+const HISTORY_LIKE_EXERCISE_TYPES: readonly LessonExerciseType[] = [
+  "lesson_card",
+  "lesson_choice",
+  "lesson_order",
+  "lesson_gap",
+  "lesson_open_answer",
+];
 
 const foundationCards: LearningObjective["cards"] = [
   { title: "Chrzest Polski", body: "Mieszko I przyjął chrzest w 966 roku." },
@@ -72,7 +80,7 @@ export const historyLikeSubject: SubjectModule = {
   ttsForPrompts: false,
   ttsForFeedbackSentence: false,
   exerciseExplanations: false,
-  agentPolicy: testAgentPolicy,
+  checkerNeedsMaterial: false,
   // Minimalny (pusty) katalog reguł przedmiotu testowego.
   rules: defineRules({}),
 };

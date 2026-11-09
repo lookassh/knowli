@@ -89,10 +89,8 @@ export const englishChapterSubject: SubjectModule = {
   normalizeExposureText: normalizeChapterExposureText,
   // Zdania z kart rozdziału są gotowymi rozwiązaniami: źródło ujawnień przy generowaniu puli.
   cardExposureTexts: englishCardSentences,
-  // Generowanie przebiegiem bazowym (etap 5a #362): paczki, kontrola zamkniętych, jedna walidacja puli.
-  baselinePool: true,
-  // Polityka generowania: rezerwa, noty reguł, oczyszczenie świeżego wyjścia modelu.
-  agentPolicy: chapterAgentPolicy,
+  // Pola generowania puli: noty reguł, oczyszczenie świeżego wyjścia modelu.
+  ...chapterAgentPolicy,
   rules: CHAPTER_RULES,
   validateExercise: validateChapterExercise,
   // Audio odpowiedzi ujawniałoby rozwiązanie; polecenia są krótkie i po polsku.

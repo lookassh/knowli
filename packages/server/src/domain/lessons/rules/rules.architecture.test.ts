@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Test architektury katalogu reguł (spec katalogu reguł §2.4 pkt 4): walidatory
- * i przyjmowanie agenta zgłaszają złamane reguły wyłącznie przez fabryki zgłoszeń
+ * i krok reguł lekcji zgłaszają złamane reguły wyłącznie przez fabryki zgłoszeń
  * katalogu (`issueFrom`), więc żaden tekst dla modelu albo rodzica nie omija
  * katalogu. W skanowanych plikach (`SCANNED` niżej):
  * - tablica zgłoszeń — nazwa `errors|issues|reasons|findings`, także z
@@ -14,17 +14,16 @@ import { describe, expect, it } from "vitest";
  *   tablicy w deklaracji, przypisaniu albo właściwości nie dostaje napisu (literał,
  *   szablon, konkatenacja `+` z napisem, `String(…)`, `join`/`toString`…, zmienna
  *   lokalna z takim inicjalizatorem) ani spreadu wywołania, które nie zwraca zgłoszeń;
- * - funkcja zgłoszeń (jawny typ wyniku ze zgłoszeniami, nazwa tablicy zgłoszeń
- *   albo hak `SubjectAgentPolicy` z wynikiem `string[]`) nie zwraca tak
- *   zbudowanej tablicy;
+ * - funkcja zgłoszeń (jawny typ wyniku ze zgłoszeniami albo nazwa tablicy
+ *   zgłoszeń) nie zwraca tak zbudowanej tablicy;
  * - właściwość `reason:` nie jest literałem napisu ani szablonem.
- * We wszystkich źródłach silnika lekcji i narzędzi agenta wywołanie fabryki
+ * We wszystkich źródłach silnika lekcji i parsowania rekordów wywołanie fabryki
  * zgłoszeń ma pierwszy argument będący literałem napisu (id reguły).
  *
  * Wywołanie „zwraca zgłoszenia”, gdy jego nazwa (identyfikator albo ostatnia
  * właściwość, np. `subject.validateExercise`) jest fabryką zgłoszeń albo funkcją,
- * metodą lub polem z jawnym typem wyniku `LessonRuleIssue`/`RuleReason`/
- * `AgentGateFinding` zadeklarowanym w tych źródłach. Rozpoznanie po nazwie, bez
+ * metodą lub polem z jawnym typem wyniku `LessonRuleIssue`
+ * zadeklarowanym w tych źródłach. Rozpoznanie po nazwie, bez
  * sprawdzania typów: kształt zgłoszeń pilnują typy, ten test — że napis nie
  * omija fabryki. `throw` nie jest ujściem zgłoszeń (np. `computeCalculationAnswer`
  * dalej rzuca, a agent dostaje `calculationIssues`), więc nie ma dla niego wyjątku.
@@ -58,9 +57,9 @@ function sourceFilesUnder(dir: string): string[] {
 }
 
 /** Pliki przedmiotów z hakami walidacji i przyjmowania. */
-const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|hint-gate|quote-normalize)\.ts$/;
+const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|quote-normalize)\.ts$/;
 
-/** Pliki walidatorów i przyjmowania agenta objęte zakazem napisów w zgłoszeniach. */
+/** Pliki walidatorów, kroku reguł lekcji i parsowania rekordów objęte zakazem napisów w zgłoszeniach. */
 const SCANNED: readonly string[] = [
   "domain/lessons/pool-validation.ts",
   "domain/lessons/calculation.ts",
@@ -83,58 +82,16 @@ interface SinkException {
   readonly reason: string;
 }
 
-const EXAMPLES_REASON =
-  "przykłady kart nie są ćwiczeniami: odpowiedź narzędzia o liniach przykładów, poza katalogiem reguł ćwiczeń";
-const examplesText = (expression: string): SinkException => ({ fn: "submitExamples", expression, reason: EXAMPLES_REASON });
-
 /**
  * Nazwane wyjątki (plik → wyrażenia z uzasadnieniem): tekst poza katalogiem reguł,
  * bo nie jest odrzuceniem ćwiczenia. Wyjątek obejmuje tylko to jedno wyrażenie,
  * więc nowy napis w tej samej funkcji pada. Nie kopiuj ich jako wzorca. Każdy wpis
  * musi coś wyłączać (test pilnuje, że lista nie zostaje nieaktualna).
  */
-const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
-  "domain/lessons/agent/admission.ts": [
-    examplesText('"examples must be an array of strings"'),
-    examplesText("`${label}: must be a string`"),
-    examplesText("`${label}: is empty`"),
-    examplesText("`${label}: is longer than ${MAX_TEXT_LENGTH} characters`"),
-    examplesText("`${label}: duplicates an earlier example; this line was ignored`"),
-    // Linia przykładu ujawnia rozwiązanie: powód z fabryki (`formatRuleReason`) z etykietą i cytatem linii.
-    examplesText("...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`)"),
-    examplesText("`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`"),
-  ],
-  [TOOLS_FILE]: [
-    {
-      fn: "cappedReasons",
-      expression: "`+${reasons.length - MAX_REASONS} more`",
-      reason: "znacznik pominiętych powodów w wyniku narzędzia, nie powód odrzucenia",
-    },
-    {
-      fn: "submit",
-      expression: '"exercises must be an array"',
-      reason: "odmowa całego wywołania narzędzia przed walidacją ćwiczeń",
-    },
-    {
-      fn: "submit",
-      expression: '"examples were not processed because exercises must be an array"',
-      reason: "odmowa całego wywołania narzędzia: przykłady nieprzetworzone razem z odrzuconym wywołaniem",
-    },
-    {
-      fn: "submit",
-      expression: '"examples are fixed by the plan"',
-      reason: "przykłady kart ustalone planem: odpowiedź o przykładach, nie odrzucenie ćwiczenia",
-    },
-    {
-      fn: "remove",
-      expression: "`there is no exercise \"${text}\" in this objective's pool`",
-      reason: "odmowa narzędzia usuwania: w puli zagadnienia nie ma ćwiczenia o tym id",
-    },
-  ],
-};
+const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {};
 
 /** Typ wyniku, który oznacza zgłoszenia katalogu. */
-const ISSUE_RESULT_TYPE = /\b(?:LessonRuleIssue|RuleReason|AgentGateFinding)\b/;
+const ISSUE_RESULT_TYPE = /\bLessonRuleIssue\b/;
 /** Nazwa tablicy zgłoszeń (także z przedrostkiem: `recordIssues`, `victimIssues`). */
 const SINK_NAME = /(?:^|[a-z])(?:errors|issues|reasons|findings|Errors|Issues|Reasons|Findings)$/;
 /** Nazwy pasujące do `SINK_NAME`, które nie są zgłoszeniami. */
@@ -160,15 +117,12 @@ interface IssueVocabulary {
   readonly factories: ReadonlySet<string>;
   /** Nazwy funkcji, metod i pól z jawnym typem wyniku zgłoszeń. */
   readonly issueSources: ReadonlySet<string>;
-  /** Haki `SubjectAgentPolicy` z wynikiem `string[]` (tekst dla modelu bez katalogu). */
-  readonly textHooks: ReadonlySet<string>;
 }
 
-/** Fabryki, źródła zgłoszeń i haki tekstowe zadeklarowane w podanych źródłach. */
+/** Fabryki i źródła zgłoszeń zadeklarowane w podanych źródłach. */
 function issueVocabulary(sources: readonly ts.SourceFile[]): IssueVocabulary {
   const factories = new Set<string>();
   const issueSources = new Set<string>();
-  const textHooks = new Set<string>();
   for (const ast of sources) {
     const returnsIssues = (type: ts.TypeNode | undefined): boolean =>
       type !== undefined && ISSUE_RESULT_TYPE.test(type.getText(ast));
@@ -186,16 +140,6 @@ function issueVocabulary(sources: readonly ts.SourceFile[]): IssueVocabulary {
       ) {
         const name = propertyName(node.name);
         if (name !== undefined && returnsIssues(node.type)) issueSources.add(name);
-        if (
-          name !== undefined
-          && ts.isMethodSignature(node)
-          && ts.isInterfaceDeclaration(node.parent)
-          && node.parent.name.text === "SubjectAgentPolicy"
-          && node.type !== undefined
-          && /^(?:readonly )?string\[\]$/.test(node.type.getText(ast))
-        ) {
-          textHooks.add(name);
-        }
       } else if (
         ts.isPropertySignature(node)
         && node.type !== undefined
@@ -209,7 +153,7 @@ function issueVocabulary(sources: readonly ts.SourceFile[]): IssueVocabulary {
     };
     visit(ast);
   }
-  return { factories, issueSources, textHooks };
+  return { factories, issueSources };
 }
 
 interface Violation {
@@ -375,7 +319,7 @@ function sinkViolations(file: string, source: string, vocabulary: IssueVocabular
     if (fn === undefined) return false;
     const name = functionName(fn);
     return (fn.type !== undefined && ISSUE_RESULT_TYPE.test(fn.type.getText(ast)))
-      || (name !== undefined && (vocabulary.issueSources.has(name) || vocabulary.textHooks.has(name) || isSinkName(name)));
+      || (name !== undefined && (vocabulary.issueSources.has(name) || isSinkName(name)));
   };
   const checkSpread = (spread: ts.Expression, at: ts.Node, where: string): void => {
     const inner = unwrap(spread);
@@ -471,13 +415,13 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
   const violations = SCANNED.flatMap((file) => sinkViolations(file, read(file), vocabulary));
 
   it("skan widzi pliki, fabryki i źródła zgłoszeń (nie jest fałszywie zielony)", () => {
-    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(7);
+    // Od etapu 5b bez `school/hint-gate.ts`.
+    expect(SCANNED.filter((file) => SUBJECT_HOOK_FILE.test(file)).length).toBeGreaterThanOrEqual(6);
     for (const file of SCANNED) expect(() => read(file), file).not.toThrow();
     expect([...vocabulary.factories]).toEqual(
       expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "chapterIssue", "schoolIssue"]),
     );
-    expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "exerciseGate", "formatRuleReason"]));
-    expect([...vocabulary.textHooks].sort()).toEqual(["objectiveGaps"]);
+    expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "validatePoolExtra"]));
   });
 
   it("w ujściach zgłoszeń nie ma napisów ani spreadów spoza fabryk (poza wyjątkami)", () => {

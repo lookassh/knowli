@@ -71,7 +71,6 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
         expect(subject).not.toHaveProperty("generationServices");
         expect(subject).not.toHaveProperty("checkService");
         expect(subject).not.toHaveProperty("checkServiceIncludesMaterial");
-        expect(subject).not.toHaveProperty("openCheckService");
       }
       expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
     });
@@ -113,32 +112,6 @@ describe("lessonCatalog (sposób tworzenia zestawu per przedmiot)", () => {
       expect(same.subjects.find((s) => s.id === "school")!.generationServices).toEqual(["openrouter.ai · agent-model"]);
       const none = withAgent();
       expect(none.subjects.find((s) => s.id === "school")!.generationServices).toEqual(["openrouter.ai · agent-model"]);
-    });
-
-    describe("usługa oceny odpowiedzi próbnych do pytań otwartych (openCheckService)", () => {
-      const OPEN = "openrouter.ai · grader-model";
-      const withOpen = (openCheckService?: string) =>
-        lessonCatalog(createServices({
-          db: {} as never,
-          lessonAgentPublic: { ...agent, ...(openCheckService ? { openCheckService } : {}) },
-        }));
-
-      it("szkoła: pole w DTO", () => {
-        const catalog = withOpen(OPEN);
-        expect(catalog.subjects.find((s) => s.id === "school")!.openCheckService).toBe(OPEN);
-        expect(SubjectCatalogDtoSchema.safeParse(catalog).success).toBe(true);
-      });
-
-      it("gramatyka i rozdział (puste openAnswerCheckTypes): bez pola", () => {
-        const catalog = withOpen(OPEN);
-        expect(catalog.subjects.find((s) => s.id === "english_grammar")).not.toHaveProperty("openCheckService");
-        expect(catalog.subjects.find((s) => s.id === "english_chapter")).not.toHaveProperty("openCheckService");
-      });
-
-      it("bez openCheckService w konfiguracji agenta: bez pola", () => {
-        const catalog = withOpen();
-        expect(catalog.subjects.find((s) => s.id === "school")).not.toHaveProperty("openCheckService");
-      });
     });
   });
 

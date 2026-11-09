@@ -6,7 +6,6 @@ import { createOpenAiLlmProvider, DEFAULT_BASE_URL as LLM_DEFAULT_BASE_URL, DEFA
 import { chatRequestExtrasFromEnv } from "./chat-request-options";
 import { createOpenAiTtsProvider } from "./openai/tts";
 import { endpointKeyFromEnv, isOpenRouterKey, isSecureOpenRouterEndpoint } from "./openrouter-key";
-import { graderConfigured } from "../config";
 import type { UsageRecorder } from "../ports/usage";
 import { lessonGenerationPolicyFromEnv } from "../modules/materials/lessons/lesson-generation-policy";
 
@@ -167,8 +166,6 @@ export function createGenerationDepsFromEnv(
         ...(env.UMIEM_FAKE_HOLD_FILE ? { holdFile: env.UMIEM_FAKE_HOLD_FILE } : {}),
       }),
       lessonExecution,
-      // tryb fake nie wymaga konfiguracji gradera (web bierze wtedy fake gradera)
-      graderAvailable: false,
     };
   }
   const apiKey = openAiKeyFromEnv(env);
@@ -189,6 +186,5 @@ export function createGenerationDepsFromEnv(
     image: createOpenAiImageProvider({ apiKey, feature: "illustration", ...(usage ? { usage } : {}) }),
     mediaStore,
     lessonExecution,
-    graderAvailable: graderConfigured(env),
   };
 }

@@ -24,7 +24,7 @@ export interface AvoidSentencesInput {
   readonly exercises: readonly LessonExerciseDraft[];
   readonly subject: LeakSubject;
   /**
-   * Zdania z treści kart (`cardExposureSources`): na końcu listy, bo podagent dostaje je w całości osobno
+   * Zdania z treści kart (`cardExposureSources`): na końcu listy, bo paczka dostaje je w całości osobno
    * (`cardSentences`), a przy limicie ważniejsze są rozwiązania ćwiczeń (#328).
    */
   readonly cardSentences?: readonly string[];

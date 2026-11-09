@@ -217,3 +217,38 @@ describe("closedCheckVerdict for multi-field types", () => {
     expect(verdictOf(cloze, [{ answers: ["red", "blue"] }, { answers: ["blue"] }])).toEqual({ pass: false, code: "check_wrong_set" });
   });
 });
+
+describe("keywords (spec etapu 5 §3)", () => {
+  const keywords: LessonExerciseDraft = {
+    ...base,
+    exerciseType: "lesson_keywords",
+    instructionPl: "Wskaż pojęcia potrzebne w odpowiedzi.",
+    keywordOptions: [{ id: "k1", text: "korzeń" }, { id: "k2", text: "liść" }, { id: "k3", text: "kwiat" }, { id: "k4", text: "łodyga" }],
+    keyOptionIds: ["k1", "k4"],
+    familyId: "f1",
+  };
+
+  it("one item with the family question, concepts as options, no key", () => {
+    const items = closedCheckItems(keywords, topic, "Jak woda dostaje się z gleby do liści?");
+    expect(items).toHaveLength(1);
+    const item = items![0]!;
+    expect(item).toContain("Question: Jak woda dostaje się z gleby do liści?");
+    expect(item).toContain("Concepts: ");
+    expect(item).not.toContain("Teraz: am/is/are");
+    expect(item).not.toMatch(/\bk[1-4]\b/u);
+    expect(item).not.toContain("Field:");
+  });
+
+  it("without the family question there is no item", () => {
+    expect(closedCheckItems(keywords, topic)).toBeNull();
+  });
+
+  it("only the full key set passes", () => {
+    expect(verdict(keywords, { answers: ["Łodyga", "korzeń"] })).toEqual({ pass: true });
+    expect(verdict(keywords, { answers: ["korzeń"] })).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdict(keywords, { answers: ["korzeń", "łodyga", "liść"] })).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdict(keywords, { answers: [] })).toEqual({ pass: false, code: "check_wrong_set" });
+    expect(verdict(keywords, { answers: null })).toEqual({ pass: false, code: "check_unknown" });
+    expect(closedCheckContract("lesson_keywords")).toBe("choice");
+  });
+});

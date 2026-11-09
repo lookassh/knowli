@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isLessonAgentAvailable, type LessonAgentDeps } from "../config";
 import { withConfigDefaults } from "../config-defaults";
-import { agentObjectivesOf } from "../domain/lessons/agent/capable";
-import { createLessonAgentState } from "../domain/lessons/agent/state";
 import { createProductionSubjectRegistry } from "../domain/lessons/subjects";
 import { englishGrammarSubject } from "../domain/lessons/subjects/english-grammar/module";
-import { lessonAgentLimits, runLessonPoolAgent } from "../modules/materials/lessons/lesson-pool-agent";
-import { objectiveAgentInput } from "../modules/materials/lessons/lesson-pool-agent-input";
-import type { LessonAgentToolOutcome, LessonObjectiveAgentInput, LessonObjectiveAgentTools } from "../ports/ai";
+import { runLessonBaselinePool } from "../modules/materials/lessons/lesson-baseline-pool";
+import type { LessonPacketInput } from "../ports/ai";
 import { FakeExerciseChecker, FakeLessonPoolAgent } from "./fake-lesson-agent";
 import { lessonAgentDepsFromEnv } from "./lesson-agent-env";
 import { createTestRecorder } from "./usage/test-recorder";
@@ -20,62 +17,42 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Zależności agenta z env, gdy test oczekuje dostępnego agenta. */
+/** Zależności generowania z env, gdy test oczekuje dostępnego generatora. */
 function available(deps: ReturnType<typeof lessonAgentDepsFromEnv>): LessonAgentDeps {
   if (!isLessonAgentAvailable(deps)) throw new Error("expected available lesson agent");
   return deps;
 }
 
-/** Wejście podagenta gramatyki z prawdziwego `objectiveAgentInput` (pierwsze zagadnienie tematu). */
-function grammarInput(): LessonObjectiveAgentInput {
-  const objectives = agentObjectivesOf(GRAMMAR_TOPIC);
-  const limits = lessonAgentLimits(englishGrammarSubject, GRAMMAR_TOPIC, 0);
-  const state = createLessonAgentState({ topic: GRAMMAR_TOPIC, objectives, fixed: [], examples: {}, fixedSources: {} });
-  return objectiveAgentInput({
-    subject: englishGrammarSubject,
-    topic: GRAMMAR_TOPIC,
-    state,
-    objective: objectives[0]!,
-    limits: limits.get(objectives[0]!.id)!,
-    material: "",
-    graderAvailable: false,
-    examplesFixed: false,
-    maxSteps: 8,
-    callTimeoutMs: 90_000,
-  });
-}
+/** Paczka jednego typu pierwszego zagadnienia gramatyki (fake czyta tylko materiał, zdania do unikania i cel). */
+const PACKET = {
+  pool: { material: "Tom plays football.", avoidSentences: [], exerciseTypes: ["lesson_gap"] },
+  objective: { id: GRAMMAR_TOPIC.objectives[0]!.id, title: "x", cards: [] },
+  type: "lesson_gap",
+  count: 1,
+  withExamples: false,
+  timeoutMs: 1,
+} as unknown as LessonPacketInput;
 
-/** Narzędzia, które po pierwszym zgłoszeniu kończą zagadnienie. */
-function completingTools(): LessonObjectiveAgentTools & { readonly submitted: unknown[] } {
-  const submitted: unknown[] = [];
-  const outcome: LessonAgentToolOutcome = {
-    results: [],
-    counts: { guided: 0, productive: 0, independent: 0, outsideStages: 0, total: 0 },
-    missing: [],
-    complete: true,
-  };
-  return {
-    submitted,
-    submit: async (raw) => {
-      submitted.push(raw);
-      return outcome;
-    },
-    remove: async () => ({ ...outcome, removed: [] }),
-    shouldStop: () => false,
-  };
+/** Paczka z fake'a w trybie fake workera; `done` po rozstrzygnięciu. */
+function packetRun(deps: LessonAgentDeps) {
+  const state = { done: false };
+  const run = deps.agent.generatePacket(PACKET, { record: () => undefined }, never).then((result) => {
+    state.done = true;
+    return result;
+  });
+  return { run, state };
 }
 
 describe("lessonAgentDepsFromEnv", () => {
-  it("tryb fake bez klucza → fake'i: generator, checker niedostępny, polityka z env, bez ostrzeżeń", async () => {
+  it("tryb fake bez klucza → fake'i: generator, kontrola zamkniętych, polityka z env, bez ostrzeżeń", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const env = withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_LESSON_AGENT_MAX_STEPS: "5" });
+    const env = withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_LESSON_AGENT_CONCURRENCY: "5" });
     const deps = available(lessonAgentDepsFromEnv(env, createTestRecorder()));
     expect(deps.agent).toBeInstanceOf(FakeLessonPoolAgent);
     expect(deps.checker).toBeInstanceOf(FakeExerciseChecker);
-    expect(deps.policy).toMatchObject({ maxStepsPerObjective: 5, concurrency: 4 });
-    expect(deps).not.toHaveProperty("grader");
-    const solved = await deps.checker.solve({ items: [{ view: "v", expectedAnswers: 1 }] }, { record: () => undefined }, never);
-    expect(solved.answers).toEqual([null]);
+    expect(deps.policy).toMatchObject({ concurrency: 5, checkerConcurrency: 4 });
+    const checked = await deps.checker.checkClosed({ contract: "choice", items: [{ view: "Wybierz.\nOptions: plays | playsx" }], timeoutMs: 1 }, { record: () => undefined }, never);
+    expect(checked.results).toEqual([{ answers: ["plays"] }]);
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -83,17 +60,16 @@ describe("lessonAgentDepsFromEnv", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const usage = createTestRecorder();
     const deps = available(lessonAgentDepsFromEnv(withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1" }), usage));
-    const result = await runLessonPoolAgent(
-      { agent: deps.agent, checker: deps.checker, subjects: createProductionSubjectRegistry(), policy: deps.policy },
+    const result = await runLessonBaselinePool(
+      { generator: deps.agent, checker: deps.checker, subjects: createProductionSubjectRegistry(), policy: deps.policy },
       {
         runId: "run-1",
         subjectId: englishGrammarSubject.id,
         deckId: "42",
         objectiveSource: { source: "catalog", topic: GRAMMAR_TOPIC },
         topicTitle: GRAMMAR_TOPIC.titlePl,
-        material: "",
-        poolSize: 0,
-        graderAvailable: false,
+        material: "Tom plays football. Ola reads books. They swim every day.",
+        poolSize: 60,
         fixed: [],
         draftExamples: {},
         skipObjectives: [],
@@ -106,45 +82,39 @@ describe("lessonAgentDepsFromEnv", () => {
     expect(result.objectives.length).toBeGreaterThan(0);
     expect(result.objectives.every((objective) => objective.exercises.length > 0)).toBe(true);
     // record: false — worker nie gromadzi historii wywołań fake'a
-    expect(agent.calls).toHaveLength(0);
-    // stepCostUsd: 0 — kroki fake'a nie zużywają budżetu runu (koszt znany, nie szacunek)
+    expect(agent.packetCalls).toHaveLength(0);
+    // stepCostUsd: 0 — paczki fake'a nie zużywają budżetu runu (koszt znany, nie szacunek)
     expect(result.spentUsd).toBe(0);
-    expect(result.unknownCostCalls).toBe(0);
     expect(usage.events).toEqual([]);
   });
 
-  it("tryb fake: opóźnienie kroku z UMIEM_FAKE_LESSON_DELAY_MS (przed UMIEM_FAKE_DELAY_MS)", async () => {
+  it("tryb fake: opóźnienie paczki z UMIEM_FAKE_LESSON_DELAY_MS (przed UMIEM_FAKE_DELAY_MS)", async () => {
     vi.useFakeTimers();
     const env = withConfigDefaults({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_FAKE_LESSON_DELAY_MS: "200", UMIEM_FAKE_DELAY_MS: "5000" });
-    const deps = available(lessonAgentDepsFromEnv(env));
-    const tools = completingTools();
-    const run = deps.agent.runObjective(grammarInput(), tools, { record: () => undefined }, never);
+    const { run, state } = packetRun(available(lessonAgentDepsFromEnv(env)));
     await vi.advanceTimersByTimeAsync(199);
-    expect(tools.submitted).toHaveLength(0);
+    expect(state.done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(tools.submitted).toHaveLength(1);
-    await expect(run).resolves.toEqual({ steps: 1, stopReason: "model_finished" });
+    expect(state.done).toBe(true);
+    expect((await run).exercises).toHaveLength(1);
   });
 
   it("tryb fake: bez UMIEM_FAKE_LESSON_DELAY_MS opóźnienie z UMIEM_FAKE_DELAY_MS", async () => {
     vi.useFakeTimers();
-    const deps = available(lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_FAKE_DELAY_MS: "300" }));
-    const tools = completingTools();
-    const run = deps.agent.runObjective(grammarInput(), tools, { record: () => undefined }, never);
+    const { run, state } = packetRun(available(lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_FAKE_DELAY_MS: "300" })));
     await vi.advanceTimersByTimeAsync(299);
-    expect(tools.submitted).toHaveLength(0);
+    expect(state.done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    await expect(run).resolves.toEqual({ steps: 1, stopReason: "model_finished" });
+    await run;
+    expect(state.done).toBe(true);
   });
 
   it("tryb fake: nieliczbowe opóźnienie → bez opóźnienia", async () => {
     vi.useFakeTimers();
-    const deps = available(lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_FAKE_LESSON_DELAY_MS: "abc" }));
-    const tools = completingTools();
-    const run = deps.agent.runObjective(grammarInput(), tools, { record: () => undefined }, never);
+    const { run, state } = packetRun(available(lessonAgentDepsFromEnv({ UMIEM_FAKE_PROVIDERS: "1", UMIEM_FAKE_LESSON_DELAY_MS: "abc" })));
     await vi.advanceTimersByTimeAsync(0);
-    expect(tools.submitted).toHaveLength(1);
-    await expect(run).resolves.toEqual({ steps: 1, stopReason: "model_finished" });
+    expect(state.done).toBe(true);
+    await run;
   });
 
   it("bez klucza poza trybem fake → niedostępny, bez logu", () => {
@@ -177,49 +147,9 @@ describe("lessonAgentDepsFromEnv", () => {
     expect(deps).not.toHaveProperty("subjects");
     // Adapter bez importu w teście: jedynym importerem adaptera jest lesson-agent-env.ts (test architektury).
     expect(deps.agent.constructor.name).toBe("AiSdkLessonPoolAgent");
-    expect(deps.agent.name).toBe("ai-sdk-openrouter");
-    expect(deps.agent.model).toBe("google/gemini-test");
+    expect(deps.agent).toMatchObject({ name: "ai-sdk-openrouter", model: "google/gemini-test" });
     expect(deps.checker.constructor.name).toBe("AiSdkExerciseChecker");
-    expect(deps.checker.model).toBe("deepseek/deepseek-test");
+    expect(deps.checker).toMatchObject({ model: "deepseek/deepseek-test" });
     expect(deps.policy).toMatchObject({ concurrency: 2 });
-  });
-
-  describe("grader kontroli otwartej (etap 2b)", () => {
-    const base = { OPENROUTER_API_KEY: "sk-or-v1-test" };
-
-    it("tryb rzeczywisty z UMIEM_GRADER_* → grader z timeoutMs z env", () => {
-      const env = withConfigDefaults({
-        ...base,
-        UMIEM_GRADER_BASE_URL: "https://grader.example/v1",
-        UMIEM_GRADER_API_KEY: "secret",
-        UMIEM_GRADER_MODEL: "cheap-1",
-        UMIEM_GRADER_TIMEOUT_MS: "1234",
-      });
-      const deps = available(lessonAgentDepsFromEnv(env, createTestRecorder()));
-      expect(deps.grader?.timeoutMs).toBe(1234);
-      expect(deps.grader?.provider.model).toBe("cheap-1");
-    });
-
-    it("domyślna konfiguracja z kluczem OpenRouter też składa grader (domyślny timeout)", () => {
-      const deps = available(lessonAgentDepsFromEnv(withConfigDefaults(base), createTestRecorder()));
-      expect(deps.grader).toBeDefined();
-      expect(deps.grader?.timeoutMs).toBe(8000);
-    });
-
-    it("bez konfiguracji gradera → brak pola (kontrola otwarta nie dotyczy)", () => {
-      // Bez domyślnych (withConfigDefaults) i bez adresu/modelu gradera: tylko klucz agenta.
-      const deps = available(lessonAgentDepsFromEnv({ ...base, UMIEM_LESSON_AGENT_MODEL: "m", UMIEM_LESSON_AGENT_CHECKER_MODEL: "c" }));
-      expect(deps.grader).toBeUndefined();
-    });
-
-    it("UMIEM_FAKE_PROVIDERS=1 → brak gradera nawet z pełną konfiguracją", () => {
-      const env = withConfigDefaults({
-        UMIEM_FAKE_PROVIDERS: "1",
-        UMIEM_GRADER_BASE_URL: "https://grader.example/v1",
-        UMIEM_GRADER_API_KEY: "secret",
-        UMIEM_GRADER_MODEL: "cheap-1",
-      });
-      expect(available(lessonAgentDepsFromEnv(env, createTestRecorder())).grader).toBeUndefined();
-    });
   });
 });

@@ -60,7 +60,7 @@ export interface LlmPromptProfileInput {
   readonly interestsRule?: string;
 }
 
-/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (liczby z `targets` kierownika agenta). */
+/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (cele etapów paczki przebiegu bazowego). */
 export interface LlmLessonStageCounts {
   readonly guided: number;
   readonly productive: number;
@@ -77,7 +77,7 @@ export interface LessonPoolInput {
   readonly exerciseTypes: readonly string[];
   /** Przekształcenia dostępne w temacie (dla `lesson_transform`). */
   readonly transforms: readonly LlmLessonTransformInput[];
-  /** Cele wejścia — w wejściu podagenta dokładnie jeden (jego zagadnienie). */
+  /** Cele wejścia — w wejściu paczki dokładnie jeden (jej zagadnienie). */
   readonly objectives: readonly LlmLessonObjectiveInput[];
   readonly material: string;
   readonly instruction?: string;
@@ -94,7 +94,6 @@ export interface LessonPoolInput {
   readonly listenChoicePerObjective?: number;
   /** Ile miejsc etapu samodzielnego zastrzec dla różnych pytań otwartych (przedmioty v3). */
   readonly minDistinctOpenAnswers?: number;
-  readonly graderAvailable: boolean;
   /** Czy każde ćwiczenie MUSI nieść cytaty źródłowe z materiału (przedmioty z uziemieniem). */
   readonly groundingRequired?: boolean;
   /**
@@ -116,7 +115,7 @@ export interface LessonPoolInput {
   readonly avoidSentences?: readonly string[];
   /**
    * Księga reguł zagadnienia (domenowa `lessonRuleBook`, spec katalogu reguł §3): karty typów i opisy
-   * reguł, które sprawdza narzędzie. Adapter tylko ją renderuje; nie dopisuje własnych reguł.
+   * reguł, które sprawdza walidacja przebiegu bazowego. Adapter tylko ją renderuje; nie dopisuje własnych reguł.
    */
   readonly ruleBook: LessonRuleBookInput;
 }
@@ -125,7 +124,7 @@ export interface LessonPoolInput {
 export interface LessonRuleBookLine {
   readonly id: string;
   readonly text: string;
-  /** Tylko id w prompcie (kształt rekordu, powtórzenie listy pól karty typu); opis model dostaje w wyniku narzędzia. */
+  /** Pomijana w prompcie (kształt rekordu, powtórzenie listy pól karty typu); renderer daje za nie jedno zdanie o schemacie wyjścia. */
   readonly brief?: boolean;
 }
 
@@ -146,8 +145,6 @@ export interface LessonRuleBookTypeBlock {
 export interface LessonRuleBookInput {
   readonly general: readonly LessonRuleBookLine[];
   readonly types: readonly LessonRuleBookTypeBlock[];
-  readonly lesson: readonly LessonRuleBookLine[];
-  readonly checks: readonly LessonRuleBookLine[];
 }
 
 /**
@@ -187,11 +184,10 @@ export interface LessonStoryInput {
 }
 
 /**
- * Licznik kosztu runu agenta puli (etap 1 issue #237). Adapter zgłasza KAŻDE żądanie HTTP, także
- * nieudane i ponowione: kwotę w USD albo `null`, gdy koszt jest nieznany (kierownik liczy wtedy
- * szacunek). Koszt zapisuje się raz na wywołanie modelu, zaraz po odpowiedzi i PRZED wykonaniem
- * narzędzi tego kroku (przerwanie w trakcie narzędzi go nie gubi). Kierownik nigdy nie woła
- * `UsageRecorder` — robi to adapter z tego samego zdarzenia.
+ * Licznik kosztu runu generowania puli lekcji. Adapter zgłasza KAŻDE żądanie HTTP, także nieudane i
+ * ponowione: kwotę w USD albo `null`, gdy koszt jest nieznany (przebieg liczy wtedy szacunek), raz
+ * na wywołanie modelu, zaraz po odpowiedzi. Przebieg nigdy nie woła `UsageRecorder` — robi to
+ * adapter z tego samego zdarzenia.
  */
 export interface RunCostSink {
   record(usd: number | null): void;
@@ -199,12 +195,16 @@ export interface RunCostSink {
 
 /**
  * Wejście paczki przebiegu bazowego (spec etapu 2 §3–§4): jedno zagadnienie i jeden typ ćwiczenia.
- * `pool` buduje moduł dla jednego typu (księga reguł bez sekcji `lesson` i `checks`); adapter
+ * `pool` buduje moduł dla jednego typu (księga reguł tego typu); adapter
  * tylko renderuje prompt.
  */
 export interface LessonPacketInput {
   readonly pool: LessonPoolInput;
-  readonly objective: Pick<LessonObjectiveAgentInput["objective"], "id" | "title" | "cards">;
+  readonly objective: {
+    readonly id: string;
+    readonly title: string;
+    readonly cards: readonly { readonly title: string; readonly body: string }[];
+  };
   readonly type: string;
   readonly count: number;
   /** Pierwsza paczka zagadnienia zwraca też 1–3 przykłady kart. */
@@ -226,184 +226,13 @@ export interface ClosedCheckInput {
   readonly contract: "choice" | "order";
   readonly items: readonly { readonly view: string }[];
   readonly timeoutMs: number;
+  /** Materiał lekcji — tylko przedmiot z `SubjectModule.checkerNeedsMaterial` (szkoła, etap 5b §5.2). */
+  readonly material?: string;
 }
 
 export interface ClosedExerciseChecker {
   checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }>;
 }
-
-/** Wejście podagenta jednego zagadnienia lekcji (agent puli, etap 1 issue #237). */
-export interface LessonObjectiveAgentInput {
-  /**
-   * Pola promptu produkcyjnego (rola, reguły, typy, materiał, polecenie, tematy zdań, avoidSentences).
-   * Liczby ćwiczeń (`countPerObjective`, `stageCounts`, `listenChoicePerObjective`) wypełnia kierownik
-   * z `targets`; `targets` jest jedynym źródłem liczb.
-   */
-  readonly pool: LessonPoolInput;
-  readonly objective: {
-    readonly id: string;
-    readonly title: string;
-    readonly cards: readonly { readonly title: string; readonly body: string }[];
-    /** `false` = model dostarcza przykłady zagadnienia przez `submit`; `true` = przykłady ustalone (plan albo wznowienie). */
-    readonly examplesFromPlan: boolean;
-    /**
-     * Pozycja zagadnienia w kolejności lekcji (od 0; zagadnień jest `otherObjectives.length + 1`) i liczba
-     * ćwiczeń zagadnienia już w stanie runu (`fixed` i przyjęte). Tylko dla fake'a agenta (rozłączna
-     * numeracja zagadnień i „+N”); adapter modelu ich nie wysyła.
-     */
-    readonly index: number;
-    readonly existingCount: number;
-  };
-  readonly otherObjectives: readonly {
-    readonly title: string;
-    readonly cards: string;
-  }[];
-  /** Przykłady i zdania kart lekcji, których nie wolno użyć jako odpowiedzi samodzielnych. */
-  readonly cardSentences: readonly string[];
-  readonly targets: {
-    readonly guided: number;
-    readonly productive: number;
-    readonly independent: number;
-    /** Typy ćwiczeń per wymagane miejsce (identyfikatory typów lekcji jako zwykłe napisy, jak w `LessonPoolInput`). */
-    readonly requiredTypes: readonly (readonly string[])[];
-    readonly targetCount: number;
-    readonly listenAllowance: number;
-    readonly maxExercises: number;
-    /**
-     * Minima publikacji całej puli zagadnienia (te same stałe co walidacja publikacji); `distinctOpenAnswers` —
-     * ile różnych pytań otwartych wymaga przedmiot (brak = bez takiego wymagania).
-     */
-    readonly publicationMinima: {
-      readonly guided: number;
-      readonly productive: number;
-      readonly independent: number;
-      readonly distinctOpenAnswers?: number;
-    };
-  };
-  readonly maxSteps: number;
-  /** Limit jednego żądania modelu w kroku (ms), z jednym ponowieniem po przekroczeniu; brak = bez limitu żądania. */
-  readonly callTimeoutMs?: number;
-}
-
-/**
- * Wynik jednego ćwiczenia: `exerciseType` i początek bodźca (ok. 40 znaków treści modelu) mówią
- * modelowi, którego ćwiczenia dotyczy. Powody i noty w postaci `[<id reguły>] <pole>: <co jest nie tak>`.
- */
-export type LessonAgentToolResult =
-  | { readonly index: number; readonly exerciseType: string | null; readonly stimulus: string; readonly accepted: string; readonly notes?: readonly string[] }
-  | { readonly index: number; readonly exerciseType: string | null; readonly stimulus: string; readonly errors: readonly string[] };
-
-/** Skrót wyniku narzędzia dla modelu: co przyjęto, co odrzucono i czego brakuje do kompletu. */
-export interface LessonAgentToolOutcome {
-  readonly results: readonly LessonAgentToolResult[];
-  /**
-   * Opisy reguł użytych w powodach i notach tego wyniku (`id → opis` z dopiskiem przedmiotu); każdy id
-   * najwyżej raz na zagadnienie, więc reguła opisana we wcześniejszym wyniku już się nie powtarza.
-   */
-  readonly rules?: Readonly<Record<string, string>>;
-  readonly examples?: { readonly accepted: number; readonly errors: readonly string[] };
-  readonly counts: {
-    readonly guided: number;
-    readonly productive: number;
-    readonly independent: number;
-    readonly outsideStages: number;
-    readonly total: number;
-  };
-  readonly missing: readonly string[];
-  readonly complete: boolean;
-}
-
-/** Narzędzia podagenta; adapter wystawia je modelowi, wykonuje kierownik. */
-export interface LessonObjectiveAgentTools {
-  /** Wejście = gałąź `exercises` (+ opcjonalnie `examples` zagadnienia) schematu puli. */
-  submit(raw: {
-    readonly exercises: readonly unknown[];
-    readonly examples?: readonly unknown[];
-  }): Promise<LessonAgentToolOutcome>;
-  remove(id: string): Promise<LessonAgentToolOutcome & { readonly removed: readonly string[] }>;
-  /** `true` po complete, wyczerpaniu budżetu, terminie albo anulowaniu. */
-  shouldStop(): boolean;
-}
-
-/**
- * Agent puli ćwiczeń (etap 1 issue #237): model w pętli wywołuje narzędzia, a serwer waliduje każdy
- * wynik. Kontrakt adapterów: surowe rekordy materializuje (rachunki, słowa kluczowe, pary/grupy/luki) przed `submit`
- * i nie waliduje treści; kończy pętlę, gdy `shouldStop()` zwraca `true` (sprawdzane przed każdym
- * krokiem), po `maxSteps` albo gdy model kończy; zgłasza koszt każdego żądania przez `RunCostSink`;
- * przerwanie `signal` kończy wywołanie wyjątkiem przerwania.
- */
-export interface LessonPoolAgentProvider {
-  readonly name: string;
-  readonly model: string;
-  runObjective(
-    input: LessonObjectiveAgentInput,
-    tools: LessonObjectiveAgentTools,
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly steps: number; readonly stopReason: "stopped" | "max_steps" | "model_finished" }>;
-}
-
-/**
- * Niezależny solver i sędzia ćwiczeń agenta puli. Wywołania paczkowe: jedno żądanie na paczkę
- * `submit`, materiał raz. `null` w odpowiedzi = brak wyniku dla pozycji (`unavailable`).
- * Do checkera trafia wyłącznie jego wejście: widoki, liczby odpowiedzi, odpowiedź, warianty,
- * teksty elementów wymaganych i podpowiedź oraz materiał, gdy przedmiot go wymaga. `solve` i
- * `solveOpen` nigdy nie dostają klucza odpowiedzi (sam widok); `judgeVariants` dostaje odpowiedź
- * kanoniczną i warianty, bo ocenia ich równoważność; `judgeHints` dostaje odpowiedź wzorcową,
- * `requiredElements[].text` i podpowiedź, bo ocenia, czy podpowiedź zdradza odpowiedź albo element
- * wymagany. Nigdy polecenie rodzica, tematy zdań, karty ani dane dziecka.
- */
-export interface LessonExerciseCheckerProvider {
-  readonly name: string;
-  readonly model: string;
-  solve(
-    input: {
-      readonly items: readonly { readonly view: string; readonly expectedAnswers: number }[];
-      readonly material?: string;
-    },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly answers: readonly (readonly string[] | null)[] }>;
-  judgeVariants(
-    input: {
-      readonly items: readonly { readonly view: string; readonly answer: string; readonly variants: readonly string[] }[];
-      readonly material?: string;
-    },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly equivalent: readonly (readonly boolean[] | null)[] }>;
-  /** Sędzia podpowiedzi pytań otwartych (etap 2b §4): `null` na pozycji = niesprawdzone. */
-  judgeHints(
-    input: {
-      readonly items: readonly {
-        readonly view: string;
-        readonly answer: string;
-        readonly requiredElements: readonly string[];
-        readonly hint: string;
-      }[];
-      readonly material?: string;
-    },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly verdicts: readonly (HintVerdict | null)[] }>;
-  /**
-   * Rozwiązujący pytania otwarte (etap 2b §4): dwie różne odpowiedzi na pozycję (inny wybór albo
-   * inne sformułowanie), oceniane potem przez grader; `null` = brak wyniku.
-   */
-  solveOpen(
-    input: { readonly items: readonly { readonly view: string }[]; readonly material?: string },
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ readonly answers: readonly (readonly [string, string] | null)[] }>;
-}
-
-/**
- * Werdykt sędziego podpowiedzi; `reason` (≤ 200 znaków, po angielsku) tylko dla modelu agenta.
- * Strukturalnie zgodny z `AgentHintVerdict` z domeny (port nie importuje domeny).
- */
-export type HintVerdict =
-  | { readonly verdict: "ok" }
-  | { readonly verdict: "unsupported" | "language" | "reveals"; readonly reason: string };
 
 export interface LlmProvider {
   readonly name: string;
@@ -549,7 +378,6 @@ export interface GraderInput {
   readonly acceptedAnswers: readonly string[];
   /**
    * Odpowiedź dziecka przekazywana jako dane: ≤ 200 znaków (lekcje), ≤ 600 (odpowiedzi szkolne).
-   * W kontroli agenta puli (etap 2b) to odpowiedź rozwiązującego modelu, nie dziecka.
    */
   readonly childAnswer: string;
   /**
@@ -589,13 +417,7 @@ export interface AnswerGraderProvider {
   readonly promptVersions: readonly string[];
   /** Wersja promptu dla konkretnego wejścia (szkoła/grupa); brak = `promptVersion`. */
   promptVersionForInput?(input: GraderInput): string;
-  /**
-   * `cost` (opcjonalny) dostaje kwotę żądania HTTP według reguł kosztu runu agenta puli
-   * (`architecture.md` §23): odpowiedź spoza 2xx → `0`, brak odpowiedzi albo nieczytelne ciało
-   * 2xx → `null`, 2xx → `usage.cost` z treści, gdy dostawca go podaje, inaczej `null`. Web woła
-   * bez niego; woła agent puli przy kontrolach (etap 2b #237).
-   */
-  grade(input: GraderInput, signal: AbortSignal, cost?: RunCostSink): Promise<unknown>;
+  grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
 }
 
 /**

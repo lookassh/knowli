@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { schoolSubject } from "../subjects/school/module";
-import { A, B, choice, contextFor, gap, keywords, listen, naChecks, objectives, open, stateWith, subject, topic } from "../testing/agent-admission-fixtures";
-import { withAgentPolicy } from "../testing/agent-test-subject";
-import type { AgentObjective, LessonExerciseDraft, LessonExerciseType } from "../types";
-import { admitBatch, precheckBatch } from "./admission";
-import { agentObjectivesOf } from "./capable";
+import { A, admitInOrder, B, choice, contextFor, gap, keywords, listen, objectives, open, stateWith, subject, topic } from "../testing/agent-admission-fixtures";
+import type { LessonExerciseDraft } from "../types";
 import { orderedLesson, poolOf, withPool, type AgentPoolEntry, type LessonAgentState } from "./state";
 import {
   addedStageExercises,
@@ -12,7 +9,6 @@ import {
   completeObjectivesOnLesson,
   finalLessonCheck,
   lessonInvariantCheck,
-  objectiveAgentLimits,
   objectiveStatus,
   objectiveStatusFor,
   stageGapOf,
@@ -20,8 +16,7 @@ import {
 } from "./status";
 
 /** Szkoła (minima 3/2/2, rezerwa samodzielnych 1 → wymagane 3/2/3); fixture'y służą tylko do pokrycia. */
-const school = withAgentPolicy(schoolSubject);
-const schoolCtx = contextFor({ subject: school });
+const schoolCtx = contextFor({ subject: schoolSubject });
 
 /** Dokłada szkice do puli zagadnienia z kolejnymi identyfikatorami (bez kontroli przyjęcia). */
 function pooled(state: LessonAgentState, objectiveId: string, drafts: readonly LessonExerciseDraft[]): LessonAgentState {
@@ -33,16 +28,6 @@ function pooled(state: LessonAgentState, objectiveId: string, drafts: readonly L
 const guidedThree = [choice(A, 1), choice(A, 2), choice(A, 3)];
 const productiveTwo = [gap(A, "Pierwszy rok ___.", "966"), gap(A, "Drugi rok ___.", "1025")];
 const independentThree = [open(A, "Pytanie 1?", "Gniezno"), open(A, "Pytanie 2?", "Poznań"), open(A, "Pytanie 3?", "Kraków")];
-
-describe("objectiveAgentLimits", () => {
-  it("maxExercises = targetCount + listenAllowance + slack", () => {
-    expect(objectiveAgentLimits({ targetCount: 8, listenAllowance: 2 }, { slack: 2 })).toEqual({
-      targetCount: 8,
-      listenAllowance: 2,
-      maxExercises: 12,
-    });
-  });
-});
 
 describe("objectiveStatus — pokrycie etapów", () => {
   it("pełna pula szkoły (3/2/3, osiem ćwiczeń, przykład) jest kompletna", () => {
@@ -179,45 +164,6 @@ describe("objectiveStatus — liczba, typy poza etapami, przykłady", () => {
   });
 });
 
-describe("objectiveStatus — wymagane typy i braki przedmiotu", () => {
-  it("grupa wymaganych typów bez ćwiczenia → `needs at least one <typ1> or <typ2>`", () => {
-    const ctx = contextFor({
-      subject: withAgentPolicy(schoolSubject, { requiredTypes: () => [["lesson_open_answer", "lesson_keywords"]] }),
-    });
-    const state = pooled(stateWith(), A, [choice(A, 1)]);
-    expect(objectiveStatus(state, A, ctx).missing).toContain("needs at least one lesson_open_answer or lesson_keywords");
-    const satisfied = pooled(stateWith(), A, [keywords(A, "f1", 1)]);
-    expect(objectiveStatus(satisfied, A, ctx).missing.some((line) => line.startsWith("needs at least one"))).toBe(false);
-  });
-
-  it("typ spoza objective.exerciseTypes jest odfiltrowany, a pusta grupa pominięta", () => {
-    const narrow: AgentObjective[] = agentObjectivesOf(topic).map((objective) => ({
-      ...objective,
-      exerciseTypes: ["lesson_choice", "lesson_gap"] as LessonExerciseType[],
-    }));
-    const required: LessonExerciseType[][] = [["lesson_keywords"], ["lesson_open_answer", "lesson_choice"]];
-    const ctx = contextFor({ subject: withAgentPolicy(schoolSubject, { requiredTypes: () => required }) });
-    const status = objectiveStatus(stateWith({ objectives: narrow }), A, ctx);
-    expect(status.missing).toContain("needs at least one lesson_choice");
-    expect(status.missing.filter((line) => line.startsWith("needs at least one"))).toHaveLength(1);
-  });
-
-  it("objectiveGaps przedmiotu dołączone na końcu, z pulą zagadnienia (fixed i pula)", () => {
-    const seen: number[] = [];
-    const ctx = contextFor({
-      subject: withAgentPolicy(schoolSubject, {
-        objectiveGaps: (pool) => {
-          seen.push(pool.length);
-          return ["subject gap"];
-        },
-      }),
-    });
-    const state = pooled(stateWith({ fixed: [gap(A, "Fixed ___.", "966")] }), A, [choice(A, 1)]);
-    expect(objectiveStatus(state, A, ctx).missing.at(-1)).toBe("subject gap");
-    expect(seen).toEqual([2]);
-  });
-});
-
 describe("tryb „dodaj N” — addModeStatus", () => {
   const full = (): LessonAgentState =>
     pooled(stateWith({ examples: { [A]: ["Stolica."] } }), A, [...guidedThree, ...productiveTwo, ...independentThree]);
@@ -270,10 +216,10 @@ describe("tryb „dodaj N” — addModeStatus", () => {
 describe("lessonInvariantCheck", () => {
   const ctx = contextFor();
 
-  it("pusty dla stanu zbudowanego przez admitBatch", () => {
+  it("pusty dla stanu zbudowanego krokiem reguł lekcji", () => {
     const start = stateWith({ examples: { [A]: ["Stolica."] } });
     const drafts = [choice(A, 1), gap(A, "Rok ___.", "966"), open(A, "Rok chrztu?", "1025")];
-    const { state } = admitBatch(start, A, precheckBatch(start, A, drafts, ctx), naChecks(drafts.length), ctx);
+    const { state } = admitInOrder(start, A, drafts, ctx);
     expect(poolOf(state, A)).toHaveLength(3);
     expect(lessonInvariantCheck(state, ctx)).toEqual([]);
   });
@@ -358,7 +304,7 @@ describe("completeObjectivesOnLesson", () => {
   const full = [...guidedThree, ...productiveTwo, ...independentThree];
   const complete = (overrides: Partial<Parameters<typeof completeObjectivesOnLesson>[0]>) =>
     completeObjectivesOnLesson({
-      subject: school,
+      subject: schoolSubject,
       topic,
       objectives,
       material: "",
@@ -386,7 +332,7 @@ describe("completeObjectivesOnLesson", () => {
     expect(complete({ examples: {}, fixedSources: { [A]: ["Stolica Piastów."] } })).toEqual(new Set());
   });
 
-  it("fixed liczy się do zagadnienia jak w kierowniku", () => {
+  it("fixed liczy się do zagadnienia jak w przebiegu bazowym", () => {
     expect(complete({ fixed: independentThree, written: [...guidedThree, ...productiveTwo] })).toEqual(new Set([A]));
   });
 });

@@ -4,60 +4,23 @@ import { chapterAgentPolicy } from "./agent-policy";
 import { englishChapterSubject } from "./module";
 import { TRANSLATION_INSTRUCTION } from "./validators";
 
-describe("chapterAgentPolicy — wartości i typy", () => {
-  it("jest polityką przedmiotu rozdziału", () => {
-    expect(englishChapterSubject.agentPolicy).toBe(chapterAgentPolicy);
+describe("chapterAgentPolicy — pola modułu", () => {
+  it("moduł rozdziału składa pola generowania z polityki", () => {
+    expect(englishChapterSubject.checkerNeedsMaterial).toBe(false);
+    expect(englishChapterSubject.ruleNotes).toBe(chapterAgentPolicy.ruleNotes);
+    expect(englishChapterSubject.sanitize).toBe(chapterAgentPolicy.sanitize);
   });
 
-  it("ma zapas samodzielnych 1 i luz 2, bez materiału dla checkera", () => {
-    expect(chapterAgentPolicy.independentReserve).toBe(1);
-    expect(chapterAgentPolicy.slack).toBe(2);
-    expect(chapterAgentPolicy.checkerNeedsMaterial).toBe(false);
-  });
-
-  it("nie ma sędziego podpowiedzi ani kontroli otwartej (zachowanie jak w 2a)", () => {
-    expect(chapterAgentPolicy.hintJudgeTypes).toBeUndefined();
-    expect(chapterAgentPolicy.openAnswerCheckTypes).toBeUndefined();
-    for (const key of ["check.hint_judge", "check.open_answer"]) {
-      expect(chapterAgentPolicy.ruleNotes?.[key]).toBeUndefined();
-    }
-  });
-
-  it("typy ślepe i wariantów należą do przedmiotu, bez keywords i listen_choice", () => {
-    const subjectTypes = new Set<string>(englishChapterSubject.exerciseTypes);
-    for (const type of [...chapterAgentPolicy.blindSolveTypes, ...chapterAgentPolicy.variantCheckTypes]) {
-      expect(subjectTypes.has(type)).toBe(true);
-    }
-    expect(chapterAgentPolicy.blindSolveTypes).not.toContain("lesson_keywords");
-    expect(chapterAgentPolicy.blindSolveTypes).not.toContain("lesson_listen_choice");
-    expect(chapterAgentPolicy.blindSolveTypes).toContain("lesson_cloze");
-    expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
-  });
-
-  it("typy ślepe to dokładnie zbiór PoC (gałąź nie-szkolna) przecięty z typami rozdziału", () => {
-    expect(chapterAgentPolicy.blindSolveTypes).toEqual([
-      "lesson_choice",
-      "lesson_gap",
-      "lesson_cloze",
-      "lesson_open_answer",
-      "lesson_order",
-      "lesson_match",
-      "lesson_group",
-    ]);
-    expect(chapterAgentPolicy.variantCheckTypes).toEqual(["lesson_open_answer", "lesson_gap"]);
-  });
-
-  it("jedyny dopisek reguły to duplikat wariantu (prompt paczki nie ma sekcji lekcji ani kontroli)", () => {
+  it("jedyny dopisek reguły to duplikat wariantu (reguła rdzenia w sekcji ogólnej księgi)", () => {
     expect(Object.keys(chapterAgentPolicy.ruleNotes ?? {})).toEqual(["variants.duplicate"]);
   });
 });
 
 describe("sanitize", () => {
-  it("bez bramek, wymaganych typów i braków słów (etap 5a); tłumaczenie bez polecenia dostaje stałe polecenie", () => {
-    for (const key of ["requiredTypes", "exerciseGate", "objectiveGaps"] as const) expect(chapterAgentPolicy[key]).toBeUndefined();
+  it("tłumaczenie bez polecenia dostaje stałe polecenie", () => {
     const translation: LessonExerciseDraft = {
       exerciseType: "lesson_open_answer", objectiveId: "english_chapter.dx.room", prompt: "Mam łóżko.", answer: "I have a bed.", acceptedAnswers: [], focus: ["bed"],
     };
-    expect(chapterAgentPolicy.sanitize!(translation, { material: "" })).toEqual({ draft: { ...translation, instructionPl: TRANSLATION_INSTRUCTION }, removed: [] });
+    expect(chapterAgentPolicy.sanitize!(translation, { material: "" })).toEqual({ draft: { ...translation, instructionPl: TRANSLATION_INSTRUCTION } });
   });
 });

@@ -28,8 +28,8 @@ type DeepWritable<T> = T extends (...args: never[]) => unknown
       ? { -readonly [K in keyof T]: DeepWritable<T[K]> }
       : T;
 
-/** Polityka agenta i katalog reguł zostają niezmienne (nie są psute głęboko w tych testach), reszta przedmiotu jest mutowalna. */
-type WritableSubject = DeepWritable<Omit<SubjectModule, "agentPolicy" | "rules">> & Pick<SubjectModule, "agentPolicy" | "rules">;
+/** Dopiski reguł i katalog reguł zostają niezmienne (nie są psute głęboko w tych testach), reszta przedmiotu jest mutowalna. */
+type WritableSubject = DeepWritable<Omit<SubjectModule, "ruleNotes" | "rules">> & Pick<SubjectModule, "ruleNotes" | "rules">;
 
 /** Głęboko klonuje dane JSON (temat, cele) jako mutowalne. */
 function cloneData<T>(value: T): DeepWritable<T> {
@@ -257,19 +257,21 @@ describe("validateSubject — katalog reguł przedmiotu", () => {
     expect(validateSubject({ ...cloneSubject(), rules: { "test_history.fixture": rule } })).toEqual([]);
   });
 
-  it("dopiski ruleNotes: przyjmuje reguły rdzenia i lekcji, odrzuca id spoza katalogów silnika (także regułę przedmiotu)", () => {
-    const withNotes = (ruleNotes: Partial<Record<string, string>>): SubjectModule => {
-      const base = cloneSubject();
-      return { ...base, rules: { "test_history.fixture": rule }, agentPolicy: { ...base.agentPolicy, ruleNotes } };
-    };
-    expect(validateSubject(withNotes({ "core.fixture": "Core note.", "lesson.leak": "Leak note.", "check.blind_solve": "Solver note." }))).toEqual([]);
-    expect(ruleErrors(withNotes({ "lesson.unknown": "x", "test_history.fixture": "y" }))).toEqual([
-      "Przedmiot: dopisek ruleNotes do „lesson.unknown”, który nie jest regułą rdzenia ani lekcji",
-      "Przedmiot: dopisek ruleNotes do „test_history.fixture”, który nie jest regułą rdzenia ani lekcji",
+  it("dopiski ruleNotes: przyjmuje tylko reguły rdzenia, odrzuca reguły lekcji i id spoza rdzenia (także regułę przedmiotu)", () => {
+    const withNotes = (ruleNotes: Partial<Record<string, string>>): SubjectModule => ({
+      ...cloneSubject(),
+      rules: { "test_history.fixture": rule },
+      ruleNotes,
+    });
+    expect(validateSubject(withNotes({ "core.fixture": "Core note.", "variants.duplicate": "Duplicate note." }))).toEqual([]);
+    expect(ruleErrors(withNotes({ "lesson.leak": "x", "lesson.unknown": "y", "test_history.fixture": "z" }))).toEqual([
+      "Przedmiot: dopisek ruleNotes do „lesson.leak”, który nie jest regułą rdzenia",
+      "Przedmiot: dopisek ruleNotes do „lesson.unknown”, który nie jest regułą rdzenia",
+      "Przedmiot: dopisek ruleNotes do „test_history.fixture”, który nie jest regułą rdzenia",
     ]);
   });
 
-  it("dopiski ruleNotes przedmiotów produkcyjnych dotyczą reguł silnika", () => {
+  it("dopiski ruleNotes przedmiotów produkcyjnych dotyczą reguł rdzenia", () => {
     for (const subject of PRODUCTION_SUBJECTS) expect(ruleErrors(subject), subject.id).toEqual([]);
   });
 });

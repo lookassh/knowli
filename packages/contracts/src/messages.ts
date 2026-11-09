@@ -857,12 +857,12 @@ export const messages = {
     rejectedReasonsLabel: "Powody odrzuceń przy generowaniu",
     rejectedReason: "{reason} ×{n}",
     rejectedOtherReasons: "inne powody: {n}",
-    // Oczyszczenia agenta puli (`cleanupCounts` szkicu): ćwiczenia przyjęte po poprawce, nie odrzucone; same liczby.
+    // Oczyszczenia dawnego agenta puli (`cleanupCounts` historycznych szkiców): ćwiczenia przyjęte po poprawce; same liczby.
     cleanupLabel: "Poprawki agenta przy przyjmowaniu ćwiczeń",
     cleanupHints: "usunięte podpowiedzi: {n}",
     cleanupVariants: "usunięte warianty odpowiedzi: {n}",
     cleanupQuotes: "poprawione cytaty z materiału: {n}",
-    // Powody odrzuceń agenta puli lekcji (`rejectedReasons` szkicu): etykiety kodów odrzuceń agenta, bez treści ćwiczeń.
+    // Powody odrzuceń przy generowaniu puli lekcji (`rejectedReasons` szkicu): etykiety kodów odrzuceń, bez treści ćwiczeń.
     agentRejectionReasons: {
       shape_malformed: "zły format ćwiczenia",
       shape_objective: "ćwiczenie przypisane do złego zagadnienia",
@@ -1176,8 +1176,7 @@ export const messages = {
     generationServiceInfo: "Materiał lekcji trafia do usługi generującej ćwiczenia: {service}. Nie wysyłamy do niej imienia, wieku ani odpowiedzi dziecka.",
     generationServicesInfo: "Materiał lekcji trafia do usług generujących ćwiczenia: {service}. Nie wysyłamy do nich imienia, wieku ani odpowiedzi dziecka.",
     checkServiceInfo: "Gotowe ćwiczenia trafiają też do drugiego modelu, który rozwiązuje je na próbę ({service}). Nie wysyłamy do niego imienia, wieku ani odpowiedzi dziecka.",
-    checkServiceInfoWithMaterial: "Podczas przygotowania lekcji drugi model ({service}) rozwiązuje ćwiczenia na próbę, sprawdza podpowiedzi i pisze próbne odpowiedzi na pytania otwarte. Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.",
-    openCheckServiceInfo: "Odpowiedzi próbne do pytań otwartych ocenia usługa oceny ({service}). Dostaje pytanie, kryteria i cytaty z materiału — bez danych dziecka.",
+    checkServiceInfoWithMaterial: "Podczas przygotowania lekcji drugi model ({service}) sprawdza na próbę ćwiczenia zamknięte (wybór, dopasowanie, grupy, luki z bankiem, pojęcia kluczowe, kolejność). Dostaje ćwiczenia i materiał lekcji — nigdy imienia, wieku ani odpowiedzi dziecka.",
     generationGapsAlert: {
       one: "Generowanie zakończyło się częściowo: {n} zagadnienie do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",
       few: "Generowanie zakończyło się częściowo: {n} zagadnienia do uzupełnienia. Użyj „Dogeneruj” przy zagadnieniu.",

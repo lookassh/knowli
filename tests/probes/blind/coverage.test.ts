@@ -27,7 +27,7 @@ describe("coverage.cjs (etap 5)", () => {
   });
 
   it("fails on a dump without exposureLeaks instead of counting zero leaks", () => {
-    // Zrzut probe:agent trzyma ujawnienia w finalCheck — tam pokrycie dałoby fałszywe 0.
+    // Stary zrzut dawnej sondy agenta trzyma ujawnienia w finalCheck — tam pokrycie dałoby fałszywe 0.
     expect(() => coverageOf(forms, { objectives: [], exercises: [], finalCheck: { leaks: { coverage: [{}] } } })).toThrow(/exposureLeaks/u);
   });
 });

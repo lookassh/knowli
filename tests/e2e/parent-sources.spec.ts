@@ -118,9 +118,9 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
   const afterCreate = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());
   expect(afterCreate.source).toEqual({ id: sourceId, title, copiedRevision: 1, currentRevision: 1 });
   expect(afterCreate.draft?.exercises.length).toBeGreaterThan(0);
-  // Pulę generuje fake-agent workera (etap 3 #237): planer dzieli pokrycie materiału na zagadnienia
+  // Pulę generuje fake przebiegu bazowego w workerze: etap zagadnień dzieli pokrycie materiału na zagadnienia
   // z rodzajem (słowa albo rama; ten materiał bez sekcji „Zwroty:” daje same słowa), każde zagadnienie
-  // kończy się z ćwiczeniami, a kierownik niczego nie odrzuca.
+  // kończy się z ćwiczeniami, a walidacja puli niczego nie odrzuca.
   const objectives = afterCreate.draft?.dynamicTopic?.objectives ?? [];
   expect(objectives.length).toBeGreaterThanOrEqual(2);
   expect(objectives.every((objective) => objective.kind === "words" || objective.kind === "frame")).toBe(true);

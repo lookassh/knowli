@@ -1,5 +1,6 @@
 import { BASE_ERROR_CATEGORY_CODES } from "./base-error-categories";
 import { ENGINE_CATALOGS } from "./rules/catalog";
+import { CORE_RULES } from "./rules/core-rules";
 import { ASSESSED_STAGES, outsideStagePath, stageOf } from "./stages";
 import type { ErrorCategoryCode, LearningObjective, LessonTopic, SubjectModule } from "./types";
 
@@ -87,10 +88,11 @@ function validateSubjectRules(module: SubjectModule, errors: string[]): void {
       errors.push(`Przedmiot: id reguły „${id}” koliduje z katalogiem reguł silnika`);
     }
   }
-  // Dopiski przedmiotu dotyczą wyłącznie reguł silnika (własne reguły przedmiot opisuje sam).
-  for (const id of Object.keys(module.agentPolicy?.ruleNotes ?? {})) {
-    if (!ENGINE_CATALOGS.some((catalog) => Object.hasOwn(catalog, id))) {
-      errors.push(`Przedmiot: dopisek ruleNotes do „${id}”, który nie jest regułą rdzenia ani lekcji`);
+  // Dopiski przedmiotu dotyczą wyłącznie reguł rdzenia: tylko one trafiają do księgi reguł paczki
+  // (reguły lekcji sprawdza kod, własne reguły przedmiot opisuje sam).
+  for (const id of Object.keys(module.ruleNotes ?? {})) {
+    if (!Object.hasOwn(CORE_RULES, id)) {
+      errors.push(`Przedmiot: dopisek ruleNotes do „${id}”, który nie jest regułą rdzenia`);
     }
   }
 }

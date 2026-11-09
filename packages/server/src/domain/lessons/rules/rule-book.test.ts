@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import { MAX_TEXT_LENGTH } from "../pool-validation";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseType, SubjectModule } from "../types";
-import { describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { describeRule, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { CORE_RULES } from "./core-rules";
+import { LESSON_RULES } from "./lesson-rules";
 import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, typeExample, type RuleBook, type RuleLine } from "./rule-book";
 import { TYPE_CARDS } from "./type-cards";
 
 /**
- * Księga reguł agenta (spec katalogu reguł §3, §2.4 pkt 5): w księdze jest
- * dokładnie każda pasująca reguła `reject`/`sanitize` (typy zagadnienia i
+ * Księga reguł paczki (spec katalogu reguł §3, §2.4 pkt 5): w księdze jest
+ * dokładnie każda pasująca reguła `reject`/`sanitize` rdzenia i przedmiotu (typy zagadnienia i
  * warunki `when`), z dopiskiem przedmiotu, w kolejności `RULE_PRIORITY`, bez
  * reguł `internal`; wynik jest deterministyczny. Macierz: trzy przedmioty ×
  * każdy typ (i wszystkie typy naraz) × przydział `lesson_listen_choice` × ton lektora.
@@ -39,7 +41,6 @@ function contextFor(
     objectiveId,
     exerciseTypes,
     text: { answerMaxLength: usesV3Payload ? MAX_LESSON_ANSWER_LENGTH : MAX_TEXT_LENGTH, groundingRequired: subject.sourceQuotes === true },
-    policy: subject.agentPolicy,
     listenChoice: variant.listenChoice,
     voiceTones: variant.voiceTones,
     exerciseExplanations: subject.exerciseExplanations,
@@ -48,9 +49,9 @@ function contextFor(
   };
 }
 
-/** Wszystkie reguły przedmiotu: rdzeń, lekcja i katalog przedmiotu. */
+/** Reguły księgi przedmiotu: rdzeń i katalog przedmiotu (reguły lekcji sprawdza kod, księga ich nie ma). */
 function rulesOf(subject: SubjectModule): [string, LessonRule][] {
-  return [...ENGINE_CATALOGS, subject.rules].flatMap((catalog) => Object.entries(catalog));
+  return [CORE_RULES, subject.rules].flatMap((catalog) => Object.entries(catalog) as [string, LessonRule][]);
 }
 
 /** Wyrocznia: reguła pasuje, gdy nie jest `internal`, dotyczy typu zagadnienia i spełnia `when`. */
@@ -63,7 +64,7 @@ function expectedIds(subject: SubjectModule, ctx: RuleBookContext): string[] {
 }
 
 function sections(book: RuleBook): (readonly RuleLine[])[] {
-  return [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks];
+  return [book.general, ...book.types.map((block) => block.rules)];
 }
 
 function idsOf(book: RuleBook): string[] {
@@ -103,6 +104,7 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
       expect(new Set(ids).size, name).toBe(ids.length);
       expect([...ids].sort(), name).toEqual(expectedIds(subject, ctx).sort());
       expect(ids.filter((id) => internalIds.includes(id)), name).toEqual([]);
+      expect(ids.filter((id) => Object.hasOwn(LESSON_RULES, id)), name).toEqual([]);
     }
   });
 
@@ -120,7 +122,7 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
   it("tekst reguły to opis z dopiskiem przedmiotu", () => {
     for (const { name, ctx } of matrix(subject)) {
       for (const line of sections(lessonRuleBook(subject, ctx)).flat()) {
-        expect(line.text, `${name}: ${line.id}`).toBe(describeRule(ruleById.get(line.id)!, ctx.text, subject.agentPolicy.ruleNotes?.[line.id]));
+        expect(line.text, `${name}: ${line.id}`).toBe(describeRule(ruleById.get(line.id)!, ctx.text, subject.ruleNotes?.[line.id]));
       }
     }
   });
@@ -181,26 +183,22 @@ describe("księga reguł — przykłady kolejności", () => {
   const book = lessonRuleBook(school, contextFor(school, school.exerciseTypes, { listenChoice: false, voiceTones: true }));
   const block = (type: LessonExerciseType) => book.types.find((entry) => entry.type === type)!.rules.map((line) => line.id);
 
-  it("pytanie otwarte zaczyna się od podpowiedzi, potem rodzina", () => {
-    expect(block("lesson_open_answer").slice(0, 4)).toEqual([
-      "hint.reveals_words",
+  it("pytanie otwarte zaczyna się od rodziny (szkoła bez podpowiedzi, etap 5b)", () => {
+    expect(block("lesson_open_answer").slice(0, 3)).toEqual([
       "school.family_answer_differs",
       "school.family_elements_differ",
       "school.family_prompt_repeated",
     ]);
   });
 
-  it("ogólne zaczynają się od cytatów, rachunek od kształtu rachunku", () => {
-    expect(book.general.slice(0, 3).map((line) => line.id)).toEqual([
+  it("ogólne zaczynają się od braku podpowiedzi i cytatów, rachunek od kształtu rachunku", () => {
+    expect(book.general.slice(0, 4).map((line) => line.id)).toEqual([
+      "school.hint_open_answer_only",
       "school.quote_in_material",
       "school.quote_required",
       "school.quote_too_short",
     ]);
     expect(block("lesson_calculation").slice(0, 3)).toEqual(["calculation.family_slug", "calculation.params", "calculation.tolerance"]);
-  });
-
-  it("kontrole: sędzia podpowiedzi przed pozostałymi", () => {
-    expect(book.checks.map((line) => line.id)).toEqual(["check.hint_judge", "check.blind_solve", "check.open_answer", "check.variants"]);
   });
 });
 
@@ -210,12 +208,7 @@ describe("księga reguł — przykłady kolejności", () => {
  * którego księga ją zawiera (albo tylko wskazanych przedmiotów — dopiski).
  */
 const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; readonly phrase: string; readonly subjects?: readonly string[] }[] = [
-  // Przegląd końcowy (I3, M1): podpowiedź opcjonalna, nigdy nie opisuje odpowiedzi, próg słów bez „rounded up”.
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "short hint whenever the material allows a safe one" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "never names or describes the answer, even indirectly" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "it must contain fewer than half" },
-  { point: "1. podpowiedź pytania otwartego", rule: "hint.reveals_words", phrase: "Words that also appear in the question" },
-  { point: "1. podpowiedź pytania otwartego", rule: "check.hint_judge", phrase: "null only if no safe hint exists" },
+  { point: "1. szkoła bez podpowiedzi (etap 5b)", rule: "school.hint_open_answer_only", phrase: "School exercises have no hint" },
   { point: "2. tolerancja rachunku", rule: "calculation.tolerance", phrase: "out or set it to zero" },
   { point: "3. rodzina rachunku", rule: "calculation.family_slug", phrase: "scale-distance-km" },
   { point: "4. pusty napis", rule: "field.empty", phrase: "does not apply is null" },
@@ -223,20 +216,8 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
   { point: "5. pola pytania otwartego szkoły", rule: "school.open_required_fields", phrase: "supplementaryElements (at most" },
   { point: "6. rodzina pytań", rule: "school.family_answer_differs", phrase: "character for character" },
   { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of requiredElements ids" },
-  { point: "6. słowa kluczowe z pytaniem", rule: "school.keywords_family_rejected", phrase: "the keywords are rejected too" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "one continuous fragment" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
-  { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },
-  { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "card example" },
-  { point: "9. „dowolne dwa”", rule: "check.open_answer", phrase: "any two" },
-  { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "child's view" },
-  { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "position by position" },
-  {
-    point: "10. ślepe rozwiązanie (dopisek)",
-    rule: "check.blind_solve",
-    phrase: "put common equivalent word orders into acceptedAnswers",
-    subjects: ["english_grammar"],
-  },
 ];
 
 describe("frazy kluczowe nowych opisów reguł", () => {

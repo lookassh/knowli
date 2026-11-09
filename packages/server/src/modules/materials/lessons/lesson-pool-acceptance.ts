@@ -1,7 +1,5 @@
-import { explanationRemovalNotes } from "../../../domain/lessons/exercise-explanation";
 import { stripListenChoiceExtras } from "../../../domain/lessons/material-creation";
 import { V3_EXERCISE_FIELDS, withoutRedundantAcceptedVariants, type V3ExerciseField } from "../../../domain/lessons/pool-validation";
-import type { LessonRuleIssue } from "../../../domain/lessons/rules/catalog";
 import type { LessonExerciseDraft, SubjectModule } from "../../../domain/lessons/types";
 import {
   scopeFamiliesToRun,
@@ -27,19 +25,8 @@ function withoutUnsolicitedV3Fields(draft: LessonExerciseDraft, subject: Subject
   return copy as unknown as LessonExerciseDraft;
 }
 
-export interface SanitizedFreshDraft {
-  readonly draft: LessonExerciseDraft;
-  /**
-   * Noty usuniętego wyjaśnienia (`explanation.*`, `found` „removed: …”) dla wyniku narzędzia agenta;
-   * pusta lista = wyjaśnienie zostało albo go nie było.
-   */
-  readonly explanationNotes: readonly LessonRuleIssue[];
-  /** Liczba wariantów `acceptedAnswers` porzuconych jako redundantne wobec odpowiedzi kanonicznej. */
-  readonly droppedVariants: number;
-}
-
 /**
- * Sanityzacja jednego świeżego ćwiczenia z wyjścia modelu (agent puli i przebieg bazowy, przez `parseLessonRecord`).
+ * Sanityzacja jednego świeżego ćwiczenia z wyjścia modelu (przebieg bazowy, przez `parseLessonRecord`).
  * Kolejność kroków jest częścią kontraktu: niezamówione pola v3 → ton głosu → wyjaśnienie → puste tablice
  * → dodatki ćwiczenia słuchowego → rodziny runu → warianty redundantne. Bez
  * `stripParentAddedFlags` (woła go wywołujący). Warianty acceptedAnswers redundantne
@@ -52,17 +39,11 @@ export function sanitizeFreshLessonDraft(
   draft: LessonExerciseDraft,
   subject: SubjectModule,
   familyScope: string | null,
-): SanitizedFreshDraft {
+): LessonExerciseDraft {
   const toned = withoutVoiceToneUnlessAllowed(withoutUnsolicitedV3Fields(draft, subject), subject);
   const explained = withoutInvalidExplanation(toned, subject);
-  const explanationNotes = explained === toned || toned.explanationPl === undefined ? [] : explanationRemovalNotes(toned.explanationPl, subject);
   // Ćwiczenie słuchowe nie ma polecenia, podpowiedzi ani piktogramu: dodatek modelu usuwamy, nie odrzucamy ćwiczenia.
   const stripped = stripListenChoiceExtras(withoutEmptyOptionalArrays(explained));
   const scoped = familyScope === null ? stripped : scopeFamiliesToRun(stripped, familyScope);
-  const sanitized = withoutRedundantAcceptedVariants(scoped);
-  return {
-    draft: sanitized,
-    explanationNotes,
-    droppedVariants: scoped.acceptedAnswers.length - sanitized.acceptedAnswers.length,
-  };
+  return withoutRedundantAcceptedVariants(scoped);
 }

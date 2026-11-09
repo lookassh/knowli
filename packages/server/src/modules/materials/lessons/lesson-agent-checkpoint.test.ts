@@ -137,13 +137,11 @@ describe("punkt kontrolny agenta — odczyt i podsumowanie", () => {
     expect(parsed).not.toHaveProperty("checkCounters");
   });
 
-  it("checkCounters: odczyt zachowuje liczniki, zły kształt unieważnia punkt kontrolny", () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const counters = { hintChecks: 3, openChecks: 2, graderCalls: 4 };
-    const value = progress({ checkCounters: counters });
-    expect(parseLessonAgentProgress(stored(value), "run-1")?.checkCounters).toEqual(counters);
-    expect(parseLessonAgentProgress({ ...(stored(value) as object), checkCounters: { hintChecks: -1 } }, "run-1")).toBeUndefined();
-    expect(log).toHaveBeenCalledTimes(1);
+  it("historyczne checkCounters (kontrole 2b agenta): punkt kontrolny parsuje się, pole pominięte", () => {
+    const old = { ...(stored(progress()) as object), checkCounters: { hintChecks: 3, openChecks: 2, graderCalls: 4 } };
+    const parsed = parseLessonAgentProgress(old, "run-1");
+    expect(parsed).toBeDefined();
+    expect(parsed).not.toHaveProperty("checkCounters");
   });
 
   it("parse: rejectionCodesWritten przechodzi przez kolumnę jsonb, brak pola zostaje brakiem", () => {
@@ -215,9 +213,4 @@ describe("punkt kontrolny agenta — odczyt i podsumowanie", () => {
     expect(text).not.toContain("Czas teraźniejszy");
   });
 
-  it("summarize: przenosi checkCounters (sam licznik, bez treści); bez pola w postępie podsumowanie go nie ma", () => {
-    const counters = { hintChecks: 3, openChecks: 2, graderCalls: 4, graderErrors: 1 };
-    expect(summarizeLessonAgentProgress(progress({ checkCounters: counters }), 1).checkCounters).toEqual(counters);
-    expect(summarizeLessonAgentProgress(progress(), 1)).not.toHaveProperty("checkCounters");
-  });
 });

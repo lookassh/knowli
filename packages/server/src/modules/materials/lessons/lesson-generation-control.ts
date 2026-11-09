@@ -19,7 +19,7 @@ export interface LessonGenerationControl {
   assertCurrent(): Promise<void>;
   call<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T>;
   /**
-   * Długa praca (kierownik puli): sygnał korzenia kontrolera bez limitu pojedynczego żądania
+   * Długa praca (przebieg bazowy puli): sygnał korzenia kontrolera bez limitu pojedynczego żądania
    * (requestTimeoutMs). Przerwanie mapowane jak w call: superseded/shutdown →
    * LessonGenerationCancelledError, termin runu → GenerationProviderError("timeout").
    */
@@ -151,7 +151,7 @@ export async function withLessonGenerationControl<T>(
     }
   };
 
-  /** Długa praca (np. kierownik puli): tylko sygnał korzenia, bez limitu pojedynczego żądania. */
+  /** Długa praca (np. przebieg bazowy puli): tylko sygnał korzenia, bez limitu pojedynczego żądania. */
   const runLong = async <R>(request: (signal: AbortSignal) => Promise<R>): Promise<R> => {
     await verifyCurrent();
     remainingRunMs();

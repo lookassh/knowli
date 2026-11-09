@@ -454,12 +454,12 @@ function v3FieldsPresent(ex: LessonExerciseDraft): V3ExerciseField[] {
 /** Opcje walidacji ćwiczenia. */
 export interface LessonExerciseValidationOptions {
   /**
-   * Ścieżka agenta (przyjmowanie puli). Rodzic dostaje dzisiejszy zbiór
+   * Ścieżka generowania (walidacja puli przebiegu bazowego). Rodzic dostaje dzisiejszy zbiór
    * komunikatów, więc API edycji i publikacji tej opcji nie używa. Włącza:
    * - ponowną analizę po pustych napisach: gdy kontrakt odrzuca wyłącznie puste
    *   napisy w opcjonalnych polach tekstowych, pozostałe reguły liczymy raz
    *   jeszcze na kopii bez tych pól i zgłaszamy razem (ćwiczenie i tak jest
-   *   odrzucone; agent poprawia wszystko naraz), bez zgłoszeń o zdjętych polach
+   *   odrzucone; id wszystkich reguł trafiają do dziennika), bez zgłoszeń o zdjętych polach
    *   (te ma już `field.empty`);
    * - pominięcie zgłoszenia kontraktu o `answer` typu liczonego, gdy pole
    *   źródłowe ma własne zgłoszenie (`contractIssues`).
@@ -470,21 +470,6 @@ export interface LessonExerciseValidationOptions {
 /** Kopia szkicu bez wskazanych pól. */
 function withoutFields(ex: LessonExerciseDraft, fields: readonly string[]): LessonExerciseDraft {
   return Object.fromEntries(Object.entries(ex).filter(([key]) => !fields.includes(key))) as unknown as LessonExerciseDraft;
-}
-
-/**
- * Szkic do sprawdzeń poza walidacją ćwiczenia na ścieżce agenta (bramka przedmiotu; spec katalogu
- * reguł §4.2): szkic bez zmian, gdy kontrakt przechodzi; kopia bez pustych napisów w opcjonalnych
- * polach tekstowych (`stripped` — zdjęte pola), gdy to jedyne błędy kontraktu — jak ponowna analiza
- * w `validateLessonExerciseIssues`; `null` przy innych błędach kontraktu (dalszych reguł się nie liczy).
- */
-export function agentReanalysisDraft(
-  ex: LessonExerciseDraft,
-): { readonly draft: LessonExerciseDraft; readonly stripped: readonly string[] } | null {
-  const shape = LessonExerciseInputSchema.safeParse(ex);
-  if (shape.success) return { draft: ex, stripped: [] };
-  const empty = onlyEmptyOptionalTexts(shape.error.issues, ex);
-  return empty === null ? null : { draft: withoutFields(ex, empty), stripped: empty };
 }
 
 /**

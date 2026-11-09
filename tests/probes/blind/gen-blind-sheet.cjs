@@ -35,7 +35,8 @@ function rng(seedText) {
 }
 
 const rows = [];
-const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize", "graderAvailable"];
+// Bez `graderAvailable` (etap 5c): prompt paczki go nie czyta, więc stare i nowe zrzuty są porównywalne.
+const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize"];
 let reference;
 for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
@@ -47,18 +48,23 @@ for (const model of candidates) {
   models.push(model);
   // Uczciwość porównania: te same modele i wejście we wszystkich źródłach arkusza, wariant zgodny z katalogiem.
   if (dump.variant !== undefined && model.replace(/-r\d+$/u, "") !== dump.variant) throw new Error(`${model}: katalog nie pasuje do wariantu ${dump.variant}`);
-  // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` zrzutu `probe:agent`.
-  const config = JSON.stringify([...SAME_FIELDS.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
+  // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` starego zrzutu dawnej sondy agenta.
+  const fields = SAME_FIELDS;
+  const config = JSON.stringify([...fields.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
   if (reference === undefined) reference = { model, config };
-  else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${SAME_FIELDS.join(", ")}, input)`);
+  else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${fields.join(", ")}, input)`);
   if (material === undefined && typeof dump.material === "string") material = dump.material;
   const objectives = new Map((dump.objectives ?? []).map((objective) => [String(objective.id).split(".").at(-1), objective]));
+  // Keywords oceniane razem z pytaniem swojej rodziny (inny, przetasowany wiersz): pierwsze pytanie otwarte tego zagadnienia i `familyId`.
+  const familyQuestion = (exercise) =>
+    dump.exercises.find((other) => other.exerciseType === "lesson_open_answer" && other.objectiveId === exercise.objectiveId && other.familyId === exercise.familyId)?.prompt ?? null;
   dump.exercises.forEach((exercise, index) => {
     const slug = String(exercise.objectiveId ?? "").split(".").at(-1);
     const objective = objectives.get(slug);
-    const context = objective
+    const base = objective
       ? { title: objective.title, descriptionEn: objective.descriptionEn ?? null, kind: objective.kind ?? null, card: objective.card, examples: objective.examples ?? [] }
       : null;
+    const context = exercise.exerciseType === "lesson_keywords" ? { ...base, familyQuestion: familyQuestion(exercise) } : base;
     rows.push({ model, index, subject: dump.subjectId, exercise, context });
   });
 }
@@ -74,12 +80,14 @@ const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
 /**
  * Treść ćwiczenia bez metadanych zdradzających źródło: bez `id` (`ex<N>` agenta, UUID potoku), `revisionId` i pól
  * `*Audio`, temat w `objectiveId` obcięty do członu zagadnienia, klucze w porządku alfabetycznym (ten sam szkic
- * w innej kolejności pól daje tę samą komórkę).
+ * w innej kolejności pól daje tę samą komórkę). Bez `hint` pytania otwartego szkoły: dziecko go nie widzi, a ma go
+ * tylko ramię agenta (przebieg bazowy szkoły nie generuje podpowiedzi), więc zdradzałby źródło wiersza (etap 5b).
  */
-function blindContent(exercise) {
+function blindContent(exercise, subject) {
   const content = {};
+  const hiddenHint = subject === "school" && exercise?.exerciseType === "lesson_open_answer";
   for (const field of Object.keys(exercise ?? {}).sort((a, b) => a.localeCompare(b))) {
-    if (field === "id" || field === "revisionId" || field.endsWith("Audio")) continue;
+    if (field === "id" || field === "revisionId" || field.endsWith("Audio") || (hiddenHint && field === "hint")) continue;
     const value = exercise[field];
     content[field] = field === "objectiveId" ? String(value ?? "").split(".").at(-1) : value;
   }
@@ -90,9 +98,11 @@ const lines = [header.join(",")];
 const key = { seed, prefix, models, rows: [] };
 rows.forEach((row, position) => {
   const rowId = `${prefix ? `${prefix}-` : ""}r${String(position + 1).padStart(3, "0")}`;
-  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise))), "", "", "", ""].join(","));
+  lines.push([rowId, row.subject, quote(JSON.stringify(row.context)), quote(JSON.stringify(blindContent(row.exercise, row.subject))), "", "", "", ""].join(","));
   const hasExplanation = typeof row.exercise?.explanationPl === "string" && row.exercise.explanationPl.trim() !== "";
-  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation });
+  // Rodzina pytania otwartego (zagadnienie + familyId) do liczenia W2+W4 na rodzinę (decyzja o kontrolach 2b, spec v2.4).
+  const family = row.exercise?.exerciseType === "lesson_open_answer" && row.exercise.familyId ? `${String(row.exercise.objectiveId ?? "").split(".").at(-1)}|${row.exercise.familyId}` : undefined;
+  key.rows.push({ rowId, model: row.model, index: row.index, type: row.exercise?.exerciseType ?? "unknown", hasExplanation, ...(family ? { family } : {}) });
 });
 
 const outDir = path.join(lessonDir, "blind");

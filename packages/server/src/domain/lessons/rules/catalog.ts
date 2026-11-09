@@ -1,4 +1,4 @@
-import type { LessonExerciseType, SubjectAgentPolicy, SubjectModule } from "../types";
+import type { LessonExerciseType, SubjectModule } from "../types";
 
 /** Tryb rozpoznawania duplikatów w puli (`SubjectModule.poolDeduplication`; brak = `answer`). */
 export type PoolDeduplication = NonNullable<SubjectModule["poolDeduplication"]>;
@@ -86,14 +86,13 @@ export interface LessonRuleIssue {
 
 /**
  * Kontekst składania reguł do promptu (warunki `when`, `lessonRuleBook`).
- * Wypełnia go wejście agenta; tu tylko kształt. `exerciseTypes` — typy
+ * Wypełnia go `ruleBookContextFor`; tu tylko kształt. `exerciseTypes` — typy
  * dozwolone w zagadnieniu; `listenChoice` — czy `lesson_listen_choice` jest
  * dostępny zagadnieniu (nie: czy zostało miejsce w przydziale).
  */
 export interface RuleBookContext {
   readonly exerciseTypes: readonly LessonExerciseType[];
   readonly text: RuleTextContext;
-  readonly policy: SubjectAgentPolicy;
   readonly listenChoice: boolean;
   readonly voiceTones: boolean;
   readonly exerciseExplanations: boolean;
@@ -109,7 +108,7 @@ export interface RuleBookContext {
    * w nim. Warunek na id tematu żyje w katalogu przedmiotu, nigdy w silniku.
    */
   readonly topicId: string;
-  /** Id zagadnienia księgi: wybiera przykłady typów przedmiotu (`SubjectAgentPolicy.typeExamples`). */
+  /** Id zagadnienia księgi: wybiera przykłady typów przedmiotu (`SubjectModule.typeExamples`). */
   readonly objectiveId: string;
 }
 

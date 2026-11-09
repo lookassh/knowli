@@ -177,18 +177,17 @@ function offersListenChoice(subject: SubjectModule): boolean {
 }
 
 /**
- * Usługi widoczne dla rodzica przy przedmiocie (spec etapu 2a §11; agent generuje każdy przedmiot):
- * model agenta, a gdy do `UMIEM_LLM` idzie etap zagadnień (temat dynamiczny)
- * albo run historyjki (przedmiot z `lessonStory`), także ta usługa; drugi model (checker) i informacja,
- * czy dostaje materiał. Bez agenta (generowanie lekcji niedostępne) — bez pól.
+ * Usługi widoczne dla rodzica przy przedmiocie (spec etapu 2a §11): model paczek przebiegu bazowego,
+ * a gdy do `UMIEM_LLM` idzie etap zagadnień (temat dynamiczny) albo run historyjki (przedmiot z
+ * `lessonStory`), także ta usługa; model kontroli zamkniętych i informacja, czy dostaje materiał.
+ * Bez konfiguracji generowania (generowanie lekcji niedostępne) — bez pól.
  */
 function agentServicesOf(services: Services, subject: SubjectModule) {
   const agent = services.lessonAgentPublic;
-  const policy = subject.agentPolicy;
   if (!agent) return {};
   const stageService = services.generationService;
   const topicsFromMaterial = materialCreationMode(subject) !== undefined;
-  // Krok poza agentem z materiałem lekcji: etap zagadnień albo run historyjki po nowej puli (oba przez `UMIEM_LLM`).
+  // Krok poza paczkami z materiałem lekcji: etap zagadnień albo run historyjki po nowej puli (oba przez `UMIEM_LLM`).
   const stageStepRuns = topicsFromMaterial || subject.lessonStory === true;
   const generationServices = stageStepRuns && stageService && stageService !== agent.generationService
     ? [agent.generationService, stageService]
@@ -196,9 +195,7 @@ function agentServicesOf(services: Services, subject: SubjectModule) {
   return {
     generationServices,
     checkService: agent.checkService,
-    checkServiceIncludesMaterial: policy.checkerNeedsMaterial,
-    // ocena odpowiedzi próbnych do pytań otwartych: tylko przedmiot z takimi typami i skonfigurowany grader
-    ...(policy.openAnswerCheckTypes?.length && agent.openCheckService ? { openCheckService: agent.openCheckService } : {}),
+    checkServiceIncludesMaterial: subject.checkerNeedsMaterial,
   };
 }
 
