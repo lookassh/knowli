@@ -70,7 +70,6 @@ describe("lessonAgentDepsFromEnv", () => {
         topicTitle: GRAMMAR_TOPIC.titlePl,
         material: "Tom plays football. Ola reads books. They swim every day.",
         poolSize: 60,
-        graderAvailable: false,
         fixed: [],
         draftExamples: {},
         skipObjectives: [],
@@ -86,7 +85,6 @@ describe("lessonAgentDepsFromEnv", () => {
     expect(agent.packetCalls).toHaveLength(0);
     // stepCostUsd: 0 — paczki fake'a nie zużywają budżetu runu (koszt znany, nie szacunek)
     expect(result.spentUsd).toBe(0);
-    expect(result.unknownCostCalls).toBe(0);
     expect(usage.events).toEqual([]);
   });
 

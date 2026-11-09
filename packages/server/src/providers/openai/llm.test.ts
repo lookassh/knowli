@@ -51,7 +51,6 @@ const INPUT: LessonPoolInput = {
   instruction: "Skup się na 3. osobie.",
   countPerObjective: 6,
   stageCounts: { guided: 2, productive: 3, independent: 1 },
-  graderAvailable: true,
   ruleBook: { ...EMPTY_RULE_BOOK, general: [{ id: "gap.marker_count", text: "GAP-MARKER-RULE." }] },
 };
 

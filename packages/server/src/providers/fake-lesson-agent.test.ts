@@ -109,7 +109,6 @@ describe("fake przebiegu bazowego (etap 4 #358)", () => {
       topicTitle: topic.titlePl,
       material: "Tom plays football. Ola reads books. They swim every day.",
       poolSize: 60,
-      graderAvailable: true,
       fixed: [],
       draftExamples: {},
       skipObjectives: [],
@@ -151,8 +150,6 @@ describe("fake przebiegu bazowego (etap 4 #358)", () => {
     expect(choice.results).toEqual([{ answers: ["plays"] }, { answers: ["plays"] }, { answers: ["plays"] }]);
     const order = await checker.checkClosed({ contract: "order", items: [{ view: "x" }], timeoutMs: 1 }, costSink(), new AbortController().signal);
     expect(order.results).toEqual([{ verdict: "yes" }]);
-    const unknown = await new FakeExerciseChecker({ closed: "unknown" }).checkClosed({ contract: "choice", items: [{ view: views[0]! }], timeoutMs: 1 }, costSink(), new AbortController().signal);
-    expect(unknown.results).toEqual([{ answers: null }]);
   });
 
   it("gra scenariusz paczki i zapisuje koszt jako packet_generate", async () => {

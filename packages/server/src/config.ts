@@ -145,12 +145,7 @@ export interface GenerationDeps {
   mediaStore: MediaStore;
   lessonExecution?: LessonGenerationPolicy;
   /**
-   * Czy w procesie web będzie model oceniający ({@link graderConfigured} na tym
-   * samym env). Steruje tylko preferencją typów ćwiczeń przy generacji puli.
-   */
-  graderAvailable?: boolean;
-  /**
-   * Agent puli lekcji dla każdego przedmiotu (składany tylko w workerze,
+   * Generator puli lekcji (przebieg bazowy) dla każdego przedmiotu (składany tylko w workerze,
    * `providers/lesson-agent-env.ts`; worker ustawia pole zawsze). Bez klucza
    * OpenRouter — {@link LessonAgentUnavailable}; nieobecny (web, fabryki testowe)
    * znaczy to samo: run lekcji kończy się wtedy `failed`/`lesson_agent_unavailable`.
@@ -158,10 +153,10 @@ export interface GenerationDeps {
   lessonAgent?: LessonAgentDeps | LessonAgentUnavailable;
 }
 
-/** Agent puli lekcji niedostępny: worker bez klucza OpenRouter (start bez błędu, runy lekcji bez generatora). */
+/** Generator puli lekcji niedostępny: worker bez klucza OpenRouter (start bez błędu, runy lekcji bez generatora). */
 export type LessonAgentUnavailable = { readonly unavailable: "no_openrouter_key" };
 
-/** Czy worker ma zależności agenta puli (nie {@link LessonAgentUnavailable} i nie brak pola). */
+/** Czy worker ma zależności generatora puli (nie {@link LessonAgentUnavailable} i nie brak pola). */
 export function isLessonAgentAvailable(agent: GenerationDeps["lessonAgent"]): agent is LessonAgentDeps {
   return agent !== undefined && !("unavailable" in agent);
 }
@@ -260,7 +255,7 @@ export interface Services {
    */
   generationService?: string;
   /**
-   * Opis agenta puli lekcji dla panelu rodzica (etykiety usług, z env procesu web); nieobecny =
+   * Opis generatora puli lekcji dla panelu rodzica (etykiety usług, z env procesu web); nieobecny =
    * generowanie lekcji niedostępne (`lessonGenerationAvailable: false`). To opis konfiguracji, nie klient modelu.
    */
   lessonAgentPublic?: LessonAgentPublic;

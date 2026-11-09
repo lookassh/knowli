@@ -61,7 +61,6 @@ export function agentFailureOf(error: unknown): AgentFailure {
  */
 export class RunCostMeter implements RunCostSink {
   private spent: number;
-  private unknown = 0;
 
   constructor(
     initialSpentUsd: number,
@@ -77,13 +76,8 @@ export class RunCostMeter implements RunCostSink {
     return this.spent;
   }
 
-  get unknownCalls(): number {
-    return this.unknown;
-  }
-
   record(usd: number | null): void {
     if (usd === null || !Number.isFinite(usd) || usd < 0) {
-      this.unknown += 1;
       this.spent += this.unknownEstimateUsd;
     } else {
       this.spent += usd;

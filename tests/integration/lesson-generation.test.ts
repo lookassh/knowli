@@ -32,10 +32,10 @@ import {
 import { messages, type LessonCommand } from "@learning/contracts";
 import { countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration, gate, KeyedChecker, packetRecords, type FakeGeneration } from "./fakes";
 
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
-import type { ClosedCheckInput, LessonPacketInput, RunCostSink } from "../../packages/server/src/ports/ai";
+import type { LessonPacketInput } from "../../packages/server/src/ports/ai";
 import { lessonExerciseIdentity } from "../../packages/server/src/domain/lessons/exercise-identity";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
@@ -103,75 +103,13 @@ const transient = (): FakePacketStep => ({ throw: new GenerationProviderError("t
  * Same błędy przejściowe dla każdej paczki zagadnienia: przebieg bazowy ponawia paczkę raz w próbie,
  * a licznik wywołań fake'a biegnie przez próby.
  */
-const alwaysTransient = (): FakePacketStep[] => Array.from({ length: 500 }, transient);
-
-/** Ten sam krok dla każdej kolejnej paczki zagadnienia (licznik wywołań fake'a biegnie przez runy). */
-const everyPacket = (step: FakePacketStep): FakePacketStep[] => Array.from({ length: 100 }, () => step);
-
-/** Typ ćwiczenia rekordu scenariusza (`undefined` dla rekordów bez typu, np. `null`). */
-const typeOf = (exercise: unknown): string | undefined => (exercise as { exerciseType?: unknown } | null)?.exerciseType as string | undefined;
-
-/**
- * Paczki zagadnienia z ręcznymi rekordami (dawne zgłoszenie podagenta): każda paczka dostaje rekordy swojego
- * typu (i towarzysza), rekordy bez typu trafiają do paczki typu pierwszego rekordu, pierwsza paczka — przykłady.
- */
-function scripted(exercises: readonly unknown[], examples?: readonly unknown[]): FakePacketStep[] {
-  const fallback = exercises.map(typeOf).find((type) => type !== undefined);
-  return everyPacket({
-    build: (input) => ({
-      exercises: exercises.filter((exercise) => input.pool.exerciseTypes.includes(typeOf(exercise) ?? fallback ?? "")),
-      ...(input.withExamples && examples !== undefined ? { examples: [...examples] } : {}),
-    }),
-  });
-}
+const alwaysTransient = (): FakePacketStep[] => everyPacket(transient, 500);
 
 /** Paczki generatora fake'a z kolejnym pasmem numeracji, opcjonalnie przerobione przez `change`. */
 function generated(change: (input: LessonPacketInput, result: ReturnType<typeof fakePacketExercises>) => ReturnType<typeof fakePacketExercises> = (_input, result) => result): FakePacketStep[] {
   let band = 0;
   return everyPacket({ build: (input) => change(input, fakePacketExercises(input, (band += 1_000))) });
 }
-
-/**
- * Kontrola zamkniętych znająca klucze ręcznych rekordów scenariusza (konwencja fake'a ich nie zna):
- * pozycja ze zdaniem rekordu w widoku dostaje jego odpowiedź, pozostałe — wynik fake'a.
- */
-class KeyedChecker extends FakeExerciseChecker {
-  constructor(private readonly known: readonly unknown[]) {
-    super();
-  }
-
-  override async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
-    const checked = await super.checkClosed(input, cost, signal);
-    const records = this.known.filter((exercise): exercise is { stem: string; answer: string } => typeof (exercise as { stem?: unknown } | null)?.stem === "string");
-    return {
-      results: input.items.map((item, index) => {
-        const lines = item.view.split("\n");
-        const record = records.find((exercise) => lines.includes(exercise.stem));
-        return record === undefined ? checked.results[index] : { answers: [record.answer] };
-      }),
-    };
-  }
-}
-
-interface Gate {
-  readonly step: FakePacketStep;
-  readonly reached: Promise<void>;
-  open(): void;
-}
-
-/** Wywołanie „w locie”: `reached` po dojściu fake'a do kroku, `open()` kończy krok (przerwanie sygnału też). */
-function gate(): Gate {
-  let open!: () => void;
-  let reach!: () => void;
-  const opened = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  const reached = new Promise<void>((resolve) => {
-    reach = resolve;
-  });
-  return { step: { gate: opened, onReached: reach }, reached, open };
-}
-
 
 describe("generowanie puli lekcji (integracja)", () => {
   const disposers: Array<() => Promise<void>> = [];
@@ -356,7 +294,7 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("świeże wyjście modelu: polecenie, podpowiedź i piktogram ćwiczenia słuchowego są usuwane zamiast odrzucać ćwiczenie", async () => {
     const fakes = await agentFakes({
       packets: {
-        third_person_s: scripted([{
+        third_person_s: packetRecords([{
               exerciseType: "lesson_listen_choice",
               objectiveId: "english_grammar.present_simple.third_person_s",
               instructionPl: "Wybierz słowo.",
@@ -397,7 +335,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     // przyjęcie go porzuca. Od etapu 3 (#360) skrót i pełna forma to osobne warianty.
     const fakes = await agentFakes({
       packets: {
-        negative_forms: scripted([
+        negative_forms: packetRecords([
           {
             exerciseType: "lesson_open_answer",
             objectiveId,
@@ -469,7 +407,7 @@ describe("generowanie puli lekcji (integracja)", () => {
                 [malformedField]: [null],
               },
             ];
-    const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises) } }, new KeyedChecker(exercises));
+    const fakes = await agentFakes({ packets: { third_person_s: packetRecords(exercises) } }, new KeyedChecker(exercises));
     const services = lessonServices(fakes);
 
     const { runId, deckId } = await createLesson(services, command());
@@ -506,7 +444,7 @@ describe("generowanie puli lekcji (integracja)", () => {
           },
           null,
         ];
-    const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises) } }, new KeyedChecker(exercises));
+    const fakes = await agentFakes({ packets: { third_person_s: packetRecords(exercises) } }, new KeyedChecker(exercises));
     const services = lessonServices(fakes);
 
     const { runId, deckId } = await createLesson(services, command());
@@ -620,7 +558,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     // je bez zmian — nulle zdejmują `isWellShapedRawExercise` (pola `nullish`) i `toExerciseDraft`.
     const fakes = await agentFakes({
       packets: {
-        third_person_s: scripted([
+        third_person_s: packetRecords([
               {
                 exerciseType: "lesson_gap",
                 objectiveId: "english_grammar.present_simple.third_person_s",
@@ -1205,7 +1143,6 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(await rejectionCodesOf(runId)).toEqual({ shape_malformed: 1, lesson_extra: 1, lesson_pool: 1 });
     expect(deck.draft!.rejectedReasons).toEqual({ [labels.shape_malformed!]: 1, [labels.lesson_extra!]: 1, [labels.lesson_pool!]: 1 });
     expect(deck.draft!.coverage).toEqual([]);
-
   });
 
   it("zestaw szkolny: publikacja i sesja dziecka na typach zamkniętych", async () => {
@@ -1422,7 +1359,7 @@ describe("generowanie puli lekcji (integracja)", () => {
         translation("On gra w piłkę.", "He plays football.", "plays"),
         translation("Ona ogląda telewizję.", "She watches TV.", "watches"),
       ];
-      const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises, ["He plays football."]) } }, new KeyedChecker(exercises));
+      const fakes = await agentFakes({ packets: { third_person_s: packetRecords(exercises, ["He plays football."]) } }, new KeyedChecker(exercises));
       const services = lessonServices(fakes);
 
       const { runId, deckId } = await createLesson(services, command());

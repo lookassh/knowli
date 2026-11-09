@@ -54,7 +54,6 @@ const POOL: LessonPoolInput = {
   material: "cat — kot",
   countPerObjective: 6,
   stageCounts: { guided: 2, productive: 2, independent: 2 },
-  graderAvailable: false,
   ruleBook: { general: [{ id: "field.empty", text: "EMPTY-RULE." }], types: [] },
 };
 

@@ -18,7 +18,7 @@ import {
   type LessonAgentRunInputArgs,
 } from "./lesson-agent-outcome";
 import { scopeFamiliesToRun, type LessonRunInput } from "./lesson-drafts";
-import { emptyLessonPoolAgentStats, type LessonPoolAgentResult, type SettledObjective } from "./lesson-pool-agent";
+import type { LessonPoolAgentResult, SettledObjective } from "./lesson-pool-agent";
 
 /** Przedmioty wg cech, nie identyfikatorów: katalog i dynamiczny (rozdział, szkoła). */
 const catalog: SubjectModule = fixtureSubject;
@@ -57,7 +57,6 @@ function args(overrides: Partial<LessonAgentRunInputArgs> = {}): LessonAgentRunI
     attemptNonce: NONCE,
     subject: catalog,
     input: runInput(),
-    graderAvailable: true,
     progress: undefined,
     draft: { exercises: [], examples: {} },
     catalogTopic: topic,
@@ -69,7 +68,7 @@ function progressWith(overrides: Partial<LessonAgentProgress> = {}): LessonAgent
   return { ...emptyLessonAgentProgress(), ...overrides };
 }
 
-/** Wejście kierownika (bez kształtów „etap zagadnień” i „nic do dodania”). */
+/** Wejście przebiegu bazowego (bez kształtów „etap zagadnień” i „nic do dodania”). */
 function agentInput(value: ReturnType<typeof lessonAgentRunInputFor>) {
   if ("needsObjectives" in value || "nothingToAdd" in value) throw new Error("expected agent input");
   return value;
@@ -92,7 +91,6 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       instruction: "Polecenie rodzica.",
       interests: ["piłka"],
       poolSize: 16,
-      graderAvailable: true,
       fixed: [],
       draftExamples: {},
       skipObjectives: [],
@@ -222,7 +220,6 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
       instruction: "Polecenie rodzica.",
       interests: ["piłka"],
       poolSize: 16,
-      graderAvailable: true,
       fixed: draftExercises,
       draftExamples: {},
       skipObjectives: [],
@@ -250,7 +247,7 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
     expect(value.examplesFixed).toBe(true);
   });
 
-  it("nowe z punktu kontrolnego pokrywają count → nothingToAdd (kierownik nie przyjmuje count < 1)", () => {
+  it("nowe z punktu kontrolnego pokrywają count → nothingToAdd (nie ma czego generować)", () => {
     const added = [gap(A, "Z1 ___.", "a"), gap(A, "Z2 ___.", "b"), gap(A, "Z3 ___.", "c"), gap(A, "Z4 ___.", "d")];
     const progress = progressWith({ objectives: { [A]: { status: "incomplete", exercises: added, examples: [] } } });
     expect(lessonAgentRunInputFor(args({ input: runInput({ regenerate }), draft, progress }))).toEqual({ nothingToAdd: true });
@@ -351,10 +348,8 @@ function settled(
 function attemptResult(objectives: SettledObjective[], overrides: Partial<LessonPoolAgentResult> = {}): LessonPoolAgentResult {
   return {
     objectives,
-    stats: emptyLessonPoolAgentStats(),
     rejections: [],
     spentUsd: 0,
-    unknownCostCalls: 0,
     ...overrides,
   };
 }
@@ -376,7 +371,7 @@ describe("outcomeObjectivesOf", () => {
 });
 
 describe("mergeAttemptIntoProgress", () => {
-  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, ruleIds: ["lesson.leak"], detail: "treść" });
+  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, ruleIds: ["lesson.leak"] });
 
   it("pula: wznowione zastępuje wpis, complete zostaje; wydatek i histogram sumowane, usunięcia bez zmian", () => {
     const start = progressWith({
@@ -392,7 +387,6 @@ describe("mergeAttemptIntoProgress", () => {
     const result = attemptResult([settled(B, "incomplete", [gapB])], {
       spentUsd: 0.375,
       rejections: [rejection("leak"), rejection("duplicate")],
-      stats: { ...emptyLessonPoolAgentStats(), submitted: 3, accepted: 1 },
     });
     expect(mergeAttemptIntoProgress(start, result, "pool")).toEqual({
       ...start,
@@ -406,10 +400,9 @@ describe("mergeAttemptIntoProgress", () => {
     });
   });
 
-  it("historyczne liczniki kontroli i oczyszczeń z punktu kontrolnego przechodzą bez zmian", () => {
-    const start = progressWith({ checkCounters: { hintChecks: 2, graderCalls: 3 }, cleanupCounts: { hintsRemoved: 1, variantsRemoved: 2 } });
+  it("historyczne liczniki oczyszczeń z punktu kontrolnego przechodzą bez zmian", () => {
+    const start = progressWith({ cleanupCounts: { hintsRemoved: 1, variantsRemoved: 2 } });
     const merged = mergeAttemptIntoProgress(start, attemptResult([]), "pool");
-    expect(merged.checkCounters).toEqual({ hintChecks: 2, graderCalls: 3 });
     expect(merged.cleanupCounts).toEqual({ hintsRemoved: 1, variantsRemoved: 2 });
     expect(mergeAttemptIntoProgress(emptyLessonAgentProgress(), attemptResult([]), "pool")).not.toHaveProperty("cleanupCounts");
   });

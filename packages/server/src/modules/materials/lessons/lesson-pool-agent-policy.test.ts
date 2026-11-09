@@ -23,14 +23,12 @@ describe("polityka generowania puli i licznik kosztu", () => {
     meter.record(0.02);
     expect(meter.exhausted()).toBe(true);
     expect(meter.spentUsd).toBeCloseTo(0.06);
-    expect(meter.unknownCalls).toBe(0);
   });
 
   it("koszt null liczy szacunkiem, a wydatek startuje od initialSpentUsd; równy budżetowi = wyczerpany", () => {
     const meter = new RunCostMeter(0.5, 1, 0.25);
     meter.record(null);
     expect(meter.spentUsd).toBeCloseTo(0.75);
-    expect(meter.unknownCalls).toBe(1);
     meter.record(null);
     expect(meter.spentUsd).toBeCloseTo(1);
     expect(meter.exhausted()).toBe(true);

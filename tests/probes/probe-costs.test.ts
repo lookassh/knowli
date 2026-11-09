@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  agentCostEstimates,
+  unknownCallEstimateUsd,
   agentLedgerCost,
   appendCostEntry,
   appendProvisionalCostEntry,
@@ -151,32 +151,32 @@ describe("koszty przebiegu generowania lekcji (także operacje dawnego agenta ze
     expect(costByOperation([{ runId: null }])).toEqual({ unknown: { calls: 1, costUsd: 0, unknownCostCalls: 1 } });
   });
 
-  const estimates = { unknownCallUsd: 0.02 };
+  const unknownCallUsd = 0.02;
 
   it("runCosts: agent i kontrole porównane z budżetem runu, lesson_objectives osobno, w kolejności runów", () => {
-    expect(runCosts(events, 0.55, estimates)).toEqual([
+    expect(runCosts(events, 0.55, unknownCallUsd)).toEqual([
       { runId: "run-a", agentUsd: 0.574, agentEstimatedUsd: 0.594, lessonObjectivesUsd: 0.01, otherUsd: 0, calls: 6, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: true },
       { runId: "run-b", agentUsd: 0.5, agentEstimatedUsd: 0.52, lessonObjectivesUsd: 0, otherUsd: 0, calls: 2, unknownCostCalls: 1, budgetUsd: 0.55, overBudget: false },
       { runId: null, agentUsd: 0, agentEstimatedUsd: 0, lessonObjectivesUsd: 0, otherUsd: 0.003, calls: 1, unknownCostCalls: 0, budgetUsd: 0.55, overBudget: false },
     ]);
     // Etap zagadnień nie zużywa budżetu agenta: sam koszt agenta równy budżetowi to nie przekroczenie.
-    expect(runCosts([{ operation: "agent_objective", providerCostUsd: 1, runId: "r" }, { operation: "lesson_objectives", providerCostUsd: 0.2, runId: "r" }], 1, estimates)[0]!.overBudget).toBe(false);
-    expect(runCosts([], 1, estimates)).toEqual([]);
+    expect(runCosts([{ operation: "agent_objective", providerCostUsd: 1, runId: "r" }, { operation: "lesson_objectives", providerCostUsd: 0.2, runId: "r" }], 1, unknownCallUsd)[0]!.overBudget).toBe(false);
+    expect(runCosts([], 1, unknownCallUsd)).toEqual([]);
   });
 
   it("runCosts: wywołania runu bez usage.cost liczą się do budżetu szacunkiem; etap zagadnień bez kosztu nie", () => {
     const nearLimit: ProbeCostEvent[] = [{ operation: "agent_objective", providerCostUsd: 0.99, runId: "r" }];
-    expect(runCosts(nearLimit, 1, estimates)[0]!.overBudget).toBe(false);
+    expect(runCosts(nearLimit, 1, unknownCallUsd)[0]!.overBudget).toBe(false);
     // Jedno wywołanie bez kosztu (szacunek 0,02) przesuwa run ponad budżet — zmierzony koszt sam by tego nie pokazał.
-    const unknownStep = runCosts([...nearLimit, { operation: "agent_objective", runId: "r" }], 1, estimates)[0]!;
+    const unknownStep = runCosts([...nearLimit, { operation: "agent_objective", runId: "r" }], 1, unknownCallUsd)[0]!;
     expect(unknownStep).toMatchObject({ agentUsd: 0.99, agentEstimatedUsd: 1.01, unknownCostCalls: 1, overBudget: true });
     // lesson_objectives bez kosztu jest poza budżetem agenta.
-    expect(runCosts([...nearLimit, { operation: "lesson_objectives", runId: "r" }], 1, estimates)[0]).toMatchObject({ agentEstimatedUsd: 0.99, unknownCostCalls: 1, overBudget: false });
+    expect(runCosts([...nearLimit, { operation: "lesson_objectives", runId: "r" }], 1, unknownCallUsd)[0]).toMatchObject({ agentEstimatedUsd: 0.99, unknownCostCalls: 1, overBudget: false });
   });
 
-  it("agentCostEstimates: szacunek z polityki runu (env), brakujący z wartości domyślnej", () => {
-    expect(agentCostEstimates({})).toEqual({ unknownCallUsd: 0.02 });
-    expect(agentCostEstimates({ unknownCallEstimateUsd: 0.05 })).toEqual({ unknownCallUsd: 0.05 });
+  it("unknownCallEstimateUsd: szacunek z polityki runu (env), brakujący z wartości domyślnej", () => {
+    expect(unknownCallEstimateUsd({})).toBe(0.02);
+    expect(unknownCallEstimateUsd({ unknownCallEstimateUsd: 0.05 })).toBe(0.05);
   });
 
   it("unsettledEvents: rozliczenie bierze wszystko, czego nie rozliczono — bez zakresu runu i spóźnione zdarzenia wcześniejszego runu — i nic dwa razy", () => {
@@ -195,19 +195,19 @@ describe("koszty przebiegu generowania lekcji (także operacje dawnego agenta ze
     log.push(late, add, unscoped);
     const second = unsettledEvents(log, settled);
     expect(second).toEqual([late, add, unscoped]);
-    expect(agentLedgerCost(second, estimates)).toEqual({ costUsd: 0.224, estimated: true });
+    expect(agentLedgerCost(second, unknownCallUsd)).toEqual({ costUsd: 0.224, estimated: true });
     for (const event of second) settled.add(event);
     expect(unsettledEvents(log, settled)).toEqual([]);
   });
 
   it("agentLedgerCost: zmierzony koszt; wywołanie bez usage.cost → szacunek z flagą", () => {
     // 0.01 + 0.02 + 0.3 + 0.25 + 0.004 + 0.5 + 0.003 zmierzone; check_grade i check_variants po 0.02 szacowane.
-    expect(agentLedgerCost(events, estimates)).toEqual({ costUsd: 1.127, estimated: true });
-    expect(agentLedgerCost(events.filter((event) => event.providerCostUsd !== undefined), estimates)).toEqual({ costUsd: 1.087, estimated: false });
-    expect(agentLedgerCost([], estimates)).toEqual({ costUsd: 0, estimated: false });
+    expect(agentLedgerCost(events, unknownCallUsd)).toEqual({ costUsd: 1.127, estimated: true });
+    expect(agentLedgerCost(events.filter((event) => event.providerCostUsd !== undefined), unknownCallUsd)).toEqual({ costUsd: 1.087, estimated: false });
+    expect(agentLedgerCost([], unknownCallUsd)).toEqual({ costUsd: 0, estimated: false });
     // Tanie wywołania z pełnym usage.cost nie przechodzą na szacunek (przebieg ma ich dziesiątki).
     const cheap = Array.from({ length: 40 }, (): ProbeCostEvent => ({ operation: "check_solve", providerCostUsd: 0.001, runId: "r" }));
-    expect(agentLedgerCost(cheap, estimates)).toEqual({ costUsd: 0.04, estimated: false });
+    expect(agentLedgerCost(cheap, unknownCallUsd)).toEqual({ costUsd: 0.04, estimated: false });
   });
 });
 

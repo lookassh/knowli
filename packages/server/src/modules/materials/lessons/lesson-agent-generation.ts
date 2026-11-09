@@ -50,7 +50,6 @@ import { LessonGenerationCancelledError, withLessonGenerationControl, type Lesso
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { runLessonBaselinePool } from "./lesson-baseline-pool";
 import {
-  emptyLessonPoolAgentStats,
   lessonAgentLimits,
   type LessonPoolAgentResult,
   type LessonPoolAgentRunInput,
@@ -94,10 +93,8 @@ function withSpend(progress: LessonAgentProgress, spentUsd: number): Pick<Lesson
 function settledResult(settled: SettledObjective): LessonPoolAgentResult {
   return {
     objectives: [settled],
-    stats: emptyLessonPoolAgentStats(),
     rejections: settled.rejections,
     spentUsd: settled.spentUsd,
-    unknownCostCalls: 0,
   };
 }
 
@@ -399,7 +396,6 @@ export async function executeLessonAgentGeneration(
       attemptNonce: randomUUID(),
       subject,
       input,
-      graderAvailable: services.generation?.graderAvailable === true,
       draft,
       ...(catalogTopic === undefined ? {} : { catalogTopic }),
     };
@@ -419,10 +415,8 @@ export async function executeLessonAgentGeneration(
     const remainingMs = runDeadlineAtMs - (agentDeps.finalizationReserveMs ?? AGENT_FINALIZATION_RESERVE_MS) - Date.now();
     const emptyAttempt: LessonPoolAgentResult = {
       objectives: [],
-      stats: emptyLessonPoolAgentStats(),
       rejections: [],
       spentUsd: begin.budgetSpentUsd,
-      unknownCostCalls: 0,
     };
     const outcomeFor = (progress: LessonAgentProgress, result: LessonPoolAgentResult): LessonAgentOutcome =>
       lessonAgentRunOutcome({
@@ -435,7 +429,7 @@ export async function executeLessonAgentGeneration(
     if (remainingMs <= 0) {
       // Bez czasu na przebieg: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
       // wyczerpany budżet (wiersz 1) i wspólny kod dostawcy z punktu kontrolnego (wiersz 6) zostają.
-      console.log(`[lesson-agent] run=${runId} no_time_for_agent remainingMs=${remainingMs}`);
+      console.log(`[lesson-agent] run=${runId} no_time_for_generation remainingMs=${remainingMs}`);
       const outcome = outcomeFor(begin, emptyAttempt);
       const timedOut = outcome.kind === "failed" && outcome.errorCode === "validation" && begin.budgetSpentUsd < budgetUsd;
       return { progress: begin, outcome: timedOut ? { kind: "failed", errorCode: "provider_timeout" } : outcome };

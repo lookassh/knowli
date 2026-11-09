@@ -30,7 +30,7 @@ każdym deploju.
      `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (web: próby ustne dziecka),
    - **lekcje wymagają klucza OpenRouter** (`OPENROUTER_API_KEY`,
      `UMIEM_LESSON_AGENT_API_KEY` albo `UMIEM_LLM_API_KEY` przy `UMIEM_LLM_BASE_URL`
-     na https OpenRouter) w web i w worker — agent puli jest jedynym
+     na https OpenRouter) w web i w worker — przebieg bazowy w workerze jest jedynym
      generatorem lekcji (sekcja „Generowanie lekcji” niżej),
    - `OPENAI_API_KEY` trafia wyłącznie do `https://api.openai.com`, a wspólny
      klucz wyłącznie po https na openrouter.ai; klucz w złym miejscu kończy start

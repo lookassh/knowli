@@ -42,7 +42,7 @@ describe("krok reguł lekcji — kody i powody odrzuceń (spec katalogu reguł �
     return entry.rejected;
   };
 
-  it("ofiara reguł lekcji: powód z prefiksem ofiary i id reguły", () => {
+  it("ofiara reguł lekcji: zgłoszenie ofiary z id reguły", () => {
     const triggering = {
       ...subject,
       validatePoolExtra: (drafts: readonly LessonExerciseDraft[]) => {
@@ -54,23 +54,22 @@ describe("krok reguł lekcji — kody i powody odrzuceń (spec katalogu reguł �
     const state = accepted(stateWith(), A, [choice(A, 1)], context);
     const rejection = rejectionAt(submit(state, A, [choice(A, 9)], context).results[0]);
     expect(rejection).toMatchObject({ kind: "lesson", code: "lesson_extra", ruleIds: ["test.issue"] });
-    expect(rejection.reasons).toEqual(["adding this exercise would make the lesson reject exercise ex1: [test.issue] exercise: victim of trigger"]);
+    expect(rejection.issues).toEqual([testIssue("ofiara", "victim of trigger")]);
   });
 
-  it("własne odrzucenie reguły puli: lesson_pool z id reguły, bez prefiksu ofiary", () => {
+  it("własne odrzucenie reguły puli: lesson_pool z id reguły", () => {
     const state = accepted(stateWith(), A, [choice(A, 1)]);
     const rejection = rejectionAt(submit(state, A, [choice(A, 1)]).results[0]);
     expect(rejection).toMatchObject({ code: "lesson_pool", ruleIds: ["lesson.duplicate_stimulus"] });
-    expect(rejection.reasons[0]).toMatch(/^\[lesson\.duplicate_stimulus\] exercise: same stimulus as the earlier lesson_choice /u);
+    expect(rejection.issues[0]!.found).toMatch(/^same stimulus as the earlier lesson_choice /u);
   });
 
-  it("ofiara reguł puli: duplikat odpowiedzi ćwiczenia późniejszego zagadnienia — lesson_pool z prefiksem ofiary", () => {
+  it("ofiara reguł puli: duplikat odpowiedzi ćwiczenia późniejszego zagadnienia — lesson_pool", () => {
     // Unikalność odpowiedzi zachowuje PIERWSZE wystąpienie: kandydat w A wyprzedza przyjęte ćwiczenie B.
     const byAnswer = contextFor({ subject: { ...subject, poolDeduplication: "answer" } });
     const state = accepted(stateWith(), B, [choice(B, 1)], byAnswer);
     const rejection = rejectionAt(submit(state, A, [gap(A, "Inne pytanie: ___.", "odpowiedź 1")], byAnswer).results[0]);
     expect(rejection).toMatchObject({ kind: "lesson", code: "lesson_pool", ruleIds: ["lesson.duplicate_answer"] });
-    expect(rejection.reasons[0]).toMatch(/^adding this exercise would make the lesson reject exercise ex1: \[lesson\.duplicate_answer\] answer: /u);
   });
 });
 
@@ -158,7 +157,6 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
       rejected: {
         kind: "lesson",
         code: "lesson_extra",
-        reasons: ["[test.issue] exercise"],
         issues: [testIssue("keywords without open-answer family")],
         ruleIds: ["test.issue"],
       },
@@ -177,7 +175,7 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
     const state = accepted(stateWith(), A, [choice(A, 1)], context);
     const result = submit(state, A, [choice(A, 9)], context);
     expect(result.results[0]).toMatchObject({ rejected: { kind: "lesson", code: "lesson_extra" } });
-    expect((result.results[0] as { rejected: { reasons: readonly string[] } }).rejected.reasons[0]).toContain("reject exercise ex1: [test.issue]");
+    expect(result.results[0]).toMatchObject({ rejected: { issues: [testIssue("victim of trigger")] } });
   });
 });
 
@@ -264,49 +262,40 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
 });
 
 describe("submitExamples", () => {
-  it("4 linie → przyjęte 3 (przycięte), czwarta zgłoszona", () => {
+  it("4 linie → przyjęte 3 (przycięte), czwarta pominięta", () => {
     const result = submitExamples(stateWith(), A, ["  Mieszko I przyjął chrzest.  ", "Zdanie drugie.", "Zdanie trzecie.", "Zdanie czwarte."], ctx);
     expect(result.accepted).toBe(3);
     expect(result.state.examples.get(A)).toEqual(["Mieszko I przyjął chrzest.", "Zdanie drugie.", "Zdanie trzecie."]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("example 4");
   });
 
   it("identyczne linie (po przycięciu) liczą się raz i nie zajmują miejsc kolejnych przykładów", () => {
     const result = submitExamples(stateWith(), A, ["Zdanie pierwsze.", "Zdanie pierwsze.", "  Zdanie pierwsze. ", "Zdanie drugie.", "Zdanie trzecie."], ctx);
     expect(result.accepted).toBe(3);
     expect(result.state.examples.get(A)).toEqual(["Zdanie pierwsze.", "Zdanie drugie.", "Zdanie trzecie."]);
-    expect(result.errors).toHaveLength(2);
-    expect(result.errors[0]).toMatch(/^example 2: .*duplicate/u);
-    expect(result.errors[1]).toMatch(/^example 3: .*duplicate/u);
   });
 
-  it("linia ujawniająca przyjęte samodzielne ćwiczenie → błąd, pozostałe przyjęte", () => {
+  it("linia ujawniająca przyjęte samodzielne ćwiczenie odpada, pozostałe przyjęte", () => {
     const state = accepted(stateWith(), A, [open(A, "Rok chrztu?", "966")]);
     const result = submitExamples(state, A, ["Chrzest Polski.", "966"], ctx);
     expect(result.accepted).toBe(1);
     expect(result.state.examples.get(A)).toEqual(["Chrzest Polski."]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("example 2");
-    expect(result.errors[0]).toContain('exercise ex1 "966"');
   });
 
   it("linia ujawniająca samodzielne fixed innego zagadnienia też odpada", () => {
     const state = stateWith({ fixed: [open(B, "Rok chrztu?", "966")] });
     const result = submitExamples(state, A, ["966"], ctx);
     expect(result.accepted).toBe(0);
-    expect(result.errors[0]).toContain('an existing exercise "966"');
   });
 
   it("linia równa odpowiedzi ćwiczenia niesamodzielnego nie jest ujawnieniem", () => {
     const state = accepted(stateWith(), A, [gap(A, "Rok ___.", "966")]);
-    expect(submitExamples(state, A, ["966"], ctx)).toMatchObject({ accepted: 1, errors: [] });
+    expect(submitExamples(state, A, ["966"], ctx)).toMatchObject({ accepted: 1 });
   });
 
   it("zastępuje poprzednie przykłady zagadnienia, inne zagadnienia bez zmian", () => {
     const state = stateWith({ examples: { [A]: ["Stare A."], [B]: ["Stare B."] } });
     const result = submitExamples(state, A, ["Nowe A."], ctx);
-    expect(result).toMatchObject({ accepted: 1, errors: [] });
+    expect(result).toMatchObject({ accepted: 1 });
     expect(result.state.examples.get(A)).toEqual(["Nowe A."]);
     expect(result.state.examples.get(B)).toEqual(["Stare B."]);
     expect(state.examples.get(A)).toEqual(["Stare A."]);
@@ -318,17 +307,16 @@ describe("submitExamples", () => {
     expect(result.accepted).toBe(0);
     expect(result.state).toBe(state);
     expect(result.state.examples.get(A)).toEqual(["Stare A."]);
-    expect(result.errors).toHaveLength(4);
   });
 
   it("pusta tablica → nic nie przyjęte, stan bez zmian", () => {
     const state = stateWith({ examples: { [A]: ["Stare A."] } });
-    expect(submitExamples(state, A, [], ctx)).toEqual({ state, accepted: 0, errors: [] });
+    expect(submitExamples(state, A, [], ctx)).toEqual({ state, accepted: 0 });
   });
 
-  it('"x" → błąd kształtu', () => {
+  it('"x" → nic nie przyjęte', () => {
     const state = stateWith();
-    expect(submitExamples(state, A, "x", ctx)).toEqual({ state, accepted: 0, errors: ["examples must be an array of strings"] });
+    expect(submitExamples(state, A, "x", ctx)).toEqual({ state, accepted: 0 });
   });
 
   it("przyjęte przykłady wpływają na kolejne kontrole ujawnień", () => {
@@ -396,14 +384,14 @@ describe("removeExercise", () => {
   it("usuwa własne ćwiczenie razem z osieroconymi słowami kluczowymi rodziny", () => {
     const withFamily = accepted(stateWith(), A, [open(A, "Kiedy?", "w 966 roku", "f1"), keywords(A, "f1", 1)]);
     const state = accepted(withFamily, A, [choice(A, 1)]);
-    const result = removeExercise(state, A, "ex1", ctx);
+    const result = removeExercise(state, A, "ex1");
     expect(result.removed).toEqual(["ex1", "ex2"]);
     expect(poolOf(result.state, A).map((entry) => entry.id)).toEqual(["ex3"]);
   });
 
   it("usuwa tylko wskazane ćwiczenie, gdy rodzina ma jeszcze pytanie otwarte (także fixed)", () => {
     const state = accepted(stateWith({ fixed: [open(A, "Kto?", "Mieszko I", "f1")] }), A, [open(A, "Kiedy?", "w 966 roku", "f1"), keywords(A, "f1", 1)]);
-    expect(removeExercise(state, A, "ex1", ctx).removed).toEqual(["ex1"]);
+    expect(removeExercise(state, A, "ex1").removed).toEqual(["ex1"]);
   });
 
   it("nieznane, cudze i fixed → [] i ten sam stan", () => {
@@ -411,7 +399,7 @@ describe("removeExercise", () => {
     state = accepted(state, A, [choice(A, 1)]);
     state = accepted(state, B, [choice(B, 2)]);
     for (const [objectiveId, id] of [[A, "ex99"], [A, "ex2"], [B, "ex1"]] as const) {
-      const result = removeExercise(state, objectiveId, id, ctx);
+      const result = removeExercise(state, objectiveId, id);
       expect(result.removed).toEqual([]);
       expect(result.state).toBe(state);
     }
@@ -426,7 +414,7 @@ describe("niezmienność wejścia", () => {
     const drafts = [choice(A, 1), keywords(A, "f1", 2), choice(A, 1)];
     const draftsSnapshot = structuredClone(drafts);
     submit(state, A, drafts);
-    removeExercise(state, A, "ex1", ctx);
+    removeExercise(state, A, "ex1");
     expect(state).toEqual(snapshot);
     expect(drafts).toEqual(draftsSnapshot);
   });

@@ -252,7 +252,7 @@ export interface LessonExerciseDraft {
 
 /**
  * Kryteria v3 odpowiedzi otwartej szkoły w prywatnym kluczu zadania (z payloadu
- * rewizji): ten sam kształt dla oceny odpowiedzi dziecka i kontroli agenta puli.
+ * rewizji) dla oceny odpowiedzi dziecka.
  */
 export interface SchoolCriteria {
   readonly requiredElements: readonly { readonly id: string; readonly text: string }[];
@@ -389,18 +389,15 @@ export interface SubjectModule {
    */
   typeExamples?(at: { readonly topicId: string; readonly objectiveId: string }): TypeExamples | undefined;
   /**
-   * Oczyszczenie świeżego wyjścia modelu przed walidacją: `removed` — nazwy usuniętych pól,
-   * `notes` — zgłoszenia reguł `sanitize` (np. usunięta podpowiedź),
-   * `quotesSnapped` — liczba cytatów zastąpionych dokładnym fragmentem materiału.
+   * Oczyszczenie świeżego wyjścia modelu przed walidacją: `notes` — zgłoszenia reguł `sanitize`
+   * (np. usunięta podpowiedź).
    */
   sanitize?(
     draft: LessonExerciseDraft,
     ctx: { readonly material: string },
   ): {
     draft: LessonExerciseDraft;
-    removed: readonly string[];
     notes?: readonly LessonRuleIssue[];
-    quotesSnapped?: number;
   };
   /**
    * Katalog reguł przedmiotu (spec katalogu reguł §2.2): reguły jego walidatorów,

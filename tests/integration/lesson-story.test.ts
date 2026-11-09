@@ -21,7 +21,7 @@ import {
 } from "@learning/server";
 import type { LessonCommand, LessonExerciseInput } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration, packetRecords, type FakeGeneration } from "./fakes";
 import type { FakePacketStep } from "../../packages/server/src/providers/fake-lesson-agent";
 import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 
@@ -109,13 +109,6 @@ const PARENT_STORY = {
   ],
 };
 
-/**
- * Scenariusz każdej kolejnej paczki zagadnienia (licznik wywołań fake'a biegnie przez runy, więc krok się powtarza).
- */
-function everyPacket(step: FakePacketStep): FakePacketStep[] {
-  return Array.from({ length: 100 }, () => step);
-}
-
 /** Paczki generatora fake'a z dodatkowymi ćwiczeniami swojego typu (np. kolizją z historyjką). */
 function generatedWith(extra: LessonExerciseInput[]): FakePacketStep[] {
   let band = 9_000;
@@ -127,11 +120,6 @@ function generatedWith(extra: LessonExerciseInput[]): FakePacketStep[] {
       return { exercises: [...own, ...generated.exercises], ...(generated.examples === undefined ? {} : { examples: generated.examples }) };
     },
   });
-}
-
-/** Paczki zwracające wyłącznie podane ćwiczenia swojego typu. */
-function onlyExercises(exercises: LessonExerciseInput[]): FakePacketStep[] {
-  return everyPacket({ build: (input) => ({ exercises: exercises.filter((exercise) => exercise.exerciseType === input.type) }) });
 }
 
 const configurationError = (): FakePacketStep[] => everyPacket({ throw: new GenerationProviderError("configuration", { status: 400 }) });
@@ -1082,7 +1070,7 @@ describe("run historyjki lekcji (integracja)", () => {
     const { scripts, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
     await executeLessonGeneration(services, storyRunId!);
     const before = (await readLessonDeck(services, deckId)).draft!;
-    scripts[OBJECTIVE_SLUG] = onlyExercises([{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }]);
+    scripts[OBJECTIVE_SLUG] = packetRecords([{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }]);
 
     const regen = await regenerateObjective(services, {
       deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),

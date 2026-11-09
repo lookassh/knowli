@@ -561,7 +561,6 @@ export function buildPoolInput(
   count: number,
   material: string,
   instruction: string | undefined,
-  graderAvailable: boolean,
   interests?: readonly string[],
   options: { readonly avoidSentences?: readonly string[] } = {},
 ): LessonPoolInput {
@@ -605,10 +604,9 @@ export function buildPoolInput(
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą ćwiczeń celu: tylko przedmiot z nagraniami zdań
-    // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje agent w swoich limitach).
+    // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje tryb „dodaj N” w `addModePlan`).
     ...(listenAllowance > 0 ? { listenChoicePerObjective: listenAllowance } : {}),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
-    graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
     answerMaxLength: ruleTextContextOf(subject).answerMaxLength,
     deduplication: subject.poolDeduplication ?? "answer",

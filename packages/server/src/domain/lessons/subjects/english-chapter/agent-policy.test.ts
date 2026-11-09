@@ -21,6 +21,6 @@ describe("sanitize", () => {
     const translation: LessonExerciseDraft = {
       exerciseType: "lesson_open_answer", objectiveId: "english_chapter.dx.room", prompt: "Mam łóżko.", answer: "I have a bed.", acceptedAnswers: [], focus: ["bed"],
     };
-    expect(chapterAgentPolicy.sanitize!(translation, { material: "" })).toEqual({ draft: { ...translation, instructionPl: TRANSLATION_INSTRUCTION }, removed: [] });
+    expect(chapterAgentPolicy.sanitize!(translation, { material: "" })).toEqual({ draft: { ...translation, instructionPl: TRANSLATION_INSTRUCTION } });
   });
 });

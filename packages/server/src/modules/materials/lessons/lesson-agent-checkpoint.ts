@@ -39,8 +39,6 @@ export type LessonAgentProgress = {
    * postęp do „Ponów”); brak = nic nie zapisano. Kolejny zapis dolicza tylko różnicę, żeby nie podwoić powodów.
    */
   readonly rejectionCodesWritten?: Record<string, number>;
-  /** Historyczne liczniki kontroli etapu 2b z runów agenta (do etapu 5c); przechodzą bez zmian, nowe próby ich nie liczą. */
-  readonly checkCounters?: Record<string, number>;
   /**
    * Historyczne oczyszczenia przy przyjmowaniu agenta (`hintsRemoved`, `variantsRemoved`, `quotesSnapped`, do etapu 5c)
    * jeszcze niezapisane w `lesson_context` szkicu: przenoszone do szkicu, zerowane po porażce walidacji, która je zapisuje.
@@ -55,7 +53,6 @@ export type LessonAgentSummary = {
   readonly objectives: Record<string, { readonly status: string; readonly accepted: number; readonly failureCode?: string }>;
   readonly totalSpentUsd: number;
   readonly rejectionCodes: Record<string, number>;
-  readonly checkCounters?: Record<string, number>;
   readonly attempts: number;
 };
 
@@ -98,8 +95,7 @@ const progressSchema = z.object({
   totalSpentUsd: nonNegative,
   rejectionCodes: z.record(z.string(), count),
   rejectionCodesWritten: z.record(z.string(), count).optional(),
-  // Opcjonalne: punkty kontrolne etapu 2a (w produkcji) nie mają tego pola.
-  checkCounters: z.record(z.string(), count).optional(),
+  // Bez `checkCounters` (kontrole 2b usunięte w etapie 5c): z.object pomija ten klucz starych punktów kontrolnych.
   cleanupCounts: z.record(z.string(), count).optional(),
   removedAfterAcceptance: count,
 });
@@ -151,7 +147,6 @@ export function parseLessonAgentProgress(value: unknown, runId?: string): Lesson
     totalSpentUsd: data.totalSpentUsd,
     rejectionCodes: data.rejectionCodes,
     ...(data.rejectionCodesWritten === undefined ? {} : { rejectionCodesWritten: data.rejectionCodesWritten }),
-    ...(data.checkCounters === undefined ? {} : { checkCounters: data.checkCounters }),
     ...(data.cleanupCounts === undefined ? {} : { cleanupCounts: data.cleanupCounts }),
     removedAfterAcceptance: data.removedAfterAcceptance,
   };
@@ -191,7 +186,6 @@ export function summarizeLessonAgentProgress(progress: LessonAgentProgress, atte
     objectives,
     totalSpentUsd: progress.totalSpentUsd,
     rejectionCodes: { ...progress.rejectionCodes },
-    ...(progress.checkCounters === undefined ? {} : { checkCounters: { ...progress.checkCounters } }),
     attempts,
   };
 }

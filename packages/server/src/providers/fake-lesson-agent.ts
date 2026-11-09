@@ -132,7 +132,7 @@ export class FakeLessonPoolAgent implements LessonPacketGenerator {
       const base = this.options.generate?.delayMs ?? 0;
       const ms = input.pool.material.includes(FAKE_SLOW_MARKER) ? Math.max(base, FAKE_SLOW_DELAY_MS) : base;
       if (ms > 0) await sleepUnlessAborted(ms, signal);
-      this.recordStep(cost, "packet_generate");
+      this.recordStep(cost);
       const step = this.options.packets?.[slug]?.[call];
       if (step === undefined) return fakePacketExercises(input, band);
       if ("throw" in step) throw step.throw;
@@ -150,12 +150,12 @@ export class FakeLessonPoolAgent implements LessonPacketGenerator {
   }
 
   /** Koszt „wywołania modelu”: licznik runu i dziennik kosztów z tego samego zdarzenia (jak adapter). */
-  private recordStep(cost: RunCostSink, operation: "packet_generate"): void {
+  private recordStep(cost: RunCostSink): void {
     const usd = this.options.stepCostUsd ?? null;
     cost.record(usd);
     recordResponse(
       this.options.usage,
-      { feature: "lesson_generation", operation, provider: "openrouter", model: this.model },
+      { feature: "lesson_generation", operation: "packet_generate", provider: "openrouter", model: this.model },
       200,
       { usage: usd === null ? {} : { cost: usd } },
     );
@@ -167,8 +167,6 @@ export interface FakeExerciseCheckerOptions {
   costUsd?: number | null;
   /** Wywołania czekają na tę obietnicę (testy równoległości); przerwanie sygnału przerywa oczekiwanie. */
   gate?: Promise<void>;
-  /** Kontrola zamkniętych: `pass` (domyślnie) — klucz ćwiczeń fake'a z widoku, `unknown` — „nie wiem” dla każdej pozycji. */
-  closed?: "pass" | "unknown";
 }
 
 export class FakeExerciseChecker implements ClosedExerciseChecker {
@@ -186,7 +184,7 @@ export class FakeExerciseChecker implements ClosedExerciseChecker {
 
   /**
    * Kontrola zamkniętych przebiegu bazowego: rozsypanka `yes`, wybór — klucz ćwiczenia fake'a odczytany
-   * z widoku ({@link fakeClosedAnswer}); `closed: "unknown"` — `null` (nie wiem).
+   * z widoku ({@link fakeClosedAnswer}).
    */
   checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
     this.closedCalls.push(input);
@@ -194,7 +192,6 @@ export class FakeExerciseChecker implements ClosedExerciseChecker {
       await this.admit(cost, signal);
       return {
         results: input.items.map((item) => {
-          if (this.options.closed === "unknown") return { answers: null };
           if (input.contract === "order") return { verdict: "yes" };
           return { answers: fakeClosedAnswer(item.view) };
         }),

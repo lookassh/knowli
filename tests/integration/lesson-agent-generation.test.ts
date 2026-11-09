@@ -28,7 +28,7 @@ import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonCommand, LessonDraftDto } from "@learning/contracts";
 import { testDatabase } from "./helpers";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration, gate, type FakeGeneration, type Gate } from "./fakes";
 import { messages } from "@learning/contracts";
 import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
@@ -428,13 +428,6 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
     /** Wywołanie „w locie”, które kończy tylko przerwanie sygnału. */
     const never = (): FakePacketStep => ({ gate: new Promise<void>(() => undefined) });
 
-    /**
-     * Ten sam krok dla każdej paczki slugu (z zapasem na ponowienie paczki i kilka prób: zagadnienie gramatyki
-     * ma 5–6 paczek, każda najwyżej 2 wywołania na próbę).
-     */
-    const everyPacket = (step: FakePacketStep | (() => FakePacketStep)): FakePacketStep[] =>
-      Array.from({ length: 100 }, () => (typeof step === "function" ? step() : step));
-
     /** Wywołania paczek zagadnienia o slugu `slug` od startu świata. */
     const packetCallsOf = (agent: FakeLessonPoolAgent, slug: string) => agent.packetCalls.filter((call) => slugOf(call.objective.id) === slug);
 
@@ -486,25 +479,6 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
           packetPlan(subject, objective, poolStageCounts(subject, objective.exerciseTypes, counts[index]!), listenChoiceAllowance(subject, objective, [])).packets.length,
         ]),
       );
-    }
-
-    interface Gate {
-      readonly step: FakePacketStep;
-      readonly reached: Promise<void>;
-      open(): void;
-    }
-
-    /** Wywołanie „w locie”: `reached` po dojściu fake'a do kroku, `open()` kończy krok. */
-    function gate(): Gate {
-      let open!: () => void;
-      let reach!: () => void;
-      const opened = new Promise<void>((resolve) => {
-        open = resolve;
-      });
-      const reached = new Promise<void>((resolve) => {
-        reach = resolve;
-      });
-      return { step: { gate: opened, onReached: reach }, reached, open };
     }
 
     /**
@@ -2345,7 +2319,7 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
 
     it("wznowienie: przejściowa porażka paczki → queued; druga próba nie generuje zagadnienia gotowego", async () => {
       // Każda paczka zagadnienia `question` i jej ponowienie w próbie 1 kończą się błędem przejściowym; potem generator.
-      const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = { question: Array.from({ length: 40 }, () => ({ throw: new GenerationProviderError("transient") })) };
+      const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = { question: everyPacket(() => ({ throw: new GenerationProviderError("transient") }), 40) };
       const { services, agent } = await grammarWorld({ packets });
       const { runId, deckId } = await createLesson(services, both());
       await executeLessonGeneration(services, runId);

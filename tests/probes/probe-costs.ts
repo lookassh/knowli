@@ -80,17 +80,12 @@ export function costByOperation(events: readonly ProbeCostEvent[]): Record<strin
   return result;
 }
 
-/** Szacunek kosztu wywołania bez `usage.cost`. */
-export interface AgentCostEstimates {
-  readonly unknownCallUsd: number;
-}
-
 /**
- * Szacunek z polityki, z którą run faktycznie działa (`lessonAgentPolicyFromEnv(env)`), uzupełnionej
+ * Szacunek kosztu wywołania bez `usage.cost` z polityki, z którą run faktycznie działa (`lessonAgentPolicyFromEnv(env)`), uzupełnionej
  * wartościami domyślnymi — ta sama liczba, którą przebieg liczy budżet runu.
  */
-export function agentCostEstimates(policy: Partial<Pick<LessonAgentPolicy, "unknownCallEstimateUsd">>): AgentCostEstimates {
-  return { unknownCallUsd: { ...DEFAULT_LESSON_AGENT_POLICY, ...policy }.unknownCallEstimateUsd };
+export function unknownCallEstimateUsd(policy: Partial<Pick<LessonAgentPolicy, "unknownCallEstimateUsd">>): number {
+  return { ...DEFAULT_LESSON_AGENT_POLICY, ...policy }.unknownCallEstimateUsd;
 }
 
 export interface RunCost {
@@ -114,7 +109,7 @@ export interface RunCost {
  * Wywołanie paczki albo kontroli bez `usage.cost` liczy się do porównania z budżetem szacunkiem
  * (jak w {@link agentLedgerCost}) — inaczej run ponad budżet przez wywołania bez kosztu wyglądałby na zgodny.
  */
-export function runCosts(events: readonly ProbeCostEvent[], budgetUsd: number, estimates: AgentCostEstimates): RunCost[] {
+export function runCosts(events: readonly ProbeCostEvent[], budgetUsd: number, unknownCallUsd: number): RunCost[] {
   const runs = new Map<string | null, RunCost>();
   for (const event of events) {
     let run = runs.get(event.runId);
@@ -126,7 +121,7 @@ export function runCosts(events: readonly ProbeCostEvent[], budgetUsd: number, e
     const agentOperation = isAgentRunOperation(event.operation);
     if (!hasCost(event)) {
       run.unknownCostCalls += 1;
-      if (agentOperation) run.agentEstimatedUsd = round6(run.agentEstimatedUsd + estimates.unknownCallUsd);
+      if (agentOperation) run.agentEstimatedUsd = round6(run.agentEstimatedUsd + unknownCallUsd);
       continue;
     }
     const usd = event.providerCostUsd!;
@@ -143,7 +138,7 @@ export function runCosts(events: readonly ProbeCostEvent[], budgetUsd: number, e
  * Koszt próby do rejestru: zmierzony `usage.cost` plus — dla każdego wywołania bez kosztu —
  * szacunek (`unknownCallEstimateUsd`), wtedy z flagą `estimated` (lepiej przeszacować niż wpisać zero).
  */
-export function agentLedgerCost(events: readonly ProbeCostEvent[], estimates: AgentCostEstimates): { costUsd: number; estimated: boolean } {
+export function agentLedgerCost(events: readonly ProbeCostEvent[], unknownCallUsd: number): { costUsd: number; estimated: boolean } {
   let costUsd = 0;
   let estimated = false;
   for (const event of events) {
@@ -152,7 +147,7 @@ export function agentLedgerCost(events: readonly ProbeCostEvent[], estimates: Ag
       continue;
     }
     estimated = true;
-    costUsd += estimates.unknownCallUsd;
+    costUsd += unknownCallUsd;
   }
   return { costUsd: round6(costUsd), estimated };
 }

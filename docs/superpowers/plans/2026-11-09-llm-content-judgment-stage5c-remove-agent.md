@@ -17,7 +17,7 @@
 - Historyczne nazwy operacji kosztu (`agent_objective`, `agent_plan`, `check_solve`, `check_variants`, `check_hints`, `check_open`, `check_grade`) zostają w dokumentacji jako historyczne i w `tests/probes/probe-costs.ts` (sumowanie starych rejestrów); kolumna jest tekstowa, kontraktów to nie dotyka.
 - Do generatora i kontroli żadnych danych dziecka; dzienniki `[lesson-baseline]` bez treści ćwiczeń. `OPENROUTER_API_KEY` tylko po https do OpenRouter. Usunięcie gradera z workera zmniejsza to, co worker wysyła (nie wysyła już odpowiedzi modelu rozwiązującego do `UMIEM_GRADER_*`).
 - Bez nowych reguł rozumiejących język i bez warstw z §8 specu zbiorczego.
-- Warunek dostępności generowania zostaje: `lessonAgentPublicFromEnv` wymaga pełnej `UMIEM_GRADER_*` (grader ocenia dziecko w procesie web, etap 3); `openCheckServiceLabel` zostaje jako ten warunek. `graderAvailable` w wejściu runu (`lesson-agent-outcome.ts:57-58, 143`, `lesson-baseline-pool.ts:107, 242`) to dostępność gradera w web dla paczki — **zostaje**.
+- Warunek dostępności generowania zostaje: `lessonAgentPublicFromEnv` wymaga pełnej `UMIEM_GRADER_*` (grader ocenia dziecko w procesie web, etap 3); `openCheckServiceLabel` zostaje jako ten warunek. `graderAvailable` w wejściu runu i `LessonPoolInput` (prompt paczki go nie czytał) usunięto w porządkach po przeglądzie gałęzi.
 - MCP i `SKILL.md` bez zmian (`learning-overview` nie obejmuje lekcji; `openCheckService` jest opcjonalnym polem DTO panelu rodzica, poza `integrations/` i OpenAPI).
 - Bez identyfikatorów modeli w commitach i PR. Nie pushować do `main`, nie scalać PR.
 

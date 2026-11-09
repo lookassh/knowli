@@ -454,12 +454,12 @@ function v3FieldsPresent(ex: LessonExerciseDraft): V3ExerciseField[] {
 /** Opcje walidacji ćwiczenia. */
 export interface LessonExerciseValidationOptions {
   /**
-   * Ścieżka agenta (przyjmowanie puli). Rodzic dostaje dzisiejszy zbiór
+   * Ścieżka generowania (walidacja puli przebiegu bazowego). Rodzic dostaje dzisiejszy zbiór
    * komunikatów, więc API edycji i publikacji tej opcji nie używa. Włącza:
    * - ponowną analizę po pustych napisach: gdy kontrakt odrzuca wyłącznie puste
    *   napisy w opcjonalnych polach tekstowych, pozostałe reguły liczymy raz
    *   jeszcze na kopii bez tych pól i zgłaszamy razem (ćwiczenie i tak jest
-   *   odrzucone; agent poprawia wszystko naraz), bez zgłoszeń o zdjętych polach
+   *   odrzucone; id wszystkich reguł trafiają do dziennika), bez zgłoszeń o zdjętych polach
    *   (te ma już `field.empty`);
    * - pominięcie zgłoszenia kontraktu o `answer` typu liczonego, gdy pole
    *   źródłowe ma własne zgłoszenie (`contractIssues`).

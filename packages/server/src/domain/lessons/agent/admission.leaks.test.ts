@@ -31,9 +31,9 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
     const rejection = rejectionOf(submit(state, A, [open(A, "Kiedy?", "w 966 roku")]).results[0]);
     expect(rejection.kind).toBe("leak");
     expect(rejection.code).toBe("leak_victim");
-    expect(rejection.reasons[0]).toMatch(/^\[lesson\.leak\] answer: the child already sees this answer in /u);
+    expect(rejection.issues[0]!.found).toMatch(/^the child already sees this answer in /u);
     expect(rejection.ruleIds).toEqual(["lesson.leak"]);
-    expect(rejection.reasons[0]).toContain('the card example "w 966 roku"');
+    expect(rejection.issues[0]!.found).toContain('the card example "w 966 roku"');
   });
 
   it("stałe źródło (fixedSources) innego zagadnienia też ujawnia: leak_victim", () => {
@@ -71,7 +71,7 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
     const result = admitInOrder(state, objectiveId, drafts, grammarCtx);
     const rejection = rejectionOf(result.results[0]);
     expect(rejection).toMatchObject({ kind: "leak", code: "leak_victim", ruleIds: ["lesson.leak"] });
-    expect(rejection.reasons[0]).toContain('the card example "Dad is cooking now."');
+    expect(rejection.issues[0]!.found).toContain('the card example "Dad is cooking now."');
     expect(result.results[1]).toHaveProperty("accepted");
   });
 
@@ -79,30 +79,30 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
     const state = acceptAll(stateWith(), A, [open(A, "Rok chrztu?", "966")]);
     const rejection = rejectionOf(submit(state, A, [gap(A, "Chrzest Polski w roku ___.", "966")]).results[0]);
     expect(rejection).toMatchObject({ kind: "leak", code: "leak_source" });
-    expect(rejection.reasons[0]).toMatch(/^\[lesson\.leak_source\] answer: it would reveal the answer of /u);
+    expect(rejection.issues[0]!.found).toMatch(/^it would reveal the answer of /u);
     expect(rejection.ruleIds).toEqual(["lesson.leak_source"]);
-    expect(rejection.reasons[0]).toContain('exercise ex1 "966"');
+    expect(rejection.issues[0]!.found).toContain('exercise ex1 "966"');
   });
 
   it("niesamodzielny kandydat ujawniający samodzielne fixed: leak_source", () => {
     const state = stateWith({ fixed: [open(A, "Rok chrztu?", "966")] });
     const rejection = rejectionOf(submit(state, A, [gap(A, "Chrzest Polski w roku ___.", "966")]).results[0]);
     expect(rejection.code).toBe("leak_source");
-    expect(rejection.reasons[0]).toContain('an existing exercise "966"');
+    expect(rejection.issues[0]!.found).toContain('an existing exercise "966"');
   });
 
   it("samodzielny z odpowiedzią przyjętego samodzielnego wcześniejszego w lekcji: leak_victim (miękkie)", () => {
     const state = acceptAll(stateWith(), A, [open(A, "Rok chrztu?", "966")]);
     const rejection = rejectionOf(submit(state, B, [open(B, "Rok, w którym rządził Mieszko?", "966")]).results[0]);
     expect(rejection.code).toBe("leak_victim");
-    expect(rejection.reasons[0]).toContain('an earlier independent exercise "966"');
+    expect(rejection.issues[0]!.found).toContain('an earlier independent exercise "966"');
   });
 
   it("samodzielny wstawiony przed przyjętym samodzielnym z tą samą odpowiedzią (wcześniejsze zagadnienie): leak_source", () => {
     const state = acceptAll(stateWith(), B, [open(B, "Rok, w którym rządził Mieszko?", "966")]);
     const rejection = rejectionOf(submit(state, A, [open(A, "Rok chrztu?", "966")]).results[0]);
     expect(rejection.code).toBe("leak_source");
-    expect(rejection.reasons[0]).toContain('exercise ex1 "966"');
+    expect(rejection.issues[0]!.found).toContain('exercise ex1 "966"');
   });
 
   it("ofiara ujawniona już przed kandydatem nie odrzuca kandydata", () => {
@@ -138,8 +138,8 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
       const state = acceptAll(stateWith(), A, [member(A, 1, "f1"), member(A, 2, "f1")]);
       const rejection = rejectionOf(submit(state, A, [gap(A, "Chrzest Polski odbył się ___.", ANSWER)]).results[0]);
       expect(rejection.code).toBe("leak_source");
-      // Obie ofiary (całą rodzinę) model dostaje w powodach.
-      expect(rejection.reasons).toHaveLength(2);
+      // Obie ofiary (cała rodzina) są w zgłoszeniach.
+      expect(rejection.issues).toHaveLength(2);
     });
 
     it("inna rodzina albo brak rodziny w tym samym zagadnieniu: leak_victim (miękkie)", () => {
@@ -160,7 +160,6 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
       const state = acceptAll(stateWith(), A, [member(A, 1, "f1"), member(A, 2, "f1")]);
       const outcome = submitExamples(state, A, [ANSWER], ctx);
       expect(outcome.accepted).toBe(0);
-      expect(outcome.errors).toHaveLength(2);
     });
   });
 
@@ -218,8 +217,7 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
       expect(poolOf(state, A)).toHaveLength(1);
       const outcome = submitExamples(state, A, ["Where's the box?", "The box is on the bed."], englishCtx);
       expect(outcome.accepted).toBe(1);
-      expect(outcome.errors).toHaveLength(1);
-      expect(outcome.errors[0]).toContain(`"Where's the box?"`);
+      expect(outcome.state.examples.get(A)).toEqual(["The box is on the bed."]);
     });
   });
 });

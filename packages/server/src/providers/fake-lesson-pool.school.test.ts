@@ -19,7 +19,7 @@ const material = "Korzeń pobiera wodę z gleby. Łodyga przewodzi wodę do liś
 describe("fakePacketExercises for school", () => {
   it("open-answer packet with the keywords companion passes structure, families and the closed check", () => {
     const objective = topic.objectives[0]!;
-    const input = packetInput({ subject, topic, objective, type: "lesson_open_answer", companion: "lesson_keywords", count: 2, withExamples: false, material, graderAvailable: true, avoidSentences: [], timeoutMs: 1000 });
+    const input = packetInput({ subject, topic, objective, type: "lesson_open_answer", companion: "lesson_keywords", count: 2, withExamples: false, material, avoidSentences: [], timeoutMs: 1000 });
     const { exercises } = fakePacketExercises(input, 100);
     const drafts: LessonExerciseDraft[] = exercises.map((raw) => {
       const parsed = parseLessonRecord(raw, objective.id, subject, null);

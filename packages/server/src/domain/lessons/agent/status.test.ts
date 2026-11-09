@@ -332,7 +332,7 @@ describe("completeObjectivesOnLesson", () => {
     expect(complete({ examples: {}, fixedSources: { [A]: ["Stolica Piastów."] } })).toEqual(new Set());
   });
 
-  it("fixed liczy się do zagadnienia jak w kierowniku", () => {
+  it("fixed liczy się do zagadnienia jak w przebiegu bazowym", () => {
     expect(complete({ fixed: independentThree, written: [...guidedThree, ...productiveTwo] })).toEqual(new Set([A]));
   });
 });

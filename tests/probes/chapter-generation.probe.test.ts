@@ -32,7 +32,7 @@ import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import type { DynamicTopicData } from "../../packages/server/src/domain/lessons/types";
 import { testDatabase } from "../integration/helpers";
 import {
-  agentCostEstimates,
+  unknownCallEstimateUsd,
   agentLedgerCost,
   appendCostEntry,
   appendProvisionalCostEntry,
@@ -321,7 +321,7 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
       flush: async () => undefined,
     };
     // Szacunki wywołań bez kosztu z polityki, z którą działa run (env), nie z wartości domyślnych.
-    const estimates = agentCostEstimates(lessonAgentPolicyFromEnv(env));
+    const unknownCallUsd = unknownCallEstimateUsd(lessonAgentPolicyFromEnv(env));
     const base = createGenerationDepsFromEnv(env, usage);
     if (!base) throw new Error("Brak konfiguracji zależności generacji (OPENAI_API_KEY dla obrazów / UMIEM_LLM_*) w .env.");
     const lessonAgent = lessonAgentDepsFromEnv(env, usage);
@@ -333,9 +333,8 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
       ...(subjectKind === "grammar" ? {} : { objectives: base.llm.model, objectivesReasoning: env.UMIEM_LLM_REASONING ?? null }),
     };
 
-    // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła; `graderAvailable`
-    // (grader w web) zmienia prompt paczki, więc zostaje w porównaniu.
-    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: base.graderAvailable === true, variant: "baseline", ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
+    // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
+    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, variant: "baseline", ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
 
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
@@ -418,7 +417,7 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
      */
     const settleRun = (provisionalId: string, probe: string, label: string): CostLedger => {
       const own = unsettledEvents(events, settled);
-      const { costUsd, estimated } = agentLedgerCost(own, estimates);
+      const { costUsd, estimated } = agentLedgerCost(own, unknownCallUsd);
       if (estimated) line(`UWAGA (${label}): wywołania bez usage.cost — do rejestru wpisany koszt z szacunkiem ${costUsd.toFixed(4)} USD`);
       const updated = settleCostEntry(costsPath, provisionalId, { at: new Date().toISOString(), ...costEntry, probe, costUsd, ...(estimated ? { estimated } : {}) });
       for (const event of own) settled.add(event);
@@ -430,7 +429,7 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
     const settleLate = () => {
       const late = unsettledEvents(events, settled);
       if (late.length === 0) return;
-      const { costUsd, estimated } = agentLedgerCost(late, estimates);
+      const { costUsd, estimated } = agentLedgerCost(late, unknownCallUsd);
       appendCostEntry(costsPath, { at: new Date().toISOString(), ...costEntry, probe: `${costEntry.probe}:late`, costUsd, ...(estimated ? { estimated } : {}) });
       for (const event of late) settled.add(event);
       line(`koszt spóźnionych wywołań=${costUsd.toFixed(4)} USD (osobny wpis rejestru)`);
@@ -474,7 +473,7 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
       costUsd: {
         total: events.reduce((sum, event) => sum + (event.providerCostUsd ?? 0), 0),
         byOperation: costByOperation(events),
-        runs: runCosts(events, runBudgetUsd, estimates),
+        runs: runCosts(events, runBudgetUsd, unknownCallUsd),
       },
       tokens: {
         in: events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
@@ -557,7 +556,7 @@ describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na praw
       // Próba raportuje jakość bez asercji; wymaga tylko, by generacja się zakończyła (`queued` po wyczerpaniu prób to porażka).
       if (!["succeeded", "failed"].includes(run.state)) writeResults();
       expect(["succeeded", "failed"]).toContain(run.state);
-      for (const cost of runCosts(events, runBudgetUsd, estimates).filter((entry) => entry.runId === runId)) {
+      for (const cost of runCosts(events, runBudgetUsd, unknownCallUsd).filter((entry) => entry.runId === runId)) {
         line(`Koszt runu: agent+kontrole=${cost.agentUsd.toFixed(4)} (z szacunkiem wywołań bez kosztu ${cost.agentEstimatedUsd.toFixed(4)}) ` +
           `z budżetu ${cost.budgetUsd.toFixed(2)} USD${cost.overBudget ? " — POWYŻEJ BUDŻETU" : ""}; ` +
           `lesson_objectives=${cost.lessonObjectivesUsd.toFixed(4)}; lekcja=${(cost.agentUsd + cost.lessonObjectivesUsd).toFixed(4)} USD; ` +

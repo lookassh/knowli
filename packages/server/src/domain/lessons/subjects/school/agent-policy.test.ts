@@ -30,7 +30,6 @@ describe("schoolAgentPolicy — pola modułu", () => {
 describe("schoolAgentPolicy.sanitize", () => {
   it.each(["lesson_gap", "lesson_choice", "lesson_cloze", "lesson_order"] as const)("usuwa podpowiedź przy %s", (exerciseType) => {
     const result = sanitize(draft({ exerciseType, hint: "Pomyśl o rzekach." }));
-    expect(result.removed).toEqual(["hint"]);
     expect(result.draft).not.toHaveProperty("hint");
     expect(result.draft.exerciseType).toBe(exerciseType);
     expect(result.notes?.map((note) => [note.rule, note.found])).toEqual([["school.hint_open_answer_only", `removed: ${exerciseType} takes no hint in school`]]);
@@ -38,7 +37,6 @@ describe("schoolAgentPolicy.sanitize", () => {
 
   it("usuwa podpowiedź także przy pytaniu otwartym (szkoła nie generuje podpowiedzi, etap 5b)", () => {
     const result = sanitize(draft({ hint: "Pomyśl o rzekach." }));
-    expect(result.removed).toEqual(["hint"]);
     expect(result.draft).not.toHaveProperty("hint");
     expect(result.notes).toEqual([
       {
@@ -50,10 +48,10 @@ describe("schoolAgentPolicy.sanitize", () => {
     ]);
   });
 
-  it("niezmienione ćwiczenie zwraca puste removed", () => {
+  it("niezmienione ćwiczenie zwraca ten sam szkic bez not", () => {
     const original = draft({ exerciseType: "lesson_gap" });
     const result = sanitize(original);
-    expect(result.removed).toEqual([]);
+    expect(result.notes).toEqual([]);
     expect(result.draft).toBe(original);
   });
 });
@@ -73,7 +71,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
       sourceRefs: [{ quote: "Mierzeja Wiślana to piaszczysty pas lądu" }],
       hint: "Przykładem jest Mierzeja Wiślana",
     });
-    expect(sanitize(open).removed).toEqual(["hint"]);
+    expect(sanitize(open).draft).not.toHaveProperty("hint");
     expect(validateLessonExercise(open, schoolSubject, topic)).toEqual([]);
   });
 
@@ -93,7 +91,7 @@ describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () 
 });
 
 describe("schoolAgentPolicy — cytaty wyrównane do materiału (spec §5.2)", () => {
-  it("zastępuje cytat modelu dokładnym fragmentem materiału i liczy zmiany", () => {
+  it("zastępuje cytat modelu dokładnym fragmentem materiału", () => {
     const result = sanitize(draft({
       sourceRefs: [
         { quote: "mierzeja wiślana to piaszczysty pas lądu" },
@@ -101,7 +99,6 @@ describe("schoolAgentPolicy — cytaty wyrównane do materiału (spec §5.2)", (
         { quote: "Cytat spoza materiału, zostaje bez zmian." },
       ],
     }));
-    expect(result.quotesSnapped).toBe(1);
     expect(result.draft.sourceRefs).toEqual([
       { quote: "Mierzeja Wiślana to piaszczysty pas lądu" },
       { quote: "między Zatoką Gdańską a Zalewem Wiślanym" },
@@ -112,7 +109,6 @@ describe("schoolAgentPolicy — cytaty wyrównane do materiału (spec §5.2)", (
   it("cytat rodzica (`parentAdded`) bez zmian", () => {
     const refs = [{ quote: "mierzeja wiślana to piaszczysty pas lądu", parentAdded: true }];
     const result = sanitize(draft({ sourceRefs: refs }));
-    expect(result.quotesSnapped).toBe(0);
     expect(result.draft.sourceRefs).toEqual(refs);
   });
 
@@ -120,6 +116,5 @@ describe("schoolAgentPolicy — cytaty wyrównane do materiału (spec §5.2)", (
     const original = draft({ exerciseType: "lesson_gap", sourceRefs: [{ quote: "Mierzeja Wiślana to piaszczysty pas lądu" }] });
     const result = sanitize(original);
     expect(result.draft).toBe(original);
-    expect(result.quotesSnapped).toBe(0);
   });
 });

@@ -31,7 +31,7 @@ import { subjectFeatures, TYPE_CARDS } from "./type-cards";
 export interface RuleLine {
   readonly id: string;
   readonly text: string;
-  /** Reguła z `promptBrief`: renderer promptu jej nie wymienia (opis trafia do wyniku narzędzia). */
+  /** Reguła z `promptBrief`: renderer promptu jej nie wymienia (za takie reguły jedno zdanie o schemacie wyjścia). */
   readonly brief?: true;
 }
 

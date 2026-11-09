@@ -33,7 +33,7 @@ import {
 import { finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { EDITOR_CARD_EXAMPLE, lessonWorld, seedEditorPoolWithLeak } from "../fixtures/lesson-world";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration, type FakeGeneration } from "./fakes";
 import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
@@ -357,7 +357,7 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
           answer: "She does not dance", focus: ["does", "not"], acceptedAnswers: [] };
       }) };
     } };
-    const fakes = await fakeGeneration({ agent: { generate: {}, packets: { negative: Array.from({ length: 20 }, () => transformFirst) } } });
+    const fakes = await fakeGeneration({ agent: { generate: {}, packets: { negative: everyPacket(transformFirst, 20) } } });
     disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);
     // Transform jest preferowany dopiero przy dostępnym graderze; dokładna
@@ -821,7 +821,7 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
         if (!input.withExamples || input.pool.voiceTones !== true || result.exercises.length === 0) return result;
         return { ...result, exercises: [{ ...result.exercises[0]!, voiceTone: "curious" }, ...result.exercises.slice(1)] };
       } };
-      const steps = Array.from({ length: 20 }, () => toned);
+      const steps = everyPacket(toned, 20);
       const fakes = await fakeGeneration({ agent: { generate: {}, packets: { fotosynteza: steps, chrzest_polski: steps } } });
       disposers.push(fakes.dispose);
       return fakes;

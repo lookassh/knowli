@@ -228,7 +228,7 @@ export function finalLessonCheck(args: {
   state = { ...state, nextId: args.accepted.length + 1 };
 
   for (const violation of lessonInvariantCheck(state, ctx)) {
-    state = removeExercise(state, violation.objectiveId, violation.id, ctx).state;
+    state = removeExercise(state, violation.objectiveId, violation.id).state;
   }
   const survivors = new Set(args.objectives.flatMap((objective) => poolOf(state, objective.id).map((entry) => entry.id)));
   const kept = args.accepted.flatMap((entry, index) => (survivors.has(`ex${index + 1}`) ? [entry.draft] : []));

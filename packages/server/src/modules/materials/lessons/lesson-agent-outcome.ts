@@ -42,8 +42,6 @@ export type LessonAgentRunInputArgs = {
   readonly attemptNonce: string;
   readonly subject: SubjectModule;
   readonly input: LessonRunInput;
-  /** `services.generation.graderAvailable` (nie ma go we wpisie runu). */
-  readonly graderAvailable: boolean;
   readonly progress: LessonAgentProgress | undefined;
   /** Szkic wersji: ćwiczenia w kolejności lekcji, przykłady i temat z `lesson_context`, zdania historyjki. */
   readonly draft: {
@@ -64,7 +62,7 @@ export type LessonAgentRunInputResult =
   | { readonly needsObjectives: true }
   /**
    * Tryb „dodaj N”: punkt kontrolny ma już co najmniej `count` nowych ćwiczeń (np. `shutdown` po rozliczeniu
-   * zagadnienia) — przebieg nie przyjmuje `count < 1`, więc wołający zapisuje postęp bez wywołań modelu.
+   * zagadnienia) — nie ma czego generować, więc wołający zapisuje postęp bez wywołań modelu.
    */
   | { readonly nothingToAdd: true };
 
@@ -128,7 +126,6 @@ export function lessonAgentRunInputFor(args: LessonAgentRunInputArgs): LessonAge
     ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
     ...(input.interests === undefined ? {} : { interests: input.interests }),
     poolSize: input.poolSize,
-    graderAvailable: args.graderAvailable,
     draftExamples: {},
     familyScope: `${args.attemptNonce}:${runId}:${args.expectedEditNumber}:${args.attempts}`,
     initialSpentUsd: progress?.budgetSpentUsd ?? 0,
@@ -229,8 +226,8 @@ export function outcomeObjectivesOf(progress: LessonAgentProgress, result: Lesso
  * Scalenie wyniku próby z postępem Z POCZĄTKU próby (tym, z którego zbudowano wejście): wpis zagadnienia
  * uruchomionego w próbie zastępuje poprzedni (pula) albo dopisuje nowe ćwiczenia (dodaj N); zagadnienia
  * `complete` pominięte w próbie zostają. Wydatek: budżet = licznik próby (zawiera `initialSpentUsd`),
- * łącznie + przyrost próby; histogram kodów odrzuceń sumowany. Historyczne liczniki kontroli i oczyszczeń
- * (`checkCounters`, `cleanupCounts` z runów agenta) przechodzą bez zmian.
+ * łącznie + przyrost próby; histogram kodów odrzuceń sumowany. Historyczne liczniki oczyszczeń
+ * (`cleanupCounts` z runów agenta) przechodzą bez zmian.
  */
 export function mergeAttemptIntoProgress(
   progress: LessonAgentProgress,

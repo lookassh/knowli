@@ -54,24 +54,6 @@ export function explanationIssues(text: string): LessonRuleIssue[] {
   return issues;
 }
 
-/**
- * Noty wyjaśnienia usuniętego z wyjścia modelu (ścieżka agenta): te same reguły `explanation.*` co
- * walidacja (przedmiot bez wyjaśnień — `explanation.not_allowed`), z `found` „removed: …”, żeby model
- * wiedział, że ćwiczenie przyjęto bez pola i dlaczego. Pusta lista = wyjaśnienie zostaje.
- */
-export function explanationRemovalNotes(
-  text: string,
-  subject: Pick<SubjectModule, "id" | "exerciseExplanations">,
-): LessonRuleIssue[] {
-  const issues = subject.exerciseExplanations
-    ? explanationIssues(text)
-    : [coreIssue("explanation.not_allowed", {
-        pl: `explanationPl: wyjaśnienie błędu niedozwolone dla przedmiotu „${subject.id}”`,
-        found: "this subject does not show error explanations",
-      })];
-  return issues.map((issue) => ({ ...issue, found: `removed: ${issue.found ?? issue.pl}` }));
-}
-
 /** Błędy treści wyjaśnienia jako komunikaty dla rodzica (`explanationIssues`; pusta lista = poprawne). */
 export function explanationTextErrors(text: string): string[] {
   return messagesOf(explanationIssues(text));

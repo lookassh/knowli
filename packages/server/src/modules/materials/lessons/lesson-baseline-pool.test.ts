@@ -84,7 +84,6 @@ function runInput(overrides: Partial<LessonPoolAgentRunInput> = {}): LessonPoolA
     topicTitle: "Present Simple",
     material: "Tom plays football.",
     poolSize: 20,
-    graderAvailable: true,
     fixed: [],
     draftExamples: {},
     skipObjectives: [],
@@ -123,7 +122,7 @@ describe("runLessonBaselinePool", () => {
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
     ]);
-    expect(result.stats.accepted).toBe(22);
+    expect(result.objectives.flatMap((objective) => objective.exercises)).toHaveLength(22);
   });
 
   it("sends one closed check per closed packet only, with card sentences in the avoid list", async () => {
@@ -193,7 +192,7 @@ describe("runLessonBaselinePool", () => {
       },
     };
     const twinned = await run(twin);
-    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap", detail: "" })]);
+    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap" })]);
     const ruleIds = twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds;
     expect(ruleIds.length).toBeGreaterThan(0);
     // Dziennik podaje identyfikatory reguł odrzuceń z typem ćwiczenia (bez treści).

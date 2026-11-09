@@ -177,8 +177,8 @@ Zasady:
   kontroli, który odczytuje klucz ćwiczeń fake'a z widoku — bez sieci, bez
   klucza, z kosztem 0 i bez zapisu kosztów; `lessonGenerationAvailable` jest wtedy
   zawsze `true`. Opóźnienie: `UMIEM_FAKE_LESSON_DELAY_MS` (rezerwowo
-  `UMIEM_FAKE_DELAY_MS`); `FAKE_SLOW_MARKER` w materiale wstrzymuje pierwszy krok
-  każdego zagadnienia o 3 s.
+  `UMIEM_FAKE_DELAY_MS`) na każdą paczkę; z `FAKE_SLOW_MARKER` w materiale każda
+  paczka czeka co najmniej 3 s (przerywalnie).
 - **Koszty.** Każde żądanie generatora i kontroli trafia do dziennika kosztów
   (`feature = lesson_generation`, `provider = openrouter`, operacje
   `packet_generate` i `check_closed`; `docs/architecture.md` §23). Operacje

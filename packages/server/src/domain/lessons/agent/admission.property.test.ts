@@ -267,7 +267,7 @@ function randomOperation(
   if (roll < 85) {
     const ids = poolOf(state, objectiveId).map((entry) => entry.id);
     const id = ids.length === 0 || rng.chance(0.1) ? "ex999" : rng.pick(ids);
-    const removed = removeExercise(state, objectiveId, id, ctx);
+    const removed = removeExercise(state, objectiveId, id);
     onStep(removed.state, `remove ${objectiveId} ${id} → [${removed.removed.join(", ")}]`);
     return removed.state;
   }

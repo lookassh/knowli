@@ -35,9 +35,8 @@ function rng(seedText) {
 }
 
 const rows = [];
+// Bez `graderAvailable` (etap 5c): prompt paczki go nie czyta, więc stare i nowe zrzuty są porównywalne.
 const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize"];
-// `graderAvailable` poza porównaniem tylko w szkole: stare zrzuty agenta szkoły biegły z graderem kontroli 2b, przebieg bazowy bez (spec etapu 5 §7.1).
-const sameFieldsOf = (dump) => (dump.subjectId === "school" ? SAME_FIELDS : [...SAME_FIELDS, "graderAvailable"]);
 let reference;
 for (const model of candidates) {
   const dump = JSON.parse(fs.readFileSync(path.join(lessonDir, model, "dump.json"), "utf8"));
@@ -50,7 +49,7 @@ for (const model of candidates) {
   // Uczciwość porównania: te same modele i wejście we wszystkich źródłach arkusza, wariant zgodny z katalogiem.
   if (dump.variant !== undefined && model.replace(/-r\d+$/u, "") !== dump.variant) throw new Error(`${model}: katalog nie pasuje do wariantu ${dump.variant}`);
   // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` starego zrzutu dawnej sondy agenta.
-  const fields = sameFieldsOf(dump);
+  const fields = SAME_FIELDS;
   const config = JSON.stringify([...fields.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
   if (reference === undefined) reference = { model, config };
   else if (config !== reference.config) throw new Error(`${model}: inna konfiguracja niż ${reference.model} (${fields.join(", ")}, input)`);

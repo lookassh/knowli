@@ -14,15 +14,9 @@ import {
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
 import { finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
-import { fakeGeneration } from "./fakes";
-import {
-  FakeExerciseChecker,
-  FakeLessonPoolAgent,
-  type FakeLessonPoolAgentOptions,
-  type FakePacketStep,
-} from "../../packages/server/src/providers/fake-lesson-agent";
+import { fakeGeneration, KeyedChecker, packetRecords } from "./fakes";
+import { FakeLessonPoolAgent, type FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
-import type { ClosedCheckInput, RunCostSink } from "../../packages/server/src/ports/ai";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { presentContinuousV1 } from "../../packages/server/src/domain/lessons/subjects/english-grammar/topics/present-continuous";
 
@@ -129,39 +123,16 @@ const NOW_OR_USUALLY_EXERCISES: LessonExerciseDraft[] = [
   translation(NOW_OR_USUALLY, "Tom zwykle pije sok.", "Tom usually drinks juice.", ["drinks"]),
 ];
 
-/** Paczki zagadnienia: każda dostaje ręczne ćwiczenia swojego typu, pierwsza — przykłady kart. */
-function packetsOf(exercises: readonly LessonExerciseDraft[], examples: string[]): FakePacketStep[] {
-  const step: FakePacketStep = {
-    build: (input) => ({
-      exercises: exercises.filter((exercise) => exercise.exerciseType === input.type),
-      ...(input.withExamples ? { examples } : {}),
-    }),
-  };
-  return Array.from({ length: 20 }, () => step);
-}
+/** Ręczne ćwiczenia wyboru: ich klucze zna kontrola zamkniętych (konwencja fake'a ich nie zna). */
+const CHOICES = [...AFFIRMATIVE_EXERCISES, ...NOW_OR_USUALLY_EXERCISES].filter((exercise) => exercise.exerciseType === "lesson_choice");
 
 /** Scenariusz fake'a paczek (klucz = slug celu). */
 const SCRIPT: FakeLessonPoolAgentOptions = {
   packets: {
-    affirmative: packetsOf(AFFIRMATIVE_EXERCISES, ["Tom is jumping now.", "The dogs are playing now."]),
-    now_or_usually: packetsOf(NOW_OR_USUALLY_EXERCISES, ["Mum is singing now.", "Mum sings every day."]),
+    affirmative: packetRecords(AFFIRMATIVE_EXERCISES, ["Tom is jumping now.", "The dogs are playing now."], 20),
+    now_or_usually: packetRecords(NOW_OR_USUALLY_EXERCISES, ["Mum is singing now.", "Mum sings every day."], 20),
   },
 };
-
-/** Kontrola zamkniętych znająca klucze ręcznych ćwiczeń wyboru (konwencja fake'a ich nie zna): po zdaniu w widoku. */
-class KeyedChecker extends FakeExerciseChecker {
-  override async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
-    const checked = await super.checkClosed(input, cost, signal);
-    const choices = [...AFFIRMATIVE_EXERCISES, ...NOW_OR_USUALLY_EXERCISES].filter((exercise) => exercise.exerciseType === "lesson_choice");
-    return {
-      results: input.items.map((item, index) => {
-        const lines = item.view.split("\n");
-        const known = choices.find((exercise) => lines.includes(exercise.stem!));
-        return known === undefined ? checked.results[index] : { answers: [known.answer] };
-      }),
-    };
-  }
-}
 
 beforeEach(async () => {
   await truncateCoreTables();
@@ -182,7 +153,7 @@ interface AgentWorld {
 
 /** Fake paczek ze scenariuszem i kontrola zamkniętych znająca klucze scenariusza. */
 async function agentWorld(agentOptions: FakeLessonPoolAgentOptions): Promise<AgentWorld> {
-  const fakes = await fakeGeneration({ agent: agentOptions, checker: new KeyedChecker() });
+  const fakes = await fakeGeneration({ agent: agentOptions, checker: new KeyedChecker(CHOICES) });
   cleanup.push(fakes.dispose);
   fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 20 };
   return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: createProductionSubjectRegistry() }), agent: fakes.agent };

@@ -344,7 +344,7 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
   };
   const build = (subject: SubjectModule) => {
     const resolved = topic(subject);
-    return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, true);
+    return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined);
   };
 
   it("groundingRequired wynika z sourceQuotes przedmiotu, nie z obecności validatePoolExtra", () => {
@@ -361,25 +361,25 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
     const grammarTopic = englishGrammarSubject.topics.find((t) => t.id === "present_simple")!;
     const withType = grammarTopic.objectives.find((o) => o.exerciseTypes.includes("lesson_listen_choice"))!;
     const withoutType = grammarTopic.objectives.find((o) => !o.exerciseTypes.includes("lesson_listen_choice"));
-    const input = buildPoolInput(englishGrammarSubject, grammarTopic, withType.id, 9, "material", undefined, true);
+    const input = buildPoolInput(englishGrammarSubject, grammarTopic, withType.id, 9, "material", undefined);
     expect(input.listenChoicePerObjective).toBe(2);
     // Dodatek leży poza podziałem etapów i licznością partii.
     expect(input.countPerObjective).toBe(9);
     expect(input.stageCounts).toEqual(poolStageCounts(englishGrammarSubject, withType.exerciseTypes, 9));
     if (withoutType) {
-      expect(buildPoolInput(englishGrammarSubject, grammarTopic, withoutType.id, 9, "material", undefined, true)).not.toHaveProperty("listenChoicePerObjective");
+      expect(buildPoolInput(englishGrammarSubject, grammarTopic, withoutType.id, 9, "material", undefined)).not.toHaveProperty("listenChoicePerObjective");
     }
     // Cel bez typu na liście (lista zawężona) nie dostaje pola.
     const narrowed: LessonTopic = {
       ...grammarTopic,
       objectives: grammarTopic.objectives.map((o) => ({ ...o, exerciseTypes: o.exerciseTypes.filter((type) => type !== "lesson_listen_choice") })),
     };
-    expect(buildPoolInput(englishGrammarSubject, narrowed, withType.id, 9, "material", undefined, true)).not.toHaveProperty("listenChoicePerObjective");
+    expect(buildPoolInput(englishGrammarSubject, narrowed, withType.id, 9, "material", undefined)).not.toHaveProperty("listenChoicePerObjective");
     // Przedmiot bez nagrań zdań feedbacku (szkoła) nie dostaje pola.
     expect(build(schoolSubject)).not.toHaveProperty("listenChoicePerObjective");
     // Przedmiot bez typu na liście, choć z nagraniami zdań, też nie.
     const noTypeSubject: SubjectModule = { ...englishGrammarSubject, exerciseTypes: englishGrammarSubject.exerciseTypes.filter((type) => type !== "lesson_listen_choice") };
-    expect(buildPoolInput(noTypeSubject, grammarTopic, withType.id, 9, "material", undefined, true)).not.toHaveProperty("listenChoicePerObjective");
+    expect(buildPoolInput(noTypeSubject, grammarTopic, withType.id, 9, "material", undefined)).not.toHaveProperty("listenChoicePerObjective");
   });
 
   it("listenChoiceAllowance odejmuje obecne ćwiczenia słuchowe celu (0, gdy limit wyczerpany)", () => {
@@ -408,7 +408,7 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
   describe("tematy zdań z zainteresowań dziecka", () => {
     const buildWith = (subject: SubjectModule, interests?: readonly string[]) => {
       const resolved = topic(subject);
-      return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, true, interests);
+      return buildPoolInput(subject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, interests);
     };
 
     it("przedmiot z regułą i niepusta lista: lista oraz reguła trafiają do wejścia", () => {
@@ -435,8 +435,8 @@ describe("buildPoolInput — opcje przedmiotu w wejściu generacji", () => {
 
 describe("buildPoolInput — zdania do unikania", () => {
   const resolved = englishGrammarSubject.topics[0]!;
-  const build = (options?: Parameters<typeof buildPoolInput>[8]) =>
-    buildPoolInput(englishGrammarSubject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, true, undefined, options);
+  const build = (options?: Parameters<typeof buildPoolInput>[7]) =>
+    buildPoolInput(englishGrammarSubject, resolved, resolved.objectives[0]!.id, 4, "material", undefined, undefined, options);
 
   it("niepusta lista trafia do wejścia", () => {
     const input = build({ avoidSentences: ["He plays football."] });

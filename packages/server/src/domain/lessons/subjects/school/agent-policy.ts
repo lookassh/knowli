@@ -23,9 +23,9 @@ function hintRemovedNote(exerciseType: LessonExerciseType): LessonRuleIssue {
  * do którego pasują po normalizacji (`snapQuote`); wycinek, który sam nie
  * przeszedłby walidacji, zostawia cytat modelu. Bez zmian — ten sam obiekt.
  */
-function snappedQuotes(draft: LessonExerciseDraft, material: string): { draft: LessonExerciseDraft; count: number } {
+function snappedQuotes(draft: LessonExerciseDraft, material: string): LessonExerciseDraft {
   const refs = draft.sourceRefs;
-  if (refs === undefined) return { draft, count: 0 };
+  if (refs === undefined) return draft;
   let count = 0;
   const next = refs.map((ref) => {
     if (ref.parentAdded === true) return ref;
@@ -34,23 +34,19 @@ function snappedQuotes(draft: LessonExerciseDraft, material: string): { draft: L
     count += 1;
     return { ...ref, quote: snapped };
   });
-  return count === 0 ? { draft, count } : { draft: { ...draft, sourceRefs: next }, count };
+  return count === 0 ? draft : { ...draft, sourceRefs: next };
 }
 
 export const schoolAgentPolicy: Pick<SubjectModule, "checkerNeedsMaterial" | "sanitize"> = {
   checkerNeedsMaterial: true,
   sanitize(draft: LessonExerciseDraft, ctx) {
-    const removed: string[] = [];
     const notes: LessonRuleIssue[] = [];
     let current = draft;
     if (current.hint !== undefined) {
       const { hint: _hint, ...rest } = current;
       current = rest;
-      removed.push("hint");
       notes.push(hintRemovedNote(current.exerciseType));
     }
-    const snapped = snappedQuotes(current, ctx.material);
-    if (snapped.count > 0) current = snapped.draft;
-    return { draft: current, removed, notes, quotesSnapped: snapped.count };
+    return { draft: snappedQuotes(current, ctx.material), notes };
   },
 };

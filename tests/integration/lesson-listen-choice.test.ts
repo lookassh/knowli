@@ -7,7 +7,7 @@ import {
 import type { LessonDraftDto, TaskDto } from "@learning/contracts";
 import { lessonWorld, type LessonWorldOptions } from "../fixtures/lesson-world";
 import { buildTestServices, ManualClock, rejectionCodesOf, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
-import { fakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration } from "./fakes";
 import { markTtsReady } from "./school-lesson-audio-helpers";
 import type { FakePacketStep } from "../../packages/server/src/providers/fake-lesson-agent";
 import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
@@ -102,7 +102,7 @@ function listenFlood(extraStages: boolean): FakePacketStep[] {
       };
     },
   };
-  return Array.from({ length: 50 }, () => step);
+  return everyPacket(step, 50);
 }
 
 describe("generowanie — limit ćwiczeń słuchowych na regułę", () => {

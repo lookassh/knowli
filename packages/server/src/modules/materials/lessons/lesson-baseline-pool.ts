@@ -14,7 +14,6 @@ import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { buildPoolInput, listenChoiceAllowance, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import { lessonAvoidSentences } from "./lesson-pool-agent-input";
 import {
-  emptyLessonPoolAgentStats,
   objectivesToRun,
   poolStartState,
   slugOf,
@@ -78,7 +77,7 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
   if (source.source === "input" && subject.buildDynamicTopic === undefined) {
     throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
   }
-  // Temat z katalogu albo dynamiczny (etap zagadnień lub punkt kontrolny), złożony jak u agenta.
+  // Temat z katalogu albo dynamiczny (etap zagadnień lub punkt kontrolny).
   const topic = source.source === "catalog" ? source.topic : subject.buildDynamicTopic!(source.dynamicTopic);
   const target = input.target;
   if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
@@ -104,14 +103,13 @@ export function packetInput(args: {
   readonly material: string;
   readonly instruction?: string;
   readonly interests?: readonly string[];
-  readonly graderAvailable: boolean;
   readonly avoidSentences: readonly string[];
   readonly timeoutMs: number;
 }): LessonPacketInput {
   const types = args.companion === undefined ? [args.type] : [args.type, args.companion];
   const single = { ...args.objective, exerciseTypes: types };
   const topic = { ...args.topic, objectives: args.topic.objectives.map((objective) => (objective.id === single.id ? single : objective)) };
-  const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.graderAvailable, args.interests, {
+  const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.interests, {
     avoidSentences: args.avoidSentences,
   });
   return {
@@ -185,11 +183,9 @@ export async function runLessonBaselinePool(
   // Błąd kodu w jednej paczce zatrzymuje pozostałe (bez nowych płatnych wywołań), zanim run zgłosi błąd.
   const crash = new AbortController();
   const runDeadline = deadlineSignal(AbortSignal.any([signal, crash.signal]), policy.runTimeoutMs, RUN_TIMEOUT_REASON);
-  const stats = emptyLessonPoolAgentStats();
   const rejections: RejectionLogEntry[] = [];
   const reject = (objectiveId: string, exerciseType: string, kind: RejectionLogEntry["kind"], code: string, ruleIds: readonly string[] = []) => {
-    rejections.push({ objectiveId, exerciseType, kind, code, ruleIds, detail: "" });
-    stats.rejectedByKind[kind] = (stats.rejectedByKind[kind] ?? 0) + 1;
+    rejections.push({ objectiveId, exerciseType, kind, code, ruleIds });
   };
   try {
     const dynamicTopic = input.objectiveSource.source === "input" ? input.objectiveSource.dynamicTopic : undefined;
@@ -197,13 +193,13 @@ export async function runLessonBaselinePool(
     signal.throwIfAborted();
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
-    // Stan startowy jak u agenta: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
+    // Stan startowy: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
     // limity zagadnień (`lessonAgentLimits`).
     const start = poolStartState({ subject, topic, objectives, input });
     const { ctx, addMode, promptTargets } = start;
     const avoidSentences = lessonAvoidSentences(subject, topic, start.state);
     const examplesFixed = input.examplesFixed ?? false;
-    // Równoległość żądań: generowanie jak zagadnienia agenta, kontrola jak checker agenta; budżet sprawdzany po zajęciu miejsca.
+    // Równoległość żądań: osobne limity generatora i kontroli z polityki runu; budżet sprawdzany po zajęciu miejsca.
     const generatorSlots = new Semaphore(policy.concurrency);
     const checkerSlots = new Semaphore(policy.checkerConcurrency);
 
@@ -239,7 +235,6 @@ export async function runLessonBaselinePool(
         material: input.material,
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
         ...(input.interests === undefined ? {} : { interests: input.interests }),
-        graderAvailable: input.graderAvailable,
         avoidSentences,
         timeoutMs: policy.callTimeoutMs,
       });
@@ -250,13 +245,12 @@ export async function runLessonBaselinePool(
         const valid: LessonExerciseDraft[] = [];
         const companions: LessonExerciseDraft[] = [];
         for (const raw of generated.exercises) {
-          stats.submitted += 1;
           const parsed = parseLessonRecord(raw, objectiveId, subject, input.familyScope);
           if (!parsed.ok) {
             reject(objectiveId, parsed.exerciseType, "shape", parsed.rejection.code, parsed.rejection.ruleIds);
             continue;
           }
-          // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
+          // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją.
           const draft = subject.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
           if (draft.exerciseType !== packet.type && draft.exerciseType !== packet.companion) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
@@ -322,7 +316,6 @@ export async function runLessonBaselinePool(
         }
         // Budżet albo termin przed kontrolą: opłacone pytania otwarte (bez kontroli) zostają, keywords nie.
         if (checked === STOPPED) return unchecked.length === 0 ? { kind: "stopped" } : { kind: "done", drafts: unchecked, examples: generated.examples };
-        stats.checkerCalls += 1;
         const passed: LessonExerciseDraft[] = [...unchecked];
         let offset = 0;
         for (const { draft, views } of checkable) {
@@ -334,7 +327,7 @@ export async function runLessonBaselinePool(
         return { kind: "done", drafts: passed, examples: generated.examples };
       } catch (error) {
         if (signal.aborted) throw signal.reason;
-        // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run (jak u agenta).
+        // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run.
         if (!(error instanceof GenerationProviderError)) {
           crash.abort(error);
           throw error;
@@ -373,7 +366,7 @@ export async function runLessonBaselinePool(
     const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
 
-    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka, krokami 3–4 przyjmowania agenta
+    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka i krokiem reguł lekcji (`lessonRulesStep`)
     // (kandydat odpada także, gdy czyni nową ofiarą inne ćwiczenie, również `fixed`).
     // Najpierw udział każdej paczki, potem zapasy w tej samej kolejności — zapas pierwszego typu nie wypycha drugiego.
     let state: LessonAgentState = start.state;
@@ -404,7 +397,6 @@ export async function runLessonBaselinePool(
         state = step.state;
         before = step.snapshot;
         used[bucket] += 1;
-        stats.accepted += 1;
       }
     }
     // Przykłady kart po ćwiczeniach wszystkich zagadnień: linia ujawniająca odpowiedź odpada, ćwiczenie zostaje.
@@ -415,7 +407,7 @@ export async function runLessonBaselinePool(
     const settledList: SettledObjective[] = outcomes.map((outcome) => {
       const id = outcome.objective.id;
       const status = objectiveStatusFor(state, id, ctx, addMode);
-      // Tylko ćwiczenia tej próby (bez `fixed`), jak `poolExercises` agenta.
+      // Tylko ćwiczenia tej próby (bez `fixed`).
       const exercises = orderedEntries(state).filter((entry) => entry.objectiveId === id && entry.id !== null).map((entry) => entry.draft);
       const base = {
         objectiveId: id,
@@ -449,7 +441,7 @@ export async function runLessonBaselinePool(
       await input.onObjectiveSettled?.(settled);
       signal.throwIfAborted();
     }
-    return { objectives: settledList, stats, rejections, spentUsd: cost.spentUsd, unknownCostCalls: cost.unknownCalls };
+    return { objectives: settledList, rejections, spentUsd: cost.spentUsd };
   } finally {
     runDeadline.dispose();
   }

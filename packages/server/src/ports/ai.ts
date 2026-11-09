@@ -94,7 +94,6 @@ export interface LessonPoolInput {
   readonly listenChoicePerObjective?: number;
   /** Ile miejsc etapu samodzielnego zastrzec dla różnych pytań otwartych (przedmioty v3). */
   readonly minDistinctOpenAnswers?: number;
-  readonly graderAvailable: boolean;
   /** Czy każde ćwiczenie MUSI nieść cytaty źródłowe z materiału (przedmioty z uziemieniem). */
   readonly groundingRequired?: boolean;
   /**
@@ -116,7 +115,7 @@ export interface LessonPoolInput {
   readonly avoidSentences?: readonly string[];
   /**
    * Księga reguł zagadnienia (domenowa `lessonRuleBook`, spec katalogu reguł §3): karty typów i opisy
-   * reguł, które sprawdza narzędzie. Adapter tylko ją renderuje; nie dopisuje własnych reguł.
+   * reguł, które sprawdza walidacja przebiegu bazowego. Adapter tylko ją renderuje; nie dopisuje własnych reguł.
    */
   readonly ruleBook: LessonRuleBookInput;
 }
@@ -125,7 +124,7 @@ export interface LessonPoolInput {
 export interface LessonRuleBookLine {
   readonly id: string;
   readonly text: string;
-  /** Tylko id w prompcie (kształt rekordu, powtórzenie listy pól karty typu); opis model dostaje w wyniku narzędzia. */
+  /** Pomijana w prompcie (kształt rekordu, powtórzenie listy pól karty typu); renderer daje za nie jedno zdanie o schemacie wyjścia. */
   readonly brief?: boolean;
 }
 
@@ -196,7 +195,7 @@ export interface RunCostSink {
 
 /**
  * Wejście paczki przebiegu bazowego (spec etapu 2 §3–§4): jedno zagadnienie i jeden typ ćwiczenia.
- * `pool` buduje moduł dla jednego typu (księga reguł bez sekcji `lesson` i `checks`); adapter
+ * `pool` buduje moduł dla jednego typu (księga reguł tego typu); adapter
  * tylko renderuje prompt.
  */
 export interface LessonPacketInput {
@@ -379,7 +378,6 @@ export interface GraderInput {
   readonly acceptedAnswers: readonly string[];
   /**
    * Odpowiedź dziecka przekazywana jako dane: ≤ 200 znaków (lekcje), ≤ 600 (odpowiedzi szkolne).
-   * W kontroli agenta puli (etap 2b) to odpowiedź rozwiązującego modelu, nie dziecka.
    */
   readonly childAnswer: string;
   /**

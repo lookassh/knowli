@@ -173,7 +173,7 @@ describe("karty typów", () => {
         const draft = admitExample(subject, type, topic);
         const material = (draft.sourceRefs ?? []).map((ref) => ref.quote).join("\n");
         const result = sanitize(draft, { material });
-        expect(result.removed, `${subject.id} ${type}`).toEqual([]);
+        expect(result.draft, `${subject.id} ${type}`).toEqual(draft);
         expect(described(result.notes ?? []), `${subject.id} ${type}`).toEqual([]);
       }
     });

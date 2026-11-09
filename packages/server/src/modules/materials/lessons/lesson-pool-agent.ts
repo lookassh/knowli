@@ -70,7 +70,6 @@ export interface LessonPoolAgentRunInput {
   readonly instruction?: string;
   readonly interests?: readonly string[];
   readonly poolSize: number;
-  readonly graderAvailable: boolean;
   readonly fixed: readonly LessonExerciseDraft[];
   readonly draftExamples: Readonly<Record<string, readonly string[]>>;
   /** Zagadnienia już zapisane: pomijane, ich ćwiczenia są w `fixed`. */
@@ -104,21 +103,11 @@ export interface LessonPoolAgentRunInput {
   readonly onObjectiveSettled?: (settled: SettledObjective) => Promise<void>;
 }
 
-/** Statystyki próby: rekordy z wyjścia modelu, przyjęte do puli, odrzucenia według rodzaju i wywołania kontroli. */
-export interface LessonPoolAgentStats {
-  submitted: number;
-  accepted: number;
-  rejectedByKind: Record<string, number>;
-  checkerCalls: number;
-}
-
 export interface LessonPoolAgentResult {
   /** Zagadnienia uruchomione w tym runie (bez pominiętych), w kolejności lekcji. */
   readonly objectives: readonly SettledObjective[];
-  readonly stats: LessonPoolAgentStats;
   readonly rejections: readonly RejectionLogEntry[];
   readonly spentUsd: number;
-  readonly unknownCostCalls: number;
 }
 
 /** Klucz stałych źródeł ujawnień spoza zagadnień (`extraExposureSources`) w `fixedSources` stanu. */
@@ -126,11 +115,6 @@ const EXTRA_SOURCES_KEY = "__extra";
 
 export function slugOf(objectiveId: string): string {
   return objectiveId.slice(objectiveId.lastIndexOf(".") + 1);
-}
-
-/** Zerowe statystyki próby (także wynik „bez czasu na generowanie” w `lesson-agent-generation.ts`). */
-export function emptyLessonPoolAgentStats(): LessonPoolAgentStats {
-  return { submitted: 0, accepted: 0, rejectedByKind: {}, checkerCalls: 0 };
 }
 
 /** Limity przyjmowania i liczby promptu zagadnienia w trybie „dodaj N” (§6.4). */

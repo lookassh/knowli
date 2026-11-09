@@ -15,7 +15,6 @@ export const chapterAgentPolicy: Pick<SubjectModule, "checkerNeedsMaterial" | "r
     "variants.duplicate": CONTRACTIONS_NOTE,
   },
   sanitize(draft) {
-    const clean = withTranslationInstruction(draft);
-    return { draft: clean, removed: [] };
+    return { draft: withTranslationInstruction(draft) };
   },
 };

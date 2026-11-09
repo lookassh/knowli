@@ -22,7 +22,7 @@ describe("fakePacketExercises for the chapter", () => {
   for (const objective of topic.objectives) {
     for (const type of objective.exerciseTypes.filter((entry) => entry !== "lesson_card")) {
       it(`${objective.id.split(".").at(-1)} × ${type}: structure and closed check pass`, () => {
-        const input = packetInput({ subject, topic, objective, type, count: 2, withExamples: false, material, graderAvailable: true, avoidSentences: [], timeoutMs: 1000 });
+        const input = packetInput({ subject, topic, objective, type, count: 2, withExamples: false, material, avoidSentences: [], timeoutMs: 1000 });
         const { exercises } = fakePacketExercises(input, 100);
         expect(exercises).toHaveLength(2);
         for (const raw of exercises) {

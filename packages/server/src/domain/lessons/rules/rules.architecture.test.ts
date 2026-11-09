@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  *
  * Wywołanie „zwraca zgłoszenia”, gdy jego nazwa (identyfikator albo ostatnia
  * właściwość, np. `subject.validateExercise`) jest fabryką zgłoszeń albo funkcją,
- * metodą lub polem z jawnym typem wyniku `LessonRuleIssue`/`RuleReason`
+ * metodą lub polem z jawnym typem wyniku `LessonRuleIssue`
  * zadeklarowanym w tych źródłach. Rozpoznanie po nazwie, bez
  * sprawdzania typów: kształt zgłoszeń pilnują typy, ten test — że napis nie
  * omija fabryki. `throw` nie jest ujściem zgłoszeń (np. `computeCalculationAnswer`
@@ -82,31 +82,16 @@ interface SinkException {
   readonly reason: string;
 }
 
-const EXAMPLES_REASON =
-  "przykłady kart nie są ćwiczeniami: odpowiedź narzędzia o liniach przykładów, poza katalogiem reguł ćwiczeń";
-const examplesText = (expression: string): SinkException => ({ fn: "submitExamples", expression, reason: EXAMPLES_REASON });
-
 /**
  * Nazwane wyjątki (plik → wyrażenia z uzasadnieniem): tekst poza katalogiem reguł,
  * bo nie jest odrzuceniem ćwiczenia. Wyjątek obejmuje tylko to jedno wyrażenie,
  * więc nowy napis w tej samej funkcji pada. Nie kopiuj ich jako wzorca. Każdy wpis
  * musi coś wyłączać (test pilnuje, że lista nie zostaje nieaktualna).
  */
-const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
-  "domain/lessons/agent/admission.ts": [
-    examplesText('"examples must be an array of strings"'),
-    examplesText("`${label}: must be a string`"),
-    examplesText("`${label}: is empty`"),
-    examplesText("`${label}: is longer than ${MAX_TEXT_LENGTH} characters`"),
-    examplesText("`${label}: duplicates an earlier example; this line was ignored`"),
-    // Linia przykładu ujawnia rozwiązanie: powód z fabryki (`formatRuleReason`) z etykietą i cytatem linii.
-    examplesText("...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`)"),
-    examplesText("`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`"),
-  ],
-};
+const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {};
 
 /** Typ wyniku, który oznacza zgłoszenia katalogu. */
-const ISSUE_RESULT_TYPE = /\b(?:LessonRuleIssue|RuleReason)\b/;
+const ISSUE_RESULT_TYPE = /\bLessonRuleIssue\b/;
 /** Nazwa tablicy zgłoszeń (także z przedrostkiem: `recordIssues`, `victimIssues`). */
 const SINK_NAME = /(?:^|[a-z])(?:errors|issues|reasons|findings|Errors|Issues|Reasons|Findings)$/;
 /** Nazwy pasujące do `SINK_NAME`, które nie są zgłoszeniami. */
@@ -436,7 +421,7 @@ describe("zgłoszenia walidatorów wyłącznie przez fabryki katalogu reguł", (
     expect([...vocabulary.factories]).toEqual(
       expect.arrayContaining(["coreIssue", "lessonIssue", "shapeIssue", "calculationIssue", "chapterIssue", "schoolIssue"]),
     );
-    expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "validatePoolExtra", "formatRuleReason"]));
+    expect([...vocabulary.issueSources]).toEqual(expect.arrayContaining(["validateExercise", "validatePoolExtra"]));
   });
 
   it("w ujściach zgłoszeń nie ma napisów ani spreadów spoza fabryk (poza wyjątkami)", () => {

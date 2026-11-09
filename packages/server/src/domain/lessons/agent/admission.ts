@@ -4,7 +4,6 @@ import { withoutOrphanKeywords } from "../keyword-families";
 import { MAX_TEXT_LENGTH, validatePoolIssues } from "../pool-validation";
 import { clip, issueFrom, type LessonRuleIssue, type RuleId } from "../rules/catalog";
 import { LESSON_RULES } from "../rules/lesson-rules";
-import { formatRuleReason, formatVictimReason, type RuleReason } from "../rules/rule-reason";
 import type { AgentObjective, LessonExerciseDraft, SubjectModule } from "../types";
 import {
   allExamples,
@@ -41,26 +40,20 @@ export interface AgentCheckContext {
 }
 
 /**
- * Odrzucenie ćwiczenia: stały kod (logi, histogram `rejectedReasons`), zgłoszenia złamanych reguł
- * i powody dla modelu (`[id] pole: found`, po angielsku, mogą zawierać treść ćwiczenia — nigdy do
- * logów). `ruleIds` — id reguł zgłoszeń bez powtórzeń, w kolejności zgłoszeń (logi bez treści).
+ * Odrzucenie ćwiczenia: stały kod (logi, histogram `rejectedReasons`) i zgłoszenia złamanych reguł
+ * (mogą zawierać treść ćwiczenia — nigdy do logów). `ruleIds` — id reguł zgłoszeń bez powtórzeń,
+ * w kolejności zgłoszeń (logi bez treści).
  */
 export interface Rejection {
-  readonly kind: "shape" | "rule" | "lesson" | "leak" | "blind" | "hint" | "open" | "limit";
+  readonly kind: "shape" | "rule" | "lesson" | "leak" | "blind" | "limit";
   readonly code: string;
-  readonly reasons: readonly RuleReason[];
   readonly issues: readonly LessonRuleIssue[];
   readonly ruleIds: readonly RuleId[];
 }
 
-/** Odrzucenie ze zgłoszeń; powody domyślnie `formatRuleReason` każdego zgłoszenia (w tej kolejności). */
-export function rejectionOf(
-  kind: Rejection["kind"],
-  code: string,
-  issues: readonly LessonRuleIssue[],
-  reasons: readonly RuleReason[] = issues.map(formatRuleReason),
-): Rejection {
-  return { kind, code, reasons, issues, ruleIds: [...new Set(issues.map((issue) => issue.rule))] };
+/** Odrzucenie ze zgłoszeń. */
+export function rejectionOf(kind: Rejection["kind"], code: string, issues: readonly LessonRuleIssue[]): Rejection {
+  return { kind, code, issues, ruleIds: [...new Set(issues.map((issue) => issue.rule))] };
 }
 
 /** Odrzucenia reguł lekcji i ujawnienia — po referencji szkicu (wadliwe `fixed` nie blokuje kandydatów). */
@@ -123,10 +116,6 @@ function entryLabel(entry: OrderedLessonEntry | undefined): string {
   return entry?.id ? `exercise ${entry.id}` : "an existing exercise";
 }
 
-function quoted(text: string): string {
-  return `"${text}"`;
-}
-
 function leakVictimIssue(leak: ExposureLeak, after: readonly OrderedLessonEntry[], ctx: AgentCheckContext): LessonRuleIssue {
   const pl = "answer: odpowiedź ćwiczenia samodzielnego jest już widoczna wcześniej w lekcji";
   if (leak.source.kind === "card_example") {
@@ -153,18 +142,9 @@ function newlyRejected(
   return [...after].filter(([draft]) => draft !== candidate && !before.has(draft));
 }
 
-/** Odrzucenie z ofiarami: zgłoszenia ofiar, a powody z prefiksem ofiary (`formatVictimReason`). */
-function victimRejection(
-  code: "lesson_pool" | "lesson_extra",
-  victims: readonly [LessonExerciseDraft, readonly LessonRuleIssue[]][],
-  entries: readonly OrderedLessonEntry[],
-): Rejection {
-  const issues = victims.flatMap(([, victimIssues]) => victimIssues);
-  const reasons = victims.flatMap(([draft, victimIssues]) => {
-    const label = entryLabel(entries.find((item) => item.draft === draft));
-    return victimIssues.map((issue) => formatVictimReason(label, issue));
-  });
-  return rejectionOf("lesson", code, issues, reasons);
+/** Zgłoszenia ofiar kandydata (ćwiczeń, które lekcja odrzuciłaby po jego dodaniu). */
+function victimIssues(victims: readonly [LessonExerciseDraft, readonly LessonRuleIssue[]][]): LessonRuleIssue[] {
+  return victims.flatMap(([, issues]) => issues);
 }
 
 export type StepOutcome =
@@ -199,9 +179,9 @@ export function lessonRulesStep(
   const ownExtraIssues = rules.extraRejected.get(candidate);
   if (ownExtraIssues !== undefined) return reject("lesson", "lesson_extra", ownExtraIssues);
   const extraVictims = newlyRejected(rules.extraRejected, before.extraRejected, candidate);
-  if (extraVictims.length > 0) return { ok: false, rejection: victimRejection("lesson_extra", extraVictims, rules.entries) };
+  if (extraVictims.length > 0) return reject("lesson", "lesson_extra", victimIssues(extraVictims));
   const poolVictims = newlyRejected(rules.poolRejected, before.poolRejected, candidate);
-  if (poolVictims.length > 0) return { ok: false, rejection: victimRejection("lesson_pool", poolVictims, rules.entries) };
+  if (poolVictims.length > 0) return reject("lesson", "lesson_pool", victimIssues(poolVictims));
 
   // Ujawnienia (tryb generation): kandydat ofiarą albo nowa ofiara (także `fixed`).
   const leaked = lessonLeaks(next, rules.entries, ctx);
@@ -232,56 +212,31 @@ export function submitExamples(
   objectiveId: string,
   lines: unknown,
   ctx: AgentCheckContext,
-): { state: LessonAgentState; accepted: number; errors: string[] } {
-  if (!Array.isArray(lines)) return { state, accepted: 0, errors: ["examples must be an array of strings"] };
+): { state: LessonAgentState; accepted: number } {
+  if (!Array.isArray(lines)) return { state, accepted: 0 };
   objectiveOf(state, objectiveId);
-  const errors: string[] = [];
   const kept: string[] = [];
   const entries = orderedEntries(state);
   const exercises = entries.map((entry) => entry.draft);
   const leakedBefore = lessonLeaks(state, entries, ctx);
-  lines.forEach((line: unknown, index) => {
-    const label = `example ${index + 1}`;
-    if (typeof line !== "string") {
-      errors.push(`${label}: must be a string`);
-      return;
-    }
+  for (const line of lines as unknown[]) {
+    if (typeof line !== "string") continue;
     const text = line.trim();
-    if (text.length === 0) {
-      errors.push(`${label}: is empty`);
-      return;
-    }
-    if (text.length > MAX_TEXT_LENGTH) {
-      errors.push(`${label}: is longer than ${MAX_TEXT_LENGTH} characters`);
-      return;
-    }
-    // Powtórzona linia nie zajmuje kolejnego z trzech miejsc.
-    if (kept.includes(text)) {
-      errors.push(`${label}: duplicates an earlier example; this line was ignored`);
-      return;
-    }
+    // Pusta, za długa albo powtórzona linia nie zajmuje kolejnego z trzech miejsc.
+    if (text.length === 0 || text.length > MAX_TEXT_LENGTH || kept.includes(text)) continue;
     // Ofiary samej linii: z jedynym przykładem źródłem twardym jest właśnie ona.
-    const victims = findExposureLeaks({
+    const leaks = findExposureLeaks({
       exercises,
       examples: { [objectiveId]: [text] },
       objectiveOrder: state.objectives.map((objective) => objective.id),
       subject: ctx.subject,
       mode: ADMISSION_LEAK_MODE,
-    })
-      .filter((leak) => leak.source.kind === "card_example" && !leakedBefore.has(entries[leak.index]!.draft))
-      .map((leak) => entries[leak.index]!);
-    if (victims.length > 0) {
-      errors.push(...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`));
-      return;
-    }
-    if (kept.length >= MAX_CARD_EXAMPLES) {
-      errors.push(`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`);
-      return;
-    }
+    }).some((leak) => leak.source.kind === "card_example" && !leakedBefore.has(entries[leak.index]!.draft));
+    if (leaks || kept.length >= MAX_CARD_EXAMPLES) continue;
     kept.push(text);
-  });
-  if (kept.length === 0) return { state, accepted: 0, errors };
-  return { state: withExamples(state, objectiveId, kept), accepted: kept.length, errors };
+  }
+  if (kept.length === 0) return { state, accepted: 0 };
+  return { state: withExamples(state, objectiveId, kept), accepted: kept.length };
 }
 
 /**
@@ -293,9 +248,7 @@ export function removeExercise(
   state: LessonAgentState,
   objectiveId: string,
   id: string,
-  ctx: AgentCheckContext,
 ): { state: LessonAgentState; removed: string[] } {
-  void ctx;
   const pool = poolOf(state, objectiveId);
   if (!pool.some((entry) => entry.id === id)) return { state, removed: [] };
   const remaining = pool.filter((entry) => entry.id !== id);

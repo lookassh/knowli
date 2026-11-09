@@ -204,7 +204,7 @@ function httpStatusOf(error: unknown): number | undefined {
   return APICallError.isInstance(cause) ? cause.statusCode : undefined;
 }
 
-/** Obietnica odrzucana z powodem przerwania, gdy sygnał przerwie się wcześniej (zawieszone narzędzie nie blokuje). */
+/** Obietnica odrzucana z powodem przerwania, gdy sygnał przerwie się wcześniej (zawieszone żądanie nie blokuje). */
 function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (signal === undefined) return promise;
   if (signal.aborted) {
@@ -289,7 +289,7 @@ class AiSdkCaller {
 // Prompty (tekst dla modelu po angielsku; reguły przedmiotu pochodzą z księgi reguł paczki)
 /**
  * Prompt systemowy paczki przebiegu bazowego (spec etapu 2 §4): rola i języki przedmiotu, jedno
- * zagadnienie z kartami, księga reguł jednego typu (bez sekcji agenta), pola i liczba ćwiczeń.
+ * zagadnienie z kartami, księga reguł jednego typu, pola i liczba ćwiczeń.
  * Bez narzędzi i rund naprawy — ćwiczenie łamiące regułę odpada.
  */
 export function packetInstructions(input: LessonPacketInput): string {
