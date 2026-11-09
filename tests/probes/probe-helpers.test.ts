@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { resolveOutsideRepoPath, runDirsOf } from "./probe-helpers";
+import { childEnv, resolveOutsideRepoPath, runDirsOf } from "./probe-helpers";
 
 const repoDir = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const outside = realpathSync(mkdtempSync(join(tmpdir(), "probe-helpers-")));
@@ -59,5 +59,15 @@ describe("runDirsOf", () => {
   it("ścieżka w repozytorium (także jako jeden z członów) → błąd", () => {
     expect(() => runDirsOf(`${outside};${join(repoDir, "tests", "run")}`, "X")).toThrow(/wewnątrz repozytorium/u);
     expect(() => runDirsOf(join(link, "nowy"), "X")).toThrow(/wewnątrz repozytorium/u);
+  });
+});
+
+describe("childEnv", () => {
+  it("przepuszcza zmienne systemu i MUSE_*, odcina sekrety i konfigurację aplikacji", () => {
+    const env = childEnv({
+      PATH: "p", Path: "p2", SystemRoot: "s", USERPROFILE: "u", MUSE_HOME: "m",
+      OPENAI_API_KEY: "x", AZURE_SPEECH_KEY: "x", DATABASE_URL: "x", POSTGRES_PASSWORD: "x", OPENROUTER_API_KEY: "x", UMIEM_GRADER_API_KEY: "x",
+    });
+    expect(Object.keys(env).sort()).toEqual(["MUSE_HOME", "PATH", "Path", "SystemRoot", "USERPROFILE"]);
   });
 });

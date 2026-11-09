@@ -5,3 +5,7 @@ docs/integrations/learning-overview.schema.json text eol=lf
 
 # Migawki testów (np. prompt agenta lekcji): porównywane bajt w bajt, więc LF niezależnie od systemu.
 **/__snapshots__/** text eol=lf
+
+# Materiały i wyniki benchmarka (`tests/probes/bench`): sha256 materiału i tabela wyników niezależne od `core.autocrlf`.
+tests/probes/fixtures/** text eol=lf
+tests/probes/results/** text eol=lf

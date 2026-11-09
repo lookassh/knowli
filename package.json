@@ -17,6 +17,7 @@
     "probe:gold": "vitest run --config vitest.probe.config.ts tests/probes/closed-check-gold.probe.test.ts",
     "probe:judge": "vitest run --config vitest.probe.config.ts tests/probes/blind/auto-judge.probe.test.ts",
     "probe:grading": "vitest run --config vitest.probe.config.ts tests/probes/grading.probe.test.ts",
+    "bench": "node apps/worker/node_modules/tsx/dist/cli.mjs tests/probes/bench/bench.ts",
     "test:e2e": "playwright test",
     "test:e2e:shards": "node scripts/run-e2e-shards.cjs",
     "build": "node apps/web/node_modules/next/dist/bin/next build apps/web",

@@ -116,3 +116,11 @@ export function runDirsOf(raw: string, name: string): string[] {
   if (dirs.length === 0) throw new Error(`${name}: pusta lista katalogów`);
   return dirs.map((dir) => resolveOutsideRepoPath(dir, name)!);
 }
+
+/** Zmienne systemu potrzebne lokalnemu CLI (Windows i POSIX); reszta środowiska, w tym sekrety z `.env`, nie przechodzi. */
+const CHILD_ENV_KEYS = new Set(["PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "WINDIR", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "USERNAME", "USER", "LANG"]);
+
+/** Środowisko zewnętrznego CLI (sędzia Muse): lista dozwolonych zmiennych systemu oraz `MUSE_*`, bez kluczy i URL-i bazy. */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => CHILD_ENV_KEYS.has(key.toUpperCase()) || key.toUpperCase().startsWith("MUSE_")));
+}
