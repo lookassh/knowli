@@ -11,10 +11,6 @@ import {
   MAX_AUDIO_BYTES,
   MAX_DECK_COVER_BYTES,
   MULTIPART_OVERHEAD_BYTES,
-  agentGrammarSubject,
-  agentSchoolSubject,
-  createProductionSubjectRegistry,
-  createSubjectRegistry,
   englishGrammarSubject,
   type Clock,
   type Services,
@@ -24,16 +20,6 @@ import { kidRouter } from "@/orpc/kid-router";
 import { parentORpcRouter } from "@/orpc/parent-router";
 import { parseLessonAgentProgress } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
 import { currentPoolId, workerDatabaseUrl } from "../integration-worker-databases";
-
-/**
- * Rejestr produkcyjny z gramatyką i szkołą na agencie puli (`agentGrammarSubject`, `agentSchoolSubject` z kontrolami
- * 2b): testy, które scenariuszują `runObjective` albo zakładają kształt wyniku fake'a agenta, do etapu 5c (#362).
- * Produkcja generuje oba przedmioty przebiegiem bazowym.
- */
-export function agentGrammarRegistry() {
-  const onAgent = new Map([agentGrammarSubject, agentSchoolSubject].map((subject) => [subject.id, subject] as const));
-  return createSubjectRegistry(createProductionSubjectRegistry().listSubjects().map((subject) => onAgent.get(subject.id) ?? subject));
-}
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 

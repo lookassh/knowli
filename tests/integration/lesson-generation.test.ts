@@ -11,10 +11,10 @@ import {
   claimQueuedRun,
   createServices,
   executeMediaAsset,
+  createProductionSubjectRegistry,
   createSubjectRegistry,
-  agentGrammarSubject,
   englishGrammarSubject,
-  agentSchoolSubject as schoolSubject,
+  schoolSubject,
   editLessonDraft,
   executeLessonGeneration,
   historyLikeSubject,
@@ -30,17 +30,18 @@ import {
   type Services,
 } from "@learning/server";
 import { messages, type LessonCommand } from "@learning/contracts";
-import { agentGrammarRegistry, countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
+import { countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
-import type { LessonAgentToolOutcome, LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
+import type { ClosedCheckInput, LessonPacketInput, RunCostSink } from "../../packages/server/src/ports/ai";
 import { lessonExerciseIdentity } from "../../packages/server/src/domain/lessons/exercise-identity";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
-import type { FakeAgentStep, FakeLessonPoolAgent, FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
-import { FAKE_EXPLANATION, fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
+import { FakeExerciseChecker, type FakeLessonPoolAgentOptions, type FakePacketStep } from "../../packages/server/src/providers/fake-lesson-agent";
+import { FAKE_EXPLANATION, fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
+import { PACKET_RESERVE } from "../../packages/server/src/domain/lessons/packet-plan";
 
 const { pool } = testDatabase();
 
@@ -52,9 +53,12 @@ async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   return result.rows as T[];
 }
 
-/** Rejestr z przedmiotem produkcyjnym + fixture historii (dowód niezależności). */
+/**
+ * Rejestr z przedmiotem produkcyjnym + fixture historii (dowód niezależności). Fixture historii dostaje
+ * `baselinePool` lokalnie: do etapu 5c worker wybiera dla przedmiotu bez flagi pętlę agenta.
+ */
 function lessonRegistry() {
-  return createSubjectRegistry([agentGrammarSubject, historyLikeSubject]);
+  return createSubjectRegistry([englishGrammarSubject, { ...historyLikeSubject, baselinePool: true }]);
 }
 
 function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Services {
@@ -88,16 +92,70 @@ async function setLessonContextKey(versionId: string, key: string, value: unknow
   );
 }
 
-/** „Bez odrzuceń” na ścieżce agenta: żadnego kodu odrzucenia w runie. */
+/** „Bez odrzuceń”: żadnego kodu odrzucenia w runie. */
 async function expectNoRejections(runId: string): Promise<void> {
   expect(await rejectionCodesOf(runId)).toEqual({});
 }
 
 /** Przejściowy błąd dostawcy (ponawialny, kod `provider`). */
-const transient = (): FakeAgentStep => ({ throw: new GenerationProviderError("transient") });
+const transient = (): FakePacketStep => ({ throw: new GenerationProviderError("transient") });
+
+/**
+ * Same błędy przejściowe dla każdej paczki zagadnienia: przebieg bazowy ponawia paczkę raz w próbie,
+ * a licznik wywołań fake'a biegnie przez próby.
+ */
+const alwaysTransient = (): FakePacketStep[] => Array.from({ length: 500 }, transient);
+
+/** Ten sam krok dla każdej kolejnej paczki zagadnienia (licznik wywołań fake'a biegnie przez runy). */
+const everyPacket = (step: FakePacketStep): FakePacketStep[] => Array.from({ length: 100 }, () => step);
+
+/** Typ ćwiczenia rekordu scenariusza (`undefined` dla rekordów bez typu, np. `null`). */
+const typeOf = (exercise: unknown): string | undefined => (exercise as { exerciseType?: unknown } | null)?.exerciseType as string | undefined;
+
+/**
+ * Paczki zagadnienia z ręcznymi rekordami (dawne zgłoszenie podagenta): każda paczka dostaje rekordy swojego
+ * typu (i towarzysza), rekordy bez typu trafiają do paczki typu pierwszego rekordu, pierwsza paczka — przykłady.
+ */
+function scripted(exercises: readonly unknown[], examples?: readonly unknown[]): FakePacketStep[] {
+  const fallback = exercises.map(typeOf).find((type) => type !== undefined);
+  return everyPacket({
+    build: (input) => ({
+      exercises: exercises.filter((exercise) => input.pool.exerciseTypes.includes(typeOf(exercise) ?? fallback ?? "")),
+      ...(input.withExamples && examples !== undefined ? { examples: [...examples] } : {}),
+    }),
+  });
+}
+
+/** Paczki generatora fake'a z kolejnym pasmem numeracji, opcjonalnie przerobione przez `change`. */
+function generated(change: (input: LessonPacketInput, result: ReturnType<typeof fakePacketExercises>) => ReturnType<typeof fakePacketExercises> = (_input, result) => result): FakePacketStep[] {
+  let band = 0;
+  return everyPacket({ build: (input) => change(input, fakePacketExercises(input, (band += 1_000))) });
+}
+
+/**
+ * Kontrola zamkniętych znająca klucze ręcznych rekordów scenariusza (konwencja fake'a ich nie zna):
+ * pozycja ze zdaniem rekordu w widoku dostaje jego odpowiedź, pozostałe — wynik fake'a.
+ */
+class KeyedChecker extends FakeExerciseChecker {
+  constructor(private readonly known: readonly unknown[]) {
+    super();
+  }
+
+  override async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
+    const checked = await super.checkClosed(input, cost, signal);
+    const records = this.known.filter((exercise): exercise is { stem: string; answer: string } => typeof (exercise as { stem?: unknown } | null)?.stem === "string");
+    return {
+      results: input.items.map((item, index) => {
+        const lines = item.view.split("\n");
+        const record = records.find((exercise) => lines.includes(exercise.stem));
+        return record === undefined ? checked.results[index] : { answers: [record.answer] };
+      }),
+    };
+  }
+}
 
 interface Gate {
-  readonly step: FakeAgentStep;
+  readonly step: FakePacketStep;
   readonly reached: Promise<void>;
   open(): void;
 }
@@ -115,17 +173,13 @@ function gate(): Gate {
   return { step: { gate: opened, onReached: reach }, reached, open };
 }
 
-/** Wynik narzędzia `submit` z historii wywołań fake'a agenta. */
-function outcomeOf(agent: FakeLessonPoolAgent, call: number, step: number): LessonAgentToolOutcome {
-  return agent.calls[call]!.outcomes[step] as LessonAgentToolOutcome;
-}
 
 describe("generowanie puli lekcji (integracja)", () => {
   const disposers: Array<() => Promise<void>> = [];
 
-  /** Fake'i z agentem puli (pętla generatora; zagadnienia ze scenariuszem wg `agent.objectives`). */
-  async function agentFakes(agent?: FakeLessonPoolAgentOptions) {
-    const fakes = await fakeGeneration(agent === undefined ? {} : { agent });
+  /** Fake'i z generatorem paczek (zagadnienia ze scenariuszem wg `agent.packets`) i opcjonalną kontrolą zamkniętych. */
+  async function agentFakes(agent?: FakeLessonPoolAgentOptions, checker?: FakeExerciseChecker) {
+    const fakes = await fakeGeneration({ ...(agent === undefined ? {} : { agent }), ...(checker === undefined ? {} : { checker }) });
     disposers.push(fakes.dispose);
     return fakes;
   }
@@ -225,12 +279,11 @@ describe("generowanie puli lekcji (integracja)", () => {
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
 
-    // Profil promptu przedmiotu niesie reguły pól (semantyka hint) do podagenta zagadnienia.
-    const agentInput = fakes.agent.calls[0]!.input;
-    expect(agentInput.pool.promptProfile.fieldRules).toContain("BASE FORM");
-    // Zdania kart gramatyki są źródłami ujawnień (#328): podagent dostaje je jako zdania do unikania.
-    expect(agentInput.pool.avoidSentences).toContain("he plays, she works, it runs.");
-    expect(agentInput.cardSentences).toContain("he plays, she works, it runs.");
+    // Profil promptu przedmiotu niesie reguły pól (semantyka hint) do paczki zagadnienia.
+    const packetInput = fakes.agent.packetCalls[0]!;
+    expect(packetInput.pool.promptProfile.fieldRules).toContain("BASE FORM");
+    // Zdania kart gramatyki są źródłami ujawnień (#328): paczka dostaje je jako zdania do unikania.
+    expect(packetInput.pool.avoidSentences).toContain("he plays, she works, it runs.");
 
     const versionId = run.deckVersionId!;
     const [version] = await query<{ state: string; lesson_context: { examples: Record<string, string[]> } }>(
@@ -272,7 +325,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect(roles).toEqual([{ role: "explanation_audio" }, { role: "feedback_audio" }]);
   });
 
-  it("szkic gramatyki zawiera ćwiczenia wyboru ze słuchu na cel, bez odrzuceń, a podagent dostaje dodatek poza podziałem etapów", async () => {
+  it("szkic gramatyki zawiera ćwiczenia wyboru ze słuchu na cel, bez odrzuceń, a plan paczek zamawia dodatek poza podziałem etapów", async () => {
     const fakes = await agentFakes();
     const services = lessonServices(fakes);
 
@@ -281,7 +334,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
-    expect(fakes.agent.calls[0]!.input.targets.listenAllowance).toBe(2);
+    expect(fakes.agent.packetCalls.filter((call) => call.type === "lesson_listen_choice").map((call) => call.count)).toEqual([2]);
     await expectNoRejections(runId);
     const versionId = run.deckVersionId!;
     const [version] = await query<{ lesson_context: { rejectedCount: number } }>(
@@ -303,10 +356,8 @@ describe("generowanie puli lekcji (integracja)", () => {
 
   it("świeże wyjście modelu: polecenie, podpowiedź i piktogram ćwiczenia słuchowego są usuwane zamiast odrzucać ćwiczenie", async () => {
     const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{
-          submit: {
-            exercises: [{
+      packets: {
+        third_person_s: scripted([{
               exerciseType: "lesson_listen_choice",
               objectiveId: "english_grammar.present_simple.third_person_s",
               instructionPl: "Wybierz słowo.",
@@ -318,9 +369,7 @@ describe("generowanie puli lekcji (integracja)", () => {
               focus: ["plays"],
               options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }],
               correctOption: "a",
-            }],
-          },
-        }],
+            }]),
       },
     });
     const services = lessonServices(fakes);
@@ -348,22 +397,18 @@ describe("generowanie puli lekcji (integracja)", () => {
     // Incydent prod 2026-10-26: wariant redundantny odrzucał CAŁE ćwiczenie, więc
     // przyjęcie go porzuca. Od etapu 3 (#360) skrót i pełna forma to osobne warianty.
     const fakes = await agentFakes({
-      objectives: {
-        negative_forms: [{
-          submit: {
-            exercises: [
-              {
-                exerciseType: "lesson_open_answer",
-                objectiveId,
-                instructionPl: "Przetłumacz zdanie na angielski.",
-                prompt: "Oni nie są w mojej klasie.",
-                answer: "They aren't in my class.",
-                acceptedAnswers: ["They're not in my class.", "They are not in my class.", "they aren't in my class"],
-                focus: ["aren't"],
-              },
-            ],
+      packets: {
+        negative_forms: scripted([
+          {
+            exerciseType: "lesson_open_answer",
+            objectiveId,
+            instructionPl: "Przetłumacz zdanie na angielski.",
+            prompt: "Oni nie są w mojej klasie.",
+            answer: "They aren't in my class.",
+            acceptedAnswers: ["They're not in my class.", "They are not in my class.", "they aren't in my class"],
+            focus: ["aren't"],
           },
-        }],
+        ]),
       },
     });
     const services = lessonServices(fakes);
@@ -396,11 +441,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     const objectiveId = "english_grammar.present_simple.third_person_s";
     // Jedno poprawne ćwiczenie + jedno o złym kształcie pola tablicowego (null w
     // środku). Strażnik kształtu musi odrzucić błędne, nie rzucać TypeError.
-    const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{
-          submit: {
-            exercises: [
+    const exercises = [
               {
                 exerciseType: "lesson_choice",
                 objectiveId,
@@ -428,11 +469,8 @@ describe("generowanie puli lekcji (integracja)", () => {
                 // zły kształt: null w tablicy
                 [malformedField]: [null],
               },
-            ],
-          },
-        }],
-      },
-    });
+            ];
+    const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises) } }, new KeyedChecker(exercises));
     const services = lessonServices(fakes);
 
     const { runId, deckId } = await createLesson(services, command());
@@ -455,9 +493,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
   it("nullExerciseDoesNotRetryWholeRun", async () => {
     const objectiveId = "english_grammar.present_simple.third_person_s";
-    const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{ submit: { exercises: [
+    const exercises = [
           {
             exerciseType: "lesson_choice",
             objectiveId,
@@ -470,9 +506,8 @@ describe("generowanie puli lekcji (integracja)", () => {
             correctOption: "a",
           },
           null,
-        ] } }],
-      },
-    });
+        ];
+    const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises) } }, new KeyedChecker(exercises));
     const services = lessonServices(fakes);
 
     const { runId, deckId } = await createLesson(services, command());
@@ -493,13 +528,8 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("odrzuca wadliwe przykłady, zachowując prawidłowe przykłady i ćwiczenia", async () => {
     const objective = "english_grammar.present_simple.third_person_s";
     const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{
-          build: (input) => ({
-            exercises: fakeObjectiveExercises(input, 0).exercises,
-            examples: ["He plays.", null, " ", "x".repeat(121)],
-          }),
-        }],
+      packets: {
+        third_person_s: generated((input, result) => (input.withExamples ? { exercises: result.exercises, examples: ["He plays.", null, " ", "x".repeat(121)] as string[] } : result)),
       },
     });
     const services = lessonServices(fakes);
@@ -507,9 +537,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     await executeLessonGeneration(services, runId);
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
-    // Narzędzie przyjmuje jedyny poprawny przykład i odsyła modelowi błąd każdej wadliwej linii.
-    expect(outcomeOf(fakes.agent, 0, 0).examples).toMatchObject({ accepted: 1 });
-    expect(outcomeOf(fakes.agent, 0, 0).examples!.errors).toHaveLength(3);
+    // Zostaje jedyny poprawny przykład; wadliwe linie odpadają.
     const [row] = await query<{ lesson_context: { examples: Record<string, string[]> } }>("select lesson_context from learning_app.deck_versions where id=$1", [run.deckVersionId]);
     expect(row!.lesson_context.examples).toEqual({ [objective]: ["He plays."] });
     // Wadliwe przykłady nie są odrzuceniami ćwiczeń.
@@ -524,23 +552,22 @@ describe("generowanie puli lekcji (integracja)", () => {
     expect((await readGeneration(services, runId)).state).toBe("running");
     const reopened = createDatabase(testDatabaseUrl());
     try {
-      const restarted = createServices({ subjects: agentGrammarRegistry(), db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+      const restarted = createServices({ subjects: lessonRegistry(), db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
       const oldEdit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
       await retryGeneration(restarted, runId);
       const edit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
       expect(edit).toBe(oldEdit + 1);
       await runDueGenerationWork(restarted);
       expect((await readGeneration(restarted, runId)).state).toBe("succeeded");
-      expect(fakes.agent.calls.length).toBeGreaterThan(0);
+      expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
     } finally { await reopened.pool.end(); }
   });
 
   it("ponowienie żywego runu odcina spóźniony zapis starego workera", async () => {
     const inFlight = gate();
-    // Stara próba wisi w „wywołaniu modelu” i zgłasza ćwiczenia dopiero po zapisie nowej (po „Ponów”).
-    const fakes = await agentFakes({
-      objectives: { third_person_s: { calls: [[inFlight.step, { generate: true }], [{ generate: true }]] } },
-    });
+    // Pierwsza paczka starej próby wisi w „wywołaniu modelu” i oddaje ćwiczenia dopiero po zapisie nowej (po „Ponów”);
+    // kolejne paczki (także nowej próby) idą generatorem fake'a.
+    const fakes = await agentFakes({ packets: { third_person_s: [inFlight.step] } });
     // Długi odstęp sprawdzania bieżącości: starą próbę odcina wyłącznie straż zapisu.
     fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 60_000 };
     const services = lessonServices(fakes);
@@ -574,7 +601,7 @@ describe("generowanie puli lekcji (integracja)", () => {
       if (!paused && /^select/i.test(sql) && sql.includes("generation_runs")) { paused = true; enter(); await released; }
       return result;
     }) as typeof isolated.pool.query;
-    const staleServices = createServices({ subjects: agentGrammarRegistry(), db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
+    const staleServices = createServices({ subjects: lessonRegistry(), db: isolated.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
     const { runId } = await createLesson(services, command());
     const stale = executeLessonGeneration(staleServices, runId);
     await entered;
@@ -591,12 +618,10 @@ describe("generowanie puli lekcji (integracja)", () => {
 
   it("odpowiedź strict-schema (komplet pól z nullami) przechodzi przez strażnik kształtu do zapisu", async () => {
     // Strict mode zwraca WSZYSTKIE pola schematu; nie dotyczące typu mają null. Adapter AI SDK przekazuje
-    // je do `submit` bez zmian — nulle zdejmują `isWellShapedRawExercise` (pola `nullish`) i `toExerciseDraft`.
+    // je bez zmian — nulle zdejmują `isWellShapedRawExercise` (pola `nullish`) i `toExerciseDraft`.
     const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{
-          submit: {
-            exercises: [
+      packets: {
+        third_person_s: scripted([
               {
                 exerciseType: "lesson_gap",
                 objectiveId: "english_grammar.present_simple.third_person_s",
@@ -614,9 +639,7 @@ describe("generowanie puli lekcji (integracja)", () => {
                 correctOption: null,
                 items: null,
               },
-            ],
-          },
-        }],
+            ]),
       },
     });
     const services = lessonServices(fakes);
@@ -637,13 +660,15 @@ describe("generowanie puli lekcji (integracja)", () => {
   });
 
   it("błąd providera → ponowienie do wyczerpania prób (attempts_exhausted)", async () => {
-    const fakes = await agentFakes({ objectives: { third_person_s: { calls: [[transient()], [transient()], [transient()]] } } });
+    const fakes = await agentFakes({ packets: { third_person_s: alwaysTransient() } });
     const clock = new ManualClock();
     const services = lessonServices(fakes, clock);
 
     const { runId } = await createLesson(services, command());
+    let perAttempt = 0;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       await executeLessonGeneration(services, runId);
+      perAttempt ||= fakes.agent.packetCalls.length;
       const dto = await readGeneration(services, runId);
       expect(dto.state).toBe("queued");
       expect(dto.attempts).toBe(attempt);
@@ -654,26 +679,29 @@ describe("generowanie puli lekcji (integracja)", () => {
     const exhausted = await readGeneration(services, runId);
     expect(exhausted.state).toBe("failed");
     expect(exhausted.errorCode).toBe("attempts_exhausted");
-    expect(fakes.agent.calls).toHaveLength(3);
+    // Każda próba: każda paczka planu i jej jedno ponowienie.
+    expect(perAttempt % 2).toBe(0);
+    expect(fakes.agent.packetCalls).toHaveLength(3 * perAttempt);
   });
 
   it("błąd trwały kończy się po jednym żądaniu, a retry ręczny czyści odroczenie", async () => {
-    const fakes = await agentFakes({
-      objectives: { third_person_s: [{ throw: new GenerationProviderError("configuration", { status: 400 }) }] },
-    });
+    // Pierwsza paczka dostaje błąd trwały; pozostałe paczki planu kończą się zwykle.
+    const fakes = await agentFakes({ packets: { third_person_s: [{ throw: new GenerationProviderError("configuration", { status: 400 }) }] } });
     const clock = new ManualClock();
     const services = lessonServices(fakes, clock);
     const { runId } = await createLesson(services, command());
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).errorCode).toBe("provider_configuration");
-    expect(fakes.agent.calls).toHaveLength(1);
+    // Jedno żądanie na paczkę planu: błąd trwały bez ponowienia.
+    const types = fakes.agent.packetCalls.map((call) => call.type);
+    expect(new Set(types).size).toBe(types.length);
     await retryGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("queued");
     expect((await readGeneration(services, runId)).attempts).toBe(0);
   });
 
   it("odracza transient retry do nextAttemptAt; ręczne retry skraca odroczenie", async () => {
-    const fakes = await agentFakes({ objectives: { third_person_s: { calls: [[transient()]] } } });
+    const fakes = await agentFakes({ packets: { third_person_s: alwaysTransient() } });
     const clock = new ManualClock();
     const services = lessonServices(fakes, clock);
     const { runId } = await createLesson(services, command());
@@ -681,9 +709,11 @@ describe("generowanie puli lekcji (integracja)", () => {
     const [scheduled] = await query<{ next_attempt_at: Date; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
     expect(scheduled!.next_attempt_at.getTime()).toBeGreaterThan(clock.now().getTime());
     expect(scheduled!.attempts).toBe(1);
-    // Ponowienie jeszcze niewymagalne: drugie wykonanie nie woła podagenta.
+    // Ponowienie jeszcze niewymagalne: drugie wykonanie nie woła generatora.
+    const callsAfterFirst = fakes.agent.packetCalls.length;
+    expect(callsAfterFirst).toBeGreaterThan(0);
     await executeLessonGeneration(services, runId);
-    expect(fakes.agent.calls).toHaveLength(1);
+    expect(fakes.agent.packetCalls).toHaveLength(callsAfterFirst);
     await retryGeneration(services, runId);
     const [cleared] = await query<{ next_attempt_at: Date | null; attempts: number }>("select next_attempt_at, attempts from learning_app.generation_runs where id=$1", [runId]);
     expect(cleared).toEqual({ next_attempt_at: null, attempts: 0 });
@@ -712,7 +742,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const dto = await readGeneration(services, runId);
     expect(dto.state).toBe("succeeded");
-    expect(fakes.agent.calls.length).toBeGreaterThan(0);
+    expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
     const [version] = await query<{ state: string }>("select state from learning_app.deck_versions where id = $1", [dto.deckVersionId!]);
     expect(version!.state).toBe("review");
   });
@@ -779,7 +809,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     await editLessonDraft(services, queued.deckVersionId!, { expectedEditNumber: 1, title: "Zmiana rodzica" });
     expect((await readGeneration(services, runId)).state).toBe("superseded");
     await executeLessonGeneration(services, runId);
-    expect(fakes.agent.calls).toHaveLength(0);
+    expect(fakes.agent.packetCalls).toHaveLength(0);
     const [version] = await query<{ edit_number: number; title: string }>("select edit_number, title from learning_app.deck_versions where id = $1", [queued.deckVersionId]);
     expect(version).toMatchObject({ edit_number: 2, title: "Zmiana rodzica" });
   });
@@ -788,9 +818,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     // Wywołanie „w locie”, które kończy wyłącznie przerwanie sygnału.
     let reach!: () => void;
     const reached = new Promise<void>((resolve) => { reach = resolve; });
-    const fakes = await agentFakes({
-      objectives: { third_person_s: [{ gate: new Promise<void>(() => undefined), onReached: reach }] },
-    });
+    const fakes = await agentFakes({ packets: { third_person_s: [{ gate: new Promise<void>(() => undefined), onReached: reach }] } });
     const services = lessonServices(fakes);
     const { runId } = await createLesson(services, command());
     const controller = new AbortController();
@@ -814,7 +842,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     const result = await readGeneration(services, runId);
     expect(result.state).toBe("queued");
     expect(result.attempts).toBe(0);
-    expect(fakes.agent.calls).toHaveLength(0);
+    expect(fakes.agent.packetCalls).toHaveLength(0);
   });
 
   it("przedmiot fixture historii (ttsForAnswers=false) przechodzi cały przepływ bez audio", async () => {
@@ -835,7 +863,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
-    expect(fakes.agent.calls.map((call) => call.objectiveId)).toEqual(["test_history.piast_origins.chrzest_966"]);
+    expect([...new Set(fakes.agent.packetCalls.map((call) => call.objective.id))]).toEqual(["test_history.piast_origins.chrzest_966"]);
     const [version] = await query<{ state: string }>("select state from learning_app.deck_versions where id = $1", [run.deckVersionId!]);
     expect(version!.state).toBe("review");
     const items = await query<{ count: number }>("select count(*)::int as count from learning_app.item_revisions where deck_version_id = $1", [run.deckVersionId!]);
@@ -890,7 +918,7 @@ describe("generowanie puli lekcji (integracja)", () => {
   it("rozdział angielskiego: zestaw z materiału ma stały tytuł przedmiotu, bez nazwy od rodzica, i jest idempotentny", async () => {
     const fakes = await agentFakes();
     // rejestr produkcyjny (gramatyka, szkoła, rozdział)
-    const services = createServices({ subjects: agentGrammarRegistry(), db: testDatabase().db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
+    const services = createServices({ subjects: createProductionSubjectRegistry(), db: testDatabase().db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps });
     const command = {
       subjectId: "english_chapter",
       topicTitlePl: "Unit 1",
@@ -931,14 +959,14 @@ describe("generowanie puli lekcji (integracja)", () => {
     await expect(createLessonFromMaterial(services, { ...command, subjectId: "school", clientRequestId: randomUUID() })).rejects.toMatchObject({ code: "validation" });
     await expect(createLessonFromMaterial(services, { ...command, subjectId: "english_grammar", clientRequestId: randomUUID() })).rejects.toMatchObject({ code: "validation" });
   });
-  it("gramatyka: fake agenta generuje wyjaśnienia, a rewizje i DTO szkicu je niosą", async () => {
+  it("gramatyka: fake paczek generuje wyjaśnienia, a rewizje i DTO szkicu je niosą", async () => {
     const fakes = await agentFakes();
     const services = lessonServices(fakes);
     const { runId, deckId } = await createLesson(services, command());
     await executeLessonGeneration(services, runId);
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
-    expect(fakes.agent.calls[0]!.input.pool.exerciseExplanations).toBe(true);
+    expect(fakes.agent.packetCalls.every((call) => call.pool.exerciseExplanations === true)).toBe(true);
 
     const rows = await query<{ payload: { explanationPl?: string } }>(
       "select payload from learning_app.item_revisions where deck_version_id = $1 and payload->>'exerciseType' is not null",
@@ -953,25 +981,18 @@ describe("generowanie puli lekcji (integracja)", () => {
   });
 
   it("gramatyka: wyjaśnienie łamiące reguły jest po cichu usuwane, ćwiczenie zostaje", async () => {
-    // Złe wyjaśnienie dostaje ćwiczenie ze środka zgłoszenia; test szuka go potem po treści,
-    // nie po pozycji, więc kolejność rewizji szkicu nie ma znaczenia.
+    // Złe wyjaśnienie dostaje pierwsze ćwiczenie pierwszej paczki (w jej udziale, więc trafia do szkicu); test szuka
+    // go potem po treści, nie po pozycji, więc kolejność rewizji szkicu nie ma znaczenia.
     const identity = (exercise: { exerciseType: string; answer: string; stem?: string; prompt?: string }) =>
       JSON.stringify([exercise.exerciseType, exercise.stem ?? null, exercise.prompt ?? null, exercise.answer]);
     let broken: string | undefined;
     const fakes = await agentFakes({
-      objectives: {
-        third_person_s: [{
-          build: (input) => {
-            const generated = fakeObjectiveExercises(input, 0);
-            const target = Math.floor(generated.exercises.length / 2);
-            const exercises = generated.exercises.map((exercise, index) => {
-              if (index !== target) return exercise;
-              broken = identity(exercise as Parameters<typeof identity>[0]);
-              return { ...exercise as Record<string, unknown>, explanationPl: "Pierwsze zdanie. Drugie zdanie." };
-            });
-            return { exercises, examples: generated.examples };
-          },
-        }],
+      packets: {
+        third_person_s: generated((_input, result) => {
+          if (broken !== undefined || result.exercises.length === 0) return result;
+          broken = identity(result.exercises[0] as Parameters<typeof identity>[0]);
+          return { ...result, exercises: [{ ...result.exercises[0]!, explanationPl: "Pierwsze zdanie. Drugie zdanie." }, ...result.exercises.slice(1)] };
+        }),
       },
     });
     const services = lessonServices(fakes);
@@ -992,19 +1013,12 @@ describe("generowanie puli lekcji (integracja)", () => {
   });
 
   it("szkoła: wyjaśnienie z modelu jest odrzucane po cichu (przedmiot bez flagi)", async () => {
-    // Zgłoszenie każdego zagadnienia szkoły niesie wyjaśnienia, mimo że przedmiot ich nie zamawia.
-    const withExplanation = (): FakeAgentStep => ({
-      build: (input) => {
-        const generated = fakeObjectiveExercises(input, 0);
-        return {
-          exercises: generated.exercises.map((exercise) => ({
-            ...exercise as Record<string, unknown>, explanationPl: "Roślina robi cukry ze światła.",
-          })),
-          examples: generated.examples,
-        };
-      },
-    });
-    const fakes = await agentFakes({ objectives: { fotosynteza: [withExplanation()] } });
+    // Każda paczka zagadnienia szkoły niesie wyjaśnienia, mimo że przedmiot ich nie zamawia.
+    const withExplanation = generated((_input, result) => ({
+      ...result,
+      exercises: result.exercises.map((exercise) => ({ ...exercise, explanationPl: "Roślina robi cukry ze światła." })),
+    }));
+    const fakes = await agentFakes({ packets: { fotosynteza: withExplanation } });
     const { db } = testDatabase();
     const services = createServices({
       db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps,
@@ -1020,8 +1034,8 @@ describe("generowanie puli lekcji (integracja)", () => {
     });
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
-    expect(fakes.agent.calls.map((call) => call.objectiveId)).toEqual([`school.d${deckId}.fotosynteza`]);
-    expect(fakes.agent.calls[0]!.input.pool.exerciseExplanations).toBe(false);
+    expect([...new Set(fakes.agent.packetCalls.map((call) => call.objective.id))]).toEqual([`school.d${deckId}.fotosynteza`]);
+    expect(fakes.agent.packetCalls.every((call) => call.pool.exerciseExplanations === false)).toBe(true);
     const exercises = (await readLessonDeck(services, deckId)).draft!.exercises;
     expect(exercises.length).toBeGreaterThan(0);
     for (const exercise of exercises) expect(exercise.explanationPl).toBeUndefined();
@@ -1055,7 +1069,7 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     const run = await readGeneration(services, runId);
     expect(run.state).toBe("succeeded");
-    // Etap zagadnień szkoły zostaje na LLM; ćwiczenia generuje podagent każdego zagadnienia.
+    // Etap zagadnień szkoły zostaje na LLM; ćwiczenia generują paczki każdego zagadnienia.
     expect(fakes.llm.objectiveRequests).toHaveLength(1);
 
     const versionId = run.deckVersionId!;
@@ -1069,7 +1083,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     for (const id of version!.lesson_context.objectiveIds) {
       expect(id.startsWith(`school.d${deckId}.`)).toBe(true);
     }
-    expect(fakes.agent.calls.map((call) => call.objectiveId).sort()).toEqual([...version!.lesson_context.objectiveIds].sort());
+    expect([...new Set(fakes.agent.packetCalls.map((call) => call.objective.id))].sort()).toEqual([...version!.lesson_context.objectiveIds].sort());
 
     const revisions = await query<{ payload_version: number; payload: Record<string, unknown> }>(
       "select payload_version, payload from learning_app.item_revisions where deck_version_id = $1 order by position",
@@ -1086,7 +1100,12 @@ describe("generowanie puli lekcji (integracja)", () => {
   });
 
   it("zestaw szkolny: ton lektora z generatora trafia do payloadu rewizji, kontekstu i DTO szkicu", async () => {
-    const fakes = await agentFakes();
+    // Generator paczki fake'a nie zwraca tonu: pierwsze ćwiczenie pierwszej paczki zagadnienia dostaje `curious`, jak od modelu.
+    const tonedPackets = () => generated((input, result) =>
+      input.withExamples && input.pool.voiceTones === true && result.exercises.length > 0
+        ? { ...result, exercises: [{ ...result.exercises[0]!, voiceTone: "curious" }, ...result.exercises.slice(1)] }
+        : result);
+    const fakes = await agentFakes({ packets: { fotosynteza: tonedPackets(), chrzest_polski: tonedPackets() } });
     const { db } = testDatabase();
     const services = createServices({
       db,
@@ -1110,7 +1129,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     });
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
-    expect(fakes.agent.calls.every((call) => call.input.pool.voiceTones === true)).toBe(true);
+    expect(fakes.agent.packetCalls.every((call) => call.pool.voiceTones === true)).toBe(true);
 
     const deck = await readLessonDeck(services, deckId);
     const toned = deck.draft!.exercises.filter((ex) => ex.voiceTone !== undefined);
@@ -1132,47 +1151,33 @@ describe("generowanie puli lekcji (integracja)", () => {
 
   it("rachunki: liczy parametry, odrzuca pojedyncze wadliwe rekordy i nie ufa parentAdded modelu", async () => {
     const material = "Skala mapy pozwala przeliczyć odległość na mapie na odległość w terenie.";
-    // Rachunek z modelu niesie same parametry; adapter AI SDK materializuje go przed `submit` — tu robi to scenariusz.
-    const rawCalculation = (input: LessonObjectiveAgentInput, overrides: Record<string, unknown> = {}) => ({
+    // Rachunek z modelu niesie same parametry; materializację przed walidacją robi tu scenariusz.
+    const rawCalculation = (input: LessonPacketInput, overrides: Record<string, unknown> = {}) => ({
       exerciseType: "lesson_calculation", objectiveId: input.objective.id,
       calculation: { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" },
       sourceRefs: [{ quote: material, parentAdded: true }],
       ...overrides,
     });
     const calculation = { kind: "scale_distance", params: { scaleDenominator: 25000, mapDistanceCm: 3 }, unit: "m", templateFamilyId: "map-scale" };
+    // Paczka rachunków: poprawne ćwiczenia generatora (pusto) + poprawny rachunek, nieznana metoda, cytat spoza materiału,
+    // ten sam rachunek z inną rodziną i drugi poprawny rachunek. Przebieg bazowy dokłada przy „+N” paczki według braków
+    // etapów (bez paczki rachunków), więc duplikat sprawdza walidacja puli tego samego runu.
     const fakes = await agentFakes({
-      objectives: {
-        skala_mapy: {
-          calls: [
-            // Pula: poprawne ćwiczenia generatora + jeden poprawny rachunek, nieznana metoda i cytat spoza materiału.
-            [{
-              build: (input) => {
-                const generated = fakeObjectiveExercises(input, 0);
-                return {
-                  exercises: [
-                    ...generated.exercises,
-                    rawCalculation(input),
-                    rawCalculation(input, { calculation: { ...calculation, kind: "unknown" } }),
-                    rawCalculation(input, {
-                      calculation: { ...calculation, params: { scaleDenominator: 25000, mapDistanceCm: 5 } },
-                      sourceRefs: [{ quote: "Ten cytat nie występuje w materiale rodzica.", parentAdded: true }],
-                    }),
-                  ],
-                  examples: generated.examples,
-                };
-              },
-            }],
-            // „+2”: ta sama metoda i parametry z inną rodziną nadal są duplikatem istniejącej puli.
-            [{
-              build: (input) => ({
-                exercises: [
-                  rawCalculation(input, { calculation: { ...calculation, templateFamilyId: "renamed-family" } }),
-                  rawCalculation(input, { calculation: { ...calculation, params: { scaleDenominator: 25000, mapDistanceCm: 4 } } }),
-                ],
-              }),
-            }],
+      packets: {
+        skala_mapy: generated((input, result) => (input.type !== "lesson_calculation" ? result : {
+          ...result,
+          exercises: [
+            ...result.exercises,
+            rawCalculation(input),
+            rawCalculation(input, { calculation: { ...calculation, kind: "unknown" } }),
+            rawCalculation(input, {
+              calculation: { ...calculation, params: { scaleDenominator: 25000, mapDistanceCm: 5 } },
+              sourceRefs: [{ quote: "Ten cytat nie występuje w materiale rodzica.", parentAdded: true }],
+            }),
+            rawCalculation(input, { calculation: { ...calculation, templateFamilyId: "renamed-family" } }),
+            rawCalculation(input, { calculation: { ...calculation, params: { scaleDenominator: 25000, mapDistanceCm: 4 } } }),
           ],
-        },
+        })),
       },
     });
     const services = createServices({
@@ -1186,31 +1191,22 @@ describe("generowanie puli lekcji (integracja)", () => {
     const objectiveId = `school.d${deckId}.skala_mapy`;
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
-    expect(fakes.agent.calls[0]!.objectiveId).toBe(objectiveId);
+    expect(fakes.agent.packetCalls.every((call) => call.objective.id === objectiveId)).toBe(true);
     const deck = await readLessonDeck(services, deckId);
     const calculations = deck.draft!.exercises.filter((exercise) => exercise.exerciseType === "lesson_calculation");
-    expect(calculations).toHaveLength(1);
+    expect(calculations.map((exercise) => exercise.answer).sort()).toEqual(["1000 m", "750 m"]);
+    const first = calculations.find((exercise) => exercise.answer === "750 m")!;
     const { templateFamilyId, ...spec } = calculation;
-    expect(calculations[0]).toMatchObject({ answer: "750 m", calculation: spec, sourceRefs: [{ quote: material }] });
+    expect(first).toMatchObject({ calculation: spec, sourceRefs: [{ quote: material }] });
     // Rodzina szablonu dostaje zakres próby runu (jak `familyId` pytań otwartych).
-    expect(calculations[0]!.calculation!.templateFamilyId?.startsWith(`${templateFamilyId}-`)).toBe(true);
-    expect(calculations[0]!.sourceRefs![0]).not.toHaveProperty("parentAdded");
-    // Dwa wadliwe rekordy odrzucone pojedynczo: nieznana metoda (zły kształt) i cytat spoza materiału (reguła puli szkoły).
-    expect(await rejectionCodesOf(runId)).toEqual({ shape_malformed: 1, lesson_extra: 1 });
-    expect(deck.draft!.rejectedReasons).toEqual({ [labels.shape_malformed!]: 1, [labels.lesson_extra!]: 1 });
+    expect(first.calculation!.templateFamilyId?.startsWith(`${templateFamilyId}-`)).toBe(true);
+    expect(first.sourceRefs![0]).not.toHaveProperty("parentAdded");
+    // Wadliwe rekordy odrzucone pojedynczo: nieznana metoda (zły kształt), cytat spoza materiału (reguła puli szkoły)
+    // i rachunek z przemianowaną rodziną — duplikat puli z dokładnym kodem.
+    expect(await rejectionCodesOf(runId)).toEqual({ shape_malformed: 1, lesson_extra: 1, lesson_pool: 1 });
+    expect(deck.draft!.rejectedReasons).toEqual({ [labels.shape_malformed!]: 1, [labels.lesson_extra!]: 1, [labels.lesson_pool!]: 1 });
     expect(deck.draft!.coverage).toEqual([]);
 
-    const topUp = await regenerateObjective(services, {
-      deckId, objectiveId, count: 2, expectedEditNumber: deck.draft!.editNumber, clientRequestId: randomUUID(),
-    });
-    await executeLessonGeneration(services, topUp.runId);
-    expect((await readGeneration(services, topUp.runId)).state).toBe("succeeded");
-    const after = await readLessonDeck(services, deckId);
-    const afterCalculations = after.draft!.exercises.filter((exercise) => exercise.exerciseType === "lesson_calculation");
-    expect(afterCalculations.map((exercise) => exercise.answer).sort()).toEqual(["1000 m", "750 m"]);
-    expect(after.draft!.exercises.length).toBe(deck.draft!.exercises.length + 1);
-    // Rachunek z przemianowaną rodziną to duplikat istniejącej puli — jedno odrzucenie z dokładnym kodem.
-    expect(await rejectionCodesOf(topUp.runId)).toEqual({ lesson_pool: 1 });
   });
 
   it("zestaw szkolny: publikacja i sesja dziecka na typach zamkniętych", async () => {
@@ -1411,29 +1407,23 @@ describe("generowanie puli lekcji (integracja)", () => {
       return { runId, draft: (await readLessonDeck(services, deckId)).draft! };
     }
 
-    it("gramatyka: tłumaczenie równe przykładowi karty nie trafia do szkicu; przykład zostaje, powód w szkicu", async () => {
+    // Przebieg bazowy rozlicza przykłady kart po ćwiczeniach wszystkich zagadnień: linia ujawniająca odpowiedź
+    // odpada, ćwiczenie zostaje (dawniej agent odrzucał ćwiczenie jako ofiarę przykładu).
+    it("gramatyka: przykład karty równy odpowiedzi tłumaczenia odpada po cichu, tłumaczenie zostaje, szkic bez ujawnień", async () => {
       const objectiveId = "english_grammar.present_simple.third_person_s";
       const translation = (prompt: string, answer: string, focus: string) => ({
         exerciseType: "lesson_open_answer", objectiveId, instructionPl: "Przetłumacz zdanie na angielski.", prompt,
         answer, acceptedAnswers: [], focus: [focus],
       });
-      const fakes = await agentFakes({
-        objectives: {
-          third_person_s: [{
-            submit: {
-              exercises: [
-                {
-                  exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz.", stem: "She ___ football.", answer: "plays",
-                  acceptedAnswers: [], focus: [], options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a",
-                },
-                translation("On gra w piłkę.", "He plays football.", "plays"),
-                translation("Ona ogląda telewizję.", "She watches TV.", "watches"),
-              ],
-              examples: ["He plays football."],
-            },
-          }],
+      const exercises = [
+        {
+          exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz.", stem: "She ___ football.", answer: "plays",
+          acceptedAnswers: [], focus: [], options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }], correctOption: "a",
         },
-      });
+        translation("On gra w piłkę.", "He plays football.", "plays"),
+        translation("Ona ogląda telewizję.", "She watches TV.", "watches"),
+      ];
+      const fakes = await agentFakes({ packets: { third_person_s: scripted(exercises, ["He plays football."]) } }, new KeyedChecker(exercises));
       const services = lessonServices(fakes);
 
       const { runId, deckId } = await createLesson(services, command());
@@ -1441,27 +1431,26 @@ describe("generowanie puli lekcji (integracja)", () => {
       expect((await readGeneration(services, runId)).state).toBe("succeeded");
 
       const draft = (await readLessonDeck(services, deckId)).draft!;
-      expect(draft.exercises.map((exercise) => exercise.answer).sort()).toEqual(["She watches TV.", "plays"]);
-      expect(draft.examples[objectiveId]).toEqual(["He plays football."]);
-      expect(await rejectionCodesOf(runId)).toEqual({ leak_victim: 1 });
-      expect(draft.rejectedReasons).toEqual({ [labels.leak_victim!]: 1 });
+      expect(draft.exercises.map((exercise) => exercise.answer).sort()).toEqual(["He plays football.", "She watches TV.", "plays"]);
+      expect(draft.examples[objectiveId] ?? []).not.toContain("He plays football.");
+      expect(await rejectionCodesOf(runId)).toEqual({});
+      expect(draft.exposureLeaks).toBeUndefined();
     });
 
     // Rodzina pytań (ta sama odpowiedź wzorcowa) nie ujawnia rozwiązania samej sobie: przyjęcie agenta
     // stosuje tę samą regułę co ostrzeżenia szkicu (`familyRepeatsAllowed`), a pokrycie liczy rodzinę raz.
     it("szkoła: rodzina trzech pytań otwartych z jedną odpowiedzią zostaje w szkicu, a pokrycie liczy jedno", async () => {
-      let independentTarget: number | undefined;
+      const FAMILY = "fotosynteza-definicja";
       const fakes = await agentFakes({
-        objectives: {
-          fotosynteza: [{
-            build: (input) => {
-              independentTarget = input.pool.stageCounts.independent;
-              const generated = fakeObjectiveExercises(input, 0);
-              const base = generated.exercises.find(isOpen) as Record<string, unknown>;
-              const family = [1, 2, 3].map((n) => ({ ...base, familyId: "fotosynteza-definicja", prompt: `Pytanie rodziny numer ${n}: czym jest fotosynteza?` }));
-              return { exercises: [...generated.exercises.filter((exercise) => !isOpen(exercise)), ...family], examples: generated.examples };
-            },
-          }],
+        packets: {
+          // Paczka pytań otwartych: rodzina trzech pytań w miejsce pytań generatora, keywords przy tej rodzinie.
+          fotosynteza: generated((input, result) => {
+            if (input.type !== "lesson_open_answer") return result;
+            const base = result.exercises.find(isOpen)!;
+            const family = [1, 2, 3].map((n) => ({ ...base, familyId: FAMILY, prompt: `Pytanie rodziny numer ${n}: czym jest fotosynteza?` }));
+            const keywords = result.exercises.filter((exercise) => exercise.exerciseType === "lesson_keywords").map((exercise) => ({ ...exercise, familyId: FAMILY }));
+            return { ...result, exercises: [...family, ...keywords] };
+          }),
         },
       });
       const services = schoolServices(fakes);
@@ -1469,8 +1458,6 @@ describe("generowanie puli lekcji (integracja)", () => {
       const { runId, draft } = await generateSchool(services);
       const familyObjectiveId = draft.objectiveIds[0]!;
       expect(familyObjectiveId.endsWith(".fotosynteza")).toBe(true);
-      // Rodzina mieści się w etapie samodzielnym zagadnienia.
-      expect(independentTarget).toBeGreaterThanOrEqual(3);
       const family = draft.exercises.filter((exercise) => exercise.objectiveId === familyObjectiveId && exercise.exerciseType === "lesson_open_answer");
       expect(family).toHaveLength(3);
       expect(new Set(family.map((exercise) => exercise.answer)).size).toBe(1);
@@ -1482,39 +1469,43 @@ describe("generowanie puli lekcji (integracja)", () => {
 
     it("szkoła: reguła twarda usuwa całą rodzinę pytań otwartych → jej słowa kluczowe poza szkicem, publikacja bez błędu rodziny", async () => {
       const FAMILY = "fotosynteza-rodzina";
+      /**
+       * Odpowiedź rodziny równa odpowiedzi wcześniejszego wyboru (etap prowadzony): twarde źródło ujawnienia. Przykład
+       * karty nie usuwa ćwiczeń w przebiegu bazowym (rozliczany po ćwiczeniach, odpada sam przykład).
+       */
+      const FAMILY_ANSWER = "fotosyntezarodzina";
       const fakes = await agentFakes({
-        objectives: {
-          fotosynteza: [
-            {
-              build: (input) => {
-                const generated = fakeObjectiveExercises(input, 0).exercises;
-                const base = generated.find(isOpen) as Record<string, unknown>;
-                const family = [1, 2].map((n) => ({ ...base, familyId: FAMILY, prompt: `Pytanie rodziny numer ${n}: czym jest fotosynteza?` }));
-                const keywords = {
-                  exerciseType: "lesson_keywords", objectiveId: input.objective.id, familyId: FAMILY,
-                  instructionPl: "Wybierz słowa kluczowe.",
-                  keywordOptions: [{ id: "k1", text: "światła" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
-                  keyOptionIds: ["k1", "k2"], answer: "światła, cukry", acceptedAnswers: [], focus: [], sourceRefs: [{ quote: "wytwarza cukry" }],
-                };
-                // Przykład karty równy odpowiedzi rodziny: reguła twarda usuwa oba pytania rodziny.
-                return {
-                  exercises: [...generated.filter((exercise) => exercise !== base), ...family, keywords],
-                  examples: [base.answer as string],
-                };
-              },
-            },
-            // Kolejny krok domyka etap samodzielny innymi pytaniami (dawna runda pod brakujący etap).
-            { build: (input) => ({ exercises: fakeObjectiveExercises(input, 100, { independent: input.pool.stageCounts.independent }).exercises }) },
-          ],
+        packets: {
+          fotosynteza: generated((input, result) => {
+            if (input.type === "lesson_choice") {
+              // Konwencja fake'a: dystraktor `<odpowiedź>x`, więc kontrola zamkniętych wskazuje odpowiedź.
+              const [first, ...rest] = result.exercises;
+              const source = { ...first!, answer: FAMILY_ANSWER, options: [{ id: "a", text: FAMILY_ANSWER }, { id: "b", text: `${FAMILY_ANSWER}x` }], correctOption: "a" };
+              return { ...result, exercises: [source, ...rest] };
+            }
+            if (input.type !== "lesson_open_answer") return result;
+            const opens = result.exercises.filter(isOpen);
+            const family = [1, 2].map((n) => ({
+              ...opens[0]!, familyId: FAMILY, prompt: `Pytanie rodziny numer ${n}: czym jest fotosynteza?`, answer: FAMILY_ANSWER, focus: [FAMILY_ANSWER],
+            }));
+            // Keywords generatora przy tej rodzinie (konwencja kontroli fake'a przechodzi).
+            const keywords = result.exercises.filter((exercise) => exercise.exerciseType === "lesson_keywords").map((exercise) => ({ ...exercise, familyId: FAMILY }));
+            // Pozostałe pytania domykają etap samodzielny; o jedno mniej niż limit etapu (zamówienie bez zapasu), więc
+            // drugi członek rodziny (przyjmowany po pierwszych członkach rodzin) też dochodzi do reguły ujawnień.
+            const others = opens.slice(1, 1 + input.count - PACKET_RESERVE - 1);
+            return { ...result, exercises: [...family, ...others, ...keywords] };
+          }),
         },
       });
       const services = schoolServices(fakes);
 
       const { runId, draft } = await generateSchool(services);
-      expect(draft.exercises.some((exercise) => exercise.exerciseType === "lesson_keywords")).toBe(false);
+      const photosynthesis = draft.exercises.filter((exercise) => exercise.objectiveId.endsWith(".fotosynteza"));
+      expect(photosynthesis.length).toBeGreaterThan(0);
+      expect(photosynthesis.some((exercise) => exercise.exerciseType === "lesson_keywords")).toBe(false);
       expect(draft.exercises.some((exercise) => exercise.familyId?.endsWith(FAMILY))).toBe(false);
       const codes = await rejectionCodesOf(runId);
-      // Oba pytania rodziny: ofiary przykładu karty; słowa kluczowe bez rodziny: reguła puli szkoły.
+      // Oba pytania rodziny: ofiary wcześniejszego wyboru; słowa kluczowe bez rodziny: reguła puli szkoły.
       expect(codes.leak_victim).toBe(2);
       expect(codes.lesson_extra).toBe(1);
       expect(draft.rejectedReasons?.[labels.leak_victim!]).toBe(2);

@@ -8,7 +8,6 @@ import {
   createServices,
   createSubjectRegistry,
   editLessonDraft,
-  agentGrammarSubject,
   englishGrammarSubject,
   executeLessonGeneration,
   publishLessonDraft,
@@ -23,9 +22,8 @@ import {
 import type { LessonCommand, LessonExerciseInput } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
-import type { FakeObjectiveScript } from "../../packages/server/src/providers/fake-lesson-agent";
-import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
-import type { LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
+import type { FakePacketStep } from "../../packages/server/src/providers/fake-lesson-agent";
+import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
 import { solvedSentencesOf } from "../../packages/server/src/domain/lessons/story";
@@ -34,7 +32,7 @@ import { latestLessonStoryRun } from "../../packages/server/src/modules/material
 
 const { pool, db } = testDatabase();
 const OBJECTIVE = "english_grammar.present_simple.third_person_s";
-/** Slug zagadnienia — klucz scenariusza fake'a agenta. */
+/** Slug zagadnienia — klucz scenariusza paczek fake'a. */
 const OBJECTIVE_SLUG = "third_person_s";
 
 async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
@@ -48,7 +46,7 @@ function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Servi
     clock,
     media: fakes.settings,
     generation: fakes.deps,
-    subjects: createSubjectRegistry([agentGrammarSubject, schoolSubject]),
+    subjects: createSubjectRegistry([englishGrammarSubject, schoolSubject]),
   });
 }
 
@@ -111,16 +109,32 @@ const PARENT_STORY = {
   ],
 };
 
-/** Krok fake'a agenta: zgłoszenie generatora fake'a z dodatkowymi ćwiczeniami (np. kolizją z historyjką). */
-function generatedWith(extra: LessonExerciseInput[]): { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } } {
-  return {
-    build: (input) => {
-      const generated = fakeObjectiveExercises(input, 9_000);
-      // Dodatkowe na początku: agent przyjmuje je przed limitem zagadnienia, a kolizję z historyjką odrzuca zapis.
-      return { exercises: [...extra, ...generated.exercises], ...(generated.examples === undefined ? {} : { examples: generated.examples }) };
-    },
-  };
+/**
+ * Scenariusz każdej kolejnej paczki zagadnienia (licznik wywołań fake'a biegnie przez runy, więc krok się powtarza).
+ */
+function everyPacket(step: FakePacketStep): FakePacketStep[] {
+  return Array.from({ length: 100 }, () => step);
 }
+
+/** Paczki generatora fake'a z dodatkowymi ćwiczeniami swojego typu (np. kolizją z historyjką). */
+function generatedWith(extra: LessonExerciseInput[]): FakePacketStep[] {
+  let band = 9_000;
+  return everyPacket({
+    build: (input) => {
+      const generated = fakePacketExercises(input, (band += 1_000));
+      // Dodatkowe na początku paczki: przyjmowane przed jej zamówieniem, a kolizję z historyjką odrzuca zapis.
+      const own = extra.filter((exercise) => exercise.exerciseType === input.type);
+      return { exercises: [...own, ...generated.exercises], ...(generated.examples === undefined ? {} : { examples: generated.examples }) };
+    },
+  });
+}
+
+/** Paczki zwracające wyłącznie podane ćwiczenia swojego typu. */
+function onlyExercises(exercises: LessonExerciseInput[]): FakePacketStep[] {
+  return everyPacket({ build: (input) => ({ exercises: exercises.filter((exercise) => exercise.exerciseType === input.type) }) });
+}
+
+const configurationError = (): FakePacketStep[] => everyPacket({ throw: new GenerationProviderError("configuration", { status: 400 }) });
 
 /** DTO ćwiczenia → wejście patcha (schemat wejścia jest `strict`). */
 function stripToInput(ex: Record<string, unknown>): LessonExerciseInput {
@@ -184,9 +198,9 @@ describe("run historyjki lekcji (integracja)", () => {
   });
 
   async function generatedGrammarLesson(clock = new ManualClock()) {
-    // Scenariusze fake'a agenta czytane przy każdym wywołaniu (test może dopisać scenariusz dogenerowania).
-    const scripts: Record<string, FakeObjectiveScript> = {};
-    const fakes = await fakeGeneration({ agent: { generate: {}, objectives: scripts } });
+    // Scenariusze paczek czytane przy każdym wywołaniu (test może dopisać scenariusz dogenerowania).
+    const scripts: Record<string, FakePacketStep[]> = {};
+    const fakes = await fakeGeneration({ agent: { generate: {}, packets: scripts } });
     disposers.push(fakes.dispose);
     const services = lessonServices(fakes, clock);
     const { runId, deckId } = await createLesson(services, command());
@@ -580,11 +594,9 @@ describe("run historyjki lekcji (integracja)", () => {
   });
   /** Pełny run lekcji kończy się porażką (błąd konfiguracji providera): wersja bez ćwiczeń. */
   async function failedFullLesson() {
-    // Scenariusze fake'a agenta czytane przy każdym wywołaniu: po usunięciu wpisu zagadnienie wraca do generatora.
-    const scripts: Record<string, FakeObjectiveScript> = {
-      [OBJECTIVE_SLUG]: [{ throw: new GenerationProviderError("configuration", { status: 400 }) }],
-    };
-    const fakes = await fakeGeneration({ agent: { generate: {}, objectives: scripts } });
+    // Scenariusze paczek czytane przy każdym wywołaniu: po usunięciu wpisu zagadnienie wraca do generatora.
+    const scripts: Record<string, FakePacketStep[]> = { [OBJECTIVE_SLUG]: configurationError() };
+    const fakes = await fakeGeneration({ agent: { generate: {}, packets: scripts } });
     disposers.push(fakes.dispose);
     const services = lessonServices(fakes);
     const { runId, deckId } = await createLesson(services, command());
@@ -625,7 +637,7 @@ describe("run historyjki lekcji (integracja)", () => {
 
   it("retrying a failed top-up run keeps the active story run", async () => {
     const { scripts, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
-    scripts[OBJECTIVE_SLUG] = [{ throw: new GenerationProviderError("configuration", { status: 400 }) }];
+    scripts[OBJECTIVE_SLUG] = configurationError();
     const regen = await regenerateObjective(services, {
       deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
     });
@@ -761,7 +773,7 @@ describe("run historyjki lekcji (integracja)", () => {
       `update learning_app.deck_versions set lesson_context = lesson_context || jsonb_build_object('story', $2::jsonb) where id = $1`,
       [versionId, JSON.stringify(PARENT_STORY)],
     );
-    scripts[OBJECTIVE_SLUG] = [generatedWith([{ ...SHE_PLAYS_GAP, stem: "Tom ___ a small dog.", answer: "has", focus: ["has"] }])];
+    scripts[OBJECTIVE_SLUG] = generatedWith([{ ...SHE_PLAYS_GAP, stem: "Tom ___ a small dog.", answer: "has", focus: ["has"] }]);
 
     await retryGeneration(services, lessonRunId);
     await executeLessonGeneration(services, lessonRunId);
@@ -1051,7 +1063,7 @@ describe("run historyjki lekcji (integracja)", () => {
     expect(story.sentences[0]).toBe("Sam has a red bike.");
     const before = (await readLessonDeck(services, deckId)).draft!;
     // Zgłoszenie dogenerowania: zwykłe ćwiczenia fake + luka, której rozwiązanie to zdanie historyjki.
-    scripts[OBJECTIVE_SLUG] = [generatedWith([{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }])];
+    scripts[OBJECTIVE_SLUG] = generatedWith([{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }]);
 
     const regen = await regenerateObjective(services, {
       deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
@@ -1070,7 +1082,7 @@ describe("run historyjki lekcji (integracja)", () => {
     const { scripts, services, deckId, versionId, storyRunId } = await generatedGrammarLesson();
     await executeLessonGeneration(services, storyRunId!);
     const before = (await readLessonDeck(services, deckId)).draft!;
-    scripts[OBJECTIVE_SLUG] = [{ submit: { exercises: [{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }] } }];
+    scripts[OBJECTIVE_SLUG] = onlyExercises([{ ...SHE_PLAYS_GAP, stem: "Sam ___ a red bike.", answer: "has", focus: ["has"] }]);
 
     const regen = await regenerateObjective(services, {
       deckId, objectiveId: OBJECTIVE, count: 4, expectedEditNumber: 2, clientRequestId: randomUUID(),
