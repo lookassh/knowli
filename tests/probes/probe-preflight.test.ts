@@ -28,7 +28,7 @@ describe("probePreflight", () => {
     for (const subject of ["chapter", "grammar"] as const) {
       expect(() => probePreflight(probeEnv(), { subject })).toThrow(/Brak klucza OpenRouter/u);
     }
-    // Klucz LLM na innym hoście nie jest kluczem agenta.
+    // Klucz LLM na innym hoście nie jest kluczem generowania lekcji.
     expect(() => probePreflight(probeEnv({ UMIEM_LLM_BASE_URL: "https://api.openai.com/v1", UMIEM_LLM_API_KEY: "sk-proj-x" }), { subject: "chapter" }))
       .toThrow(/Brak klucza OpenRouter/u);
   });
@@ -38,7 +38,7 @@ describe("probePreflight", () => {
     expect(() => probePreflight(probeEnv({ UMIEM_LESSON_AGENT_API_KEY: "sk-proj-abc" }), { subject: "chapter" })).toThrow(/UMIEM_LESSON_AGENT_API_KEY/u);
   });
 
-  it("agent i checker idą na stały OpenRouter; szkoła dokłada host UMIEM_LLM i gradera", () => {
+  it("paczki i kontrola idą na stały OpenRouter; szkoła i rozdział dokładają host UMIEM_LLM", () => {
     expect(probePreflight(probeEnv({ OPENROUTER_API_KEY: KEY }), { subject: "chapter" }).hosts).toEqual(["openrouter.ai"]);
     expect(probePreflight(probeEnv({ OPENROUTER_API_KEY: KEY }), { subject: "school" }).hosts).toEqual(["openrouter.ai"]);
   });
@@ -47,21 +47,20 @@ describe("probePreflight", () => {
     const llmElsewhere = probeEnv({ OPENROUTER_API_KEY: KEY, UMIEM_LLM_BASE_URL: "https://llm.example.com/v1", UMIEM_LLM_API_KEY: "local-key" });
     expect(() => probePreflight(llmElsewhere, { subject: "school" })).toThrow(/UMIEM_LLM_BASE_URL: host llm\.example\.com nie jest OpenRouter/u);
     expect(probePreflight(llmElsewhere, { subject: "school", allowHost: "llm.example.com" }).hosts).toEqual(["openrouter.ai", "llm.example.com"]);
-    // Rozdział nie woła UMIEM_LLM (zagadnienia planuje agent) — host LLM go nie zatrzymuje.
-    expect(probePreflight(llmElsewhere, { subject: "chapter" }).hosts).toEqual(["openrouter.ai"]);
+    // Rozdział też ma etap zagadnień przez UMIEM_LLM (od etapu 5a), gramatyka nie — host LLM jej nie zatrzymuje.
+    expect(() => probePreflight(llmElsewhere, { subject: "chapter" })).toThrow(/UMIEM_LLM_BASE_URL: host llm\.example\.com/u);
+    expect(probePreflight(llmElsewhere, { subject: "grammar" }).hosts).toEqual(["openrouter.ai"]);
 
+    // Worker nie woła gradera (etap 5c): jego host nie trafia do listy hostów próby.
     const graderElsewhere = probeEnv({
       OPENROUTER_API_KEY: KEY,
       UMIEM_GRADER_BASE_URL: "https://grader.example.com/v1",
       UMIEM_GRADER_API_KEY: "grader-key",
     });
-    // Złożony grader może zostać wywołany — jego host jest sprawdzany w każdym przedmiocie.
-    expect(() => probePreflight(graderElsewhere, { subject: "chapter" })).toThrow(/UMIEM_GRADER_BASE_URL: host grader\.example\.com/u);
-    const graderHttp = probeEnv({ OPENROUTER_API_KEY: KEY, UMIEM_GRADER_BASE_URL: "http://localhost:9999/v1", UMIEM_GRADER_API_KEY: "grader-key" });
-    expect(() => probePreflight(graderHttp, { subject: "school", allowHost: "localhost:9999" })).toThrow(/UMIEM_GRADER_BASE_URL: próba wymaga https/u);
+    expect(probePreflight(graderElsewhere, { subject: "chapter" }).hosts).toEqual(["openrouter.ai"]);
   });
 
-  it("szkoła bez pełnego UMIEM_GRADER_* → błąd z nazwą brakującej zmiennej", () => {
+  it("brak pełnego UMIEM_GRADER_* → błąd z nazwą brakującej zmiennej w każdym przedmiocie", () => {
     // Bez `withConfigDefaults` — domyślne wartości uzupełniłyby model i adres.
     const base = { NODE_ENV: "test", OPENROUTER_API_KEY: KEY, UMIEM_LLM_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_GRADER_BASE_URL: "https://openrouter.ai/api/v1", UMIEM_GRADER_MODEL: "google/gemini-3.8-flash" };
     expect(() => probePreflight({ ...base, UMIEM_GRADER_MODEL: undefined }, { subject: "school" })).toThrow(/brak: UMIEM_GRADER_MODEL\./u);
@@ -70,11 +69,12 @@ describe("probePreflight", () => {
     const ownAgentKey = { NODE_ENV: "test", UMIEM_LESSON_AGENT_API_KEY: KEY, UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: base.UMIEM_GRADER_MODEL };
     expect(() => probePreflight(ownAgentKey, { subject: "school" })).toThrow(/brak: UMIEM_GRADER_API_KEY/u);
     expect(probePreflight(base, { subject: "school" }).hosts).toEqual(["openrouter.ai"]);
-    // Inne przedmioty działają bez gradera.
-    expect(probePreflight({ NODE_ENV: "test", UMIEM_LESSON_AGENT_API_KEY: KEY }, { subject: "grammar" }).hosts).toEqual(["openrouter.ai"]);
+    // Generowanie każdego przedmiotu wymaga gradera (`lessonAgentPublicFromEnv`).
+    expect(() => probePreflight({ NODE_ENV: "test", UMIEM_LESSON_AGENT_API_KEY: KEY }, { subject: "grammar" })).toThrow(/brak: UMIEM_GRADER_BASE_URL/u);
+    expect(probePreflight({ ...base, UMIEM_LLM_BASE_URL: undefined }, { subject: "grammar" }).hosts).toEqual(["openrouter.ai"]);
   });
 
-  it("szacunek = budżet runu agenta, ×2 z „+N”; zła liczba „+N” → błąd", () => {
+  it("szacunek = budżet runu, ×2 z „+N”; zła liczba „+N” → błąd", () => {
     expect(probePreflight(probeEnv({ OPENROUTER_API_KEY: KEY }), { subject: "grammar" }).estimateUsd).toBe(1);
     expect(probePreflight(probeEnv({ OPENROUTER_API_KEY: KEY }), { subject: "grammar", addCount: 12 }).estimateUsd).toBe(2);
     const budget = probeEnv({ OPENROUTER_API_KEY: KEY, UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "0.4" });

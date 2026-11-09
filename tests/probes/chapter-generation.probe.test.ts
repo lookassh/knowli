@@ -56,19 +56,19 @@ import { probePreflight } from "./probe-preflight";
 const { eq } = createRequire(new URL("../../packages/server/package.json", import.meta.url))("drizzle-orm") as typeof import("../../packages/server/node_modules/drizzle-orm");
 
 /**
- * Próba generowania lekcji agentem puli na PRAWDZIWYCH modelach (spec etapu 3 #237 §6.3–6.4):
- * przypadki użycia z bazą jak w workerze, agent i checker z `lessonAgentDepsFromEnv`
+ * Próba generowania lekcji przebiegiem bazowym na PRAWDZIWYCH modelach (spec etapu 3 #237 §6.3–6.4):
+ * przypadki użycia z bazą jak w workerze, generator paczek i kontrola zamkniętych z `lessonAgentDepsFromEnv`
  * (`@learning/server/lesson-agent`). To nie jest test jakości — bez asercji poza końcem runu,
  * tylko raport w konsoli (liczby i ostatnie człony identyfikatorów zagadnień) i plik wyników:
- * zagadnienia z rodzajami, ćwiczenia per zagadnienie i etap, odrzucenia (kody), liczniki kontroli,
+ * zagadnienia z rodzajami, ćwiczenia per zagadnienie i etap, odrzucenia (kody),
  * braki pokrycia, koszt per operacja i per run, próby i oczekiwania kolejki, wynik „+N” i próby
  * publikacji. Płatne wywołania, więc plik jest pomijany bez `UMIEM_PROBE_MATERIAL` (gramatyka:
  * bez `UMIEM_PROBE_SUBJECT=grammar`) i nie należy do konfiguracji unit ani integration.
  * Materiał leży POZA repozytorium i nie może do niego trafić.
  *
  * Zanim padnie cokolwiek płatnego (rejestr, wpis tymczasowy, wywołanie): {@link probePreflight}
- * — brak klucza OpenRouter, tryb fake, host spoza OpenRouter albo szkoła bez pełnego
- * `UMIEM_GRADER_*` kończą próbę bez kosztu. Szacunek do rejestru = budżet runu agenta
+ * — brak klucza OpenRouter, tryb fake, host spoza OpenRouter albo brak pełnego
+ * `UMIEM_GRADER_*` kończą próbę bez kosztu. Szacunek do rejestru = budżet runu
  * (`UMIEM_LESSON_AGENT_RUN_BUDGET_USD`, ×2 z „+N”).
  *
  * Zmienne (poza .env z kluczem, którego wartości nigdy nie są wypisywane):
@@ -88,23 +88,22 @@ const { eq } = createRequire(new URL("../../packages/server/package.json", impor
  *   się nie udał, plik wyników dostaje `add: { skipped }`;
  * - `UMIEM_PROBE_OUT_DIR` — katalog wyników poza repozytorium (wymagany): plik
  *   `chapter-<czas>.json` na każde uruchomienie (liczby, braki pokrycia, koszt; tu też treść
- *   tytułów zagadnień i odpowiedzi luk, wiersze dzienników `[lesson]`/`[lesson-agent]` oraz każde
- *   ćwiczenie wysłane przez agenta z odpowiedzią walidacji (`agentSubmissions`) — tylko w pliku);
+ *   tytułów zagadnień i odpowiedzi luk oraz wiersze dzienników `[lesson]`/`[lesson-agent]` — tylko w pliku);
  * - `UMIEM_PROBE_COSTS` — rejestr kosztów prób `costs.json` (wymagany, musi istnieć; nowy zakłada
  *   tylko `UMIEM_PROBE_COSTS_INIT=1`, z limitem `UMIEM_PROBE_COSTS_CAP_USD`, domyślnie 10 USD): przed startem
  *   „wydane + szacunek (z „+N”) > limit → stop”, przed każdym runem wpis tymczasowy z budżetem runu
  *   (zabity proces nadal się liczy), po runie (także po błędzie) zastąpiony kosztem z `usage.cost`;
- *   wywołanie bez kosztu liczone szacunkiem kierownika agenta (polityka z env) z flagą `estimated`;
+ *   wywołanie bez kosztu liczone szacunkiem z polityki runu (env) z flagą `estimated`;
  *   wpis rozlicza każde jeszcze nierozliczone zdarzenie (także bez zakresu runu i spóźnione
  *   zakończenia wcześniejszego runu), a to, co dojdzie po ostatnim rozliczeniu, dostaje osobny wpis;
  * - `UMIEM_PROBE_ALLOW_HOST` — host usługi inny niż OpenRouter dopuszczony jawnie (domyślnie próba
  *   odmawia wywołania innego hosta i każdego adresu bez https); nagłówek próby wypisuje modele i hosty;
  * - `UMIEM_PROBE_DUMP` — plik JSON z pełnym szkicem, podsumowaniem runu i dziennikiem do ręcznej oceny;
- * - `UMIEM_PROBE_POOL_DUMP_OUT` — zrzut szkicu po runie agenta (przed „+N”) w formacie arkusza
+ * - `UMIEM_PROBE_POOL_DUMP_OUT` — zrzut szkicu po runie (przed „+N”) w formacie arkusza
  *   `blind/gen-blind-sheet.cjs` (`subjectId`, `objectives[]` z `title`, `kind`, `card`,
  *   `examples`, `exercises[]`), w tym samym pliku zagadnienia z kartami jako tablicą
- *   (`objectives[].cards: { title, body }[]`, `descriptionEn`), temat i materiał — wejście
- *   `UMIEM_PROBE_AGENT_OBJECTIVES_DUMP` próby `probe:agent`. Istniejący plik nie jest nadpisywany.
+ *   (`objectives[].cards: { title, body }[]`, `descriptionEn`), temat i materiał. Istniejący plik
+ *   nie jest nadpisywany.
  * Wszystkie ścieżki plików przechodzą przez `resolveOutsideRepoPath` (ścieżka w checkoucie
  * kończy próbę błędem, zanim zostanie wywołany model).
  */
@@ -175,7 +174,7 @@ function reportDraft(draft: LessonDraftDto): Record<string, unknown> {
   const kept = draft.exercises.length;
   line(`Ćwiczeń w szkicu: ${kept}; rejectedCount (usunięte po przyjęciu): ${draft.rejectedCount}`);
   const reasons = Object.entries(draft.rejectedReasons ?? {}).sort((a, b) => b[1] - a[1]);
-  // Etykiety powodów tylko w pliku wyników; na konsolę same liczby (kody odrzuceń agenta — z punktu kontrolnego).
+  // Etykiety powodów tylko w pliku wyników; na konsolę same liczby (kody odrzuceń — z punktu kontrolnego).
   line(`rejectedReasons: ${reasons.length} różnych, łącznie ${reasons.reduce((sum, [, count]) => sum + count, 0)} (etykiety w pliku wyników)`);
   const coverage = draft.coverage.map((gap) => ({ objective: slugOf(gap.objectiveId), stage: gap.stage, actual: gap.actual, required: gap.required }));
   line(`Braki pokrycia (coverage): ${coverage.length === 0 ? "brak" : coverage.map((gap) => `${gap.objective}/${gap.stage}: ${gap.actual} z ${gap.required}`).join("; ")}`);
@@ -185,8 +184,8 @@ function reportDraft(draft: LessonDraftDto): Record<string, unknown> {
 }
 
 /**
- * Podsumowanie punktu kontrolnego runu agenta bez treści: statusy i liczby zagadnień, histogram
- * kodów odrzuceń, liczniki kontroli, wydatek, próby. Postęp po porażce (`kind: "progress"`) niesie
+ * Podsumowanie punktu kontrolnego runu bez treści: statusy i liczby zagadnień, histogram
+ * kodów odrzuceń, wydatek, próby. Postęp po porażce (`kind: "progress"`) niesie
  * ćwiczenia i materiał — z niego bierzemy wyłącznie liczby.
  */
 async function agentRunSummary(runId: string): Promise<Record<string, unknown> | null> {
@@ -195,7 +194,7 @@ async function agentRunSummary(runId: string): Promise<Record<string, unknown> |
     .from(schema.generationRuns)
     .where(eq(schema.generationRuns.id, runId));
   const value = rows[0]?.checkpoint as
-    | { kind?: string; objectives?: Record<string, { status?: string; accepted?: number; exercises?: unknown[]; failureCode?: string }>; rejectionCodes?: Record<string, number>; checkCounters?: Record<string, number>; totalSpentUsd?: number; attempts?: number }
+    | { kind?: string; objectives?: Record<string, { status?: string; accepted?: number; exercises?: unknown[]; failureCode?: string }>; rejectionCodes?: Record<string, number>; totalSpentUsd?: number; attempts?: number }
     | null
     | undefined;
   if (value === null || value === undefined) return null;
@@ -207,7 +206,6 @@ async function agentRunSummary(runId: string): Promise<Record<string, unknown> |
       ...(entry.failureCode === undefined ? {} : { failureCode: entry.failureCode }),
     }])),
     rejectionCodes: value.rejectionCodes ?? {},
-    checkCounters: value.checkCounters ?? null,
     totalSpentUsd: value.totalSpentUsd ?? null,
     attempts: value.attempts ?? null,
   };
@@ -238,12 +236,12 @@ async function draftObjectives(draft: LessonDraftDto): Promise<{ topicTitle: str
   };
 }
 
-/** Zrzut punktu odniesienia: format arkusza `gen-blind-sheet.cjs` + karty jako tablica, temat i materiał (wejście próby agenta). */
+/** Zrzut punktu odniesienia: format arkusza `gen-blind-sheet.cjs` + karty jako tablica, temat i materiał. */
 async function poolDumpOf(draft: LessonDraftDto, material: string, meta: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { topicTitle, objectives } = await draftObjectives(draft);
   return {
     schema: "lesson-pool-dump/v1",
-    source: typeof meta.variant === "string" ? meta.variant : "agent",
+    source: typeof meta.variant === "string" ? meta.variant : "baseline",
     ...meta,
     subjectId: draft.subjectId,
     topicId: draft.topicId,
@@ -266,7 +264,7 @@ async function poolDumpOf(draft: LessonDraftDto, material: string, meta: Record<
   };
 }
 
-describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych modelach", () => {
+describe.skipIf(!enabled)("próba generowania lekcji przebiegiem bazowym na prawdziwych modelach", () => {
   afterAll(async () => {
     if (enabled) await testDatabase().pool.end();
   });
@@ -309,7 +307,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     const poolSize = Number(process.env.UMIEM_PROBE_POOL_SIZE ?? 60);
     const env = withConfigDefaults({ ...process.env });
     const allowHost = process.env.UMIEM_PROBE_ALLOW_HOST;
-    // Kontrola przed rejestrem i wpisem tymczasowym: brak klucza, tryb fake, obcy host, szkoła bez gradera → stop bez kosztu.
+    // Kontrola przed rejestrem i wpisem tymczasowym: brak klucza, tryb fake, obcy host, brak gradera → stop bez kosztu.
     const preflight = probePreflight(env, { subject: subjectKind, ...(addCount === undefined ? {} : { addCount }), ...(allowHost === undefined ? {} : { allowHost }) });
     const runBudgetUsd = preflight.estimateUsd / (addCount === undefined ? 1 : 2);
 
@@ -327,16 +325,16 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     const base = createGenerationDepsFromEnv(env, usage);
     if (!base) throw new Error("Brak konfiguracji zależności generacji (OPENAI_API_KEY dla obrazów / UMIEM_LLM_*) w .env.");
     const lessonAgent = lessonAgentDepsFromEnv(env, usage);
-    if ("unavailable" in lessonAgent) throw new Error("Brak klucza OpenRouter dla agenta puli — próba nie ma czego wywołać.");
+    if ("unavailable" in lessonAgent) throw new Error("Brak klucza OpenRouter dla generowania lekcji — próba nie ma czego wywołać.");
     const models = {
-      generator: (lessonAgent.agent as { readonly model?: string }).model ?? null,
+      generator: env.UMIEM_LESSON_AGENT_MODEL ?? null,
       checker: env.UMIEM_LESSON_AGENT_CHECKER_MODEL ?? null,
-      grader: base.graderAvailable === true ? env.UMIEM_GRADER_MODEL ?? null : null,
       // Etap zagadnień (`UMIEM_LLM_*`): szkoła i od etapu 5a rozdział; bramka wymaga tego samego modelu i reasoning co generator.
       ...(subjectKind === "grammar" ? {} : { objectives: base.llm.model, objectivesReasoning: env.UMIEM_LLM_REASONING ?? null }),
     };
 
-    // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
+    // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła; `graderAvailable`
+    // (grader w web) zmienia prompt paczki, więc zostaje w porównaniu.
     const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: base.graderAvailable === true, variant: "baseline", ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
 
     const ledger =
@@ -363,7 +361,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     const titleOf = { chapter: "Angielski — rozdział", school: `szkoła (${schoolSubjectTitle})`, grammar: `Angielski — gramatyka (${grammarTopicId})` } as const;
     line("");
-    line(`=== Próba generowania agentem puli: ${titleOf[subjectKind]} ===`);
+    line(`=== Próba generowania przebiegiem bazowym: ${titleOf[subjectKind]} ===`);
     line(`modele=${JSON.stringify(models)} hosty=${preflight.hosts.join(", ")} pula=${poolSize} materiał=${material.length} znaków; ` +
       `budżet runu=${runBudgetUsd.toFixed(2)} USD${addCount === undefined ? "" : ` (+N=${addCount}: drugi run)`}, ` +
       `wydane dotąd=${ledger.spentUsd.toFixed(4)} z ${ledger.capUsd} USD`);
@@ -552,8 +550,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         `próby=${main.attempts}, oczekiwanie kolejki=${(main.waitedMs / 1000).toFixed(1)} s`);
       const agentSummary = await agentRunSummary(runId);
       if (agentSummary !== null) {
-        line(`Agent: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}; ` +
-          `kontrole ${JSON.stringify(agentSummary.checkCounters)}`);
+        line(`Run: zagadnienia ${JSON.stringify(agentSummary.objectives)}; kody odrzuceń ${JSON.stringify(agentSummary.rejectionCodes)}`);
       }
       const results = resultsOf({ state: run.state, errorCode: run.errorCode ?? null, durationMs, attempts: main.attempts, waitedMs: main.waitedMs, agent: agentSummary });
       const writeResults = () => writeResultsFile(results);
@@ -579,7 +576,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       line(`Dziennik generacji: wierszy=${lessonLog.length}`);
       results.draft = reportDraft(draft);
 
-      // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).
+      // Zrzut szkicu po runie (przed „+N” i próbą publikacji).
       if (poolDumpPath !== undefined) {
         const poolDump = await poolDumpOf(draft, material, {
           ...sheetFields,
@@ -589,7 +586,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
           materialSha256: materialPath === undefined ? null : sha256File(materialPath),
           models,
           runState: run.state,
-          phase: "draft after the lesson agent run (before +N and publish attempt)",
+          phase: "draft after the lesson generation run (before +N and publish attempt)",
         });
         writeFileSync(poolDumpPath, `${JSON.stringify(poolDump, null, 2)}\n`, "utf8");
         results.poolDump = { file: basename(poolDumpPath), sha256: sha256File(poolDumpPath), exercises: draft.exercises.length, objectives: (poolDump.objectives as unknown[]).length };

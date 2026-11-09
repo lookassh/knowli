@@ -36,7 +36,7 @@ function rng(seedText) {
 
 const rows = [];
 const SAME_FIELDS = ["modelId", "solverId", "effort", "poolSize"];
-// `graderAvailable` poza porównaniem tylko w szkole: agent biegnie z graderem kontroli 2b, przebieg bazowy po 5b bez (spec etapu 5 §7.1).
+// `graderAvailable` poza porównaniem tylko w szkole: stare zrzuty agenta szkoły biegły z graderem kontroli 2b, przebieg bazowy bez (spec etapu 5 §7.1).
 const sameFieldsOf = (dump) => (dump.subjectId === "school" ? SAME_FIELDS : [...SAME_FIELDS, "graderAvailable"]);
 let reference;
 for (const model of candidates) {
@@ -49,7 +49,7 @@ for (const model of candidates) {
   models.push(model);
   // Uczciwość porównania: te same modele i wejście we wszystkich źródłach arkusza, wariant zgodny z katalogiem.
   if (dump.variant !== undefined && model.replace(/-r\d+$/u, "") !== dump.variant) throw new Error(`${model}: katalog nie pasuje do wariantu ${dump.variant}`);
-  // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` zrzutu `probe:agent`.
+  // Materiał: `materialSha256` zrzutu `probe:chapter`, `input.sha256` starego zrzutu dawnej sondy agenta.
   const fields = sameFieldsOf(dump);
   const config = JSON.stringify([...fields.map((field) => dump[field]), dump.materialSha256 ?? dump.input?.sha256]);
   if (reference === undefined) reference = { model, config };
