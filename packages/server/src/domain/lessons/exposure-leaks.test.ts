@@ -46,7 +46,7 @@ describe("findExposureLeaks", () => {
     expect(leaks).toEqual([{ index: 0, kind: "hard", source: { kind: "card_example", objectiveId: A, text: "I'm hungry." } }]);
   });
 
-  it.each(MODES)("gramatyka (%s): luka z odpowiedzią „plays” nie ujawnia tłumaczenia „He plays football.”", (mode) => {
+  it.each(MODES)("gramatyka (%s): luka „He ___ football.” → plays ujawnia tłumaczenie „He plays football.” — hard (#373)", (mode) => {
     const leaks = findExposureLeaks({
       exercises: [gap("He ___ football.", "plays"), translation("He plays football.")],
       examples: {},
@@ -54,7 +54,53 @@ describe("findExposureLeaks", () => {
       subject: englishGrammarSubject,
       mode,
     });
-    expect(leaks).toEqual([]);
+    expect(leaks).toEqual([{ index: 1, kind: "hard", source: { kind: "exercise", index: 0 } }]);
+  });
+
+  it.each(MODES)("gramatyka (%s): wymiana short_answers widziana w krótkiej odpowiedzi, wyborze z pytaniem i luce ujawnia tłumaczenie całej wymiany — hard (#373)", (mode) => {
+    const victim = () => translation("Is Dad late? No, he isn't.");
+    const shortAnswer = draft({
+      exerciseType: "lesson_short_answer",
+      prompt: "Is Dad late?",
+      options: [
+        { id: "a", text: "No, he isn't." },
+        { id: "b", text: "No, he doesn't." },
+      ],
+      correctOption: "a",
+      answer: "No, he isn't.",
+    });
+    const choiceWithQuestion = draft({
+      exerciseType: "lesson_choice",
+      stem: "Is Dad late?",
+      options: [
+        { id: "a", text: "No, he isn't." },
+        { id: "b", text: "No, I'm not." },
+      ],
+      correctOption: "a",
+      answer: "No, he isn't.",
+    });
+    const exchangeGap = gap("Is Dad late? No, he ___.", "isn't");
+    for (const source of [shortAnswer, choiceWithQuestion, exchangeGap]) {
+      const leaks = findExposureLeaks({
+        exercises: [source, victim()],
+        examples: {},
+        objectiveOrder: [A],
+        subject: englishGrammarSubject,
+        mode,
+      });
+      expect(leaks).toEqual([{ index: 1, kind: "hard", source: { kind: "exercise", index: 0 } }]);
+    }
+  });
+
+  it.each(MODES)("gramatyka (%s): przykład karty z pełną wymianą ujawnia tłumaczenie wymiany — hard (#373)", (mode) => {
+    const leaks = findExposureLeaks({
+      exercises: [translation("Are you hungry? Yes, I am.")],
+      examples: { [A]: ["Are you hungry? Yes, I am."] },
+      objectiveOrder: [A],
+      subject: englishGrammarSubject,
+      mode,
+    });
+    expect(leaks).toEqual([{ index: 0, kind: "hard", source: { kind: "card_example", objectiveId: A, text: "Are you hungry? Yes, I am." } }]);
   });
 
   it("szkoła: trzy open_answer z jedną odpowiedzią — pierwszy bez wpisu, dwa kolejne soft", () => {
@@ -128,14 +174,16 @@ describe("findExposureLeaks", () => {
     expect(leaks).toEqual([{ index: 1, kind: "hard", source: { kind: "exercise", index: 0 } }]);
   });
 
-  it("gramatyka: „She goes to school.” vs „She goes to school” — generation: hard; coverage: []", () => {
+  it("gramatyka: „She goes to school.” vs „She goes to school” — hard w obu trybach (wspólna normalizacja ekspozycji, #373)", () => {
     const base = {
       exercises: [translation("She goes to school.")],
       examples: { [A]: ["She goes to school"] },
       objectiveOrder: [A],
       subject: englishGrammarSubject,
     } as const;
-    expect(findExposureLeaks({ ...base, mode: "coverage" })).toEqual([]);
+    expect(findExposureLeaks({ ...base, mode: "coverage" })).toEqual([
+      { index: 0, kind: "hard", source: { kind: "card_example", objectiveId: A, text: "She goes to school" } },
+    ]);
     expect(findExposureLeaks({ ...base, mode: "generation" })).toEqual([
       { index: 0, kind: "hard", source: { kind: "card_example", objectiveId: A, text: "She goes to school" } },
     ]);

@@ -4,6 +4,7 @@ import { createLessonAgentState, withPool } from "../../../domain/lessons/agent/
 import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { lessonInvariantCheck } from "../../../domain/lessons/agent/status";
 import type { LessonExerciseDraft } from "../../../domain/lessons/types";
+import { grammarExposureText } from "../../../domain/lessons/subjects/english-grammar/exposure";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
 import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -118,11 +119,28 @@ describe("runLessonBaselinePool", () => {
     const types = result.objectives[0]!.exercises.map((draft) => draft.exerciseType);
     expect(types).toEqual([...Array(4).fill("lesson_choice"), ...Array(4).fill("lesson_gap"), ...Array(3).fill("lesson_open_answer")]);
     expect(result.objectives[0]!.examples).toEqual(["I play football."]);
-    expect(generator.calls.map((call) => [call.type, call.count, call.withExamples])).toEqual([
-      ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
-      ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
-    ]);
+    // Kolejność wywołań między zagadnieniami jest równoległa; w obrębie zagadnienia paczka samodzielna idzie ostatnia (#373).
+    for (const objectiveId of [first, second]) {
+      expect(generator.calls.filter((call) => call.objective.id === objectiveId).map((call) => [call.type, call.count, call.withExamples])).toEqual([
+        ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
+      ]);
+    }
     expect(result.objectives.flatMap((objective) => objective.exercises)).toHaveLength(22);
+  });
+
+  it("generates the independent packet last with earlier packets' solved sentences in the avoid list (#373)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const generator = new FakeGenerator();
+    await run(generator);
+    const callsOf = (objectiveId: string) => generator.calls.filter((call) => call.objective.id === objectiveId);
+    for (const objectiveId of [first, second]) {
+      const calls = callsOf(objectiveId);
+      expect(calls.map((call) => call.type)).toEqual(["lesson_choice", "lesson_gap", "lesson_open_answer"]);
+      const solved = "Tom plays football";
+      // Faza pierwsza nie zna jeszcze swoich rozwiązań; paczka samodzielna dostaje rozwiązane zdanie wyboru z tego samego zagadnienia.
+      expect(calls[0]!.pool.avoidSentences).not.toContain(solved);
+      if (objectiveId === first) expect(calls[2]!.pool.avoidSentences).toContain(solved);
+    }
   });
 
   it("sends one closed check per closed packet only, with card sentences in the avoid list", async () => {
@@ -377,7 +395,7 @@ describe("runLessonBaselinePool", () => {
     expect(inner.calls.map((call) => call.type)).toEqual(
       (["lesson_choice", "lesson_gap", "lesson_open_answer"] as const).filter((_type, index) => [split.guided, split.productive, split.independent][index]! > 0),
     );
-    expect(inner.calls[0]!.pool.avoidSentences).toEqual(expect.arrayContaining([fixed.find((item) => item.exerciseType === "lesson_open_answer")!.answer]));
+    expect(inner.calls[0]!.pool.avoidSentences).toEqual(expect.arrayContaining([grammarExposureText(fixed.find((item) => item.exerciseType === "lesson_open_answer")!)]));
     const added = result.objectives[0]!.exercises;
     expect(added).toHaveLength(3);
     expect(added.some((item) => fixed.includes(item) || item.answer === "Story line.")).toBe(false);
@@ -388,11 +406,11 @@ describe("runLessonBaselinePool", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     // Szkic ma ćwiczenie samodzielne; nowe ćwiczenie etapu prowadzonego go powtarza — ofiarą byłoby `fixed`.
     const independent: LessonExerciseDraft = { ...(raw("lesson_open_answer", second, 900) as unknown as LessonExerciseDraft) };
-    const guided: LessonExerciseDraft = { ...independent, exerciseType: "lesson_choice", stem: "___ swims in the lake.", answer: independent.answer, options: [{ id: "a", text: independent.answer }, { id: "b", text: "x" }], correctOption: "a" } as LessonExerciseDraft;
+    const guided: LessonExerciseDraft = { ...independent, exerciseType: "lesson_choice", stem: "Max900 ___ in the lake.", answer: "swims", focus: ["swims"], options: [{ id: "a", text: "swims" }, { id: "b", text: "swim" }], correctOption: "a" } as LessonExerciseDraft;
     const generator: LessonPacketGenerator = {
       generatePacket: async (input) => ({ exercises: input.type === "lesson_choice" ? [guided] : [] }),
     };
-    const checker = new FakeChecker(() => ({ answers: [independent.answer] }));
+    const checker = new FakeChecker(() => ({ answers: ["swims"] }));
     const result = await run(generator, checker, { fixed: [independent], examplesFixed: true, target: { mode: "add", objectiveId: second, count: 3 } });
     expect(result.objectives[0]!.exercises).toEqual([]);
     expect(result.rejections.some((entry) => ["lesson_pool", "leak_victim", "leak_source"].includes(entry.code))).toBe(true);
@@ -443,8 +461,8 @@ describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", (
       [first, "incomplete", undefined],
       [second, "incomplete", undefined],
     ]);
-    // Paczki czekające w semaforze po terminie nie wołają generatora.
-    expect(generator.packetCalls).toHaveLength(4);
+    // Paczki czekające w semaforze po terminie nie wołają generatora (czwarty slot trzymała paczka samodzielna na bramce, #373).
+    expect(generator.packetCalls).toHaveLength(3);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -474,10 +492,11 @@ describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", (
     const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), controller.signal);
     const rejection = expect(pending).rejects.toBe("superseded");
     await vi.advanceTimersByTimeAsync(0);
-    expect(generator.packetCalls).toHaveLength(4);
+    // Czwarty slot trzyma paczka samodzielna czekająca na bramce wcześniejszych paczek (#373) — dostawcy jeszcze nie wołała.
+    expect(generator.packetCalls).toHaveLength(3);
     controller.abort("superseded");
     await rejection;
-    expect(generator.packetCalls).toHaveLength(4);
+    expect(generator.packetCalls).toHaveLength(3);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -498,13 +517,14 @@ describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", (
     const gate = deferred();
     const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ gate: gate.promise })) });
     const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), new AbortController().signal);
-    await vi.waitFor(() => expect(generator.packetCalls).toHaveLength(4));
+    // Czwarty slot trzyma paczka samodzielna na bramce (#373): wywołane są 3 paczki, limit slotów bez zmian.
+    await vi.waitFor(() => expect(generator.packetCalls).toHaveLength(3));
     await flush();
-    expect(generator.packetCalls).toHaveLength(4);
+    expect(generator.packetCalls).toHaveLength(3);
     gate.resolve();
     await pending;
     expect(generator.packetCalls).toHaveLength(6);
-    expect(generator.maxConcurrent).toBe(4);
+    expect(generator.maxConcurrent).toBeLessThanOrEqual(4);
   });
 
   it("runs at most `checkerConcurrency` closed checks at once, independently of the generator limit", async () => {

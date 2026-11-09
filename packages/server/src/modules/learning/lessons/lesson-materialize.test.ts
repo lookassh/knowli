@@ -762,7 +762,7 @@ describe("materializeCard — ekspozycje przykładów w normalizacji przedmiotu"
   });
 
   it("przedmiot bez normalizeExposureText zachowuje dotychczasowe klucze przykładów", () => {
-    const card = materializeCard(plan, 0, objective, englishGrammarSubject, examples, "rev-1");
+    const card = materializeCard(plan, 0, objective, { ...englishGrammarSubject, normalizeExposureText: undefined }, examples, "rev-1");
     expect(card.exposures).toEqual(examples.map((example) => computeTargetKey(example, "en-GB")));
   });
 });
