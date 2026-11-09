@@ -41,3 +41,10 @@ describe("current architecture docs do not describe removed mechanisms (#406)", 
     expect(readdirSync(new URL("../packages/server/src/db", import.meta.url))).not.toContain("queries");
   });
 });
+
+describe("AGENTS.md fits the Codex project-doc budget", () => {
+  it("stays under 32 KiB (Codex silently truncates project_doc_max_bytes, default 32 KiB)", () => {
+    const bytes = readFileSync(new URL("../AGENTS.md", import.meta.url)).byteLength;
+    expect(bytes).toBeLessThan(32 * 1024);
+  });
+});
