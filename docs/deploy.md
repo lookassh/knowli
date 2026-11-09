@@ -56,11 +56,12 @@ każdym deploju.
 Aktualizacja aplikacji: `git pull` + ponownie `up -d --build` — migracje
 odpalają się automatycznie przed startem web/worker.
 
-## Generowanie lekcji (agent puli)
+## Generowanie lekcji (przebieg bazowy)
 
-Od etapu 3 (#237, PR 2) lekcje wszystkich przedmiotów generuje wyłącznie agent
-puli (worker, OpenRouter; opis i zmienne: `docs/provider-config.md`, sekcja
-„Agent puli lekcji”). Co to znaczy przy wdrożeniu:
+Lekcje wszystkich przedmiotów generuje przebieg bazowy w workerze (paczki
+zagadnienie × typ i kontrola zadań zamkniętych przez OpenRouter; od etapu 5c,
+#362, bez dawnego agenta puli; opis i zmienne: `docs/provider-config.md`, sekcja
+„Generator puli lekcji”). Co to znaczy przy wdrożeniu:
 
 - **Klucz.** `OPENROUTER_API_KEY` (albo `UMIEM_LESSON_AGENT_API_KEY`; trzecia
   rezerwa to `UMIEM_LLM_API_KEY`, gdy `UMIEM_LLM_BASE_URL` wskazuje https
@@ -81,12 +82,12 @@ puli (worker, OpenRouter; opis i zmienne: `docs/provider-config.md`, sekcja
   starcie; zła wartość (liczba, wysiłek rozumowania, routing, ta sama rodzina
   modeli generatora i checkera, klucz w kształcie OpenAI) zatrzymuje start z nazwą
   zmiennej. Web ich nie waliduje.
-- **Usunięte ustawienia.** `UMIEM_LESSON_AGENT_SUBJECTS` już nie istnieje (agent
-  obsługuje wszystkie przedmioty); pozostawiona w `.env` jest ignorowana, ale
-  warto ją usunąć.
-- **Koszt.** Agent kosztuje więcej niż dawny potok: próba 2026-11-03 — rozdział
-  0,11–0,15, gramatyka ok. 0,07, szkoła 0,20–0,31 USD na lekcję plus kontrole
-  modelem; domyślny budżet runu to 1,00 USD (`UMIEM_LESSON_AGENT_RUN_BUDGET_USD`).
+- **Usunięte ustawienia.** `UMIEM_LESSON_AGENT_SUBJECTS`,
+  `UMIEM_LESSON_AGENT_MAX_STEPS` i `UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS` już
+  nie istnieją; pozostawione w `.env` są ignorowane, ale warto je usunąć. Worker
+  nie woła już modelu oceniającego (`UMIEM_GRADER_*` jest potrzebne w web).
+- **Koszt.** Sondy etapu 5 (2026-11-08): rozdział ok. 0,3, szkoła ok. 0,4 USD na
+  lekcję z kontrolą zadań zamkniętych; domyślny budżet runu to 1,00 USD (`UMIEM_LESSON_AGENT_RUN_BUDGET_USD`).
   Koszty widać w sekcji „Koszty” panelu rodzica.
 - **Zmiana niezgodna dla OpenAI-direct.** Instancja bez klucza OpenRouter (LLM i
   TTS na `api.openai.com`) traci generowanie lekcji; słówka, TTS i ilustracje
