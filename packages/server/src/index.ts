@@ -70,6 +70,7 @@ export {
 } from "./modules/materials";
 export { claimQueuedRun, enqueueGenerationRun, markRun } from "./modules/materials";
 export { executeMediaAsset } from "./modules/materials";
+export { DEFAULT_ORPHAN_GRACE_MS, reportOrphanMediaBlobs, summarizeOrphanMediaReport, type OrphanMediaReport } from "./modules/materials";
 export { errorCodeOf, requireGeneration, MAX_AUTOMATIC_ATTEMPTS } from "./modules/materials";
 export { countForeignPendingTts, runDueGenerationWork, type WorkerLimits } from "./modules/materials";
 export {

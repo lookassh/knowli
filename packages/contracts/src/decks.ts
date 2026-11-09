@@ -269,6 +269,8 @@ export const RevisionAssetDtoSchema = z.object({
   /** failed = wyczerpane próby generacji; rodzic widzi porażkę, nie wieczny spinner */
   state: z.enum(["pending", "approved", "failed", "omitted"]),
   assetId: UuidSchema.nullable(),
+  /** Kod terminalnego runu zasobu (np. `media_storage`); brak poza porażką. */
+  errorCode: z.string().nullable().optional(),
 });
 
 export const DraftDtoSchema = z.object({

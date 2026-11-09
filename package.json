@@ -22,6 +22,7 @@
     "build": "node apps/web/node_modules/next/dist/bin/next build apps/web",
     "typecheck": "node scripts/typecheck.cjs",
     "media:regenerate-ui-audio": "pnpm --filter @learning/worker ui-audio:regenerate",
+    "media:orphan-report": "pnpm --filter @learning/worker media:orphan-report",
     "wt:setup": "node scripts/setup-worktree.cjs",
     "wt:clean": "node scripts/clean-worktrees.cjs",
     "hooks:install": "node scripts/install-git-hooks.cjs"

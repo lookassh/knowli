@@ -19,8 +19,31 @@ export function requireGeneration(services: Services): GenerationDeps {
   return services.generation;
 }
 
-/** Walidacja wyniku AI to porażka terminalna; pozostałe błędy są powtarzalne. */
+/** Kody systemowe zapisu na wolumenie mediów: awaria dysku/uprawnień, nie providera (#385). */
+const MEDIA_STORAGE_CODES = new Set(["ENOSPC", "EACCES", "EROFS"]);
+
+/** Szuka kodu systemowego w błędzie i jego łańcuchu `cause` (błędy fs bywają opakowane). */
+function hasMediaStorageCode(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== null && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && MEDIA_STORAGE_CODES.has(code)) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * Walidacja wyniku AI i błąd zapisu mediów to porażki terminalne; pozostałe
+ * błędy są powtarzalne. `media_storage` nie może wracać do kolejki, bo każda
+ * kolejna próba płaciłaby providerowi za generację, której nie da się zapisać.
+ */
 export function errorCodeOf(error: unknown): string {
+  if (hasMediaStorageCode(error)) {
+    return "media_storage";
+  }
   if (error instanceof z.ZodError) {
     return "validation";
   }

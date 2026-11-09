@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { utimes } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createDraft,
@@ -5,6 +8,7 @@ import {
   editDraft,
   executeGeneration,
   executeMediaAsset,
+  reportOrphanMediaBlobs,
   publishDraft,
   readDraft,
   reconcileDraftAssets,
@@ -184,6 +188,41 @@ describe("zasoby medialne i uzgodnienia szkicu (integracja)", () => {
     expect(repeatedRun.state).toBe("succeeded");
     expect(repeatedRun.attempts).toBe(1);
     expect(fakes.tts.callsFor("Thursday")).toBe(1);
+  });
+
+  it("ENOSPC przy zapisie medium kończy run jako media_storage bez kolejnej płatnej generacji (#385)", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const enospc = Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+    const failingStore = {
+      putImmutable: async () => { throw enospc; },
+      get: fakes.store.get.bind(fakes.store),
+    };
+    const { db } = testDatabase();
+    const services = createServices({
+      db, clock: new ManualClock(), media: fakes.settings,
+      generation: { ...fakes.deps, mediaStore: failingStore },
+    });
+    const draft = await createDraft(services, { title: "Dni", items: [item()] });
+    await reconcileDraftAssets(services, draft.id);
+    const assetId = (await assetLink(draft.id, 0, "target_audio")).asset_id!;
+
+    await executeMediaAsset(services, assetId);
+
+    expect(fakes.tts.callsFor("Thursday")).toBe(1);
+    expect((await assetRow(assetId)).state).toBe("failed");
+    const run = await runOfAsset(assetId);
+    expect(run.state).toBe("failed");
+    expect(run.error_code).toBe("media_storage");
+    expect(run.attempts).toBe(1);
+    const failedDraft = await readDraft(services, draft.id);
+    expect(failedDraft.assets.find((asset) => asset.assetId === assetId))
+      .toMatchObject({ state: "failed", errorCode: "media_storage" });
+
+    // Terminalny stan: ponowne wywołanie workera nie płaci providerowi drugi raz.
+    await executeMediaAsset(services, assetId);
+    expect(fakes.tts.callsFor("Thursday")).toBe(1);
+    expect((await runOfAsset(assetId)).state).toBe("failed");
   });
 
   it("ponawia historyczną ilustrację modelem zapisanym w zasobie, gdy metadata nie ma modelu", async () => {
@@ -603,5 +642,38 @@ describe("zasoby medialne i uzgodnienia szkicu (integracja)", () => {
     expect(remaining.map((r) => r.role)).toEqual(["target_audio"]);
     // globalny zasób pozostaje w cache
     expect(await countRows("media_assets")).toBe(3);
+  });
+
+  it("raport sierot (#386) zestawia dysk z media_assets: powiązany blob nie jest kandydatem, a dry-run niczego nie usuwa", async () => {
+    const fakes = await fakeGeneration();
+    disposers.push(fakes.dispose);
+    const { db } = testDatabase();
+
+    const referenced = await fakes.store.putImmutable(Uint8Array.from(Buffer.from("referenced-bytes")), "audio/mpeg");
+    const orphan = await fakes.store.putImmutable(Uint8Array.from(Buffer.from("orphan-bytes")), "audio/mpeg");
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await utimes(join(fakes.root, referenced.storageKey), old, old);
+    await utimes(join(fakes.root, orphan.storageKey), old, old);
+
+    await pool.query(
+      `insert into learning_app.media_assets
+         (id, kind, fingerprint, generation_number, state, storage_key, content_sha256, mime_type, byte_count, provider, model)
+       values ($1, 'tts', 'orphan-report-referenced', 1, 'ready', $2, $3, 'audio/mpeg', $4, 'fake', 'fake'),
+              ($5, 'tts', 'orphan-report-pending', 1, 'pending', null, null, null, null, 'fake', 'fake')`,
+      [randomUUID(), referenced.storageKey, referenced.contentSha256, referenced.byteCount, randomUUID()],
+    );
+
+    const report = await reportOrphanMediaBlobs(db, {
+      rootDir: fakes.root,
+      nowMs: Date.now(),
+      minAgeMs: 60 * 60 * 1000,
+    });
+    expect(report.referencedKeyCount).toBe(1);
+    expect(report.referencedOnDiskCount).toBe(1);
+    expect(report.eligibleStorageKeys).toEqual([orphan.storageKey]);
+    expect(report.orphanBytes).toBe(orphan.byteCount);
+    // dry-run: kandydat i blob powiązany nadal są na dysku.
+    expect(await fakes.store.get(orphan.storageKey)).not.toBeNull();
+    expect(await fakes.store.get(referenced.storageKey)).not.toBeNull();
   });
 });

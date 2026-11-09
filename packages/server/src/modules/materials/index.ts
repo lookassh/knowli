@@ -22,6 +22,7 @@ export { regenerateLessonStory } from "./lessons/lesson-story-generation";
 export { regenerateLessonCardAudio, regenerateLessonPromptAudio, regenerateLessonStoryAudio } from "./lessons/lesson-prompt-audio";
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
 export { executeMediaAsset } from "./media-generation";
+export { DEFAULT_ORPHAN_GRACE_MS, reportOrphanMediaBlobs, summarizeOrphanMediaReport, type OrphanMediaReport } from "./media-orphan-report";
 export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";
 export { createSourceMaterial, deleteSourceMaterial, getSourceMaterial, listSourceMaterials, updateSourceMaterial } from "./source-materials";
 export { prepareUiAudio, readUiAudio, regenerateUiAudio } from "./ui-audio";
