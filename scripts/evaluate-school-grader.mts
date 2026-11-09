@@ -1,6 +1,6 @@
 /**
  * Ewaluacja gradera szkolnego (Etap 2) na złotym zestawie
- * `.kiro/specs/school-subjects/grader-golden-set.json`.
+ * `tests/probes/fixtures/school-grader-golden-set.json`.
  *
  * Uruchomienie:
  *   corepack pnpm eval:school-grader            # prawdziwy model z .env (UMIEM_GRADER_*)
@@ -84,7 +84,7 @@ if (!useFake) {
   }
 }
 const golden = JSON.parse(
-  readFileSync(new URL("../.kiro/specs/school-subjects/grader-golden-set.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../tests/probes/fixtures/school-grader-golden-set.json", import.meta.url), "utf8"),
 ) as GoldenSet;
 
 let provider: AnswerGraderProvider;

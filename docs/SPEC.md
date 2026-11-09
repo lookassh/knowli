@@ -256,7 +256,7 @@ Podczas sesji algorytm aplikacji:
 
 Nie wywołujemy LLM po każdym kliknięciu. W MVP nie ma swobodnego czatu dziecka z AI ani generowania nowych, niezatwierdzonych faktów w trakcie sesji.
 
-Wyjątek dla lekcji (moduł gramatyki, 2026-10-12): w lekcjach interaktywnych odpowiedź tekstowa, której nie rozstrzyga dopasowanie deterministyczne do zatwierdzonych wariantów (po normalizacji i tolerancji drobnej literówki), może zostać oceniona przez konfigurowalny **model oceniający** zgodny z OpenAI. Wywołanie następuje tylko dla niedopasowanej odpowiedzi i tylko gdy nie ma zapisanego werdyktu dla tej pary (ćwiczenie, znormalizowana odpowiedź, wersja promptu); werdykt trafia do wspólnego cache, więc ta sama odpowiedź nie woła modelu ponownie. Brak skonfigurowanego modelu, limit wywołań sesji, timeout lub błąd dają wynik „nieocenione” bez kary. Zamknięte ćwiczenia i trafienia cache nie wołają modelu. Szczegóły: sekcja „Lekcje i przedmioty” oraz `.kiro/specs/grammar-module/`.
+Wyjątek dla lekcji (moduł gramatyki, 2026-10-12): w lekcjach interaktywnych odpowiedź tekstowa, której nie rozstrzyga dopasowanie deterministyczne do zatwierdzonych wariantów (po normalizacji i tolerancji drobnej literówki), może zostać oceniona przez konfigurowalny **model oceniający** zgodny z OpenAI. Wywołanie następuje tylko dla niedopasowanej odpowiedzi i tylko gdy nie ma zapisanego werdyktu dla tej pary (ćwiczenie, znormalizowana odpowiedź, wersja promptu); werdykt trafia do wspólnego cache, więc ta sama odpowiedź nie woła modelu ponownie. Brak skonfigurowanego modelu, limit wywołań sesji, timeout lub błąd dają wynik „nieocenione” bez kary. Zamknięte ćwiczenia i trafienia cache nie wołają modelu. Szczegóły: sekcja „Lekcje i przedmioty”.
 
 ## 11. Umiejętności śledzone niezależnie
 
@@ -755,7 +755,7 @@ W projekcie architektury trzeba opisać trwałość danych i zasobów, ich kopie
 
 ## 28. Przedmioty szkolne z materiału rodzica (2026-10-28, stan kodu 2026-10-29)
 
-Moduł rozszerza silnik lekcji (§29a) o przedmioty szkolne — historię, biologię, język polski i inne — jako generyczny przedmiot `school`, którego zagadnienia powstają z materiału dostarczonego przez rodzica, a nie z katalogu w kodzie. Status: wymagania i projekt w `.kiro/specs/school-subjects/{requirements,design,tasks}.md`. W kodzie: Etapy 1–2 (przedmiot z tekstu wklejonego, typy zamknięte i odpowiedź otwarta z oceną dwuwymiarową), Etap 2b (zadania rachunkowe liczone przez kod), Etap 3 (odpowiedź mówiona przez dyktowanie do pola), Etap 4 (trener precyzji), Etap 5 (raport kartkówki z wymiarem precyzji), Etap 6 (kategorie fragmentów i pomylone pojęcia), Etap 7 („Połącz w pary” i „Pogrupuj”), Etap 8 („Posłuchaj pytania”, a jako jego kontynuacja „Posłuchaj karty”) i Etap 10 („Uzupełnij tekst”). Całość jest niezweryfikowana pilotażem z dzieckiem ani na fizycznym urządzeniu; dyktowanie sprawdzono tylko na syntetycznym polskim głosie. Zestaw szkolny jest lekcją; słówka i gramatyka pozostają bez zmian, a raport Hermesa nadal wyklucza lekcje.
+Moduł rozszerza silnik lekcji (§29a) o przedmioty szkolne — historię, biologię, język polski i inne — jako generyczny przedmiot `school`, którego zagadnienia powstają z materiału dostarczonego przez rodzica, a nie z katalogu w kodzie. Status: dawne wymagania i projekt (`.kiro/specs/school-subjects/`) usunięto z repozytorium; ostatnia wersja — historia gita, commit `984d636b`. W kodzie: Etapy 1–2 (przedmiot z tekstu wklejonego, typy zamknięte i odpowiedź otwarta z oceną dwuwymiarową), Etap 2b (zadania rachunkowe liczone przez kod), Etap 3 (odpowiedź mówiona przez dyktowanie do pola), Etap 4 (trener precyzji), Etap 5 (raport kartkówki z wymiarem precyzji), Etap 6 (kategorie fragmentów i pomylone pojęcia), Etap 7 („Połącz w pary” i „Pogrupuj”), Etap 8 („Posłuchaj pytania”, a jako jego kontynuacja „Posłuchaj karty”) i Etap 10 („Uzupełnij tekst”). Całość jest niezweryfikowana pilotażem z dzieckiem ani na fizycznym urządzeniu; dyktowanie sprawdzono tylko na syntetycznym polskim głosie. Zestaw szkolny jest lekcją; słówka i gramatyka pozostają bez zmian, a raport Hermesa nadal wyklucza lekcje.
 
 Wejściem jest wyłącznie tekst wklejony przez rodzica (jeden zestaw = jeden podrozdział; limit materiału dla przedmiotu szkolnego: 16 000 znaków; od Etapu 2 rozdziału angielskiego ten sam tekst można zapisać jako źródło i utworzyć z niego zestaw szkolny bez ponownego wklejania — §37), np. wierne opracowanie przygotowane w narzędziu zewnętrznym (NotebookLM) ze zdjęć podręcznika. Upload plików, OCR, analiza dokumentów i wyświetlanie obrazów z podręcznika są poza zakresem (decyzja właściciela); kształt powiązań ze źródłem ma pozwolić dopiąć je później bez zmiany znaczenia zapisanych prób.
 
@@ -776,7 +776,7 @@ W odpowiedzi ustnej STT ustala tekst, dziecko widzi go przed wysłaniem, a ocena
 Aplikacja nadal nie zawiera uploadu dokumentów ani OCR; czytelność zdjęć i wierność opracowania weryfikuje rodzic przy przygotowaniu tekstu w narzędziu zewnętrznym.
 ## 29a. Lekcje i przedmioty (2026-10-12)
 
-Uzupełnienie wprowadza drugi rodzaj materiału obok zestawu słówek: **lekcję**. Lekcja uczy czasu/konstrukcji gramatycznej (tematy katalogu: Present Simple, czasownik „to be”, dodany 2026-10-26, oraz Present Continuous, dodany 2026-11-05) na materiale, który dziecko przerabia w szkole. Szczegółowe wymagania i kryteria: `.kiro/specs/grammar-module/{requirements,design}.md`; poniżej opis produktu.
+Uzupełnienie wprowadza drugi rodzaj materiału obok zestawu słówek: **lekcję**. Lekcja uczy czasu/konstrukcji gramatycznej (tematy katalogu: Present Simple, czasownik „to be”, dodany 2026-10-26, oraz Present Continuous, dodany 2026-11-05) na materiale, który dziecko przerabia w szkole. Dawne szczegółowe wymagania (`.kiro/specs/grammar-module/`) usunięto z repozytorium (ostatnia wersja — historia gita, commit `984d636b`); poniżej opis produktu.
 
 ### 29a.1. Pojęcia
 
@@ -926,7 +926,7 @@ Rodzic widzi, że dziecko rozpoznaje większość słów, samodzielnie przypomin
 
 ### 32.1. Kryteria akceptacji lekcji i przedmiotów (A41+, 2026-10-12)
 
-Mapują wymagania 1–11 z `.kiro/specs/grammar-module/requirements.md`.
+Mapują wymagania 1–11 z dawnego `.kiro/specs/grammar-module/requirements.md` (historia gita, commit `984d636b`).
 
 | ID | Scenariusz | Oczekiwany rezultat | Wym. |
 | --- | --- | --- | --- |

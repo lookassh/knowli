@@ -31,6 +31,5 @@ backups/
 
 .superpowers/
 .zcodeignore
-.kiro/*
-!.kiro/specs/
+.kiro/
 _bmad-output/
