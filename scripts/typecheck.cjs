@@ -6,7 +6,7 @@
  * Pakiet `typescript` (5.9) zostaje dla narzędzi, które wołają API kompilatora
  * (`next build` sprawdza typy przez `ts.createProgram`, testy
  * `*.architecture.test.ts` parsują kod przez `ts.createSourceFile`) — TS 7.0
- * nie ma tego API. Pełna migracja na TS 7.1: AGENTS.md, „Running and verifying”.
+ * nie ma tego API. Pełna migracja na TS 7.1: docs/agents/testing.md, „Planowana migracja” (issue #433).
  */
 "use strict";
 
