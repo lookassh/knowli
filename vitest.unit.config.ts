@@ -17,7 +17,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "apps/*/src/**/*.test.ts", "apps/*/src/**/*.test.tsx", "tests/*.test.ts", "tests/e2e/spec-projects.test.ts", "tests/probes/probe-costs.test.ts", "tests/probes/probe-preflight.test.ts", "tests/probes/probe-helpers.test.ts", "tests/probes/closed-check-gold.probe.test.ts", "tests/probes/blind/score.test.ts", "tests/probes/blind/coverage.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "apps/*/src/**/*.test.ts", "apps/*/src/**/*.test.tsx", "tests/*.test.ts", "tests/e2e/spec-projects.test.ts", "tests/probes/probe-costs.test.ts", "tests/probes/probe-preflight.test.ts", "tests/probes/probe-helpers.test.ts", "tests/probes/closed-check-gold.probe.test.ts", "tests/probes/blind/score.test.ts", "tests/probes/blind/coverage.test.ts", "tests/probes/bench/bench.test.ts"],
     passWithNoTests: true,
     environment: "node",
     // Wątki zamiast procesów (`forks`): ok. 1/4 krócej, głównie na imporcie modułów.

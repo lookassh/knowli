@@ -1,3 +1,4 @@
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,4 +116,19 @@ export function runDirsOf(raw: string, name: string): string[] {
   const dirs = raw.split(";").map((item) => item.trim()).filter((item) => item !== "");
   if (dirs.length === 0) throw new Error(`${name}: pusta lista katalogów`);
   return dirs.map((dir) => resolveOutsideRepoPath(dir, name)!);
+}
+
+/** Zmienne systemu potrzebne lokalnemu CLI (Windows i POSIX); reszta środowiska, w tym sekrety z `.env`, nie przechodzi. */
+const CHILD_ENV_KEYS = new Set(["PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "WINDIR", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "USERNAME", "USER", "LANG"]);
+
+/** Środowisko zewnętrznego CLI (sędzia Muse): lista dozwolonych zmiennych systemu oraz `MUSE_*`, bez kluczy i URL-i bazy. */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => CHILD_ENV_KEYS.has(key.toUpperCase()) || key.toUpperCase().startsWith("MUSE_")));
+}
+
+/** Lokalne CLI Muse Code ze środowiskiem `childEnv`; na Windows `muse` to skrypt `.cmd`, więc przez `cmd.exe /c` (argumenty bez metaznaków powłoki). */
+export function runMuse(args: string[], options: Omit<ExecFileSyncOptionsWithStringEncoding, "env" | "encoding"> = {}): string {
+  const full = { ...options, env: childEnv(), encoding: "utf8" as const };
+  // Lokalne narzędzie dewelopera z jego PATH (jak `pnpm`): bezwzględna ścieżka i tak pochodziłaby z tego samego PATH.
+  return process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", ...args], full) : execFileSync("muse", args, full); // NOSONAR typescript:S4036
 }

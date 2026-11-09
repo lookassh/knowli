@@ -1,0 +1,572 @@
+{
+  "schema": "probe-bench-record/v1",
+  "label": "sonnet-stage5",
+  "date": "2026-11-09",
+  "commit": "a78e981c",
+  "dirty": false,
+  "diffSha256": null,
+  "note": "Bieg potwierdzający etapu 5 z kredytu Anthropic (BYOK): koszt w rejestrze ok. 0, z tokenów 1,15–1,30 USD (szkoła), 0,86–1,00 (rozdział), 0,53–0,80 (gramatyka) na lekcję. Gramatyka 1 powtórzenie.",
+  "models": {
+    "generator": "anthropic/claude-sonnet-5.5",
+    "objectives": "anthropic/claude-sonnet-5.5",
+    "objectivesReasoning": "low",
+    "checker": "deepseek/deepseek-v4.1-flash-1017",
+    "grader": "google/gemini-3.8-flash",
+    "effort": "low"
+  },
+  "routing": {
+    "UMIEM_LLM_PROVIDER_ORDER": "anthropic",
+    "UMIEM_LLM_PROVIDER_ALLOW_FALLBACKS": "false",
+    "UMIEM_LESSON_AGENT_CHECKER_PROVIDER_ALLOW_FALLBACKS": "true"
+  },
+  "judge": "muse:",
+  "judgeVersion": "Muse Code 1.4.14 (model domyślny wg notatek biegów: muse-wonder-full-1.0)",
+  "rubric": "rubric-stage5.md",
+  "generation": {
+    "school-plant-parts": {
+      "materialSha256": "524e9f631e9de70fa5e123fe08358db59a53acb2a038f6b356ffb92c1b1c0a34",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 0,
+      "costUsd": {
+        "min": 0.0127,
+        "max": 0.0188
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 641015,
+          "out": 132172
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 100889,
+          "out": 61678
+        }
+      },
+      "durationS": {
+        "min": 139,
+        "max": 270
+      },
+      "coverageGapsBeforeAdd": 5,
+      "anyDefect": {
+        "defects": 16,
+        "n": 120,
+        "rate": 0.1333,
+        "low": 0.0838,
+        "high": 0.2056
+      },
+      "defects": {
+        "W1": {
+          "defects": 0,
+          "n": 51
+        },
+        "W5": {
+          "defects": 9,
+          "n": 120
+        },
+        "W6": {
+          "defects": 1,
+          "n": 120
+        },
+        "W9": {
+          "defects": 0,
+          "n": 120
+        },
+        "W2": {
+          "defects": 3,
+          "n": 69
+        },
+        "W4": {
+          "defects": 3,
+          "n": 69
+        },
+        "W3": {
+          "defects": 0,
+          "n": 38
+        }
+      }
+    },
+    "school-baptism-poland": {
+      "materialSha256": "09a728635244e4ffbe6dcf6aa191099edae2cb28dbdd1f02b4ebde7ecc78d079",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 0,
+      "costUsd": {
+        "min": 0.0166,
+        "max": 0.0199
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 540380,
+          "out": 122547
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 102520,
+          "out": 71855
+        }
+      },
+      "durationS": {
+        "min": 123,
+        "max": 128
+      },
+      "coverageGapsBeforeAdd": 6,
+      "anyDefect": {
+        "defects": 15,
+        "n": 110,
+        "rate": 0.1364,
+        "low": 0.0844,
+        "high": 0.2129
+      },
+      "defects": {
+        "W2": {
+          "defects": 3,
+          "n": 60
+        },
+        "W4": {
+          "defects": 1,
+          "n": 60
+        },
+        "W5": {
+          "defects": 6,
+          "n": 110
+        },
+        "W6": {
+          "defects": 1,
+          "n": 110
+        },
+        "W9": {
+          "defects": 4,
+          "n": 110
+        },
+        "W1": {
+          "defects": 1,
+          "n": 50
+        },
+        "W3": {
+          "defects": 0,
+          "n": 38
+        }
+      }
+    },
+    "chapter-clothes-weather": {
+      "materialSha256": "6e3416f8c0bf98edbac1372cb3ad06a7ace2f5716c5729ea470648bba200a988",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 2,
+      "costUsd": {
+        "min": 0.0106,
+        "max": 0.0133
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 454730,
+          "out": 94360
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 50311,
+          "out": 47274
+        }
+      },
+      "durationS": {
+        "min": 97,
+        "max": 102
+      },
+      "coverageGapsBeforeAdd": 0,
+      "anyDefect": {
+        "defects": 22,
+        "n": 151,
+        "rate": 0.1457,
+        "low": 0.0982,
+        "high": 0.2107
+      },
+      "defects": {
+        "W2": {
+          "defects": 0,
+          "n": 86
+        },
+        "W4": {
+          "defects": 1,
+          "n": 86
+        },
+        "W5": {
+          "defects": 19,
+          "n": 151
+        },
+        "W6": {
+          "defects": 1,
+          "n": 151
+        },
+        "W7": {
+          "defects": 0,
+          "n": 117
+        },
+        "W9": {
+          "defects": 1,
+          "n": 151
+        },
+        "W1": {
+          "defects": 0,
+          "n": 65
+        },
+        "W3": {
+          "defects": 0,
+          "n": 41
+        },
+        "W8": {
+          "defects": 0,
+          "n": 19
+        }
+      }
+    },
+    "chapter-home-rooms": {
+      "materialSha256": "0378d74cb2dfd4c8dd885430771c44075cb82515f2f38962e301f0191694b0b3",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 2,
+      "costUsd": {
+        "min": 0.0121,
+        "max": 0.0189
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 413522,
+          "out": 92730
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 51379,
+          "out": 61447
+        }
+      },
+      "durationS": {
+        "min": 98,
+        "max": 112
+      },
+      "coverageGapsBeforeAdd": 1,
+      "anyDefect": {
+        "defects": 18,
+        "n": 150,
+        "rate": 0.12,
+        "low": 0.0773,
+        "high": 0.1817
+      },
+      "defects": {
+        "W2": {
+          "defects": 0,
+          "n": 92
+        },
+        "W4": {
+          "defects": 0,
+          "n": 92
+        },
+        "W5": {
+          "defects": 3,
+          "n": 150
+        },
+        "W6": {
+          "defects": 11,
+          "n": 150
+        },
+        "W7": {
+          "defects": 1,
+          "n": 117
+        },
+        "W9": {
+          "defects": 2,
+          "n": 150
+        },
+        "W1": {
+          "defects": 0,
+          "n": 58
+        },
+        "W3": {
+          "defects": 1,
+          "n": 41
+        },
+        "W8": {
+          "defects": 0,
+          "n": 16
+        }
+      }
+    },
+    "chapter-food-likes": {
+      "materialSha256": "c143c792e4153918be2768ca94771ae315c2ffd26e7053f7179da6d7559e16d1",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 0,
+      "costUsd": {
+        "min": 0.0118,
+        "max": 0.0131
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 418971,
+          "out": 90290
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 42558,
+          "out": 49329
+        }
+      },
+      "durationS": {
+        "min": 83,
+        "max": 113
+      },
+      "coverageGapsBeforeAdd": 4,
+      "anyDefect": {
+        "defects": 25,
+        "n": 149,
+        "rate": 0.1678,
+        "low": 0.1163,
+        "high": 0.236
+      },
+      "defects": {
+        "W1": {
+          "defects": 0,
+          "n": 61
+        },
+        "W5": {
+          "defects": 18,
+          "n": 149
+        },
+        "W6": {
+          "defects": 0,
+          "n": 149
+        },
+        "W7": {
+          "defects": 0,
+          "n": 120
+        },
+        "W8": {
+          "defects": 0,
+          "n": 19
+        },
+        "W9": {
+          "defects": 1,
+          "n": 149
+        },
+        "W2": {
+          "defects": 5,
+          "n": 88
+        },
+        "W4": {
+          "defects": 0,
+          "n": 88
+        },
+        "W3": {
+          "defects": 1,
+          "n": 39
+        }
+      }
+    },
+    "grammar-to-be": {
+      "materialSha256": "3d736428e22673fee60100dcaf89c23deb11cbfc76eab7592d1b5dc3a5e4ec8a",
+      "runs": 1,
+      "succeeded": 1,
+      "publishable": 1,
+      "costUsd": {
+        "min": 0.0025,
+        "max": 0.0025
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 115205,
+          "out": 30263
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 4170,
+          "out": 4976
+        }
+      },
+      "durationS": {
+        "min": 58,
+        "max": 58
+      },
+      "coverageGapsBeforeAdd": 0,
+      "anyDefect": {
+        "defects": 3,
+        "n": 68,
+        "rate": 0.0441,
+        "low": 0.0151,
+        "high": 0.1219
+      },
+      "defects": {
+        "W1": {
+          "defects": 0,
+          "n": 26
+        },
+        "W5": {
+          "defects": 2,
+          "n": 68
+        },
+        "W6": {
+          "defects": 0,
+          "n": 68
+        },
+        "W7": {
+          "defects": 0,
+          "n": 68
+        },
+        "W8": {
+          "defects": 0,
+          "n": 5
+        },
+        "W9": {
+          "defects": 0,
+          "n": 68
+        },
+        "W3": {
+          "defects": 0,
+          "n": 16
+        },
+        "W2": {
+          "defects": 1,
+          "n": 42
+        },
+        "W4": {
+          "defects": 0,
+          "n": 42
+        }
+      }
+    },
+    "grammar-present-simple": {
+      "materialSha256": "db1d4b3b2332ff4651ac046a5e455639e75e3c5201736b5bc8f21bb332329ad6",
+      "runs": 1,
+      "succeeded": 1,
+      "publishable": 1,
+      "costUsd": {
+        "min": 0.0029,
+        "max": 0.0029
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 150608,
+          "out": 39477
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 5240,
+          "out": 5714
+        }
+      },
+      "durationS": {
+        "min": 77,
+        "max": 77
+      },
+      "coverageGapsBeforeAdd": 0,
+      "anyDefect": {
+        "defects": 22,
+        "n": 83,
+        "rate": 0.2651,
+        "low": 0.182,
+        "high": 0.3689
+      },
+      "defects": {
+        "W2": {
+          "defects": 3,
+          "n": 51
+        },
+        "W4": {
+          "defects": 1,
+          "n": 51
+        },
+        "W5": {
+          "defects": 10,
+          "n": 83
+        },
+        "W6": {
+          "defects": 8,
+          "n": 83
+        },
+        "W7": {
+          "defects": 0,
+          "n": 83
+        },
+        "W9": {
+          "defects": 0,
+          "n": 83
+        },
+        "W1": {
+          "defects": 0,
+          "n": 32
+        },
+        "W3": {
+          "defects": 0,
+          "n": 23
+        },
+        "W8": {
+          "defects": 0,
+          "n": 8
+        }
+      }
+    },
+    "grammar-present-continuous": {
+      "materialSha256": "db1d4b3b2332ff4651ac046a5e455639e75e3c5201736b5bc8f21bb332329ad6",
+      "runs": 1,
+      "succeeded": 1,
+      "publishable": 1,
+      "costUsd": {
+        "min": 0.0031,
+        "max": 0.0031
+      },
+      "tokens": {
+        "anthropic/claude-sonnet-5.5": {
+          "in": 186251,
+          "out": 42945
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "in": 5162,
+          "out": 6044
+        }
+      },
+      "durationS": {
+        "min": 85,
+        "max": 85
+      },
+      "coverageGapsBeforeAdd": 0,
+      "anyDefect": {
+        "defects": 13,
+        "n": 77,
+        "rate": 0.1688,
+        "low": 0.1014,
+        "high": 0.2677
+      },
+      "defects": {
+        "W1": {
+          "defects": 0,
+          "n": 33
+        },
+        "W3": {
+          "defects": 3,
+          "n": 24
+        },
+        "W5": {
+          "defects": 7,
+          "n": 77
+        },
+        "W6": {
+          "defects": 3,
+          "n": 77
+        },
+        "W7": {
+          "defects": 0,
+          "n": 77
+        },
+        "W9": {
+          "defects": 0,
+          "n": 77
+        },
+        "W2": {
+          "defects": 1,
+          "n": 44
+        },
+        "W4": {
+          "defects": 0,
+          "n": 44
+        },
+        "W8": {
+          "defects": 0,
+          "n": 6
+        }
+      }
+    }
+  },
+  "gold": {}
+}

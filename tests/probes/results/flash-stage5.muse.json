@@ -1,0 +1,360 @@
+{
+  "schema": "probe-bench-record/v1",
+  "label": "flash-stage5",
+  "date": "2026-11-09",
+  "commit": "mixed",
+  "dirty": false,
+  "diffSha256": null,
+  "note": "Z istniejących zrzutów etapu 5: rozdział — bieg potwierdzający 5a (commit 09e9835f, „+3”), szkoła — strojenie 2 etapu 5b (commit 0ca0e205), kontrola wzorcowa — 4f513128 (rozdział) i 414370e3 (szkoła). Gramatyka nie była oceniana tym sędzią.",
+  "models": {
+    "generator": "google/gemini-3.8-flash",
+    "objectives": "google/gemini-3.8-flash",
+    "objectivesReasoning": "low",
+    "checker": "deepseek/deepseek-v4.1-flash-1017",
+    "grader": "google/gemini-3.8-flash",
+    "effort": "low"
+  },
+  "routing": {},
+  "judge": "muse:",
+  "judgeVersion": "Muse Code 1.4.14 (model domyślny wg notatek biegów: muse-wonder-full-1.0)",
+  "rubric": "rubric-stage5.md",
+  "generation": {
+    "school-plant-parts": {
+      "materialSha256": "524e9f631e9de70fa5e123fe08358db59a53acb2a038f6b356ffb92c1b1c0a34",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 2,
+      "costUsd": {
+        "min": 0.3558,
+        "max": 0.4311
+      },
+      "tokens": {},
+      "durationS": {
+        "min": 128,
+        "max": 136
+      },
+      "coverageGapsBeforeAdd": 0,
+      "anyDefect": {
+        "defects": 5,
+        "n": 131,
+        "rate": 0.0382,
+        "low": 0.0164,
+        "high": 0.0862
+      },
+      "defects": {
+        "W2": {
+          "defects": 0,
+          "n": 76
+        },
+        "W4": {
+          "defects": 0,
+          "n": 76
+        },
+        "W5": {
+          "defects": 2,
+          "n": 131
+        },
+        "W6": {
+          "defects": 2,
+          "n": 131
+        },
+        "W9": {
+          "defects": 2,
+          "n": 131
+        },
+        "W1": {
+          "defects": 0,
+          "n": 55
+        },
+        "W3": {
+          "defects": 0,
+          "n": 47
+        }
+      }
+    },
+    "school-baptism-poland": {
+      "materialSha256": "09a728635244e4ffbe6dcf6aa191099edae2cb28dbdd1f02b4ebde7ecc78d079",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 1,
+      "costUsd": {
+        "min": 0.3658,
+        "max": 0.4252
+      },
+      "tokens": {},
+      "durationS": {
+        "min": 105,
+        "max": 129
+      },
+      "coverageGapsBeforeAdd": 3,
+      "anyDefect": {
+        "defects": 8,
+        "n": 123,
+        "rate": 0.065,
+        "low": 0.0333,
+        "high": 0.1231
+      },
+      "defects": {
+        "W2": {
+          "defects": 3,
+          "n": 71
+        },
+        "W4": {
+          "defects": 0,
+          "n": 71
+        },
+        "W5": {
+          "defects": 0,
+          "n": 123
+        },
+        "W6": {
+          "defects": 1,
+          "n": 123
+        },
+        "W9": {
+          "defects": 0,
+          "n": 123
+        },
+        "W1": {
+          "defects": 1,
+          "n": 52
+        },
+        "W3": {
+          "defects": 3,
+          "n": 39
+        }
+      }
+    },
+    "chapter-clothes-weather": {
+      "materialSha256": "6e3416f8c0bf98edbac1372cb3ad06a7ace2f5716c5729ea470648bba200a988",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 2,
+      "costUsd": {
+        "min": 0.3202,
+        "max": 0.3219
+      },
+      "tokens": {},
+      "durationS": {
+        "min": 82,
+        "max": 84
+      },
+      "coverageGapsBeforeAdd": 1,
+      "anyDefect": {
+        "defects": 11,
+        "n": 153,
+        "rate": 0.0719,
+        "low": 0.0406,
+        "high": 0.1241
+      },
+      "defects": {
+        "W2": {
+          "defects": 0,
+          "n": 93
+        },
+        "W4": {
+          "defects": 0,
+          "n": 93
+        },
+        "W5": {
+          "defects": 5,
+          "n": 153
+        },
+        "W6": {
+          "defects": 5,
+          "n": 153
+        },
+        "W7": {
+          "defects": 0,
+          "n": 125
+        },
+        "W9": {
+          "defects": 0,
+          "n": 153
+        },
+        "W1": {
+          "defects": 0,
+          "n": 60
+        },
+        "W3": {
+          "defects": 1,
+          "n": 36
+        },
+        "W8": {
+          "defects": 0,
+          "n": 18
+        }
+      }
+    },
+    "chapter-home-rooms": {
+      "materialSha256": "0378d74cb2dfd4c8dd885430771c44075cb82515f2f38962e301f0191694b0b3",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 2,
+      "costUsd": {
+        "min": 0.3118,
+        "max": 0.3135
+      },
+      "tokens": {},
+      "durationS": {
+        "min": 87,
+        "max": 98
+      },
+      "coverageGapsBeforeAdd": 1,
+      "anyDefect": {
+        "defects": 10,
+        "n": 151,
+        "rate": 0.0662,
+        "low": 0.0364,
+        "high": 0.1176
+      },
+      "defects": {
+        "W2": {
+          "defects": 3,
+          "n": 92
+        },
+        "W4": {
+          "defects": 3,
+          "n": 92
+        },
+        "W5": {
+          "defects": 3,
+          "n": 151
+        },
+        "W6": {
+          "defects": 1,
+          "n": 151
+        },
+        "W7": {
+          "defects": 0,
+          "n": 123
+        },
+        "W9": {
+          "defects": 0,
+          "n": 151
+        },
+        "W1": {
+          "defects": 0,
+          "n": 59
+        },
+        "W3": {
+          "defects": 0,
+          "n": 38
+        },
+        "W8": {
+          "defects": 0,
+          "n": 17
+        }
+      }
+    },
+    "chapter-food-likes": {
+      "materialSha256": "c143c792e4153918be2768ca94771ae315c2ffd26e7053f7179da6d7559e16d1",
+      "runs": 2,
+      "succeeded": 2,
+      "publishable": 1,
+      "costUsd": {
+        "min": 0.2638,
+        "max": 0.2673
+      },
+      "tokens": {},
+      "durationS": {
+        "min": 75,
+        "max": 76
+      },
+      "coverageGapsBeforeAdd": 2,
+      "anyDefect": {
+        "defects": 11,
+        "n": 134,
+        "rate": 0.0821,
+        "low": 0.0465,
+        "high": 0.141
+      },
+      "defects": {
+        "W2": {
+          "defects": 0,
+          "n": 78
+        },
+        "W4": {
+          "defects": 0,
+          "n": 78
+        },
+        "W5": {
+          "defects": 8,
+          "n": 134
+        },
+        "W6": {
+          "defects": 0,
+          "n": 134
+        },
+        "W7": {
+          "defects": 1,
+          "n": 103
+        },
+        "W9": {
+          "defects": 2,
+          "n": 134
+        },
+        "W1": {
+          "defects": 0,
+          "n": 56
+        },
+        "W8": {
+          "defects": 0,
+          "n": 14
+        },
+        "W3": {
+          "defects": 0,
+          "n": 38
+        }
+      }
+    }
+  },
+  "gold": {
+    "gold-chapter": {
+      "fixture": "closed-check-gold-stage5.json",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "reps": 3,
+      "correctRejected": [
+        0,
+        0,
+        0
+      ],
+      "correctTotal": 18,
+      "wrongKeyDetected": [
+        16,
+        16,
+        16
+      ],
+      "wrongKeyTotal": 16,
+      "secondCorrectDetected": [
+        4,
+        8,
+        4
+      ],
+      "secondCorrectTotal": 9
+    },
+    "gold-school": {
+      "fixture": "closed-check-gold-school.json",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "reps": 3,
+      "correctRejected": [
+        0,
+        0,
+        0
+      ],
+      "correctTotal": 18,
+      "wrongKeyDetected": [
+        18,
+        18,
+        18
+      ],
+      "wrongKeyTotal": 18,
+      "secondCorrectDetected": [
+        14,
+        14,
+        14
+      ],
+      "secondCorrectTotal": 14
+    }
+  }
+}
