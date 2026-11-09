@@ -174,7 +174,7 @@ function assertObjectivesInTopic(topic: LessonTopic, objectiveIds: readonly stri
 }
 
 /** Tytuł lekcji: z tematu i przedmiotu, lub z instrukcji, obcięty do 120 znaków. */
-function lessonTitle(subject: SubjectModule, topic: LessonTopic, instruction?: string): string {
+export function lessonTitle(subject: SubjectModule, topic: LessonTopic, instruction?: string): string {
   const base = `${subject.titlePl}: ${topic.titlePl}`;
   const title = instruction && instruction.trim() !== "" ? instruction.trim() : base;
   return [...title].slice(0, 120).join("");
@@ -529,7 +529,7 @@ export function listenChoiceAllowance(
 }
 
 /** Czy cel może mieć ćwiczenia `lesson_listen_choice`: przedmiot nagrywa zdania, a typ leży na liście przedmiotu i celu. */
-function listenChoiceAvailable(subject: SubjectModule, objective: { exerciseTypes: readonly string[] }): boolean {
+export function listenChoiceAvailable(subject: SubjectModule, objective: { exerciseTypes: readonly string[] }): boolean {
   return subject.ttsForFeedbackSentence && subject.exerciseTypes.includes("lesson_listen_choice") && objective.exerciseTypes.includes("lesson_listen_choice");
 }
 

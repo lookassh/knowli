@@ -2,6 +2,8 @@
 
 Umiem! udostępnia rodzinie ograniczone, tylko do odczytu podsumowanie przez endpoint MCP w istniejącym procesie web. Hermes łączy się przez Streamable HTTP; nie uruchamia lokalnego serwera ani nie łączy się bezpośrednio z bazą.
 
+Od 2026-11-09 endpoint nie jest już wyłącznie do odczytu: token z zakresem `lessons:write` dostaje na tym samym `/api/mcp` narzędzia pisania szkiców lekcji (`docs/integrations/lesson-authoring.md`). Każdy token ma dokładnie jeden zakres i widzi tylko narzędzia swojego zakresu; token Hermesa (`learning:read`) nie widzi narzędzi autorskich, a token `lessons:write` nie czyta raportu (403). Kontrakt `learning-overview`, pakiet konsumenta i ten skill są bez zmian.
+
 ## Endpoint i konfiguracja Hermesa
 
 Endpoint to `POST /api/mcp` na prywatnym adresie HTTPS aplikacji Umiem!. Przykładowa konfiguracja:
@@ -18,7 +20,7 @@ mcp_servers:
 
 Ustaw `UMIEM_READ_TOKEN` w chronionym środowisku procesu Hermesa oraz osobno procesu raportera rodzinnego. YAML zawiera jedynie referencję, nigdy wartość sekretu. Token korzysta z zakresu `learning:read`; system sprawdza go przy każdym żądaniu i ponownie przed odczytem danych. Token nie zastępuje sesji rodzica ani dziecka.
 
-Wymagane jest HTTPS za prywatną bramą rodzinną (np. VPN/access proxy). Endpoint nie włącza CORS. Opcjonalna zmienna `UMIEM_MCP_ALLOWED_ORIGINS` zawiera rozdzielone przecinkami, dokładne originy HTTPS; domyślna pusta wartość dopuszcza klientów serwerowych bez nagłówka `Origin`, a odrzuca każde żądanie z nieznanym Origin. Limit wynosi 60 uwierzytelnionych żądań na token w ciągu minuty na proces i jest współdzielony z REST odczytem.
+Wymagane jest HTTPS. `/api/mcp` jest osiągalne z internetu i chronione tokenem Bearer (decyzja 2026-11-09 i stan faktyczny produkcji: cała aplikacja publiczna przez Cloudflare, `docs/architecture.md` §13) — dlatego token `learning:read` zostaje wyłącznie w konfiguracji Hermesa i nie trafia do connectorów claude.ai. Endpoint nie włącza CORS. Opcjonalna zmienna `UMIEM_MCP_ALLOWED_ORIGINS` zawiera rozdzielone przecinkami, dokładne originy HTTPS; domyślna pusta wartość dopuszcza klientów serwerowych bez nagłówka `Origin`, a odrzuca każde żądanie z nieznanym Origin. Limit wynosi 60 uwierzytelnionych żądań na token w ciągu minuty na proces i jest współdzielony z REST odczytem. Ciało żądania tokenu `learning:read` jest ograniczone do 16 KB; token `lessons:write` ma własne limity (512 KB, 10 zapisów lekcji na godzinę).
 
 Skonfiguruj narzędzie w Hermes jako zwykły zdalny MCP `url` + `headers`. Dla raportu rodzinnego zainstaluj wersjonowany pakiet konsumenta zawierający walidator, schemat, manifest i skill; klient raportu korzysta z tego samego HTTP MCP. Token nie trafia do konfiguracji repozytorium, promptów, argumentów narzędzia ani logów.
 
@@ -39,12 +41,12 @@ Zakres — raport nie obejmuje jeszcze lekcji (2026-10-12). Kontrakt `learning-o
 Wydaj token w chronionym środowisku workera. CLI zapisuje sekret tylko do nowego pliku o prywatnych uprawnieniach:
 
 ```text
-node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name hermes-family --out /absolute/private/path/umiem-token
+node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name hermes-family --out /absolute/private/path/umiem-token [--scope learning:read]
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts list
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts revoke --id <uuid>
 ```
 
-Do procesu Hermesa przekaż wartość tokenu przez chronione środowisko, a nie przez argument polecenia lub plik repozytorium. Rotacja: utwórz nowy token, skonfiguruj zmienną i odśwież połączenia klienta, potwierdź działanie, następnie odwołaj stary token.
+`--scope` przyjmuje `learning:read` (domyślnie) albo `lessons:write`; tokenu z dwoma zakresami nie da się wydać. Do procesu Hermesa przekaż wartość tokenu przez chronione środowisko, a nie przez argument polecenia lub plik repozytorium. Rotacja: utwórz nowy token, skonfiguruj zmienną i odśwież połączenia klienta, potwierdź działanie, następnie odwołaj stary token.
 
 ## Aktualizacja kontraktu
 

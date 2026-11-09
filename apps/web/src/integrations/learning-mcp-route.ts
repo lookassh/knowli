@@ -1,10 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { AppError, requireLearningReadToken, getLearningOverview, type IntegrationPrincipal, type Services } from "@learning/server";
-import { LearningOverviewQuerySchema, messages, type LearningOverviewQuery } from "@learning/contracts";
+import {
+  AppError,
+  authenticateIntegrationToken,
+  createAuthoredLesson,
+  getAuthoredLesson,
+  getLearningOverview,
+  lessonAuthoringCatalog,
+  LESSONS_WRITE_SCOPE,
+  replaceAuthoredLesson,
+  validateAuthoredLesson,
+  type IntegrationPrincipal,
+  type Services,
+} from "@learning/server";
+import { LESSON_AUTHORING_MAX_REQUEST_BYTES, LearningOverviewQuerySchema, messages, type LearningOverviewQuery } from "@learning/contracts";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createLearningMcpServer } from "./learning-mcp-server";
-import { IntegrationReadLimiter, learningOverviewLimiter } from "./integration-read-limiter";
+import { createLearningMcpServer, LEARNING_MCP_TOOL } from "./learning-mcp-server";
+import {
+  createLessonAuthoringMcpServer,
+  LESSON_AUTHORING_TOOL_NAMES,
+  LESSON_WRITE_TOOL_NAMES,
+  lessonAuthoringInputError,
+  type LessonAuthoringOperations,
+} from "./lesson-authoring-mcp-tools";
+import { IntegrationReadLimiter, learningOverviewLimiter, lessonWriteLimiter } from "./integration-read-limiter";
 
+/** Limit ciała żądania tokenu `learning:read`; token `lessons:write` niesie całą lekcję (`LESSON_AUTHORING_MAX_REQUEST_BYTES`). */
 const MAX_REQUEST_BYTES = 16 * 1024;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MCP_VERSION = "2025-11-25";
@@ -12,7 +32,12 @@ const MCP_VERSION = "2025-11-25";
 export type LearningMcpDependencies = {
   authenticate(rawToken: string): Promise<IntegrationPrincipal>;
   readOverview(query: LearningOverviewQuery, rawToken: string): Promise<unknown>;
+  /** Narzędzia autorskie lekcji dla tokenu `lessons:write` (zapisy ponownie sprawdzają token w transakcji). */
+  lessonAuthoring(rawToken: string): LessonAuthoringOperations;
+  /** Wspólny limit żądań na token (60 na minutę). */
   limiter: IntegrationReadLimiter;
+  /** Zapisy lekcji na token (10 na godzinę). */
+  writeLimiter: IntegrationReadLimiter;
   allowedOrigins: ReadonlySet<string>;
   now(): number;
   requestId(): string;
@@ -41,7 +66,7 @@ function appErrorResponse(error: unknown, requestId: string, deps: LearningMcpDe
   if (error instanceof AppError && error.code === "forbidden") return rpcFailure(requestId, -32003, 403, "Forbidden.");
   const pgCode = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
   if (pgCode.startsWith("08") || pgCode.startsWith("53") || pgCode.startsWith("57") || pgCode === "ECONNRESET" || pgCode === "ECONNREFUSED") {
-    return rpcFailure(requestId, -32003, 503, "Learning overview is temporarily unavailable.");
+    return rpcFailure(requestId, -32003, 503, "The service is temporarily unavailable.");
   }
   const catalogue = messages.errors as Record<string, string | undefined>;
   const status = error instanceof AppError ? error.status : 500;
@@ -57,7 +82,7 @@ function validOrigin(value: string): boolean {
   } catch { return false; }
 }
 
-async function readBoundedBody(request: Request): Promise<{ bytes: Uint8Array } | { tooLarge: true }> {
+async function readBoundedBody(request: Request, maxBytes: number): Promise<{ bytes: Uint8Array } | { tooLarge: true }> {
   if (!request.body) return { bytes: new Uint8Array() };
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -67,7 +92,7 @@ async function readBoundedBody(request: Request): Promise<{ bytes: Uint8Array } 
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_REQUEST_BYTES) {
+      if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
         return { tooLarge: true };
       }
@@ -102,8 +127,10 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     return rpcFailure(requestId, -32600, 400, "Invalid MCP HTTP headers.");
   }
 
+  const authoring = principal.scopes[0] === LESSONS_WRITE_SCOPE;
+  const maxRequestBytes = authoring ? LESSON_AUTHORING_MAX_REQUEST_BYTES : MAX_REQUEST_BYTES;
   let body: unknown;
-  const bounded = await readBoundedBody(request);
+  const bounded = await readBoundedBody(request, maxRequestBytes);
   if ("tooLarge" in bounded) return rpcFailure(requestId, -32600, 413, "Request body is too large.");
   try { body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bounded.bytes)); }
   catch { return rpcFailure(requestId, -32700, 400, "Parse error."); }
@@ -117,18 +144,48 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     }
   }
 
-  const server = createLearningMcpServer((query) => deps.readOverview(LearningOverviewQuerySchema.parse(query), match[1]!), requestId);
-  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, maxRequestBodySize: MAX_REQUEST_BYTES });
+  // Narzędzia innego zakresu nie istnieją dla tego tokenu (`tools/list`), a ich wywołanie to 403.
+  const params = typeof body === "object" && body !== null && "params" in body ? (body as { params?: unknown }).params : undefined;
+  const toolName = rpcMethod === "tools/call" && typeof params === "object" && params !== null && "name" in params ? (params as { name?: unknown }).name : undefined;
+  if (typeof toolName === "string") {
+    const otherScope = authoring ? toolName === LEARNING_MCP_TOOL : LESSON_AUTHORING_TOOL_NAMES.has(toolName);
+    if (otherScope) return rpcFailure(requestId, -32003, 403, "Forbidden.");
+    if (authoring) {
+      const args = typeof params === "object" && params !== null && "arguments" in params ? (params as { arguments?: unknown }).arguments : undefined;
+      const inputError = lessonAuthoringInputError(toolName, args, requestId);
+      if (inputError) {
+        const id = typeof body === "object" && body !== null && "id" in body ? (body as { id?: unknown }).id : null;
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id, result: inputError }), {
+          status: 200, headers: headers(requestId, { "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+    }
+    if (authoring && LESSON_WRITE_TOOL_NAMES.has(toolName)) {
+      try { deps.writeLimiter.assertAvailable(principal, deps.now()); }
+      catch { return rpcFailure(requestId, -32029, 429, "Rate limit exceeded.", { "retry-after": String(deps.writeLimiter.retryAfterSeconds(principal, deps.now())) }); }
+    }
+  }
+
+  const server = authoring
+    ? createLessonAuthoringMcpServer(deps.lessonAuthoring(match[1]!), requestId)
+    : createLearningMcpServer((query) => deps.readOverview(LearningOverviewQuerySchema.parse(query), match[1]!), requestId);
+  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, maxRequestBodySize: maxRequestBytes });
   try {
     await server.connect(transport);
     const bodyBuffer = bounded.bytes.buffer.slice(bounded.bytes.byteOffset, bounded.bytes.byteOffset + bounded.bytes.byteLength) as ArrayBuffer;
     const sdkRequest = new Request(request.url, { method: "POST", headers: request.headers, body: bodyBuffer });
     const response = await transport.handleRequest(sdkRequest, { parsedBody: body });
     const responseBody = new Uint8Array(await response.arrayBuffer());
+    // Limit zapisów liczy tylko udane zapisy: odrzucenie regułami, konflikt i błąd nie zlecają nagrań.
+    // shortcut: równoległe zapisy tego samego tokenu mogą przekroczyć limit o kilka; wystarcza przy jednym agencie.
+    if (authoring && typeof toolName === "string" && LESSON_WRITE_TOOL_NAMES.has(toolName) && response.status === 200) {
+      const result = (JSON.parse(new TextDecoder().decode(responseBody)) as { result?: { isError?: boolean } }).result;
+      if (result !== undefined && result.isError !== true) deps.writeLimiter.record(principal, deps.now());
+    }
     let output = responseBody;
     if (output.byteLength > MAX_RESPONSE_BYTES) {
       const parsed = JSON.parse(new TextDecoder().decode(output)) as { id?: string | number | null };
-      output = new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id: parsed.id ?? null, result: { isError: true, content: [{ type: "text", text: JSON.stringify({ code: "learning_summary_too_large", message: "The learning overview is too large to return.", retryable: false, requestId }) }] } }));
+      output = new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id: parsed.id ?? null, result: { isError: true, content: [{ type: "text", text: JSON.stringify({ code: "response_too_large", message: "The response is too large to return.", retryable: false, requestId }) }] } }));
     }
     const outHeaders = headers(requestId, response.headers);
     outHeaders.delete("mcp-session-id");
@@ -142,9 +199,17 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
 
 export function createLearningMcpDependencies(services: Services, allowedOrigins: ReadonlySet<string>): LearningMcpDependencies {
   return {
-    authenticate: (rawToken) => requireLearningReadToken(services.db, rawToken),
+    authenticate: (rawToken) => authenticateIntegrationToken(services.db, rawToken),
     readOverview: (query, rawToken) => getLearningOverview(services, query, rawToken),
+    lessonAuthoring: (rawToken) => ({
+      catalog: async (input) => lessonAuthoringCatalog(services, input),
+      validate: (input) => validateAuthoredLesson(services, rawToken, input),
+      create: (input) => createAuthoredLesson(services, rawToken, input),
+      get: (input) => getAuthoredLesson(services, rawToken, input),
+      replace: (input) => replaceAuthoredLesson(services, rawToken, input),
+    }),
     limiter: learningOverviewLimiter,
+    writeLimiter: lessonWriteLimiter,
     allowedOrigins,
     now: () => services.clock.now().getTime(),
     requestId: randomUUID,

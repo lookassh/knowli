@@ -52,6 +52,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     grammar-without-tts.test.ts
     history.test.ts
     lesson-chapter-sentence-audio.test.ts
+    lesson-authoring-mcp.test.ts
     lesson-chapter.test.ts
     lesson-isolation.test.ts
     lesson-parent-api.test.ts
@@ -77,6 +78,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     decks-management.test.ts
     generation.test.ts
     history-policy-scope.test.ts
+    integration-token-scope-migration.test.ts
     learning-mcp.test.ts
     lesson-agent-generation.test.ts
     lesson-attempts.test.ts
