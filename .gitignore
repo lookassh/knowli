@@ -33,3 +33,5 @@ backups/
 .zcodeignore
 .kiro/
 _bmad-output/
+_bmad/**/*.user.toml
+_bmad/render/
