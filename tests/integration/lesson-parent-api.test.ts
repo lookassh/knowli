@@ -21,7 +21,7 @@ import {
   readLessonDeck,
   ensureLearningPolicy,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import {
   LessonDeckDtoSchema,
   LessonDraftDtoSchema,

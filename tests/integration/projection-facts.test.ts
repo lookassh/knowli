@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, endSession, ensureLearningPolicy, nextTask, publishDraft, rebuildProgress, startSession, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, endSession, ensureLearningPolicy, nextTask, publishDraft, rebuildProgress, startSession, upsertAssignment } from "@learning/server/testing";
 import { writeSealedEvent } from "../../packages/server/src/modules/learning/events";
 import { recordSkillIssued } from "../../packages/server/src/modules/learning/skill-projections";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";

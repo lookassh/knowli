@@ -7,7 +7,7 @@ import {
   readSkillHistories, reconcileDraftAssets, reviewSessionActivity, runDueGenerationWork, skillHistoryKey, startSession, submitAttempt,
   updateDeckSettings, upsertAssignment,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { fakeGeneration, type FakeGeneration } from "./fakes";
 import { ManualClock, testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { DisclosureDtoSchema, SessionDtoSchema, type SessionActivityReport } from "@learning/contracts";

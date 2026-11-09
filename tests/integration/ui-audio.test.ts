@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createServices, executeMediaAsset, prepareUiAudio, readReadyMedia, readUiAudio, regenerateUiAudio, type Services } from "@learning/server";
+import { createServices, executeMediaAsset, prepareUiAudio, readReadyMedia, readUiAudio, regenerateUiAudio, type Services } from "@learning/server/testing";
 import { messages } from "@learning/contracts";
 import { testDatabase, truncateCoreTables, handleKidApi } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";

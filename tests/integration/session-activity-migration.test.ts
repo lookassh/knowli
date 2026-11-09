@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { createChild, createDraft, createServices, ensureLearningPolicy, migrateDatabase, publishDraft, upsertAssignment } from "@learning/server";
+import { createChild, createDraft, createServices, ensureLearningPolicy, migrateDatabase, publishDraft, upsertAssignment } from "@learning/server/testing";
 import { ManualClock, openQuietDatabase, testDatabaseUrl, waitForDatabaseIdle } from "./helpers";
 
 const migrationsFolder = path.resolve("packages/server/drizzle");

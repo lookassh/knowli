@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as server from "../index";
+import * as server from "./vocabulary-capabilities";
 
 const api = server as unknown as Record<string, (input: {
   canRead: boolean;

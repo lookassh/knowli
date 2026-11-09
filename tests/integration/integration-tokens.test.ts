@@ -6,7 +6,7 @@ import {
   listIntegrationTokens,
   requireLearningReadToken,
   revokeIntegrationToken,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { buildTestServices, countRows, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 
 process.env.DATABASE_URL = testDatabaseUrl();

@@ -7,7 +7,7 @@ import {
   rebuildProgress,
   readSkillHistories,
   skillHistoryKey,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { ExerciseType, History, Skill } from "../../packages/server/src/domain/types";
 import { qualifyProjectionEvidence } from "../../packages/server/src/domain/projection-evidence";
 import { childProfiles } from "../../packages/server/src/db/schema";

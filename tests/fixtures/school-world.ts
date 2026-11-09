@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { computeTargetKey } from "@learning/server";
+import { computeTargetKey } from "@learning/server/testing";
 import type { testDatabase } from "../integration/helpers";
 import type { LessonStoryFixture } from "./lesson-world";
 

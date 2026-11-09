@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./testing": "./src/testing.ts",
     "./lesson-agent": "./src/providers/lesson-agent-env.ts"
   },
   "dependencies": {

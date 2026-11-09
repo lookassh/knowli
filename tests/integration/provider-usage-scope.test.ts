@@ -35,7 +35,7 @@ import {
   submitSpeechAttempt,
   upsertAssignment,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { SessionActivityReport, TaskDto, VocabularyItemInput } from "@learning/contracts";
 import { ManualClock, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration, recordingProvider, type FakeGeneration } from "./fakes";

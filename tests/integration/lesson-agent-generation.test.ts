@@ -23,7 +23,7 @@ import {
   type GenerationDeps,
   type LessonAgentDeps,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonCommand, LessonDraftDto } from "@learning/contracts";
 import { testDatabase } from "./helpers";

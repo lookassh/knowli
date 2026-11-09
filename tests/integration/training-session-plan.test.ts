@@ -1,10 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
-import { createChild, createDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server";
+import { createChild, createDraft, publishDraft, upsertAssignment, startSession, nextTask, endSession, completePresentation, submitAttempt, createServices, executeMediaAsset, prepareUiAudio, reconcileDraftAssets, runDueGenerationWork } from "@learning/server/testing";
 import { randomUUID } from "node:crypto";
 import { buildTestServices, ManualClock, openRestartedServices, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
-import { readTrainingSessionPlan } from "@learning/server";
+import { readTrainingSessionPlan } from "@learning/server/testing";
 import { issueNextVocabularyPlanTask } from "../../packages/server/src/modules/learning/vocabulary-plan-tasks";
 import { childProfiles, itemRevisionSkills, learningSessions } from "../../packages/server/src/db/schema";
 import type { TrainingSessionPlanSnapshot, TrainingSessionSlot } from "../../packages/server/src/domain/training-session-plan";

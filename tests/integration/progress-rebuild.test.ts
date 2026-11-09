@@ -13,7 +13,7 @@ import {
   startSession,
   submitAttempt,
   upsertAssignment,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 

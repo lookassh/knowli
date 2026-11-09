@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { endSession, nextTask, startSession, submitAttempt, upsertAssignment, readMockTestSummary, getMockTestReport, listMockTests, deleteChild } from "@learning/server";
+import { endSession, nextTask, startSession, submitAttempt, upsertAssignment, readMockTestSummary, getMockTestReport, listMockTests, deleteChild } from "@learning/server/testing";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { mockTestDeck } from "./mock-test-helpers";
 const { pool } = testDatabase();

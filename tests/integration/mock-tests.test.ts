@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, it } from "vitest";
-import { endSession, getMockTestReport, listMockTests, nextTask, readMockTestSummary, startSession, upsertAssignment, submitAttempt, readAttempt, finalizeAttempt, authorizeDisclosure, submitSpeechAttempt } from "@learning/server";
+import { endSession, getMockTestReport, listMockTests, nextTask, readMockTestSummary, startSession, upsertAssignment, submitAttempt, readAttempt, finalizeAttempt, authorizeDisclosure, submitSpeechAttempt } from "@learning/server/testing";
 import { randomUUID } from "node:crypto";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { mockTestDeck } from "./mock-test-helpers";

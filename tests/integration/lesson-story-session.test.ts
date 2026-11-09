@@ -21,7 +21,7 @@ import {
   schema,
   submitAttempt,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { loadLessonPlanningSnapshot } from "../../packages/server/src/modules/learning/lessons/lesson-sessions";
 import { lessonWorld, RICH_KEYS, STORY_FIXTURE, type LessonStoryFixture, type LessonWorldOptions } from "../fixtures/lesson-world";
 import { SCHOOL_OBJECTIVE_ID, seedSchoolDeck } from "../fixtures/school-world";

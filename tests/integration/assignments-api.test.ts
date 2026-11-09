@@ -10,7 +10,7 @@ import {
   runDueGenerationWork,
   setupParent,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { handleParentApi } from "./helpers";

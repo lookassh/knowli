@@ -21,7 +21,7 @@ import {
   ttsFingerprint,
   readSkillHistories,
   skillHistoryKey,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import {
   buildTestServices,

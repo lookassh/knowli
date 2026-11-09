@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ParentCostsDtoSchema, type ParentCostsDto } from "@learning/contracts";
-import { createDrizzleUsageRecorder, createServices, deleteChild, loginParent, readParentCosts, setupParent, withUsageScope, type UsageEvent, type UsagePrices } from "@learning/server";
+import { createDrizzleUsageRecorder, createServices, deleteChild, loginParent, readParentCosts, setupParent, withUsageScope, type UsageEvent, type UsagePrices } from "@learning/server/testing";
 import { ManualClock, buildTestServices, handleParentApi, testDatabase, truncateCoreTables } from "./helpers";
 
 /**

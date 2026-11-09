@@ -14,7 +14,7 @@ import {
   submitAttempt,
   upsertAssignment,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { AttemptDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,

@@ -5,7 +5,7 @@ import {
   executeLessonGeneration, nextTask, publishLessonDraft, readLessonDeck, startSession, submitAttempt,
   createSubjectRegistry, englishGrammarSubject, runDueGenerationWork, enqueueDeckGeneration, executeGeneration, executeMediaAsset,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { grammarWithoutSentenceAudio, ManualClock, testDatabase, truncateCoreTables } from "./helpers";

@@ -168,7 +168,8 @@ describe("granica koordynacji generowania", () => {
     ]));
     const rootSource = readFileSync(new URL("../../index.ts", import.meta.url), "utf8");
     const rootExports = publicExports(rootSource);
-    expect(rootExports.map((entry) => entry.original).sort()).toEqual([...publicNames].sort());
+    // root wystawia tylko to, co importuje kod produkcyjny (public-barrel.architecture.test.ts)
+    expect(rootExports.map((entry) => entry.original)).toEqual(["runDueGenerationWork"]);
     expect(rootExports.every((entry) => entry.target === materialsBarrel && entry.exported === entry.original)).toBe(true);
   });
 });

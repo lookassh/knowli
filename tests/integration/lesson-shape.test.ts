@@ -8,13 +8,13 @@ import {
   startSession,
   submitAttempt,
   validatePool,
-} from "@learning/server";
+} from "@learning/server/testing";
 import {
   LessonExerciseInputSchema,
   type LessonExerciseInput,
   type TaskDto,
 } from "@learning/contracts";
-import type { LessonExerciseDraft } from "@learning/server";
+import type { LessonExerciseDraft } from "@learning/server/testing";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 

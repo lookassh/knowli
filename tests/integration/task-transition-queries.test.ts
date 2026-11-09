@@ -9,7 +9,7 @@ import {
   startSession,
   submitAttempt,
   upsertAssignment,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { buildTestServices, capturePoolQueries, finishLessonTask, startLegacyTrainingSession, testDatabase, truncateCoreTables } from "./helpers";
 import { lessonWorld, STORY_FIXTURE } from "../fixtures/lesson-world";

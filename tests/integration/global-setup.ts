@@ -1,4 +1,4 @@
-import { createDatabase, migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
+import { createDatabase, migrateDatabase, waitUntilDatabaseReady } from "@learning/server/testing";
 import { resolveIntegrationWorkers, workerDatabaseName } from "../integration-worker-databases";
 import {
   currentOwnerContext,

@@ -21,7 +21,7 @@ import {
   type AppError,
   type PronunciationProvider,
   type SttProvider,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { ProgressDtoSchema, type TaskDto } from "@learning/contracts";
 import { buildTestServices, testDatabase, truncateCoreTables, type ManualClock } from "./helpers";
 

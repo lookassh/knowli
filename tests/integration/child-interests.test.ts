@@ -18,7 +18,7 @@ import {
   regenerateObjective,
   updateChild,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { LessonCommand } from "@learning/contracts";
 import { buildTestServices, countRows, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";

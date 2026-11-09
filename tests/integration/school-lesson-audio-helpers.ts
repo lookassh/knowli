@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createChild, createServices, editLessonDraft, publishLessonDraft, type SubjectRegistry } from "@learning/server";
+import { createChild, createServices, editLessonDraft, publishLessonDraft, type SubjectRegistry } from "@learning/server/testing";
 import type { LessonExerciseInput, LessonVoiceTone } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 

@@ -16,7 +16,7 @@ import {
   readLessonMockTestSummary,
   startSession,
   submitAttempt,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { SCHOOL_OBJECTIVE_ID, seedSchoolDeck as seedSchoolDeckFixture, type SchoolDeckOptions } from "../fixtures/school-world";

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
 import { LessonDeckDtoSchema } from "@learning/contracts";
-import { FAKE_SLOW_MARKER } from "@learning/server";
+import { FAKE_SLOW_MARKER } from "@learning/server/testing";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { lessonAgentRunSummary } from "./helpers/lesson-agent-run";
 import { closeWorldDatabase, worldPool } from "./helpers/world-database";

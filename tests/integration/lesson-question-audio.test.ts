@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createLessonDraftFromPublished, createServices, editLessonDraft, endSession, executeMediaAsset, nextTask, runDueGenerationWork,
   publishLessonDraft, readLessonDeck, regenerateLessonPromptAudio, startSession, submitAttempt, createSubjectRegistry, schoolSubject, ttsFingerprint,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { LessonDraftDto, LessonExerciseInput, TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";

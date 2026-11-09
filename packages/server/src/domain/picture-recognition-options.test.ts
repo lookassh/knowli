@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as server from "../index";
+import * as server from "./picture-recognition-options";
 
 const api = server as unknown as Record<string, (input: Record<string, unknown>) => unknown>;
 const red = { itemRevisionId: "00000000-0000-4000-8000-000000000001", position: 0, source: "czerwony", target: "red", targetLocale: "en-GB", acceptedAnswers: ["scarlet"], visual: { kind: "color", color: "#ff0000" } };

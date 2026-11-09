@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, nextTask, publishDraft, readParentWorkCard, startSession, submitAttempt, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, nextTask, publishDraft, readParentWorkCard, startSession, submitAttempt, upsertAssignment } from "@learning/server/testing";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 

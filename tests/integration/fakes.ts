@@ -14,7 +14,7 @@ import {
   type MediaStore,
   type UsageFeature,
   type UsageRecorder,
-} from "@learning/server";
+} from "@learning/server/testing";
 import {
   FakeExerciseChecker,
   FakeLessonPoolAgent,
@@ -33,7 +33,7 @@ export {
   FakeTtsProvider,
   fakeMediaSettings,
   type LlmBehavior,
-} from "@learning/server";
+} from "@learning/server/testing";
 
 export interface FakeGeneration {
   llm: FakeLlmProvider;

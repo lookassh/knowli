@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createChild, createServices, editLessonDraft, endSession, getLessonMockTestReport, nextTask,
   publishLessonDraft, readLessonDeck, readLessonMockTestSummary, startSession, submitAttempt,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { LessonExerciseInput, TaskDto } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 

@@ -4,7 +4,7 @@ import {
   completePresentation, createChild, createLesson, createLessonDraftFromPublished, createLessonFromMaterial, createServices, createSubjectRegistry, decideLessonVerdict,
   editLessonDraft, englishGrammarSubject, executeLessonGeneration, FakeAnswerGrader, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt,
   readLessonDeck, regenerateLessonPromptAudio, runDueGenerationWork, startSession, submitAttempt,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { FeedbackDtoSchema, type AttemptInput, type LessonDraftDto, type TaskDto } from "@learning/contracts";
 import { lessonWorld, RICH_KEYS, type LessonWorldOptions } from "../fixtures/lesson-world";
 import { STYLE_SENTENCES_PL } from "../../packages/server/src/providers/tts-style-profile";

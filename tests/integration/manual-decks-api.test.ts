@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { loginParent, setupParent } from "@learning/server";
+import { loginParent, setupParent } from "@learning/server/testing";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";

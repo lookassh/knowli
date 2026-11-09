@@ -4,7 +4,7 @@ import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server";
+import { migrateDatabase, waitUntilDatabaseReady } from "@learning/server/testing";
 import { isPortInUse } from "../local-ports";
 import {
   ContainerNameTakenError,
