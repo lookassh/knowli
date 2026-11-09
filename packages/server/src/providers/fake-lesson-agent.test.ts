@@ -987,6 +987,52 @@ describe("fake przebiegu bazowego (etap 4 #358)", () => {
     expect(recorder.events.map((event) => event.operation)).toEqual(["packet_generate", "packet_generate"]);
   });
 
+  it("gra kroki paczki gate, hang, stall i build", async () => {
+    const packet = { pool: { material: "Tom plays.", avoidSentences: [] }, objective: { id: "english_grammar.present_simple.third_person_s", title: "x", cards: [] }, type: "lesson_gap", count: 2, withExamples: false, timeoutMs: 1 } as unknown as Parameters<FakeLessonPoolAgent["generatePacket"]>[0];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let reached = false;
+    const built = { exercises: [{ exerciseType: "lesson_gap" }] };
+    let seen: unknown;
+    const agent = new FakeLessonPoolAgent({
+      packets: {
+        third_person_s: [
+          { gate, onReached: () => (reached = true) },
+          { gate: new Promise<void>(() => undefined) },
+          { hang: true },
+          { stall: true },
+          { build: (input) => ((seen = input), built) },
+        ],
+      },
+      stepCostUsd: 0.01,
+    });
+    const sink = costSink();
+    const first = agent.generatePacket(packet, sink, new AbortController().signal);
+    await vi.waitFor(() => expect(reached).toBe(true));
+    expect(sink.values).toEqual([0.01]);
+    release();
+    expect((await first).exercises).toHaveLength(2);
+
+    const gated = new AbortController();
+    const second = agent.generatePacket(packet, costSink(), gated.signal);
+    gated.abort(new Error("stop gate"));
+    await expect(second).rejects.toThrow("stop gate");
+
+    const hung = new AbortController();
+    const third = agent.generatePacket(packet, costSink(), hung.signal);
+    hung.abort(new Error("stop hang"));
+    await expect(third).rejects.toThrow("stop hang");
+
+    const stalledCall = new AbortController();
+    const fourth = agent.generatePacket(packet, costSink(), stalledCall.signal);
+    stalledCall.abort(new Error("stop stall"));
+    const winner = await Promise.race([fourth.then(() => "done", () => "rejected"), new Promise((resolve) => setTimeout(() => resolve("still running"), 30))]);
+    expect(winner).toBe("still running");
+
+    expect(await agent.generatePacket(packet, costSink(), new AbortController().signal)).toBe(built);
+    expect(seen).toBe(packet);
+  });
+
   it("wstrzymuje każdą paczkę materiału z FAKE_SLOW_MARKER", async () => {
     vi.useFakeTimers();
     try {

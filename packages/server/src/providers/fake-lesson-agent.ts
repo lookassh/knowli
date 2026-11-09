@@ -41,10 +41,20 @@ export type FakeAgentStep =
   | { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } };
 
 /**
- * Krok scenariusza paczki przebiegu bazowego (`generatePacket`): awaria. Kolejne wywołania paczek celu biorą
- * kolejne kroki; po ich końcu — generator ({@link fakePacketExercises}).
+ * Krok scenariusza paczki przebiegu bazowego (`generatePacket`). Kolejne wywołania paczek celu biorą kolejne
+ * kroki (w kolejności wejścia do semafora); po ich końcu — generator ({@link fakePacketExercises}). Koszt
+ * paczki jest zapisany przed krokiem.
  */
-export type FakePacketStep = { throw: Error };
+export type FakePacketStep =
+  | { throw: Error }
+  /** „Wywołanie w locie”: `onReached`, potem czekanie na `gate` (dalej generator); przerwanie odrzuca `signal.reason`. */
+  | { gate: Promise<void>; onReached?: () => void }
+  /** Czeka do przerwania sygnału i odrzuca `signal.reason`. */
+  | { hang: true }
+  /** Dostawca ignorujący przerwanie: krok nigdy się nie kończy. */
+  | { stall: true }
+  /** Wynik zbudowany z wejścia paczki. */
+  | { build: (input: LessonPacketInput) => { exercises: unknown[]; examples?: unknown[] } };
 
 /** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
 export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
@@ -350,7 +360,17 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
       if (ms > 0) await sleepUnlessAborted(ms, signal);
       this.recordStep(cost, "packet_generate");
       const step = this.options.packets?.[slug]?.[call];
-      if (step !== undefined) throw step.throw;
+      if (step === undefined) return fakePacketExercises(input, band);
+      if ("throw" in step) throw step.throw;
+      if ("build" in step) return step.build(input);
+      if ("stall" in step) return stalled();
+      if ("gate" in step) step.onReached?.();
+      const abort = rejectOnAbort(signal);
+      try {
+        await Promise.race(["gate" in step ? step.gate : abort.promise, abort.promise]);
+      } finally {
+        abort.dispose();
+      }
       return fakePacketExercises(input, band);
     });
   }
