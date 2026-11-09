@@ -128,16 +128,14 @@ export const SubjectCatalogDtoSchema = z.object({
     offersListenChoice: z.boolean().optional(),
     /**
      * Etykiety usług (host · model), do których trafia materiał przy generowaniu tego przedmiotu
-     * (agent puli, a w szkole także usługa etapu zagadnień); brak = generowanie lekcji niedostępne
+     * (paczki przebiegu bazowego, a w szkole także usługa etapu zagadnień); brak = generowanie lekcji niedostępne
      * (`lessonGenerationAvailable: false`).
      */
     generationServices: z.array(z.string().min(1)).min(1).optional(),
-    /** Etykieta drugiego modelu, który rozwiązuje gotowe ćwiczenia na próbę (agent puli); brak = bez kontroli rozwiązywaniem. */
+    /** Etykieta drugiego modelu, który sprawdza na próbę gotowe ćwiczenia zamknięte (kontrola zamkniętych); brak = bez tej kontroli. */
     checkService: z.string().min(1).optional(),
-    /** Czy do drugiego modelu trafia też materiał lekcji (polityka checkera przedmiotu); ma sens przy `checkService`. */
+    /** Czy do drugiego modelu trafia też materiał lekcji (`SubjectModule.checkerNeedsMaterial`); ma sens przy `checkService`. */
     checkServiceIncludesMaterial: z.boolean().optional(),
-    /** Etykieta usługi oceny odpowiedzi próbnych do pytań otwartych (grader; agent puli, kontrola otwarta); brak = bez tej kontroli. */
-    openCheckService: z.string().min(1).optional(),
     topics: z.array(z.object({
       id: z.string().min(1),
       version: z.number().int().positive(),
@@ -582,9 +580,9 @@ export const LessonDraftDtoSchema = z.object({
    */
   rejectedReasons: z.record(z.string(), z.number().int().positive()).optional(),
   /**
-   * Oczyszczenia agenta puli przy przyjmowaniu ćwiczeń (sumy po przebiegach tej wersji): usunięte podpowiedzi
-   * pytań otwartych, usunięte warianty odpowiedzi i cytaty wyrównane do materiału. Same liczby, bez treści;
-   * brak pola = nic nie oczyszczono.
+   * Oczyszczenia dawnego agenta puli przy przyjmowaniu ćwiczeń (sumy po przebiegach tej wersji): usunięte
+   * podpowiedzi pytań otwartych, usunięte warianty odpowiedzi i cytaty wyrównane do materiału. Same liczby,
+   * bez treści. Historyczne szkice; nowe nie mają (brak pola = nic nie oczyszczono).
    */
   cleanupCounts: z.object({
     hintsRemoved: z.number().int().nonnegative(),

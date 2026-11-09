@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validatePoolIssues } from "../pool-validation";
 import { historyLikeSubject } from "../testing/history-like-subject";
-import { testAgentPolicy } from "../testing/test-agent-policy";
 import type { LessonExerciseDraft } from "../types";
 import type { PoolDeduplication, RuleBookContext } from "./catalog";
 import { LESSON_RULES } from "./lesson-rules";
@@ -15,7 +14,6 @@ function context(deduplication: PoolDeduplication): RuleBookContext {
   return {
     exerciseTypes: historyLikeSubject.exerciseTypes,
     text: { answerMaxLength: 120, groundingRequired: false },
-    policy: testAgentPolicy,
     listenChoice: false,
     voiceTones: false,
     exerciseExplanations: false,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LessonExerciseDraft } from "../types";
 import { historyLikeSubject } from "../testing/history-like-subject";
-import { agentTestSubject, withAgentPolicy } from "../testing/agent-test-subject";
+import { agentTestSubject } from "../testing/agent-test-subject";
 import { agentObjectivesOf } from "./capable";
 
 describe("agentObjectivesOf", () => {
@@ -31,10 +31,8 @@ describe("agentTestSubject", () => {
     ...over,
   });
 
-  it("ma typy keywords i listen_choice oraz zaślepkę polityki", () => {
+  it("ma typy keywords i listen_choice", () => {
     expect(agentTestSubject.exerciseTypes).toEqual(expect.arrayContaining(["lesson_keywords", "lesson_listen_choice"]));
-    expect(agentTestSubject.agentPolicy.blindSolveTypes).toEqual(agentTestSubject.exerciseTypes);
-    expect(agentTestSubject.agentPolicy.ruleNotes).toEqual({ "lesson.leak": "leak victim", "lesson.leak_source": "leak source" });
   });
 
   it("validatePoolExtra wymaga rodziny pytania otwartego dla słów kluczowych", () => {
@@ -45,11 +43,5 @@ describe("agentTestSubject", () => {
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f" })], { material: "" }).size).toBe(0);
     // Rodzina innego zagadnienia nie wystarcza (jak w szkole i `withoutOrphanKeywords`).
     expect(agentTestSubject.validatePoolExtra!([keywords, draft({ familyId: "f", objectiveId: "other" })], { material: "" }).size).toBe(1);
-  });
-
-  it("withAgentPolicy nadpisuje wybrane pola polityki", () => {
-    const wrapped = withAgentPolicy(historyLikeSubject, { slack: 5 });
-    expect(wrapped.agentPolicy.slack).toBe(5);
-    expect(wrapped.agentPolicy.independentReserve).toBe(1);
   });
 });

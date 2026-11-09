@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createChild,
   createLesson,
+  createProductionSubjectRegistry,
   createServices,
   executeLessonGeneration,
   nextTask,
@@ -12,22 +13,18 @@ import {
   type Services,
 } from "@learning/server";
 import type { TaskDto } from "@learning/contracts";
-import { agentGrammarRegistry, finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
-import { fakeGeneration } from "./fakes";
-import {
-  FakeLessonPoolAgent,
-  type FakeLessonPoolAgentOptions,
-} from "../../packages/server/src/providers/fake-lesson-agent";
+import { finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
+import { fakeGeneration, KeyedChecker, packetRecords } from "./fakes";
+import { FakeLessonPoolAgent, type FakeLessonPoolAgentOptions } from "../../packages/server/src/providers/fake-lesson-agent";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
-import type { LessonAgentToolOutcome } from "../../packages/server/src/ports/ai";
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
 import { presentContinuousV1 } from "../../packages/server/src/domain/lessons/subjects/english-grammar/topics/present-continuous";
 
 /**
  * Temat Present Continuous od generowania do sesji dziecka (design „Present Continuous” §11.2) na
- * ścieżce agenta puli (jedyny generator lekcji, #281): fake agenta zgłasza
- * ręcznie napisane ćwiczenia celów 1 i 2 (uniwersalny generator fake tworzy ćwiczenia, które
- * walidator tematu odrzuca), checker niedostępny. Dane fikcyjne.
+ * przebiegu bazowym: paczki fake'a zwracają ręcznie napisane ćwiczenia celów 1 i 2 swojego typu
+ * (uniwersalny generator fake tworzy ćwiczenia, które walidator tematu odrzuca), a kontrola
+ * zamkniętych zna ich klucze. Dane fikcyjne.
  */
 
 const { db, pool } = testDatabase();
@@ -126,11 +123,14 @@ const NOW_OR_USUALLY_EXERCISES: LessonExerciseDraft[] = [
   translation(NOW_OR_USUALLY, "Tom zwykle pije sok.", "Tom usually drinks juice.", ["drinks"]),
 ];
 
-/** Scenariusz fake'a agenta: jedno zgłoszenie na cel (klucz = slug celu) z przykładami kart. */
+/** Ręczne ćwiczenia wyboru: ich klucze zna kontrola zamkniętych (konwencja fake'a ich nie zna). */
+const CHOICES = [...AFFIRMATIVE_EXERCISES, ...NOW_OR_USUALLY_EXERCISES].filter((exercise) => exercise.exerciseType === "lesson_choice");
+
+/** Scenariusz fake'a paczek (klucz = slug celu). */
 const SCRIPT: FakeLessonPoolAgentOptions = {
-  objectives: {
-    affirmative: [{ submit: { exercises: AFFIRMATIVE_EXERCISES, examples: ["Tom is jumping now.", "The dogs are playing now."] } }],
-    now_or_usually: [{ submit: { exercises: NOW_OR_USUALLY_EXERCISES, examples: ["Mum is singing now.", "Mum sings every day."] } }],
+  packets: {
+    affirmative: packetRecords(AFFIRMATIVE_EXERCISES, ["Tom is jumping now.", "The dogs are playing now."], 20),
+    now_or_usually: packetRecords(NOW_OR_USUALLY_EXERCISES, ["Mum is singing now.", "Mum sings every day."], 20),
   },
 };
 
@@ -151,12 +151,12 @@ interface AgentWorld {
   agent: FakeLessonPoolAgent;
 }
 
-/** Jak `agentWorld` w `lesson-agent-generation.test.ts`: fake agenta ze scenariuszem, checker niedostępny. */
+/** Fake paczek ze scenariuszem i kontrola zamkniętych znająca klucze scenariusza. */
 async function agentWorld(agentOptions: FakeLessonPoolAgentOptions): Promise<AgentWorld> {
-  const fakes = await fakeGeneration({ agent: agentOptions });
+  const fakes = await fakeGeneration({ agent: agentOptions, checker: new KeyedChecker(CHOICES) });
   cleanup.push(fakes.dispose);
   fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 20 };
-  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: agentGrammarRegistry() }), agent: fakes.agent };
+  return { services: createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: createProductionSubjectRegistry() }), agent: fakes.agent };
 }
 
 interface IssuedTask {
@@ -171,7 +171,7 @@ async function objectiveOfTask(task: TaskDto): Promise<string> {
 }
 
 describe("lekcja Present Continuous — generowanie, szkic, publikacja, sesja dziecka", () => {
-  it("agent przyjmuje wszystkie ćwiczenia, publikacja przechodzi, sesja wydaje karty celu 1, ćwiczenie celu 2 i zdanie luki bez nawiasu", async () => {
+  it("przebieg bazowy przyjmuje wszystkie ćwiczenia, publikacja przechodzi, sesja wydaje karty celu 1, ćwiczenie celu 2 i zdanie luki bez nawiasu", async () => {
     const { services, agent } = await agentWorld(SCRIPT);
     const { runId, deckId } = await createLesson(services, {
       subjectId: "english_grammar",
@@ -184,24 +184,12 @@ describe("lekcja Present Continuous — generowanie, szkic, publikacja, sesja dz
 
     await executeLessonGeneration(services, runId);
 
-    // Generowanie: ścieżka agenta, oba cele kompletne, zero odrzuceń.
+    // Generowanie: przebieg bazowy, paczki obu celów, oba cele kompletne, zero odrzuceń.
     const run = (await pool.query<{ state: string; agent_checkpoint: { rejectionCodes: Record<string, number>; objectives: Record<string, { status: string; accepted: number }> } }>(
       "select state, agent_checkpoint from learning_app.generation_runs where id = $1", [runId],
     )).rows[0]!;
     expect(run.state).toBe("succeeded");
-    expect(agent.calls.map((call) => call.objectiveId)).toEqual([AFFIRMATIVE, NOW_OR_USUALLY]);
-    const outcomes = agent.calls.flatMap((call) => call.outcomes as LessonAgentToolOutcome[]);
-    expect(outcomes).toHaveLength(2);
-    const errors = outcomes.flatMap((outcome) => [
-      ...outcome.results.flatMap((result) => ("errors" in result ? [`#${result.index}: ${result.errors.join("; ")}`] : [])),
-      ...(outcome.examples?.errors ?? []),
-    ]);
-    expect(errors).toEqual([]);
-    expect(outcomes.map((outcome) => outcome.results.length)).toEqual([10, 10]);
-    expect(outcomes.map((outcome) => ({ complete: outcome.complete, missing: outcome.missing }))).toEqual([
-      { complete: true, missing: [] },
-      { complete: true, missing: [] },
-    ]);
+    expect([...new Set(agent.packetCalls.map((call) => call.objective.id))].sort()).toEqual([AFFIRMATIVE, NOW_OR_USUALLY]);
     expect(run.agent_checkpoint.rejectionCodes).toEqual({});
     expect(run.agent_checkpoint.objectives).toEqual({
       [AFFIRMATIVE]: { status: "complete", accepted: 10 },

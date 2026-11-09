@@ -9,9 +9,10 @@ import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { ClosedCheckInput, ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../../../ports/ai";
 import { GenerationProviderError } from "../../../ports/generation-error";
+import { FakeExerciseChecker, FakeLessonPoolAgent, type FakePacketStep } from "../../../providers/fake-lesson-agent";
 import { runLessonBaselinePool } from "./lesson-baseline-pool";
 import { poolStageCounts } from "./lesson-drafts";
-import type { LessonPoolAgentRunInput } from "./lesson-pool-agent";
+import type { LessonPoolAgentRunInput, SettledObjective } from "./lesson-pool-agent";
 
 /**
  * Przebieg bazowy (spec etapu 2 §3) na fake'ach portów: bez sieci, bez bazy. Przedmiot gramatyki
@@ -83,7 +84,6 @@ function runInput(overrides: Partial<LessonPoolAgentRunInput> = {}): LessonPoolA
     topicTitle: "Present Simple",
     material: "Tom plays football.",
     poolSize: 20,
-    graderAvailable: true,
     fixed: [],
     draftExamples: {},
     skipObjectives: [],
@@ -122,7 +122,7 @@ describe("runLessonBaselinePool", () => {
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
     ]);
-    expect(result.stats.accepted).toBe(22);
+    expect(result.objectives.flatMap((objective) => objective.exercises)).toHaveLength(22);
   });
 
   it("sends one closed check per closed packet only, with card sentences in the avoid list", async () => {
@@ -133,8 +133,7 @@ describe("runLessonBaselinePool", () => {
     expect(checker.calls).toHaveLength(2);
     expect(checker.calls[0]!.contract).toBe("choice");
     expect(checker.calls[0]!.items).toHaveLength(7);
-    expect(generator.calls[0]!.pool.ruleBook.lesson).toEqual([]);
-    expect(generator.calls[0]!.pool.ruleBook.checks).toEqual([]);
+    expect(Object.keys(generator.calls[0]!.pool.ruleBook)).toEqual(["general", "types"]);
     expect(generator.calls[0]!.pool.exerciseTypes).toEqual(["lesson_choice"]);
   });
 
@@ -144,7 +143,7 @@ describe("runLessonBaselinePool", () => {
     await run(new FakeGenerator(), plain);
     expect(plain.calls.length).toBeGreaterThan(0);
     expect(plain.calls.every((call) => !("material" in call))).toBe(true);
-    const needsMaterial: SubjectModule = { ...subject, agentPolicy: { ...subject.agentPolicy, checkerNeedsMaterial: true } };
+    const needsMaterial: SubjectModule = { ...subject, checkerNeedsMaterial: true };
     const withMaterial = new FakeChecker();
     await runLessonBaselinePool(
       { generator: new FakeGenerator(), checker: withMaterial, subjects: { getSubject: () => needsMaterial }, policy: {} },
@@ -193,7 +192,7 @@ describe("runLessonBaselinePool", () => {
       },
     };
     const twinned = await run(twin);
-    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap", detail: "" })]);
+    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap" })]);
     const ruleIds = twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds;
     expect(ruleIds.length).toBeGreaterThan(0);
     // Dziennik podaje identyfikatory reguł odrzuceń z typem ćwiczenia (bez treści).
@@ -409,8 +408,149 @@ describe("runLessonBaselinePool", () => {
     let state = createLessonAgentState({ topic, objectives: agentObjectivesOf(topic), fixed: [], examples: {}, fixedSources: {} });
     let n = 1;
     for (const objective of result.objectives) state = withPool(state, objective.objectiveId, objective.exercises.map((draft) => ({ id: `ex${n++}`, draft })));
-    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0, listenAllowance: 0, maxExercises: 99 }]));
+    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0 }]));
     expect(lessonInvariantCheck(state, { subject, material: "", limits })).toEqual([]);
+  });
+});
+
+/** Mechanika runu przeniesiona z testów pętli agenta (`lesson-pool-agent.limits.test.ts`): terminy, przerwanie, równoległość, budżet. */
+describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", () => {
+  const slugOf = (id: string) => id.split(".").at(-1)!;
+  /** Ten sam krok dla każdej z 3 paczek (choice, gap, open) obu zagadnień. */
+  const allPackets = (step: () => FakePacketStep) => ({ [slugOf(first)]: [step(), step(), step()], [slugOf(second)]: [step(), step(), step()] });
+  const flush = () => new Promise<void>((done) => setTimeout(done, 0));
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  it("run deadline with hung packets: both objectives incomplete (not failed), result returned, timers cleared", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ hang: true })) });
+    let settled = false;
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker(), { runTimeoutMs: 2_000 }), runInput(), new AbortController().signal).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status, objective.failure])).toEqual([
+      [first, "incomplete", undefined],
+      [second, "incomplete", undefined],
+    ]);
+    // Paczki czekające w semaforze po terminie nie wołają generatora.
+    expect(generator.packetCalls).toHaveLength(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a generator ignoring the abort (stall) does not hold the run past its deadline", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ stall: true })) });
+    let settled = false;
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker(), { runTimeoutMs: 1_000 }), runInput(), new AbortController().signal).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    const result = await pending;
+    expect(result.objectives.map((objective) => objective.status)).toEqual(["incomplete", "incomplete"]);
+    expect(result.objectives.every((objective) => objective.failure === undefined)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("aborts with signal.reason mid-run and clears the timers", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ hang: true })) });
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), controller.signal);
+    const rejection = expect(pending).rejects.toBe("superseded");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(generator.packetCalls).toHaveLength(4);
+    controller.abort("superseded");
+    await rejection;
+    expect(generator.packetCalls).toHaveLength(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a signal aborted before start rejects with its reason without any provider call or hook", async () => {
+    const controller = new AbortController();
+    controller.abort("superseded");
+    const generator = new FakeLessonPoolAgent();
+    const checker = new FakeExerciseChecker();
+    const resolved = vi.fn(async () => undefined);
+    await expect(runLessonBaselinePool(deps(generator, checker), runInput({ onObjectivesResolved: resolved }), controller.signal)).rejects.toBe("superseded");
+    expect(generator.packetCalls).toEqual([]);
+    expect(checker.closedCalls).toEqual([]);
+    expect(resolved).not.toHaveBeenCalled();
+  });
+
+  it("runs at most `concurrency` packet calls at once (default policy: 4 of 6)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const gate = deferred();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ gate: gate.promise })) });
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), new AbortController().signal);
+    await vi.waitFor(() => expect(generator.packetCalls).toHaveLength(4));
+    await flush();
+    expect(generator.packetCalls).toHaveLength(4);
+    gate.resolve();
+    await pending;
+    expect(generator.packetCalls).toHaveLength(6);
+    expect(generator.maxConcurrent).toBe(4);
+  });
+
+  it("runs at most `checkerConcurrency` closed checks at once, independently of the generator limit", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const gate = deferred();
+    const checker = new FakeExerciseChecker({ gate: gate.promise });
+    const pending = run(new FakeGenerator(), checker, {}, { concurrency: 6, checkerConcurrency: 1 });
+    await vi.waitFor(() => expect(checker.closedCalls).toHaveLength(1));
+    await flush();
+    // Dwie paczki zamknięte (choice obu zagadnień): druga czeka na miejsce kontroli.
+    expect(checker.closedCalls).toHaveLength(1);
+    gate.resolve();
+    await pending;
+    expect(checker.closedCalls).toHaveLength(2);
+    expect(checker.maxConcurrent).toBe(1);
+  });
+
+  it("does not count initialSpentUsd twice (result, objectives and the settled hook)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const settled: SettledObjective[] = [];
+    const resolved = vi.fn(async (_value: { spentUsd: number }) => undefined);
+    // 6 paczek × 0,001 + 2 kontrole × 0,0005 = 0,007 ponad wydatek startowy.
+    const result = await run(new FakeGenerator(), new FakeChecker(), {
+      initialSpentUsd: 0.3,
+      onObjectivesResolved: resolved,
+      onObjectiveSettled: async (objective) => void settled.push(objective),
+    });
+    expect(resolved.mock.calls[0]![0].spentUsd).toBeCloseTo(0.3, 10);
+    expect(result.spentUsd).toBeCloseTo(0.307, 10);
+    for (const objective of [...result.objectives, ...settled]) expect(objective.spentUsd).toBeCloseTo(0.307, 10);
+  });
+
+  it("an initialSpentUsd at the budget starts no call and leaves every objective incomplete", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const generator = new FakeGenerator();
+    const checker = new FakeChecker();
+    const settled: string[] = [];
+    const result = await run(generator, checker, { initialSpentUsd: 0.5, onObjectiveSettled: async (objective) => void settled.push(objective.objectiveId) }, { runBudgetUsd: 0.5 });
+    expect(generator.calls).toEqual([]);
+    expect(checker.calls).toEqual([]);
+    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status, objective.steps, objective.failure])).toEqual([
+      [first, "incomplete", 0, undefined],
+      [second, "incomplete", 0, undefined],
+    ]);
+    expect(settled).toEqual([first, second]);
+    expect(result.spentUsd).toBe(0.5);
   });
 });
 
@@ -566,10 +706,7 @@ describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a
         draft.exerciseType === "lesson_open_answer" && draft.instructionPl !== "Fixed."
           ? [{ rule: "lesson.test", field: "instructionPl", pl: "x" } as never]
           : [],
-      agentPolicy: {
-        ...subject.agentPolicy,
-        sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
-      },
+      sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
     };
     const result = await runLessonBaselinePool(
       { generator: new FakeGenerator(), checker: new FakeChecker(), subjects: { getSubject: (id: string) => (id === strict.id ? strict : undefined) } },
@@ -597,7 +734,7 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
       });
       return issues as never;
     },
-    agentPolicy: { ...schoolSubject.agentPolicy, sanitize: undefined },
+    sanitize: undefined,
   };
   const kwTopic = {
     titlePl: "Rośliny",

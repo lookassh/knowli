@@ -882,12 +882,8 @@ describe("usługi generowania per przedmiot i luki generowania (agent puli, etap
     expect(withServices.checkServiceIncludesMaterial).toBe(true);
   });
 
-  it("openCheckService (ocena odpowiedzi próbnych do pytań otwartych): opcjonalne, bez pustego napisu", () => {
-    expect(SubjectCatalogDtoSchema.parse({ lessonGenerationAvailable: true, subjects: [subject] }).subjects[0]!).not.toHaveProperty("openCheckService");
-    const parsed = SubjectCatalogDtoSchema.parse({ lessonGenerationAvailable: true, subjects: [{ ...subject, openCheckService: "openrouter.ai · g" }] }).subjects[0]!;
-    expect(parsed.openCheckService).toBe("openrouter.ai · g");
-    expect(SubjectCatalogDtoSchema.safeParse({ lessonGenerationAvailable: true, subjects: [{ ...subject, openCheckService: "" }] }).success).toBe(false);
-    expect(SubjectCatalogDtoSchema.safeParse({ lessonGenerationAvailable: true, subjects: [{ ...subject, openCheckService: 1 }] }).success).toBe(false);
+  it("bez openCheckService (etap 5c): ścisły schemat przedmiotu odrzuca dawne pole", () => {
+    expect(SubjectCatalogDtoSchema.safeParse({ lessonGenerationAvailable: true, subjects: [{ ...subject, openCheckService: "openrouter.ai · g" }] }).success).toBe(false);
   });
 
   it("pola usług odrzucają puste wartości i złe typy", () => {

@@ -1,84 +1,42 @@
-import type {
-  ClosedCheckInput,
-  ClosedExerciseChecker,
-  HintVerdict,
-  LessonPacketGenerator,
-  LessonPacketInput,
-  LessonExerciseCheckerProvider,
-  LessonObjectiveAgentInput,
-  LessonObjectiveAgentTools,
-  LessonPoolAgentProvider,
-  RunCostSink,
-} from "../ports/ai";
+import type { ClosedCheckInput, ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../ports/ai";
 import type { UsageRecorder } from "../ports/usage";
-import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeClosedAnswer, fakeObjectiveExercises, fakePacketExercises } from "./fake-lesson-pool";
+import { FAKE_SLOW_DELAY_MS, FAKE_SLOW_MARKER, fakeClosedAnswer, fakePacketExercises } from "./fake-lesson-pool";
 import { recordResponse } from "./usage/record-http";
 
 /**
- * Deterministyczne fake'i agenta puli lekcji i checkera (etap 1 issue #237): sterowane scenariuszem,
- * bez sieci i modeli. Służą testom kierownika agenta i trybowi `UMIEM_FAKE_PROVIDERS=1` (etap 3 PR 2
- * §5.2: pętla generatora `generate` + checker `unavailable`); nie są adapterem żadnej usługi.
- * Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
+ * Deterministyczne fake'i generatora paczek i kontroli zadań zamkniętych przebiegu bazowego: sterowane
+ * scenariuszem, bez sieci i modeli. Służą testom i trybowi `UMIEM_FAKE_PROVIDERS=1`; nie są adapterem
+ * żadnej usługi. Scenariusze rozpoznają zagadnienia po slugu z identyfikatora celu.
  */
-
-/** Krok scenariusza podagenta: jedno „wywołanie modelu” z narzędziami albo awarią. */
-export type FakeAgentStep =
-  | { submit: { exercises: unknown; examples?: unknown } }
-  | { remove: string }
-  | { parallel: FakeAgentStep[] }
-  | { throw: Error }
-  | { hang: true }
-  /** Dostawca ignorujący przerwanie: krok nigdy się nie kończy, także po przerwaniu sygnału. */
-  | { stall: true }
-  /**
-   * „Wywołanie w locie”: `onReached` sygnalizuje dojście do kroku, potem krok czeka na `gate`;
-   * przerwanie sygnału odrzuca `signal.reason`. Koszt kroku jest zapisany przed czekaniem.
-   */
-  | { gate: Promise<void>; onReached?: () => void }
-  /** Jedno zgłoszenie generatora ({@link fakeObjectiveExercises}) z bieżącym przesunięciem zagadnienia (+100 na krok). */
-  | { generate: true }
-  /** Zgłoszenie zbudowane z wejścia podagenta w czasie kroku (identyfikatory zagadnień szkoły i rozdziału zawierają `deckId`). */
-  | { build: (input: LessonObjectiveAgentInput) => { exercises: unknown[]; examples?: unknown } };
 
 /**
- * Krok scenariusza paczki przebiegu bazowego (`generatePacket`): awaria. Kolejne wywołania paczek celu biorą
- * kolejne kroki; po ich końcu — generator ({@link fakePacketExercises}).
+ * Krok scenariusza paczki przebiegu bazowego (`generatePacket`). Kolejne wywołania paczek celu biorą kolejne
+ * kroki (w kolejności wejścia do semafora); po ich końcu — generator ({@link fakePacketExercises}). Koszt
+ * paczki jest zapisany przed krokiem.
  */
-export type FakePacketStep = { throw: Error };
-
-/** Scenariusz zagadnienia: jeden dla każdego wywołania albo `calls[i]` dla i-tego wywołania (ponowienia). */
-export type FakeObjectiveScript = FakeAgentStep[] | { calls: FakeAgentStep[][] };
+export type FakePacketStep =
+  | { throw: Error }
+  /** „Wywołanie w locie”: `onReached`, potem czekanie na `gate` (dalej generator); przerwanie odrzuca `signal.reason`. */
+  | { gate: Promise<void>; onReached?: () => void }
+  /** Czeka do przerwania sygnału i odrzuca `signal.reason`. */
+  | { hang: true }
+  /** Dostawca ignorujący przerwanie: krok nigdy się nie kończy. */
+  | { stall: true }
+  /** Wynik zbudowany z wejścia paczki. */
+  | { build: (input: LessonPacketInput) => { exercises: unknown[]; examples?: unknown[] } };
 
 export interface FakeLessonPoolAgentOptions {
-  /**
-   * Scenariusze per zagadnienie; klucz = slug, czyli `objective.id.split(".").at(-1)`. Przy `calls`
-   * wywołanie spoza listy nie ma kroków.
-   */
-  objectives?: Record<string, FakeObjectiveScript>;
-  /** Koszt jednego kroku zapisywany w `RunCostSink`; brak = `null` (koszt nieznany). */
+  /** Koszt jednej paczki zapisywany w `RunCostSink`; brak = `null` (koszt nieznany). */
   stepCostUsd?: number | null;
-  /**
-   * Dziennik kosztów: jeden `recordResponse` na krok (jak adapter na żądanie HTTP), `provider`
-   * `"openrouter"`, operacje `agent_objective` i `packet_generate`.
-   */
+  /** Dziennik kosztów: jeden `recordResponse` na paczkę (jak adapter na żądanie HTTP), `provider` `"openrouter"`, operacja `packet_generate`. */
   usage?: UsageRecorder;
-  /**
-   * Pętla generatora (spec etapu 3 §5.2): zagadnienie bez scenariusza zgłasza {@link fakeObjectiveExercises}
-   * i dokłada kroki tylko dla braków z wyniku narzędzia (do `maxSteps`). `delayMs` opóźnia każdy krok, a `FAKE_SLOW_MARKER` w materiale — pierwszy krok
-   * zagadnienia do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał.
-   */
+  /** `delayMs` opóźnia każdą paczkę, a `FAKE_SLOW_MARKER` w materiale — do co najmniej `FAKE_SLOW_DELAY_MS`; sen przerywa sygnał. */
   generate?: { delayMs?: number };
-  /** Scenariusze paczek przebiegu bazowego per slug zagadnienia (kolejne wywołania — kolejne kroki). */
+  /** Scenariusze paczek per slug zagadnienia (kolejne wywołania — kolejne kroki). */
   packets?: Record<string, FakePacketStep[]>;
-  /** Zapis historii `calls` i `packetCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
+  /** Zapis historii `packetCalls` (domyślnie `true`); proces workera wyłącza go, żeby nie rosła. */
   record?: boolean;
 }
-
-type SubmitInput = Parameters<LessonObjectiveAgentTools["submit"]>[0];
-type FakeStage = "guided" | "productive" | "independent";
-
-/** Odstęp numeracji kolejnych kroków generatora w zagadnieniu. */
-const GENERATOR_STEP_OFFSET = 100;
 
 /**
  * Czeka na przerwanie sygnału i odrzuca `signal.reason`; przerwany wcześniej odrzuca od razu.
@@ -119,90 +77,6 @@ async function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void
   }
 }
 
-/**
- * Przesunięcie numeracji pierwszego kroku zagadnienia: `index · 1000` w puli bez ćwiczeń zagadnienia,
- * a przy istniejących (szkic przy „+N”, przyjęte z punktu kontrolnego) osobne pasmo
- * `index · 1000 + 500 + existingCount · 2`. Kolizje z numerami szkicu po usunięciach rodzica naprawia
- * kolejny krok pętli.
- */
-function startOffset(input: LessonObjectiveAgentInput): number {
-  const { index, existingCount } = input.objective;
-  return existingCount > 0 ? index * 1000 + 500 + existingCount * 2 : index * 1000;
-}
-
-/** Zamówienie kolejnego kroku pętli generatora. */
-interface GeneratorRequest {
-  readonly counts: Record<FakeStage, number>;
-  readonly required: readonly (readonly string[])[];
-  /** Ponowne przykłady kart (brak „card examples” w wyniku). */
-  readonly examples: boolean;
-}
-
-const STAGES: readonly FakeStage[] = ["guided", "productive", "independent"];
-
-const STAGE_GAP = /^(guided|productive|independent): (\d+) of (\d+)$/u;
-const NEW_EXERCISES = /^new exercises: (\d+) of (\d+)$/u;
-const DISTINCT_OPEN = /^distinct open answers: (\d+) of (\d+)$/u;
-const EXERCISES = /^exercises: (\d+) of (\d+)$/u;
-const NEEDS_TYPE = /^needs at least one (.+)$/u;
-
-/** `b − a` z dopasowania `"… a of b"` (grupy 1 i 2). */
-function shortfall(match: RegExpExecArray): number {
-  return Math.max(0, Number(match[2]) - Number(match[1]));
-}
-
-/**
- * Kolejny krok z braków wyniku narzędzia (`objectiveStatus`): `"<etap>: a of b"` → `b − a` ćwiczeń etapu,
- * `"distinct open answers: a of b"` → tyle samodzielnych więcej, `"exercises: a of b"` → reszta braku
- * jako wspomagane, `"needs at least one …"` → po jednym ćwiczeniu typu, `"card examples"` → przykłady.
- * W „+N” `"new exercises: k of N"` → `N − k` rozłożone po równo na etapy z braków (żaden — samodzielny),
- * co najmniej braki etapów; `"exercises"` wtedy pomijany. Brak rozpoznanego braku → `undefined` (koniec).
- */
-function nextGeneratorRequest(missing: readonly string[]): GeneratorRequest | undefined {
-  const counts: Record<FakeStage, number> = { guided: 0, productive: 0, independent: 0 };
-  const listed = new Set<FakeStage>();
-  const required: string[][] = [];
-  let remaining: number | undefined;
-  let total = 0;
-  let examples = false;
-  for (const line of missing) {
-    const stage = STAGE_GAP.exec(line);
-    const added = NEW_EXERCISES.exec(line);
-    const distinct = DISTINCT_OPEN.exec(line);
-    const exercises = EXERCISES.exec(line);
-    const needs = NEEDS_TYPE.exec(line);
-    if (stage !== null) {
-      const name = stage[1] as FakeStage;
-      counts[name] += Math.max(0, Number(stage[3]) - Number(stage[2]));
-      listed.add(name);
-    } else if (added !== null) remaining = shortfall(added);
-    else if (distinct !== null) counts.independent += shortfall(distinct);
-    else if (exercises !== null) total = shortfall(exercises);
-    else if (needs !== null) required.push(needs[1]!.split(" or "));
-    else if (line.startsWith("card examples:")) examples = true;
-  }
-  const sum = () => counts.guided + counts.productive + counts.independent;
-  if (remaining !== undefined) {
-    const stages = listed.size > 0 ? STAGES.filter((stage) => listed.has(stage)) : (["independent"] as const);
-    const extra = Math.max(0, remaining - sum());
-    stages.forEach((stage, position) => {
-      counts[stage] += Math.floor(extra / stages.length) + (position < extra % stages.length ? 1 : 0);
-    });
-  } else {
-    counts.guided += Math.max(0, total - sum());
-  }
-  if (sum() === 0 && required.length === 0 && !examples) return undefined;
-  return { counts, required, examples };
-}
-
-/** Odpowiedzi zgłoszonych ćwiczeń: kolejne kroki unikają ich jak zdań lekcji (`avoidSentences`). */
-function answersOf(exercises: readonly unknown[]): string[] {
-  return exercises.flatMap((exercise) => {
-    const answer = (exercise as { answer?: unknown } | null)?.answer;
-    return typeof answer === "string" ? [answer] : [];
-  });
-}
-
 /** Obietnica, która nigdy się nie rozstrzyga (dostawca ignorujący `signal`). */
 function stalled(): Promise<never> {
   return new Promise<never>(() => undefined);
@@ -224,111 +98,21 @@ class ConcurrencyMeter {
   }
 }
 
-export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacketGenerator {
+export class FakeLessonPoolAgent implements LessonPacketGenerator {
   readonly name = "fake-lesson-agent";
   readonly model = "fake-lesson-agent-model";
-  /**
-   * Zapis wywołań `runObjective`. Przy kroku `parallel` `outcomes` są w kolejności ZAKOŃCZENIA narzędzi,
-   * nie startu. Wynik wywołania: `model_finished`, gdy scenariusz się skończył; `max_steps`, gdy limit
-   * kroków wejścia zostanie osiągnięty przed końcem scenariusza; `stopped` po `shouldStop()`.
-   * Przerwany `signal` (sprawdzany przed każdym krokiem i przed narzędziami) odrzuca `signal.reason`.
-   */
-  readonly calls: {
-    objectiveId: string;
-    input: LessonObjectiveAgentInput;
-    tools: LessonObjectiveAgentTools;
-    outcomes: unknown[];
-  }[] = [];
   /** Zapis wywołań `generatePacket` (przy `record !== false`). */
   readonly packetCalls: LessonPacketInput[] = [];
   /** Kolejne pasmo numeracji paczek: każda paczka (także „+N” i wznowienie w tym procesie) ma inne odpowiedzi. */
   private packetBand = 0;
   private readonly packetCounts = new Map<string, number>();
   private readonly meter = new ConcurrencyMeter();
-  /** Liczba dotychczasowych wywołań `runObjective` per slug (wybór scenariusza z `calls`). */
-  private readonly callCounts = new Map<string, number>();
 
   constructor(private readonly options: FakeLessonPoolAgentOptions = {}) {}
 
-  /** Największa liczba jednocześnie trwających wywołań `runObjective`. */
+  /** Największa liczba jednocześnie trwających wywołań `generatePacket`. */
   get maxConcurrent(): number {
     return this.meter.max;
-  }
-
-  runObjective(
-    input: LessonObjectiveAgentInput,
-    tools: LessonObjectiveAgentTools,
-    cost: RunCostSink,
-    signal: AbortSignal,
-  ): Promise<{ steps: number; stopReason: "stopped" | "max_steps" | "model_finished" }> {
-    const slug = input.objective.id.split(".").at(-1) ?? input.objective.id;
-    const scripted = this.scriptFor(slug);
-    const outcomes: unknown[] = [];
-    if (this.options.record !== false) this.calls.push({ objectiveId: input.objective.id, input, tools, outcomes });
-    if (scripted === undefined && this.options.generate !== undefined) {
-      return this.meter.track(() => this.runGenerator(input, tools, cost, signal, outcomes));
-    }
-    const script = scripted ?? [];
-    const progress = { generated: 0 };
-    return this.meter.track(async () => {
-      let steps = 0;
-      for (const step of script) {
-        signal.throwIfAborted();
-        if (steps >= input.maxSteps) return { steps, stopReason: "max_steps" as const };
-        if (tools.shouldStop()) return { steps, stopReason: "stopped" as const };
-        // „Wywołanie modelu”: koszt odpowiedzi jest zapisany przed narzędziami, więc przerwanie w trakcie
-        // narzędzi go nie gubi (jak onLanguageModelCallEnd w AI SDK).
-        this.recordStep(cost, "agent_objective");
-        steps += 1;
-        await this.executeStep(step, tools, outcomes, signal, input, progress);
-      }
-      return { steps, stopReason: "model_finished" as const };
-    });
-  }
-
-  /**
-   * Pętla generatora: krok 1 z liczbami `pool.stageCounts` (wymagane typy i dodatek słuchowy), kolejne
-   * tylko dla braków z wyniku `submit` ({@link nextGeneratorRequest}), z przesunięciem +100 i odpowiedziami
-   * wcześniejszych kroków w `avoidSentences`. Koniec: `complete`, brak rozpoznanego braku (`model_finished`),
-   * `maxSteps` albo `shouldStop()`. Koszt kroku zapisany po „odpowiedzi” (po śnie), przed narzędziem.
-   */
-  private async runGenerator(
-    input: LessonObjectiveAgentInput,
-    tools: LessonObjectiveAgentTools,
-    cost: RunCostSink,
-    signal: AbortSignal,
-    outcomes: unknown[],
-  ): Promise<{ steps: number; stopReason: "stopped" | "max_steps" | "model_finished" }> {
-    let steps = 0;
-    let offset = startOffset(input);
-    let request: GeneratorRequest | undefined;
-    let stepInput = input;
-    for (;;) {
-      signal.throwIfAborted();
-      if (steps >= input.maxSteps) return { steps, stopReason: "max_steps" };
-      if (tools.shouldStop()) return { steps, stopReason: "stopped" };
-      await this.pause(input, steps === 0, signal);
-      this.recordStep(cost, "agent_objective");
-      steps += 1;
-      const generated = fakeObjectiveExercises(stepInput, offset, request?.counts, request?.required);
-      const examples = request === undefined || request.examples ? generated.examples : undefined;
-      signal.throwIfAborted();
-      const outcome = await tools.submit({ exercises: generated.exercises, ...(examples === undefined ? {} : { examples }) });
-      outcomes.push(outcome);
-      if (outcome.complete) return { steps, stopReason: "model_finished" };
-      request = nextGeneratorRequest(outcome.missing);
-      if (request === undefined) return { steps, stopReason: "model_finished" };
-      offset += GENERATOR_STEP_OFFSET;
-      const pool = stepInput.pool;
-      stepInput = { ...stepInput, pool: { ...pool, avoidSentences: [...(pool.avoidSentences ?? []), ...answersOf(generated.exercises)] } };
-    }
-  }
-
-  /** Opóźnienie kroku generatora: `delayMs`, a pierwszy krok materiału z `FAKE_SLOW_MARKER` co najmniej `FAKE_SLOW_DELAY_MS`. */
-  private async pause(input: LessonObjectiveAgentInput, first: boolean, signal: AbortSignal): Promise<void> {
-    const base = this.options.generate?.delayMs ?? 0;
-    const ms = first && input.pool.material.includes(FAKE_SLOW_MARKER) ? Math.max(base, FAKE_SLOW_DELAY_MS) : base;
-    if (ms > 0) await sleepUnlessAborted(ms, signal);
   }
 
   /**
@@ -348,199 +132,59 @@ export class FakeLessonPoolAgent implements LessonPoolAgentProvider, LessonPacke
       const base = this.options.generate?.delayMs ?? 0;
       const ms = input.pool.material.includes(FAKE_SLOW_MARKER) ? Math.max(base, FAKE_SLOW_DELAY_MS) : base;
       if (ms > 0) await sleepUnlessAborted(ms, signal);
-      this.recordStep(cost, "packet_generate");
+      this.recordStep(cost);
       const step = this.options.packets?.[slug]?.[call];
-      if (step !== undefined) throw step.throw;
+      if (step === undefined) return fakePacketExercises(input, band);
+      if ("throw" in step) throw step.throw;
+      if ("build" in step) return step.build(input);
+      if ("stall" in step) return stalled();
+      if ("gate" in step) step.onReached?.();
+      const abort = rejectOnAbort(signal);
+      try {
+        await Promise.race(["gate" in step ? step.gate : abort.promise, abort.promise]);
+      } finally {
+        abort.dispose();
+      }
       return fakePacketExercises(input, band);
     });
   }
 
-  /** Scenariusz wywołania; `undefined` = zagadnienie bez scenariusza (wtedy generator albo brak kroków). */
-  private scriptFor(slug: string): FakeAgentStep[] | undefined {
-    const script = this.options.objectives?.[slug];
-    const call = this.callCounts.get(slug) ?? 0;
-    this.callCounts.set(slug, call + 1);
-    if (script === undefined) return undefined;
-    return Array.isArray(script) ? script : (script.calls[call] ?? []);
-  }
-
   /** Koszt „wywołania modelu”: licznik runu i dziennik kosztów z tego samego zdarzenia (jak adapter). */
-  private recordStep(cost: RunCostSink, operation: "agent_objective" | "packet_generate"): void {
+  private recordStep(cost: RunCostSink): void {
     const usd = this.options.stepCostUsd ?? null;
     cost.record(usd);
     recordResponse(
       this.options.usage,
-      { feature: "lesson_generation", operation, provider: "openrouter", model: this.model },
+      { feature: "lesson_generation", operation: "packet_generate", provider: "openrouter", model: this.model },
       200,
       { usage: usd === null ? {} : { cost: usd } },
     );
   }
-
-  private async executeStep(
-    step: FakeAgentStep,
-    tools: LessonObjectiveAgentTools,
-    outcomes: unknown[],
-    signal: AbortSignal,
-    input: LessonObjectiveAgentInput,
-    progress: { generated: number },
-  ): Promise<void> {
-    signal.throwIfAborted();
-    if ("generate" in step) {
-      const first = progress.generated === 0;
-      const offset = startOffset(input) + GENERATOR_STEP_OFFSET * progress.generated;
-      progress.generated += 1;
-      await this.pause(input, first, signal);
-      const generated = fakeObjectiveExercises(input, offset);
-      signal.throwIfAborted();
-      outcomes.push(await tools.submit(generated));
-    } else if ("build" in step) {
-      outcomes.push(await tools.submit(step.build(input) as SubmitInput));
-    } else if ("submit" in step) {
-      const raw = step.submit as SubmitInput;
-      outcomes.push(await tools.submit(raw));
-    } else if ("remove" in step) {
-      outcomes.push(await tools.remove(step.remove));
-    } else if ("parallel" in step) {
-      // Wywołania startują synchronicznie jedno po drugim i nie czekają na siebie (AI SDK: Promise.all).
-      await Promise.all(step.parallel.map((inner) => this.executeStep(inner, tools, outcomes, signal, input, progress)));
-    } else if ("throw" in step) {
-      throw step.throw;
-    } else if ("stall" in step) {
-      await stalled();
-    } else if ("gate" in step) {
-      step.onReached?.();
-      const abort = rejectOnAbort(signal);
-      try {
-        await Promise.race([step.gate, abort.promise]);
-      } finally {
-        abort.dispose();
-      }
-    } else {
-      await rejectOnAbort(signal).promise;
-    }
-  }
 }
 
-type SolveInput = Parameters<LessonExerciseCheckerProvider["solve"]>[0];
-type JudgeInput = Parameters<LessonExerciseCheckerProvider["judgeVariants"]>[0];
-type HintInput = Parameters<LessonExerciseCheckerProvider["judgeHints"]>[0];
-type OpenInput = Parameters<LessonExerciseCheckerProvider["solveOpen"]>[0];
-
 export interface FakeExerciseCheckerOptions {
-  /** `view → odpowiedzi` (null = brak wyniku); domyślnie pusta lista, czyli rozjazd. */
-  solve?: (view: string) => string[] | null;
-  /**
-   * Wynik całej paczki zamiast `solve` per pozycja; `"throw"` rzuca, `"hang"` czeka na przerwanie,
-   * `"stall"` nigdy się nie kończy (dostawca ignorujący przerwanie).
-   */
-  solveBatch?: (items: readonly { view: string }[]) => (string[] | null)[] | "throw" | "hang" | "stall";
-  /** Werdykt dla jednego wariantu (null = brak wyniku pozycji); domyślnie `true`. */
-  judge?: (variant: string) => boolean | null;
-  judgeBatch?: (items: readonly unknown[]) => (boolean[] | null)[] | "throw" | "hang" | "stall";
-  /** Werdykt sędziego podpowiedzi dla pozycji (null = niesprawdzone); domyślnie `{ verdict: "ok" }`. */
-  judgeHint?: (item: HintInput["items"][number]) => HintVerdict | null;
-  /** Tryb awarii całej paczki `judgeHints` (`undefined` = liczy `judgeHint` per pozycja); jak `solveBatch`. */
-  hintBatch?: (items: HintInput["items"]) => (HintVerdict | null)[] | "throw" | "hang" | "stall" | undefined;
-  /** Dwie odpowiedzi rozwiązującego otwarte dla widoku (null = brak wyniku); domyślnie `["A", "B"]`. */
-  solveOpen?: (view: string) => readonly [string, string] | null;
-  /** Tryb awarii całej paczki `solveOpen` (`undefined` = liczy `solveOpen` per pozycja). */
-  openBatch?: (items: OpenInput["items"]) => ((readonly [string, string]) | null)[] | "throw" | "hang" | "stall" | undefined;
   /** Koszt jednego wywołania; domyślnie 0, `null` = nieznany. */
   costUsd?: number | null;
   /** Wywołania czekają na tę obietnicę (testy równoległości); przerwanie sygnału przerywa oczekiwanie. */
   gate?: Promise<void>;
-  /** Kontrola niedostępna (tryb fake workera): metody agenta dają `null` dla każdej pozycji (`checkClosed` jej nie dotyczy). */
-  unavailable?: true;
-  /** Kontrola zamkniętych: `pass` (domyślnie) — klucz ćwiczeń fake'a z widoku, `unknown` — „nie wiem” dla każdej pozycji. */
-  closed?: "pass" | "unknown";
 }
 
-export class FakeExerciseChecker implements LessonExerciseCheckerProvider, ClosedExerciseChecker {
+export class FakeExerciseChecker implements ClosedExerciseChecker {
   readonly name = "fake-lesson-checker";
   readonly model = "fake-lesson-checker-model";
-  readonly solveCalls: SolveInput[] = [];
-  readonly judgeCalls: JudgeInput[] = [];
-  readonly hintCalls: HintInput[] = [];
-  readonly openCalls: OpenInput[] = [];
   readonly closedCalls: ClosedCheckInput[] = [];
   private readonly meter = new ConcurrencyMeter();
 
   constructor(private readonly options: FakeExerciseCheckerOptions = {}) {}
 
-  /** Największa liczba jednocześnie trwających wywołań `solve` i `judgeVariants` razem. */
+  /** Największa liczba jednocześnie trwających wywołań `checkClosed`. */
   get maxConcurrent(): number {
     return this.meter.max;
   }
 
-  solve(input: SolveInput, cost: RunCostSink, signal: AbortSignal): Promise<{ answers: (string[] | null)[] }> {
-    this.solveCalls.push(input);
-    return this.meter.track(async () => {
-      await this.admit(cost, signal);
-      if (this.options.unavailable) return { answers: input.items.map(() => null) };
-      const batch = this.options.solveBatch?.(input.items);
-      if (batch === "throw") throw new Error("fake checker: solve failed");
-      if (batch === "hang") return rejectOnAbort(signal).promise;
-      if (batch === "stall") return stalled();
-      if (batch) return { answers: batch };
-      const solve = this.options.solve ?? (() => []);
-      return { answers: input.items.map((item) => solve(item.view)) };
-    });
-  }
-
-  judgeVariants(input: JudgeInput, cost: RunCostSink, signal: AbortSignal): Promise<{ equivalent: (boolean[] | null)[] }> {
-    this.judgeCalls.push(input);
-    return this.meter.track(async () => {
-      await this.admit(cost, signal);
-      if (this.options.unavailable) return { equivalent: input.items.map(() => null) };
-      const batch = this.options.judgeBatch?.(input.items);
-      if (batch === "throw") throw new Error("fake checker: judgeVariants failed");
-      if (batch === "hang") return rejectOnAbort(signal).promise;
-      if (batch === "stall") return stalled();
-      if (batch) return { equivalent: batch };
-      const judge = this.options.judge ?? (() => true);
-      return {
-        equivalent: input.items.map((item) => {
-          const verdicts = item.variants.map((variant) => judge(variant));
-          return verdicts.every((verdict): verdict is boolean => verdict !== null) ? verdicts : null;
-        }),
-      };
-    });
-  }
-
-  judgeHints(input: HintInput, cost: RunCostSink, signal: AbortSignal): Promise<{ verdicts: (HintVerdict | null)[] }> {
-    this.hintCalls.push(input);
-    return this.meter.track(async () => {
-      await this.admit(cost, signal);
-      if (this.options.unavailable) return { verdicts: input.items.map(() => null) };
-      const batch = this.options.hintBatch?.(input.items);
-      if (batch === "throw") throw new Error("fake checker: judgeHints failed");
-      if (batch === "hang") return rejectOnAbort(signal).promise;
-      if (batch === "stall") return stalled();
-      if (batch) return { verdicts: batch };
-      const judge = this.options.judgeHint ?? (() => ({ verdict: "ok" }) as const);
-      return { verdicts: input.items.map((item) => judge(item)) };
-    });
-  }
-
-  solveOpen(input: OpenInput, cost: RunCostSink, signal: AbortSignal): Promise<{ answers: ((readonly [string, string]) | null)[] }> {
-    this.openCalls.push(input);
-    return this.meter.track(async () => {
-      await this.admit(cost, signal);
-      if (this.options.unavailable) return { answers: input.items.map(() => null) };
-      const batch = this.options.openBatch?.(input.items);
-      if (batch === "throw") throw new Error("fake checker: solveOpen failed");
-      if (batch === "hang") return rejectOnAbort(signal).promise;
-      if (batch === "stall") return stalled();
-      if (batch) return { answers: batch };
-      const solve = this.options.solveOpen ?? (() => ["A", "B"] as const);
-      return { answers: input.items.map((item) => solve(item.view)) };
-    });
-  }
-
   /**
    * Kontrola zamkniętych przebiegu bazowego: rozsypanka `yes`, wybór — klucz ćwiczenia fake'a odczytany
-   * z widoku ({@link fakeClosedAnswer}); `closed: "unknown"` — `null` (nie wiem). Tryb `unavailable` tu nie
-   * działa: w przebiegu bazowym brak wyniku odrzuca ćwiczenie, a tryb fake workera ma budować lekcje.
+   * z widoku ({@link fakeClosedAnswer}).
    */
   checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
     this.closedCalls.push(input);
@@ -548,7 +192,6 @@ export class FakeExerciseChecker implements LessonExerciseCheckerProvider, Close
       await this.admit(cost, signal);
       return {
         results: input.items.map((item) => {
-          if (this.options.closed === "unknown") return { answers: null };
           if (input.contract === "order") return { verdict: "yes" };
           return { answers: fakeClosedAnswer(item.view) };
         }),

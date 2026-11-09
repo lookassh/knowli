@@ -39,8 +39,7 @@ const input: LessonPoolInput = {
   material: "play",
   countPerObjective: 3,
   stageCounts: { guided: 1, productive: 1, independent: 1 },
-  graderAvailable: false,
-  ruleBook: { general: [], types: [], lesson: [], checks: [] },
+  ruleBook: { general: [], types: [] },
 };
 
 describe("lessonPoolJsonSchema", () => {

@@ -453,7 +453,7 @@ export function splitStages(count: number, mix: StageMix = DEFAULT_LESSON_POLICY
 }
 
 /**
- * Podział liczby ćwiczeń celu na etapy (`targets` kierownika agenta). Rachunek dzieli
+ * Podział liczby ćwiczeń celu na etapy (cele etapów paczek przebiegu bazowego). Rachunek dzieli
  * etap samodzielny z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy
  * etap samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
  * z etapu produktywnego (o ile ten zachowa swoje minimum). Łączna liczba bez zmian.
@@ -561,7 +561,6 @@ export function buildPoolInput(
   count: number,
   material: string,
   instruction: string | undefined,
-  graderAvailable: boolean,
   interests?: readonly string[],
   options: { readonly avoidSentences?: readonly string[] } = {},
 ): LessonPoolInput {
@@ -605,10 +604,9 @@ export function buildPoolInput(
     countPerObjective: count,
     stageCounts: poolStageCounts(subject, objective.exerciseTypes, count),
     // Wybór ze słuchu to dodatek poza podziałem etapów i liczbą ćwiczeń celu: tylko przedmiot z nagraniami zdań
-    // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje agent w swoich limitach).
+    // i cel, którego lista zawiera typ (ćwiczenia słuchowe już w szkicu odejmuje tryb „dodaj N” w `addModePlan`).
     ...(listenAllowance > 0 ? { listenChoicePerObjective: listenAllowance } : {}),
     ...(subject.usesV3Payload === true ? { minDistinctOpenAnswers: DISTINCT_OPEN_ANSWERS_PER_OBJECTIVE } : {}),
-    graderAvailable,
     groundingRequired: subject.sourceQuotes === true,
     answerMaxLength: ruleTextContextOf(subject).answerMaxLength,
     deduplication: subject.poolDeduplication ?? "answer",
@@ -1337,7 +1335,7 @@ export async function finalizeLessonPoolWrite(
 }
 
 /**
- * Tożsamość runu w bazie (kierownik agenta, przejęcie runu): edycja rodzica, retry albo
+ * Tożsamość runu w bazie (przebieg bazowy, przejęcie runu): edycja rodzica, retry albo
  * publikacja ją zmieniają — run nadal `running` w tej próbie, a wersja szkicu ma ten numer edycji.
  */
 export async function lessonRunIsCurrent(db: Executor, run: LessonRunIdentity): Promise<boolean> {

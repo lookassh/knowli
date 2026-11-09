@@ -124,9 +124,8 @@ export interface DynamicTopicData {
 }
 
 /**
- * Zagadnienie widziane przez agenta puli: cele lekcji w kolejności nauki z
- * kartami i typami ćwiczeń przedmiotu (filtr `requiredTypes`). Typ żyje tutaj,
- * a nie w `agent/`, żeby `SubjectModule` nie tworzył cyklu typów z agentem.
+ * Zagadnienie widziane przez przebieg bazowy: cele lekcji w kolejności nauki z
+ * kartami i typami ćwiczeń przedmiotu.
  */
 export interface AgentObjective {
   readonly id: string;
@@ -136,70 +135,7 @@ export interface AgentObjective {
   readonly exerciseTypes: readonly LessonExerciseType[];
 }
 
-/**
- * Zastrzeżenie bramki ćwiczenia agenta: kod trafia do `Rejection.code`, a do
- * modelu powód z id reguły zgłoszenia (`formatRuleReason`).
- */
-export interface AgentGateFinding {
-  readonly code: string;
-  readonly issue: LessonRuleIssue;
-}
-
-/**
- * Polityka przedmiotu dla agenta puli (`SubjectModule.agentPolicy`). Silnik
- * agenta nie zna identyfikatorów przedmiotów — dziedzinowe reguły przychodzą
- * wyłącznie tędy. Polityka jest obowiązkowa: rejestr odrzuca przedmiot bez niej.
- */
-export interface SubjectAgentPolicy {
-  /** Typy, które checker rozwiązuje „na ślepo” (bez klucza odpowiedzi). */
-  readonly blindSolveTypes: readonly LessonExerciseType[];
-  /** Typy, których warianty odpowiedzi sprawdza checker. */
-  readonly variantCheckTypes: readonly LessonExerciseType[];
-  /** Checker dostaje materiał lekcji (rozwiązanie wymaga materiału). */
-  readonly checkerNeedsMaterial: boolean;
-  readonly independentReserve: number;
-  readonly slack: number;
-  /** Typy, w których sędzia podpowiedzi ocenia niepusty `hint` (etap 2b). Brak = pusta lista. */
-  readonly hintJudgeTypes?: readonly LessonExerciseType[];
-  /** Typy sprawdzane kontrolą otwartą: rozwiązujący + grader (etap 2b). Brak = pusta lista. */
-  readonly openAnswerCheckTypes?: readonly LessonExerciseType[];
-  /**
-   * Dopiski przedmiotu do opisów reguł silnika (spec katalogu reguł §2.1; po angielsku, dla
-   * modelu): id reguły rdzenia albo lekcji → zdania doklejane do jej opisu (`describeRule`), np.
-   * `lesson.leak` — jak zmienić ujawnione zdanie w tym przedmiocie. Klucz spoza katalogów silnika
-   * odrzuca `validateSubject`.
-   */
-  readonly ruleNotes?: Partial<Record<string, string>>;
-  /**
-   * Przykłady typów przedmiotu dla zagadnienia (bez `objectiveId`): zastępują w księdze reguł przykład
-   * karty typu (`TYPE_CARDS`), gdy ogólny przykład łamie reguły tematu albo celu (np. formy „to be”).
-   * Brak typu w wyniku — przykład karty.
-   */
-  typeExamples?(at: { readonly topicId: string; readonly objectiveId: string }): TypeExamples | undefined;
-  requiredTypes?(objective: AgentObjective): readonly (readonly LessonExerciseType[])[];
-  /**
-   * Oczyszczenie kandydata agenta przed kontrolami: `removed` — nazwy usuniętych pól,
-   * `notes` — zgłoszenia reguł `sanitize` dla modelu (np. usunięta podpowiedź),
-   * `quotesSnapped` — liczba cytatów zastąpionych dokładnym fragmentem materiału.
-   */
-  sanitize?(
-    draft: LessonExerciseDraft,
-    ctx: { readonly material: string },
-  ): {
-    draft: LessonExerciseDraft;
-    removed: readonly string[];
-    notes?: readonly LessonRuleIssue[];
-    quotesSnapped?: number;
-  };
-  /** Kod trafia do `Rejection.code` (np. `card_word_missing`), powód do modelu. */
-  exerciseGate?(
-    draft: LessonExerciseDraft,
-    objective: AgentObjective,
-    ctx: { material: string },
-  ): readonly AgentGateFinding[];
-  objectiveGaps?(pool: readonly LessonExerciseDraft[], objective: AgentObjective, ctx: { material: string }): string[];
-}
-/** Przykładowe rekordy agenta według typu (`SubjectAgentPolicy.typeExamples`). */
+/** Przykładowe rekordy według typu (`SubjectModule.typeExamples`). */
 export type TypeExamples = Partial<Record<LessonExerciseType, Readonly<Record<string, unknown>>>>;
 
 /** Normalizator odpowiedzi przedmiotu. */
@@ -316,7 +252,7 @@ export interface LessonExerciseDraft {
 
 /**
  * Kryteria v3 odpowiedzi otwartej szkoły w prywatnym kluczu zadania (z payloadu
- * rewizji): ten sam kształt dla oceny odpowiedzi dziecka i kontroli agenta puli.
+ * rewizji) dla oceny odpowiedzi dziecka.
  */
 export interface SchoolCriteria {
   readonly requiredElements: readonly { readonly id: string; readonly text: string }[];
@@ -438,16 +374,31 @@ export interface SubjectModule {
     drafts: readonly LessonExerciseDraft[],
     ctx: { readonly material: string },
   ): ReadonlyMap<number, readonly LessonRuleIssue[]>;
+  /** Kontrola zamkniętych dostaje materiał lekcji (rozwiązanie wymaga materiału, szkoła). */
+  readonly checkerNeedsMaterial: boolean;
   /**
-   * Przedmiot katalogowy generowany przebiegiem bazowym (etap 4 epiku #358, `runLessonBaselinePool`):
-   * paczki cel × typ i kontrola zamkniętych zamiast agenta. Brak = agent puli.
+   * Dopiski przedmiotu do opisów reguł rdzenia w księdze reguł paczki (spec katalogu reguł §2.1; po
+   * angielsku, dla modelu): id reguły rdzenia → zdania doklejane do jej opisu (`describeRule`), np.
+   * `variants.duplicate`. Klucz spoza katalogu rdzenia odrzuca `validateSubject`.
    */
-  readonly baselinePool?: true;
+  readonly ruleNotes?: Partial<Record<string, string>>;
   /**
-   * Polityka agenta puli. Przedmiot z `baselinePool` korzysta z jej pól wspólnych (rezerwa etapu
-   * samodzielnego, zapas limitów zapisu, przykłady typów, dopiski reguł silnika) do etapu 5.
+   * Przykłady typów przedmiotu dla zagadnienia (bez `objectiveId`): zastępują w księdze reguł przykład
+   * karty typu (`TYPE_CARDS`), gdy ogólny przykład łamie reguły tematu albo celu (np. formy „to be”).
+   * Brak typu w wyniku — przykład karty.
    */
-  readonly agentPolicy: SubjectAgentPolicy;
+  typeExamples?(at: { readonly topicId: string; readonly objectiveId: string }): TypeExamples | undefined;
+  /**
+   * Oczyszczenie świeżego wyjścia modelu przed walidacją: `notes` — zgłoszenia reguł `sanitize`
+   * (np. usunięta podpowiedź).
+   */
+  sanitize?(
+    draft: LessonExerciseDraft,
+    ctx: { readonly material: string },
+  ): {
+    draft: LessonExerciseDraft;
+    notes?: readonly LessonRuleIssue[];
+  };
   /**
    * Katalog reguł przedmiotu (spec katalogu reguł §2.2): reguły jego walidatorów,
    * haków puli i bramek. Id nie mogą kolidować z rdzeniem, lekcją ani innym

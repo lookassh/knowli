@@ -43,6 +43,9 @@ export interface PacketPlan {
 
 const STAGES = ["guided", "productive", "independent"] as const;
 
+/** Zapas etapu samodzielnego ponad minimum puli (wspólny dla wszystkich przedmiotów; status zagadnienia też go dolicza). */
+export const INDEPENDENT_RESERVE = 1;
+
 export function bucketOf(type: LessonExerciseType): PacketBucket {
   if (type === "lesson_keywords") return "keywords";
   return outsideStagePath(type) ? "listen" : (stageOf(type) as PacketBucket);
@@ -53,7 +56,7 @@ export function packetPlan(subject: SubjectModule, objective: LearningObjective,
   const targets: StageCounts = {
     guided: Math.max(stageSplit.guided, minimums.guided),
     productive: Math.max(stageSplit.productive, minimums.productive),
-    independent: Math.max(stageSplit.independent, minimums.independent + subject.agentPolicy.independentReserve),
+    independent: Math.max(stageSplit.independent, minimums.independent + INDEPENDENT_RESERVE),
   };
   return packetPlanForTargets(objective, targets, objective.exerciseTypes.includes("lesson_notice"), listenAllowance, objective.exerciseTypes.includes("lesson_keywords"));
 }

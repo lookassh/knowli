@@ -74,7 +74,6 @@ describe("szkoła na przebiegu bazowym (integracja, etap 5b)", () => {
     const { draft } = await generate(services);
 
     expect(fakes.llm.objectiveRequests).toHaveLength(1);
-    expect(fakes.agent.calls).toHaveLength(0);
     expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
     // Keywords zamawia wyłącznie paczka pytań otwartych; żadnej paczki samych keywords.
     expect(fakes.agent.packetCalls.some((call) => call.type === "lesson_keywords")).toBe(false);
@@ -128,7 +127,6 @@ describe("szkoła na przebiegu bazowym (integracja, etap 5b)", () => {
     await executeLessonGeneration(services, runId);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
     expect(fakes.llm.objectiveRequests).toHaveLength(0);
-    expect(fakes.agent.calls).toHaveLength(0);
 
     const draft = (await readLessonDeck(services, deckId)).draft!;
     expect(draft.objectiveIds).toEqual([plants, baptism]);

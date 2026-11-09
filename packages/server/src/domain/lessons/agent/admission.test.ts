@@ -1,42 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { validateLessonExercise } from "../pool-validation";
+import { MAX_TEXT_LENGTH, validateLessonExercise } from "../pool-validation";
 import { englishChapterSubject } from "../subjects/english-chapter/module";
 import { TRANSLATION_INSTRUCTION } from "../subjects/english-chapter/validators";
-import {
-  A,
-  B,
-  choice,
-  contextFor,
-  gap,
-  keywords,
-  listen,
-  naChecks,
-  open,
-  stateWith,
-  subject,
-  topic,
-} from "../testing/agent-admission-fixtures";
+import { A, admitInOrder, B, choice, contextFor, gap, keywords, listen, open, stateWith, subject, topic, type StepEntry } from "../testing/agent-admission-fixtures";
 import { schoolSubject } from "../subjects/school/module";
 import { testIssue } from "../testing/test-issue";
-import { withAgentPolicy } from "../testing/agent-test-subject";
-import { NA_CHECKS } from "../testing/agent-admission-fixtures";
 import type { DynamicTopicData, LessonExerciseDraft } from "../types";
-import { admitBatch, precheckBatch, removeExercise, type AdmitEntry, type AgentCheckContext, type PrecheckEntry } from "./admission";
+import { removeExercise, submitExamples, type AgentCheckContext } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { createLessonAgentState, orderedLesson, poolOf, type LessonAgentState } from "./state";
 
 const ctx = contextFor();
 
-/** Przyjmuje paczkę jak kierownik: precheck, potem admit na tym samym stanie (checker „na”). */
+/** Przyjmuje kandydatów po kolei krokiem reguł lekcji i ujawnień, jak walidacja puli przebiegu bazowego. */
 function submit(state: LessonAgentState, objectiveId: string, drafts: readonly LessonExerciseDraft[], context: AgentCheckContext = ctx) {
-  const prechecked = precheckBatch(state, objectiveId, drafts, context);
-  const admitted = admitBatch(state, objectiveId, prechecked, naChecks(drafts.length), context);
-  return { prechecked, ...admitted };
+  return admitInOrder(state, objectiveId, drafts, context);
 }
 
-function codeOf(entry: PrecheckEntry | AdmitEntry | undefined): string {
+function codeOf(entry: StepEntry | undefined): string {
   if (entry === undefined) return "missing";
-  if ("pass" in entry) return entry.pass ? "pass" : entry.rejection.code;
   return "accepted" in entry ? "accepted" : entry.rejected.code;
 }
 
@@ -54,171 +36,40 @@ describe("fixture'y przyjmowania", () => {
   });
 });
 
-describe("przyjmowanie paczki — limity i kolejność kroków", () => {
-  it("pełna pula wygrywa z duplikatem: limit_full", () => {
-    const context = contextFor({ limits: { [A]: { targetCount: 1, listenAllowance: 0, maxExercises: 1 } } });
-    const state = accepted(stateWith(), A, [choice(A, 1)], context);
-    const result = submit(state, A, [choice(A, 1)], context);
-    expect(result.results.map(codeOf)).toEqual(["limit_full"]);
-    expect(result.prechecked[0]).toMatchObject({ pass: false, rejection: { kind: "limit", code: "limit_full" } });
-  });
-
-  it("limit_full liczy wyłącznie pulę agenta, nie ćwiczenia fixed zagadnienia", () => {
-    const context = contextFor({ limits: { [A]: { targetCount: 1, listenAllowance: 0, maxExercises: 1 } } });
-    const state = stateWith({ fixed: [choice(A, 7), choice(A, 8), choice(A, 9)] });
-    const result = submit(state, A, [choice(A, 1), choice(A, 2)], context);
-    expect(result.results.map(codeOf)).toEqual(["accepted", "limit_full"]);
-  });
-
-  it("reguła ćwiczenia wygrywa z ujawnieniem: rule_exercise", () => {
-    const state = stateWith({ examples: { [A]: ["w 966 roku"] } });
-    const invalid = { ...open(A, "Kiedy?", "w 966 roku"), prompt: "" };
-    const result = submit(state, A, [invalid]);
-    expect(result.results[0]).toMatchObject({ rejected: { kind: "rule", code: "rule_exercise" } });
-  });
-
-  it("limit_listen przy listenAllowance 0", () => {
-    const context = contextFor({ limits: { [A]: { targetCount: 4, listenAllowance: 0, maxExercises: 6 } } });
-    const result = submit(stateWith(), A, [listen(A, 1)], context);
-    expect(result.results[0]).toMatchObject({ rejected: { kind: "limit", code: "limit_listen" } });
-  });
-
-  it("limit_listen liczy ćwiczenia słuchowe puli i fixed zagadnienia (nie innych zagadnień)", () => {
-    const context = contextFor({ limits: { [A]: { targetCount: 4, listenAllowance: 2, maxExercises: 8 } } });
-    // Ćwiczenie słuchowe B w `fixed` nie zajmuje limitu A.
-    const state = stateWith({ fixed: [listen(A, 1), listen(B, 9)] });
-    const result = submit(state, A, [listen(A, 2), listen(A, 3)], context);
-    expect(result.results.map(codeOf)).toEqual(["accepted", "limit_listen"]);
-  });
-
-  it("brak limitów zagadnienia w kontekście to błąd wołającego", () => {
-    expect(() => precheckBatch(stateWith(), A, [choice(A, 1)], contextFor({}, [B]))).toThrow(`no limits for objective ${A}`);
-  });
-
-  it("bramka przedmiotu zwraca swój kod i powody", () => {
-    const gated = withAgentPolicy(subject, {
-      exerciseGate: (draft) => (draft.answer === "odpowiedź 2" ? [{ code: "gate_code", issue: testIssue("bramka", "gate reason") }] : []),
-    });
-    const result = submit(stateWith(), A, [choice(A, 1), choice(A, 2)], contextFor({ subject: gated }));
-    expect(result.results[0]).toMatchObject({ accepted: "ex1" });
-    expect(result.results[1]).toEqual({
-      rejected: {
-        kind: "rule",
-        code: "gate_code",
-        reasons: ["[test.issue] exercise: gate reason"],
-        issues: [testIssue("bramka", "gate reason")],
-        ruleIds: ["test.issue"],
-      },
-    });
-  });
-});
-
-describe("przyjmowanie paczki — kody i powody odrzuceń (spec katalogu reguł §4.1–4.2)", () => {
-  /** Przedmiot z regułą przedmiotu (odpowiedź „odpowiedź 2”) i bramką (odpowiedzi „odpowiedź 2” i „odpowiedź 3”). */
-  const ruled = withAgentPolicy(
-    {
-      ...subject,
-      validateExercise: (ex) => (ex.answer === "odpowiedź 2" ? [testIssue("reguła", "subject rule broken")] : []),
-    },
-    {
-      ...subject.agentPolicy,
-      exerciseGate: (draft) =>
-        draft.answer === "odpowiedź 2" || draft.answer === "odpowiedź 3"
-          ? [{ code: "gate_first", issue: testIssue("bramka", "gate finding") }, { code: "gate_second", issue: testIssue("bramka", "second finding") }]
-          : [],
-    },
-  );
-  const ruledCtx = contextFor({ subject: ruled });
-  const rejectionAt = (entry: AdmitEntry | undefined) => {
+describe("krok reguł lekcji — kody i powody odrzuceń (spec katalogu reguł §4.1–4.2)", () => {
+  const rejectionAt = (entry: StepEntry | undefined) => {
     if (entry === undefined || !("rejected" in entry)) throw new Error(`expected rejection, got ${JSON.stringify(entry)}`);
     return entry.rejected;
   };
 
-  it("reguła i ustalenie bramki: jedno odrzucenie z powodami obu (reguły najpierw) i kodem pierwszego ustalenia", () => {
-    const rejection = rejectionAt(submit(stateWith(), A, [choice(A, 2)], ruledCtx).results[0]);
-    expect(rejection).toMatchObject({ kind: "rule", code: "gate_first", ruleIds: ["test.issue"] });
-    expect(rejection.reasons).toEqual([
-      "[test.issue] exercise: subject rule broken",
-      "[test.issue] exercise: gate finding",
-      "[test.issue] exercise: second finding",
-    ]);
-  });
-
-  it("same ustalenia bramki: kod pierwszego; same reguły: rule_exercise", () => {
-    expect(rejectionAt(submit(stateWith(), A, [choice(A, 3)], ruledCtx).results[0]).code).toBe("gate_first");
-    const invalid = { ...choice(A, 1), correctOption: "z" };
-    const rejection = rejectionAt(submit(stateWith(), A, [invalid], ruledCtx).results[0]);
-    expect(rejection.code).toBe("rule_exercise");
-    expect(rejection.reasons.every((reason) => /^\[[a-z0-9_.]+\] /u.test(reason))).toBe(true);
-  });
-
-  it("błąd kontraktu: tylko zgłoszenia kontraktu, bez bramki", () => {
-    const broken = { ...choice(A, 3), options: [{ id: "a", text: "odpowiedź 3" }] };
-    const rejection = rejectionAt(submit(stateWith(), A, [broken], ruledCtx).results[0]);
-    expect(rejection.code).toBe("rule_exercise");
-    expect(rejection.reasons.some((reason) => reason.includes("gate finding"))).toBe(false);
-    expect(rejection.ruleIds).not.toContain("test.issue");
-  });
-
-  it("puste napisy w polach opcjonalnych (ścieżka agenta): field.empty razem z regułami dalszymi", () => {
-    const draft = { ...choice(A, 2), instructionPl: "" };
-    const rejection = rejectionAt(submit(stateWith(), A, [draft], ruledCtx).results[0]);
-    // Bramka też liczy się na kopii bez pustego pola: kod pierwszego ustalenia bramki.
-    expect(rejection.code).toBe("gate_first");
-    expect(rejection.ruleIds).toEqual(["field.empty", "test.issue"]);
-    expect(rejection.reasons[0]).toMatch(/^\[field\.empty\] instructionPl/u);
-    expect(rejection.reasons.slice(1)).toEqual([
-      "[test.issue] exercise: subject rule broken",
-      "[test.issue] exercise: gate finding",
-      "[test.issue] exercise: second finding",
-    ]);
-  });
-
-  it("kolejność powodów jest stała: kontrakt, rdzeń, przedmiot, bramka; wyniki w indeksach wejścia", () => {
-    const batch = [choice(A, 2), { ...choice(A, 1), correctOption: "z", instructionPl: "" }, keywords(A, "f9", 1)];
-    const results = submit(stateWith(), A, batch, ruledCtx).results;
-    expect(results.map(codeOf)).toEqual(["gate_first", "rule_exercise", "lesson_extra"]);
-    expect(rejectionAt(results[0]).reasons).toEqual([
-      "[test.issue] exercise: subject rule broken",
-      "[test.issue] exercise: gate finding",
-      "[test.issue] exercise: second finding",
-    ]);
-    expect(rejectionAt(results[1]).ruleIds).toEqual(["field.empty", "options.correct_unknown"]);
-    expect(rejectionAt(results[2]).reasons).toEqual(["[test.issue] exercise"]);
-  });
-
-  it("ofiara reguł lekcji: powód z prefiksem ofiary i id reguły", () => {
-    const triggering = withAgentPolicy(
-      {
-        ...subject,
-        validatePoolExtra: (drafts) => {
-          const triggered = drafts.some((draft) => draft.answer === "odpowiedź 9");
-          return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, [testIssue("ofiara", "victim of trigger")]] as const] : [])));
-        },
+  it("ofiara reguł lekcji: zgłoszenie ofiary z id reguły", () => {
+    const triggering = {
+      ...subject,
+      validatePoolExtra: (drafts: readonly LessonExerciseDraft[]) => {
+        const triggered = drafts.some((draft) => draft.answer === "odpowiedź 9");
+        return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, [testIssue("ofiara", "victim of trigger")]] as const] : [])));
       },
-      subject.agentPolicy,
-    );
+    };
     const context = contextFor({ subject: triggering });
     const state = accepted(stateWith(), A, [choice(A, 1)], context);
     const rejection = rejectionAt(submit(state, A, [choice(A, 9)], context).results[0]);
     expect(rejection).toMatchObject({ kind: "lesson", code: "lesson_extra", ruleIds: ["test.issue"] });
-    expect(rejection.reasons).toEqual(["adding this exercise would make the lesson reject exercise ex1: [test.issue] exercise: victim of trigger"]);
+    expect(rejection.issues).toEqual([testIssue("ofiara", "victim of trigger")]);
   });
 
-  it("własne odrzucenie reguły puli: lesson_pool z id reguły, bez prefiksu ofiary", () => {
+  it("własne odrzucenie reguły puli: lesson_pool z id reguły", () => {
     const state = accepted(stateWith(), A, [choice(A, 1)]);
     const rejection = rejectionAt(submit(state, A, [choice(A, 1)]).results[0]);
     expect(rejection).toMatchObject({ code: "lesson_pool", ruleIds: ["lesson.duplicate_stimulus"] });
-    expect(rejection.reasons[0]).toMatch(/^\[lesson\.duplicate_stimulus\] exercise: same stimulus as the earlier lesson_choice /u);
+    expect(rejection.issues[0]!.found).toMatch(/^same stimulus as the earlier lesson_choice /u);
   });
 
-  it("ofiara reguł puli: duplikat odpowiedzi ćwiczenia późniejszego zagadnienia — lesson_pool z prefiksem ofiary", () => {
+  it("ofiara reguł puli: duplikat odpowiedzi ćwiczenia późniejszego zagadnienia — lesson_pool", () => {
     // Unikalność odpowiedzi zachowuje PIERWSZE wystąpienie: kandydat w A wyprzedza przyjęte ćwiczenie B.
     const byAnswer = contextFor({ subject: { ...subject, poolDeduplication: "answer" } });
     const state = accepted(stateWith(), B, [choice(B, 1)], byAnswer);
     const rejection = rejectionAt(submit(state, A, [gap(A, "Inne pytanie: ___.", "odpowiedź 1")], byAnswer).results[0]);
     expect(rejection).toMatchObject({ kind: "lesson", code: "lesson_pool", ruleIds: ["lesson.duplicate_answer"] });
-    expect(rejection.reasons[0]).toMatch(/^adding this exercise would make the lesson reject exercise ex1: \[lesson\.duplicate_answer\] answer: /u);
   });
 });
 
@@ -238,7 +89,7 @@ describe("przyjmowanie paczki — słowa kluczowe szkoły po pytaniu otwartym sw
   const context: AgentCheckContext = {
     subject: schoolSubject,
     material,
-    limits: new Map([[OBJECTIVE, { targetCount: 8, listenAllowance: 0, maxExercises: 10 }]]),
+    limits: new Map([[OBJECTIVE, { targetCount: 8 }]]),
   };
   const state = () => createLessonAgentState({ topic: schoolTopic, objectives: agentObjectivesOf(schoolTopic), fixed: [], examples: {}, fixedSources: {} });
   const openDraft = (overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft => ({
@@ -266,27 +117,19 @@ describe("przyjmowanie paczki — słowa kluczowe szkoły po pytaniu otwartym sw
     focus: [],
     sourceRefs: [{ quote: QUOTE }],
   };
-  const ruleIdsOf = (entry: PrecheckEntry | AdmitEntry | undefined) => {
-    if (entry === undefined) return [];
-    if ("pass" in entry) return entry.pass ? [] : entry.rejection.ruleIds;
-    return "rejected" in entry ? entry.rejected.ruleIds : [];
-  };
-
-  it("słowa kluczowe przed pytaniem rodziny w paczce przechodzą (przetwarzane na końcu)", () => {
-    const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft, openDraft()], context);
-    expect(prechecked.map(codeOf)).toEqual(["pass", "pass"]);
+  it("słowa kluczowe po pytaniu swojej rodziny przechodzą", () => {
+    expect(submit(state(), OBJECTIVE, [openDraft(), keywordsDraft], context).results.map(codeOf)).toEqual(["accepted", "accepted"]);
   });
 
   it("bez rodziny w lekcji: school.keywords_family_missing", () => {
-    const prechecked = precheckBatch(state(), OBJECTIVE, [keywordsDraft], context);
-    expect(ruleIdsOf(prechecked[0])).toEqual(["school.keywords_family_missing"]);
+    const [entry] = submit(state(), OBJECTIVE, [keywordsDraft], context).results;
+    expect(entry).toMatchObject({ rejected: { ruleIds: ["school.keywords_family_missing"] } });
   });
 });
 
 describe("przyjmowanie paczki — reguły lekcji", () => {
-  it("duplikat w paczce: drugi lesson_pool już w precheckBatch", () => {
+  it("duplikat w paczce: drugi lesson_pool", () => {
     const result = submit(stateWith(), A, [choice(A, 1), choice(A, 1)]);
-    expect(result.prechecked.map(codeOf)).toEqual(["pass", "lesson_pool"]);
     expect(result.results.map(codeOf)).toEqual(["accepted", "lesson_pool"]);
     expect(poolOf(result.state, A).map((entry) => entry.id)).toEqual(["ex1"]);
   });
@@ -299,13 +142,13 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
   it("wadliwe fixed (duplikat w fixed) nie blokuje poprawnego kandydata", () => {
     const state = stateWith({ fixed: [choice(A, 1), choice(A, 1)] });
     const result = submit(state, A, [choice(A, 2)]);
-    expect(result.results).toEqual([{ accepted: "ex1", sanitized: [], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 }]);
+    expect(result.results).toEqual([{ accepted: "ex1" }]);
   });
 
   it("fixed odrzucone przez validatePoolExtra (sierota słów kluczowych) nie blokuje poprawnego kandydata", () => {
     const state = stateWith({ fixed: [keywords(A, "f9", 9)] });
     const result = submit(state, A, [choice(A, 1)]);
-    expect(result.results).toEqual([{ accepted: "ex1", sanitized: [], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 }]);
+    expect(result.results).toEqual([{ accepted: "ex1" }]);
   });
 
   it("słowa kluczowe bez rodziny w lekcji: lesson_extra", () => {
@@ -314,38 +157,25 @@ describe("przyjmowanie paczki — reguły lekcji", () => {
       rejected: {
         kind: "lesson",
         code: "lesson_extra",
-        reasons: ["[test.issue] exercise"],
         issues: [testIssue("keywords without open-answer family")],
         ruleIds: ["test.issue"],
       },
     });
   });
 
-  it("słowa kluczowe przed swoją rodziną w paczce: oba przyjęte w precheckBatch i admitBatch, wyniki w indeksach wejścia", () => {
-    const result = submit(stateWith(), A, [keywords(A, "f1", 1), open(A, "Kiedy?", "w 966 roku", "f1")]);
-    expect(result.prechecked.map(codeOf)).toEqual(["pass", "pass"]);
-    expect(result.results).toEqual([
-      { accepted: "ex2", sanitized: [], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 },
-      { accepted: "ex1", sanitized: [], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 },
-    ]);
-  });
-
   it("błąd validatePoolExtra na innym ćwiczeniu odrzuca kandydata: lesson_extra", () => {
-    const triggering = withAgentPolicy(
-      {
-        ...subject,
-        validatePoolExtra: (drafts) => {
-          const triggered = drafts.some((draft) => draft.answer === "odpowiedź 9");
-          return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, [testIssue("victim of trigger")]] as const] : [])));
-        },
+    const triggering = {
+      ...subject,
+      validatePoolExtra: (drafts: readonly LessonExerciseDraft[]) => {
+        const triggered = drafts.some((draft) => draft.answer === "odpowiedź 9");
+        return new Map(drafts.flatMap((draft, index) => (triggered && draft.answer === "odpowiedź 1" ? [[index, [testIssue("victim of trigger")]] as const] : [])));
       },
-      subject.agentPolicy,
-    );
+    };
     const context = contextFor({ subject: triggering });
     const state = accepted(stateWith(), A, [choice(A, 1)], context);
     const result = submit(state, A, [choice(A, 9)], context);
     expect(result.results[0]).toMatchObject({ rejected: { kind: "lesson", code: "lesson_extra" } });
-    expect((result.results[0] as { rejected: { reasons: readonly string[] } }).rejected.reasons[0]).toContain("reject exercise ex1: [test.issue]");
+    expect(result.results[0]).toMatchObject({ rejected: { issues: [testIssue("victim of trigger")] } });
   });
 });
 
@@ -378,12 +208,12 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
     ],
   };
   const chapterTopic = englishChapterSubject.buildDynamicTopic!(data);
-  const chapter = withAgentPolicy(englishChapterSubject);
+  const chapter = englishChapterSubject;
   const material = "It's raining today. It's sunny today. It's windy. I'm wearing a coat.";
   const chapterCtx: AgentCheckContext = {
     subject: chapter,
     material,
-    limits: new Map([WEATHER, WEARING].map((id) => [id, { targetCount: 8, listenAllowance: 2, maxExercises: 12 }])),
+    limits: new Map([WEATHER, WEARING].map((id) => [id, { targetCount: 8 }])),
   };
   const chapterState = () =>
     createLessonAgentState({ topic: chapterTopic, objectives: agentObjectivesOf(chapterTopic), fixed: [], examples: {}, fixedSources: {} });
@@ -431,43 +261,122 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
   });
 });
 
-describe("przyjmowanie paczki — sanityzacja", () => {
-  it("agentPolicy.sanitize oczyszcza szkic, a usunięte pola wracają w sanitized", () => {
-    const sanitizing = withAgentPolicy(subject, {
-      sanitize: (draft) => {
-        const { hint, ...rest } = draft;
-        return { draft: rest, removed: hint === undefined ? [] : ["hint"] };
-      },
-    });
-    const result = submit(stateWith(), A, [{ ...choice(A, 1), hint: "podpowiedź" }], contextFor({ subject: sanitizing }));
-    expect(result.prechecked[0]).toMatchObject({ pass: true, sanitized: ["hint"] });
-    expect((result.prechecked[0] as { draft: LessonExerciseDraft }).draft.hint).toBeUndefined();
-    expect(result.results[0]).toEqual({ accepted: "ex1", sanitized: ["hint"], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 });
+describe("submitExamples", () => {
+  it("4 linie → przyjęte 3 (przycięte), czwarta pominięta", () => {
+    const result = submitExamples(stateWith(), A, ["  Mieszko I przyjął chrzest.  ", "Zdanie drugie.", "Zdanie trzecie.", "Zdanie czwarte."], ctx);
+    expect(result.accepted).toBe(3);
+    expect(result.state.examples.get(A)).toEqual(["Mieszko I przyjął chrzest.", "Zdanie drugie.", "Zdanie trzecie."]);
+  });
+
+  it("identyczne linie (po przycięciu) liczą się raz i nie zajmują miejsc kolejnych przykładów", () => {
+    const result = submitExamples(stateWith(), A, ["Zdanie pierwsze.", "Zdanie pierwsze.", "  Zdanie pierwsze. ", "Zdanie drugie.", "Zdanie trzecie."], ctx);
+    expect(result.accepted).toBe(3);
+    expect(result.state.examples.get(A)).toEqual(["Zdanie pierwsze.", "Zdanie drugie.", "Zdanie trzecie."]);
+  });
+
+  it("linia ujawniająca przyjęte samodzielne ćwiczenie odpada, pozostałe przyjęte", () => {
+    const state = accepted(stateWith(), A, [open(A, "Rok chrztu?", "966")]);
+    const result = submitExamples(state, A, ["Chrzest Polski.", "966"], ctx);
+    expect(result.accepted).toBe(1);
+    expect(result.state.examples.get(A)).toEqual(["Chrzest Polski."]);
+  });
+
+  it("linia ujawniająca samodzielne fixed innego zagadnienia też odpada", () => {
+    const state = stateWith({ fixed: [open(B, "Rok chrztu?", "966")] });
+    const result = submitExamples(state, A, ["966"], ctx);
+    expect(result.accepted).toBe(0);
+  });
+
+  it("linia równa odpowiedzi ćwiczenia niesamodzielnego nie jest ujawnieniem", () => {
+    const state = accepted(stateWith(), A, [gap(A, "Rok ___.", "966")]);
+    expect(submitExamples(state, A, ["966"], ctx)).toMatchObject({ accepted: 1 });
+  });
+
+  it("zastępuje poprzednie przykłady zagadnienia, inne zagadnienia bez zmian", () => {
+    const state = stateWith({ examples: { [A]: ["Stare A."], [B]: ["Stare B."] } });
+    const result = submitExamples(state, A, ["Nowe A."], ctx);
+    expect(result).toMatchObject({ accepted: 1 });
+    expect(result.state.examples.get(A)).toEqual(["Nowe A."]);
+    expect(result.state.examples.get(B)).toEqual(["Stare B."]);
+    expect(state.examples.get(A)).toEqual(["Stare A."]);
+  });
+
+  it("żadna linia nie przeszła → stare przykłady zostają (ten sam stan)", () => {
+    const state = accepted(stateWith({ examples: { [A]: ["Stare A."] } }), A, [open(A, "Rok chrztu?", "966")]);
+    const result = submitExamples(state, A, ["966", "   ", 7, "x".repeat(MAX_TEXT_LENGTH + 1)], ctx);
+    expect(result.accepted).toBe(0);
+    expect(result.state).toBe(state);
+    expect(result.state.examples.get(A)).toEqual(["Stare A."]);
+  });
+
+  it("pusta tablica → nic nie przyjęte, stan bez zmian", () => {
+    const state = stateWith({ examples: { [A]: ["Stare A."] } });
+    expect(submitExamples(state, A, [], ctx)).toEqual({ state, accepted: 0 });
+  });
+
+  it('"x" → nic nie przyjęte', () => {
+    const state = stateWith();
+    expect(submitExamples(state, A, "x", ctx)).toEqual({ state, accepted: 0 });
+  });
+
+  it("przyjęte przykłady wpływają na kolejne kontrole ujawnień", () => {
+    const state = submitExamples(stateWith(), A, ["w 966 roku"], ctx).state;
+    const result = submit(state, A, [open(A, "Kiedy?", "w 966 roku")]);
+    expect(result.results[0]).toMatchObject({ rejected: { code: "leak_victim" } });
   });
 });
 
-describe("zgodność precheckBatch i admitBatch na tym samym stanie", () => {
-  const fixtures: [string, () => LessonAgentState, readonly LessonExerciseDraft[]][] = [
-    ["mieszana paczka z duplikatem", () => stateWith(), [choice(A, 1), gap(A, "Chrzest w roku ___.", "966"), choice(A, 1), open(A, "Kiedy?", "w 966 roku")]],
-    [
-      "słowa kluczowe i sierota",
-      () => stateWith({ fixed: [open(A, "Kto?", "Mieszko I", "f0")] }),
-      [keywords(A, "f2", 1), keywords(A, "f0", 2), open(A, "Kiedy?", "w 966 roku", "f2"), keywords(A, "f9", 3)],
-    ],
-    [
-      "ujawnienia i limit słuchowy",
-      () => stateWith({ examples: { [A]: ["Bolesław Chrobry"] }, fixed: [listen(A, 1), listen(A, 2)] }),
-      [open(A, "Syn Mieszka?", "Bolesław Chrobry"), listen(A, 3), gap(A, "Rok ___.", "966"), open(A, "Rok chrztu?", "966")],
-    ],
-  ];
+describe("wydajność przyjmowania", () => {
+  // Lekcja szkoły: 6 zagadnień po 15 ćwiczeń (90) i materiał ok. 15 000 znaków; paczka 12.
+  const OBJECTIVES = 6;
+  const sentence = (o: number, k: number) => `Fakt ${o}-${k}: w zagadnieniu numer ${o} zdarzenie ${k} opisuje materiał rodzica.`;
+  const material = Array.from({ length: OBJECTIVES }, (_, o) => Array.from({ length: 35 }, (_, k) => sentence(o, k)).join(" ")).join(" ");
+  const schoolTopic = schoolSubject.buildDynamicTopic!({
+    titlePl: "Duża lekcja",
+    objectives: Array.from({ length: OBJECTIVES }, (_, o) => ({
+      id: `school.ddeck.o${o}`,
+      titlePl: `Zagadnienie ${o}`,
+      descriptionEn: `Objective ${o}.`,
+      cards: [
+        { title: "Karta 1", body: sentence(o, 0) },
+        { title: "Karta 2", body: sentence(o, 1) },
+      ],
+    })),
+  });
+  const ids = schoolTopic.objectives.map((objective) => objective.id);
 
-  it.each(fixtures)("%s", (_name, makeState, drafts) => {
-    const state = makeState();
-    const prechecked = precheckBatch(state, A, drafts, ctx);
-    const admitted = admitBatch(state, A, prechecked, naChecks(drafts.length), ctx);
-    const precheckCodes = prechecked.map((entry) => (entry.pass ? "accepted" : entry.rejection.code));
-    expect(admitted.results.map(codeOf)).toEqual(precheckCodes);
-    expect(new Set(precheckCodes).size).toBeGreaterThan(1);
+  function schoolDraft(o: number, k: number): LessonExerciseDraft {
+    const objectiveId = ids[o]!;
+    const answer = `odpowiedź ${o}-${k}`;
+    const sourceRefs = [{ quote: sentence(o, k % 30) }];
+    if (k % 3 === 0) return { ...choice(objectiveId, 0), stem: `Pytanie ${o}-${k}: ___`, options: [{ id: "a", text: answer }, { id: "b", text: `inna ${o}-${k}` }], answer, sourceRefs };
+    if (k % 3 === 1) return { ...gap(objectiveId, `Luka ${o}-${k}: ___.`, answer), sourceRefs };
+    return {
+      ...open(objectiveId, `Pytanie otwarte ${o}-${k}?`, answer),
+      questionType: "definition",
+      requiredElements: [{ id: "e1", text: answer }],
+      expectedForm: "explanation",
+      sourceRefs,
+    };
+  }
+
+  it("90 ćwiczeń, 6 zagadnień, materiał ok. 15 000 znaków: kolejne lessonRulesStep paczki 12 < 2000 ms (w CI < 10 000 ms)", () => {
+    expect(material.length).toBeGreaterThan(14_000);
+    expect(material.length).toBeLessThan(16_000);
+    const fixed = Array.from({ length: OBJECTIVES }, (_, o) => Array.from({ length: 15 }, (_, k) => schoolDraft(o, k))).flat();
+    const state = createLessonAgentState({ topic: schoolTopic, objectives: agentObjectivesOf(schoolTopic), fixed, examples: {}, fixedSources: {} });
+    const context: AgentCheckContext = {
+      subject: schoolSubject,
+      material,
+      limits: new Map(ids.map((id) => [id, { targetCount: 8 }])),
+    };
+    const batch = Array.from({ length: 12 }, (_, k) => schoolDraft(0, 15 + k));
+    const startedAt = performance.now();
+    const admitted = submit(state, ids[0]!, batch, context);
+    const elapsed = performance.now() - startedAt;
+    expect(admitted.results.filter((entry) => "accepted" in entry)).toHaveLength(12);
+    // Strażnik złożoności (np. kwadratowej), nie benchmark: współdzielony runner CI dostaje zapas.
+    expect(elapsed).toBeLessThan(process.env.CI ? 10_000 : 2000);
   });
 });
 
@@ -475,14 +384,14 @@ describe("removeExercise", () => {
   it("usuwa własne ćwiczenie razem z osieroconymi słowami kluczowymi rodziny", () => {
     const withFamily = accepted(stateWith(), A, [open(A, "Kiedy?", "w 966 roku", "f1"), keywords(A, "f1", 1)]);
     const state = accepted(withFamily, A, [choice(A, 1)]);
-    const result = removeExercise(state, A, "ex1", ctx);
+    const result = removeExercise(state, A, "ex1");
     expect(result.removed).toEqual(["ex1", "ex2"]);
     expect(poolOf(result.state, A).map((entry) => entry.id)).toEqual(["ex3"]);
   });
 
   it("usuwa tylko wskazane ćwiczenie, gdy rodzina ma jeszcze pytanie otwarte (także fixed)", () => {
     const state = accepted(stateWith({ fixed: [open(A, "Kto?", "Mieszko I", "f1")] }), A, [open(A, "Kiedy?", "w 966 roku", "f1"), keywords(A, "f1", 1)]);
-    expect(removeExercise(state, A, "ex1", ctx).removed).toEqual(["ex1"]);
+    expect(removeExercise(state, A, "ex1").removed).toEqual(["ex1"]);
   });
 
   it("nieznane, cudze i fixed → [] i ten sam stan", () => {
@@ -490,7 +399,7 @@ describe("removeExercise", () => {
     state = accepted(state, A, [choice(A, 1)]);
     state = accepted(state, B, [choice(B, 2)]);
     for (const [objectiveId, id] of [[A, "ex99"], [A, "ex2"], [B, "ex1"]] as const) {
-      const result = removeExercise(state, objectiveId, id, ctx);
+      const result = removeExercise(state, objectiveId, id);
       expect(result.removed).toEqual([]);
       expect(result.state).toBe(state);
     }
@@ -499,14 +408,13 @@ describe("removeExercise", () => {
 });
 
 describe("niezmienność wejścia", () => {
-  it("precheckBatch, admitBatch i removeExercise nie zmieniają stanu wejściowego", () => {
+  it("lessonRulesStep i removeExercise nie zmieniają stanu wejściowego", () => {
     const state = accepted(stateWith({ examples: { [A]: ["x"] }, fixed: [choice(B, 3)] }), A, [open(A, "Kiedy?", "w 966 roku", "f1"), keywords(A, "f1", 1)]);
     const snapshot = structuredClone(state);
     const drafts = [choice(A, 1), keywords(A, "f1", 2), choice(A, 1)];
     const draftsSnapshot = structuredClone(drafts);
-    const prechecked = precheckBatch(state, A, drafts, ctx);
-    admitBatch(state, A, prechecked, naChecks(drafts.length), ctx);
-    removeExercise(state, A, "ex1", ctx);
+    submit(state, A, drafts);
+    removeExercise(state, A, "ex1");
     expect(state).toEqual(snapshot);
     expect(drafts).toEqual(draftsSnapshot);
   });

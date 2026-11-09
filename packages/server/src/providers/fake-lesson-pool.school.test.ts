@@ -19,12 +19,12 @@ const material = "Korzeń pobiera wodę z gleby. Łodyga przewodzi wodę do liś
 describe("fakePacketExercises for school", () => {
   it("open-answer packet with the keywords companion passes structure, families and the closed check", () => {
     const objective = topic.objectives[0]!;
-    const input = packetInput({ subject, topic, objective, type: "lesson_open_answer", companion: "lesson_keywords", count: 2, withExamples: false, material, graderAvailable: true, avoidSentences: [], timeoutMs: 1000 });
+    const input = packetInput({ subject, topic, objective, type: "lesson_open_answer", companion: "lesson_keywords", count: 2, withExamples: false, material, avoidSentences: [], timeoutMs: 1000 });
     const { exercises } = fakePacketExercises(input, 100);
     const drafts: LessonExerciseDraft[] = exercises.map((raw) => {
       const parsed = parseLessonRecord(raw, objective.id, subject, null);
       if (!parsed.ok) throw new Error(`${String(raw.exerciseType)}: ${parsed.rejection.code} ${parsed.rejection.ruleIds.join(",")}`);
-      const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
+      const draft = subject.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
       expect(validateLessonExerciseIssues(draft, subject, topic, { agent: true }).map((issue) => issue.rule)).toEqual([]);
       return draft;
     });

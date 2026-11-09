@@ -55,7 +55,7 @@ export const schoolPrompts: SubjectPromptProfile = {
     "ciągu wydarzeń, zwróć mniej ćwiczeń albo żadnego.",
   // Semantyka typów w ich blokach (pola i limity opisują karta typu i reguły w księdze reguł).
   typeRules: {
-    // Etap 5b: dydaktyka dawnych kontroli 2b i ślepego rozwiązania (sekcja `checks` księgi, której przebieg bazowy nie czyta)
+    // Etap 5b: dydaktyka przeniesiona z dawnych kontroli 2b i ślepego rozwiązania (usuniętych w etapie 5c)
     // oraz doprecyzowania wspólnej końcówki paczki, pisanej pod przedmioty angielskie (strojenie tylko w polach przedmiotu, spec §7.7).
     lesson_open_answer:
       "The child answers without the material: never refer to the text (e.g. 'according to the text', 'in the second " +

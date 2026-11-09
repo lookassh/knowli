@@ -82,7 +82,6 @@ describe("przedmiot english_chapter", () => {
       { code: "spelling", labelPl: "Pisownia" },
     ]);
     expect(englishChapterSubject.validateExercise).toBe(validateChapterExercise);
-    expect(englishChapterSubject.baselinePool).toBe(true);
     expect(englishChapterSubject.exposureText).toBe(chapterExposureText);
     expect(englishChapterSubject.normalizeExposureText).toBe(normalizeChapterExposureText);
   });

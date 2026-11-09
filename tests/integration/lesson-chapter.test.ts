@@ -134,7 +134,6 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
 
     // Jedno wywołanie etapu zagadnień, ćwiczenia z paczek (bez pętli agenta).
     expect(fakes.llm.objectiveRequests).toHaveLength(1);
-    expect(fakes.agent.calls).toHaveLength(0);
     expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
 
     const objectives = draft.dynamicTopic!.objectives;
@@ -236,7 +235,6 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
 
     // Temat z punktu kontrolnego: bez etapu zagadnień; paczki tylko dla zagadnienia niegotowego, przykłady kart z jego pierwszej paczki.
     expect(fakes.llm.objectiveRequests).toHaveLength(0);
-    expect(fakes.agent.calls).toHaveLength(0);
     expect(fakes.agent.packetCalls.length).toBeGreaterThan(0);
     expect(fakes.agent.packetCalls.every((call) => call.objective.id === WEARING)).toBe(true);
     expect(fakes.agent.packetCalls.filter((call) => call.withExamples)).toHaveLength(1);
@@ -473,7 +471,6 @@ describe("lekcja Angielski — rozdział (integracja)", () => {
     expect(ofFrame(after)).toBeGreaterThanOrEqual(ofFrame(before) + 4);
     // Paczki dostały zagadnienie ze szkicu (tytuł i karty), bez etapu zagadnień; rodzaj `frame` wyznacza typy (układanka, bez grup).
     expect(fakes.llm.objectiveRequests).toHaveLength(0);
-    expect(fakes.agent.calls).toHaveLength(0);
     const packets = fakes.agent.packetCalls;
     expect(packets.length).toBeGreaterThan(0);
     for (const call of packets) {

@@ -84,7 +84,7 @@ describe("trwałe generowanie zestawu (integracja)", () => {
       clientRequestId: randomUUID(),
     });
     const generateDeck = vi.spyOn(fakes.llm, "generateDeck");
-    const generateLesson = vi.spyOn(fakes.agent, "runObjective");
+    const generateLesson = vi.spyOn(fakes.agent, "generatePacket");
 
     expect(await runDueGenerationWork(services, { deck: 0, lesson: 0, tts: 0, images: 0 }))
       .toEqual({ processed: 0 });

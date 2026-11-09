@@ -9,7 +9,7 @@ import type {
   LlmProvider,
 } from "../../ports/ai";
 import { LESSON_STORY_LIMITS } from "../../domain/lessons/story";
-import { poolExerciseTypes, voiceToneProperty } from "./lesson-pool-schema";
+import { voiceToneProperty } from "./lesson-pool-schema";
 import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 import { postLessonJson, type LessonJsonRequestConfig } from "./lesson-json-request";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
@@ -94,47 +94,7 @@ const VOICE_TONE_BASE_RULE =
 const VOICE_TONE_RULE =
   `${VOICE_TONE_BASE_RULE} \`mysterious\` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences.`;
 
-/** Najwięcej dodatkowych ćwiczeń słuchowych na cel partii (decyzja #198). */
-const MAX_LISTEN_CHOICE_EXTRA = 2;
-
-/**
- * Przyznany dodatek `lesson_listen_choice` przycięty do 0–2. Bez dodatku (brak pola, 0 albo szkic
- * ma już komplet) prompt w ogóle nie wymienia typu — także na listach dozwolonych typów.
- */
-function listenChoiceExtra(input: LessonPoolInput): number {
-  const raw = input.listenChoicePerObjective;
-  if (raw === undefined || !Number.isFinite(raw)) return 0;
-  return Math.min(MAX_LISTEN_CHOICE_EXTRA, Math.max(0, Math.floor(raw)));
-}
-
-/** Typy wymieniane w prompcie: bez `lesson_listen_choice`, gdy dodatek nie został przyznany. */
-function promptExerciseTypes(input: LessonPoolInput, types: readonly string[]): string[] {
-  const listed = poolExerciseTypes(types);
-  return listenChoiceExtra(input) > 0 ? listed : listed.filter((type) => type !== "lesson_listen_choice");
-}
-
-/**
- * Jawny przydział etapu samodzielnego, gdy przedmiot wymaga różnych pytań
- * otwartych: najpierw one, rachunki tylko w nadwyżce miejsc (model traktował
- * menu typów jako wymienne i rachunek zajmował miejsce wymaganego pytania).
- */
-function independentReservation(input: LessonPoolInput): string {
-  if (input.minDistinctOpenAnswers === undefined) return "";
-  const open = Math.min(input.stageCounts.independent, input.minDistinctOpenAnswers);
-  const spare = input.stageCounts.independent - open;
-  const calculations = !input.exerciseTypes.includes("lesson_calculation")
-    ? ""
-    : spare > 0
-      ? `At most ${spare} independent slot(s) may be lesson_calculation, and only when the material teaches the method. `
-      : "No independent slot is left for lesson_calculation: produce no calculations. ";
-  return `Independent slots: the first ${open} MUST be lesson_open_answer questions with DIFFERENT model answers (not one family). ` +
-    calculations;
-}
-
-/**
- * Wiersze reguł jednej sekcji księgi: `[id] opis`, oddzielone spacją; reguły `brief` pomija (opisuje je wynik
- * narzędzia).
- */
+/** Wiersze reguł jednej sekcji księgi: `[id] opis`, oddzielone spacją; reguły `brief` pomija. */
 function ruleLines(lines: readonly LessonRuleBookLine[]): string {
   return lines
     .filter((line) => line.brief !== true)
@@ -153,28 +113,16 @@ function hasDescribed(lines: readonly LessonRuleBookLine[]): boolean {
 }
 
 /**
- * Księga reguł zagadnienia jako tekst promptu (spec katalogu reguł §3): nagłówek, reguły ogólne,
- * blok każdego typu (karta typu z przykładem, semantyka typu przedmiotu, reguły typu), reguły lekcji
- * i kontrole innymi modelami. Kolejność i treść daje domenowa `lessonRuleBook`; renderer tylko
- * składa wiersze i pomija puste sekcje (bez pustych nagłówków). Czysta funkcja.
+ * Księga reguł jako tekst promptu paczki (spec katalogu reguł §3): nagłówek, reguły ogólne, blok każdego
+ * typu (karta typu z przykładem, semantyka typu przedmiotu, reguły typu). Kolejność i treść daje domenowa
+ * `lessonRuleBook`; renderer tylko składa wiersze i pomija puste sekcje (bez pustych nagłówków). Paczka
+ * nie ma rundy naprawy: ćwiczenie łamiące regułę odpada. Czysta funkcja.
  */
-export function renderRuleBook(book: LessonRuleBookInput, options: { readonly packet?: boolean } = {}): string {
-  // Paczka przebiegu bazowego (etap 2) nie ma narzędzia ani rundy naprawy: ćwiczenie łamiące regułę odpada.
-  const parts = [
-    options.packet === true
-      ? "RULES — every exercise must satisfy every rule below; an exercise that breaks a rule is discarded."
-      : "RULES — the tool checks every rule below; a rejection names the broken rule in [brackets].",
-  ];
-  // Reguły `brief` (kształt rekordu, pola kart typów, limity schematu narzędzia) bez id i opisu: jedno zdanie, opis w wyniku narzędzia.
-  const brief = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat().some((line) => line.brief === true);
-  if (brief) {
-    parts.push(
-      options.packet === true
-        ? "Record shape and card fields: every exercise has the field types and limits of the output schema and the fields its type card lists."
-        : "Record shape and card fields: every exercise has the field types and limits of the tool schema and the fields its " +
-            "type card lists; the tool result names and describes a broken rule of this kind.",
-    );
-  }
+export function renderRuleBook(book: LessonRuleBookInput): string {
+  const parts = ["RULES — every exercise must satisfy every rule below; an exercise that breaks a rule is discarded."];
+  // Reguły `brief` (kształt rekordu, pola kart typów, limity schematu) bez id i opisu: jedno zdanie.
+  const brief = [book.general, ...book.types.map((block) => block.rules)].flat().some((line) => line.brief === true);
+  if (brief) parts.push("Record shape and card fields: every exercise has the field types and limits of the output schema and the fields its type card lists.");
   if (hasDescribed(book.general)) parts.push(`General: ${ruleLines(book.general)}`);
   // Przykłady kart nie znają materiału lekcji: model ma z nich brać format rekordu, nie treść.
   if (book.types.some((block) => block.example !== undefined)) parts.push(EXAMPLES_NOTE);
@@ -183,91 +131,10 @@ export function renderRuleBook(book: LessonRuleBookInput, options: { readonly pa
     if (block.subjectRule !== undefined && block.subjectRule !== "") parts.push(`  ${block.subjectRule}`);
     if (hasDescribed(block.rules)) parts.push(`  ${ruleLines(block.rules)}`);
   }
-  if (hasDescribed(book.lesson)) parts.push(`Lesson: ${ruleLines(book.lesson)}`);
-  if (hasDescribed(book.checks)) parts.push(`Checks by another model: ${ruleLines(book.checks)}`);
   return parts.join("\n");
 }
 
-/**
- * Prompt systemowy podagenta puli lekcji: złożony WYŁĄCZNIE z danych wejścia
- * (opis przedmiotu, profil promptów, cele, dozwolone typy, przekształcenia,
- * etapy, księga reguł). Adapter nie zna gramatyki — każdy fakt o przedmiocie
- * pochodzi z `input`. Reguły, które sprawdza kod, przychodzą wyłącznie z księgi
- * reguł (`input.ruleBook`); tu zostają ręczne wskazówki, których kod nie sprawdza
- * (rola, zagadnienia, etapy, gotowość gradera, ton lektora, styl wyjaśnień,
- * semantyka pól przedmiotu). Liczby ćwiczeń podaje `Target` w `objectiveInstructions`.
- */
-export function lessonSystemPrompt(input: LessonPoolInput): string {
-  const parts: string[] = [];
-  parts.push(input.promptProfile.generationRole);
-  parts.push(
-    `Subject: ${input.subjectTitle} (${input.subjectId}). ` +
-      `Prompt language (instructions shown to the child): ${input.promptLocale}. ` +
-      `Answer language (the canonical answer the child produces): ${input.answerLocale}.`,
-  );
-  parts.push(
-    "Each exercise checks exactly ONE learning objective, given by its id below. " +
-      "Use ONLY these objectives and their allowed exercise types:",
-  );
-  for (const objective of input.objectives) {
-    parts.push(
-      `- objectiveId "${objective.id}": ${objective.descriptionEn} ` +
-        `Allowed exerciseType values: ${promptExerciseTypes(input, objective.exerciseTypes).join(", ")}. ` +
-        `Error categories: ${objective.errorCategories.join(", ") || "none"}.`,
-    );
-  }
-  if (input.transforms.length > 0) {
-    parts.push(
-      "Available transforms (use transformId only from this list for lesson_transform): " +
-        input.transforms.map((t) => `${t.id} (${t.instructionPl})`).join("; ") +
-        ".",
-    );
-  }
-  const stageMenu = (types: readonly string[]) =>
-    types.filter((type) => input.exerciseTypes.includes(type)).join(", ") || "none available";
-  parts.push(
-    "Stages of the exercise types (Target below gives the counts): " +
-      `guided (${stageMenu(["lesson_choice", "lesson_order", "lesson_short_answer", "lesson_match", "lesson_group", "lesson_cloze"])}), ` +
-      `productive (${stageMenu(["lesson_gap", "lesson_error_fix", "lesson_transform"])}), ` +
-      `independent (${stageMenu(["lesson_open_answer", "lesson_calculation"])}). ` +
-      independentReservation(input) +
-      "The stage type lists are a menu, not a per-exercise requirement: every exercise must use ONLY an exerciseType " +
-      "from its objective's allowed list above — if none of a stage's listed types is allowed for the objective, " +
-      "cover that stage with an allowed type (typically lesson_choice).",
-  );
-  // Wybór ze słuchu leży poza podziałem etapów (jego menu go nie wymienia); liczbę podaje `Target`.
-  if (listenChoiceExtra(input) > 0) {
-    parts.push(
-      "lesson_listen_choice exercises are extra, outside the stage split (Target gives their allowance), " +
-        "only for an objective whose allowed exerciseType list contains lesson_listen_choice.",
-    );
-  }
-  if (!input.graderAvailable) {
-    parts.push(
-      "The answer-grading model is unavailable, so prefer closed types (lesson_choice, " +
-        "lesson_short_answer) and lesson_gap over free-text types.",
-    );
-  }
-  if (input.deduplication !== "exercise") {
-    parts.push("When distinct short answers run out, vary full-sentence answers (different subjects, verbs or objects).");
-  }
-  if (input.promptProfile.fieldRules !== undefined) {
-    parts.push(`Field rules for this subject: ${input.promptProfile.fieldRules}`);
-  }
-  // Reguła (zaufany tekst przedmiotu) trafia tu, a same tematy — wyłącznie do wiadomości użytkownika.
-  if (usesSentenceThemes(input)) {
-    parts.push(input.promptProfile.interestsRule!);
-  }
-  if (input.voiceTones === true) {
-    parts.push(`${VOICE_TONE_BASE_RULE} Return voiceTone for every exercise except lesson_calculation (null when no tone fits).`);
-  }
-  if (input.exerciseExplanations === true) parts.push(EXPLANATION_RULE);
-  parts.push(fieldMeaningRule(input));
-  parts.push(renderRuleBook(input.ruleBook));
-  return parts.join("\n");
-}
-
-/** Zasada pola `explanationPl` (prompt agenta i paczki przebiegu bazowego). */
+/** Zasada pola `explanationPl` (prompt paczki przebiegu bazowego). */
 export const EXPLANATION_RULE =
   "explanationPl: for every exercise except lesson_calculation, return a Polish sentence for a child of about 8 that explains " +
   "why the correct answer is correct (the rule behind it). " +
@@ -275,7 +142,7 @@ export const EXPLANATION_RULE =
   "No praise or judging of the child, no names. " +
   "English examples only from this exercise (its answer, sentence or options). Use null when no short, accurate rule applies.";
 
-/** Znaczenie pól i dyscyplina języków (prompt agenta i paczki przebiegu bazowego). */
+/** Znaczenie pól i dyscyplina języków (prompt paczki przebiegu bazowego). */
 export function fieldMeaningRule(input: Pick<LessonPoolInput, "promptLocale" | "answerLocale">): string {
   // Dyscyplina języków ma sens tylko przy dwóch językach (język polecenia ≠ język odpowiedzi).
   const twoLanguages = input.promptLocale !== input.answerLocale;
@@ -510,8 +377,8 @@ function lessonStorySystemPrompt(input: LessonStoryInput): string {
 /**
  * Adapter LLM: zestawy słówek w trybie `json_object`, zagadnienia i historyjka
  * lekcji w trybie `json_schema` strict (structured outputs) — walidacja
- * semantyczna wyniku AI pozostaje w domenie. Pulę ćwiczeń generuje agent puli
- * (`lesson-pool-agent.ts`) z promptem `lessonSystemPrompt`/`lessonUserMaterial`.
+ * semantyczna wyniku AI pozostaje w domenie. Pulę ćwiczeń generuje przebieg bazowy paczkami
+ * (`lesson-pool-agent.ts`) z wiadomością `lessonUserMaterial`.
  * Wybór modelu czeka na próbę techniczną z zadania 0 — bez kluczy adapter
  * pozostaje niezweryfikowany.
  */
