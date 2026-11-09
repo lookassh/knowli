@@ -1,8 +1,10 @@
 import type { LessonExerciseType, SubjectModule } from "../../types";
 import { englishNormalizer } from "../english/normalizer";
 import { englishCardSentences } from "../english/card-sentences";
+import { normalizeEnglishExposureText } from "../english/exposure";
 import { grammarAgentPolicy } from "./agent-policy";
 import { ENGLISH_GRAMMAR_ERROR_CATEGORIES } from "./error-categories";
+import { grammarExposureText } from "./exposure";
 import { englishGrammarPrompts } from "./prompts";
 import { presentSimpleV1 } from "./topics/present-simple";
 import { toBeV1, toBeV2 } from "./topics/to-be";
@@ -45,6 +47,9 @@ export const englishGrammarSubject: SubjectModule = {
   // Zdania angielskie z kart są gotowymi rozwiązaniami (#328): źródło ujawnień przy generowaniu puli.
   // Polskie fragmenty bez diakrytyków też przechodzą, ale nie zrównają się z angielską odpowiedzią.
   cardExposureTexts: englishCardSentences,
+  // Ekspozycją jest rozwiązane zdanie albo cała wymiana, jak w rozdziale (#373).
+  exposureText: grammarExposureText,
+  normalizeExposureText: normalizeEnglishExposureText,
   // Gramatyka ćwiczy zastosowanie reguły; audio odpowiedzi ujawniałoby rozwiązanie.
   ttsForAnswers: false,
   ttsForPrompts: false,

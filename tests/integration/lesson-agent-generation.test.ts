@@ -1204,10 +1204,13 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
         const planned = await plannedPackets(runId);
         const all = planned[OBJECTIVE]! + planned[NEGATIVE]!;
+        // Paczka samodzielna B czeka na rozwiązania wcześniejszych paczek B (#373): przy wstrzymanej pierwszej paczce nie ma jeszcze jej wywołania ani kosztu.
+        const paid = all - 1;
         const shutdown = new AbortController();
         const running = executeLessonGeneration(services, runId, { signal: shutdown.signal });
         await inFlight.reached;
-        await vi.waitFor(() => expect(agent.packetCalls).toHaveLength(all), { timeout: 10_000, interval: 10 });
+        await vi.waitFor(() => expect(agent.packetCalls).toHaveLength(paid), { timeout: 10_000, interval: 10 });
+        expect(agent.packetCalls.filter((call) => call.objective.id === NEGATIVE && call.type === "lesson_open_answer")).toHaveLength(0);
         shutdown.abort();
         await running;
 
@@ -1217,16 +1220,16 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
         // Przebieg bazowy rozlicza zagadnienia dopiero po walidacji puli: przerwana próba nic nie rozliczyła…
         expect(saved.objectives).toEqual({});
         // …ale jej wydatek (wszystkie opłacone paczki, także B „w locie”) jest w punkcie kontrolnym.
-        expect(saved.budgetSpentUsd).toBeCloseTo(0.01 * all, 6);
-        expect(saved.totalSpentUsd).toBeCloseTo(0.01 * all, 6);
+        expect(saved.budgetSpentUsd).toBeCloseTo(0.01 * paid, 6);
+        expect(saved.totalSpentUsd).toBeCloseTo(0.01 * paid, 6);
 
         await executeLessonGeneration(services, runId);
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
         // Wydatek przerwanej próby + paczki próby 2, bez podwójnego liczenia.
-        expect(agent.packetCalls).toHaveLength(2 * all);
-        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.01 * 2 * all, 6);
+        expect(agent.packetCalls).toHaveLength(paid + all);
+        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.01 * (paid + all), 6);
       });
 
       it("błąd przejściowy bazy w ostatniej próbie przy przyjętym zagadnieniu → queued, następne przejęcie zapisuje część bez wywołań modelu (#319)", async () => {

@@ -194,7 +194,7 @@ export interface SubjectPromptProfile {
  */
 export type LessonExposureSource = Pick<
   LessonExerciseDraft,
-  "exerciseType" | "stem" | "answer" | "options" | "correctOption" | "clozeText" | "gapAnswers"
+  "exerciseType" | "stem" | "prompt" | "answer" | "options" | "correctOption" | "clozeText" | "gapAnswers"
 >;
 
 export interface LessonExerciseDraft {

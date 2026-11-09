@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { computeTargetKey } from "@learning/server";
 import { LEARNING_V2_POLICY } from "../../packages/server/src/policies/learning-v2";
+import { normalizeEnglishExposureText } from "../../packages/server/src/domain/lessons/subjects/english/exposure";
 import type { testDatabase } from "../integration/helpers";
 
 type Pool = ReturnType<typeof testDatabase>["pool"];
@@ -596,7 +597,7 @@ async function seedListenChoice(
   }
   return {
     itemId, revisionId, assetId, fingerprint, targetKey, sentence,
-    sentenceTargetKey: computeTargetKey(sentence, RICH_ANSWER_LOCALE),
+    sentenceTargetKey: computeTargetKey(normalizeEnglishExposureText(sentence), RICH_ANSWER_LOCALE),
   };
 }
 
@@ -607,7 +608,7 @@ async function seedListenChoice(
  */
 export const EDITOR_CARD_EXAMPLE = "She plays tennis.";
 
-/** Valid full editor pool for third-person -s: 3 guided, 4 productive, 2 independent. */
+/** Valid full editor pool for third-person -s: 3 guided, 4 productive, 2 independent. Zdania prowadzone/produktywne różnią się od samodzielnych — ekspozycja jest zdaniowa (#373). */
 async function seedEditorPool(
   pool: Pool,
   version: { deckId: string; versionId: string },
@@ -615,9 +616,9 @@ async function seedEditorPool(
 ): Promise<void> {
   const objectiveId = "english_grammar.present_simple.third_person_s";
   const exercises = [
-    { type: "lesson_choice", prompt: "He ___ football.", answer: "plays", focus: "plays" },
-    { type: "lesson_choice", prompt: "She ___ at home.", answer: "works", focus: "works" },
-    { type: "lesson_choice", prompt: "It ___ fast.", answer: "runs", focus: "runs" },
+    { type: "lesson_choice", prompt: "Tom ___ football.", answer: "plays", focus: "plays" },
+    { type: "lesson_choice", prompt: "Mum ___ at home.", answer: "works", focus: "works" },
+    { type: "lesson_choice", prompt: "The dog ___ fast.", answer: "runs", focus: "runs" },
     { type: "lesson_gap", prompt: "He ___ to school.", answer: "goes", focus: "goes" },
     { type: "lesson_gap", prompt: "She ___ TV.", answer: "watches", focus: "watches" },
     { type: "lesson_gap", prompt: "It ___ dinner.", answer: "cooks", focus: "cooks" },

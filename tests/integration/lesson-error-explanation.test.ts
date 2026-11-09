@@ -592,7 +592,8 @@ describe("sesja — wyjaśnienie w feedbacku po błędzie", () => {
   });
 
   describe("ekspozycje i niezmienność klucza", () => {
-    const QUOTING = "Wybierz plays, tak jak w zdaniu he goes.";
+    // Cytat rozwiązanego zdania luki (ekspozycja jest zdaniowa, #373) — sama forma „goes” cytatem celu już nie jest.
+    const QUOTING = "Wybierz plays, tak jak w zdaniu: He goes (go) to school.";
     const quoting: Scenario = {
       type: "lesson_choice", services: plain, answer: choiceWrong,
       explanations: { text: EXPLANATION, textByType: { lesson_choice: QUOTING }, audio: "ready" },

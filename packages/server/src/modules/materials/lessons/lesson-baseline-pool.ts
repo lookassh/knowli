@@ -33,7 +33,8 @@ import { parseLessonRecord, type RejectionLogEntry } from "./lesson-pool-agent-t
 
 /**
  * Przebieg bazowy generowania puli lekcji (spec etapu 2 §3, spec zbiorczy §4): dla każdego
- * zagadnienia paczki cel × typ (jedno wywołanie generatora na paczkę), walidacja struktury, jedna
+ * zagadnienia paczki cel × typ (jedno wywołanie generatora na paczkę; paczki samodzielne na końcu
+ * zagadnienia, ze zdaniami do unikania z wcześniejszych paczek), walidacja struktury, jedna
  * kontrola zadań zamkniętych na paczkę i — po wszystkich zagadnieniach — jedna walidacja puli w
  * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Typy wejścia i wyniku z
  * `lesson-pool-agent.ts`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Jedyny
@@ -223,23 +224,31 @@ export async function runLessonBaselinePool(
       packet: PacketPlan["packets"][number],
       withExamples: boolean,
       sink: RunCostSink,
+      avoidReady: () => Promise<readonly string[]>,
     ): Promise<PacketOutcome> => {
-      const request = packetInput({
-        subject,
-        topic,
-        objective: catalogObjective,
-        type: packet.type,
-        ...(packet.companion === undefined ? {} : { companion: packet.companion }),
-        count: packet.count,
-        withExamples,
-        material: input.material,
-        ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
-        ...(input.interests === undefined ? {} : { interests: input.interests }),
-        avoidSentences,
-        timeoutMs: policy.callTimeoutMs,
-      });
       try {
-        const generated = await callModel(generatorSlots, () => deps.generator.generatePacket(request, sink, runDeadline.signal));
+        const generated = await callModel(generatorSlots, async () => {
+          // Żądanie składane dopiero w miejscu semafora: paczka samodzielna czeka tu na rozwiązania
+          // wcześniejszych paczek tego zagadnienia (bramka `avoidReady`), nie tracąc miejsca w kolejce (#373).
+          const avoidSentences = await avoidReady();
+          // Po bramce termin mógł już minąć — nie wołaj wtedy dostawcy.
+          runDeadline.signal.throwIfAborted();
+          const request = packetInput({
+            subject,
+            topic,
+            objective: catalogObjective,
+            type: packet.type,
+            ...(packet.companion === undefined ? {} : { companion: packet.companion }),
+            count: packet.count,
+            withExamples,
+            material: input.material,
+            ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
+            ...(input.interests === undefined ? {} : { interests: input.interests }),
+            avoidSentences,
+            timeoutMs: policy.callTimeoutMs,
+          });
+          return deps.generator.generatePacket(request, sink, runDeadline.signal);
+        });
         if (generated === STOPPED) return { kind: "stopped" };
         const objectiveId = catalogObjective.id;
         const valid: LessonExerciseDraft[] = [];
@@ -354,7 +363,45 @@ export async function runLessonBaselinePool(
           spent += cost.spentUsd - before;
         },
       };
-      const outcomes = await allSettledOrThrow(plan.packets.map((packet, packetIndex) => runPacket(catalogObjective, packet, !examplesFixed && packetIndex === 0, sink)));
+      const byIndex = new Map<number, PacketOutcome>();
+      // Bramka paczek samodzielnych (#373): ich wywołanie modelu
+      // czeka na rozwiązania paczek pozostałych typów tego zagadnienia — dostają je jako zdania do unikania,
+      // więc model nie powtarza zdań i wymian już widzianych z rozwiązaniem.
+      let openGate: (avoid: readonly string[]) => void = () => undefined;
+      const gate = new Promise<readonly string[]>((resolve) => { openGate = resolve; });
+      const firstPhase = plan.packets.flatMap((packet, index) => (bucketOf(packet.type) === "independent" ? [] : [index]));
+      // Start w kolejności „najpierw niesamodzielne": paczka samodzielna czeka w slocie na bramce, więc paczka
+      // wcześniejsza z planu za nią (słuchanie) nie może zostać za nią w kolejce semafora — przy limicie 1 to zakleszczenie.
+      const startOrder = [...firstPhase, ...plan.packets.flatMap((packet, index) => (bucketOf(packet.type) === "independent" ? [index] : []))];
+      const tasksByIndex = new Map<number, Promise<void>>();
+      for (const packetIndex of startOrder) {
+        const packet = plan.packets[packetIndex]!;
+        const avoidReady = bucketOf(packet.type) === "independent" ? () => gate : () => Promise.resolve(avoidSentences);
+        tasksByIndex.set(packetIndex, (async () => {
+          byIndex.set(packetIndex, await runPacket(catalogObjective, packet, !examplesFixed && packetIndex === 0, sink, avoidReady));
+        })());
+      }
+      const tasks = plan.packets.map((_, index) => tasksByIndex.get(index)!);
+      let firstError: unknown;
+      let firstFailed = false;
+      try {
+        await allSettledOrThrow(firstPhase.map((index) => tasks[index]!));
+      } catch (error) {
+        firstFailed = true;
+        firstError = error;
+      } finally {
+        const earlierDrafts = firstPhase.flatMap((index) => {
+          const outcome = byIndex.get(index);
+          return outcome?.kind === "done" ? outcome.drafts : [];
+        });
+        openGate(earlierDrafts.length > 0 ? lessonAvoidSentences(subject, topic, start.state, earlierDrafts) : avoidSentences);
+      }
+      if (firstFailed) {
+        await Promise.allSettled(tasks);
+        throw firstError;
+      }
+      await allSettledOrThrow(tasks);
+      const outcomes = plan.packets.map((_, index) => byIndex.get(index) ?? ({ kind: "stopped" } as const));
       const failed = outcomes.find((outcome) => outcome.kind === "failed");
       if (failed !== undefined) {
         return { objective, plan, packets: [], examples: undefined, failure: agentFailureOf(failed.error), calls, spentUsd: spent };

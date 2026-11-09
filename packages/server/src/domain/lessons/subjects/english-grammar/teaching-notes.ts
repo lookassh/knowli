@@ -18,7 +18,7 @@ export const SHORT_ANSWER_CONTRACTION_NOTE =
 /**
  * Bieg diagnostyczny #372 (`lesson.leak` w `short_answers`): krótkich odpowiedzi jest kilkanaście, więc tłumaczenie
  * samej odpowiedzi powtarza klucz ćwiczeń wyboru i odpada jako ujawnione; pełna wymiana ma własny klucz.
- * shortcut: detektor przecieków gramatyki porównuje tylko `answer`, więc wymiany powtórzonej w innym typie nie widzi; strukturalne `exposureText` w #373.
+ * Od #373 detektor przecieków porównuje w gramatyce całe rozwiązane wymiany, więc wymiana powtórzona w innym typie odpada regułą `lesson.leak`, a paczka etapu samodzielnego dostaje rozwiązania wcześniejszych paczek zagadnienia jako zdania do unikania.
  */
 export const SHORT_ANSWER_TRANSLATION_NOTE =
   "A lesson_open_answer translates the whole exchange, the question together with its short answer, never the short answer " +
