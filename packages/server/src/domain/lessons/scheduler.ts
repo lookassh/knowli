@@ -721,8 +721,8 @@ function hasAssessedThisSession(objectiveId: string, input: LessonScheduleInput)
 
 /**
  * Priorytet 3 (okno sprawdzianu): cel kwalifikuje się, gdy jest „w grze" i
- * jeszcze nieopanowany — czyli nie `mastered` ORAZ (wprowadzony w tej sesji
- * LUB kontynuowany z wcześniejszej sesji). Jeden predykat zamiast splotu flag.
+ * jeszcze nieopanowany — czyli nie `mastered` ORAZ (kontynuowany z wcześniejszej
+ * sesji LUB nowy z ukończonymi kartami, notice i etapem prowadzonym w tej sesji).
  */
 function eligibleForTestWindow(
   objectiveId: string,
@@ -730,8 +730,15 @@ function eligibleForTestWindow(
   state: ObjectiveSessionState,
 ): boolean {
   if (input.progress[objectiveId]?.status === "mastered") return false;
-  const inPlay = state.introduced || isContinuedFromPriorSession(objectiveId, input);
-  return inPlay;
+  if (isContinuedFromPriorSession(objectiveId, input)) return true;
+  if (!state.introduced || needsIntroductionSteps(objectiveId, input, state)) return false;
+  // Nowy cel: zdania samodzielne dopiero po etapie prowadzonym. Liczymy wydane zadania,
+  // nie sukcesy, bo plan treningu powstaje bez wyników.
+  const guidedIssued = input.sessionHistory.filter((t) =>
+    t.objectiveId === objectiveId && t.kind === "exercise" && !outsideStagePath(t.exerciseType) &&
+    stageOf(t.exerciseType) === "guided",
+  ).length;
+  return guidedIssued >= input.policy.advanceAfterCorrect;
 }
 
 /**

@@ -103,7 +103,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
                 {...fieldProps}
                 onChange={(event) => changeText(event.target.value)}
                 submitOnEnter
-                placeholder={messages.kid.typeWord}
+                placeholder={messages.kid.lessonAnswerPlaceholder}
                 aria-label={messages.kid.lessonAnswerInput}
               />
             ) : (
@@ -112,7 +112,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
                 variant="sentence"
                 {...fieldProps}
                 onChange={(event) => changeText(event.target.value)}
-                placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.typeWord}
+                placeholder={calculation ? messages.kid.lessonCalculationPlaceholder : messages.kid.lessonAnswerPlaceholder}
                 aria-label={calculation ? messages.kid.lessonCalculationInput : messages.kid.lessonSourceSentence}
               />
             )}
