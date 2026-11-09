@@ -582,15 +582,13 @@ export function lessonAgentSettingsFromEnv(env: Record<string, string | undefine
   };
 }
 
-/** Opis agenta puli dla panelu rodzica: etykiety usług (`host · model`); obecny = generowanie lekcji dostępne. */
+/** Opis generowania lekcji dla panelu rodzica: etykiety usług (`host · model`); obecny = generowanie lekcji dostępne. */
 export interface LessonAgentPublic {
   readonly generationService: string;
   readonly checkService: string;
-  /** Usługa oceny odpowiedzi (`host · model` gradera); poza trybem fake zawsze obecna — bez gradera generowanie jest niedostępne. */
-  readonly openCheckService?: string;
 }
 
-/** Etykieta gradera (`host · model`, nigdy klucz); nie rzuca — błąd konfiguracji gradera pomija pole. */
+/** Etykieta gradera (`host · model`, nigdy klucz); nie rzuca — błąd konfiguracji gradera daje `undefined`. */
 function openCheckServiceLabel(env: Record<string, string | undefined>): string | undefined {
   try {
     const connection = graderConnectionFromEnv(env);
@@ -601,8 +599,9 @@ function openCheckServiceLabel(env: Record<string, string | undefined>): string 
 }
 
 /**
- * Opis agenta dla panelu rodzica (web): nazwy usług. Obecny = worker ma agenta,
- * czyli generowanie lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
+ * Opis generowania lekcji dla panelu rodzica (web): nazwy usług. Obecny = worker generuje lekcje
+ * (pełna konfiguracja `UMIEM_GRADER_*` jest warunkiem: grader ocenia dziecko w web), czyli generowanie
+ * lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
  * klucza); inaczej `undefined`, gdy klucza OpenRouter nie ma albo ma kształt
  * klucza OpenAI (worker z takim kluczem nie wstaje). Nigdy nie rzuca — błędne
  * liczby i wysiłki agenta zatrzymują worker, nie web.
@@ -619,11 +618,9 @@ export function lessonAgentPublicFromEnv(env: Record<string, string | undefined>
   }
   if (apiKey === undefined) return undefined;
   // Lekcje bez gradera oceniałyby tylko klucz: generowanie wymaga pełnej konfiguracji UMIEM_GRADER_* (etap 3 #360).
-  const openCheckService = openCheckServiceLabel(env);
-  if (openCheckService === undefined) return undefined;
+  if (openCheckServiceLabel(env) === undefined) return undefined;
   return {
     generationService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_MODEL")}`,
     checkService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_CHECKER_MODEL")}`,
-    openCheckService,
   };
 }

@@ -680,9 +680,6 @@ export default function NewLessonForm({
             {serviceInfo.check && (
               <Text size="sm" className="pp-editor-muted" data-testid="lesson-check-service">{serviceInfo.check}</Text>
             )}
-            {serviceInfo.openCheck && (
-              <Text size="sm" className="pp-editor-muted" data-testid="lesson-open-check-service">{serviceInfo.openCheck}</Text>
-            )}
 
             {generationUnavailable && (
               <Alert color="yellow" variant="light" role="status" data-testid="lesson-generation-unavailable" icon={<ParentIcon name="alert-triangle" />}>

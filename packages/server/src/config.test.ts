@@ -395,13 +395,12 @@ describe("lessonAgentPublicFromEnv", () => {
     expect(lessonAgentPublicFromEnv({ ...KEY, ...grader })).toEqual({
       generationService: "openrouter.ai · google/gemini-3.8-flash",
       checkService: "openrouter.ai · deepseek/deepseek-v4.1-flash-1017",
-      openCheckService: "openrouter.ai · cheap-1",
     });
     expect(lessonAgentPublicFromEnv({ ...KEY, ...grader, UMIEM_LESSON_AGENT_MODEL: "x/y" })?.generationService).toBe("openrouter.ai · x/y");
   });
 
   it("domyślna konfiguracja z kluczem OpenRouter włącza generowanie (grader z tego samego klucza)", () => {
-    expect(lessonAgentPublicFromEnv(withConfigDefaults(KEY))?.openCheckService).toBe("openrouter.ai · google/gemini-3.8-flash");
+    expect(lessonAgentPublicFromEnv(withConfigDefaults(KEY))).toBeDefined();
   });
 
   it("pozostawione UMIEM_LESSON_AGENT_SUBJECTS nie zmienia wyniku", () => {
@@ -431,18 +430,18 @@ describe("lessonAgentPublicFromEnv", () => {
     });
   });
 
-  describe("openCheckService (usługa oceny odpowiedzi próbnych)", () => {
-
-    it("z graderem: host · model, bez klucza", () => {
+  describe("grader jako warunek dostępności generowania", () => {
+    it("z graderem: bez klucza w opisie i bez pola usługi oceny", () => {
       const result = lessonAgentPublicFromEnv({ ...KEY, ...grader });
-      expect(result?.openCheckService).toBe("openrouter.ai · cheap-1");
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty("openCheckService");
       expect(JSON.stringify(result)).not.toContain("secret");
       expect(JSON.stringify(result)).not.toContain(KEY.OPENROUTER_API_KEY);
     });
 
-    it("wspólny OPENROUTER_API_KEY też włącza pole", () => {
+    it("wspólny OPENROUTER_API_KEY też spełnia warunek gradera", () => {
       const env = { UMIEM_GRADER_BASE_URL: grader.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: "m/1", ...KEY };
-      expect(lessonAgentPublicFromEnv(env)?.openCheckService).toBe("openrouter.ai · m/1");
+      expect(lessonAgentPublicFromEnv(env)).toBeDefined();
     });
 
     it("bez gradera → generowanie niedostępne (#360)", () => {
@@ -456,8 +455,5 @@ describe("lessonAgentPublicFromEnv", () => {
       expect(result).toBeUndefined();
     });
 
-    it("tryb fake → brak pola", () => {
-      expect(lessonAgentPublicFromEnv({ UMIEM_FAKE_PROVIDERS: "1", ...grader })).not.toHaveProperty("openCheckService");
-    });
   });
 });
