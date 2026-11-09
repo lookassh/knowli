@@ -36,9 +36,9 @@ import { parseLessonRecord, type RejectionLogEntry } from "./lesson-pool-agent-t
  * Przebieg bazowy generowania puli lekcji (spec etapu 2 §3, spec zbiorczy §4): dla każdego
  * zagadnienia paczki cel × typ (jedno wywołanie generatora na paczkę), walidacja struktury, jedna
  * kontrola zadań zamkniętych na paczkę i — po wszystkich zagadnieniach — jedna walidacja puli w
- * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Te same typy wejścia i wyniku
- * co `runLessonPoolAgent`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Worker
- * woła go dla przedmiotu z `baselinePool`. Bez bazy i identyfikatorów przedmiotów.
+ * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Typy wejścia i wyniku z
+ * `lesson-pool-agent.ts`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Jedyny
+ * generator puli lekcji w workerze (etap 5c). Bez bazy i identyfikatorów przedmiotów.
  */
 
 export interface LessonBaselineDeps {

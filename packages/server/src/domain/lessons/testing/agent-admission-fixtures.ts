@@ -1,12 +1,12 @@
 import { keywordsAnswer } from "../pool-validation";
 import { agentTestSubject } from "./agent-test-subject";
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../types";
-import type { AgentCheckContext, CandidateChecks, ObjectiveAgentLimits } from "../agent/admission";
+import { lessonRulesStep, snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits, type Rejection } from "../agent/admission";
 import { agentObjectivesOf } from "../agent/capable";
 import { createLessonAgentState, type LessonAgentState, type LessonAgentStateInput } from "../agent/state";
 
 /**
- * Wspólne fixture'y testów przyjmowania paczki (przedmiot testowy agenta).
+ * Wspólne fixture'y testów reguł lekcji i ujawnień (przedmiot testowy).
  * Temat dopuszcza wszystkie typy przedmiotu w obu zagadnieniach; przedmiot ma
  * payload v3 (`familyId` słów kluczowych) i deduplikację po bodźcu — przy
  * deduplikacji po odpowiedzi każde ujawnienie między ćwiczeniami byłoby
@@ -44,10 +44,25 @@ export function stateWith(overrides: Partial<LessonAgentStateInput> = {}): Lesso
   return createLessonAgentState({ topic, objectives, fixed: [], examples: {}, fixedSources: {}, ...overrides });
 }
 
-export const NA_CHECKS: CandidateChecks = { solve: { kind: "na" }, variants: { kind: "na" }, hint: { kind: "na" }, open: { kind: "na" } };
+export type StepEntry = { readonly accepted: string } | { readonly rejected: Rejection };
 
-export function naChecks(count: number): CandidateChecks[] {
-  return Array.from({ length: count }, () => NA_CHECKS);
+/** Kandydaci po kolei krokiem reguł lekcji i ujawnień (`lessonRulesStep`), jak walidacja puli przebiegu bazowego. */
+export function admitInOrder(
+  state: LessonAgentState,
+  objectiveId: string,
+  drafts: readonly LessonExerciseDraft[],
+  ctx: AgentCheckContext,
+): { state: LessonAgentState; results: StepEntry[] } {
+  let current = state;
+  let before = snapshotOf(state, ctx);
+  const results = drafts.map((draft): StepEntry => {
+    const step = lessonRulesStep(current, objectiveId, draft, before, ctx);
+    if (!step.ok) return { rejected: step.rejection };
+    current = step.state;
+    before = step.snapshot;
+    return { accepted: step.id };
+  });
+  return { state: current, results };
 }
 
 export function choice(objectiveId: string, n: number): LessonExerciseDraft {

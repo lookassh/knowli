@@ -39,11 +39,11 @@ export type LessonAgentProgress = {
    * postęp do „Ponów”); brak = nic nie zapisano. Kolejny zapis dolicza tylko różnicę, żeby nie podwoić powodów.
    */
   readonly rejectionCodesWritten?: Record<string, number>;
-  /** Liczniki kontroli etapu 2b (`CHECK_COUNTER_KEYS`), sumowane między próbami; brak w punktach kontrolnych etapu 2a. */
+  /** Historyczne liczniki kontroli etapu 2b z runów agenta (do etapu 5c); przechodzą bez zmian, nowe próby ich nie liczą. */
   readonly checkCounters?: Record<string, number>;
   /**
-   * Oczyszczenia przy przyjmowaniu (`hintsRemoved`, `variantsRemoved`, `quotesSnapped`) jeszcze niezapisane w
-   * `lesson_context` szkicu: sumowane między próbami, zerowane po porażce walidacji, która je zapisuje.
+   * Historyczne oczyszczenia przy przyjmowaniu agenta (`hintsRemoved`, `variantsRemoved`, `quotesSnapped`, do etapu 5c)
+   * jeszcze niezapisane w `lesson_context` szkicu: przenoszone do szkicu, zerowane po porażce walidacji, która je zapisuje.
    */
   readonly cleanupCounts?: Record<string, number>;
   readonly removedAfterAcceptance: number;

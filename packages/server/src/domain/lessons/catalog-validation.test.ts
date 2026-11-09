@@ -262,7 +262,7 @@ describe("validateSubject — katalog reguł przedmiotu", () => {
       const base = cloneSubject();
       return { ...base, rules: { "test_history.fixture": rule }, agentPolicy: { ...base.agentPolicy, ruleNotes } };
     };
-    expect(validateSubject(withNotes({ "core.fixture": "Core note.", "lesson.leak": "Leak note.", "check.blind_solve": "Solver note." }))).toEqual([]);
+    expect(validateSubject(withNotes({ "core.fixture": "Core note.", "lesson.leak": "Leak note." }))).toEqual([]);
     expect(ruleErrors(withNotes({ "lesson.unknown": "x", "test_history.fixture": "y" }))).toEqual([
       "Przedmiot: dopisek ruleNotes do „lesson.unknown”, który nie jest regułą rdzenia ani lekcji",
       "Przedmiot: dopisek ruleNotes do „test_history.fixture”, który nie jest regułą rdzenia ani lekcji",

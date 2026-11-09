@@ -56,10 +56,10 @@ describe("getServerServices — opis agenta puli lekcji", () => {
     expect(lessonCatalog(services!).lessonGenerationAvailable).toBe(false);
   });
 
-  it("błędne UMIEM_LESSON_AGENT_MAX_STEPS przy poprawnym kluczu nie zatrzymuje web", () => {
+  it("błędne UMIEM_LESSON_AGENT_CONCURRENCY przy poprawnym kluczu nie zatrzymuje web", () => {
     stubBaseEnv();
     vi.stubEnv("OPENROUTER_API_KEY", "sk-or-v1-web");
-    vi.stubEnv("UMIEM_LESSON_AGENT_MAX_STEPS", "abc");
+    vi.stubEnv("UMIEM_LESSON_AGENT_CONCURRENCY", "abc");
     let services: ReturnType<typeof getServerServices> | undefined;
     expect(() => { services = getServerServices(); }).not.toThrow();
     expect(services!.lessonAgentPublic).toBeDefined();

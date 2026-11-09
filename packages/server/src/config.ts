@@ -3,9 +3,7 @@ import type {
   AnswerGraderProvider,
   ClosedExerciseChecker,
   ImageProvider,
-  LessonExerciseCheckerProvider,
   LessonPacketGenerator,
-  LessonPoolAgentProvider,
   LlmProvider,
   PronunciationProvider,
   SessionActivityReviewer,
@@ -168,17 +166,12 @@ export function isLessonAgentAvailable(agent: GenerationDeps["lessonAgent"]): ag
   return agent !== undefined && !("unavailable" in agent);
 }
 
-/** Zależności agenta puli lekcji w workerze (adapter dostawcy za portami). */
+/** Zależności generowania puli lekcji w workerze (adapter dostawcy za portami przebiegu bazowego). */
 export interface LessonAgentDeps {
-  /** Agent puli i generator paczek przebiegu bazowego (ten sam adapter). */
-  readonly agent: LessonPoolAgentProvider & LessonPacketGenerator;
-  /** Checker agenta i kontrola zamkniętych przebiegu bazowego (ten sam adapter). */
-  readonly checker: LessonExerciseCheckerProvider & ClosedExerciseChecker;
-  /**
-   * Grader kontroli otwartej (etap 2b, `UMIEM_GRADER_*`); nieobecny = kontrola otwarta nie dotyczy
-   * (tryb fake zawsze bez gradera).
-   */
-  readonly grader?: AgentGraderDeps;
+  /** Generator paczek. */
+  readonly agent: LessonPacketGenerator;
+  /** Kontrola zadań zamkniętych. */
+  readonly checker: ClosedExerciseChecker;
   readonly policy: Partial<LessonAgentPolicy>;
   /** Rezerwa na finalizację przed terminem runu (domyślnie `AGENT_FINALIZATION_RESERVE_MS`); nadpisywana w testach. */
   readonly finalizationReserveMs?: number;
@@ -456,38 +449,6 @@ export function graderFromEnv(env: Record<string, string | undefined>, usage?: U
 }
 
 /**
- * Zależności gradera w agencie puli lekcji (etap 2b #237, proces worker): ten sam adapter co
- * w web, ale z etykietą kosztu `lesson_generation`/`check_grade`; `timeoutMs` to deadline
- * jednego wywołania. Bez limitu wywołań na sesję — budżet pilnuje run.
- */
-export interface AgentGraderDeps {
-  readonly provider: AnswerGraderProvider;
-  readonly timeoutMs: number;
-}
-
-/**
- * Grader agenta puli ze zmiennych `UMIEM_GRADER_*` — to samo połączenie, dodatki żądania i
- * timeout co {@link graderFromEnv} (rezerwa `OPENROUTER_API_KEY`). Brak konfiguracji →
- * undefined; częściowa → ten sam błąd startu co w web.
- */
-export function agentGraderFromEnv(env: Record<string, string | undefined>, usage?: UsageRecorder): AgentGraderDeps | undefined {
-  const connection = graderConnectionFromEnv(env);
-  if (connection === undefined) {
-    return undefined;
-  }
-  const { baseUrl, apiKey, model } = connection;
-  const timeoutMs = positiveIntEnv("UMIEM_GRADER_TIMEOUT_MS", env.UMIEM_GRADER_TIMEOUT_MS, DEFAULT_GRADER_TIMEOUT_MS);
-  return {
-    provider: createOpenAiCompatibleGrader({
-      baseUrl, apiKey, model, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
-      usageLabel: { feature: "lesson_generation", operation: "check_grade" },
-      ...(usage ? { usage } : {}),
-    }),
-    timeoutMs,
-  };
-}
-
-/**
  * Ocena aktywności sesji ze zmiennych środowiskowych. Świadomie współdzieli
  * `UMIEM_GRADER_BASE_URL/API_KEY/MODEL` z graderem lekcji (decyzja handoff.md
  * §4): brak konfiguracji gradera = ocena aktywności również wyłączona. Osobny
@@ -567,16 +528,13 @@ function agentProviderRouting(
   return effort === "none" ? routing : { ...routing, require_parameters: true };
 }
 
-/** Limity agenta z env (`UMIEM_LESSON_AGENT_MAX_STEPS`, współbieżność, terminy, budżet); zła liczba to błąd startu. */
+/** Limity generowania puli z env (współbieżność, terminy, budżet); zła liczba to błąd startu. */
 export function lessonAgentPolicyFromEnv(env: Record<string, string | undefined>): Partial<LessonAgentPolicy> {
   const int = (name: keyof typeof CONFIG_DEFAULTS & `UMIEM_LESSON_AGENT_${string}`) =>
     positiveIntEnv(name, env[name], Number(CONFIG_DEFAULTS[name]));
-  const maxSteps = int("UMIEM_LESSON_AGENT_MAX_STEPS");
   return {
-    maxStepsPerObjective: maxSteps,
     concurrency: int("UMIEM_LESSON_AGENT_CONCURRENCY"),
     checkerConcurrency: int("UMIEM_LESSON_AGENT_CHECKER_CONCURRENCY"),
-    objectiveTimeoutMs: int("UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS"),
     checkerTimeoutMs: int("UMIEM_LESSON_AGENT_CHECKER_TIMEOUT_MS"),
     callTimeoutMs: int("UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS"),
     runBudgetUsd: positiveNumberEnv(

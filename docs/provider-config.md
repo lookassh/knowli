@@ -118,10 +118,8 @@ i wysiłkiem rozumowania.
 | `UMIEM_LESSON_AGENT_REASONING` | `low` | Wysiłek rozumowania generatora: `xhigh`, `high`, `medium`, `low`, `minimal` albo `none` (bez pola `reasoning`) |
 | `UMIEM_LESSON_AGENT_CHECKER_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Model checkera |
 | `UMIEM_LESSON_AGENT_CHECKER_REASONING` | `low` | Wysiłek rozumowania checkera (te same wartości) |
-| `UMIEM_LESSON_AGENT_MAX_STEPS` | `8` | Maksimum kroków pętli narzędzi na zagadnienie i dla planisty |
 | `UMIEM_LESSON_AGENT_CONCURRENCY` | `4` | Zagadnienia równolegle |
 | `UMIEM_LESSON_AGENT_CHECKER_CONCURRENCY` | `4` | Równoległe wywołania checkera |
-| `UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS` | `300000` | Termin jednego zagadnienia |
 | `UMIEM_LESSON_AGENT_CHECKER_TIMEOUT_MS` | `90000` | Termin jednego wywołania checkera |
 | `UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS` | `90000` | Limit jednego żądania modelu generatora (krok zagadnienia) i planisty; po przekroczeniu jedno ponowienie kroku, po drugim zagadnienie kończy się jak po swoim terminie (`incomplete`), a plan — porażką `provider_timeout` |
 | `UMIEM_LESSON_AGENT_RUN_BUDGET_USD` | `1.00` | Budżet runu we wszystkich automatycznych próbach (wydatek z `usage.cost` OpenRouter; „Ponów” rodzica przyznaje świeży budżet). To limit wydatku **agenta** w jednym runie, nie ceny jednego wywołania; czas runu ogranicza `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS` (10 min, z rezerwą 30 s na zapis do szkicu) |

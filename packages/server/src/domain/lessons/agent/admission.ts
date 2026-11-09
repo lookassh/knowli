@@ -1,18 +1,11 @@
 import { exerciseExposureText } from "../exposure-key";
 import { findExposureLeaks, type ExposureLeak } from "../exposure-leaks";
 import { withoutOrphanKeywords } from "../keyword-families";
-import {
-  agentReanalysisDraft,
-  answersEquivalent,
-  MAX_TEXT_LENGTH,
-  validateLessonExerciseIssues,
-  validatePoolIssues,
-} from "../pool-validation";
+import { MAX_TEXT_LENGTH, validatePoolIssues } from "../pool-validation";
 import { clip, issueFrom, type LessonRuleIssue, type RuleId } from "../rules/catalog";
 import { LESSON_RULES } from "../rules/lesson-rules";
 import { formatRuleReason, formatVictimReason, type RuleReason } from "../rules/rule-reason";
 import type { AgentObjective, LessonExerciseDraft, SubjectModule } from "../types";
-import { blindMatches, blindMismatchFound, blindVariantCandidate } from "./solver";
 import {
   allExamples,
   orderedEntries,
@@ -26,13 +19,13 @@ import {
 } from "./state";
 
 /**
- * Przyjmowanie paczki ćwiczeń agenta (spec §3.3): każdy kandydat przechodzi
- * kontrole na CAŁEJ lekcji (`fixed` + pule wszystkich zagadnień), a odrzucenie
- * wraca do modelu z nazwanym kodem i powodami z id reguł (spec katalogu reguł
- * §4.1). Czyste funkcje nad jawnym stanem.
+ * Reguły lekcji i ujawnienia dla kandydata na CAŁEJ lekcji (`fixed` + pule wszystkich zagadnień),
+ * przykłady kart i usuwanie ćwiczeń — wspólne dla walidacji puli przebiegu bazowego i kontroli
+ * końcowej workera. Odrzucenie ma nazwany kod i zgłoszenia z id reguł (spec katalogu reguł §4.1).
+ * Czyste funkcje nad jawnym stanem.
  */
 
-/** Fabryka zgłoszeń reguł lekcji: limity, ujawnienia i kontrole modelami. */
+/** Fabryka zgłoszeń reguł lekcji: ujawnienia. */
 const lessonIssue = issueFrom(LESSON_RULES);
 
 /** Limity zagadnienia (§3.5): `maxExercises` = `targetCount` + `listenAllowance` + `slack`. */
@@ -47,44 +40,6 @@ export interface AgentCheckContext {
   readonly subject: SubjectModule;
   readonly material: string;
   readonly limits: ReadonlyMap<string, ObjectiveAgentLimits>;
-}
-
-/** Wynik kroku checkera: `na` — krok nie dotyczy; `unavailable` — błąd lub termin checkera (krok przechodzi). */
-export type CheckResult<T> =
-  | { readonly kind: "na" }
-  | { readonly kind: "unavailable" }
-  | { readonly kind: "done"; readonly value: T };
-
-/** Werdykt sędziego podpowiedzi (etap 2b §6.4); `reason` ≤ 200 znaków, tylko dla modelu agenta. */
-export type AgentHintVerdict =
-  | { readonly verdict: "ok" }
-  | { readonly verdict: "unsupported" | "language" | "reveals"; readonly reason: string };
-
-/** Wynik jednej odpowiedzi kontroli otwartej: ocena wiedzy plus teksty braków i błędów (nigdy do Kid DTO). */
-export interface OpenGraded {
-  readonly answer: string;
-  readonly knowledge: "correct" | "partial" | "incorrect";
-  /** Teksty brakujących elementów wymaganych. */
-  readonly missing: readonly string[];
-  /** Błędne stwierdzenia i pomylone pojęcia (jako „said → meant”). */
-  readonly wrong: readonly string[];
-}
-
-/** Kontrola otwarta jest `done` tylko, gdy obie odpowiedzi (dwóch rozwiązujących) mają wynik. */
-export interface OpenCheckOutcome {
-  readonly answers: readonly [OpenGraded, OpenGraded];
-}
-
-export interface CandidateChecks {
-  readonly solve: CheckResult<readonly string[]>;
-  readonly variants: CheckResult<readonly boolean[]>;
-  /**
-   * Czy sędzia wariantów uznał odpowiedź rozwiązującego (różną od klucza) za równoważną kluczowi;
-   * brak pola = kontrola nie dotyczy. Dotyczy typów z `variantCheckTypes`.
-   */
-  readonly solverVariant?: CheckResult<boolean>;
-  readonly hint: CheckResult<AgentHintVerdict>;
-  readonly open: CheckResult<OpenCheckOutcome>;
 }
 
 /**
@@ -109,31 +64,6 @@ export function rejectionOf(
 ): Rejection {
   return { kind, code, reasons, issues, ruleIds: [...new Set(issues.map((issue) => issue.rule))] };
 }
-
-export type PrecheckEntry =
-  | {
-      readonly pass: true;
-      readonly draft: LessonExerciseDraft;
-      readonly sanitized: readonly string[];
-      /** Zgłoszenia reguł `sanitize` przedmiotu (np. usunięta podpowiedź) — noty dla modelu. */
-      readonly notes: readonly LessonRuleIssue[];
-      /** Cytaty zastąpione dokładnym fragmentem materiału przez sanityzację przedmiotu. */
-      readonly quotesSnapped: number;
-    }
-  | { readonly pass: false; readonly rejection: Rejection };
-
-export type AdmitEntry =
-  | {
-      readonly accepted: string;
-      readonly sanitized: readonly string[];
-      readonly unchecked: boolean;
-      /** Noty sanityzacji i usuniętych wariantów (`check.variants`). */
-      readonly notes: readonly LessonRuleIssue[];
-      /** Warianty odpowiedzi usunięte, bo checker uznał je za nierównoważne (spec katalogu reguł §5.3). */
-      readonly removedVariants: readonly string[];
-      readonly quotesSnapped: number;
-    }
-  | { readonly rejected: Rejection };
 
 /** Odrzucenia reguł lekcji i ujawnienia — po referencji szkicu (wadliwe `fixed` nie blokuje kandydatów). */
 export interface LessonSnapshot {
@@ -185,45 +115,10 @@ export function snapshotOf(state: LessonAgentState, ctx: AgentCheckContext): Les
   return { ...rules, leaked: lessonLeaks(state, rules.entries, ctx) };
 }
 
-/** Kolejność przetwarzania paczki: słowa kluczowe na końcu (po pytaniach otwartych swojej rodziny), stabilnie. */
-function processingOrder(keywords: readonly boolean[]): number[] {
-  const indexes = keywords.map((_flag, index) => index);
-  return [...indexes.filter((index) => !keywords[index]), ...indexes.filter((index) => keywords[index])];
-}
-
-function isKeywords(draft: LessonExerciseDraft): boolean {
-  return draft.exerciseType === "lesson_keywords";
-}
-
 function objectiveOf(state: LessonAgentState, objectiveId: string): AgentObjective {
   const objective = state.objectives.find((item) => item.id === objectiveId);
   if (objective === undefined) throw new Error(`unknown objective ${objectiveId}`);
   return objective;
-}
-
-function limitsOf(ctx: AgentCheckContext, objectiveId: string): ObjectiveAgentLimits {
-  const limits = ctx.limits.get(objectiveId);
-  if (limits === undefined) throw new Error(`no limits for objective ${objectiveId}`);
-  return limits;
-}
-
-/** Sanityzacja polityki przedmiotu (oczyszcza szkic przed kontrolami). */
-function sanitizeCandidate(
-  draft: LessonExerciseDraft,
-  ctx: AgentCheckContext,
-): {
-  draft: LessonExerciseDraft;
-  sanitized: readonly string[];
-  notes: readonly LessonRuleIssue[];
-  quotesSnapped: number;
-} {
-  const sanitizedResult = ctx.subject.agentPolicy.sanitize?.(draft, { material: ctx.material }) ?? { draft, removed: [] };
-  return {
-    draft: sanitizedResult.draft,
-    sanitized: sanitizedResult.removed,
-    notes: sanitizedResult.notes ?? [],
-    quotesSnapped: sanitizedResult.quotesSnapped ?? 0,
-  };
 }
 
 function entryLabel(entry: OrderedLessonEntry | undefined): string {
@@ -279,77 +174,9 @@ export type StepOutcome =
   | { readonly ok: false; readonly rejection: Rejection };
 
 /**
- * Reguły ćwiczenia (krok 2): kontrakt, rdzeń i przedmiot ścieżką agenta i bramka przedmiotu —
- * wszystko w jednym odrzuceniu. Gdy kontrakt odrzuca wyłącznie puste napisy w polach opcjonalnych,
- * reguły dalsze i bramka liczą się na kopii bez tych pól (spec katalogu reguł §4.2); przy innych
- * błędach kontraktu zostają same jego zgłoszenia. Kod: pierwszego ustalenia bramki, inaczej `rule_exercise`.
- */
-function exerciseRejection(
-  draft: LessonExerciseDraft,
-  objective: AgentObjective,
-  state: LessonAgentState,
-  ctx: AgentCheckContext,
-): Rejection | undefined {
-  const issues = validateLessonExerciseIssues(draft, ctx.subject, state.topic, { agent: true });
-  // Bramka zakłada poprawny kształt szkicu, więc dostaje szkic spełniający kontrakt albo żaden.
-  const gateDraft = agentReanalysisDraft(draft);
-  const findings = gateDraft === null
-    ? []
-    : (ctx.subject.agentPolicy.exerciseGate?.(gateDraft.draft, objective, { material: ctx.material }) ?? [])
-      .filter((finding) => !gateDraft.stripped.includes(finding.issue.field));
-  const all = [...issues, ...findings.map((finding) => finding.issue)];
-  if (all.length === 0) return undefined;
-  return findings.length > 0 ? reject("rule", findings[0]!.code, all).rejection : reject("rule", "rule_exercise", all).rejection;
-}
-
-/**
- * Kroki 1–4 dla jednego (już oczyszczonego) kandydata na bieżącym stanie.
- * `before` to migawka bieżącego stanu; przy sukcesie zwracana migawka `after`
- * staje się `before` następnego kandydata (każda liczona raz).
- */
-function deterministicSteps(
-  state: LessonAgentState,
-  objectiveId: string,
-  draft: LessonExerciseDraft,
-  before: LessonSnapshot,
-  ctx: AgentCheckContext,
-): StepOutcome {
-  if (draft.objectiveId !== objectiveId) throw new Error(`draft objective ${draft.objectiveId} differs from ${objectiveId}`);
-  const objective = objectiveOf(state, objectiveId);
-  const limits = limitsOf(ctx, objectiveId);
-  const pool = poolOf(state, objectiveId);
-
-  // 1. Limity.
-  if (pool.length >= limits.maxExercises) {
-    return reject("limit", "limit_full", [
-      lessonIssue("lesson.limit_full", {
-        pl: "exercise: zagadnienie ma już komplet ćwiczeń (limit puli)",
-        found: `this objective already has ${pool.length} exercises (limit ${limits.maxExercises}); remove an exercise before submitting another`,
-      }),
-    ]);
-  }
-  if (draft.exerciseType === "lesson_listen_choice") {
-    const isOwnListen = (item: LessonExerciseDraft) => item.objectiveId === objectiveId && item.exerciseType === "lesson_listen_choice";
-    const listenCount = pool.filter((entry) => isOwnListen(entry.draft)).length + state.fixed.filter(isOwnListen).length;
-    if (listenCount >= limits.listenAllowance) {
-      return reject("limit", "limit_listen", [
-        lessonIssue("lesson.limit_listen", {
-          pl: "exerciseType: zagadnienie wyczerpało limit ćwiczeń słuchowych",
-          found: `this objective already has ${listenCount} lesson_listen_choice exercises (allowance ${limits.listenAllowance}); submit other exercise types`,
-        }),
-      ]);
-    }
-  }
-
-  // 2. Reguły ćwiczenia i bramka przedmiotu.
-  const exerciseRejected = exerciseRejection(draft, objective, state, ctx);
-  if (exerciseRejected !== undefined) return { ok: false, rejection: exerciseRejected };
-  return lessonRulesStep(state, objectiveId, draft, before, ctx);
-}
-
-/**
- * Kroki 3–4 (reguły lekcji i ujawnienia) dla kandydata na bieżącym stanie: kandydat odpada, gdy sam
- * łamie regułę albo czyni nową ofiarą inne ćwiczenie (także `fixed`). Wspólne z przebiegiem bazowym.
+ * Reguły lekcji i ujawnienia dla kandydata na bieżącym stanie: kandydat odpada, gdy sam łamie regułę
+ * albo czyni nową ofiarą inne ćwiczenie (także `fixed`). `before` to migawka bieżącego stanu; przy
+ * sukcesie zwracana migawka staje się `before` następnego kandydata (każda liczona raz).
  */
 export function lessonRulesStep(
   state: LessonAgentState,
@@ -367,7 +194,7 @@ export function lessonRulesStep(
   const entry: AgentPoolEntry = { id, draft: candidate };
   const next = withPool(taken.state, objectiveId, [...pool, entry]);
 
-  // 3. Reguły lekcji: kandydat odrzucony albo nowe odrzucenie innego ćwiczenia.
+  // Reguły lekcji: kandydat odrzucony albo nowe odrzucenie innego ćwiczenia.
   const rules = lessonRules(next, ctx);
   const ownPoolIssues = rules.poolRejected.get(candidate);
   if (ownPoolIssues !== undefined) return reject("lesson", "lesson_pool", ownPoolIssues);
@@ -378,7 +205,7 @@ export function lessonRulesStep(
   const poolVictims = newlyRejected(rules.poolRejected, before.poolRejected, candidate);
   if (poolVictims.length > 0) return { ok: false, rejection: victimRejection("lesson_pool", poolVictims, rules.entries) };
 
-  // 4. Ujawnienia (tryb generation): kandydat ofiarą albo nowa ofiara (także `fixed`).
+  // Ujawnienia (tryb generation): kandydat ofiarą albo nowa ofiara (także `fixed`).
   const leaked = lessonLeaks(next, rules.entries, ctx);
   const ownLeak = leaked.get(candidate);
   if (ownLeak !== undefined) return reject("leak", "leak_victim", [leakVictimIssue(ownLeak, rules.entries, ctx)]);
@@ -390,261 +217,6 @@ export function lessonRulesStep(
 
 function reject(kind: Rejection["kind"], code: string, issues: readonly LessonRuleIssue[]): { ok: false; rejection: Rejection } {
   return { ok: false, rejection: rejectionOf(kind, code, issues) };
-}
-
-/**
- * Sanityzacja i kroki 1–4 dla paczki (§3.3) na roboczej kopii stanu: kolejni
- * kandydaci są do niej dokładani, więc duplikat w paczce odpada już tutaj.
- * Słowa kluczowe idą na końcu paczki (po pytaniach otwartych swojej rodziny);
- * wyniki w indeksach wejścia. Stan wejściowy się nie zmienia.
- */
-export function precheckBatch(
-  state: LessonAgentState,
-  objectiveId: string,
-  drafts: readonly LessonExerciseDraft[],
-  ctx: AgentCheckContext,
-): PrecheckEntry[] {
-  const results: PrecheckEntry[] = new Array(drafts.length);
-  let working = state;
-  let before = snapshotOf(state, ctx);
-  for (const index of processingOrder(drafts.map(isKeywords))) {
-    const draft = drafts[index]!;
-    const sanitized = sanitizeCandidate(draft, ctx);
-    const outcome = deterministicSteps(working, objectiveId, sanitized.draft, before, ctx);
-    if (!outcome.ok) {
-      results[index] = { pass: false, rejection: outcome.rejection };
-      continue;
-    }
-    working = outcome.state;
-    before = outcome.snapshot;
-    results[index] = {
-      pass: true,
-      draft: sanitized.draft,
-      sanitized: sanitized.sanitized,
-      notes: sanitized.notes,
-      quotesSnapped: sanitized.quotesSnapped,
-    };
-  }
-  return results;
-}
-
-/** Kod i zgłoszenie sędziego podpowiedzi (§6.4); powód sędziego trafia do `found`. */
-function hintFinding(verdict: AgentHintVerdict): { code: string; issue: LessonRuleIssue } | undefined {
-  if (verdict.verdict === "ok") return undefined;
-  const [code, label] =
-    verdict.verdict === "unsupported"
-      ? (["hint_unsupported", "not supported by the material"] as const)
-      : verdict.verdict === "language"
-        ? (["hint_language", "not correct in the language of the instructions"] as const)
-        : (["hint_reveals_paraphrase", "giving away the answer or a required element in other words"] as const);
-  const reason = verdict.reason.trim() === "" ? "" : `: ${clip(verdict.reason, undefined, { quote: false })}`;
-  return {
-    code,
-    issue: lessonIssue("check.hint_judge", {
-      pl: "hint: sędzia podpowiedzi odrzucił podpowiedź",
-      found: `the hint judge found the hint ${label}${reason}`,
-    }),
-  };
-}
-
-/**
- * Zgłoszenie kontroli otwartej: pierwsza nieprzyjęta odpowiedź. Błędy wygrywają z brakami:
- * odpowiedź z błędnymi stwierdzeniami albo `incorrect` to przypadek „błędy” (sprawdź model i
- * kryteria z materiałem), a „braki” (rozluźnij kryteria) tylko `partial` bez błędów — inaczej
- * odpowiedź sprzeczna z materiałem skłaniałaby agenta do luzowania kryteriów (§13). Lista błędów
- * jest zawsze, gdy niepusta, także obok braków.
- */
-function openFinding(outcome: OpenCheckOutcome): { code: string; issue: LessonRuleIssue } | undefined {
-  const failed = outcome.answers.find((graded) => graded.knowledge !== "correct");
-  if (failed === undefined) return undefined;
-  const list = (texts: readonly string[]) => (texts.length === 0 ? "nothing" : texts.map((text) => clip(text)).join(", "));
-  const wrongFirst = failed.wrong.length > 0 || failed.knowledge === "incorrect";
-  const parts = [
-    wrongFirst
-      ? "an answer based on the material was graded as containing errors."
-      : "a correct answer that follows the question was not accepted: it lacks required elements.",
-    `Answer: ${clip(failed.answer)}.`,
-  ];
-  if (failed.missing.length > 0 || !wrongFirst) parts.push(`Missing: ${list(failed.missing)}.`);
-  if (failed.wrong.length > 0 || (wrongFirst && failed.missing.length === 0)) parts.push(`Errors: ${list(failed.wrong)}.`);
-  return {
-    code: "open_not_accepted",
-    issue: lessonIssue("check.open_answer", {
-      pl: "requiredElements: ocena nie przyjęła odpowiedzi niezależnego rozwiązującego",
-      found: parts.join(" "),
-    }),
-  };
-}
-
-/** Wariant odrzucony przez checker: pozycja w `acceptedAnswers` szkicu i tekst. */
-interface RemovedVariant {
-  readonly index: number;
-  readonly text: string;
-}
-
-function removedVariantsOf(draft: LessonExerciseDraft, variants: CandidateChecks["variants"]): RemovedVariant[] {
-  if (variants.kind !== "done") return [];
-  return draft.acceptedAnswers.flatMap((text, index) => (variants.value[index] === false ? [{ index, text }] : []));
-}
-
-function variantNote(removed: RemovedVariant, draft: LessonExerciseDraft): LessonRuleIssue {
-  return lessonIssue("check.variants", {
-    field: `acceptedAnswers[${removed.index}]`,
-    pl: "acceptedAnswers: wariant nie był równoważny odpowiedzi i został usunięty",
-    found: `variant ${clip(removed.text)} removed: not equivalent to the answer ${clip(draft.answer)}; do not add it again`,
-  });
-}
-
-function variantAddedNote(text: string, index: number, draft: LessonExerciseDraft): LessonRuleIssue {
-  return lessonIssue("check.variants", {
-    field: `acceptedAnswers[${index}]`,
-    pl: "acceptedAnswers: wariant z odpowiedzi niezależnego rozwiązującego został dopisany",
-    found: `variant ${clip(text)} added: the independent solver answered it and the variant check judged it equivalent to the answer ${clip(draft.answer)}; the child's answer is accepted in this wording too`,
-  });
-}
-
-/**
- * Odpowiedź rozwiązującego do dopisania jako wariant: różna od klucza, uznana przez sędziego wariantów
- * za równoważną i niebędąca usuniętym wariantem (ten sędzia już odrzucił).
- */
-function solverVariantOf(
-  draft: LessonExerciseDraft,
-  removed: readonly RemovedVariant[],
-  checks: CandidateChecks,
-  ctx: AgentCheckContext,
-): string | undefined {
-  const { solve, solverVariant } = checks;
-  if (solve.kind !== "done" || solverVariant?.kind !== "done" || !solverVariant.value) return undefined;
-  const normalizer = ctx.subject.normalizer;
-  const candidate = blindVariantCandidate(draft, solve.value, normalizer);
-  return candidate === undefined || removed.some((variant) => answersEquivalent(candidate, variant.text, normalizer)) ? undefined : candidate;
-}
-
-/**
- * Kroki checkera (spec katalogu reguł §5.3) na oczyszczonym szkicu (`draft`, bez wariantów
- * `removed`): `na` przechodzi, `unavailable` przechodzi z `unchecked`, `done` może odrzucić.
- * Ślepe rozwiązanie wygrywa z sędzią podpowiedzi i kontrolą otwartą; te dwie są oceniane razem
- * (jedno odrzucenie z kodem pierwszej — podpowiedzi — i wszystkimi zgłoszeniami, żeby agent
- * poprawił wszystko naraz). Odpowiedź pasująca tylko do usuniętego wariantu: w ślepym rozwiązaniu
- * rozjazd z wyjaśnieniem, w kontroli otwartej ocena bez podstaw (`unavailable`).
- */
-function checkerSteps(
-  draft: LessonExerciseDraft,
-  removed: readonly RemovedVariant[],
-  checks: CandidateChecks,
-  ctx: AgentCheckContext,
-): { ok: true; unchecked: boolean } | { ok: false; rejection: Rejection } {
-  const { solve, hint } = checks;
-  const normalizer = ctx.subject.normalizer;
-  const onlyRemoved = (answer: string): RemovedVariant | undefined =>
-    [draft.answer, ...draft.acceptedAnswers].some((key) => answersEquivalent(answer, key, normalizer))
-      ? undefined
-      : removed.find((variant) => answersEquivalent(answer, variant.text, normalizer));
-
-  if (solve.kind === "done" && !blindMatches(draft, solve.value, normalizer)) {
-    const viaRemoved = solve.value.length === 1 ? onlyRemoved(solve.value[0]!) : undefined;
-    const detail = blindMismatchFound(draft, solve.value, normalizer);
-    return reject("blind", "blind_mismatch", [
-      lessonIssue("check.blind_solve", {
-        pl: "answer: niezależny rozwiązujący odpowiedział inaczej niż klucz",
-        found: viaRemoved === undefined
-          ? detail
-          : `${detail}; it matched only the removed variant ${clip(viaRemoved.text)}, which the variant check judged not ` +
-            "equivalent: do not add it again; make the stimulus point to the key only",
-      }),
-    ]);
-  }
-  // Ocena przyjęta tylko dzięki usuniętemu wariantowi nie jest dowodem: kontrola bez wyniku.
-  const open: CandidateChecks["open"] =
-    checks.open.kind === "done" &&
-    removed.length > 0 &&
-    checks.open.value.answers.some((graded) => graded.knowledge === "correct" && onlyRemoved(graded.answer) !== undefined)
-      ? { kind: "unavailable" }
-      : checks.open;
-  const findings = [hint.kind === "done" ? hintFinding(hint.value) : undefined, open.kind === "done" ? openFinding(open.value) : undefined];
-  const present = findings.filter((finding) => finding !== undefined);
-  if (present.length > 0) {
-    return reject(findings[0] !== undefined ? "hint" : "open", present[0]!.code, present.map((finding) => finding.issue));
-  }
-  const unavailable = [solve, checks.variants, hint, open].some((result) => result.kind === "unavailable");
-  return { ok: true, unchecked: unavailable };
-}
-
-/**
- * Przyjmuje kandydatów `pass` po kolei na bieżącym stanie, potem kroki checkera z `checks` (ten
- * sam indeks co `prechecked`). Kolejność jak w `precheckBatch`; wyniki w indeksach wejścia.
- *
- * Bez zmian wariantów kroki 1–4 idą przed checkerem (między `precheck` a `admit` inne
- * zagadnienie mogło dodać ćwiczenie). Z wariantami odrzuconymi przez checker (spec katalogu reguł
- * §5.3): oczyszczony szkic bez nich, ślepe rozwiązanie, sędzia i kontrola otwarta na oczyszczonym
- * szkicu, potem kroki 1–4 powtórzone na nim (odrzucenie z kodem kroku), a do puli trafia oczyszczony
- * szkic z notą `check.variants`. Z odpowiedzią rozwiązującego uznaną przez sędziego za równoważną
- * (`solverVariant`) ta odpowiedź jest dopisana do wariantów zamiast rozjazdu `blind_mismatch`, a
- * kroki 1–4 liczą się na szkicu z nią; gdy jej nie przepuszczą, ćwiczenie jest odrzucane jak bez niej.
- */
-export function admitBatch(
-  state: LessonAgentState,
-  objectiveId: string,
-  prechecked: readonly PrecheckEntry[],
-  checks: readonly CandidateChecks[],
-  ctx: AgentCheckContext,
-): { state: LessonAgentState; results: AdmitEntry[] } {
-  if (checks.length !== prechecked.length) {
-    throw new Error(`checks length ${checks.length} differs from prechecked length ${prechecked.length}`);
-  }
-  const results: AdmitEntry[] = new Array(prechecked.length);
-  const order = processingOrder(prechecked.map((entry) => entry.pass && isKeywords(entry.draft)));
-  let current = state;
-  let before = snapshotOf(state, ctx);
-  for (const index of order) {
-    const entry = prechecked[index]!;
-    if (!entry.pass) {
-      results[index] = { rejected: entry.rejection };
-      continue;
-    }
-    const check = checks[index]!;
-    const removed = removedVariantsOf(entry.draft, check.variants);
-    const cleaned = removed.length === 0
-      ? entry.draft
-      : { ...entry.draft, acceptedAnswers: entry.draft.acceptedAnswers.filter((_variant, position) => !removed.some((item) => item.index === position)) };
-    const added = solverVariantOf(cleaned, removed, check, ctx);
-    const draft = added === undefined ? cleaned : { ...cleaned, acceptedAnswers: [...cleaned.acceptedAnswers, added] };
-    const rejectWith = (rejection: Rejection) => {
-      results[index] = { rejected: rejection };
-    };
-    let outcome = removed.length === 0 && added === undefined ? deterministicSteps(current, objectiveId, draft, before, ctx) : undefined;
-    if (outcome !== undefined && !outcome.ok) {
-      rejectWith(outcome.rejection);
-      continue;
-    }
-    const checked = checkerSteps(draft, removed, check, ctx);
-    if (!checked.ok) {
-      rejectWith(checked.rejection);
-      continue;
-    }
-    outcome ??= deterministicSteps(current, objectiveId, draft, before, ctx);
-    if (!outcome.ok) {
-      // Dopisany wariant nie przeszedł walidacji (duplikat, limit, ujawnienie): rozjazd liczy się jak bez niego.
-      const mismatch = added === undefined ? undefined : checkerSteps(cleaned, removed, check, ctx);
-      rejectWith(mismatch !== undefined && !mismatch.ok ? mismatch.rejection : outcome.rejection);
-      continue;
-    }
-    current = outcome.state;
-    before = outcome.snapshot;
-    results[index] = {
-      accepted: outcome.id,
-      sanitized: entry.sanitized,
-      unchecked: checked.unchecked,
-      notes: [
-        ...entry.notes,
-        ...removed.map((variant) => variantNote(variant, entry.draft)),
-        ...(added === undefined ? [] : [variantAddedNote(added, draft.acceptedAnswers.length - 1, draft)]),
-      ],
-      removedVariants: removed.map((variant) => variant.text),
-      quotesSnapped: entry.quotesSnapped,
-    };
-  }
-  return { state: current, results };
 }
 
 /** Najwyżej tyle przykładów kart na zagadnienie. */

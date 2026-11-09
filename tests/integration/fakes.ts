@@ -76,7 +76,7 @@ export async function fakeGeneration(options: FakeGenerationOptions = {}): Promi
       mediaStore: store,
       lessonAgent: {
         agent,
-        checker: options.checker ?? new FakeExerciseChecker({ unavailable: true }),
+        checker: options.checker ?? new FakeExerciseChecker(),
         policy: options.policy ?? {},
       },
     },

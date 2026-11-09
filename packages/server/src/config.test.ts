@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_LESSON_STT_MODEL, agentGraderFromEnv, defaultMediaSettings, graderFromEnv, lessonAgentPublicFromEnv, lessonAgentSettingsFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv, speechFromEnv, ttsInstructionsFor, ttsVoiceFor } from "./config";
+import { DEFAULT_LESSON_STT_MODEL, defaultMediaSettings, graderFromEnv, lessonAgentPublicFromEnv, lessonAgentSettingsFromEnv, lessonSpeechFromEnv, mediaSettingsFromEnv, sessionActivityFromEnv, speechFromEnv, ttsInstructionsFor, ttsVoiceFor } from "./config";
 import { withConfigDefaults } from "./config-defaults";
 import { createTestRecorder } from "./providers/usage/test-recorder";
 
@@ -313,14 +313,19 @@ describe("lessonAgentSettingsFromEnv", () => {
       provider: { require_parameters: true }, checkerProvider: { require_parameters: true },
     });
     expect(settings.policy).toEqual({
-      maxStepsPerObjective: 8, concurrency: 4, checkerConcurrency: 4,
-      objectiveTimeoutMs: 300_000, checkerTimeoutMs: 90_000, callTimeoutMs: 90_000, runBudgetUsd: 1,
+      concurrency: 4, checkerConcurrency: 4, checkerTimeoutMs: 90_000, callTimeoutMs: 90_000, runBudgetUsd: 1,
     });
     const tuned = lessonAgentSettingsFromEnv(base({
-      UMIEM_LESSON_AGENT_MAX_STEPS: "5", UMIEM_LESSON_AGENT_CONCURRENCY: "2", UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "0.25",
+      UMIEM_LESSON_AGENT_CONCURRENCY: "2", UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "0.25",
       UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS: "45000",
     }))!;
-    expect(tuned.policy).toMatchObject({ maxStepsPerObjective: 5, concurrency: 2, runBudgetUsd: 0.25, callTimeoutMs: 45_000 });
+    expect(tuned.policy).toMatchObject({ concurrency: 2, runBudgetUsd: 0.25, callTimeoutMs: 45_000 });
+  });
+
+  it("usunięte zmienne pętli agenta (MAX_STEPS, OBJECTIVE_TIMEOUT_MS) są ignorowane, także z błędną wartością", () => {
+    const old = { UMIEM_LESSON_AGENT_MAX_STEPS: "abc", UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS: "0" };
+    expect(lessonAgentSettingsFromEnv(base(old))).toEqual(lessonAgentSettingsFromEnv(base()));
+    expect(lessonAgentSettingsFromEnv(withConfigDefaults(old))).toBeUndefined();
   });
 
   it("działa na surowym env, bez withConfigDefaults", () => {
@@ -336,7 +341,6 @@ describe("lessonAgentSettingsFromEnv", () => {
   });
 
   it("błędna liczba, wysiłek albo budżet to błąd z nazwą zmiennej", () => {
-    expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_MAX_STEPS: "abc" }))).toThrow(/UMIEM_LESSON_AGENT_MAX_STEPS/);
     expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_CONCURRENCY: "0" }))).toThrow(/UMIEM_LESSON_AGENT_CONCURRENCY/);
     expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS: "0" }))).toThrow(/UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS/);
     expect(() => lessonAgentSettingsFromEnv(base({ UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "-1" }))).toThrow(/UMIEM_LESSON_AGENT_RUN_BUDGET_USD/);
@@ -351,7 +355,7 @@ describe("lessonAgentSettingsFromEnv", () => {
   });
 
   it("błędna wartość jest odrzucana także bez klucza (walidacja przed kluczem)", () => {
-    expect(() => lessonAgentSettingsFromEnv(withConfigDefaults({ UMIEM_LESSON_AGENT_MAX_STEPS: "abc" }))).toThrow(/UMIEM_LESSON_AGENT_MAX_STEPS/);
+    expect(() => lessonAgentSettingsFromEnv(withConfigDefaults({ UMIEM_LESSON_AGENT_CONCURRENCY: "abc" }))).toThrow(/UMIEM_LESSON_AGENT_CONCURRENCY/);
     expect(() => lessonAgentSettingsFromEnv(withConfigDefaults({ UMIEM_LESSON_AGENT_REASONING: "turbo" }))).toThrow(/UMIEM_LESSON_AGENT_REASONING/);
     expect(() => lessonAgentSettingsFromEnv(withConfigDefaults({ UMIEM_LESSON_AGENT_CHECKER_MODEL: "google/gemini-3.8-pro" })))
       .toThrow(/UMIEM_LESSON_AGENT_CHECKER_MODEL/);
@@ -417,7 +421,7 @@ describe("lessonAgentPublicFromEnv", () => {
   });
 
   it("nie rzuca na błędnych liczbach i wysiłkach", () => {
-    const env = withConfigDefaults({ ...KEY, UMIEM_LESSON_AGENT_MAX_STEPS: "abc", UMIEM_LESSON_AGENT_REASONING: "turbo" });
+    const env = withConfigDefaults({ ...KEY, UMIEM_LESSON_AGENT_CONCURRENCY: "abc", UMIEM_LESSON_AGENT_REASONING: "turbo" });
     expect(() => lessonAgentPublicFromEnv(env)).not.toThrow();
   });
 
@@ -455,52 +459,5 @@ describe("lessonAgentPublicFromEnv", () => {
     it("tryb fake → brak pola", () => {
       expect(lessonAgentPublicFromEnv({ UMIEM_FAKE_PROVIDERS: "1", ...grader })).not.toHaveProperty("openCheckService");
     });
-  });
-});
-
-describe("agentGraderFromEnv", () => {
-  const base = {
-    UMIEM_GRADER_BASE_URL: "https://grader.example/v1",
-    UMIEM_GRADER_API_KEY: "secret",
-    UMIEM_GRADER_MODEL: "cheap-1",
-  };
-
-  it("pełna konfiguracja → provider i domyślny timeout 8000", () => {
-    const deps = agentGraderFromEnv({ ...base });
-    expect(deps?.timeoutMs).toBe(8000);
-    expect(deps?.provider.model).toBe("cheap-1");
-  });
-
-  it("UMIEM_GRADER_TIMEOUT_MS nadpisuje timeout", () => {
-    expect(agentGraderFromEnv({ ...base, UMIEM_GRADER_TIMEOUT_MS: "1234" })?.timeoutMs).toBe(1234);
-  });
-
-  it("brak klucza → undefined", () => {
-    expect(agentGraderFromEnv({ UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL, UMIEM_GRADER_MODEL: base.UMIEM_GRADER_MODEL })).toBeUndefined();
-    expect(agentGraderFromEnv({})).toBeUndefined();
-  });
-
-  it("klucz bez MODEL → ten sam błąd co graderFromEnv", () => {
-    const env = { UMIEM_GRADER_API_KEY: "secret", UMIEM_GRADER_BASE_URL: base.UMIEM_GRADER_BASE_URL };
-    expect(() => agentGraderFromEnv(env)).toThrow(/all of BASE_URL, API_KEY and MODEL/);
-    expect(() => graderFromEnv(env)).toThrow(/all of BASE_URL, API_KEY and MODEL/);
-  });
-
-  it("adapter zapisuje zdarzenia z etykietą lesson_generation/check_grade", async () => {
-    const events: { feature: string; operation?: string }[] = [];
-    const usage = { record: (event: { feature: string; operation?: string }) => { events.push(event); }, flush: async () => {} };
-    const deps = agentGraderFromEnv({ ...base }, usage as never)!;
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response("x", { status: 500 })) as typeof fetch;
-    try {
-      await expect(deps.provider.grade({
-        subjectTitle: "s", topicTitle: "t", roleProfile: { gradingRole: "g", almostDefinition: "a" },
-        instruction: "i", stimulus: null, objective: { description: "d", errorCategories: [] },
-        acceptedAnswers: ["a"], childAnswer: "x",
-      }, AbortSignal.timeout(1000))).rejects.toThrow();
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-    expect(events).toEqual([expect.objectContaining({ feature: "lesson_generation", operation: "check_grade" })]);
   });
 });

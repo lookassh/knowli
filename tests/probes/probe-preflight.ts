@@ -1,4 +1,4 @@
-import { lessonAgentPolicyFromEnv } from "@learning/server";
+import { graderConfigured, lessonAgentPolicyFromEnv } from "@learning/server";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import { OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
 import { DEFAULT_BASE_URL as LLM_DEFAULT_BASE_URL } from "../../packages/server/src/providers/openai/llm";
@@ -62,15 +62,12 @@ export function probePreflight(
   if ("unavailable" in deps) {
     throw new Error("Brak klucza OpenRouter dla agenta puli (UMIEM_LESSON_AGENT_API_KEY / OPENROUTER_API_KEY) — próba nie ma czego wywołać.");
   }
-  if (school && deps.grader === undefined) {
-    throw new Error("Próba szkoły: grader agenta nie został złożony mimo UMIEM_GRADER_* — sprawdź konfigurację.");
-  }
 
   const allowHost = options.allowHost;
   const hosts = [
     probeEndpointHost(OPENROUTER_BASE_URL, "UMIEM_LESSON_AGENT (agent i checker)", allowHost),
     ...(school ? [probeEndpointHost(env.UMIEM_LLM_BASE_URL?.trim() || LLM_DEFAULT_BASE_URL, "UMIEM_LLM_BASE_URL", allowHost)] : []),
-    ...(deps.grader !== undefined ? [probeEndpointHost(env.UMIEM_GRADER_BASE_URL, "UMIEM_GRADER_BASE_URL", allowHost)] : []),
+    ...(graderConfigured(env) ? [probeEndpointHost(env.UMIEM_GRADER_BASE_URL, "UMIEM_GRADER_BASE_URL", allowHost)] : []),
   ];
 
   const runBudgetUsd = lessonAgentPolicyFromEnv(env).runBudgetUsd;

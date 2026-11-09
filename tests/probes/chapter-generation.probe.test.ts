@@ -52,7 +52,6 @@ import {
 } from "./probe-costs";
 import { loadDotEnv, resolveOutsideRepoPath } from "./probe-helpers";
 import { probePreflight } from "./probe-preflight";
-import { cleanupCounters, recordingAgent, submissionMetrics, type AgentSubmission } from "./probe-submissions";
 
 const { eq } = createRequire(new URL("../../packages/server/package.json", import.meta.url))("drizzle-orm") as typeof import("../../packages/server/node_modules/drizzle-orm");
 
@@ -330,15 +329,15 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     const lessonAgent = lessonAgentDepsFromEnv(env, usage);
     if ("unavailable" in lessonAgent) throw new Error("Brak klucza OpenRouter dla agenta puli — próba nie ma czego wywołać.");
     const models = {
-      generator: lessonAgent.agent.model,
+      generator: (lessonAgent.agent as { readonly model?: string }).model ?? null,
       checker: env.UMIEM_LESSON_AGENT_CHECKER_MODEL ?? null,
-      grader: lessonAgent.grader === undefined ? null : env.UMIEM_GRADER_MODEL ?? null,
+      grader: base.graderAvailable === true ? env.UMIEM_GRADER_MODEL ?? null : null,
       // Etap zagadnień (`UMIEM_LLM_*`): szkoła i od etapu 5a rozdział; bramka wymaga tego samego modelu i reasoning co generator.
       ...(subjectKind === "grammar" ? {} : { objectives: base.llm.model, objectivesReasoning: env.UMIEM_LLM_REASONING ?? null }),
     };
 
     // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
-    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: lessonAgent.grader !== undefined, variant: variantOf(subjectKind), ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
+    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: base.graderAvailable === true, variant: variantOf(subjectKind), ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
 
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
@@ -355,20 +354,18 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       mkdirSync(directory, { recursive: true });
     }
 
-    // Wysłane ćwiczenia z odpowiedzią walidacji (przyczyny odrzuceń nie trafiają do punktu kontrolnego) — tylko do pliku wyników.
-    const submissions: AgentSubmission[] = [];
     // Etykieta bieżącego runu (`main`, potem `add` dla „+N”): wysłane ćwiczenia i wiersze dziennika są nią znakowane, a miary liczone osobno per run.
     let currentRun = "main";
     const services = createServices({
       db: testDatabase().db,
-      generation: { ...base, lessonAgent: { ...lessonAgent, agent: recordingAgent(lessonAgent.agent, submissions, () => currentRun) } },
+      generation: { ...base, lessonAgent },
     });
 
     const titleOf = { chapter: "Angielski — rozdział", school: `szkoła (${schoolSubjectTitle})`, grammar: `Angielski — gramatyka (${grammarTopicId})` } as const;
     line("");
     line(`=== Próba generowania agentem puli: ${titleOf[subjectKind]} ===`);
     line(`modele=${JSON.stringify(models)} hosty=${preflight.hosts.join(", ")} pula=${poolSize} materiał=${material.length} znaków; ` +
-      `openCheck=${lessonAgent.grader === undefined ? "off" : "on"}; budżet runu=${runBudgetUsd.toFixed(2)} USD${addCount === undefined ? "" : ` (+N=${addCount}: drugi run)`}, ` +
+      `budżet runu=${runBudgetUsd.toFixed(2)} USD${addCount === undefined ? "" : ` (+N=${addCount}: drugi run)`}, ` +
       `wydane dotąd=${ledger.spentUsd.toFixed(4)} z ${ledger.capUsd} USD`);
 
     // Wiersze dzienników generacji (mogą nieść kody i liczby, a w błędach — szczegóły) tylko do pliku wyników, nie na konsolę.
@@ -474,11 +471,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
 
     const started = Date.now();
     const resultsPath = join(outDir, `chapter-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);
-    /** Miary jednego runu: wysłane ćwiczenia, kody odrzuceń z dziennika i liczniki oczyszczeń tego runu. */
-    const runMetrics = (run: string) => ({
-      ...submissionMetrics(submissions.filter((entry) => entry.run === run), lessonLogByRun[run] ?? []),
-      cleanup: cleanupCounters(lessonLogByRun[run] ?? []),
-    });
     /** Części pliku wyników liczone przy każdym zapisie: koszt (per operacja i per run), tokeny, dziennik generacji, miary przebiegu. */
     const liveParts = (): Record<string, unknown> => ({
       costUsd: {
@@ -499,8 +491,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         }, {}),
       },
       lessonLog: lessonLog.map((text) => text.replace(/run=[0-9a-f-]+ /u, "")),
-      submissionMetrics: { main: runMetrics("main"), ...(currentRun === "main" ? {} : { [currentRun]: runMetrics(currentRun) }) },
-      agentSubmissions: submissions,
     });
     /** Plik wyników: wspólna część (wejście, modele, szacunek) i stan przebiegu; koszt i dziennik dokłada zapis. */
     const resultsOf = (run: Record<string, unknown>): Record<string, unknown> => ({
@@ -510,7 +500,6 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
       material: materialPath === undefined ? { file: null, chars: material.length } : { file: basename(materialPath), sha256: sha256File(materialPath), chars: material.length },
       models,
       hosts: preflight.hosts,
-      openCheck: lessonAgent.grader !== undefined,
       poolSize,
       estimateUsd: preflight.estimateUsd,
       runBudgetUsd,
@@ -587,13 +576,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
         line("Brak szkicu po generacji — nie ma co raportować.");
         return;
       }
-      const { cleanup, ...metrics } = runMetrics("main");
-      // Miary „N/M”: suma liczników / liczba różnych kluczy (kodów, id reguł); same liczby, rozbicie per klucz tylko w pliku wyników.
-      const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0);
-      line(`Dziennik generacji: wierszy=${lessonLog.length} wysłane=${metrics.submitted} przyjęte=${metrics.accepted} odrzucone=${metrics.submitted - metrics.accepted} przyjęte1=${metrics.acceptedFirstCall} wywołania=${metrics.submitCalls} ` +
-        `kody odrzuceń=${total(metrics.rejectedByCode)}/${Object.keys(metrics.rejectedByCode).length} reguły=${total(metrics.rejectedByRule)}/${Object.keys(metrics.rejectedByRule).length} ` +
-        `noty=${total(metrics.acceptedWithNotes)}/${Object.keys(metrics.acceptedWithNotes).length} otwarte=${metrics.openAnswers} zPodpowiedzią=${metrics.openAnswersWithHint} ` +
-        `oczyszczenia: podpowiedzi=${cleanup.hintsRemoved} warianty=${cleanup.variantsRemoved} cytaty=${cleanup.quotesSnapped}`);
+      line(`Dziennik generacji: wierszy=${lessonLog.length}`);
       results.draft = reportDraft(draft);
 
       // Zrzut szkicu po runie agenta (przed „+N” i próbą publikacji).

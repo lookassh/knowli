@@ -63,13 +63,6 @@ describe("schoolAgentPolicy — wartości i typy", () => {
     expect(schoolAgentPolicy.ruleNotes?.["lesson.leak_source"]?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("dopisek check.blind_solve szkoły: jednoznaczność wyboru i luk z bankiem (bez zdania źródłowego przedmiotów angielskich)", () => {
-    const note = schoolAgentPolicy.ruleNotes?.["check.blind_solve"] ?? "";
-    expect(note).toContain("lesson_choice has exactly one correct option");
-    expect(note).toContain("never two gaps whose words could be swapped");
-    expect(note).not.toContain("Polish source sentence");
-  });
-
   it("nie ma wymaganych typów ani braków", () => {
     expect(schoolAgentPolicy.requiredTypes).toBeUndefined();
     expect(schoolAgentPolicy.objectiveGaps).toBeUndefined();

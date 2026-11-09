@@ -1,19 +1,8 @@
-import { LessonExerciseTypeSchema } from "@learning/contracts";
-import { AppError } from "../../../errors";
-import { removeExercise, type AgentCheckContext, type ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
-import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
-import { createLessonAgentState, orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
-import {
-  lessonInvariantCheck,
-  objectiveAgentLimits,
-  objectiveStatus,
-  objectiveStatusFor,
-  stageGapOf,
-  type ObjectiveStatus,
-} from "../../../domain/lessons/agent/status";
+import type { AgentCheckContext, ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
+import { createLessonAgentState, type LessonAgentState } from "../../../domain/lessons/agent/state";
+import { objectiveAgentLimits, objectiveStatus, stageGapOf, type ObjectiveStatus } from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { outsideStagePath } from "../../../domain/lessons/stages";
-import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type {
   AgentObjective,
   DynamicTopicData,
@@ -21,29 +10,14 @@ import type {
   LessonTopic,
   SubjectModule,
 } from "../../../domain/lessons/types";
-import type { LessonExerciseCheckerProvider, LessonPoolAgentProvider, LlmLessonStageCounts, RunCostSink } from "../../../ports/ai";
-import { GenerationProviderError } from "../../../ports/generation-error";
-import { AgentCheckRun, CHECK_COUNTER_KEYS, type AgentCheckGrader, type CheckCounterKey } from "./lesson-agent-check-run";
-import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
+import type { LlmLessonStageCounts } from "../../../ports/ai";
 import { listenChoiceAllowance, mergeExamples, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
-import { objectiveAgentInput } from "./lesson-pool-agent-input";
-import {
-  agentFailureOf,
-  DEFAULT_LESSON_AGENT_POLICY,
-  OBJECTIVE_TIMEOUT_REASON,
-  RUN_TIMEOUT_REASON,
-  RunCostMeter,
-  type AgentFailure,
-  type LessonAgentPolicy,
-  type RunBudgetSink,
-} from "./lesson-pool-agent-policy";
-import { createObjectiveTools, type ObjectiveToolsStats, type RejectionLogEntry } from "./lesson-pool-agent-tools";
+import type { AgentFailure } from "./lesson-pool-agent-policy";
+import type { RejectionLogEntry } from "./lesson-pool-agent-tools";
 
 /**
- * Kierownik agenta puli lekcji (spec etapu 1 §7, etapu 2a §6): rozwiązuje
- * zagadnienia (katalog albo dane wejścia), woła hak tematu, uruchamia
- * podagentów zagadnień równolegle na wspólnym stanie lekcji, zamyka każde
- * zagadnienie, woła hak zapisu szeregowo i kończy kontrolą końcową. Bez bazy i
+ * Typy wejścia i wyniku próby generowania puli lekcji (przebieg bazowy, `lesson-baseline-pool.ts`) oraz
+ * wspólny stan startowy: limity zagadnień, tryb „dodaj N” i zagadnienia do wygenerowania. Bez bazy i
  * bez identyfikatorów przedmiotów.
  */
 
@@ -113,42 +87,30 @@ export interface LessonPoolAgentRunInput {
    * kontrolnego albo szkicu.
    */
   readonly initialExamples?: Readonly<Record<string, readonly string[]>>;
-  /** `true` = `submit` ignoruje przykłady (ustalone, np. ze szkicu w trybie „dodaj N”); brak = `false`. */
+  /** `true` = przykłady z wyjścia modelu są ignorowane (ustalone, np. ze szkicu w trybie „dodaj N”); brak = `false`. */
   readonly examplesFixed?: boolean;
   /** Stałe źródła ujawnień spoza zagadnień (np. zdania historyjki szkicu). */
   readonly extraExposureSources?: readonly string[];
   /** Brak = `{ mode: "pool" }`. W trybie `add` `skipObjectives` nie ma znaczenia: działa tylko `objectiveId`. */
   readonly target?: LessonPoolAgentTarget;
   /**
-   * Wołany raz, od razu po rozwiązaniu tematu (`catalog`/`input`), przed podagentami; błąd przerywa run
-   * jak błąd `onObjectiveSettled`.
+   * Wołany raz, od razu po rozwiązaniu tematu (`catalog`/`input`), przed wywołaniami modelu; błąd przerywa
+   * run jak błąd `onObjectiveSettled`.
    */
   readonly onObjectivesResolved?: (resolved: ResolvedObjectives) => Promise<void>;
   /**
-   * Wołany szeregowo, w kolejności zakończenia zagadnień; błąd przerywa run. Dostaje migawkę zagadnienia
-   * sprzed kontroli końcowej (`lessonInvariantCheck`): usunięcia bezpiecznika widać dopiero w wyniku runu,
-   * a uzgodnienie zapisanych zagadnień z tymi usunięciami należy do etapu 2.
+   * Wołany szeregowo dla każdego rozliczonego zagadnienia (po walidacji puli); błąd przerywa run.
    */
   readonly onObjectiveSettled?: (settled: SettledObjective) => Promise<void>;
 }
 
-/**
- * Statystyki runu. Od etapu 2b także liczniki kontroli (`CHECK_COUNTER_KEYS`, §7.4): sędzia podpowiedzi,
- * kontrola otwarta i grader (wywołania, pozycje bez wyniku, błędy i odrzucone werdykty).
- */
-export type LessonPoolAgentStats = {
+/** Statystyki próby: rekordy z wyjścia modelu, przyjęte do puli, odrzucenia według rodzaju i wywołania kontroli. */
+export interface LessonPoolAgentStats {
   submitted: number;
   accepted: number;
   rejectedByKind: Record<string, number>;
-  checkUnavailable: number;
   checkerCalls: number;
-  invariantViolations: number;
-  refused: number;
-  /** Oczyszczenia przy przyjęciu (spec katalogu reguł §4.1): usunięte podpowiedzi, warianty i wyrównane cytaty. */
-  hintsRemoved: number;
-  variantsRemoved: number;
-  quotesSnapped: number;
-} & Record<CheckCounterKey, number>;
+}
 
 export interface LessonPoolAgentResult {
   /** Zagadnienia uruchomione w tym runie (bez pominiętych), w kolejności lekcji. */
@@ -159,73 +121,16 @@ export interface LessonPoolAgentResult {
   readonly unknownCostCalls: number;
 }
 
-export interface LessonPoolAgentDeps {
-  readonly agent: LessonPoolAgentProvider;
-  readonly checker: LessonExerciseCheckerProvider;
-  /** Grader kontroli otwartej (etap 2b); brak = kontrola otwarta nie dotyczy. Strukturalnie `AgentGraderDeps`. */
-  readonly grader?: AgentCheckGrader;
-  readonly subjects: Pick<SubjectRegistry, "getSubject">;
-  /** Brak pól = `DEFAULT_LESSON_AGENT_POLICY`. */
-  readonly policy?: Partial<LessonAgentPolicy>;
-}
-
 /** Klucz stałych źródeł ujawnień spoza zagadnień (`extraExposureSources`) w `fixedSources` stanu. */
 const EXTRA_SOURCES_KEY = "__extra";
-
-/** Liczniki oczyszczeń z narzędzi (sumowane w statystykach runu i w logu zagadnienia). */
-export const CLEANUP_COUNTER_KEYS = ["hintsRemoved", "variantsRemoved", "quotesSnapped"] as const;
-
-/** Typ ćwiczenia do dziennika: tylko znane typy lekcji (typ z rekordu modelu to dowolny napis). */
-function loggedType(exerciseType: string): string {
-  return LessonExerciseTypeSchema.safeParse(exerciseType).success ? exerciseType : "unknown";
-}
 
 export function slugOf(objectiveId: string): string {
   return objectiveId.slice(objectiveId.lastIndexOf(".") + 1);
 }
 
-/** Zerowe statystyki runu (także wynik „bez kierownika” w `lesson-agent-generation.ts`). */
+/** Zerowe statystyki próby (także wynik „bez czasu na generowanie” w `lesson-agent-generation.ts`). */
 export function emptyLessonPoolAgentStats(): LessonPoolAgentStats {
-  return {
-    submitted: 0,
-    accepted: 0,
-    rejectedByKind: {},
-    checkUnavailable: 0,
-    checkerCalls: 0,
-    invariantViolations: 0,
-    refused: 0,
-    hintsRemoved: 0,
-    variantsRemoved: 0,
-    quotesSnapped: 0,
-    ...Object.fromEntries(CHECK_COUNTER_KEYS.map((key) => [key, 0])),
-  } as LessonPoolAgentStats;
-}
-
-/** Przedmiot z rejestru obsługujący źródło zagadnień; inaczej błąd walidacji bez wywołań. */
-function resolveSubject(deps: LessonPoolAgentDeps, input: LessonPoolAgentRunInput): SubjectModule {
-  const subject = deps.subjects.getSubject(input.subjectId);
-  if (subject === undefined) throw new AppError("validation", { message: `unknown subject ${input.subjectId}` });
-  if (input.objectiveSource.source !== "catalog" && subject.buildDynamicTopic === undefined) {
-    throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
-  }
-  const target = input.target;
-  if (target?.mode === "add") {
-    if (!Number.isInteger(target.count) || target.count < 1) {
-      throw new AppError("validation", { message: "add mode count must be a positive integer" });
-    }
-  }
-  return subject;
-}
-
-function formatCodes(codes: ReadonlyMap<string, number>): string {
-  return codes.size === 0 ? "-" : [...codes].map(([code, count]) => `${code}:${count}`).join(",");
-}
-
-/** Przyjęte ćwiczenia puli zagadnienia w kolejności lekcji. */
-function poolExercises(state: LessonAgentState, objectiveId: string): LessonExerciseDraft[] {
-  return orderedEntries(state)
-    .filter((entry) => entry.objectiveId === objectiveId && entry.id !== null)
-    .map((entry) => entry.draft);
+  return { submitted: 0, accepted: 0, rejectedByKind: {}, checkerCalls: 0 };
 }
 
 /** Limity przyjmowania i liczby promptu zagadnienia w trybie „dodaj N” (§6.4). */
@@ -270,7 +175,7 @@ function addModePlan(
 /**
  * Limity zagadnień trybu „pula” z liczb per cel (`objectiveBatchCounts`): `targetCount` z puli rodzica, dodatek słuchowy jako
  * łączny limit zagadnienia (przyjmowanie samo liczy ćwiczenia słuchowe `fixed`), `limit_full` liczy tylko
- * pulę. Wspólne z kontrolą końcową ścieżki agenta przed zapisem do szkicu.
+ * pulę. Wspólne z kontrolą końcową workera przed zapisem do szkicu.
  */
 export function lessonAgentLimits(
   subject: SubjectModule,
@@ -289,59 +194,10 @@ export function lessonAgentLimits(
   );
 }
 
-export async function runLessonPoolAgent(
-  deps: LessonPoolAgentDeps,
-  input: LessonPoolAgentRunInput,
-  signal: AbortSignal,
-): Promise<LessonPoolAgentResult> {
-  const subject = resolveSubject(deps, input);
-  signal.throwIfAborted();
-  const policy: LessonAgentPolicy = { ...DEFAULT_LESSON_AGENT_POLICY, ...deps.policy };
-  const cost = new RunCostMeter(input.initialSpentUsd, policy.runBudgetUsd, policy.unknownCallEstimateUsd, input.onSpend);
-  const runDeadline = deadlineSignal(signal, policy.runTimeoutMs, RUN_TIMEOUT_REASON);
-  try {
-    const source = input.objectiveSource;
-    const resolvedTopic = source.source === "input" ? source.dynamicTopic : undefined;
-    const topic: LessonTopic = source.source === "catalog" ? source.topic : subject.buildDynamicTopic!(source.dynamicTopic);
-    const target = input.target;
-    if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
-      // Przed hakiem tematu i podagentami: nieznane zagadnienie nie zapisuje nic i nie woła dostawcy.
-      throw new AppError("validation", { message: `unknown objective ${target.objectiveId}` });
-    }
-    if (input.onObjectivesResolved !== undefined) {
-      // Przed podagentami: ścieżka zapisuje temat i wydatek (punkt kontrolny).
-      await input.onObjectivesResolved({
-        ...(resolvedTopic === undefined ? {} : { dynamicTopic: resolvedTopic }),
-        spentUsd: cost.spentUsd,
-      });
-      if (signal.aborted) throw signal.reason;
-    }
-    const objectives = agentObjectivesOf(topic);
-    const result = await superviseObjectives({
-      deps,
-      input,
-      subject,
-      topic,
-      objectives,
-      policy,
-      cost,
-      runSignal: signal,
-      runDeadline: runDeadline.signal,
-    });
-    return {
-      ...result,
-      spentUsd: cost.spentUsd,
-      unknownCostCalls: cost.unknownCalls,
-    };
-  } finally {
-    runDeadline.dispose();
-  }
-}
-
 /**
- * Stan startowy kierownika (pula i „dodaj N”): limity zagadnień, stan lekcji z `fixed`, przykładami
+ * Stan startowy próby (pula i „dodaj N”): limity zagadnień, stan lekcji z `fixed`, przykładami
  * początkowymi i stałymi źródłami ujawnień, a w trybie „dodaj N” —
- * limity i liczby promptu zagadnienia z {@link addModePlan}. Wspólne z przebiegiem bazowym.
+ * limity i liczby promptu zagadnienia z {@link addModePlan}.
  */
 export function poolStartState(args: {
   readonly subject: SubjectModule;
@@ -384,254 +240,4 @@ export function objectivesToRun(objectives: readonly AgentObjective[], input: Le
   if (target?.mode === "add") return objectives.filter((objective) => objective.id === target.objectiveId);
   const skipped = new Set(input.skipObjectives);
   return objectives.filter((objective) => !skipped.has(objective.id));
-}
-
-interface SuperviseArgs {
-  readonly deps: LessonPoolAgentDeps;
-  readonly input: LessonPoolAgentRunInput;
-  readonly subject: SubjectModule;
-  readonly topic: LessonTopic;
-  readonly objectives: readonly AgentObjective[];
-  readonly policy: LessonAgentPolicy;
-  readonly cost: RunCostMeter;
-  readonly runSignal: AbortSignal;
-  /** Sygnał runu z terminem runu. */
-  readonly runDeadline: AbortSignal;
-}
-
-/** Liczniki zagadnienia do logu (bez treści). */
-interface ObjectiveTrack {
-  accepted: number;
-  hintsRemoved: number;
-  variantsRemoved: number;
-  quotesSnapped: number;
-  readonly rejected: Map<string, number>;
-  costUsd: number;
-  requests: number;
-}
-
-/** Podagenci zagadnień, zamknięcie, hak zapisu i kontrola końcowa (§7.1 pkt 3–7). */
-async function superviseObjectives(args: SuperviseArgs): Promise<Pick<LessonPoolAgentResult, "objectives" | "stats" | "rejections">> {
-  const { deps, input, subject, topic, objectives, policy, cost } = args;
-  const examplesFixed = input.examplesFixed ?? false;
-
-  const start = poolStartState({ subject, topic, objectives, input });
-  const { ctx, addMode, promptTargets } = start;
-  let state = start.state;
-  const getState = () => state;
-  const setState = (next: LessonAgentState) => {
-    state = next;
-  };
-
-  const stats = emptyLessonPoolAgentStats();
-  const rejections: RejectionLogEntry[] = [];
-  const checkerSemaphore = new Semaphore(policy.checkerConcurrency);
-  // Wspólne dla runu: semafor gradera, pamięć wyników kontroli i wyłącznik gradera (etap 2b).
-  const checkRun = new AgentCheckRun(policy);
-  const objectiveSemaphore = new Semaphore(policy.concurrency);
-
-  // Błąd haka (albo kierownika) przerywa wszystkie zagadnienia przez wspólny sygnał.
-  const failing = new AbortController();
-  let failure: { readonly error: unknown } | undefined;
-  const active = new Set<{ close(): Promise<void> }>();
-  const fail = (error: unknown): void => {
-    if (failure !== undefined) return;
-    failure = { error };
-    failing.abort(error);
-    for (const handle of active) void handle.close();
-  };
-  const stopped = () => failure !== undefined || args.runSignal.aborted;
-  const objectivesParent = AbortSignal.any([args.runDeadline, failing.signal]);
-
-  const settledById = new Map<string, SettledObjective>();
-  let hooks: Promise<void> = Promise.resolve();
-  const enqueueHook = (settled: SettledObjective): void => {
-    const hook = input.onObjectiveSettled;
-    if (hook === undefined) return;
-    // Kolejka szeregowa w kolejności zakończenia; nie wstrzymuje startu kolejnych podagentów.
-    hooks = hooks.then(async () => {
-      if (stopped()) return;
-      try {
-        await hook(settled);
-      } catch (error) {
-        fail(error);
-      }
-    });
-  };
-
-  const addStats = (track: ObjectiveTrack) => (delta: Partial<ObjectiveToolsStats>) => {
-    stats.submitted += delta.submitted ?? 0;
-    stats.accepted += delta.accepted ?? 0;
-    stats.checkerCalls += delta.checkerCalls ?? 0;
-    stats.checkUnavailable += delta.checkUnavailable ?? 0;
-    for (const key of CHECK_COUNTER_KEYS) stats[key] += delta[key] ?? 0;
-    for (const key of CLEANUP_COUNTER_KEYS) {
-      stats[key] += delta[key] ?? 0;
-      track[key] += delta[key] ?? 0;
-    }
-    track.accepted += delta.accepted ?? 0;
-  };
-
-  /** Nakładka licznika runu: koszt zagadnienia do logu, budżet wspólny. */
-  const objectiveCost = (track: ObjectiveTrack): RunBudgetSink => ({
-    record: (usd) => {
-      const before = cost.spentUsd;
-      cost.record(usd);
-      track.costUsd += cost.spentUsd - before;
-    },
-    exhausted: () => cost.exhausted(),
-  });
-
-  const settle = (objective: AgentObjective, steps: number, error: { readonly error: unknown } | undefined): SettledObjective => {
-    const status = objectiveStatusFor(state, objective.id, ctx, addMode);
-    const base = {
-      objectiveId: objective.id,
-      missing: status.missing,
-      exercises: poolExercises(state, objective.id),
-      examples: [...(state.examples.get(objective.id) ?? [])],
-      steps,
-      spentUsd: cost.spentUsd,
-      rejections: rejections.filter((entry) => entry.objectiveId === objective.id),
-    };
-    if (error !== undefined) return { ...base, status: "failed", failure: agentFailureOf(error.error) };
-    return { ...base, status: status.complete ? "complete" : "incomplete" };
-  };
-
-  const runOne = async (objective: AgentObjective): Promise<void> => {
-    if (stopped()) return;
-    // Termin zagadnienia liczy się od faktycznego startu podagenta (po miejscu w semaforze).
-    const deadline = deadlineSignal(objectivesParent, policy.objectiveTimeoutMs, OBJECTIVE_TIMEOUT_REASON);
-    try {
-      const settled = await superviseObjective(objective, deadline.signal);
-      enqueueHook(settled);
-    } finally {
-      // Zegar i nasłuch terminu zdejmowane także przy błędzie budowy narzędzi albo wejścia.
-      deadline.dispose();
-    }
-  };
-
-  const superviseObjective = async (objective: AgentObjective, objectiveSignal: AbortSignal): Promise<SettledObjective> => {
-    const track: ObjectiveTrack = { accepted: 0, hintsRemoved: 0, variantsRemoved: 0, quotesSnapped: 0, rejected: new Map(), costUsd: 0, requests: 0 };
-    const budget = objectiveCost(track);
-    const agentCost: RunCostSink = {
-      record: (usd) => {
-        track.requests += 1;
-        budget.record(usd);
-      },
-    };
-    // Wejście budowane przed narzędziami i poza obsługą błędów dostawcy: błąd kodu (np. w budowaniu
-    // promptu) odrzuca run, zamiast oznaczać zagadnienie jako `failed`. Zagadnienie, którego termin
-    // (np. runu) minął albo budżet runu wyczerpał się przed startem, nie woła dostawcy i jest
-    // rozliczane jak po terminie (`incomplete`).
-    const agentInput =
-      objectiveSignal.aborted || cost.exhausted()
-        ? undefined
-        : objectiveAgentInput({
-            subject,
-            topic,
-            state,
-            objective,
-            limits: ctx.limits.get(objective.id)!,
-            material: input.material,
-            ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
-            ...(input.interests === undefined ? {} : { interests: input.interests }),
-            graderAvailable: input.graderAvailable,
-            examplesFixed,
-            maxSteps: policy.maxStepsPerObjective,
-            callTimeoutMs: policy.callTimeoutMs,
-            ...(promptTargets === undefined ? {} : { promptTargets }),
-          });
-    const handle = createObjectiveTools({
-      objectiveId: objective.id,
-      getState,
-      setState,
-      ctx,
-      checker: deps.checker,
-      checkerSemaphore,
-      checkRun,
-      ...(deps.grader === undefined ? {} : { grader: deps.grader }),
-      cost: budget,
-      objectiveSignal,
-      policy,
-      familyScope: input.familyScope,
-      examplesFixed,
-      ...(addMode === undefined ? {} : { addMode }),
-      onRejection: (entry) => {
-        rejections.push(entry);
-        // Dziennik bez treści: kod, id reguł i typ (znany typ lekcji; inny napis modelu jako `unknown`).
-        console.log(
-          `[lesson-agent] run=${input.runId} obj=${slugOf(objective.id)} rejected code=${entry.code} type=${loggedType(entry.exerciseType)} rules=${entry.ruleIds.join(",") || "-"}`,
-        );
-        stats.rejectedByKind[entry.kind] = (stats.rejectedByKind[entry.kind] ?? 0) + 1;
-        track.rejected.set(entry.code, (track.rejected.get(entry.code) ?? 0) + 1);
-      },
-      onRefusal: () => {
-        stats.refused += 1;
-      },
-      onStats: addStats(track),
-      // Wyłącznik otwiera się raz na run (`AgentCheckRun.recordGraderFailure`), więc log jest jednorazowy.
-      onGraderBreaker: () => {
-        console.log(`[lesson-agent] run=${input.runId} grader_unavailable`);
-      },
-    });
-    active.add(handle);
-    let steps = 0;
-    let providerError: { readonly error: unknown } | undefined;
-    try {
-      if (agentInput !== undefined) {
-        // Wyścig z sygnałem zagadnienia: dostawca ignorujący przerwanie nie wstrzymuje terminu ani runu.
-        steps = (await untilAborted(deps.agent.runObjective(agentInput, handle.tools, agentCost, objectiveSignal), objectiveSignal)).steps;
-      }
-    } catch (error) {
-      // `failed` tylko dla wyjątku dostawcy przy nieprzerwanym sygnale zagadnienia; termin → `incomplete`.
-      // Sygnał sprawdzany TERAZ, przed `close()`: przerwanie w trakcie zamykania nie zmienia klasyfikacji.
-      // Limit żądania przekroczony także po ponowieniu (`callTimeoutMs`) kończy zagadnienie jak jego termin.
-      const callTimedOut = error instanceof GenerationProviderError && error.kind === "timeout";
-      if (callTimedOut) console.log(`[lesson-agent] run=${input.runId} obj=${slugOf(objective.id)} call_timeout`);
-      if (!objectiveSignal.aborted && !callTimedOut) providerError = { error };
-      // Kroki przerwanego wywołania nie wracają z dostawcy: liczba jego żądań to najlepsze przybliżenie.
-      steps = track.requests;
-    } finally {
-      // Zamknięcie od razu po powrocie: spóźnione wywołania narzędzi kończą się odmową bez przyjęcia.
-      // `close()` czeka na trwające wywołanie narzędzia; jego checker przerywa zamknięcie (wyścig w `callChecker`).
-      await handle.close();
-      active.delete(handle);
-    }
-    const settled = settle(objective, steps, providerError);
-    settledById.set(objective.id, settled);
-    console.log(
-      `[lesson-agent] run=${input.runId} obj=${slugOf(objective.id)} status=${settled.status}${settled.failure === undefined ? "" : ` error=${settled.failure.errorCode}`} steps=${steps} accepted=${track.accepted} rejected=${formatCodes(track.rejected)} hintsRemoved=${track.hintsRemoved} variantsRemoved=${track.variantsRemoved} quotesSnapped=${track.quotesSnapped} costUsd=${track.costUsd.toFixed(4)}`,
-    );
-    return settled;
-  };
-
-  const toRun = objectivesToRun(objectives, input);
-  await Promise.all(toRun.map((objective) => objectiveSemaphore.run(() => runOne(objective)).catch(fail)));
-  await hooks;
-  if (failure !== undefined) throw failure.error;
-  if (args.runSignal.aborted) throw args.runSignal.reason;
-
-  // Kontrola końcowa: bezpiecznik niezmiennika przyjmowania — usunięcia bez rund naprawczych.
-  const violations = lessonInvariantCheck(state, ctx);
-  for (const violation of violations) {
-    state = removeExercise(state, violation.objectiveId, violation.id, ctx).state;
-    console.log(`[lesson-agent] run=${input.runId} obj=${slugOf(violation.objectiveId)} invariant_violation id=${violation.id}`);
-  }
-  stats.invariantViolations = violations.length;
-
-  const finalObjectives = toRun.flatMap((objective) => {
-    const settled = settledById.get(objective.id);
-    if (settled === undefined) return [];
-    if (violations.length === 0) return [settled];
-    const status = objectiveStatusFor(state, objective.id, ctx, addMode);
-    return [
-      {
-        ...settled,
-        exercises: poolExercises(state, objective.id),
-        missing: status.missing,
-        ...(settled.status === "failed" ? {} : { status: status.complete ? ("complete" as const) : ("incomplete" as const) }),
-      },
-    ];
-  });
-  return { objectives: finalObjectives, stats, rejections };
 }

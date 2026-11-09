@@ -2,17 +2,16 @@ import { describe, expect, it } from "vitest";
 import { cardExposureSources } from "../card-exposure-sources";
 import { englishNormalizer } from "../subjects/english/normalizer";
 import { englishGrammarSubject } from "../subjects/english-grammar/module";
-import { A, B, contextFor, gap, naChecks, open, stateWith, subject } from "../testing/agent-admission-fixtures";
+import { A, admitInOrder, B, contextFor, gap, open, stateWith, subject, type StepEntry } from "../testing/agent-admission-fixtures";
 import type { LessonExerciseDraft } from "../types";
-import { admitBatch, precheckBatch, submitExamples, type AdmitEntry, type AgentCheckContext } from "./admission";
+import { submitExamples, type AgentCheckContext } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { createLessonAgentState, poolOf, type LessonAgentState } from "./state";
 
 const ctx = contextFor();
 
 function submit(state: LessonAgentState, objectiveId: string, drafts: readonly LessonExerciseDraft[]) {
-  const prechecked = precheckBatch(state, objectiveId, drafts, ctx);
-  return admitBatch(state, objectiveId, prechecked, naChecks(drafts.length), ctx);
+  return admitInOrder(state, objectiveId, drafts, ctx);
 }
 
 function acceptAll(state: LessonAgentState, objectiveId: string, drafts: readonly LessonExerciseDraft[]): LessonAgentState {
@@ -21,12 +20,12 @@ function acceptAll(state: LessonAgentState, objectiveId: string, drafts: readonl
   return result.state;
 }
 
-function rejectionOf(entry: AdmitEntry | undefined) {
+function rejectionOf(entry: StepEntry | undefined) {
   if (entry === undefined || !("rejected" in entry)) throw new Error(`expected rejection, got ${JSON.stringify(entry)}`);
   return entry.rejected;
 }
 
-describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
+describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
   it("kandydat samodzielny równy przykładowi karty: leak_victim z regułą lesson.leak i przykładem", () => {
     const state = stateWith({ examples: { [A]: ["w 966 roku"] } });
     const rejection = rejectionOf(submit(state, A, [open(A, "Kiedy?", "w 966 roku")]).results[0]);
@@ -69,7 +68,7 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
       focus: subjectVerb.split(" ").slice(1),
     });
     const drafts = [translation("Tata teraz gotuje.", "Dad is cooking", ""), translation("Ola teraz czyta książkę.", "Ola is reading", " a book")];
-    const result = admitBatch(state, objectiveId, precheckBatch(state, objectiveId, drafts, grammarCtx), naChecks(drafts.length), grammarCtx);
+    const result = admitInOrder(state, objectiveId, drafts, grammarCtx);
     const rejection = rejectionOf(result.results[0]);
     expect(rejection).toMatchObject({ kind: "leak", code: "leak_victim", ruleIds: ["lesson.leak"] });
     expect(rejection.reasons[0]).toContain('the card example "Dad is cooking now."');
@@ -109,13 +108,13 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
   it("ofiara ujawniona już przed kandydatem nie odrzuca kandydata", () => {
     const state = stateWith({ examples: { [A]: ["966"] }, fixed: [open(A, "Rok chrztu?", "966")] });
     const result = submit(state, A, [gap(A, "Chrzest Polski w roku ___.", "966")]);
-    expect(result.results[0]).toEqual({ accepted: "ex1", sanitized: [], unchecked: false, notes: [], removedVariants: [], quotesSnapped: 0 });
+    expect(result.results[0]).toEqual({ accepted: "ex1" });
     expect(poolOf(result.state, A)).toHaveLength(1);
   });
 
-  it("drugi kandydat paczki widzi pierwszego: ujawnienie wewnątrz paczki odpada już w precheckBatch", () => {
-    const prechecked = precheckBatch(stateWith(), A, [open(A, "Rok chrztu?", "966"), gap(A, "Chrzest Polski w roku ___.", "966")], ctx);
-    expect(prechecked.map((entry) => (entry.pass ? "pass" : entry.rejection.code))).toEqual(["pass", "leak_source"]);
+  it("drugi kandydat widzi pierwszego: ujawnienie wewnątrz paczki odpada", () => {
+    const result = submit(stateWith(), A, [open(A, "Rok chrztu?", "966"), gap(A, "Chrzest Polski w roku ___.", "966")]);
+    expect(result.results.map((entry) => ("accepted" in entry ? "accepted" : entry.rejected.code))).toEqual(["accepted", "leak_source"]);
   });
 
   describe("rodzina pytań otwartych (ta sama odpowiedź wzorcowa)", () => {
@@ -169,7 +168,7 @@ describe("przyjmowanie paczki — ujawnienia (tryb generation)", () => {
     // Przedmiot testowy z normalizatorem angielskim: skróty („where's”, „it's”) mają rozwinięcia.
     const englishCtx = contextFor({ subject: { ...subject, normalizer: englishNormalizer } });
     const submitEn = (state: LessonAgentState, objectiveId: string, drafts: readonly LessonExerciseDraft[]) =>
-      admitBatch(state, objectiveId, precheckBatch(state, objectiveId, drafts, englishCtx), naChecks(drafts.length), englishCtx);
+      admitInOrder(state, objectiveId, drafts, englishCtx);
     const withVariants = (draft: LessonExerciseDraft, acceptedAnswers: string[]): LessonExerciseDraft => ({ ...draft, acceptedAnswers });
 
     it("forma skrócona przykładu karty wobec pełnej formy świeżego tłumaczenia (i odwrotnie): leak_victim", () => {

@@ -346,7 +346,7 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
       const { agent } = fakes;
       const lessonAgent: LessonAgentDeps = {
         agent,
-        checker: world.checker ?? new FakeExerciseChecker({ unavailable: true }),
+        checker: world.checker ?? new FakeExerciseChecker(),
         policy: world.policy ?? {},
         ...(world.finalizationReserveMs === undefined ? {} : { finalizationReserveMs: world.finalizationReserveMs }),
       };

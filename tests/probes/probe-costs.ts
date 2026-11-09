@@ -86,9 +86,12 @@ export interface AgentCostEstimates {
  * Szacunki z polityki, z którą run faktycznie działa (`lessonAgentPolicyFromEnv(env)`), uzupełnionej
  * wartościami domyślnymi kierownika — te same liczby, którymi kierownik liczy budżet runu.
  */
-export function agentCostEstimates(policy: Partial<Pick<LessonAgentPolicy, "unknownCallEstimateUsd" | "unknownGraderCallEstimateUsd">>): AgentCostEstimates {
+export function agentCostEstimates(
+  policy: Partial<Pick<LessonAgentPolicy, "unknownCallEstimateUsd">> & { readonly unknownGraderCallEstimateUsd?: number },
+): AgentCostEstimates {
   const merged = { ...DEFAULT_LESSON_AGENT_POLICY, ...policy };
-  return { unknownCallUsd: merged.unknownCallEstimateUsd, unknownGraderCallUsd: merged.unknownGraderCallEstimateUsd };
+  // shortcut: szacunek gradera agenta (usunięty z polityki w 5c) tylko dla starych rejestrów `check_grade`; zadanie 7 go usuwa.
+  return { unknownCallUsd: merged.unknownCallEstimateUsd, unknownGraderCallUsd: policy.unknownGraderCallEstimateUsd ?? 0.002 };
 }
 
 function estimateOf(event: ProbeCostEvent, estimates: AgentCostEstimates): number {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { schoolSubject } from "../subjects/school/module";
-import { A, B, choice, contextFor, gap, keywords, listen, naChecks, objectives, open, stateWith, subject, topic } from "../testing/agent-admission-fixtures";
+import { A, admitInOrder, B, choice, contextFor, gap, keywords, listen, objectives, open, stateWith, subject, topic } from "../testing/agent-admission-fixtures";
 import { withAgentPolicy } from "../testing/agent-test-subject";
 import type { AgentObjective, LessonExerciseDraft, LessonExerciseType } from "../types";
-import { admitBatch, precheckBatch } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { orderedLesson, poolOf, withPool, type AgentPoolEntry, type LessonAgentState } from "./state";
 import {
@@ -270,10 +269,10 @@ describe("tryb „dodaj N” — addModeStatus", () => {
 describe("lessonInvariantCheck", () => {
   const ctx = contextFor();
 
-  it("pusty dla stanu zbudowanego przez admitBatch", () => {
+  it("pusty dla stanu zbudowanego krokiem reguł lekcji", () => {
     const start = stateWith({ examples: { [A]: ["Stolica."] } });
     const drafts = [choice(A, 1), gap(A, "Rok ___.", "966"), open(A, "Rok chrztu?", "1025")];
-    const { state } = admitBatch(start, A, precheckBatch(start, A, drafts, ctx), naChecks(drafts.length), ctx);
+    const { state } = admitInOrder(start, A, drafts, ctx);
     expect(poolOf(state, A)).toHaveLength(3);
     expect(lessonInvariantCheck(state, ctx)).toEqual([]);
   });

@@ -1,30 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { findExposureLeaks } from "../exposure-leaks";
-import { keywordsAnswer, validateLessonExercise, validatePool } from "../pool-validation";
+import { keywordsAnswer, validateLessonExercise, validateLessonExerciseIssues, validatePool } from "../pool-validation";
 import { schoolSubject } from "../subjects/school/module";
-import { choice, gap, keywords, listen, open, subject as testSubject, topic as testTopic } from "../testing/agent-admission-fixtures";
-import { withAgentPolicy } from "../testing/agent-test-subject";
+import { admitInOrder, choice, gap, keywords, listen, open, subject as testSubject, topic as testTopic, type StepEntry } from "../testing/agent-admission-fixtures";
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../types";
-import {
-  admitBatch,
-  precheckBatch,
-  removeExercise,
-  submitExamples,
-  type AdmitEntry,
-  type AgentCheckContext,
-  type AgentHintVerdict,
-  type CandidateChecks,
-  type CheckResult,
-  type ObjectiveAgentLimits,
-  type OpenCheckOutcome,
-  type OpenGraded,
-} from "./admission";
+import { removeExercise, submitExamples, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
 import { agentObjectivesOf } from "./capable";
 import { allExamples, createLessonAgentState, orderedLesson, poolOf, type LessonAgentState, type LessonAgentStateInput } from "./state";
 
 /**
  * Test własności niezmiennika §3.3: losowe (deterministyczne, mulberry32)
- * sekwencje `precheckBatch`+`admitBatch`, `removeExercise` i `submitExamples`
+ * sekwencje przyjęć krokiem `lessonRulesStep` (po walidacji ćwiczenia, jak walidacja puli
+ * przebiegu bazowego), `removeExercise` i `submitExamples`
  * na dwóch przedmiotach. Wyrocznia jest bezwzględna: po każdej operacji
  * świeże `findExposureLeaks` (coverage), `validatePool` i `validatePoolExtra`
  * na całej lekcji — bez porównania z wewnętrznymi migawkami przyjmowania.
@@ -79,7 +66,7 @@ interface World {
   readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly material: string;
-  /** Losowy szkic zagadnienia ze słownika (może łamać reguły — wtedy odpada w kroku 2). */
+  /** Losowy szkic zagadnienia ze słownika (może łamać reguły — wtedy odpada przed krokiem reguł lekcji). */
   draft(rng: Rng, objectiveId: string): LessonExerciseDraft;
   /** Stan startowy z czystym `fixed`: bez ujawnień i błędów walidacji. */
   start(objectiveIds: readonly [string, string]): Omit<LessonAgentStateInput, "topic" | "objectives">;
@@ -184,7 +171,7 @@ const schoolTopic = schoolSubject.buildDynamicTopic!({
 });
 
 const schoolWorld: World = {
-  subject: withAgentPolicy(schoolSubject),
+  subject: schoolSubject,
   topic: schoolTopic,
   material: SCHOOL_MATERIAL,
   draft(rng, objectiveId) {
@@ -247,46 +234,8 @@ function lessonFindings(state: LessonAgentState, ctx: AgentCheckContext) {
 
 const label = (draft: LessonExerciseDraft) => `${draft.objectiveId.split(".").at(-1)}/${draft.exerciseType}:${draft.answer}`;
 
-function randomChecks(rng: Rng, draft: LessonExerciseDraft): CandidateChecks {
-  const roll = rng.int(100);
-  const solve: CheckResult<readonly string[]> =
-    roll < 70 ? { kind: "na" } : roll < 85 ? { kind: "unavailable" } : { kind: "done", value: [rng.chance(0.5) ? draft.answer : rng.pick(ANSWERS)] };
-  const variants: CheckResult<readonly boolean[]> = rng.chance(0.85) ? { kind: "na" } : { kind: "unavailable" };
-  const hint = randomHint(rng);
-  const open = randomOpen(rng, draft);
-  return { solve, variants, hint, open };
-}
-
-function randomHint(rng: Rng): CheckResult<AgentHintVerdict> {
-  const roll = rng.int(100);
-  if (roll < 60) return { kind: "na" };
-  if (roll < 70) return { kind: "unavailable" };
-  if (roll < 85) return { kind: "done", value: { verdict: "ok" } };
-  return { kind: "done", value: { verdict: rng.pick(["unsupported", "language", "reveals"] as const), reason: "losowy powód" } };
-}
-
-function randomOpen(rng: Rng, draft: LessonExerciseDraft): CheckResult<OpenCheckOutcome> {
-  const roll = rng.int(100);
-  if (roll < 60) return { kind: "na" };
-  if (roll < 70) return { kind: "unavailable" };
-  const graded = (knowledge: OpenGraded["knowledge"]): OpenGraded => ({
-    answer: draft.answer,
-    knowledge,
-    missing: knowledge === "partial" ? ["brakujący element"] : [],
-    wrong: knowledge === "incorrect" ? ["błędne stwierdzenie"] : [],
-  });
-  const knowledge = rng.pick(["correct", "correct", "partial", "incorrect"] as const);
-  return { kind: "done", value: { answers: [graded("correct"), graded(knowledge)] } };
-}
-
-/** Wynik kontroli, który musi odrzucić kandydata (podpowiedź albo otwarta nieprzyjęta). */
-function rejectsCandidate(checks: CandidateChecks): boolean {
-  if (checks.hint.kind === "done" && checks.hint.value.verdict !== "ok") return true;
-  return checks.open.kind === "done" && checks.open.value.answers.some((answer) => answer.knowledge !== "correct");
-}
-
 /** Zbiera kody odrzuceń do zbioru wołającego (bez stanu modułu: wynik nie zależy od kolejności testów). */
-function record(codes: Set<string> | undefined, results: readonly AdmitEntry[]): void {
+function record(codes: Set<string> | undefined, results: readonly StepEntry[]): void {
   if (codes === undefined) return;
   for (const entry of results) if ("rejected" in entry) codes.add(entry.rejected.code);
 }
@@ -305,32 +254,14 @@ function randomOperation(
   const roll = rng.int(100);
   if (roll < 60) {
     const drafts = Array.from({ length: 1 + rng.int(4) }, () => world.draft(rng, objectiveId));
-    const prechecked = precheckBatch(state, objectiveId, drafts, ctx);
-    let current = state;
-    // Co trzecia paczka: między precheck a admit inne zagadnienie przyjmuje własną paczkę.
-    if (rng.chance(0.3)) {
-      const other = objectiveId === first ? second : first;
-      const otherDrafts = Array.from({ length: 1 + rng.int(2) }, () => world.draft(rng, other));
-      const otherPrechecked = precheckBatch(current, other, otherDrafts, ctx);
-      const interleaved = admitBatch(current, other, otherPrechecked, otherPrechecked.map(() => ({ solve: { kind: "na" }, variants: { kind: "na" }, hint: { kind: "na" }, open: { kind: "na" } }) as const), ctx);
-      record(codes, interleaved.results);
-      current = interleaved.state;
-      onStep(current, `admit ${other} [${otherDrafts.map(label).join(", ")}] (między precheck a admit)`);
-    }
-    const checks = prechecked.map((entry, index) => randomChecks(rng, entry.pass ? entry.draft : drafts[index]!));
-    const admitted = admitBatch(current, objectiveId, prechecked, checks, ctx);
+    // Jak przebieg bazowy: szkic łamiący reguły ćwiczenia odpada przed krokiem reguł lekcji.
+    const valid = drafts.filter((draft) => validateLessonExerciseIssues(draft, world.subject, world.topic, { agent: true }).length === 0);
+    const admitted = admitInOrder(state, objectiveId, valid, ctx);
     record(codes, admitted.results);
-    // Odrzucenie przez sędziego podpowiedzi albo kontrolę otwartą nigdy nie dodaje ćwiczenia do stanu.
-    admitted.results.forEach((entry, index) => {
-      if (!rejectsCandidate(checks[index]!)) return;
-      if ("accepted" in entry) {
-        expect.fail(`kandydat ${index} przyjęty mimo odrzucenia przez hint/open (${label(drafts[index]!)})`);
-      }
-    });
-    // Pula rośnie dokładnie o liczbę przyjętych: odrzucony (także przez hint/open) nic nie dokłada.
+    // Pula rośnie dokładnie o liczbę przyjętych.
     const acceptedCount = admitted.results.filter((entry) => "accepted" in entry).length;
-    expect(poolOf(admitted.state, objectiveId).length - poolOf(current, objectiveId).length).toBe(acceptedCount);
-    onStep(admitted.state, `admit ${objectiveId} [${drafts.map(label).join(", ")}]`);
+    expect(poolOf(admitted.state, objectiveId).length - poolOf(state, objectiveId).length).toBe(acceptedCount);
+    onStep(admitted.state, `admit ${objectiveId} [${valid.map(label).join(", ")}]`);
     return admitted.state;
   }
   if (roll < 85) {
@@ -373,7 +304,7 @@ function runSeed(
 }
 
 describe.each([
-  ["przedmiot testowy agenta", testWorld],
+  ["przedmiot testowy", testWorld],
   ["school", schoolWorld],
 ] as const)("niezmiennik przyjmowania — %s", (_name, world) => {
   const ctx = contextOf(world);
@@ -438,12 +369,12 @@ describe("niezmiennik przyjmowania — wadliwe fixed", () => {
 
 describe("niezmiennik przyjmowania — pokrycie kodów", () => {
   // Własny przebieg ziaren (bez wyroczni): wynik nie zależy od kolejności ani filtrowania testów pliku.
-  it("każdy z kodów lesson_pool, leak_victim, leak_source, limit_full wystąpił", { timeout: 60_000 }, () => {
+  it("każdy z kodów lesson_pool, leak_victim, leak_source wystąpił", { timeout: 60_000 }, () => {
     const codes = new Set<string>();
     for (const world of [testWorld, schoolWorld]) {
       const start = world.start(objectiveIdsOf(world));
       for (const seed of COVERAGE_SEEDS) runSeed(world, seed, start, () => undefined, codes);
     }
-    for (const code of ["lesson_pool", "leak_victim", "leak_source", "limit_full"]) expect(codes, code).toContain(code);
+    for (const code of ["lesson_pool", "leak_victim", "leak_source"]) expect(codes, code).toContain(code);
   });
 });

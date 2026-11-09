@@ -56,10 +56,6 @@ export const schoolAgentPolicy: SubjectAgentPolicy = {
   ruleNotes: {
     "lesson.leak": "If it leaks, ask about a different fact of the material or phrase the question differently.",
     "lesson.leak_source": "Use a different fact or phrase the question differently.",
-    // Jednoznaczność typów rozwiązywanych na ślepo (sprawdza ją tylko ślepe rozwiązanie).
-    "check.blind_solve":
-      "lesson_choice has exactly one correct option; in lesson_cloze exactly one bank word fits each gap: never two gaps " +
-      "whose words could be swapped.",
   },
   sanitize(draft: LessonExerciseDraft, ctx) {
     const removed: string[] = [];

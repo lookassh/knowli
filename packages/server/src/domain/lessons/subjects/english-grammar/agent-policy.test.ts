@@ -76,9 +76,4 @@ describe("grammarAgentPolicy", () => {
     expect(grammarAgentPolicy.ruleNotes?.["lesson.leak"]).toContain("use a different subject, verb or object");
     expect(grammarAgentPolicy.ruleNotes?.["lesson.leak_source"]).toBe("Use a different sentence.");
   });
-
-  it("dopisek check.blind_solve: polskie zdanie źródłowe wskazuje jedno sformułowanie, szyki w acceptedAnswers", () => {
-    expect(grammarAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("(pronoun, tense, word order)");
-    expect(grammarAgentPolicy.ruleNotes?.["check.blind_solve"]).toContain("acceptedAnswers");
-  });
 });

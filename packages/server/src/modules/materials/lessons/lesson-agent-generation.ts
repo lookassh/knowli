@@ -20,7 +20,6 @@ import {
 } from "./lesson-agent-checkpoint";
 import {
   acceptedInLessonOrder,
-  agentCheckStartLine,
   agentRejectedReasons,
   generationGapsOf,
   lessonAgentRunInputFor,
@@ -53,7 +52,6 @@ import { runLessonBaselinePool } from "./lesson-baseline-pool";
 import {
   emptyLessonPoolAgentStats,
   lessonAgentLimits,
-  runLessonPoolAgent,
   type LessonPoolAgentResult,
   type LessonPoolAgentRunInput,
   type SettledObjective,
@@ -61,15 +59,15 @@ import {
 import { DEFAULT_LESSON_AGENT_POLICY } from "./lesson-pool-agent-policy";
 
 /**
- * Ścieżka agenta w `executeLessonGeneration` (spec etapu 2a §7–§10): próba runu puli lekcji generowana
- * kierownikiem `runLessonPoolAgent` z punktem kontrolnym w wierszu runu, wynik próby z funkcji czystych
+ * Generowanie puli lekcji w `executeLessonGeneration` (spec etapu 2a §7–§10): próba runu generowana
+ * przebiegiem bazowym `runLessonBaselinePool` z punktem kontrolnym w wierszu runu, wynik próby z funkcji czystych
  * (`lesson-agent-outcome.ts`) i wspólny zapis do szkicu (`finalizeLessonPoolWrite`).
  * Granica transakcji: zapis do szkicu i podsumowanie punktu kontrolnego w jednej transakcji; zapisy
  * postępu w trakcie — osobno, pod strażą tożsamości próby. Logi `[lesson-agent]` bez treści ćwiczeń,
  * materiału, kart i tematów zdań.
  */
 
-/** Rezerwa na zapis do szkicu przed terminem kontrolera (termin kierownika przychodzi wcześniej o tyle). */
+/** Rezerwa na zapis do szkicu przed terminem kontrolera (termin przebiegu przychodzi wcześniej o tyle). */
 export const AGENT_FINALIZATION_RESERVE_MS = 30_000;
 
 /** Szkic wersji czytany przed próbą (zapis i tak sprawdza numer edycji pod blokadą). */
@@ -80,19 +78,19 @@ interface DraftView {
   readonly storySentences?: readonly string[];
 }
 
-/** Wynik próby do rozliczenia: postęp po scaleniu z wynikiem kierownika i decyzja z tabeli §9. */
+/** Wynik próby do rozliczenia: postęp po scaleniu z wynikiem przebiegu i decyzja z tabeli §9. */
 interface AttemptResult {
   readonly progress: LessonAgentProgress;
   readonly outcome: LessonAgentOutcome;
 }
 
-/** Wydatek kierownika (zawiera `initialSpentUsd`) przeniesiony do postępu: budżet = licznik, łącznie + przyrost. */
+/** Wydatek przebiegu (zawiera `initialSpentUsd`) przeniesiony do postępu: budżet = licznik, łącznie + przyrost. */
 function withSpend(progress: LessonAgentProgress, spentUsd: number): Pick<LessonAgentProgress, "budgetSpentUsd" | "totalSpentUsd"> {
   const delta = Math.max(0, spentUsd - progress.budgetSpentUsd);
   return { budgetSpentUsd: progress.budgetSpentUsd + delta, totalSpentUsd: progress.totalSpentUsd + delta };
 }
 
-/** Wynik kierownika z jednym rozliczonym zagadnieniem (zapis postępu w haku `onObjectiveSettled`). */
+/** Wynik przebiegu z jednym rozliczonym zagadnieniem (zapis postępu w haku `onObjectiveSettled`). */
 function settledResult(settled: SettledObjective): LessonPoolAgentResult {
   return {
     objectives: [settled],
@@ -206,7 +204,7 @@ export async function executeLessonAgentGeneration(
   let catalogTopic: LessonTopic | undefined;
   // Najświeższa znana wartość postępu: zapis best-effort przy wyjściu (przynajmniej wydatek budżetu).
   let latest: LessonAgentProgress = emptyLessonAgentProgress();
-  // Bieżący wydatek kierownika (z `initialSpentUsd`): przerwana próba zapisuje też koszt nierozliczonych zagadnień (#317).
+  // Bieżący wydatek przebiegu (z `initialSpentUsd`): przerwana próba zapisuje też koszt nierozliczonych zagadnień (#317).
   let liveSpentUsd = 0;
   // Bez odczytanego punktu kontrolnego zapis best-effort nadpisałby go pustym postępem.
   let loaded = false;
@@ -277,15 +275,15 @@ export async function executeLessonAgentGeneration(
       material: input.material,
       fixed: draft.exercises,
       accepted: accepted.map((exercise) => ({ objectiveId: exercise.objectiveId, draft: exercise })),
-      // Zdania i przykłady kart są źródłami ujawnień tak jak w kierowniku.
+      // Zdania i przykłady kart są źródłami ujawnień tak jak w przebiegu.
       examples: mergeExamples(cardExposureSources(subject, topic), mode === "add" ? draft.examples : newExamples),
       limits,
     });
     if (check.removed > 0) console.log(`[lesson-agent] run=${runId} final_check removed=${check.removed}`);
     // Luki z ćwiczeń faktycznie zapisanych: w puli zagadnienie, któremu kontrola końcowa albo sam zapis (kolizje
     // z historyjką) odrzuciły ćwiczenie, traci komplet tylko wtedy, gdy nie jest kompletem na zapisanej lekcji
-    // (status jak w kierowniku: własne przykłady kart, pozostałe źródła ujawnień, limity puli); dogenerowanie
-    // liczy „dodano k z N” z zapisanych, nie z przyjętych przez agenta.
+    // (status jak w przebiegu: własne przykłady kart, pozostałe źródła ujawnień, limity puli); dogenerowanie
+    // liczy „dodano k z N” z zapisanych, nie z przyjętych w próbie.
     let gaps: LessonGenerationGap[] = [];
     const completeOnWritten = (written: readonly LessonExerciseDraft[]): ReadonlySet<string> =>
       completeObjectivesOnLesson({
@@ -309,7 +307,7 @@ export async function executeLessonAgentGeneration(
     const context: LessonPoolWriteContext = {
       ...(mode === "pool" && dynamicTopic !== undefined ? { dynamicTopic } : {}),
       newExamples,
-      // Usunięcia po przyjęciu (bezpiecznik kierownika i kontrola końcowa), nie odrzucenia w pętli agenta.
+      // Usunięcia po przyjęciu (kontrola końcowa; historyczny licznik z runów agenta), nie odrzucenia w przebiegu.
       rejectedCount: progress.removedAfterAcceptance + check.removed,
       // Powody dla rodzica: kumulowane kody runu bez tych, które porażka walidacji już zapisała w szkicu.
       rejectedReasons: agentRejectedReasons(unwrittenRejectionCodes(progress)),
@@ -391,7 +389,7 @@ export async function executeLessonAgentGeneration(
     }
   };
 
-  /** Próba pod kontrolerem: etap zagadnień (szkoła), kierownik z hakami zapisu postępu, scalenie i wynik. */
+  /** Próba pod kontrolerem: etap zagadnień (rozdział, szkoła), przebieg bazowy z hakami zapisu postępu, scalenie i wynik. */
   const attempt = async (control: LessonGenerationControl): Promise<AttemptResult> => {
     let begin = start ?? emptyLessonAgentProgress();
     const inputArgs = {
@@ -435,7 +433,7 @@ export async function executeLessonAgentGeneration(
         maxAttempts: MAX_AUTOMATIC_ATTEMPTS,
       });
     if (remainingMs <= 0) {
-      // Bez czasu na kierownika: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
+      // Bez czasu na przebieg: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
       // wyczerpany budżet (wiersz 1) i wspólny kod dostawcy z punktu kontrolnego (wiersz 6) zostają.
       console.log(`[lesson-agent] run=${runId} no_time_for_agent remainingMs=${remainingMs}`);
       const outcome = outcomeFor(begin, emptyAttempt);
@@ -446,8 +444,6 @@ export async function executeLessonAgentGeneration(
     console.log(
       `[lesson-agent] run=${runId} start mode=${mode} attempt=${attempts} resumed=${Object.keys(begin.objectives).length} pool=${input.poolSize} remainingMs=${remainingMs}`,
     );
-    // Stan kontroli etapu 2b (sędzia podpowiedzi, kontrola otwarta z graderem): jedna linia, bez treści.
-    if (subject.baselinePool !== true) console.log(agentCheckStartLine(runId, subject, agentDeps.grader !== undefined));
     // Kopia robocza do zapisów w trakcie; scalenie wyniku liczy się od `begin` (inaczej wydatek i histogram dwa razy).
     let working = begin;
     const runWithHooks: LessonPoolAgentRunInput = {
@@ -469,24 +465,11 @@ export async function executeLessonAgentGeneration(
       },
     };
     const policy = { ...agentDeps.policy, runTimeoutMs: remainingMs };
-    // Przedmiot z `baselinePool` (gramatyka, etap 4 #358): przebieg bazowy; pozostałe — agent puli.
-    const result = await control.run((agentSignal) =>
-      subject.baselinePool === true
-        ? runLessonBaselinePool({ generator: agentDeps.agent, checker: agentDeps.checker, subjects: services.subjects, policy }, runWithHooks, agentSignal)
-        : runLessonPoolAgent(
-            {
-              agent: agentDeps.agent,
-              checker: agentDeps.checker,
-              ...(agentDeps.grader === undefined ? {} : { grader: agentDeps.grader }),
-              subjects: services.subjects,
-              policy,
-            },
-            runWithHooks,
-            agentSignal,
-          ),
+    const result = await control.run((attemptSignal) =>
+      runLessonBaselinePool({ generator: agentDeps.agent, checker: agentDeps.checker, subjects: services.subjects, policy }, runWithHooks, attemptSignal),
     );
     const merged = mergeAttemptIntoProgress(begin, result, mode, addObjectiveId);
-    // Temat zna tylko kopia robocza (hak tematu), nie wynik kierownika.
+    // Temat zna tylko kopia robocza (hak tematu), nie wynik przebiegu.
     const progress: LessonAgentProgress = {
       ...merged,
       ...(merged.dynamicTopic === undefined && working.dynamicTopic !== undefined ? { dynamicTopic: working.dynamicTopic } : {}),

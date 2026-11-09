@@ -198,10 +198,6 @@ describe("księga reguł — przykłady kolejności", () => {
     ]);
     expect(block("lesson_calculation").slice(0, 3)).toEqual(["calculation.family_slug", "calculation.params", "calculation.tolerance"]);
   });
-
-  it("kontrole szkoły bez sędziego podpowiedzi i kontroli otwartej (etap 5b)", () => {
-    expect(book.checks.map((line) => line.id)).toEqual(["check.blind_solve", "check.variants"]);
-  });
 });
 
 /**
@@ -222,14 +218,6 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },
   { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "card example" },
-  { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "child's view" },
-  { point: "10. ślepe rozwiązanie", rule: "check.blind_solve", phrase: "position by position" },
-  {
-    point: "10. ślepe rozwiązanie (dopisek)",
-    rule: "check.blind_solve",
-    phrase: "put common equivalent word orders into acceptedAnswers",
-    subjects: ["english_grammar"],
-  },
 ];
 
 describe("frazy kluczowe nowych opisów reguł", () => {

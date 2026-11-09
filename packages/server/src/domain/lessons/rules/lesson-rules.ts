@@ -2,9 +2,9 @@ import type { RuleCatalog } from "./catalog";
 
 /**
  * Katalog reguł lekcji (spec katalogu reguł §2.2): reguły całej puli
- * (`validatePoolIssues`), limity zagadnienia, ujawnienia odpowiedzi i kontrole
- * modelami (przyjmowanie agenta, `agent/admission.ts`). Przedmiot dopisuje do
- * opisów własne zdania przez `SubjectAgentPolicy.ruleNotes`.
+ * (`validatePoolIssues`) i ujawnienia odpowiedzi (`agent/admission.ts`, krok
+ * reguł lekcji walidacji puli). Przedmiot dopisuje do opisów własne zdania przez
+ * `SubjectAgentPolicy.ruleNotes`.
  *
  * Bez importu wartości z `./catalog` (cykl przez `ENGINE_CATALOGS`): katalog
  * deklaruje się przez `satisfies RuleCatalog`, a id sprawdza `defineRules`
@@ -37,24 +37,6 @@ export const LESSON_RULES = {
     when: (ctx) => ctx.deduplication === "answer",
     description: "No two exercises of the lesson have answers that are equivalent after normalization.",
   },
-  // Limity zagadnienia (przyjmowanie agenta).
-  "lesson.limit_full": {
-    field: "exercise",
-    kind: "reject",
-    promptBrief: true,
-    description:
-      "An objective holds at most its exercise limit (target count plus listening allowance plus a small slack); remove " +
-      "one of its exercises before submitting another.",
-  },
-  "lesson.limit_listen": {
-    field: "exerciseType",
-    kind: "reject",
-    types: ["lesson_listen_choice"],
-    when: (ctx) => ctx.listenChoice,
-    description:
-      "An objective holds at most its listening allowance of lesson_listen_choice exercises (its pool and the exercises " +
-      "already in the lesson count together); once it is used up, submit other exercise types.",
-  },
   // Ujawnienia rozwiązań (tryb `generation`: równoważność po normalizatorze przedmiotu, także warianty).
   "lesson.leak": {
     field: "answer",
@@ -70,50 +52,5 @@ export const LESSON_RULES = {
     description:
       "An exercise must not show the answer of a later independent exercise of this or another objective (also one " +
       "already in the lesson): its answer and full sentence differ from it.",
-  },
-  // Kontrole innymi modelami (checker, sędzia podpowiedzi, grader).
-  "check.blind_solve": {
-    field: "answer",
-    kind: "reject",
-    when: (ctx) => ctx.policy.blindSolveTypes.some((type) => ctx.exerciseTypes.includes(type)),
-    description:
-      "An independent solver sees only the child's view (instruction, stimulus, options, word blocks, word bank; the " +
-      "material only when the subject's checker needs it), never the key; its answer must match the answer or an accepted " +
-      "variant, ignoring letter case, punctuation and contracted forms; pairs, groups and cloze gaps are compared position " +
-      "by position. Make the exercise have exactly one solution.",
-  },
-  "check.variants": {
-    field: "acceptedAnswers",
-    kind: "sanitize",
-    when: (ctx) => ctx.policy.variantCheckTypes.some((type) => ctx.exerciseTypes.includes(type)),
-    description:
-      "Another model checks every acceptedAnswers variant; a variant not equivalent to the answer is removed (the " +
-      "exercise stays) and the result notes the removal. A removed variant is gone for the child: never add it again; if " +
-      "the removed wording is a correct answer, make the prompt more specific so only the key fits, or remove_exercise " +
-      "and write a different one. When the independent solver answers with a different wording that the same model judges " +
-      "equivalent to the answer (for example another word order), that wording is added to acceptedAnswers (the exercise " +
-      "stays) and the result notes the addition.",
-  },
-  "check.hint_judge": {
-    field: "hint",
-    kind: "reject",
-    priority: "hint",
-    when: (ctx) => (ctx.policy.hintJudgeTypes ?? []).some((type) => ctx.exerciseTypes.includes(type)),
-    description:
-      "Another model judges every non-empty hint: it must follow from the material, be correct in the language of the " +
-      "instructions and not give away the answer or a required element, even in other words. A rejected hint rejects the " +
-      "exercise: fix the hint (null only if no safe hint exists).",
-  },
-  "check.open_answer": {
-    field: "requiredElements",
-    kind: "reject",
-    when: (ctx) => (ctx.policy.openAnswerCheckTypes ?? []).some((type) => ctx.exerciseTypes.includes(type)),
-    description:
-      "Two independent solvers answer the open question from the child's view and a grader grades both answers against " +
-      "requiredElements; both must be accepted. If a correct answer lacks elements the question does not demand, make " +
-      "requiredElements match the question (for “any two”, require what every valid choice satisfies and move examples to " +
-      "supplementaryElements) or make the question ask for them; do not drop elements the question genuinely requires. " +
-      "If an answer based on the material is graded wrong, check the model answer and criteria against the material, then " +
-      "make the question more precise or add the mistake to commonErrors.",
   },
 } as const satisfies RuleCatalog;

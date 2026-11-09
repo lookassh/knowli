@@ -1,19 +1,18 @@
-import type { LessonObjectiveAgentInput, LessonPacketInput, LessonPoolInput } from "../ports/ai";
-import { stageOf } from "../domain/lessons/stages";
+import type { LessonPacketInput, LessonPoolInput } from "../ports/ai";
 import { englishChapterSubject } from "../domain/lessons/subjects/english-chapter/module";
 import { schoolSubject } from "../domain/lessons/subjects/school/module";
 import type { LessonExerciseType } from "../domain/lessons/types";
 
 /**
  * Deterministyczny generator ćwiczeń lekcji dla fake'ów (testy, E2E, `UMIEM_FAKE_PROVIDERS=1`):
- * czyste funkcje bez sieci i stanu. `fakeObjectiveExercises` buduje zgłoszenie jednego zagadnienia
- * dla fake'a agenta puli (etap 3 PR 2 #237, spec §5.2) tak, żeby przeszło prawdziwe przyjmowanie.
+ * czyste funkcje bez sieci i stanu. `fakePacketExercises` buduje paczkę przebiegu bazowego tak, żeby
+ * przeszła prawdziwą walidację, a `fakeClosedAnswer` odczytuje jej klucz z widoku kontroli zamkniętych.
  * Nie jest adapterem żadnej usługi.
  */
 
 /**
- * Materiał lekcji z tym znacznikiem wydłuża pierwszy krok każdego zagadnienia fake agenta do co najmniej
- * FAKE_SLOW_DELAY_MS, przerywalnie, niezależnie od skonfigurowanego opóźnienia kroku
+ * Materiał lekcji z tym znacznikiem wydłuża każdą paczkę fake'a do co najmniej
+ * FAKE_SLOW_DELAY_MS, przerywalnie, niezależnie od skonfigurowanego opóźnienia
  * (`UMIEM_FAKE_LESSON_DELAY_MS`): E2E generuje lekcje bez sztucznego opóźnienia, a test restartu
  * trwającej generacji nadal ją widzi.
  */
@@ -22,10 +21,6 @@ export const FAKE_SLOW_DELAY_MS = 3_000;
 
 /** Stałe zdanie bez odpowiedzi ćwiczenia: spełnia reguły treści wyjaśnienia (jedno zdanie, zwykły tekst, ≤ 120). */
 export const FAKE_EXPLANATION = "Ta reguła mówi, jak zbudować poprawne zdanie.";
-
-type FakeStage = "guided" | "productive" | "independent";
-type StageCounts = Record<FakeStage, number>;
-const STAGES: readonly FakeStage[] = ["guided", "productive", "independent"];
 
 /** Deterministyczne słowo z materiału (pierwszy token) dla danego indeksu. */
 function materialWord(material: string, index: number): string {
@@ -39,18 +34,6 @@ function materialWord(material: string, index: number): string {
   // Unikalność odpowiedzi w puli: dołączamy sufiks indeksu (po normalizacji
   // nadal jeden token, bo cyfry są częścią tokenu).
   return index === 0 ? base.toLowerCase() : `${base.toLowerCase()}${index}`;
-}
-
-/** Typy ćwiczeń fake'a według etapu: budowany jest pierwszy typ dozwolony przez cel. */
-const FAKE_STAGE_TYPES: Record<FakeStage, readonly string[]> = {
-  guided: ["lesson_choice", "lesson_short_answer", "lesson_order"],
-  productive: ["lesson_gap", "lesson_error_fix", "lesson_transform"],
-  independent: ["lesson_open_answer"],
-};
-
-/** Zdanie do porównania z `avoidSentences`: małe litery, bez spacji na brzegach i bez końcowej kropki. */
-function avoidKey(sentence: string): string {
-  return sentence.toLowerCase().trim().replace(/\.$/u, "");
 }
 
 /** Przy fladze `exerciseExplanations` każde ćwiczenie dostaje przewidywalne wyjaśnienie (infrastruktura testowa). */
@@ -202,105 +185,6 @@ function fakeExercise(
     default:
       return { ...base, prompt: `Przetłumacz zdanie (${sequence + 1}).` };
   }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Zgłoszenie jednego zagadnienia dla fake'a agenta puli.
-
-/** Zamówienie kroku: liczby etapów, wymagane typy (po jednym ćwiczeniu z grupy) i dodatek słuchowy. */
-interface StepRequest {
-  readonly stages: StageCounts;
-  /** Wybrany typ każdej grupy wymaganej (pierwszy dozwolony i obsługiwany), bez powtórzeń. */
-  readonly required: readonly string[];
-  readonly listen: number;
-}
-
-/** Typy, które generator potrafi zbudować poprawnie dla gramatyki i szkoły. */
-const STAGED_TYPES: ReadonlySet<string> = new Set([...STAGES.flatMap((stage) => FAKE_STAGE_TYPES[stage]), "lesson_notice", LISTEN_CHOICE_TYPE]);
-function stageOfType(type: string): FakeStage | undefined {
-  const stage = stageOf(type as LessonExerciseType);
-  return stage === "intro" || type === LISTEN_CHOICE_TYPE ? undefined : stage;
-}
-
-function stepRequest(
-  input: LessonObjectiveAgentInput,
-  counts: Partial<StageCounts> | undefined,
-  requiredTypes: readonly (readonly string[])[] | undefined,
-  allowed: ReadonlySet<string>,
-  supported: ReadonlySet<string>,
-): StepRequest {
-  const stages: StageCounts =
-    counts === undefined
-      ? { ...input.pool.stageCounts }
-      : { guided: counts.guided ?? 0, productive: counts.productive ?? 0, independent: counts.independent ?? 0 };
-  const groups = requiredTypes ?? (counts === undefined ? input.targets.requiredTypes : []);
-  const required = [
-    ...new Set(groups.flatMap((group) => group.find((type) => allowed.has(type) && supported.has(type)) ?? [])),
-  ];
-  const listen = counts === undefined ? input.targets.listenAllowance : 0;
-  return { stages, required, listen: required.includes(LISTEN_CHOICE_TYPE) ? Math.max(1, listen) : listen };
-}
-
-/**
- * Typy kolejnych ćwiczeń etapu: najpierw wymagane typy tego etapu (liczą się do jego liczby, ale
- * zawsze po jednym), potem pierwszy dozwolony typ etapu do zamówionej liczby.
- */
-function stageTypes(stage: FakeStage, request: StepRequest, allowed: ReadonlySet<string>): string[] {
-  const required = request.required.filter((type) => stageOfType(type) === stage);
-  const filler = FAKE_STAGE_TYPES[stage].find((type) => allowed.has(type));
-  const rest = filler === undefined ? 0 : Math.max(0, request.stages[stage] - required.length);
-  return [...required, ...Array.from({ length: rest }, () => filler!)];
-}
-
-/** Gramatyka i szkoła: odpowiedzi ze słów materiału z sufiksem numeru, numeracja od `offset`. */
-function stagedObjectiveExercises(input: LessonObjectiveAgentInput, offset: number, request: StepRequest, allowed: ReadonlySet<string>) {
-  const pool = input.pool;
-  const objectiveId = input.objective.id;
-  const exercises: Record<string, unknown>[] = [];
-  let seq = offset;
-  const nextAnswer = () => materialWord(pool.material, seq++);
-  for (const stage of STAGES) {
-    for (const type of stageTypes(stage, request, allowed)) exercises.push(fakeExercise(type, objectiveId, nextAnswer(), pool, offset + exercises.length));
-  }
-  if (allowed.has(LISTEN_CHOICE_TYPE)) {
-    for (let i = 0; i < request.listen; i++) {
-      const answer = nextAnswer();
-      const number = offset + exercises.length + 1;
-      exercises.push(fakeListenChoice(objectiveId, `Listen and choose: ___ (${number}).`, answer, FAKE_LISTEN_DISTRACTORS.find((word) => word !== answer)!));
-    }
-  }
-  // Gwarancja ≥ 1 ćwiczenia: cel bez typów etapów dostaje pierwszy dozwolony typ.
-  if (exercises.length === 0) {
-    const type = pool.objectives.find((objective) => objective.id === objectiveId)?.exerciseTypes[0] ?? "lesson_open_answer";
-    exercises.push(fakeExercise(type, objectiveId, nextAnswer(), pool, offset));
-  }
-  // Przykładowy ton lektora (etap B): tylko gdy generator ma go zwracać.
-  if (pool.voiceTones === true) exercises[0] = { ...exercises[0]!, voiceTone: "curious" };
-  return { exercises, examples: [`Example for ${objectiveId}.`] };
-}
-
-/**
- * Zgłoszenie jednego kroku podagenta zagadnienia `input.objective` (rekordy gotowe; materializacja
- * narzędzi przepuszcza je bez zmian). Numeracja i dobór odpowiedzi od `offset`
- * (pętla fake'a agenta: `index · 1000`, przy „+N” `index · 1000 + 500 + existingCount · 2`, kolejne
- * kroki +100), więc zagadnienia lekcji i kroki nie powtarzają odpowiedzi.
- *
- * Bez `counts`: liczby etapów z `pool.stageCounts`, każdy typ z `targets.requiredTypes` i dodatek
- * słuchowy `targets.listenAllowance`. Z `counts`: tylko zamówione etapy i wymagane typy z
- * `requiredTypes` (po jednym ćwiczeniu z grupy). Przykłady kart pominięte przy `examplesFromPlan`.
- */
-export function fakeObjectiveExercises(
-  input: LessonObjectiveAgentInput,
-  offset: number,
-  counts?: Partial<Record<FakeStage, number>>,
-  requiredTypes?: readonly (readonly string[])[],
-): { exercises: unknown[]; examples?: string[] } {
-  const pool = input.pool;
-  const allowed = new Set(pool.objectives.find((objective) => objective.id === input.objective.id)?.exerciseTypes ?? []);
-  const request = stepRequest(input, counts, requiredTypes, allowed, STAGED_TYPES);
-  const generated = stagedObjectiveExercises(input, offset, request, allowed);
-  const exercises = withFakeExplanations(generated.exercises, pool);
-  return input.objective.examplesFromPlan ? { exercises } : { exercises, examples: generated.examples };
 }
 
 /** Tekst występuje jako osobne słowo (tokeny liter i cyfr) w którymś ze zdań. */

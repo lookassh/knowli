@@ -24,11 +24,6 @@ const BLIND_SOLVE_TYPES: readonly LessonExerciseType[] = [
 
 const VARIANT_CHECK_TYPES: readonly LessonExerciseType[] = ["lesson_open_answer", "lesson_transform", "lesson_error_fix", "lesson_gap"];
 
-/** Dopisek do ślepego rozwiązania (spec katalogu reguł §3): polskie zdanie źródłowe wskazuje jedno sformułowanie. */
-const BLIND_SOLVE_NOTE =
-  "The Polish source sentence must point to one English wording (pronoun, tense, word order); " +
-  "put common equivalent word orders into acceptedAnswers right away.";
-
 /** Dopisek do duplikatu wariantu: skrót i pełna forma to osobne warianty (etap 3 #360). */
 const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
   "unless the instruction asks for one of them.";
@@ -36,7 +31,7 @@ const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted 
 /**
  * Od etapu 4 (#358) gramatyka generuje się przebiegiem bazowym: z tej polityki działają tylko pola wspólne
  * (`independentReserve`, `slack` limitów zapisu, `typeExamples`, dopisek `variants.duplicate` w sekcji
- * `general` księgi reguł); pozostałe — dla testów mechaniki agenta (`agentGrammarSubject`) do etapu 5.
+ * `general` księgi reguł); pozostałe pola usuwa etap 5c razem z typem polityki.
  */
 export const grammarAgentPolicy: SubjectAgentPolicy = {
   blindSolveTypes: BLIND_SOLVE_TYPES,
@@ -47,7 +42,6 @@ export const grammarAgentPolicy: SubjectAgentPolicy = {
   ruleNotes: {
     "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — use a different subject, verb or object.",
     "lesson.leak_source": "Use a different sentence.",
-    "check.blind_solve": BLIND_SOLVE_NOTE,
     "variants.duplicate": CONTRACTIONS_NOTE,
   },
   typeExamples: grammarTypeExamples,

@@ -1,19 +1,16 @@
 import { messages } from "@learning/contracts";
 import { renderCalculationPrompt } from "../calculation";
-import { answersEquivalent } from "../pool-validation";
-import { clip } from "../rules/catalog";
-import type { AnswerNormalizer, LessonExerciseDraft, LessonTopic } from "../types";
+import type { LessonExerciseDraft, LessonTopic } from "../types";
 
 /**
- * Widok dziecka dla niezależnego rozwiązującego („ślepy solver”) i porównanie jego
- * odpowiedzi z kluczem ćwiczenia (spec etapu 1 §3.7). Czyste funkcje nad szkicem:
- * bez modelu, zegara i losowości — kolejność banków i kolumn ustala `sortedTexts`.
+ * Widok dziecka bez klucza dla kontroli zadań zamkniętych (spec etapu 1 §3.7, etapu 2 §2). Czyste
+ * funkcje nad szkicem: bez modelu, zegara i losowości — kolejność banków i kolumn ustala `sortedTexts`.
  */
 
 const sortedTexts = (texts: readonly string[]): string[] => [...texts].sort((a, b) => a.localeCompare(b, "en"));
 
 /**
- * Elementy grupowania w kolejności alfabetycznej tekstu — ta sama w widoku i w `blindMatches`.
+ * Elementy grupowania w kolejności alfabetycznej tekstu — ta sama w widoku i w kontroli zamkniętych.
  * Kolejność szkicu bywa skorelowana z `groupId` (model wypisuje grupę po grupie), więc
  * pozycja zdradzałaby przypisanie.
  */
@@ -159,94 +156,4 @@ export function solverView(draft: LessonExerciseDraft, topic: LessonTopic): stri
       lines.push(instructionOf(draft, topic), draft.prompt);
   }
   return lines.filter((line): line is string => line !== undefined && line !== "").join("\n");
-}
-
-/** Liczba odpowiedzi rozwiązującego: luki cloze, lewe strony par, elementy grup, inaczej jedna. */
-export function expectedAnswerCount(draft: LessonExerciseDraft): number {
-  if (draft.exerciseType === "lesson_cloze") return draft.gapAnswers?.length ?? 1;
-  if (draft.exerciseType === "lesson_match") return draft.pairs?.length ?? 1;
-  if (draft.exerciseType === "lesson_group") return draft.groupItems?.length ?? 1;
-  return 1;
-}
-
-/** Zapis etykiety do porównania: wielkość liter, apostrofy typograficzne i odstępy nie mają znaczenia. */
-const plainKey = (text: string): string =>
-  text.trim().toLowerCase().replace(/[’‘]/gu, "'").replace(/\s+/gu, " ");
-
-/**
- * Czy odpowiedzi rozwiązującego zgadzają się z kluczem szkicu. Cloze porównuje pozycyjnie
- * z wariantami przedmiotu; pary i grupy — „lewa => prawa” / „element => grupa” w podanej
- * kolejności, po etykiecie z prawej strony; pozostałe typy — jedna odpowiedź względem
- * `answer` i `acceptedAnswers`. Inna liczba odpowiedzi niż oczekiwana to zawsze rozjazd.
- */
-export function blindMatches(draft: LessonExerciseDraft, answers: readonly string[], normalizer: AnswerNormalizer): boolean {
-  if (answers.length !== expectedAnswerCount(draft)) return false;
-  const key = positionalKey(draft);
-  if (key !== null) return key.every((expected, index) => positionMatches(draft, answers[index] ?? "", expected, normalizer));
-  return [draft.answer, ...draft.acceptedAnswers].some((candidate) => answersEquivalent(answers[0] ?? "", candidate, normalizer));
-}
-
-/**
- * Odpowiedź rozwiązującego, która mogłaby zostać wariantem klucza: jedna odpowiedź tekstowa różna od
- * klucza (typy z kluczem pozycyjnym — cloze, pary, grupy — nie dopisują wariantów).
- */
-export function blindVariantCandidate(draft: LessonExerciseDraft, answers: readonly string[], normalizer: AnswerNormalizer): string | undefined {
-  if (positionalKey(draft) !== null || answers.length !== 1) return undefined;
-  const answer = (answers[0] ?? "").trim();
-  return answer === "" || blindMatches(draft, answers, normalizer) ? undefined : answer;
-}
-
-/**
- * Klucz porównywany pozycja po pozycji: luki cloze, prawe strony par w kolejności lewych, etykiety
- * grup elementów w kolejności widoku. Pozostałe typy mają jedną odpowiedź (`null`).
- */
-function positionalKey(draft: LessonExerciseDraft): string[] | null {
-  switch (draft.exerciseType) {
-    case "lesson_cloze":
-      return [...(draft.gapAnswers ?? [])];
-    case "lesson_match":
-      return (draft.pairs ?? []).map((pair) => pair.right);
-    case "lesson_group":
-      return groupItemsInViewOrder(draft).map((item) => draft.groups?.find((group) => group.id === item.groupId)?.label ?? "");
-    default:
-      return null;
-  }
-}
-
-/** Cloze: wariant przedmiotu; pary i grupy: etykieta po `=>` bez wielkości liter i zbędnych odstępów. */
-function positionMatches(draft: LessonExerciseDraft, answer: string, expected: string, normalizer: AnswerNormalizer): boolean {
-  if (draft.exerciseType === "lesson_cloze") return answersEquivalent(answer, expected, normalizer);
-  return plainKey(answer.split("=>").at(-1) ?? "") === plainKey(expected);
-}
-
-/** Pozycja w opisie rozjazdu: numer luki albo numer i lewa strona pary lub elementu grupy. */
-function positionLabel(draft: LessonExerciseDraft, index: number): string {
-  if (draft.exerciseType === "lesson_match") return `pair ${index + 1} ${clip(draft.pairs?.[index]?.left ?? "")}`;
-  if (draft.exerciseType === "lesson_group") return `item ${index + 1} ${clip(groupItemsInViewOrder(draft)[index]?.text ?? "")}`;
-  return `gap ${index + 1}`;
-}
-
-const clippedList = (texts: readonly string[]): string => (texts.length === 0 ? "nothing" : texts.map((text) => clip(text)).join(", "));
-
-/**
- * Opis rozjazdu ślepego rozwiązania dla modelu (`found` reguły `check.blind_solve`, spec katalogu
- * reguł §4.4): zawsze z kluczem; przy innej liczbie odpowiedzi obie liczby; przy parach, grupach i
- * lukach z bankiem tylko pozycje, które się różnią. Wołany dla odpowiedzi, które `blindMatches` odrzuca.
- */
-export function blindMismatchFound(draft: LessonExerciseDraft, answers: readonly string[], normalizer: AnswerNormalizer): string {
-  const key = positionalKey(draft);
-  const expected = expectedAnswerCount(draft);
-  if (answers.length !== expected) {
-    return `the solver gave ${answers.length} answers (${clippedList(answers)}) where the key has ${expected} (${clippedList(key ?? [draft.answer])})`;
-  }
-  if (key !== null) {
-    const differences = key.flatMap((expectedText, index) =>
-      positionMatches(draft, answers[index] ?? "", expectedText, normalizer)
-        ? []
-        : [`${positionLabel(draft, index)}: solver ${clip(answers[index] ?? "")}, key ${clip(expectedText)}`],
-    );
-    return `the solver's answers differ from the key at ${differences.join("; ")}`;
-  }
-  const variants = draft.acceptedAnswers.length === 0 ? "" : `, accepted variants ${clippedList(draft.acceptedAnswers)}`;
-  return `the solver answered ${clip(answers[0] ?? "")}; the key is ${clip(draft.answer)}${variants}`;
 }

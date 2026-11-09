@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Test architektury katalogu reguł (spec katalogu reguł §2.4 pkt 4): walidatory
- * i przyjmowanie agenta zgłaszają złamane reguły wyłącznie przez fabryki zgłoszeń
+ * i krok reguł lekcji zgłaszają złamane reguły wyłącznie przez fabryki zgłoszeń
  * katalogu (`issueFrom`), więc żaden tekst dla modelu albo rodzica nie omija
  * katalogu. W skanowanych plikach (`SCANNED` niżej):
  * - tablica zgłoszeń — nazwa `errors|issues|reasons|findings`, także z
@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
  *   albo hak `SubjectAgentPolicy` z wynikiem `string[]`) nie zwraca tak
  *   zbudowanej tablicy;
  * - właściwość `reason:` nie jest literałem napisu ani szablonem.
- * We wszystkich źródłach silnika lekcji i narzędzi agenta wywołanie fabryki
+ * We wszystkich źródłach silnika lekcji i parsowania rekordów wywołanie fabryki
  * zgłoszeń ma pierwszy argument będący literałem napisu (id reguły).
  *
  * Wywołanie „zwraca zgłoszenia”, gdy jego nazwa (identyfikator albo ostatnia
@@ -60,7 +60,7 @@ function sourceFilesUnder(dir: string): string[] {
 /** Pliki przedmiotów z hakami walidacji i przyjmowania. */
 const SUBJECT_HOOK_FILE = /^domain\/lessons\/subjects\/.+\/(?:validators|agent-policy|quote-normalize)\.ts$/;
 
-/** Pliki walidatorów i przyjmowania agenta objęte zakazem napisów w zgłoszeniach. */
+/** Pliki walidatorów, kroku reguł lekcji i parsowania rekordów objęte zakazem napisów w zgłoszeniach. */
 const SCANNED: readonly string[] = [
   "domain/lessons/pool-validation.ts",
   "domain/lessons/calculation.ts",
@@ -103,33 +103,6 @@ const EXCEPTIONS: Readonly<Record<string, readonly SinkException[]>> = {
     // Linia przykładu ujawnia rozwiązanie: powód z fabryki (`formatRuleReason`) z etykietą i cytatem linii.
     examplesText("...victims.map((victim) => `${label} ${quoted(text)}: ${formatRuleReason(leakSourceIssue(victim, ctx))}`)"),
     examplesText("`${label}: an objective has at most ${MAX_CARD_EXAMPLES} card examples; this line was ignored`"),
-  ],
-  [TOOLS_FILE]: [
-    {
-      fn: "cappedReasons",
-      expression: "`+${reasons.length - MAX_REASONS} more`",
-      reason: "znacznik pominiętych powodów w wyniku narzędzia, nie powód odrzucenia",
-    },
-    {
-      fn: "submit",
-      expression: '"exercises must be an array"',
-      reason: "odmowa całego wywołania narzędzia przed walidacją ćwiczeń",
-    },
-    {
-      fn: "submit",
-      expression: '"examples were not processed because exercises must be an array"',
-      reason: "odmowa całego wywołania narzędzia: przykłady nieprzetworzone razem z odrzuconym wywołaniem",
-    },
-    {
-      fn: "submit",
-      expression: '"examples are fixed by the plan"',
-      reason: "przykłady kart ustalone planem: odpowiedź o przykładach, nie odrzucenie ćwiczenia",
-    },
-    {
-      fn: "remove",
-      expression: "`there is no exercise \"${text}\" in this objective's pool`",
-      reason: "odmowa narzędzia usuwania: w puli zagadnienia nie ma ćwiczenia o tym id",
-    },
   ],
 };
 

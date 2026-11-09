@@ -2,22 +2,16 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_LESSON_GENERATION_POLICY } from "./lesson-generation-policy";
 import { DEFAULT_LESSON_AGENT_POLICY, RunCostMeter } from "./lesson-pool-agent-policy";
 
-describe("polityka agenta i licznik kosztu", () => {
-  it("wartości domyślne z planu etapu 1", () => {
+describe("polityka generowania puli i licznik kosztu", () => {
+  it("wartości domyślne", () => {
     expect(DEFAULT_LESSON_AGENT_POLICY).toEqual({
-      maxStepsPerObjective: 8,
       concurrency: 4,
       checkerConcurrency: 4,
       checkerTimeoutMs: 90_000,
       callTimeoutMs: 90_000,
-      objectiveTimeoutMs: 300_000,
       runTimeoutMs: DEFAULT_LESSON_GENERATION_POLICY.runTimeoutMs,
       runBudgetUsd: 1,
       unknownCallEstimateUsd: 0.02,
-      graderConcurrency: 4,
-      graderStageTimeoutMs: 30_000,
-      unknownGraderCallEstimateUsd: 0.002,
-      graderBreakerThreshold: 3,
     });
   });
 
