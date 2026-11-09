@@ -71,13 +71,15 @@ export const integrationTokens = app.table(
     id: uuid("id").primaryKey(),
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
-    scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+    scopes: text("scopes").array().notNull(),
     createdAt: timestamps("created_at").notNull().defaultNow(),
     revokedAt: timestamps("revoked_at"),
   },
   (t) => [
     check("integration_tokens_name_length", sql`length(${t.name}) between 1 and 120`),
-    check("integration_tokens_scopes_allowed", sql`${t.scopes} <@ ARRAY['learning:read']::text[]`),
+    check("integration_tokens_scopes_allowed", sql`${t.scopes} <@ ARRAY['learning:read', 'lessons:write']::text[]`),
+    // Dokładnie jeden zakres: odczyt postępów i pisanie lekcji to osobne tokeny (migracja 0041).
+    check("integration_tokens_single_scope", sql`cardinality(${t.scopes}) = 1`),
     uniqueIndex("integration_tokens_hash_idx").on(t.tokenHash),
     index("integration_tokens_revoked_idx").on(t.revokedAt),
   ],

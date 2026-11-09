@@ -23,7 +23,7 @@ export interface RenderedCard {
   readonly examples: string[];
 }
 
-const EXAMPLES_PLACEHOLDER = "{{examples}}";
+export const EXAMPLES_PLACEHOLDER = "{{examples}}";
 
 export function renderCard(card: CardSource, examples: readonly string[]): RenderedCard {
   const body = card.body

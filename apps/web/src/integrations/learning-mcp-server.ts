@@ -6,15 +6,19 @@ export const LEARNING_MCP_TOOL = "umiem_get_learning_overview";
 
 type OverviewReader = (query: LearningOverviewQuery) => Promise<unknown>;
 
-function toolError(code: string, message: string, retryable: boolean, requestId: string) {
+/** Wspólne dla serwerów obu zakresów tokenu (odczyt postępów, pisanie lekcji). */
+export const LEARNING_MCP_SERVER_INFO = { name: "umiem-learning", version: "0.3.0" };
+
+/** Błąd narzędzia: `{code, message, retryable, requestId, details?}` w treści tekstowej z `isError`. */
+export function toolError(code: string, message: string, retryable: boolean, requestId: string, details?: unknown) {
   return {
     isError: true,
-    content: [{ type: "text" as const, text: JSON.stringify({ code, message, retryable, requestId }) }],
+    content: [{ type: "text" as const, text: JSON.stringify({ code, message, retryable, requestId, ...(details === undefined ? {} : { details }) }) }],
   };
 }
 
 export function createLearningMcpServer(readOverview: OverviewReader, requestId: string): McpServer {
-  const server = new McpServer({ name: "umiem-learning", version: "0.2.0" });
+  const server = new McpServer(LEARNING_MCP_SERVER_INFO);
   server.registerTool(LEARNING_MCP_TOOL, {
     description: "Read recent learning activity by day, current progress, estimated learning time, and planned Umiem! tests for the family.",
     inputSchema: LearningOverviewQuerySchema,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiErrorSchema, LearningOverviewDtoSchema } from "@learning/contracts";
-import { AppError, getLearningOverview, type Services } from "@learning/server";
+import { AppError, getLearningOverview, type IntegrationPrincipal, type Services } from "@learning/server";
 import { IntegrationReadLimiter } from "./integration-read-limiter";
 import { handleLearningMcpRequest, type LearningMcpDependencies } from "./learning-mcp-route";
 import { handleLearningOverviewRequest } from "./learning-overview-orpc";
@@ -11,7 +11,7 @@ vi.mock("@learning/server", async (load) => {
 });
 
 const services = { clock: { now: () => new Date("2026-10-11T12:00:00Z") } } as Services;
-const principal = { id: "token-id", scopes: ["learning:read"] };
+const principal: IntegrationPrincipal = { id: "token-id", scopes: ["learning:read"] };
 const childId = "11111111-1111-4111-8111-111111111111";
 /** Minimalne DTO spełniające superRefine LearningOverviewDtoSchema (children: []). */
 const payload = {
@@ -162,7 +162,9 @@ describe("learning overview oRPC boundary", () => {
     const mcpDependencies: LearningMcpDependencies = {
       authenticate: vi.fn(async () => principal as never),
       readOverview: vi.fn(async () => payload),
+      lessonAuthoring: () => { throw new Error("not used by a learning:read token"); },
       limiter,
+      writeLimiter: new IntegrationReadLimiter(),
       allowedOrigins: new Set(),
       now: () => now,
       requestId: () => "request-id",

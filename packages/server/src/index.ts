@@ -23,8 +23,18 @@ export * from "./errors";
 export { createDatabase, migrateDatabase, type Database } from "./db/client";
 export { waitUntilDatabaseReady, type DatabaseReadinessOptions } from "./db/ready";
 export * as schema from "./db/schema";
-export { issueIntegrationToken, listIntegrationTokens, requireLearningReadToken, revokeIntegrationToken } from "./modules/family";
-export type { IntegrationPrincipal, IntegrationTokenMetadata } from "./modules/family";
+export {
+  authenticateIntegrationToken,
+  INTEGRATION_SCOPES,
+  isIntegrationScope,
+  issueIntegrationToken,
+  LESSONS_WRITE_SCOPE,
+  listIntegrationTokens,
+  requireIntegrationScope,
+  requireLearningReadToken,
+  revokeIntegrationToken,
+} from "./modules/family";
+export type { IntegrationPrincipal, IntegrationScope, IntegrationTokenMetadata } from "./modules/family";
 export { getLearningOverview } from "./modules/reporting";
 export {
   reviewSessionActivity,
@@ -82,6 +92,13 @@ export {
   regenerateLessonStory,
   applyLessonExercises,
   splitStages,
+} from "./modules/materials";
+export {
+  createAuthoredLesson,
+  getAuthoredLesson,
+  lessonAuthoringCatalog,
+  replaceAuthoredLesson,
+  validateAuthoredLesson,
 } from "./modules/materials";
 export {
   lessonCatalog,

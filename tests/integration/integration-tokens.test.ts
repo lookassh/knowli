@@ -56,11 +56,8 @@ describe("read-only integration tokens", () => {
     const { services } = buildTestServices();
     const id = randomUUID();
     const secret = secretFor(id);
-    await issueIntegrationToken(services, "No scope", secret);
-    await testDatabase().pool.query(
-      "UPDATE learning_app.integration_tokens SET scopes = '{}'::text[] WHERE id = $1",
-      [id],
-    );
+    // Token pisania lekcji nie czyta postępów (jeden zakres na token, migracja 0041).
+    await issueIntegrationToken(services, "Lesson authoring", secret, "lessons:write");
     await expect(requireLearningReadToken(services.db, secret)).rejects.toMatchObject({
       code: "forbidden",
       status: 403,

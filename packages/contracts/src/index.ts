@@ -6,6 +6,7 @@ export * from "./generation";
 export * from "./kid";
 export * from "./kid-api-contract";
 export * from "./lessons";
+export * from "./lesson-authoring";
 export * from "./learning-overview";
 export * from "./messages";
 export * from "./ui-audio";

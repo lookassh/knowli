@@ -78,6 +78,7 @@ Architektura
 MCP i skill
 - Przy każdej zmianie API (endpointy, DTO, parametry, domyślne wartości, autoryzacja, kody błędów, znaczenie danych) sprawdź wpływ na MCP i `SKILL.md` i zaktualizuj w tym samym PR adapter, walidację i skill. Regeneruj JSON Schema z `packages/contracts` i kopię u konsumenta; nie rozwijaj ręcznie rozbieżnych definicji; sprawdź `schemaVersion` i zgodność z wdrożonymi wersjami.
 - W opisie PR podaj wpływ API → MCP → skill, wykonane sprawdzenia (endpoint HTTP, walidacja kontraktu, klient Streamable HTTP na fikcyjnych danych) i wymagane wdrożenia u konsumentów; brak wpływu uzasadnij. Hermes łączy się jako zwykły klient MCP (`url` + Bearer); nie trzymaj tu klienta REST, serwera stdio ani forka schematu.
+- Token `lessons:write` (jeden zakres na token) daje na `/api/mcp` narzędzia pisania szkiców lekcji (`docs/integrations/lesson-authoring.md`, publiczna sama ścieżka `/api/mcp` wg `docs/architecture.md` §13); ich skill `skills/umiem-lesson-authoring` leży poza archiwum Hermesa, bez schematu konsumenta i zmiany manifestu, bo kontrakt niosą `inputSchema`/`outputSchema` z `tools/list`.
 - `SKILL.md`: prawdziwe nazwy narzędzi i parametrów, ograniczenia, interpretacja, błędy, prywatność; bez tokenów, danych dzieci i twierdzeń, że poprawne odpowiedzi to trwałe opanowanie albo brak zapisu to brak nauki; czas szacowany jawnie oznaczony. `learning-overview` świadomie nie obejmuje lekcji — utrzymaj filtr i notę.
 
 Dane i nauka
