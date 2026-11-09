@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { withConfigDefaults } from "../../../packages/server/src/config-defaults";
 import { initCostLedger, readCostLedger } from "../probe-costs";
-import { childEnv, loadDotEnv } from "../probe-helpers";
+import { loadDotEnv, runMuse } from "../probe-helpers";
 import { buildRecord, csvRowCount, readRun, type BenchRecord } from "./record";
-import { DEFAULT_REPS, SUITE, fixturePath, taskById, type BenchTask, type GenerationTask } from "./suite";
+import { DEFAULT_REPS, SUITE, fixturePath, taskById, type BenchTask, type GenerationTask, type GoldTask } from "./suite";
 import { renderTable } from "./table";
 
 const require = createRequire(import.meta.url);
@@ -32,7 +32,7 @@ const CODE_PATHS = ["--", "packages", "tests/probes", ":(exclude)tests/probes/re
 
 export type Step =
   | { kind: "generate"; task: GenerationTask; rep: number; env: Record<string, string>; done: string; log: string; dumps: string[] }
-  | { kind: "gold"; task: BenchTask; env: Record<string, string>; done: string; log: string }
+  | { kind: "gold"; task: GoldTask; env: Record<string, string>; done: string; log: string }
   | { kind: "sheet"; task: GenerationTask; args: string[]; done: string; log: string }
   | { kind: "judge"; task: GenerationTask; env: Record<string, string>; sheet: string; done: string; log: string };
 
@@ -170,8 +170,7 @@ function currentMeta(label: string, reps: number): BenchMeta {
 
 function museVersion(): string | undefined {
   try {
-    const out = process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", "--version"], { env: childEnv(), encoding: "utf8" }) : execFileSync("muse", ["--version"], { env: childEnv(), encoding: "utf8" });
-    const line = out.split(/\r?\n/u)[0]?.trim() ?? "";
+    const line = runMuse(["--version"]).split(/\r?\n/u)[0]?.trim() ?? "";
     // Do rekordu w repo trafia tylko krótka linia wersji, nie baner ani ścieżka.
     return /^[\w .()-]{1,80}$/u.test(line) ? line : undefined;
   } catch {

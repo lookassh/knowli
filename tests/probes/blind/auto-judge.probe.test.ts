@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -9,7 +8,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import { OPENROUTER_BASE_URL, openRouterCostOf } from "../../../packages/server/src/providers/openai/lesson-pool-agent";
 import { appendProvisionalCostEntry, assertWithinCostCap, readCostLedger, settleCostEntry } from "../probe-costs";
-import { childEnv, loadDotEnv, probeApiKey, resolveOutsideRepoPath } from "../probe-helpers";
+import { loadDotEnv, probeApiKey, resolveOutsideRepoPath, runMuse } from "../probe-helpers";
 
 /**
  * Automatyczny sędzia ślepej oceny etapu 2 (spec etapu 2 §7), z innej rodziny modeli niż generator i
@@ -83,10 +82,8 @@ function museVerdicts(museModel: string, prompt: string): Verdict[] {
     const answerShape = '{"rows":[{"rowId":"...","verdict":"ok|defect","criterion":"","level":"|too_hard|too_easy","adjudicatorNote":"..."}]}';
     writeFileSync(promptFile, [JUDGE_SYSTEM, "", prompt, "", `Answer with ONLY one JSON object and nothing else, shaped like ${answerShape}.`].join("\n"), "utf8");
     const args = ["exec", "--preset", "empty", "--reasoning-effort", "medium", ...(museModel === "" ? [] : ["--model", museModel]), "--prompt-file", promptFile];
-    const env = childEnv();
-    const options = { cwd: workspace, env, encoding: "utf8" as const, timeout: 900_000, maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] as ("ignore" | "pipe")[] };
-    // `muse` na Windows to skrypt `.cmd`, więc przez `cmd.exe /c`; w argumentach tylko ścieżka pliku z promptem.
-    const stdout = process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", ...args], options) : execFileSync("muse", args, options);
+    // W argumentach tylko ścieżka pliku z promptem i nazwa modelu (sprawdzona wyżej).
+    const stdout = runMuse(args, { cwd: workspace, timeout: 900_000, maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
     const start = stdout.indexOf("{");
     const end = stdout.lastIndexOf("}");
     if (start < 0 || end < start) throw new Error("odpowiedź Muse bez obiektu JSON");
