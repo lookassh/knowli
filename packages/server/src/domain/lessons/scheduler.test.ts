@@ -549,9 +549,31 @@ describe("selectLessonTask — ekspozycja vs wydanie w sesji (collision targetKe
 });
 
 describe("selectLessonTask — okno sprawdzianu: cel wprowadzony w tej sesji i nieopanowany", () => {
+  // Prod 2026-11-09: po pierwszej karcie nowego celu okno sprawdzianu wydało 9 zadań
+  // samodzielnych/produktywnych, a reszta kart i etap prowadzony wyszły dopiero potem.
+  it("nowy cel najpierw kończy karty, notice i etap prowadzony", () => {
+    const exercises = [...poolFor(O1), notice(O1)];
+    const card = task({ objectiveId: O1, kind: "card", exerciseType: "lesson_card" });
+    const base = { testWindowOpen: true, exercises, cardCountByObjective: { [O1]: 2 } };
+
+    expect(selectLessonTask(input({ ...base, sessionHistory: [card] })))
+      .toMatchObject({ kind: "card", objectiveId: O1, cardPurpose: "intro" });
+
+    const introduced = [card, task({ objectiveId: O1, kind: "card", exerciseType: "lesson_card" }),
+      task({ objectiveId: O1, exerciseType: "lesson_notice", outcome: "correct", itemId: `item:${O1}:notice` })];
+    expect(selectLessonTask(input({ ...base, sessionHistory: introduced })))
+      .toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_choice" });
+
+    const oneGuided = [...introduced,
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: `item:${O1}:guided:a` })];
+    expect(selectLessonTask(input({ ...base, sessionHistory: oneGuided })))
+      .toMatchObject({ kind: "exercise", objectiveId: O1, exerciseType: "lesson_choice" });
+  });
+
   it("nowy cel wprowadzony w sesji (not_assessed), nieopanowany → etap samodzielny", () => {
     const sessionHistory = [
       task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g1" }),
+      task({ objectiveId: O1, exerciseType: "lesson_choice", outcome: "correct", itemId: "g2" }),
     ];
     const plan = selectLessonTask(
       input({

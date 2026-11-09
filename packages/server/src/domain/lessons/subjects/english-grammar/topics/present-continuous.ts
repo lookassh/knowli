@@ -38,6 +38,9 @@ const PC_TOPIC_NOTES = notes(
     "A short Polish scene in instructionPl is a good context: its own short sentence before the task (Cicho! Dziadek śpi. " +
     "Uzupełnij zdanie.); never use teraz, właśnie, zawsze or zwykle as words of the task " +
     "itself (never Teraz uzupełnij zdanie.), because there they are no marker. " +
+    "The child sees only the task, no picture: a scene tells what happens and never asks the child to look at something " +
+    "(never Spójrz na robota na scenie!, Widzisz, co robię?) or refers to the chapter's comic, pictures or exercises; " +
+    "it is about the same person and action as the sentence of the task. " +
     "A context sentence may use is or are without a verb (This is Ola., It is sunny.), but never a verb used as an " +
     "adjective after is (never The door is open.). " +
     "explanationPl is exactly one sentence: an exclamation or a question of the scene stands in quotes („Look!”, „Cicho!”, " +
