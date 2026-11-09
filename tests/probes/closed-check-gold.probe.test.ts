@@ -7,6 +7,7 @@ import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../..
 import { validateLessonExerciseIssues } from "../../packages/server/src/domain/lessons/pool-validation";
 import { englishChapterSubject } from "../../packages/server/src/domain/lessons/subjects/english-chapter/module";
 import { englishGrammarSubject } from "../../packages/server/src/domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../packages/server/src/domain/lessons/subjects/school/module";
 import type { DynamicTopicData, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../packages/server/src/domain/lessons/types";
 import { parseLessonRecord } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-tools";
 import { DEFAULT_LESSON_AGENT_POLICY } from "../../packages/server/src/modules/materials/lessons/lesson-pool-agent-policy";
@@ -32,37 +33,57 @@ interface GoldCase {
   readonly id: string;
   readonly class: "correct" | "wrong_key" | "second_correct";
   readonly draft: unknown;
+  /** Keywords: pytanie otwarte rodziny (wiersz `Question:` kontroli, etap 5b). */
+  readonly familyPrompt?: string;
+  /** Druga poprawna szkoły: cytat materiału, który czyni drugą odpowiedź poprawną (dla autora i przeglądu). */
+  readonly justification?: string;
 }
 
 interface GoldFixture {
-  readonly subject?: "english_chapter";
+  readonly subject?: "english_chapter" | "school";
   readonly dynamicTopic?: DynamicTopicData;
+  /** Szkoła: materiał lekcji (oczyszczenie cytatów, uziemienie, kontrola z materiałem). */
+  readonly material?: string;
   readonly cases: GoldCase[];
 }
 
-/** Przedmiot i temat fixture'u: gramatyka (Present Continuous) albo rozdział z tematem dynamicznym. */
-function loadFixture(name: string): { cases: GoldCase[]; subject: SubjectModule; topic: LessonTopic } {
-  const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures", name), "utf8")) as GoldFixture;
-  if (fixture.subject === "english_chapter") {
-    return { cases: fixture.cases, subject: englishChapterSubject, topic: englishChapterSubject.buildDynamicTopic!(fixture.dynamicTopic!) };
-  }
-  // Moduł gramatyki od etapu 4 (#358) nie ma heurystyk językowych — ten sam stan co dawny moduł sondy.
-  return { cases: fixture.cases, subject: englishGrammarSubject, topic: englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")! };
+interface LoadedFixture {
+  readonly cases: GoldCase[];
+  readonly subject: SubjectModule;
+  readonly topic: LessonTopic;
+  readonly material: string;
 }
 
-const FIXTURES = { "closed-check-gold.json": [22, 22, 12], "closed-check-gold-stage5.json": [18, 16, 9] } as const;
+/** Przedmiot i temat fixture'u: gramatyka (Present Continuous) albo rozdział / szkoła z tematem dynamicznym. */
+function loadFixture(name: string): LoadedFixture {
+  const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures", name), "utf8")) as GoldFixture;
+  const material = fixture.material ?? "";
+  if (fixture.subject === "english_chapter" || fixture.subject === "school") {
+    const subject = fixture.subject === "school" ? schoolSubject : englishChapterSubject;
+    return { cases: fixture.cases, subject, topic: subject.buildDynamicTopic!(fixture.dynamicTopic!), material };
+  }
+  // Moduł gramatyki od etapu 4 (#358) nie ma heurystyk językowych — ten sam stan co dawny moduł sondy.
+  return { cases: fixture.cases, subject: englishGrammarSubject, topic: englishGrammarSubject.topics.find((candidate) => candidate.id === "present_continuous")!, material };
+}
+
+const FIXTURES = { "closed-check-gold.json": [22, 22, 12], "closed-check-gold-stage5.json": [18, 16, 9], "closed-check-gold-school.json": [18, 18, 14] } as const;
 const REPETITIONS = 3;
 
 /** Szkic przypadku po tym samym oczyszczeniu i walidacji struktury co w przebiegu bazowym; błąd = zły przypadek. */
-function draftOf(entry: GoldCase, subject: SubjectModule, topic: LessonTopic): LessonExerciseDraft {
+function draftOf(entry: GoldCase, { subject, topic, material }: LoadedFixture): LessonExerciseDraft {
   const raw = entry.draft as { objectiveId: string };
   const parsed = parseLessonRecord(raw, raw.objectiveId, subject, null);
   if (!parsed.ok) throw new Error(`${entry.id}: ${parsed.rejection.code}`);
-  const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: "" }).draft ?? parsed.draft;
+  const draft = subject.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
   const issues = validateLessonExerciseIssues(draft, subject, topic, { agent: true });
   if (issues.length > 0) throw new Error(`${entry.id}: ${issues.map((issue) => issue.rule).join(",")}`);
+  // Cytaty szkoły: uziemienie w materiale fixture'u (reguły puli `school.quote_*`).
+  const quoteIssues = (subject.validatePoolExtra?.([draft], { material }).get(0) ?? []).filter((issue) => issue.rule.startsWith("school.quote"));
+  if (quoteIssues.length > 0) throw new Error(`${entry.id}: ${quoteIssues.map((issue) => issue.rule).join(",")}`);
   return draft;
 }
+
+const itemsOf = (entry: GoldCase, draft: LessonExerciseDraft, topic: LessonTopic) => closedCheckItems(draft, topic, entry.familyPrompt);
 
 /** Wyniki idealnej kontroli dla klucza ćwiczenia (po jednym na pozycję `closedCheckItems`). */
 function idealResults(draft: LessonExerciseDraft): unknown[] {
@@ -77,6 +98,8 @@ function idealResults(draft: LessonExerciseDraft): unknown[] {
       return groupItemsInViewOrder(draft).map((item) => ({ answers: [draft.groups!.find((entry) => entry.id === item.groupId)!.label] }));
     case "lesson_cloze":
       return draft.gapAnswers!.map((answer) => ({ answers: [answer] }));
+    case "lesson_keywords":
+      return [{ answers: draft.keyOptionIds!.map((id) => draft.keywordOptions!.find((option) => option.id === id)!.text) }];
     default:
       return [{ answers: [draft.options!.find((option) => option.id === draft.correctOption)!.text] }];
   }
@@ -85,19 +108,20 @@ function idealResults(draft: LessonExerciseDraft): unknown[] {
 const twinOf = (cases: readonly GoldCase[], entry: GoldCase) => cases.find((item) => item.id === entry.id.replace("w-", "c-"));
 
 describe.each(Object.entries(FIXTURES))("ćwiczenia wzorcowe kontroli zamkniętych %s (bez sieci)", (name, sizes) => {
-  const { cases, subject, topic } = loadFixture(name);
+  const fixture = loadFixture(name);
+  const { cases, subject, topic } = fixture;
 
   it("has the class sizes of the spec and every case passes the structure check", () => {
     const count = (klass: GoldCase["class"]) => cases.filter((entry) => entry.class === klass).length;
     expect([count("correct"), count("wrong_key"), count("second_correct")]).toEqual([...sizes]);
     expect(new Set(cases.map((entry) => entry.id)).size).toBe(cases.length);
-    for (const entry of cases) expect(closedCheckItems(draftOf(entry, subject, topic), topic), entry.id).not.toBeNull();
+    for (const entry of cases) expect(itemsOf(entry, draftOf(entry, fixture), topic), entry.id).not.toBeNull();
   });
 
   it("an ideal checker passes every correct case and rejects its mechanical wrong-key twin", () => {
     for (const entry of cases.filter((item) => item.class === "wrong_key")) {
-      const draft = draftOf(twinOf(cases, entry)!, subject, topic);
-      const twin = draftOf(entry, subject, topic);
+      const draft = draftOf(twinOf(cases, entry)!, fixture);
+      const twin = draftOf(entry, fixture);
       const ideal = idealResults(draft);
       expect(closedCheckVerdict(draft, ideal, subject.normalizer).pass, entry.id).toBe(true);
       const order = draft.exerciseType === "lesson_order";
@@ -117,14 +141,15 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
     if (!model) throw new Error("UMIEM_PROBE_AGENT_SOLVER_MODEL jest wymagany");
     const fixtureName = process.env.UMIEM_PROBE_GOLD_FIXTURE?.trim() || "closed-check-gold.json";
     if (!(fixtureName in FIXTURES)) throw new Error(`nieznany fixture ${fixtureName}`);
-    const { cases: goldCases, subject, topic } = loadFixture(fixtureName);
+    const fixture = loadFixture(fixtureName);
+    const { cases: goldCases, subject, topic, material } = fixture;
     const costsPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_COSTS, "UMIEM_PROBE_COSTS");
     if (costsPath === undefined) throw new Error("UMIEM_PROBE_COSTS jest wymagany");
     const dumpPath = resolveOutsideRepoPath(process.env.UMIEM_PROBE_GOLD_DUMP, "UMIEM_PROBE_GOLD_DUMP");
     if (dumpPath !== undefined && existsSync(dumpPath)) throw new Error(`${dumpPath} już istnieje`);
     const cases = goldCases.map((entry) => {
-      const draft = draftOf(entry, subject, topic);
-      return { entry, draft, views: closedCheckItems(draft, topic)! };
+      const draft = draftOf(entry, fixture);
+      return { entry, draft, views: itemsOf(entry, draft, topic)! };
     });
     // Błędny klucz z widokiem jak u poprawnego ćwiczenia: werdykt z jego odpowiedzi, bez wywołania.
     const viewsOf = new Map(cases.map((item) => [item.entry.id, JSON.stringify(item.views)]));
@@ -154,7 +179,12 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
         for (const type of [...new Set(called.map((item) => item.draft.exerciseType))]) {
           const packet = called.filter((item) => item.draft.exerciseType === type);
           const items = packet.flatMap((item) => item.views.map((view) => ({ view })));
-          const { results } = await checker.checkClosed({ contract: closedCheckContract(type)!, items, timeoutMs: DEFAULT_LESSON_AGENT_POLICY.checkerTimeoutMs }, sink, new AbortController().signal);
+          const withMaterial = subject.checkerNeedsMaterial ? { material } : {};
+          const { results } = await checker.checkClosed(
+            { contract: closedCheckContract(type)!, items, timeoutMs: DEFAULT_LESSON_AGENT_POLICY.checkerTimeoutMs, ...withMaterial },
+            sink,
+            new AbortController().signal,
+          );
           let offset = 0;
           for (const item of packet) {
             answers.set(item.entry.id, results.slice(offset, offset + item.views.length));
@@ -176,6 +206,10 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
       console.log(`koszt=${costUsd.toFixed(4)} USD (bez kosztu: ${unknown})`);
     }
     for (const [klass, rows] of Object.entries(tally)) console.log(`${klass}: ${rows.map((row) => `${row.rejected}/${row.total}`).join(" ")} odrzucone`);
+    // Per przypadek (k/3 odrzuceń): powtórzenia są skorelowane, więc liczy się też, które przypadki zawodzą.
+    const perCase = new Map<string, number>();
+    for (const entry of verdicts) if (!entry.pass) perCase.set(entry.id, (perCase.get(entry.id) ?? 0) + 1);
+    console.log(`odrzucone per przypadek: ${[...perCase].map(([id, rejected]) => `${id} ${rejected}/${REPETITIONS}`).join(", ") || "-"}`);
     if (dumpPath !== undefined) {
       mkdirSync(dirname(dumpPath), { recursive: true });
       writeFileSync(dumpPath, `${JSON.stringify({ model, fixture: fixtureName, tally, verdicts }, null, 2)}\n`, "utf8");

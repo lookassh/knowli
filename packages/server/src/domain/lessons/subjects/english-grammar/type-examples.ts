@@ -1,7 +1,7 @@
 import type { LessonExerciseType, TypeExamples } from "../../types";
 
 /**
- * Przykłady typów tematów „to be” i Present Continuous dla księgi reguł agenta (`agentPolicy.typeExamples`).
+ * Przykłady typów tematów „to be” i Present Continuous dla księgi reguł paczki (`SubjectModule.typeExamples`).
  * Ogólne przykłady kart typów ćwiczą Present Simple (drinks, plays, don't), więc w temacie „to be” uczyłyby
  * złej formy (luka na czasownik zamiast formy be) i do/does. Każdy cel ma własny zestaw, bo cele
  * różnią się biegunowością (przeczenia wymagają not, cele twierdzące go zabraniają) i formą

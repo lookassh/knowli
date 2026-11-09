@@ -16,6 +16,7 @@ import {
   createSchoolLesson,
   createSubjectRegistry,
   schoolSubject,
+  createProductionSubjectRegistry,
   executeLessonGeneration,
   readLessonDeck,
   ensureLearningPolicy,
@@ -29,11 +30,11 @@ import {
   type LessonDraftDto,
   type LessonExerciseInput,
 } from "@learning/contracts";
-import { agentGrammarRegistry, finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
+import { finishLessonTask, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { EDITOR_CARD_EXAMPLE, lessonWorld, seedEditorPoolWithLeak } from "../fixtures/lesson-world";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
-import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
+import { everyPacket, fakeGeneration, type FakeGeneration } from "./fakes";
+import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { handleParentApi } from "./helpers";
 import { errorResponse } from "../../apps/web/src/http/errors";
 import { createLessonSnapshot, toLessonDraftPatch } from "../../apps/web/src/parent/lessons/lesson-editor-state";
@@ -51,7 +52,7 @@ async function truncateDeckTables(): Promise<void> {
 
 function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Services {
   const { db } = testDatabase();
-  return createServices({ db, clock, media: fakes.settings, generation: fakes.deps, subjects: agentGrammarRegistry() });
+  return createServices({ db, clock, media: fakes.settings, generation: fakes.deps, subjects: createProductionSubjectRegistry() });
 }
 
 /** Request helper: path -> segments; GET has no origin requirement. */
@@ -344,19 +345,19 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
   });
 
   it("generacja → edycja samego tytułu → publikacja → rzeczywista sesja dziecka", async () => {
-    // Zgłoszenie generatora fake'a agenta z pierwszą luką zamienioną na przekształcenie.
-    const fakes = await fakeGeneration({ agent: { generate: {}, objectives: { negative: [{ build: (input) => {
-      const result = fakeObjectiveExercises(input, 0);
-      let replaced = false;
-      return { ...result, exercises: result.exercises.map((raw) => {
-        const ex = raw as Record<string, unknown>;
-        if (replaced || ex.exerciseType !== "lesson_gap") return raw;
-        replaced = true;
-        const { stem: _stem, hint: _hint, ...base } = ex;
-        return { ...base, exerciseType: "lesson_transform", statement: "She dances.", transformId: "to_negative",
+    // Paczki generatora fake'a; w paczce przekształceń pierwsze ćwiczenie zamienione na prawdziwe zdanie.
+    let band = 0;
+    const transformFirst = { build: (input: Parameters<typeof fakePacketExercises>[0]) => {
+      const result = fakePacketExercises(input, (band += 1_000));
+      if (input.type !== "lesson_transform") return result;
+      return { ...result, exercises: result.exercises.map((ex, index) => {
+        if (index > 0) return ex;
+        const { statement: _statement, transformId: _transformId, ...base } = ex;
+        return { ...base, statement: "She dances.", transformId: "to_negative",
           answer: "She does not dance", focus: ["does", "not"], acceptedAnswers: [] };
       }) };
-    } }] } } });
+    } };
+    const fakes = await fakeGeneration({ agent: { generate: {}, packets: { negative: everyPacket(transformFirst, 20) } } });
     disposers.push(fakes.dispose);
     const { services, cookie } = await freshParent(fakes);
     // Transform jest preferowany dopiero przy dostępnym graderze; dokładna
@@ -406,10 +407,11 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
       }
       await endSession(sessionServices, sessionId);
     };
-    const firstSession = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
-    await completeSession(firstSession.sessionId);
-    const nextSession = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
-    await completeSession(nextSession.sessionId);
+    // Sesje do pierwszego przekształcenia (pula przebiegu bazowego jest większa niż dwie sesje etapów prowadzonych).
+    for (let session = 0; session < 6 && !(seen.has("lesson_transform") && seen.has("lesson_story")); session++) {
+      const started = await startSession(sessionServices, { childId: child.id, deckId, microphoneEnabled: false });
+      await completeSession(started.sessionId);
+    }
     expect(seen.has("lesson_choice")).toBe(true);
     expect(seen.has("lesson_transform")).toBe(true);
     // Run historyjki przez workera: sesja kończy się historyjką i pytaniami.
@@ -528,11 +530,13 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     const skillAfterCosmetic = await objectiveSkillVersionIds(draft.id);
     expect(skillAfterCosmetic).toEqual(skillBefore);
 
-    // Zmiana odpowiedzi pierwszego ćwiczenia → nowa skill_version.
+    // Zmiana odpowiedzi pierwszego ćwiczenia wyboru → nowa skill_version.
     const afterInputs = afterCosmetic.exercises.map(stripToInput);
+    const target = afterInputs.findIndex((ex) => ex.exerciseType === "lesson_choice");
+    expect(target).toBeGreaterThanOrEqual(0);
     const changed = afterInputs.map((ex, i) =>
       // Wybór: odpowiedź to tekst poprawnej opcji (reguła answer.correct_option_text), więc zmienia się też opcja.
-      i === 0
+      i === target
         ? {
             ...ex,
             answer: "goes",
@@ -806,6 +810,23 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
       "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
     ].join("\n");
 
+    /**
+     * Fake paczek szkoły z tonem lektora: generator paczki fake'a nie zwraca tonu, więc pierwsze ćwiczenie
+     * pierwszej paczki każdego zagadnienia dostaje `curious` (jak model przy `pool.voiceTones`).
+     */
+    async function tonedSchoolFakes(): Promise<FakeGeneration> {
+      let band = 0;
+      const toned = { build: (input: Parameters<typeof fakePacketExercises>[0]) => {
+        const result = fakePacketExercises(input, (band += 1_000));
+        if (!input.withExamples || input.pool.voiceTones !== true || result.exercises.length === 0) return result;
+        return { ...result, exercises: [{ ...result.exercises[0]!, voiceTone: "curious" }, ...result.exercises.slice(1)] };
+      } };
+      const steps = everyPacket(toned, 20);
+      const fakes = await fakeGeneration({ agent: { generate: {}, packets: { fotosynteza: steps, chrzest_polski: steps } } });
+      disposers.push(fakes.dispose);
+      return fakes;
+    }
+
     async function schoolDraft(
       fakes: FakeGeneration,
       material: string = SCHOOL_MATERIAL,
@@ -925,8 +946,7 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     });
 
     it("edycja samej treści pytania zachowuje ton w DTO i w payloadzie", async () => {
-      const fakes = await fakeGeneration();
-      disposers.push(fakes.dispose);
+      const fakes = await tonedSchoolFakes();
       const { services, cookie, draft } = await schoolDraft(fakes);
       expect(draft.exercises[0]!.voiceTone).toBe("curious");
       expect(draft.dynamicTopic!.objectives[0]!.cards[0]!.voiceTone).toBe("cheerful");
@@ -967,8 +987,7 @@ describe("Parent API lekcji (integracja, przez router HTTP)", () => {
     });
 
     it("zmiana samego tonu po publikacji i kopii szkicu nie tworzy skill_version ani nie rusza postępu dziecka", async () => {
-      const fakes = await fakeGeneration();
-      disposers.push(fakes.dispose);
+      const fakes = await tonedSchoolFakes();
       const { services, cookie, deckId, draft } = await schoolDraft(fakes);
       const publish = await call(services, "POST", `lesson-drafts/${draft.id}/publish`, { body: { expectedEditNumber: draft.editNumber }, cookie });
       expect(publish.status).toBe(200);

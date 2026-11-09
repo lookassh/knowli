@@ -7,7 +7,7 @@ import { schoolSubject } from "./module";
 /**
  * Przypadki reguł katalogu szkoły (`rules.ts`) dla testu kompletności
  * `rules/rule-cases.test.ts`. Każdy przypadek woła prawdziwy hak przedmiotu
- * (`validateExercise`, `validatePoolExtra`, `agentPolicy.sanitize`).
+ * (`validateExercise`, `validatePoolExtra`, `SubjectModule.sanitize`).
  */
 
 const OBJECTIVE_ID = "school.cases.fotosynteza";
@@ -84,10 +84,9 @@ function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExer
 }
 
 const exercise = (draft: LessonExerciseDraft) => () => schoolSubject.validateExercise(draft, topic);
-const pool = (drafts: readonly LessonExerciseDraft[], rejectedFamilies?: ReadonlySet<string>) => () =>
-  [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL, ...(rejectedFamilies ? { rejectedFamilies } : {}) }).values()].flat();
+const pool = (drafts: readonly LessonExerciseDraft[]) => () => [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flat();
 const sanitizeNotes = (draft: LessonExerciseDraft) => () =>
-  schoolSubject.agentPolicy.sanitize!(draft, { material: MATERIAL }).notes ?? [];
+  schoolSubject.sanitize!(draft, { material: MATERIAL }).notes ?? [];
 
 const family = openDraft({ familyId: "def" });
 
@@ -132,18 +131,6 @@ registerRuleCases([
     ]),
   },
   { rule: "school.keywords_family_missing", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()]) },
-  // Kaskada: pytanie otwarte rodziny „def” odpadło w tym samym wywołaniu agenta.
-  { rule: "school.keywords_family_rejected", violation: pool([openDraft({ familyId: "inna" }), keywordsDraft()], new Set(["def"])) },
-  {
-    rule: "school.keyword_not_in_answer",
-    violation: pool([
-      family,
-      keywordsDraft({
-        keywordOptions: [{ id: "k1", text: "chlorofil" }, { id: "k2", text: "cukry" }, { id: "k3", text: "tlen" }, { id: "k4", text: "korzenie" }],
-        answer: "chlorofil, cukry",
-      }),
-    ]),
-  },
   {
     rule: "school.calculation_family_mismatch",
     violation: pool([calculationDraft(), calculationDraft({ ...scale, unit: "km" })]),
@@ -159,11 +146,5 @@ registerRuleCases([
       focus: ["fotosyntezy"],
       hint: "proces",
     }),
-  },
-  {
-    rule: "hint.reveals_words",
-    violation: sanitizeNotes(
-      openDraft({ answer: "Mierzeja Wiślana", requiredElements: [{ id: "e1", text: "Mierzeja Wiślana" }], hint: "Przykładem jest Mierzeja Wiślana" }),
-    ),
   },
 ]);

@@ -3,12 +3,10 @@ import { messages } from "@learning/contracts";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../errors";
 import { A, B, choice, gap, keywords, listen, subject as fixtureSubject, topic } from "../../../domain/lessons/testing/agent-admission-fixtures";
-import { withAgentPolicy } from "../../../domain/lessons/testing/agent-test-subject";
 import type { DynamicTopicData, LessonExerciseDraft, SubjectModule } from "../../../domain/lessons/types";
 import { emptyLessonAgentProgress, type LessonAgentProgress } from "./lesson-agent-checkpoint";
 import {
   acceptedInLessonOrder,
-  agentCheckStartLine,
   agentRejectedReasons,
   generationGapsOf,
   lessonAgentRunInputFor,
@@ -20,7 +18,7 @@ import {
   type LessonAgentRunInputArgs,
 } from "./lesson-agent-outcome";
 import { scopeFamiliesToRun, type LessonRunInput } from "./lesson-drafts";
-import { emptyLessonPoolAgentStats, type LessonPoolAgentResult, type SettledObjective } from "./lesson-pool-agent";
+import type { LessonPoolAgentResult, SettledObjective } from "./lesson-pool-agent";
 
 /** Przedmioty wg cech, nie identyfikatorów: katalog i dynamiczny (rozdział, szkoła). */
 const catalog: SubjectModule = fixtureSubject;
@@ -59,7 +57,6 @@ function args(overrides: Partial<LessonAgentRunInputArgs> = {}): LessonAgentRunI
     attemptNonce: NONCE,
     subject: catalog,
     input: runInput(),
-    graderAvailable: true,
     progress: undefined,
     draft: { exercises: [], examples: {} },
     catalogTopic: topic,
@@ -71,7 +68,7 @@ function progressWith(overrides: Partial<LessonAgentProgress> = {}): LessonAgent
   return { ...emptyLessonAgentProgress(), ...overrides };
 }
 
-/** Wejście kierownika (bez kształtów „etap zagadnień” i „nic do dodania”). */
+/** Wejście przebiegu bazowego (bez kształtów „etap zagadnień” i „nic do dodania”). */
 function agentInput(value: ReturnType<typeof lessonAgentRunInputFor>) {
   if ("needsObjectives" in value || "nothingToAdd" in value) throw new Error("expected agent input");
   return value;
@@ -94,7 +91,6 @@ describe("lessonAgentRunInputFor — pełna generacja", () => {
       instruction: "Polecenie rodzica.",
       interests: ["piłka"],
       poolSize: 16,
-      graderAvailable: true,
       fixed: [],
       draftExamples: {},
       skipObjectives: [],
@@ -224,7 +220,6 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
       instruction: "Polecenie rodzica.",
       interests: ["piłka"],
       poolSize: 16,
-      graderAvailable: true,
       fixed: draftExercises,
       draftExamples: {},
       skipObjectives: [],
@@ -252,7 +247,7 @@ describe("lessonAgentRunInputFor — dogenerowanie", () => {
     expect(value.examplesFixed).toBe(true);
   });
 
-  it("nowe z punktu kontrolnego pokrywają count → nothingToAdd (kierownik nie przyjmuje count < 1)", () => {
+  it("nowe z punktu kontrolnego pokrywają count → nothingToAdd (nie ma czego generować)", () => {
     const added = [gap(A, "Z1 ___.", "a"), gap(A, "Z2 ___.", "b"), gap(A, "Z3 ___.", "c"), gap(A, "Z4 ___.", "d")];
     const progress = progressWith({ objectives: { [A]: { status: "incomplete", exercises: added, examples: [] } } });
     expect(lessonAgentRunInputFor(args({ input: runInput({ regenerate }), draft, progress }))).toEqual({ nothingToAdd: true });
@@ -353,10 +348,8 @@ function settled(
 function attemptResult(objectives: SettledObjective[], overrides: Partial<LessonPoolAgentResult> = {}): LessonPoolAgentResult {
   return {
     objectives,
-    stats: emptyLessonPoolAgentStats(),
     rejections: [],
     spentUsd: 0,
-    unknownCostCalls: 0,
     ...overrides,
   };
 }
@@ -378,9 +371,9 @@ describe("outcomeObjectivesOf", () => {
 });
 
 describe("mergeAttemptIntoProgress", () => {
-  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, ruleIds: ["lesson.leak"], detail: "treść" });
+  const rejection = (code: string) => ({ objectiveId: A, exerciseType: "lesson_gap", kind: "rule" as const, code, ruleIds: ["lesson.leak"] });
 
-  it("pula: wznowione zastępuje wpis, complete zostaje; wydatek, histogram i usunięcia sumowane", () => {
+  it("pula: wznowione zastępuje wpis, complete zostaje; wydatek i histogram sumowane, usunięcia bez zmian", () => {
     const start = progressWith({
       objectives: {
         [A]: { status: "complete", exercises: [choiceA], examples: ["A."] },
@@ -394,7 +387,6 @@ describe("mergeAttemptIntoProgress", () => {
     const result = attemptResult([settled(B, "incomplete", [gapB])], {
       spentUsd: 0.375,
       rejections: [rejection("leak"), rejection("duplicate")],
-      stats: { ...emptyLessonPoolAgentStats(), submitted: 3, accepted: 1, invariantViolations: 2 },
     });
     expect(mergeAttemptIntoProgress(start, result, "pool")).toEqual({
       ...start,
@@ -405,32 +397,14 @@ describe("mergeAttemptIntoProgress", () => {
       budgetSpentUsd: 0.375,
       totalSpentUsd: 0.625,
       rejectionCodes: { leak: 3, duplicate: 1 },
-      removedAfterAcceptance: 3,
     });
   });
 
-  it("liczniki kontroli: sumowane między próbami jak histogram, bez pola gdy nic nie policzono", () => {
-    const counted = (stats: Partial<LessonPoolAgentResult["stats"]>) =>
-      attemptResult([], { stats: { ...emptyLessonPoolAgentStats(), ...stats } });
-    // Zero liczników (jak w 2a) nie dodaje pola do punktu kontrolnego.
-    expect(mergeAttemptIntoProgress(emptyLessonAgentProgress(), counted({}), "pool")).not.toHaveProperty("checkCounters");
-    const first = mergeAttemptIntoProgress(emptyLessonAgentProgress(), counted({ hintChecks: 2, openChecks: 1, graderCalls: 3 }), "pool");
-    expect(first.checkCounters).toEqual({ hintChecks: 2, openChecks: 1, graderCalls: 3 });
-    const second = mergeAttemptIntoProgress(first, counted({ hintChecks: 1, graderCalls: 2, graderErrors: 1, openUnavailable: 1 }), "pool");
-    expect(second.checkCounters).toEqual({ hintChecks: 3, openChecks: 1, graderCalls: 5, graderErrors: 1, openUnavailable: 1 });
-    // Próba bez nowych liczników zachowuje dotychczasowe.
-    expect(mergeAttemptIntoProgress(second, counted({}), "pool").checkCounters).toEqual(second.checkCounters);
-  });
-
-  it("oczyszczenia: sumowane między próbami, bez pola gdy nic nie policzono", () => {
-    const cleaned = (stats: Partial<LessonPoolAgentResult["stats"]>) =>
-      attemptResult([], { stats: { ...emptyLessonPoolAgentStats(), ...stats } });
-    expect(mergeAttemptIntoProgress(emptyLessonAgentProgress(), cleaned({}), "pool")).not.toHaveProperty("cleanupCounts");
-    const first = mergeAttemptIntoProgress(emptyLessonAgentProgress(), cleaned({ hintsRemoved: 2, variantsRemoved: 3 }), "pool");
-    expect(first.cleanupCounts).toEqual({ hintsRemoved: 2, variantsRemoved: 3 });
-    const second = mergeAttemptIntoProgress(first, cleaned({ variantsRemoved: 1, quotesSnapped: 4 }), "pool");
-    expect(second.cleanupCounts).toEqual({ hintsRemoved: 2, variantsRemoved: 4, quotesSnapped: 4 });
-    expect(mergeAttemptIntoProgress(second, cleaned({}), "pool").cleanupCounts).toEqual(second.cleanupCounts);
+  it("historyczne liczniki oczyszczeń z punktu kontrolnego przechodzą bez zmian", () => {
+    const start = progressWith({ cleanupCounts: { hintsRemoved: 1, variantsRemoved: 2 } });
+    const merged = mergeAttemptIntoProgress(start, attemptResult([]), "pool");
+    expect(merged.cleanupCounts).toEqual({ hintsRemoved: 1, variantsRemoved: 2 });
+    expect(mergeAttemptIntoProgress(emptyLessonAgentProgress(), attemptResult([]), "pool")).not.toHaveProperty("cleanupCounts");
   });
 
   it("pula: kod porażki zagadnienia", () => {
@@ -517,27 +491,6 @@ describe("mergeGenerationGaps", () => {
   });
 });
 
-
-describe("agentCheckStartLine", () => {
-  const grammar = withAgentPolicy(fixtureSubject, {});
-  const school = withAgentPolicy(fixtureSubject, { hintJudgeTypes: ["lesson_open_answer"], openAnswerCheckTypes: ["lesson_open_answer"] });
-
-  it("szkoła z graderem → hintJudge=on openCheck=on", () => {
-    expect(agentCheckStartLine("run-1", school, true)).toBe("[lesson-agent] run=run-1 hintJudge=on openCheck=on");
-  });
-
-  it("szkoła bez gradera → openCheck=off, sędzia podpowiedzi zostaje", () => {
-    expect(agentCheckStartLine("run-1", school, false)).toBe("[lesson-agent] run=run-1 hintJudge=on openCheck=off");
-  });
-
-  it("gramatyka (bez list etapu 2b), z graderem albo bez → oba off", () => {
-    expect(agentCheckStartLine("run-1", grammar, true)).toBe("[lesson-agent] run=run-1 hintJudge=off openCheck=off");
-    expect(agentCheckStartLine("run-1", grammar, false)).toBe("[lesson-agent] run=run-1 hintJudge=off openCheck=off");
-    expect(agentCheckStartLine("run-1", withAgentPolicy(fixtureSubject, { hintJudgeTypes: [], openAnswerCheckTypes: [] }), true))
-      .toBe("[lesson-agent] run=run-1 hintJudge=off openCheck=off");
-  });
-});
-
 describe("agentRejectedReasons", () => {
   const labels = messages.lessons.agentRejectionReasons;
 
@@ -584,30 +537,43 @@ describe("agentRejectedReasons", () => {
     expect(Object.keys(reasons)).not.toContain("__proto__");
   });
 
-  it("każdy kod odrzucenia emitowany przez przyjęcie, narzędzia agenta, bramki przedmiotów i kontrole 2b ma etykietę", () => {
-    // Skan źródeł emiterów kodów: `reject(rodzaj, "kod"` i `rejectionOf(rodzaj, "kod"`, `code: "kod"` (odrzucenia narzędzi, bramki
-    // przedmiotów, kontrola otwarta) i krotki `["hint_…", …]` sędziego podpowiedzi. Nowy kod bez etykiety
-    // pokazałby się rodzicowi jako „inne powody”.
+  it("każdy kod odrzucenia emitowany przez krok reguł lekcji, parsowanie, przebieg bazowy, kontrolę zamkniętych i przedmioty ma etykietę", () => {
+    // Skan źródeł emiterów kodów: `reject(rodzaj, "kod"` i `rejectionOf(rodzaj, "kod"` (krok reguł lekcji),
+    // `reject(cel, typ, rodzaj, "kod"` (przebieg bazowy), `"shape_…"` (parsowanie) i `code: "kod"` (kontrola
+    // zamkniętych, przedmioty). Nowy kod bez etykiety pokazałby się rodzicowi jako „inne powody”.
     const subjectsDir = new URL("../../../domain/lessons/subjects/", import.meta.url);
     const policies = readdirSync(subjectsDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && readdirSync(new URL(`${entry.name}/`, subjectsDir)).includes("agent-policy.ts"))
       .map((entry) => new URL(`${entry.name}/agent-policy.ts`, subjectsDir));
-    const files = [new URL("../../../domain/lessons/agent/admission.ts", import.meta.url), new URL("./lesson-pool-agent-tools.ts", import.meta.url), ...policies];
+    const files = [
+      new URL("../../../domain/lessons/agent/admission.ts", import.meta.url),
+      new URL("../../../domain/lessons/closed-check.ts", import.meta.url),
+      new URL("./lesson-pool-agent-tools.ts", import.meta.url),
+      new URL("./lesson-baseline-pool.ts", import.meta.url),
+      ...policies,
+    ];
     const codes = new Set<string>();
     for (const file of files) {
       const text = readFileSync(file, "utf8");
-      for (const pattern of [/\b(?:reject|rejectionOf)\(\s*"[a-z]+",\s*"([a-z_]+)"/gu, /\bcode: "([a-z_]+)"/gu, /\["(hint_[a-z_]+)",/gu]) {
+      for (const pattern of [
+        /\b(?:reject|rejectionOf)\(\s*"[a-z]+",\s*"([a-z_]+)"/gu,
+        /\breject\([^,()]+,[^,()]+,\s*"[a-z]+",\s*"([a-z_]+)"/gu,
+        /"(shape_[a-z_]+)"/gu,
+        /\bcode: "([a-z_]+)"/gu,
+      ]) {
         for (const match of text.matchAll(pattern)) codes.add(match[1]!);
       }
     }
-    // Skan działa: znajduje kody z każdego źródła (przyjęcie, narzędzia, bramki szkoły, kontrole 2b).
-    for (const known of ["limit_full", "leak_victim", "rule_exercise", "open_not_accepted", "shape_malformed", "hint_language"]) {
+    // Skan działa: znajduje kody z każdego źródła (krok reguł lekcji, parsowanie, przebieg bazowy, kontrola zamkniętych).
+    for (const known of ["leak_victim", "lesson_pool", "shape_malformed", "shape_type", "rule_exercise", "over_count", "check_unknown", "check_wrong_set"]) {
       expect(codes, known).toContain(known);
     }
-    // Bramka podpowiedzi szkoły już nie odrzuca (podpowiedź jest usuwana z notą), a odrzucony wariant
-    // jest usuwany z notą `check.variants`; etykiety obu kodów zostają dla szkiców zapisanych wcześniej
-    // z tymi kodami w `rejectedReasons`. Tak samo bramki słów i ram rozdziału i hak `refineGeneratedPool` (usunięte w etapie 5a #362).
-    for (const retired of ["hint_reveals_answer", "variant_rejected", "card_word_missing", "frame_missing", "refine"]) {
+    // Kody usuniętych emiterów (bramki, hak `refineGeneratedPool`, pętla agenta i jej kontrole — etap 5c): etykiety zostają
+    // dla szkiców zapisanych wcześniej z tymi kodami w `rejectedReasons` i dla punktu kontrolnego runu w toku.
+    for (const retired of [
+      "hint_reveals_answer", "variant_rejected", "card_word_missing", "frame_missing", "refine",
+      "limit_full", "limit_listen", "blind_mismatch", "open_not_accepted", "hint_unsupported", "hint_language", "hint_reveals_paraphrase",
+    ]) {
       expect(codes).not.toContain(retired);
       expect(Object.hasOwn(labels, retired)).toBe(true);
     }

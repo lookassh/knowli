@@ -8,9 +8,9 @@ import {
   createLessonFromMaterial,
   createSchoolLesson,
   createServices,
+  createProductionSubjectRegistry,
   createSubjectRegistry,
   editLessonDraft,
-  agentGrammarSubject,
   englishGrammarSubject,
   executeLessonGeneration,
   historyLikeSubject,
@@ -26,26 +26,26 @@ import {
 } from "@learning/server";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonCommand, LessonDraftDto } from "@learning/contracts";
-import { agentGrammarRegistry, testDatabase } from "./helpers";
+import { testDatabase } from "./helpers";
 import { ManualClock } from "./helpers";
-import { fakeGeneration, type FakeGeneration } from "./fakes";
+import { everyPacket, fakeGeneration, gate, type FakeGeneration, type Gate } from "./fakes";
 import { messages } from "@learning/contracts";
-import { fakeObjectiveExercises } from "../../packages/server/src/providers/fake-lesson-pool";
+import { fakePacketExercises } from "../../packages/server/src/providers/fake-lesson-pool";
 import { GenerationProviderError } from "../../packages/server/src/ports/generation-error";
-import { FakeAnswerGrader } from "../../packages/server/src/providers/fake";
 import {
   FakeExerciseChecker,
   FakeLessonPoolAgent,
-  type FakeAgentStep,
   type FakeLessonPoolAgentOptions,
+  type FakePacketStep,
 } from "../../packages/server/src/providers/fake-lesson-agent";
-import type { HintVerdict, LessonAgentToolOutcome, LessonObjectiveAgentInput } from "../../packages/server/src/ports/ai";
+import type { ClosedCheckInput, LessonPacketInput, RunCostSink } from "../../packages/server/src/ports/ai";
 import {
   DEFAULT_LESSON_GENERATION_POLICY,
   type LessonGenerationPolicy,
 } from "../../packages/server/src/modules/materials/lessons/lesson-generation-policy";
 
 import type { LessonExerciseDraft } from "../../packages/server/src/domain/lessons/types";
+import { packetPlan, packetPlanForTargets, PACKET_RESERVE } from "../../packages/server/src/domain/lessons/packet-plan";
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";
 import { solvedSentencesOf } from "../../packages/server/src/domain/lessons/story";
 import { supersedeLessonRuns } from "../../packages/server/src/modules/materials/generation-runs";
@@ -56,11 +56,22 @@ import {
   saveLessonAgentCheckpoint,
   type LessonAgentProgress,
 } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
-import { listenChoiceAllowance, markLessonRun, type LessonRunIdentity } from "../../packages/server/src/modules/materials/lessons/lesson-drafts";
+import { lessonCatalogTopic } from "../../packages/server/src/modules/materials/lessons/lesson-agent-outcome";
+import {
+  listenChoiceAllowance,
+  markLessonRun,
+  objectiveBatchCounts,
+  orderedDraftExercises,
+  poolStageCounts,
+  type LessonRunIdentity,
+} from "../../packages/server/src/modules/materials/lessons/lesson-drafts";
 
 const { pool } = testDatabase();
 
 const OBJECTIVE = "english_grammar.present_simple.third_person_s";
+
+/** Przedmioty produkcyjne (wszystkie na przebiegu bazowym) i przedmiot testowy historii. */
+const subjectRegistry = () => createSubjectRegistry([...createProductionSubjectRegistry().listSubjects(), historyLikeSubject]);
 
 async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   const result = await pool.query(sql, params);
@@ -74,7 +85,7 @@ function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Servi
     clock,
     media: fakes.settings,
     generation: fakes.deps,
-    subjects: createSubjectRegistry([agentGrammarSubject, historyLikeSubject]),
+    subjects: subjectRegistry(),
   });
 }
 
@@ -142,7 +153,7 @@ async function runningLesson(services: Services): Promise<{ runId: string; deckV
   return { runId, deckVersionId: run.deckVersionId, run };
 }
 
-describe("agent puli lekcji (integracja)", () => {
+describe("pula lekcji na ścieżce workera (integracja)", () => {
   const disposers: Array<() => Promise<void>> = [];
 
   beforeEach(async () => {
@@ -283,7 +294,7 @@ describe("agent puli lekcji (integracja)", () => {
     });
   });
 
-  describe("ścieżka agenta w executeLessonGeneration", () => {
+  describe("przebieg bazowy w executeLessonGeneration", () => {
     const NEGATIVE = "english_grammar.present_simple.negative";
     const CHAPTER_MATERIAL = [
       "Słowa:",
@@ -310,34 +321,32 @@ describe("agent puli lekcji (integracja)", () => {
     }
 
     function servicesWith(fakes: FakeGeneration, generation: GenerationDeps, clock: ManualClock): Services {
-      return createServices({ subjects: agentGrammarRegistry(), db: testDatabase().db, clock, media: fakes.settings, generation });
+      return createServices({ subjects: subjectRegistry(), db: testDatabase().db, clock, media: fakes.settings, generation });
     }
 
-    /** Scenariusz fake'a agenta; zagadnienia bez scenariusza generuje pętla generatora (`generate: {}`). */
-    type AgentScript = FakeLessonPoolAgentOptions;
+    /** Scenariusze paczek fake'a per slug zagadnienia; paczki bez kroku zwracają wynik generatora fake'a. */
+    type Packets = NonNullable<FakeLessonPoolAgentOptions["packets"]>;
 
     interface WorldOptions {
       readonly policy?: LessonAgentDeps["policy"];
       readonly finalizationReserveMs?: number;
       readonly execution?: Partial<LessonGenerationPolicy>;
-      /** Checker zamiast domyślnego „niedostępnego” (etap 2b: kontrole szkoły). */
+      /** Kontrola zamkniętych zamiast domyślnej (klucz fake'a z widoku). */
       readonly checker?: FakeExerciseChecker;
-      /** Grader kontroli otwartej (etap 2b); brak = kontrola otwarta nie dotyczy. */
-      readonly grader?: FakeAnswerGrader;
     }
 
     /**
-     * Produkcyjny rejestr, fake agenta (domyślnie pętla generatora), checker niedostępny.
-     * Kontroler sprawdza bieżącość próby co 20 ms (edycja i „Ponów” w trakcie przerywają próbę od razu).
+     * Produkcyjny rejestr (wszystkie przedmioty na przebiegu bazowym), fake paczek (domyślnie generator fake'a),
+     * kontrola zamkniętych fake'a. Kontroler sprawdza bieżącość próby co 20 ms (edycja i „Ponów” w trakcie
+     * przerywają próbę od razu).
      */
-    async function agentWorld(agentOptions: AgentScript = {}, world: WorldOptions = {}): Promise<AgentWorld> {
+    async function agentWorld(agentOptions: FakeLessonPoolAgentOptions = {}, world: WorldOptions = {}): Promise<AgentWorld> {
       const fakes = await fakeGeneration({ agent: agentOptions });
       disposers.push(fakes.dispose);
       const { agent } = fakes;
       const lessonAgent: LessonAgentDeps = {
         agent,
-        checker: world.checker ?? new FakeExerciseChecker({ unavailable: true }),
-        ...(world.grader === undefined ? {} : { grader: { provider: world.grader, timeoutMs: 5_000 } }),
+        checker: world.checker ?? new FakeExerciseChecker(),
         policy: world.policy ?? {},
         ...(world.finalizationReserveMs === undefined ? {} : { finalizationReserveMs: world.finalizationReserveMs }),
       };
@@ -411,34 +420,87 @@ describe("agent puli lekcji (integracja)", () => {
     }
 
     /** Przejściowy błąd dostawcy (ponawialny, kod `provider`). */
-    const transient = (): FakeAgentStep => ({ throw: new GenerationProviderError("transient") });
+    const transient = (): FakePacketStep => ({ throw: new GenerationProviderError("transient") });
 
-    /**
-     * Jedno zgłoszenie generatora fake'a w scenariuszu ponowień: wywołanie spoza listy `calls` nie ma
-     * kroków (nie wraca do pętli generatora), więc wynik generatora w ponowieniu podaje się jawnie.
-     */
-    const GENERATE: FakeAgentStep = { generate: true };
+    /** Paczka, w której model nie zwrócił żadnego ćwiczenia. */
+    const EMPTY: FakePacketStep = { build: () => ({ exercises: [] }) };
 
     /** Wywołanie „w locie”, które kończy tylko przerwanie sygnału. */
-    const never = (): FakeAgentStep => ({ gate: new Promise<void>(() => undefined) });
+    const never = (): FakePacketStep => ({ gate: new Promise<void>(() => undefined) });
 
-    interface Gate {
-      readonly step: FakeAgentStep;
-      readonly reached: Promise<void>;
-      open(): void;
+    /** Wywołania paczek zagadnienia o slugu `slug` od startu świata. */
+    const packetCallsOf = (agent: FakeLessonPoolAgent, slug: string) => agent.packetCalls.filter((call) => slugOf(call.objective.id) === slug);
+
+    /** Kroki od następnego wywołania paczek slugu: wcześniejsze wywołania zużyły już swoje indeksy kroków. */
+    function fromNextCall(agent: FakeLessonPoolAgent, slug: string, steps: readonly FakePacketStep[]): FakePacketStep[] {
+      const used = packetCallsOf(agent, slug).length;
+      const next: FakePacketStep[] = [];
+      steps.forEach((step, index) => {
+        next[used + index] = step;
+      });
+      return next;
     }
 
-    /** Wywołanie „w locie”: `reached` po dojściu fake'a do kroku, `open()` kończy krok. */
-    function gate(): Gate {
-      let open!: () => void;
-      let reach!: () => void;
-      const opened = new Promise<void>((resolve) => {
-        open = resolve;
-      });
-      const reached = new Promise<void>((resolve) => {
-        reach = resolve;
-      });
-      return { step: { gate: opened, onReached: reach }, reached, open };
+    /** Pasma numeracji kroków `generatorStep` (fake numeruje swoje paczki od 0 co 1000 — bez kolizji odpowiedzi). */
+    let band = 500_000;
+
+    /**
+     * Paczka z wynikiem generatora fake'a w osobnym paśmie numeracji (`count` razy `scale`), przekształconym
+     * przez `edit` (np. wybór po typie paczki).
+     */
+    function generatorStep(
+      edit: (exercises: Record<string, unknown>[], input: LessonPacketInput) => unknown[] = (exercises) => exercises,
+      scale = 1,
+    ): FakePacketStep {
+      return {
+        build: (input) => {
+          band += 1000;
+          const result = fakePacketExercises({ ...input, count: input.count * scale }, band);
+          return { exercises: edit(result.exercises, input), ...(result.examples === undefined ? {} : { examples: result.examples }) };
+        },
+      };
+    }
+
+    /**
+     * Liczba paczek zagadnień pełnej generacji gramatyki (plan przebiegu bazowego dla zagadnień i puli runu);
+     * każda paczka to jedno wywołanie generatora, ponowienie błędu technicznego — drugie.
+     */
+    async function plannedPackets(runId: string): Promise<Record<string, number>> {
+      const [row] = await query<{ input: { objectiveIds: string[]; poolSize: number } }>(
+        "select input from learning_app.generation_runs where id = $1",
+        [runId],
+      );
+      const subject = englishGrammarSubject;
+      const topic = lessonCatalogTopic(subject.topics.find((item) => item.id === "present_simple")!, row!.input.objectiveIds);
+      const counts = objectiveBatchCounts(row!.input.poolSize, topic.objectives.length, subject);
+      return Object.fromEntries(
+        topic.objectives.map((objective, index) => [
+          objective.id,
+          packetPlan(subject, objective, poolStageCounts(subject, objective.exerciseTypes, counts[index]!), listenChoiceAllowance(subject, objective, [])).packets.length,
+        ]),
+      );
+    }
+
+    /**
+     * Kontrola zamkniętych fake'a, której jedno wywołanie po `hold(gate)` czeka na bramkę — wywołanie „w locie”
+     * po wygenerowaniu paczek (paczka z własnym wynikiem nie ma kroku `gate`).
+     */
+    class HeldChecker extends FakeExerciseChecker {
+      private held: Gate | undefined;
+
+      hold(held: Gate): void {
+        this.held = held;
+      }
+
+      override async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ results: unknown[] }> {
+        const held = this.held;
+        this.held = undefined;
+        if (held !== undefined && "gate" in held.step) {
+          held.step.onReached?.();
+          await held.step.gate;
+        }
+        return super.checkClosed(input, cost, signal);
+      }
     }
 
     /** Ponowienie z opóźnieniem wymagalne od razu (kolejne przejęcie bez czekania na zegar). */
@@ -459,25 +521,27 @@ describe("agent puli lekcji (integracja)", () => {
       }
     }
 
-    /** Ostatnia automatyczna próba przerwana zamknięciem po rozliczeniu zagadnienia A (B w locie). */
-    async function shutdownInLastAttempt(services: Services, runId: string): Promise<void> {
-      await pool.query("update learning_app.generation_runs set attempts = 2 where id = $1", [runId]);
+    /**
+     * Ostatnia automatyczna próba przerwana zamknięciem procesu (przebieg bazowy rozlicza zagadnienia dopiero po
+     * walidacji puli, więc rozliczone A pochodzi z wcześniejszej próby): próba 1 — A gotowe, B błąd przejściowy;
+     * ostatnia próba — paczka B „w locie”, gdy przychodzi zamknięcie.
+     */
+    async function shutdownInLastAttempt(world: AgentWorld, packets: Packets, runId: string): Promise<void> {
+      packets.negative = everyPacket(transient);
+      await executeLessonGeneration(world.services, runId);
+      expect((await fullRun(runId)).state).toBe("queued");
+      const held = gate();
+      packets.negative = fromNextCall(world.agent, "negative", [held.step]);
+      await pool.query("update learning_app.generation_runs set attempts = 2, next_attempt_at = null where id = $1", [runId]);
       const shutdown = new AbortController();
-      const running = executeLessonGeneration(services, runId, { signal: shutdown.signal });
-      await untilSettled(runId, OBJECTIVE);
+      const running = executeLessonGeneration(world.services, runId, { signal: shutdown.signal });
+      await held.reached;
       shutdown.abort();
       await running;
     }
 
     async function progressOf(runId: string): Promise<LessonAgentProgress | undefined> {
       return parseLessonAgentProgress((await fullRun(runId)).agent_checkpoint, runId);
-    }
-
-    /** Czeka, aż hak rozliczenia zapisze zagadnienie w punkcie kontrolnym (próba nadal trwa). */
-    async function untilSettled(runId: string, objectiveId: string): Promise<void> {
-      await vi.waitFor(async () => {
-        expect((await progressOf(runId))?.objectives[objectiveId]).toBeDefined();
-      }, { timeout: 10_000, interval: 10 });
     }
 
     /** Zagadnienia ćwiczeń szkicu (bez powtórzeń, w kolejności pozycji). */
@@ -518,8 +582,7 @@ describe("agent puli lekcji (integracja)", () => {
 
       const row = await fullRun(runId);
       expect(row.state).toBe("succeeded");
-      // Od etapu 5a (#362) rozdział idzie paczkami przebiegu bazowego, bez pętli agenta.
-      expect(agent.calls).toHaveLength(0);
+      // Od etapu 5a (#362) rozdział idzie paczkami przebiegu bazowego.
       expect(agent.packetCalls.length).toBeGreaterThan(0);
       const after = await versionOf(runId);
       expect(after.edit_number).toBe(before.edit_number + 1);
@@ -549,7 +612,7 @@ describe("agent puli lekcji (integracja)", () => {
       const grammarRow = await fullRun(grammar.runId);
       expect(grammarRow.state).toBe("succeeded");
       // Temat katalogu zawężony do zagadnień lekcji: tylko wybrane zagadnienie, nie cały temat.
-      expect(agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE]);
+      expect(new Set(agent.packetCalls.map((call) => call.objective.id))).toEqual(new Set([OBJECTIVE]));
       const grammarVersion = await versionOf(grammar.runId);
       const objectiveRows = await query<{ objective_id: string }>(
         "select payload->>'objectiveId' as objective_id from learning_app.item_revisions where deck_version_id = $1",
@@ -581,7 +644,7 @@ describe("agent puli lekcji (integracja)", () => {
     });
 
     it("zero przyjętych → failed validation, liczniki w kontekście", async () => {
-      const { services } = await agentWorld({ objectives: { third_person_s: [] } });
+      const { services } = await agentWorld({ packets: { third_person_s: everyPacket(EMPTY) } });
       const { runId } = await createLesson(services, command());
       const before = await versionOf(runId);
       // Wcześniejsza próba usunęła 2 ćwiczenia po przyjęciu (bezpiecznik); ta nic nie przyjmuje.
@@ -607,15 +670,7 @@ describe("agent puli lekcji (integracja)", () => {
     describe("powody odrzuceń w szkicu (decyzja właściciela 2026-11-05)", () => {
       const labels = messages.lessons.agentRejectionReasons;
       const reasonsOf = (version: VersionRow) => (version.lesson_context as { rejectedReasons?: Record<string, number> }).rejectedReasons;
-      const malformed = { notAnExercise: true };
-      /** Tekst `found` z powodów, które model dostał w wynikach narzędzia (`[id] pole: found`). */
-      const foundTexts = (agent: AgentWorld["agent"]): string[] =>
-        agent.calls
-          .flatMap((call) => call.outcomes as LessonAgentToolOutcome[])
-          .flatMap((outcome) => outcome.results)
-          .flatMap((result) => ("errors" in result ? result.errors : []))
-          .map((reason) => reason.slice(reason.indexOf(": ") + 2))
-          .filter((found) => found.length > 0);
+      const malformed = { notAnExercise: true, secret: "treść-rekordu" };
       /** `rejectedReasons` szkicu: wyłącznie etykiety kodów odrzuceń z `messages.ts`, bez treści. */
       const expectOnlyCodeLabels = (reasons: Record<string, number> | undefined): void => {
         const known = new Set(Object.values(labels));
@@ -623,10 +678,11 @@ describe("agent puli lekcji (integracja)", () => {
       };
 
       it("pełne odrzucenie → failed validation, szkic ma etykietę; „Ponów” sumuje kody obu prób bez podwojenia", async () => {
-        const { services, agent } = await agentWorld({
-          objectives: { third_person_s: { calls: [[{ submit: { exercises: [malformed] } }], [{ submit: { exercises: [malformed, malformed] } }]] } },
-        });
+        // Próba 1: każda paczka zwraca jeden zły rekord; próba po „Ponów” — dwa.
+        let batch: unknown[] = [malformed];
+        const { services } = await agentWorld({ packets: { third_person_s: everyPacket({ build: () => ({ exercises: batch }) }) } });
         const { runId } = await createLesson(services, command());
+        const packets = (await plannedPackets(runId))[OBJECTIVE]!;
 
         await executeLessonGeneration(services, runId);
 
@@ -634,31 +690,32 @@ describe("agent puli lekcji (integracja)", () => {
         expect(failed.state).toBe("failed");
         expect(failed.error_code).toBe("validation");
         const label = labels.shape_malformed!;
-        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: 1 });
+        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: packets });
         // Pełny postęp zostaje (asercje „bez odrzuceń” czytają kody), z oznaczeniem kodów już zapisanych w szkicu.
         const saved = parseLessonAgentProgress(failed.agent_checkpoint, runId)!;
-        expect(saved.rejectionCodes).toEqual({ shape_malformed: 1 });
-        expect(saved.rejectionCodesWritten).toEqual({ shape_malformed: 1 });
-        // Pełny postęp w kolumnie agent_checkpoint nie zawiera tekstu `found` odrzuceń.
+        expect(saved.rejectionCodes).toEqual({ shape_malformed: packets });
+        expect(saved.rejectionCodesWritten).toEqual({ shape_malformed: packets });
+        // Szkic ma tylko etykiety, a kolumna agent_checkpoint — żadnej treści odrzuconych rekordów.
         expectOnlyCodeLabels(reasonsOf(await versionOf(runId)));
-        const found = foundTexts(agent);
-        expect(found.length).toBeGreaterThan(0);
-        for (const text of found) expect(JSON.stringify(failed.agent_checkpoint)).not.toContain(text);
+        expect(JSON.stringify(failed.agent_checkpoint)).not.toContain("treść-rekordu");
 
+        batch = [malformed, malformed];
         await retryGeneration(services, runId);
         await executeLessonGeneration(services, runId);
 
         const again = await fullRun(runId);
         expect(again.state).toBe("failed");
-        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: 3 });
-        expect(parseLessonAgentProgress(again.agent_checkpoint, runId)!.rejectionCodes).toEqual({ shape_malformed: 3 });
+        expect(reasonsOf(await versionOf(runId))).toEqual({ [label]: 3 * packets });
+        expect(parseLessonAgentProgress(again.agent_checkpoint, runId)!.rejectionCodes).toEqual({ shape_malformed: 3 * packets });
       });
     });
 
     it("wszystkie zagadnienia provider_configuration → failed provider_configuration bez ponowienia", async () => {
+      // Pierwsza paczka każdego zagadnienia odrzucona kluczem (401); reszta paczek przechodzi, ale porażka paczki oblewa zagadnienie.
       const refused = () => [{ throw: new GenerationProviderError("configuration", { status: 401 }) }];
-      const { services, agent } = await agentWorld({ objectives: { third_person_s: refused(), negative: refused() } });
+      const { services, agent } = await agentWorld({ packets: { third_person_s: refused(), negative: refused() } });
       const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+      const planned = await plannedPackets(runId);
 
       await executeLessonGeneration(services, runId);
 
@@ -667,7 +724,8 @@ describe("agent puli lekcji (integracja)", () => {
       expect(row.error_code).toBe("provider_configuration");
       expect(row.attempts).toBe(1);
       expect(row.next_attempt_at).toBeNull();
-      expect(agent.calls).toHaveLength(2);
+      // Błąd konfiguracji bez ponowienia paczki: jedno wywołanie na paczkę planu.
+      expect(agent.packetCalls).toHaveLength(planned[OBJECTIVE]! + planned[NEGATIVE]!);
       expect(Object.values(parseLessonAgentProgress(row.agent_checkpoint, runId)!.objectives).map((entry) => entry.failureCode)).toEqual([
         "provider_configuration",
         "provider_configuration",
@@ -682,7 +740,7 @@ describe("agent puli lekcji (integracja)", () => {
       await executeLessonGeneration(services, grammar.runId);
       const grammarRow = await fullRun(grammar.runId);
       expect(grammarRow.state).toBe("succeeded");
-      expect(agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE]);
+      expect(new Set(agent.packetCalls.map((call) => call.objective.id))).toEqual(new Set([OBJECTIVE]));
       expect(summaryOf(grammarRow).totalSpentUsd).toBeGreaterThanOrEqual(0.5);
 
       // Dobra obwiednia, temat łamiący reguły katalogu → etap zagadnień od zera.
@@ -706,18 +764,18 @@ describe("agent puli lekcji (integracja)", () => {
       expect(summaryOf(chapterRow).totalSpentUsd).toBeGreaterThanOrEqual(0.2);
     });
 
-    it("agent: nowy szkic bez klucza review", async () => {
+    it("nowy szkic bez klucza review", async () => {
       const { services, agent } = await agentWorld();
       const { runId } = await createLesson(services, command());
 
       await executeLessonGeneration(services, runId);
 
       expect((await fullRun(runId)).state).toBe("succeeded");
-      expect(agent.calls.length).toBeGreaterThan(0);
+      expect(agent.packetCalls.length).toBeGreaterThan(0);
       expect((await versionOf(runId)).lesson_context).not.toHaveProperty("review");
     });
 
-    it("agent: stary klucz review w szkicu — run succeeded, klucz zostaje, DTO go nie ma", async () => {
+    it("stary klucz review w szkicu — run succeeded, klucz zostaje, DTO go nie ma", async () => {
       const { services, agent } = await agentWorld();
       const { runId, deckId } = await createLesson(services, command());
       const before = await versionOf(runId);
@@ -727,13 +785,13 @@ describe("agent puli lekcji (integracja)", () => {
       await executeLessonGeneration(services, runId);
 
       expect((await fullRun(runId)).state).toBe("succeeded");
-      expect(agent.calls.length).toBeGreaterThan(0);
+      expect(agent.packetCalls.length).toBeGreaterThan(0);
       const after = await versionOf(runId);
       expect(after.lesson_context).toHaveProperty("review");
       expect((await readLessonDeck(services, deckId)).draft).not.toHaveProperty("review");
     });
 
-    it("agent: attempts > MAX → attempts_exhausted bez wywołań", async () => {
+    it("attempts > MAX → attempts_exhausted bez wywołań", async () => {
       const { services, agent } = await agentWorld();
       const { runId } = await createLesson(services, command());
       await pool.query("update learning_app.generation_runs set attempts = 3 where id = $1", [runId]);
@@ -744,7 +802,7 @@ describe("agent puli lekcji (integracja)", () => {
       expect(row.state).toBe("failed");
       expect(row.error_code).toBe("attempts_exhausted");
       expect(row.attempts).toBe(4);
-      expect(agent.calls).toEqual([]);
+      expect(agent.packetCalls).toEqual([]);
     });
 
     describe("tryb fake z env (spec etapu 3 §5.2): publikowalna pula bez luk i bez odrzuceń ujawnień", () => {
@@ -865,7 +923,7 @@ describe("agent puli lekcji (integracja)", () => {
         await expectPublishable(services, draft);
       });
 
-      it("bliźniak z historią wywołań: gramatyka i szkoła kończą każde zagadnienie jednym krokiem generatora", async () => {
+      it("bliźniak z historią wywołań: gramatyka i szkoła kończą każde zagadnienie jednym przebiegiem paczek (bez ponowień)", async () => {
         for (const create of [grammarLesson, schoolLesson]) {
           // Jak fake z env (`stepCostUsd: 0`), ale z historią wywołań.
           const agent = new FakeLessonPoolAgent({ generate: {}, stepCostUsd: 0 });
@@ -873,22 +931,27 @@ describe("agent puli lekcji (integracja)", () => {
           const { runId, deckId } = await create(services);
           await executeLessonGeneration(services, runId);
           await expectCleanRun(services, runId, deckId);
-          expect(agent.calls.length).toBeGreaterThan(0);
-          expect(agent.calls.map((call) => call.outcomes.length)).toEqual(agent.calls.map(() => 1));
+          expect(agent.packetCalls.length).toBeGreaterThan(0);
+          // Paczka = zagadnienie × typ: każda wywołana raz.
+          const packets = agent.packetCalls.map((call) => `${call.objective.id}/${call.type}`);
+          expect(new Set(packets).size).toBe(packets.length);
         }
       });
     });
 
-    it("rejectedCount = usunięcia po przyjęciu, nie odrzucenia w pętli", async () => {
-      // Zagadnienie B: w próbie 1 błąd przejściowy, w próbie 2 tylko ćwiczenie o złym kształcie (odrzucenie w pętli).
-      const malformed = [{ submit: { exercises: [{ exerciseType: "lesson_choice", objectiveId: NEGATIVE }] } }];
-      const negative = { calls: [[{ throw: new GenerationProviderError("transient") }], malformed] };
-      const { services, clock } = await agentWorld({ objectives: { negative } });
+    /** Paczka B z jednym ćwiczeniem o złym kształcie (odrzucenie w walidacji paczki). */
+    const MALFORMED_NEGATIVE: FakePacketStep = { build: () => ({ exercises: [{ exerciseType: "lesson_choice", objectiveId: NEGATIVE }] }) };
+
+    it("rejectedCount = usunięcia po przyjęciu, nie odrzucenia w walidacji paczek", async () => {
+      // Zagadnienie B: w próbie 1 błąd przejściowy każdej paczki, w próbie 2 tylko ćwiczenia o złym kształcie.
+      const packets: Packets = { negative: everyPacket(transient) };
+      const { services, clock, agent } = await agentWorld({ packets });
       const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
       const before = await versionOf(runId);
       await executeLessonGeneration(services, runId);
       const first = await fullRun(runId);
       expect(first.state).toBe("queued");
+      packets.negative = fromNextCall(agent, "negative", everyPacket(MALFORMED_NEGATIVE));
       const firstProgress = parseLessonAgentProgress(first.agent_checkpoint, runId)!;
       const own = firstProgress.objectives[OBJECTIVE]!;
       expect(own.exercises.length).toBeGreaterThan(0);
@@ -908,7 +971,7 @@ describe("agent puli lekcji (integracja)", () => {
       const after = await versionOf(runId);
       expect(await exerciseCount(after.id)).toBe(own.exercises.length);
       const context = after.lesson_context as { rejectedCount: number; generationGaps?: unknown };
-      // 2 (bezpiecznik) + 1 (kontrola końcowa: duplikat); odrzucenie w pętli się nie liczy.
+      // 2 (bezpiecznik) + 1 (kontrola końcowa: duplikat); odrzucenie w walidacji paczki się nie liczy.
       expect(context.rejectedCount).toBe(((before.lesson_context as { rejectedCount?: number }).rejectedCount ?? 0) + 3);
       // Zagadnienie A straciło w kontroli końcowej tylko duplikat — na zapisanej lekcji nadal jest kompletem.
       expect(context.generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
@@ -916,15 +979,15 @@ describe("agent puli lekcji (integracja)", () => {
       expect(Object.values(summary.rejectionCodes).reduce((sum, value) => sum + value, 0)).toBeGreaterThanOrEqual(1);
     });
 
-    it("pełna pula: zapis odrzuca ćwiczenia potrzebne do minimum etapu → luka incomplete mimo kompletu u agenta", async () => {
-      // Próba 1: A gotowe, B błąd przejściowy (punkt kontrolny z kompletem A); próba 2: B bez ćwiczeń.
-      const malformed = [{ submit: { exercises: [{ exerciseType: "lesson_choice", objectiveId: NEGATIVE }] } }];
-      const negative = { calls: [[{ throw: new GenerationProviderError("transient") }], malformed] };
-      const { services, clock } = await agentWorld({ objectives: { negative } });
+    it("pełna pula: zapis odrzuca ćwiczenia potrzebne do minimum etapu → luka incomplete mimo kompletu w walidacji puli", async () => {
+      // Próba 1: A gotowe, B błąd przejściowy (punkt kontrolny z kompletem A); próba 2: B bez poprawnych ćwiczeń.
+      const packets: Packets = { negative: everyPacket(transient) };
+      const { services, clock, agent } = await agentWorld({ packets });
       const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
       await executeLessonGeneration(services, runId);
       const first = await fullRun(runId);
       expect(first.state).toBe("queued");
+      packets.negative = fromNextCall(agent, "negative", everyPacket(MALFORMED_NEGATIVE));
       const own = parseLessonAgentProgress(first.agent_checkpoint, runId)!.objectives[OBJECTIVE]!;
       expect(own.status).toBe("complete");
       // Historyjka szkicu powtarza rozwiązania wszystkich ćwiczeń etapu samodzielnego A — zapis je odrzuca.
@@ -947,7 +1010,7 @@ describe("agent puli lekcji (integracja)", () => {
       );
       expect(written.length).toBeGreaterThan(0);
       expect(written.filter((row) => stageOf(row.exercise_type as LessonExerciseDraft["exerciseType"]) === "independent")).toEqual([]);
-      // Na zapisanej lekcji A nie spełnia minimum etapu samodzielnego: luka mimo kompletu u agenta.
+      // Na zapisanej lekcji A nie spełnia minimum etapu samodzielnego: luka mimo kompletu z punktu kontrolnego.
       expect(contextOf(after).generationGaps).toEqual([
         { objectiveId: OBJECTIVE, reason: "incomplete" },
         { objectiveId: NEGATIVE, reason: "incomplete" },
@@ -985,19 +1048,12 @@ describe("agent puli lekcji (integracja)", () => {
       const QUESTION = "english_grammar.present_simple.question";
 
       it("błąd przejściowy zagadnienia → queued; kolejna próba pomija gotowe i etap zagadnień rozdziału i szkoły, przenosi wydatek, kończy zapisem", async () => {
-        // Rozdział (przebieg bazowy, etap 5a #362): każda paczka zagadnienia „zwroty” w próbie 1 (z ponowieniem) kończy się
-        // błędem przejściowym, w próbie 2 — generator. Drugie zagadnienie szkoły: błąd przejściowy w próbie 1, w próbie 2 wynik generatora.
-        const flaky = { calls: [[transient()], [GENERATE]] };
-        const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = {
-          zwroty: Array.from({ length: 40 }, () => ({ throw: new GenerationProviderError("transient") })),
-        };
-        const { fakes, services, agent } = await agentWorld({
-          stepCostUsd: 0.01,
-          packets,
-          objectives: { gory_polski: flaky },
-        });
-        const callsOf = (prefix: string) => agent.calls.filter((call) => call.objectiveId.startsWith(prefix)).map((call) => slugOf(call.objectiveId));
+        // Każda paczka zagadnienia „zwroty” rozdziału i „gory_polski” szkoły w próbie 1 (z ponowieniem) kończy się
+        // błędem przejściowym, w próbie 2 — wynik generatora. Paczka kosztuje 0,01 USD, kontrola zamkniętych 0.
+        const packets: Packets = { zwroty: everyPacket(transient), gory_polski: everyPacket(transient) };
+        const { fakes, services, agent } = await agentWorld({ stepCostUsd: 0.01, packets });
         const packetSlugs = () => agent.packetCalls.map((call) => slugOf(call.objective.id));
+        const schoolCalls = () => agent.packetCalls.filter((call) => call.objective.id.startsWith("school.")).length;
 
         // Rozdział (etap zagadnień i przebieg bazowy).
         const chapter = await createLessonFromMaterial(services, {
@@ -1031,7 +1087,6 @@ describe("agent puli lekcji (integracja)", () => {
         // Etap zagadnień pominięty (temat z punktu kontrolnego), gotowe zagadnienie bez nowych paczek.
         expect(fakes.llm.objectiveRequests).toHaveLength(1);
         expect(packetSlugs().filter((slug) => slug === "s_owa")).toHaveLength(firstWords);
-        expect(agent.calls).toHaveLength(0);
         expectSummaryWithoutContent(chapterRow.agent_checkpoint, 2);
         // Wydatek przeniesiony: próba 1 i paczki „zwroty” próby 2.
         expect(summaryOf(chapterRow).totalSpentUsd).toBeGreaterThan(saved.totalSpentUsd);
@@ -1040,7 +1095,7 @@ describe("agent puli lekcji (integracja)", () => {
         expect(chapterContext.dynamicTopic).toEqual(saved.dynamicTopic);
         expect(await draftObjectives(chapterVersion.id)).toEqual(saved.dynamicTopic!.objectives.map((objective) => objective.id));
 
-        // Szkoła (etap zagadnień poza agentem).
+        // Szkoła (etap zagadnień i przebieg bazowy).
         const school = await createSchoolLesson(services, {
           subjectTitlePl: "Geografia",
           topicTitlePl: "Polska",
@@ -1056,23 +1111,36 @@ describe("agent puli lekcji (integracja)", () => {
           rzeki_polski: "complete",
           gory_polski: "failed",
         });
-        expect(schoolSaved.budgetSpentUsd).toBeCloseTo(0.02, 6);
+        // Koszt per wywołanie paczki (także ponowienie), bez kontroli zamkniętych (0 USD).
+        const firstSchoolCalls = schoolCalls();
+        const firstRivers = packetSlugs().filter((slug) => slug === "rzeki_polski").length;
+        expect(firstRivers).toBeGreaterThan(0);
+        expect(schoolSaved.budgetSpentUsd).toBeCloseTo(0.01 * firstSchoolCalls, 6);
 
+        packets.gory_polski = [];
         await dueNow(school.runId);
         await executeLessonGeneration(services, school.runId);
         const schoolRow = await fullRun(school.runId);
         expect(schoolRow.state).toBe("succeeded");
         // Etap zagadnień rozdziału i jeden etap szkoły (pominięty przy wznowieniu).
         expect(fakes.llm.objectiveRequests).toHaveLength(2);
-        expect(callsOf("school.")).toEqual(["rzeki_polski", "gory_polski", "gory_polski"]);
-        expect(summaryOf(schoolRow).totalSpentUsd).toBeCloseTo(0.03, 6);
+        // Gotowe „rzeki_polski” bez nowych paczek; „gory_polski” generowane od nowa.
+        expect(packetSlugs().filter((slug) => slug === "rzeki_polski")).toHaveLength(firstRivers);
+        expect(schoolCalls()).toBeGreaterThan(firstSchoolCalls);
+        // Wydatek próby 1 przeniesiony i doliczony raz: łącznie = 0,01 USD × wszystkie paczki szkoły.
+        expect(summaryOf(schoolRow).totalSpentUsd).toBeCloseTo(0.01 * schoolCalls(), 6);
         expect(await draftObjectives((await versionOf(school.runId)).id)).toEqual(schoolSaved.dynamicTopic!.objectives.map((objective) => objective.id));
       });
 
       it("wyczerpane próby → zapis części, generationGaps z zagadnieniem incomplete/failed", async () => {
-        // A: wynik generatora; B: błąd przejściowy w każdej próbie; C: model kończy bez zgłoszeń.
-        const { services, agent } = await agentWorld({ objectives: { negative: [transient()], question: [] } });
+        // A: wynik generatora; B: błąd przejściowy każdej paczki w każdej próbie; C: paczki bez ćwiczeń.
+        // Koszt 0: szacunek nieznanego kosztu (0,02 USD na wywołanie) wyczerpałby budżet runu w próbie 3.
+        const { services, agent } = await agentWorld({
+          stepCostUsd: 0,
+          packets: { negative: everyPacket(transient), question: everyPacket(EMPTY) },
+        });
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE, QUESTION] }));
+        const planned = await plannedPackets(runId);
         for (const attempt of [1, 2]) {
           await executeLessonGeneration(services, runId);
           expect((await fullRun(runId)).state, `próba ${attempt}`).toBe("queued");
@@ -1085,9 +1153,11 @@ describe("agent puli lekcji (integracja)", () => {
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(3);
         expect(row.error_code).toBeNull();
-        // Gotowe zagadnienie nie jest ponawiane; pozostałe startują od zera w każdej próbie.
-        expect(agent.calls.filter((call) => call.objectiveId === OBJECTIVE)).toHaveLength(1);
-        expect(agent.calls.filter((call) => call.objectiveId === NEGATIVE)).toHaveLength(3);
+        // Gotowe zagadnienie nie jest ponawiane; pozostałe startują od zera w każdej próbie
+        // (B: każda paczka z jednym ponowieniem błędu technicznego).
+        expect(packetCallsOf(agent, "third_person_s")).toHaveLength(planned[OBJECTIVE]!);
+        expect(packetCallsOf(agent, "negative")).toHaveLength(3 * 2 * planned[NEGATIVE]!);
+        expect(packetCallsOf(agent, "question")).toHaveLength(3 * planned[QUESTION]!);
         const version = await versionOf(runId);
         expect(contextOf(version).generationGaps).toEqual([
           { objectiveId: NEGATIVE, reason: "failed" },
@@ -1099,9 +1169,11 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("shutdown w ostatniej próbie (gate + abort sygnału) → następne przejęcie zapisuje z punktu kontrolnego bez wywołań modelu; gap dla nierozliczonego zagadnienia", async () => {
-        const { services, agent } = await agentWorld({ objectives: { negative: [never()] } });
+        const packets: Packets = {};
+        const world = await agentWorld({ packets });
+        const { services, agent } = world;
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
-        await shutdownInLastAttempt(services, runId);
+        await shutdownInLastAttempt(world, packets, runId);
 
         const stopped = await fullRun(runId);
         expect(stopped.state).toBe("queued");
@@ -1109,80 +1181,67 @@ describe("agent puli lekcji (integracja)", () => {
         expect(stopped.next_attempt_at).toBeNull();
         const saved = parseLessonAgentProgress(stopped.agent_checkpoint, runId)!;
         expect(saved.objectives[OBJECTIVE]!.exercises.length).toBeGreaterThan(0);
-        expect(saved.objectives[NEGATIVE]).toBeUndefined();
-        const calls = agent.calls.length;
+        // B przerwane w ostatniej próbie: w punkcie kontrolnym zostaje wpis z próby 1.
+        expect(saved.objectives[NEGATIVE]).toMatchObject({ status: "failed", exercises: [] });
+        const calls = agent.packetCalls.length;
 
         await executeLessonGeneration(services, runId);
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(4);
-        expect(agent.calls).toHaveLength(calls);
+        expect(agent.packetCalls).toHaveLength(calls);
         const version = await versionOf(runId);
         expect(await exerciseCount(version.id)).toBe(saved.objectives[OBJECTIVE]!.exercises.length);
-        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
+        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "failed" }]);
         expectSummaryWithoutContent(row.agent_checkpoint, 4);
       });
 
-      it("shutdown w trakcie zagadnienia z kosztem → punkt kontrolny ma faktyczny wydatek, kolejna próba startuje od niego (#317)", async () => {
-        // A: krok z odrzuconym zgłoszeniem i krok generatora (0,02 USD); B płaci 0,01 USD za krok 1,
-        // a po haku A drugi krok 0,01 USD „w locie”.
-        const first = gate();
-        const second = gate();
-        const { services } = await agentWorld({
-          stepCostUsd: 0.01,
-          objectives: {
-            third_person_s: [{ submit: { exercises: [{ notAnExercise: true }] } }, GENERATE],
-            negative: { calls: [[first.step, second.step], [GENERATE]] },
-          },
-        });
+      it("shutdown w trakcie próby z kosztem → punkt kontrolny ma faktyczny wydatek, kolejna próba startuje od niego (#317)", async () => {
+        // Paczka kosztuje 0,01 USD (zapis kosztu przed czekaniem); pierwsza paczka B „w locie”, pozostałe gotowe.
+        const inFlight = gate();
+        const { services, agent } = await agentWorld({ stepCostUsd: 0.01, packets: { negative: [inFlight.step] } });
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        const planned = await plannedPackets(runId);
+        const all = planned[OBJECTIVE]! + planned[NEGATIVE]!;
         const shutdown = new AbortController();
         const running = executeLessonGeneration(services, runId, { signal: shutdown.signal });
-        await first.reached;
-        await untilSettled(runId, OBJECTIVE);
-        first.open();
-        await second.reached;
+        await inFlight.reached;
+        await vi.waitFor(() => expect(agent.packetCalls).toHaveLength(all), { timeout: 10_000, interval: 10 });
         shutdown.abort();
         await running;
 
         const stopped = await fullRun(runId);
         expect(stopped.state).toBe("queued");
         const saved = parseLessonAgentProgress(stopped.agent_checkpoint, runId)!;
-        expect(saved.objectives[NEGATIVE]).toBeUndefined();
-        // Wydatek nierozliczonego B jest w punkcie kontrolnym, nie tylko koszt do ostatniego haka.
-        expect(saved.budgetSpentUsd).toBeCloseTo(0.04, 6);
-        expect(saved.totalSpentUsd).toBeCloseTo(0.04, 6);
-        // Kody odrzuceń rozliczonego A przetrwały przerwanie (hak, nie wynik kierownika).
-        expect(Object.values(saved.rejectionCodes).reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+        // Przebieg bazowy rozlicza zagadnienia dopiero po walidacji puli: przerwana próba nic nie rozliczyła…
+        expect(saved.objectives).toEqual({});
+        // …ale jej wydatek (wszystkie opłacone paczki, także B „w locie”) jest w punkcie kontrolnym.
+        expect(saved.budgetSpentUsd).toBeCloseTo(0.01 * all, 6);
+        expect(saved.totalSpentUsd).toBeCloseTo(0.01 * all, 6);
 
         await executeLessonGeneration(services, runId);
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
-        // 0,04 z przerwanej próby + jeden krok B w próbie 2.
-        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.05, 6);
+        // Wydatek przerwanej próby + paczki próby 2, bez podwójnego liczenia.
+        expect(agent.packetCalls).toHaveLength(2 * all);
+        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.01 * 2 * all, 6);
       });
 
       it("błąd przejściowy bazy w ostatniej próbie przy przyjętym zagadnieniu → queued, następne przejęcie zapisuje część bez wywołań modelu (#319)", async () => {
-        const held = gate();
-        const { services, agent } = await agentWorld({ objectives: { negative: [held.step] } });
+        const { services, agent } = await agentWorld();
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
         // Ostatnia automatyczna próba.
         await pool.query("update learning_app.generation_runs set attempts = 2 where id = $1", [runId]);
-        const running = executeLessonGeneration(services, runId);
-        await untilSettled(runId, OBJECTIVE);
-        await held.reached;
-        // Zapis postępu z zagadnieniem B pada na przejściowym błędzie Postgresa (serialization_failure).
+        // Rozliczenie po walidacji puli zapisuje zagadnienia po kolei: zapis A przechodzi, zapis postępu
+        // z zagadnieniem B pada na przejściowym błędzie Postgresa (serialization_failure).
         await withFailingUpdate(
           "update on learning_app.generation_runs",
           `if new.agent_checkpoint -> 'objectives' ? '${NEGATIVE}' then
             raise exception 'test: checkpoint write failed' using errcode = '40001';
           end if;`,
-          () => {
-            held.open();
-            return running;
-          },
+          () => executeLessonGeneration(services, runId),
         );
 
         const requeued = await fullRun(runId);
@@ -1190,7 +1249,8 @@ describe("agent puli lekcji (integracja)", () => {
         expect(requeued.attempts).toBe(3);
         const saved = parseLessonAgentProgress(requeued.agent_checkpoint, runId)!;
         expect(saved.objectives[OBJECTIVE]!.exercises.length).toBeGreaterThan(0);
-        const calls = agent.calls.length;
+        expect(saved.objectives[NEGATIVE]).toBeUndefined();
+        const calls = agent.packetCalls.length;
 
         await dueNow(runId);
         await executeLessonGeneration(services, runId);
@@ -1198,18 +1258,20 @@ describe("agent puli lekcji (integracja)", () => {
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(4);
-        expect(agent.calls).toHaveLength(calls);
+        expect(agent.packetCalls).toHaveLength(calls);
         const version = await versionOf(runId);
         expect(await draftObjectives(version.id)).toEqual([OBJECTIVE]);
         expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
       });
 
       it("przejęcie po wyczerpaniu prób: przejściowa awaria zapisu części → failed attempts_exhausted, bez kolejnego ponowienia", async () => {
-        const { services, agent } = await agentWorld({ objectives: { negative: [never()] } });
+        const packets: Packets = {};
+        const world = await agentWorld({ packets });
+        const { services, agent } = world;
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
-        await shutdownInLastAttempt(services, runId);
+        await shutdownInLastAttempt(world, packets, runId);
         expect((await fullRun(runId)).state).toBe("queued");
-        const calls = agent.calls.length;
+        const calls = agent.packetCalls.length;
 
         await withFailingUpdate(
           "update of edit_number on learning_app.deck_versions",
@@ -1221,21 +1283,26 @@ describe("agent puli lekcji (integracja)", () => {
         expect(row.state).toBe("failed");
         expect(row.error_code).toBe("attempts_exhausted");
         expect(row.attempts).toBe(4);
-        expect(agent.calls).toHaveLength(calls);
+        expect(agent.packetCalls).toHaveLength(calls);
       });
 
       it("budżet wyczerpany przy błędzie przejściowym innego zagadnienia → zapis części bez ponowienia", async () => {
-        // Krok kosztuje 0,01 USD, budżet runu 0,025: próba 1 wydaje 0,02 (A gotowe, B przejściowy → ponowienie),
-        // w próbie 2 przejściowy błąd B przekracza budżet — kolejna próba nic by nie wydała.
-        const { services, agent } = await agentWorld(
-          { stepCostUsd: 0.01, objectives: { negative: [transient()] } },
-          { policy: { runBudgetUsd: 0.025 } },
-        );
+        // Paczka kosztuje 0,01 USD. Próba 1: A gotowe (nA paczek), każda paczka B z ponowieniem pada przejściowo
+        // (2·nB wywołań) → ponowienie runu. Budżet = wydatek próby 1 + 0,005: w próbie 2 pierwsze wywołanie B
+        // przekracza budżet (bez ponowienia paczki), pozostałe paczki nie startują — kolejna próba nic by nie wydała.
+        // Jedno miejsce generatora: kolejność wywołań i sprawdzeń budżetu jest stała.
+        const policy: { runBudgetUsd?: number; concurrency?: number } = { concurrency: 1 };
+        const { services, agent } = await agentWorld({ stepCostUsd: 0.01, packets: { negative: everyPacket(transient) } }, { policy });
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        const planned = await plannedPackets(runId);
+        const firstSpent = 0.01 * (planned[OBJECTIVE]! + 2 * planned[NEGATIVE]!);
+        // Polityka czytana przy każdym wykonaniu runu; budżet zależy od planu paczek.
+        policy.runBudgetUsd = firstSpent + 0.005;
         await executeLessonGeneration(services, runId);
         const first = await fullRun(runId);
         expect(first.state).toBe("queued");
-        expect(parseLessonAgentProgress(first.agent_checkpoint, runId)!.budgetSpentUsd).toBeCloseTo(0.02, 6);
+        expect(parseLessonAgentProgress(first.agent_checkpoint, runId)!.budgetSpentUsd).toBeCloseTo(firstSpent, 6);
+        const firstNegative = packetCallsOf(agent, "negative").length;
         await dueNow(runId);
 
         await executeLessonGeneration(services, runId);
@@ -1244,18 +1311,20 @@ describe("agent puli lekcji (integracja)", () => {
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(2);
         expect(row.next_attempt_at).toBeNull();
-        expect(agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE, NEGATIVE, NEGATIVE]);
+        // Próba 2: gotowe A bez paczek, B — jedno wywołanie.
+        expect(packetCallsOf(agent, "third_person_s")).toHaveLength(planned[OBJECTIVE]!);
+        expect(packetCallsOf(agent, "negative")).toHaveLength(firstNegative + 1);
         const version = await versionOf(runId);
         expect(await draftObjectives(version.id)).toEqual([OBJECTIVE]);
         expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "failed" }]);
-        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.03, 6);
+        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(firstSpent + 0.01, 6);
       });
 
       it("termin runu → succeeded z częścią", async () => {
-        // Termin kierownika = 6000 − 1000 ms rezerwy; B nie kończy się sam, A jest gotowe wcześniej.
-        // A ma 5 s z zapisem do bazy (wcześniej 2 s — za mało przy obciążonym procesorze).
+        // Termin przebiegu bazowego = 6000 − 1000 ms rezerwy; paczki B nie kończą się same (termin przerywa je
+        // bez porażki), A jest gotowe wcześniej. A ma 5 s z zapisem do bazy (wcześniej 2 s — za mało przy obciążonym procesorze).
         const { services } = await agentWorld(
-          { objectives: { negative: [never()] } },
+          { packets: { negative: everyPacket(never) } },
           { finalizationReserveMs: 1000, execution: { requestTimeoutMs: 6000, runTimeoutMs: 6000 } },
         );
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
@@ -1272,8 +1341,9 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("edycja rodzica w trakcie (gate) → superseded, szkic bez zmian, agent_checkpoint NULL", async () => {
         const inFlight = gate();
-        const { services, agent } = await agentWorld({ objectives: { third_person_s: [inFlight.step] } });
+        const { services, agent } = await agentWorld({ packets: { third_person_s: [inFlight.step] } });
         const { runId } = await createLesson(services, command());
+        const planned = await plannedPackets(runId);
         const before = await versionOf(runId);
         const running = executeLessonGeneration(services, runId);
         await inFlight.reached;
@@ -1284,7 +1354,8 @@ describe("agent puli lekcji (integracja)", () => {
         const row = await fullRun(runId);
         expect(row.state).toBe("superseded");
         expect(row.agent_checkpoint).toBeNull();
-        expect(agent.calls).toHaveLength(1);
+        // Najwyżej paczki przerwanej próby, bez ponowień i kolejnej próby.
+        expect(agent.packetCalls.length).toBeLessThanOrEqual(planned[OBJECTIVE]!);
         // Szkic tylko z edycją rodzica: bez ćwiczeń i zmian kontekstu z generowania.
         const after = await versionOf(runId);
         expect(after.edit_number).toBe(before.edit_number + 1);
@@ -1294,13 +1365,13 @@ describe("agent puli lekcji (integracja)", () => {
 
       it("podbicie editNumber przez acceptVerdictAsVariant w trakcie → run superseded (nie running), agent_checkpoint NULL", async () => {
         const inFlight = gate();
-        // Wywołanie 1: pula lekcji; wywołanie 2: dogenerowanie, w trakcie którego rodzic przyjmuje wariant.
-        const { services } = await agentWorld({
-          objectives: { third_person_s: { calls: [[GENERATE], [inFlight.step]] } },
-        });
+        // Pula lekcji z generatora; pierwsza paczka dogenerowania „w locie”, w trakcie rodzic przyjmuje wariant.
+        const packets: Packets = {};
+        const { services, agent } = await agentWorld({ packets });
         const lesson = await createLesson(services, command());
         await executeLessonGeneration(services, lesson.runId);
         expect((await fullRun(lesson.runId)).state).toBe("succeeded");
+        packets.third_person_s = fromNextCall(agent, "third_person_s", [inFlight.step]);
         const draft = await versionOf(lesson.runId);
         const exercisesBefore = await exerciseCount(draft.id);
         const [revision] = await query<{ id: string }>(
@@ -1336,25 +1407,27 @@ describe("agent puli lekcji (integracja)", () => {
         const inFlight = gate();
         // Długi odstęp sprawdzania bieżącości: starą próbę kończy wyłącznie straż zapisu punktu kontrolnego.
         const { services, agent } = await agentWorld(
-          { stepCostUsd: 0.01, objectives: { negative: { calls: [[inFlight.step], [GENERATE]] } } },
+          { stepCostUsd: 0.01, packets: { negative: [inFlight.step] } },
           { execution: { cancelPollMs: 60_000 } },
         );
         const { runId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        const planned = await plannedPackets(runId);
         const before = await fullRun(runId);
         const running = executeLessonGeneration(services, runId);
         await inFlight.reached;
-        await untilSettled(runId, OBJECTIVE);
+        // Punkt kontrolny z początku próby (przebieg bazowy rozlicza zagadnienia dopiero po walidacji puli).
         const saved = (await progressOf(runId))!;
 
         await retryGeneration(services, runId);
         inFlight.open();
         await running;
+        const oldCalls = agent.packetCalls.length;
 
         const retried = await fullRun(runId);
         expect(retried.state).toBe("queued");
         expect(retried.attempts).toBe(0);
         expect(retried.expected_edit_number).toBe(before.expected_edit_number + 1);
-        // Zakończone B starej próby nie trafiło do punktu kontrolnego; „Ponów” wyzerował budżet.
+        // Rozliczenie starej próby (A i B) nie trafiło do punktu kontrolnego; „Ponów” wyzerował budżet.
         expect(parseLessonAgentProgress(retried.agent_checkpoint, runId)).toEqual({ ...saved, budgetSpentUsd: 0 });
 
         await executeLessonGeneration(services, runId);
@@ -1362,33 +1435,26 @@ describe("agent puli lekcji (integracja)", () => {
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(1);
-        expect(agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE, NEGATIVE, NEGATIVE]);
+        // Nowa próba od zera: każda paczka planu raz.
+        expect(agent.packetCalls.length - oldCalls).toBe(planned[OBJECTIVE]! + planned[NEGATIVE]!);
         expect(await draftObjectives((await versionOf(runId)).id)).toEqual([OBJECTIVE, NEGATIVE]);
-        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(0.03, 6);
+        // Wydatek starej próby nie trafił do punktu kontrolnego (zapis odrzucony): łącznie = paczki nowej próby.
+        expect(summaryOf(row).totalSpentUsd).toBeCloseTo(saved.totalSpentUsd + 0.01 * (planned[OBJECTIVE]! + planned[NEGATIVE]!), 6);
       });
 
       it("Ponów po częściowym runie → wznowienie bez zduplikowanych familyId", async () => {
         /**
-         * Krok dogenerowania: jedno pytanie otwarte z rodziną o stałym slugu — model powtarza slug w każdej
-         * próbie, więc rozdzielić rodziny musi zakres runu (`familyScope`) per próba. Generator proszony
-         * o jedno ćwiczenie etapu samodzielnego; `offset` przesuwa jego indeks odpowiedzi za pulę (inaczej
-         * odpowiedź powtarza odpowiedź puli i odpada jako ujawniona).
+         * Paczka z rodziną pytań o stałym slugu „pytanie-1” — model powtarza slug w każdej próbie, więc rozdzielić
+         * rodziny musi zakres próby (`familyScope`). „Ponów” odroczonego runu zeruje `attempts` bez podbicia numeru
+         * edycji: gotowe „rzeki_polski” z próby 1 i „gory_polski” z próby po „Ponów” mają ten sam numer próby.
          */
-        const oneFamily = (offset: number): FakeAgentStep => ({
-          build: (input) => {
-            const open = fakeObjectiveExercises(input, offset, { independent: 1 })
-              .exercises.filter((exercise) => (exercise as { exerciseType?: unknown }).exerciseType === "lesson_open_answer")
-              .slice(0, 1)
-              .map((exercise) => ({ ...(exercise as Record<string, unknown>), familyId: "pytanie-1" }));
-            return { exercises: open };
-          },
-        });
-        // Wywołanie 1: pula lekcji; 2: dogenerowanie — jedno pytanie, potem błąd przejściowy; 3: wznowienie po „Ponów”.
-        const { services, agent } = await agentWorld({
-          objectives: {
-            rzeki_polski: { calls: [[GENERATE], [oneFamily(100), transient()], [oneFamily(200)]] },
-          },
-        });
+        const FIXED_FAMILY = "pytanie-1";
+        const familyStep = generatorStep((exercises) =>
+          exercises.map((exercise) => (exercise.familyId === undefined ? exercise : { ...exercise, familyId: FIXED_FAMILY })),
+        );
+        // Próba 1: „rzeki_polski” gotowe, każda paczka „gory_polski” pada przejściowo → ponowienie odroczone.
+        const packets: Packets = { rzeki_polski: everyPacket(familyStep), gory_polski: everyPacket(transient) };
+        const { services, agent } = await agentWorld({ packets });
         const school = await createSchoolLesson(services, {
           subjectTitlePl: "Geografia",
           topicTitlePl: "Polska",
@@ -1397,48 +1463,41 @@ describe("agent puli lekcji (integracja)", () => {
           clientRequestId: randomUUID(),
         });
         await executeLessonGeneration(services, school.runId);
-        expect((await fullRun(school.runId)).state).toBe("succeeded");
-        const draft = await versionOf(school.runId);
-        const rivers = (draft.lesson_context as { objectiveIds: string[] }).objectiveIds.find((id) => slugOf(id) === "rzeki_polski")!;
-        const add = await regenerateObjective(services, {
-          deckId: school.deckId,
-          objectiveId: rivers,
-          count: 3,
-          expectedEditNumber: draft.edit_number,
-          clientRequestId: randomUUID(),
-        });
-
-        // Częściowy run: jedno nowe ćwiczenie w punkcie kontrolnym, ponowienie odroczone.
-        await executeLessonGeneration(services, add.runId);
-        const partial = await fullRun(add.runId);
+        const partial = await fullRun(school.runId);
         expect(partial.state).toBe("queued");
-        const firstFamilies = parseLessonAgentProgress(partial.agent_checkpoint, add.runId)!.objectives[rivers]!.exercises.map((exercise) => exercise.familyId);
-        expect(firstFamilies).toHaveLength(1);
+        const saved = parseLessonAgentProgress(partial.agent_checkpoint, school.runId)!;
+        const [rivers] = Object.keys(saved.objectives).filter((id) => slugOf(id) === "rzeki_polski");
+        expect(saved.objectives[rivers!]!.status).toBe("complete");
+        const riversFamilies = new Set(saved.objectives[rivers!]!.exercises.flatMap((exercise) => exercise.familyId ?? []));
+        expect(riversFamilies.size).toBeGreaterThan(0);
+        const riversCalls = packetCallsOf(agent, "rzeki_polski").length;
 
         // „Ponów” odroczonego runu: nowy budżet prób bez podbicia numeru edycji.
-        await retryGeneration(services, add.runId);
-        expect((await fullRun(add.runId)).attempts).toBe(0);
-        await executeLessonGeneration(services, add.runId);
+        packets.gory_polski = fromNextCall(agent, "gory_polski", everyPacket(familyStep));
+        await retryGeneration(services, school.runId);
+        expect((await fullRun(school.runId)).attempts).toBe(0);
+        await executeLessonGeneration(services, school.runId);
 
-        const row = await fullRun(add.runId);
+        const row = await fullRun(school.runId);
         expect(row.state).toBe("succeeded");
-        expect(agent.calls.filter((call) => call.objectiveId === rivers)).toHaveLength(3);
-        const families = await query<{ family_id: string }>(
-          `select payload->>'familyId' as family_id from learning_app.item_revisions
-            where deck_version_id = $1 and payload->>'objectiveId' = $2 and payload->>'familyId' is not null`,
-          [draft.id, rivers],
+        expect(row.attempts).toBe(1);
+        expect(packetCallsOf(agent, "rzeki_polski")).toHaveLength(riversCalls);
+        const families = await query<{ objective_id: string; family_id: string }>(
+          `select payload->>'objectiveId' as objective_id, payload->>'familyId' as family_id from learning_app.item_revisions
+            where deck_version_id = $1 and payload->>'familyId' is not null`,
+          [(await versionOf(school.runId)).id],
         );
-        // Oba nowe pytania zapisane, każde we własnej rodzinie: wznowienie nie dokleja się do rodziny wcześniejszej próby.
-        expect(families.map((family) => family.family_id)).toHaveLength(2);
-        expect(new Set(families.map((family) => family.family_id)).size).toBe(2);
-        expect(families.map((family) => family.family_id)).toContain(firstFamilies[0]);
+        const familiesOf = (slug: string) => new Set(families.filter((family) => slugOf(family.objective_id) === slug).map((family) => family.family_id));
+        // Rodziny gotowego zagadnienia zapisane bez zmian, a wznowienie nie dokleja się do nich mimo tego samego slugu.
+        expect(familiesOf("rzeki_polski")).toEqual(riversFamilies);
+        expect(familiesOf("gory_polski").size).toBeGreaterThan(0);
+        for (const family of familiesOf("gory_polski")) expect(riversFamilies.has(family), family).toBe(false);
       });
 
       it("porażka walidacji, potem „Ponów” i sukces → liczniki usunięć w kontekście raz", async () => {
         // Próba 1 nic nie przyjmuje (porażka walidacji), próba po „Ponów” — wynik generatora.
-        const { services } = await agentWorld({
-          objectives: { third_person_s: { calls: [[], [GENERATE]] } },
-        });
+        const packets: Packets = { third_person_s: everyPacket(EMPTY) };
+        const { services } = await agentWorld({ packets });
         const { runId, deckId } = await createLesson(services, command());
         const before = contextOf(await versionOf(runId));
         // Wcześniejsza próba: 2 usunięcia bezpiecznika i 1 zagadnienie odrzucone przy budowie tematu.
@@ -1456,6 +1515,7 @@ describe("agent puli lekcji (integracja)", () => {
         expect(failedContext.droppedObjectiveCount).toBe((before.droppedObjectiveCount ?? 0) + 1);
         expect(failedContext.cleanupCounts).toEqual({ hintsRemoved: 3, variantsRemoved: 5 });
 
+        packets.third_person_s = [];
         await retryGeneration(services, runId);
         await executeLessonGeneration(services, runId);
 
@@ -1469,7 +1529,7 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("awaria transakcji porażki walidacji → liczniki zostają w punkcie kontrolnym (kontekst wycofany)", async () => {
-        const { services } = await agentWorld({ objectives: { third_person_s: [] } });
+        const { services } = await agentWorld({ packets: { third_person_s: everyPacket(EMPTY) } });
         const { runId } = await createLesson(services, command());
         const before = await versionOf(runId);
         await setCheckpoint(runId, { ...emptyLessonAgentProgress(), removedAfterAcceptance: 2, droppedObjectiveCount: 1 });
@@ -1494,8 +1554,8 @@ describe("agent puli lekcji (integracja)", () => {
         expect(saved.droppedObjectiveCount).toBe(1);
       });
 
-      it("brak czasu na kierownika: termin tylko dla „nic nie przyjęto”, budżet i kody dostawcy z punktu kontrolnego zostają", async () => {
-        // Termin runu równy rezerwie: kierownik nie startuje, wynik z samego punktu kontrolnego.
+      it("brak czasu na przebieg bazowy: termin tylko dla „nic nie przyjęto”, budżet i kody dostawcy z punktu kontrolnego zostają", async () => {
+        // Termin runu równy rezerwie: przebieg bazowy nie startuje, wynik z samego punktu kontrolnego.
         const { services, agent } = await agentWorld({}, {
           finalizationReserveMs: 1000,
           execution: { requestTimeoutMs: 1000, runTimeoutMs: 1000 },
@@ -1519,7 +1579,7 @@ describe("agent puli lekcji (integracja)", () => {
           expect(row.state, errorCode).toBe("failed");
           expect(row.error_code, errorCode).toBe(errorCode);
         }
-        expect(agent.calls).toEqual([]);
+        expect(agent.packetCalls).toEqual([]);
       });
 
       it("koszty: zdarzenia UsageRecorder (fake z usage) w zakresie runu, totalSpentUsd w podsumowaniu", async () => {
@@ -1527,6 +1587,7 @@ describe("agent puli lekcji (integracja)", () => {
         const recorder = createDrizzleUsageRecorder({ db: testDatabase().db, clock: new ManualClock(), prices: {} });
         const { services } = await agentWorld({ stepCostUsd: 0.01, usage: recorder });
         const { runId, deckId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+        const planned = await plannedPackets(runId);
 
         // Zakres kosztów jak w workerze (`runDueGenerationWork`).
         await runDueGenerationWork(services, { total: 1, deck: 0, lesson: 1, tts: 0, images: 0 });
@@ -1536,13 +1597,15 @@ describe("agent puli lekcji (integracja)", () => {
         expect(row.state).toBe("succeeded");
         const events = await query<Record<string, unknown>>(
           `select feature, operation, provider, scope_kind, generation_run_id, deck_id, cost_usd
-             from learning_app.provider_usage_events where operation like 'agent_%' order by occurred_at, id`,
+             from learning_app.provider_usage_events where operation like 'packet_%' order by occurred_at, id`,
         );
-        expect(events).toHaveLength(2);
+        // Jedno zdarzenie na paczkę planu (kontrola zamkniętych fake'a nie pisze dziennika).
+        const packets = planned[OBJECTIVE]! + planned[NEGATIVE]!;
+        expect(events).toHaveLength(packets);
         for (const event of events) {
           expect(event).toMatchObject({
             feature: "lesson_generation",
-            operation: "agent_objective",
+            operation: "packet_generate",
             provider: "openrouter",
             scope_kind: "run",
             generation_run_id: runId,
@@ -1550,8 +1613,110 @@ describe("agent puli lekcji (integracja)", () => {
           });
         }
         const eventsUsd = events.reduce((sum, event) => sum + Number(event.cost_usd), 0);
-        expect(eventsUsd).toBeCloseTo(0.02, 6);
+        expect(eventsUsd).toBeCloseTo(0.01 * packets, 6);
         expect(summaryOf(row).totalSpentUsd).toBeCloseTo(eventsUsd, 6);
+      });
+
+      describe("punkt kontrolny runu agenta w toku po wdrożeniu etapu 5c", () => {
+        /** Liczniki, które zapisywała pętla agenta (kontrole 2b i oczyszczenia przy przyjmowaniu). */
+        const AGENT_COUNTERS = {
+          checkCounters: { hintChecks: 4, openChecks: 2, graderCalls: 2, graderErrors: 1 },
+          cleanupCounts: { hintsRemoved: 1, variantsRemoved: 2 },
+        };
+
+        async function payloadsOf(versionId: string, objectiveId: string): Promise<Record<string, unknown>[]> {
+          const rows = await query<{ payload: Record<string, unknown> }>(
+            "select payload from learning_app.item_revisions where deck_version_id = $1 and payload->>'objectiveId' = $2 order by position",
+            [versionId, objectiveId],
+          );
+          return rows.map((row) => row.payload);
+        }
+
+        it("pula: liczniki agenta i zagadnienie incomplete z częścią ćwiczeń → przebieg bazowy kończy run, gotowe zagadnienie zostaje stałe", async () => {
+          // Próba 1: A gotowe, B błąd przejściowy (prawdziwe ćwiczenia A w punkcie kontrolnym).
+          const packets: Packets = { negative: everyPacket(transient) };
+          const { services, agent } = await agentWorld({ packets });
+          const { runId, deckId } = await createLesson(services, command({ objectiveIds: [OBJECTIVE, NEGATIVE] }));
+          await executeLessonGeneration(services, runId);
+          const first = await fullRun(runId);
+          expect(first.state).toBe("queued");
+          const own = parseLessonAgentProgress(first.agent_checkpoint, runId)!.objectives[OBJECTIVE]!;
+          expect(own.status).toBe("complete");
+          // Surowy JSON jak po próbie agenta przerwanej w trakcie B: liczniki 2b i oczyszczeń, B `incomplete` z częścią ćwiczeń.
+          const partialB = own.exercises.slice(0, 2).map((exercise) => ({ ...exercise, objectiveId: NEGATIVE, stem: `${exercise.stem ?? ""} (B)` }));
+          await setCheckpoint(runId, {
+            ...(first.agent_checkpoint as Record<string, unknown>),
+            ...AGENT_COUNTERS,
+            objectives: { [OBJECTIVE]: own, [NEGATIVE]: { status: "incomplete", exercises: partialB, examples: [] } },
+          });
+          packets.negative = [];
+          const ownCalls = packetCallsOf(agent, "third_person_s").length;
+          await dueNow(runId);
+
+          await executeLessonGeneration(services, runId);
+
+          const row = await fullRun(runId);
+          expect(row.state).toBe("succeeded");
+          expect(row.error_code).toBeNull();
+          // Podsumowanie bez treści (historyczne liczniki kontroli mogą w nim zostać).
+          expect(row.agent_checkpoint).toMatchObject({ kind: "summary", attempts: 2 });
+          for (const entry of Object.values(summaryOf(row).objectives)) {
+            for (const key of Object.keys(entry)) expect(["status", "accepted", "failureCode"]).toContain(key);
+          }
+          // A stałe: bez nowych paczek, zapisane ćwiczenia z punktu kontrolnego.
+          expect(packetCallsOf(agent, "third_person_s")).toHaveLength(ownCalls);
+          const version = await versionOf(runId);
+          expect((await payloadsOf(version.id, OBJECTIVE)).map((payload) => payload.stem).sort()).toEqual(own.exercises.map((exercise) => exercise.stem).sort());
+          // B `incomplete` w puli generowane od nowa: część z punktu kontrolnego nie trafia do szkicu.
+          const negativeStems = (await payloadsOf(version.id, NEGATIVE)).map((payload) => payload.stem);
+          expect(negativeStems.length).toBeGreaterThan(0);
+          for (const exercise of partialB) expect(negativeStems).not.toContain(exercise.stem);
+          expect(contextOf(version).generationGaps).toBeUndefined();
+          // Oczyszczenia agenta przeniesione do szkicu (DTO), liczniki kontroli nie.
+          expect(contextOf(version).cleanupCounts).toEqual(AGENT_COUNTERS.cleanupCounts);
+          expect((await readLessonDeck(services, deckId)).draft!.cleanupCounts).toEqual({ ...AGENT_COUNTERS.cleanupCounts, quotesSnapped: 0 });
+          expect(version.lesson_context).not.toHaveProperty("checkCounters");
+        });
+
+        it("„+N”: zagadnienie incomplete z częścią nowych ćwiczeń → zostają stałe, przebieg bazowy dogenerowuje resztę", async () => {
+          const { services } = await agentWorld();
+          // Prawdziwe ćwiczenie zagadnienia spoza szkicu: z puli drugiej lekcji (inne pasmo numeracji fake'a).
+          const other = await createLesson(services, command());
+          await executeLessonGeneration(services, other.runId);
+          const [partial] = (await orderedDraftExercises(services.db, (await versionOf(other.runId)).id))
+            .filter((exercise) => exercise.exerciseType === "lesson_choice");
+          expect(partial).toBeDefined();
+
+          const lesson = await createLesson(services, command());
+          await executeLessonGeneration(services, lesson.runId);
+          const draft = await versionOf(lesson.runId);
+          const ownBefore = (await payloadsOf(draft.id, OBJECTIVE)).length;
+          const add = await regenerateObjective(services, {
+            deckId: lesson.deckId,
+            objectiveId: OBJECTIVE,
+            count: 3,
+            expectedEditNumber: draft.edit_number,
+            clientRequestId: randomUUID(),
+          });
+          await setCheckpoint(add.runId, {
+            ...emptyLessonAgentProgress(),
+            ...AGENT_COUNTERS,
+            objectives: { [OBJECTIVE]: { status: "incomplete", exercises: [partial], examples: [] } },
+            budgetSpentUsd: 0.05,
+            totalSpentUsd: 0.05,
+          });
+
+          await executeLessonGeneration(services, add.runId);
+
+          const row = await fullRun(add.runId);
+          expect(row.state).toBe("succeeded");
+          const stems = (await payloadsOf(draft.id, OBJECTIVE)).map((payload) => payload.stem);
+          // Część z punktu kontrolnego zapisana raz, razem z dogenerowaną resztą (+3 łącznie).
+          expect(stems.filter((stem) => stem === partial!.stem)).toHaveLength(1);
+          expect(stems.length).toBeGreaterThanOrEqual(ownBefore + 3);
+          expect(contextOf(await versionOf(add.runId)).generationGaps).toBeUndefined();
+          expect(summaryOf(row).totalSpentUsd).toBeGreaterThanOrEqual(0.05);
+        });
       });
     });
 
@@ -1569,39 +1734,34 @@ describe("agent puli lekcji (integracja)", () => {
         );
       }
 
-      /**
-       * Krok dogenerowania (generator fake'a): indeks odpowiedzi przesunięty za pulę (`offset`; inaczej odpowiedzi
-       * powtarzają pulę i odpadają jako duplikaty), liczby etapów i dodatku słuchowego zamiast liczb z wejścia
-       * (`stages`, `listen`), najwyżej `take` pierwszych ćwiczeń, `extra` przed wynikiem generatora.
-       */
-      function addGenerator(options: {
-        offset: number;
-        stages?: { guided: number; productive: number; independent: number };
-        listen?: number;
-        take?: number;
-        extra?: readonly LessonExerciseDraft[];
-      }): FakeAgentStep {
-        return {
-          build: (input) => {
-            const request: LessonObjectiveAgentInput = {
-              ...input,
-              pool: { ...input.pool, ...(options.stages === undefined ? {} : { stageCounts: options.stages }) },
-              targets: { ...input.targets, ...(options.listen === undefined ? {} : { listenAllowance: options.listen }) },
-            };
-            const result = fakeObjectiveExercises(request, options.offset);
-            const taken = options.take === undefined ? result.exercises : result.exercises.slice(0, options.take);
-            return { ...result, exercises: [...(options.extra ?? []), ...taken] };
-          },
-        };
+      interface AddWorld extends AgentWorld {
+        readonly packets: Packets;
+        readonly checker: HeldChecker;
       }
 
-      /** Lekcja gramatyki z pulą z pierwszego wywołania agenta i run „Dogeneruj +N” zagadnienia w kolejce. */
-      async function draftWithAdd(services: Services, count: number, prepare?: (versionId: string) => Promise<void>) {
+      /** Świat z mutowalnymi scenariuszami paczek i kontrolą zamkniętych, którą można zatrzymać na bramce. */
+      async function addWorld(): Promise<AddWorld> {
+        const packets: Packets = {};
+        const checker = new HeldChecker();
+        return { ...(await agentWorld({ packets }, { checker })), packets, checker };
+      }
+
+      /**
+       * Lekcja gramatyki z pulą z generatora fake'a i run „Dogeneruj +N” zagadnienia w kolejce; `steps` — kroki
+       * paczek dogenerowania (od następnego wywołania; brak = generator).
+       */
+      async function draftWithAdd(
+        world: AddWorld,
+        count: number,
+        options: { steps?: readonly FakePacketStep[]; prepare?: (versionId: string) => Promise<void> } = {},
+      ) {
+        const { services } = world;
         const lesson = await createLesson(services, command());
         await executeLessonGeneration(services, lesson.runId);
         expect((await fullRun(lesson.runId)).state).toBe("succeeded");
         const draft = await versionOf(lesson.runId);
-        await prepare?.(draft.id);
+        await options.prepare?.(draft.id);
+        if (options.steps !== undefined) world.packets.third_person_s = fromNextCall(world.agent, "third_person_s", options.steps);
         const add = await regenerateObjective(services, {
           deckId: lesson.deckId,
           objectiveId: OBJECTIVE,
@@ -1609,8 +1769,24 @@ describe("agent puli lekcji (integracja)", () => {
           expectedEditNumber: draft.edit_number,
           clientRequestId: randomUUID(),
         });
-        return { draft, add, before: await draftRows(draft.id), poolRunId: lesson.runId };
+        return { draft, add, deckId: lesson.deckId, before: await draftRows(draft.id), poolRunId: lesson.runId, callsBefore: world.agent.packetCalls.length };
       }
+
+      const catalogObjective = englishGrammarSubject.topics.flatMap((topic) => topic.objectives).find((objective) => objective.id === OBJECTIVE)!;
+
+      /** Wybór gramatyki zagadnienia, którego rozwiązane zdanie (`stem` z poprawną opcją) to `stem` z `answer`. */
+      const choiceExercise = (stem: string, answer: string): LessonExerciseDraft => ({
+        exerciseType: "lesson_choice",
+        objectiveId: OBJECTIVE,
+        instructionPl: "Wybierz.",
+        stem,
+        answer,
+        acceptedAnswers: [],
+        focus: [],
+        // Dystraktor `<odpowiedź>x` jak w fake'u: kontrola zamkniętych fake'a wskazuje opcję-przedrostek.
+        options: [{ id: "a", text: answer }, { id: "b", text: `${answer}x` }],
+        correctOption: "a",
+      });
 
       /** Luka gramatyki zagadnienia; rozwiązane zdanie = `stem` z `answer` w miejscu luki. */
       const gapExercise = (stem: string, answer: string): LessonExerciseDraft => ({
@@ -1644,56 +1820,47 @@ describe("agent puli lekcji (integracja)", () => {
       /** Historyjka zapisana w trakcie runu (run historyjki nie podbija numeru edycji). */
       const STORY_LATE = storyOf(["Sam rides his red bike.", "The bike is fast and shiny.", "They go to the park.", "Sam is very happy."]);
 
+      /** Ćwiczenie, którego rozwiązanie powtarza zdanie `STORY_LATE` (kolizja wykrywana dopiero przy zapisie). */
+      const lateCollision = () => choiceExercise("Sam ___ his red bike.", "rides");
+
       it("dogeneruj +2 → najwyżej 2+stageGap+listenLeft nowych, szkic nietknięty, generationGaps bez wpisu zagadnienia", async () => {
-        // Wywołanie 2: generator zgłasza znacznie więcej ćwiczeń, niż wolno przyjąć.
-        const { services, agent } = await agentWorld({
-          objectives: {
-            third_person_s: {
-              calls: [
-                [GENERATE],
-                [addGenerator({ offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 })],
-              ],
-            },
-          },
-        });
-        const { draft, add, before, poolRunId } = await draftWithAdd(services, 2, (versionId) =>
+        // Każda paczka dogenerowania zwraca trzy razy więcej ćwiczeń, niż zamówiono.
+        const world = await addWorld();
+        const { draft, add, before, poolRunId, callsBefore } = await draftWithAdd(world, 2, {
+          steps: everyPacket(() => generatorStep(undefined, 3)),
           // Luki z wcześniejszego generowania: wpis tego zagadnienia znika, wpis innego zostaje.
-          setContextField(versionId, "generationGaps", [
-            { objectiveId: OBJECTIVE, reason: "incomplete" },
-            { objectiveId: NEGATIVE, reason: "failed" },
-          ]),
-        );
+          prepare: (versionId) =>
+            setContextField(versionId, "generationGaps", [
+              { objectiveId: OBJECTIVE, reason: "incomplete" },
+              { objectiveId: NEGATIVE, reason: "failed" },
+            ]),
+        });
         const contextBefore = contextOf(await versionOf(add.runId));
 
-        await executeLessonGeneration(services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
 
         const row = await fullRun(add.runId);
         expect(row.state).toBe("succeeded");
-        const call = agent.calls.at(-1)!;
-        expect(call.objectiveId).toBe(OBJECTIVE);
-        const { targets } = call.input;
-        // Oczekiwane liczby ze szkicu, niezależnie od celów promptu: pula pierwszego runu jest kompletem
+        const calls = world.agent.packetCalls.slice(callsBefore);
+        expect(calls.every((call) => call.objective.id === OBJECTIVE && !call.withExamples)).toBe(true);
+        // Oczekiwane liczby ze szkicu, niezależnie od zamówień paczek: pula pierwszego runu jest kompletem
         // (brak braków etapów → stageGap = 0), a reszta dodatku słuchowego = limit zagadnienia − ćwiczenia
         // słuchowe zagadnienia w szkicu.
         expect(summaryOf(await fullRun(poolRunId)).objectives[OBJECTIVE]!.status).toBe("complete");
         const stageGap = 0;
         const listenInDraft = before.filter((item) => item.payload.objectiveId === OBJECTIVE && item.payload.exerciseType === "lesson_listen_choice").length;
-        const catalogObjective = englishGrammarSubject.topics
-          .flatMap((topic) => topic.objectives)
-          .find((objective) => objective.id === OBJECTIVE)!;
         const listenLeft = Math.max(0, listenChoiceAllowance(englishGrammarSubject, catalogObjective, []) - listenInDraft);
-        // Prompt: etapy = 2 + braki etapów; limit nowych = 2 + braki etapów + reszta dodatku słuchowego.
-        const stagesTarget = targets.guided + targets.productive + targets.independent;
-        expect(stagesTarget).toBe(2 + stageGap);
-        expect(targets.listenAllowance).toBe(listenLeft);
-        expect(targets.maxExercises).toBe(2 + stageGap + listenLeft);
+        // Paczki: udziały etapów = 2 + braki etapów (zamówienie = udział + zapas), słuchanie = reszta dodatku słuchowego.
+        const stagePackets = calls.filter((call) => call.type !== "lesson_listen_choice");
+        expect(stagePackets.reduce((sum, call) => sum + call.count - PACKET_RESERVE, 0)).toBe(2 + stageGap);
+        expect(calls.filter((call) => call.type === "lesson_listen_choice").map((call) => call.count)).toEqual(listenLeft > 0 ? [listenLeft] : []);
         const after = await draftRows(draft.id);
         // Szkic nietknięty: wcześniejsze ćwiczenia bez zmian, nowe dopisane za nimi.
         expect(after.slice(0, before.length)).toEqual(before);
         const added = after.length - before.length;
         expect(added).toBeGreaterThanOrEqual(2);
-        expect(added).toBeLessThanOrEqual(targets.maxExercises);
-        // Kontrola końcowa (limity puli) nie usunęła żadnego z przyjętych nowych ćwiczeń.
+        expect(added).toBeLessThanOrEqual(2 + stageGap + listenLeft);
+        // Zapis nie usunął żadnego z przyjętych nowych ćwiczeń.
         expect(summaryOf(row).objectives[OBJECTIVE]).toMatchObject({ accepted: added });
         const version = await versionOf(add.runId);
         expect(version.edit_number).toBe(draft.edit_number + 1);
@@ -1702,33 +1869,26 @@ describe("agent puli lekcji (integracja)", () => {
         expectSummaryWithoutContent(row.agent_checkpoint, 1);
       });
 
-      it("dogeneruj ze zdaniem historyjki → agent dostaje je jako źródło ujawnień; kolizja w zapisie odrzucona", async () => {
-        const inFlight = gate();
-        // Wywołanie 2: luka z rozwiązaniem ze zdania historyjki zapisanej w trakcie runu (agent jej nie zna)
-        // i jedno zwykłe ćwiczenie — agent przyjmuje oba, zapis odrzuca kolizję.
-        const lateCollision = gapExercise("Sam ___ his red bike.", "rides");
-        const { services, agent } = await agentWorld({
-          objectives: {
-            third_person_s: {
-              calls: [
-                [GENERATE],
-                [
-                  inFlight.step,
-                  addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1, extra: [lateCollision] }),
-                ],
-              ],
-            },
-          },
+      it("dogeneruj ze zdaniem historyjki → paczki dostają je jako zdania do unikania; kolizja w zapisie odrzucona", async () => {
+        // Paczka wyboru: ćwiczenie z rozwiązaniem ze zdania historyjki zapisanej w trakcie runu (przebieg bazowy jej
+        // nie zna), paczka luki: jedno zwykłe ćwiczenie — walidacja puli przyjmuje oba, zapis odrzuca kolizję.
+        // Kontrola zamkniętych paczki wyboru jest „w locie”, gdy run historyjki zapisuje nową historyjkę.
+        const world = await addWorld();
+        const step = generatorStep((exercises, input) => (input.type === "lesson_choice" ? [lateCollision()] : exercises.slice(0, 1)));
+        const { draft, add, before, callsBefore } = await draftWithAdd(world, 2, {
+          steps: everyPacket(step),
+          prepare: (versionId) => setContextField(versionId, "story", STORY_START),
         });
-        const { draft, add, before } = await draftWithAdd(services, 2, (versionId) => setContextField(versionId, "story", STORY_START));
         const contextBefore = contextOf(await versionOf(add.runId));
+        const inFlight = gate();
+        world.checker.hold(inFlight);
 
-        const running = executeLessonGeneration(services, add.runId);
+        const running = executeLessonGeneration(world.services, add.runId);
         await inFlight.reached;
-        // Zdania historyjki ze startu są źródłami ujawnień podagenta: zdania kart i zdania do unikania w prompcie.
-        const input = agent.calls.at(-1)!.input;
-        expect(input.cardSentences).toEqual(expect.arrayContaining(STORY_START.sentences));
-        expect(input.pool.avoidSentences).toEqual(expect.arrayContaining(STORY_START.sentences));
+        // Paczki dogenerowania wyboru i luki; zdania historyjki ze startu są w zdaniach do unikania każdej paczki.
+        const calls = world.agent.packetCalls.slice(callsBefore);
+        expect(calls.map((call) => call.type).sort()).toEqual(["lesson_choice", "lesson_gap"]);
+        for (const call of calls) expect(call.pool.avoidSentences).toEqual(expect.arrayContaining(STORY_START.sentences));
         // Run historyjki zapisuje nową historyjkę w trakcie (bez podbicia numeru edycji).
         await setContextField(draft.id, "story", STORY_LATE);
         inFlight.open();
@@ -1739,21 +1899,20 @@ describe("agent puli lekcji (integracja)", () => {
         expect(summaryOf(row).objectives[OBJECTIVE]).toMatchObject({ accepted: 2 });
         const after = await draftRows(draft.id);
         expect(after).toHaveLength(before.length + 1);
-        expect(after.map((item) => item.payload.stem)).not.toContain(lateCollision.stem);
+        expect(after.map((item) => item.payload.stem)).not.toContain(lateCollision().stem);
         const version = await versionOf(add.runId);
         expect(contextOf(version).rejectedCount).toBe((contextBefore.rejectedCount ?? 0) + 1);
-        // „Dodano k z N” liczy ćwiczenia zapisane, nie przyjęte przez agenta.
+        // „Dodano k z N” liczy ćwiczenia zapisane, nie przyjęte w walidacji puli.
         expect(contextOf(version).generationGaps).toEqual([{ objectiveId: OBJECTIVE, reason: "add_short", added: 1, requested: 2 }]);
         expect((version.lesson_context as { story?: unknown }).story).toEqual(STORY_LATE);
       });
 
       it("pełna pula: kolizja z historyjką w zapisie, zapisana pula nadal pełna → bez luki", async () => {
-        // Pula z generatora fake'a (komplet) i jedno dodatkowe ćwiczenie, którego rozwiązanie powtarza zdanie historyjki
-        // szkicu — agent w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
+        // Pula z generatora fake'a (komplet) i jedno dodatkowe ćwiczenie luki, którego rozwiązanie powtarza zdanie historyjki
+        // szkicu — przebieg bazowy w trybie puli historyjki nie zna, przyjmuje je; zapis je odrzuca.
         const collision = gapExercise("Sam ___ his red bike.", "rides");
-        const { services } = await agentWorld({
-          objectives: { third_person_s: { calls: [[addGenerator({ offset: 0, extra: [collision] })]] } },
-        });
+        const step = generatorStep((exercises, input) => (input.type === "lesson_gap" ? [collision, ...exercises] : exercises));
+        const { services } = await agentWorld({ packets: { third_person_s: everyPacket(step) } });
         const { runId } = await createLesson(services, command());
         const before = await versionOf(runId);
         await setContextField(before.id, "story", STORY_LATE);
@@ -1762,7 +1921,7 @@ describe("agent puli lekcji (integracja)", () => {
 
         const row = await fullRun(runId);
         expect(row.state).toBe("succeeded");
-        // Agent uznał zagadnienie za komplet…
+        // Walidacja puli uznała zagadnienie za komplet…
         expect(summaryOf(row).objectives[OBJECTIVE]!.status).toBe("complete");
         const version = await versionOf(runId);
         expect((await draftRows(version.id)).map((item) => item.payload.stem)).not.toContain(collision.stem);
@@ -1772,64 +1931,62 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("dogeneruj z błędem przejściowym → requeue → łącznie ≤ limitu, bez duplikatów", async () => {
-        // Wywołanie 2: jedno ćwiczenie, potem błąd przejściowy; wywołanie 3 (ponowienie) zaczyna od tego samego
-        // ćwiczenia (ten sam indeks odpowiedzi) i zgłasza dużo więcej.
-        const { services, agent } = await agentWorld({
-          objectives: {
-            third_person_s: {
-              calls: [
-                [GENERATE],
-                [addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 }), transient()],
-                [addGenerator({ offset: 100, stages: { guided: 4, productive: 4, independent: 4 }, listen: 3 })],
-              ],
-            },
-          },
-        });
-        const { draft, add, before } = await draftWithAdd(services, 3);
+        // Próba 1: każda paczka dogenerowania z ponowieniem pada przejściowo (zagadnienie `failed`, bez ćwiczeń);
+        // próba 2: generator fake'a w paczkach zamawiających trzy razy więcej, niż wolno przyjąć.
+        const world = await addWorld();
+        const { draft, add, before, callsBefore } = await draftWithAdd(world, 3, { steps: everyPacket(transient) });
 
-        await executeLessonGeneration(services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
         const requeued = await fullRun(add.runId);
         expect(requeued.state).toBe("queued");
         expect(requeued.error_code).toBe("provider");
         const firstAttempt = parseLessonAgentProgress(requeued.agent_checkpoint, add.runId)!.objectives[OBJECTIVE]!;
         expect(firstAttempt.status).toBe("failed");
-        expect(firstAttempt.exercises).toHaveLength(1);
+        // Porażka paczki oblewa zagadnienie: nic z próby 1 nie przechodzi do punktu kontrolnego.
+        expect(firstAttempt.exercises).toEqual([]);
         // Szkic bez zmian do zapisu końcowego.
         expect(await draftRows(draft.id)).toEqual(before);
+        const firstCalls = world.agent.packetCalls.slice(callsBefore);
+        world.packets.third_person_s = fromNextCall(world.agent, "third_person_s", everyPacket(() => generatorStep(undefined, 3)));
         await dueNow(add.runId);
 
-        await executeLessonGeneration(services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
 
         const row = await fullRun(add.runId);
         expect(row.state).toBe("succeeded");
         expect(row.attempts).toBe(2);
-        const [, firstCall, secondCall] = agent.calls;
-        // Ponowienie prosi o resztę (+2), a limit liczy z ćwiczeniem z punktu kontrolnego jako stałym.
-        expect(secondCall!.input.targets.maxExercises).toBeLessThanOrEqual(firstCall!.input.targets.maxExercises - 1);
+        // Ponowienie prosi o te same paczki (+3 od nowa): typy i zamówienia jak w próbie 1 (bez jej ponowień paczek).
+        const packetsOf = (calls: readonly LessonPacketInput[]) => [...new Set(calls.map((call) => `${call.type}:${call.count}`))].sort();
+        const secondCalls = world.agent.packetCalls.slice(callsBefore + firstCalls.length);
+        expect(packetsOf(secondCalls)).toEqual(packetsOf(firstCalls));
+        expect(secondCalls).toHaveLength(firstCalls.length / 2);
+        const listenLeft = Math.max(
+          0,
+          listenChoiceAllowance(englishGrammarSubject, catalogObjective, [])
+            - before.filter((item) => item.payload.objectiveId === OBJECTIVE && item.payload.exerciseType === "lesson_listen_choice").length,
+        );
         const after = await draftRows(draft.id);
         expect(after.slice(0, before.length)).toEqual(before);
         const added = after.slice(before.length);
         expect(added.length).toBeGreaterThanOrEqual(3);
-        expect(added.length).toBeLessThanOrEqual(firstCall!.input.targets.maxExercises);
-        // Ćwiczenie pierwszej próby zapisane raz; jego powtórka w ponowieniu odrzucona.
-        expect(added.filter((item) => item.payload.stem === firstAttempt.exercises[0]!.stem)).toHaveLength(1);
+        expect(added.length).toBeLessThanOrEqual(3 + listenLeft);
         const answers = after.map((item) => String(item.payload.answer).toLowerCase());
         expect(new Set(answers).size).toBe(answers.length);
       });
 
       it("dogeneruj bez nowych → failed, editNumber bez zmian", async () => {
-        const { services, agent } = await agentWorld({
-          objectives: { third_person_s: { calls: [[GENERATE], []] } },
-        });
-        const { draft, add, before } = await draftWithAdd(services, 2);
+        const world = await addWorld();
+        const { draft, add, before, callsBefore } = await draftWithAdd(world, 2, { steps: everyPacket(EMPTY) });
 
-        await executeLessonGeneration(services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
 
         const row = await fullRun(add.runId);
         expect(row.state).toBe("failed");
         expect(row.error_code).toBe("validation");
         expect(row.next_attempt_at).toBeNull();
-        expect(agent.calls).toHaveLength(2);
+        // Jedno wywołanie na paczkę planu „+2” (braki etapów 0, bez słuchania: dodatek słuchowy wykorzystany w puli).
+        const plan = packetPlanForTargets(catalogObjective, poolStageCounts(englishGrammarSubject, catalogObjective.exerciseTypes, 2), false, 0);
+        expect(world.agent.packetCalls.slice(callsBefore).map((call) => call.type)).toEqual(plan.packets.map((packet) => packet.type));
         const version = await versionOf(add.runId);
         expect(version.edit_number).toBe(draft.edit_number);
         expect(await draftRows(draft.id)).toEqual(before);
@@ -1837,17 +1994,12 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("dogeneruj z niedoborem → add_short dodano k z N", async () => {
-        // Wywołanie 2: model kończy po jednym ćwiczeniu.
-        const { services } = await agentWorld({
-          objectives: {
-            third_person_s: {
-              calls: [[GENERATE], [addGenerator({ offset: 100, stages: { guided: 1, productive: 0, independent: 0 }, take: 1 })]],
-            },
-          },
-        });
-        const { draft, add, before } = await draftWithAdd(services, 3);
+        // Model zwraca tylko jedno ćwiczenie wyboru; pozostałe paczki puste.
+        const world = await addWorld();
+        const step = generatorStep((exercises, input) => (input.type === "lesson_choice" ? exercises.slice(0, 1) : []));
+        const { draft, add, before } = await draftWithAdd(world, 3, { steps: everyPacket(step) });
 
-        await executeLessonGeneration(services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
 
         const row = await fullRun(add.runId);
         expect(row.state).toBe("succeeded");
@@ -1858,26 +2010,18 @@ describe("agent puli lekcji (integracja)", () => {
       });
 
       it("wszystkie nowe odpadły na kolizji z historyjką → failed validation; „Ponów” → sukces, liczniki usunięć w kontekście raz", async () => {
-        const inFlight = gate();
-        const lateCollision = gapExercise("Sam ___ his red bike.", "rides");
-        // Wywołanie 2: jedyne zgłoszone ćwiczenie koliduje z historyjką zapisaną w trakcie; wywołanie 3 po „Ponów”.
-        const { services } = await agentWorld({
-          objectives: {
-            third_person_s: {
-              calls: [
-                [GENERATE],
-                [inFlight.step, { submit: { exercises: [lateCollision] } }],
-                [addGenerator({ offset: 200 })],
-              ],
-            },
-          },
-        });
-        const { draft, add, before } = await draftWithAdd(services, 2);
+        // Jedyne ćwiczenie dogenerowania koliduje z historyjką zapisaną w trakcie (kontrola zamkniętych „w locie”);
+        // po „Ponów” — generator fake'a.
+        const world = await addWorld();
+        const step = generatorStep((_exercises, input) => (input.type === "lesson_choice" ? [lateCollision()] : []));
+        const { draft, add, before } = await draftWithAdd(world, 2, { steps: everyPacket(step) });
         const contextBefore = contextOf(await versionOf(add.runId));
         // Wcześniejsza próba: 2 usunięcia bezpiecznika kierownika.
         await setCheckpoint(add.runId, { ...emptyLessonAgentProgress(), removedAfterAcceptance: 2 });
+        const inFlight = gate();
+        world.checker.hold(inFlight);
 
-        const running = executeLessonGeneration(services, add.runId);
+        const running = executeLessonGeneration(world.services, add.runId);
         await inFlight.reached;
         await setContextField(draft.id, "story", STORY_LATE);
         inFlight.open();
@@ -1894,344 +2038,29 @@ describe("agent puli lekcji (integracja)", () => {
         expect(saved.removedAfterAcceptance).toBe(0);
         expect(saved.objectives[OBJECTIVE]!.exercises).toEqual([]);
 
-        await retryGeneration(services, add.runId);
-        await executeLessonGeneration(services, add.runId);
+        world.packets.third_person_s = [];
+        await retryGeneration(world.services, add.runId);
+        await executeLessonGeneration(world.services, add.runId);
 
         expect((await fullRun(add.runId)).state).toBe("succeeded");
         const after = await draftRows(draft.id);
         expect(after.length).toBeGreaterThanOrEqual(before.length + 2);
-        expect(after.map((item) => item.payload.stem)).not.toContain(lateCollision.stem);
+        expect(after.map((item) => item.payload.stem)).not.toContain(lateCollision().stem);
         expect(contextOf(await versionOf(add.runId)).rejectedCount).toBe((contextBefore.rejectedCount ?? 0) + 3);
       });
-    });
 
-    describe("kontrole szkoły (etap 2b: sędzia podpowiedzi, kontrola otwarta)", () => {
-      /** Marker pytania spornego w widoku ćwiczenia: rozwiązujący odpowiada na nie pełną i niepełną odpowiedzią. */
-      const DISPUTED = "SPORNE";
-      const FULL = "Wisła i Odra";
-      const PARTIAL = "Tylko Wisła";
-      const BAD_HINT = "Podpowiedź o zakręcie rzeki, której nie ma w materiale.";
-      const GOOD_HINT = "Pomyśl o rzekach przepływających przez kraj.";
-      const START_LINE = /^\[lesson-agent\] run=\S+ hintJudge=(on|off) openCheck=(on|off)$/u;
+      it("szkic z historycznymi cleanupCounts po „+N” zwraca te same cleanupCounts w DTO", async () => {
+        // Oczyszczenia zapisywała pętla agenta przy przyjmowaniu; przebieg bazowy ich nie liczy, ale też nie gubi.
+        const historical = { hintsRemoved: 3, variantsRemoved: 5 };
+        const world = await addWorld();
+        const { add, deckId } = await draftWithAdd(world, 2, { prepare: (versionId) => setContextField(versionId, "cleanupCounts", historical) });
+        expect((await readLessonDeck(world.services, deckId)).draft!.cleanupCounts).toEqual({ ...historical, quotesSnapped: 0 });
 
-      type Exercise = Record<string, unknown>;
-      const isOpen = (exercise: unknown): exercise is Exercise =>
-        (exercise as { exerciseType?: unknown } | null)?.exerciseType === "lesson_open_answer";
+        await executeLessonGeneration(world.services, add.runId);
 
-      /** Surowy werdykt gradera szkoły: pełna partycja `required` na trafione i `missing`. */
-      function schoolVerdict(required: readonly string[], missing: readonly string[], knowledge: "correct" | "partial" | "incorrect") {
-        return {
-          knowledge,
-          precision: "concise",
-          matchedElementIds: required.filter((id) => !missing.includes(id)),
-          missingElementIds: [...missing],
-          incorrectStatements: [],
-          redundantFragments: [],
-          offTopicFragments: [],
-          confusedConcepts: [],
-          note: "",
-        };
-      }
-
-      /**
-       * Grader: domyślnie `correct` dla jednego elementu `e1` (pytania fake'a); pytania sporne (dwa elementy
-       * `e1`, `e2`) dostają `correct` dla pełnej odpowiedzi rozwiązującego i `partial` dla niepełnej.
-       */
-      function schoolGrader(): FakeAnswerGrader {
-        return new FakeAnswerGrader()
-          .onDefault({ raw: schoolVerdict(["e1"], [], "correct") })
-          .onAnswer(FULL, { raw: schoolVerdict(["e1", "e2"], [], "correct") })
-          .onAnswer(PARTIAL, { raw: schoolVerdict(["e1", "e2"], ["e2"], "partial") });
-      }
-
-      /** Checker szkoły: zamknięte ćwiczenia niesprawdzone, pytanie sporne ma niepełną odpowiedź rozwiązującego. */
-      function schoolChecker(options: { judgeHint?: (item: { hint: string }) => HintVerdict | null } = {}): FakeExerciseChecker {
-        return new FakeExerciseChecker({
-          solve: () => null,
-          solveOpen: (view) => (view.includes(DISPUTED) ? [FULL, PARTIAL] : ["A", "B"]),
-          ...(options.judgeHint === undefined ? {} : { judgeHint: options.judgeHint }),
-        });
-      }
-
-      /** Pytanie wymagające dwóch elementów: odpowiedź rozwiązującego jest niepełna względem drugiego. */
-      const disputed = (exercise: Exercise): Exercise => ({
-        ...exercise,
-        prompt: `${String(exercise.prompt)} ${DISPUTED}`,
-        requiredElements: [{ id: "e1", text: "Wisła" }, { id: "e2", text: "Odra" }],
-      });
-
-      /** Poprawka pytania spornego: inne pytanie i jeden wymagany element (grader ocenia `correct`). */
-      const repaired = (exercise: Exercise): Exercise => ({
-        ...exercise,
-        prompt: "Podaj najdłuższą rzekę Polski.",
-        requiredElements: [{ id: "e1", text: "Wisła" }],
-      });
-
-      /**
-       * Krok generatora: wynik fake'a, w którym `edit` zmienia pierwsze pytanie otwarte (`all` — każde) albo — z
-       * `only` — wynik ma tylko to jedno, zmienione pytanie (poprawka jednego ćwiczenia). `offset` przesuwa
-       * indeks odpowiedzi za pulę i prosi o jedno ćwiczenie etapu samodzielnego (dogenerowanie).
-       */
-      function openPool(
-        edit: (exercise: Exercise) => Exercise,
-        options: { all?: true; only?: true; offset?: number } = {},
-      ): FakeAgentStep {
-        return {
-          build: (input) => {
-            const result =
-              options.offset === undefined
-                ? fakeObjectiveExercises(input, 0)
-                : fakeObjectiveExercises(input, options.offset, { independent: 1 });
-            const first = result.exercises.find(isOpen);
-            if (options.only) return { exercises: first === undefined ? [] : [edit(first)] };
-            const exercises = result.exercises.map((exercise) => (isOpen(exercise) && (options.all || exercise === first) ? edit(exercise) : exercise));
-            return { ...result, exercises };
-          },
-        };
-      }
-
-      function schoolLesson(services: Services) {
-        return createSchoolLesson(services, {
-          subjectTitlePl: "Geografia",
-          topicTitlePl: "Polska",
-          // Jedno zagadnienie: pule fake'a różnych zagadnień mają wspólne odpowiedzi i ujawniają się nawzajem.
-          material: ["Zagadnienie 1: Rzeki Polski", "Wisła jest najdłuższą rzeką Polski. Odra płynie na zachodzie kraju."].join("\n"),
-          poolSize: 40,
-          clientRequestId: randomUUID(),
-        });
-      }
-
-      /** Pytania otwarte zapisane w szkicu (treść pytania i podpowiedź). */
-      async function savedOpen(versionId: string): Promise<{ prompt: string; hint: string | null }[]> {
-        return query<{ prompt: string; hint: string | null }>(
-          `select payload->>'prompt' as prompt, payload->>'hint' as hint from learning_app.item_revisions
-            where deck_version_id = $1 and payload->>'exerciseType' = 'lesson_open_answer' order by position`,
-          [versionId],
-        );
-      }
-
-      interface RunSummary {
-        rejectionCodes: Record<string, number>;
-        checkCounters?: Record<string, number>;
-      }
-      const summaryCodes = (row: FullRunRow) => row.agent_checkpoint as RunSummary;
-
-      /** Wszystkie wiersze zapisane przez `fn` w `console.log` (każdy argument jako tekst). */
-      async function withLogLines<T>(fn: () => Promise<T>): Promise<string[]> {
-        const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-        try {
-          await fn();
-          return log.mock.calls.map((call) => call.map((part) => (typeof part === "string" ? part : JSON.stringify(part))).join(" "));
-        } finally {
-          log.mockRestore();
-        }
-      }
-
-      /** Wiersze startowe kontroli (`hintJudge=… openCheck=…`) zapisane przez `fn` w `console.log`. */
-      async function withStartLines<T>(fn: () => Promise<T>): Promise<string[]> {
-        return (await withLogLines(fn)).filter((line) => START_LINE.test(line));
-      }
-
-      /** Prywatność (§8): treść kontroli (odpowiedzi rozwiązującego, podpowiedzi, powody) nie trafia do logów ani do runu. */
-      function expectNoCheckContent(lines: readonly string[], row: FullRunRow, texts: readonly string[]): void {
-        const logs = lines.join("\n");
-        const runJson = JSON.stringify(row);
-        expect(lines.length).toBeGreaterThan(0);
-        for (const text of texts) {
-          expect(logs, text).not.toContain(text);
-          expect(runJson, text).not.toContain(text);
-        }
-      }
-
-      it("open_not_accepted then fix: niepełna odpowiedź rozwiązującego odrzuca pytanie, poprawka trafia do szkicu", async () => {
-        const grader = schoolGrader();
-        const checker = schoolChecker();
-        const { services } = await agentWorld(
-          {
-            objectives: {
-              rzeki_polski: [
-                openPool(disputed),
-                openPool((exercise) => repaired(disputed(exercise)), { only: true }),
-              ],
-            },
-          },
-          { checker, grader },
-        );
-        const { runId } = await schoolLesson(services);
-
-        const lines = await withLogLines(() => executeLessonGeneration(services, runId));
-        const startLines = lines.filter((line) => START_LINE.test(line));
-
-        const row = await fullRun(runId);
-        expect(row.state).toBe("succeeded");
-        // Odpowiedzi rozwiązującego (także odrzucona niepełna) ani brakujący element w powodzie nie trafiają do logów i podsumowania.
-        expectNoCheckContent(lines, row, [FULL, PARTIAL, 'Missing: "Odra"']);
-        const summary = summaryCodes(row);
-        expect(summary.rejectionCodes.open_not_accepted).toBe(1);
-        expect(summary.checkCounters!.openChecks).toBeGreaterThanOrEqual(1);
-        expect(summary.checkCounters!.graderCalls).toBeGreaterThanOrEqual(1);
-        expect(summary.checkCounters!.graderErrors ?? 0).toBe(0);
-        const version = await versionOf(runId);
-        const saved = await savedOpen(version.id);
-        expect(saved.map((entry) => entry.prompt)).toContain("Podaj najdłuższą rzekę Polski.");
-        expect(saved.some((entry) => entry.prompt.includes(DISPUTED))).toBe(false);
-        expect(contextOf(version).generationGaps).toBeUndefined();
-        // Grader dostał niepełną odpowiedź rozwiązującego pytania spornego.
-        expect(grader.requests.map((request) => request.childAnswer)).toContain(PARTIAL);
-        // Log startu kontroli (jedyny test składania sędziego i gradera w ścieżce generacji): raz na próbę.
-        expect(startLines).toEqual([`[lesson-agent] run=${runId} hintJudge=on openCheck=on`]);
-      });
-
-      it("repeated rejections leave objective incomplete: kroki zagadnienia wyczerpane na odrzuceniach → luka incomplete", async () => {
-        const grader = schoolGrader();
-        const checker = schoolChecker();
-        const { services, agent } = await agentWorld(
-          (() => {
-            const everyDisputed = openPool(disputed, { all: true });
-            return { objectives: { rzeki_polski: [everyDisputed, everyDisputed, everyDisputed, everyDisputed, everyDisputed] } };
-          })(),
-          { checker, grader, policy: { maxStepsPerObjective: 3 } },
-        );
-        const { runId } = await schoolLesson(services);
-        // Ostatnia automatyczna próba: nieukończone zagadnienie trafia do szkicu jako luka.
-        await pool.query("update learning_app.generation_runs set attempts = 2 where id = $1", [runId]);
-
-        await executeLessonGeneration(services, runId);
-
-        const row = await fullRun(runId);
-        expect(row.state).toBe("succeeded");
-        const rivers = agent.calls.find((call) => slugOf(call.objectiveId) === "rzeki_polski")!;
-        expect(rivers.outcomes).toHaveLength(3);
-        const version = await versionOf(runId);
-        expect(contextOf(version).generationGaps).toEqual([{ objectiveId: rivers.objectiveId, reason: "incomplete" }]);
-        expect(summaryCodes(row).rejectionCodes.open_not_accepted).toBeGreaterThanOrEqual(3);
-        expect(summaryOf(row).objectives[rivers.objectiveId]).toMatchObject({ status: "incomplete" });
-        expect((await savedOpen(version.id)).some((entry) => entry.prompt.includes(DISPUTED))).toBe(false);
-      });
-
-      it("grader throws → accepted unchecked: awaria gradera nie odrzuca ćwiczeń, liczniki w podsumowaniu", async () => {
-        const grader = new FakeAnswerGrader().onDefault({ error: "grader offline" });
-        const checker = schoolChecker();
-        const { services } = await agentWorld({}, { checker, grader });
-        const { runId } = await schoolLesson(services);
-
-        await executeLessonGeneration(services, runId);
-
-        const row = await fullRun(runId);
-        expect(row.state).toBe("succeeded");
-        const summary = summaryCodes(row);
-        expect(summary.checkCounters!.graderErrors).toBeGreaterThanOrEqual(1);
-        expect(summary.rejectionCodes.open_not_accepted).toBeUndefined();
-        expect(grader.requests.length).toBeGreaterThanOrEqual(1);
-        const version = await versionOf(runId);
-        expect((await savedOpen(version.id)).length).toBeGreaterThan(0);
-        expect(contextOf(version).generationGaps).toBeUndefined();
-      });
-
-      it("no grader → no open calls: bez gradera rozwiązujący i grader nie są wołane, sędzia podpowiedzi działa", async () => {
-        const checker = schoolChecker({ judgeHint: () => ({ verdict: "ok" }) });
-        const { services } = await agentWorld(
-          { objectives: { rzeki_polski: [openPool((exercise) => ({ ...exercise, hint: GOOD_HINT }))] } },
-          { checker },
-        );
-        const { runId } = await schoolLesson(services);
-
-        const startLines = await withStartLines(() => executeLessonGeneration(services, runId));
-
-        const row = await fullRun(runId);
-        expect(row.state).toBe("succeeded");
-        expect(checker.openCalls).toHaveLength(0);
-        const summary = summaryCodes(row);
-        expect(summary.checkCounters?.openChecks ?? 0).toBe(0);
-        expect(summary.checkCounters?.graderCalls ?? 0).toBe(0);
-        // Sędzia podpowiedzi nadal działa: podpowiedź pytania trafiła do niego i do szkicu.
-        expect(checker.hintCalls.flatMap((call) => call.items.map((item) => item.hint))).toEqual([GOOD_HINT]);
-        expect((await savedOpen((await versionOf(runId)).id)).map((entry) => entry.hint)).toContain(GOOD_HINT);
-        expect(startLines).toEqual([`[lesson-agent] run=${runId} hintJudge=on openCheck=off`]);
-      });
-
-      it("hint unsupported then fix: podpowiedź spoza materiału odrzucona, poprawka bez podpowiedzi przyjęta", async () => {
-        const grader = schoolGrader();
-        const JUDGE_REASON = "the material says nothing about it";
-        const checker = schoolChecker({
-          judgeHint: (item) => (item.hint === BAD_HINT ? { verdict: "unsupported", reason: JUDGE_REASON } : { verdict: "ok" }),
-        });
-        const { services } = await agentWorld(
-          {
-            objectives: {
-              rzeki_polski: [
-                openPool((exercise) => ({ ...exercise, hint: BAD_HINT })),
-                openPool((exercise) => exercise, { only: true }),
-              ],
-            },
-          },
-          { checker, grader },
-        );
-        const { runId } = await schoolLesson(services);
-
-        const lines = await withLogLines(() => executeLessonGeneration(services, runId));
-
-        const row = await fullRun(runId);
-        expect(row.state).toBe("succeeded");
-        // Zła podpowiedź i powód sędziego tylko w pamięci kontroli — nie w logach ani podsumowaniu.
-        expectNoCheckContent(lines, row, [BAD_HINT, JUDGE_REASON]);
-        const summary = summaryCodes(row);
-        expect(summary.rejectionCodes.hint_unsupported).toBe(1);
-        expect(summary.rejectionCodes.open_not_accepted).toBeUndefined();
-        expect(summary.checkCounters!.hintChecks).toBeGreaterThanOrEqual(1);
-        const version = await versionOf(runId);
-        const saved = await savedOpen(version.id);
-        expect(saved.length).toBeGreaterThan(0);
-        expect(saved.every((entry) => entry.hint !== BAD_HINT)).toBe(true);
-        expect(contextOf(version).generationGaps).toBeUndefined();
-      });
-
-      it("add mode applies checks: Dogeneruj +1 w szkole woła rozwiązującego, odrzuca pytanie i przyjmuje poprawkę", async () => {
-        const grader = schoolGrader();
-        const checker = schoolChecker();
-        const { services, agent } = await agentWorld(
-          {
-            objectives: {
-              rzeki_polski: {
-                calls: [
-                  [GENERATE],
-                  [
-                    openPool(disputed, { only: true, offset: 100 }),
-                    openPool((exercise) => repaired(disputed(exercise)), { only: true, offset: 100 }),
-                  ],
-                ],
-              },
-            },
-          },
-          { checker, grader },
-        );
-        const school = await schoolLesson(services);
-        await executeLessonGeneration(services, school.runId);
-        expect((await fullRun(school.runId)).state).toBe("succeeded");
-        const draft = await versionOf(school.runId);
-        const rivers = (draft.lesson_context as { objectiveIds: string[] }).objectiveIds.find((id) => slugOf(id) === "rzeki_polski")!;
-        const openBefore = await savedOpen(draft.id);
-        const callsBefore = checker.openCalls.length;
-
-        const add = await regenerateObjective(services, {
-          deckId: school.deckId,
-          objectiveId: rivers,
-          count: 1,
-          expectedEditNumber: draft.edit_number,
-          clientRequestId: randomUUID(),
-        });
-        await executeLessonGeneration(services, add.runId);
-
-        const row = await fullRun(add.runId);
-        expect(row.state).toBe("succeeded");
-        expect(agent.calls.filter((call) => call.objectiveId === rivers)).toHaveLength(2);
-        // Kontrola otwarta działa w dogenerowaniu: rozwiązujący wołany, sporne pytanie odrzucone, poprawka dopisana.
-        expect(checker.openCalls.length).toBeGreaterThan(callsBefore);
-        expect(summaryCodes(row).rejectionCodes.open_not_accepted).toBe(1);
-        const after = await savedOpen(draft.id);
-        expect(after).toHaveLength(openBefore.length + 1);
-        expect(after.at(-1)!.prompt).toBe("Podaj najdłuższą rzekę Polski.");
-        expect(after.some((entry) => entry.prompt.includes(DISPUTED))).toBe(false);
+        expect((await fullRun(add.runId)).state).toBe("succeeded");
+        expect(contextOf(await versionOf(add.runId)).cleanupCounts).toEqual(historical);
+        expect((await readLessonDeck(world.services, deckId)).draft!.cleanupCounts).toEqual({ ...historical, quotesSnapped: 0 });
       });
     });
 
@@ -2298,7 +2127,7 @@ describe("agent puli lekcji (integracja)", () => {
 
           expectUnavailable(await fullRun(runId));
           expect(await checkpointText(runId)).toBe(checkpointBefore);
-          expect(world.agent.calls).toEqual([]);
+          expect(world.agent.packetCalls).toEqual([]);
           expect(world.fakes.llm.objectiveRequests).toEqual([]);
           expect(world.fakes.llm.storyRequests).toEqual([]);
           const after = await versionOf(runId);
@@ -2322,7 +2151,7 @@ describe("agent puli lekcji (integracja)", () => {
 
           expectUnavailable(await fullRun(school.runId));
           expect(world.fakes.llm.objectiveRequests).toEqual([]);
-          expect(world.agent.calls).toEqual([]);
+          expect(world.agent.packetCalls).toEqual([]);
           expect(await exerciseCount((await versionOf(school.runId)).id)).toBe(0);
         });
 
@@ -2340,12 +2169,12 @@ describe("agent puli lekcji (integracja)", () => {
             expectedEditNumber: draft.edit_number,
             clientRequestId: randomUUID(),
           });
-          const callsBefore = world.agent.calls.length;
+          const callsBefore = world.agent.packetCalls.length;
 
           await executeLessonGeneration(withoutAgent(world, lessonAgent), add.runId);
 
           expectUnavailable(await fullRun(add.runId));
-          expect(world.agent.calls).toHaveLength(callsBefore);
+          expect(world.agent.packetCalls).toHaveLength(callsBefore);
           expect((await versionOf(add.runId)).edit_number).toBe(draft.edit_number);
           expect(await revisionIds(draft.id)).toEqual(revisionsBefore);
         });
@@ -2379,7 +2208,7 @@ describe("agent puli lekcji (integracja)", () => {
           expect(row.error_code).toBe("validation");
         });
 
-        it("„Ponów” po dodaniu klucza → succeeded na agencie", async () => {
+        it("„Ponów” po dodaniu klucza → succeeded przebiegiem bazowym", async () => {
           const world = await agentWorld();
           const { runId } = await createLesson(world.services, command());
           await executeLessonGeneration(withoutAgent(world, lessonAgent), runId);
@@ -2390,12 +2219,12 @@ describe("agent puli lekcji (integracja)", () => {
 
           const row = await fullRun(runId);
           expect(row.state).toBe("succeeded");
-          expect(world.agent.calls.map((call) => call.objectiveId)).toEqual([OBJECTIVE]);
+          expect(new Set(world.agent.packetCalls.map((call) => call.objective.id))).toEqual(new Set([OBJECTIVE]));
           expect(await exerciseCount((await versionOf(runId)).id)).toBeGreaterThan(0);
         });
       });
 
-      it("nieznany przedmiot przy dostępnym agencie → failed validation bez wywołań", async () => {
+      it("nieznany przedmiot przy dostępnym generatorze → failed validation bez wywołań", async () => {
         const { services, agent } = await agentWorld();
         const { runId } = await createLesson(services, command());
         await setRunInput(runId, { subjectId: "no_such_subject" });
@@ -2405,10 +2234,10 @@ describe("agent puli lekcji (integracja)", () => {
         const row = await fullRun(runId);
         expect(row.state).toBe("failed");
         expect(row.error_code).toBe("validation");
-        expect(agent.calls).toEqual([]);
+        expect(agent.packetCalls).toEqual([]);
       });
 
-      it("runy z kolejki sprzed wdrożenia z polami potoku (purpose, existingAnswers, existingExercises) wykonuje agent", async () => {
+      it("runy z kolejki sprzed wdrożenia z polami potoku (purpose, existingAnswers, existingExercises) wykonuje przebieg bazowy", async () => {
         const { services, agent } = await agentWorld();
         const lesson = await createLesson(services, command());
         await setRunInput(lesson.runId, { purpose: "pool" });
@@ -2432,12 +2261,12 @@ describe("agent puli lekcji (integracja)", () => {
             existingExercises: [{ objectiveId: OBJECTIVE, exerciseType: "lesson_choice", stimulus: "He ___ football." }],
           },
         });
-        const callsBefore = agent.calls.length;
+        const callsBefore = agent.packetCalls.length;
 
         await executeLessonGeneration(services, add.runId);
 
         expect((await fullRun(add.runId)).state).toBe("succeeded");
-        expect(agent.calls[callsBefore]!.input.objective.id).toBe(OBJECTIVE);
+        expect(agent.packetCalls[callsBefore]!.objective.id).toBe(OBJECTIVE);
         expect(await objectiveExerciseCount(draft.id, OBJECTIVE)).toBeGreaterThanOrEqual(objectiveBefore + 4);
         expect(await revisionIds(draft.id)).toEqual(expect.arrayContaining(revisionsBefore));
       });
@@ -2477,12 +2306,11 @@ describe("agent puli lekcji (integracja)", () => {
     const both = (): LessonCommand => command({ objectiveIds: [THIRD, QUESTION], poolSize: 24 });
     const stateOf = async (runId: string) => (await query<{ state: string; attempts: number }>("select state, attempts from learning_app.generation_runs where id = $1", [runId]))[0]!;
 
-    it("nowa lekcja: paczki zamiast agenta, szkic bez luk", async () => {
+    it("nowa lekcja: paczki, szkic bez luk", async () => {
       const { services, agent } = await grammarWorld();
       const { runId, deckId } = await createLesson(services, both());
       await executeLessonGeneration(services, runId);
       expect((await stateOf(runId)).state).toBe("succeeded");
-      expect(agent.calls).toHaveLength(0);
       expect(agent.packetCalls.length).toBeGreaterThan(0);
       const draft = (await readLessonDeck(services, deckId)).draft!;
       expect(draft.generationGaps ?? []).toEqual([]);
@@ -2491,7 +2319,7 @@ describe("agent puli lekcji (integracja)", () => {
 
     it("wznowienie: przejściowa porażka paczki → queued; druga próba nie generuje zagadnienia gotowego", async () => {
       // Każda paczka zagadnienia `question` i jej ponowienie w próbie 1 kończą się błędem przejściowym; potem generator.
-      const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = { question: Array.from({ length: 40 }, () => ({ throw: new GenerationProviderError("transient") })) };
+      const packets: NonNullable<FakeLessonPoolAgentOptions["packets"]> = { question: everyPacket(() => ({ throw: new GenerationProviderError("transient") }), 40) };
       const { services, agent } = await grammarWorld({ packets });
       const { runId, deckId } = await createLesson(services, both());
       await executeLessonGeneration(services, runId);

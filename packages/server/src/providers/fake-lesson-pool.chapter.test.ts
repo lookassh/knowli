@@ -22,18 +22,18 @@ describe("fakePacketExercises for the chapter", () => {
   for (const objective of topic.objectives) {
     for (const type of objective.exerciseTypes.filter((entry) => entry !== "lesson_card")) {
       it(`${objective.id.split(".").at(-1)} × ${type}: structure and closed check pass`, () => {
-        const input = packetInput({ subject, topic, objective, type, count: 2, withExamples: false, material, graderAvailable: true, avoidSentences: [], timeoutMs: 1000 });
+        const input = packetInput({ subject, topic, objective, type, count: 2, withExamples: false, material, avoidSentences: [], timeoutMs: 1000 });
         const { exercises } = fakePacketExercises(input, 100);
         expect(exercises).toHaveLength(2);
         for (const raw of exercises) {
           const parsed = parseLessonRecord(raw, objective.id, subject, null);
           if (!parsed.ok) throw new Error(`${type}: ${parsed.rejection.code} ${parsed.rejection.ruleIds.join(",")}`);
-          const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
+          const draft = subject.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
           expect(validateLessonExerciseIssues(draft, subject, topic, { agent: true }).map((issue) => issue.rule)).toEqual([]);
           const views = closedCheckItems(draft, topic);
           if (views === null) continue;
           const results = views.map((view) =>
-            type === "lesson_order" ? { verdict: "yes" } : { answers: [fakeClosedAnswer(view)] },
+            type === "lesson_order" ? { verdict: "yes" } : { answers: fakeClosedAnswer(view) },
           );
           expect(closedCheckVerdict(draft, results, subject.normalizer)).toEqual({ pass: true });
         }

@@ -4,7 +4,7 @@ import { lessonRulesStep, snapshotOf, submitExamples } from "../../../domain/les
 import { orderedEntries, type LessonAgentState } from "../../../domain/lessons/agent/state";
 import { objectiveStatusFor } from "../../../domain/lessons/agent/status";
 import { closedCheckContract, closedCheckItems, closedCheckVerdict } from "../../../domain/lessons/closed-check";
-import { bucketOf, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
+import { bucketOf, KEYWORDS_PER_OBJECTIVE, packetPlan, packetPlanForTargets, type PacketBucket, type PacketPlan } from "../../../domain/lessons/packet-plan";
 import { validateLessonExerciseIssues } from "../../../domain/lessons/pool-validation";
 import type { SubjectRegistry } from "../../../domain/lessons/registry";
 import type { AgentObjective, LearningObjective, LessonExerciseDraft, LessonExerciseType, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
@@ -14,7 +14,6 @@ import { deadlineSignal, Semaphore, untilAborted } from "./lesson-agent-timers";
 import { buildPoolInput, listenChoiceAllowance, objectiveBatchCounts, poolStageCounts } from "./lesson-drafts";
 import { lessonAvoidSentences } from "./lesson-pool-agent-input";
 import {
-  emptyLessonPoolAgentStats,
   objectivesToRun,
   poolStartState,
   slugOf,
@@ -36,9 +35,9 @@ import { parseLessonRecord, type RejectionLogEntry } from "./lesson-pool-agent-t
  * Przebieg bazowy generowania puli lekcji (spec etapu 2 §3, spec zbiorczy §4): dla każdego
  * zagadnienia paczki cel × typ (jedno wywołanie generatora na paczkę), walidacja struktury, jedna
  * kontrola zadań zamkniętych na paczkę i — po wszystkich zagadnieniach — jedna walidacja puli w
- * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Te same typy wejścia i wyniku
- * co `runLessonPoolAgent`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Worker
- * woła go dla przedmiotu z `baselinePool`. Bez bazy i identyfikatorów przedmiotów.
+ * kolejności lekcji. Odrzucone ćwiczenia odpadają; bez rund naprawy. Typy wejścia i wyniku z
+ * `lesson-pool-agent.ts`, także wznowienie (`fixed`, `skipObjectives`) i „dodaj N” (etap 4). Jedyny
+ * generator puli lekcji w workerze (etap 5c). Bez bazy i identyfikatorów przedmiotów.
  */
 
 export interface LessonBaselineDeps {
@@ -78,7 +77,7 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
   if (source.source === "input" && subject.buildDynamicTopic === undefined) {
     throw new AppError("validation", { message: `subject ${subject.id} has no dynamic topics` });
   }
-  // Temat z katalogu albo dynamiczny (etap zagadnień lub punkt kontrolny), złożony jak u agenta.
+  // Temat z katalogu albo dynamiczny (etap zagadnień lub punkt kontrolny).
   const topic = source.source === "catalog" ? source.topic : subject.buildDynamicTopic!(source.dynamicTopic);
   const target = input.target;
   if (target?.mode === "add" && !topic.objectives.some((objective) => objective.id === target.objectiveId)) {
@@ -90,29 +89,31 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
 
 /**
  * Wejście paczki: pola promptu z `buildPoolInput` na kopii celu z jednym typem (księga reguł tego
- * typu), bez sekcji `lesson` i `checks` księgi (opisują limity, ujawnienia i kontrole agenta).
+ * typu).
  */
 export function packetInput(args: {
   readonly subject: SubjectModule;
   readonly topic: LessonTopic;
   readonly objective: LearningObjective;
   readonly type: LessonExerciseType;
+  /** Typ zamawiany w tej samej paczce (keywords przy pytaniach otwartych, spec etapu 5 §5.1). */
+  readonly companion?: LessonExerciseType;
   readonly count: number;
   readonly withExamples: boolean;
   readonly material: string;
   readonly instruction?: string;
   readonly interests?: readonly string[];
-  readonly graderAvailable: boolean;
   readonly avoidSentences: readonly string[];
   readonly timeoutMs: number;
 }): LessonPacketInput {
-  const single = { ...args.objective, exerciseTypes: [args.type] };
+  const types = args.companion === undefined ? [args.type] : [args.type, args.companion];
+  const single = { ...args.objective, exerciseTypes: types };
   const topic = { ...args.topic, objectives: args.topic.objectives.map((objective) => (objective.id === single.id ? single : objective)) };
-  const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.graderAvailable, args.interests, {
+  const pool = buildPoolInput(args.subject, topic, single.id, args.count, args.material, args.instruction, args.interests, {
     avoidSentences: args.avoidSentences,
   });
   return {
-    pool: { ...pool, exerciseTypes: [args.type], ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
+    pool: { ...pool, exerciseTypes: types },
     objective: { id: single.id, title: single.titlePl, cards: single.cards.map((card) => ({ title: card.title, body: card.body })) },
     type: args.type,
     count: args.count,
@@ -159,6 +160,17 @@ async function allSettledOrThrow<T>(tasks: readonly Promise<T>[]): Promise<T[]> 
   return results.map((result) => (result as PromiseFulfilledResult<T>).value);
 }
 
+/** Stabilnie: najpierw pierwszy członek każdej rodziny (`familyId`), potem drugi itd.; ćwiczenia bez rodziny jak pierwsi. */
+function familiesFirst(drafts: readonly LessonExerciseDraft[]): LessonExerciseDraft[] {
+  const seen = new Map<string, number>();
+  const ranked = drafts.map((draft, index) => {
+    const rank = draft.familyId === undefined ? 0 : (seen.get(draft.familyId) ?? 0);
+    if (draft.familyId !== undefined) seen.set(draft.familyId, rank + 1);
+    return { draft, index, rank };
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map(({ draft }) => draft);
+}
+
 export async function runLessonBaselinePool(
   deps: LessonBaselineDeps,
   input: LessonPoolAgentRunInput,
@@ -171,11 +183,9 @@ export async function runLessonBaselinePool(
   // Błąd kodu w jednej paczce zatrzymuje pozostałe (bez nowych płatnych wywołań), zanim run zgłosi błąd.
   const crash = new AbortController();
   const runDeadline = deadlineSignal(AbortSignal.any([signal, crash.signal]), policy.runTimeoutMs, RUN_TIMEOUT_REASON);
-  const stats = emptyLessonPoolAgentStats();
   const rejections: RejectionLogEntry[] = [];
   const reject = (objectiveId: string, exerciseType: string, kind: RejectionLogEntry["kind"], code: string, ruleIds: readonly string[] = []) => {
-    rejections.push({ objectiveId, exerciseType, kind, code, ruleIds, detail: "" });
-    stats.rejectedByKind[kind] = (stats.rejectedByKind[kind] ?? 0) + 1;
+    rejections.push({ objectiveId, exerciseType, kind, code, ruleIds });
   };
   try {
     const dynamicTopic = input.objectiveSource.source === "input" ? input.objectiveSource.dynamicTopic : undefined;
@@ -183,13 +193,13 @@ export async function runLessonBaselinePool(
     signal.throwIfAborted();
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
-    // Stan startowy jak u agenta: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
-    // limity zapisu (`lessonAgentLimits`; `maxExercises` nie działa — przyjmowanie nie woła kroku limitów).
+    // Stan startowy: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
+    // limity zagadnień (`lessonAgentLimits`).
     const start = poolStartState({ subject, topic, objectives, input });
     const { ctx, addMode, promptTargets } = start;
     const avoidSentences = lessonAvoidSentences(subject, topic, start.state);
     const examplesFixed = input.examplesFixed ?? false;
-    // Równoległość żądań: generowanie jak zagadnienia agenta, kontrola jak checker agenta; budżet sprawdzany po zajęciu miejsca.
+    // Równoległość żądań: osobne limity generatora i kontroli z polityki runu; budżet sprawdzany po zajęciu miejsca.
     const generatorSlots = new Semaphore(policy.concurrency);
     const checkerSlots = new Semaphore(policy.checkerConcurrency);
 
@@ -219,12 +229,12 @@ export async function runLessonBaselinePool(
         topic,
         objective: catalogObjective,
         type: packet.type,
+        ...(packet.companion === undefined ? {} : { companion: packet.companion }),
         count: packet.count,
         withExamples,
         material: input.material,
         ...(input.instruction === undefined ? {} : { instruction: input.instruction }),
         ...(input.interests === undefined ? {} : { interests: input.interests }),
-        graderAvailable: input.graderAvailable,
         avoidSentences,
         timeoutMs: policy.callTimeoutMs,
       });
@@ -233,16 +243,16 @@ export async function runLessonBaselinePool(
         if (generated === STOPPED) return { kind: "stopped" };
         const objectiveId = catalogObjective.id;
         const valid: LessonExerciseDraft[] = [];
+        const companions: LessonExerciseDraft[] = [];
         for (const raw of generated.exercises) {
-          stats.submitted += 1;
           const parsed = parseLessonRecord(raw, objectiveId, subject, input.familyScope);
           if (!parsed.ok) {
             reject(objectiveId, parsed.exerciseType, "shape", parsed.rejection.code, parsed.rejection.ruleIds);
             continue;
           }
-          // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
-          const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
-          if (draft.exerciseType !== packet.type) {
+          // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją.
+          const draft = subject.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
+          if (draft.exerciseType !== packet.type && draft.exerciseType !== packet.companion) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
             continue;
           }
@@ -251,29 +261,62 @@ export async function runLessonBaselinePool(
             reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(issues.map((issue) => issue.rule))]);
             continue;
           }
+          // Towarzysz paczki (keywords) poza zamówioną liczbą; limit na zagadnienie daje kubełek w walidacji puli,
+          // a do kontroli idzie najwyżej jeden zapasowy ponad niego (koszt pozycji z materiałem).
+          if (draft.exerciseType === packet.companion) {
+            if (companions.length >= KEYWORDS_PER_OBJECTIVE + 1) reject(objectiveId, draft.exerciseType, "limit", "over_count");
+            else companions.push(draft);
+            continue;
+          }
           if (valid.length >= packet.count) {
             reject(objectiveId, draft.exerciseType, "limit", "over_count");
             continue;
           }
           valid.push(draft);
         }
-        const contract = closedCheckContract(packet.type);
-        if (contract === null) return { kind: "done", drafts: valid, examples: generated.examples };
+        // Keywords sprawdza się z pytaniem swojej rodziny z tej paczki; bez niego odpadają regułą rodzin przedmiotu.
+        const familyPrompts = new Map<string, string>();
+        for (const draft of valid) {
+          if (draft.familyId !== undefined && !familyPrompts.has(draft.familyId)) familyPrompts.set(draft.familyId, draft.prompt ?? "");
+        }
+        const withFamily = companions.filter((draft) => {
+          if (draft.familyId !== undefined && familyPrompts.has(draft.familyId)) return true;
+          const ruleIds = (subject.validatePoolExtra?.([draft], { material: input.material }).get(0) ?? []).map((issue) => issue.rule);
+          reject(objectiveId, draft.exerciseType, "rule", "rule_exercise", [...new Set(ruleIds)]);
+          return false;
+        });
+        // Kontrakt per ćwiczenie: typ bez kontroli (pytanie otwarte) przechodzi bez zmian; w paczce jest najwyżej jeden kontrakt.
+        const unchecked = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) === null);
+        const toCheck = [...valid, ...withFamily].filter((draft) => closedCheckContract(draft.exerciseType) !== null);
+        const contract = toCheck.length === 0 ? null : closedCheckContract(toCheck[0]!.exerciseType);
+        if (contract === null) return { kind: "done", drafts: unchecked, examples: generated.examples };
         // Ćwiczenie bez widoku (słuchanie bez zdania nagrania) odpada przed kontrolą; ćwiczenie z przypisaniem
         // to jedna pozycja na pole, a jego werdykt bierze swój wycinek wyników.
-        const checkable = valid.flatMap((draft) => {
-          const views = closedCheckItems(draft, topic);
+        const checkable = toCheck.flatMap((draft) => {
+          const views = closedCheckItems(draft, topic, draft.familyId === undefined ? undefined : familyPrompts.get(draft.familyId));
           if (views === null) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
           return views === null ? [] : [{ draft, views }];
         });
-        if (checkable.length === 0) return { kind: "done", drafts: [], examples: generated.examples };
+        if (checkable.length === 0) return { kind: "done", drafts: unchecked, examples: generated.examples };
         const items = checkable.flatMap(({ views }) => views.map((view) => ({ view })));
-        const checked = await callModel(checkerSlots, () =>
-          deps.checker.checkClosed({ contract, items, timeoutMs: policy.checkerTimeoutMs }, sink, runDeadline.signal),
-        );
-        if (checked === STOPPED) return { kind: "stopped" };
-        stats.checkerCalls += 1;
-        const passed: LessonExerciseDraft[] = [];
+        let checked;
+        try {
+          checked = await callModel(checkerSlots, () =>
+            deps.checker.checkClosed(
+              { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.checkerNeedsMaterial ? { material: input.material } : {}) },
+              sink,
+              runDeadline.signal,
+            ),
+          );
+        } catch (error) {
+          if (signal.aborted || !(error instanceof GenerationProviderError) || unchecked.length === 0) throw error;
+          // Awaria kontroli opcjonalnych keywords nie zabiera paczce pytań otwartych (bez kontroli).
+          for (const { draft } of checkable) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
+          return { kind: "done", drafts: unchecked, examples: generated.examples };
+        }
+        // Budżet albo termin przed kontrolą: opłacone pytania otwarte (bez kontroli) zostają, keywords nie.
+        if (checked === STOPPED) return unchecked.length === 0 ? { kind: "stopped" } : { kind: "done", drafts: unchecked, examples: generated.examples };
+        const passed: LessonExerciseDraft[] = [...unchecked];
         let offset = 0;
         for (const { draft, views } of checkable) {
           const verdict = closedCheckVerdict(draft, checked.results.slice(offset, offset + views.length), subject.normalizer);
@@ -284,7 +327,7 @@ export async function runLessonBaselinePool(
         return { kind: "done", drafts: passed, examples: generated.examples };
       } catch (error) {
         if (signal.aborted) throw signal.reason;
-        // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run (jak u agenta).
+        // Tylko błąd usługi oznacza cel jako nieudany; błąd kodu przerywa run.
         if (!(error instanceof GenerationProviderError)) {
           crash.abort(error);
           throw error;
@@ -323,7 +366,7 @@ export async function runLessonBaselinePool(
     const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
 
-    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka, krokami 3–4 przyjmowania agenta
+    // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka i krokiem reguł lekcji (`lessonRulesStep`)
     // (kandydat odpada także, gdy czyni nową ofiarą inne ćwiczenie, również `fixed`).
     // Najpierw udział każdej paczki, potem zapasy w tej samej kolejności — zapas pierwszego typu nie wypycha drugiego.
     let state: LessonAgentState = start.state;
@@ -332,10 +375,15 @@ export async function runLessonBaselinePool(
     for (const outcome of outcomes) {
       const id = outcome.objective.id;
       const caps = outcome.plan.caps;
-      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0 };
-      const shares = outcome.packets.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
-      const reserves = outcome.packets.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
-      for (const draft of [...shares.flat(), ...reserves.flat()]) {
+      const used: Record<PacketBucket, number> = { guided: 0, productive: 0, independent: 0, intro: 0, listen: 0, keywords: 0 };
+      // Towarzysze paczek (keywords) na końcu zagadnienia: po udziałach i zapasach, więc ich rodzina pytań jest już przyjęta.
+      const isCompanion = (draft: LessonExerciseDraft, index: number) => draft.exerciseType === outcome.plan.packets[index]!.companion;
+      // Rodziny pytań najpierw pierwszymi członkami: model pisze rodziny po kolei, a udział etapu brałby jedną rodzinę.
+      const own = outcome.packets.map((drafts, index) => familiesFirst(drafts.filter((draft) => !isCompanion(draft, index))));
+      const shares = own.map((drafts, index) => drafts.slice(0, outcome.plan.packets[index]!.share));
+      const reserves = own.map((drafts, index) => drafts.slice(outcome.plan.packets[index]!.share));
+      const tails = outcome.packets.map((drafts, index) => drafts.filter((draft) => isCompanion(draft, index)));
+      for (const draft of [...shares.flat(), ...reserves.flat(), ...tails.flat()]) {
         const bucket = bucketOf(draft.exerciseType);
         if (used[bucket] >= caps[bucket]) {
           overflow.set(id, (overflow.get(id) ?? 0) + 1);
@@ -349,7 +397,6 @@ export async function runLessonBaselinePool(
         state = step.state;
         before = step.snapshot;
         used[bucket] += 1;
-        stats.accepted += 1;
       }
     }
     // Przykłady kart po ćwiczeniach wszystkich zagadnień: linia ujawniająca odpowiedź odpada, ćwiczenie zostaje.
@@ -360,7 +407,7 @@ export async function runLessonBaselinePool(
     const settledList: SettledObjective[] = outcomes.map((outcome) => {
       const id = outcome.objective.id;
       const status = objectiveStatusFor(state, id, ctx, addMode);
-      // Tylko ćwiczenia tej próby (bez `fixed`), jak `poolExercises` agenta.
+      // Tylko ćwiczenia tej próby (bez `fixed`).
       const exercises = orderedEntries(state).filter((entry) => entry.objectiveId === id && entry.id !== null).map((entry) => entry.draft);
       const base = {
         objectiveId: id,
@@ -394,7 +441,7 @@ export async function runLessonBaselinePool(
       await input.onObjectiveSettled?.(settled);
       signal.throwIfAborted();
     }
-    return { objectives: settledList, stats, rejections, spentUsd: cost.spentUsd, unknownCostCalls: cost.unknownCalls };
+    return { objectives: settledList, rejections, spentUsd: cost.spentUsd };
   } finally {
     runDeadline.dispose();
   }

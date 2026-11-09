@@ -151,7 +151,7 @@ test("generates a multi-objective Present Simple pool with Polish prompts and no
     expect(exercises.filter((exercise) => exercise.exerciseType !== "lesson_listen_choice").every((exercise) => exercise.instructionPl?.length)).toBe(true);
   }
   expect(deck.draft?.exercises.some((exercise) => exercise.exerciseType === "lesson_open_answer" && exercise.prompt?.startsWith("Przetłumacz"))).toBe(true);
-  // Fake-agent puli: każde zagadnienie zamknięte w jednym runie, bez odrzuceń kierownika
+  // Fake generatora puli (przebieg bazowy): każde zagadnienie zamknięte w jednym runie, bez odrzuceń walidacji puli
   // (odpowiedzi i bodźce unikalne w całej lekcji, nie tylko w zagadnieniu).
   const agentRun = await lessonAgentRunSummary(await worldPool(), deckId);
   expect(Object.keys(agentRun.objectives).sort()).toEqual([...objectiveIds].sort());

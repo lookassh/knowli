@@ -1,3 +1,4 @@
+import { CHOICE_TYPES } from "../../domain/lessons/rules/core-rules";
 import {
   LessonVoiceToneSchema,
   MAX_ACCEPTED_ANSWERS,
@@ -72,13 +73,18 @@ const nullableList = (items: Record<string, unknown>, minItems: number | undefin
 });
 
 /**
- * Strict-mode pole tonu lektora: nullable enum z kontraktu (`null` = styl roli).
+ * Strict-mode nullable enum jako `anyOf` (pusta lista = samo `null`): Anthropic odrzuca `null` w `enum`
+ * przy `type: ["null", "string"]`, a Gemini psuje odpowiedź przy samym `enum` bez typu.
+ */
+const nullableEnum = (values: readonly string[]): Record<string, unknown> =>
+  values.length === 0 ? { type: "null" } : { anyOf: [{ type: "string", enum: [...values] }, { type: "null" }] };
+
+/**
+ * Strict-mode pole tonu lektora: enum z kontraktu albo `null` (= styl roli).
  * `whisper: false` (ćwiczenia) pomija `mysterious` — pytania nie są szeptane (spec tonu TTS §4.3).
  */
-export const voiceToneProperty = ({ whisper = true }: { whisper?: boolean } = {}): Record<string, unknown> => ({
-  type: ["null", "string"],
-  enum: [null, ...LessonVoiceToneSchema.options.filter((tone) => whisper || tone !== "mysterious")],
-});
+export const voiceToneProperty = ({ whisper = true }: { whisper?: boolean } = {}): Record<string, unknown> =>
+  nullableEnum(LessonVoiceToneSchema.options.filter((tone) => whisper || tone !== "mysterious"));
 
 /** Dokłada wymagane pole `voiceTone` do gałęzi ćwiczenia (strict mode: pole także w `required`). */
 function withVoiceTone(branch: Record<string, unknown>): Record<string, unknown> {
@@ -110,51 +116,72 @@ const id = (maxLength?: number): Record<string, unknown> => (maxLength === undef
 const idTextItem = (maxLength: number = MAX_LESSON_TEXT_LENGTH, idMaxLength?: number) =>
   strictObject({ id: id(idMaxLength), text: text(maxLength) });
 
+/**
+ * Pola gałęzi zwykłej należące tylko do niektórych typów (karty typów, reguła `school.v3_field_type`):
+ * gałąź bez żadnego z tych typów nie ma pola. Anthropic przyjmuje najwyżej 16 pól z unią (nullable)
+ * w schemacie, a pełna gałąź ma ich do 19; brak pola parser czyta jak `null` (`raw-shape.ts`).
+ */
+const TYPE_SPECIFIC_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  transformId: ["lesson_transform"],
+  noticeSegments: ["lesson_notice"],
+  visualSubject: ["lesson_choice"],
+  options: CHOICE_TYPES,
+  correctOption: [...CHOICE_TYPES, "lesson_notice"],
+  items: ["lesson_order"],
+  questionType: ["lesson_open_answer"],
+  requiredElements: ["lesson_open_answer"],
+  supplementaryElements: ["lesson_open_answer"],
+  commonErrors: ["lesson_open_answer"],
+  expectedForm: ["lesson_open_answer"],
+  familyId: ["lesson_open_answer"],
+};
+
 function lessonExerciseSchema(
   input: LessonPoolInput,
   objective: LessonPoolInput["objectives"][number],
   allowedTypes: string[],
 ): Record<string, unknown> {
+  const properties = Object.fromEntries(Object.entries(lessonExerciseProperties(input, objective, allowedTypes)).filter(
+    ([field]) => TYPE_SPECIFIC_FIELDS[field]?.some((type) => allowedTypes.includes(type)) ?? true,
+  ));
+  return { type: "object", additionalProperties: false, required: Object.keys(properties), properties };
+}
+
+function lessonExerciseProperties(
+  input: LessonPoolInput,
+  objective: LessonPoolInput["objectives"][number],
+  allowedTypes: string[],
+): Record<string, unknown> {
   return {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "exerciseType", "objectiveId", "answer", "acceptedAnswers", "focus", "instructionPl",
-      "stem", "statement", "prompt", "hint", "transformId", "noticeSegments", "visualSubject", "options",
-      "correctOption", "items", "questionType", "requiredElements", "supplementaryElements",
-      "commonErrors", "expectedForm", "familyId", "sourceRefs",
-    ],
-    properties: {
-      exerciseType: { type: "string", enum: allowedTypes },
-      objectiveId: { type: "string", enum: [objective.id] },
-      // Limit odpowiedzi przedmiotu (jak `answer.max_length` w księdze reguł), nie stały limit kontraktu.
-      answer: text(input.answerMaxLength),
-      acceptedAnswers: list(text(input.answerMaxLength), undefined, MAX_ACCEPTED_ANSWERS),
-      focus: { type: "array", items: text() },
-      instructionPl: nullableText(),
-      stem: nullableText(),
-      statement: nullableText(),
-      prompt: nullableText(),
-      hint: nullableText(),
-      transformId: { type: ["null", "string"], enum: [null, ...input.transforms.map((transform) => transform.id)] },
-      noticeSegments: nullableList(list(text(), MIN_NOTICE_SEGMENTS, MAX_NOTICE_SEGMENTS), MIN_NOTICE_SENTENCES, MAX_NOTICE_SENTENCES),
-      visualSubject: { type: ["null", "string"], enum: [null, "boy", "girl", "man", "woman", "group", "dog"] },
-      options: nullableList(idTextItem(), MIN_OPTIONS, MAX_OPTIONS),
-      correctOption: { type: ["null", "string"], minLength: 1 },
-      items: nullableList(idTextItem(), MIN_ORDER_ITEMS, MAX_ORDER_ITEMS),
-      questionType: { type: ["null", "string"], enum: [null, "definition", "enumeration", "cause", "comparison", "fact", "process"] },
-      requiredElements: nullableList(idTextItem(MAX_LESSON_TEXT_LENGTH, MAX_ELEMENT_ID_LENGTH), MIN_REQUIRED_ELEMENTS, MAX_REQUIRED_ELEMENTS),
-      supplementaryElements: nullableList(text(), undefined, MAX_SUPPLEMENTARY_ELEMENTS),
-      commonErrors: nullableList(text(), undefined, MAX_COMMON_ERRORS),
-      expectedForm: { type: ["null", "string"], enum: [null, "short", "one_sentence", "explanation", "list"] },
-      familyId: nullableText(MAX_FAMILY_ID_LENGTH),
-      // Przy uziemieniu tablica cytatów musi być NIEPUSTA już w schemacie: bez
-      // minItems model w ok. połowie odpowiedzi zwracał `[]` dla większości ćwiczeń
-      // (sonda na prawdziwym LLM), a walidacja odrzucała je potem jako nieuziemione.
-      sourceRefs: input.groundingRequired
-        ? list(quoteItems, MIN_SOURCE_REFS, MAX_SOURCE_REFS)
-        : nullableList(quoteItems, undefined, MAX_SOURCE_REFS),
-    },
+    exerciseType: { type: "string", enum: allowedTypes },
+    objectiveId: { type: "string", enum: [objective.id] },
+    // Limit odpowiedzi przedmiotu (jak `answer.max_length` w księdze reguł), nie stały limit kontraktu.
+    answer: text(input.answerMaxLength),
+    acceptedAnswers: list(text(input.answerMaxLength), undefined, MAX_ACCEPTED_ANSWERS),
+    focus: { type: "array", items: text() },
+    instructionPl: nullableText(),
+    stem: nullableText(),
+    statement: nullableText(),
+    prompt: nullableText(),
+    hint: nullableText(),
+    transformId: nullableEnum(input.transforms.map((transform) => transform.id)),
+    noticeSegments: nullableList(list(text(), MIN_NOTICE_SEGMENTS, MAX_NOTICE_SEGMENTS), MIN_NOTICE_SENTENCES, MAX_NOTICE_SENTENCES),
+    visualSubject: nullableEnum(["boy", "girl", "man", "woman", "group", "dog"]),
+    options: nullableList(idTextItem(), MIN_OPTIONS, MAX_OPTIONS),
+    correctOption: { type: ["null", "string"], minLength: 1 },
+    items: nullableList(idTextItem(), MIN_ORDER_ITEMS, MAX_ORDER_ITEMS),
+    questionType: nullableEnum(["definition", "enumeration", "cause", "comparison", "fact", "process"]),
+    requiredElements: nullableList(idTextItem(MAX_LESSON_TEXT_LENGTH, MAX_ELEMENT_ID_LENGTH), MIN_REQUIRED_ELEMENTS, MAX_REQUIRED_ELEMENTS),
+    supplementaryElements: nullableList(text(), undefined, MAX_SUPPLEMENTARY_ELEMENTS),
+    commonErrors: nullableList(text(), undefined, MAX_COMMON_ERRORS),
+    expectedForm: nullableEnum(["short", "one_sentence", "explanation", "list"]),
+    familyId: nullableText(MAX_FAMILY_ID_LENGTH),
+    // Przy uziemieniu tablica cytatów musi być NIEPUSTA już w schemacie: bez
+    // minItems model w ok. połowie odpowiedzi zwracał `[]` dla większości ćwiczeń
+    // (sonda na prawdziwym LLM), a walidacja odrzucała je potem jako nieuziemione.
+    sourceRefs: input.groundingRequired
+      ? list(quoteItems, MIN_SOURCE_REFS, MAX_SOURCE_REFS)
+      : nullableList(quoteItems, undefined, MAX_SOURCE_REFS),
   };
 }
 

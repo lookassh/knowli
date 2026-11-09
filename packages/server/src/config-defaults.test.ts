@@ -126,12 +126,6 @@ describe("złożenie produkcyjne: domyślne + .env z samymi kluczami", () => {
     // bez żadnego klucza OpenRouter — wyłączony, bez błędu startu
     expect(graderConfigured(withConfigDefaults({ OPENAI_API_KEY: KEYS.OPENAI_API_KEY }))).toBe(false);
   });
-
-  it("worker przekazuje dostępność gradera tą samą regułą co web", () => {
-    expect(createGenerationDepsFromEnv(withConfigDefaults(KEYS))!.graderAvailable).toBe(true);
-    // tryb fake nie ocenia prawdziwej konfiguracji gradera
-    expect(createGenerationDepsFromEnv(withConfigDefaults({ ...KEYS, UMIEM_FAKE_PROVIDERS: "1" }))!.graderAvailable).toBe(false);
-  });
 });
 
 describe("zgodność z wartościami awaryjnymi parserów", () => {

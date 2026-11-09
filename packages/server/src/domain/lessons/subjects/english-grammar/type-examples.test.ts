@@ -6,7 +6,7 @@ import { englishGrammarSubject } from "./module";
 import { grammarTypeExamples } from "./type-examples";
 
 /**
- * Przykłady typów tematu Present Continuous (`agentPolicy.typeExamples`) nie powtarzają zdań z kart tematu:
+ * Przykłady typów tematu Present Continuous (`SubjectModule.typeExamples`) nie powtarzają zdań z kart tematu:
  * model kopiuje przykłady, a ćwiczenie równe przykładowi karty niczego nie sprawdza (ślepa ocena
  * sondy Present Continuous: „Tom isn't playing football now.” jak na karcie). Walidację przykładów
  * w ich celach sprawdza `rules/type-cards.test.ts`.

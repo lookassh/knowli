@@ -32,7 +32,6 @@ Do wypełnienia: `verdict`, `criterion`, `level`, `adjudicatorNote`.
 | W4 | dwuznaczne zadanie tekstowe — rozdział: polecenie i widoczny kontekst pozwalają poprawnie odpowiedzieć BEZ sprawdzanego słowa albo ramy zagadnienia; szkoła: istnieje poprawna według materiału odpowiedź, której nie pokrywają elementy wymagane | gap, open_answer |
 | W5 | poza zakresem — rozdział: sprawdzana część ćwiczenia używa słowa treści spoza materiału albo słowa / ramy innego zagadnienia; szkoła: ćwiczenie wymaga faktu spoza materiału; oba: ćwiczenie nie ćwiczy swojego zagadnienia | wszystkie |
 | W6 | zdradzona odpowiedź: rozwiązanie widać w bodźcu, polskim zdaniu polecenia (poza samym tłumaczeniem, które dziecko ma przełożyć), podpowiedzi (`hint`), karcie albo przykładzie karty z kolumny `objective` | wszystkie |
-| W6h | to samo co W6, gdy źródłem zdradzenia jest podpowiedź (`hint`) pytania otwartego szkoły; wiersz z W6h ma też W6 | open_answer (szkoła) |
 | W7 | `explanationPl` nieprawdziwe albo niezgodne z kluczem | ćwiczenia z `explanationPl` |
 | W8 | opcje nie do odróżnienia ze słuchu: zdania z różnymi opcjami brzmią tak samo (ocena z zapisu, nie z nagrania) | listen_choice |
 | W9 | błąd językowy w treści widocznej dla dziecka (angielskiej albo polskiej) | wszystkie |
@@ -44,6 +43,7 @@ Rozstrzygnięcia:
 - zadanie zamknięte z błędnym kluczem liczy się tylko jako W1, nie W3;
 - inna poprawna odpowiedź zadania tekstowego, która używa sprawdzanego słowa albo ramy = `ok`; bez nich = W4;
 - karta z parą „słowo — znaczenie” NIE zdradza ćwiczenia z tym słowem (karta uczy słowa); W6 to zdanie odpowiedzi widoczne wcześniej (w karcie, przykładzie karty albo bodźcu tego samego ćwiczenia);
+- karta szkoły wyjaśniająca fakt NIE zdradza pytania o ten fakt zadanego innymi słowami (karta uczy faktu); W6 w szkole to zdanie karty z luką albo pytanie, które przepisuje zdanie karty;
 - w zagadnieniu ramy zdaniowej słowo wypełniające ramę (np. kolor, ubranie z innej listy tego rozdziału) NIE jest „słowem innego zagadnienia” w sensie W5, o ile pochodzi z materiału;
 - słowa funkcyjne (a, the, is, I, you, my, and, in, on…) nie są „słowami treści spoza materiału”;
 - dokładne powtórzenia rozwiązań między ćwiczeniami lekcji sprawdza kod; W6 dotyczy tylko tego, co widać w wierszu i w kolumnie `objective`.

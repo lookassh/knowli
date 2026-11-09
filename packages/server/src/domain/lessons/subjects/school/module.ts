@@ -102,7 +102,7 @@ export const schoolSubject: SubjectModule = {
     };
   },
   validatePoolExtra: validateSchoolPool,
-  // Polityka agenta puli: typy ślepe, sanityzacja i bramka podpowiedzi pytań otwartych.
-  agentPolicy: schoolAgentPolicy,
+  // Pola generowania puli: oczyszczenie (bez podpowiedzi, cytaty), materiał w kontroli zamkniętych.
+  ...schoolAgentPolicy,
   rules: SCHOOL_RULES,
 };

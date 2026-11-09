@@ -3,9 +3,7 @@ import type {
   AnswerGraderProvider,
   ClosedExerciseChecker,
   ImageProvider,
-  LessonExerciseCheckerProvider,
   LessonPacketGenerator,
-  LessonPoolAgentProvider,
   LlmProvider,
   PronunciationProvider,
   SessionActivityReviewer,
@@ -147,12 +145,7 @@ export interface GenerationDeps {
   mediaStore: MediaStore;
   lessonExecution?: LessonGenerationPolicy;
   /**
-   * Czy w procesie web będzie model oceniający ({@link graderConfigured} na tym
-   * samym env). Steruje tylko preferencją typów ćwiczeń przy generacji puli.
-   */
-  graderAvailable?: boolean;
-  /**
-   * Agent puli lekcji dla każdego przedmiotu (składany tylko w workerze,
+   * Generator puli lekcji (przebieg bazowy) dla każdego przedmiotu (składany tylko w workerze,
    * `providers/lesson-agent-env.ts`; worker ustawia pole zawsze). Bez klucza
    * OpenRouter — {@link LessonAgentUnavailable}; nieobecny (web, fabryki testowe)
    * znaczy to samo: run lekcji kończy się wtedy `failed`/`lesson_agent_unavailable`.
@@ -160,25 +153,20 @@ export interface GenerationDeps {
   lessonAgent?: LessonAgentDeps | LessonAgentUnavailable;
 }
 
-/** Agent puli lekcji niedostępny: worker bez klucza OpenRouter (start bez błędu, runy lekcji bez generatora). */
+/** Generator puli lekcji niedostępny: worker bez klucza OpenRouter (start bez błędu, runy lekcji bez generatora). */
 export type LessonAgentUnavailable = { readonly unavailable: "no_openrouter_key" };
 
-/** Czy worker ma zależności agenta puli (nie {@link LessonAgentUnavailable} i nie brak pola). */
+/** Czy worker ma zależności generatora puli (nie {@link LessonAgentUnavailable} i nie brak pola). */
 export function isLessonAgentAvailable(agent: GenerationDeps["lessonAgent"]): agent is LessonAgentDeps {
   return agent !== undefined && !("unavailable" in agent);
 }
 
-/** Zależności agenta puli lekcji w workerze (adapter dostawcy za portami). */
+/** Zależności generowania puli lekcji w workerze (adapter dostawcy za portami przebiegu bazowego). */
 export interface LessonAgentDeps {
-  /** Agent puli i generator paczek przebiegu bazowego (ten sam adapter). */
-  readonly agent: LessonPoolAgentProvider & LessonPacketGenerator;
-  /** Checker agenta i kontrola zamkniętych przebiegu bazowego (ten sam adapter). */
-  readonly checker: LessonExerciseCheckerProvider & ClosedExerciseChecker;
-  /**
-   * Grader kontroli otwartej (etap 2b, `UMIEM_GRADER_*`); nieobecny = kontrola otwarta nie dotyczy
-   * (tryb fake zawsze bez gradera).
-   */
-  readonly grader?: AgentGraderDeps;
+  /** Generator paczek. */
+  readonly agent: LessonPacketGenerator;
+  /** Kontrola zadań zamkniętych. */
+  readonly checker: ClosedExerciseChecker;
   readonly policy: Partial<LessonAgentPolicy>;
   /** Rezerwa na finalizację przed terminem runu (domyślnie `AGENT_FINALIZATION_RESERVE_MS`); nadpisywana w testach. */
   readonly finalizationReserveMs?: number;
@@ -267,7 +255,7 @@ export interface Services {
    */
   generationService?: string;
   /**
-   * Opis agenta puli lekcji dla panelu rodzica (etykiety usług, z env procesu web); nieobecny =
+   * Opis generatora puli lekcji dla panelu rodzica (etykiety usług, z env procesu web); nieobecny =
    * generowanie lekcji niedostępne (`lessonGenerationAvailable: false`). To opis konfiguracji, nie klient modelu.
    */
   lessonAgentPublic?: LessonAgentPublic;
@@ -456,38 +444,6 @@ export function graderFromEnv(env: Record<string, string | undefined>, usage?: U
 }
 
 /**
- * Zależności gradera w agencie puli lekcji (etap 2b #237, proces worker): ten sam adapter co
- * w web, ale z etykietą kosztu `lesson_generation`/`check_grade`; `timeoutMs` to deadline
- * jednego wywołania. Bez limitu wywołań na sesję — budżet pilnuje run.
- */
-export interface AgentGraderDeps {
-  readonly provider: AnswerGraderProvider;
-  readonly timeoutMs: number;
-}
-
-/**
- * Grader agenta puli ze zmiennych `UMIEM_GRADER_*` — to samo połączenie, dodatki żądania i
- * timeout co {@link graderFromEnv} (rezerwa `OPENROUTER_API_KEY`). Brak konfiguracji →
- * undefined; częściowa → ten sam błąd startu co w web.
- */
-export function agentGraderFromEnv(env: Record<string, string | undefined>, usage?: UsageRecorder): AgentGraderDeps | undefined {
-  const connection = graderConnectionFromEnv(env);
-  if (connection === undefined) {
-    return undefined;
-  }
-  const { baseUrl, apiKey, model } = connection;
-  const timeoutMs = positiveIntEnv("UMIEM_GRADER_TIMEOUT_MS", env.UMIEM_GRADER_TIMEOUT_MS, DEFAULT_GRADER_TIMEOUT_MS);
-  return {
-    provider: createOpenAiCompatibleGrader({
-      baseUrl, apiKey, model, requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_GRADER"),
-      usageLabel: { feature: "lesson_generation", operation: "check_grade" },
-      ...(usage ? { usage } : {}),
-    }),
-    timeoutMs,
-  };
-}
-
-/**
  * Ocena aktywności sesji ze zmiennych środowiskowych. Świadomie współdzieli
  * `UMIEM_GRADER_BASE_URL/API_KEY/MODEL` z graderem lekcji (decyzja handoff.md
  * §4): brak konfiguracji gradera = ocena aktywności również wyłączona. Osobny
@@ -567,16 +523,13 @@ function agentProviderRouting(
   return effort === "none" ? routing : { ...routing, require_parameters: true };
 }
 
-/** Limity agenta z env (`UMIEM_LESSON_AGENT_MAX_STEPS`, współbieżność, terminy, budżet); zła liczba to błąd startu. */
+/** Limity generowania puli z env (współbieżność, terminy, budżet); zła liczba to błąd startu. */
 export function lessonAgentPolicyFromEnv(env: Record<string, string | undefined>): Partial<LessonAgentPolicy> {
   const int = (name: keyof typeof CONFIG_DEFAULTS & `UMIEM_LESSON_AGENT_${string}`) =>
     positiveIntEnv(name, env[name], Number(CONFIG_DEFAULTS[name]));
-  const maxSteps = int("UMIEM_LESSON_AGENT_MAX_STEPS");
   return {
-    maxStepsPerObjective: maxSteps,
     concurrency: int("UMIEM_LESSON_AGENT_CONCURRENCY"),
     checkerConcurrency: int("UMIEM_LESSON_AGENT_CHECKER_CONCURRENCY"),
-    objectiveTimeoutMs: int("UMIEM_LESSON_AGENT_OBJECTIVE_TIMEOUT_MS"),
     checkerTimeoutMs: int("UMIEM_LESSON_AGENT_CHECKER_TIMEOUT_MS"),
     callTimeoutMs: int("UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS"),
     runBudgetUsd: positiveNumberEnv(
@@ -624,15 +577,13 @@ export function lessonAgentSettingsFromEnv(env: Record<string, string | undefine
   };
 }
 
-/** Opis agenta puli dla panelu rodzica: etykiety usług (`host · model`); obecny = generowanie lekcji dostępne. */
+/** Opis generowania lekcji dla panelu rodzica: etykiety usług (`host · model`); obecny = generowanie lekcji dostępne. */
 export interface LessonAgentPublic {
   readonly generationService: string;
   readonly checkService: string;
-  /** Usługa oceny odpowiedzi (`host · model` gradera); poza trybem fake zawsze obecna — bez gradera generowanie jest niedostępne. */
-  readonly openCheckService?: string;
 }
 
-/** Etykieta gradera (`host · model`, nigdy klucz); nie rzuca — błąd konfiguracji gradera pomija pole. */
+/** Etykieta gradera (`host · model`, nigdy klucz); nie rzuca — błąd konfiguracji gradera daje `undefined`. */
 function openCheckServiceLabel(env: Record<string, string | undefined>): string | undefined {
   try {
     const connection = graderConnectionFromEnv(env);
@@ -643,8 +594,9 @@ function openCheckServiceLabel(env: Record<string, string | undefined>): string 
 }
 
 /**
- * Opis agenta dla panelu rodzica (web): nazwy usług. Obecny = worker ma agenta,
- * czyli generowanie lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
+ * Opis generowania lekcji dla panelu rodzica (web): nazwy usług. Obecny = worker generuje lekcje
+ * (pełna konfiguracja `UMIEM_GRADER_*` jest warunkiem: grader ocenia dziecko w web), czyli generowanie
+ * lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
  * klucza); inaczej `undefined`, gdy klucza OpenRouter nie ma albo ma kształt
  * klucza OpenAI (worker z takim kluczem nie wstaje). Nigdy nie rzuca — błędne
  * liczby i wysiłki agenta zatrzymują worker, nie web.
@@ -661,11 +613,9 @@ export function lessonAgentPublicFromEnv(env: Record<string, string | undefined>
   }
   if (apiKey === undefined) return undefined;
   // Lekcje bez gradera oceniałyby tylko klucz: generowanie wymaga pełnej konfiguracji UMIEM_GRADER_* (etap 3 #360).
-  const openCheckService = openCheckServiceLabel(env);
-  if (openCheckService === undefined) return undefined;
+  if (openCheckServiceLabel(env) === undefined) return undefined;
   return {
     generationService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_MODEL")}`,
     checkService: `openrouter.ai · ${agentStringEnv(env, "UMIEM_LESSON_AGENT_CHECKER_MODEL")}`,
-    openCheckService,
   };
 }

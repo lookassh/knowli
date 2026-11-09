@@ -12,8 +12,6 @@ import { loadDotEnv } from "./tests/probes/probe-helpers";
 //
 // Uruchomienie: `UMIEM_PROBE_MATERIAL=<plik> pnpm probe:chapter` albo
 // `UMIEM_PROBE_SUBJECT=grammar pnpm probe:chapter`.
-// Próba agenta puli lekcji (`pnpm probe:agent`, zmienne `UMIEM_PROBE_AGENT_*`, #237) też
-// działa bez bazy; jej wejściem jest materiał albo zrzut zagadnień z `probe:chapter`.
 //
 // .env wczytany przed decyzją (bez nadpisywania środowiska) — tak samo jak w plikach prób.
 loadDotEnv();

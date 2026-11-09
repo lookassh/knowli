@@ -1,6 +1,7 @@
 import { lessonCoverageGapSources, lessonPoolMinimums } from "../lesson-coverage";
 import { outsideStagePath, stageOf } from "../stages";
-import type { AgentObjective, LessonExerciseDraft, LessonTopic, SubjectAgentPolicy, SubjectModule } from "../types";
+import { INDEPENDENT_RESERVE } from "../packet-plan";
+import type { AgentObjective, LessonExerciseDraft, LessonTopic, SubjectModule } from "../types";
 import { removeExercise, snapshotOf, type AgentCheckContext, type ObjectiveAgentLimits } from "./admission";
 import {
   allExamples,
@@ -21,18 +22,6 @@ import {
 /** Przykładów kart na zagadnienie: co najmniej 1, najwyżej 3 (jak w `submitExamples`). */
 const MIN_CARD_EXAMPLES = 1;
 const MAX_CARD_EXAMPLES = 3;
-
-/** `maxExercises` = `targetCount` + `listenAllowance` + `slack` (§3.5). */
-export function objectiveAgentLimits(
-  counts: { targetCount: number; listenAllowance: number },
-  policy: Pick<SubjectAgentPolicy, "slack">,
-): ObjectiveAgentLimits {
-  return {
-    targetCount: counts.targetCount,
-    listenAllowance: counts.listenAllowance,
-    maxExercises: counts.targetCount + counts.listenAllowance + policy.slack,
-  };
-}
 
 /**
  * Surowe liczby ćwiczeń zagadnienia (`fixed` i pula, także ujawnione):
@@ -86,15 +75,14 @@ function limitsOf(ctx: AgentCheckContext, objectiveId: string): ObjectiveAgentLi
 /**
  * Status zagadnienia na CAŁEJ lekcji (§3.5): pokrycie etapów (ćwiczenia
  * ujawnione się nie liczą; minimum samodzielnych podniesione o
- * `independentReserve`), osobno reguła różnych odpowiedzi otwartych
- * (szkoła: „distinct open answers: n of 2”), liczba ćwiczeń, wymagane
- * typy, przykłady kart i braki przedmiotu. `fixed` zagadnienia liczą się wszędzie.
+ * `INDEPENDENT_RESERVE`), osobno reguła różnych odpowiedzi otwartych
+ * (szkoła: „distinct open answers: n of 2”), liczba ćwiczeń i przykłady
+ * kart. `fixed` zagadnienia liczą się wszędzie.
  */
 export function objectiveStatus(state: LessonAgentState, objectiveId: string, ctx: AgentCheckContext): ObjectiveStatus {
-  const objective = state.objectives.find((item) => item.id === objectiveId);
-  if (objective === undefined) throw new Error(`unknown objective ${objectiveId}`);
+  if (!state.objectives.some((item) => item.id === objectiveId)) throw new Error(`unknown objective ${objectiveId}`);
   const limits = limitsOf(ctx, objectiveId);
-  const { subject, material } = ctx;
+  const { subject } = ctx;
   const drafts = orderedEntries(state)
     .filter((entry) => entry.objectiveId === objectiveId)
     .map((entry) => entry.draft);
@@ -103,7 +91,7 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
   const stageGaps = { guided: 0, productive: 0, independent: 0 };
 
   const base = lessonPoolMinimums(subject);
-  const required = { ...base, independent: base.independent + subject.agentPolicy.independentReserve };
+  const required = { ...base, independent: base.independent + INDEPENDENT_RESERVE };
   // Źródła braków osobno: reguła różnych odpowiedzi otwartych (szkoła) ma własny komunikat, bo jako
   // brak etapu samodzielnego zaniżałaby liczbę („independent: 2 of 3” przy trzech ćwiczeniach).
   const gaps = lessonCoverageGapSources({
@@ -123,19 +111,11 @@ export function objectiveStatus(state: LessonAgentState, objectiveId: string, ct
 
   if (counts.total < limits.targetCount) missing.push(`exercises: ${counts.total} of ${limits.targetCount}`);
 
-  // Grupy wymaganych typów: rdzeń odfiltrowuje typy, których zagadnienie nie dopuszcza.
-  for (const group of subject.agentPolicy.requiredTypes?.(objective) ?? []) {
-    const allowed = group.filter((type) => objective.exerciseTypes.includes(type));
-    if (allowed.length === 0) continue;
-    if (!drafts.some((draft) => allowed.includes(draft.exerciseType))) missing.push(`needs at least one ${allowed.join(" or ")}`);
-  }
-
   const examples = state.examples.get(objectiveId)?.length ?? 0;
   if (examples < MIN_CARD_EXAMPLES || examples > MAX_CARD_EXAMPLES) {
     missing.push(`card examples: ${examples} of ${MIN_CARD_EXAMPLES}-${MAX_CARD_EXAMPLES}`);
   }
 
-  missing.push(...(subject.agentPolicy.objectiveGaps?.(drafts, objective, { material }) ?? []));
   return { counts, stageGaps, missing, complete: missing.length === 0 };
 }
 
@@ -169,7 +149,7 @@ export function addedStageExercises(state: LessonAgentState, objectiveId: string
 
 /**
  * Status zagadnienia w trybie runu: bez `add` — `objectiveStatus`; z `add` — `missing` i `complete`
- * z `addModeStatus` (wspólne źródło dla narzędzi podagenta i kierownika).
+ * z `addModeStatus` (rozliczenie zagadnień przebiegu bazowego).
  */
 export function objectiveStatusFor(
   state: LessonAgentState,
@@ -183,7 +163,7 @@ export function objectiveStatusFor(
 }
 
 /**
- * Bezpiecznik po zakończeniu podagentów (§3.6): `findExposureLeaks` (tryb przyjmowania, `generation`)
+ * Bezpiecznik całej lekcji (§3.6): `findExposureLeaks` (tryb przyjmowania, `generation`)
  * i `validatePool`/`validatePoolExtra` całej lekcji. Przy zachowanym
  * niezmienniku przyjmowania pusta lista; inaczej ćwiczenia PULI do usunięcia:
  * ofiary z pul, a dla ofiary `fixed` — źródło ujawnienia, o ile jest z puli
@@ -216,7 +196,7 @@ export function lessonInvariantCheck(state: LessonAgentState, ctx: AgentCheckCon
  * Kontrola końcowa na całości przed zapisem do szkicu (spec etapu 2a §10 pkt 2): ćwiczenia `accepted`
  * (wszystkie zagadnienia, także z różnych prób) są pulą, `fixed` (szkic w trybie „dodaj N”) jest
  * nietykalne. `lessonInvariantCheck` + `removeExercise` (z osieroconymi słowami kluczowymi) łapią
- * ujawnienia i duplikaty między próbami oraz migawki sprzed bezpiecznika kierownika. `kept` w kolejności
+ * ujawnienia i duplikaty między próbami oraz z punktu kontrolnego. `kept` w kolejności
  * `accepted`; `removed` liczy się do `rejectedCount`.
  */
 export function finalLessonCheck(args: {
@@ -248,7 +228,7 @@ export function finalLessonCheck(args: {
   state = { ...state, nextId: args.accepted.length + 1 };
 
   for (const violation of lessonInvariantCheck(state, ctx)) {
-    state = removeExercise(state, violation.objectiveId, violation.id, ctx).state;
+    state = removeExercise(state, violation.objectiveId, violation.id).state;
   }
   const survivors = new Set(args.objectives.flatMap((objective) => poolOf(state, objective.id).map((entry) => entry.id)));
   const kept = args.accepted.flatMap((entry, index) => (survivors.has(`ex${index + 1}`) ? [entry.draft] : []));
@@ -259,7 +239,7 @@ export function finalLessonCheck(args: {
  * Zagadnienia kompletne na lekcji po zapisie (spec etapu 2a §11): stan jak w `finalLessonCheck` —
  * `fixed` nietykalne, zapisane ćwiczenia jako pule zagadnień w kolejności `written` — i `objectiveStatus`
  * każdego zagadnienia tematu. `examples` (własne przykłady kart zagadnień) i `fixedSources` (pozostałe
- * źródła ujawnień) jak w stanie kierownika, żeby liczba przykładów kart i ujawnienia liczyły się tak samo.
+ * źródła ujawnień) jak w stanie startowym próby, żeby liczba przykładów kart i ujawnienia liczyły się tak samo.
  */
 export function completeObjectivesOnLesson(args: {
   readonly subject: SubjectModule;

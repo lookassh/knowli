@@ -13,8 +13,8 @@ import { CORE_RULES } from "./rules/core-rules";
  *   semantyką (tylko pola z `guarded`).
  *
  * Pola nieobowiązkowe są `nullish`: structured outputs (json_schema strict)
- * zwraca każde pole schematu, z `null` dla nie dotyczących typu, więc `null`
- * znaczy brak pola. Czysta domena: nie rzuca dla dowolnego JSON.
+ * zwraca każde pole swojej gałęzi schematu, z `null` dla nie dotyczących typu,
+ * a pól innych typów gałąź nie ma — brak pola i `null` znaczą to samo. Czysta domena: nie rzuca dla dowolnego JSON.
  */
 
 const shapeIssue = issueFrom(CORE_RULES);
@@ -243,7 +243,7 @@ export function rawShapeIssues(raw: unknown): LessonRuleIssue[] {
   return issues;
 }
 
-/** Zgłoszenie ćwiczenia innego zagadnienia niż to, nad którym pracuje podagent. */
+/** Zgłoszenie ćwiczenia innego zagadnienia niż to, którego dotyczy paczka. */
 export function foreignObjectiveIssues(objectiveId: string, expected: string): LessonRuleIssue[] {
   if (objectiveId === expected) return [];
   return [shapeIssue("shape.objective_id", {

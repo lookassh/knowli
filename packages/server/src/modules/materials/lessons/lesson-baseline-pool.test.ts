@@ -5,12 +5,14 @@ import { agentObjectivesOf } from "../../../domain/lessons/agent/capable";
 import { lessonInvariantCheck } from "../../../domain/lessons/agent/status";
 import type { LessonExerciseDraft } from "../../../domain/lessons/types";
 import { englishGrammarSubject } from "../../../domain/lessons/subjects/english-grammar/module";
+import { schoolSubject } from "../../../domain/lessons/subjects/school/module";
 import type { LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import type { ClosedCheckInput, ClosedExerciseChecker, LessonPacketGenerator, LessonPacketInput, RunCostSink } from "../../../ports/ai";
 import { GenerationProviderError } from "../../../ports/generation-error";
+import { FakeExerciseChecker, FakeLessonPoolAgent, type FakePacketStep } from "../../../providers/fake-lesson-agent";
 import { runLessonBaselinePool } from "./lesson-baseline-pool";
 import { poolStageCounts } from "./lesson-drafts";
-import type { LessonPoolAgentRunInput } from "./lesson-pool-agent";
+import type { LessonPoolAgentRunInput, SettledObjective } from "./lesson-pool-agent";
 
 /**
  * Przebieg bazowy (spec etapu 2 §3) na fake'ach portów: bez sieci, bez bazy. Przedmiot gramatyki
@@ -82,7 +84,6 @@ function runInput(overrides: Partial<LessonPoolAgentRunInput> = {}): LessonPoolA
     topicTitle: "Present Simple",
     material: "Tom plays football.",
     poolSize: 20,
-    graderAvailable: true,
     fixed: [],
     draftExamples: {},
     skipObjectives: [],
@@ -121,7 +122,7 @@ describe("runLessonBaselinePool", () => {
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
       ["lesson_choice", 7, true], ["lesson_gap", 7, false], ["lesson_open_answer", 6, false],
     ]);
-    expect(result.stats.accepted).toBe(22);
+    expect(result.objectives.flatMap((objective) => objective.exercises)).toHaveLength(22);
   });
 
   it("sends one closed check per closed packet only, with card sentences in the avoid list", async () => {
@@ -132,9 +133,25 @@ describe("runLessonBaselinePool", () => {
     expect(checker.calls).toHaveLength(2);
     expect(checker.calls[0]!.contract).toBe("choice");
     expect(checker.calls[0]!.items).toHaveLength(7);
-    expect(generator.calls[0]!.pool.ruleBook.lesson).toEqual([]);
-    expect(generator.calls[0]!.pool.ruleBook.checks).toEqual([]);
+    expect(Object.keys(generator.calls[0]!.pool.ruleBook)).toEqual(["general", "types"]);
     expect(generator.calls[0]!.pool.exerciseTypes).toEqual(["lesson_choice"]);
+  });
+
+  it("passes the lesson material to the check only when the subject needs it (stage 5b)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const plain = new FakeChecker();
+    await run(new FakeGenerator(), plain);
+    expect(plain.calls.length).toBeGreaterThan(0);
+    expect(plain.calls.every((call) => !("material" in call))).toBe(true);
+    const needsMaterial: SubjectModule = { ...subject, checkerNeedsMaterial: true };
+    const withMaterial = new FakeChecker();
+    await runLessonBaselinePool(
+      { generator: new FakeGenerator(), checker: withMaterial, subjects: { getSubject: () => needsMaterial }, policy: {} },
+      runInput(),
+      new AbortController().signal,
+    );
+    expect(withMaterial.calls.length).toBeGreaterThan(0);
+    expect(withMaterial.calls.every((call) => call.material === "Tom plays football.")).toBe(true);
   });
 
   it("drops records of another type, over the order and rejected by the check", async () => {
@@ -175,7 +192,7 @@ describe("runLessonBaselinePool", () => {
       },
     };
     const twinned = await run(twin);
-    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap", detail: "" })]);
+    expect(twinned.rejections.filter((entry) => entry.code === "lesson_pool")).toEqual([expect.objectContaining({ objectiveId: first, exerciseType: "lesson_gap" })]);
     const ruleIds = twinned.rejections.find((entry) => entry.code === "lesson_pool")!.ruleIds;
     expect(ruleIds.length).toBeGreaterThan(0);
     // Dziennik podaje identyfikatory reguł odrzuceń z typem ćwiczenia (bez treści).
@@ -391,8 +408,149 @@ describe("runLessonBaselinePool", () => {
     let state = createLessonAgentState({ topic, objectives: agentObjectivesOf(topic), fixed: [], examples: {}, fixedSources: {} });
     let n = 1;
     for (const objective of result.objectives) state = withPool(state, objective.objectiveId, objective.exercises.map((draft) => ({ id: `ex${n++}`, draft })));
-    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0, listenAllowance: 0, maxExercises: 99 }]));
+    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0 }]));
     expect(lessonInvariantCheck(state, { subject, material: "", limits })).toEqual([]);
+  });
+});
+
+/** Mechanika runu przeniesiona z testów pętli agenta (`lesson-pool-agent.limits.test.ts`): terminy, przerwanie, równoległość, budżet. */
+describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", () => {
+  const slugOf = (id: string) => id.split(".").at(-1)!;
+  /** Ten sam krok dla każdej z 3 paczek (choice, gap, open) obu zagadnień. */
+  const allPackets = (step: () => FakePacketStep) => ({ [slugOf(first)]: [step(), step(), step()], [slugOf(second)]: [step(), step(), step()] });
+  const flush = () => new Promise<void>((done) => setTimeout(done, 0));
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  it("run deadline with hung packets: both objectives incomplete (not failed), result returned, timers cleared", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ hang: true })) });
+    let settled = false;
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker(), { runTimeoutMs: 2_000 }), runInput(), new AbortController().signal).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status, objective.failure])).toEqual([
+      [first, "incomplete", undefined],
+      [second, "incomplete", undefined],
+    ]);
+    // Paczki czekające w semaforze po terminie nie wołają generatora.
+    expect(generator.packetCalls).toHaveLength(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a generator ignoring the abort (stall) does not hold the run past its deadline", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ stall: true })) });
+    let settled = false;
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker(), { runTimeoutMs: 1_000 }), runInput(), new AbortController().signal).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    const result = await pending;
+    expect(result.objectives.map((objective) => objective.status)).toEqual(["incomplete", "incomplete"]);
+    expect(result.objectives.every((objective) => objective.failure === undefined)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("aborts with signal.reason mid-run and clears the timers", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ hang: true })) });
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), controller.signal);
+    const rejection = expect(pending).rejects.toBe("superseded");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(generator.packetCalls).toHaveLength(4);
+    controller.abort("superseded");
+    await rejection;
+    expect(generator.packetCalls).toHaveLength(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a signal aborted before start rejects with its reason without any provider call or hook", async () => {
+    const controller = new AbortController();
+    controller.abort("superseded");
+    const generator = new FakeLessonPoolAgent();
+    const checker = new FakeExerciseChecker();
+    const resolved = vi.fn(async () => undefined);
+    await expect(runLessonBaselinePool(deps(generator, checker), runInput({ onObjectivesResolved: resolved }), controller.signal)).rejects.toBe("superseded");
+    expect(generator.packetCalls).toEqual([]);
+    expect(checker.closedCalls).toEqual([]);
+    expect(resolved).not.toHaveBeenCalled();
+  });
+
+  it("runs at most `concurrency` packet calls at once (default policy: 4 of 6)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const gate = deferred();
+    const generator = new FakeLessonPoolAgent({ packets: allPackets(() => ({ gate: gate.promise })) });
+    const pending = runLessonBaselinePool(deps(generator, new FakeExerciseChecker()), runInput(), new AbortController().signal);
+    await vi.waitFor(() => expect(generator.packetCalls).toHaveLength(4));
+    await flush();
+    expect(generator.packetCalls).toHaveLength(4);
+    gate.resolve();
+    await pending;
+    expect(generator.packetCalls).toHaveLength(6);
+    expect(generator.maxConcurrent).toBe(4);
+  });
+
+  it("runs at most `checkerConcurrency` closed checks at once, independently of the generator limit", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const gate = deferred();
+    const checker = new FakeExerciseChecker({ gate: gate.promise });
+    const pending = run(new FakeGenerator(), checker, {}, { concurrency: 6, checkerConcurrency: 1 });
+    await vi.waitFor(() => expect(checker.closedCalls).toHaveLength(1));
+    await flush();
+    // Dwie paczki zamknięte (choice obu zagadnień): druga czeka na miejsce kontroli.
+    expect(checker.closedCalls).toHaveLength(1);
+    gate.resolve();
+    await pending;
+    expect(checker.closedCalls).toHaveLength(2);
+    expect(checker.maxConcurrent).toBe(1);
+  });
+
+  it("does not count initialSpentUsd twice (result, objectives and the settled hook)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const settled: SettledObjective[] = [];
+    const resolved = vi.fn(async (_value: { spentUsd: number }) => undefined);
+    // 6 paczek × 0,001 + 2 kontrole × 0,0005 = 0,007 ponad wydatek startowy.
+    const result = await run(new FakeGenerator(), new FakeChecker(), {
+      initialSpentUsd: 0.3,
+      onObjectivesResolved: resolved,
+      onObjectiveSettled: async (objective) => void settled.push(objective),
+    });
+    expect(resolved.mock.calls[0]![0].spentUsd).toBeCloseTo(0.3, 10);
+    expect(result.spentUsd).toBeCloseTo(0.307, 10);
+    for (const objective of [...result.objectives, ...settled]) expect(objective.spentUsd).toBeCloseTo(0.307, 10);
+  });
+
+  it("an initialSpentUsd at the budget starts no call and leaves every objective incomplete", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const generator = new FakeGenerator();
+    const checker = new FakeChecker();
+    const settled: string[] = [];
+    const result = await run(generator, checker, { initialSpentUsd: 0.5, onObjectiveSettled: async (objective) => void settled.push(objective.objectiveId) }, { runBudgetUsd: 0.5 });
+    expect(generator.calls).toEqual([]);
+    expect(checker.calls).toEqual([]);
+    expect(result.objectives.map((objective) => [objective.objectiveId, objective.status, objective.steps, objective.failure])).toEqual([
+      [first, "incomplete", 0, undefined],
+      [second, "incomplete", 0, undefined],
+    ]);
+    expect(settled).toEqual([first, second]);
+    expect(result.spentUsd).toBe(0.5);
   });
 });
 
@@ -548,10 +706,7 @@ describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a
         draft.exerciseType === "lesson_open_answer" && draft.instructionPl !== "Fixed."
           ? [{ rule: "lesson.test", field: "instructionPl", pl: "x" } as never]
           : [],
-      agentPolicy: {
-        ...subject.agentPolicy,
-        sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
-      },
+      sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
     };
     const result = await runLessonBaselinePool(
       { generator: new FakeGenerator(), checker: new FakeChecker(), subjects: { getSubject: (id: string) => (id === strict.id ? strict : undefined) } },
@@ -560,5 +715,201 @@ describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a
     );
     expect(result.objectives[0]!.exercises.filter((draft) => draft.exerciseType === "lesson_open_answer")).toHaveLength(3);
     expect(result.rejections.filter((entry) => entry.code === "rule_exercise")).toHaveLength(0);
+  });
+});
+
+describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)", () => {
+  /** Przedmiot jak szkoła (payload v3, typy szkoły), bez walidatorów przedmiotu poza regułą rodzin keywords. */
+  const kwSubject: SubjectModule = {
+    ...schoolSubject,
+    id: "kw_test",
+    validateExercise: () => [],
+    validatePoolExtra: (drafts) => {
+      const families = new Set(drafts.filter((d) => d.exerciseType === "lesson_open_answer").map((d) => `${d.objectiveId}|${d.familyId}`));
+      const issues = new Map<number, { rule: string; field: string; pl: string; found: string }[]>();
+      drafts.forEach((d, index) => {
+        if (d.exerciseType === "lesson_keywords" && !families.has(`${d.objectiveId}|${d.familyId}`)) {
+          issues.set(index, [{ rule: "school.keywords_family_missing", field: "familyId", pl: "brak rodziny", found: "no family" }]);
+        }
+      });
+      return issues as never;
+    },
+    sanitize: undefined,
+  };
+  const kwTopic = {
+    titlePl: "Rośliny",
+    objectives: [{ id: "kw_test.d1.plants", titlePl: "Części rośliny", descriptionEn: "Plant parts.", cards: [{ title: "Pojęcia", body: "korzeń — pobiera wodę" }] }],
+  };
+  const objectiveId = kwTopic.objectives[0]!.id;
+
+  const open = (n: number) => ({
+    objectiveId,
+    exerciseType: "lesson_open_answer",
+    instructionPl: "Odpowiedz.",
+    prompt: `Pytanie ${n}: co robi korzeń?`,
+    answer: `Korzeń ${n} pobiera wodę.`,
+    acceptedAnswers: [],
+    focus: ["pobiera wodę"],
+    familyId: `f${n}`,
+  });
+  const keywords = (familyId: string, tag = "") => ({
+    objectiveId,
+    exerciseType: "lesson_keywords",
+    instructionPl: `Wskaż pojęcia${tag}.`,
+    answer: "korzeń, woda",
+    acceptedAnswers: [],
+    focus: [],
+    familyId,
+    keywordOptions: [{ id: "k1", text: `korzeń${tag}` }, { id: "k2", text: `woda${tag}` }, { id: "k3", text: `liść${tag}` }, { id: "k4", text: `kwiat${tag}` }],
+    keyOptionIds: ["k1", "k2"],
+  });
+
+  class KwGenerator implements LessonPacketGenerator {
+    readonly calls: LessonPacketInput[] = [];
+    constructor(private readonly companions: (count: number) => unknown[]) {}
+    async generatePacket(input: LessonPacketInput, cost: RunCostSink): Promise<{ exercises: unknown[] }> {
+      this.calls.push(input);
+      cost.record(0.001);
+      if (input.type !== "lesson_open_answer") return { exercises: [] };
+      return { exercises: [...this.companions(input.count), ...Array.from({ length: input.count }, (_, i) => open(i))] };
+    }
+  }
+
+  /** Kontrola: keywords z tagiem „-bad” dostają dodatkowe pojęcie (zły komplet), pozostałe — klucz. */
+  function kwChecker(): ClosedExerciseChecker & { calls: ClosedCheckInput[] } {
+    const calls: ClosedCheckInput[] = [];
+    return {
+      calls,
+      checkClosed: async (input, cost) => {
+        calls.push(input);
+        cost.record(0.0005);
+        return {
+          results: input.items.map(({ view }) =>
+            view.includes("-bad") ? { answers: ["korzeń-bad", "woda-bad", "liść-bad"] } : { answers: ["korzeń", "woda"] },
+          ),
+        };
+      },
+    };
+  }
+
+  const kwRun = (generator: LessonPacketGenerator, checker: ClosedExerciseChecker, input: Partial<LessonPoolAgentRunInput> = {}, policy = {}) =>
+    runLessonBaselinePool(
+      { generator, checker, subjects: { getSubject: (id: string) => (id === kwSubject.id ? kwSubject : undefined) }, policy },
+      runInput({ subjectId: kwSubject.id, objectiveSource: { source: "input", dynamicTopic: kwTopic }, ...input }),
+      new AbortController().signal,
+    );
+
+  const exercisesOf = (result: Awaited<ReturnType<typeof kwRun>>) => result.objectives.flatMap((objective) => objective.exercises);
+
+  it("checks keywords with the family question and admits them after the objective's other exercises", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Rodzina ostatniego pytania udziału, keywords pierwsze w odpowiedzi modelu.
+    const generator = new KwGenerator((count) => [keywords(`f${count - 4}`)]);
+    const checker = kwChecker();
+    const result = await kwRun(generator, checker);
+    const openPacket = generator.calls.find((call) => call.type === "lesson_open_answer")!;
+    expect(openPacket.pool.exerciseTypes).toEqual(["lesson_open_answer", "lesson_keywords"]);
+    const exercises = exercisesOf(result);
+    expect(exercises.at(-1)?.exerciseType).toBe("lesson_keywords");
+    expect(exercises.filter((draft) => draft.exerciseType === "lesson_open_answer").length).toBeGreaterThan(0);
+    const item = checker.calls.flatMap((call) => call.items).find(({ view }) => view.includes("Question:"))!;
+    expect(item.view).toContain(`Question: Pytanie ${openPacket.count - 4}: co robi korzeń?`);
+  });
+
+  it("rejects keywords without a valid family question by the family rule and keeps the open questions", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => [keywords("missing")]), checker);
+    const exercises = exercisesOf(result);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    expect(checker.calls.flatMap((call) => call.items).some(({ view }) => view.includes("Question:"))).toBe(false);
+    const rejected = result.objectives.flatMap((objective) => objective.rejections).find((entry) => entry.exerciseType === "lesson_keywords");
+    expect(rejected).toMatchObject({ code: "rule_exercise", ruleIds: ["school.keywords_family_missing"] });
+  });
+
+  it("checks both keywords and admits the first one that passes", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => [keywords("f0", "-bad"), keywords("f1")]), checker);
+    expect(checker.calls.flatMap((call) => call.items).filter(({ view }) => view.includes("Question:"))).toHaveLength(2);
+    const admitted = exercisesOf(result).filter((draft) => draft.exerciseType === "lesson_keywords");
+    expect(admitted).toHaveLength(1);
+    expect(admitted[0]!.familyId).toBe("f1");
+  });
+
+  it("admits at most one keywords per objective and keeps them out of the independent bucket", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await kwRun(new KwGenerator(() => [keywords("f0"), keywords("f1")]), kwChecker());
+    const exercises = exercisesOf(result);
+    expect(exercises.filter((draft) => draft.exerciseType === "lesson_keywords")).toHaveLength(1);
+    const without = await kwRun(new KwGenerator(() => []), kwChecker());
+    const openOf = (list: readonly LessonExerciseDraft[]) => list.filter((draft) => draft.exerciseType === "lesson_open_answer").length;
+    expect(openOf(exercises)).toBe(openOf(exercisesOf(without)));
+  });
+
+  it("a checker failure on the keywords keeps the packet's open questions (keywords: check_unknown)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const failing: ClosedExerciseChecker = {
+      checkClosed: async () => {
+        throw new GenerationProviderError("refusal");
+      },
+    };
+    const result = await kwRun(new KwGenerator(() => [keywords("f0")]), failing);
+    const exercises = exercisesOf(result);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    const rejected = result.objectives.flatMap((objective) => objective.rejections).find((entry) => entry.exerciseType === "lesson_keywords");
+    expect(rejected).toMatchObject({ code: "check_unknown" });
+  });
+
+  it("a budget spent on the open-answer packet keeps its open questions without the keywords check", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const generator: LessonPacketGenerator = {
+      generatePacket: async (input, cost) => {
+        cost.record(input.type === "lesson_open_answer" ? 1 : 0);
+        return input.type === "lesson_open_answer" ? { exercises: [keywords("f0"), ...Array.from({ length: input.count }, (_, i) => open(i))] } : { exercises: [] };
+      },
+    };
+    const checker = kwChecker();
+    const result = await kwRun(generator, checker, {}, { runBudgetUsd: 0.5, concurrency: 1 });
+    const exercises = exercisesOf(result);
+    expect(checker.calls).toHaveLength(0);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer")).toBe(true);
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_keywords")).toBe(false);
+  });
+
+  it("sends at most one spare keywords to the check; further ones are over_count", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = kwChecker();
+    const result = await kwRun(new KwGenerator(() => ["f0", "f1", "f2", "f3"].map((family) => keywords(family))), checker);
+    expect(checker.calls.flatMap((call) => call.items).filter(({ view }) => view.includes("Question:"))).toHaveLength(2);
+    const overCount = result.objectives.flatMap((objective) => objective.rejections).filter((entry) => entry.exerciseType === "lesson_keywords" && entry.code === "over_count");
+    expect(overCount).toHaveLength(2);
+  });
+
+  it("fills the open-answer share with distinct question families before second members (round 1: one family took the whole share)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Model pisze rodziny po kolei: f0, f0, f1, f1, …
+    const pair = (n: number, member: number) => ({ ...open(n), prompt: `Pytanie ${n}.${member}: co robi korzeń?` });
+    const generator: LessonPacketGenerator = {
+      generatePacket: async (input, cost) => {
+        cost.record(0.001);
+        return input.type === "lesson_open_answer" ? { exercises: Array.from({ length: input.count }, (_, i) => pair(Math.floor(i / 2), i % 2)) } : { exercises: [] };
+      },
+    };
+    const result = await kwRun(generator, kwChecker());
+    const families = new Set(exercisesOf(result).filter((draft) => draft.exerciseType === "lesson_open_answer").map((draft) => draft.familyId));
+    expect(families.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps keywords with their family after run scoping", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await kwRun(new KwGenerator(() => [keywords("f0")]), kwChecker(), { familyScope: "r1" });
+    const exercises = exercisesOf(result);
+    const kw = exercises.find((draft) => draft.exerciseType === "lesson_keywords");
+    expect(kw).toBeDefined();
+    expect(exercises.some((draft) => draft.exerciseType === "lesson_open_answer" && draft.familyId === kw!.familyId)).toBe(true);
+    expect(kw!.familyId).not.toBe("f0");
   });
 });
