@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 import { withConfigDefaults } from "../../../packages/server/src/config-defaults";
 import { initCostLedger, readCostLedger } from "../probe-costs";
 import { childEnv, loadDotEnv } from "../probe-helpers";
-import { buildRecord, readRun, type BenchRecord } from "./record";
+import { buildRecord, csvRowCount, readRun, type BenchRecord } from "./record";
 import { DEFAULT_REPS, SUITE, fixturePath, taskById, type BenchTask, type GenerationTask } from "./suite";
 import { renderTable } from "./table";
 
@@ -25,19 +25,30 @@ const MUSE_PREFIX = "muse:";
 const RESERVE_NOTE = "sonda generowania rezerwuje przed każdym powtórzeniem cały budżet runu (2 USD z „+N”), więc limit potrzebuje zapasu ≥ 2 USD ponad spodziewany koszt";
 /** Zmienne routingu dostawców zapisywane w rekordzie: decydują o dostawcy, a przy kluczu właściciela (BYOK) o koszcie. */
 const ROUTING = /^UMIEM_(LLM|LESSON_AGENT(_CHECKER)?)_PROVIDER_/u;
+/** Modele i wysiłek, które sondy biorą z env (z domyślnymi z `config-defaults.ts`); zmiana przy wznowieniu = inna konfiguracja. */
+const MODEL_ENV = ["UMIEM_LESSON_AGENT_MODEL", "UMIEM_LESSON_AGENT_REASONING", "UMIEM_LESSON_AGENT_CHECKER_MODEL", "UMIEM_LLM_MODEL", "UMIEM_LLM_REASONING"] as const;
+/** Kod, od którego zależy wynik; `tests/probes/results` pomijamy, bo bieg sam tam zapisuje rekord i tabelę. */
+const CODE_PATHS = ["--", "packages", "tests/probes", ":(exclude)tests/probes/results"];
 
 export type Step =
-  | { kind: "generate"; task: GenerationTask; rep: number; env: Record<string, string>; done: string; log: string }
+  | { kind: "generate"; task: GenerationTask; rep: number; env: Record<string, string>; done: string; log: string; dumps: string[] }
   | { kind: "gold"; task: BenchTask; env: Record<string, string>; done: string; log: string }
   | { kind: "sheet"; task: GenerationTask; args: string[]; done: string; log: string }
   | { kind: "judge"; task: GenerationTask; env: Record<string, string>; sheet: string; done: string; log: string };
 
 export const judgeSlug = (judge: string) => judge.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
 export const isPaid = (step: Step, judge: string) => step.kind === "generate" || step.kind === "gold" || (step.kind === "judge" && !judge.startsWith(MUSE_PREFIX));
+const stepName = (step: Step) => `${step.kind} ${step.task.id}${step.kind === "generate" ? ` r${step.rep}` : ""}`;
 
-/** Dziedziczone środowisko bez `UMIEM_PROBE_*`: zmienna z powłoki nie zmieni materiału, hosta, rejestru ani „+N” zadania. */
+/** Środowisko sond bez `UMIEM_PROBE_*` z powłoki: o materiale, hoście, rejestrze i „+N” decyduje wyłącznie zadanie. */
 export function inheritedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && !entry[0].startsWith("UMIEM_PROBE_")));
+}
+
+/** `UMIEM_PROBE_*` w `.env` wróciłyby do sond (każda sama wczytuje `.env`), więc benchmark ich nie przyjmuje. */
+export function assertNoProbeEnvInDotEnv(dotEnvKeys: string[]): void {
+  const probe = dotEnvKeys.filter((key) => key.startsWith("UMIEM_PROBE_"));
+  if (probe.length > 0) throw new Error(`.env ustawia ${probe.join(", ")} — sondy wczytałyby je z powrotem; usuń je z .env przed benchmarkiem`);
 }
 
 export function validateLabel(label: string | undefined): string {
@@ -45,8 +56,11 @@ export function validateLabel(label: string | undefined): string {
   return label;
 }
 
-/** Plan kroków dla zadań; `exists` sprawdza pliki (test podaje własną funkcję). Krok gotowy, gdy jest jego plik wyniku. */
-export function planSteps(options: { out: string; tasks: readonly BenchTask[]; reps: number; judge: string; checkerModel: string; exists: (path: string) => boolean; isDirEmpty: (path: string) => boolean }): Step[] {
+/**
+ * Plan kroków dla zadań; `exists` i `judged` sprawdzają pliki (test podaje własne funkcje). Krok jest gotowy, gdy jest jego
+ * plik wyniku: powtórzenie z plikiem wyników (także nieudanego runu, żeby wznowienie nie płaciło drugi raz), kompletne werdykty.
+ */
+export function planSteps(options: { out: string; tasks: readonly BenchTask[]; reps: number; judge: string; checkerModel: string; exists: (path: string) => boolean; isDirEmpty: (path: string) => boolean; judged: (verdicts: string, sheet: string) => boolean }): Step[] {
   const { out, tasks, reps, judge, exists, isDirEmpty } = options;
   const costs = join(out, "costs.json");
   const slug = judgeSlug(judge);
@@ -62,20 +76,22 @@ export function planSteps(options: { out: string; tasks: readonly BenchTask[]; r
     const dir = join(out, task.id);
     for (let rep = 1; rep <= reps; rep += 1) {
       const outDir = join(dir, "out", `r${rep}`);
-      // Plik wyników powstaje także po nieudanym runie: wznowienie nie płaci za niego drugi raz.
       if (exists(outDir) && !isDirEmpty(outDir)) continue;
+      const dump = join(dir, `baseline-r${rep}`, "dump.json");
       steps.push({
         kind: "generate",
         task,
         rep,
         done: outDir,
         log: join(dir, "logs", `r${rep}.log`),
+        // Zrzut bez pliku wyników (przerwany proces) blokowałby powtórzenie („już istnieje”), a i tak trzeba je opłacić od nowa.
+        dumps: [join(dir, `baseline-r${rep}`), join(dir, `baseline-add-r${rep}`)],
         env: {
           ...task.env,
           UMIEM_PROBE_SUBJECT: task.subject,
           UMIEM_PROBE_MATERIAL: join(out, "materials", task.material),
           UMIEM_PROBE_OUT_DIR: outDir,
-          UMIEM_PROBE_POOL_DUMP_OUT: join(dir, `baseline-r${rep}`, "dump.json"),
+          UMIEM_PROBE_POOL_DUMP_OUT: dump,
           UMIEM_PROBE_COSTS: costs,
           ...(task.addCount === undefined ? {} : { UMIEM_PROBE_ADD_COUNT: String(task.addCount) }),
         },
@@ -84,41 +100,42 @@ export function planSteps(options: { out: string; tasks: readonly BenchTask[]; r
     const key = join(dir, "blind", "key.json");
     const judgeDir = join(out, "judge", task.id);
     if (!exists(key)) steps.push({ kind: "sheet", task, done: key, log: join(dir, "logs", "sheet.log"), args: [dir, task.id, task.id, judgeDir, RUBRIC] });
+    const sheet = join(judgeDir, "sheet.csv");
     const verdicts = join(out, "judge", `${task.id}.${slug}.csv`);
-    steps.push({ kind: "judge", task, sheet: join(judgeDir, "sheet.csv"), done: verdicts, log: join(out, "judge", `${task.id}.${slug}.log`), env: { UMIEM_PROBE_JUDGE_DIR: judgeDir, UMIEM_PROBE_JUDGE_MODEL: judge, UMIEM_PROBE_JUDGE_OUT: verdicts, UMIEM_PROBE_COSTS: costs } });
+    if (!options.judged(verdicts, sheet)) {
+      steps.push({ kind: "judge", task, sheet, done: verdicts, log: join(out, "judge", `${task.id}.${slug}.log`), env: { UMIEM_PROBE_JUDGE_DIR: judgeDir, UMIEM_PROBE_JUDGE_MODEL: judge, UMIEM_PROBE_JUDGE_OUT: verdicts, UMIEM_PROBE_COSTS: costs } });
+    }
   }
   return steps;
 }
 
-/** Liczba wierszy CSV (pola w cudzysłowach mogą mieć nowe linie) — przez `parseCsv` z `score.cjs`. */
-function csvRows(path: string): number {
-  const { parseCsv } = require("../blind/score.cjs") as { parseCsv: (text: string) => unknown[] };
-  return parseCsv(readFileSync(path, "utf8")).length;
-}
-
 /** Werdykty gotowe, gdy mają tyle wierszy co arkusz (sędzia dopisuje partiami, więc przerwany bieg zostawia niepełny plik). */
-export const verdictsComplete = (verdicts: string, sheet: string) => existsSync(verdicts) && existsSync(sheet) && csvRows(verdicts) === csvRows(sheet);
+export const verdictsComplete = (verdicts: string, sheet: string) => existsSync(verdicts) && existsSync(sheet) && csvRowCount(readFileSync(verdicts, "utf8")) === csvRowCount(readFileSync(sheet, "utf8"));
 
-/** Płatny krok wymaga `--cap-usd`; istniejący rejestr z innym limitem → błąd (`initCostLedger` nie zmienia limitu). */
-export function assertPaidAllowed(paidSteps: number, capUsd: number | undefined, ledger: { capUsd: number } | undefined): void {
+/** Płatny krok wymaga `--cap-usd`; nowy limit nie może być niższy niż już wydane w rejestrze biegu. */
+export function assertPaidAllowed(paidSteps: number, capUsd: number | undefined, ledger: { spentUsd: number } | undefined): void {
   if (paidSteps === 0) return;
   if (capUsd === undefined) throw new Error(`${paidSteps} płatnych kroków, a brak --cap-usd (limit rejestru kosztów biegu; ${RESERVE_NOTE})`);
-  if (ledger !== undefined && Math.abs(ledger.capUsd - capUsd) > 1e-9) throw new Error(`costs.json ma limit ${ledger.capUsd} USD, a --cap-usd ${capUsd}: podaj ten sam limit albo nowy --out`);
+  if (ledger !== undefined && capUsd < ledger.spentUsd) throw new Error(`costs.json: wydane ${ledger.spentUsd.toFixed(2)} USD, więcej niż --cap-usd ${capUsd}`);
 }
 
-export type BenchMeta = { label: string; commit: string; dirty: boolean; diffSha256: string | null; routing: Record<string, string>; reps: number; tasks: string[] };
+export type BenchMeta = { label: string; commit: string; dirty: boolean; diffSha256: string | null; routing: Record<string, string>; models: Record<string, string>; reps: number };
 
-/** Jeden katalog biegu = jedna konfiguracja: inny commit, stan roboczy, routing albo powtórzenia → błąd. */
-export function checkMeta(existing: BenchMeta | undefined, current: BenchMeta): void {
+/**
+ * Jeden katalog biegu = jedna konfiguracja. Etykieta zawsze ta sama; kod, routing, modele i powtórzenia porównujemy tylko,
+ * gdy plan jeszcze generuje (sama ponowna ocena innym sędzią może biec na innym commicie — rekord bierze zapisaną konfigurację).
+ */
+export function checkMeta(existing: BenchMeta | undefined, current: BenchMeta, generates: boolean): void {
   if (existing === undefined) return;
-  for (const field of ["label", "commit", "dirty", "diffSha256", "routing", "reps"] as const) {
+  const fields = generates ? (["label", "commit", "dirty", "diffSha256", "routing", "models", "reps"] as const) : (["label"] as const);
+  for (const field of fields) {
     if (JSON.stringify(existing[field]) !== JSON.stringify(current[field])) throw new Error(`bench.json: ${field} różni się od zapisanego (${JSON.stringify(existing[field])}) — jeden katalog biegu to jedna konfiguracja; użyj nowego --out`);
   }
 }
 
-/** Szacunek kosztu z najnowszego rekordu z danym zadaniem: max koszt lekcji × liczba powtórzeń do zrobienia. */
+/** Szacunek kosztu z najnowszego rekordu z danym zadaniem (bez rekordów z routingiem BYOK, których koszt jest niepełny). */
 export function estimateUsd(steps: Step[], records: BenchRecord[]): { usd: number; unknown: string[] } {
-  const byDate = [...records].sort((a, b) => b.date.localeCompare(a.date));
+  const byDate = records.filter((record) => Object.keys(record.routing).length === 0).sort((a, b) => b.date.localeCompare(a.date));
   let usd = 0;
   const unknown = new Set<string>();
   for (const step of steps) {
@@ -130,23 +147,33 @@ export function estimateUsd(steps: Step[], records: BenchRecord[]): { usd: numbe
   return { usd, unknown: [...unknown] };
 }
 
-export function readRecords(dir: string = RESULTS_DIR): BenchRecord[] {
-  return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".json")).sort().map((name) => JSON.parse(readFileSync(join(dir, name), "utf8")) as BenchRecord) : [];
+export function readRecords(): BenchRecord[] {
+  return existsSync(RESULTS_DIR) ? readdirSync(RESULTS_DIR).filter((name) => name.endsWith(".json")).sort().map((name) => JSON.parse(readFileSync(join(RESULTS_DIR, name), "utf8")) as BenchRecord) : [];
 }
 
 const git = (...args: string[]) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }).trim();
 
-function currentMeta(label: string, reps: number, tasks: readonly BenchTask[]): BenchMeta {
-  const dirty = git("status", "--porcelain") !== "";
+function currentMeta(label: string, reps: number): BenchMeta {
+  const dirty = git("status", "--porcelain", ...CODE_PATHS) !== "";
+  let diffSha256: string | null = null;
+  if (dirty) {
+    // Diff śledzonych plików i treść nowych (nieśledzonych): nowy prompt w `packages` też zmienia hash.
+    const hash = createHash("sha256").update(git("diff", "HEAD", ...CODE_PATHS));
+    for (const file of git("ls-files", "--others", "--exclude-standard", ...CODE_PATHS).split("\n").filter(Boolean).sort()) hash.update(file).update(readFileSync(join(REPO, file)));
+    diffSha256 = hash.digest("hex");
+  }
   const routing = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => ROUTING.test(entry[0]) && entry[1] !== undefined).sort());
-  return { label, commit: git("rev-parse", "--short", "HEAD"), dirty, diffSha256: dirty ? createHash("sha256").update(git("diff", "HEAD", "--", "packages", "tests/probes")).digest("hex") : null, routing, reps, tasks: tasks.map((task) => task.id) };
+  const env = withConfigDefaults(process.env);
+  const models = Object.fromEntries(MODEL_ENV.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]!]])));
+  return { label, commit: git("rev-parse", "--short", "HEAD"), dirty, diffSha256, routing, models, reps };
 }
 
 function museVersion(): string | undefined {
   try {
-    const args = ["--version"];
-    const out = process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", ...args], { env: childEnv(), encoding: "utf8" }) : execFileSync("muse", args, { env: childEnv(), encoding: "utf8" });
-    return out.split(/\r?\n/u)[0]?.trim() || undefined;
+    const out = process.platform === "win32" ? execFileSync("cmd.exe", ["/d", "/s", "/c", "muse", "--version"], { env: childEnv(), encoding: "utf8" }) : execFileSync("muse", ["--version"], { env: childEnv(), encoding: "utf8" });
+    const line = out.split(/\r?\n/u)[0]?.trim() ?? "";
+    // Do rekordu w repo trafia tylko krótka linia wersji, nie baner ani ścieżka.
+    return /^[\w .()-]{1,80}$/u.test(line) ? line : undefined;
   } catch {
     return undefined;
   }
@@ -166,27 +193,27 @@ function spawnLogged(args: string[], env: Record<string, string>, log: string): 
 const probeArgs = (file: string) => [VITEST, "run", "--config", "vitest.probe.config.ts", file];
 
 function execute(step: Step, base: Record<string, string>): void {
-  const label = `${step.kind} ${step.task.id}${step.kind === "generate" ? ` r${step.rep}` : ""}`;
   const started = Date.now();
   let status: number;
   if (step.kind === "generate") {
+    for (const dir of step.dumps) rmSync(dir, { recursive: true, force: true });
     mkdirSync(step.done, { recursive: true });
     status = spawnLogged(probeArgs("tests/probes/chapter-generation.probe.test.ts"), { ...base, ...step.env }, step.log);
-    if (readdirSync(step.done).length === 0) throw new Error(`${label}: brak pliku wyników (kod ${status}); log: ${step.log}`);
+    if (readdirSync(step.done).length === 0) throw new Error(`${stepName(step)}: brak pliku wyników (kod ${status}); log: ${step.log}`);
   } else if (step.kind === "gold") {
     status = spawnLogged(probeArgs("tests/probes/closed-check-gold.probe.test.ts"), { ...base, ...step.env }, step.log);
     // Zrzut powstaje przed asercjami progów: kod ≠ 0 przy zrzucie to wynik, nie awaria.
-    if (!existsSync(step.done)) throw new Error(`${label}: brak zrzutu (kod ${status}); log: ${step.log}`);
+    if (!existsSync(step.done)) throw new Error(`${stepName(step)}: brak zrzutu (kod ${status}); log: ${step.log}`);
   } else if (step.kind === "sheet") {
     status = spawnLogged([SHEET, ...step.args], base, step.log);
-    if (!existsSync(step.done)) throw new Error(`${label}: brak arkusza (kod ${status}); log: ${step.log}`);
+    if (!existsSync(step.done)) throw new Error(`${stepName(step)}: brak arkusza (kod ${status}); log: ${step.log}`);
   } else {
-    if (verdictsComplete(step.done, step.sheet)) return;
+    // Sonda nie dopisuje do istniejącego pliku: niepełny odkładamy, a sędzia ocenia arkusz od nowa (płatny sędzia płaci ponownie).
     if (existsSync(step.done)) renameSync(step.done, step.done.replace(/\.csv$/u, `.partial-${Date.now()}.csv`));
     status = spawnLogged(probeArgs("tests/probes/blind/auto-judge.probe.test.ts"), { ...base, ...step.env }, step.log);
-    if (!verdictsComplete(step.done, step.sheet)) throw new Error(`${label}: niepełne werdykty (kod ${status}); log: ${step.log}`);
+    if (!verdictsComplete(step.done, step.sheet)) throw new Error(`${stepName(step)}: niepełne werdykty (kod ${status}); log: ${step.log}`);
   }
-  console.log(`${label}: gotowe (${Math.round((Date.now() - started) / 1000)} s, kod ${status})`);
+  console.log(`${stepName(step)}: gotowe (${Math.round((Date.now() - started) / 1000)} s, kod ${status})`);
 }
 
 function writeTable(): void {
@@ -208,24 +235,29 @@ function run(argv: string[]): void {
   const recordPath = join(RESULTS_DIR, `${label}.${slug}.json`);
   if (existsSync(recordPath)) throw new Error(`${recordPath} już istnieje`);
 
-  const metaPath = join(out, "bench.json");
-  const meta = currentMeta(label, reps, tasks);
-  const saved = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as BenchMeta) : undefined;
-  checkMeta(saved, meta);
   const env = withConfigDefaults(process.env);
-  const steps = planSteps({ out, tasks, reps, judge, checkerModel: env.UMIEM_LESSON_AGENT_CHECKER_MODEL!, exists: existsSync, isDirEmpty: (path) => readdirSync(path).length === 0 });
+  const steps = planSteps({ out, tasks, reps, judge, checkerModel: env.UMIEM_LESSON_AGENT_CHECKER_MODEL!, exists: existsSync, isDirEmpty: (path) => readdirSync(path).length === 0, judged: verdictsComplete });
+  const metaPath = join(out, "bench.json");
+  const saved = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as BenchMeta) : undefined;
+  const meta = currentMeta(label, reps);
+  checkMeta(saved, meta, steps.some((step) => step.kind === "generate" || step.kind === "gold"));
+  const config = saved ?? meta;
   const paid = steps.filter((step) => isPaid(step, judge));
   const costsPath = join(out, "costs.json");
+  const ledger = existsSync(costsPath) ? readCostLedger(costsPath) : undefined;
   const estimate = estimateUsd(steps, readRecords());
   console.log(`plan (${steps.length} kroków, płatnych ${paid.length}):`);
-  for (const step of steps) console.log(`- ${step.kind} ${step.task.id}${step.kind === "generate" ? ` r${step.rep}` : ""}${isPaid(step, judge) ? " (płatny)" : ""}`);
+  for (const step of steps) console.log(`- ${stepName(step)}${isPaid(step, judge) ? " (płatny)" : ""}`);
   console.log(`szacunek generowania z poprzednich rekordów: ${estimate.usd.toFixed(2)} USD${estimate.unknown.length ? `; bez danych: ${estimate.unknown.join(", ")}` : ""} (kontrola wzorcowa ok. 0,05 USD na zadanie; koszt przy kluczu właściciela BYOK rejestr widzi jako 0)`);
-  assertPaidAllowed(paid.length, capUsd, existsSync(costsPath) ? readCostLedger(costsPath) : undefined);
+  assertPaidAllowed(paid.length, capUsd, ledger);
 
   mkdirSync(out, { recursive: true });
   if (saved === undefined) writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
-  if (capUsd !== undefined) initCostLedger(costsPath, capUsd);
-  else if (!existsSync(costsPath)) initCostLedger(costsPath, 0.01); // tylko sędzia Muse: rejestr wymagany przez sondę, wpisy po 0 USD
+  if (ledger === undefined) initCostLedger(costsPath, capUsd ?? 0.01); // bez płatnych kroków (sędzia Muse) rejestr tylko dla sondy, wpisy po 0 USD
+  else if (capUsd !== undefined && ledger.capUsd !== capUsd) {
+    writeFileSync(costsPath, `${JSON.stringify({ ...ledger, capUsd }, null, 2)}\n`, "utf8");
+    console.log(`costs.json: limit ${ledger.capUsd} → ${capUsd} USD (wydane ${ledger.spentUsd.toFixed(2)})`);
+  }
   mkdirSync(join(out, "materials"), { recursive: true });
   for (const task of tasks) if (task.kind === "generation") copyFileSync(fixturePath(task.material), join(out, "materials", task.material));
   const base = inheritedEnv(process.env);
@@ -233,7 +265,7 @@ function run(argv: string[]): void {
 
   const { generation, gold } = readRun(out, tasks, (task) => join(out, "judge", `${task}.${slug}.csv`));
   const record = buildRecord({
-    meta: { label, date: new Date().toISOString().slice(0, 10), commit: meta.commit, dirty: meta.dirty, diffSha256: meta.diffSha256, routing: meta.routing, judge, judgeVersion: judge.startsWith(MUSE_PREFIX) ? museVersion() : undefined, rubric: RUBRIC, ...(values.note ? { note: values.note } : {}) },
+    meta: { label, date: new Date().toISOString().slice(0, 10), commit: config.commit, dirty: config.dirty, diffSha256: config.diffSha256, routing: config.routing, judge, judgeVersion: judge.startsWith(MUSE_PREFIX) ? museVersion() : undefined, rubric: RUBRIC, ...(values.note ? { note: values.note } : {}) },
     generation,
     gold,
   });
@@ -243,9 +275,17 @@ function run(argv: string[]): void {
   writeTable();
 }
 
+/** Klucze ustawione w `.env` repozytorium (bez wartości). */
+function dotEnvKeys(): string[] {
+  const path = join(REPO, ".env");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8").split(/\r?\n/u).flatMap((line) => /^(?:export\s+)?([A-Z0-9_]+)=/u.exec(line.trim())?.[1] ?? []);
+}
+
 function main(argv: string[]): void {
   const [command, ...rest] = argv;
   if (command === "run") {
+    assertNoProbeEnvInDotEnv(dotEnvKeys());
     loadDotEnv();
     run(rest);
   } else if (command === "table") writeTable();

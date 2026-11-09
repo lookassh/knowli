@@ -2,7 +2,7 @@
   "schema": "probe-bench-record/v1",
   "label": "flash-stage5",
   "date": "2026-11-09",
-  "commit": "09e9835f",
+  "commit": "mixed",
   "dirty": false,
   "diffSha256": null,
   "note": "Z istniejących zrzutów etapu 5: rozdział — bieg potwierdzający 5a (commit 09e9835f, „+3”), szkoła — strojenie 2 etapu 5b (commit 0ca0e205), kontrola wzorcowa — 4f513128 (rozdział) i 414370e3 (szkoła). Gramatyka nie była oceniana tym sędzią.",
@@ -34,7 +34,6 @@
         "max": 136
       },
       "coverageGapsBeforeAdd": 0,
-      "rows": 131,
       "anyDefect": {
         "defects": 5,
         "n": 131,
@@ -88,7 +87,6 @@
         "max": 129
       },
       "coverageGapsBeforeAdd": 3,
-      "rows": 123,
       "anyDefect": {
         "defects": 8,
         "n": 123,
@@ -142,7 +140,6 @@
         "max": 84
       },
       "coverageGapsBeforeAdd": 1,
-      "rows": 153,
       "anyDefect": {
         "defects": 11,
         "n": 153,
@@ -204,7 +201,6 @@
         "max": 98
       },
       "coverageGapsBeforeAdd": 1,
-      "rows": 151,
       "anyDefect": {
         "defects": 10,
         "n": 151,
@@ -266,7 +262,6 @@
         "max": 76
       },
       "coverageGapsBeforeAdd": 2,
-      "rows": 134,
       "anyDefect": {
         "defects": 11,
         "n": 134,

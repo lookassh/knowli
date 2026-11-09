@@ -22,9 +22,9 @@ export function renderTable(records: BenchRecord[], materials: Map<string, strin
     "",
     "> Generowane przez `pnpm bench table` z plików `*.json` w tym katalogu — nie edytuj ręcznie. Instrukcja: [`../README.md`](../README.md).",
     "",
-    "Komórka: publikowalne lekcje / przebiegi · odsetek wierszy z wadą (dowolna klasa W1–W9 rubryki) z przedziałem Wilsona 95% · koszt lekcji z rejestru.",
+    "Komórka: publikowalne lekcje / przebiegi · odsetek wierszy z wadą (dowolna klasa W1–W9 rubryki) z przedziałem Wilsona 95% i liczbą wierszy · koszt lekcji raportowany przez OpenRouter (min–max powtórzeń).",
     "Przy 60–150 wierszach na zadanie różnice kilku punktów procentowych mieszczą się w przedziałach — porównuj przedziały, nie same odsetki.",
-    "Koszt 0 przy dostawcy z kluczem właściciela (BYOK) nie oznacza darmowego biegu: tokeny są w rekordzie.",
+    "„BYOK” przy koszcie: rekord z przypiętym dostawcą na kluczu właściciela — OpenRouter raportuje wtedy tylko część kosztu (zwykle kontrolę), a pełny koszt trzeba policzyć z tokenów w rekordzie.",
   ];
   let marked = false;
   for (const judge of [...new Set(sorted.map((record) => record.judge))]) {
@@ -38,7 +38,8 @@ export function renderTable(records: BenchRecord[], materials: Map<string, strin
         const other = entry.materialSha256 !== null && materials.has(task) && materials.get(task) !== entry.materialSha256;
         if (other) marked = true;
         const defect = entry.anyDefect;
-        return `pub ${entry.publishable}/${entry.runs} · wady ${pct(defect.rate)} [${pct(defect.low)}–${pct(defect.high)}] n=${defect.n} · ${span(entry.costUsd, usd)} USD${other ? " *" : ""}`;
+        const byok = Object.keys(record.routing).length > 0 ? " (BYOK, niepełny)" : "";
+        return `pub ${entry.publishable}/${entry.runs} · wady ${pct(defect.rate)} [${pct(defect.low)}–${pct(defect.high)}] n=${defect.n} · ${span(entry.costUsd, usd)} USD${byok}${other ? " *" : ""}`;
       });
       lines.push(`| ${task} | ${cells.join(" | ")} |`);
     }

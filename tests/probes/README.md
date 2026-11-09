@@ -14,13 +14,15 @@ Wynik to mały rekord w `results/`, a [`results/README.md`](results/README.md) z
 
 - **Ocena innego modelu generatora albo kontroli:** pełny zestaw, porównanie z rekordem obecnego modelu.
 - **Strojenie promptu paczki:** wybrane zadania (`--tasks`) na niezacommitowanej zmianie (rekord zapisuje `dirty` i hash diffu), porównanie z rekordem bazowym pod tym samym sędzią.
-- **Nowy sędzia:** ten sam katalog biegu z innym `--judge` daje nowy rekord bez płacenia za generowanie.
+- **Nowy sędzia:** ten sam katalog biegu (`--out`) i ta sama `--label` z innym `--judge` dają nowy rekord `<label>.<sędzia>.json` bez płacenia za generowanie. Działa też na późniejszym commicie: rekord bierze konfigurację generowania z `bench.json`.
 
 ## Szybki start
 
 ```bash
 pnpm bench run --out ~/knowli-probes/bench/<label> --label <label> --cap-usd 7
 ```
+
+W Windows PowerShell 5.1 `~` w argumencie nie jest rozwijane: pisz `$HOME/knowli-probes/bench/<label>`.
 
 | Parametr | Domyślnie | Znaczenie |
 |---|---|---|
@@ -32,7 +34,7 @@ pnpm bench run --out ~/knowli-probes/bench/<label> --label <label> --cap-usd 7
 | `--tasks` | cały zestaw | Lista id zadań po przecinku |
 | `--note` | — | Krótka nota do rekordu (bez treści ćwiczeń) |
 
-Bez `--cap-usd` benchmark wypisuje plan i szacunek z poprzednich rekordów, po czym kończy się, zanim cokolwiek wywoła. Każdy krok pomija gotowe pliki, więc przerwany bieg wznawia się tym samym poleceniem. Powtórzenie z plikiem wyników nieudanego runu też liczy się jako gotowe, żeby nie płacić za nie drugi raz. Jeden katalog biegu to jedna konfiguracja: `bench.json` pilnuje commitu, stanu roboczego, routingu dostawców i liczby powtórzeń.
+Benchmark zawsze najpierw wypisuje plan i szacunek kosztu z poprzednich rekordów. Gdy plan ma płatny krok, a brak `--cap-usd`, kończy się błędem, zanim cokolwiek wywoła (plan z samym sędzią `muse:` rusza od razu). Każdy krok pomija gotowe pliki, więc przerwany bieg wznawia się tym samym poleceniem. Powtórzenie z plikiem wyników nieudanego runu też liczy się jako gotowe, żeby nie płacić za nie drugi raz. Jeden katalog biegu to jedna konfiguracja: dopóki plan generuje, `bench.json` pilnuje etykiety, commitu, niezacommitowanych zmian w `packages` i `tests/probes` (hash diffu i nowych plików), modeli, routingu dostawców i liczby powtórzeń. Powtórzenie przerwane przed plikiem wyników jest liczone od nowa (jego zrzuty są usuwane).
 
 Po zakończeniu powstaje `results/<label>.<sędzia>.json`, a tabela przelicza się sama (`pnpm bench table` robi tylko tabelę).
 
@@ -48,7 +50,7 @@ Przykład oceny innego generatora (PowerShell):
 
 ```powershell
 $env:UMIEM_LESSON_AGENT_MODEL='vendor/model'; $env:UMIEM_LLM_MODEL='vendor/model'
-pnpm bench run --out ~/knowli-probes/bench/model-x --label model-x --cap-usd 7
+pnpm bench run --out $HOME/knowli-probes/bench/model-x --label model-x --cap-usd 7
 ```
 
 Kredyt dostawcy na własnym kluczu (BYOK, np. Anthropic) wymaga przypięcia dostawcy: `UMIEM_LLM_PROVIDER_ORDER=anthropic` i `UMIEM_LLM_PROVIDER_ALLOW_FALLBACKS=false`. Bez tego OpenRouter kieruje część wywołań do innych dostawców i płaci z kredytów OpenRouter. Kontrola dziedziczy `UMIEM_LLM_PROVIDER_*`, więc zostaw jej `UMIEM_LESSON_AGENT_CHECKER_PROVIDER_ALLOW_FALLBACKS=true`. Rekord zapisuje te zmienne w `routing`.
@@ -68,7 +70,7 @@ Nowe zadanie to wpis w `SUITE` i plik w `fixtures/` (bez danych dzieci i bez cud
 
 ## Koszty
 
-Według rejestrów etapu 5, przy obecnym generatorze:
+Według rejestrów etapów 4–5 (poza repozytorium) przy obecnym generatorze; rozdział i szkoła są też w `results/`:
 
 | Zadanie | Koszt |
 |---|---|
@@ -80,9 +82,9 @@ Według rejestrów etapu 5, przy obecnym generatorze:
 | Pełny zestaw, `--reps 1` | ok. 2,3 USD |
 
 - **Zapas w limicie.** Sonda generowania rezerwuje przed każdym powtórzeniem cały budżet runu (`UMIEM_LESSON_AGENT_RUN_BUDGET_USD`, ×2 z „+N”, czyli 2 USD), więc `--cap-usd` potrzebuje zapasu ≥ 2 USD ponad spodziewany koszt.
-- **Limit przy wznowieniu.** Rejestr `<out>/costs.json` trzyma limit z pierwszego biegu. Wznowienie z innym `--cap-usd` kończy się błędem.
+- **Limit przy wznowieniu.** Rejestr `<out>/costs.json` liczy wydatki całego katalogu biegu. Wznowienie z innym `--cap-usd` ustawia nowy limit (nie niższy niż wydane), np. przed oceną płatnym sędzią.
 - **BYOK.** Przy kluczu właściciela OpenRouter raportuje koszt 0, więc limit tego wydatku nie zatrzyma. Koszt policz z tokenów (`tokens` w rekordzie, ceny dostawcy).
-- **Sędzia `muse:`** nic nie kosztuje (subskrypcja CLI). Sędzia z OpenRouter rezerwuje 2 USD na arkusz i kosztuje ok. 0,8 USD.
+- **Sędzia `muse:`** nic nie kosztuje (subskrypcja CLI). Sędzia z OpenRouter rezerwuje 2 USD na arkusz i kosztował w etapie 5 ok. 0,8 USD na arkusz; przerwana ocena płatnym sędzią zaczyna arkusz od nowa i płaci ponownie.
 
 ## Sędziowie i interpretacja
 

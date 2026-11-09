@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RESULTS_DIR, assertPaidAllowed, checkMeta, estimateUsd, inheritedEnv, isPaid, judgeSlug, planSteps, readRecords, validateLabel, type BenchMeta } from "./bench";
+import { RESULTS_DIR, assertNoProbeEnvInDotEnv, assertPaidAllowed, checkMeta, estimateUsd, inheritedEnv, isPaid, judgeSlug, planSteps, readRecords, validateLabel, type BenchMeta } from "./bench";
 import { buildRecord, type BlindKey, type GenerationInput, type ProbeResults, type RecordMeta, type Verdict } from "./record";
 import { SUITE, fixturePath, sha256Of, taskById } from "./suite";
 import { renderTable } from "./table";
@@ -61,7 +61,7 @@ describe("buildRecord", () => {
   it("liczy przebieg bazowy z „+N”, pomija ramię agenta, publikowalność, koszty i tokeny", () => {
     const record = buildRecord({ meta: META, generation: [input()], gold: [] });
     const entry = record.generation["chapter-home-rooms"]!;
-    expect(entry).toMatchObject({ runs: 2, succeeded: 2, publishable: 1, rows: 3, costUsd: { min: 0.25, max: 0.3 }, durationS: { min: 90, max: 100 }, coverageGapsBeforeAdd: 2, materialSha256: "abc" });
+    expect(entry).toMatchObject({ runs: 2, succeeded: 2, publishable: 1, costUsd: { min: 0.25, max: 0.3 }, durationS: { min: 90, max: 100 }, coverageGapsBeforeAdd: 2, materialSha256: "abc" });
     expect(entry.tokens).toEqual({ "gen/a": { in: 200, out: 20 } });
     expect(entry.anyDefect).toMatchObject({ defects: 2, n: 3 });
     expect(entry.defects.W5).toEqual({ defects: 2, n: 3 });
@@ -112,12 +112,19 @@ describe("renderTable", () => {
 describe("CLI", () => {
   const out = "/home/u/bench";
   const plan = (existing: string[] = [], tasks = SUITE, judge = "muse:") =>
-    planSteps({ out, tasks, reps: 2, judge, checkerModel: "chk/b", exists: (path) => existing.includes(path), isDirEmpty: () => false });
+    planSteps({ out, tasks, reps: 2, judge, checkerModel: "chk/b", exists: (path) => existing.includes(path), isDirEmpty: () => false, judged: (verdicts) => existing.includes(verdicts) });
 
   it("plan pomija gotowe powtórzenia (także nieudane z plikiem wyników) i arkusze", () => {
     const tasks = [taskById("chapter-home-rooms")];
     const done = [join(out, "chapter-home-rooms", "out", "r1"), join(out, "chapter-home-rooms", "blind", "key.json")];
     expect(plan(done, tasks).map((step) => `${step.kind}${step.kind === "generate" ? step.rep : ""}`)).toEqual(["generate2", "judge"]);
+    expect(plan([...done, join(out, "judge", "chapter-home-rooms.muse.csv")], tasks).map((step) => step.kind)).toEqual(["generate"]);
+  });
+
+  it("powtórzenie do zrobienia czyści swoje zrzuty (przerwany proces zostawia zrzut bez pliku wyników)", () => {
+    const step = plan([], [taskById("chapter-home-rooms")])[0]!;
+    if (step.kind !== "generate") throw new Error("plan");
+    expect(step.dumps).toEqual([join(out, "chapter-home-rooms", "baseline-r1"), join(out, "chapter-home-rooms", "baseline-add-r1")]);
   });
 
   it("env zadań: materiał w --out, „+N” tylko z „+N”, kontrola wzorcowa z UMIEM_PROBE_GOLD", () => {
@@ -137,21 +144,24 @@ describe("CLI", () => {
   });
 
   it("płatne kroki wymagają --cap-usd zgodnego z rejestrem; sędzia Muse nie jest płatny", () => {
-    const judgeOnly = plan([...SUITE.flatMap((task) => [join(out, task.id, "out", "r1"), join(out, task.id, "out", "r2"), join(out, task.id, "blind", "key.json"), join(out, "gold", `${task.id}.json`)])]);
+    const judgeOnly = plan([...SUITE.flatMap((task) => [join(out, task.id, "out", "r1"), join(out, task.id, "out", "r2"), join(out, task.id, "blind", "key.json"), join(out, "gold", `${task.id}.json`)])], SUITE, "openai/x");
     expect(judgeOnly.every((step) => step.kind === "judge")).toBe(true);
     expect(judgeOnly.filter((step) => isPaid(step, "muse:"))).toHaveLength(0);
     expect(judgeOnly.filter((step) => isPaid(step, "openai/x"))).toHaveLength(judgeOnly.length);
     expect(() => assertPaidAllowed(0, undefined, undefined)).not.toThrow();
     expect(() => assertPaidAllowed(3, undefined, undefined)).toThrow(/--cap-usd/u);
-    expect(() => assertPaidAllowed(3, 5, { capUsd: 4 })).toThrow(/limit 4/u);
-    expect(() => assertPaidAllowed(3, 5, { capUsd: 5 })).not.toThrow();
+    expect(() => assertPaidAllowed(3, 5, { spentUsd: 5.5 })).toThrow(/wydane 5.50/u);
+    expect(() => assertPaidAllowed(3, 5, { spentUsd: 4 })).not.toThrow();
   });
 
   it("niezgodny bench.json, zła etykieta i slug sędziego", () => {
-    const meta: BenchMeta = { label: "a", commit: "c1", dirty: false, diffSha256: null, routing: {}, reps: 2, tasks: [] };
-    expect(() => checkMeta(meta, { ...meta, tasks: ["x"] })).not.toThrow();
-    expect(() => checkMeta(meta, { ...meta, commit: "c2" })).toThrow(/commit/u);
-    expect(() => checkMeta(meta, { ...meta, routing: { UMIEM_LLM_PROVIDER_ORDER: "anthropic" } })).toThrow(/routing/u);
+    const meta: BenchMeta = { label: "a", commit: "c1", dirty: false, diffSha256: null, routing: {}, models: { UMIEM_LESSON_AGENT_MODEL: "gen/a" }, reps: 2 };
+    expect(() => checkMeta(meta, { ...meta, commit: "c2" }, true)).toThrow(/commit/u);
+    expect(() => checkMeta(meta, { ...meta, routing: { UMIEM_LLM_PROVIDER_ORDER: "anthropic" } }, true)).toThrow(/routing/u);
+    expect(() => checkMeta(meta, { ...meta, models: { UMIEM_LESSON_AGENT_MODEL: "gen/b" } }, true)).toThrow(/models/u);
+    // Sama ponowna ocena innym sędzią: inny commit (np. po zacommitowaniu rekordu) nie blokuje, inna etykieta tak.
+    expect(() => checkMeta(meta, { ...meta, commit: "c2", dirty: true }, false)).not.toThrow();
+    expect(() => checkMeta(meta, { ...meta, label: "b" }, false)).toThrow(/label/u);
     expect(() => validateLabel("../x")).toThrow(/--label/u);
     expect(validateLabel("flash-2026-11-09")).toBe("flash-2026-11-09");
     expect(judgeSlug("muse:")).toBe("muse");
@@ -162,5 +172,12 @@ describe("CLI", () => {
     const record = buildRecord({ meta: META, generation: [input()], gold: [] });
     const steps = plan([], [taskById("chapter-home-rooms"), taskById("chapter-food-likes")]);
     expect(estimateUsd(steps, [record])).toEqual({ usd: 0.6, unknown: ["chapter-food-likes"] });
+    const byok = buildRecord({ meta: { ...META, date: "2026-12-01", routing: { UMIEM_LLM_PROVIDER_ORDER: "anthropic" } }, generation: [input({ results: [results({ costUsd: { total: 0.01 } })] })], gold: [] });
+    expect(estimateUsd(steps, [record, byok]).usd).toBe(0.6);
+  });
+
+  it(".env z UMIEM_PROBE_* jest odrzucany (sondy wczytałyby go z powrotem)", () => {
+    expect(() => assertNoProbeEnvInDotEnv(["OPENROUTER_API_KEY", "UMIEM_LLM_MODEL"])).not.toThrow();
+    expect(() => assertNoProbeEnvInDotEnv(["UMIEM_PROBE_ALLOW_HOST"])).toThrow(/UMIEM_PROBE_ALLOW_HOST/u);
   });
 });

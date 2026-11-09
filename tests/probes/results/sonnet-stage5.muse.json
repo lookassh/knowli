@@ -47,7 +47,6 @@
         "max": 270
       },
       "coverageGapsBeforeAdd": 5,
-      "rows": 120,
       "anyDefect": {
         "defects": 16,
         "n": 120,
@@ -110,7 +109,6 @@
         "max": 128
       },
       "coverageGapsBeforeAdd": 6,
-      "rows": 110,
       "anyDefect": {
         "defects": 15,
         "n": 110,
@@ -173,7 +171,6 @@
         "max": 102
       },
       "coverageGapsBeforeAdd": 0,
-      "rows": 151,
       "anyDefect": {
         "defects": 22,
         "n": 151,
@@ -244,7 +241,6 @@
         "max": 112
       },
       "coverageGapsBeforeAdd": 1,
-      "rows": 150,
       "anyDefect": {
         "defects": 18,
         "n": 150,
@@ -315,7 +311,6 @@
         "max": 113
       },
       "coverageGapsBeforeAdd": 4,
-      "rows": 149,
       "anyDefect": {
         "defects": 25,
         "n": 149,
@@ -386,7 +381,6 @@
         "max": 58
       },
       "coverageGapsBeforeAdd": 0,
-      "rows": 68,
       "anyDefect": {
         "defects": 3,
         "n": 68,
@@ -457,7 +451,6 @@
         "max": 77
       },
       "coverageGapsBeforeAdd": 0,
-      "rows": 83,
       "anyDefect": {
         "defects": 22,
         "n": 83,
@@ -528,7 +521,6 @@
         "max": 85
       },
       "coverageGapsBeforeAdd": 0,
-      "rows": 77,
       "anyDefect": {
         "defects": 13,
         "n": 77,

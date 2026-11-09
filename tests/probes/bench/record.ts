@@ -85,7 +85,6 @@ function generationEntry(input: GenerationInput) {
     tokens,
     durationS: range(input.results.flatMap((result) => (result.durationMs === undefined ? [] : [Math.round(result.durationMs / 1000)]))),
     coverageGapsBeforeAdd: input.results.reduce((sum, result) => sum + (result.draft?.coverage ?? []).filter((gap) => gap.actual < gap.required).length, 0),
-    rows: rows.length,
     anyDefect: { defects: defective, n: rows.length, rate: round(rows.length === 0 ? 0 : defective / rows.length), low: round(interval.low), high: round(interval.high) },
     defects,
   };
@@ -140,6 +139,9 @@ export function buildRecord({ meta, generation, gold }: { meta: RecordMeta; gene
 }
 
 export type BenchRecord = ReturnType<typeof buildRecord>;
+
+/** Liczba wierszy CSV (pola w cudzysłowach mogą mieć nowe linie). */
+export const csvRowCount = (text: string): number => score.parseCsv(text).length;
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
 const jsonFiles = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".json")).sort().map((name) => join(dir, name)) : []);
