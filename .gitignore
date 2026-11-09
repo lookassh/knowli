@@ -35,3 +35,6 @@ backups/
 _bmad-output/
 _bmad/**/*.user.toml
 _bmad/render/
+# Instalator BMAD i jego testy uruchamiane są z katalogu pluginu, nie z `_bmad/`.
+_bmad/scripts/setup.py
+_bmad/scripts/tests/
