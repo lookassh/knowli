@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1",
+    "title": "Zaliczanie aktywnego czasu nauki",
+    "description": "Zrealizuj CAP-10 i część CAP-5/6: serwerowe rozliczanie odcinków z sygnałami Kid UI, kontrolą tła, bezczynności, offline i przejęcia urządzenia według activity-policy.md. Udostępnij chronioną możliwość inspekcji rozliczeń i sprawdź AC-03–06, AC-18–20 oraz AC-28–29 bez naliczania punktów i wymian.",
+    "spec_checkpoint": true,
+    "done_checkpoint": true,
+    "invoke_dev_with": "Stosuj TDD RED–GREEN: udokumentuj rzeczywiście zaobserwowane RED, minimalne GREEN i adekwatne bramki; na końcu uzyskaj niezależne review. Realizuj tylko zakres tego story, bez automatyzacji Xbox, push do main lub scalania PR. W planie pokaż przebiegi pomiaru dla wolnego czytania, odsłuchu, wpisywania i awarii oraz oceń jawne założenie A1; nie traktuj estymacji MCP jako czasu nagrody."
+  },
+  {
+    "id": "2",
+    "title": "Punkty, dorobek zestawów i cel dnia",
+    "description": "Na rozliczeniach story 1 zrealizuj CAP-1–6: 1 punkt za 60 sekund, reszty minut, zgodne sumy zestawów/profilu, lokalny cel 30 minut i widoki według reward-rules.md. Sprawdź AC-01–02, AC-05–10, AC-17 oraz AC-21–22, zachowując odrębność raportu MCP i stan gotowości pakietów bez ich wymiany.",
+    "spec_checkpoint": false,
+    "done_checkpoint": false,
+    "invoke_dev_with": "Stosuj TDD RED–GREEN: udokumentuj rzeczywiście zaobserwowane RED, minimalne GREEN i adekwatne bramki; na końcu uzyskaj niezależne review. Realizuj tylko zakres tego story, bez automatyzacji Xbox, push do main lub scalania PR."
+  },
+  {
+    "id": "3",
+    "title": "Krótka zapowiedziana runda dnia",
+    "description": "Zrealizuj CAP-11 oraz część CAP-2/5: jawna porcja do 3 zadań z dzisiejszego materiału przez istniejący bezpieczny silnik, bez progu poprawności i dokładania zadań po obiecanym końcu. Sprawdź AC-23–24 i zgodność z daily-round.md dla słówek, ścieżki obrazkowej oraz lekcji.",
+    "spec_checkpoint": false,
+    "done_checkpoint": false,
+    "invoke_dev_with": "Stosuj TDD RED–GREEN: udokumentuj rzeczywiście zaobserwowane RED, minimalne GREEN i adekwatne bramki; na końcu uzyskaj niezależne review. Realizuj tylko zakres tego story, bez automatyzacji Xbox, push do main lub scalania PR."
+  },
+  {
+    "id": "4",
+    "title": "Karta pracy dziecka w panelu rodzica",
+    "description": "Zrealizuj CAP-12 na danych stories 1–3: chroniony podgląd dnia, czasu, sesji/zestawów, przykładów i braków oraz statusu rundy według daily-round.md. Sprawdź AC-14, AC-25 i AC-29 bez automatycznej oceny uczciwości i bez funkcji przyznawania czasu Xbox.",
+    "spec_checkpoint": false,
+    "done_checkpoint": false,
+    "invoke_dev_with": "Stosuj TDD RED–GREEN: udokumentuj rzeczywiście zaobserwowane RED, minimalne GREEN i adekwatne bramki; na końcu uzyskaj niezależne review. Realizuj tylko zakres tego story, bez automatyzacji Xbox, push do main lub scalania PR."
+  },
+  {
+    "id": "5",
+    "title": "Wymiana pełnych bloków nauki na ręcznie przyznany Xbox",
+    "description": "Zrealizuj CAP-8/9 oraz część CAP-3/5/6: każde 30 minut w jednym dniu daje pakiet 15 minut za 30 punktów, z rezerwacją punktów i uprawnienia oraz decyzją rodzica z karty pracy. Sprawdź AC-11–15, AC-26–27 i pełny przepływ UI według xbox-rewards.md, bez integracji Microsoft lub Home Assistant.",
+    "spec_checkpoint": true,
+    "done_checkpoint": true,
+    "invoke_dev_with": "Stosuj TDD RED–GREEN: udokumentuj rzeczywiście zaobserwowane RED, minimalne GREEN i adekwatne bramki; na końcu uzyskaj niezależne review. Realizuj tylko zakres tego story, bez automatyzacji Xbox, push do main lub scalania PR. W planie potwierdź założenie A3 o późniejszej realizacji pełnych bloków oraz transakcje i zachowanie przy niepewnym ręcznym dodaniu czasu; sprawdź pełny przepływ na fikcyjnych profilach."
+  }
+]

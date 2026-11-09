@@ -1,0 +1,18 @@
+{
+  "commit": "66a07173350ba59b504d6d74f934473154f2b063",
+  "environment": "local PostgreSQL 17 container; service-level calls; warm single published 8-item deck; microphone off; 3 series x 5 warmups + 30 samples",
+  "start": {
+    "n": 90,
+    "p50": 11.827000000000226,
+    "p95": 13.655999999999949,
+    "min": 10.810099999999693,
+    "max": 14.967099999999846
+  },
+  "next": {
+    "n": 90,
+    "p50": 26.015000000000327,
+    "p95": 29.02559999999994,
+    "min": 24.16939999999977,
+    "max": 32.53390000000036
+  }
+}

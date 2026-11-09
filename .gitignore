@@ -32,4 +32,14 @@ backups/
 .superpowers/
 .zcodeignore
 .kiro/
-_bmad-output/
+# Artefakty BMAD (specy, plany, UX) są commitowane z gałęzią. Repo jest publiczne:
+# notatki z rozmów (.memlog.md) i pliki robocze zostają lokalnie. Bez danych dzieci.
+_bmad-output/**/.memlog.md
+_bmad-output/**/.working/
+_bmad-output/**/review-prompt-*.md
+_bmad-output/**/bmad-build-auto-result-*.md
+_bmad/**/*.user.toml
+_bmad/render/
+# Instalator BMAD i jego testy uruchamiane są z katalogu pluginu, nie z `_bmad/`.
+_bmad/scripts/setup.py
+_bmad/scripts/tests/
