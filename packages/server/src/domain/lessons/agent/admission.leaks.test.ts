@@ -55,7 +55,7 @@ describe("krok reguł lekcji — ujawnienia (tryb generation)", () => {
     const grammarCtx: AgentCheckContext = {
       subject: englishGrammarSubject,
       material: "",
-      limits: new Map([[objectiveId, { targetCount: 8, listenAllowance: 2, maxExercises: 12 }]]),
+      limits: new Map([[objectiveId, { targetCount: 8 }]]),
     };
     // Odpowiedź i warianty „teraz” jak w poprawnym tłumaczeniu celu (reguły Present Continuous przechodzą).
     const translation = (prompt: string, subjectVerb: string, rest: string): LessonExerciseDraft => ({

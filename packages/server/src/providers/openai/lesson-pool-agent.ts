@@ -162,53 +162,36 @@ function requestTracker(cost: RunCostSink, usage: UsageRecorder | undefined, bas
       }
       pending = 0;
     },
-    /** Żądanie porzucone po limicie i ponawiane w tym samym kroku: bez odpowiedzi, a krok nadal czeka na `end`. */
-    abandoned(): void {
-      if (closed) return;
-      cost.record(null);
-      recordTransportFailure(usage, base);
-    },
     close(): void {
       closed = true;
     },
   };
 }
 
-/** Limit jednego żądania kroku: `canRetry` decyduje o jedynym ponowieniu (np. `shouldStop()` zagadnienia). */
-interface CallLimit {
-  readonly timeoutMs: number;
-  canRetry(): boolean;
-}
-
 /**
- * Model z limitem jednego żądania (`doGenerate`): po `timeoutMs` żądanie jest przerywane i — gdy
- * `canRetry()` — ponawiane raz z tymi samymi parametrami; porzucone żądanie zgłasza `onAbandoned`
- * (koszt nieznany jak przy przerwaniu). Drugie przekroczenie rzuca `GenerationProviderError("timeout")`,
- * a to żądanie rozlicza `fail` licznika. Zegar na `setTimeout` (testy sterują czasem), nie
- * `AbortSignal.timeout`; wyścig z sygnałem, więc dostawca ignorujący przerwanie nie wstrzymuje kroku.
- * Przerwanie rodzica rzuca błąd bez ponowienia.
+ * Model z limitem jednego żądania (`doGenerate`): po `timeoutMs` żądanie jest przerywane i rzuca
+ * `GenerationProviderError("timeout")`, a żądanie rozlicza `fail` licznika (bez ponowienia w adapterze —
+ * ponowienie robi przebieg). Zegar na `setTimeout` (testy sterują czasem), nie `AbortSignal.timeout`;
+ * wyścig z sygnałem, więc dostawca ignorujący przerwanie nie wstrzymuje kroku. Przerwanie rodzica rzuca
+ * jego błąd.
  */
-function withCallTimeout(model: Exclude<LanguageModel, string>, limit: CallLimit, onAbandoned: () => void): LanguageModel {
+function withCallTimeout(model: Exclude<LanguageModel, string>, timeoutMs: number): LanguageModel {
   return wrapLanguageModel({
     model,
     middleware: {
       specificationVersion: "v4",
       wrapGenerate: async ({ params, model: inner }) => {
         const parent = params.abortSignal;
-        for (let attempt = 1; ; attempt += 1) {
-          const timer = new AbortController();
-          const handle = setTimeout(() => timer.abort(new GenerationProviderError("timeout")), limit.timeoutMs);
-          const signal = parent === undefined ? timer.signal : AbortSignal.any([parent, timer.signal]);
-          try {
-            return await untilAborted(Promise.resolve(inner.doGenerate({ ...params, abortSignal: signal })), signal);
-          } catch (error) {
-            if (parent?.aborted === true || !timer.signal.aborted) throw error;
-            // Budżet sprawdzany przed porzuceniem: szacunek porzuconego żądania liczy się od kolejnego kroku.
-            if (attempt >= 2 || !limit.canRetry()) throw new GenerationProviderError("timeout");
-            onAbandoned();
-          } finally {
-            clearTimeout(handle);
-          }
+        const timer = new AbortController();
+        const handle = setTimeout(() => timer.abort(new GenerationProviderError("timeout")), timeoutMs);
+        const signal = parent === undefined ? timer.signal : AbortSignal.any([parent, timer.signal]);
+        try {
+          return await untilAborted(Promise.resolve(inner.doGenerate({ ...params, abortSignal: signal })), signal);
+        } catch (error) {
+          if (parent?.aborted === true || !timer.signal.aborted) throw error;
+          throw new GenerationProviderError("timeout");
+        } finally {
+          clearTimeout(handle);
         }
       },
     },
@@ -274,19 +257,19 @@ class AiSdkCaller {
 
   /**
    * Wywołanie SDK z kontrolą kosztu, przerwania i błędów: wyjątek zapisuje żądania bez
-   * odpowiedzi, a potem rzuca błąd zmapowany przez `toGenerationProviderError`. Z `limit` wywołanie
-   * dostaje model z limitem jednego żądania (`withCallTimeout`), inaczej model bez zmian.
+   * odpowiedzi, a potem rzuca błąd zmapowany przez `toGenerationProviderError`. Wywołanie
+   * dostaje model z limitem jednego żądania (`withCallTimeout`).
    */
   async tracked<T>(
     operation: AgentOperation,
     cost: RunCostSink,
     signal: AbortSignal,
     call: (hooks: CallHooks, model: LanguageModel) => Promise<T>,
-    limit?: CallLimit,
+    timeoutMs: number,
   ): Promise<T> {
     signal.throwIfAborted();
     const tracker = requestTracker(cost, this.usage, { feature: "lesson_generation", operation, provider: USAGE_PROVIDER, model: this.model });
-    const model = limit === undefined ? this.languageModel : withCallTimeout(this.languageModel, limit, () => tracker.abandoned());
+    const model = withCallTimeout(this.languageModel, timeoutMs);
     try {
       const result = await untilAborted(
         call({ onLanguageModelCallStart: () => tracker.start(), onLanguageModelCallEnd: (event) => tracker.end(event) }, model),
@@ -399,7 +382,7 @@ export class AiSdkLessonPoolAgent implements LessonPacketGenerator {
           abortSignal: signal,
           ...hooks,
         }),
-      { timeoutMs: input.timeoutMs, canRetry: () => false },
+      input.timeoutMs,
     );
     const output = (result.output ?? {}) as { exercises?: unknown; examples?: unknown };
     return {
@@ -453,7 +436,7 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
           abortSignal: signal,
           ...hooks,
         }),
-      { timeoutMs: input.timeoutMs, canRetry: () => false },
+      input.timeoutMs,
     );
     const results = sameLength(result.output.results, input.items.length);
     return { results: input.items.map((_item, index) => results?.[index]) };

@@ -2,33 +2,30 @@ import { MAX_LESSON_ANSWER_LENGTH, MAX_LESSON_TEXT_LENGTH } from "@learning/cont
 import type { LessonExerciseType, SubjectModule } from "../types";
 import {
   describeRule,
-  ENGINE_CATALOGS,
   RULE_PRIORITY,
   type LessonRule,
   type RuleBookContext,
   type RuleCatalog,
   type RuleTextContext,
 } from "./catalog";
-import { LESSON_RULES } from "./lesson-rules";
+import { CORE_RULES } from "./core-rules";
 import { subjectFeatures, TYPE_CARDS } from "./type-cards";
 
 /**
- * Księga reguł agenta puli (spec katalogu reguł §3): karty typów i reguły
- * pasujące do przedmiotu, typów dozwolonych w zagadnieniu i warunków `when`.
+ * Księga reguł paczki przebiegu bazowego (spec katalogu reguł §3): karty typów i reguły
+ * rdzenia i przedmiotu pasujące do typów dozwolonych w zagadnieniu i warunków `when`.
  * Adapter tylko ją renderuje. Czysta funkcja: ten sam wynik dla tego samego
  * wejścia (kolejność stała, bez zegara i losowości).
  *
  * Sekcje:
- * - `checks` — kontrole innymi modelami (reguły lekcji z obszaru `check`);
- * - `lesson` — pozostałe reguły lekcji (cała pula, limity, ujawnienia);
  * - `types` — blok każdego dozwolonego typu (karta typu, reguła typu przedmiotu i
  *   reguły, które w zagadnieniu dotyczą wyłącznie tego typu);
  * - `general` — reguły rdzenia i przedmiotu bez typów albo wspólne kilku typom
  *   zagadnienia (opis wtedy sam wymienia typy). Żaden opis się nie powtarza.
  *
  * W każdej sekcji najpierw reguły grup `RULE_PRIORITY` (w kolejności grup), potem
- * reszta po id. Reguły `internal` nigdy nie trafiają do księgi. Opis z dopiskiem
- * przedmiotu (`agentPolicy.ruleNotes`).
+ * reszta po id. Reguły `internal` i reguły lekcji (`LESSON_RULES`; sprawdza je kod po paczce) nigdy nie
+ * trafiają do księgi. Opis z dopiskiem przedmiotu (`SubjectModule.ruleNotes`).
  */
 
 export interface RuleLine {
@@ -51,15 +48,10 @@ export interface TypeBlock {
 export interface RuleBook {
   readonly general: readonly RuleLine[];
   readonly types: readonly TypeBlock[];
-  readonly lesson: readonly RuleLine[];
-  readonly checks: readonly RuleLine[];
 }
 
 /** Zastępczy `objectiveId` przykładu karty: model wpisuje id swojego zagadnienia. */
 export const EXAMPLE_OBJECTIVE_ID = "<objective id>";
-
-/** Obszar id reguł kontroli innymi modelami. */
-const CHECK_AREA = "check";
 
 /** Typ bez bloku: karta pochodzi z tematu, nie z puli. */
 const CARD_TYPE: LessonExerciseType = "lesson_card";
@@ -68,7 +60,7 @@ const CARD_TYPE: LessonExerciseType = "lesson_card";
 const TYPE_ORDER = Object.keys(TYPE_CARDS) as LessonExerciseType[];
 
 type Placement =
-  | { readonly section: "general" | "lesson" | "checks" }
+  | { readonly section: "general" }
   | { readonly section: "type"; readonly type: LessonExerciseType };
 
 interface PlacedRule {
@@ -84,13 +76,8 @@ function matches(rule: LessonRule, allowed: readonly LessonExerciseType[], ctx: 
   return rule.when === undefined || rule.when(ctx);
 }
 
-/**
- * Sekcja reguły: lekcja i kontrole po katalogu, reszta do bloku jedynego pasującego typu albo ogólnych.
- */
-function placementOf(id: string, rule: LessonRule, catalog: RuleCatalog, blockTypes: readonly LessonExerciseType[]): Placement {
-  if (catalog === LESSON_RULES) {
-    return { section: id.split(".")[0] === CHECK_AREA ? "checks" : "lesson" };
-  }
+/** Sekcja reguły: blok jedynego pasującego typu albo ogólne. */
+function placementOf(rule: LessonRule, blockTypes: readonly LessonExerciseType[]): Placement {
   const matching = rule.types?.filter((type) => blockTypes.includes(type)) ?? [];
   return matching.length === 1 ? { section: "type", type: matching[0]! } : { section: "general" };
 }
@@ -111,15 +98,15 @@ function byPriorityThenId(a: PlacedRule, b: PlacedRule): number {
 export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): RuleBook {
   const allowed = ctx.exerciseTypes.filter((type) => subject.exerciseTypes.includes(type));
   const blockTypes = TYPE_ORDER.filter((type) => type !== CARD_TYPE && allowed.includes(type));
-  const notes = ctx.policy.ruleNotes ?? {};
+  const notes = subject.ruleNotes ?? {};
 
   const placed: PlacedRule[] = [];
   const seen = new Set<string>();
-  for (const catalog of [...ENGINE_CATALOGS, subject.rules]) {
+  for (const catalog of [CORE_RULES, subject.rules] as readonly RuleCatalog[]) {
     for (const [id, rule] of Object.entries(catalog)) {
       if (seen.has(id) || !matches(rule, allowed, ctx)) continue;
       seen.add(id);
-      placed.push({ id, rule, placement: placementOf(id, rule, catalog, blockTypes) });
+      placed.push({ id, rule, placement: placementOf(rule, blockTypes) });
     }
   }
   placed.sort(byPriorityThenId);
@@ -129,8 +116,6 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
     text: describeRule(rule, ctx.text, notes[id]),
     ...(rule.promptBrief === true ? { brief: true as const } : {}),
   });
-  const section = (name: "general" | "lesson" | "checks"): RuleLine[] =>
-    placed.filter((entry) => entry.placement.section === name).map(line);
 
   const types = blockTypes.map((type): TypeBlock => {
     const card = TYPE_CARDS[type];
@@ -147,11 +132,11 @@ export function lessonRuleBook(subject: SubjectModule, ctx: RuleBookContext): Ru
     };
   });
 
-  return { general: section("general"), types, lesson: section("lesson"), checks: section("checks") };
+  return { general: placed.filter((entry) => entry.placement.section === "general").map(line), types };
 }
 
 /**
- * Przykład typu w zagadnieniu: przykład przedmiotu dla tematu i zagadnienia (`agentPolicy.typeExamples`),
+ * Przykład typu w zagadnieniu: przykład przedmiotu dla tematu i zagadnienia (`SubjectModule.typeExamples`),
  * a bez niego przykład karty typu dla cech przedmiotu. `undefined` — typ bez przykładu.
  */
 export function typeExample(
@@ -159,7 +144,7 @@ export function typeExample(
   at: Pick<RuleBookContext, "topicId" | "objectiveId">,
   type: LessonExerciseType,
 ): Readonly<Record<string, unknown>> | undefined {
-  const own = subject.agentPolicy.typeExamples?.({ topicId: at.topicId, objectiveId: at.objectiveId })?.[type];
+  const own = subject.typeExamples?.({ topicId: at.topicId, objectiveId: at.objectiveId })?.[type];
   return own ?? TYPE_CARDS[type].example?.(subjectFeatures(subject));
 }
 
@@ -191,7 +176,6 @@ export function ruleBookContextFor(
     objectiveId,
     exerciseTypes,
     text: ruleTextContextOf(subject),
-    policy: subject.agentPolicy,
     listenChoice,
     voiceTones: subject.ttsForPrompts === true,
     exerciseExplanations: subject.exerciseExplanations,

@@ -27,7 +27,7 @@ export const subject: SubjectModule = {
 export const objectives = agentObjectivesOf(topic);
 export const [A, B] = objectives.map((objective) => objective.id) as [string, string];
 
-export const DEFAULT_LIMITS: ObjectiveAgentLimits = { targetCount: 8, listenAllowance: 2, maxExercises: 12 };
+export const DEFAULT_LIMITS: ObjectiveAgentLimits = { targetCount: 8 };
 
 export function contextFor(
   overrides: { subject?: SubjectModule; limits?: Partial<Record<string, ObjectiveAgentLimits>>; material?: string } = {},

@@ -1,7 +1,7 @@
 import type { LearningObjective, LessonTopic, SubjectModule } from "../types";
 import { baseNormalizer } from "../normalize";
 import { defineRules } from "../rules/catalog";
-import { HISTORY_LIKE_EXERCISE_TYPES, testAgentPolicy } from "./test-agent-policy";
+import { HISTORY_LIKE_EXERCISE_TYPES } from "./test-agent-policy";
 
 /**
  * Fixture przedmiotu nie-językowego („history-like”) — dowód, że silnik lekcji
@@ -72,7 +72,7 @@ export const historyLikeSubject: SubjectModule = {
   ttsForPrompts: false,
   ttsForFeedbackSentence: false,
   exerciseExplanations: false,
-  agentPolicy: testAgentPolicy,
+  checkerNeedsMaterial: false,
   // Minimalny (pusty) katalog reguł przedmiotu testowego.
   rules: defineRules({}),
 };

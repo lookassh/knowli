@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import { MAX_TEXT_LENGTH } from "../pool-validation";
 import { PRODUCTION_SUBJECTS } from "../subjects";
 import type { LessonExerciseType, SubjectModule } from "../types";
-import { describeRule, ENGINE_CATALOGS, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { describeRule, RULE_PRIORITY, type LessonRule, type RuleBookContext } from "./catalog";
+import { CORE_RULES } from "./core-rules";
+import { LESSON_RULES } from "./lesson-rules";
 import { EXAMPLE_OBJECTIVE_ID, lessonRuleBook, typeExample, type RuleBook, type RuleLine } from "./rule-book";
 import { TYPE_CARDS } from "./type-cards";
 
 /**
- * Księga reguł agenta (spec katalogu reguł §3, §2.4 pkt 5): w księdze jest
- * dokładnie każda pasująca reguła `reject`/`sanitize` (typy zagadnienia i
+ * Księga reguł paczki (spec katalogu reguł §3, §2.4 pkt 5): w księdze jest
+ * dokładnie każda pasująca reguła `reject`/`sanitize` rdzenia i przedmiotu (typy zagadnienia i
  * warunki `when`), z dopiskiem przedmiotu, w kolejności `RULE_PRIORITY`, bez
  * reguł `internal`; wynik jest deterministyczny. Macierz: trzy przedmioty ×
  * każdy typ (i wszystkie typy naraz) × przydział `lesson_listen_choice` × ton lektora.
@@ -39,7 +41,6 @@ function contextFor(
     objectiveId,
     exerciseTypes,
     text: { answerMaxLength: usesV3Payload ? MAX_LESSON_ANSWER_LENGTH : MAX_TEXT_LENGTH, groundingRequired: subject.sourceQuotes === true },
-    policy: subject.agentPolicy,
     listenChoice: variant.listenChoice,
     voiceTones: variant.voiceTones,
     exerciseExplanations: subject.exerciseExplanations,
@@ -48,9 +49,9 @@ function contextFor(
   };
 }
 
-/** Wszystkie reguły przedmiotu: rdzeń, lekcja i katalog przedmiotu. */
+/** Reguły księgi przedmiotu: rdzeń i katalog przedmiotu (reguły lekcji sprawdza kod, księga ich nie ma). */
 function rulesOf(subject: SubjectModule): [string, LessonRule][] {
-  return [...ENGINE_CATALOGS, subject.rules].flatMap((catalog) => Object.entries(catalog));
+  return [CORE_RULES, subject.rules].flatMap((catalog) => Object.entries(catalog) as [string, LessonRule][]);
 }
 
 /** Wyrocznia: reguła pasuje, gdy nie jest `internal`, dotyczy typu zagadnienia i spełnia `when`. */
@@ -63,7 +64,7 @@ function expectedIds(subject: SubjectModule, ctx: RuleBookContext): string[] {
 }
 
 function sections(book: RuleBook): (readonly RuleLine[])[] {
-  return [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks];
+  return [book.general, ...book.types.map((block) => block.rules)];
 }
 
 function idsOf(book: RuleBook): string[] {
@@ -103,6 +104,7 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
       expect(new Set(ids).size, name).toBe(ids.length);
       expect([...ids].sort(), name).toEqual(expectedIds(subject, ctx).sort());
       expect(ids.filter((id) => internalIds.includes(id)), name).toEqual([]);
+      expect(ids.filter((id) => Object.hasOwn(LESSON_RULES, id)), name).toEqual([]);
     }
   });
 
@@ -120,7 +122,7 @@ describe.each(SUBJECTS)("księga reguł — %s", (_id, subject) => {
   it("tekst reguły to opis z dopiskiem przedmiotu", () => {
     for (const { name, ctx } of matrix(subject)) {
       for (const line of sections(lessonRuleBook(subject, ctx)).flat()) {
-        expect(line.text, `${name}: ${line.id}`).toBe(describeRule(ruleById.get(line.id)!, ctx.text, subject.agentPolicy.ruleNotes?.[line.id]));
+        expect(line.text, `${name}: ${line.id}`).toBe(describeRule(ruleById.get(line.id)!, ctx.text, subject.ruleNotes?.[line.id]));
       }
     }
   });
@@ -216,8 +218,6 @@ const KEY_PHRASES: readonly { readonly point: string; readonly rule: string; rea
   { point: "6. rodzina pytań", rule: "school.family_elements_differ", phrase: "the same set of requiredElements ids" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "one continuous fragment" },
   { point: "7. ciągły cytat", rule: "school.quote_in_material", phrase: "never join two fragments" },
-  { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "guided or productive" },
-  { point: "8. odpowiedź samodzielna", rule: "lesson.leak", phrase: "card example" },
 ];
 
 describe("frazy kluczowe nowych opisów reguł", () => {

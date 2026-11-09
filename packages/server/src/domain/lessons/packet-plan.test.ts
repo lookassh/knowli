@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bucketOf, KEYWORDS_PER_OBJECTIVE, PACKET_RESERVE, packetPlan, packetPlanForTargets } from "./packet-plan";
+import { lessonPoolMinimums } from "./lesson-coverage";
+import { bucketOf, INDEPENDENT_RESERVE, KEYWORDS_PER_OBJECTIVE, PACKET_RESERVE, packetPlan, packetPlanForTargets } from "./packet-plan";
 import { stageOf } from "./stages";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { SCHOOL_EXERCISE_TYPES, schoolSubject } from "./subjects/school/module";
@@ -29,6 +30,8 @@ describe("packetPlan", () => {
   it("raises small splits to the publication minimum with the independent reserve", () => {
     const plan = packetPlan(englishGrammarSubject, objective("present_continuous.affirmative"), { guided: 1, productive: 1, independent: 1 }, 0);
     expect(plan.caps).toEqual({ guided: 3, productive: 4, independent: 3, intro: 2, listen: 0, keywords: 0 });
+    expect(INDEPENDENT_RESERVE).toBe(1);
+    expect(plan.caps.independent).toBe(lessonPoolMinimums(englishGrammarSubject).independent + INDEPENDENT_RESERVE);
     expect(plan.packets.some((packet) => packet.type === "lesson_listen_choice")).toBe(false);
   });
 

@@ -453,7 +453,7 @@ export function splitStages(count: number, mix: StageMix = DEFAULT_LESSON_POLICY
 }
 
 /**
- * Podział liczby ćwiczeń celu na etapy (`targets` kierownika agenta). Rachunek dzieli
+ * Podział liczby ćwiczeń celu na etapy (cele etapów paczek przebiegu bazowego). Rachunek dzieli
  * etap samodzielny z pytaniami otwartymi, a te mają twarde minimum publikacji — gdy
  * etap samodzielny ma tylko tyle miejsc, ile wynosi minimum, jedno miejsce przechodzi
  * z etapu produktywnego (o ile ten zachowa swoje minimum). Łączna liczba bez zmian.
@@ -1337,7 +1337,7 @@ export async function finalizeLessonPoolWrite(
 }
 
 /**
- * Tożsamość runu w bazie (kierownik agenta, przejęcie runu): edycja rodzica, retry albo
+ * Tożsamość runu w bazie (przebieg bazowy, przejęcie runu): edycja rodzica, retry albo
  * publikacja ją zmieniają — run nadal `running` w tej próbie, a wersja szkicu ma ten numer edycji.
  */
 export async function lessonRunIsCurrent(db: Executor, run: LessonRunIdentity): Promise<boolean> {

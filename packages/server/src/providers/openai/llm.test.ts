@@ -16,7 +16,7 @@ import { createTestRecorder, createThrowingRecorder } from "../usage/test-record
  */
 
 /** Księga reguł bez reguł: testy składania promptu sprawdzają resztę promptu. */
-const EMPTY_RULE_BOOK: LessonRuleBookInput = { general: [], types: [], lesson: [], checks: [] };
+const EMPTY_RULE_BOOK: LessonRuleBookInput = { general: [], types: [] };
 
 function okResponse(body: unknown): Response {
   return new Response(
@@ -220,11 +220,9 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
         rules: [{ id: "gap.marker_count", text: "GAP-MARKER.", brief: true }],
       },
     ],
-    lesson: [{ id: "lesson.leak", text: "LESSON-LEAK." }],
-    checks: [{ id: "check.blind_solve", text: "CHECK-BLIND." }],
   };
 
-  it("sekcje w stałej kolejności: nagłówek, zdanie o regułach brief, ogólne, zdanie o przykładach, bloki typów, lekcja, kontrole", () => {
+  it("sekcje w stałej kolejności: nagłówek, zdanie o regułach brief, ogólne, zdanie o przykładach, bloki typów", () => {
     expect(renderRuleBook(BOOK)).toBe([
       "RULES — every exercise must satisfy every rule below; an exercise that breaks a rule is discarded.",
       "Record shape and card fields: every exercise has the field types and limits of the output schema and the fields its type card lists.",
@@ -235,8 +233,6 @@ describe("renderRuleBook — księga reguł jako tekst promptu (spec katalogu re
       "  CHOICE-SUBJECT.",
       "  [options.count] OPTIONS-COUNT.",
       "lesson_gap — GAP-SUMMARY.",
-      "Lesson: [lesson.leak] LESSON-LEAK.",
-      "Checks by another model: [check.blind_solve] CHECK-BLIND.",
     ].join("\n"));
   });
 

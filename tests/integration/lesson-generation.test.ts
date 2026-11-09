@@ -54,11 +54,10 @@ async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 }
 
 /**
- * Rejestr z przedmiotem produkcyjnym + fixture historii (dowód niezależności). Fixture historii dostaje
- * `baselinePool` lokalnie: do etapu 5c worker wybiera dla przedmiotu bez flagi pętlę agenta.
+ * Rejestr z przedmiotem produkcyjnym + fixture historii (dowód niezależności).
  */
 function lessonRegistry() {
-  return createSubjectRegistry([englishGrammarSubject, { ...historyLikeSubject, baselinePool: true }]);
+  return createSubjectRegistry([englishGrammarSubject, historyLikeSubject]);
 }
 
 function lessonServices(fakes: FakeGeneration, clock = new ManualClock()): Services {

@@ -1,47 +1,18 @@
-import type { LessonExerciseType, SubjectAgentPolicy } from "../../types";
+import type { SubjectModule } from "../../types";
 import { grammarTypeExamples } from "./type-examples";
-
-/**
- * Polityka agenta puli dla przedmiotu `english_grammar` (design etapu 1 §4.3):
- * tylko typy rozwiązywane na ślepo, dopiski do reguł silnika (`ruleNotes`) i przykłady typów tematów
- * „to be” i Present Continuous (`typeExamples`). Bez wymaganych typów,
- * bramek, braków i planu; `hint` zostaje bez zmian (forma podstawowa, np. „go”).
- *
- * Listy to zbiór PoC (gałąź nie-szkolna) przecięty z typami gramatyki (brak
- * `lesson_match`, `lesson_group`, `lesson_cloze`); literały zamiast importu z
- * `module.ts`, który importuje politykę. Zgodność z typami przedmiotu pilnuje test.
- * Bez `lesson_keywords` i `lesson_listen_choice`.
- */
-
-const BLIND_SOLVE_TYPES: readonly LessonExerciseType[] = [
-  "lesson_choice",
-  "lesson_gap",
-  "lesson_open_answer",
-  "lesson_order",
-  "lesson_error_fix",
-  "lesson_transform",
-];
-
-const VARIANT_CHECK_TYPES: readonly LessonExerciseType[] = ["lesson_open_answer", "lesson_transform", "lesson_error_fix", "lesson_gap"];
 
 /** Dopisek do duplikatu wariantu: skrót i pełna forma to osobne warianty (etap 3 #360). */
 const CONTRACTIONS_NOTE = "Write contracted and full forms as separate accepted answers (doesn't and does not are different variants), " +
   "unless the instruction asks for one of them.";
 
 /**
- * Od etapu 4 (#358) gramatyka generuje się przebiegiem bazowym: z tej polityki działają tylko pola wspólne
- * (`independentReserve`, `slack` limitów zapisu, `typeExamples`, dopisek `variants.duplicate` w sekcji
- * `general` księgi reguł); pozostałe pola usuwa etap 5c razem z typem polityki.
+ * Pola generowania puli przedmiotu `english_grammar` (przebieg bazowy, `module.ts` składa je w module):
+ * nota reguły rdzenia `variants.duplicate` w sekcji ogólnej księgi reguł i przykłady typów tematów „to be”
+ * i Present Continuous (`typeExamples`).
  */
-export const grammarAgentPolicy: SubjectAgentPolicy = {
-  blindSolveTypes: BLIND_SOLVE_TYPES,
-  variantCheckTypes: VARIANT_CHECK_TYPES,
+export const grammarAgentPolicy: Pick<SubjectModule, "checkerNeedsMaterial" | "ruleNotes" | "typeExamples"> = {
   checkerNeedsMaterial: false,
-  independentReserve: 1,
-  slack: 2,
   ruleNotes: {
-    "lesson.leak": "An independent answer must be a NEW sentence nobody showed before — use a different subject, verb or object.",
-    "lesson.leak_source": "Use a different sentence.",
     "variants.duplicate": CONTRACTIONS_NOTE,
   },
   typeExamples: grammarTypeExamples,

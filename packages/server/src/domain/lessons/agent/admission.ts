@@ -28,11 +28,9 @@ import {
 /** Fabryka zgłoszeń reguł lekcji: ujawnienia. */
 const lessonIssue = issueFrom(LESSON_RULES);
 
-/** Limity zagadnienia (§3.5): `maxExercises` = `targetCount` + `listenAllowance` + `slack`. */
+/** Limit zagadnienia (§3.5): docelowa liczba ćwiczeń na ścieżce etapów (`exercises: n of m` w statusie). */
 export interface ObjectiveAgentLimits {
   readonly targetCount: number;
-  readonly listenAllowance: number;
-  readonly maxExercises: number;
 }
 
 /** Kontekst kontroli (§3.2). */

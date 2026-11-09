@@ -7,7 +7,7 @@ import { schoolSubject } from "./module";
 /**
  * Przypadki reguł katalogu szkoły (`rules.ts`) dla testu kompletności
  * `rules/rule-cases.test.ts`. Każdy przypadek woła prawdziwy hak przedmiotu
- * (`validateExercise`, `validatePoolExtra`, `agentPolicy.sanitize`).
+ * (`validateExercise`, `validatePoolExtra`, `SubjectModule.sanitize`).
  */
 
 const OBJECTIVE_ID = "school.cases.fotosynteza";
@@ -86,7 +86,7 @@ function keywordsDraft(overrides: Partial<LessonExerciseDraft> = {}): LessonExer
 const exercise = (draft: LessonExerciseDraft) => () => schoolSubject.validateExercise(draft, topic);
 const pool = (drafts: readonly LessonExerciseDraft[]) => () => [...schoolSubject.validatePoolExtra!(drafts, { material: MATERIAL }).values()].flat();
 const sanitizeNotes = (draft: LessonExerciseDraft) => () =>
-  schoolSubject.agentPolicy.sanitize!(draft, { material: MATERIAL }).notes ?? [];
+  schoolSubject.sanitize!(draft, { material: MATERIAL }).notes ?? [];
 
 const family = openDraft({ familyId: "def" });
 

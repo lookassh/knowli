@@ -121,7 +121,7 @@ function hasDescribed(lines: readonly LessonRuleBookLine[]): boolean {
 export function renderRuleBook(book: LessonRuleBookInput): string {
   const parts = ["RULES — every exercise must satisfy every rule below; an exercise that breaks a rule is discarded."];
   // Reguły `brief` (kształt rekordu, pola kart typów, limity schematu) bez id i opisu: jedno zdanie.
-  const brief = [book.general, ...book.types.map((block) => block.rules), book.lesson, book.checks].flat().some((line) => line.brief === true);
+  const brief = [book.general, ...book.types.map((block) => block.rules)].flat().some((line) => line.brief === true);
   if (brief) parts.push("Record shape and card fields: every exercise has the field types and limits of the output schema and the fields its type card lists.");
   if (hasDescribed(book.general)) parts.push(`General: ${ruleLines(book.general)}`);
   // Przykłady kart nie znają materiału lekcji: model ma z nich brać format rekordu, nie treść.
@@ -131,8 +131,6 @@ export function renderRuleBook(book: LessonRuleBookInput): string {
     if (block.subjectRule !== undefined && block.subjectRule !== "") parts.push(`  ${block.subjectRule}`);
     if (hasDescribed(block.rules)) parts.push(`  ${ruleLines(block.rules)}`);
   }
-  if (hasDescribed(book.lesson)) parts.push(`Lesson: ${ruleLines(book.lesson)}`);
-  if (hasDescribed(book.checks)) parts.push(`Checks by another model: ${ruleLines(book.checks)}`);
   return parts.join("\n");
 }
 

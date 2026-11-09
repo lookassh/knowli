@@ -1,6 +1,6 @@
 import type { AgentCheckContext, ObjectiveAgentLimits } from "../../../domain/lessons/agent/admission";
 import { createLessonAgentState, type LessonAgentState } from "../../../domain/lessons/agent/state";
-import { objectiveAgentLimits, objectiveStatus, stageGapOf, type ObjectiveStatus } from "../../../domain/lessons/agent/status";
+import { objectiveStatus, type ObjectiveStatus } from "../../../domain/lessons/agent/status";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { outsideStagePath } from "../../../domain/lessons/stages";
 import type {
@@ -141,12 +141,9 @@ export interface AddModePlan {
 
 /**
  * Tryb „dodaj N” (§6.4), braki etapów ze statusu zagadnienia na starcie (`start`):
- * - limity: `targetCount` statusu = ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`; dodatek
- *   słuchowy jako łączny limit (przyjmowanie samo liczy `fixed`); `maxExercises` = `count` + suma braków
- *   etapów + reszta dodatku słuchowego (`slack` 0; `limit_full` liczy tylko pulę);
+ * - limit: `targetCount` statusu = ćwiczenia zagadnienia w `fixed` na ścieżce etapów + `count`;
  * - prompt: podział etapów = braki etapów + `count` rozłożone przez `poolStageCounts`, bez podnoszenia etapu
- *   samodzielnego (`fixed` już się liczy), więc suma = `count` + braki ≤ `maxExercises`; dodatek słuchowy
- *   w prompcie = to, co jeszcze można przyjąć.
+ *   samodzielnego (`fixed` już się liczy); dodatek słuchowy w prompcie = to, co jeszcze można przyjąć.
  */
 function addModePlan(
   subject: SubjectModule,
@@ -165,17 +162,15 @@ function addModePlan(
     productive: start.stageGaps.productive + split.productive,
     independent: start.stageGaps.independent + split.independent,
   };
-  const stageGap = stageGapOf(start);
   return {
-    limits: { targetCount: fixedOnStagePath + count, listenAllowance, maxExercises: count + stageGap + listenLeft },
+    limits: { targetCount: fixedOnStagePath + count },
     promptTargets: { stages, listenAllowance: listenLeft },
   };
 }
 
 /**
- * Limity zagadnień trybu „pula” z liczb per cel (`objectiveBatchCounts`): `targetCount` z puli rodzica, dodatek słuchowy jako
- * łączny limit zagadnienia (przyjmowanie samo liczy ćwiczenia słuchowe `fixed`), `limit_full` liczy tylko
- * pulę. Wspólne z kontrolą końcową workera przed zapisem do szkicu.
+ * Limity zagadnień trybu „pula” z liczb per cel (`objectiveBatchCounts`): `targetCount` z puli rodzica.
+ * Wspólne z kontrolą końcową workera przed zapisem do szkicu.
  */
 export function lessonAgentLimits(
   subject: SubjectModule,
@@ -186,10 +181,7 @@ export function lessonAgentLimits(
   return new Map(
     topic.objectives.map((objective, index) => [
       objective.id,
-      objectiveAgentLimits(
-        { targetCount: counts[index]!, listenAllowance: listenChoiceAllowance(subject, objective, []) },
-        subject.agentPolicy,
-      ),
+      { targetCount: counts[index]! },
     ]),
   );
 }

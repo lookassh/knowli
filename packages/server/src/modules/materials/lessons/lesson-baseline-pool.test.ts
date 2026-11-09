@@ -134,8 +134,7 @@ describe("runLessonBaselinePool", () => {
     expect(checker.calls).toHaveLength(2);
     expect(checker.calls[0]!.contract).toBe("choice");
     expect(checker.calls[0]!.items).toHaveLength(7);
-    expect(generator.calls[0]!.pool.ruleBook.lesson).toEqual([]);
-    expect(generator.calls[0]!.pool.ruleBook.checks).toEqual([]);
+    expect(Object.keys(generator.calls[0]!.pool.ruleBook)).toEqual(["general", "types"]);
     expect(generator.calls[0]!.pool.exerciseTypes).toEqual(["lesson_choice"]);
   });
 
@@ -145,7 +144,7 @@ describe("runLessonBaselinePool", () => {
     await run(new FakeGenerator(), plain);
     expect(plain.calls.length).toBeGreaterThan(0);
     expect(plain.calls.every((call) => !("material" in call))).toBe(true);
-    const needsMaterial: SubjectModule = { ...subject, agentPolicy: { ...subject.agentPolicy, checkerNeedsMaterial: true } };
+    const needsMaterial: SubjectModule = { ...subject, checkerNeedsMaterial: true };
     const withMaterial = new FakeChecker();
     await runLessonBaselinePool(
       { generator: new FakeGenerator(), checker: withMaterial, subjects: { getSubject: () => needsMaterial }, policy: {} },
@@ -410,7 +409,7 @@ describe("runLessonBaselinePool", () => {
     let state = createLessonAgentState({ topic, objectives: agentObjectivesOf(topic), fixed: [], examples: {}, fixedSources: {} });
     let n = 1;
     for (const objective of result.objectives) state = withPool(state, objective.objectiveId, objective.exercises.map((draft) => ({ id: `ex${n++}`, draft })));
-    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0, listenAllowance: 0, maxExercises: 99 }]));
+    const limits = new Map(result.objectives.map((objective) => [objective.objectiveId, { targetCount: 0 }]));
     expect(lessonInvariantCheck(state, { subject, material: "", limits })).toEqual([]);
   });
 });
@@ -708,10 +707,7 @@ describe("runLessonBaselinePool: dynamic topics and multi-field checks (stage 5a
         draft.exerciseType === "lesson_open_answer" && draft.instructionPl !== "Fixed."
           ? [{ rule: "lesson.test", field: "instructionPl", pl: "x" } as never]
           : [],
-      agentPolicy: {
-        ...subject.agentPolicy,
-        sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
-      },
+      sanitize: (draft) => ({ draft: draft.exerciseType === "lesson_open_answer" ? { ...draft, instructionPl: "Fixed." } : draft, removed: [] }),
     };
     const result = await runLessonBaselinePool(
       { generator: new FakeGenerator(), checker: new FakeChecker(), subjects: { getSubject: (id: string) => (id === strict.id ? strict : undefined) } },
@@ -739,7 +735,7 @@ describe("runLessonBaselinePool: keywords with the open-answer packet (stage 5b)
       });
       return issues as never;
     },
-    agentPolicy: { ...schoolSubject.agentPolicy, sanitize: undefined },
+    sanitize: undefined,
   };
   const kwTopic = {
     titlePl: "Rośliny",

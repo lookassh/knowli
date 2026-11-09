@@ -337,7 +337,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     };
 
     // Pola porównania konfiguracji arkusza (`SAME_FIELDS` w `blind/gen-blind-sheet.cjs`) i wariant źródła.
-    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: base.graderAvailable === true, variant: variantOf(subjectKind), ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
+    const sheetFields = { modelId: models.generator, solverId: models.checker, effort: env.UMIEM_LESSON_AGENT_REASONING ?? null, poolSize, graderAvailable: base.graderAvailable === true, variant: "baseline", ...(subjectKind === "school" ? { subjectTitlePl: schoolSubjectTitle, topicTitlePl } : {}) };
 
     const ledger =
       process.env.UMIEM_PROBE_COSTS_INIT === "1"
@@ -657,7 +657,7 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
           mkdirSync(dirname(addDumpPath), { recursive: true });
           const addDump = await poolDumpOf({ ...afterDraft, exercises: afterDraft.exercises.filter((exercise) => !known.has(exercise.revisionId)) }, material, {
             ...sheetFields,
-            variant: `${variantOf(subjectKind)}-add`,
+            variant: "baseline-add",
             probe: "chapter-generation",
             at: new Date().toISOString(),
             subjectKind,
@@ -698,12 +698,3 @@ describe.skipIf(!enabled)("próba generowania lekcji agentem puli na prawdziwych
     }, settleLate, (settleError) => line(`UWAGA: rozliczenie spóźnionych wywołań nie powiodło się (${errorClassOf(settleError)})`));
   });
 });
-
-/**
- * Wariant generatora przedmiotu w zrzucie arkusza z rejestru tego checkoutu (`baselinePool`): to samo narzędzie
- * w ramieniu agenta (`main`) i przebiegu bazowego (gałąź) daje właściwą etykietę (szkoła od etapu 5b).
- */
-function variantOf(subjectKind: "chapter" | "school" | "grammar"): "baseline" | "agent" {
-  const id = { chapter: "english_chapter", school: "school", grammar: "english_grammar" }[subjectKind];
-  return createProductionSubjectRegistry().getSubject(id)?.baselinePool === true ? "baseline" : "agent";
-}

@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentObjective, LessonExerciseDraft } from "../../types";
 import { schoolAgentPolicy } from "./agent-policy";
 import { validateLessonExercise } from "../../pool-validation";
-import { describeRule, ruleOf, type RuleId, type RuleTextContext } from "../../rules/catalog";
 import { schoolSubject } from "./module";
-
-const TEXT_CTX: RuleTextContext = { answerMaxLength: 600, groundingRequired: true };
 
 const objective: AgentObjective = {
   id: "school.dx.geografia",
@@ -22,50 +19,11 @@ function draft(overrides: Partial<LessonExerciseDraft>): LessonExerciseDraft {
 const MATERIAL = "Mierzeja Wiślana to piaszczysty pas lądu między Zatoką Gdańską a Zalewem Wiślanym.";
 const sanitize = (d: LessonExerciseDraft, material = MATERIAL) => schoolAgentPolicy.sanitize!(d, { material });
 
-describe("schoolAgentPolicy — wartości i typy", () => {
-  it("jest polityką przedmiotu szkolnego", () => {
-    expect(schoolSubject.agentPolicy).toBe(schoolAgentPolicy);
-  });
-
-  it("ma zapas samodzielnych 1 i luz 2, a checker dostaje materiał", () => {
-    expect(schoolAgentPolicy.independentReserve).toBe(1);
-    expect(schoolAgentPolicy.slack).toBe(2);
-    expect(schoolAgentPolicy.checkerNeedsMaterial).toBe(true);
-  });
-
-  it("typy ślepe to zamknięte typy z lukami, bez otwartych, układanek, rachunków i słów kluczowych", () => {
-    expect(schoolAgentPolicy.blindSolveTypes).toEqual(["lesson_choice", "lesson_match", "lesson_group", "lesson_cloze", "lesson_gap"]);
-    expect(schoolAgentPolicy.blindSolveTypes).toContain("lesson_gap");
-    for (const type of ["lesson_open_answer", "lesson_order", "lesson_calculation", "lesson_keywords", "lesson_listen_choice"] as const) {
-      expect(schoolAgentPolicy.blindSolveTypes).not.toContain(type);
-    }
-    const subjectTypes = new Set<string>(schoolSubject.exerciseTypes);
-    for (const type of schoolAgentPolicy.blindSolveTypes) expect(subjectTypes.has(type)).toBe(true);
-  });
-
-  it("warianty sprawdza się tylko przy lukach", () => {
-    expect(schoolAgentPolicy.variantCheckTypes).toEqual(["lesson_gap"]);
-  });
-
-  it("szkoła nie deklaruje kontroli 2b (przebieg bazowy, etap 5b; kod 2b usuwa etap 5c)", () => {
-    expect(schoolAgentPolicy.hintJudgeTypes).toBeUndefined();
-    expect(schoolAgentPolicy.openAnswerCheckTypes).toBeUndefined();
-    expect(schoolAgentPolicy.ruleNotes?.["check.hint_judge"]).toBeUndefined();
-    expect(schoolAgentPolicy.ruleNotes?.["check.open_answer"]).toBeUndefined();
-    expect(schoolSubject.baselinePool).toBe(true);
-  });
-
-  it("dopisek lesson.leak nie wspomina pokoju, podpowiada inny fakt lub inne sformułowanie i trafia do opisu reguły", () => {
-    const leak = schoolAgentPolicy.ruleNotes?.["lesson.leak"] ?? "";
-    expect(leak).not.toContain("room");
-    expect(leak).toContain("ask about a different fact of the material or phrase the question differently");
-    expect(describeRule(ruleOf(schoolSubject, "lesson.leak" as RuleId)!, TEXT_CTX, leak)).toContain(leak);
-    expect(schoolAgentPolicy.ruleNotes?.["lesson.leak_source"]?.length ?? 0).toBeGreaterThan(0);
-  });
-
-  it("nie ma wymaganych typów ani braków", () => {
-    expect(schoolAgentPolicy.requiredTypes).toBeUndefined();
-    expect(schoolAgentPolicy.objectiveGaps).toBeUndefined();
+describe("schoolAgentPolicy — pola modułu", () => {
+  it("moduł szkoły składa pola generowania z polityki: materiał w kontroli zamkniętych, bez dopisków reguł", () => {
+    expect(schoolSubject.checkerNeedsMaterial).toBe(true);
+    expect(schoolSubject.sanitize).toBe(schoolAgentPolicy.sanitize);
+    expect(schoolSubject.ruleNotes).toBeUndefined();
   });
 });
 
@@ -101,11 +59,6 @@ describe("schoolAgentPolicy.sanitize", () => {
 });
 
 describe("schoolAgentPolicy — podpowiedź pytania otwartego (spec §5.1)", () => {
-  it("bramka szkoły nie zwraca ustaleń (podpowiedź nie odrzuca już ćwiczenia)", () => {
-    const findings = schoolAgentPolicy.exerciseGate?.(draft({ hint: "Przykładem jest Mierzeja Wiślana" }), objective, { material: MATERIAL }) ?? [];
-    expect(findings).toEqual([]);
-  });
-
   it("edytor rodzica przyjmuje podpowiedź, którą sanityzacja agenta by usunęła", () => {
     const topic = schoolSubject.buildDynamicTopic!({
       titlePl: "Geografia",

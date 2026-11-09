@@ -55,7 +55,7 @@ const POOL: LessonPoolInput = {
   countPerObjective: 6,
   stageCounts: { guided: 2, productive: 2, independent: 2 },
   graderAvailable: false,
-  ruleBook: { general: [{ id: "field.empty", text: "EMPTY-RULE." }], types: [], lesson: [], checks: [] },
+  ruleBook: { general: [{ id: "field.empty", text: "EMPTY-RULE." }], types: [] },
 };
 
 function recordingCost(log: string[]): RunCostSink & { values: (number | null)[] } {

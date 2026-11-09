@@ -90,7 +90,7 @@ describe("przyjmowanie paczki — słowa kluczowe szkoły po pytaniu otwartym sw
   const context: AgentCheckContext = {
     subject: schoolSubject,
     material,
-    limits: new Map([[OBJECTIVE, { targetCount: 8, listenAllowance: 0, maxExercises: 10 }]]),
+    limits: new Map([[OBJECTIVE, { targetCount: 8 }]]),
   };
   const state = () => createLessonAgentState({ topic: schoolTopic, objectives: agentObjectivesOf(schoolTopic), fixed: [], examples: {}, fixedSources: {} });
   const openDraft = (overrides: Partial<LessonExerciseDraft> = {}): LessonExerciseDraft => ({
@@ -215,7 +215,7 @@ describe("przyjmowanie paczki — konflikt słuchowy między zagadnieniami (rozd
   const chapterCtx: AgentCheckContext = {
     subject: chapter,
     material,
-    limits: new Map([WEATHER, WEARING].map((id) => [id, { targetCount: 8, listenAllowance: 2, maxExercises: 12 }])),
+    limits: new Map([WEATHER, WEARING].map((id) => [id, { targetCount: 8 }])),
   };
   const chapterState = () =>
     createLessonAgentState({ topic: chapterTopic, objectives: agentObjectivesOf(chapterTopic), fixed: [], examples: {}, fixedSources: {} });
@@ -380,7 +380,7 @@ describe("wydajność przyjmowania", () => {
     const context: AgentCheckContext = {
       subject: schoolSubject,
       material,
-      limits: new Map(ids.map((id) => [id, { targetCount: 8, listenAllowance: 0, maxExercises: 20 }])),
+      limits: new Map(ids.map((id) => [id, { targetCount: 8 }])),
     };
     const batch = Array.from({ length: 12 }, (_, k) => schoolDraft(0, 15 + k));
     const startedAt = performance.now();

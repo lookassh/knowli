@@ -1,24 +1,14 @@
 import type { LessonRuleIssue } from "../../rules/catalog";
-import type { LessonExerciseDraft, LessonExerciseType, SubjectAgentPolicy } from "../../types";
+import type { LessonExerciseDraft, LessonExerciseType, SubjectModule } from "../../types";
 import { snapQuote } from "./quote-normalize";
 import { schoolIssue } from "./rules";
 
 /**
- * Polityka agenta puli dla przedmiotu `school` (design etapu 1 §4.4, spec
- * katalogu reguł §5.1–5.2, etap 5b): typy rozwiązywane na ślepo i sanityzacja świeżego
- * wyjścia modelu — usunięcie każdej podpowiedzi (szkoła jej nie generuje) i cytaty wyrównane
- * do dokładnego fragmentu materiału. Bez kontroli 2b (kod usuwa etap 5c). Tylko reguły domenowe
- * nad przekazanymi danymi.
- *
- * Listy typów są literałami, nie importem z `module.ts` (ten importuje politykę;
- * cykl zostawiłby stałą w strefie martwej). Zgodność z typami przedmiotu pilnuje test.
+ * Pola generowania puli przedmiotu `school` (spec katalogu reguł §5.1–5.2, etap 5b; `module.ts` składa
+ * je w module): materiał lekcji w kontroli zamkniętych i oczyszczenie świeżego wyjścia modelu — usunięcie
+ * każdej podpowiedzi (szkoła jej nie generuje) i cytaty wyrównane do dokładnego fragmentu materiału.
+ * Tylko reguły domenowe nad przekazanymi danymi.
  */
-
-/** Zamknięte typy z jednoznaczną odpowiedzią; otwarte, układanki, rachunki i słowa kluczowe bez ślepego rozwiązania. */
-const BLIND_SOLVE_TYPES: readonly LessonExerciseType[] = ["lesson_choice", "lesson_match", "lesson_group", "lesson_cloze", "lesson_gap"];
-
-/** Warianty odpowiedzi sprawdza niezależny model tylko przy lukach. */
-const VARIANT_CHECK_TYPES: readonly LessonExerciseType[] = ["lesson_gap"];
 
 /** Nota reguły `school.hint_open_answer_only`: podpowiedź z wyjścia modelu usunięta (szkoła jej nie generuje). */
 function hintRemovedNote(exerciseType: LessonExerciseType): LessonRuleIssue {
@@ -47,16 +37,8 @@ function snappedQuotes(draft: LessonExerciseDraft, material: string): { draft: L
   return count === 0 ? { draft, count } : { draft: { ...draft, sourceRefs: next }, count };
 }
 
-export const schoolAgentPolicy: SubjectAgentPolicy = {
-  blindSolveTypes: BLIND_SOLVE_TYPES,
-  variantCheckTypes: VARIANT_CHECK_TYPES,
+export const schoolAgentPolicy: Pick<SubjectModule, "checkerNeedsMaterial" | "sanitize"> = {
   checkerNeedsMaterial: true,
-  independentReserve: 1,
-  slack: 2,
-  ruleNotes: {
-    "lesson.leak": "If it leaks, ask about a different fact of the material or phrase the question differently.",
-    "lesson.leak_source": "Use a different fact or phrase the question differently.",
-  },
   sanitize(draft: LessonExerciseDraft, ctx) {
     const removed: string[] = [];
     const notes: LessonRuleIssue[] = [];

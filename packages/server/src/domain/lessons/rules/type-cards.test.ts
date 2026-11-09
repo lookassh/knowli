@@ -14,7 +14,7 @@ import { TYPE_CARDS, type SubjectFeatures } from "./type-cards";
  * Karty typów (spec katalogu reguł §2.1): przykład każdej karty przechodzi drogę
  * rekordu agenta — materializację, kształt rekordu i walidację ćwiczenia (kontrakt,
  * rdzeń, przedmiot) — dla każdego produkcyjnego przedmiotu, który ma typ. Przykład
- * w zagadnieniu to przykład przedmiotu (`agentPolicy.typeExamples`) albo karty
+ * w zagadnieniu to przykład przedmiotu (`SubjectModule.typeExamples`) albo karty
  * (`typeExample`), więc temat katalogu sprawdzamy w każdym jego zagadnieniu z jego typami:
  * przykład nie może łamać reguł tematu ani celu (np. form „to be”).
  */
@@ -167,7 +167,7 @@ describe("karty typów", () => {
     });
 
     it("sanityzacja agenta nie zmienia przykładów (np. podpowiedź pytania otwartego zostaje)", () => {
-      const sanitize = subject.agentPolicy.sanitize;
+      const sanitize = subject.sanitize;
       if (sanitize === undefined) return;
       for (const type of types) {
         const draft = admitExample(subject, type, topic);

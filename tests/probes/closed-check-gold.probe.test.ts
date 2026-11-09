@@ -74,7 +74,7 @@ function draftOf(entry: GoldCase, { subject, topic, material }: LoadedFixture): 
   const raw = entry.draft as { objectiveId: string };
   const parsed = parseLessonRecord(raw, raw.objectiveId, subject, null);
   if (!parsed.ok) throw new Error(`${entry.id}: ${parsed.rejection.code}`);
-  const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
+  const draft = subject.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
   const issues = validateLessonExerciseIssues(draft, subject, topic, { agent: true });
   if (issues.length > 0) throw new Error(`${entry.id}: ${issues.map((issue) => issue.rule).join(",")}`);
   // Cytaty szkoły: uziemienie w materiale fixture'u (reguły puli `school.quote_*`).
@@ -179,7 +179,7 @@ describe.skipIf(!paid)("ćwiczenia wzorcowe na prawdziwym modelu kontroli (płat
         for (const type of [...new Set(called.map((item) => item.draft.exerciseType))]) {
           const packet = called.filter((item) => item.draft.exerciseType === type);
           const items = packet.flatMap((item) => item.views.map((view) => ({ view })));
-          const withMaterial = subject.agentPolicy.checkerNeedsMaterial ? { material } : {};
+          const withMaterial = subject.checkerNeedsMaterial ? { material } : {};
           const { results } = await checker.checkClosed(
             { contract: closedCheckContract(type)!, items, timeoutMs: DEFAULT_LESSON_AGENT_POLICY.checkerTimeoutMs, ...withMaterial },
             sink,

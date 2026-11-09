@@ -90,7 +90,7 @@ function resolveInput(deps: LessonBaselineDeps, input: LessonPoolAgentRunInput):
 
 /**
  * Wejście paczki: pola promptu z `buildPoolInput` na kopii celu z jednym typem (księga reguł tego
- * typu), bez sekcji `lesson` i `checks` księgi (opisują limity, ujawnienia i kontrole agenta).
+ * typu).
  */
 export function packetInput(args: {
   readonly subject: SubjectModule;
@@ -115,7 +115,7 @@ export function packetInput(args: {
     avoidSentences: args.avoidSentences,
   });
   return {
-    pool: { ...pool, exerciseTypes: types, ruleBook: { ...pool.ruleBook, lesson: [], checks: [] } },
+    pool: { ...pool, exerciseTypes: types },
     objective: { id: single.id, title: single.titlePl, cards: single.cards.map((card) => ({ title: card.title, body: card.body })) },
     type: args.type,
     count: args.count,
@@ -198,7 +198,7 @@ export async function runLessonBaselinePool(
     const objectives = agentObjectivesOf(topic);
     const counts = objectiveBatchCounts(input.poolSize, topic.objectives.length, subject);
     // Stan startowy jak u agenta: `fixed` (szkic albo zagadnienia z punktu kontrolnego), przykłady, źródła ujawnień,
-    // limity zapisu (`lessonAgentLimits`; `maxExercises` nie działa — przyjmowanie nie woła kroku limitów).
+    // limity zagadnień (`lessonAgentLimits`).
     const start = poolStartState({ subject, topic, objectives, input });
     const { ctx, addMode, promptTargets } = start;
     const avoidSentences = lessonAvoidSentences(subject, topic, start.state);
@@ -257,7 +257,7 @@ export async function runLessonBaselinePool(
             continue;
           }
           // Oczyszczenie przedmiotu (np. stałe polecenie tłumaczenia) przed walidacją, jak przy przyjmowaniu agenta.
-          const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
+          const draft = subject.sanitize?.(parsed.draft, { material: input.material }).draft ?? parsed.draft;
           if (draft.exerciseType !== packet.type && draft.exerciseType !== packet.companion) {
             reject(objectiveId, draft.exerciseType, "shape", "shape_type");
             continue;
@@ -309,7 +309,7 @@ export async function runLessonBaselinePool(
         try {
           checked = await callModel(checkerSlots, () =>
             deps.checker.checkClosed(
-              { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.agentPolicy.checkerNeedsMaterial ? { material: input.material } : {}) },
+              { contract, items, timeoutMs: policy.checkerTimeoutMs, ...(subject.checkerNeedsMaterial ? { material: input.material } : {}) },
               sink,
               runDeadline.signal,
             ),

@@ -243,7 +243,7 @@ export function rawShapeIssues(raw: unknown): LessonRuleIssue[] {
   return issues;
 }
 
-/** Zgłoszenie ćwiczenia innego zagadnienia niż to, nad którym pracuje podagent. */
+/** Zgłoszenie ćwiczenia innego zagadnienia niż to, którego dotyczy paczka. */
 export function foreignObjectiveIssues(objectiveId: string, expected: string): LessonRuleIssue[] {
   if (objectiveId === expected) return [];
   return [shapeIssue("shape.objective_id", {

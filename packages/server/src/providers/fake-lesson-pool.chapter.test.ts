@@ -28,7 +28,7 @@ describe("fakePacketExercises for the chapter", () => {
         for (const raw of exercises) {
           const parsed = parseLessonRecord(raw, objective.id, subject, null);
           if (!parsed.ok) throw new Error(`${type}: ${parsed.rejection.code} ${parsed.rejection.ruleIds.join(",")}`);
-          const draft = subject.agentPolicy.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
+          const draft = subject.sanitize?.(parsed.draft, { material }).draft ?? parsed.draft;
           expect(validateLessonExerciseIssues(draft, subject, topic, { agent: true }).map((issue) => issue.rule)).toEqual([]);
           const views = closedCheckItems(draft, topic);
           if (views === null) continue;

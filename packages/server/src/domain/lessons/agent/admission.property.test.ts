@@ -55,7 +55,7 @@ const OPS_PER_SEED = 20;
 const SEEDS = Array.from({ length: 50 }, (_, index) => index + 1);
 /** Ziarna testu pokrycia kodów odrzuceń (podzbiór `SEEDS`). */
 const COVERAGE_SEEDS = SEEDS.slice(0, 10);
-const LIMITS: ObjectiveAgentLimits = { targetCount: 3, listenAllowance: 1, maxExercises: 5 };
+const LIMITS: ObjectiveAgentLimits = { targetCount: 3 };
 
 const SCHOOL_MATERIAL =
   "Mieszko I przyjął chrzest w 966 roku. Stolicą państwa było Gniezno. Żoną Mieszka była Dąbrówka. " +

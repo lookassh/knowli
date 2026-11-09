@@ -1,6 +1,6 @@
-import type { LessonExerciseType, SubjectAgentPolicy } from "../types";
+import type { LessonExerciseType } from "../types";
 
-/** Typy ćwiczeń `historyLikeSubject` (tu, żeby polityka nie importowała przedmiotu cyklicznie). */
+/** Typy ćwiczeń `historyLikeSubject`. */
 export const HISTORY_LIKE_EXERCISE_TYPES: readonly LessonExerciseType[] = [
   "lesson_card",
   "lesson_choice",
@@ -8,19 +8,3 @@ export const HISTORY_LIKE_EXERCISE_TYPES: readonly LessonExerciseType[] = [
   "lesson_gap",
   "lesson_open_answer",
 ];
-
-/**
- * Wspólna polityka agenta dla przedmiotu testowego `historyLikeSubject`:
- * wszystkie jego typy do ślepego rozwiązania i sprawdzania wariantów, bez
- * kontroli modelem w szkole.
- */
-export const testAgentPolicy: SubjectAgentPolicy = {
-  blindSolveTypes: HISTORY_LIKE_EXERCISE_TYPES,
-  variantCheckTypes: HISTORY_LIKE_EXERCISE_TYPES,
-  hintJudgeTypes: [],
-  openAnswerCheckTypes: [],
-  checkerNeedsMaterial: false,
-  independentReserve: 1,
-  slack: 2,
-  ruleNotes: { "lesson.leak": "leak victim", "lesson.leak_source": "leak source" },
-};

@@ -3,8 +3,7 @@ import type { RuleCatalog } from "./catalog";
 /**
  * Katalog reguł lekcji (spec katalogu reguł §2.2): reguły całej puli
  * (`validatePoolIssues`) i ujawnienia odpowiedzi (`agent/admission.ts`, krok
- * reguł lekcji walidacji puli). Przedmiot dopisuje do opisów własne zdania przez
- * `SubjectAgentPolicy.ruleNotes`.
+ * reguł lekcji walidacji puli). Kod sprawdza je po paczce; do księgi reguł paczki nie trafiają.
  *
  * Bez importu wartości z `./catalog` (cykl przez `ENGINE_CATALOGS`): katalog
  * deklaruje się przez `satisfies RuleCatalog`, a id sprawdza `defineRules`

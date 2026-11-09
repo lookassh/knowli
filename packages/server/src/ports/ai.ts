@@ -60,7 +60,7 @@ export interface LlmPromptProfileInput {
   readonly interestsRule?: string;
 }
 
-/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (liczby z `targets` kierownika agenta). */
+/** Ile ćwiczeń danego etapu wygenerować dla jednego celu (cele etapów paczki przebiegu bazowego). */
 export interface LlmLessonStageCounts {
   readonly guided: number;
   readonly productive: number;
@@ -77,7 +77,7 @@ export interface LessonPoolInput {
   readonly exerciseTypes: readonly string[];
   /** Przekształcenia dostępne w temacie (dla `lesson_transform`). */
   readonly transforms: readonly LlmLessonTransformInput[];
-  /** Cele wejścia — w wejściu podagenta dokładnie jeden (jego zagadnienie). */
+  /** Cele wejścia — w wejściu paczki dokładnie jeden (jej zagadnienie). */
   readonly objectives: readonly LlmLessonObjectiveInput[];
   readonly material: string;
   readonly instruction?: string;
@@ -146,8 +146,6 @@ export interface LessonRuleBookTypeBlock {
 export interface LessonRuleBookInput {
   readonly general: readonly LessonRuleBookLine[];
   readonly types: readonly LessonRuleBookTypeBlock[];
-  readonly lesson: readonly LessonRuleBookLine[];
-  readonly checks: readonly LessonRuleBookLine[];
 }
 
 /**
@@ -229,7 +227,7 @@ export interface ClosedCheckInput {
   readonly contract: "choice" | "order";
   readonly items: readonly { readonly view: string }[];
   readonly timeoutMs: number;
-  /** Materiał lekcji — tylko przedmiot z `agentPolicy.checkerNeedsMaterial` (szkoła, etap 5b §5.2). */
+  /** Materiał lekcji — tylko przedmiot z `SubjectModule.checkerNeedsMaterial` (szkoła, etap 5b §5.2). */
   readonly material?: string;
 }
 
