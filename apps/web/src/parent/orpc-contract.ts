@@ -550,7 +550,7 @@ export const parentApiContract = {
 
   /**
    * Źródła (materiał źródłowy rodzica): wklejony tekst rozdziału, z którego
-   * powstają lekcje. Wyłącznie Parent API — źródeł nie ma w Kid API ani w MCP.
+   * powstają lekcje. Parent API; agent czyta i zapisuje źródła narzędziami MCP tokenu `materials:write`, źródeł nie ma w Kid API.
    */
   sources: {
     list: oc

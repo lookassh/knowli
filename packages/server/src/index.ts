@@ -28,7 +28,6 @@ export {
   INTEGRATION_SCOPES,
   isIntegrationScope,
   issueIntegrationToken,
-  LESSONS_WRITE_SCOPE,
   listIntegrationTokens,
   revokeIntegrationToken,
 } from "./modules/family";
@@ -70,8 +69,23 @@ export {
   regenerateLessonStory,
 } from "./modules/materials";
 export {
+  archiveMaterial,
+  createSource,
+  createVocabularyDeck,
+  editVocabularyDeck,
+  getSource,
+  getVocabularyDeck,
+  listMaterials,
+  listSources,
+  omitIllustration,
+  publishMaterial,
+  regenerateRecording,
+  updateSource,
+} from "./modules/materials";
+export {
   createAuthoredLesson,
   getAuthoredLesson,
+  appendAuthoredLesson,
   lessonAuthoringCatalog,
   replaceAuthoredLesson,
   validateAuthoredLesson,

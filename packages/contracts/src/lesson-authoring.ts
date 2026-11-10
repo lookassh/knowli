@@ -4,8 +4,8 @@ import { CoverageGapDtoSchema, LessonExerciseInputSchema, LessonExerciseTypeSche
 
 /**
  * Lekcje pisane przez agenta (narzędzia MCP z zakresem `lessons:write`): wejścia i wyjścia
- * narzędzi `lesson_catalog`, `lesson_validate`, `lesson_draft_create`, `lesson_draft_get`
- * i `lesson_draft_replace`. Wyjścia to osobne DTO z listą dozwolonych pól: bez danych dzieci,
+ * narzędzi `lesson_catalog`, `lesson_validate`, `lesson_draft_create`, `lesson_draft_get`,
+ * `lesson_draft_replace` i `lesson_draft_append`. Wyjścia to osobne DTO z listą dozwolonych pól: bez danych dzieci,
  * tematów zdań (`interests`), przypisań, kosztów, kodów runów i modelu oceniającego.
  */
 
@@ -13,7 +13,7 @@ import { CoverageGapDtoSchema, LessonExerciseInputSchema, LessonExerciseTypeSche
 export const LESSON_AUTHORING_MAX_EXERCISES = 150;
 /** Limit ciała żądania MCP tokenu `lessons:write`. */
 export const LESSON_AUTHORING_MAX_REQUEST_BYTES = 512 * 1024;
-/** Zapisy (`lesson_draft_create`, `lesson_draft_replace`) na token na godzinę. */
+/** Zapisy (`lesson_draft_create`, `lesson_draft_replace`, `lesson_draft_append`) na token na godzinę. */
 export const LESSON_AUTHORING_WRITES_PER_HOUR = 10;
 export const LESSON_AUTHORING_MAX_TITLE_LENGTH = 120;
 
@@ -24,11 +24,20 @@ const ObjectiveIdsSchema = z.array(z.string().min(1)).min(1).refine(
 /** Przykłady kart: zagadnienie → zdania wstawiane w miejsce `{{examples}}` karty. */
 const ExamplesSchema = z.record(z.string().min(1), z.array(z.string().min(1).max(200)).max(20));
 const ExercisesSchema = z.array(LessonExerciseInputSchema).min(1).max(LESSON_AUTHORING_MAX_EXERCISES);
+/** Nowe zadania bez `id`. */
+const NewExercisesSchema = z.array(LessonExerciseInputSchema.omit({ id: true }).strict()).min(1).max(LESSON_AUTHORING_MAX_EXERCISES);
 const TitleSchema = z.string().trim().min(1).max(LESSON_AUTHORING_MAX_TITLE_LENGTH);
 
+/**
+ * Temat katalogowy (`subjectId` + `topicId`) albo istniejąca lekcja (`deckId`): wtedy zasady tematu
+ * przypiętego w lekcji, także złożonego z materiału rodzica, zawężone do jej zagadnień.
+ */
 export const LessonCatalogInputSchema = z.object({
-  subjectId: z.string().min(1),
-  topicId: z.string().min(1),
+  subjectId: z.string().min(1).optional(),
+  topicId: z.string().min(1).optional(),
+  deckId: UuidSchema.optional(),
+  /** Tylko te zagadnienia w odpowiedzi (księga reguł jest per zagadnienie i bywa duża); brak = wszystkie. */
+  objectiveIds: ObjectiveIdsSchema.optional(),
 }).strict();
 export type LessonCatalogInput = z.infer<typeof LessonCatalogInputSchema>;
 
@@ -43,8 +52,7 @@ export const LessonDraftCreateInputSchema = z.object({
   title: TitleSchema.optional(),
   examples: ExamplesSchema,
   story: LessonStorySchema.optional(),
-  /** Nowe zadania bez `id`. */
-  exercises: z.array(LessonExerciseInputSchema.omit({ id: true }).strict()).min(1).max(LESSON_AUTHORING_MAX_EXERCISES),
+  exercises: NewExercisesSchema,
 }).strict();
 export type LessonDraftCreateInput = z.infer<typeof LessonDraftCreateInputSchema>;
 
@@ -53,7 +61,8 @@ export type LessonDraftCreateInput = z.infer<typeof LessonDraftCreateInputSchema
  * (jak utworzenie). Z `deckId` temat, zagadnienia, materiał, przykłady i historyjka pochodzą
  * z zestawu (szkic albo wersja opublikowana), a podane `examples`/`story` je zastępują jak w poprawce.
  * `title` jest przyjmowany i pomijany (wejście może być kopią utworzenia albo poprawki); `story: null`
- * = walidacja bez historyjki.
+ * = walidacja bez historyjki. `append: true` (tylko z `deckId`): `exercises` to nowe zadania bez `id`
+ * dopisywane na koniec zapisanej puli, a indeksy wyniku dotyczą całej puli po dopisaniu (`firstNewIndex`).
  */
 export const LessonValidateInputSchema = z.object({
   deckId: UuidSchema.optional(),
@@ -64,6 +73,7 @@ export const LessonValidateInputSchema = z.object({
   examples: ExamplesSchema.optional(),
   story: LessonStorySchema.nullable().optional(),
   title: TitleSchema.optional(),
+  append: z.boolean().optional(),
   exercises: ExercisesSchema,
 }).strict();
 export type LessonValidateInput = z.infer<typeof LessonValidateInputSchema>;
@@ -85,6 +95,17 @@ export const LessonDraftReplaceInputSchema = z.object({
   title: TitleSchema.optional(),
 }).strict();
 export type LessonDraftReplaceInput = z.infer<typeof LessonDraftReplaceInputSchema>;
+
+/**
+ * Dopisanie nowych zadań (bez `id`) na koniec puli bez odsyłania reszty; zapisane zadania zachowują `id`
+ * i historię. Walidowana jest cała pula po dopisaniu. Bez szkicu `expectedEditNumber` dotyczy wersji opublikowanej.
+ */
+export const LessonDraftAppendInputSchema = z.object({
+  deckId: UuidSchema,
+  expectedEditNumber: z.number().int().positive(),
+  exercises: NewExercisesSchema,
+}).strict();
+export type LessonDraftAppendInput = z.infer<typeof LessonDraftAppendInputSchema>;
 
 /** Złamana reguła zadania (z `LessonRuleIssue`): id reguły, pole, co znaleziono (po angielsku), komunikat rodzica. */
 export const AuthoringIssueSchema = z.object({
@@ -121,6 +142,8 @@ export const LessonValidateResultSchema = z.object({
   exposureLeaks: z.array(AuthoringExposureLeakSchema),
   /** Błędy historyjki (po polsku); pusta lista = poprawna albo brak historyjki. */
   story: z.array(z.string()),
+  /** Tylko przy `append: true`: indeks pierwszego nowego zadania w puli po dopisaniu. */
+  firstNewIndex: z.number().int().nonnegative().optional(),
 }).strict();
 export type LessonValidateResult = z.infer<typeof LessonValidateResultSchema>;
 
@@ -132,6 +155,12 @@ export const LessonDraftWriteResultSchema = z.object({
   exposureLeaks: z.array(AuthoringExposureLeakSchema),
 }).strict();
 export type LessonDraftWriteResult = z.infer<typeof LessonDraftWriteResultSchema>;
+
+/** Wynik dopisania: `exerciseIds` to `id` nowych zadań w kolejności wejścia. */
+export const LessonDraftAppendResultSchema = LessonDraftWriteResultSchema.extend({
+  exerciseIds: z.array(UuidSchema).min(1),
+}).strict();
+export type LessonDraftAppendResult = z.infer<typeof LessonDraftAppendResultSchema>;
 
 /** Stan zestawu: szkic, a bez szkicu wersja opublikowana (`status: published`). */
 export const LessonAuthoringDraftDtoSchema = z.object({
@@ -145,6 +174,17 @@ export const LessonAuthoringDraftDtoSchema = z.object({
   topicId: z.string().min(1),
   topicVersion: z.number().int().positive(),
   objectiveIds: z.array(z.string().min(1)),
+  /** Nazwa przedmiotu nadana przez rodzica (lekcje z materiału). */
+  subjectTitlePl: z.string().optional(),
+  /** Zagadnienia lekcji w kolejności `objectiveIds`: nazwy, karty widoczne dla dziecka i typy zadań dozwolone w zagadnieniu. */
+  objectives: z.array(z.object({
+    id: z.string().min(1),
+    titlePl: z.string(),
+    cards: z.array(z.object({ title: z.string(), body: z.string() }).strict()),
+    exerciseTypes: z.array(LessonExerciseTypeSchema),
+  }).strict()),
+  /** Materiał lekcji (tekst rodzica albo materiał podany przy utworzeniu): źródło cytatów `sourceRefs`. */
+  material: z.string(),
   examples: z.record(z.string(), z.array(z.string())),
   story: LessonStorySchema.optional(),
   exercises: z.array(LessonExerciseInputSchema.extend({ id: UuidSchema }).strict()),

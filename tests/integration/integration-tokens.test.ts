@@ -56,7 +56,7 @@ describe("read-only integration tokens", () => {
     const { services } = buildTestServices();
     const id = randomUUID();
     const secret = secretFor(id);
-    // Token pisania lekcji nie czyta postępów (jeden zakres na token, migracja 0041).
+    // Token pisania lekcji nie czyta postępów, dopóki właściciel nie doda mu zakresu `learning:read`.
     await issueIntegrationToken(services, "Lesson authoring", secret, "lessons:write");
     await expect(requireLearningReadToken(services.db, secret)).rejects.toMatchObject({
       code: "forbidden",

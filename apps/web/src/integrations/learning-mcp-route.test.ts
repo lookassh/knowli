@@ -3,6 +3,7 @@ import { AppError, type IntegrationPrincipal } from "@learning/server";
 import sampleOverview from "../../../../docs/superpowers/specs/2026-10-11-hermes-learning-overview.example.json";
 import { handleLearningMcpRequest, type LearningMcpDependencies } from "./learning-mcp-route";
 import { IntegrationReadLimiter } from "./integration-read-limiter";
+import { LESSON_AUTHORING_TOOLS, type LessonAuthoringOperations } from "./lesson-authoring-mcp-tools";
 
 const principal: IntegrationPrincipal = { id: "token-a", scopes: ["learning:read"] };
 const writer: IntegrationPrincipal = { id: "token-w", scopes: ["lessons:write"] };
@@ -137,10 +138,41 @@ describe("Streamable HTTP MCP boundary", () => {
     const author = makeDeps({ authenticate: vi.fn(async () => writer) });
     const writeTools = await (await handleLearningMcpRequest(post(rpc("tools/list")), author)).json();
     expect(writeTools.result.tools.map(({ name }: { name: string }) => name).sort())
-      .toEqual(["lesson_catalog", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
+      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
     const forbiddenRead = await handleLearningMcpRequest(post(rpc("tools/call", 1, { name: "umiem_get_learning_overview", arguments: {} })), author);
     expect(forbiddenRead.status).toBe(403);
     expect(author.readOverview).not.toHaveBeenCalled();
+  });
+
+  it("materials:write edits but cannot publish or archive; materials:publish only lists, publishes and archives", async () => {
+    const names = async (deps: LearningMcpDependencies) =>
+      (await (await handleLearningMcpRequest(post(rpc("tools/list")), deps)).json()).result.tools.map(({ name }: { name: string }) => name).sort();
+    const status = async (deps: LearningMcpDependencies, name: string) =>
+      (await handleLearningMcpRequest(post(rpc("tools/call", 1, { name, arguments: {} })), deps)).status;
+
+    const editor = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["materials:write"] })) });
+    expect(await names(editor)).toEqual([
+      "deck_draft_create", "deck_draft_edit", "deck_get", "illustration_omit", "lesson_catalog", "lesson_draft_append", "lesson_draft_create",
+      "lesson_draft_get", "lesson_draft_replace", "lesson_validate", "material_list", "recording_regenerate", "source_create", "source_get",
+      "source_list", "source_update",
+    ]);
+    for (const tool of ["material_publish", "material_archive", "umiem_get_learning_overview"]) expect(await status(editor, tool)).toBe(403);
+
+    const publisher = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["materials:publish"] })) });
+    expect(await names(publisher)).toEqual(["material_archive", "material_list", "material_publish"]);
+    for (const tool of ["deck_draft_edit", "deck_get", "lesson_draft_get", "lesson_draft_append", "source_get", "umiem_get_learning_overview"]) {
+      expect(await status(publisher, tool)).toBe(403);
+    }
+
+    const author = makeDeps({ authenticate: vi.fn(async () => writer) });
+    for (const tool of ["deck_draft_edit", "material_list", "source_update", "recording_regenerate", "material_publish"]) expect(await status(author, tool)).toBe(403);
+
+    // Kilka zakresów w jednym tokenie: suma narzędzi, bez powtórzeń.
+    const combined = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["learning:read", "materials:write", "materials:publish"] })) });
+    const all = await names(combined);
+    expect(all).toHaveLength(19);
+    expect(new Set(all).size).toBe(19);
+    expect(all).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "material_list", "material_publish", "deck_draft_edit"]));
   });
 
   it("limits lesson writes per token per hour separately from dry runs and accepts larger bodies only for lessons:write", async () => {
@@ -175,7 +207,7 @@ describe("Streamable HTTP MCP boundary", () => {
     const author = makeDeps({
       authenticate: vi.fn(async () => writer),
       writeLimiter: new IntegrationReadLimiter(1, 3_600_000),
-      lessonAuthoring: () => ({ catalog: vi.fn(), validate: vi.fn(), get: vi.fn(), create, replace }),
+      lessonAuthoring: () => ({ ...Object.fromEntries(Object.keys(LESSON_AUTHORING_TOOLS).map((key) => [key, vi.fn()])), create, replace }) as unknown as LessonAuthoringOperations,
     });
     const createCall = rpc("tools/call", 1, { name: "lesson_draft_create", arguments: {
       clientRequestId: requestId, subjectId: "english_grammar", topicId: "present_continuous",
