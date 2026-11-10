@@ -4,6 +4,8 @@ import {
   LessonAuthoringDraftDtoSchema,
   LessonCatalogDtoSchema,
   LessonCatalogInputSchema,
+  LessonDraftAppendInputSchema,
+  LessonDraftAppendResultSchema,
   LessonDraftCreateInputSchema,
   LessonDraftGetInputSchema,
   LessonDraftReplaceInputSchema,
@@ -21,10 +23,11 @@ export const LESSON_AUTHORING_TOOLS = {
   create: "lesson_draft_create",
   get: "lesson_draft_get",
   replace: "lesson_draft_replace",
+  append: "lesson_draft_append",
 } as const;
 export const LESSON_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set(Object.values(LESSON_AUTHORING_TOOLS));
 /** Zapisy zlecające płatne nagrania TTS: osobny limit na godzinę. */
-export const LESSON_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([LESSON_AUTHORING_TOOLS.create, LESSON_AUTHORING_TOOLS.replace]);
+export const LESSON_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([LESSON_AUTHORING_TOOLS.create, LESSON_AUTHORING_TOOLS.replace, LESSON_AUTHORING_TOOLS.append]);
 
 type Operation = (input: unknown) => Promise<unknown>;
 export type LessonAuthoringOperations = Record<keyof typeof LESSON_AUTHORING_TOOLS, Operation>;
@@ -76,6 +79,7 @@ const INPUT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   [LESSON_AUTHORING_TOOLS.create]: LessonDraftCreateInputSchema,
   [LESSON_AUTHORING_TOOLS.get]: LessonDraftGetInputSchema,
   [LESSON_AUTHORING_TOOLS.replace]: LessonDraftReplaceInputSchema,
+  [LESSON_AUTHORING_TOOLS.append]: LessonDraftAppendInputSchema,
 };
 
 /**
@@ -120,11 +124,11 @@ export function createLessonAuthoringMcpServer(operations: LessonAuthoringOperat
   const server = new McpServer(LEARNING_MCP_SERVER_INFO);
   const t = LESSON_AUTHORING_TOOLS;
   register(server, t.catalog, {
-    description: "Rules for writing an Umiem! lesson of a catalog topic: objectives with cards, allowed exercise types and the same rule book, prompt profile, stages, ordering and limits the lesson generator uses. Call it first.",
+    description: "Rules for writing an Umiem! lesson: objectives with cards, allowed exercise types and the same rule book, prompt profile, stages, ordering and limits the lesson generator uses. Pass subjectId and topicId for a catalog topic, or deckId for an existing lesson (also one built from the parent's material, such as a school lesson). objectiveIds limits the answer to those objectives: the rule book is repeated per objective and is large. Call it first.",
     inputSchema: LessonCatalogInputSchema, outputSchema: LessonCatalogDtoSchema, readOnly: true, idempotent: true,
   }, operations.catalog, requestId);
   register(server, t.validate, {
-    description: "Dry-run validation of a lesson (new, or with deckId against an existing lesson): per-exercise rule issues by array index, story errors, coverage gaps and exposure leaks including card sentences. Saves nothing and orders no recordings.",
+    description: "Dry-run validation of a lesson (new, or with deckId against an existing lesson): per-exercise rule issues by array index and field, story errors, coverage gaps and exposure leaks including card sentences. With deckId and append: true the exercises are new ones checked together with the stored pool; indexes then point into the pool after the append (firstNewIndex). Saves nothing and orders no recordings.",
     inputSchema: LessonValidateInputSchema, outputSchema: LessonValidateResultSchema, readOnly: true, idempotent: true,
   }, operations.validate, requestId);
   register(server, t.create, {
@@ -132,12 +136,16 @@ export function createLessonAuthoringMcpServer(operations: LessonAuthoringOperat
     inputSchema: LessonDraftCreateInputSchema, outputSchema: LessonDraftWriteResultSchema, readOnly: false, idempotent: true,
   }, operations.create, requestId);
   register(server, t.get, {
-    description: "Read a lesson: its draft, or the published version when there is no draft. Exercise ids are needed to keep a child's history in lesson_draft_replace.",
+    description: "Read a lesson: its draft, or the published version when there is no draft. Returns the objectives (id, title, cards, allowed exercise types), the lesson material that sourceRefs quotes must come from, and every exercise in full (key, variants, criteria, sources), ready to send back unchanged. Exercise ids are needed to keep a child's history in lesson_draft_replace.",
     inputSchema: LessonDraftGetInputSchema, outputSchema: LessonAuthoringDraftDtoSchema, readOnly: true, idempotent: true,
   }, operations.get, requestId);
   register(server, t.replace, {
     description: "Replace all exercises of a lesson draft (also of a published lesson: a new draft is copied in the same transaction). Keep id from lesson_draft_get for existing exercises; an exercise without id is new and has no history. Fails with conflict on a stale expectedEditNumber or an exercise generation run in progress (a story generation run does not block). Orders paid TTS recordings.",
     inputSchema: LessonDraftReplaceInputSchema, outputSchema: LessonDraftWriteResultSchema, readOnly: false, idempotent: false, destructive: true,
   }, operations.replace, requestId);
+  register(server, t.append, {
+    description: "Add new exercises (without id) at the end of a lesson's pool without sending the rest (also to a published lesson: a new draft is copied in the same transaction). Stored exercises keep their ids and history; the whole pool is validated after the append and nothing is saved on any error. Returns the new exercise ids. Fails with conflict on a stale expectedEditNumber or an exercise generation run in progress. Orders paid TTS recordings: validate with append: true first.",
+    inputSchema: LessonDraftAppendInputSchema, outputSchema: LessonDraftAppendResultSchema, readOnly: false, idempotent: false,
+  }, operations.append, requestId);
   return server;
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   AppError,
+  appendAuthoredLesson,
   authenticateIntegrationToken,
   createAuthoredLesson,
   getAuthoredLesson,
@@ -202,11 +203,12 @@ export function createLearningMcpDependencies(services: Services, allowedOrigins
     authenticate: (rawToken) => authenticateIntegrationToken(services.db, rawToken),
     readOverview: (query, rawToken) => getLearningOverview(services, query, rawToken),
     lessonAuthoring: (rawToken) => ({
-      catalog: async (input) => lessonAuthoringCatalog(services, input),
+      catalog: (input) => lessonAuthoringCatalog(services, rawToken, input),
       validate: (input) => validateAuthoredLesson(services, rawToken, input),
       create: (input) => createAuthoredLesson(services, rawToken, input),
       get: (input) => getAuthoredLesson(services, rawToken, input),
       replace: (input) => replaceAuthoredLesson(services, rawToken, input),
+      append: (input) => appendAuthoredLesson(services, rawToken, input),
     }),
     limiter: learningOverviewLimiter,
     writeLimiter: lessonWriteLimiter,

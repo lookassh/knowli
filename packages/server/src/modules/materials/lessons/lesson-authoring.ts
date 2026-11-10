@@ -5,6 +5,7 @@ import {
   LESSON_AUTHORING_MAX_REQUEST_BYTES,
   LESSON_AUTHORING_WRITES_PER_HOUR,
   LessonCatalogInputSchema,
+  LessonDraftAppendInputSchema,
   LessonDraftCreateInputSchema,
   LessonDraftGetInputSchema,
   LessonDraftReplaceInputSchema,
@@ -13,14 +14,16 @@ import {
   type CoverageGapDto,
   type LessonAuthoringDraftDto,
   type LessonCatalogDto,
+  type LessonDraftAppendResult,
   type LessonDraftDto,
+  type LessonDraftReplaceInput,
   type LessonDraftWriteResult,
   type LessonExerciseInput,
   type LessonValidateResult,
 } from "@learning/contracts";
 import type { Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
-import { deckVersions, decks, generationRuns, itemRevisions } from "../../../db/schema";
+import { deckVersions, decks, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
 import { LESSONS_WRITE_SCOPE, requireIntegrationScope } from "../../family";
 import { EXAMPLES_PLACEHOLDER } from "../../../domain/lessons/card";
@@ -32,7 +35,7 @@ import { materialCreationMode } from "../../../domain/lessons/material-creation"
 import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rules/rule-book";
 import { outsideStagePath, STAGE_BY_TYPE } from "../../../domain/lessons/stages";
 import { LESSON_STORY_LIMITS, solvedSentencesOf, validateLessonStory, type LessonStory } from "../../../domain/lessons/story";
-import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import type { LearningObjective, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { lessonPoolRunFilter } from "../generation-runs";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
@@ -50,7 +53,9 @@ import {
 
 /**
  * Lekcje pisane przez agenta (narzędzia MCP, token `lessons:write`, `docs/architecture.md` §19.18):
- * katalog zasad pisania, walidacja na sucho, szkic bez generatora, odczyt i poprawka szkicu.
+ * katalog zasad pisania, walidacja na sucho, szkic bez generatora, odczyt, poprawka i dopisanie zadań.
+ * Utworzenie od zera tylko dla przedmiotów katalogowych; istniejącą lekcję (także z materiału rodzica,
+ * z tematem z `lesson_context.dynamicTopic`) narzędzia czytają, walidują i zapisują po `deckId`.
  * Walidacja odpowiada generatorowi: reguły puli (`lessonPoolIssues`), pokrycie i ujawnienia z kartami
  * (`cardExposureSources`), historyjka. Zapisy w jednej transakcji z ponownym sprawdzeniem tokenu,
  * zapisem i uzgodnieniem mediów; publikację, przypisania i generowanie robi wyłącznie rodzic.
@@ -80,7 +85,7 @@ function invalid(message: string, details?: unknown): AppError {
   return new AppError("validation", { message, ...(details === undefined ? {} : { details }) });
 }
 
-/** Tylko przedmioty z katalogu tematów; przedmioty z materiału rodzica → `validation`. */
+/** Utworzenie od zera: tylko przedmioty z katalogu tematów; przedmioty z materiału rodzica → `validation`. */
 function catalogSubject(services: Services, subjectId: string): SubjectModule {
   const subject = requireSubject(services, subjectId);
   if (materialCreationMode(subject) !== undefined) throw invalid(`subject builds lessons from parent material: ${subjectId}`);
@@ -101,8 +106,24 @@ function scopedTopic(topic: LessonTopic, objectiveIds: readonly string[]): Lesso
   return { ...topic, objectives: objectiveIds.map((id) => topic.objectives.find((objective) => objective.id === id)!) };
 }
 
-/** Sprawdzenia strukturalne wejścia (przed regułami zadań): przykłady kart, historyjka, `id` zadań. */
-function assertLessonInput(lesson: AuthoredLesson, knownExerciseIds: ReadonlySet<string>): void {
+/**
+ * Sprawdzenia strukturalne wejścia (przed regułami zadań): przykłady kart, historyjka, `id` zadań
+ * i flaga `parentAdded` cytatu. Flaga wyłącza sprawdzenie cytatu w materiale, więc agent może ją
+ * tylko zachować na cytacie zapisanego zadania, który już ją ma (nadaje ją rodzic w panelu).
+ */
+function assertLessonInput(lesson: AuthoredLesson, stored: readonly StoredExercise[]): void {
+  const knownExerciseIds = new Set(stored.map((exercise) => exercise.id));
+  const parentQuotes = new Map(stored.map((exercise) => [
+    exercise.id,
+    new Set((exercise.sourceRefs ?? []).filter((ref) => ref.parentAdded === true).map((ref) => ref.quote)),
+  ]));
+  const forged = lesson.exercises.flatMap((exercise, index) =>
+    (exercise.sourceRefs ?? []).some((ref) => ref.parentAdded === true && !(exercise.id !== undefined && parentQuotes.get(exercise.id)?.has(ref.quote)))
+      ? [index]
+      : []);
+  if (forged.length > 0) {
+    throw invalid("sourceRefs[].parentAdded marks a quote the parent added in the panel; keep it only on a stored quote that already has it", { parentAdded: forged });
+  }
   const missing = lesson.topic.objectives
     .filter((objective) => objective.cards.some((card) => card.body.includes(EXAMPLES_PLACEHOLDER)))
     .filter((objective) => (lesson.examples[objective.id] ?? []).length === 0)
@@ -202,10 +223,30 @@ async function currentVersionId(db: Executor, deck: { id: string; publishedVersi
   return id;
 }
 
-/** Przedmiot katalogowy i temat zawężony do zagadnień zapisanej wersji. */
+/** Przedmiot i temat przypięte w wersji (katalogowy albo złożony z materiału rodzica), zawężone do jej zagadnień. */
 function versionLesson(services: Services, context: ReturnType<typeof readLessonContext>) {
-  const subject = catalogSubject(services, context.subjectId);
+  const subject = requireSubject(services, context.subjectId);
   return { subject, topic: scopedTopic(requireTopic(services, context), context.objectiveIds) };
+}
+
+/** Bieżąca wersja aktywnej lekcji (szkic, a bez szkicu opublikowana) z kontekstem. */
+async function currentVersion(db: Executor, deckId: string) {
+  const versionId = await currentVersionId(db, await authorableDeck(db, deckId));
+  const version = (await db.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
+  return { versionId, context: readLessonContext(version.lessonContext) };
+}
+
+type StoredExercise = LessonAuthoringDraftDto["exercises"][number];
+
+/** Zapisane zadania wersji w kolejności puli, w kształcie wejścia narzędzi. */
+async function storedExercises(db: Executor, services: Services, versionId: string): Promise<StoredExercise[]> {
+  return (await readLessonDraftDto(db, services, versionId)).exercises.map(authoringExercise);
+}
+
+/** Typy zadań puli dozwolone w zagadnieniu: jak `buildPoolInput`, wybór ze słuchu tylko tam, gdzie przedmiot nagrywa zdania; karta nie jest zadaniem puli. */
+function authorableTypes(subject: SubjectModule, objective: LearningObjective) {
+  const listenChoice = listenChoiceAvailable(subject, objective);
+  return { listenChoice, types: objective.exerciseTypes.filter((type) => type !== "lesson_card" && (listenChoice || type !== "lesson_listen_choice")) };
 }
 
 /** Pokrycie i ujawnienia zapisanej wersji (indeksy = kolejność `exercises` w `lesson_draft_get`). */
@@ -218,11 +259,28 @@ function writeResult(services: Services, dto: LessonDraftDto): LessonDraftWriteR
   return { deckId: dto.deckId, draftId: dto.id, editNumber: dto.editNumber, ...draftFindings(services, dto) };
 }
 
-/** Katalog zasad pisania tematu: te same opisy reguł, profil promptu i limity, które dostaje generator paczek. */
-export function lessonAuthoringCatalog(services: Services, input: unknown): LessonCatalogDto {
-  const { subjectId, topicId } = LessonCatalogInputSchema.parse(input);
-  const subject = catalogSubject(services, subjectId);
-  const topic = latestTopic(services, subject, topicId);
+/**
+ * Katalog zasad pisania: te same opisy reguł, profil promptu i limity, które dostaje generator paczek.
+ * Dla tematu katalogowego (`subjectId` + `topicId`) albo istniejącej lekcji (`deckId`): temat przypięty
+ * w jej wersji, także złożony z materiału rodzica, zawężony do jej zagadnień.
+ */
+export async function lessonAuthoringCatalog(services: Services, rawToken: string, input: unknown): Promise<LessonCatalogDto> {
+  const { subjectId, topicId, deckId, objectiveIds } = LessonCatalogInputSchema.parse(input);
+  const only = (topic: LessonTopic) => (objectiveIds === undefined ? topic : scopedTopic(topic, objectiveIds));
+  if (deckId === undefined) {
+    if (subjectId === undefined || topicId === undefined) throw invalid("subjectId and topicId, or deckId, are required");
+    const subject = catalogSubject(services, subjectId);
+    return catalogDto(subject, only(latestTopic(services, subject, topicId)));
+  }
+  if (subjectId !== undefined || topicId !== undefined) throw invalid("with deckId leave subjectId and topicId out");
+  return services.db.transaction(async (tx) => {
+    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+    const { subject, topic } = versionLesson(services, (await currentVersion(tx, deckId)).context);
+    return catalogDto(subject, only(topic));
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
+
+function catalogDto(subject: SubjectModule, topic: LessonTopic): LessonCatalogDto {
   const { avoidSentencesMax: _generatorOnly, ...storyLimits } = LESSON_STORY_LIMITS;
   const typeRules = Object.entries(subject.prompts.typeRules ?? {}).filter((entry): entry is [string, string] => entry[1] !== undefined);
   return {
@@ -254,9 +312,7 @@ export function lessonAuthoringCatalog(services: Services, input: unknown): Less
       writesPerHour: LESSON_AUTHORING_WRITES_PER_HOUR,
     },
     objectives: topic.objectives.map((objective) => {
-      // Jak `buildPoolInput`: wybór ze słuchu tylko tam, gdzie przedmiot nagrywa zdania; karta nie jest zadaniem puli.
-      const listenChoice = listenChoiceAvailable(subject, objective);
-      const types = objective.exerciseTypes.filter((type) => type !== "lesson_card" && (listenChoice || type !== "lesson_listen_choice"));
+      const { listenChoice, types } = authorableTypes(subject, objective);
       const ruleBook = lessonRuleBook(subject, ruleBookContextFor(subject, topic.id, objective.id, types, listenChoice));
       return {
         id: objective.id,
@@ -293,21 +349,20 @@ export async function validateAuthoredLesson(services: Services, rawToken: strin
       ...(valid.story == null ? {} : { story: valid.story }),
       exercises: valid.exercises,
     };
-    assertLessonInput(lesson, new Set());
+    if (valid.append === true) throw invalid("append needs deckId");
+    assertLessonInput(lesson, []);
     return checkLesson(lesson);
   }
   const deckId = valid.deckId;
   return services.db.transaction(async (tx) => {
     await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
-    const versionId = await currentVersionId(tx, await authorableDeck(tx, deckId));
-    const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
-    const context = readLessonContext(version.lessonContext);
+    const { versionId, context } = await currentVersion(tx, deckId);
     if ((valid.subjectId !== undefined && valid.subjectId !== context.subjectId) ||
       (valid.topicId !== undefined && valid.topicId !== context.topicId) ||
       (valid.objectiveIds !== undefined && valid.objectiveIds.join("\n") !== context.objectiveIds.join("\n"))) {
       throw invalid("subjectId, topicId and objectiveIds must match the lesson; leave them out with deckId");
     }
-    const ids = await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, versionId));
+    const stored = await storedExercises(tx, services, versionId);
     const story = valid.story === undefined ? context.story : valid.story ?? undefined;
     const lesson: AuthoredLesson = {
       ...versionLesson(services, context),
@@ -315,10 +370,10 @@ export async function validateAuthoredLesson(services: Services, rawToken: strin
       material: context.material,
       examples: valid.examples ?? context.examples,
       ...(story === undefined ? {} : { story }),
-      exercises: valid.exercises,
+      exercises: valid.append === true ? appended(stored, valid.exercises) : valid.exercises,
     };
-    assertLessonInput(lesson, new Set(ids.map((row) => row.itemId)));
-    return checkLesson(lesson);
+    assertLessonInput(lesson, stored);
+    return { ...checkLesson(lesson), ...(valid.append === true ? { firstNewIndex: stored.length } : {}) };
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }
 
@@ -339,7 +394,7 @@ export async function createAuthoredLesson(services: Services, rawToken: string,
     ...(valid.story === undefined ? {} : { story: valid.story }),
     exercises: valid.exercises,
   };
-  assertLessonInput(lesson, new Set());
+  assertLessonInput(lesson, []);
   assertLessonValid(lesson);
   const deckId = valid.clientRequestId;
   const title = valid.title ?? lessonTitle(subject, topic);
@@ -381,12 +436,14 @@ export async function createAuthoredLesson(services: Services, rawToken: string,
   });
 }
 
-/** Stan zestawu dla agenta: szkic albo wersja opublikowana, bez danych dzieci, tematów zdań i mediów. */
+/** Stan zestawu dla agenta: szkic albo wersja opublikowana z zagadnieniami i materiałem, bez danych dzieci, tematów zdań i mediów. */
 export async function getAuthoredLesson(services: Services, rawToken: string, input: unknown): Promise<LessonAuthoringDraftDto> {
   const { deckId } = LessonDraftGetInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
     await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
-    const dto = await readLessonDraftDto(tx, services, await currentVersionId(tx, await authorableDeck(tx, deckId)));
+    const { versionId, context } = await currentVersion(tx, deckId);
+    const { subject, topic } = versionLesson(services, context);
+    const dto = await readLessonDraftDto(tx, services, versionId);
     return {
       deckId: dto.deckId,
       draftId: dto.id,
@@ -397,6 +454,14 @@ export async function getAuthoredLesson(services: Services, rawToken: string, in
       topicId: dto.topicId,
       topicVersion: dto.topicVersion,
       objectiveIds: dto.objectiveIds,
+      ...(context.subjectTitlePl === undefined ? {} : { subjectTitlePl: context.subjectTitlePl }),
+      objectives: topic.objectives.map((objective) => ({
+        id: objective.id,
+        titlePl: objective.titlePl,
+        cards: objective.cards.map((card) => ({ title: card.title, body: card.body })),
+        exerciseTypes: authorableTypes(subject, objective).types,
+      })),
+      material: context.material,
       examples: dto.examples,
       ...(dto.story === undefined ? {} : { story: dto.story }),
       exercises: dto.exercises.map(authoringExercise),
@@ -440,51 +505,76 @@ async function hasActiveLessonPoolRun(tx: Tx, versionId: string): Promise<boolea
   return row !== undefined;
 }
 
+/** Pula po dopisaniu: zapisane zadania z `id`, potem nowe; ponad limit zapisu → `validation`. */
+function appended(stored: readonly StoredExercise[], added: readonly LessonExerciseInput[]): LessonExerciseInput[] {
+  if (added.some((exercise) => exercise.id !== undefined)) throw invalid("appended exercises are new: leave id out");
+  if (stored.length + added.length > LESSON_AUTHORING_MAX_EXERCISES) {
+    throw invalid(`the lesson would have ${stored.length + added.length} exercises; the limit is ${LESSON_AUTHORING_MAX_EXERCISES}`);
+  }
+  return [...stored, ...added];
+}
+
+type ExercisesWrite = Omit<LessonDraftReplaceInput, "exercises"> & { exercises: LessonExerciseInput[] };
+
 /**
- * Poprawka szkicu pełną listą zadań. Bez szkicu: `expectedEditNumber` dotyczy wersji opublikowanej,
- * a kopia szkicu i edycja dzieją się w tej transakcji (błąd → brak szkicu).
+ * Zapis zadań szkicu w transakcji wołającego: pełna lista albo (`append`) dopisanie na koniec puli.
+ * Bez szkicu `expectedEditNumber` dotyczy wersji opublikowanej, a kopia szkicu i edycja dzieją się
+ * w tej transakcji (błąd → brak szkicu). Zwraca stan po zapisie i liczbę zadań sprzed zapisu.
  */
+async function writeExercisesTx(tx: Tx, services: Services, rawToken: string, valid: ExercisesWrite, append: boolean) {
+  await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+  const deck = await authorableDeck(tx, valid.deckId);
+  let versionId = await editableVersionId(tx, deck.id);
+  let expectedEditNumber = valid.expectedEditNumber;
+  if (versionId === undefined) {
+    if (!deck.publishedVersionId) throw new AppError("conflict");
+    const published = await lockVersion(tx, deck.publishedVersionId);
+    if (published.editNumber !== expectedEditNumber) throw new AppError("conflict");
+    versionId = await createVersionFromPublished(tx, deck.id, (innerTx, { source, newVersionId }) =>
+      copyRevisionsSkillsAssets(innerTx, { sourceVersionId: source.id, newVersionId, deckId: deck.id }),
+    );
+    expectedEditNumber = 1;
+  } else {
+    const version = await lockVersion(tx, versionId);
+    if (version.editNumber !== expectedEditNumber) throw new AppError("conflict");
+    if (await hasActiveLessonPoolRun(tx, versionId)) throw new AppError("conflict", { message: "an exercise generation run of this draft is in progress" });
+  }
+  const version = await lockVersion(tx, versionId);
+  const context = readLessonContext(version.lessonContext);
+  const stored = await storedExercises(tx, services, versionId);
+  const exercises = append ? appended(stored, valid.exercises) : valid.exercises;
+  const story = valid.story === undefined ? context.story : valid.story ?? undefined;
+  const lesson: AuthoredLesson = {
+    ...versionLesson(services, context),
+    objectiveIds: context.objectiveIds,
+    material: context.material,
+    examples: valid.examples ?? context.examples,
+    ...(story === undefined ? {} : { story }),
+    exercises,
+  };
+  assertLessonInput(lesson, stored);
+  assertLessonValid(lesson);
+  const dto = await editLessonDraftTx(tx, services, versionId, {
+    expectedEditNumber,
+    exercises,
+    ...(valid.examples === undefined ? {} : { examples: valid.examples }),
+    ...(valid.story === undefined ? {} : { story: valid.story }),
+    ...(valid.title === undefined ? {} : { title: valid.title }),
+  });
+  return { dto, storedCount: stored.length };
+}
+
+/** Poprawka szkicu pełną listą zadań: zadanie z `id` zachowuje element i historię, bez `id` jest nowe, pominięte znika. */
 export async function replaceAuthoredLesson(services: Services, rawToken: string, input: unknown): Promise<LessonDraftWriteResult> {
   const valid = LessonDraftReplaceInputSchema.parse(input);
+  return services.db.transaction(async (tx) => writeResult(services, (await writeExercisesTx(tx, services, rawToken, valid, false)).dto));
+}
+
+/** Dopisanie nowych zadań na koniec puli: zapisane zadania zachowują `id` i historię, walidowana jest cała pula. */
+export async function appendAuthoredLesson(services: Services, rawToken: string, input: unknown): Promise<LessonDraftAppendResult> {
+  const valid = LessonDraftAppendInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
-    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
-    const deck = await authorableDeck(tx, valid.deckId);
-    let versionId = await editableVersionId(tx, deck.id);
-    let expectedEditNumber = valid.expectedEditNumber;
-    if (versionId === undefined) {
-      if (!deck.publishedVersionId) throw new AppError("conflict");
-      const published = await lockVersion(tx, deck.publishedVersionId);
-      if (published.editNumber !== expectedEditNumber) throw new AppError("conflict");
-      versionId = await createVersionFromPublished(tx, deck.id, (innerTx, { source, newVersionId }) =>
-        copyRevisionsSkillsAssets(innerTx, { sourceVersionId: source.id, newVersionId, deckId: deck.id }),
-      );
-      expectedEditNumber = 1;
-    } else {
-      const version = await lockVersion(tx, versionId);
-      if (version.editNumber !== expectedEditNumber) throw new AppError("conflict");
-      if (await hasActiveLessonPoolRun(tx, versionId)) throw new AppError("conflict", { message: "an exercise generation run of this draft is in progress" });
-    }
-    const version = await lockVersion(tx, versionId);
-    const context = readLessonContext(version.lessonContext);
-    const ids = await tx.select({ itemId: itemRevisions.itemId }).from(itemRevisions).where(eq(itemRevisions.deckVersionId, versionId));
-    const story = valid.story === undefined ? context.story : valid.story ?? undefined;
-    const lesson: AuthoredLesson = {
-      ...versionLesson(services, context),
-      objectiveIds: context.objectiveIds,
-      material: context.material,
-      examples: valid.examples ?? context.examples,
-      ...(story === undefined ? {} : { story }),
-      exercises: valid.exercises,
-    };
-    assertLessonInput(lesson, new Set(ids.map((row) => row.itemId)));
-    assertLessonValid(lesson);
-    const dto = await editLessonDraftTx(tx, services, versionId, {
-      expectedEditNumber,
-      exercises: valid.exercises,
-      ...(valid.examples === undefined ? {} : { examples: valid.examples }),
-      ...(valid.story === undefined ? {} : { story: valid.story }),
-      ...(valid.title === undefined ? {} : { title: valid.title }),
-    });
-    return writeResult(services, dto);
+    const { dto, storedCount } = await writeExercisesTx(tx, services, rawToken, valid, true);
+    return { ...writeResult(services, dto), exerciseIds: dto.exercises.slice(storedCount).map((exercise) => exercise.id!) };
   });
 }

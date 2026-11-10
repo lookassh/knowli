@@ -14,7 +14,7 @@ export type { WorkerLimits } from "./generation-worker";
 export { enqueueDeckGeneration, executeGeneration, readGeneration, retryGeneration } from "./generation";
 export { buildPayload, payloadToItem, validateItems } from "./item-payload";
 export { createLessonDraftFromPublished, deckIdOfLessonVersion, editLessonDraft, lessonCatalog, publishLessonDraft, readLessonDeck } from "./lessons/lesson-api";
-export { createAuthoredLesson, getAuthoredLesson, lessonAuthoringCatalog, replaceAuthoredLesson, validateAuthoredLesson } from "./lessons/lesson-authoring";
+export { appendAuthoredLesson, createAuthoredLesson, getAuthoredLesson, lessonAuthoringCatalog, replaceAuthoredLesson, validateAuthoredLesson } from "./lessons/lesson-authoring";
 export { applyLessonExercises, createLesson, createLessonFromMaterial, createSchoolLesson, executeLessonGeneration, regenerateObjective, splitStages } from "./lessons/lesson-drafts";
 export { lessonCategoryLabels, lessonGraderInput, lessonInstructionOf, schoolCriteriaOf } from "./lessons/lesson-grader-input";
 export type { OpenAnswerFields } from "./lessons/lesson-grader-input";

@@ -72,6 +72,7 @@ export {
 export {
   createAuthoredLesson,
   getAuthoredLesson,
+  appendAuthoredLesson,
   lessonAuthoringCatalog,
   replaceAuthoredLesson,
   validateAuthoredLesson,

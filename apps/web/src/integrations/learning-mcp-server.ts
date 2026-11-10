@@ -7,7 +7,7 @@ export const LEARNING_MCP_TOOL = "umiem_get_learning_overview";
 type OverviewReader = (query: LearningOverviewQuery) => Promise<unknown>;
 
 /** Wspólne dla serwerów obu zakresów tokenu (odczyt postępów, pisanie lekcji). */
-export const LEARNING_MCP_SERVER_INFO = { name: "umiem-learning", version: "0.3.0" };
+export const LEARNING_MCP_SERVER_INFO = { name: "umiem-learning", version: "0.4.0" };
 
 /** Błąd narzędzia: `{code, message, retryable, requestId, details?}` w treści tekstowej z `isError`. */
 export function toolError(code: string, message: string, retryable: boolean, requestId: string, details?: unknown) {

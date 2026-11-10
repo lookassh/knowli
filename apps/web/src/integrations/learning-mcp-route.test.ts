@@ -137,7 +137,7 @@ describe("Streamable HTTP MCP boundary", () => {
     const author = makeDeps({ authenticate: vi.fn(async () => writer) });
     const writeTools = await (await handleLearningMcpRequest(post(rpc("tools/list")), author)).json();
     expect(writeTools.result.tools.map(({ name }: { name: string }) => name).sort())
-      .toEqual(["lesson_catalog", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
+      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
     const forbiddenRead = await handleLearningMcpRequest(post(rpc("tools/call", 1, { name: "umiem_get_learning_overview", arguments: {} })), author);
     expect(forbiddenRead.status).toBe(403);
     expect(author.readOverview).not.toHaveBeenCalled();
@@ -175,7 +175,7 @@ describe("Streamable HTTP MCP boundary", () => {
     const author = makeDeps({
       authenticate: vi.fn(async () => writer),
       writeLimiter: new IntegrationReadLimiter(1, 3_600_000),
-      lessonAuthoring: () => ({ catalog: vi.fn(), validate: vi.fn(), get: vi.fn(), create, replace }),
+      lessonAuthoring: () => ({ catalog: vi.fn(), validate: vi.fn(), get: vi.fn(), create, replace, append: vi.fn() }),
     });
     const createCall = rpc("tools/call", 1, { name: "lesson_draft_create", arguments: {
       clientRequestId: requestId, subjectId: "english_grammar", topicId: "present_continuous",
