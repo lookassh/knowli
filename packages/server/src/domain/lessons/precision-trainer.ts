@@ -14,7 +14,6 @@ export interface SchoolAssessmentDetails {
   readonly redundantFragments?: unknown;
   /** Fragmenty niezwiązane z pytaniem (werdykt v3). */
   readonly offTopicFragments?: unknown;
-  readonly formOk?: unknown;
   readonly matchedElementIds?: unknown;
   readonly missingElementIds?: unknown;
 }
@@ -36,7 +35,8 @@ export interface ShortenOfferInput {
 /**
  * Czy po tej odpowiedzi zaproponować skrócenie: wiedza poprawna, precyzja
  * rozwlekła lub nie na temat, a do usunięcia jest co najmniej jeden fragment
- * zbędny lub niezwiązany z pytaniem albo naruszona forma jednego zdania.
+ * zbędny lub niezwiązany z pytaniem. Sama naruszona forma jednego zdania nie
+ * wystarcza: dziecko nie miałoby zaznaczenia, co usunąć.
  * Tylko w treningu, z wywołaniem gradera na poprawkę i poza fazą obietnicy
  * końca sesji.
  */
@@ -45,7 +45,7 @@ export function shouldOfferShorten(input: ShortenOfferInput): boolean {
   if (input.graderCallsLeft < 1 || input.remainingWithThisTask <= SESSION_PROMISE_REMAINING) return false;
   const { knowledge, precision } = input.details;
   if (knowledge !== "correct" || (precision !== "verbose" && precision !== "unfocused")) return false;
-  return removableFragments(input.details).length > 0 || input.details.formOk === false;
+  return removableFragments(input.details).length > 0;
 }
 
 function stringList(value: unknown): string[] {

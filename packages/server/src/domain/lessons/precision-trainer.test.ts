@@ -14,8 +14,8 @@ describe("shouldOfferShorten", () => {
     expect(shouldOfferShorten({ ...offer, remainingWithThisTask: SESSION_PROMISE_REMAINING + 1 })).toBe(true);
   });
 
-  it("proponuje też przy naruszonej formie jednego zdania bez fragmentów", () => {
-    expect(shouldOfferShorten({ ...offer, details: { knowledge: "correct", precision: "verbose", formOk: false } })).toBe(true);
+  it("nie proponuje przy samej naruszonej formie jednego zdania: nie ma zaznaczenia, co usunąć (AC-17)", () => {
+    expect(shouldOfferShorten({ ...offer, details: { knowledge: "correct", precision: "verbose", formOk: false } as never })).toBe(false);
   });
 
   it.each([

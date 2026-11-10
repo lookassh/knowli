@@ -70,6 +70,8 @@ export function unchangedRevisionResult(revisionOf: RevisionOf | undefined, text
  * Ocena poprawki względem oryginału: zapisuje powiązanie, utracone elementy
  * wymagane (N07) i skrócenie. Utrata elementu daje wynik niezaliczony
  * z podpowiedzią bez treści elementu; wiedza z modelu zostaje w szczegółach.
+ * Podpowiedź wskazuje na obie wersje dziecka, które widok skracania nadal
+ * pokazuje nad panelem wyniku (oryginał i pole z poprawką).
  */
 export function withRevisionComparison<T extends GradeShape>(revisionOf: RevisionOf | undefined, childAnswer: string, result: T): T {
   if (!revisionOf || result.grade.outcome === "unevaluated") return result;
@@ -154,8 +156,10 @@ export async function offerShortenFollowUp(
   const publicPrompt = task.publicPrompt as { prompt?: unknown } | null;
   const question = typeof publicPrompt?.prompt === "string" ? publicPrompt.prompt : "";
   const fragments = removableFragments(details);
-  const segments = (fragments.length > 0 ? buildAnswerSegments(args.childAnswer, fragments.redundant, fragments.offTopic) : null)
-    ?? [{ text: args.childAnswer, state: "plain" as const }];
+  const segments = buildAnswerSegments(args.childAnswer, fragments.redundant, fragments.offTopic);
+  // Bez widocznego zaznaczenia nie ma czego skracać (np. werdykt z cache dla innego zapisu
+  // tej samej odpowiedzi): dziecko dostaje zwykłe „Świetnie!”.
+  if (segments === null || segments.every((segment) => segment.state === "plain")) return null;
   const prompt: TaskPrompt = {
     kind: "lesson_shorten",
     instructionPl: messages.kid.lessonShortenInstruction,
@@ -195,6 +199,6 @@ export async function offerShortenFollowUp(
   // Treść nie na temat ma własną podpowiedź; same zbędne informacje — „krócej” (design §9.2).
   return {
     kind: "lesson_precision_hint",
-    hintPl: fragments.offTopic.length > 0 ? messages.kid.lessonPrecisionHintOffTopic : messages.kid.lessonPrecisionHint,
+    hintPl: segments.some((segment) => segment.state === "offtopic") ? messages.kid.lessonPrecisionHintOffTopic : messages.kid.lessonPrecisionHint,
   };
 }

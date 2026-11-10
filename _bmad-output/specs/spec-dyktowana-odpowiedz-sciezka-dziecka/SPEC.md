@@ -36,7 +36,7 @@ Ból do usunięcia przed pierwszym użyciem. Lekcje szkolne pozwalają dziecku p
   - **success:** Każde wydane zadanie „Skróć odpowiedź” ma co najmniej jeden zaznaczony fragment; bez niego dziecko dostaje zwykłe „Świetnie!” i idzie dalej.
 - **CAP-6**
   - **intent:** Gdy przy skracaniu zginie ważna informacja, dziecko widzi, co się zmieniło.
-  - **success:** Feedback po takiej poprawce pokazuje obie wersje odpowiedzi dziecka; żaden komunikat nie odsyła do treści, której nie ma na ekranie.
+  - **success:** Ekran z feedbackiem po takiej poprawce pokazuje obie wersje odpowiedzi dziecka (widok skracania zostaje nad panelem wyniku); żaden komunikat nie odsyła do treści, której nie ma na ekranie.
 - **CAP-7**
   - **intent:** Sterowanie mikrofonem przy dyktowaniu odpowiedzi mówi o odpowiedzi i o tym, jak skończyć.
   - **success:** Przy dyktowaniu nie pojawia się „Nagraj”, „przytrzymaj” ani „powiedz słowo”; etykieta to „Powiedz odpowiedź”, a w trakcie nagrania widać, że drugie dotknięcie kończy.
