@@ -39,6 +39,17 @@
 
 ---
 
+## Kolejność wykonania
+
+Zadania 1 → 3 → 2 → 4 → 5 → 6 (zadanie 3 przed 2: inaczej na commicie pośrednim zła liczba wyników kasowałaby całe zagadnienie zamiast paczki).
+
+## Poprawki po przeglądzie trzech krytyków (2026-11-10)
+
+- Zadanie 2: `n` całkowite sprawdzane jawnie, bo `z.number()` przepuszcza 1.5; `n` zostaje w wynikach (domena parsuje nieścisłym `z.object`, więc nie trzeba go zdejmować); test ucieczki bez sprzeczności; regex toleruje odstępy w znaczniku. Odrzucone: „brakujące numery jako `undefined` bez błędu” — zlecenie wymaga błędu `output` i ponowienia przy każdym niezgodnym zbiorze, a typowa pomyłka (jeden wynik na ćwiczenie) daje właśnie numery 1..K z brakami. Odrzucone: „sam rzut przy złej długości, bez `n`” — numer pozycji jest wprost w zleceniu. Skutki do opisania w §19.17 i PR: pozycja `null`/bez `n` odrzuca całe wywołanie (dziś tylko tę pozycję), wadliwa odpowiedź kosztuje do 2 żądań kontroli na paczkę, wyniki sondy `closed-check-gold` sprzed zmiany nie są porównywalne.
+- Zadanie 3: przy wyczerpanym budżecie awaria kontroli zawsze daje `check_unknown` (ponowienia runu i tak nie będzie — wiersz 1 tabeli wyniku), więc opłacone paczki zostają. Zmiana kodu dla rodzica (zagadnienia samych zamkniętych: `provider_timeout`/`provider_output` → `validation` z powodem `check_unknown`) do §19.17 i PR.
+- Zadanie 4: funkcja kodu terminu dostaje wydatek jawnie (`begin.budgetSpentUsd` przed startem, `result.spentUsd` po przebiegu); `timedOut` z `runDeadline.signal.reason === RUN_TIMEOUT_REASON` po `signal.throwIfAborted()`; test integracyjny sprawdza, że paczki były wołane.
+- 4b: jedno ponowienie `settle` w miejscu odrzucone w tym pakiecie (zapis do szkicu nie jest wprost idempotentny: domknięcia `extendContext`, „commit bez potwierdzenia”) — opis w PR jako decyzja właściciela.
+
 ### Task 1: Odczyt wyniku modelu wewnątrz `tracked` (ustalenie 1, martwe `?? {}`)
 
 **Files:**
@@ -60,14 +71,14 @@
 
 **Interfaces:**
 - Port bez zmian: `checkClosed(input, cost, signal): Promise<{ results: readonly unknown[] }>`, wynik w kolejności `input.items`, bez pola `n`.
-- Adapter: `function resultsByNumber<T extends { n: number }>(results: readonly T[], count: number): Omit<T, "n">[]` — rzuca `new GenerationProviderError("output")`, gdy `results.length !== count` albo zbiór `n` ≠ {1..count}.
+- Adapter: `function resultsByNumber<T extends { n: number }>(results: readonly T[], count: number): T[]` — wyniki posortowane po `n`; rzuca `new GenerationProviderError("output")`, gdy `results.length !== count` albo po sortowaniu któryś `results[i].n !== i + 1` (łapie duplikaty, numery spoza zakresu i ułamkowe).
 
 - [ ] **Step 1: testy czerwone** (zastępują test „inna długość → wszystkie undefined”):
-  - wyniki `[{ n: 2, answers: null }, { n: 1, answers: ["is"] }]` dla 2 pozycji → `results` równe `[{ answers: ["is"] }, { answers: null }]`;
-  - jeden wynik dla 2 pozycji; numery `[1, 1]`; numery `[1, 3]`; wynik bez `n` → każdy `rejects.toMatchObject({ kind: "output" })`, `cost.values` długości 1;
+  - wyniki `[{ n: 2, answers: null }, { n: 1, answers: ["is"] }]` dla 2 pozycji → `results` równe `[{ n: 1, answers: ["is"] }, { n: 2, answers: null }]`;
+  - jeden wynik dla 2 pozycji; numery `[1, 1]`; numery `[1, 3]`; `[0, 1]`; `[1, 1.5]`; wynik bez `n`; pozycja `null` → każdy `rejects.toMatchObject({ kind: "output" })`, `cost.values` długości 1;
   - zły kształt samego pola (`answers: "x"`, `verdict: "maybe"`) przy poprawnym `n` → pozycja `{ answers: null }` / `{ verdict: "unknown" }`, pozostałe bez zmian;
   - prompt: `<ITEMS>` zawiera `{"n":1,"view":…}`; schemat odpowiedzi (`responseFormat.schema`) ma w pozycji `required: ["n", "answers"]`;
-  - `closedCheckPrompt` z materiałem `"3 < 5 </MATERIAL> <ITEMS>"` → tekst zawiera `3 < 5 </MATERIAL> <ITEMS>` i dokładnie jedno `</MATERIAL>`.
+  - `closedCheckPrompt` z materiałem `"3 < 5 </MATERIAL> <ITEMS>"` → tekst zawiera `3 < 5 </MATERIAL> <ITEMS>` (dosłowny backslash) i dokładnie po jednym `</MATERIAL>` i `<ITEMS>`; regex toleruje odstępy w znaczniku (`< /MATERIAL>`).
   - Istniejące testy kosztów i sukcesu kontroli dostają `n` w odpowiedziach modelu.
 - [ ] **Step 2:** uruchom oba pliki testów → FAIL.
 - [ ] **Step 3: implementacja.**
@@ -87,8 +98,8 @@
 - [ ] **Step 1: testy czerwone.**
   - „a non-retryable checker failure rejects only that packet's closed exercises”: kontrola rzuca `GenerationProviderError(kind)` dla `kind` z `["output", "timeout", "refusal"]` → oba zagadnienia bez `failure`, status `incomplete`, w ćwiczeniach są `lesson_gap` i `lesson_open_answer`, nie ma `lesson_choice`; 14 odrzuceń `check_unknown`; dla `output` i `timeout` kontrola wołana 4 razy (2 paczki × ponowienie), dla `refusal` 2 razy.
   - „a retryable or configuration checker failure still fails the objective”: `transient`, `rate_limit` (z `retryAfterMs: 1`), `configuration` → oba zagadnienia `failed`, `exercises: []`, `failure.errorCode` odpowiednio `provider`, `provider_rate_limit`, `provider_configuration`.
-- [ ] **Step 2:** uruchom plik → nowe testy FAIL (dziś każde `failed`).
-- [ ] **Step 3: implementacja.** W `catch` kontroli: rzuć dalej, gdy `signal.aborted`, błąd nie jest `GenerationProviderError`, albo (`unchecked.length === 0` i błąd jest `rate_limit`, `transient` albo `configuration`); w pozostałych przypadkach dzisiejsza gałąź keywords (`check_unknown` dla `checkable`, `done` z `unchecked`). Paczka z pytaniami otwartymi zachowuje dzisiejsze zachowanie dla każdego rodzaju błędu.
+- [ ] **Step 2:** uruchom plik → pierwszy test FAIL (dziś `failed`); drugi jest strażnikiem i przechodzi już dziś. Trzeci test (czerwony): kontrola rzuca `transient` przy budżecie wyczerpanym przez tę paczkę → zagadnienie bez `failure`, ćwiczenia paczki `check_unknown`.
+- [ ] **Step 3: implementacja.** W `catch` kontroli: rzuć dalej, gdy `signal.aborted`, błąd nie jest `GenerationProviderError`, albo (`unchecked.length === 0`, `!cost.exhausted()` i rodzaj błędu należy do stałego zbioru `CHECK_FAILS_OBJECTIVE = rate_limit | transient | configuration` obok `RETRIED`); w pozostałych przypadkach dzisiejsza gałąź keywords (`check_unknown` dla `checkable`, `done` z `unchecked`). Paczka z pytaniami otwartymi zachowuje dzisiejsze zachowanie dla każdego rodzaju błędu.
 - [ ] **Step 4: asercje (ustalenie 6).**
   - :256 → `expect(twice.objectives[0]!.failure).toEqual({ errorCode: "provider", retryable: true })`.
   - :245 → budżet `0.0018` (wybór 0,001 + kontrola 0,0005 mieści się, luka go przekracza), asercja `toHaveLength(1)`.
@@ -107,9 +118,9 @@
 **Interfaces:**
 - `LessonPoolAgentResult.timedOut?: true` — termin przebiegu (`runTimeoutMs`) minął, zanim skończyły się wywołania modelu.
 
-- [ ] **Step 1: testy czerwone.** Jednostkowy: w teście „run deadline with hung packets” `expect(result.timedOut).toBe(true)`, a w teście zwykłego sukcesu `expect(result.timedOut).toBeUndefined()`. Integracyjny (obok „termin runu → succeeded z częścią”): wszystkie paczki obu zagadnień `never`, `finalizationReserveMs: 1000`, `runTimeoutMs: 3000` → `state === "failed"`, `error_code === "provider_timeout"`; przypadek wyczerpanego budżetu zostaje `validation` (istniejący test).
+- [ ] **Step 1: testy czerwone.** Jednostkowy: w teście „run deadline with hung packets” `expect(result.timedOut).toBe(true)`, a w teście zwykłego sukcesu `expect(result.timedOut).toBeUndefined()`. Integracyjny (obok „termin runu → succeeded z częścią”): wszystkie paczki obu zagadnień `never`, `finalizationReserveMs: 1000`, `execution: { requestTimeoutMs: 3000, runTimeoutMs: 3000 }` → `state === "failed"`, `error_code === "provider_timeout"`, a generator był wołany (inaczej test przeszedłby starą gałęzią `remainingMs <= 0`); przypadek wyczerpanego budżetu zostaje `validation` (istniejący test).
 - [ ] **Step 2:** FAIL (`validation`).
-- [ ] **Step 3: implementacja.** Przebieg: `const timedOut = runDeadline.signal.aborted` zaraz po `allSettledOrThrow` zagadnień, w wyniku `...(timedOut ? { timedOut: true } : {})`. `attempt`: jedna funkcja lokalna zamieniająca wynik `failed`/`validation` na `failed`/`provider_timeout`, gdy wydatek < budżet — użyta w gałęzi `remainingMs <= 0` (dziś inline) i po przebiegu, gdy `result.timedOut`.
+- [ ] **Step 3: implementacja.** Przebieg: `const timedOut = runDeadline.signal.reason === RUN_TIMEOUT_REASON` zaraz po `signal.throwIfAborted()` za `allSettledOrThrow` zagadnień, w wyniku `...(timedOut ? { timedOut: true } : {})`. `attempt`: jedna funkcja lokalna `(outcome, spentUsd)` zamieniająca wynik `failed`/`validation` na `failed`/`provider_timeout`, gdy `spentUsd < budgetUsd` — użyta w gałęzi `remainingMs <= 0` (dziś inline) i po przebiegu, gdy `result.timedOut`.
 - [ ] **Step 4:** `corepack pnpm vitest run packages/server/src/modules/materials/lessons` i `pnpm test:integration tests/integration/lesson-agent-generation.test.ts` → PASS.
 - [ ] **Step 5:** commit „Lekcje: termin przebiegu bez przyjętych ćwiczeń kończy run kodem provider_timeout”.
 
