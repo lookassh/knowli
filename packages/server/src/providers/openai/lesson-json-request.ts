@@ -95,7 +95,8 @@ export async function postLessonJson(
     messages: [
       { role: "system", content: args.system },
       { role: "user", content: args.user },
-    ],  }));
+    ],
+  }));
   // jedno żądanie HTTP = jeden zapis; catch transportu zapisuje tylko, gdy odpowiedzi nie było
   let recorded = false;
   try {

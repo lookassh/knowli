@@ -11,6 +11,7 @@ import {
   generationGapsOf,
   lessonAgentRunInputFor,
   lessonAgentRunOutcome,
+  lessonOutcomeAfterDeadline,
   mergeAttemptIntoProgress,
   mergeGenerationGaps,
   outcomeObjectivesOf,
@@ -600,5 +601,20 @@ describe("unwrittenRejectionCodes", () => {
   it("odejmuje kody już zapisane w szkicu; zerowe różnice pomija", () => {
     expect(unwrittenRejectionCodes({ rejectionCodes: { a: 3, b: 2, c: 1 }, rejectionCodesWritten: { a: 3, b: 1 } })).toEqual({ b: 1, c: 1 });
     expect(unwrittenRejectionCodes({ rejectionCodes: { a: 2 } })).toEqual({ a: 2 });
+  });
+});
+
+describe("lessonOutcomeAfterDeadline", () => {
+  const validation = { kind: "failed", errorCode: "validation" } as const;
+
+  it("termin zastępuje tylko „nic nie przyjęto” przy niewyczerpanym budżecie", () => {
+    expect(lessonOutcomeAfterDeadline(validation, 0.4, 0.5)).toEqual({ kind: "failed", errorCode: "provider_timeout" });
+  });
+
+  it("wyczerpany budżet, kod dostawcy, zapis części i ponowienie zostają", () => {
+    expect(lessonOutcomeAfterDeadline(validation, 0.5, 0.5)).toBe(validation);
+    for (const outcome of [{ kind: "failed", errorCode: "provider_configuration" }, { kind: "finalize" }, { kind: "requeue", errorCode: "provider" }] as const) {
+      expect(lessonOutcomeAfterDeadline(outcome, 0, 0.5)).toBe(outcome);
+    }
   });
 });

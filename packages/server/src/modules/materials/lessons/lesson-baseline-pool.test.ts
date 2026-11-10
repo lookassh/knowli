@@ -242,7 +242,7 @@ describe("runLessonBaselinePool", () => {
     await run(refusal);
     expect(refusal.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(2);
     const spent = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new GenerationProviderError("transient") : undefined) });
-    // Budżet mieści pierwszą paczkę wyboru (0,001) z jej kontrolą (0,0005); paczka luk go przekracza i nie jest ponawiana.
+    // Po pierwszej paczce wyboru budżet jeszcze zostaje; nieudana paczka luk go przekracza, więc nie jest ponawiana.
     await run(spent, new FakeChecker(), {}, { runBudgetUsd: 0.0018, concurrency: 1 });
     expect(spent.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(1);
   });
@@ -379,7 +379,8 @@ describe("runLessonBaselinePool", () => {
     const checker = failingChecker(() => new GenerationProviderError("transient"), 1);
     const result = await run(new FakeGenerator(), checker, {}, { runBudgetUsd: 0.5 });
     expect(result.objectives.map((objective) => objective.failure)).toEqual([undefined, undefined]);
-    expect(result.rejections.filter((entry) => entry.code === "check_unknown").length).toBeGreaterThanOrEqual(7);
+    // Paczka wyboru pierwszego zagadnienia zawsze dochodzi do kontroli: jej 7 ćwiczeń odpada, zagadnienie zostaje.
+    expect(result.objectives[0]!.rejections.filter((entry) => entry.code === "check_unknown")).toHaveLength(7);
     expect(result.objectives.flatMap((objective) => objective.exercises).some((draft) => draft.exerciseType === "lesson_choice")).toBe(false);
   });
 

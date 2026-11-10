@@ -422,6 +422,7 @@ export async function runLessonBaselinePool(
     const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
     // Tutaj, nie przy zwrocie: termin, który minie dopiero w trakcie zapisów postępu, niczego nie przerwał.
+    // Termin tuż po ostatniej paczce też ustawia flagę — liczy się tylko przy zerze przyjętych ćwiczeń.
     const timedOut = runDeadline.signal.reason === RUN_TIMEOUT_REASON;
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka i krokiem reguł lekcji (`lessonRulesStep`)
