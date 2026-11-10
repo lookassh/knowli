@@ -1,0 +1,68 @@
+- id: "1"
+  title: Sonda mowy w zestawie kalibracyjnym gradera
+  description: >-
+    Zrealizuj CAP-1: dopisz przypadki mówione do zestawu kalibracyjnego i
+    rozszerz raport o grupę mówioną. Sprawdź AC-01–03; wynik pomiaru i
+    rozstrzygnięcie reguły decyzyjnej są wejściem story 2.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Bez zmian w prompcie i kodzie oceny. Przebieg na prawdziwym modelu tylko
+    po zgodzie właściciela (pnpm eval:school-grader nie ma limitu kosztu;
+    jedno wywołanie na przypadek). Przypadki wyłącznie fikcyjne, bez danych
+    dziecka. Wynik zapisz w folderze specu i pokaż właścicielowi przed story 2.
+- id: "2"
+  title: Tolerancja mowy w ocenie podyktowanej odpowiedzi
+  description: >-
+    Stan 2026-11-10: wstrzymane do odbioru rodzinnego; pomiar syntetyczny
+    nie wskazał problemu (speech-baseline.md), więc następne jest story 3.
+    Zrealizuj CAP-2 na podstawie pomiaru ze story 1: model wie, że odpowiedź
+    była mówiona, toleruje cechy mowy i nie dostaje wymogu jednego zdania dla
+    niepoprawionej dyktowanej odpowiedzi. Sprawdź AC-04–10, AC-32 i AC-34.
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Jeśli reguła decyzyjna ze story 1 nie wskazała problemu, zgłoś to i nie
+    zmieniaj promptu. Tolerancja tylko w prompcie, bez reguł językowych w
+    kodzie. Podnieś wersję promptu i rozdziel cache według sposobu
+    wprowadzenia (AC-32), w miarę możliwości bez migracji. Przeczytaj
+    docs/agents/lessons.md i docs/agents/providers-privacy.md; zaktualizuj
+    opis danych wysyłanych do gradera. Pomiar tym samym modelem i regułą co w
+    story 1.
+- id: "3"
+  title: Ocena wiedzy mimo wadliwych fragmentów i zachowany tekst po nieudanej ocenie
+  description: >-
+    Zrealizuj CAP-3 i CAP-4: wadliwy fragment zbędny lub nie na temat jest
+    pomijany zamiast unieważniać ocenę, a po „Nie udało się ocenić” tekst
+    zostaje w polu. Sprawdź AC-11–16 i AC-33.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Niezależne od stories 1–2; może iść przed nimi. Reguły wiedzy w walidacji
+    werdyktu zostają odrzucające (AC-13). useRetryReset używa wiele widoków:
+    zmień zachowanie tylko dla ponowienia po nieocenionej próbie.
+- id: "4"
+  title: Skracanie odpowiedzi bez ślepych zaułków
+  description: >-
+    Zrealizuj CAP-5 i CAP-6: krok skracania tylko z widocznym zaznaczeniem, a
+    po zgubieniu ważnej informacji feedback pokazuje obie wersje odpowiedzi
+    dziecka. Sprawdź AC-14 i AC-17–22.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Wymaga story 3 (AC-14). Feedback zawiera wyłącznie tekst dziecka (AC-21).
+    Przeczytaj docs/agents/kid-ui.md; zmiana layoutu wymaga testu geometrii.
+    Jeśli zmienia się Kid DTO, sprawdź wpływ na kontrakt API i uzasadnij brak
+    wpływu na MCP.
+- id: "5"
+  title: Mikrofon i stany dyktowania odpowiedzi
+  description: >-
+    Zrealizuj CAP-7, CAP-9 i CAP-10: teksty mikrofonu dla dyktowania,
+    komunikat po przerwanym nagraniu i tekst oczekiwania bez słowa
+    „nagranie”. Sprawdź AC-23–25, AC-29 i AC-30.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Wymaga story 3 (AC-15). Teksty ćwiczenia słówek bez zmian (AC-25). Po
+    story właściciel robi odbiór na tablecie — dopiero po decyzji z Open
+    Questions w SPEC.md.

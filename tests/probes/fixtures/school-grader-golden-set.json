@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Złoty zestaw ewaluacyjny gradera odpowiedzi otwartych przedmiotu szkolnego. Fikcyjne odpowiedzi dziecka; brak danych prawdziwych dzieci.",
   "gate": {
     "hardCategoriesMustPass": [
@@ -563,6 +563,166 @@
             "południk"
           ]
         }
+      }
+    },
+    {
+      "id": "S01",
+      "question": "fotosynteza",
+      "category": "mowa — wypełniacze",
+      "childAnswer": "Yyy no roślina robi sobie jedzenie, czyli cukier, no, z wody i gazu z powietrza, yyy, a pomaga jej w tym słońce.",
+      "input": "speech",
+      "pairOf": "G01",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S02",
+      "question": "fotosynteza",
+      "category": "mowa — restart zdania",
+      "childAnswer": "Fotosynteza to jest, to znaczy roślina bierze wodę i dwutlenek węgla i jak jest światło, to wytwarza z tego cukry.",
+      "input": "speech",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S03",
+      "question": "chrzest",
+      "category": "mowa — autokorekta faktu",
+      "childAnswer": "Żeby Polska dołączyła do chrześcijańskich krajów i żeby sąsiedzi nie mieli powodu jej atakować, że jest pogańska, a do tego jego władza była słabsza, nie, silniejsza.",
+      "input": "speech",
+      "pairOf": "G09",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S04",
+      "question": "poludnik",
+      "category": "mowa — autokorekta faktu",
+      "childAnswer": "Południk to taka umowna linia na Ziemi, która łączy wschód z zachodem, znaczy nie, biegun północny z południowym.",
+      "input": "speech",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S05",
+      "question": "chrzest",
+      "category": "mowa — przekręcona nazwa lub termin",
+      "childAnswer": "Mieszkał pierwszy przyjął chrzest, żeby wzmocnić władzę, wejść do chrześcijańskiej Europy i żeby sąsiedzi nie mieli pretekstu do wojny o nawracanie.",
+      "input": "speech",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S06",
+      "question": "fotosynteza",
+      "category": "mowa — dygresja nie na temat",
+      "childAnswer": "No roślina z wody i dwutlenku węgla przy świetle wytwarza cukry. A wczoraj grałem z bratem w piłkę i wygrałem trzy do jednego.",
+      "input": "speech",
+      "pairOf": "G25",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "verbose",
+        "missingElementIds": [],
+        "fragments": "offTopic",
+        "fragmentContains": "piłkę"
+      }
+    },
+    {
+      "id": "S07",
+      "question": "fotosynteza-jedno-zdanie",
+      "category": "mowa — kilka zdań z pauz",
+      "childAnswer": "Roślina bierze wodę. I dwutlenek węgla. I przy świetle robi z tego cukry.",
+      "input": "speech",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S08",
+      "question": "ssak-ptak",
+      "category": "mowa — powtórzenia",
+      "childAnswer": "Ssaki, ssaki karmią młode mlekiem i mają, mają sierść, a ptaki składają jaja i mają pióra.",
+      "input": "speech",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S09",
+      "question": "fotosynteza",
+      "category": "mowa — częściowa z wypełniaczami",
+      "childAnswer": "Yyy no roślina, yyy, bierze światło słoneczne i wodę.",
+      "input": "speech",
+      "pairOf": "G03",
+      "expected": {
+        "knowledge": "partial",
+        "precision": "concise",
+        "missingElementIds": [
+          "e1",
+          "e2"
+        ]
+      }
+    },
+    {
+      "id": "S10",
+      "question": "ssak-ptak",
+      "category": "mowa — błąd rzeczowy z wypełniaczami",
+      "childAnswer": "No to, yyy, ssaki składają jaja i mają pióra, a ptaki, no, karmią młode mlekiem i mają sierść.",
+      "input": "speech",
+      "pairOf": "G16",
+      "expected": {
+        "knowledge": "incorrect",
+        "precision": "concise",
+        "missingElementIds": [
+          "e1",
+          "e2",
+          "e3"
+        ]
+      }
+    },
+    {
+      "id": "S11",
+      "question": "fotosynteza",
+      "category": "mowa — przekręcona nazwa lub termin",
+      "childAnswer": "Roślina z wody i z dwóch tlenków węgla przy świetle wytwarza cukry.",
+      "input": "speech",
+      "disputed": true,
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "S12",
+      "question": "ssak-ptak",
+      "category": "mowa — słowa do otoczenia",
+      "childAnswer": "Ssaki karmią młode mlekiem i mają sierść, a ptaki składają jaja i mają pióra. Już, koniec.",
+      "input": "speech",
+      "disputed": true,
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
       }
     }
   ]
