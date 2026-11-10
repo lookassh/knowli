@@ -11,19 +11,20 @@
  * zgodność wymiaru wiedzy ≥ 90%, zgodność brakujących elementów ≥ 90%
  * (dla przypadków z oczekiwaną listą) i zero werdyktów odrzuconych przez
  * walidator. Precyzja i forma są raportowane, nie bramkują.
+ * Przypadki mówione (`input: "speech"`) są raportowane osobno i nie bramkują.
  * Zestaw zawiera wyłącznie fikcyjne odpowiedzi — brak danych dzieci.
  */
 import { readFileSync } from "node:fs";
 import { graderFromEnv } from "../packages/server/src/config";
 import { withConfigDefaults } from "../packages/server/src/config-defaults";
 import {
-  countSentences,
   validateSchoolVerdict,
   type SchoolVerdict,
 } from "../packages/server/src/domain/lessons/evaluate";
 import { schoolSubject } from "../packages/server/src/domain/lessons/subjects/school/module";
 import type { AnswerGraderProvider, GraderInput } from "../packages/server/src/ports/ai";
 import { FakeAnswerGrader } from "../packages/server/src/providers/fake";
+import { formOkForCase, groupReportLines, isUnneededShorten, type CaseOutcome } from "../tests/probes/school-grader-report";
 
 interface GoldenQuestion {
   prompt: string;
@@ -40,6 +41,9 @@ interface GoldenCase {
   id: string;
   question: string;
   category: string;
+  input?: "speech";
+  pairOf?: string;
+  disputed?: boolean;
   childAnswer: string;
   expected: {
     knowledge: string;
@@ -147,25 +151,36 @@ let confusionNegatives = 0;
 let fragmentsOk = 0;
 let fragmentsChecked = 0;
 const failures: string[] = [];
+const outcomes: CaseOutcome[] = [];
 
 for (const testCase of golden.cases) {
   const question = golden.questions[testCase.question]!;
   const input = inputFor(question, testCase.childAnswer);
+  const inputKind = testCase.input ?? "written";
+  const spoken = inputKind === "speech";
+  let raw: unknown;
   let verdict: SchoolVerdict | null = null;
   let providerError: string | null = null;
   try {
-    const raw = await provider.grade(input, AbortSignal.timeout(60_000));
+    raw = await provider.grade(input, AbortSignal.timeout(60_000));
     verdict = validateSchoolVerdict(raw, {
       requiredElementIds: question.requiredElements.map((el) => el.id),
       childAnswer: testCase.childAnswer,
-      formOk: question.expectedForm === "one_sentence" ? countSentences(testCase.childAnswer) <= 1 : null,
+      formOk: formOkForCase(question.expectedForm, inputKind, testCase.childAnswer),
     });
   } catch (error) {
     // Transport/provider failure (401, 429, timeout, network) — not a validator rejection.
     providerError = error instanceof Error ? error.message : String(error);
   }
   const hard = golden.gate.hardCategoriesMustPass.includes(testCase.category);
+  const base = { id: testCase.id, input: inputKind, pairOf: testCase.pairOf, disputed: testCase.disputed === true };
   if (verdict === null) {
+    outcomes.push({ ...base, status: providerError === null ? "rejected" : "provider_error", knowledgeMatch: null, precisionMatch: null, unneededShorten: false });
+    if (spoken) {
+      const reason = providerError === null ? `werdykt odrzucony przez walidator: ${JSON.stringify(raw)}` : `błąd dostawcy: ${providerError}`;
+      failures.push(`[MOWA] ${testCase.id} (${testCase.category}): ${reason}`);
+      continue;
+    }
     invalid += 1;
     const reason = providerError === null ? "werdykt odrzucony przez walidator" : `błąd dostawcy: ${providerError}`;
     failures.push(`${testCase.id} (${testCase.category})${hard ? " [TWARDA]" : ""}: ${reason} (oczekiwano wiedzy ${testCase.expected.knowledge})`);
@@ -173,6 +188,27 @@ for (const testCase of golden.cases) {
   }
   const knowledgeMatch = verdict.knowledge === testCase.expected.knowledge;
   const precisionMatch = verdict.precision === testCase.expected.precision;
+  const unneededShorten = isUnneededShorten(verdict, testCase.expected.precision);
+  outcomes.push({ ...base, status: "graded", knowledgeMatch, precisionMatch, unneededShorten });
+  if (spoken) {
+    const mismatches: string[] = [];
+    if (!knowledgeMatch) mismatches.push(`wiedza ${verdict.knowledge} ≠ ${testCase.expected.knowledge}`);
+    if (!precisionMatch) mismatches.push(`precyzja ${verdict.precision} ≠ ${testCase.expected.precision}`);
+    const expectedMissing = testCase.expected.missingElementIds;
+    if (expectedMissing !== undefined && !(verdict.missingElementIds.length === expectedMissing.length && verdict.missingElementIds.every((x) => expectedMissing.includes(x)))) {
+      mismatches.push(`brakujące elementy [${verdict.missingElementIds.join(",")}] ≠ [${expectedMissing.join(",")}]`);
+    }
+    if (testCase.expected.fragments !== undefined) {
+      const list = testCase.expected.fragments === "offTopic" ? verdict.offTopicFragments : verdict.redundantFragments;
+      const needle = testCase.expected.fragmentContains?.toLocaleLowerCase("pl-PL");
+      if (!list.some((fragment) => needle === undefined || fragment.toLocaleLowerCase("pl-PL").includes(needle))) {
+        mismatches.push(`brak fragmentu kategorii ${testCase.expected.fragments}`);
+      }
+    }
+    if (unneededShorten) mismatches.push("niepotrzebne skracanie");
+    if (mismatches.length > 0) failures.push(`[MOWA] ${testCase.id} (${testCase.category}): ${mismatches.join("; ")}`);
+    continue;
+  }
   if (knowledgeMatch) knowledgeOk += 1;
   if (precisionMatch) precisionOk += 1;
   if (!knowledgeMatch) {
@@ -218,12 +254,12 @@ for (const testCase of golden.cases) {
   }
   if (testCase.expected.formOk !== undefined) {
     formChecked += 1;
-    const actualFormOk = question.expectedForm === "one_sentence" ? countSentences(testCase.childAnswer) <= 1 : null;
+    const actualFormOk = formOkForCase(question.expectedForm, inputKind, testCase.childAnswer);
     if (actualFormOk === testCase.expected.formOk) formOkCount += 1;
   }
 }
 
-const total = golden.cases.length;
+const total = golden.cases.filter((c) => c.input === undefined).length;
 const accuracy = knowledgeOk / total;
 const missingAccuracy = missingChecked > 0 ? missingOk / missingChecked : 1;
 console.log(
@@ -231,6 +267,7 @@ console.log(
   `brakujaceElementyZgodne=${missingOk}/${missingChecked} formaZgodna=${formOkCount}/${formChecked} odrzucone=${invalid} ` +
   `pomylenieWykryte=${confusionDetected}/${confusionChecked} falszywePomylenie=${confusionFalsePositive}/${confusionNegatives} kategorieFragmentow=${fragmentsOk}/${fragmentsChecked}`,
 );
+for (const line of groupReportLines(outcomes)) console.log(line);
 for (const failure of failures) console.log(` - ${failure}`);
 
 if (useFake) {
