@@ -271,6 +271,39 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     expect((await pool.query("select state from learning_app.generation_runs where id = $1", [runId])).rows[0]).toEqual({ state: "queued" });
   });
 
+  it("run historyjki w toku nie blokuje dodania zadania i zostaje w kolejce; poprawka z historyjką go unieważnia", async () => {
+    const services = await world();
+    const client = await connect(services, await token(services, "lessons:write"));
+    const deckId = randomUUID();
+    const created = LessonDraftWriteResultSchema.parse((await call(client, "lesson_draft_create", { ...LESSON, clientRequestId: deckId })).structuredContent);
+    // Run historyjki zlecany po każdej udanej generacji lekcji (`input.purpose = "story"`):
+    // edycja ćwiczeń go nie przerywa, więc nie może blokować dodawania zadań przez MCP.
+    const storyRunId = randomUUID();
+    await pool.query(
+      `insert into learning_app.generation_runs (id, deck_version_id, expected_edit_number, kind, dedupe_key, state, input)
+       values ($1, $2, 1, 'lesson', $3, 'queued', '{"purpose":"story"}'::jsonb)`,
+      [storyRunId, created.draftId, `lesson-story:${storyRunId}`],
+    );
+    const draft = LessonAuthoringDraftDtoSchema.parse((await call(client, "lesson_draft_get", { deckId })).structuredContent);
+    const added = translation("Mama teraz śpiewa.", "Mum is singing now.", ["is", "singing"]);
+    const replaced = LessonDraftWriteResultSchema.parse((await call(client, "lesson_draft_replace", {
+      deckId, expectedEditNumber: draft.editNumber, exercises: [...draft.exercises, added],
+    })).structuredContent);
+    expect(replaced.editNumber).toBe(draft.editNumber + 1);
+    const after = LessonAuthoringDraftDtoSchema.parse((await call(client, "lesson_draft_get", { deckId })).structuredContent);
+    expect(after.exercises).toHaveLength(EXERCISES.length + 1);
+    expect(after.exercises.at(-1)?.answer).toBe("Mum is singing now.");
+    expect((await pool.query("select state from learning_app.generation_runs where id = $1", [storyRunId])).rows[0]).toEqual({ state: "queued" });
+
+    // Poprawka z polem `story` to świadomy wybór historyjki: run w toku zostaje unieważniony jak przy edycji rodzica.
+    const story = {
+      sentences: ["Sam has a red bike.", "He rides it to school.", "His sister walks.", "They meet at the park."],
+      questions: [{ id: "q1", question: "Jaki rower ma Sam?", options: [{ id: "a", text: "niebieski" }, { id: "b", text: "czerwony" }, { id: "c", text: "zielony" }], correctOption: "b" }],
+    };
+    await call(client, "lesson_draft_replace", { deckId, expectedEditNumber: replaced.editNumber, exercises: after.exercises, story });
+    expect((await pool.query("select state from learning_app.generation_runs where id = $1", [storyRunId])).rows[0]).toEqual({ state: "superseded" });
+  });
+
   it("zakresy: learning:read nie widzi narzędzi autorskich, lessons:write nie czyta postępów, zapis sprawdza token ponownie", async () => {
     const services = await world();
     const reader = await token(services, "learning:read");

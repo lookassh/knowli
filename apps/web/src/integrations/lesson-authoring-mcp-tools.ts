@@ -136,7 +136,7 @@ export function createLessonAuthoringMcpServer(operations: LessonAuthoringOperat
     inputSchema: LessonDraftGetInputSchema, outputSchema: LessonAuthoringDraftDtoSchema, readOnly: true, idempotent: true,
   }, operations.get, requestId);
   register(server, t.replace, {
-    description: "Replace all exercises of a lesson draft (also of a published lesson: a new draft is copied in the same transaction). Keep id from lesson_draft_get for existing exercises; an exercise without id is new and has no history. Fails with conflict on a stale expectedEditNumber or a generation run in progress. Orders paid TTS recordings.",
+    description: "Replace all exercises of a lesson draft (also of a published lesson: a new draft is copied in the same transaction). Keep id from lesson_draft_get for existing exercises; an exercise without id is new and has no history. Fails with conflict on a stale expectedEditNumber or an exercise generation run in progress (a story generation run does not block). Orders paid TTS recordings.",
     inputSchema: LessonDraftReplaceInputSchema, outputSchema: LessonDraftWriteResultSchema, readOnly: false, idempotent: false, destructive: true,
   }, operations.replace, requestId);
   return server;
