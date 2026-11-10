@@ -126,6 +126,12 @@ export function packetInput(args: {
 /** Błędy techniczne z jednym ponowieniem (spec etapu 2 §3.2); błąd konfiguracji i pozostałe — bez ponowienia. */
 const RETRIED: ReadonlySet<GenerationProviderErrorKind> = new Set(["rate_limit", "transient", "timeout", "output"]);
 
+/**
+ * Awarie kontroli zamkniętych, które kończą zagadnienie porażką: przejściowe (run wraca do kolejki) i błąd
+ * konfiguracji (ma być widoczny). Pozostałe odrzucają tylko ćwiczenia paczki (`check_unknown`).
+ */
+const CHECK_FAILS_OBJECTIVE: ReadonlySet<GenerationProviderErrorKind> = new Set(["rate_limit", "transient", "configuration"]);
+
 /** Czekanie przerywane sygnałem (zegar zdejmowany także przy przerwaniu). */
 function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -318,8 +324,11 @@ export async function runLessonBaselinePool(
             ),
           );
         } catch (error) {
-          if (signal.aborted || !(error instanceof GenerationProviderError) || unchecked.length === 0) throw error;
-          // Awaria kontroli opcjonalnych keywords nie zabiera paczce pytań otwartych (bez kontroli).
+          if (signal.aborted || !(error instanceof GenerationProviderError)) throw error;
+          // Paczka samych zamkniętych: awaria przejściowa albo konfiguracji to porażka zagadnienia, o ile budżet
+          // pozwala jeszcze na kolejną próbę runu (po wyczerpaniu budżetu ponowienia nie będzie).
+          if (unchecked.length === 0 && CHECK_FAILS_OBJECTIVE.has(error.kind) && !cost.exhausted()) throw error;
+          // Inna awaria kontroli odrzuca tylko ćwiczenia tej paczki; pytania otwarte (bez kontroli) i pozostałe paczki zostają.
           for (const { draft } of checkable) reject(objectiveId, draft.exerciseType, "blind", "check_unknown");
           return { kind: "done", drafts: unchecked, examples: generated.examples };
         }
@@ -412,6 +421,9 @@ export async function runLessonBaselinePool(
 
     const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
+    // Tutaj, nie przy zwrocie: termin, który minie dopiero w trakcie zapisów postępu, niczego nie przerwał.
+    // Termin tuż po ostatniej paczce też ustawia flagę — liczy się tylko przy zerze przyjętych ćwiczeń.
+    const timedOut = runDeadline.signal.reason === RUN_TIMEOUT_REASON;
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka i krokiem reguł lekcji (`lessonRulesStep`)
     // (kandydat odpada także, gdy czyni nową ofiarą inne ćwiczenie, również `fixed`).
@@ -488,7 +500,7 @@ export async function runLessonBaselinePool(
       await input.onObjectiveSettled?.(settled);
       signal.throwIfAborted();
     }
-    return { objectives: settledList, rejections, spentUsd: cost.spentUsd };
+    return { objectives: settledList, rejections, spentUsd: cost.spentUsd, ...(timedOut ? { timedOut: true as const } : {}) };
   } finally {
     runDeadline.dispose();
   }

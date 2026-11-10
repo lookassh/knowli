@@ -219,8 +219,9 @@ export interface LessonPacketGenerator {
 
 /**
  * Kontrola zadań zamkniętych (spec etapu 2 §2): widoki dziecka bez klucza i celu. Wynik per
- * pozycja jako `unknown` (schemat i porównanie w domenie, `closed-check.ts`); przy innej liczbie
- * wyników niż pozycji wszystkie `undefined`.
+ * pozycja, w kolejności `items`, jako `unknown` (schemat i porównanie w domenie, `closed-check.ts`;
+ * brak wyniku pozycji = „nie wiem”). Adapter, który nie umie przypisać wyników do pozycji (inna
+ * liczba albo numery wyników), rzuca `GenerationProviderError("output")` — nigdy nie zgaduje.
  */
 export interface ClosedCheckInput {
   readonly contract: "choice" | "order";

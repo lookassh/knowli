@@ -209,6 +209,14 @@ export function lessonAgentRunOutcome(args: {
 }
 
 /**
+ * Wynik próby, gdy zabrakło czasu runu (przed przebiegiem albo w jego trakcie): termin zastępuje tylko
+ * „nic nie przyjęto” (wiersz 7); wyczerpany budżet (wiersz 1) i wspólny kod dostawcy (wiersz 6) zostają.
+ */
+export function lessonOutcomeAfterDeadline(outcome: LessonAgentOutcome, spentUsd: number, budgetUsd: number): LessonAgentOutcome {
+  return outcome.kind === "failed" && outcome.errorCode === "validation" && spentUsd < budgetUsd ? { kind: "failed", errorCode: "provider_timeout" } : outcome;
+}
+
+/**
  * Zagadnienia postępu do `lessonAgentRunOutcome`: porażki tej próby z ponawialnością z wyniku, porażki
  * wcześniejszych prób (sam kod w punkcie kontrolnym) jako nieponawialne.
  */
