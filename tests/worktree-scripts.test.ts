@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -20,7 +20,7 @@ describe("worktree scripts", () => {
     writeFileSync(join(home, ".config", "umiem", ".env"), "KEY=master\n");
     mkdirSync(join(repo, "node_modules"), { recursive: true });
     writeFileSync(join(repo, "node_modules", ".keep"), ""); // istniejące node_modules: bez instalacji
-    writeFileSync(join(repo, ".gitignore"), ".env\n");
+    writeFileSync(join(repo, ".gitignore"), ".env\nbackups/\n");
     for (const file of ["setup-worktree.cjs", "clean-worktrees.cjs", "install-git-hooks.cjs", "hooks/post-checkout"]) {
       cpSync(resolve("scripts", file), join(repo, "scripts", file));
     }
@@ -29,19 +29,25 @@ describe("worktree scripts", () => {
     run("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
     run("node", ["scripts/install-git-hooks.cjs"]);
 
-    for (const name of ["merged", "dirty", "unmerged"]) run("git", ["worktree", "add", "-q", join(wts, name), "-b", name]);
+    for (const name of ["merged", "fresh", "backup", "dirty", "unmerged"]) run("git", ["worktree", "add", "-q", join(wts, name), "-b", name]);
     expect(readFileSync(join(wts, "merged", ".env"), "utf-8")).toBe("KEY=master\n");
 
     writeFileSync(join(wts, "dirty", "note.md"), "praca\n");
     writeFileSync(join(wts, "unmerged", "feature.txt"), "x\n");
     run("git", ["add", "feature.txt"], join(wts, "unmerged"));
     run("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feature"], join(wts, "unmerged"));
+    mkdirSync(join(wts, "backup", "backups"));
+    writeFileSync(join(wts, "backup", "backups", "db.sql"), "dump\n"); // ignorowany, ale nie do odtworzenia
     mkdirSync(join(wts, "orphan"));
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // "fresh" zostaje świeży
+    for (const name of ["merged", "backup"]) utimesSync(join(repo, ".git", "worktrees", name, "logs", "HEAD"), twoDaysAgo, twoDaysAgo);
 
     const report = run("node", ["scripts/clean-worktrees.cjs", "--remove"]);
 
     expect(existsSync(join(wts, "merged"))).toBe(false);
     expect(run("git", ["branch", "--list", "merged"]).trim()).toBe("");
+    expect(existsSync(join(wts, "fresh"))).toBe(true);
+    expect(existsSync(join(wts, "backup", "backups", "db.sql"))).toBe(true);
     expect(existsSync(join(wts, "dirty", "note.md"))).toBe(true);
     expect(existsSync(join(wts, "unmerged"))).toBe(true);
     expect(existsSync(join(wts, "orphan"))).toBe(false);

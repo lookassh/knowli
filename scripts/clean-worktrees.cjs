@@ -23,7 +23,12 @@ function git(args, cwd) {
   }
 }
 
-const isAncestor = (commit, of) => spawnSync('git', ['merge-base', '--is-ancestor', commit, of], { stdio: 'ignore' }).status === 0;
+/** Ignorowane ścieżki, które da się odtworzyć (zależności, buildy, wyniki testów, kopia .env). */
+const REGENERABLE = /(^|\/)(node_modules|\.next|dist|coverage|test-results|playwright-report|__pycache__)\/$|\.tsbuildinfo$|\.py[cod]$|^\.env$|^tests\/e2e\/\.(world|fake-hold)/;
+/** Świeży worktree (np. właśnie założony przez sesję) wygląda jak scalony — nie ruszamy go przez dobę. */
+const FRESH_MS = 24 * 60 * 60 * 1000;
+
+const isAncestor =(commit, of) => spawnSync('git', ['merge-base', '--is-ancestor', commit, of], { stdio: 'ignore' }).status === 0;
 const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
 function parseWorktrees() {
@@ -60,6 +65,15 @@ function classify(wt, ctx) {
   const dirty = git(['status', '--porcelain'], wt.path);
   if (dirty === null) return { removable: false, label: 'nie da się odczytać stanu' };
   if (dirty) return { removable: false, label: `niezapisane zmiany: ${dirty.split(/\r?\n/).length}` };
+  // `git status` nie pokazuje plików z .gitignore — chronimy wszystko poza odtwarzalnym (np. backups/, .superpowers/).
+  const ignored = (git(['status', '--porcelain', '--ignored'], wt.path) || '')
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('!! ') && !REGENERABLE.test(line.slice(3)));
+  if (ignored.length) return { removable: false, label: `pliki ignorowane do sprawdzenia: ${ignored.map((l) => l.slice(3)).slice(0, 3).join(', ')}` };
+  const gitDir = git(['rev-parse', '--absolute-git-dir'], wt.path);
+  const reflog = gitDir && path.join(gitDir, 'logs', 'HEAD');
+  const lastActivity = fs.statSync(reflog && fs.existsSync(reflog) ? reflog : wt.path).mtimeMs;
+  if (Date.now() - lastActivity < FRESH_MS) return { removable: false, label: 'aktywny w ostatnich 24 h, pomijam' };
   if (isAncestor(wt.head, ctx.mainRef)) return { removable: true, label: `czysty, scalony (w ${ctx.mainRef})` };
   if (ctx.prCommits === null) return { removable: false, label: 'nie ustalono scalenia (brak gh/remote)' };
   if (ctx.prCommits.has(wt.head)) return { removable: true, label: 'czysty, scalony (w scalonym PR)' };
