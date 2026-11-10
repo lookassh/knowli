@@ -5,7 +5,7 @@
  * Uruchomienie:
  *   corepack pnpm eval:school-grader            # prawdziwy model z .env (UMIEM_GRADER_*)
  *   corepack pnpm eval:school-grader -- --fake  # heurystyka fake (tylko sanity pipeline'u)
- *   corepack pnpm eval:school-grader -- --runs=3  # 3 przebiegi + reguła decyzyjna dla mowy (1–5)
+ *   corepack pnpm eval:school-grader -- --runs=3  # 3 przebiegi + reguła decyzyjna dla mowy (1 albo 3)
  *
  * Bramka (prawdziwy model): przypadki kategorii twardych (słowa kluczowe przy
  * błędnej zależności, istotny błąd rzeczowy) muszą dać wiedzę `incorrect`,
@@ -72,8 +72,9 @@ interface GoldenSet {
 
 const useFake = process.argv.includes("--fake");
 const runsArg = process.argv.find((a) => a.startsWith("--runs="))?.slice("--runs=".length) ?? "1";
-if (process.argv.includes("--runs") || !/^[1-5]$/.test(runsArg)) {
-  console.error("Nieprawidłowa wartość --runs: dozwolone liczby całkowite 1–5.");
+// Reguła decyzyjna działa tylko dla 3 przebiegów — inne liczby płaciłyby za pomiar bez rozstrzygnięcia.
+if (process.argv.includes("--runs") || !/^[13]$/.test(runsArg)) {
+  console.error("Nieprawidłowa wartość --runs: dozwolone 1 albo 3.");
   process.exit(2);
 }
 const runs = Number(runsArg);
@@ -190,7 +191,7 @@ async function evaluateOnce() {
         continue;
       }
       invalid += 1;
-      const reason = providerError === null ? "werdykt odrzucony przez walidator" : `błąd dostawcy: ${providerError}`;
+      const reason = providerError === null ? `werdykt odrzucony przez walidator: ${JSON.stringify(raw)}` : `błąd dostawcy: ${providerError}`;
       failures.push(`${testCase.id} (${testCase.category})${hard ? " [TWARDA]" : ""}: ${reason} (oczekiwano wiedzy ${testCase.expected.knowledge})`);
       continue;
     }

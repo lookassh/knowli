@@ -342,7 +342,7 @@ Expected: PASS, 11 testów.
 
 - [ ] **Step 5: Dodaj `--runs=N` do skryptu**
 
-- `--runs=N` (domyślnie 1, dozwolone 1–5; inna wartość kończy skrypt kodem 2 przed jakimkolwiek wywołaniem).
+- `--runs=N` (domyślnie 1, dozwolone 1 albo 3 — po przeglądzie końcowym zawężone z 1–5; inna wartość kończy skrypt kodem 2 przed jakimkolwiek wywołaniem).
 - Cały dotychczasowy przebieg (pętla, podsumowanie, wiersze grup, lista niezgodności) wykonuje się N razy; przed każdym wiersz `przebieg=i/N`.
 - Po ostatnim przebiegu wypisz wiersze `decisionLines`.
 - Bramka: OK tylko, gdy przeszła w każdym przebiegu; kod wyjścia jak dotąd. `--fake` nadal kończy się kodem 0.
