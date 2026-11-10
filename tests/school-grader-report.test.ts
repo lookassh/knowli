@@ -36,9 +36,11 @@ describe("groupReportLines", () => {
       outcome({ input: "speech", precisionMatch: false, unneededShorten: true }),
       outcome({ input: "speech", status: "rejected", knowledgeMatch: null, precisionMatch: null }),
       outcome({ input: "speech", status: "provider_error", knowledgeMatch: null, precisionMatch: null }),
+      outcome({ input: "speech", holdout: true, knowledgeMatch: false }),
     ])).toEqual([
       "pisane: przypadki=2 wiedzaZgodna=1 precyzjaZgodna=2 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0",
       "mówione: przypadki=3 wiedzaZgodna=1 precyzjaZgodna=0 odrzuconeWalidator=1 bladDostawcy=1 niepotrzebneSkracanie=1",
+      "mówione-nowe: przypadki=1 wiedzaZgodna=0 precyzjaZgodna=1 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0",
     ]);
   });
   it("prints a zero row for a group with no cases", () => {

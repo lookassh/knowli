@@ -5,7 +5,7 @@ Miejsca potwierdzone przeglądem z 2026-11-10 (ścieżki względem `packages/`).
 | CAP | Gdzie | Co jest dziś |
 | --- | --- | --- |
 | CAP-1 | `tests/probes/fixtures/school-grader-golden-set.json`, `scripts/evaluate-school-grader.mts:175-244` | 27 przypadków pisanych (po story 1 dodatkowo 12 mówionych); precyzja liczona, ale poza bramką; `scripts/` poza `pnpm typecheck` |
-| CAP-2 | `server/src/providers/openai-compatible/grader.ts:98-153` | Prompt i dane bez znacznika mowy; zawsze „Oczekiwana forma odpowiedzi” |
+| CAP-2 | `server/src/providers/openai-compatible/grader.ts:98-153` | (Stan sprzed story 2; dotyczy wszystkich wierszy CAP-2.) Prompt i dane bez znacznika mowy; zawsze „Oczekiwana forma odpowiedzi” |
 | CAP-2 | `server/src/modules/learning/lessons/lesson-attempts.ts:608`, `:842-851` | Kod już rozróżnia `speech` niepoprawioną i pomija dla niej liczenie zdań |
 | CAP-2 | `server/src/db/schema.ts:987` | Klucz cache: rewizja ćwiczenia + znormalizowana odpowiedź + wersja promptu, bez sposobu wprowadzenia |
 | CAP-3 | `server/src/domain/lessons/evaluate.ts:361-375`, `:441-465` | (Stan sprzed story 3.) Limit 4 fragmentów w schemacie Zod; fragment niedosłowny, duplikat lub nachodzenie kategorii zwraca `null`; `partial`/`incorrect` wymagają luki (`:452-455`) |

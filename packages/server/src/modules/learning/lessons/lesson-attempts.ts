@@ -477,10 +477,11 @@ export function buildGraderInput(
   key: LessonTaskAnswerKey,
   childAnswer: string,
   blocks?: readonly string[],
+  spoken = false,
 ): GraderInput {
   const { subject, topic, objective } = resolveObjective(services, key);
   const prompt = task.publicPrompt as { instructionPl?: string; stem?: string; statement?: string; prompt?: string; stemWithGap?: string } | null;
-  return lessonGraderInput({
+  const input = lessonGraderInput({
     subject,
     topic,
     objective: { descriptionEn: objective.descriptionEn, errorCategories: allowedCategoriesFor(services, key) },
@@ -492,6 +493,8 @@ export function buildGraderInput(
     schoolCriteria: key.schoolCriteria,
     answerText: childAnswer,
   });
+  // Niepoprawiona mowa: osobny wariant promptu i osobny wpis cache (wersja promptu w kluczu).
+  return spoken && input.school ? { ...input, school: { ...input.school, spoken: true } } : input;
 }
 
 /**
@@ -1374,7 +1377,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     const childAnswer = blocks ? blocks.join(" ") : (typed as Extract<AttemptInput, { modality: "text" }>).text;
     const normalizedAnswer = normalizedAnswerKey(childAnswer);
     // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
-    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks) : null;
+    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks, skipsFormCheck(started.answerSource)) : null;
     const promptVersion = services.grader
       ? (services.grader.provider.promptVersionForInput?.(earlyInput!) ?? services.grader.provider.promptVersion)
       : undefined;

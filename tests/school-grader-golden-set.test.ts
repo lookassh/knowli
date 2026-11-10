@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-interface Case { id: string; question: string; category: string; childAnswer: string; input?: string; pairOf?: string; disputed?: boolean; expected: { knowledge: string; precision: string } }
+interface Case { id: string; question: string; category: string; childAnswer: string; input?: string; pairOf?: string; disputed?: boolean; holdout?: boolean; expected: { knowledge: string; precision: string } }
 const golden = JSON.parse(readFileSync(new URL("./probes/fixtures/school-grader-golden-set.json", import.meta.url), "utf8")) as {
   gate: { hardCategoriesMustPass: string[] }; questions: Record<string, unknown>; cases: Case[];
 };
@@ -39,7 +39,12 @@ describe("school grader golden set — speech cases", () => {
       expect([undefined, "speech"]).toContain(c.input);
       expect([...c.childAnswer].length, c.id).toBeLessThanOrEqual(600);
     }
-    expect(written.every((c) => c.pairOf === undefined && c.disputed === undefined)).toBe(true);
+    expect(written.every((c) => c.pairOf === undefined && c.disputed === undefined && c.holdout === undefined)).toBe(true);
+  });
+  it("has at least 4 speech cases added after the speech prompt was frozen (AC-34)", () => {
+    const holdout = speech.filter((c) => c.holdout === true);
+    expect(holdout.length).toBeGreaterThanOrEqual(4);
+    expect(holdout.every((c) => c.category.startsWith("mowa — ") && c.disputed === undefined)).toBe(true);
   });
   it("keeps the 27 written cases and the gate untouched", () => {
     expect(written).toHaveLength(27);

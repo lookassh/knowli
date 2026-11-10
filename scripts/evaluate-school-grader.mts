@@ -45,6 +45,8 @@ interface GoldenCase {
   input?: "speech";
   pairOf?: string;
   disputed?: boolean;
+  /** Przypadek mówiony dopisany po zamrożeniu promptu mowy (AC-34). */
+  holdout?: boolean;
   childAnswer: string;
   expected: {
     knowledge: string;
@@ -111,10 +113,11 @@ if (useFake) {
     process.exit(2);
   }
   provider = deps.provider;
-  console.log(`arm=real model=${provider.model} promptVersion=${provider.promptVersionForInput?.({ school: {} } as GraderInput) ?? provider.promptVersion}`);
+  const version = (spoken: boolean) => provider.promptVersionForInput?.({ school: { spoken } } as GraderInput) ?? provider.promptVersion;
+  console.log(`arm=real model=${provider.model} promptVersion=${version(false)} promptVersionMowa=${version(true)}`);
 }
 
-function inputFor(question: GoldenQuestion, childAnswer: string): GraderInput {
+function inputFor(question: GoldenQuestion, childAnswer: string, spoken: boolean): GraderInput {
   return {
     subjectTitle: "Przedmiot szkolny",
     topicTitle: question.topicTitle ?? "Zagadnienie",
@@ -135,6 +138,8 @@ function inputFor(question: GoldenQuestion, childAnswer: string): GraderInput {
       commonErrors: question.commonErrors ?? [],
       expectedForm: question.expectedForm,
       sourceQuotes: question.sourceQuotes ?? [],
+      // Jak w aplikacji: niepoprawiona mowa dostaje wariant promptu dla mowy.
+      ...(spoken ? { spoken: true } : {}),
     },
   };
 }
@@ -164,9 +169,9 @@ async function evaluateOnce() {
 
   for (const testCase of golden.cases) {
     const question = golden.questions[testCase.question]!;
-    const input = inputFor(question, testCase.childAnswer);
     const inputKind = testCase.input ?? "written";
     const spoken = inputKind === "speech";
+    const input = inputFor(question, testCase.childAnswer, spoken);
     let raw: unknown;
     let verdict: SchoolVerdict | null = null;
     let providerError: string | null = null;
@@ -182,7 +187,7 @@ async function evaluateOnce() {
       providerError = error instanceof Error ? error.message : String(error);
     }
     const hard = golden.gate.hardCategoriesMustPass.includes(testCase.category);
-    const base = { id: testCase.id, input: inputKind, pairOf: testCase.pairOf, disputed: testCase.disputed === true };
+    const base = { id: testCase.id, input: inputKind, pairOf: testCase.pairOf, disputed: testCase.disputed === true, holdout: testCase.holdout === true };
     if (verdict === null) {
       outcomes.push({ ...base, status: providerError === null ? "rejected" : "provider_error", knowledgeMatch: null, precisionMatch: null, unneededShorten: false });
       if (spoken) {
