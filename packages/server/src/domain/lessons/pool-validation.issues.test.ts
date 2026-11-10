@@ -335,6 +335,17 @@ describe("reguły par, grup, luk z bankiem i słów kluczowych", () => {
     expect(issue.found).toBe('id "a" repeats in options');
   });
 
+  it("przeliczenie na tę samą jednostkę → calculation.same_unit; różne jednostki przechodzą", () => {
+    const conversion = (fromUnit: "m" | "km") => computed("lesson_calculation", {
+      calculation: { kind: "unit_conversion", params: { value: 5, fromUnit }, unit: "m", templateFamilyId: "unit-m" },
+    });
+    const issue = only(issuesOf(conversion("m")), "calculation.same_unit");
+    expect(issue.field).toBe("calculation.params.fromUnit");
+    expect(issue.pl).toBe("calculation.params.fromUnit: jednostka wejściowa musi różnić się od jednostki wyniku");
+    expect(issue.found).toBe('fromUnit and unit are both "m"');
+    expect(issuesOf(conversion("km")).filter((other) => other.rule === "calculation.same_unit")).toEqual([]);
+  });
+
   it("groupId spoza grup → group.item_unknown_group z polem elementu i dozwolonymi id", () => {
     const issues = issuesOf(computed("lesson_group", {
       groups: [{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ptaki" }],
