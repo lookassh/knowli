@@ -269,6 +269,56 @@ test("open answer: failed dictations leave the field untouched and point to typi
   await expect(page.getByTestId("kid-lesson-input")).toHaveValue("Moja odpowiedź");
 });
 
+test("open answer: dictation texts name the answer, an interrupted recording says so, the waiting text has no „nagranie”", async ({ page }) => {
+  const done = attempt("10000000-0000-4000-8000-000000000723", openTaskId);
+  const processing: AttemptDto = { ...done, state: "processing", feedback: null, taskState: "issued", stepId: null, completedAt: null };
+  const calls = await open(page, fixture([openTask], [processing, processing, done]), []);
+  const record = page.getByTestId("kid-record");
+  const status = page.getByTestId("kid-record-status");
+  if ((await record.getAttribute("data-ready")) !== "true") {
+    await expect(record).toHaveText("Włącz mikrofon");
+    await record.click();
+    await expect(record).toHaveAttribute("data-ready", "true");
+  }
+  await expect(record).toHaveText("Powiedz odpowiedź");
+  await record.click();
+  await expect(record).toHaveAttribute("data-phase", "recording");
+  // w trakcie nagrania widać, jak skończyć; najdłuższa etykieta mieści się w przycisku
+  await expect(record).toHaveText("Dotknij, gdy skończysz");
+  await expect(page.getByTestId("kid-record-controls")).not.toContainText(/nagraj|przytrzymaj|słowo/i);
+  for (const viewport of [VIEWPORTS[0]!, VIEWPORTS[2]!]) {
+    await page.setViewportSize(viewport);
+    await record.scrollIntoViewIfNeeded();
+    const bounds = (await record.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(bounds.height).toBeGreaterThanOrEqual(48);
+    // Etykieta w jednym wierszu i w całości wewnątrz przycisku (pierścień dźwięku celowo wystaje poza obrys).
+    const label = await record.evaluate((element) => {
+      const span = element.querySelector("span")!.getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      return { inside: span.left >= box.left && span.right <= box.right && span.top >= box.top && span.bottom <= box.bottom, height: span.height };
+    });
+    expect(label.inside).toBe(true);
+    expect(label.height).toBeLessThan(32);
+  }
+  await expect(record).toHaveAttribute("data-phase", "recording");
+
+  // utrata fokusu okna: komunikat, mikrofon zwolniony, nic nie poszło do rozpoznawania (AC-29)
+  const stopsBefore = await microphoneTrackStops(page);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(record).toHaveAttribute("data-phase", "idle");
+  await expect(status).toHaveText("Nagranie przerwane. Powiedz jeszcze raz.");
+  expect(await microphoneTrackStops(page)).toBeGreaterThan(stopsBefore);
+  expect(calls).toHaveLength(0);
+
+  // odpowiedź otwarta: oceniany jest tekst, więc komunikat oczekiwania nie mówi o nagraniu (AC-30)
+  await page.getByTestId("kid-lesson-input").fill("Poziomica to linia na mapie.");
+  await page.getByTestId("kid-lesson-check").click();
+  await expect(page.getByTestId("kid-processing")).toHaveText("Sprawdzam odpowiedź…");
+  expect(calls).toHaveLength(0);
+});
+
 test("shorten: dictation replaces the field while the marked original stays visible", async ({ page }, testInfo) => {
   await open(page, fixture([shortenTask]), [{ status: "heard", text: EDITED }]);
   await expect(page.getByTestId("kid-lesson-input")).toHaveValue(ORIGINAL);

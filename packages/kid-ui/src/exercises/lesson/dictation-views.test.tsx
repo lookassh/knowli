@@ -47,7 +47,7 @@ describe("odpowiedź otwarta z dyktowaniem", () => {
     expect(field().getAttribute("aria-label")).toBe(messages.kid.lessonAnswerInput);
     const record = screen.getByTestId("kid-record");
     // dotknij — mów — dotknij, mimo profilu „przytrzymaj”: zwykły klik startuje nagrywanie
-    expect(record.textContent).toContain(messages.kid.record);
+    expect(record.textContent).toBe("Powiedz odpowiedź");
     fireEvent.click(record);
     expect(props.handlers.onRecord).toHaveBeenCalledTimes(1);
   });
@@ -148,6 +148,7 @@ describe("„Skróć odpowiedź” z dyktowaniem", () => {
 
   it("dyktowanie zastępuje treść pola, a oryginał z zaznaczeniami zostaje widoczny", () => {
     const { props, rerender } = renderShorten();
+    expect(screen.getByTestId("kid-record").textContent).toBe("Powiedz odpowiedź");
     expect(field().value).toBe(shortenPrompt.kind === "lesson_shorten" ? shortenPrompt.originalAnswer : "");
     expect(screen.getByTestId("kid-record")).toBeTruthy();
     rerender({ dictation: heard(4, "Poziomica łączy punkty o tej samej wysokości.") });

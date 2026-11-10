@@ -3366,6 +3366,101 @@ describe("LearningSessionController — dyktowanie odpowiedzi lekcji (Etap 3 szk
     }
   });
 
+  it("przerwane dyktowanie zostawia komunikat, zwalnia rejestrator i nie liczy się jako nieudane (AC-29)", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "no_speech" }]);
+      await record(harness);
+      const before = (harness.controller.getScreen() as { dictation?: unknown }).dictation;
+      expect(before).toMatchObject({ failures: 1 });
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      const cancelled = harness.recorder.cancelled;
+      harness.controller.interruptRecording();
+      expect(harness.recorder.cancelled).toBe(cancelled + 1);
+      expect(harness.controller.getScreen()).toMatchObject({
+        recordingPhase: "idle", recordingNotice: messages.kid.dictationInterrupted, technicalRecordingIssue: false, dictation: before,
+      });
+      expect(harness.calls).toHaveLength(1);
+      // drugie zdarzenie z pary (ukrycie karty + blur) nie kasuje komunikatu
+      harness.controller.interruptRecording();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingNotice: messages.kid.dictationInterrupted });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("komunikat o przerwanym dyktowaniu przeżywa powrót z tła i powrót sieci (AC-29)", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([]);
+      harness.state.tasks.push(openAnswer(), openAnswer());
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      harness.controller.interruptRecording();
+      await harness.controller.refreshStep();
+      expect(harness.controller.getScreen()).toMatchObject({ task: { taskId: "dict-1" }, recordingNotice: messages.kid.dictationInterrupted });
+      harness.controller.markOffline();
+      await harness.controller.retry();
+      expect(harness.controller.getScreen()).toMatchObject({ offline: false, task: { taskId: "dict-1" }, recordingNotice: messages.kid.dictationInterrupted });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("przerwanie w fazie startu mikrofonu jest ciche, a w fazie kończenia zostawia komunikat i odrzuca nagranie", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "heard", text: "Poziomica." }]);
+      const starting = harness.controller.startRecording();
+      harness.controller.interruptRecording();
+      await starting;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: null });
+
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      const stopping = harness.controller.stopRecording();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "stopping", recordingNotice: messages.kid.dictationRecognizing });
+      harness.controller.interruptRecording();
+      await stopping;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: messages.kid.dictationInterrupted });
+      expect((harness.controller.getScreen() as { dictation?: unknown }).dictation ?? null).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("wysłanie odpowiedzi gasi komunikat o przerwanym dyktowaniu", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([]);
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      harness.controller.interruptRecording();
+      await harness.controller.answerText("Poziomica to linia na mapie.");
+      expect((harness.controller.getScreen() as { recordingNotice: string | null }).recordingNotice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("przerwanie bez trwającego dyktowania czyści jak dotąd: bezczynny mikrofon i inne zadania bez komunikatu", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "no_speech" }]);
+      await record(harness);
+      harness.controller.interruptRecording();
+      expect((harness.controller.getScreen() as { recordingNotice: string | null }).recordingNotice).toBeNull();
+      const plain = await dictationHarness([], openAnswer("plain-1", null));
+      await plain.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      plain.controller.interruptRecording();
+      expect(plain.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: null });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("odlicza ostatnie 10 sekund i zatrzymuje odliczanie po anulowaniu", async () => {
     vi.useFakeTimers();
     try {

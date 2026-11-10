@@ -56,6 +56,44 @@ describe("SpeechRecordButton", () => {
     expect(handlers.onStart).not.toHaveBeenCalled();
   });
 
+  describe("dyktowanie odpowiedzi (CAP-7)", () => {
+    const button = () => screen.getByTestId("kid-record").textContent;
+    const status = () => screen.queryByTestId("kid-record-status")?.textContent ?? null;
+    const forbidden = /nagraj|przytrzymaj|słowo/i;
+
+    it.each([
+      ["gotowy, bezczynny", { phase: "idle", ready: true }, "Powiedz odpowiedź", null],
+      ["przed zgodą na mikrofon", { phase: "idle", ready: false }, "Włącz mikrofon", null],
+      ["zgoda w toku", { phase: "preparing", ready: false }, "Powiedz odpowiedź", "Włącz mikrofon, a potem powiedz odpowiedź."],
+      ["start", { phase: "starting", ready: true }, "Włączam mikrofon…", "Włączam mikrofon…"],
+      ["nagrywanie", { phase: "recording", ready: true }, "Dotknij, gdy skończysz", "Słucham — mów teraz"],
+      ["kończenie", { phase: "stopping", ready: true }, "Powiedz odpowiedź", "Zapisuję twoją odpowiedź…"],
+    ] as const)("%s: teksty mówią o odpowiedzi, bez „Nagraj”, „przytrzymaj” i „słowo” (AC-23, AC-24)", (_name, props, label, line) => {
+      renderControl({ mode: "toggle", dictation: true, ...props });
+      expect(button()).toBe(label);
+      expect(status()).toBe(line);
+      expect(screen.getByTestId("kid-record-controls").textContent).not.toMatch(forbidden);
+    });
+
+    it("w fazie kończenia nie pokazuje już „Nagrywam…”", () => {
+      renderControl({ mode: "toggle", dictation: true, phase: "stopping" });
+      expect(screen.queryByTestId("kid-recording")).toBeNull();
+    });
+
+    it.each([
+      ["hold, gotowy", { mode: "hold", phase: "idle", ready: true }, "Przytrzymaj i powiedz", null],
+      ["toggle, gotowy", { mode: "toggle", phase: "idle", ready: true }, "Nagraj", null],
+      ["hold, przed zgodą", { mode: "hold", phase: "idle", ready: false }, "Włącz mikrofon", "Przytrzymaj przycisk, aby włączyć mikrofon i zacząć."],
+      ["hold, zgoda w toku", { mode: "hold", phase: "preparing", ready: false }, "Przytrzymaj i powiedz", "Włącz mikrofon, a potem przytrzymaj przycisk i powiedz słowo."],
+      ["toggle, nagrywanie", { mode: "toggle", phase: "recording", ready: true }, "Słucham — mów teraz", "Słucham — mów teraz"],
+      ["toggle, kończenie", { mode: "toggle", phase: "stopping", ready: true }, "Nagraj", "Kończę nagrywanie…"],
+    ] as const)("ćwiczenie słówek bez zmian — %s (AC-25)", (_name, props, label, line) => {
+      renderControl(props);
+      expect(button()).toBe(label);
+      expect(status()).toBe(line);
+    });
+  });
+
   it("keeps an accessible name for the microphone control", () => {
     renderControl();
     expect(screen.getByRole("button", { name: /powiedz/i })).toBeTruthy();

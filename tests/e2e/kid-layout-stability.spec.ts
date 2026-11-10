@@ -76,6 +76,8 @@ test("processing status does not move task slots", async ({ page }) => {
   await page.getByTestId("kid-input").fill("cat");
   await page.getByTestId("kid-submit").click();
   await expect(page.getByTestId("kid-processing")).toBeVisible();
+  // ćwiczenie słówek: tekst oczekiwania bez zmian (AC-30)
+  await expect(page.getByTestId("kid-processing")).toHaveText("Sprawdzam nagranie…");
   const during = await bounds();
   const status = await page.getByTestId("kid-session-status").boundingBox();
   const processing = await page.getByTestId("kid-processing").boundingBox();

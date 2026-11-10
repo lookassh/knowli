@@ -88,6 +88,7 @@ export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAva
               level={inputLevel}
               notice={recordingNotice}
               mode="toggle"
+              dictation
               onPrepare={handlers.onPrepareRecording}
               onStart={handlers.onRecord}
               onStop={handlers.onStopRecording}

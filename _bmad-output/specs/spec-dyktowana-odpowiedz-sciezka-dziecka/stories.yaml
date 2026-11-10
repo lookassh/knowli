@@ -63,6 +63,12 @@
 - id: "5"
   title: Mikrofon i stany dyktowania odpowiedzi
   description: >-
+    Stan 2026-11-10: zrealizowane, czeka na odbiór właściciela; pytanie o
+    tekst odpowiedzi w lesson_verdicts rozstrzygnięte (zostaje jak jest),
+    więc odbiór na tablecie jest odblokowany. Komunikat o
+    przerwanym nagraniu nie pojawia się w fazie startu mikrofonu (zgoda na
+    mikrofon sama potrafi odebrać fokus). Inne pisane typy lekcji nadal
+    pokazują „Sprawdzam nagranie…” (poza CAP-10).
     Zrealizuj CAP-7, CAP-9 i CAP-10: teksty mikrofonu dla dyktowania,
     komunikat po przerwanym nagraniu i tekst oczekiwania bez słowa
     „nagranie”. Sprawdź AC-23–25, AC-29 i AC-30.

@@ -666,6 +666,8 @@ export const messages = {
     recordingLevel: "Poziom głosu",
     sayIt: "Powiedz na głos",
     processing: "Sprawdzam nagranie…",
+    /** Odpowiedź otwarta lekcji (pisana albo podyktowana): oceniany jest tekst, nie nagranie. */
+    processingAnswer: "Sprawdzam odpowiedź…",
     revealTitle: "To słowo to:",
     pictureRecallPrompt: "Jak jest po angielsku?",
     // picture_recognition: aria głośniczka odsłuchu poprawnego słowa w feedbackzie.
@@ -824,6 +826,9 @@ export const messages = {
     // Dyktowanie odpowiedzi (Etap 3 przedmiotów szkolnych): mowa wpisuje tekst do pola.
     lessonAnswerInput: "Twoja odpowiedź",
     dictationRecord: "Powiedz odpowiedź",
+    dictationStop: "Dotknij, gdy skończysz",
+    dictationPrepare: "Włącz mikrofon, a potem powiedz odpowiedź.",
+    dictationInterrupted: "Nagranie przerwane. Powiedz jeszcze raz.",
     dictationRecognizing: "Zapisuję twoją odpowiedź…",
     dictationHeard: "Sprawdź, czy dobrze cię usłyszałem. Możesz poprawić.",
     dictationNotHeard: "Nie usłyszałem wyraźnie. Powiedz jeszcze raz.",

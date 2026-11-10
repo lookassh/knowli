@@ -1018,6 +1018,9 @@ export class LearningSessionController {
       // poprzedniej karty nie przetrwa przejścia (SPEC §16)
       this.#resetAutoCapture();
       this.#autoCaptureTaskId = null;
+      // Powrót z tła albo sieci wczytuje to samo zadanie: komunikat o przerwanym dyktowaniu ma dotrwać do dziecka.
+      const keptNotice = this.#screen.task?.taskId === task.taskId && this.#screen.recordingNotice === messages.kid.dictationInterrupted
+        ? messages.kid.dictationInterrupted : null;
       this.#screen = {
         ...this.#screen,
         task,
@@ -1030,7 +1033,7 @@ export class LearningSessionController {
         processing: false,
         recordingPhase: "idle",
         inputLevel: null,
-        recordingNotice: null, technicalRecordingIssue: false,
+        recordingNotice: keptNotice, technicalRecordingIssue: false,
         error: null,
         taskAudioError: null,
         questionAudioError: false,
@@ -1339,6 +1342,8 @@ export class LearningSessionController {
     const clearTaskAudioError = screen.task.prompt.kind === "lesson_listen_choice";
     this.#setLearning({ busy: true, transitioning: true, questionAudioError: false,
       ...(clearTaskAudioError ? { taskAudioError: null } : {}),
+      // Odpowiedź wysłana: komunikat o przerwanym dyktowaniu jest już nieaktualny.
+      ...(screen.recordingNotice === messages.kid.dictationInterrupted ? { recordingNotice: null } : {}),
       pendingChoiceId: input.modality === "choice" ? input.optionId : null });
     this.#activity?.recordInteraction();
     this.#activity?.pause("technical_wait");
@@ -2181,7 +2186,8 @@ export class LearningSessionController {
     // starego rejestratora nie widzą wyzerowanego VAD.
     const autoCapture = this.#autoCaptureActive;
     this.#resetAutoCapture();
-    this.#setLearning({ recordingPhase: "stopping", inputLevel: null });
+    // Dyktowanie: komunikat rozpoznawania od razu, żeby nie zostało stare odliczanie.
+    this.#setLearning({ recordingPhase: "stopping", inputLevel: null, ...(dictation ? { recordingNotice: messages.kid.dictationRecognizing } : {}) });
     if (Date.now() - this.#recordingStartedAt < 300) {
       this.#recorder = null;
       recorder.cancel();
@@ -2237,6 +2243,7 @@ export class LearningSessionController {
   async #dictate(taskId: string, audio: { bytes: Uint8Array; mimeType: string }, epoch: number): Promise<void> {
     this.#setLearning({ recordingPhase: "stopping", recordingNotice: messages.kid.dictationRecognizing, technicalRecordingIssue: false, inputLevel: null });
     this.#activity?.recordInteraction();
+    const generation = this.#recordingGeneration;
     let result: DictationDto;
     try {
       result = this.#api.dictate ? await this.#api.dictate(taskId, audio) : { status: "unavailable" };
@@ -2247,6 +2254,8 @@ export class LearningSessionController {
     }
     const current = this.#learning();
     if (epoch !== this.#epoch || !current || current.task?.taskId !== taskId) return;
+    // Przerwane w trakcie rozpoznawania (utrata fokusu, sieci): wynik nie wchodzi do pola ani licznika.
+    if (generation !== this.#recordingGeneration) return;
     const previousFailures = current.dictation?.taskId === taskId ? current.dictation.failures : 0;
     const failures = result.status === "heard" ? 0 : previousFailures + 1;
     const base = result.status === "heard" ? messages.kid.dictationHeard
@@ -2287,6 +2296,20 @@ export class LearningSessionController {
   #stopCountdown(): void {
     if (this.#countdownHandle !== null) globalThis.clearInterval(this.#countdownHandle);
     this.#countdownHandle = null;
+  }
+
+  /**
+   * Utrata fokusu, ukrycie karty albo brak sieci. Anuluje jak `cancelRecording()`,
+   * ale przerwane dyktowanie zostawia komunikat (nie jest nieudanym dyktowaniem).
+   * Faza `starting` zostaje cicha: sama prośba o zgodę na mikrofon potrafi wywołać `blur`.
+   * Drugie zdarzenie z pary (ukrycie + blur) nie kasuje ustawionego komunikatu.
+   */
+  interruptRecording(): void {
+    const screen = this.#learning();
+    // `stopping` obejmuje też wysyłkę do rozpoznania: jej wynik odrzuca `#dictate` (zmieniona generacja).
+    const lost = screen !== null && (screen.recordingPhase === "recording" || screen.recordingPhase === "stopping") && this.#dictationLimitMs(screen) !== null;
+    const kept = screen?.recordingNotice === messages.kid.dictationInterrupted;
+    this.cancelRecording(lost || kept ? messages.kid.dictationInterrupted : null);
   }
 
   cancelRecording(notice: string | null = null, technicalIssue = false): void {

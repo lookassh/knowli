@@ -126,6 +126,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
               notice={recordingNotice}
               // długa odpowiedź: dotknij — mów — dotknij, niezależnie od ustawienia profilu
               mode="toggle"
+              dictation
               onPrepare={handlers.onPrepareRecording}
               onStart={handlers.onRecord}
               onStop={handlers.onStopRecording}

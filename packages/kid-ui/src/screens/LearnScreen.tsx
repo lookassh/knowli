@@ -351,7 +351,7 @@ export function LearnScreen({
         {screen.answerSaved && <p className="kid-notice">{messages.kid.answerSaved}</p>}
         {screen.processing && (
           <p className="kid-notice" data-testid="kid-processing">
-            {messages.kid.processing}
+            {task?.prompt.kind === "lesson_open_answer" || task?.prompt.kind === "lesson_shorten" ? messages.kid.processingAnswer : messages.kid.processing}
           </p>
         )}
         {screen.guidanceError && instructionAudioKey && <div className="kid-notice" data-testid="kid-guidance-error"><p>{messages.errors.picture_guidance_unavailable}</p><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" onClick={() => void controller.playGuidance(instructionAudioKey).catch(() => undefined)}>{messages.errors.picture_audio_retry}</ActionButton><ActionButton priority="secondary" fullWidth={false} size="sm" type="button" data-testid="kid-guidance-error-end" aria-haspopup="dialog" aria-expanded={endConfirmOpen} disabled={busy} onClick={openEndConfirm}>{messages.kid.end}</ActionButton></div>}

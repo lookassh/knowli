@@ -50,15 +50,15 @@ export function useLearningSession(deps: {
         void controller.refreshProfiles();
         controller.resumeActivity();
         void controller.refreshStep();
-      } else { controller.pauseActivity("background"); controller.cancelRecording(); }
+      } else { controller.pauseActivity("background"); controller.interruptRecording(); }
     };
-    const onBlur = () => { controller.pauseActivity("blur"); controller.cancelRecording(); };
+    const onBlur = () => { controller.pauseActivity("blur"); controller.interruptRecording(); };
     const onFocus = () => {
       if (document.visibilityState !== "visible" || !document.hasFocus()) return;
       controller.resumeActivity();
       void controller.refreshProfiles();
     };
-    const onOffline = () => { controller.pauseActivity("offline"); controller.cancelRecording(); controller.markOffline(); };
+    const onOffline = () => { controller.pauseActivity("offline"); controller.interruptRecording(); controller.markOffline(); };
     const onOnline = () => {
       void controller.retry().then(() => {
         if (document.visibilityState === "visible" && document.hasFocus()) controller.resumeActivity();
