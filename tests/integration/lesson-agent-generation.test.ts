@@ -1342,6 +1342,23 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
         expect(contextOf(version).generationGaps).toEqual([{ objectiveId: NEGATIVE, reason: "incomplete" }]);
       }, 15_000);
 
+      it("termin runu bez przyjętych ćwiczeń → failed/provider_timeout (jak brak czasu przed startem), nie validation", async () => {
+        // Żadna paczka się nie kończy: termin przebiegu (3000 − 1000 ms rezerwy) przerywa je bez porażki zagadnienia.
+        const { services, agent } = await agentWorld(
+          { packets: { third_person_s: everyPacket(never) } },
+          { finalizationReserveMs: 1000, execution: { requestTimeoutMs: 3000, runTimeoutMs: 3000 } },
+        );
+        const { runId } = await createLesson(services, command());
+
+        await executeLessonGeneration(services, runId);
+
+        const row = await fullRun(runId);
+        expect(row.state).toBe("failed");
+        expect(row.error_code).toBe("provider_timeout");
+        // Przebieg wystartował — to nie gałąź „brak czasu na przebieg”.
+        expect(agent.packetCalls.length).toBeGreaterThan(0);
+      }, 15_000);
+
       it("edycja rodzica w trakcie (gate) → superseded, szkic bez zmian, agent_checkpoint NULL", async () => {
         const inFlight = gate();
         const { services, agent } = await agentWorld({ packets: { third_person_s: [inFlight.step] } });

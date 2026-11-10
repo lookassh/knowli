@@ -421,6 +421,8 @@ export async function runLessonBaselinePool(
 
     const outcomes = await allSettledOrThrow(objectivesToRun(objectives, input).map((objective) => runObjective(objective)));
     signal.throwIfAborted();
+    // Tutaj, nie przy zwrocie: termin, który minie dopiero w trakcie zapisów postępu, niczego nie przerwał.
+    const timedOut = runDeadline.signal.reason === RUN_TIMEOUT_REASON;
 
     // Walidacja puli: przyjęcie po kolei w kolejności lekcji, z limitem kubełka i krokiem reguł lekcji (`lessonRulesStep`)
     // (kandydat odpada także, gdy czyni nową ofiarą inne ćwiczenie, również `fixed`).
@@ -497,7 +499,7 @@ export async function runLessonBaselinePool(
       await input.onObjectiveSettled?.(settled);
       signal.throwIfAborted();
     }
-    return { objectives: settledList, rejections, spentUsd: cost.spentUsd };
+    return { objectives: settledList, rejections, spentUsd: cost.spentUsd, ...(timedOut ? { timedOut: true as const } : {}) };
   } finally {
     runDeadline.dispose();
   }

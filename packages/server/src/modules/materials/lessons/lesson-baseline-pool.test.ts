@@ -126,6 +126,7 @@ describe("runLessonBaselinePool", () => {
       ]);
     }
     expect(result.objectives.flatMap((objective) => objective.exercises)).toHaveLength(22);
+    expect(result.timedOut).toBeUndefined();
   });
 
   it("generates the independent packet last with earlier packets' solved sentences in the avoid list (#373)", async () => {
@@ -521,6 +522,8 @@ describe("runLessonBaselinePool: run deadline, abort, concurrency and budget", (
     // Paczki czekające w semaforze po terminie nie wołają generatora (czwarty slot trzymała paczka samodzielna na bramce, #373).
     expect(generator.packetCalls).toHaveLength(3);
     expect(vi.getTimerCount()).toBe(0);
+    // Wołający odróżnia termin przebiegu od „wszystko odrzucone”.
+    expect(result.timedOut).toBe(true);
   });
 
   it("a generator ignoring the abort (stall) does not hold the run past its deadline", async () => {

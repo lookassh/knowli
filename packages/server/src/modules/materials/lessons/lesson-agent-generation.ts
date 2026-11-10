@@ -426,13 +426,14 @@ export async function executeLessonAgentGeneration(
         attempts,
         maxAttempts: MAX_AUTOMATIC_ATTEMPTS,
       });
+    // Termin runu zastępuje tylko „nic nie przyjęto” (wiersz 7); wyczerpany budżet (wiersz 1) i wspólny kod
+    // dostawcy (wiersz 6) zostają. Ten sam kod, gdy czasu zabrakło przed przebiegiem i w jego trakcie.
+    const afterDeadline = (outcome: LessonAgentOutcome, spentUsd: number): LessonAgentOutcome =>
+      outcome.kind === "failed" && outcome.errorCode === "validation" && spentUsd < budgetUsd ? { kind: "failed", errorCode: "provider_timeout" } : outcome;
     if (remainingMs <= 0) {
-      // Bez czasu na przebieg: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
-      // wyczerpany budżet (wiersz 1) i wspólny kod dostawcy z punktu kontrolnego (wiersz 6) zostają.
+      // Bez czasu na przebieg: wynik z samego postępu.
       console.log(`[lesson-agent] run=${runId} no_time_for_generation remainingMs=${remainingMs}`);
-      const outcome = outcomeFor(begin, emptyAttempt);
-      const timedOut = outcome.kind === "failed" && outcome.errorCode === "validation" && begin.budgetSpentUsd < budgetUsd;
-      return { progress: begin, outcome: timedOut ? { kind: "failed", errorCode: "provider_timeout" } : outcome };
+      return { progress: begin, outcome: afterDeadline(outcomeFor(begin, emptyAttempt), begin.budgetSpentUsd) };
     }
 
     console.log(
@@ -469,7 +470,8 @@ export async function executeLessonAgentGeneration(
       ...(merged.dynamicTopic === undefined && working.dynamicTopic !== undefined ? { dynamicTopic: working.dynamicTopic } : {}),
     };
     latest = progress;
-    return { progress, outcome: outcomeFor(progress, result) };
+    const outcome = outcomeFor(progress, result);
+    return { progress, outcome: result.timedOut ? afterDeadline(outcome, result.spentUsd) : outcome };
   };
 
   try {
