@@ -435,7 +435,7 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
 
   /** Kontrola zadań zamkniętych: jedno żądanie na paczkę, wynik per pozycja jako dane (werdykt liczy domena). */
   async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }> {
-    // Jawna unia: wspólne `results` obu kontraktów bez rzutowania.
+    // Wspólny typ pozycji obu kontraktów: adapter czyta tylko `n`, pola wyniku ocenia domena.
     const item: z.ZodType<{ n: number }> = CHECK_ITEM[input.contract];
     const results = await this.caller.tracked(
       "check_closed",
