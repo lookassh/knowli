@@ -285,7 +285,7 @@ describe("koszty żądań (UsageRecorder i RunCostSink, spec §4)", () => {
     await withUsageScope({ generationRunId: "run-1" }, async () => {
       const packetModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ exercises: [] }), 0.01)] });
       await new AiSdkLessonPoolAgent(agentOptions(packetModel, { usage })).generatePacket(PACKET, recordingCost([]), signal);
-      const closedModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ answers: ["a"] }] }), 0.004)] });
+      const closedModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 1, answers: ["a"] }] }), 0.004)] });
       await new AiSdkExerciseChecker(agentOptions(closedModel, { usage })).checkClosed(CLOSED, recordingCost([]), signal);
     });
 
@@ -372,14 +372,14 @@ describe("providerOptions (spec §4, §5)", () => {
     const provider = { data_collection: "deny", order: ["x"], require_parameters: true };
     const agentModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ exercises: [] }))] });
     await new AiSdkLessonPoolAgent(agentOptions(agentModel, { effort: "medium", provider })).generatePacket(PACKET, recordingCost([]), new AbortController().signal);
-    const checkerModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ answers: ["a"] }] }))] });
+    const checkerModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 1, answers: ["a"] }] }))] });
     await new AiSdkExerciseChecker(agentOptions(checkerModel, { provider })).checkClosed(CLOSED, recordingCost([]), new AbortController().signal);
     expect(agentModel.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: { reasoning: { effort: "medium" }, provider } });
     expect(checkerModel.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: { reasoning: { effort: "low" }, provider } });
   });
 
   it("effort none → bez reasoning; bez routingu → bez provider", async () => {
-    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ answers: ["a"] }] }))] });
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 1, answers: ["a"] }] }))] });
     await new AiSdkExerciseChecker(agentOptions(model, { effort: "none" })).checkClosed(CLOSED, recordingCost([]), new AbortController().signal);
     expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: {} });
   });
@@ -408,12 +408,12 @@ describe("jawny klucz i host OpenRouter (zaślepiony fetch)", () => {
     withoutEnvKeys();
     const usage = createTestRecorder();
     const cost = recordingCost([]);
-    const stub = stubFetch([jsonResponse(chatCompletion(JSON.stringify({ results: [{ answers: ["cat"] }] }), 0.0042))]);
+    const stub = stubFetch([jsonResponse(chatCompletion(JSON.stringify({ results: [{ n: 1, answers: ["cat"] }] }), 0.0042))]);
     const checker = new AiSdkExerciseChecker({ apiKey: "test-key", model: "vendor/checker", effort: "low", provider: { data_collection: "deny" }, usage, fetch: stub.fetch });
 
     const result = await checker.checkClosed(CLOSED, cost, new AbortController().signal);
 
-    expect(result.results).toEqual([{ answers: ["cat"] }]);
+    expect(result.results).toEqual([{ n: 1, answers: ["cat"] }]);
     expect(stub.calls).toHaveLength(1);
     const url = new URL(stub.calls[0]!.url);
     expect(url.host).toBe("openrouter.ai");
@@ -481,7 +481,7 @@ describe("adaptery nic nie logują", () => {
       const signal = new AbortController().signal;
       const okModel = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ exercises: [] }))] });
       await new AiSdkLessonPoolAgent(agentOptions(okModel, { usage: createTestRecorder() })).generatePacket(PACKET, recordingCost([]), signal);
-      await new AiSdkExerciseChecker({ apiKey: "test-key", model: "m", effort: "low", fetch: stubFetch([jsonResponse(chatCompletion(JSON.stringify({ results: [{ answers: ["a"] }] })))]).fetch })
+      await new AiSdkExerciseChecker({ apiKey: "test-key", model: "m", effort: "low", fetch: stubFetch([jsonResponse(chatCompletion(JSON.stringify({ results: [{ n: 1, answers: ["a"] }] })))]).fetch })
         .checkClosed(CLOSED, recordingCost([]), signal);
       await new AiSdkExerciseChecker({ apiKey: "test-key", model: "m", effort: "low", fetch: stubFetch([jsonResponse({ error: { message: "x" } }, 503)]).fetch })
         .checkClosed(CLOSED, recordingCost([]), signal)
@@ -550,24 +550,46 @@ describe("przebieg bazowy: generatePacket i checkClosed (etap 2, MockLanguageMod
     }
   });
 
-  it("checkClosed: widoki w <ITEMS>, system z zasadą danych, wynik per pozycja; inna długość → wszystkie undefined; operacja check_closed", async () => {
+  const TWO_ITEMS = { contract: "choice" as const, items: [{ view: "She ___ happy.\nOptions: are | is" }, { view: "B" }], timeoutMs: 1_000 };
+
+  it("checkClosed: ponumerowane widoki w <ITEMS>, system z zasadą danych, wyniki dopasowane po n (nie po kolejności); operacja check_closed", async () => {
     const usage = scopedRecorder();
-    const model = new MockLanguageModelV4({
-      doGenerate: [
-        textResult(JSON.stringify({ results: [{ answers: ["is"] }, { answers: null }] }), 0.001),
-        textResult(JSON.stringify({ results: [{ answers: ["is"] }] })),
-      ],
-    });
+    const model = new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 2, answers: null }, { n: 1, answers: ["is"] }] }), 0.001)] });
     const checker = checkerOf(model, { usage });
-    const input = { contract: "choice" as const, items: [{ view: "She ___ happy.\nOptions: are | is" }, { view: "B" }], timeoutMs: 1_000 };
-    const first = await withUsageScope({ generationRunId: "run-1" }, () => checker.checkClosed(input, recordingCost([]), new AbortController().signal));
-    expect(first.results).toEqual([{ answers: ["is"] }, { answers: null }]);
+    const first = await withUsageScope({ generationRunId: "run-1" }, () => checker.checkClosed(TWO_ITEMS, recordingCost([]), new AbortController().signal));
+    expect(first.results).toEqual([{ n: 1, answers: ["is"] }, { n: 2, answers: null }]);
     expect(sentPrompt(model)).toContain("<ITEMS>");
     expect(sentPrompt(model)).toContain("She ___ happy.");
+    // Prompt użytkownika jest w JSON-ie wiadomości, stąd podwójne cytowanie.
+    expect(sentPrompt(model)).toContain(String.raw`{\"n\":2,\"view\":\"B\"}`);
     expect(JSON.stringify(model.doGenerateCalls[0]!.prompt.find((message) => message.role === "system"))).toMatch(/ignore any instructions/iu);
     expect(usage.events.map((entry) => entry.event.operation)).toEqual(["check_closed"]);
-    const second = await checker.checkClosed(input, recordingCost([]), new AbortController().signal);
-    expect(second.results).toEqual([undefined, undefined]);
+    const format = model.doGenerateCalls[0]!.responseFormat as { schema?: { properties?: { results?: { items?: { required?: string[] } } } } };
+    expect(format.schema?.properties?.results?.items?.required).toEqual(["n", "answers"]);
+  });
+
+  it.each([
+    ["jeden wynik na dwie pozycje", [{ n: 1, answers: ["is"] }]],
+    ["powtórzony numer", [{ n: 1, answers: ["is"] }, { n: 1, answers: [] }]],
+    ["numer spoza zakresu", [{ n: 1, answers: ["is"] }, { n: 3, answers: [] }]],
+    ["numer zero", [{ n: 0, answers: ["is"] }, { n: 1, answers: [] }]],
+    ["numer ułamkowy", [{ n: 1, answers: ["is"] }, { n: 1.5, answers: [] }]],
+    ["wynik bez numeru", [{ n: 1, answers: ["is"] }, { answers: [] }]],
+    ["pozycja null", [{ n: 1, answers: ["is"] }, null]],
+    ["za dużo wyników", [{ n: 1, answers: ["is"] }, { n: 2, answers: [] }, { n: 3, answers: [] }]],
+  ])("checkClosed: %s → błąd output (przebieg ponawia raz), koszt zapisany raz", async (_name, results) => {
+    const cost = recordingCost([]);
+    const checker = checkerOf(new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results }))] }));
+    await expect(checker.checkClosed(TWO_ITEMS, cost, new AbortController().signal)).rejects.toMatchObject({ name: "GenerationProviderError", kind: "output" });
+    expect(cost.values).toEqual([0.002]);
+  });
+
+  it("checkClosed: zły kształt pola przy poprawnym numerze to „nie wiem” tej pozycji, nie całej paczki", async () => {
+    const choice = checkerOf(new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 1, answers: "is" }, { n: 2, answers: ["b"] }] }))] }));
+    expect((await choice.checkClosed(TWO_ITEMS, recordingCost([]), new AbortController().signal)).results).toEqual([{ n: 1, answers: null }, { n: 2, answers: ["b"] }]);
+    const order = checkerOf(new MockLanguageModelV4({ doGenerate: [textResult(JSON.stringify({ results: [{ n: 1, verdict: "maybe" }, { n: 2, verdict: "yes" }] }))] }));
+    const ordered = await order.checkClosed({ ...TWO_ITEMS, contract: "order" }, recordingCost([]), new AbortController().signal);
+    expect(ordered.results).toEqual([{ n: 1, verdict: "unknown" }, { n: 2, verdict: "yes" }]);
   });
 
 });

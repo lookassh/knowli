@@ -395,17 +395,32 @@ export class AiSdkLessonPoolAgent implements LessonPacketGenerator {
 // ---------------------------------------------------------------------------------------------
 // Kontrola zadań zamkniętych
 
+/**
+ * Materiał to proza, nie JSON: „<” zostaje dosłowne (np. „3 < 5”), poza otwarciem znacznika bloku
+ * danych — materiał z „</MATERIAL>” albo „<ITEMS>” nie zamyka bloku ani nie udaje pozycji.
+ */
 function materialBlock(material: string | undefined): string[] {
-  return material === undefined ? [] : ["", "<MATERIAL>", material, "</MATERIAL>"];
+  return material === undefined ? [] : ["", "<MATERIAL>", material.replace(/<(?=\s*\/?\s*(?:MATERIAL|ITEMS)\b)/giu, "\\u003c"), "</MATERIAL>"];
 }
 
 /**
- * Pozycja wyniku odporna na błąd modelu: zły kształt jednej pozycji daje `null` (port dopuszcza
- * brak wyniku per pozycja), a pozostałe pozycje paczki przechodzą — ścisły schemat odrzuciłby całe
- * wywołanie i cała paczka byłaby `unavailable`.
+ * Schemat wyniku pozycji: numer `n` ścisły (po nim wynik trafia do pozycji), a zły kształt samego
+ * pola daje „nie wiem” tej pozycji zamiast odrzucenia całego wywołania.
  */
-function tolerant<T extends z.ZodType>(schema: T) {
-  return schema.nullable().catch(null);
+const CHECK_ITEM = {
+  choice: z.object({ n: z.number(), answers: CHOICE_CHECK_RESULT.shape.answers.catch(null) }),
+  order: z.object({ n: z.number(), verdict: ORDER_CHECK_RESULT.shape.verdict.catch("unknown") }),
+};
+
+/**
+ * Wyniki kontroli w kolejności pozycji, dopasowane po numerze `n`. Inny zbiór numerów niż 1..N
+ * (np. jeden wynik na ćwiczenie z kilkoma polami) to zła odpowiedź modelu: błąd `output`, który
+ * przebieg ponawia raz — nigdy dopasowanie po pozycji ani częściowe.
+ */
+function resultsByNumber<T extends { readonly n: number }>(results: readonly T[], count: number): T[] {
+  const sorted = [...results].sort((a, b) => a.n - b.n);
+  if (sorted.length !== count || sorted.some((result, index) => result.n !== index + 1)) throw new GenerationProviderError("output");
+  return sorted;
 }
 
 export class AiSdkExerciseChecker implements ClosedExerciseChecker {
@@ -420,8 +435,9 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
 
   /** Kontrola zadań zamkniętych: jedno żądanie na paczkę, wynik per pozycja jako dane (werdykt liczy domena). */
   async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }> {
-    const item = input.contract === "choice" ? CHOICE_CHECK_RESULT : ORDER_CHECK_RESULT;
-    const output = await this.caller.tracked(
+    // Jawna unia: wspólne `results` obu kontraktów bez rzutowania.
+    const item: z.ZodType<{ n: number }> = CHECK_ITEM[input.contract];
+    const results = await this.caller.tracked(
       "check_closed",
       cost,
       signal,
@@ -430,16 +446,16 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
           model,
           maxRetries: 0,
           providerOptions: this.caller.providerOptions,
-          output: Output.object({ schema: z.object({ results: z.array(tolerant(item)) }) }),
+          output: Output.object({ schema: z.object({ results: z.array(item) }) }),
           system: CHECKER_DATA_RULE,
           prompt: closedCheckPrompt(input),
           abortSignal: signal,
           ...hooks,
-        }).then((result) => result.output),
+          // Odczyt i dopasowanie wewnątrz `tracked`: pusta treść i zły zbiór numerów wychodzą jako błąd `output`.
+        }).then((result) => resultsByNumber(result.output.results, input.items.length)),
       input.timeoutMs,
     );
-    const results = sameLength(output.results, input.items.length);
-    return { results: input.items.map((_item, index) => results?.[index]) };
+    return { results };
   }
 }
 
@@ -456,11 +472,13 @@ export function closedCheckPrompt(input: Pick<ClosedCheckInput, "contract" | "it
         'For EACH item decide whether the arranged answer is a correct answer to the instruction: verdict "yes", "no", or "unknown" when you cannot decide.';
   return [
     question,
-    `There are ${input.items.length} items. Return results: one object per item, in the given order.`,
+    `There are ${input.items.length} items, numbered n = 1 to ${input.items.length}. Return results: exactly one object per item, each with the n of its item.` +
+      // Typowa pomyłka: jeden wynik na ćwiczenie z kilkoma polami (match, group, cloze) — tylko kontrakt wyboru ma pola.
+      (input.contract === "choice" ? " Items that show the same exercise with a different Field line are separate items." : ""),
     ...materialBlock(input.material),
     "",
     "<ITEMS>",
-    jsonForBlock(input.items.map(({ view }) => ({ view }))),
+    jsonForBlock(input.items.map(({ view }, index) => ({ n: index + 1, view }))),
     "</ITEMS>",
   ].join("\n");
 }
@@ -475,13 +493,4 @@ const CHECKER_DATA_RULE =
  */
 function jsonForBlock(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
-/**
- * Lista wyników kontroli: przy innej liczbie pozycji niż w
- * żądaniu nie wiadomo, która odpowiedź należy do której pozycji, więc cała paczka jest niesprawdzona
- * (`undefined` → `null` na każdej pozycji) zamiast dopasowania po pozycji.
- */
-function sameLength<T>(values: readonly T[] | null | undefined, length: number): readonly T[] | undefined {
-  return values !== null && values !== undefined && values.length === length ? values : undefined;
 }
