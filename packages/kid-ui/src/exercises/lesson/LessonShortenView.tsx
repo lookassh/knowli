@@ -75,7 +75,9 @@ export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAva
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              disabled={disabled}
+              // Przy panelu wyniku pole zostaje do czytania i przewijania (dziecko porównuje obie wersje).
+              disabled={disabled && dock === undefined}
+              readOnly={dock !== undefined}
             />
           </form>
           {showMic && (

@@ -418,7 +418,8 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     const beforeRevision = await progressOf();
     const followUp = (await nextTask(services, openTask.sessionId))!;
     const revision = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina wytwarza cukry." });
-    expect(revision.feedback).toMatchObject({ kind: "lesson_hint" });
+    // Sama podpowiedź: obie wersje dziecka zostają widoczne w widoku skracania, bez wzorca i elementów (AC-20, AC-21).
+    expect(revision.feedback).toEqual({ kind: "lesson_hint", hintPl: "Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej." });
     expect(JSON.stringify(revision.feedback)).not.toContain("światło");
     const rows = await pool.query<{ outcome: string; independent: boolean; details: { lostElementIds?: string[] } }>(
       `select a.outcome, a.independent, a.details from learning_app.assessments a
@@ -432,6 +433,43 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     expect(report.school?.shortening?.recent[0]).toMatchObject({ lostElements: ["roślina wykorzystuje światło"], successful: false });
     expect(report.school?.knowledge).toMatchObject({ partial: 0, incorrect: 0 });
     expect(report.topErrors).toEqual([]);
+  });
+
+  it("sama naruszona forma jednego zdania nie wydaje kroku skracania (AC-17)", async () => {
+    const services = makeServices(new FakeAnswerGrader());
+    const child = await createChild(services, { displayName: "Dwa zdania", avatarKey: "fox" });
+    const { deckId } = await seedSchoolDeck(child.id, { expectedForm: "one_sentence", secondObjective: true });
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina wytwarza cukry. Roślina wykorzystuje światło." });
+    expect(result.feedback!.kind).toBe("great");
+    const details = await pool.query<{ details: { precision?: string; formOk?: boolean } }>(
+      "select n.details from learning_app.assessments n join learning_app.attempts a on a.id = n.attempt_id where a.task_id = $1", [openTask.taskId]);
+    expect(details.rows[0]!.details).toMatchObject({ precision: "verbose", formOk: false });
+    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where session_id = $1 and context ? 'followUpOf'", [openTask.sessionId]);
+    expect((rows.rows[0] as { n: number }).n).toBe(0);
+  });
+
+  it("werdykt z cache dla innego zapisu tej samej odpowiedzi: fragmentów nie ma w tekście, więc bez kroku skracania (AC-18)", async () => {
+    const grader = new FakeAnswerGrader();
+    const services = makeServices(grader);
+    const first = await createChild(services, { displayName: "Pierwszy", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(first.id, { secondObjective: true });
+    const { result } = await answerVerbosely(services, first.id, deckId);
+    expect(result.feedback).toMatchObject({ kind: "lesson_precision_hint" });
+
+    // Drugie dziecko na tej samej talii: ten sam klucz cache (interpunkcja nie wchodzi do klucza),
+    // ale bez przecinków zapisane fragmenty nie są już dosłownymi podciągami odpowiedzi.
+    const second = await createChild(services, { displayName: "Drugi", avatarKey: "cat" });
+    await pool.query(
+      "insert into learning_app.assignments (id, child_id, deck_id, test_date, test_goals) values ($1, $2, $3, CURRENT_DATE + 7, ARRAY['lesson'])",
+      [randomUUID(), second.id, deckId]);
+    const openTask = await reachOpenTask(services, second.id, deckId);
+    const calls = grader.callCount;
+    const again = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: verboseAnswer.replaceAll(",", "") });
+    expect(grader.callCount).toBe(calls);
+    expect(again.feedback!.kind).toBe("great");
+    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where session_id = $1 and context ? 'followUpOf'", [openTask.sessionId]);
+    expect((rows.rows[0] as { n: number }).n).toBe(0);
   });
 
   it("poprawka identyczna z oryginałem nie jest oceniana i czeka na krótszą wersję", async () => {

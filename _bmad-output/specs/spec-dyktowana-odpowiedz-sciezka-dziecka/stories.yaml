@@ -47,9 +47,12 @@
 - id: "4"
   title: Skracanie odpowiedzi bez ślepych zaułków
   description: >-
+    Stan 2026-11-10: zrealizowane, czeka na odbiór właściciela. CAP-6 w
+    mniejszym wariancie: panel wyniku niesie samą podpowiedź, a obie wersje
+    pokazuje widok skracania nad panelem (bez zmiany Kid DTO).
     Zrealizuj CAP-5 i CAP-6: krok skracania tylko z widocznym zaznaczeniem, a
-    po zgubieniu ważnej informacji feedback pokazuje obie wersje odpowiedzi
-    dziecka. Sprawdź AC-14 i AC-17–22.
+    po zgubieniu ważnej informacji na ekranie z feedbackiem widać obie wersje
+    odpowiedzi dziecka. Sprawdź AC-14 i AC-17–22.
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: >-

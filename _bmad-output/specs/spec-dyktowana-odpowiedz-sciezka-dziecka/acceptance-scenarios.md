@@ -21,14 +21,14 @@ Przypadki do wykonania podczas implementacji na fikcyjnych danych, nie wyniki te
 | AC-11 | CAP-3 | Werdykt `correct` z jednym fragmentem zbędnym, którego nie ma dosłownie w odpowiedzi | Ocena `correct`; fragment pominięty; brak „Nie udało się ocenić” |
 | AC-12 | CAP-3 | Pięć fragmentów zbędnych albo fragment zbędny nachodzący na fragment nie na temat | Ocena wiedzy zachowana; zostają najwyżej cztery pierwsze poprawne fragmenty listy, nachodzące pominięte |
 | AC-13 | CAP-3 | Werdykt łamiący reguły wiedzy (identyfikator spoza listy, `correct` z brakami, niepełna partycja elementów) albo `partial`/`incorrect`, którego jedyną luką jest niedosłowne błędne stwierdzenie | Reguły wiedzy jak dotąd; błędne stwierdzenie liczy się jako luka mimo pominięcia jego tekstu; wyjątek: `incorrect`, któremu po pominięciu nie zostaje żadna widoczna luka, pozostaje nieoceniony |
-| AC-14 | CAP-3/5 | Poprawna rozwlekła odpowiedź, wszystkie fragmenty pominięte jako wadliwe | „Świetnie!” bez kroku skracania (przy naruszonej formie jednego zdania dopiero po story 4) |
+| AC-14 | CAP-3/5 | Poprawna rozwlekła odpowiedź, wszystkie fragmenty pominięte jako wadliwe | „Świetnie!” bez kroku skracania |
 | AC-33 | CAP-3 | Ta sama odpowiedź wysłana drugi raz po werdykcie z pominiętym fragmentem | Trafienie w cache, bez drugiego wywołania modelu |
 | AC-15 | CAP-4 | „Nie udało się ocenić”, dziecko wybiera ponowienie | Pole zawiera poprzedni tekst; sposób wprowadzenia (mowa/klawiatura) zachowany; kolejne dyktowanie zastępuje tekst |
 | AC-16 | CAP-4 | Zwykła błędna odpowiedź z prawem do ponowienia w innych ćwiczeniach | Pole czyści się jak dotąd |
 | AC-17 | CAP-5 | Poprawna odpowiedź, precyzja `verbose`, brak fragmentów, naruszona tylko forma zdania | Brak zadania skracania |
 | AC-18 | CAP-5 | Trafienie w cache werdyktu przy innej interpunkcji, fragmentów nie da się odnaleźć w tekście | Brak zadania skracania |
 | AC-19 | CAP-5 | Poprawna odpowiedź z co najmniej jednym odnalezionym fragmentem zbędnym lub nie na temat | Zadanie skracania z zaznaczeniem, jak dotąd; nadal bez oferty w ostatnich trzech zadaniach sesji |
-| AC-20 | CAP-6 | Poprawka gubi element trafiony w oryginale | Feedback pokazuje „Twoja odpowiedź” i krótszą wersję; komunikat nie każe porównywać z czymś niewidocznym; próba niesamodzielna, bez wpływu na serię |
+| AC-20 | CAP-6 | Poprawka gubi element trafiony w oryginale | Na ekranie z feedbackiem zostają „Twoja odpowiedź” i pole z krótszą wersją (widok skracania nad panelem wyniku); komunikat nie każe porównywać z czymś niewidocznym; próba niesamodzielna, bez wpływu na serię |
 | AC-21 | CAP-6 | Feedback z AC-20 | Zawiera wyłącznie tekst dziecka; bez wzorca, elementów wymaganych i notatki modelu |
 | AC-22 | CAP-6 | Feedback z AC-20 na telefonie i tablecie przy najdłuższej odpowiedzi (600 znaków) | Brak przepełnienia, przycisk dalej widoczny, cele ≥ 48 px |
 | AC-23 | CAP-7 | Zadanie z dyktowaniem, mikrofon gotowy | Etykieta „Powiedz odpowiedź” |

@@ -238,6 +238,58 @@ test("shorten: question, marked original, prefilled field and actions fit every 
   await expectReachable(page, { width: 844, height: 390 }, [{ testId: "kid-lesson-check", minHeight: 54 }]);
 });
 
+// Poprawka zgubiła ważną informację (CAP-6): panel wyniku niesie samą podpowiedź, a obie wersje
+// dziecka — oryginał i pole z poprawką — zostają osiągalne nad panelem, także przy 600 znakach.
+const LONG_SENTENCE = "Roślina w świetle robi z wody i dwutlenku węgla cukier i tlen, którym oddychamy. ";
+const LONG_ORIGINAL = LONG_SENTENCE.repeat(8).slice(0, 600).trim();
+const LONG_REVISION = LONG_ORIGINAL.replaceAll("i tlen", "i gazy").slice(0, 600);
+const LOST_HINT = "Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej.";
+const longShortenTask: TaskDto = {
+  ...base(shortenTaskId, "lesson_open_answer"),
+  prompt: {
+    kind: "lesson_shorten",
+    instructionPl: "Skróć odpowiedź. Usuń zaznaczone fragmenty, zostaw to, co najważniejsze.",
+    prompt: QUESTION,
+    originalAnswer: LONG_ORIGINAL,
+    answerSegments: [
+      { text: LONG_ORIGINAL.slice(0, LONG_SENTENCE.length), state: "pill" },
+      { text: LONG_ORIGINAL.slice(LONG_SENTENCE.length), state: "plain" },
+    ],
+  },
+};
+
+test("shorten: after a lost element both versions stay reachable above the result panel (600 characters)", async ({ page }, testInfo) => {
+  await open(page, fixture([longShortenTask], [
+    attempt("10000000-0000-4000-8000-000000000634", shortenTaskId, "text", { kind: "lesson_hint", hintPl: LOST_HINT }),
+  ]), "kid-lesson-shorten");
+  await page.getByTestId("kid-lesson-input").fill(LONG_REVISION);
+  await page.getByTestId("kid-lesson-check").click();
+  const feedback = page.getByTestId("kid-feedback");
+  await expect(feedback).toContainText(LOST_HINT);
+  await expect(page.getByTestId("kid-lesson-correct")).toHaveCount(0);
+  await expect(page.getByTestId("kid-lesson-input")).toHaveValue(LONG_REVISION);
+
+  // pole z poprawką da się czytać i przewijać, ale nie edytować
+  await expect(page.getByTestId("kid-lesson-input")).toBeEnabled();
+  await expect(page.getByTestId("kid-lesson-input")).not.toBeEditable();
+
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await expectReachable(page, viewport, [{ testId: "kid-next", minHeight: 54 }]);
+    await expectNotClipped(page, "kid-lesson-feedback-hint");
+    // Każda wersja po przewinięciu materiału zaczyna się nad panelem wyniku (co najmniej wiersz tekstu).
+    for (const testId of ["kid-lesson-shorten-original", "kid-lesson-input"]) {
+      await page.getByTestId(testId).evaluate((element) => element.scrollIntoView({ block: "start" }));
+      const bounds = (await page.getByTestId(testId).boundingBox())!;
+      const panelTop = (await feedback.boundingBox())!.y;
+      const name = `${testId} at ${viewport.width}x${viewport.height}`;
+      expect(bounds.y, name).toBeGreaterThanOrEqual(-1);
+      expect(bounds.y + 48, name).toBeLessThanOrEqual(panelTop);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`shorten-lost-${viewport.width}x${viewport.height}.png`) });
+  }
+});
+
 // Werdykt v3 (design szkoły §9.2): zbędne i nie na temat w jednym tekście.
 const CATEGORIZED_ORIGINAL = "Roślina w świetle robi z wody i dwutlenku węgla cukier. Liście są zielone przez chlorofil. Wczoraj z kolegami graliśmy w piłkę na boisku za szkołą.";
 const categorizedShortenTask: TaskDto = {

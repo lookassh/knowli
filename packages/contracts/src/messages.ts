@@ -819,7 +819,7 @@ export const messages = {
     lessonPracticedForm: "To też dobrze! W tej lekcji ćwiczymy tak: {text}",
     lessonSegmentRedundant: "zbędne",
     lessonSegmentOffTopic: "nie na temat",
-    lessonShortenLostElement: "Krócej, ale zgubiła się ważna informacja. Porównaj z poprzednią odpowiedzią.",
+    lessonShortenLostElement: "Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej.",
     lessonShortenUnchanged: "To ta sama odpowiedź. Usuń zaznaczone fragmenty.",
     // Dyktowanie odpowiedzi (Etap 3 przedmiotów szkolnych): mowa wpisuje tekst do pola.
     lessonAnswerInput: "Twoja odpowiedź",
