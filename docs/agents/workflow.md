@@ -17,3 +17,9 @@ Ustalenie właściciela z 2026-11-10. BMAD służy do odkrywania i rozbijania fu
 ## `bmad-build`
 
 Tylko na wyraźne polecenie właściciela (np. mała, jednocelowa poprawka). Nie uruchamiaj go samodzielnie, mimo że jego opis zgłasza go do każdej delegowanej zmiany. Jego specy trafiają do `_bmad-output/implementation-artifacts/`.
+
+## Review — jedna ścieżka
+
+- **Per zadanie:** recenzja wbudowana w `superpowers:subagent-driven-development` (zgodność ze specem i AC, jakość).
+- **Przed PR:** trzej niezależni krytycy na gotowej gałęzi, potem `/ponytail:ponytail-review`.
+- Pozostałe narzędzia przeglądu — `bmad-code-review`, `bmad-review`, `superpowers:requesting-code-review`, `engineering:code-review`, wbudowane `/code-review` — tylko na wyraźne polecenie właściciela; nie dokładaj ich samodzielnie do powyższej ścieżki.

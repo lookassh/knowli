@@ -29,7 +29,7 @@ Prywatna, self-hostowana aplikacja rodzinna: rodzic określa materiał, AI przyg
 - Przed zmianą w `packages/kid-ui/` lub w specach `tests/e2e/kid-*` przeczytaj `docs/agents/kid-ui.md`.
 - Przed zmianą w `packages/server/src/domain/lessons/`, `modules/*/lessons/` lub przy nowym przedmiocie przeczytaj `docs/agents/lessons.md`.
 - Przed zmianą w `packages/server/src/providers/`, promptach, `config-defaults.ts` albo danych wysyłanych do usług AI przeczytaj `docs/agents/providers-privacy.md`.
-- Przed specyfikacją, planem lub implementacją funkcji przeczytaj `docs/agents/workflow.md` (BMAD: odkrywanie i historyjki z AC; Superpowers: plan i implementacja; `bmad-build` tylko na wyraźne polecenie).
+- Przed specyfikacją, planem lub implementacją funkcji przeczytaj `docs/agents/workflow.md` (BMAD: odkrywanie i historyjki z AC; Superpowers: plan i implementacja; `bmad-build` i dodatkowe narzędzia review tylko na wyraźne polecenie).
 - Czytaj z `docs/` tylko sekcje związane z zadaniem (np. `schema.sql` przy bazie, `architecture.md` §19 przy lekcjach), nie wszystkie pięć plików od deski do deski.
 
 ## Running and verifying
