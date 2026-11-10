@@ -17,7 +17,7 @@ const path = require('path');
 
 function git(args, cwd) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); // NOSONAR javascript:S4036 — lokalne narzędzie dewelopera: git z PATH użytkownika
   } catch {
     return null;
   }
@@ -28,7 +28,7 @@ const REGENERABLE = /(^|\/)(node_modules|\.next|dist|coverage|test-results|playw
 /** Świeży worktree (np. właśnie założony przez sesję) wygląda jak scalony — nie ruszamy go przez dobę. */
 const FRESH_MS = 24 * 60 * 60 * 1000;
 
-const isAncestor =(commit, of) => spawnSync('git', ['merge-base', '--is-ancestor', commit, of], { stdio: 'ignore' }).status === 0;
+const isAncestor =(commit, of) => spawnSync('git', ['merge-base', '--is-ancestor', commit, of], { stdio: 'ignore' }).status === 0; // NOSONAR javascript:S4036
 const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
 function parseWorktrees() {
@@ -51,9 +51,9 @@ function mergedPrCommits() {
   for (const gh of ['gh', 'C:\\Program Files\\GitHub CLI\\gh.exe']) {
     const result = spawnSync(gh, ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'headRefOid', '--jq', '.[].headRefOid'], { encoding: 'utf-8' });
     if (result.status !== 0) continue;
-    const check = spawnSync('git', ['cat-file', '--batch-check'], { input: result.stdout, encoding: 'utf-8' });
+    const check = spawnSync('git', ['cat-file', '--batch-check'], { input: result.stdout, encoding: 'utf-8' }); // NOSONAR javascript:S4036
     const heads = check.stdout.split(/\r?\n/).filter((l) => l && !l.endsWith('missing')).map((l) => l.split(' ')[0]);
-    const reachable = spawnSync('git', ['rev-list', '--stdin'], { input: heads.join('\n') + '\n', encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
+    const reachable = spawnSync('git', ['rev-list', '--stdin'], { input: heads.join('\n') + '\n', encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 }); // NOSONAR javascript:S4036
     return new Set(reachable.stdout.split(/\r?\n/).filter(Boolean));
   }
   return null;
@@ -82,7 +82,7 @@ function classify(wt, ctx) {
 
 /** Usuwa katalog bez wchodzenia w dowiązania (pnpm na Windows używa junction). */
 function removeDir(dir) {
-  if (process.platform === 'win32') spawnSync('cmd', ['/c', 'rmdir', '/s', '/q', `\\\\?\\${path.resolve(dir)}`], { stdio: 'ignore' });
+  if (process.platform === 'win32') spawnSync('cmd', ['/c', 'rmdir', '/s', '/q', `\\\\?\\${path.resolve(dir)}`], { stdio: 'ignore' }); // NOSONAR javascript:S4036
   else fs.rmSync(dir, { recursive: true, force: true });
   return !fs.existsSync(dir);
 }
