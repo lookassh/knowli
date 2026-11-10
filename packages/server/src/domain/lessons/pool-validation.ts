@@ -540,7 +540,8 @@ export function validateLessonExerciseIssues(
       }));
     }
     const answerLength = [...ex.answer].length;
-    if (answerLength > MAX_TEXT_LENGTH) {
+    // Odpowiedź liczoną przez kod ograniczają limity jej pól źródłowych (pary, grupy, luki, pojęcia).
+    if (answerLength > MAX_TEXT_LENGTH && COMPUTED_ANSWER_SOURCES[ex.exerciseType] === undefined) {
       issues.push(coreIssue("answer.max_length", {
         pl: `answer: przekracza ${MAX_TEXT_LENGTH} znaków`,
         found: `${answerLength} characters, limit ${MAX_TEXT_LENGTH}`,
@@ -603,6 +604,7 @@ export function validateLessonExerciseIssues(
   // Focus sprawdzamy jak dotąd (starsze szkice zapisują się i publikują); focus niedosłowny
   // po neutralnej normalizacji tylko wyłącza tolerancję literówki w ocenie.
   validateFocus(ex, normalizer, issues);
+  validateBlankElements(ex, issues);
   validateByType(ex, topic, objective, normalizer, issues);
   validateAcceptedAnswers(ex, issues);
 
@@ -705,6 +707,31 @@ function validateFocus(
   }
 }
 
+/**
+ * Elementy list pokazywane dziecku jako kafelki nie mogą składać się z samych białych znaków
+ * (kontrakt pilnuje tylko długości ≥ 1). Segmenty `lesson_notice` i bank `lesson_cloze` mają własne reguły.
+ */
+function validateBlankElements(ex: LessonExerciseDraft, issues: LessonRuleIssue[]): void {
+  const elements: (readonly [field: string, text: string])[] = [
+    ...(ex.options ?? []).map((option, i) => [`options[${i}]`, option.text] as const),
+    ...(ex.items ?? []).map((item, i) => [`items[${i}]`, item.text] as const),
+    ...(ex.pairs ?? []).flatMap((pair, i) => [[`pairs[${i}].left`, pair.left], [`pairs[${i}].right`, pair.right]] as const),
+    ...(ex.extraRight ?? []).map((text, i) => [`extraRight[${i}]`, text] as const),
+    ...(ex.groups ?? []).map((group, i) => [`groups[${i}].label`, group.label] as const),
+    ...(ex.groupItems ?? []).map((item, i) => [`groupItems[${i}]`, item.text] as const),
+    ...(ex.keywordOptions ?? []).map((option, i) => [`keywordOptions[${i}]`, option.text] as const),
+  ];
+  for (const [field, text] of elements) {
+    if (text.trim() === "") {
+      issues.push(coreIssue("field.blank", {
+        field,
+        pl: `${field}: element nie może składać się z samych białych znaków`,
+        found: "blank text",
+      }));
+    }
+  }
+}
+
 function validateByType(
   ex: LessonExerciseDraft,
   topic: LessonTopic,
@@ -759,6 +786,14 @@ function validateByType(
       break;
     case "lesson_keywords":
       validateKeywords(ex, normalizer, issues);
+      break;
+    case "lesson_calculation":
+      if (ex.calculation?.kind === "unit_conversion" && ex.calculation.params.fromUnit === ex.calculation.unit) {
+        issues.push(coreIssue("calculation.same_unit", {
+          pl: "calculation.params.fromUnit: jednostka wejściowa musi różnić się od jednostki wyniku",
+          found: `fromUnit and unit are both ${clip(ex.calculation.unit)}`,
+        }));
+      }
       break;
     case "lesson_match":
       validateMatch(ex, issues);
@@ -1275,6 +1310,15 @@ function validateOptions(
     issues.push(coreIssue("options.count", {
       pl: `options: liczba opcji (${options.length}) poza zakresem ${MIN_OPTIONS}–${MAX_OPTIONS}`,
       found: `${options.length} options, allowed ${MIN_OPTIONS}–${MAX_OPTIONS}`,
+    }));
+  }
+  // Sesja wyznacza poprawną opcję po id źródłowym: powtórzone id dałoby dziecku zły klucz.
+  const repeatedId = firstRepeated(options.map((option) => option.id));
+  if (repeatedId !== undefined) {
+    issues.push(coreIssue("options.ids_unique", {
+      field: `options[${repeatedId.index}].id`,
+      pl: "options: identyfikatory opcji muszą być unikalne",
+      found: `id ${clip(repeatedId.value)} repeats in options`,
     }));
   }
   // Unikalność po normalizacji (dowolny wspólny wariant = duplikat).

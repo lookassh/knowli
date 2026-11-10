@@ -84,7 +84,16 @@ describe("lessonExerciseIdentity", () => {
     const cloze = exercise({ exerciseType: "lesson_cloze", clozeText: "It’s a ___.", gapAnswers: ["cat."] });
     expect(lessonExerciseStimulus(cloze)).toBe(JSON.stringify(["it’s a ___.", ["cat."]]));
     const match = exercise({ exerciseType: "lesson_match", pairs: [{ left: "Don’t!", right: "Nie." }] });
-    expect(lessonExerciseStimulus(match)).toBe(JSON.stringify(["don’t!=nie."]));
+    expect(lessonExerciseStimulus(match)).toBe(JSON.stringify([["don’t!", "nie."]]));
+  });
+
+  it("identifies match pairs by both sides, whatever the order and wherever a separator character sits", () => {
+    const match = (pairs: { left: string; right: string }[]) => exercise({ exerciseType: "lesson_match", pairs });
+    expect(lessonExerciseIdentity(match([{ left: "a=b", right: "c" }]))).not.toBe(lessonExerciseIdentity(match([{ left: "a", right: "b=c" }])));
+    expect(lessonExerciseIdentity(match([{ left: "a", right: "1" }, { left: "b", right: "2" }])))
+      .toBe(lessonExerciseIdentity(match([{ left: "b", right: "2" }, { left: "a", right: "1" }])));
+    expect(lessonExerciseIdentity(match([{ left: "a", right: "1" }, { left: "b", right: "2" }])))
+      .not.toBe(lessonExerciseIdentity(match([{ left: "a", right: "2" }, { left: "b", right: "1" }])));
   });
 
   it("uses the displayed question as the short-answer stimulus before a legacy stem", () => {

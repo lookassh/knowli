@@ -300,6 +300,41 @@ describe("reguły par, grup, luk z bankiem i słów kluczowych", () => {
   const computed = (exerciseType: LessonExerciseDraft["exerciseType"], fields: Record<string, unknown>) =>
     ({ exerciseType, objectiveId: THIRD_PERSON, answer: "x", acceptedAnswers: [], focus: [], ...fields }) as LessonExerciseDraft;
 
+  const PAIRS = [{ left: "Wisła", right: "rzeka" }, { left: "Rysy", right: "szczyt" }, { left: "Kraków", right: "miasto" }];
+  const GROUPS = [{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ptaki" }];
+  const ITEMS = [{ text: "Pies", groupId: "g1" }, { text: "Kot", groupId: "g1" }, { text: "Wróbel", groupId: "g2" }, { text: "Sowa", groupId: "g2" }];
+  const TERMS = [{ id: "k1", text: "liść" }, { id: "k2", text: "korzeń" }, { id: "k3", text: "łodyga" }, { id: "k4", text: "kwiat" }];
+
+  it.each<[string, LessonExerciseDraft]>([
+    ["options[1]", computed("lesson_choice", { stem: "She ___.", options: [{ id: "a", text: "x" }, { id: "b", text: " " }], correctOption: "a" })],
+    ["items[1]", computed("lesson_order", { items: [{ id: "i0", text: "She" }, { id: "i1", text: "\t" }, { id: "i2", text: "plays" }] })],
+    ["pairs[2].left", computed("lesson_match", { pairs: [...PAIRS.slice(0, 2), { left: " ", right: "miasto" }] })],
+    ["pairs[2].right", computed("lesson_match", { pairs: [...PAIRS.slice(0, 2), { left: "Kraków", right: "\u00a0" }] })],
+    ["extraRight[0]", computed("lesson_match", { pairs: PAIRS, extraRight: ["  "] })],
+    ["groups[1].label", computed("lesson_group", { groups: [GROUPS[0], { id: "g2", label: " " }], groupItems: ITEMS })],
+    ["groupItems[3]", computed("lesson_group", { groups: GROUPS, groupItems: [...ITEMS.slice(0, 3), { text: " ", groupId: "g2" }] })],
+    ["keywordOptions[3]", computed("lesson_keywords", { keywordOptions: [...TERMS.slice(0, 3), { id: "k4", text: " " }], keyOptionIds: ["k1", "k2"] })],
+  ])("element z samych białych znaków → field.blank w %s", (field, ex) => {
+    const issue = only(issuesOf(ex), "field.blank");
+    expect(issue.field).toBe(field);
+    expect(issue.pl).toBe(`${field}: element nie może składać się z samych białych znaków`);
+  });
+
+  it("symbol albo sama interpunkcja to nie pusty element (field.blank sprawdza tylko białe znaki)", () => {
+    const issues = issuesOf(computed("lesson_choice", {
+      stem: "2 ___ 1", options: [{ id: "a", text: ">" }, { id: "b", text: "<" }, { id: "c", text: "?" }, { id: "d", text: "…" }], correctOption: "a",
+    }));
+    expect(issues.filter((issue) => issue.rule === "field.blank")).toEqual([]);
+  });
+
+  it("powtórzone id opcji → options.ids_unique z polem powtórzenia", () => {
+    const issue = only(issuesOf(computed("lesson_choice", {
+      stem: "Rzeka ___.", options: [{ id: "a", text: "Wisła" }, { id: "a", text: "Odra" }, { id: "b", text: "Warta" }], correctOption: "a", answer: "Wisła",
+    })), "options.ids_unique");
+    expect(issue.field).toBe("options[1].id");
+    expect(issue.found).toBe('id "a" repeats in options');
+  });
+
   it("groupId spoza grup → group.item_unknown_group z polem elementu i dozwolonymi id", () => {
     const issues = issuesOf(computed("lesson_group", {
       groups: [{ id: "g1", label: "Ssaki" }, { id: "g2", label: "Ptaki" }],
