@@ -14,7 +14,7 @@ Miejsca potwierdzone przeglądem z 2026-11-10 (ścieżki względem `packages/`).
 | CAP-5 | `server/src/domain/lessons/precision-trainer.ts:43-49` | (Stan sprzed story 4.) Oferta także przy samym `formOk === false` |
 | CAP-5 | `server/src/modules/learning/lessons/lesson-shorten.ts:156-158` | Gdy segmentów nie da się zbudować, cały tekst idzie jako `plain` |
 | CAP-6 | `server/src/modules/learning/lessons/lesson-shorten.ts:74-96`, `contracts/src/messages.ts:822` | (Stan sprzed story 4.) Wynik `incorrect` z podpowiedzią „Porównaj z poprzednią odpowiedzią”, bez treści |
-| CAP-7 | `kid-ui/src/exercises/SpeechRecordButton.tsx:91-99`, `contracts/src/messages.ts:655-665`, `:826` | Teksty ćwiczenia słówek; `dictationRecord` nieużyte |
+| CAP-7 | `kid-ui/src/exercises/SpeechRecordButton.tsx:91-99`, `contracts/src/messages.ts:655-665`, `:826` | (Stan sprzed story 5; dotyczy też CAP-9 i CAP-10.) Teksty ćwiczenia słówek; `dictationRecord` nieużyte |
 | CAP-9 | `kid-ui/src/session/useLearningSession.ts:53-61`, `session-controller.ts:2292` | `cancelRecording()` bez komunikatu |
 | CAP-10 | `kid-ui/src/screens/LearnScreen.tsx:351-355`, `contracts/src/messages.ts:668` | Stan oczekiwania `kid-processing` już jest; jedyny tekst to „Sprawdzam nagranie…” |
 

@@ -14,6 +14,8 @@ export interface SpeechRecordButtonProps {
   level: number | null;
   notice?: string | null;
   mode: RecordingModeDto;
+  /** Dyktowanie odpowiedzi lekcji: teksty mówią o odpowiedzi i o tym, jak skończyć (bez „Nagraj”/„przytrzymaj”). */
+  dictation?: boolean;
   onPrepare(): void;
   onStart(): void;
   onStop(): void;
@@ -29,7 +31,7 @@ function keyOwner(key: string): GestureOwner | null {
 }
 
 /** Shared hold-to-speak control with an accessible click/toggle alternative. */
-export function SpeechRecordButton({ phase, ready, disabled, level, notice = null, mode, onPrepare, onStart, onStop, onCancel }: SpeechRecordButtonProps) {
+export function SpeechRecordButton({ phase, ready, disabled, level, notice = null, mode, dictation = false, onPrepare, onStart, onStop, onCancel }: SpeechRecordButtonProps) {
   const [gesture, dispatch] = useReducer(
     (state: GestureState, event: Parameters<typeof reduceRecordingGesture>[1]) => reduceRecordingGesture(state, event).state,
     initialGesture,
@@ -88,15 +90,17 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
   const levelValue = level === null ? null : Math.round(Math.max(0, Math.min(1, level)) * 100);
   const active = phase === "starting" || phase === "recording" || phase === "stopping";
   const nativeDisabled = disabled || (phase !== "idle" && phase !== "recording" && phase !== "starting");
-  const status = phase === "preparing" ? messages.kid.recordingPrepare
+  const status = phase === "preparing" ? dictation ? messages.kid.dictationPrepare : messages.kid.recordingPrepare
     : phase === "starting" ? messages.kid.recordingStarting
           : phase === "recording" ? messages.kid.recordingListen
-        : phase === "stopping" ? messages.kid.recordingFinishing
-          : ready ? null : messages.kid.recordingPermission;
-  const label = phase === "recording" ? messages.kid.recordingListen
+        : phase === "stopping" ? dictation ? messages.kid.dictationRecognizing : messages.kid.recordingFinishing
+          : ready || dictation ? null : messages.kid.recordingPermission;
+  const wordLabel = mode === "hold" ? messages.kid.recordHold
+    : phase === "starting" ? messages.kid.recordingStarting : messages.kid.record;
+  const dictationLabel = phase === "starting" ? messages.kid.recordingStarting : messages.kid.dictationRecord;
+  const label = phase === "recording" ? dictation ? messages.kid.dictationStop : messages.kid.recordingListen
     : !ready && phase === "idle" ? messages.kid.recordingEnableMic
-      : mode === "hold" ? messages.kid.recordHold
-        : phase === "starting" ? messages.kid.recordingStarting : messages.kid.record;
+      : dictation ? dictationLabel : wordLabel;
 
   return (
     <div className="kid-record-controls" data-testid="kid-record-controls">
@@ -180,7 +184,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         {phase === "recording" && <SoundRing testId="kid-recording-ring" />}
       </button>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
-      {active && (
+      {active && !(dictation && phase === "stopping") && (
         <div className="kid-recording" data-testid="kid-recording"><KidIcon name="microphone" /> {messages.kid.recording}</div>
       )}
       {levelValue !== null && phase === "recording" && (
