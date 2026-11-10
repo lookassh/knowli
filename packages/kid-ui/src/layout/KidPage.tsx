@@ -34,6 +34,10 @@ export function KidPage({
         data-viewport-short={session && viewport.height !== null && viewport.height <= 700 ? "true" : undefined}
         data-viewport-very-short={session && viewport.height !== null && viewport.height <= 479 ? "true" : undefined}
         style={style}
+        // Menu kontekstowe (prawy przycisk, długie przytrzymanie) tylko w polach tekstowych — do kopiuj/wklej.
+        onContextMenu={(event) => {
+          if (!(event.target as Element).closest("input, textarea, [contenteditable]")) event.preventDefault();
+        }}
       >
         {children}
       </div>
