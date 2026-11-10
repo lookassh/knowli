@@ -601,14 +601,6 @@ function openCheckServiceLabel(env: Record<string, string | undefined>): string 
 }
 
 /**
- * Opis generowania lekcji dla panelu rodzica (web): nazwy usług. Obecny = worker generuje lekcje
- * (pełna konfiguracja `UMIEM_GRADER_*` jest warunkiem: grader ocenia dziecko w web), czyli generowanie
- * lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
- * klucza); inaczej `undefined`, gdy klucza OpenRouter nie ma albo ma kształt
- * klucza OpenAI (worker z takim kluczem nie wstaje). Nigdy nie rzuca — błędne
- * liczby i wysiłki agenta zatrzymują worker, nie web.
- */
-/**
  * Polityka runu lekcji dla procesu web (pole `stalled` runu puli). Błędne limity zatrzymują worker, nie web:
  * tutaj dają `undefined`, czyli wartości domyślne.
  */
@@ -620,6 +612,14 @@ export function lessonExecutionFromEnv(env: Record<string, string | undefined>):
   }
 }
 
+/**
+ * Opis generowania lekcji dla panelu rodzica (web): nazwy usług. Obecny = worker generuje lekcje
+ * (pełna konfiguracja `UMIEM_GRADER_*` jest warunkiem: grader ocenia dziecko w web), czyli generowanie
+ * lekcji jest dostępne. Tryb fake pokazuje nazwy fake (bez
+ * klucza); inaczej `undefined`, gdy klucza OpenRouter nie ma albo ma kształt
+ * klucza OpenAI (worker z takim kluczem nie wstaje). Nigdy nie rzuca — błędne
+ * liczby i wysiłki agenta zatrzymują worker, nie web.
+ */
 export function lessonAgentPublicFromEnv(env: Record<string, string | undefined>): LessonAgentPublic | undefined {
   if (env.UMIEM_FAKE_PROVIDERS === "1") {
     return { generationService: "fake-lesson-agent-model", checkService: "fake-lesson-checker-model" };

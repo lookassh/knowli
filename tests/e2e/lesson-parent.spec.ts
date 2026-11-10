@@ -113,10 +113,10 @@ test("healthy lesson generation: no restart button, save and publish blocked, ru
   await enterParent(page);
   // Znacznik w materiale: każda paczka fake-generatora puli trwa co najmniej 3 s (przerywalnie),
   // więc stan „generowanie” jest widoczny. Zdrowego runu nie da się zrestartować (wyrzuciłby opłacone paczki).
-  await createLesson(page, `Restart ${randomUUID().slice(0, 8)} ${FAKE_SLOW_MARKER}`, false);
+  await createLesson(page, `Generowanie ${randomUUID().slice(0, 8)} ${FAKE_SLOW_MARKER}`, false);
   await expect(page.getByTestId("generation-banner")).toBeVisible();
   await expect(page.getByTestId("publish-blocked-reason")).toHaveText(messages.lessons.generationBlocksSave);
-  await expect(page.getByTestId("publish-lesson")).toBeDisabled();
+  await expect(page.getByTestId("editor-title")).toBeDisabled();
   await expect(page.getByTestId("retry-stalled-generation")).toHaveCount(0);
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();

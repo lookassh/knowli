@@ -597,10 +597,16 @@ describe("generowanie puli lekcji (integracja)", () => {
     const services = lessonServices(fakes);
     const { runId, deckId } = await createLesson(services, command());
     await claimQueuedRun(services.db, runId);
+    // web nie ma zależności generacji: politykę dostaje wprost z własnego env (`Services.lessonExecution`)
+    const web = createServices({ db: services.db, subjects: lessonRegistry(), lessonExecution: fakes.deps.lessonExecution });
+    const webWithDefaults = createServices({ db: services.db, subjects: lessonRegistry() });
     await ageClaim(runId, 13);
     expect((await readLessonDeck(services, deckId)).generation!.stalled).toBeUndefined();
+    expect((await readLessonDeck(web, deckId)).generation!.stalled).toBeUndefined();
+    expect((await readLessonDeck(webWithDefaults, deckId)).generation!.stalled).toBe(true);
     await ageClaim(runId, 23);
     expect((await readLessonDeck(services, deckId)).generation!.stalled).toBe(true);
+    expect((await readLessonDeck(web, deckId)).generation!.stalled).toBe(true);
   });
 
   it("worker przywraca run puli utknięty w running i kończy go, a zdrowego nie rusza", async () => {

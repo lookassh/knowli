@@ -1156,7 +1156,7 @@ export const messages = {
     removeSourceRef: "Usuń cytat",
     generating: "Generuję ćwiczenia…",
     generationFailed: "Generowanie nie udało się.",
-    generationBlocksSave: "Trwa generowanie ćwiczeń. Poprawki wprowadź po jego zakończeniu — teraz nie da się ich zapisać.",
+    generationBlocksSave: "Trwa generowanie ćwiczeń. Lekcję zmienisz i opublikujesz, gdy się skończy.",
     generationQueueSlow: "Generowanie jeszcze się nie zaczęło. Możesz poczekać albo wrócić później. Zapis lub publikacja lekcji je przerwie.",
     generationErrors: {
       validation: "Nie udało się przygotować poprawnych ćwiczeń. Ponów próbę.",

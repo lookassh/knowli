@@ -135,7 +135,7 @@ Moduł: `apps/web/src/parent/lessons/LessonEditor.tsx`, `apps/web/src/parent/Edi
 **Task 2 (predykat):**
 - `lessonPoolRunStalled(stallAfterMs: number): SQL<boolean>` w `generation-runs.ts` (bez importu z `lessons/`); `lessonRunStallAfterMs(source: { generation?: { lessonExecution?: LessonGenerationPolicy }; lessonExecution?: LessonGenerationPolicy }): number` w `lessons/lesson-generation-policy.ts` (termin runu + `LESSON_RUN_STALL_MARGIN_MS = 120_000`).
 - `stalled` tylko w `readLessonDeck` (`latestLessonRunOfPurpose` dostaje `stallAfterMs`, wywołanie w `lesson-api.ts`); `readGeneration` bez zmian — panel lekcji go nie czyta.
-- `lessonGenerationPolicyFromEnv` eksportowane przez `modules/materials/index.ts`, potem root.
+- Web dostaje politykę przez `lessonExecutionFromEnv` w `config.ts` (jak inne `*FromEnv`; nie rzuca), eksport z roota.
 - Dokumentacja: `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS` musi być wspólne dla web i workera.
 
 **Task 3 (worker):**
@@ -148,7 +148,7 @@ Moduł: `apps/web/src/parent/lessons/LessonEditor.tsx`, `apps/web/src/parent/Edi
 - Istniejący test „zawieszony run…” (`parent-lesson-editor-layout.spec.ts`) dostaje `stalled: true`; `regenUnavailableShown` w `LessonEditor.tsx` liczy `running` tylko z `stalled === true` (inaczej `aria-describedby` wskazuje nieistniejący element).
 - Bez nowego `stalledPoolGenerationHint` — zostaje istniejący `lessons.stalledGenerationHint`.
 - Teksty po uwagach:
-  - `generationBlocksSave`: „Trwa generowanie ćwiczeń. Poprawki wprowadź po jego zakończeniu — teraz nie da się ich zapisać.” (zapis po zakończeniu runu przy niezapisanych zmianach kończy się istniejącym konfliktem wersji; blokada pól formularza to decyzja właściciela, poza zakresem).
+  - `generationBlocksSave`: „Trwa generowanie ćwiczeń. Poprawki wprowadź po jego zakończeniu — teraz nie da się ich zapisać.” — po przeglądzie gałęzi zmienione na „Trwa generowanie ćwiczeń. Lekcję zmienisz i opublikujesz, gdy się skończy.”, a pola formularza są w tym czasie zablokowane (poprawka wpisana w trakcie przepadałaby na konflikcie wersji).
   - `generationQueueSlow`: „Generowanie jeszcze się nie zaczęło. Możesz poczekać albo wrócić później. Zapis lub publikacja lekcji je przerwie.”
   - `generationErrors.validation`: „Nie udało się przygotować poprawnych ćwiczeń. Ponów próbę.”
   - `generationErrors.internal`: „Generowanie przerwał błąd aplikacji. Ponowienie może nie pomóc.”

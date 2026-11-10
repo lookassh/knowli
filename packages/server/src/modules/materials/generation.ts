@@ -286,6 +286,8 @@ export async function readGeneration(services: Services, runId: string): Promise
  * Ręczne ponowienie po porażce (lub odblokowanie runu utkwionego w running
  * po awarii workera). Resetuje budżet prób; nie rusza runów zakończonych ani
  * zdrowej próby w toku (`conflict` — ponowienie wyrzuciłoby opłaconą pracę).
+ * Run puli lekcji: `conflict` także wtedy, gdy nie jest najnowszym runem puli
+ * wersji albo gdy zagadnienie jego dogenerowania usunięto ze szkicu.
  * Zwraca id runu do śledzenia: zwykle ten sam, a dla runu historyjki
  * albo utkniętego runu zestawu w `running` — id nowego runu, który go zastępuje.
  */
@@ -339,9 +341,7 @@ export async function retryGeneration(services: Services, runId: string): Promis
           .where(eq(generationRuns.id, runId));
         return { runId };
       }
-      // Run puli: „Ponów” to świadoma decyzja rodzica — punkt kontrolny agenta
-      // zachowuje postęp, ale dostaje świeży budżet (spec etapu 2a §8.4), w każdej
-      // gałęzi wstawiającej run do kolejki, pod blokadą runu powyżej.
+      // Run puli: punkt kontrolny zachowuje postęp, ale dostaje świeży budżet (spec etapu 2a §8.4).
       // Run czekający w kolejce bez odroczenia nie wymaga niczego.
       if (current.state === "queued" && !(current.nextAttemptAt && current.nextAttemptAt > services.clock.now())) return { runId };
       // Zdrowa próba w toku: ponowienie wyrzuciłoby opłacone paczki. Utkniętą (np. po padzie workera) wolno ponowić.
@@ -352,14 +352,19 @@ export async function retryGeneration(services: Services, runId: string): Promis
         .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.deckVersionId, version.id), lessonPoolRunFilter()))
         .orderBy(desc(generationRuns.createdAt)).limit(1))[0];
       if (latest?.id !== runId) throw new AppError("conflict");
-      const context = (version.lessonContext ?? {}) as { objectiveIds?: string[]; dynamicTopic?: unknown };
+      const context = (version.lessonContext ?? {}) as { objectiveIds?: string[]; dynamicTopic?: unknown; interests?: unknown };
       const regenerate = (current.input as { regenerate?: { objectiveId: string } } | null)?.regenerate;
       const isTopUp = regenerate !== undefined;
-      // Dogenerowanie niesie migawkę zagadnień z chwili zlecenia: po edycji rodzica bierzemy bieżące,
-      // a zagadnienia usuniętego ze szkicu nie dogenerowujemy.
+      // Dogenerowanie niesie migawkę szkicu z chwili zlecenia: po edycji rodzica bierzemy bieżące zagadnienia
+      // i tematy zdań, a zagadnienia usuniętego ze szkicu nie dogenerowujemy.
       if (isTopUp && !context.objectiveIds?.includes(regenerate.objectiveId)) throw new AppError("conflict");
-      const input = isTopUp && context.dynamicTopic !== undefined
-        ? { ...(current.input as Record<string, unknown>), dynamicTopic: context.dynamicTopic }
+      const { interests: _staleInterests, ...snapshot } = current.input as Record<string, unknown>;
+      const input = isTopUp
+        ? {
+            ...snapshot,
+            ...(context.dynamicTopic === undefined ? {} : { dynamicTopic: context.dynamicTopic }),
+            ...(context.interests === undefined ? {} : { interests: context.interests }),
+          }
         : current.input;
       // „Ponów” to świadoma decyzja rodzica: run przyjmuje bieżący numer edycji szkicu (jak zestawy, #302) —
       // zapis rodzica po porażce nie zamyka runu `failed`, więc porównanie numerów zawsze dawałoby konflikt.

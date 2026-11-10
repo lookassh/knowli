@@ -303,22 +303,26 @@ test.describe("cykl życia runu puli w edytorze", () => {
     await expect(page.getByTestId("publish-blocked-reason")).toHaveText(blocked);
     await expect(page.getByTestId("publish-lesson")).toBeDisabled();
     await expect(page.getByTestId("publish-lesson")).toHaveAccessibleDescription(blocked);
-    // poprawka w trakcie generowania: zapis zostaje wyłączony i mówi dlaczego
-    await page.getByTestId("editor-title").fill("Nowy tytuł");
     await expect(page.getByTestId("save-lesson")).toBeDisabled();
     await expect(page.getByTestId("save-lesson")).toHaveAccessibleDescription(blocked);
-    await expect(page.getByTestId("publish-blocked-reason")).toHaveText(blocked);
+    // pola też są zablokowane: poprawka wpisana teraz przepadłaby na konflikcie wersji po zapisie puli
+    await expect(page.getByTestId("editor-title")).toBeDisabled();
+    await expect(page.getByTestId("lesson-themes-remove")).toBeDisabled();
+    await page.getByTestId("exercise-edit-0").click();
+    await expect(page.getByTestId("exercise-answer-0")).toBeDisabled();
   });
 
-  test("blokada zapisu znika po zakończeniu runu mimo niezapisanych zmian", async ({ page }) => {
+  test("blokada znika po zakończeniu runu: pola, zapis i publikacja wracają", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     let data = withRun({ state: "running" });
     await openLesson(page, { data: () => data });
-    await page.getByTestId("editor-title").fill("Nowy tytuł");
-    await expect(page.getByTestId("save-lesson")).toBeDisabled();
+    await expect(page.getByTestId("editor-title")).toBeDisabled();
     data = withRun({ state: "succeeded" });
+    await expect(page.getByTestId("editor-title")).toBeEnabled();
+    await expect(page.getByTestId("publish-lesson")).toBeEnabled();
+    await expect(page.getByTestId("publish-blocked-reason")).toHaveCount(0);
+    await page.getByTestId("editor-title").fill("Nowy tytuł");
     await expect(page.getByTestId("save-lesson")).toBeEnabled();
-    await expect(page.getByTestId("publish-blocked-reason")).not.toHaveText(blocked);
   });
 
   test("utknięty run: „Ponów generowanie” działa, zapis i publikacja odblokowane", async ({ page }) => {
@@ -344,6 +348,8 @@ test.describe("cykl życia runu puli w edytorze", () => {
     await expect(page.getByTestId("generation-retry-blocked")).toBeVisible();
     // nieudany run nie blokuje zapisu: po zapisie da się go ponowić
     await expect(page.getByTestId("save-lesson")).toBeEnabled();
+    await page.getByTestId("editor-title").fill(lesson.title);
+    await page.getByTestId("generation-retry").click({ force: true });
     expect(retryPosts(calls)).toBe(0);
   });
 
@@ -356,11 +362,14 @@ test.describe("cykl życia runu puli w edytorze", () => {
     await page.clock.runFor(170_000);
     await expect(page.getByTestId("generation-queue-slow")).toHaveCount(0);
     await expect(page.getByTestId("publish-lesson")).toBeDisabled();
-    // run wrócił do kolejki po kolejnej próbie: to nowe czekanie
+    // run wrócił do kolejki po kolejnej próbie: to nowe czekanie (czekamy, aż panel dostanie nową próbę)
     data = withRun({ state: "queued", attempts: 1 });
-    await page.clock.runFor(20_000);
+    await page.clock.runFor(2_000);
+    await page.waitForResponse((response) => response.url().endsWith(`/lessons/${deckId}`));
+    await page.clock.runFor(150_000);
     await expect(page.getByTestId("generation-queue-slow")).toHaveCount(0);
-    await page.clock.runFor(180_000);
+    await expect(page.getByTestId("publish-lesson")).toBeDisabled();
+    await page.clock.runFor(40_000);
     await expect(page.getByTestId("generation-queue-slow")).toHaveText(messages.lessons.generationQueueSlow);
     await expect(page.getByTestId("publish-lesson")).toBeEnabled();
     await expect(page.getByTestId("retry-stalled-generation")).toHaveCount(0);
