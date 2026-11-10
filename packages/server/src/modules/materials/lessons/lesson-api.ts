@@ -46,6 +46,7 @@ import { resolveLessonTopic, validateDynamicTopicData } from "../../../domain/le
 import { assertAssetPublishable, mediaPendingError, reconcileBeforePublish, reconcileDraftAssetsTx, reconcileLessonStoryAssetTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { supersedeFailedLessonStoryRuns, supersedeLessonRuns } from "../generation-runs";
+import { lessonRunStallAfterMs } from "./lesson-generation-policy";
 import { readDeckSource } from "../source-materials";
 import {
   assertEditable,
@@ -447,8 +448,8 @@ export async function readLessonDraftDto(
 }
 
 /** Najnowszy run puli lekcji wskazanej wersji (polling panelu rodzica; bez runów historyjki). */
-async function latestLessonRun(db: Executor, deckVersionId: string): Promise<GenerationDto | null> {
-  return latestLessonRunOfPurpose(db, deckVersionId, "pool");
+async function latestLessonRun(db: Executor, services: Services, deckVersionId: string): Promise<GenerationDto | null> {
+  return latestLessonRunOfPurpose(db, deckVersionId, "pool", lessonRunStallAfterMs(services));
 }
 
 async function lessonAssignments(db: Executor, deckId: string): Promise<AssignmentDto[]> {
@@ -509,7 +510,7 @@ async function readLessonDeckSnapshot(db: Executor, services: Services, id: stri
     sessionTaskBudget: deck.sessionTaskBudget,
     draft: editable ? await readLessonDraftDto(db, services, editable.id) : null,
     published: publishedVersionId ? await readLessonDraftDto(db, services, publishedVersionId) : null,
-    generation: editable ? await latestLessonRun(db, editable.id) : null,
+    generation: editable ? await latestLessonRun(db, services, editable.id) : null,
     // Run historyjki osobno: `generation` pokazuje tylko runy puli (spec §6.2).
     storyGeneration: editable ? await latestLessonStoryRun(db, editable.id) : null,
     assignments: await lessonAssignments(db, id),

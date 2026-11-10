@@ -10,6 +10,22 @@ export const DEFAULT_LESSON_GENERATION_POLICY: LessonGenerationPolicy = {
   cancelPollMs: 1_000,
 };
 
+/** Zapas ponad termin runu, po którym próbę w `running` uznajemy za utkniętą (zegar bazy kontra zegar procesu, zapis końcowy). */
+export const LESSON_RUN_STALL_MARGIN_MS = 120_000;
+
+/**
+ * Po ilu ms od przejęcia run puli w `running` jest utknięty: termin runu z polityki procesu plus margines.
+ * Worker ma politykę w zależnościach generacji, web — z własnego env (`Services.lessonExecution`); obie
+ * wartości muszą pochodzić z tej samej konfiguracji (`UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS`).
+ */
+export function lessonRunStallAfterMs(source: {
+  generation?: { lessonExecution?: LessonGenerationPolicy } | undefined;
+  lessonExecution?: LessonGenerationPolicy | undefined;
+}): number {
+  const policy = source.generation?.lessonExecution ?? source.lessonExecution ?? DEFAULT_LESSON_GENERATION_POLICY;
+  return policy.runTimeoutMs + LESSON_RUN_STALL_MARGIN_MS;
+}
+
 function positiveInteger(value: string | undefined, fallback: number, key: string): number {
   if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);

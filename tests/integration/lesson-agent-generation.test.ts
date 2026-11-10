@@ -266,6 +266,9 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
       // running po awarii workera
       const running = await runningLesson(services);
       await saveLessonAgentCheckpoint(services.db, running.run, progress());
+      // zdrowej próby nie wolno ponowić; ta jest starsza niż termin runu z zapasem
+      await expect(retryGeneration(services, running.runId)).rejects.toMatchObject({ code: "conflict" });
+      await pool.query("update learning_app.generation_runs set claimed_at = now() - interval '13 minutes' where id = $1", [running.runId]);
       await retryGeneration(services, running.runId);
       expect((await runRow(running.runId)).state).toBe("queued");
       expect(parseLessonAgentProgress((await runRow(running.runId)).agent_checkpoint, running.runId)).toEqual(expected);
@@ -1439,6 +1442,7 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
         // Punkt kontrolny z początku próby (przebieg bazowy rozlicza zagadnienia dopiero po walidacji puli).
         const saved = (await progressOf(runId))!;
 
+        await pool.query("update learning_app.generation_runs set claimed_at = now() - interval '13 minutes' where id = $1", [runId]);
         await retryGeneration(services, runId);
         inFlight.open();
         await running;
@@ -1493,7 +1497,7 @@ describe("pula lekcji na ścieżce workera (integracja)", () => {
         expect(riversFamilies.size).toBeGreaterThan(0);
         const riversCalls = packetCallsOf(agent, "rzeki_polski").length;
 
-        // „Ponów” odroczonego runu: nowy budżet prób bez podbicia numeru edycji.
+        // „Ponów” odroczonego runu: nowy budżet prób.
         packets.gory_polski = fromNextCall(agent, "gory_polski", everyPacket(familyStep));
         await retryGeneration(services, school.runId);
         expect((await fullRun(school.runId)).attempts).toBe(0);

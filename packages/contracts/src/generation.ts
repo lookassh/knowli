@@ -105,7 +105,10 @@ export const GenerationDtoSchema = z.object({
   attempts: z.number().int().nonnegative(),
   errorCode: z.string().nullable(),
   rejectedCount: z.number().int().nonnegative().nullable().optional(),
-  /** Run zestawu słówek utknął w `running` (ponad 10 minut od przejęcia, #299) — panel pokazuje „Ponów”; brak pola — nie utknął. */
+  /**
+   * Run utknął w `running` — panel pokazuje „Ponów”; brak pola — nie utknął. Zestaw słówek: ponad 10 minut od
+   * przejęcia (#299). Pula lekcji (`LessonDeckDto.generation`): dłużej niż termin runu z zapasem, np. po padzie workera.
+   */
   stalled: z.boolean().optional(),
 });
 export type GenerationDto = z.infer<typeof GenerationDtoSchema>;

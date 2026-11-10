@@ -97,6 +97,9 @@ export function lessonPollInterval(deck: LessonDeckDto | undefined): number | fa
   return promptAudioPending || cardAudioPending || explanationAudioPending || storyAudioPending ? 3000 : false;
 }
 
+/** Po tylu ms nieprzerwanego `queued` panel mówi, że generowanie nie ruszyło, i odblokowuje zapis (mierzone w przeglądarce). */
+const LESSON_QUEUE_NOTICE_MS = 180_000;
+
 /**
  * Przegląd i edycja jednej lekcji: ćwiczenia pogrupowane wg reguł i etapów
  * z etykietami typów, edycja pól zależnie od typu, usuwanie, walidacja per
@@ -348,6 +351,24 @@ export default function LessonEditor({
   const editable = draft !== null;
 
   const generating = deck?.generation?.state === "queued" || deck?.generation?.state === "running";
+  // Stan runu z bieżącej odpowiedzi odpytywania: przy niezapisanych zmianach `deck` się nie odświeża,
+  // a blokada zapisu nie może zostać po zakończeniu runu.
+  const liveRun = lessonQuery.data?.generation ?? null;
+  const queuedRunKey = liveRun?.state === "queued" ? `${liveRun.id}:${liveRun.attempts}` : null;
+  const [queueSlow, setQueueSlow] = useState(false);
+  useEffect(() => {
+    setQueueSlow(false);
+    if (queuedRunKey === null) return;
+    const timer = setTimeout(() => setQueueSlow(true), LESSON_QUEUE_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [queuedRunKey]);
+  // Zdrowe generowanie blokuje zapis i publikację (zamknęłyby run po cichu). Run utknięty — `stalled`
+  // z serwera albo długie czekanie w kolejce — odblokowuje je, żeby rodzic nie został bez wyjścia.
+  const generationStuck = liveRun?.state === "running" ? liveRun.stalled === true : queueSlow;
+  const generationBlocksSave = (liveRun?.state === "queued" || liveRun?.state === "running") && !generationStuck;
+  // Pola formularza też: poprawka wpisana w trakcie generowania przepadłaby na konflikcie wersji po jego zapisie.
+  const formLocked = busy || generationBlocksSave;
+  const runStalled = deck?.generation?.state === "running" && deck.generation.stalled === true;
   const generationFailure = deck?.generation?.errorCode
     ? messages.lessons.generationErrors[deck.generation.errorCode] ?? messages.lessons.generationFailed
     : messages.lessons.generationFailed;
@@ -438,7 +459,7 @@ export default function LessonEditor({
 
   const save = async () => {
     const base = baseSnapshot.current;
-    if (!draft || !form || !base || busyRef.current || !dirty.current || base.versionId !== draft.id || calculationBlocked) return;
+    if (!draft || !form || !base || busyRef.current || !dirty.current || base.versionId !== draft.id || calculationBlocked || generationBlocksSave) return;
     if (form.title.trim().length === 0) {
       setError(messages.decks.titleIncomplete);
       return;
@@ -528,7 +549,7 @@ export default function LessonEditor({
   };
 
   const publish = async () => {
-    if (!draft || busy || isDirty || conflict || draft.exercises.length === 0 || draft.coverage.length > 0) return;
+    if (!draft || busy || isDirty || conflict || generationBlocksSave || draft.exercises.length === 0 || draft.coverage.length > 0) return;
     setBusyState(true);
     setError(null);
     setStoryErrors([]);
@@ -818,7 +839,7 @@ export default function LessonEditor({
   const exerciseCount = form?.exercises.length ?? 0;
   const regenDisabled = busy || generating || isDirty || generationUnavailable;
   // Powód wyłączenia „Dogeneruj”: wiersz pod listą powodów, a przy nieudanym albo zawieszonym runie ten sam tekst w alercie runu.
-  const regenUnavailableShown = editable && generationUnavailable && groups.length > 0 && deck?.generation?.state !== "failed" && !(generating && deck?.generation?.state === "running");
+  const regenUnavailableShown = editable && generationUnavailable && groups.length > 0 && deck?.generation?.state !== "failed" && !runStalled;
   const regenDescribedBy = generationUnavailable ? (regenUnavailableShown ? "regen-unavailable" : "generation-unavailable") : undefined;
 
   // klucz: identyfikator ćwiczenia (przeżywa zapis, który nadaje nowe klucze klienta), dla nowych — klucz klienta
@@ -897,7 +918,7 @@ export default function LessonEditor({
         ex={ex}
         index={index}
         editable={editable}
-        busy={busy}
+        busy={formLocked}
         open={openCards.has(ex.id ?? ex.clientKey) || changed || errors !== undefined}
         changed={changed}
         leak={leakNotice(ex)}
@@ -947,9 +968,9 @@ export default function LessonEditor({
           {dynamic && (
             <Group gap="xs" align="flex-end">
               <TextInput size="md" className="pp-lesson-grow" label={messages.lessons.dynamicObjectiveTitleLabel}
-                data-testid={`dynamic-objective-title-${objectiveId}`} value={objectiveMeta(objectiveId)?.titlePl ?? ""} disabled={busy}
+                data-testid={`dynamic-objective-title-${objectiveId}`} value={objectiveMeta(objectiveId)?.titlePl ?? ""} disabled={formLocked}
                 onChange={(e) => mutateDynamicObjective(objectiveId, { titlePl: e.currentTarget.value })} />
-              <Button size="md" variant="subtle" color="red" data-testid={`dynamic-objective-remove-${objectiveId}`} disabled={busy}
+              <Button size="md" variant="subtle" color="red" data-testid={`dynamic-objective-remove-${objectiveId}`} disabled={formLocked}
                 onClick={() => confirmRemoveObjective(objectiveId)}>
                 {messages.lessons.removeDynamicObjective}
               </Button>
@@ -968,20 +989,20 @@ export default function LessonEditor({
               )}
               {dynamic ? (
                 <Stack gap="xs">
-                  <TextInput size="md" data-testid={`dynamic-card-title-${objectiveId}-${cardIndex}`} value={card.title} disabled={busy}
+                  <TextInput size="md" data-testid={`dynamic-card-title-${objectiveId}-${cardIndex}`} value={card.title} disabled={formLocked}
                     aria-label={messages.lessons.dynamicCardTitleLabel}
                     onChange={(e) => {
                       const title = e.currentTarget.value;
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, title } : c)) });
                     }} />
-                  <Textarea size="md" autosize minRows={2} data-testid={`dynamic-card-body-${objectiveId}-${cardIndex}`} value={card.body} disabled={busy}
+                  <Textarea size="md" autosize minRows={2} data-testid={`dynamic-card-body-${objectiveId}-${cardIndex}`} value={card.body} disabled={formLocked}
                     aria-label={messages.lessons.dynamicCardBodyLabel}
                     onChange={(e) => {
                       const body = e.currentTarget.value;
                       mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { ...c, body } : c)) });
                     }} />
                   {active?.voiceTones && (
-                    <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={busy} hint={messages.lessons.voiceToneCardHint} whisper
+                    <VoiceToneSelect value={(card as EditableDynamicCard).voiceTone} disabled={formLocked} hint={messages.lessons.voiceToneCardHint} whisper
                       styleEnabled={active.voiceTones.styleEnabled} testId={`dynamic-card-voice-tone-${objectiveId}-${cardIndex}`}
                       onChange={(voiceTone) => {
                         mutateDynamicObjective(objectiveId, { cards: objectiveMeta(objectiveId)!.cards.map((c, ci) => (ci === cardIndex ? { title: c.title, body: c.body, ...(voiceTone ? { voiceTone } : {}) } : c)) });
@@ -1002,12 +1023,12 @@ export default function LessonEditor({
           {editable ? (
             <Stack gap="xs">
               {lines.map((line, i) => (
-                <TextInput key={i} size="md" data-testid={`example-line-${objectiveId}-${i}`} value={line} disabled={busy}
+                <TextInput key={i} size="md" data-testid={`example-line-${objectiveId}-${i}`} value={line} disabled={formLocked}
                   aria-label={messages.lessons.exampleLineLabel.replace("{n}", String(i + 1))}
                   onChange={(e) => mutateExampleLine(objectiveId, i, e.currentTarget.value)} />
               ))}
               <Button size="md" variant="light" className="pp-lesson-start" data-testid={`example-add-${objectiveId}`}
-                disabled={busy || lines.length >= 3} onClick={() => mutateExampleLine(objectiveId, lines.length, "")}>
+                disabled={formLocked || lines.length >= 3} onClick={() => mutateExampleLine(objectiveId, lines.length, "")}>
                 {messages.lessons.addExample}
               </Button>
             </Stack>
@@ -1198,7 +1219,13 @@ export default function LessonEditor({
     </>
   ));
 
-  const publishBlocked = editable && (isDirty || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0);
+  // „Ponów generowanie” (porażka albo run utknięty): wyłączone z widocznym powodem, nigdy martwe kliknięcie.
+  const retryDisabled = busy || isDirty || conflict || generationUnavailable;
+  const retryDescribedBy = generationUnavailable ? "generation-unavailable" : isDirty ? "generation-retry-blocked" : undefined;
+  const retryBlockedText = generationUnavailable
+    ? <Text size="sm" id="generation-unavailable" data-testid="generation-unavailable">{generationUnavailableText}</Text>
+    : isDirty && <Text size="sm" id="generation-retry-blocked" data-testid="generation-retry-blocked">{messages.lessons.saveBeforePublish}</Text>;
+  const publishBlocked = editable && (generationBlocksSave || isDirty || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0);
   const showActionBar = editable || (deck?.state === "published" && !draft);
   const errorAlert = <EditorErrorText error={error ?? ""} />;
 
@@ -1225,7 +1252,7 @@ export default function LessonEditor({
       editable={editable}
       errors={storyErrors}
       generation={editable ? deck?.storyGeneration ?? null : null}
-      busy={busy || generating}
+      busy={formLocked || generating}
       locked={isDirty || conflict}
       hasExercises={(draft?.exercises.length ?? 0) > 0}
       audio={storyAudioControls || undefined}
@@ -1239,7 +1266,7 @@ export default function LessonEditor({
     <Stack gap="md">
       {form && (
         <TextInput size="md" label={messages.decks.titleLabel} data-testid="editor-title" className="pp-editor-titlefield"
-          value={form.title} disabled={!editable || busy}
+          value={form.title} disabled={!editable || formLocked}
           onChange={(e) => {
             const title = e.currentTarget.value;
             markDirty();
@@ -1331,7 +1358,7 @@ export default function LessonEditor({
           <Group gap="xs" mb={editable ? 2 : "md"} align="center" data-testid="lesson-themes-line">
             <Text size="sm" className="pp-editor-muted">{messages.lessons.themesLine.replace("{themes}", () => themes.join(", "))}</Text>
             {editable && (
-              <Button size="md" variant="subtle" data-testid="lesson-themes-remove" disabled={busy || conflict} onClick={removeThemes}>
+              <Button size="md" variant="subtle" data-testid="lesson-themes-remove" disabled={formLocked || conflict} onClick={removeThemes}>
                 {messages.lessons.themesRemove}
               </Button>
             )}
@@ -1345,14 +1372,17 @@ export default function LessonEditor({
           <Alert color="blue" variant="light" data-testid="generation-banner" icon={<Loader size="xs" />}>
             <Stack gap="xs" align="flex-start">
               <Text size="sm">{messages.lessons.generating}</Text>
-              {deck?.generation?.state === "running" && (
+              {queueSlow && deck?.generation?.state === "queued" && (
+                <Text size="sm" data-testid="generation-queue-slow">{messages.lessons.generationQueueSlow}</Text>
+              )}
+              {runStalled && (
                 <>
                   <Text size="sm">{messages.lessons.stalledGenerationHint}</Text>
                   <Button size="md" variant="default" data-testid="retry-stalled-generation" leftSection={<ParentIcon name="refresh" />}
-                    disabled={busy || isDirty || conflict || generationUnavailable} aria-describedby={generationUnavailable ? "generation-unavailable" : undefined} onClick={retry}>
+                    disabled={retryDisabled} aria-describedby={retryDescribedBy} onClick={retry}>
                     {messages.lessons.retryGeneration}
                   </Button>
-                  {generationUnavailable && <Text size="sm" id="generation-unavailable" data-testid="generation-unavailable">{generationUnavailableText}</Text>}
+                  {retryBlockedText}
                 </>
               )}
             </Stack>
@@ -1364,10 +1394,10 @@ export default function LessonEditor({
               {/* ten sam tekst (run bez agenta) pokazujemy raz — jako komunikat o niedostępnym generowaniu */}
               {!(generationUnavailable && generationFailure === generationUnavailableText) && <Text size="sm">{generationFailure}</Text>}
               <Button size="md" variant="default" data-testid="generation-retry" leftSection={<ParentIcon name="refresh" />}
-                disabled={generationUnavailable} aria-describedby={generationUnavailable ? "generation-unavailable" : undefined} onClick={retry}>
+                disabled={retryDisabled} aria-describedby={retryDescribedBy} onClick={retry}>
                 {messages.lessons.retryGeneration}
               </Button>
-              {generationUnavailable && <Text size="sm" id="generation-unavailable" data-testid="generation-unavailable">{generationUnavailableText}</Text>}
+              {retryBlockedText}
             </Stack>
           </Alert>
         )}
@@ -1478,7 +1508,7 @@ export default function LessonEditor({
         <EditorActionBar
           error={error}
           blockedReason={publishBlocked
-            ? (isDirty
+            ? generationBlocksSave ? messages.lessons.generationBlocksSave : (isDirty
               ? `${messages.decks.unsavedChanges} · ${messages.lessons.saveBeforePublish}`
               : (draft?.exercises.length ?? 0) === 0 ? messages.lessons.emptyLesson : messages.lessons.publishBlockedCoverage)
             : null}
@@ -1486,8 +1516,9 @@ export default function LessonEditor({
           isDirty={isDirty}
           busy={busy}
           testIds={{ save: "save-lesson", publish: "publish-lesson" }}
-          saveDisabled={busy || conflict || calculationBlocked}
-          publishDisabled={busy || isDirty || conflict || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0}
+          reasonBlocksSave={generationBlocksSave}
+          saveDisabled={busy || conflict || calculationBlocked || generationBlocksSave}
+          publishDisabled={busy || isDirty || conflict || generationBlocksSave || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0}
           onSave={() => void save()}
           onPublish={() => void publish()}
           onNewVersion={() => void startNewVersion()}

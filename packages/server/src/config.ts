@@ -23,7 +23,7 @@ import { chatRequestExtrasFromEnv, openRouterProviderRoutingFromEnv } from "./pr
 import { endpointKeyFromEnv, lessonAgentKeyFromEnv } from "./providers/openrouter-key";
 import { createProductionSubjectRegistry } from "./domain/lessons/subjects";
 import type { SubjectRegistry } from "./domain/lessons/registry";
-import type { LessonGenerationPolicy } from "./modules/materials/lessons/lesson-generation-policy";
+import { lessonGenerationPolicyFromEnv, type LessonGenerationPolicy } from "./modules/materials/lessons/lesson-generation-policy";
 import type { LessonAgentPolicy } from "./modules/materials/lessons/lesson-pool-agent-policy";
 
 /** Zegar jako zależność — domena i moduły nie wołają Date.now() bezpośrednio. */
@@ -260,6 +260,11 @@ export interface Services {
    */
   lessonAgentPublic?: LessonAgentPublic;
   /**
+   * Polityka runu lekcji w procesie bez zależności generacji (web): z niej liczy się termin, po którym run
+   * puli w `running` jest utknięty (`lessonRunStallAfterMs`). Worker ma ją w `generation.lessonExecution`.
+   */
+  lessonExecution?: LessonGenerationPolicy;
+  /**
    * Recorder kosztów usług AI (spec llm-cost-tracking §4). Nieobecny = brak
    * zapisu kosztów; `flush()` przy zamykaniu procesu i w testach.
    */
@@ -293,6 +298,7 @@ export function createServices(
     sessionActivity?: SessionActivityDeps;
     generationService?: string;
     lessonAgentPublic?: LessonAgentPublic;
+    lessonExecution?: LessonGenerationPolicy;
     usage?: UsageRecorder;
     subjects?: SubjectRegistry;
     parentSetupToken?: string;
@@ -312,6 +318,7 @@ export function createServices(
     ...(input.sessionActivity ? { sessionActivity: input.sessionActivity } : {}),
     ...(input.generationService ? { generationService: input.generationService } : {}),
     ...(input.lessonAgentPublic ? { lessonAgentPublic: input.lessonAgentPublic } : {}),
+    ...(input.lessonExecution ? { lessonExecution: input.lessonExecution } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
     ...(input.parentSetupToken ? { parentSetupToken: input.parentSetupToken } : {}),
   };
@@ -588,6 +595,18 @@ function openCheckServiceLabel(env: Record<string, string | undefined>): string 
   try {
     const connection = graderConnectionFromEnv(env);
     return connection === undefined ? undefined : `${new URL(connection.baseUrl).host} · ${connection.model}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Polityka runu lekcji dla procesu web (pole `stalled` runu puli). Błędne limity zatrzymują worker, nie web:
+ * tutaj dają `undefined`, czyli wartości domyślne.
+ */
+export function lessonExecutionFromEnv(env: Record<string, string | undefined>): LessonGenerationPolicy | undefined {
+  try {
+    return lessonGenerationPolicyFromEnv(env);
   } catch {
     return undefined;
   }

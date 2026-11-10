@@ -83,6 +83,17 @@ function command(overrides: Partial<LessonCommand> = {}): LessonCommand {
   };
 }
 
+/** Postarza przejęcie runu: tak wygląda próba, której worker padł (`claimed_at` liczy zegar bazy). */
+async function ageClaim(runId: string, minutes: number) {
+  await pool.query("update learning_app.generation_runs set claimed_at = now() - make_interval(mins => $2) where id = $1", [runId, minutes]);
+}
+
+async function runRow(runId: string) {
+  const [row] = await query<{ state: string; attempts: number; expected_edit_number: number; error_code: string | null; agent_checkpoint: unknown }>(
+    "select state, attempts, expected_edit_number, error_code, agent_checkpoint from learning_app.generation_runs where id=$1", [runId]);
+  return row!;
+}
+
 /** Zapis klucza kontekstu lekcji bezpośrednio w bazie (dane sprzed zmiany kodu). */
 async function setLessonContextKey(versionId: string, key: string, value: unknown) {
   await pool.query(
@@ -491,6 +502,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     try {
       const restarted = createServices({ subjects: lessonRegistry(), db: reopened.db, clock: services.clock, media: fakes.settings, generation: fakes.deps });
       const oldEdit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
+      await ageClaim(runId, 13);
       await retryGeneration(restarted, runId);
       const edit = (await query<{ expected_edit_number: number }>("select expected_edit_number from learning_app.generation_runs where id=$1", [runId]))[0]!.expected_edit_number;
       expect(edit).toBe(oldEdit + 1);
@@ -513,6 +525,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     await inFlight.reached;
     let before: unknown[] = [];
     try {
+      await ageClaim(runId, 13);
       await retryGeneration(services, runId);
       await executeLessonGeneration(services, runId);
       before = await query("select id, payload from learning_app.item_revisions order by id");
@@ -521,6 +534,202 @@ describe("generowanie puli lekcji (integracja)", () => {
     } finally { inFlight.open(); await pending; }
     expect(await query("select id, payload from learning_app.item_revisions order by id")).toEqual(before);
     expect((await readGeneration(services, runId)).state).toBe("succeeded");
+  });
+
+  it("ponowienie po porażce i edycji szkicu przyjmuje bieżący numer edycji", async () => {
+    const fakes = await agentFakes({ packets: { third_person_s: [{ throw: new GenerationProviderError("configuration", { status: 400 }) }] } });
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const failed = await readGeneration(services, runId);
+    expect(failed.state).toBe("failed");
+    await editLessonDraft(services, failed.deckVersionId!, { expectedEditNumber: 1, title: "Zmiana rodzica" });
+    // zapis rodzica nie zamyka runu `failed` — alert z „Ponów” zostaje, więc ponowienie musi przejść
+    await retryGeneration(services, runId);
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("succeeded");
+    const [version] = await query<{ title: string }>("select title from learning_app.deck_versions where id = $1", [failed.deckVersionId]);
+    expect(version!.title).toBe("Zmiana rodzica");
+    expect((await query("select id from learning_app.item_revisions where deck_version_id = $1", [failed.deckVersionId])).length).toBeGreaterThan(0);
+  });
+
+  it("ponowienie starszego nieudanego runu puli to konflikt, gdy wersja ma nowszy run", async () => {
+    const fakes = await agentFakes({ packets: { third_person_s: [{ throw: new GenerationProviderError("configuration", { status: 400 }) }] } });
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    expect((await readGeneration(services, runId)).state).toBe("failed");
+    const newer = await regenerateObjective(services, {
+      deckId, objectiveId: "english_grammar.present_simple.third_person_s", count: 4, expectedEditNumber: 1, clientRequestId: randomUUID(),
+    });
+    await expect(retryGeneration(services, runId)).rejects.toMatchObject({ code: "conflict" });
+    expect((await runRow(newer.runId)).state).toBe("queued");
+    expect((await runRow(runId)).state).toBe("failed");
+  });
+
+  it("zdrowy run puli w toku: „Ponów” to konflikt; utknięty da się ponowić i jest oznaczony w DTO lekcji", async () => {
+    const inFlight = gate();
+    const fakes = await agentFakes({ packets: { third_person_s: [inFlight.step] } });
+    fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 60_000 };
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    const pending = executeLessonGeneration(services, runId);
+    await inFlight.reached;
+    try {
+      const healthy = await runRow(runId);
+      expect((await readLessonDeck(services, deckId)).generation).toMatchObject({ state: "running" });
+      expect((await readLessonDeck(services, deckId)).generation!.stalled).toBeUndefined();
+      await expect(retryGeneration(services, runId)).rejects.toMatchObject({ code: "conflict" });
+      // termin runu 10 min + 2 min marginesu: 11 minut to jeszcze zdrowa próba
+      await ageClaim(runId, 11);
+      await expect(retryGeneration(services, runId)).rejects.toMatchObject({ code: "conflict" });
+      expect(await runRow(runId)).toEqual(healthy);
+      await ageClaim(runId, 13);
+      expect((await readLessonDeck(services, deckId)).generation!.stalled).toBe(true);
+      await retryGeneration(services, runId);
+      expect(await runRow(runId)).toMatchObject({ state: "queued", attempts: 0, expected_edit_number: healthy.expected_edit_number + 1 });
+    } finally { inFlight.open(); await pending; }
+  });
+
+  it("termin „utknął” idzie za polityką runu z konfiguracji", async () => {
+    const fakes = await agentFakes();
+    fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, runTimeoutMs: 20 * 60_000 };
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await claimQueuedRun(services.db, runId);
+    // web nie ma zależności generacji: politykę dostaje wprost z własnego env (`Services.lessonExecution`)
+    const web = createServices({ db: services.db, subjects: lessonRegistry(), lessonExecution: fakes.deps.lessonExecution });
+    const webWithDefaults = createServices({ db: services.db, subjects: lessonRegistry() });
+    await ageClaim(runId, 13);
+    expect((await readLessonDeck(services, deckId)).generation!.stalled).toBeUndefined();
+    expect((await readLessonDeck(web, deckId)).generation!.stalled).toBeUndefined();
+    expect((await readLessonDeck(webWithDefaults, deckId)).generation!.stalled).toBe(true);
+    await ageClaim(runId, 23);
+    expect((await readLessonDeck(services, deckId)).generation!.stalled).toBe(true);
+    expect((await readLessonDeck(web, deckId)).generation!.stalled).toBe(true);
+  });
+
+  it("worker przywraca run puli utknięty w running i kończy go, a zdrowego nie rusza", async () => {
+    const fakes = await agentFakes();
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    await claimQueuedRun(services.db, runId);
+    await ageClaim(runId, 11);
+    await runDueGenerationWork(services);
+    expect(await runRow(runId)).toMatchObject({ state: "running", attempts: 1 });
+    expect(fakes.agent.packetCalls).toHaveLength(0);
+    await ageClaim(runId, 13);
+    await runDueGenerationWork(services);
+    expect(await runRow(runId)).toMatchObject({ state: "succeeded", attempts: 2 });
+  });
+
+  it("spóźniony worker po przywróceniu runu niczego nie zapisuje, także gdy nowa próba jeszcze trwa", async () => {
+    const first = gate();
+    const second = gate();
+    // Licznik kroków fake'a biegnie przez próby: bramkę drugiej próby dopisujemy pod indeks jej pierwszej paczki
+    // (jedna paczka naraz, więc stara próba stoi dokładnie na pierwszym kroku).
+    const steps: FakePacketStep[] = [first.step];
+    const fakes = await fakeGeneration({ agent: { packets: { third_person_s: steps } }, policy: { concurrency: 1 } });
+    disposers.push(fakes.dispose);
+    // Długi odstęp sprawdzania bieżącości: starą próbę odcinają wyłącznie straże zapisu.
+    fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 60_000 };
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    const stale = executeLessonGeneration(services, runId);
+    await first.reached;
+    steps[fakes.agent.packetCalls.length] = second.step;
+    await ageClaim(runId, 13);
+    const recovered = runDueGenerationWork(services);
+    try {
+      await second.reached;
+      const during = await runRow(runId);
+      expect(during).toMatchObject({ state: "running", attempts: 2 });
+      first.open();
+      await stale;
+      // stara próba (attempts = 1) nie przeszła straży: stan, punkt kontrolny i szkic nowej próby bez zmian
+      expect(await runRow(runId)).toEqual(during);
+      expect(await query("select id from learning_app.item_revisions")).toHaveLength(0);
+    } finally { first.open(); second.open(); await stale; await recovered; }
+    expect(await runRow(runId)).toMatchObject({ state: "succeeded", attempts: 2 });
+  });
+
+  it("utknięty run z wyczerpanymi próbami kończy attempts_exhausted zamiast krążyć", async () => {
+    const fakes = await agentFakes();
+    const services = lessonServices(fakes);
+    const { runId } = await createLesson(services, command());
+    await claimQueuedRun(services.db, runId);
+    await pool.query("update learning_app.generation_runs set attempts = 3 where id = $1", [runId]);
+    await ageClaim(runId, 13);
+    await runDueGenerationWork(services);
+    expect(await runRow(runId)).toMatchObject({ state: "failed", attempts: 4, error_code: "attempts_exhausted" });
+    expect(fakes.agent.packetCalls).toHaveLength(0);
+  });
+
+  it("publikacja w trakcie dogenerowania: spóźniony zapis nie zmienia opublikowanej wersji", async () => {
+    const inFlight = gate();
+    const steps: FakePacketStep[] = [];
+    const fakes = await agentFakes({ packets: { third_person_s: steps } });
+    fakes.deps.lessonExecution = { ...DEFAULT_LESSON_GENERATION_POLICY, cancelPollMs: 60_000 };
+    const services = lessonServices(fakes);
+    const { runId, deckId } = await createLesson(services, command());
+    await executeLessonGeneration(services, runId);
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+    expect(draft.coverage).toEqual([]);
+    steps[fakes.agent.packetCalls.length] = inFlight.step;
+    const regen = await regenerateObjective(services, {
+      deckId, objectiveId: "english_grammar.present_simple.third_person_s", count: 4, expectedEditNumber: draft.editNumber, clientRequestId: randomUUID(),
+    });
+    const pending = executeLessonGeneration(services, regen.runId);
+    await inFlight.reached;
+    let before: unknown[] = [];
+    try {
+      await publishLessonDraft(services, draft.id, draft.editNumber);
+      before = await query("select id, payload from learning_app.item_revisions order by id");
+      expect((await runRow(regen.runId)).state).toBe("superseded");
+    } finally { inFlight.open(); await pending; }
+    expect(await query("select id, payload from learning_app.item_revisions order by id")).toEqual(before);
+    expect((await runRow(regen.runId)).state).toBe("superseded");
+    const [version] = await query<{ state: string; edit_number: number }>("select state, edit_number from learning_app.deck_versions where id = $1", [draft.id]);
+    expect(version).toEqual({ state: "published", edit_number: draft.editNumber });
+  });
+
+  it("ponowienie dogenerowania po usunięciu jego zagadnienia to konflikt; po zmianie kart bierze bieżące zagadnienia", async () => {
+    const packets: Record<string, FakePacketStep[]> = {};
+    const fakes = await agentFakes({ packets });
+    const { db } = testDatabase();
+    const services = createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: createSubjectRegistry([schoolSubject]) });
+    const material = [
+      "Zagadnienie 1: Fotosynteza",
+      "Wyjaśnienie: Fotosynteza to proces, w którym roślina z wody i dwutlenku węgla, przy udziale światła, wytwarza cukry. Cukry są pokarmem rośliny.",
+      "Zagadnienie 2: Chrzest Polski",
+      "Wyjaśnienie: Mieszko I przyjął chrzest w 966 roku. Chrzest włączył państwo do chrześcijańskiej Europy i wzmocnił władzę księcia.",
+    ].join("\n");
+    const { runId, deckId } = await createSchoolLesson(services, { subjectTitlePl: "Przyroda i historia", topicTitlePl: "Materiał pilotażowy", material, poolSize: 40, clientRequestId: randomUUID() });
+    await executeLessonGeneration(services, runId);
+    const draft = (await readLessonDeck(services, deckId)).draft!;
+    const [kept, removed] = draft.dynamicTopic!.objectives;
+    // dogenerowanie usuwanego zagadnienia kończy się porażką trwałą
+    const slug = removed!.id.split(".").at(-1)!;
+    packets[slug] = everyPacket({ throw: new GenerationProviderError("configuration", { status: 400 }) });
+    const regen = await regenerateObjective(services, { deckId, objectiveId: removed!.id, count: 2, expectedEditNumber: draft.editNumber, clientRequestId: randomUUID() });
+    await executeLessonGeneration(services, regen.runId);
+    expect((await runRow(regen.runId)).state).toBe("failed");
+    // rodzic zmienia tytuł zagadnienia: ponowienie bierze bieżące zagadnienia, nie migawkę ze zlecenia
+    const renamed = await editLessonDraft(services, draft.id, {
+      expectedEditNumber: draft.editNumber,
+      dynamicTopic: { objectives: draft.dynamicTopic!.objectives.map((o) => (o.id === removed!.id ? { ...o, titlePl: "Chrzest Mieszka" } : o)) },
+    });
+    await retryGeneration(services, regen.runId);
+    const [queued] = await query<{ input: { dynamicTopic: { objectives: Array<{ id: string; titlePl: string }> } } }>("select input from learning_app.generation_runs where id = $1", [regen.runId]);
+    expect(queued!.input.dynamicTopic.objectives.find((o) => o.id === removed!.id)!.titlePl).toBe("Chrzest Mieszka");
+    await executeLessonGeneration(services, regen.runId);
+    expect((await runRow(regen.runId)).state).toBe("failed");
+    // rodzic usuwa zagadnienie: jego dogenerowania nie da się już ponowić
+    const current = (await readLessonDeck(services, deckId)).draft!;
+    expect(current.editNumber).toBeGreaterThan(renamed.editNumber);
+    await editLessonDraft(services, draft.id, { expectedEditNumber: current.editNumber, dynamicTopic: { objectives: [current.dynamicTopic!.objectives.find((o) => o.id === kept!.id)!] } });
+    await expect(retryGeneration(services, regen.runId)).rejects.toMatchObject({ code: "conflict" });
+    expect((await runRow(regen.runId)).state).toBe("failed");
   });
 
   it("stary SELECT przed claimem nie przejmuje nowego wykonania po retry", async () => {
@@ -544,6 +753,7 @@ describe("generowanie puli lekcji (integracja)", () => {
     await entered;
     try {
       await claimQueuedRun(services.db, runId);
+      await ageClaim(runId, 13);
       await retryGeneration(services, runId);
       release();
       await stale;

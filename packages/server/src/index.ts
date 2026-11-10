@@ -10,6 +10,7 @@ export {
   graderFromEnv,
   isLessonAgentAvailable,
   lessonAgentPublicFromEnv,
+  lessonExecutionFromEnv,
   lessonSpeechFromEnv,
   mediaSettingsFromEnv,
   speechFromEnv,

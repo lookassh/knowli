@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openNewMaterial } from "./helpers/parent-new-material";
 import { randomUUID } from "node:crypto";
-import { LessonDeckDtoSchema } from "@learning/contracts";
+import { LessonDeckDtoSchema, messages } from "@learning/contracts";
 import { FAKE_SLOW_MARKER } from "@learning/server/testing";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { lessonAgentRunSummary } from "./helpers/lesson-agent-run";
@@ -109,14 +109,15 @@ test("browser Back from a newly created lesson returns to the list, not to the e
   await expect(page.locator(`[data-deck-id="${deckId}"]`)).toBeVisible();
 });
 
-test("parent can safely restart a running lesson generation", async ({ page }) => {
+test("healthy lesson generation: no restart button, save and publish blocked, run finishes on its own", async ({ page }) => {
   await enterParent(page);
-  // Znacznik w materiale: pierwszy krok każdego zagadnienia fake-agenta puli trwa 3 s (przerywalnie),
-  // więc przycisk restartu trwającej generacji jest osiągalny, a restart wznawia run od nowa.
-  await createLesson(page, `Restart ${randomUUID().slice(0, 8)} ${FAKE_SLOW_MARKER}`, false);
-  const retry = page.getByTestId("retry-stalled-generation");
-  await expect(retry).toBeVisible();
-  await retry.click();
+  // Znacznik w materiale: każda paczka fake-generatora puli trwa co najmniej 3 s (przerywalnie),
+  // więc stan „generowanie” jest widoczny. Zdrowego runu nie da się zrestartować (wyrzuciłby opłacone paczki).
+  await createLesson(page, `Generowanie ${randomUUID().slice(0, 8)} ${FAKE_SLOW_MARKER}`, false);
+  await expect(page.getByTestId("generation-banner")).toBeVisible();
+  await expect(page.getByTestId("publish-blocked-reason")).toHaveText(messages.lessons.generationBlocksSave);
+  await expect(page.getByTestId("editor-title")).toBeDisabled();
+  await expect(page.getByTestId("retry-stalled-generation")).toHaveCount(0);
   await expect(page.getByTestId("generation-banner")).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('[data-testid^="objective-group-"]').first()).toBeVisible();
   await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);

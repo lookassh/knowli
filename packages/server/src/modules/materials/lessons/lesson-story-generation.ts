@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { GenerationDto } from "@learning/contracts";
 import type { Services } from "../../../config";
@@ -21,6 +21,7 @@ import {
   isStoryRunInput,
   LESSON_STORY_PURPOSE,
   lessonPoolRunFilter,
+  lessonPoolRunStalled,
   lessonStoryRunFilter,
 } from "../generation-runs";
 import { MAX_AUTOMATIC_ATTEMPTS, requireGeneration } from "../generation-runtime";
@@ -408,10 +409,12 @@ export async function latestLessonRunOfPurpose(
   db: Executor,
   deckVersionId: string,
   purpose: "pool" | "story",
+  /** Termin „utknął” runu puli (`lessonRunStallAfterMs`); bez niego DTO nie niesie `stalled`. */
+  stallAfterMs?: number,
 ): Promise<GenerationDto | null> {
-  const run = (
+  const row = (
     await db
-      .select()
+      .select({ run: generationRuns, stalled: stallAfterMs === undefined ? sql<boolean>`false` : lessonPoolRunStalled(stallAfterMs) })
       .from(generationRuns)
       .where(and(
         eq(generationRuns.deckVersionId, deckVersionId),
@@ -421,9 +424,10 @@ export async function latestLessonRunOfPurpose(
       .orderBy(desc(generationRuns.createdAt))
       .limit(1)
   )[0];
-  if (!run) {
+  if (!row) {
     return null;
   }
+  const { run } = row;
   const deckId = (
     await db.select({ deckId: deckVersions.deckId }).from(deckVersions).where(eq(deckVersions.id, deckVersionId))
   )[0]?.deckId ?? null;
@@ -436,6 +440,7 @@ export async function latestLessonRunOfPurpose(
     errorCode: run.errorCode ?? null,
     // Lekcje liczą odrzucenia w `LessonDraftDto.rejectedCount` (z `lesson_context`), nie w runie.
     rejectedCount: null,
+    ...(row.stalled ? { stalled: true } : {}),
   };
 }
 
