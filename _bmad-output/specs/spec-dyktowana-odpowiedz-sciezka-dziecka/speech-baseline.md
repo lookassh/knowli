@@ -42,3 +42,48 @@ mówione: przypadki=12 wiedzaZgodna=12 precyzjaZgodna=12 odrzuconeWalidator=0 bl
 REGUŁA: story 2 niepotrzebne
 BRAMKA: NIE SPEŁNIONA
 ```
+
+# Pomiar po zmianie promptu (story 2)
+
+**Reguła: mowa bez stabilnych błędów.** W trzech przebiegach wszystkie 16 przypadków mówionych (12 dotychczasowych, w tym 2 sporne, i 4 nowe H01–H04) miało zgodną wiedzę, precyzję, brakujące elementy i oczekiwany fragment nie na temat (S06); żaden werdykt nie został odrzucony przez walidację i żaden nie wywołał niepotrzebnego skracania. Przypadki częściowe i błędne (S09, S10, H02, H03, H04) nie zostały zawyżone.
+
+- Data: 2026-11-10
+- Commit: 4c7aa62f
+- Polecenie: `corepack pnpm eval:school-grader -- --runs=3` (129 wywołań)
+- Model i wersje promptu: `google/gemini-3.8-flash`, `school-grader-v3` (pisane, bez zmian), `school-grader-v3-speech` (mówione)
+
+Jak czytać:
+
+- Pomiar bazowy też nie miał błędów mowy, więc ten wynik pokazuje brak regresji, nie poprawę.
+- Bramka przypadków pisanych nadal nie jest spełniona z tych samych powodów co w pomiarze bazowym (G05 — brakujące elementy, G06 — fałszywe pomylenie w jednym przebiegu, G27 — wiedza). Prompt pisany się nie zmienił; nowych porażek pisanych nie ma, a odrzucenia G05 z pomiaru bazowego tym razem nie było. AC-08 w brzmieniu „bramka przechodzi” pozostaje więc niespełnione z powodów zastanych.
+- Przypadki H01–H04 były w tym przebiegu użyte pierwszy raz; po jakiejkolwiek zmianie promptu przestają być „nieużyte”.
+- Uwagi stałe z pomiaru bazowego obowiązują: przypadki są napisane ręcznie, nie pochodzą z rozpoznawania mowy dziecka.
+
+## Wyjście skryptu
+
+```
+arm=real model=google/gemini-3.8-flash promptVersion=school-grader-v3 promptVersionMowa=school-grader-v3-speech
+przebieg=1/3
+przypadki=27 wiedzaZgodna=27 (100%) precyzjaZgodna=26 brakujaceElementyZgodne=19/20 formaZgodna=2/2 odrzucone=0 pomylenieWykryte=5/5 falszywePomylenie=1/22 kategorieFragmentow=2/2
+pisane: przypadki=27 wiedzaZgodna=27 precyzjaZgodna=26 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione: przypadki=12 wiedzaZgodna=12 precyzjaZgodna=12 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione-nowe: przypadki=4 wiedzaZgodna=4 precyzjaZgodna=4 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+ - G05 (błędna zależność mimo słów kluczowych): brakujące elementy [e1,e2,e3] ≠ [e1,e2]
+ - G06 (istotny błąd rzeczowy): fałszywe pomylenie [{"said":"Fotosynteza","meant":"Oddychanie komórkowe"}]
+przebieg=2/3
+przypadki=27 wiedzaZgodna=26 (96%) precyzjaZgodna=26 brakujaceElementyZgodne=19/20 formaZgodna=2/2 odrzucone=0 pomylenieWykryte=5/5 falszywePomylenie=0/22 kategorieFragmentow=2/2
+pisane: przypadki=27 wiedzaZgodna=26 precyzjaZgodna=26 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione: przypadki=12 wiedzaZgodna=12 precyzjaZgodna=12 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione-nowe: przypadki=4 wiedzaZgodna=4 precyzjaZgodna=4 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+ - G05 (błędna zależność mimo słów kluczowych): brakujące elementy [e1,e2,e3] ≠ [e1,e2]
+ - G27 (pomylenie pojęć przy komplecie elementów): wiedza incorrect ≠ partial
+przebieg=3/3
+przypadki=27 wiedzaZgodna=26 (96%) precyzjaZgodna=25 brakujaceElementyZgodne=19/20 formaZgodna=2/2 odrzucone=0 pomylenieWykryte=5/5 falszywePomylenie=0/22 kategorieFragmentow=2/2
+pisane: przypadki=27 wiedzaZgodna=26 precyzjaZgodna=25 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione: przypadki=12 wiedzaZgodna=12 precyzjaZgodna=12 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+mówione-nowe: przypadki=4 wiedzaZgodna=4 precyzjaZgodna=4 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0
+ - G05 (błędna zależność mimo słów kluczowych): brakujące elementy [e1,e2,e3] ≠ [e1,e2]
+ - G27 (pomylenie pojęć przy komplecie elementów): wiedza incorrect ≠ partial
+REGUŁA: mowa bez stabilnych błędów
+BRAMKA: NIE SPEŁNIONA
+```

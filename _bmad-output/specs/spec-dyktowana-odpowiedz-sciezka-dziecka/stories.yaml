@@ -19,9 +19,10 @@
     jednego zdania znika z żądania tylko dla niepoprawionej mowy; pozostałe
     formy zostają. Rodzic widzi tę samą odpowiedź mówioną i pisaną jako dwa
     werdykty. Poprawka w kroku skracania podyktowanego oryginału dziedziczy
-    wariant mowy. Przebieg na prawdziwym modelu po zmianie NIE został
-    wykonany (wymaga zgody na koszt): AC-04, AC-05, AC-08 i druga połowa
-    AC-06 są niezweryfikowane. Przypadki H01–H04 powstały razem z promptem,
+    wariant mowy. Pomiar po zmianie (2026-11-10, speech-baseline.md): mowa
+    bez stabilnych błędów, AC-04–06 spełnione na przypadkach syntetycznych;
+    bramka pisanych (AC-08) nie przechodzi z powodów zastanych (G05, G06,
+    G27), bez nowych porażek. Przypadki H01–H04 powstały razem z promptem,
     więc „nieużywane przy strojeniu” znaczy tylko: przed pierwszym pomiarem.
     Zrealizuj CAP-2 na podstawie pomiaru ze story 1: model wie, że odpowiedź
     była mówiona, toleruje cechy mowy i nie dostaje wymogu jednego zdania dla
