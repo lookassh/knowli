@@ -109,20 +109,21 @@ function scopedTopic(topic: LessonTopic, objectiveIds: readonly string[]): Lesso
 /**
  * Sprawdzenia strukturalne wejścia (przed regułami zadań): przykłady kart, historyjka, `id` zadań
  * i flaga `parentAdded` cytatu. Flaga wyłącza sprawdzenie cytatu w materiale, więc agent może ją
- * tylko zachować na cytacie zapisanego zadania, który już ją ma (nadaje ją rodzic w panelu).
+ * tylko zachować na cytacie zapisanego zadania, który już ją ma (nadaje ją rodzic w panelu), i tylko
+ * gdy zadanie zachowuje typ, zagadnienie i odpowiedź, które ten cytat uzasadniał.
  */
 function assertLessonInput(lesson: AuthoredLesson, stored: readonly StoredExercise[]): void {
   const knownExerciseIds = new Set(stored.map((exercise) => exercise.id));
-  const parentQuotes = new Map(stored.map((exercise) => [
-    exercise.id,
-    new Set((exercise.sourceRefs ?? []).filter((ref) => ref.parentAdded === true).map((ref) => ref.quote)),
-  ]));
+  const storedById = new Map(stored.map((exercise) => [exercise.id, exercise]));
+  const keepsParentQuote = (exercise: LessonExerciseInput, quote: string): boolean => {
+    const before = exercise.id === undefined ? undefined : storedById.get(exercise.id);
+    return before !== undefined && before.exerciseType === exercise.exerciseType && before.objectiveId === exercise.objectiveId &&
+      before.answer === exercise.answer && (before.sourceRefs ?? []).some((ref) => ref.parentAdded === true && ref.quote === quote);
+  };
   const forged = lesson.exercises.flatMap((exercise, index) =>
-    (exercise.sourceRefs ?? []).some((ref) => ref.parentAdded === true && !(exercise.id !== undefined && parentQuotes.get(exercise.id)?.has(ref.quote)))
-      ? [index]
-      : []);
+    (exercise.sourceRefs ?? []).some((ref) => ref.parentAdded === true && !keepsParentQuote(exercise, ref.quote)) ? [index] : []);
   if (forged.length > 0) {
-    throw invalid("sourceRefs[].parentAdded marks a quote the parent added in the panel; keep it only on a stored quote that already has it", { parentAdded: forged });
+    throw invalid("sourceRefs[].parentAdded marks a quote the parent added in the panel; keep it only on a stored quote that already has it, in an exercise with the same type, objective and answer", { parentAdded: forged });
   }
   const missing = lesson.topic.objectives
     .filter((objective) => objective.cards.some((card) => card.body.includes(EXAMPLES_PLACEHOLDER)))
@@ -238,6 +239,11 @@ async function currentVersion(db: Executor, deckId: string) {
 
 type StoredExercise = LessonAuthoringDraftDto["exercises"][number];
 
+/** Zapisane przykłady kart bez zagadnień usuniętych przez rodzica (edycja zagadnień zostawia ich klucze w kontekście). */
+function storedExamples(context: ReturnType<typeof readLessonContext>): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(context.examples).filter(([objectiveId]) => context.objectiveIds.includes(objectiveId)));
+}
+
 /** Zapisane zadania wersji w kolejności puli, w kształcie wejścia narzędzi. */
 async function storedExercises(db: Executor, services: Services, versionId: string): Promise<StoredExercise[]> {
   return (await readLessonDraftDto(db, services, versionId)).exercises.map(authoringExercise);
@@ -275,8 +281,9 @@ export async function lessonAuthoringCatalog(services: Services, rawToken: strin
   if (subjectId !== undefined || topicId !== undefined) throw invalid("with deckId leave subjectId and topicId out");
   return services.db.transaction(async (tx) => {
     await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
-    const { subject, topic } = versionLesson(services, (await currentVersion(tx, deckId)).context);
-    return catalogDto(subject, only(topic));
+    const { context } = await currentVersion(tx, deckId);
+    const { subject, topic } = versionLesson(services, context);
+    return { ...catalogDto(subject, only(topic)), subjectTitlePl: context.subjectTitlePl ?? subject.titlePl };
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }
 
@@ -368,7 +375,7 @@ export async function validateAuthoredLesson(services: Services, rawToken: strin
       ...versionLesson(services, context),
       objectiveIds: context.objectiveIds,
       material: context.material,
-      examples: valid.examples ?? context.examples,
+      examples: valid.examples ?? storedExamples(context),
       ...(story === undefined ? {} : { story }),
       exercises: valid.append === true ? appended(stored, valid.exercises) : valid.exercises,
     };
@@ -548,7 +555,7 @@ async function writeExercisesTx(tx: Tx, services: Services, rawToken: string, va
     ...versionLesson(services, context),
     objectiveIds: context.objectiveIds,
     material: context.material,
-    examples: valid.examples ?? context.examples,
+    examples: valid.examples ?? storedExamples(context),
     ...(story === undefined ? {} : { story }),
     exercises,
   };

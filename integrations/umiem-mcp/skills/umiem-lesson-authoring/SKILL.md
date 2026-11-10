@@ -1,6 +1,6 @@
 ---
 name: umiem-lesson-authoring
-description: Use when a parent asks you to write or fix an Umiem! lesson (for example an English grammar topic) and the Umiem! MCP server with the lesson authoring tools is connected.
+description: Use when a parent asks you to write or fix an Umiem! lesson (for example an English grammar topic) or to add questions to an existing lesson (also a school lesson built from their material) and the Umiem! MCP server with the lesson authoring tools is connected.
 ---
 
 # Writing an Umiem! lesson
@@ -11,7 +11,7 @@ A new lesson can be created only for catalog topics (for example `english_gramma
 
 ## Step 0 — ask the parent
 
-Before writing, ask the parent in the chat about the child's age, English level and the words and verbs the child already knows. Umiem! does not send any child data to you, so this conversation is the only source. Use only first names or nothing; do not ask for or repeat other personal data.
+Before writing a new lesson (skip this when you only add questions to a lesson built from the parent's material), ask the parent in the chat about the child's age, English level and the words and verbs the child already knows. Umiem! does not send any child data to you, so this conversation is the only source. Use only first names or nothing; do not ask for or repeat other personal data.
 
 ## Workflow
 
@@ -31,11 +31,12 @@ Use this for a lesson the parent already has, for example a school lesson built 
 2. `lesson_catalog {deckId, objectiveIds: [<the objective you write for>]}` — the rule book for that lesson. Always pass `objectiveIds`: the rules are repeated per objective and are large, and in a school lesson they are the same for every objective.
 3. Write the new exercises without `id`. `objectiveId` must be one of the lesson's `objectives`, and `exerciseType` one of that objective's `exerciseTypes`. In a lesson built from material every exercise needs `sourceRefs` with a quote copied exactly from `material` (a continuous fragment; do not paraphrase, shorten with "…" or join two fragments). Base the question only on `material`.
 4. `lesson_validate {deckId, append: true, exercises: [<new exercises>]}` — checks the new exercises together with the stored pool and saves nothing. Indexes in the result point into the pool after the append: your first new exercise is `firstNewIndex`. Iterate until `ok` is `true`.
-5. `lesson_draft_append {deckId, expectedEditNumber, exercises: [<new exercises>]}` — adds them at the end. Stored exercises keep their ids and the child's history. The result has the new `exerciseIds` and the new `editNumber`. On any error nothing is saved.
+5. `lesson_draft_append {deckId, expectedEditNumber, exercises: [<new exercises>]}` — adds them at the end. Stored exercises keep their ids and the child's history. The result has the new `exerciseIds` and the new `editNumber`. On any error nothing is saved. The call is not idempotent: after a timeout or a `conflict`, call `lesson_draft_get` and check whether your exercises are already stored before appending again.
 
 Rules of a lesson built from material:
 - An open answer (`lesson_open_answer`) needs `questionType`, `expectedForm` and `requiredElements` (unique `id`s); exercises that share a `familyId` within one objective must share the same `answer` and the same `requiredElements` ids. `lesson_keywords` must point to an existing family by `familyId`.
-- Do not set `parentAdded` on a quote. It marks a source the parent added in the panel; keep it only on a stored quote that already has it when you send that exercise back. Anything else answers `validation` with `details.parentAdded` (exercise indexes).
+- Do not set `parentAdded` on a quote. It marks a source the parent added in the panel; keep it only on a stored quote that already has it when you send that exercise back with the same type, objective and answer. Anything else answers `validation` with `details.parentAdded` (exercise indexes).
+- The whole pool is validated on every write, as in the panel. If a stored exercise you did not write is reported (an old exercise that breaks a newer rule), tell the parent instead of rewriting it; changing a stored exercise's answer, variants or criteria starts a new history for it.
 - You cannot change the lesson's objectives, cards or material, and you cannot create such a lesson from scratch; the parent does that in the panel.
 - A published lesson without a draft gets a new draft in the same step (`expectedEditNumber` is the published version's `editNumber`); the published version the child learns from stays unchanged until the parent publishes the draft.
 
@@ -55,7 +56,7 @@ Pitfalls seen when writing Present Continuous by hand (2026-11-09):
 
 ## Results and errors
 
-- `lesson_validate` returns `{ok, exercises, coverage, exposureLeaks, story, firstNewIndex?}`. `exercises` lists `{index, issues: [{rule, field, found, pl}]}` by position in your array: `rule` is the rule id from the catalog, `found` says in English what is wrong, `pl` is the parent's Polish message. `story` lists Polish story errors.
+- `lesson_validate` returns `{ok, exercises, coverage, exposureLeaks, story, firstNewIndex?}`. `exercises` lists `{index, issues: [{rule, field, found, pl}]}` by position in your array (with `append: true`: position in the pool after the append, see `firstNewIndex`): `rule` is the rule id from the catalog, `found` says in English what is wrong, `pl` is the parent's Polish message. `story` lists Polish story errors.
 - Write tools return `{deckId, draftId, editNumber, coverage, exposureLeaks}` (`lesson_draft_append` also `exerciseIds`); leak `index` values point into the lesson's exercise order (as in `lesson_draft_get`).
 - A failed tool returns `isError` with JSON `{code, message, retryable, requestId, details?}`. `validation` carries `details.exercises` (by index in the whole pool for `lesson_draft_append`), `details.story`, `details.examples` (`missing`, `unknown`) or `details.parentAdded`; `conflict` means a stale `expectedEditNumber`, a `clientRequestId` used by another deck, or an exercise generation run of the parent in progress (a story generation run does not block exercise edits) — read the lesson again and retry later, never work around it. An input that does not match the tool schema (unknown field, wrong type, too many exercises) is `validation` with `details.issues` (`path`, `message`) naming the field.
 - HTTP 429: per token at most 60 requests a minute and 10 create/replace/append calls an hour (each write orders paid recordings). Validate first; do not loop on writes.
