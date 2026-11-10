@@ -4,7 +4,7 @@ Miejsca potwierdzone przeglądem z 2026-11-10 (ścieżki względem `packages/`).
 
 | CAP | Gdzie | Co jest dziś |
 | --- | --- | --- |
-| CAP-1 | `tests/probes/fixtures/school-grader-golden-set.json`, `scripts/evaluate-school-grader.mts:175-244` | 27 przypadków pisanych; precyzja liczona, ale poza bramką; `scripts/` poza `pnpm typecheck` |
+| CAP-1 | `tests/probes/fixtures/school-grader-golden-set.json`, `scripts/evaluate-school-grader.mts:175-244` | 27 przypadków pisanych (po story 1 dodatkowo 12 mówionych); precyzja liczona, ale poza bramką; `scripts/` poza `pnpm typecheck` |
 | CAP-2 | `server/src/providers/openai-compatible/grader.ts:98-153` | Prompt i dane bez znacznika mowy; zawsze „Oczekiwana forma odpowiedzi” |
 | CAP-2 | `server/src/modules/learning/lessons/lesson-attempts.ts:608`, `:842-851` | Kod już rozróżnia `speech` niepoprawioną i pomija dla niej liczenie zdań |
 | CAP-2 | `server/src/db/schema.ts:987` | Klucz cache: rewizja ćwiczenia + znormalizowana odpowiedź + wersja promptu, bez sposobu wprowadzenia |

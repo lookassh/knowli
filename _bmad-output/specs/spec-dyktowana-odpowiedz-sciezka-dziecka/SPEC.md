@@ -55,7 +55,7 @@ CAP-8 (dopisywanie przy kolejnym dyktowaniu) wycofano po przeglądzie; ID nie b�
 - Tolerancja mowy żyje wyłącznie w prompcie modelu. Kod nie rozpoznaje ani nie usuwa wypełniaczy i nie dostaje nowych reguł rozumiejących język.
 - Zmiana promptu modelu oceniającego podnosi wersję promptu. Sposób wprowadzenia wchodzi do klucza cache werdyktów: ta sama treść mową i klawiaturą nie dzieli wpisu. Mowa poprawiona ręcznie jest oceniana jak klawiatura.
 - Do modelu trafia najwyżej znacznik sposobu wprowadzenia; żadnych danych dziecka ani nagrań.
-- CAP-2 wchodzi do implementacji dopiero po pomiarze z CAP-1 i odbiorze właściciela.
+- CAP-2 wchodzi do implementacji dopiero po pomiarze z CAP-1 i odbiorze właściciela. Stan 2026-11-10 (`speech-baseline.md`): pomiar na przypadkach syntetycznych nie wskazał problemu; CAP-2 jest wstrzymane do transkryptów z odbioru rodzinnego, decyzja należy do właściciela.
 - Etykiety przypadków mówionych to oczekiwanie docelowe właściciela. Przypadki sporne są oznaczone i nie wchodzą do reguły decyzyjnej.
 - Przypadki mówione są raportowane osobno i nie wchodzą do bramki zestawu przed story 2.
 - Przebiegi na prawdziwym modelu wymagają zgody właściciela (`pnpm bench` dodatkowo `--cap-usd`); wyników różnych modeli się nie porównuje.
@@ -81,6 +81,7 @@ CAP-8 (dopisywanie przy kolejnym dyktowaniu) wycofano po przeglądzie; ID nie b�
 
 - CAP-5: gdy jedynym powodem jest forma zdania, skracania się nie proponuje (zamiast osobnego polecenia).
 - CAP-6: obie wersje są pokazane bez dodatkowej próby, bo kolejna kosztowałaby wywołanie modelu.
+- Wynik CAP-1 dotyczy ręcznie napisanych przypadków, nie prawdziwych transkryptów dziecka.
 - CAP-1: nie zweryfikowano, czy rozpoznawanie mowy zapisuje „yyy”. Jeśli je wycina, przypadki z wypełniaczami mierzą rzadszy problem.
 
 ## Open Questions

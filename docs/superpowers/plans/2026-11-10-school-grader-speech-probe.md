@@ -380,7 +380,7 @@ Podaj: 117 wywołań modelu z `UMIEM_GRADER_*` (39 przypadków × 3 przebiegi, d
 - [ ] **Step 2: Uruchom pomiar**
 
 Run: `corepack pnpm eval:school-grader -- --runs=3`
-Expected: pierwszy wiersz `arm=real model=… promptVersion=…`; trzy przebiegi; wiersz `REGUŁA: story 2 potrzebne` albo `REGUŁA: story 2 niepotrzebne`; `BRAMKA: OK` (bramka liczy tylko pisane — inny wynik zgłoś właścicielowi, nie poprawiaj zestawu ani promptu).
+Expected: pierwszy wiersz `arm=real model=… promptVersion=…`; trzy przebiegi; wiersz `REGUŁA: story 2 potrzebne` albo `REGUŁA: story 2 niepotrzebne`; `BRAMKA: OK` (bramka liczy tylko pisane — inny wynik zgłoś właścicielowi, nie poprawiaj zestawu ani promptu). Pomiar z 2026-11-10 dał `BRAMKA: NIE SPEŁNIONA` z powodu przypadków pisanych G05, G06 i G27; opis w `speech-baseline.md`.
 
 - [ ] **Step 3: Zapisz wynik w `speech-baseline.md`**
 
