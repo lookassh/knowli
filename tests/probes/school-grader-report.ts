@@ -49,7 +49,7 @@ const DIMENSIONS = [
  * Zwraca po jednym wierszu na stabilnie błędny przypadek mówiony i wiersz końcowy.
  */
 export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string[] {
-  if (runs.length < 3) return ["REGUŁA: wymaga --runs=3"];
+  if (runs.length !== 3) return ["REGUŁA: wymaga --runs=3"];
   const ids = [...new Set(runs.flat().filter((o) => o.input === "speech" && !o.disputed).map((o) => o.id))].sort();
   const lines: string[] = [];
   const stableCases = { wiedza: 0, odrzucenie: 0, skracanie: 0 };
@@ -68,5 +68,10 @@ export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string
     }
   }
   const needed = stableCases.wiedza >= 1 || stableCases.odrzucenie >= 1 || stableCases.skracanie >= 2;
-  return [...lines, `REGUŁA: story 2 ${needed ? "potrzebne" : "niepotrzebne"}`];
+  // Błąd dostawcy w mowie albo w pisanym bliźniaku mógł ukryć porażkę.
+  const twins = new Set(runs.flat().filter((o) => o.input === "speech" && !o.disputed && o.pairOf !== undefined).map((o) => o.pairOf));
+  const providerErrors = runs.flat().filter((o) => o.status === "provider_error" &&
+    (o.input === "speech" ? !o.disputed : twins.has(o.id))).length;
+  const warning = providerErrors > 0 ? [`UWAGA: błędy dostawcy w mowie lub bliźniakach: ${providerErrors} — rozstrzygnięcie niepełne`] : [];
+  return [...lines, ...warning,`REGUŁA: story 2 ${needed ? "potrzebne" : "niepotrzebne"}`];
 }

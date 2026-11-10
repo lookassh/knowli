@@ -50,6 +50,7 @@ describe("groupReportLines", () => {
 describe("decisionLines", () => {
   const speech = (id: string, over: Partial<CaseOutcome> = {}) => outcome({ id, input: "speech", ...over });
   const bad = { knowledgeMatch: false };
+  const warn = (n: number) => `UWAGA: błędy dostawcy w mowie lub bliźniakach: ${n} — rozstrzygnięcie niepełne`;
   it("needs three runs", () => {
     expect(decisionLines([[speech("S01", bad)]])).toEqual(["REGUŁA: wymaga --runs=3"]);
   });
@@ -61,9 +62,20 @@ describe("decisionLines", () => {
     const rejected = { status: "rejected", knowledgeMatch: null, precisionMatch: null } as const;
     const provider = { status: "provider_error", knowledgeMatch: null, precisionMatch: null } as const;
     expect(decisionLines([[speech("S02", rejected)], [speech("S02", rejected)], [speech("S02", provider)]]))
-      .toEqual(["S02: odrzucenie 2/3", "REGUŁA: story 2 potrzebne"]);
+      .toEqual(["S02: odrzucenie 2/3", warn(1), "REGUŁA: story 2 potrzebne"]);
     expect(decisionLines([[speech("S02", provider)], [speech("S02", provider)], [speech("S02", provider)]]))
-      .toEqual(["REGUŁA: story 2 niepotrzebne"]);
+      .toEqual([warn(3), "REGUŁA: story 2 niepotrzebne"]);
+  });
+  it("warns about provider errors on a written twin that hides a paired failure", () => {
+    const run = [
+      speech("S03", { ...bad, pairOf: "G09" }),
+      outcome({ id: "G09", status: "provider_error", knowledgeMatch: null, precisionMatch: null }),
+    ];
+    expect(decisionLines([run, run, run])).toEqual([warn(3), "REGUŁA: story 2 niepotrzebne"]);
+  });
+  it("applies the rule only for exactly three runs", () => {
+    const run = [speech("S02", bad)];
+    expect(decisionLines([run, run, [], []])).toEqual(["REGUŁA: wymaga --runs=3"]);
   });
   it("needs two cases for the shorten dimension", () => {
     const shorten = { unneededShorten: true };

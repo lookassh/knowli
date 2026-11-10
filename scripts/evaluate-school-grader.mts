@@ -72,7 +72,7 @@ interface GoldenSet {
 
 const useFake = process.argv.includes("--fake");
 const runsArg = process.argv.find((a) => a.startsWith("--runs="))?.slice("--runs=".length) ?? "1";
-if (!/^[1-5]$/.test(runsArg)) {
+if (process.argv.includes("--runs") || !/^[1-5]$/.test(runsArg)) {
   console.error("Nieprawidłowa wartość --runs: dozwolone liczby całkowite 1–5.");
   process.exit(2);
 }
