@@ -31,7 +31,8 @@ try {
 
     const destPath = path.join(hooksTargetDir, hookName);
 
-    fs.copyFileSync(srcPath, destPath);
+    // LF niezależnie od core.autocrlf: `sh` nie wykona skryptu z CRLF.
+    fs.writeFileSync(destPath, fs.readFileSync(srcPath, 'utf-8').replace(/\r\n/g, '\n'));
     try {
       fs.chmodSync(destPath, 0o755);
     } catch (_) {
