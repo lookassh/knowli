@@ -233,6 +233,15 @@
   background: var(--kid-bg);
   min-height: calc(100 * var(--kid-dvh));
   font-family: inherit;
+  /* Etykiety i przyciski to UI aplikacji, nie tekst do kopiowania. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Safari bez tego nie pozwala pisać w polach pod user-select: none. */
+.kid-ui :is(input, textarea) {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .kid-page--flow {
