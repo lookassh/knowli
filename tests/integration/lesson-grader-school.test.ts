@@ -663,7 +663,8 @@ describe("wadliwy fragment werdyktu nie odbiera oceny wiedzy (CAP-3, integracja)
     });
     const { services } = servicesWith(grader);
     const child = await createChild(services, { displayName: "Bez zaznaczeń", avatarKey: "cat" });
-    const { deckId } = await seedSchoolDeck(child.id);
+    // drugi cel: poza fazą „Jeszcze 3 i koniec!”, więc z ocalałym fragmentem skracanie byłoby zaproponowane
+    const { deckId } = await seedSchoolDeck(child.id, { secondObjective: true });
     const openTask = await reachOpenTask(services, child.id, deckId);
     const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: answer });
     expect(result.feedback!.kind).toBe("great");
