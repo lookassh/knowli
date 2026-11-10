@@ -409,6 +409,7 @@ export function LearnScreen({
                 mediaUrl={(assetId) => controller.mediaUrl(assetId)}
                 optionOutcomes={outcomes}
                 dock={screen.reveal === null ? dock : undefined}
+                keepDraftOnRetry={hasFeedback && feedback !== null && (feedback.dto === null || feedback.dto.kind === "not_assessed")}
                 listenStimulus={screen.listenStimulus?.taskId === task.taskId ? screen.listenStimulus : null}
                 feedbackAudio={hasFeedback && feedback !== null && listenChoice && feedback.dto?.correctAudioAssetId !== undefined
                   ? { assetId: feedback.dto.correctAudioAssetId, onPlay: () => void controller.playSentenceAudio() }

@@ -358,15 +358,18 @@ export interface SchoolVerdictContext {
   readonly formOk?: boolean | null;
 }
 
+const MAX_SCHOOL_FRAGMENTS = 4;
+
 const schoolVerdictSchema = z.object({
   knowledge: z.enum(["correct", "partial", "incorrect"]),
   precision: z.enum(["concise", "verbose", "unfocused"]),
   matchedElementIds: z.array(z.string().min(1)).max(6),
   missingElementIds: z.array(z.string().min(1)).max(6),
   incorrectStatements: z.array(z.string().min(1)).max(4),
-  redundantFragments: z.array(z.string().min(1)).max(4),
+  // Bez limitu i wymogu niepustego tekstu: wadliwe fragmenty odsiewa walidacja (najwyżej MAX_SCHOOL_FRAGMENTS).
+  redundantFragments: z.array(z.string()),
   // v3 (design §9.1): brak pól = werdykt v2, czyli puste listy
-  offTopicFragments: z.array(z.string().min(1)).max(4).default([]),
+  offTopicFragments: z.array(z.string()).default([]),
   confusedConcepts: z.array(z.object({
     said: z.string().min(1).max(60),
     meant: z.string().min(1).max(60),
@@ -434,8 +437,9 @@ export function countSentences(text: string): number {
  * może po cichu zaliczyć wiedzy); `correct` bez braków i błędnych stwierdzeń;
  * `partial` z co najmniej jednym trafionym elementem oraz brakiem lub
  * nieścisłością; kompletna, poprawna treść nie może być partial/incorrect;
- * fragmenty (błędne i zbędne) jako
- * dokładne podciągi odpowiedzi po NFC; `formOk === false` ogranicza precyzję
+ * fragmenty (błędne, zbędne, nie na temat) to dokładne podciągi odpowiedzi po
+ * NFC, rozłączne między kategoriami — wadliwy fragment jest POMIJANY, nie
+ * odrzuca werdyktu (najwyżej 4 na listę); `formOk === false` ogranicza precyzję
  * co najwyżej do `verbose` (klamp, nie odrzucenie).
  */
 export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): SchoolVerdict | null {
@@ -454,15 +458,34 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
   if (v.knowledge === "correct" && hasGap) return null;
   if (v.knowledge === "partial" && (matched.length === 0 || !hasGap)) return null;
   if (v.knowledge === "incorrect" && !hasGap) return null;
+  // Wadliwy fragment (niedosłowny, pusty, powtórzony, nachodzący na zachowany fragment innej
+  // kategorii) jest pomijany i nie unieważnia oceny wiedzy; lukę policzono wyżej z surowej listy modelu.
   const answerNfc = ctx.childAnswer.normalize("NFC");
-  for (const fragment of [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments]) {
-    if (!answerNfc.includes(fragment.normalize("NFC"))) return null;
-  }
-  // Kategorie fragmentów są rozłączne: ten sam tekst nie może być naraz błędem, zbędnym i nie na temat
-  // — także częściowo (fragment jednej kategorii zawarty w fragmencie innej albo nachodzący na niego).
-  const categorized = [...v.incorrectStatements, ...v.redundantFragments, ...v.offTopicFragments].map((f) => f.normalize("NFC"));
-  if (new Set(categorized).size !== categorized.length) return null;
-  if (categoriesOverlap(answerNfc, [v.incorrectStatements, v.redundantFragments, v.offTopicFragments])) return null;
+  const haystack = answerNfc.toLowerCase();
+  const seen = new Set<string>();
+  const spans: { category: number; start: number; end: number }[] = [];
+  const keepValid = (fragments: readonly string[], category: number): string[] => {
+    const kept: string[] = [];
+    for (const fragment of fragments) {
+      const text = fragment.normalize("NFC");
+      if (kept.length === MAX_SCHOOL_FRAGMENTS || text.trim() === "" || seen.has(text) || !answerNfc.includes(text)) continue;
+      // Zakres jak w `buildAnswerSegments`: pierwsze wystąpienie bez rozróżniania wielkości liter
+      // (inaczej „Kot” i „kot” trafiłyby u dziecka na to samo słowo). Nachodzenie w obrębie kategorii jest dozwolone.
+      const needle = text.toLowerCase();
+      const start = haystack.indexOf(needle);
+      const end = start + needle.length;
+      if (spans.some((s) => s.category !== category && s.start < end && start < s.end)) continue;
+      seen.add(text);
+      spans.push({ category, start, end });
+      kept.push(fragment);
+    }
+    return kept;
+  };
+  const incorrectStatements = keepValid(v.incorrectStatements, 0);
+  const redundantFragments = keepValid(v.redundantFragments, 1);
+  const offTopicFragments = keepValid(v.offTopicFragments, 2);
+  // `incorrect` bez żadnej widocznej luki po odsianiu dałby podpowiedź „uzupełnij”, choć niczego nie brakuje.
+  if (v.knowledge === "incorrect" && missing.length === 0 && incorrectStatements.length === 0 && v.confusedConcepts.length === 0) return null;
   // Pomylenie pojęć to błąd treści: nigdy przy wiedzy poprawnej; `said` pochodzi z odpowiedzi.
   if (v.confusedConcepts.length > 0 && v.knowledge === "correct") return null;
   const confusedConcepts: ConfusedConcept[] = [];
@@ -485,29 +508,12 @@ export function validateSchoolVerdict(raw: unknown, ctx: SchoolVerdictContext): 
     precision,
     matchedElementIds: matched,
     missingElementIds: missing,
-    incorrectStatements: [...v.incorrectStatements],
-    redundantFragments: [...v.redundantFragments],
-    offTopicFragments: [...v.offTopicFragments],
+    incorrectStatements,
+    redundantFragments,
+    offTopicFragments,
     confusedConcepts,
     note: v.note,
   };
-}
-
-/**
- * Czy zakresy fragmentów różnych kategorii na siebie nachodzą. Zakres to
- * pierwsze wystąpienie bez rozróżniania wielkości liter — dokładnie tak, jak
- * zaznacza je `buildAnswerSegments` (inaczej „Kot” i „kot” trafiłyby w dziecku
- * na to samo słowo). Nachodzenie w obrębie jednej kategorii jest dozwolone —
- * segmenty scalają je w jeden.
- */
-function categoriesOverlap(answerNfc: string, categories: readonly (readonly string[])[]): boolean {
-  const haystack = answerNfc.toLowerCase();
-  const spans = categories.flatMap((fragments, category) => fragments.map((fragment) => {
-    const text = fragment.normalize("NFC").toLowerCase();
-    const start = haystack.indexOf(text);
-    return { category, start, end: start + text.length };
-  }));
-  return spans.some((a, i) => spans.some((b, j) => j > i && a.category !== b.category && a.start < b.end && b.start < a.end));
 }
 
 /**

@@ -23,7 +23,7 @@ import type { ExerciseProps } from "../types";
  * i mikrofon dyktowania: rozpoznany tekst trafia do pola, dziecko może go
  * poprawić, a „Sprawdź” ocenia dopiero zatwierdzony tekst.
  */
-export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, dictation }: ExerciseProps) {
+export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, dictation, keepDraftOnRetry }: ExerciseProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -36,7 +36,7 @@ export function LessonSentenceView({ task, busy, dock, handlers, mockTest, micAv
     // fokus tylko przy nowym zadaniu
     focusField();
   }, [task.taskId]);
-  useRetryReset(dock, () => { setText(""); dictationField.reset(); }, focusField);
+  useRetryReset(dock, () => { setText(""); dictationField.reset(); }, focusField, keepDraftOnRetry);
 
   if (
     task.prompt.kind !== "lesson_error_fix" &&

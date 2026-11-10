@@ -610,6 +610,68 @@ describe("kartkówka szkolna z wymiarem precyzji (Etap 5, integracja)", () => {
   });
 });
 
+describe("wadliwy fragment werdyktu nie odbiera oceny wiedzy (CAP-3, integracja)", () => {
+  function servicesWith(grader: FakeAnswerGrader) {
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+    });
+    return { services, clock };
+  }
+
+  it("częściowa odpowiedź ze zmyślonym fragmentem zbędnym jest oceniona, a powtórka trafia w cache (AC-11, AC-33)", async () => {
+    const answer = "Roślina wytwarza cukry.";
+    const grader = new FakeAnswerGrader().onAnswer(answer, {
+      raw: {
+        knowledge: "partial", precision: "verbose",
+        matchedElementIds: ["e1"], missingElementIds: ["e2"],
+        incorrectStatements: [], redundantFragments: ["tego nie ma w odpowiedzi"], offTopicFragments: [],
+        confusedConcepts: [], note: "",
+      },
+    });
+    const { services, clock } = servicesWith(grader);
+    const child = await createChild(services, { displayName: "Fragment", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+
+    const first = await reachOpenTask(services, child.id, deckId);
+    const result = await submitAttempt(services, { taskId: first.taskId, clientAttemptId: randomUUID(), modality: "text", text: answer });
+    expect(result.feedback).toMatchObject({ kind: "lesson_hint" });
+    const cache = await pool.query<{ verdict: string; redundant_fragments: unknown }>("select verdict, redundant_fragments from learning_app.lesson_verdicts");
+    expect(cache.rows).toEqual([{ verdict: "almost", redundant_fragments: [] }]);
+
+    const calls = grader.callCount;
+    await endSession(services, first.sessionId);
+    clock.advanceHours(48);
+    const again = await reachOpenTask(services, child.id, deckId);
+    expect(again.prompt).toEqual(first.prompt);
+    const repeated = await submitAttempt(services, { taskId: again.taskId, clientAttemptId: randomUUID(), modality: "text", text: answer });
+    expect(repeated.feedback).toMatchObject({ kind: "lesson_hint" });
+    expect(grader.callCount).toBe(calls);
+  });
+
+  it("poprawna rozwlekła odpowiedź, której wszystkie fragmenty odpadły: „Świetnie!” bez kroku skracania (AC-14)", async () => {
+    const answer = "Roślina wytwarza cukry, bo wykorzystuje światło, a w ogóle rośliny są bardzo ciekawe";
+    const grader = new FakeAnswerGrader().onAnswer(answer, {
+      raw: {
+        knowledge: "correct", precision: "verbose",
+        matchedElementIds: ["e1", "e2"], missingElementIds: [],
+        incorrectStatements: [], redundantFragments: ["rośliny są super ciekawe"], offTopicFragments: ["babcia ma ogród"],
+        confusedConcepts: [], note: "",
+      },
+    });
+    const { services } = servicesWith(grader);
+    const child = await createChild(services, { displayName: "Bez zaznaczeń", avatarKey: "cat" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const openTask = await reachOpenTask(services, child.id, deckId);
+    const result = await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: answer });
+    expect(result.feedback!.kind).toBe("great");
+    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where context ? 'followUpOf'");
+    expect((rows.rows[0] as { n: number }).n).toBe(0);
+  });
+});
+
 describe("werdykt v3: pomylone pojęcia i fragmenty nie na temat (Etap 6, integracja)", () => {
   const confusedAnswer = "Oddychanie to proces, w którym roślina wytwarza cukry przy świetle.";
   const confusedVerdict = {

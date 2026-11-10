@@ -105,6 +105,40 @@ describe("odpowiedź otwarta z dyktowaniem", () => {
   });
 });
 
+describe("ponowienie po odpowiedzi otwartej", () => {
+  const dock = <span>dock</span>;
+
+  it("po nieudanej ocenie zostawia podyktowany tekst i sposób wprowadzenia; kolejne dyktowanie go zastępuje (AC-15)", () => {
+    const dictation = heard(1, "Roślina wytwarza cukry");
+    const { props, rerender } = renderSentence({ dictation });
+    rerender({ dictation, dock, keepDraftOnRetry: true });
+    rerender({ dictation });
+    expect(field().value).toBe("Roślina wytwarza cukry");
+    fireEvent.click(check());
+    expect(props.handlers.onSubmitText).toHaveBeenCalledWith("Roślina wytwarza cukry", "speech");
+    rerender({ dictation: heard(2, "Nowa odpowiedź") });
+    expect(field().value).toBe("Nowa odpowiedź");
+  });
+
+  it("po nieudanej ocenie zostawia tekst wpisany z klawiatury (AC-15)", () => {
+    const { props, rerender } = renderSentence();
+    fireEvent.change(field(), { target: { value: "Roślina wytwarza cukry" } });
+    rerender({ dock, keepDraftOnRetry: true });
+    rerender({});
+    expect(field().value).toBe("Roślina wytwarza cukry");
+    fireEvent.click(check());
+    expect(props.handlers.onSubmitText).toHaveBeenCalledWith("Roślina wytwarza cukry", "keyboard");
+  });
+
+  it("zwykłe ponowienie czyści pole jak dotąd (AC-16)", () => {
+    const dictation = heard(1, "Roślina wytwarza cukry");
+    const { rerender } = renderSentence({ dictation });
+    rerender({ dictation, dock });
+    rerender({ dictation });
+    expect(field().value).toBe("");
+  });
+});
+
 describe("„Skróć odpowiedź” z dyktowaniem", () => {
   function renderShorten(overrides: Partial<ExerciseProps> = {}) {
     const props = makeExerciseProps(task(shortenPrompt), { micAvailable: true, microphoneReady: true, ...overrides });
@@ -121,6 +155,19 @@ describe("„Skróć odpowiedź” z dyktowaniem", () => {
     expect(screen.getByTestId("kid-lesson-shorten-original")).toBeTruthy();
     fireEvent.click(check());
     expect(props.handlers.onSubmitText).toHaveBeenCalledWith("Poziomica łączy punkty o tej samej wysokości.", "speech");
+  });
+
+  it("po nieudanej ocenie zostaje wersja dziecka, a zwykłe ponowienie wraca do oryginału (AC-15, AC-16)", () => {
+    const original = shortenPrompt.kind === "lesson_shorten" ? shortenPrompt.originalAnswer : "";
+    const dock = <span>dock</span>;
+    const { rerender } = renderShorten();
+    fireEvent.change(field(), { target: { value: "Krótsza wersja." } });
+    rerender({ dock, keepDraftOnRetry: true });
+    rerender({});
+    expect(field().value).toBe("Krótsza wersja.");
+    rerender({ dock });
+    rerender({});
+    expect(field().value).toBe(original);
   });
 
   it("bez dyktowania wysyła tekst jak dotąd, bez sposobu wprowadzenia", () => {
