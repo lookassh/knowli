@@ -169,10 +169,50 @@ describe("createOpenAiCompatibleGrader", () => {
     expect(system).toContain("confusedConcepts");
   });
 
+  const speechSchool = {
+    question: "Wyjaśnij w jednym zdaniu, co to jest południk.", modelAnswer: "Linia łącząca bieguny.",
+    requiredElements: [{ id: "e1", text: "łączy bieguny" }], supplementaryElements: ["jest półokręgiem"],
+    commonErrors: ["to równoleżnik"], expectedForm: "one_sentence", sourceQuotes: ["Południk łączy bieguny."],
+  };
+  const schoolMessages = async (school: Record<string, unknown>) => {
+    const { calls, fetchImpl } = capturingFetch(() => chatResponse(VALID_JSON));
+    const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m", fetchImpl });
+    const graderInput = { ...input, school } as unknown as typeof input;
+    await grader.grade(graderInput, AbortSignal.timeout(1000));
+    const [system, user] = (JSON.parse(calls[0]!.init.body) as { messages: { content: string }[] }).messages.map((m) => m.content);
+    const data = JSON.parse(user!.slice(user!.indexOf("{"), user!.lastIndexOf("}") + 1)) as Record<string, unknown>;
+    return { system: system!, user: user!, data, version: grader.promptVersionForInput?.(graderInput) };
+  };
+
+  it("odpowiedź pisana: prompt szkolny i dane bez zmian względem school-grader-v3 (AC-07)", async () => {
+    const written = await schoolMessages(speechSchool);
+    expect(written.version).toBe("school-grader-v3");
+    expect([written.system, written.user]).toMatchSnapshot();
+    const explicit = await schoolMessages({ ...speechSchool, spoken: false });
+    expect([explicit.system, explicit.user]).toEqual([written.system, written.user]);
+    expect(explicit.version).toBe("school-grader-v3");
+  });
+
+  it("niepoprawiona mowa: osobna wersja, akapit o mowie, bez wymogu jednego zdania, w danych tylko znacznik (AC-06, AC-10)", async () => {
+    const spoken = await schoolMessages({ ...speechSchool, spoken: true });
+    expect(spoken.version).toBe("school-grader-v3-speech");
+    expect(spoken.system).toContain("podyktowana na głos");
+    expect(spoken.system).not.toContain("Oczekiwana forma odpowiedzi");
+    expect(Object.keys(spoken.data).sort()).toEqual(
+      ["childAnswer", "commonErrors", "inputMethod", "modelAnswer", "question", "requiredElements", "sourceQuotes", "supplementaryElements"],
+    );
+    expect(spoken.data.inputMethod).toBe("speech");
+    // Inna forma niż jedno zdanie zostaje wskazówką także dla mowy.
+    const list = await schoolMessages({ ...speechSchool, expectedForm: "list", spoken: true });
+    expect(list.system).toContain("Oczekiwana forma odpowiedzi: list.");
+    expect(list.data.expectedForm).toBe("list");
+    expect(list.data.inputMethod).toBe("speech");
+  });
+
   it("promptVersion jest stałą adaptera; promptVersions to bieżące wersje lekcji i szkoły", () => {
     const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
     expect(grader.promptVersion).toBe("grader-v2");
-    expect(grader.promptVersions).toEqual(["grader-v2", "school-grader-v3"]);
+    expect(grader.promptVersions).toEqual(["grader-v2", "school-grader-v3", "school-grader-v3-speech"]);
   });
 
   it("grader-v2: definicja poprawności i usesTargetForm w prompcie; linia rozsypanki tylko przy blocks (#360)", async () => {

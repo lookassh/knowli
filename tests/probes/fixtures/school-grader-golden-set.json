@@ -724,6 +724,68 @@
         "precision": "concise",
         "missingElementIds": []
       }
+    },
+    {
+      "id": "H01",
+      "question": "poludnik",
+      "category": "mowa — bez interpunkcji",
+      "input": "speech",
+      "holdout": true,
+      "childAnswer": "to jest taka wymyślona linia na ziemi ee która idzie od bieguna północnego do południowego",
+      "expected": {
+        "knowledge": "correct",
+        "precision": "concise",
+        "missingElementIds": []
+      }
+    },
+    {
+      "id": "H02",
+      "question": "ssak-ptak",
+      "category": "mowa — autokorekta na błędną wersję",
+      "input": "speech",
+      "holdout": true,
+      "childAnswer": "ssaki karmią młode mlekiem a ptaki składają jaja yyy nie odwrotnie ssaki składają jaja a ptaki karmią młode mlekiem",
+      "expected": {
+        "knowledge": "incorrect",
+        "precision": "concise",
+        "missingElementIds": [
+          "e1",
+          "e2",
+          "e3"
+        ]
+      }
+    },
+    {
+      "id": "H03",
+      "question": "wysokosc-wzgledna",
+      "category": "mowa — pomylenie pojęć",
+      "input": "speech",
+      "holdout": true,
+      "pairOf": "G22",
+      "childAnswer": "yyy wysokość względna to no wysokość mierzona od poziomu morza na przykład czterysta metrów nad poziomem morza",
+      "expected": {
+        "knowledge": "incorrect",
+        "precision": "concise",
+        "missingElementIds": [
+          "e1"
+        ]
+      }
+    },
+    {
+      "id": "H04",
+      "question": "chrzest",
+      "category": "mowa — częściowa bez interpunkcji",
+      "input": "speech",
+      "holdout": true,
+      "childAnswer": "no bo chciał żeby jego władza była mocniejsza",
+      "expected": {
+        "knowledge": "partial",
+        "precision": "concise",
+        "missingElementIds": [
+          "e1",
+          "e2"
+        ]
+      }
     }
   ]
 }

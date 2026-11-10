@@ -5,6 +5,8 @@ export interface CaseOutcome {
   readonly input: "written" | "speech";
   readonly pairOf?: string;
   readonly disputed: boolean;
+  /** Przypadek mówiony dopisany po zamrożeniu promptu mowy (AC-34): własny wiersz raportu. */
+  readonly holdout?: boolean;
   /** rejected = walidacja odrzuciła werdykt; provider_error = transport/dostawca. */
   readonly status: "graded" | "rejected" | "provider_error";
   /** null, gdy status !== "graded". */
@@ -27,12 +29,12 @@ export function isUnneededShorten(
     verdict.redundantFragments.length + verdict.offTopicFragments.length > 0;
 }
 
-/** Dwa wiersze raportu, zawsze w kolejności: pisane, mówione. */
+/** Trzy wiersze raportu, zawsze w kolejności: pisane, mówione, mówione-nowe (holdout). */
 export function groupReportLines(outcomes: readonly CaseOutcome[]): string[] {
-  return (["written", "speech"] as const).map((input) => {
-    const group = outcomes.filter((o) => o.input === input);
+  return (["pisane", "mówione", "mówione-nowe"] as const).map((label) => {
+    const group = outcomes.filter((o) => (o.input === "written" ? "pisane" : o.holdout ? "mówione-nowe" : "mówione") === label);
     const count = (pick: (o: CaseOutcome) => boolean) => group.filter(pick).length;
-    return `${input === "written" ? "pisane" : "mówione"}: przypadki=${group.length} wiedzaZgodna=${count((o) => o.knowledgeMatch === true)} ` +
+    return `${label}: przypadki=${group.length} wiedzaZgodna=${count((o) => o.knowledgeMatch === true)} ` +
       `precyzjaZgodna=${count((o) => o.precisionMatch === true)} odrzuconeWalidator=${count((o) => o.status === "rejected")} ` +
       `bladDostawcy=${count((o) => o.status === "provider_error")} niepotrzebneSkracanie=${count((o) => o.unneededShorten)}`;
   });
@@ -73,5 +75,5 @@ export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string
   const providerErrors = runs.flat().filter((o) => o.status === "provider_error" &&
     (o.input === "speech" ? !o.disputed : twins.has(o.id))).length;
   const warning = providerErrors > 0 ? [`UWAGA: błędy dostawcy w mowie lub bliźniakach: ${providerErrors} — rozstrzygnięcie niepełne`] : [];
-  return [...lines, ...warning,`REGUŁA: story 2 ${needed ? "potrzebne" : "niepotrzebne"}`];
+  return [...lines, ...warning,`REGUŁA: ${needed ? "mowa stabilnie błędna" : "mowa bez stabilnych błędów"}`];
 }

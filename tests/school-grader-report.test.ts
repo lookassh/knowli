@@ -36,9 +36,11 @@ describe("groupReportLines", () => {
       outcome({ input: "speech", precisionMatch: false, unneededShorten: true }),
       outcome({ input: "speech", status: "rejected", knowledgeMatch: null, precisionMatch: null }),
       outcome({ input: "speech", status: "provider_error", knowledgeMatch: null, precisionMatch: null }),
+      outcome({ input: "speech", holdout: true, knowledgeMatch: false }),
     ])).toEqual([
       "pisane: przypadki=2 wiedzaZgodna=1 precyzjaZgodna=2 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0",
       "mówione: przypadki=3 wiedzaZgodna=1 precyzjaZgodna=0 odrzuconeWalidator=1 bladDostawcy=1 niepotrzebneSkracanie=1",
+      "mówione-nowe: przypadki=1 wiedzaZgodna=0 precyzjaZgodna=1 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0",
     ]);
   });
   it("prints a zero row for a group with no cases", () => {
@@ -56,22 +58,22 @@ describe("decisionLines", () => {
   });
   it("calls story 2 needed for one stable knowledge failure", () => {
     expect(decisionLines([[speech("S02", bad)], [speech("S02", bad)], [speech("S02")]]))
-      .toEqual(["S02: wiedza 2/3", "REGUŁA: story 2 potrzebne"]);
+      .toEqual(["S02: wiedza 2/3", "REGUŁA: mowa stabilnie błędna"]);
   });
   it("counts validator rejections but not provider errors", () => {
     const rejected = { status: "rejected", knowledgeMatch: null, precisionMatch: null } as const;
     const provider = { status: "provider_error", knowledgeMatch: null, precisionMatch: null } as const;
     expect(decisionLines([[speech("S02", rejected)], [speech("S02", rejected)], [speech("S02", provider)]]))
-      .toEqual(["S02: odrzucenie 2/3", warn(1), "REGUŁA: story 2 potrzebne"]);
+      .toEqual(["S02: odrzucenie 2/3", warn(1), "REGUŁA: mowa stabilnie błędna"]);
     expect(decisionLines([[speech("S02", provider)], [speech("S02", provider)], [speech("S02", provider)]]))
-      .toEqual([warn(3), "REGUŁA: story 2 niepotrzebne"]);
+      .toEqual([warn(3), "REGUŁA: mowa bez stabilnych błędów"]);
   });
   it("warns about provider errors on a written twin that hides a paired failure", () => {
     const run = [
       speech("S03", { ...bad, pairOf: "G09" }),
       outcome({ id: "G09", status: "provider_error", knowledgeMatch: null, precisionMatch: null }),
     ];
-    expect(decisionLines([run, run, run])).toEqual([warn(3), "REGUŁA: story 2 niepotrzebne"]);
+    expect(decisionLines([run, run, run])).toEqual([warn(3), "REGUŁA: mowa bez stabilnych błędów"]);
   });
   it("applies the rule only for exactly three runs", () => {
     const run = [speech("S02", bad)];
@@ -81,8 +83,8 @@ describe("decisionLines", () => {
     const shorten = { unneededShorten: true };
     const one = [speech("S01", shorten), speech("S02")];
     const two = [speech("S01", shorten), speech("S02", shorten)];
-    expect(decisionLines([one, one, one])).toEqual(["S01: skracanie 3/3", "REGUŁA: story 2 niepotrzebne"]);
-    expect(decisionLines([two, two, two])).toEqual(["S01: skracanie 3/3", "S02: skracanie 3/3", "REGUŁA: story 2 potrzebne"]);
+    expect(decisionLines([one, one, one])).toEqual(["S01: skracanie 3/3", "REGUŁA: mowa bez stabilnych błędów"]);
+    expect(decisionLines([two, two, two])).toEqual(["S01: skracanie 3/3", "S02: skracanie 3/3", "REGUŁA: mowa stabilnie błędna"]);
   });
   it("ignores single failures, disputed cases and pairs whose written twin fails", () => {
     const run = [
@@ -90,10 +92,10 @@ describe("decisionLines", () => {
       speech("S03", { ...bad, pairOf: "G09" }),
       outcome({ id: "G09", knowledgeMatch: false }),
     ];
-    expect(decisionLines([run, run, [...run, speech("S04", bad)]])).toEqual(["REGUŁA: story 2 niepotrzebne"]);
+    expect(decisionLines([run, run, [...run, speech("S04", bad)]])).toEqual(["REGUŁA: mowa bez stabilnych błędów"]);
   });
   it("counts a paired case when its written twin passes", () => {
     const run = [speech("S03", { ...bad, pairOf: "G09" }), outcome({ id: "G09" })];
-    expect(decisionLines([run, run, run])).toEqual(["S03: wiedza 3/3", "REGUŁA: story 2 potrzebne"]);
+    expect(decisionLines([run, run, run])).toEqual(["S03: wiedza 3/3", "REGUŁA: mowa stabilnie błędna"]);
   });
 });

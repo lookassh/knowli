@@ -390,7 +390,7 @@ export interface GraderInput {
   /**
    * Dane ścieżki szkolnej (Etap 2): elementy wymagane ćwiczenia, forma i cytaty
    * źródłowe. Obecność przełącza adapter na werdykt dwuwymiarowy i prompt
-   * `school-grader-v3` (design §9.1); brak = dotychczasowy werdykt v1.
+   * `school-grader-v3` (design §9.1; `spoken` → wariant `school-grader-v3-speech`); brak = dotychczasowy werdykt v1.
    */
   readonly school?: {
     readonly question: string;
@@ -401,6 +401,12 @@ export interface GraderInput {
     readonly commonErrors: readonly string[];
     readonly expectedForm: string;
     readonly sourceQuotes: readonly string[];
+    /**
+     * Odpowiedź podyktowana i niepoprawiona ręcznie. Adapter przełącza wariant promptu
+     * (tolerancja cech mowy, bez wymogu jednego zdania) i wersję promptu, czyli klucz cache.
+     * Do usługi trafia wyłącznie jako znacznik sposobu wprowadzenia.
+     */
+    readonly spoken?: boolean;
   };
 }
 

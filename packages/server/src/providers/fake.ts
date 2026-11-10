@@ -447,6 +447,7 @@ export type FakeGraderBehavior =
   | { error: string; delayMs?: number };
 
 const FAKE_SCHOOL_PROMPT_VERSION = "fake-school-grader-v3";
+const FAKE_SCHOOL_SPEECH_PROMPT_VERSION = "fake-school-grader-v3-speech";
 
 /**
  * Deterministyczny fake modelu oceniającego dla integracji/E2E: liczy wywołania
@@ -460,7 +461,7 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   readonly promptVersion: string;
   readonly requests: GraderInput[] = [];
   get promptVersions(): readonly string[] {
-    return [this.promptVersion, FAKE_SCHOOL_PROMPT_VERSION];
+    return [this.promptVersion, FAKE_SCHOOL_PROMPT_VERSION, FAKE_SCHOOL_SPEECH_PROMPT_VERSION];
   }
   #byAnswer = new Map<string, FakeGraderBehavior>();
   #default: FakeGraderBehavior | null = null;
@@ -487,7 +488,8 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   }
 
   promptVersionForInput(input: GraderInput): string {
-    return input.school ? FAKE_SCHOOL_PROMPT_VERSION : this.promptVersion;
+    if (!input.school) return this.promptVersion;
+    return input.school.spoken ? FAKE_SCHOOL_SPEECH_PROMPT_VERSION : FAKE_SCHOOL_PROMPT_VERSION;
   }
 
   get callCount(): number {

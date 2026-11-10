@@ -477,10 +477,11 @@ export function buildGraderInput(
   key: LessonTaskAnswerKey,
   childAnswer: string,
   blocks?: readonly string[],
+  spoken = false,
 ): GraderInput {
   const { subject, topic, objective } = resolveObjective(services, key);
   const prompt = task.publicPrompt as { instructionPl?: string; stem?: string; statement?: string; prompt?: string; stemWithGap?: string } | null;
-  return lessonGraderInput({
+  const input = lessonGraderInput({
     subject,
     topic,
     objective: { descriptionEn: objective.descriptionEn, errorCategories: allowedCategoriesFor(services, key) },
@@ -492,6 +493,8 @@ export function buildGraderInput(
     schoolCriteria: key.schoolCriteria,
     answerText: childAnswer,
   });
+  // Niepoprawiona mowa: osobny wariant promptu i osobny wpis cache (wersja promptu w kluczu).
+  return spoken && input.school ? { ...input, school: { ...input.school, spoken: true } } : input;
 }
 
 /**
@@ -841,9 +844,14 @@ interface LessonAttemptStart {
 
 type AnswerSource = { inputMethod: "keyboard" } | { inputMethod: "speech"; edited: boolean };
 
-/** Niepoprawiony tekst z dyktowania nie ma wiarygodnej interpunkcji (formOkFor). */
-function skipsFormCheck(source: AnswerSource): boolean {
-  return source.inputMethod === "speech" && !source.edited;
+/**
+ * Tekst pochodzi z niepoprawionej mowy: nie ma wiarygodnej interpunkcji (formOkFor) i idzie do
+ * wariantu promptu dla mowy. Poprawka w kroku skracania podyktowanego oryginału to nadal ten sam
+ * zapis mowy, więc dziedziczy znacznik — inaczej oba werdykty porównywałyby dwa warianty promptu.
+ */
+function spokenText(start: { answerSource: AnswerSource; key: LessonTaskAnswerKey }): boolean {
+  const source = start.answerSource;
+  return (source.inputMethod === "speech" && !source.edited) || start.key.revisionOf?.spoken === true;
 }
 
 /** Zapis odpowiedzi tekstowej z oznaczeniem dyktowania; brak pola = klawiatura. */
@@ -1146,7 +1154,7 @@ async function finalizeLessonAttempt(
   const mockTest = session.mode === "mock_test";
   const graded = precomputed
     ?? noStimulusGrade(key, frozen.assistance, valid.modality)
-    ?? gradeLessonAnswer(valid, task, key, services, skipsFormCheck(start.answerSource));
+    ?? gradeLessonAnswer(valid, task, key, services, spokenText(start));
   const result = valid.modality === "text" ? withRevisionComparison(key.revisionOf, valid.text, graded) : graded;
   const qualification = qualifyLessonAttempt({
     receivedAt: frozen.receivedAt,
@@ -1203,7 +1211,7 @@ async function finalizeLessonAttempt(
   // feedbacku w trakcie (omówienie dopiero po zamknięciu).
   // Trener precyzji: poprawna, lecz rozwlekła odpowiedź otwarta dostaje zadanie następcze.
   const shortenOffer = !mockTest && valid.modality === "text" && taskState !== "issued"
-    ? await offerShortenFollowUp(tx, services, { task, session, itemId, attemptId, childAnswer: valid.text, result, now: receivedAt })
+    ? await offerShortenFollowUp(tx, services, { task, session, itemId, attemptId, childAnswer: valid.text, result, now: receivedAt, spoken: spokenText(start) })
     : null;
   // Nagranie zdania doklejone PRZED zapisem — ponowny odczyt zwraca ten sam identyfikator.
   const visibleFeedback = mockTest || valid.modality === "skip" ? null : shortenOffer ?? result.feedback;
@@ -1357,7 +1365,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
       return { kind: "done" as const, dto: started.dto };
     }
     const result = noStimulusGrade(started.key, started.frozen.assistance, typed.modality)
-      ?? gradeLessonAnswer(typed, started.task, started.key, services, skipsFormCheck(started.answerSource));
+      ?? gradeLessonAnswer(typed, started.task, started.key, services, spokenText(started));
 
     // Niedopasowana odpowiedź tekstowa i inna kolejność klocków eskalują do zapisanego werdyktu / modelu.
     const needsModel = (typed.modality === "sequence" || (typed.modality === "text" && started.key.exerciseType !== "lesson_calculation")) &&
@@ -1374,7 +1382,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     const childAnswer = blocks ? blocks.join(" ") : (typed as Extract<AttemptInput, { modality: "text" }>).text;
     const normalizedAnswer = normalizedAnswerKey(childAnswer);
     // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
-    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks) : null;
+    const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks, spokenText(started)) : null;
     const promptVersion = services.grader
       ? (services.grader.provider.promptVersionForInput?.(earlyInput!) ?? services.grader.provider.promptVersion)
       : undefined;
@@ -1386,7 +1394,7 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
         const schoolVerdict = earlyInput?.school ? schoolVerdictFromCacheRow(cached, started.key, childAnswer) : null;
         const cachedResult = earlyInput?.school
           ? schoolVerdict
-            ? resultFromSchoolVerdict(services, started.key, childAnswer, schoolVerdict, cached.id, cached.parentDecision === "overridden_incorrect", skipsFormCheck(started.answerSource))
+            ? resultFromSchoolVerdict(services, started.key, childAnswer, schoolVerdict, cached.id, cached.parentDecision === "overridden_incorrect", spokenText(started))
             : null
           : resultFromVerdict(services, started.task, started.key, childAnswer, verdictFromCacheRow(cached), cached.id, cached.parentDecision === "overridden_incorrect");
         if (cachedResult) {
@@ -1659,7 +1667,7 @@ async function finalizeGradedAttempt(
         effectiveSchoolVerdict,
         verdictId,
         authoritativeIncorrect,
-        skipsFormCheck(start.answerSource),
+        spokenText(start),
       )
     : resultFromVerdict(services, task, key, args.childAnswer, effectiveVerdict, verdictId, authoritativeIncorrect));
   const qualification = qualifyLessonAttempt({
@@ -1708,7 +1716,7 @@ async function finalizeGradedAttempt(
 
   // Kartkówka: wynik niewidoczny — brak feedbacku/ekspozycji w trakcie.
   const shortenOffer = !mockTest && taskState !== "issued"
-    ? await offerShortenFollowUp(tx, services, { task, session: freshSession, itemId, attemptId, childAnswer: args.childAnswer, result, now: receivedAt })
+    ? await offerShortenFollowUp(tx, services, { task, session: freshSession, itemId, attemptId, childAnswer: args.childAnswer, result, now: receivedAt, spoken: spokenText(start) })
     : null;
   // Nagranie zdania doklejone przed zapisem (jak wyżej).
   const visibleFeedback = mockTest ? null : shortenOffer ?? result.feedback;

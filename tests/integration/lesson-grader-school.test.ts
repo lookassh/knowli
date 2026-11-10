@@ -803,3 +803,120 @@ describe("werdykt v3: pomylone pojęcia i fragmenty nie na temat (Etap 6, integr
     expect(report.school?.fragmentKinds).toEqual({ redundant: 1, offTopic: 1 });
   });
 });
+
+describe("niepoprawiona mowa ma własny wariant promptu i własny wpis cache (CAP-2, integracja)", () => {
+  it("ta sama treść z klawiatury i podyktowana nie dzieli werdyktu; mowa poprawiona ręcznie idzie jak klawiatura (AC-07, AC-09, AC-32)", async () => {
+    const answer = "Roślina robi cukier.";
+    // Werdykt częściowy: zadanie otwarte wraca w kolejnych sesjach.
+    const partial = {
+      raw: {
+        knowledge: "partial", precision: "concise", matchedElementIds: ["e1"], missingElementIds: ["e2"],
+        incorrectStatements: [], redundantFragments: [], offTopicFragments: [], confusedConcepts: [], note: "",
+      },
+    };
+    const grader = new FakeAnswerGrader().onDefault(partial);
+    let heard = answer;
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+      lessonSpeech: fakeLessonSpeechDeps({ name: "fake-dictation", transcribe: async () => ({ status: "ok", text: heard, confidence: 0.96 }) }),
+    });
+    const child = await createChild(services, { displayName: "Dwa wpisy", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id);
+    const nextOpenTask = async (previous?: TaskDto) => {
+      if (previous) {
+        await endSession(services, previous.sessionId);
+        clock.advanceHours(48);
+      }
+      return reachOpenTask(services, child.id, deckId, true);
+    };
+    const dictateAndSubmit = async (task: TaskDto, text: string) => {
+      await dictateLessonAnswer(services, { taskId: task.taskId }, { bytes: wavBytes(3), mimeType: "audio/wav", locale: "pl-PL" });
+      return submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text, inputMethod: "speech" });
+    };
+
+    // 1) klawiatura; rodzic uznaje potem ten werdykt za błędny
+    const typed = await nextOpenTask();
+    expect((await submitAttempt(services, { taskId: typed.taskId, clientAttemptId: randomUUID(), modality: "text", text: answer })).feedback!.kind).toBe("lesson_hint");
+    expect(grader.callCount).toBe(1);
+    await pool.query("update learning_app.lesson_verdicts set parent_decision = 'overridden_incorrect', parent_decided_at = now()");
+
+    // 2) ta sama treść podyktowana i niepoprawiona: nie czyta wiersza klawiatury ani jego decyzji
+    const spoken = await nextOpenTask(typed);
+    expect((await dictateAndSubmit(spoken, answer)).feedback!.kind).toBe("lesson_hint");
+    expect(grader.callCount).toBe(2);
+    expect(grader.requests[0]!.school!.spoken).toBeUndefined();
+    expect(grader.requests[1]!.school!.spoken).toBe(true);
+    const rows = await pool.query<{ item_revision_id: string; prompt_version: string }>(
+      "select item_revision_id, prompt_version from learning_app.lesson_verdicts order by prompt_version",
+    );
+    expect(rows.rows.map((row) => row.prompt_version)).toEqual(["fake-school-grader-v3", "fake-school-grader-v3-speech"]);
+    expect(rows.rows[0]!.item_revision_id).toBe(rows.rows[1]!.item_revision_id);
+    const stored = await pool.query<{ answer: Record<string, unknown> }>("select answer from learning_app.attempts where task_id = $1", [spoken.taskId]);
+    expect(stored.rows[0]!.answer).toEqual({ text: answer, inputMethod: "speech", edited: false });
+
+    // 3) ponowne dyktowanie tej samej treści trafia w wiersz mówiony
+    const spokenAgain = await nextOpenTask(spoken);
+    expect((await dictateAndSubmit(spokenAgain, answer)).feedback!.kind).toBe("lesson_hint");
+    expect(grader.callCount).toBe(2);
+
+    // 4) mowa poprawiona ręcznie: żądanie i wpis cache jak z klawiatury
+    const editedText = "Roślina robi cukier z wody.";
+    const edited = await nextOpenTask(spokenAgain);
+    await dictateAndSubmit(edited, editedText);
+    expect(grader.callCount).toBe(3);
+    expect(grader.requests[2]!.school!.spoken).toBeUndefined();
+    const versionsOf = async (text: string) => (await pool.query<{ prompt_version: string }>(
+      "select prompt_version from learning_app.lesson_verdicts where normalized_answer = $1 order by prompt_version", [text],
+    )).rows.map((row) => row.prompt_version);
+    expect(await versionsOf("roślina robi cukier z wody")).toEqual(["fake-school-grader-v3"]);
+
+    // 5) odwrotny kierunek: treść, która ma tylko wiersz mówiony, wpisana z klawiatury nie trafia w niego
+    heard = "Roślina robi cukier z powietrza.";
+    const spokenFirst = await nextOpenTask(edited);
+    await dictateAndSubmit(spokenFirst, heard);
+    expect(grader.callCount).toBe(4);
+    expect(await versionsOf("roślina robi cukier z powietrza")).toEqual(["fake-school-grader-v3-speech"]);
+    const typedAfter = await nextOpenTask(spokenFirst);
+    await submitAttempt(services, { taskId: typedAfter.taskId, clientAttemptId: randomUUID(), modality: "text", text: heard });
+    expect(grader.callCount).toBe(5);
+    expect(await versionsOf("roślina robi cukier z powietrza")).toEqual(["fake-school-grader-v3", "fake-school-grader-v3-speech"]);
+  });
+
+  it("poprawka w kroku skracania podyktowanej odpowiedzi jest oceniana wariantem mowy, choć wpisana z klawiatury", async () => {
+    const verbose = "Roślina wytwarza cukry, bo wykorzystuje światło. A wczoraj grałem w piłkę.";
+    const shorter = "Roślina wytwarza cukry, bo wykorzystuje światło.";
+    const verdict = (precision: string, offTopicFragments: string[]) => ({
+      raw: {
+        knowledge: "correct", precision, matchedElementIds: ["e1", "e2"], missingElementIds: [],
+        incorrectStatements: [], redundantFragments: [], offTopicFragments, confusedConcepts: [], note: "",
+      },
+    });
+    const grader = new FakeAnswerGrader()
+      .onAnswer(verbose, verdict("verbose", ["A wczoraj grałem w piłkę."]))
+      .onAnswer(shorter, verdict("concise", []));
+    const { services: base, clock } = buildTestServices();
+    const services = createServices({
+      db: (base as unknown as { db: Parameters<typeof createServices>[0]["db"] }).db,
+      clock,
+      grader: { provider: grader, maxCallsPerSession: 20, timeoutMs: 8000 },
+      lessonSpeech: fakeLessonSpeechDeps(new FakeDictationSttProvider({ status: "ok", text: verbose, confidence: 0.96 })),
+    });
+    const child = await createChild(services, { displayName: "Skracanie mowy", avatarKey: "owl" });
+    const { deckId } = await seedSchoolDeck(child.id, { expectedForm: "one_sentence", secondObjective: true });
+    const openTask = await reachOpenTask(services, child.id, deckId, true);
+    await dictateLessonAnswer(services, { taskId: openTask.taskId }, { bytes: wavBytes(3), mimeType: "audio/wav", locale: "pl-PL" });
+    await submitAttempt(services, { taskId: openTask.taskId, clientAttemptId: randomUUID(), modality: "text", text: verbose, inputMethod: "speech" });
+
+    const followUp = (await nextTask(services, openTask.sessionId))!;
+    expect(followUp.prompt).toMatchObject({ kind: "lesson_shorten" });
+    const revision = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: shorter });
+    expect(revision.feedback!.kind).toBe("great");
+    expect(grader.requests.map((request) => request.school!.spoken)).toEqual([true, true]);
+    // Sposób wprowadzenia poprawki zostaje zapisany zgodnie z prawdą: klawiatura.
+    const stored = await pool.query<{ answer: Record<string, unknown> }>("select answer from learning_app.attempts where task_id = $1", [followUp.taskId]);
+    expect(stored.rows[0]!.answer).toEqual({ text: shorter });
+  });
+});

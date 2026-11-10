@@ -14,16 +14,24 @@
 - id: "2"
   title: Tolerancja mowy w ocenie podyktowanej odpowiedzi
   description: >-
-    Stan 2026-11-10: wstrzymane do odbioru rodzinnego; pomiar syntetyczny
-    nie wskazał problemu (speech-baseline.md), więc następne jest story 3.
+    Stan 2026-11-10: zrealizowane na polecenie właściciela mimo pomiaru
+    syntetycznego, który nie wskazał problemu (speech-baseline.md). Forma
+    jednego zdania znika z żądania tylko dla niepoprawionej mowy; pozostałe
+    formy zostają. Rodzic widzi tę samą odpowiedź mówioną i pisaną jako dwa
+    werdykty. Poprawka w kroku skracania podyktowanego oryginału dziedziczy
+    wariant mowy. Pomiar po zmianie (2026-11-10, speech-baseline.md): mowa
+    bez stabilnych błędów, AC-04–06 spełnione na przypadkach syntetycznych;
+    bramka pisanych (AC-08) nie przechodzi z powodów zastanych (G05, G06,
+    G27), bez nowych porażek. Przypadki H01–H04 powstały razem z promptem,
+    więc „nieużywane przy strojeniu” znaczy tylko: przed pierwszym pomiarem.
     Zrealizuj CAP-2 na podstawie pomiaru ze story 1: model wie, że odpowiedź
     była mówiona, toleruje cechy mowy i nie dostaje wymogu jednego zdania dla
     niepoprawionej dyktowanej odpowiedzi. Sprawdź AC-04–10, AC-32 i AC-34.
   spec_checkpoint: true
   done_checkpoint: false
   invoke_dev_with: >-
-    Jeśli reguła decyzyjna ze story 1 nie wskazała problemu, zgłoś to i nie
-    zmieniaj promptu. Tolerancja tylko w prompcie, bez reguł językowych w
+    Reguła decyzyjna ze story 1 nie wskazała problemu; właściciel 2026-11-10
+    polecił zmianę promptu mimo to. Tolerancja tylko w prompcie, bez reguł językowych w
     kodzie. Podnieś wersję promptu i rozdziel cache według sposobu
     wprowadzenia (AC-32), w miarę możliwości bez migracji. Przeczytaj
     docs/agents/lessons.md i docs/agents/providers-privacy.md; zaktualizuj

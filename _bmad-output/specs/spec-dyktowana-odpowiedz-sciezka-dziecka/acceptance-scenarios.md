@@ -2,7 +2,7 @@
 
 Przypadki do wykonania podczas implementacji na fikcyjnych danych, nie wyniki testów. Każde story sprawdza wiersze przywołane w swoim opisie.
 
-**Reguła decyzyjna (AC-03, AC-04–08).** Trzy przebiegi tym samym modelem i promptem. Przypadek mówiony jest „stabilnie błędny”, gdy w co najmniej 2 z 3 przebiegów: wiedza różni się od oczekiwanej, werdykt odrzuca walidacja albo model wywołuje niepotrzebne skracanie (wiedza poprawna, precyzja `verbose`/`unfocused`, co najmniej jeden fragment, a oczekiwano `concise`). Przypadek sparowany liczy się tylko wtedy, gdy jego pisany odpowiednik jest w tych przebiegach zgodny. Przypadki sporne i błędy dostawcy się nie liczą.
+**Reguła decyzyjna (AC-03, AC-04–08).** Trzy przebiegi tym samym modelem i promptem. Przypadek mówiony jest „stabilnie błędny”, gdy w co najmniej 2 z 3 przebiegów: wiedza różni się od oczekiwanej, werdykt odrzuca walidacja albo model wywołuje niepotrzebne skracanie (wiedza poprawna, precyzja `verbose`/`unfocused`, co najmniej jeden fragment, a oczekiwano `concise`). Przypadek sparowany liczy się tylko wtedy, gdy jego pisany odpowiednik jest w tych przebiegach zgodny. Przypadki sporne i błędy dostawcy się nie liczą. Od story 2 skrypt wypisuje rozstrzygnięcie jako „REGUŁA: mowa stabilnie błędna” albo „REGUŁA: mowa bez stabilnych błędów” (wcześniej „story 2 potrzebne/niepotrzebne”).
 
 | ID | CAP | Sytuacja | Oczekiwane zachowanie |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@ Przypadki do wykonania podczas implementacji na fikcyjnych danych, nie wyniki te
 | AC-03 | CAP-1 | Pomiar na prawdziwym modelu | Tylko po zgodzie właściciela; trzy przebiegi; przy wyniku model, wersja promptu, data i rozstrzygnięcie reguły: story 2 potrzebne, gdy ≥ 1 przypadek stabilnie błędny w wiedzy lub odrzuceniu albo ≥ 2 w skracaniu |
 | AC-04 | CAP-2 | Przypadki mówione z autokorektą po zmianie promptu | Żaden nie jest stabilnie błędny w wiedzy |
 | AC-05 | CAP-2 | Przypadki mówione z wypełniaczami, restartem, powtórzeniami | Żaden nie wywołuje stabilnie niepotrzebnego skracania |
-| AC-06 | CAP-2 | Niepoprawiona podyktowana odpowiedź na pytanie z formą jednego zdania | Model nie dostaje wymogu jednego zdania; przypadek „kilka zdań z pauz” nie jest stabilnie błędny |
+| AC-06 | CAP-2 | Niepoprawiona podyktowana odpowiedź na pytanie z formą jednego zdania | Model nie dostaje wymogu jednego zdania z pola formy (treść pytania zostaje); przypadek „kilka zdań z pauz” nie jest stabilnie błędny |
 | AC-07 | CAP-2 | Ta sama treść wpisana z klawiatury albo podyktowana i poprawiona ręcznie | Żądanie i ocena jak przed zmianą, w tym forma jednego zdania |
 | AC-08 | CAP-2 | Zestaw po zmianie promptu | Bramka przypadków pisanych przechodzi (twarde 100%, wiedza ≥ 90%, zero odrzuconych); przypadki mówione częściowy i błędny nadal `partial` i `incorrect` |
 | AC-09 | CAP-2 | Ta sama odpowiedź oceniona przed i po zmianie promptu | Nowa wersja promptu: stary wpis cache nie jest użyty |
