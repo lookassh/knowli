@@ -33,6 +33,7 @@ import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rule
 import { outsideStagePath, STAGE_BY_TYPE } from "../../../domain/lessons/stages";
 import { LESSON_STORY_LIMITS, solvedSentencesOf, validateLessonStory, type LessonStory } from "../../../domain/lessons/story";
 import type { LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import { lessonPoolRunFilter } from "../generation-runs";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { createVersionFromPublished, lockVersion } from "../version-ops";
@@ -426,10 +427,15 @@ type UnlistedOptionalField = Exclude<
 type AssertNone<T extends never> = T;
 export type AuthoringOptionalFieldsComplete = AssertNone<UnlistedOptionalField>;
 
-/** Run generowania (puli albo historyjki) w toku: narzędzie nie przerywa pracy rodzica. */
-async function hasActiveLessonRun(tx: Tx, versionId: string): Promise<boolean> {
+/**
+ * Run generowania puli ćwiczeń w toku: narzędzie nie przerywa pracy rodzica (edycja
+ * zamknęłaby run przez `supersedeLessonRuns`). Run historyjki nie blokuje, jak przy
+ * edycji rodzica: nie zależy od numeru edycji i przeżywa edycję ćwiczeń, a poprawka
+ * z polem `story` unieważnia go w `editLessonDraftTx`.
+ */
+async function hasActiveLessonPoolRun(tx: Tx, versionId: string): Promise<boolean> {
   const [row] = await tx.select({ id: generationRuns.id }).from(generationRuns)
-    .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.deckVersionId, versionId), inArray(generationRuns.state, ["queued", "running"])))
+    .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.deckVersionId, versionId), inArray(generationRuns.state, ["queued", "running"]), lessonPoolRunFilter()))
     .limit(1);
   return row !== undefined;
 }
@@ -456,7 +462,7 @@ export async function replaceAuthoredLesson(services: Services, rawToken: string
     } else {
       const version = await lockVersion(tx, versionId);
       if (version.editNumber !== expectedEditNumber) throw new AppError("conflict");
-      if (await hasActiveLessonRun(tx, versionId)) throw new AppError("conflict", { message: "a generation run of this draft is in progress" });
+      if (await hasActiveLessonPoolRun(tx, versionId)) throw new AppError("conflict", { message: "an exercise generation run of this draft is in progress" });
     }
     const version = await lockVersion(tx, versionId);
     const context = readLessonContext(version.lessonContext);
