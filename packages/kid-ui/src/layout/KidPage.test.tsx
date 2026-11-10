@@ -50,6 +50,17 @@ function renderSession() {
 
 const kidZoom = (element: HTMLElement) => element.style.getPropertyValue("--kid-zoom");
 
+describe("KidPage context menu", () => {
+  it("blocks the context menu outside text fields", () => {
+    stubWindow(390, 750);
+    stubFinePointer(false);
+    renderKid(<KidPage mode="flow"><p>Etykieta</p><input aria-label="Odpowiedź" /></KidPage>);
+    const open = (element: Element) => element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(open(screen.getByText("Etykieta"))).toBe(false);
+    expect(open(screen.getByLabelText("Odpowiedź"))).toBe(true);
+  });
+});
+
 describe("KidPage zoom", () => {
   it("zooms a large window and sizes the session frame in inner pixels", () => {
     stubWindow(3440, 1440);
