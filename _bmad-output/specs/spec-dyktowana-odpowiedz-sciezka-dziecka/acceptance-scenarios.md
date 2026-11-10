@@ -5,8 +5,8 @@ Przypadki do wykonania podczas implementacji na fikcyjnych danych, nie wyniki te
 | ID | CAP | Sytuacja | Oczekiwane zachowanie |
 | --- | --- | --- | --- |
 | AC-01 | CAP-1 | Zestaw kalibracyjny po zmianie | Co najmniej 8 przypadków mówionych: wypełniacze, restart zdania, autokorekta faktu, przekręcona nazwa własna lub data, dygresja nie na temat, poprawna odpowiedź w dwóch–trzech zdaniach; każdy z oczekiwaną wiedzą i precyzją |
-| AC-02 | CAP-1 | Przebieg skryptu oceny gradera | Raport podaje osobno dla przypadków pisanych i mówionych: trafność wiedzy, trafność precyzji, liczbę werdyktów odrzuconych przez walidację |
-| AC-03 | CAP-1 | Przebieg płatny | Uruchomiony tylko po zgodzie właściciela, z `--cap-usd`; model i data zapisane przy wyniku |
+| AC-02 | CAP-1 | Przebieg skryptu oceny gradera | Raport podaje osobno dla przypadków pisanych i mówionych: trafność wiedzy, trafność precyzji, liczbę werdyktów odrzuconych przez walidację; bramka zestawu liczy tylko przypadki pisane |
+| AC-03 | CAP-1 | Przebieg na prawdziwym modelu | Uruchomiony tylko po zgodzie właściciela; jedno wywołanie na przypadek; model, wersja promptu i data zapisane przy wyniku |
 | AC-04 | CAP-2 | Podyktowane „stolicą jest Kraków, nie, Warszawa” przy poprawnej Warszawie | Wiedza `correct`; autokorekta nie trafia do błędnych stwierdzeń |
 | AC-05 | CAP-2 | Poprawna podyktowana odpowiedź z „yyy”, „no i”, „znaczy” | Precyzja `concise`; wypełniacze nie są fragmentami zbędnymi i nie wywołują skracania |
 | AC-06 | CAP-2 | Poprawna, niepoprawiona podyktowana odpowiedź w dwóch zdaniach bez dygresji | Model nie dostaje wymogu jednego zdania; precyzja `concise` |

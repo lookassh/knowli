@@ -56,7 +56,8 @@ Ból do usunięcia przed pierwszym użyciem. Lekcje szkolne pozwalają dziecku p
 - Tolerancja mowy żyje wyłącznie w prompcie modelu. Kod nie rozpoznaje ani nie usuwa wypełniaczy i nie dostaje nowych reguł rozumiejących język.
 - Zmiana promptu modelu oceniającego podnosi wersję promptu (klucz cache werdyktów). Do modelu trafia najwyżej znacznik sposobu wprowadzenia; żadnych danych dziecka ani nagrań.
 - CAP-2 wchodzi do implementacji dopiero po pomiarze z CAP-1 i odbiorze właściciela.
-- Płatne przebiegi sondy wymagają zgody właściciela i `--cap-usd`; wyników różnych sędziów się nie porównuje.
+- Przebiegi na prawdziwym modelu wymagają zgody właściciela (`pnpm bench` dodatkowo `--cap-usd`); wyników różnych modeli się nie porównuje.
+- Przypadki mówione zestawu kalibracyjnego są raportowane osobno i nie wchodzą do jego bramki przed story 2.
 - Kid DTO nie zawiera klucza, kryteriów, notatki modelu ani etykiety precyzji. Feedback skracania pokazuje wyłącznie tekst dziecka, więc nie tworzy ekspozycji klucza; pozostałe ujawnienia są zamykane przed wysłaniem.
 - Nieocenione próby, cisza, niepewne rozpoznanie i przerwane nagranie nie są dowodem błędnej wiedzy.
 - Ekrany dziecka powstają ze wspólnych komponentów i katalogu komunikatów; zmiana layoutu ma test geometrii Playwright.

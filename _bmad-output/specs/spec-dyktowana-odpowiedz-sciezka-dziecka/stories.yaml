@@ -7,8 +7,9 @@
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: >-
-    Bez zmian w prompcie i kodzie oceny. Płatny przebieg tylko po zgodzie
-    właściciela i z --cap-usd; przeczytaj tests/probes/README.md. Przypadki
+    Bez zmian w prompcie i kodzie oceny. Przebieg na prawdziwym modelu tylko
+    po zgodzie właściciela (pnpm eval:school-grader nie ma limitu kosztu;
+    jedno wywołanie na przypadek). Przypadki
     wyłącznie fikcyjne, bez danych dziecka. Raport z pomiaru pokaż
     właścicielowi przed story 2.
 - id: "2"
