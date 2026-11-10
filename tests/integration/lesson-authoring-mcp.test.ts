@@ -10,17 +10,23 @@ import {
   getLearningOverview,
   issueIntegrationToken,
   publishLessonDraft,
+  readDeck,
   readLessonDeck,
   revokeIntegrationToken,
+  runDueGenerationWork,
   type IntegrationScope,
   type Services,
 } from "@learning/server";
 import {
   LessonAuthoringDraftDtoSchema,
+  DeckDraftWriteResultSchema,
   LessonCatalogDtoSchema,
   LessonDraftAppendResultSchema,
   LessonDraftWriteResultSchema,
   LessonValidateResultSchema,
+  MaterialListResultSchema,
+  SourceMaterialDtoSchema,
+  VocabularyDeckDtoSchema,
   type LessonExerciseInput,
 } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
@@ -98,7 +104,7 @@ async function world(): Promise<Services> {
   return createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: createProductionSubjectRegistry() });
 }
 
-async function token(services: Services, scope: IntegrationScope): Promise<string> {
+async function token(services: Services, scope: IntegrationScope | IntegrationScope[]): Promise<string> {
   const secret = `umiem_${randomUUID()}_${randomBytes(32).toString("base64url")}`;
   await issueIntegrationToken(services, `test ${scope}`, secret, scope);
   return secret;
@@ -328,13 +334,39 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     expect(await countRows("select count(*)::int as n from learning_app.decks")).toBe(0);
   });
 
-  it("baza nie przyjmuje tokenu bez zakresu ani z dwoma zakresami", async () => {
+  it("baza nie przyjmuje tokenu bez zakresu ani z nieznanym zakresem; kilka znanych zakresów w jednym tokenie jest dozwolone", async () => {
     const services = await world();
     const secret = await token(services, "lessons:write");
     const id = secret.split("_")[1]!;
-    for (const scopes of ["{}", "{learning:read,lessons:write}", "{admin}"]) {
+    for (const scopes of ["{}", "{admin}", "{learning:read,admin}"]) {
       await expect(pool.query("update learning_app.integration_tokens set scopes = $2::text[] where id = $1", [id, scopes])).rejects.toThrow();
     }
+    await pool.query("update learning_app.integration_tokens set scopes = '{materials:write,materials:publish}' where id = $1", [id]);
+    await expect(issueIntegrationToken(services, "pusty", `umiem_${randomUUID()}_${randomBytes(32).toString("base64url")}`, [])).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("token z kilkoma zakresami widzi sumę narzędzi: redaguje, publikuje i czyta raport jednym połączeniem; brakujący zakres dalej daje 403", async () => {
+    const services = await world();
+    const all = await connect(services, await token(services, ["learning:read", "materials:write", "materials:publish"]));
+    const names = (await all.listTools()).tools.map(({ name }) => name);
+    expect(names).toHaveLength(19);
+    expect(names).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "lesson_draft_append", "deck_draft_edit", "material_publish", "material_archive"]));
+
+    const deckId = randomUUID();
+    const created = LessonDraftWriteResultSchema.parse((await call(all, "lesson_draft_create", { ...LESSON, clientRequestId: deckId })).structuredContent);
+    expect((await call(all, "material_publish", { deckId, expectedEditNumber: created.editNumber })).structuredContent).toEqual({ deckId, deckVersionId: created.draftId });
+    expect((await call(all, "umiem_get_learning_overview", {})).isError).not.toBe(true);
+
+    // Redagowanie z publikacją, bez odczytu postępów.
+    const editorPublisher = await token(services, ["lessons:write", "materials:publish"]);
+    const partial = await connect(services, editorPublisher);
+    expect((await partial.listTools()).tools.map(({ name }) => name).sort()).toEqual([
+      "lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate",
+      "material_archive", "material_list", "material_publish",
+    ]);
+    await expect(call(partial, "umiem_get_learning_overview", {})).rejects.toThrow(/403|Forbidden/);
+    await expect(call(partial, "deck_get", { deckId })).rejects.toThrow(/403|Forbidden/);
+    await expect(getLearningOverview(services, { days: 7, upcomingTestDays: 14 }, editorPublisher)).rejects.toMatchObject({ code: "forbidden" });
   });
 
   it("walidacja z deckId przyjmuje id zadań zestawu i odrzuca niezgodne zagadnienia lub obce id", async () => {
@@ -594,6 +626,209 @@ describe("lekcje pisane przez agenta przez MCP", () => {
       expect(await identity(versionId)).toEqual(publishedBefore);
       expect(await countRows("select edit_number as n from learning_app.deck_versions where id = $1", [versionId])).toBe(published.editNumber);
       expect((await readLessonDeck(services, deckId)).published!.exercises).toHaveLength(79);
+    });
+  });
+
+  describe("materiały: słówka, źródła, nagrania, publikacja", () => {
+    const word = (source: string, target: string, acceptedAnswers: string[] = []) =>
+      ({ source, target, acceptedAnswers, locales: { source: "pl-PL", target: "en-GB" }, visualType: "none" as const });
+    const skillsOf = async (itemId: string) => (await pool.query<{ skill: string; id: string; predecessor_id: string | null }>(
+      `select irs.skill, sv.id, sv.predecessor_id from learning_app.item_revision_skills irs
+         join learning_app.skill_versions sv on sv.id = irs.skill_version_id where irs.item_id = $1 order by irs.skill`, [itemId],
+    )).rows;
+
+    it("zestaw słówek: dopisanie słowa i poprawa wariantu tłumaczenia; zapis w panelu, historia, media, błędy bez częściowego zapisu", async () => {
+      const services = await world();
+      const client = await connect(services, await token(services, "materials:write"));
+      // Schematy wszystkich narzędzi zakresu przechodzą przez prawdziwe `tools/list`.
+      expect((await client.listTools()).tools.map(({ name }) => name)).toHaveLength(16);
+      const deckId = randomUUID();
+      const created = DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_create", { clientRequestId: deckId, title: "Fikcyjne owoce" })).structuredContent);
+      expect(created).toMatchObject({ deckId, editNumber: 1, itemIds: [] });
+      expect(DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_create", { clientRequestId: deckId })).structuredContent)).toEqual(created);
+      const seeded = DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_edit", {
+        deckId, expectedEditNumber: 1, items: [word("jabłko", "apple"), word("gruszka", "pear", ["a pear"])],
+      })).structuredContent);
+      const [appleId, pearId] = seeded.itemIds as [string, string];
+      const before = VocabularyDeckDtoSchema.parse((await call(client, "deck_get", { deckId })).structuredContent);
+      expect(before.items.map(({ id, target }) => [id, target])).toEqual([[appleId, "apple"], [pearId, "pear"]]);
+      const [appleSkills, pearSkills] = [await skillsOf(appleId), await skillsOf(pearId)];
+
+      const listed = await call(client, "material_list", { query: "OWOCE" });
+      expect(MaterialListResultSchema.parse(listed.structuredContent).materials).toEqual([
+        { deckId, title: "Fikcyjne owoce", kind: "vocabulary", state: "draft", itemCount: 2, draftEditNumber: seeded.editNumber, published: false },
+      ]);
+      expect(JSON.stringify(listed)).not.toMatch(/assignedChildren|displayName|childId/);
+
+      // Dopisanie słowa i poprawa wariantu istniejącego tłumaczenia jednym zapisem, bez odsyłania reszty.
+      const pear = before.items[1]!;
+      const edited = DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_edit", {
+        deckId, expectedEditNumber: seeded.editNumber, items: [{ ...pear, acceptedAnswers: ["a pear", "pear fruit"] }, word("śliwka", "plum")],
+      })).structuredContent);
+      expect(edited.editNumber).toBe(seeded.editNumber + 1);
+      expect(edited.itemIds[0]).toBe(pearId);
+      const plumId = edited.itemIds[1]!;
+
+      // Panel rodzica widzi zapis.
+      const panel = (await readDeck(services, deckId)).draft!;
+      expect(panel.editNumber).toBe(edited.editNumber);
+      expect(panel.items.map(({ id, target, acceptedAnswers }) => [id, target, acceptedAnswers])).toEqual([
+        [appleId, "apple", []], [pearId, "pear", ["a pear", "pear fruit"]], [plumId, "plum", []],
+      ]);
+      // Historia: nietknięte słowo zachowuje klucze umiejętności; zmiana wariantów daje nowe klucze z poprzednikiem (reguła `classifyRevisionImpact`).
+      expect(await skillsOf(appleId)).toEqual(appleSkills);
+      const pearAfter = await skillsOf(pearId);
+      expect(pearAfter.map(({ skill, predecessor_id }) => [skill, predecessor_id])).toEqual(pearSkills.map(({ skill, id }) => [skill, id]));
+      // Brakujące nagranie nowego słowa zlecone istniejącym mechanizmem w transakcji zapisu.
+      expect(await countRows(
+        `select count(*)::int as n from learning_app.revision_assets ra join learning_app.item_revisions ir on ir.id = ra.item_revision_id
+          where ir.item_id = $1 and ra.role = 'target_audio' and ra.asset_id is not null`, [plumId],
+      )).toBe(1);
+
+      // Błędy bez częściowego zapisu.
+      const edit = (args: Record<string, unknown>, expectedEditNumber = edited.editNumber) => call(client, "deck_draft_edit", { deckId, expectedEditNumber, ...args });
+      expect(toolErrorOf(await edit({ items: [word("wiśnia", "cherry")] }, seeded.editNumber)).code).toBe("conflict");
+      expect(toolErrorOf(await edit({ items: [word("wiśnia", "cherry"), { ...word("x", "y"), id: randomUUID() }] })).code).toBe("validation");
+      expect(toolErrorOf(await edit({ items: [{ ...pear, target: "pears" }], remove: [pearId] })).code).toBe("validation");
+      expect(toolErrorOf(await edit({ remove: [appleId, pearId, plumId] })).code).toBe("validation");
+      expect(toolErrorOf(await edit({ items: [{ ...word("kolor", "red"), visualType: "color", visualData: { color: "not-a-color" } }] })).code).toBe("validation");
+      const unchanged = (await readDeck(services, deckId)).draft!;
+      expect(unchanged.editNumber).toBe(edited.editNumber);
+      expect(unchanged.items.map(({ id }) => id)).toEqual([appleId, pearId, plumId]);
+
+      // Zmiana samego tytułu pustego zestawu i kolizja id z cudzym rodzajem zestawu.
+      const emptyId = randomUUID();
+      await call(client, "deck_draft_create", { clientRequestId: emptyId });
+      expect(DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_edit", { deckId: emptyId, expectedEditNumber: 1, title: "Pusty" })).structuredContent).editNumber).toBe(2);
+      // Pozycja innego zestawu i rola nagrania lekcji w zestawie słówek.
+      expect(toolErrorOf(await call(client, "recording_regenerate", { deckId: emptyId, target: { kind: "item", itemId: appleId, role: "target_audio" } })).code).toBe("not_found");
+      expect(toolErrorOf(await call(client, "recording_regenerate", { deckId, target: { kind: "item", itemId: appleId, role: "prompt_audio" } })).code).toBe("validation");
+      expect(toolErrorOf(await call(client, "recording_regenerate", { deckId, target: { kind: "story" } })).code).toBe("validation");
+
+      // Ponowne nagranie w szkicu: nowe ujęcie nagrania słowa.
+      const regenerated = (await call(client, "recording_regenerate", { deckId, target: { kind: "item", itemId: appleId, role: "target_audio" } })).structuredContent as { assetId: string };
+      expect(regenerated.assetId).toMatch(/^[0-9a-f-]{36}$/);
+
+      const removed = DeckDraftWriteResultSchema.parse((await edit({ remove: [plumId], title: "Owoce" })).structuredContent);
+      expect((await readDeck(services, deckId)).draft).toMatchObject({ title: "Owoce", editNumber: removed.editNumber });
+      expect((await readDeck(services, deckId)).draft!.items.map(({ id }) => id)).toEqual([appleId, pearId]);
+
+      // Token redagujący nie publikuje ani nie archiwizuje; token samych lekcji nie widzi zestawów słówek; lekcja to nie zestaw słówek.
+      await expect(call(client, "material_publish", { deckId, expectedEditNumber: removed.editNumber })).rejects.toThrow(/403|Forbidden/);
+      await expect(call(client, "material_archive", { deckId })).rejects.toThrow(/403|Forbidden/);
+      const lessonsOnly = await connect(services, await token(services, "lessons:write"));
+      await expect(call(lessonsOnly, "deck_get", { deckId })).rejects.toThrow(/403|Forbidden/);
+      expect(toolErrorOf(await call(client, "lesson_draft_get", { deckId })).code).toBe("validation");
+    });
+
+    it("opublikowany zestaw słówek: publikacja tokenem materials:publish, edycja tworzy szkic, wersja opublikowana bez zmian", async () => {
+      const services = await world();
+      const editor = await connect(services, await token(services, "materials:write"));
+      const publisher = await connect(services, await token(services, "materials:publish"));
+      const deckId = randomUUID();
+      await call(editor, "deck_draft_create", { clientRequestId: deckId, title: "Fikcyjne warzywa" });
+      const seeded = DeckDraftWriteResultSchema.parse((await call(editor, "deck_draft_edit", { deckId, expectedEditNumber: 1, items: [word("marchew", "carrot")] })).structuredContent);
+      const publish = () => call(publisher, "material_publish", { deckId, expectedEditNumber: seeded.editNumber });
+      // Nagranie jeszcze niegotowe: publikacja odrzucona jak w panelu, bez wersji opublikowanej.
+      expect(toolErrorOf(await publish())).toMatchObject({ code: "validation", details: { media: "pending" } });
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and published_version_id is not null", [deckId])).toBe(0);
+      for (let pass = 0; pass < 20; pass += 1) {
+        if ((await runDueGenerationWork(services, { lesson: 0, deck: 0, tts: 50, images: 0 })).processed === 0) break;
+      }
+      expect((await publish()).structuredContent).toEqual({ deckId, deckVersionId: seeded.draftId });
+      const rowsOf = async (versionId: string) => (await pool.query(
+        "select id, item_id, payload, position from learning_app.item_revisions where deck_version_id = $1 order by position", [versionId],
+      )).rows;
+      const publishedRows = await rowsOf(seeded.draftId);
+      const published = VocabularyDeckDtoSchema.parse((await call(editor, "deck_get", { deckId })).structuredContent);
+      expect(published).toMatchObject({ status: "published", draftId: seeded.draftId, recordings: [{ itemId: seeded.itemIds[0], role: "target_audio", state: "approved" }] });
+
+      // Stary numer edycji i błąd walidacji: brak szkicu.
+      expect(toolErrorOf(await call(editor, "deck_draft_edit", { deckId, expectedEditNumber: published.editNumber + 1, items: [word("burak", "beetroot")] })).code).toBe("conflict");
+      expect(toolErrorOf(await call(editor, "deck_draft_edit", { deckId, expectedEditNumber: published.editNumber, remove: [randomUUID()] })).code).toBe("validation");
+      expect(await countRows("select count(*)::int as n from learning_app.deck_versions where deck_id = $1", [deckId])).toBe(1);
+
+      const edited = DeckDraftWriteResultSchema.parse((await call(editor, "deck_draft_edit", {
+        deckId, expectedEditNumber: published.editNumber, items: [{ ...published.items[0]!, acceptedAnswers: ["a carrot"] }, word("burak", "beetroot")],
+      })).structuredContent);
+      expect(edited.draftId).not.toBe(seeded.draftId);
+      expect(edited.itemIds[0]).toBe(seeded.itemIds[0]);
+      const draft = VocabularyDeckDtoSchema.parse((await call(editor, "deck_get", { deckId })).structuredContent);
+      expect(draft).toMatchObject({ status: "draft", draftId: edited.draftId, editNumber: edited.editNumber });
+      expect(draft.items.map(({ target, acceptedAnswers }) => [target, acceptedAnswers])).toEqual([["carrot", ["a carrot"]], ["beetroot", []]]);
+      // Wersja opublikowana, z której uczy się dziecko, zostaje identyczna.
+      expect(await rowsOf(seeded.draftId)).toEqual(publishedRows);
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and published_version_id = $2", [deckId, seeded.draftId])).toBe(1);
+      expect((await readDeck(services, deckId)).published!.items.map(({ target, acceptedAnswers }) => [target, acceptedAnswers])).toEqual([["carrot", []]]);
+
+      // Zestaw zarchiwizowany nie przyjmuje edycji; id lekcji nie jest zestawem słówek.
+      await call(publisher, "material_archive", { deckId });
+      expect(toolErrorOf(await call(editor, "deck_draft_edit", { deckId, expectedEditNumber: edited.editNumber, title: "X" })).code).toBe("validation");
+    });
+
+    it("źródła: zapis, odczyt i edycja z kontrolą rewizji", async () => {
+      const services = await world();
+      const client = await connect(services, await token(services, "materials:write"));
+      const input = { clientRequestId: randomUUID(), title: "Fikcyjny rozdział", body: "Pająk ma osiem nóg." };
+      const created = (await call(client, "source_create", input)).structuredContent as { sourceId: string; created: boolean };
+      expect(created.created).toBe(true);
+      expect((await call(client, "source_create", input)).structuredContent).toEqual({ sourceId: created.sourceId, created: false });
+      const source = SourceMaterialDtoSchema.parse((await call(client, "source_get", { sourceId: created.sourceId })).structuredContent);
+      expect(source).toMatchObject({ title: "Fikcyjny rozdział", body: "Pająk ma osiem nóg.", revision: 1, decks: [] });
+      const updated = SourceMaterialDtoSchema.parse((await call(client, "source_update", { sourceId: source.id, expectedRevision: 1, body: "Pająk ma osiem nóg i nie jest owadem." })).structuredContent);
+      expect(updated).toMatchObject({ revision: 2, body: "Pająk ma osiem nóg i nie jest owadem." });
+      expect(toolErrorOf(await call(client, "source_update", { sourceId: source.id, expectedRevision: 1, title: "Inny" })).code).toBe("conflict");
+      expect(toolErrorOf(await call(client, "source_update", { sourceId: source.id, expectedRevision: 2 })).code).toBe("validation");
+      const list = (await call(client, "source_list", {})).structuredContent as { sources: { id: string; title: string; revision: number }[] };
+      expect(list.sources).toEqual([expect.objectContaining({ id: source.id, title: "Fikcyjny rozdział", revision: 2 })]);
+    });
+
+    it("publikacja i archiwizacja tylko tokenem materials:publish, który nie czyta ani nie redaguje treści", async () => {
+      const services = await world();
+      const editor = await connect(services, await token(services, "materials:write"));
+      const deckId = randomUUID();
+      const created = LessonDraftWriteResultSchema.parse((await call(editor, "lesson_draft_create", { ...LESSON, clientRequestId: deckId })).structuredContent);
+      // Role nagrań słówek nie dotyczą zadań lekcji (liczyłyby nagranie z pól pozycji słówek); id lekcji nie tworzy zestawu słówek.
+      const exerciseId = LessonAuthoringDraftDtoSchema.parse((await call(editor, "lesson_draft_get", { deckId })).structuredContent).exercises[0]!.id;
+      const mediaBefore = await countRows("select count(*)::int as n from learning_app.media_assets");
+      expect(toolErrorOf(await call(editor, "recording_regenerate", { deckId, target: { kind: "item", itemId: exerciseId, role: "target_audio" } })).code).toBe("validation");
+      expect(await countRows("select count(*)::int as n from learning_app.media_assets")).toBe(mediaBefore);
+      expect(toolErrorOf(await call(editor, "deck_draft_create", { clientRequestId: deckId })).code).toBe("conflict");
+      expect(toolErrorOf(await call(editor, "illustration_omit", { deckId, itemId: exerciseId })).code).toBe("validation");
+
+      // Szkic z brakiem pokrycia: publikacja odrzucona z listą braków, bez wersji opublikowanej.
+      const gapId = randomUUID();
+      const gap = LessonDraftWriteResultSchema.parse((await call(editor, "lesson_draft_create", { ...LESSON, exercises: EXERCISES.slice(0, 3), clientRequestId: gapId })).structuredContent);
+      const gapPublisher = await connect(services, await token(services, "materials:publish"));
+      const refused = toolErrorOf(await call(gapPublisher, "material_publish", { deckId: gapId, expectedEditNumber: gap.editNumber }));
+      expect(refused.code).toBe("conflict");
+      expect((refused.details as { coverage: unknown[] }).coverage.length).toBeGreaterThan(0);
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and published_version_id is not null", [gapId])).toBe(0);
+
+      const publisher = await connect(services, await token(services, "materials:publish"));
+      expect((await publisher.listTools()).tools.map(({ name }) => name).sort()).toEqual(["material_archive", "material_list", "material_publish"]);
+      await expect(call(publisher, "lesson_draft_get", { deckId })).rejects.toThrow(/403|Forbidden/);
+      await expect(call(publisher, "lesson_draft_append", { deckId, expectedEditNumber: 1, exercises: [EXERCISES[0]] })).rejects.toThrow(/403|Forbidden/);
+
+      const listed = MaterialListResultSchema.parse((await call(publisher, "material_list", { kind: "lesson", query: "present" })).structuredContent).materials;
+      expect(listed).toContainEqual(expect.objectContaining({ deckId, kind: "lesson", state: "review", draftEditNumber: created.editNumber, published: false }));
+      expect(toolErrorOf(await call(publisher, "material_publish", { deckId, expectedEditNumber: created.editNumber + 1 })).code).toBe("conflict");
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and published_version_id is not null", [deckId])).toBe(0);
+
+      expect((await call(publisher, "material_publish", { deckId, expectedEditNumber: created.editNumber })).structuredContent).toEqual({ deckId, deckVersionId: created.draftId });
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and published_version_id = $2", [deckId, created.draftId])).toBe(1);
+      // Po publikacji nie ma szkicu: kolejna publikacja i ponowne nagranie to conflict.
+      expect(toolErrorOf(await call(publisher, "material_publish", { deckId, expectedEditNumber: created.editNumber })).code).toBe("conflict");
+      expect(toolErrorOf(await call(editor, "recording_regenerate", { deckId, target: { kind: "story" } })).code).toBe("conflict");
+
+      expect((await call(publisher, "material_archive", { deckId })).structuredContent).toEqual({ deckId });
+      expect(await countRows("select count(*)::int as n from learning_app.decks where id = $1 and archived_at is not null", [deckId])).toBe(1);
+      const ids = async (args: Record<string, unknown>) => MaterialListResultSchema.parse((await call(publisher, "material_list", args)).structuredContent).materials.map((row) => row.deckId);
+      expect(await ids({})).not.toContain(deckId);
+      expect(await ids({ includeArchived: true })).toContain(deckId);
+      // Archiwizacja jest idempotentna, a zarchiwizowanego materiału nie da się opublikować.
+      expect((await call(publisher, "material_archive", { deckId })).structuredContent).toEqual({ deckId });
+      expect(toolErrorOf(await call(publisher, "material_publish", { deckId, expectedEditNumber: 1 })).code).toBe("validation");
     });
   });
 });

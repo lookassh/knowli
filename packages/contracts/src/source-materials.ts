@@ -6,7 +6,7 @@ import { MAX_SCHOOL_MATERIAL_LENGTH } from "./lessons";
 /**
  * Kontrakty źródeł (materiał źródłowy rodzica; design 2026-10-30, §3, §7).
  * Źródło to wklejony tekst rozdziału, z którego rodzic tworzy lekcje i zestawy.
- * Dotyczy wyłącznie Parent API — źródeł nie ma w Kid API ani w MCP.
+ * Parent API oraz narzędzia MCP tokenu `materials:write` (`material-authoring.ts`) — źródeł nie ma w Kid API.
  *
  * Limity odzwierciedlają CHECK-i w `learning_app.source_materials`; teksty
  * są przycinane (trim) przed sprawdzeniem długości.

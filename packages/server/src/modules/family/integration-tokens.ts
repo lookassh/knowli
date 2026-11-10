@@ -6,13 +6,17 @@ import type { Executor } from "../../db/client";
 import { integrationTokens } from "../../db/schema";
 
 const TOKEN_PATTERN = /^umiem_([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})_([A-Za-z0-9_-]{43})$/i;
-/** Zakresy tokenów integracji; token ma dokładnie jeden (CHECK `integration_tokens_single_scope`). */
-export const INTEGRATION_SCOPES = ["learning:read", "lessons:write"] as const;
+/** Zakresy tokenów integracji; token ma co najmniej jeden (CHECK `integration_tokens_scopes_nonempty`), właściciel może je łączyć. */
+export const INTEGRATION_SCOPES = ["learning:read", "lessons:write", "materials:write", "materials:publish"] as const;
 export type IntegrationScope = (typeof INTEGRATION_SCOPES)[number];
 /** Zakres tokenu pisania lekcji (narzędzia MCP `lesson_*`). */
 export const LESSONS_WRITE_SCOPE: IntegrationScope = "lessons:write";
+/** Redagowanie materiałów: narzędzia lekcji oraz zestawy słówek, źródła i nagrania; bez publikacji i archiwizacji. */
+export const MATERIALS_WRITE_SCOPE: IntegrationScope = "materials:write";
+/** Publikacja i archiwizacja materiałów: osobny token, bez narzędzi redagowania. */
+export const MATERIALS_PUBLISH_SCOPE: IntegrationScope = "materials:publish";
 
-/** `scopes` ma zawsze dokładnie jeden znany zakres (sprawdza `authenticateIntegrationToken`). */
+/** `scopes` to niepusta lista samych znanych zakresów (sprawdza `authenticateIntegrationToken`). */
 export type IntegrationPrincipal = { id: string; scopes: readonly IntegrationScope[] };
 export type IntegrationTokenMetadata = {
   id: string;
@@ -37,8 +41,8 @@ export function isIntegrationScope(value: string): value is IntegrationScope {
 }
 
 /**
- * Token integracji z bazy: zły lub odwołany → `unauthorized`, token bez dokładnie jednego znanego
- * zakresu → `forbidden`. Wołane na granicy HTTP i ponownie w transakcji przypadku użycia.
+ * Token integracji z bazy: zły lub odwołany → `unauthorized`, token bez zakresu albo z nieznanym
+ * zakresem → `forbidden`. Wołane na granicy HTTP i ponownie w transakcji przypadku użycia.
  */
 export async function authenticateIntegrationToken(
   exec: Executor,
@@ -58,19 +62,20 @@ export async function authenticateIntegrationToken(
   if (stored.length !== provided.length || !timingSafeEqual(stored, provided)) {
     throw new AppError("unauthorized");
   }
-  const [scope, ...rest] = record.scopes;
-  if (scope === undefined || rest.length > 0 || !isIntegrationScope(scope)) throw new AppError("forbidden");
-  return { id: record.id, scopes: [scope] };
+  const scopes = [...new Set(record.scopes)];
+  if (scopes.length === 0 || !scopes.every(isIntegrationScope)) throw new AppError("forbidden");
+  return { id: record.id, scopes };
 }
 
-/** Token z wymaganym zakresem; inny zakres → `forbidden`. */
+/** Token mający co najmniej jeden z podanych zakresów; inaczej → `forbidden`. */
 export async function requireIntegrationScope(
   exec: Executor,
   rawToken: string,
-  scope: IntegrationScope,
+  scope: IntegrationScope | readonly IntegrationScope[],
 ): Promise<IntegrationPrincipal> {
   const principal = await authenticateIntegrationToken(exec, rawToken);
-  if (principal.scopes[0] !== scope) throw new AppError("forbidden");
+  const accepted: readonly IntegrationScope[] = typeof scope === "string" ? [scope] : scope;
+  if (!principal.scopes.some((granted) => accepted.includes(granted))) throw new AppError("forbidden");
   return principal;
 }
 
@@ -88,15 +93,16 @@ export async function issueIntegrationToken(
   services: Services,
   name: string,
   secret: string,
-  scope: IntegrationScope = "learning:read",
+  scope: IntegrationScope | readonly IntegrationScope[] = "learning:read",
 ): Promise<{ id: string }> {
-  if (!isIntegrationScope(scope)) throw new AppError("validation");
+  const scopes = [...new Set(typeof scope === "string" ? [scope] : scope)];
+  if (scopes.length === 0 || !scopes.every(isIntegrationScope)) throw new AppError("validation");
   const id = tokenId(secret);
   await services.db.insert(integrationTokens).values({
     id,
     name: validateName(name),
     tokenHash: digest(secret).toString("hex"),
-    scopes: [scope],
+    scopes,
     createdAt: services.clock.now(),
   });
   return { id };

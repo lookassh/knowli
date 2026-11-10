@@ -105,18 +105,19 @@ describe("integration token CLI", () => {
     expect(stdout.join("\n")).not.toContain(secret);
   });
 
-  it("issues exactly one scope: learning:read by default, lessons:write on request, nothing else", async () => {
+  it("issues learning:read by default, the requested scope or several comma-separated scopes, and nothing unknown or repeated", async () => {
     const dir = await tempDir();
     const issue = vi.fn(async () => ({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
     const deps = { issue, secureFile: async () => undefined, stdout: () => undefined, stderr: () => undefined };
 
     await runIntegrationTokenCommand(["create", "--name", "Hermes", "--out", join(dir, "a")], deps);
     await runIntegrationTokenCommand(["create", "--name", "Claude", "--out", join(dir, "b"), "--scope", "lessons:write"], deps);
-    expect(issue.mock.calls.map((call) => (call as unknown[])[2])).toEqual(["learning:read", "lessons:write"]);
+    await runIntegrationTokenCommand(["create", "--name", "All", "--out", join(dir, "m"), "--scope", "materials:write,materials:publish"], deps);
+    expect(issue.mock.calls.map((call) => (call as unknown[])[2])).toEqual([["learning:read"], ["lessons:write"], ["materials:write", "materials:publish"]]);
 
-    for (const scope of ["admin", "learning:read,lessons:write"]) {
+    for (const scope of ["admin", "learning:read,admin", "lessons:write,lessons:write", "learning:read,"]) {
       await expect(runIntegrationTokenCommand(["create", "--name", "X", "--out", join(dir, `c-${scope.length}`), "--scope", scope], deps)).rejects.toThrow("Usage");
     }
-    expect(issue).toHaveBeenCalledTimes(2);
+    expect(issue).toHaveBeenCalledTimes(3);
   });
 });
