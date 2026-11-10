@@ -78,8 +78,8 @@ export const integrationTokens = app.table(
   (t) => [
     check("integration_tokens_name_length", sql`length(${t.name}) between 1 and 120`),
     check("integration_tokens_scopes_allowed", sql`${t.scopes} <@ ARRAY['learning:read', 'lessons:write', 'materials:write', 'materials:publish']::text[]`),
-    // Dokładnie jeden zakres: odczyt postępów, redagowanie i publikacja to osobne tokeny (migracje 0041, 0042).
-    check("integration_tokens_single_scope", sql`cardinality(${t.scopes}) = 1`),
+    // Co najmniej jeden zakres; łączenie zakresów w jednym tokenie to decyzja właściciela przy wydaniu (migracja 0042).
+    check("integration_tokens_scopes_nonempty", sql`cardinality(${t.scopes}) >= 1`),
     uniqueIndex("integration_tokens_hash_idx").on(t.tokenHash),
     index("integration_tokens_revoked_idx").on(t.revokedAt),
   ],

@@ -166,6 +166,13 @@ describe("Streamable HTTP MCP boundary", () => {
 
     const author = makeDeps({ authenticate: vi.fn(async () => writer) });
     for (const tool of ["deck_draft_edit", "material_list", "source_update", "recording_regenerate", "material_publish"]) expect(await status(author, tool)).toBe(403);
+
+    // Kilka zakresów w jednym tokenie: suma narzędzi, bez powtórzeń.
+    const combined = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["learning:read", "materials:write", "materials:publish"] })) });
+    const all = await names(combined);
+    expect(all).toHaveLength(19);
+    expect(new Set(all).size).toBe(19);
+    expect(all).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "material_list", "material_publish", "deck_draft_edit"]));
   });
 
   it("limits lesson writes per token per hour separately from dry runs and accepts larger bodies only for lessons:write", async () => {

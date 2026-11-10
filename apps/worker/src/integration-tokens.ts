@@ -16,7 +16,7 @@ import type { IntegrationScope, Services } from "@learning/server";
 
 type TokenMetadata = Awaited<ReturnType<typeof listIntegrationTokens>>[number];
 type CliDependencies = {
-  issue: (name: string, secret: string, scope: IntegrationScope) => Promise<{ id: string }>;
+  issue: (name: string, secret: string, scopes: readonly IntegrationScope[]) => Promise<{ id: string }>;
   list?: () => Promise<readonly TokenMetadata[]>;
   revoke?: (id: string) => Promise<void>;
   randomToken?: () => string;
@@ -84,10 +84,10 @@ export async function runIntegrationTokenCommand(args: string[], deps: CliDepend
     ensureOnlyOptions(options, ["--name", "--out", "--scope"]);
     const name = readOption(options, "--name")?.trim();
     const outputPath = readOption(options, "--out");
-    // Jeden zakres na token: odczyt postępów (Hermes) i pisanie lekcji to osobne tokeny.
-    const scope = readOption(options, "--scope") ?? "learning:read";
-    if (!name || name.length > 120 || !outputPath || !isAbsolute(outputPath) || !isIntegrationScope(scope)) {
-      throw new Error(`Usage: integration-tokens create --name <name> --out <absolute-path> [--scope ${INTEGRATION_SCOPES.join("|")}]`);
+    // Kilka zakresów po przecinku łączy uprawnienia w jednym tokenie (decyzja właściciela przy wydaniu).
+    const scopes = (readOption(options, "--scope") ?? "learning:read").split(",").map((value) => value.trim());
+    if (!name || name.length > 120 || !outputPath || !isAbsolute(outputPath) || !scopes.every(isIntegrationScope) || new Set(scopes).size !== scopes.length) {
+      throw new Error(`Usage: integration-tokens create --name <name> --out <absolute-path> [--scope <scope>[,<scope>...]] (scopes: ${INTEGRATION_SCOPES.join(", ")})`);
     }
     const path = resolve(outputPath);
     const secret = (deps.randomToken ?? defaultRandomToken)();
@@ -95,8 +95,8 @@ export async function runIntegrationTokenCommand(args: string[], deps: CliDepend
     try {
       await writePrivateSecret(path, secret, deps.secureFile ?? secureTokenFile);
       created = true;
-      const { id } = await deps.issue(name, secret, scope);
-      deps.stdout(`Created integration token ${id} (${scope}); secret saved to the requested file.`);
+      const { id } = await deps.issue(name, secret, scopes);
+      deps.stdout(`Created integration token ${id} (${scopes.join(", ")}); secret saved to the requested file.`);
     } catch (error) {
       if (created) await unlink(path).catch(() => undefined);
       throw error;
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
   const services: Services = createServices({ db });
   try {
     await runIntegrationTokenCommand(process.argv.slice(2), {
-      issue: (name, secret, scope) => issueIntegrationToken(services, name, secret, scope),
+      issue: (name, secret, scopes) => issueIntegrationToken(services, name, secret, scopes),
       list: () => listIntegrationTokens(services),
       revoke: (id) => revokeIntegrationToken(services, id),
       stdout: (message) => process.stdout.write(`${message}\n`),

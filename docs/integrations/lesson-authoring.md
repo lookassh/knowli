@@ -21,7 +21,7 @@ Limity tokenu `lessons:write`: żądanie do 512 KB, najwyżej 150 zadań, 10 zap
 
 ## Zestawy słówek, źródła, nagrania, publikacja (2026-11-10)
 
-Token ma dokładnie jeden zakres, a zakres wyznacza narzędzia w `tools/list`; narzędzie innego zakresu → 403:
+Zakresy tokenu wyznaczają narzędzia w `tools/list`; narzędzie zakresu, którego token nie ma → 403. Token może mieć kilka zakresów (decyzja właściciela 2026-11-10) i widzi wtedy sumę ich narzędzi:
 
 | Zakres | Narzędzia |
 | --- | --- |
@@ -43,22 +43,23 @@ Token ma dokładnie jeden zakres, a zakres wyznacza narzędzia w `tools/list`; n
 | `material_publish` | publikacja szkicu | Lekcja albo zestaw słówek, te same warunki co w panelu (pokrycie, gotowe media); `expectedEditNumber` = `draftEditNumber` z listy; błędy reguł zadań wracają jako same indeksy, bez treści |
 | `material_archive` | archiwizacja | Wycofanie z nowych sesji; panel i MCP nie mają operacji odwrotnej |
 
-Publikacja i archiwizacja to osobny token: token redagujący (`lessons:write`, `materials:write`) ich nie ma, a token `materials:publish` nie czyta treści i niczego nie redaguje. Żaden z tych zakresów nie daje dostępu do profili dzieci, przypisań, odpowiedzi, postępów, werdyktów, kosztów, PIN-u ani ustawień. Zapisy liczone do limitu 10 na godzinę: zapisy lekcji, `deck_draft_edit`, `recording_regenerate`, `material_publish`, `material_archive`.
+Publikacja i archiwizacja to osobny zakres: sam zakres redagowania (`lessons:write`, `materials:write`) ich nie daje, a sam `materials:publish` nie czyta treści i niczego nie redaguje. Token dostaje je razem tylko wtedy, gdy właściciel jawnie wyda go z oboma zakresami. Żaden z tych zakresów nie daje dostępu do profili dzieci, przypisań, odpowiedzi, postępów, werdyktów, kosztów, PIN-u ani ustawień. Zapisy liczone do limitu 10 na godzinę: zapisy lekcji, `deck_draft_edit`, `recording_regenerate`, `material_publish`, `material_archive`.
 
 Operacje panelu poza MCP (stan 2026-11-10): przypisania dzieciom (wymagają identyfikatorów i imion dzieci, których tokeny materiałów świadomie nie widzą — do decyzji właściciela), generowanie modelem (zestaw z opisu, lekcja z tematu lub materiału, dogenerowanie zagadnienia, historyjka, ponowienie runu — płatne wywołania LLM), edycja zagadnień i kart lekcji z materiału, tematy zdań, okładka i budżet sesji zestawu, usunięcie źródła, podgląd rachunku (`previewCalculation`), stan runu generowania (agent dowiaduje się o runie puli tylko z `conflict`), werdykty odpowiedzi, postępy, kartkówki, karta pracy, koszty i profile dzieci.
 
 ## Wydanie tokenu
 
-Token ma dokładnie jeden zakres (CLI i `CHECK` w bazie nie pozwalają ich łączyć; migracja `0042` dodała `materials:write` i `materials:publish`, tokeny `learning:read` i `lessons:write` działają bez zmian). W chronionym środowisku workera:
+Zakresy wybiera właściciel przy wydaniu: `--scope` przyjmuje jeden zakres albo kilka po przecinku. Baza wymaga co najmniej jednego znanego zakresu (migracja `0042` dodała `materials:write` i `materials:publish` i zastąpiła warunek „dokładnie jeden” z `0041` warunkiem „co najmniej jeden”); istniejące tokeny `learning:read` i `lessons:write` działają bez zmian. Zakresów wydanego tokenu nie da się zmienić — wydaj nowy i odwołaj stary. W chronionym środowisku workera:
 
 ```text
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name claude-lessons --scope lessons:write --out /absolute/private/path/umiem-lessons-token
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name claude-materials --scope materials:write --out /absolute/private/path/umiem-materials-token
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name claude-publish --scope materials:publish --out /absolute/private/path/umiem-publish-token
+node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts create --name claude-all --scope materials:write,materials:publish --out /absolute/private/path/umiem-all-token
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts list
 ```
 
-Token `materials:publish` wydawaj tylko wtedy, gdy agent ma publikować bez udziału rodzica w panelu; jako osobny connector można go włączać na czas jednej rozmowy.
+Jeden token z `materials:write,materials:publish` wystarcza na jeden connector, który redaguje i publikuje; agent może wtedy opublikować własną zmianę bez przeglądu rodzica w panelu. Osobny token `materials:publish` w osobnym connectorze pozwala włączać publikację tylko na czas jednej rozmowy. Dodanie `learning:read` do tokenu redagującego daje temu samemu agentowi także raport postępów dzieci (imiona, aktywność) — łącz je tylko świadomie; token Hermesa zostaje przy samym `learning:read`.
 
 CLI zapisuje sekret tylko do nowego pliku o prywatnych uprawnieniach i wypisuje samo id. Token Hermesa (`learning:read`) zostaje wyłącznie w konfiguracji Hermesa i nigdy nie trafia do connectora claude.ai.
 
@@ -96,4 +97,4 @@ Odwołanie działa od następnego żądania: granica HTTP sprawdza token przy ka
 
 ## Kontrakt
 
-Źródło schematów: `packages/contracts/src/lesson-authoring.ts` (`inputSchema` i `outputSchema` narzędzi). Klienci MCP pobierają je z `tools/list`, więc nie ma osobnego JSON Schema ani manifestu u konsumenta; pakiet konsumenta Hermesa i kontrakt `learning-overview` są bez zmian. Kontrakt narzędzi materiałów: `packages/contracts/src/material-authoring.ts`. Wersja serwera MCP: 0.5.0 (0.5.0: zakresy `materials:write` i `materials:publish` z narzędziami słówek, źródeł, nagrań, listy, publikacji i archiwizacji; 0.4.0: lekcje z materiału rodzica po `deckId`, `lesson_draft_append`, `lesson_catalog` z `deckId`/`objectiveIds`, `lesson_validate` z `append`, nowe pola `objectives`, `material`, `subjectTitlePl` w `lesson_draft_get`; zmiany addytywne, dotychczasowe wywołania działają bez zmian).
+Źródło schematów: `packages/contracts/src/lesson-authoring.ts` (`inputSchema` i `outputSchema` narzędzi). Klienci MCP pobierają je z `tools/list`, więc nie ma osobnego JSON Schema ani manifestu u konsumenta; pakiet konsumenta Hermesa i kontrakt `learning-overview` są bez zmian. Kontrakt narzędzi materiałów: `packages/contracts/src/material-authoring.ts`. Wersja serwera MCP: 0.5.0 (0.5.0: zakresy `materials:write` i `materials:publish` z narzędziami słówek, źródeł, nagrań, listy, publikacji i archiwizacji, kilka zakresów w jednym tokenie; 0.4.0: lekcje z materiału rodzica po `deckId`, `lesson_draft_append`, `lesson_catalog` z `deckId`/`objectiveIds`, `lesson_validate` z `append`, nowe pola `objectives`, `material`, `subjectTitlePl` w `lesson_draft_get`; zmiany addytywne, dotychczasowe wywołania działają bez zmian).

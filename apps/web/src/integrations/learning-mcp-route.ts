@@ -26,13 +26,14 @@ import {
 } from "@learning/server";
 import { LESSON_AUTHORING_MAX_REQUEST_BYTES, LearningOverviewQuerySchema, messages, type LearningOverviewQuery } from "@learning/contracts";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createLearningMcpServer, LEARNING_MCP_TOOL } from "./learning-mcp-server";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { LEARNING_MCP_SERVER_INFO, LEARNING_MCP_TOOL, registerLearningOverviewTool } from "./learning-mcp-server";
 import {
   authoringToolNames,
-  createLessonAuthoringMcpServer,
   LESSON_AUTHORING_TOOL_NAMES,
   LESSON_WRITE_TOOL_NAMES,
   lessonAuthoringInputError,
+  registerAuthoringTools,
   type LessonAuthoringOperations,
 } from "./lesson-authoring-mcp-tools";
 import { IntegrationReadLimiter, learningOverviewLimiter, lessonWriteLimiter } from "./integration-read-limiter";
@@ -140,9 +141,11 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     return rpcFailure(requestId, -32600, 400, "Invalid MCP HTTP headers.");
   }
 
-  const scope = principal.scopes[0]!;
-  const authoring = scope !== "learning:read";
-  const allowedTools: ReadonlySet<string> = authoring ? authoringToolNames(scope) : new Set([LEARNING_MCP_TOOL]);
+  // Token widzi sumę narzędzi swoich zakresów; większe ciało żądania tylko z zakresem redagowania lub publikacji.
+  const scopes = principal.scopes;
+  const reading = scopes.includes("learning:read");
+  const authoring = scopes.some((scope) => scope !== "learning:read");
+  const allowedTools: ReadonlySet<string> = new Set([...(reading ? [LEARNING_MCP_TOOL] : []), ...authoringToolNames(scopes)]);
   const maxRequestBytes = authoring ? LESSON_AUTHORING_MAX_REQUEST_BYTES : MAX_REQUEST_BYTES;
   let body: unknown;
   const bounded = await readBoundedBody(request, maxRequestBytes);
@@ -181,9 +184,9 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     }
   }
 
-  const server = authoring
-    ? createLessonAuthoringMcpServer(deps.lessonAuthoring(match[1]!), requestId, scope)
-    : createLearningMcpServer((query) => deps.readOverview(LearningOverviewQuerySchema.parse(query), match[1]!), requestId);
+  const server = new McpServer(LEARNING_MCP_SERVER_INFO);
+  if (reading) registerLearningOverviewTool(server, (query) => deps.readOverview(LearningOverviewQuerySchema.parse(query), match[1]!), requestId);
+  if (authoring) registerAuthoringTools(server, deps.lessonAuthoring(match[1]!), requestId, scopes);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, maxRequestBodySize: maxRequestBytes });
   try {
     await server.connect(transport);

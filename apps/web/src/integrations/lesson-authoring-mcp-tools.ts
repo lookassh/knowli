@@ -36,12 +36,13 @@ import {
   VocabularyDeckDtoSchema,
 } from "@learning/contracts";
 import { z } from "zod";
-import { LEARNING_MCP_SERVER_INFO, toolError } from "./learning-mcp-server";
+import { toolError } from "./learning-mcp-server";
 
 /**
- * Narzędzia redagowania materiałów (`docs/integrations/lesson-authoring.md`). Token ma jeden zakres:
+ * Narzędzia redagowania materiałów (`docs/integrations/lesson-authoring.md`). Zakresy tokenu:
  * `lessons:write` — lekcje; `materials:write` — lekcje, zestawy słówek, źródła, nagrania i lista materiałów;
- * `materials:publish` — lista, publikacja i archiwizacja. Token redagujący nie publikuje ani nie archiwizuje,
+ * `materials:publish` — lista, publikacja i archiwizacja. Token widzi sumę narzędzi swoich zakresów
+ * (właściciel łączy je przy wydaniu); sam zakres redagowania nie publikuje ani nie archiwizuje,
  * a żaden z tych zakresów nie daje dostępu do dzieci, przypisań, postępów ani ustawień.
  */
 export const LESSON_AUTHORING_TOOLS = {
@@ -182,9 +183,13 @@ const KEYS = Object.keys(DEFINITIONS) as ToolKey[];
 export const LESSON_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set(Object.values(LESSON_AUTHORING_TOOLS));
 export const LESSON_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set(KEYS.filter((key) => DEFINITIONS[key].write).map((key) => LESSON_AUTHORING_TOOLS[key]));
 
-/** Narzędzia widoczne dla tokenu o danym zakresie; pozostałe dla niego nie istnieją. */
-export function authoringToolNames(scope: IntegrationScope): ReadonlySet<string> {
-  return new Set(KEYS.filter((key) => DEFINITIONS[key].scopes.includes(scope)).map((key) => LESSON_AUTHORING_TOOLS[key]));
+function granted(key: ToolKey, scopes: readonly IntegrationScope[]): boolean {
+  return DEFINITIONS[key].scopes.some((scope) => scopes.includes(scope));
+}
+
+/** Narzędzia widoczne dla tokenu o danych zakresach; pozostałe dla niego nie istnieją. */
+export function authoringToolNames(scopes: readonly IntegrationScope[]): ReadonlySet<string> {
+  return new Set(KEYS.filter((key) => granted(key, scopes)).map((key) => LESSON_AUTHORING_TOOLS[key]));
 }
 
 const MESSAGES: Record<string, string> = {
@@ -244,12 +249,11 @@ export function lessonAuthoringInputError(toolName: string, args: unknown, reque
   return parsed.success ? null : authoringError(parsed.error, requestId, toolName);
 }
 
-/** Serwer MCP z narzędziami zakresu tokenu. */
-export function createLessonAuthoringMcpServer(operations: LessonAuthoringOperations, requestId: string, scope: IntegrationScope): McpServer {
-  const server = new McpServer(LEARNING_MCP_SERVER_INFO);
+/** Rejestruje na serwerze narzędzia materiałów dozwolone zakresami tokenu. */
+export function registerAuthoringTools(server: McpServer, operations: LessonAuthoringOperations, requestId: string, scopes: readonly IntegrationScope[]): void {
   for (const key of KEYS) {
     const config = DEFINITIONS[key];
-    if (!config.scopes.includes(scope)) continue;
+    if (!granted(key, scopes)) continue;
     const name = LESSON_AUTHORING_TOOLS[key];
     server.registerTool(name, {
       description: config.description,
@@ -269,5 +273,4 @@ export function createLessonAuthoringMcpServer(operations: LessonAuthoringOperat
       return { structuredContent: output.data as Record<string, unknown>, content: [{ type: "text" as const, text: JSON.stringify(output.data) }] };
     });
   }
-  return server;
 }

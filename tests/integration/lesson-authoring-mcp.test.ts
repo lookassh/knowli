@@ -104,7 +104,7 @@ async function world(): Promise<Services> {
   return createServices({ db, clock: new ManualClock(), media: fakes.settings, generation: fakes.deps, subjects: createProductionSubjectRegistry() });
 }
 
-async function token(services: Services, scope: IntegrationScope): Promise<string> {
+async function token(services: Services, scope: IntegrationScope | IntegrationScope[]): Promise<string> {
   const secret = `umiem_${randomUUID()}_${randomBytes(32).toString("base64url")}`;
   await issueIntegrationToken(services, `test ${scope}`, secret, scope);
   return secret;
@@ -334,13 +334,39 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     expect(await countRows("select count(*)::int as n from learning_app.decks")).toBe(0);
   });
 
-  it("baza nie przyjmuje tokenu bez zakresu ani z dwoma zakresami", async () => {
+  it("baza nie przyjmuje tokenu bez zakresu ani z nieznanym zakresem; kilka znanych zakresów w jednym tokenie jest dozwolone", async () => {
     const services = await world();
     const secret = await token(services, "lessons:write");
     const id = secret.split("_")[1]!;
-    for (const scopes of ["{}", "{learning:read,lessons:write}", "{materials:write,materials:publish}", "{lessons:write,materials:write}", "{admin}"]) {
+    for (const scopes of ["{}", "{admin}", "{learning:read,admin}"]) {
       await expect(pool.query("update learning_app.integration_tokens set scopes = $2::text[] where id = $1", [id, scopes])).rejects.toThrow();
     }
+    await pool.query("update learning_app.integration_tokens set scopes = '{materials:write,materials:publish}' where id = $1", [id]);
+    await expect(issueIntegrationToken(services, "pusty", `umiem_${randomUUID()}_${randomBytes(32).toString("base64url")}`, [])).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("token z kilkoma zakresami widzi sumę narzędzi: redaguje, publikuje i czyta raport jednym połączeniem; brakujący zakres dalej daje 403", async () => {
+    const services = await world();
+    const all = await connect(services, await token(services, ["learning:read", "materials:write", "materials:publish"]));
+    const names = (await all.listTools()).tools.map(({ name }) => name);
+    expect(names).toHaveLength(19);
+    expect(names).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "lesson_draft_append", "deck_draft_edit", "material_publish", "material_archive"]));
+
+    const deckId = randomUUID();
+    const created = LessonDraftWriteResultSchema.parse((await call(all, "lesson_draft_create", { ...LESSON, clientRequestId: deckId })).structuredContent);
+    expect((await call(all, "material_publish", { deckId, expectedEditNumber: created.editNumber })).structuredContent).toEqual({ deckId, deckVersionId: created.draftId });
+    expect((await call(all, "umiem_get_learning_overview", {})).isError).not.toBe(true);
+
+    // Redagowanie z publikacją, bez odczytu postępów.
+    const editorPublisher = await token(services, ["lessons:write", "materials:publish"]);
+    const partial = await connect(services, editorPublisher);
+    expect((await partial.listTools()).tools.map(({ name }) => name).sort()).toEqual([
+      "lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate",
+      "material_archive", "material_list", "material_publish",
+    ]);
+    await expect(call(partial, "umiem_get_learning_overview", {})).rejects.toThrow(/403|Forbidden/);
+    await expect(call(partial, "deck_get", { deckId })).rejects.toThrow(/403|Forbidden/);
+    await expect(getLearningOverview(services, { days: 7, upcomingTestDays: 14 }, editorPublisher)).rejects.toMatchObject({ code: "forbidden" });
   });
 
   it("walidacja z deckId przyjmuje id zadań zestawu i odrzuca niezgodne zagadnienia lub obce id", async () => {
