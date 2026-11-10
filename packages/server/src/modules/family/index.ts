@@ -10,6 +10,8 @@ export {
   isIntegrationScope,
   issueIntegrationToken,
   LESSONS_WRITE_SCOPE,
+  MATERIALS_PUBLISH_SCOPE,
+  MATERIALS_WRITE_SCOPE,
   listIntegrationTokens,
   requireIntegrationScope,
   requireLearningReadToken,

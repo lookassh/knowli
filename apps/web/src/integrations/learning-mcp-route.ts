@@ -2,13 +2,24 @@ import { randomUUID } from "node:crypto";
 import {
   AppError,
   appendAuthoredLesson,
+  archiveMaterial,
   authenticateIntegrationToken,
   createAuthoredLesson,
+  createSource,
+  createVocabularyDeck,
+  editVocabularyDeck,
   getAuthoredLesson,
   getLearningOverview,
+  getSource,
+  getVocabularyDeck,
   lessonAuthoringCatalog,
-  LESSONS_WRITE_SCOPE,
+  listMaterials,
+  listSources,
+  omitIllustration,
+  publishMaterial,
+  regenerateRecording,
   replaceAuthoredLesson,
+  updateSource,
   validateAuthoredLesson,
   type IntegrationPrincipal,
   type Services,
@@ -17,6 +28,7 @@ import { LESSON_AUTHORING_MAX_REQUEST_BYTES, LearningOverviewQuerySchema, messag
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createLearningMcpServer, LEARNING_MCP_TOOL } from "./learning-mcp-server";
 import {
+  authoringToolNames,
   createLessonAuthoringMcpServer,
   LESSON_AUTHORING_TOOL_NAMES,
   LESSON_WRITE_TOOL_NAMES,
@@ -33,11 +45,11 @@ const MCP_VERSION = "2025-11-25";
 export type LearningMcpDependencies = {
   authenticate(rawToken: string): Promise<IntegrationPrincipal>;
   readOverview(query: LearningOverviewQuery, rawToken: string): Promise<unknown>;
-  /** Narzędzia autorskie lekcji dla tokenu `lessons:write` (zapisy ponownie sprawdzają token w transakcji). */
+  /** Narzędzia redagowania i publikacji materiałów dla tokenów `lessons:write`, `materials:write` i `materials:publish` (każda operacja ponownie sprawdza token). */
   lessonAuthoring(rawToken: string): LessonAuthoringOperations;
   /** Wspólny limit żądań na token (60 na minutę). */
   limiter: IntegrationReadLimiter;
-  /** Zapisy lekcji na token (10 na godzinę). */
+  /** Zapisy materiałów na token (10 na godzinę). */
   writeLimiter: IntegrationReadLimiter;
   allowedOrigins: ReadonlySet<string>;
   now(): number;
@@ -128,7 +140,9 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
     return rpcFailure(requestId, -32600, 400, "Invalid MCP HTTP headers.");
   }
 
-  const authoring = principal.scopes[0] === LESSONS_WRITE_SCOPE;
+  const scope = principal.scopes[0]!;
+  const authoring = scope !== "learning:read";
+  const allowedTools: ReadonlySet<string> = authoring ? authoringToolNames(scope) : new Set([LEARNING_MCP_TOOL]);
   const maxRequestBytes = authoring ? LESSON_AUTHORING_MAX_REQUEST_BYTES : MAX_REQUEST_BYTES;
   let body: unknown;
   const bounded = await readBoundedBody(request, maxRequestBytes);
@@ -149,8 +163,8 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
   const params = typeof body === "object" && body !== null && "params" in body ? (body as { params?: unknown }).params : undefined;
   const toolName = rpcMethod === "tools/call" && typeof params === "object" && params !== null && "name" in params ? (params as { name?: unknown }).name : undefined;
   if (typeof toolName === "string") {
-    const otherScope = authoring ? toolName === LEARNING_MCP_TOOL : LESSON_AUTHORING_TOOL_NAMES.has(toolName);
-    if (otherScope) return rpcFailure(requestId, -32003, 403, "Forbidden.");
+    const known = toolName === LEARNING_MCP_TOOL || LESSON_AUTHORING_TOOL_NAMES.has(toolName);
+    if (known && !allowedTools.has(toolName)) return rpcFailure(requestId, -32003, 403, "Forbidden.");
     if (authoring) {
       const args = typeof params === "object" && params !== null && "arguments" in params ? (params as { arguments?: unknown }).arguments : undefined;
       const inputError = lessonAuthoringInputError(toolName, args, requestId);
@@ -168,7 +182,7 @@ export async function handleLearningMcpRequest(request: Request, deps: LearningM
   }
 
   const server = authoring
-    ? createLessonAuthoringMcpServer(deps.lessonAuthoring(match[1]!), requestId)
+    ? createLessonAuthoringMcpServer(deps.lessonAuthoring(match[1]!), requestId, scope)
     : createLearningMcpServer((query) => deps.readOverview(LearningOverviewQuerySchema.parse(query), match[1]!), requestId);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, maxRequestBodySize: maxRequestBytes });
   try {
@@ -209,6 +223,18 @@ export function createLearningMcpDependencies(services: Services, allowedOrigins
       get: (input) => getAuthoredLesson(services, rawToken, input),
       replace: (input) => replaceAuthoredLesson(services, rawToken, input),
       append: (input) => appendAuthoredLesson(services, rawToken, input),
+      materialList: (input) => listMaterials(services, rawToken, input),
+      deckGet: (input) => getVocabularyDeck(services, rawToken, input),
+      deckCreate: (input) => createVocabularyDeck(services, rawToken, input),
+      deckEdit: (input) => editVocabularyDeck(services, rawToken, input),
+      sourceList: (input) => listSources(services, rawToken, input),
+      sourceGet: (input) => getSource(services, rawToken, input),
+      sourceCreate: (input) => createSource(services, rawToken, input),
+      sourceUpdate: (input) => updateSource(services, rawToken, input),
+      recordingRegenerate: (input) => regenerateRecording(services, rawToken, input),
+      illustrationOmit: (input) => omitIllustration(services, rawToken, input),
+      publish: (input) => publishMaterial(services, rawToken, input),
+      archive: (input) => archiveMaterial(services, rawToken, input),
     }),
     limiter: learningOverviewLimiter,
     writeLimiter: lessonWriteLimiter,

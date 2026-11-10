@@ -46,7 +46,7 @@ node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-token
 node apps/worker/node_modules/tsx/dist/cli.mjs apps/worker/src/integration-tokens.ts revoke --id <uuid>
 ```
 
-`--scope` przyjmuje `learning:read` (domyślnie) albo `lessons:write`; tokenu z dwoma zakresami nie da się wydać. Do procesu Hermesa przekaż wartość tokenu przez chronione środowisko, a nie przez argument polecenia lub plik repozytorium. Rotacja: utwórz nowy token, skonfiguruj zmienną i odśwież połączenia klienta, potwierdź działanie, następnie odwołaj stary token.
+`--scope` przyjmuje `learning:read` (domyślnie), `lessons:write`, `materials:write` albo `materials:publish` (`docs/integrations/lesson-authoring.md`); tokenu z dwoma zakresami nie da się wydać. Do procesu Hermesa przekaż wartość tokenu przez chronione środowisko, a nie przez argument polecenia lub plik repozytorium. Rotacja: utwórz nowy token, skonfiguruj zmienną i odśwież połączenia klienta, potwierdź działanie, następnie odwołaj stary token.
 
 ## Aktualizacja kontraktu
 

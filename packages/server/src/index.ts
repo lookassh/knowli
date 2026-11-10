@@ -70,6 +70,20 @@ export {
   regenerateLessonStory,
 } from "./modules/materials";
 export {
+  archiveMaterial,
+  createSource,
+  createVocabularyDeck,
+  editVocabularyDeck,
+  getSource,
+  getVocabularyDeck,
+  listMaterials,
+  listSources,
+  omitIllustration,
+  publishMaterial,
+  regenerateRecording,
+  updateSource,
+} from "./modules/materials";
+export {
   createAuthoredLesson,
   getAuthoredLesson,
   appendAuthoredLesson,

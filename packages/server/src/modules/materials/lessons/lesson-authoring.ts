@@ -25,7 +25,7 @@ import type { Services } from "../../../config";
 import type { Executor, Tx } from "../../../db/client";
 import { deckVersions, decks, generationRuns } from "../../../db/schema";
 import { AppError } from "../../../errors";
-import { LESSONS_WRITE_SCOPE, requireIntegrationScope } from "../../family";
+import { LESSONS_WRITE_SCOPE, MATERIALS_WRITE_SCOPE, requireIntegrationScope } from "../../family";
 import { EXAMPLES_PLACEHOLDER } from "../../../domain/lessons/card";
 import { cardExposureSources } from "../../../domain/lessons/card-exposure-sources";
 import { findExposureLeaks } from "../../../domain/lessons/exposure-leaks";
@@ -60,6 +60,9 @@ import {
  * (`cardExposureSources`), historyjka. Zapisy w jednej transakcji z ponownym sprawdzeniem tokenu,
  * zapisem i uzgodnieniem mediów; publikację, przypisania i generowanie robi wyłącznie rodzic.
  */
+
+/** Tokeny z narzędziami lekcji: pisanie lekcji albo redagowanie wszystkich materiałów. */
+const AUTHORING_SCOPES = [LESSONS_WRITE_SCOPE, MATERIALS_WRITE_SCOPE] as const;
 
 /** Zasady kolejności planisty, których nie widać w regułach zadań. */
 const ORDERING_RULES = [
@@ -280,7 +283,7 @@ export async function lessonAuthoringCatalog(services: Services, rawToken: strin
   }
   if (subjectId !== undefined || topicId !== undefined) throw invalid("with deckId leave subjectId and topicId out");
   return services.db.transaction(async (tx) => {
-    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
     const { context } = await currentVersion(tx, deckId);
     const { subject, topic } = versionLesson(services, context);
     return { ...catalogDto(subject, only(topic)), subjectTitlePl: context.subjectTitlePl ?? subject.titlePl };
@@ -362,7 +365,7 @@ export async function validateAuthoredLesson(services: Services, rawToken: strin
   }
   const deckId = valid.deckId;
   return services.db.transaction(async (tx) => {
-    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
     const { versionId, context } = await currentVersion(tx, deckId);
     if ((valid.subjectId !== undefined && valid.subjectId !== context.subjectId) ||
       (valid.topicId !== undefined && valid.topicId !== context.topicId) ||
@@ -406,7 +409,7 @@ export async function createAuthoredLesson(services: Services, rawToken: string,
   const deckId = valid.clientRequestId;
   const title = valid.title ?? lessonTitle(subject, topic);
   return services.db.transaction(async (tx) => {
-    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
     const inserted = await tx.insert(decks).values({ id: deckId, title, kind: "lesson" }).onConflictDoNothing({ target: decks.id }).returning({ id: decks.id });
     if (inserted.length === 0) {
       // Powtórka tego samego `clientRequestId`: ten sam zestaw, o ile to lekcja.
@@ -447,7 +450,7 @@ export async function createAuthoredLesson(services: Services, rawToken: string,
 export async function getAuthoredLesson(services: Services, rawToken: string, input: unknown): Promise<LessonAuthoringDraftDto> {
   const { deckId } = LessonDraftGetInputSchema.parse(input);
   return services.db.transaction(async (tx) => {
-    await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
     const { versionId, context } = await currentVersion(tx, deckId);
     const { subject, topic } = versionLesson(services, context);
     const dto = await readLessonDraftDto(tx, services, versionId);
@@ -529,7 +532,7 @@ type ExercisesWrite = Omit<LessonDraftReplaceInput, "exercises"> & { exercises: 
  * w tej transakcji (błąd → brak szkicu). Zwraca stan po zapisie i liczbę zadań sprzed zapisu.
  */
 async function writeExercisesTx(tx: Tx, services: Services, rawToken: string, valid: ExercisesWrite, append: boolean) {
-  await requireIntegrationScope(tx, rawToken, LESSONS_WRITE_SCOPE);
+  await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
   const deck = await authorableDeck(tx, valid.deckId);
   let versionId = await editableVersionId(tx, deck.id);
   let expectedEditNumber = valid.expectedEditNumber;

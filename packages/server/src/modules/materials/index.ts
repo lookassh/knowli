@@ -22,6 +22,7 @@ export type { SchoolCriteria } from "../../domain/lessons/types";
 export { regenerateLessonStory } from "./lessons/lesson-story-generation";
 export { regenerateLessonCardAudio, regenerateLessonPromptAudio, regenerateLessonStoryAudio } from "./lessons/lesson-prompt-audio";
 export { acceptVerdictAsVariant, decideLessonVerdict, lessonObjectiveProgress, listLessonVerdicts } from "./lessons/lesson-supervision";
+export { archiveMaterial, createSource, createVocabularyDeck, editVocabularyDeck, getSource, getVocabularyDeck, listMaterials, listSources, omitIllustration, publishMaterial, regenerateRecording, updateSource } from "./material-authoring";
 export { executeMediaAsset } from "./media-generation";
 export { DEFAULT_ORPHAN_GRACE_MS, reportOrphanMediaBlobs, summarizeOrphanMediaReport, type OrphanMediaReport } from "./media-orphan-report";
 export { omitRevisionAsset, readReadyMedia, readReadyMediaStream, reconcileDraftAssets, regenerateRevisionAsset, toDisplayIllustration, ILLUSTRATION_DISPLAY_MAX_PX, type ReadyMediaStream } from "./media-reconciliation";

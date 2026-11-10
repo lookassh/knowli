@@ -121,7 +121,7 @@ async function insertRevision(
  * wciąż pending, podczas gdy gotowy blob w media_assets już czeka — rodzic
  * widzi wtedy "approved". Stan omitted pozostaje decyzją, nie projekcją.
  */
-async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> {
+export async function readDraftDto(db: Executor, versionId: string): Promise<DraftDto> {
   const version = (await db.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0];
   if (!version) {
     throw new AppError("not_found");
@@ -490,26 +490,28 @@ export async function editDraft(
   input: DraftPatch,
 ): Promise<DraftDto> {
   const valid = DraftPatchSchema.parse(input);
+  return services.db.transaction((tx) => editDraftTx(tx, services, draftId, valid));
+}
+
+/** Rdzeń edycji szkicu słówek w transakcji wołającego (edycja rodzica i narzędzie MCP `deck_draft_edit`). */
+export async function editDraftTx(tx: Tx, services: Services, draftId: string, valid: DraftPatch): Promise<DraftDto> {
   if (valid.title === undefined && valid.items === undefined) {
     throw new AppError("validation", { message: "patch must change title or items" });
   }
-
-  return services.db.transaction(async (tx) => {
-    const version = await lockVersion(tx, draftId);
-    assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
-    assertEditable(version, valid.expectedEditNumber);
-    if (valid.title !== undefined) {
-      await tx.update(deckVersions).set({ title: valid.title }).where(eq(deckVersions.id, draftId));
-    }
-    if (valid.items !== undefined) {
-      validateVocabularyFormatItems(version.vocabularyFormat, valid.items);
-      await applyItems(tx, draftId, version.deckId, valid.items);
-    }
-    await bumpEditNumber(tx, draftId);
-    // każda edycja uzgadnia powiązania zasobów w tej samej transakcji
-    await reconcileDraftAssetsTx(tx, services, version);
-    return readDraftDto(tx, draftId);
-  });
+  const version = await lockVersion(tx, draftId);
+  assertVocabularyDeck(await readVersionDeckKind(tx, draftId));
+  assertEditable(version, valid.expectedEditNumber);
+  if (valid.title !== undefined) {
+    await tx.update(deckVersions).set({ title: valid.title }).where(eq(deckVersions.id, draftId));
+  }
+  if (valid.items !== undefined) {
+    validateVocabularyFormatItems(version.vocabularyFormat, valid.items);
+    await applyItems(tx, draftId, version.deckId, valid.items);
+  }
+  await bumpEditNumber(tx, draftId);
+  // każda edycja uzgadnia powiązania zasobów w tej samej transakcji
+  await reconcileDraftAssetsTx(tx, services, version);
+  return readDraftDto(tx, draftId);
 }
 
 export async function publishDraft(

@@ -7,10 +7,14 @@ import { integrationTokens } from "../../db/schema";
 
 const TOKEN_PATTERN = /^umiem_([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})_([A-Za-z0-9_-]{43})$/i;
 /** Zakresy tokenów integracji; token ma dokładnie jeden (CHECK `integration_tokens_single_scope`). */
-export const INTEGRATION_SCOPES = ["learning:read", "lessons:write"] as const;
+export const INTEGRATION_SCOPES = ["learning:read", "lessons:write", "materials:write", "materials:publish"] as const;
 export type IntegrationScope = (typeof INTEGRATION_SCOPES)[number];
 /** Zakres tokenu pisania lekcji (narzędzia MCP `lesson_*`). */
 export const LESSONS_WRITE_SCOPE: IntegrationScope = "lessons:write";
+/** Redagowanie materiałów: narzędzia lekcji oraz zestawy słówek, źródła i nagrania; bez publikacji i archiwizacji. */
+export const MATERIALS_WRITE_SCOPE: IntegrationScope = "materials:write";
+/** Publikacja i archiwizacja materiałów: osobny token, bez narzędzi redagowania. */
+export const MATERIALS_PUBLISH_SCOPE: IntegrationScope = "materials:publish";
 
 /** `scopes` ma zawsze dokładnie jeden znany zakres (sprawdza `authenticateIntegrationToken`). */
 export type IntegrationPrincipal = { id: string; scopes: readonly IntegrationScope[] };
@@ -63,14 +67,14 @@ export async function authenticateIntegrationToken(
   return { id: record.id, scopes: [scope] };
 }
 
-/** Token z wymaganym zakresem; inny zakres → `forbidden`. */
+/** Token z wymaganym zakresem (jednym z podanych); inny zakres → `forbidden`. */
 export async function requireIntegrationScope(
   exec: Executor,
   rawToken: string,
-  scope: IntegrationScope,
+  scope: IntegrationScope | readonly IntegrationScope[],
 ): Promise<IntegrationPrincipal> {
   const principal = await authenticateIntegrationToken(exec, rawToken);
-  if (principal.scopes[0] !== scope) throw new AppError("forbidden");
+  if (!(typeof scope === "string" ? [scope] : scope).includes(principal.scopes[0]!)) throw new AppError("forbidden");
   return principal;
 }
 
