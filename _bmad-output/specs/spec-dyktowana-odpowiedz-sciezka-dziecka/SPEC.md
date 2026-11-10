@@ -63,7 +63,7 @@ CAP-8 (dopisywanie przy kolejnym dyktowaniu) wycofano po przeglądzie; ID nie b�
 - Kid DTO nie zawiera klucza, kryteriów, notatki modelu ani etykiety precyzji. Feedback skracania niesie samą podpowiedź (obie wersje dziecka pokazuje widok skracania), więc nie tworzy ekspozycji klucza; pozostałe ujawnienia są zamykane przed wysłaniem.
 - Nieocenione próby, cisza, niepewne rozpoznanie i przerwane nagranie nie są dowodem błędnej wiedzy.
 - Ekrany dziecka powstają ze wspólnych komponentów i katalogu komunikatów; zmiana layoutu ma test geometrii Playwright.
-- Odbiór rodzinny na tablecie nie rusza przed decyzją właściciela z Open Questions.
+- Odbiór rodzinny na tablecie nie ruszał przed decyzją właściciela z Open Questions; decyzja zapadła 2026-11-10, odbiór jest odblokowany.
 
 ## Non-goals
 
@@ -86,4 +86,5 @@ CAP-8 (dopisywanie przy kolejnym dyktowaniu) wycofano po przeglądzie; ID nie b�
 
 ## Open Questions
 
-- Czy tekst odpowiedzi w `lesson_verdicts` ma znikać razem z profilem albo wygasać? Dziś celowo przeżywa usunięcie profilu, a przy swobodnej mowie może zawierać imiona i sprawy domowe. Najtańszy wariant do rozważenia: nie zapisywać do cache niepoprawionej mowy.
+- Brak otwartych pytań.
+- Rozstrzygnięte 2026-11-10 (właściciel): tekst odpowiedzi w `lesson_verdicts` zostaje jak jest — przeżywa usunięcie profilu, także dla niepoprawionej mowy. Właściciel zna ryzyko, że swobodna mowa może zawierać imiona i sprawy domowe; wariantu „nie zapisywać do cache niepoprawionej mowy” nie wdrażamy.
