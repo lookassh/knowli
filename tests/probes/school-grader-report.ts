@@ -37,3 +37,36 @@ export function groupReportLines(outcomes: readonly CaseOutcome[]): string[] {
       `bladDostawcy=${count((o) => o.status === "provider_error")} niepotrzebneSkracanie=${count((o) => o.unneededShorten)}`;
   });
 }
+
+const DIMENSIONS = [
+  ["wiedza", (o: CaseOutcome) => o.status === "graded" && o.knowledgeMatch === false],
+  ["odrzucenie", (o: CaseOutcome) => o.status === "rejected"],
+  ["skracanie", (o: CaseOutcome) => o.unneededShorten],
+] as const;
+
+/**
+ * Reguła z acceptance-scenarios.md. `runs[i]` to wyniki wszystkich przypadków i-tego przebiegu.
+ * Zwraca po jednym wierszu na stabilnie błędny przypadek mówiony i wiersz końcowy.
+ */
+export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string[] {
+  if (runs.length < 3) return ["REGUŁA: wymaga --runs=3"];
+  const ids = [...new Set(runs.flat().filter((o) => o.input === "speech" && !o.disputed).map((o) => o.id))].sort();
+  const lines: string[] = [];
+  const stableCases = { wiedza: 0, odrzucenie: 0, skracanie: 0 };
+  for (const id of ids) {
+    for (const [name, isBad] of DIMENSIONS) {
+      const count = runs.filter((run) => {
+        const o = run.find((x) => x.id === id);
+        if (o === undefined || !isBad(o)) return false;
+        if (o.pairOf === undefined) return true;
+        const twin = run.find((x) => x.id === o.pairOf);
+        return twin?.status === "graded" && twin.knowledgeMatch === true;
+      }).length;
+      if (count < 2) continue;
+      stableCases[name] += 1;
+      lines.push(`${id}: ${name} ${count}/${runs.length}`);
+    }
+  }
+  const needed = stableCases.wiedza >= 1 || stableCases.odrzucenie >= 1 || stableCases.skracanie >= 2;
+  return [...lines, `REGUŁA: story 2 ${needed ? "potrzebne" : "niepotrzebne"}`];
+}

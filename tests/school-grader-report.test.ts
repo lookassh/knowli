@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formOkForCase, groupReportLines, isUnneededShorten, type CaseOutcome } from "./probes/school-grader-report";
+import { decisionLines, formOkForCase, groupReportLines, isUnneededShorten, type CaseOutcome } from "./probes/school-grader-report";
 
 const outcome = (over: Partial<CaseOutcome>): CaseOutcome => ({
   id: "X", input: "written", disputed: false, status: "graded", knowledgeMatch: true, precisionMatch: true, unneededShorten: false, ...over,
@@ -44,5 +44,44 @@ describe("groupReportLines", () => {
   it("prints a zero row for a group with no cases", () => {
     expect(groupReportLines([outcome({})])[1])
       .toBe("mówione: przypadki=0 wiedzaZgodna=0 precyzjaZgodna=0 odrzuconeWalidator=0 bladDostawcy=0 niepotrzebneSkracanie=0");
+  });
+});
+
+describe("decisionLines", () => {
+  const speech = (id: string, over: Partial<CaseOutcome> = {}) => outcome({ id, input: "speech", ...over });
+  const bad = { knowledgeMatch: false };
+  it("needs three runs", () => {
+    expect(decisionLines([[speech("S01", bad)]])).toEqual(["REGUŁA: wymaga --runs=3"]);
+  });
+  it("calls story 2 needed for one stable knowledge failure", () => {
+    expect(decisionLines([[speech("S02", bad)], [speech("S02", bad)], [speech("S02")]]))
+      .toEqual(["S02: wiedza 2/3", "REGUŁA: story 2 potrzebne"]);
+  });
+  it("counts validator rejections but not provider errors", () => {
+    const rejected = { status: "rejected", knowledgeMatch: null, precisionMatch: null } as const;
+    const provider = { status: "provider_error", knowledgeMatch: null, precisionMatch: null } as const;
+    expect(decisionLines([[speech("S02", rejected)], [speech("S02", rejected)], [speech("S02", provider)]]))
+      .toEqual(["S02: odrzucenie 2/3", "REGUŁA: story 2 potrzebne"]);
+    expect(decisionLines([[speech("S02", provider)], [speech("S02", provider)], [speech("S02", provider)]]))
+      .toEqual(["REGUŁA: story 2 niepotrzebne"]);
+  });
+  it("needs two cases for the shorten dimension", () => {
+    const shorten = { unneededShorten: true };
+    const one = [speech("S01", shorten), speech("S02")];
+    const two = [speech("S01", shorten), speech("S02", shorten)];
+    expect(decisionLines([one, one, one])).toEqual(["S01: skracanie 3/3", "REGUŁA: story 2 niepotrzebne"]);
+    expect(decisionLines([two, two, two])).toEqual(["S01: skracanie 3/3", "S02: skracanie 3/3", "REGUŁA: story 2 potrzebne"]);
+  });
+  it("ignores single failures, disputed cases and pairs whose written twin fails", () => {
+    const run = [
+      speech("S11", { ...bad, disputed: true }),
+      speech("S03", { ...bad, pairOf: "G09" }),
+      outcome({ id: "G09", knowledgeMatch: false }),
+    ];
+    expect(decisionLines([run, run, [...run, speech("S04", bad)]])).toEqual(["REGUŁA: story 2 niepotrzebne"]);
+  });
+  it("counts a paired case when its written twin passes", () => {
+    const run = [speech("S03", { ...bad, pairOf: "G09" }), outcome({ id: "G09" })];
+    expect(decisionLines([run, run, run])).toEqual(["S03: wiedza 3/3", "REGUŁA: story 2 potrzebne"]);
   });
 });
