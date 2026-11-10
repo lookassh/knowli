@@ -60,8 +60,9 @@ const catalog = {
 
 interface Calls { requests: Array<{ method: string; path: string; body: unknown }> }
 
-async function openLesson(page: Page, options: { data?: typeof lesson; catalogData?: unknown } = {}): Promise<Calls> {
-  const data = options.data ?? lesson;
+async function openLesson(page: Page, options: { data?: typeof lesson | (() => typeof lesson); catalogData?: unknown } = {}): Promise<Calls> {
+  // funkcja = odpowiedź zmienna w czasie (odpytywanie runu)
+  const data = () => (typeof options.data === "function" ? options.data() : options.data ?? lesson);
   const calls: Calls = { requests: [] };
   await page.route("**/api/v1/parent/**", (route) => {
     const request = route.request();
@@ -77,7 +78,7 @@ async function openLesson(page: Page, options: { data?: typeof lesson; catalogDa
     }
     if (path.endsWith("/children")) return route.fulfill({ json: [{ id: childId, displayName: "Ala", avatarKey: "fox", recordingMode: "hold", canRead: true, interests: [] }] });
     if (path.endsWith("/decks")) return route.fulfill({ json: [{ deckId, title: lesson.title, state: "published", kind: "lesson", editableVersionId: draftId, publishedVersionId: publishedId }] });
-    if (path.endsWith(`/lessons/${deckId}`)) return route.fulfill({ json: data });
+    if (path.endsWith(`/lessons/${deckId}`)) return route.fulfill({ json: data() });
     if (method === "POST" && path.endsWith(`/decks/${deckId}/archive`)) return route.fulfill({ status: 204, body: "" });
     if (method === "PATCH" && path.endsWith(`/lesson-drafts/${draftId}`)) {
       return route.fulfill({ status: 400, json: {
@@ -268,7 +269,7 @@ test.describe("bez klucza OpenRouter (lessonGenerationAvailable: false)", () => 
     await page.setViewportSize({ width: 1280, height: 900 });
     await openLesson(page, {
       catalogData: offCatalog,
-      data: { ...lesson, generation: { ...runBase, state: "running", errorCode: null } } as unknown as typeof lesson,
+      data: { ...lesson, generation: { ...runBase, state: "running", errorCode: null, stalled: true } } as unknown as typeof lesson,
     });
     await expect(page.getByTestId("retry-stalled-generation")).toBeDisabled();
     await expect(page.getByTestId("generation-unavailable")).toHaveText(unavailable);
@@ -285,6 +286,84 @@ test.describe("bez klucza OpenRouter (lessonGenerationAvailable: false)", () => 
     await expect(page.getByTestId("generation-retry")).toBeEnabled();
     await page.getByTestId("generation-retry").click();
     await expect.poll(() => calls.requests.filter((r) => r.method === "POST" && r.path.includes("/generation")).length).toBe(1);
+  });
+});
+
+test.describe("cykl życia runu puli w edytorze", () => {
+  const runBase = { id: uuid(98), deckId, deckVersionId: draftId, attempts: 1, errorCode: null, rejectedCount: null };
+  const withRun = (run: Record<string, unknown>) => ({ ...lesson, generation: { ...runBase, ...run } }) as unknown as typeof lesson;
+  const retryPosts = (calls: Calls) => calls.requests.filter((r) => r.method === "POST" && r.path.includes("/generation")).length;
+  const blocked = messages.lessons.generationBlocksSave;
+
+  test("zdrowy run w toku: bez „Ponów”, zapis i publikacja wyłączone z powodem", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openLesson(page, { data: withRun({ state: "running" }) });
+    await expect(page.getByTestId("generation-banner")).toBeVisible();
+    await expect(page.getByTestId("retry-stalled-generation")).toHaveCount(0);
+    await expect(page.getByTestId("publish-blocked-reason")).toHaveText(blocked);
+    await expect(page.getByTestId("publish-lesson")).toBeDisabled();
+    await expect(page.getByTestId("publish-lesson")).toHaveAccessibleDescription(blocked);
+    // poprawka w trakcie generowania: zapis zostaje wyłączony i mówi dlaczego
+    await page.getByTestId("editor-title").fill("Nowy tytuł");
+    await expect(page.getByTestId("save-lesson")).toBeDisabled();
+    await expect(page.getByTestId("save-lesson")).toHaveAccessibleDescription(blocked);
+    await expect(page.getByTestId("publish-blocked-reason")).toHaveText(blocked);
+  });
+
+  test("blokada zapisu znika po zakończeniu runu mimo niezapisanych zmian", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    let data = withRun({ state: "running" });
+    await openLesson(page, { data: () => data });
+    await page.getByTestId("editor-title").fill("Nowy tytuł");
+    await expect(page.getByTestId("save-lesson")).toBeDisabled();
+    data = withRun({ state: "succeeded" });
+    await expect(page.getByTestId("save-lesson")).toBeEnabled();
+    await expect(page.getByTestId("publish-blocked-reason")).not.toHaveText(blocked);
+  });
+
+  test("utknięty run: „Ponów generowanie” działa, zapis i publikacja odblokowane", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const calls = await openLesson(page, { data: withRun({ state: "running", stalled: true }) });
+    await expect(page.getByTestId("generation-banner")).toContainText(messages.lessons.stalledGenerationHint);
+    await expect(page.getByTestId("publish-lesson")).toBeEnabled();
+    await expect(page.getByTestId("publish-blocked-reason")).toHaveCount(0);
+    await page.getByTestId("retry-stalled-generation").click();
+    await expect.poll(() => retryPosts(calls)).toBe(1);
+  });
+
+  test("nieudany run i niezapisane zmiany: „Ponów generowanie” wyłączone z powodem", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const calls = await openLesson(page, { data: withRun({ state: "failed", errorCode: "internal" }) });
+    // kod bez zachęty do ponawiania ma własny tekst
+    await expect(page.getByTestId("generation-failed")).toContainText(messages.lessons.generationErrors.internal!);
+    await expect(page.getByTestId("generation-retry")).toBeEnabled();
+    await expect(page.getByTestId("generation-retry-blocked")).toHaveCount(0);
+    await page.getByTestId("editor-title").fill("Nowy tytuł");
+    await expect(page.getByTestId("generation-retry")).toBeDisabled();
+    await expect(page.getByTestId("generation-retry")).toHaveAccessibleDescription(messages.lessons.saveBeforePublish);
+    await expect(page.getByTestId("generation-retry-blocked")).toBeVisible();
+    // nieudany run nie blokuje zapisu: po zapisie da się go ponowić
+    await expect(page.getByTestId("save-lesson")).toBeEnabled();
+    expect(retryPosts(calls)).toBe(0);
+  });
+
+  test("run czeka w kolejce 3 minuty: komunikat i odblokowana publikacja; nowa próba liczy czas od nowa", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.clock.install();
+    let data = withRun({ state: "queued", attempts: 0 });
+    await openLesson(page, { data: () => data });
+    await expect(page.getByTestId("publish-lesson")).toBeDisabled();
+    await page.clock.runFor(170_000);
+    await expect(page.getByTestId("generation-queue-slow")).toHaveCount(0);
+    await expect(page.getByTestId("publish-lesson")).toBeDisabled();
+    // run wrócił do kolejki po kolejnej próbie: to nowe czekanie
+    data = withRun({ state: "queued", attempts: 1 });
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("generation-queue-slow")).toHaveCount(0);
+    await page.clock.runFor(180_000);
+    await expect(page.getByTestId("generation-queue-slow")).toHaveText(messages.lessons.generationQueueSlow);
+    await expect(page.getByTestId("publish-lesson")).toBeEnabled();
+    await expect(page.getByTestId("retry-stalled-generation")).toHaveCount(0);
   });
 });
 

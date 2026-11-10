@@ -117,6 +117,7 @@ export function EditorActionBar({
   testIds,
   saveDisabled,
   publishDisabled,
+  reasonBlocksSave = false,
   onSave,
   onPublish,
   onNewVersion,
@@ -131,6 +132,8 @@ export function EditorActionBar({
   testIds: { save: string; publish: string };
   saveDisabled: boolean;
   publishDisabled: boolean;
+  /** Powód blokady dotyczy też zapisu (np. trwające generowanie lekcji), nie tylko publikacji. */
+  reasonBlocksSave?: boolean;
   onSave: () => void;
   onPublish: () => void;
   onNewVersion: () => void;
@@ -144,15 +147,17 @@ export function EditorActionBar({
             <Text size="sm" className="pp-editor-bar-note" data-testid="publish-media-summary">{mediaSummary}</Text>
           )}
           {blockedReason && (
-            <Text size="sm" className="pp-editor-bar-note" data-testid="publish-blocked-reason">{blockedReason}</Text>
+            <Text size="sm" className="pp-editor-bar-note" id="publish-blocked-reason" data-testid="publish-blocked-reason">{blockedReason}</Text>
           )}
         </div>
         {editable ? (
           <div className="pp-editor-bar-actions">
-            <Button size="md" variant={isDirty ? "filled" : "default"} data-testid={testIds.save} onClick={onSave} disabled={saveDisabled}>
+            <Button size="md" variant={isDirty ? "filled" : "default"} data-testid={testIds.save} onClick={onSave} disabled={saveDisabled}
+              aria-describedby={blockedReason && reasonBlocksSave ? "publish-blocked-reason" : undefined}>
               {messages.decks.save}
             </Button>
-            <Button size="md" variant={isDirty ? "default" : "filled"} data-testid={testIds.publish} onClick={onPublish} disabled={publishDisabled}>
+            <Button size="md" variant={isDirty ? "default" : "filled"} data-testid={testIds.publish} onClick={onPublish} disabled={publishDisabled}
+              aria-describedby={blockedReason ? "publish-blocked-reason" : undefined}>
               {messages.decks.publish}
             </Button>
           </div>
