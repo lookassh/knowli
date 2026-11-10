@@ -121,3 +121,38 @@ Moduł: `apps/web/src/parent/lessons/LessonEditor.tsx`, `apps/web/src/parent/Edi
 - [ ] `docs/architecture.md` §19.17: akapit „Cykl życia runu puli” (predykat, przywracanie przez worker, reguły „Ponów”, blokada zapisu w panelu, ograniczenie: komunikat o kolejce liczony w przeglądarce).
 - [ ] API → MCP → skill: sprawdź `apps/web/src/integrations/lesson-authoring-mcp-tools.ts`, `integrations/umiem-mcp/` i oba `SKILL.md` — narzędzia MCP nie wołają `retryGeneration` ani nie zwracają `GenerationDto`; jeśli to się potwierdzi, zapisz uzasadnienie braku wpływu w opisie PR (schemat konsumenta bez zmian: `stalled` było już w `GenerationDtoSchema`).
 - [ ] `pnpm check`; commit.
+
+---
+
+## Poprawki po przeglądzie trzech krytyków (2026-11-10) — mają pierwszeństwo przed treścią zadań powyżej
+
+**Task 1 (ponowienie po porażce):**
+- W miejsce usuniętego porównania numerów edycji: run musi być NAJNOWSZYM runem puli wersji (`created_at desc`), inaczej `conflict` — stary nieudany run ze starej karty nie zamknie nowszego runu ani nie dopisze drugiej puli.
+- Ponawiane dogenerowanie (`input.regenerate`): `conflict`, gdy zagadnienia nie ma już w `lessonContext.objectiveIds`; `input.dynamicTopic` runu odświeżane z bieżącego kontekstu wersji (rodzic mógł zmienić karty po porażce). Testy: „usunięte zagadnienie → conflict”, „starszy run → conflict”.
+- Odroczone `queued` („Ponów” skraca odroczenie) idzie wspólną ścieżką z podbiciem numeru edycji — zerowanie `attempts` bez zmiany `expectedEditNumber` pozwalało na kolizję tożsamości ze spóźnionym workerem. `queued` nieodroczone nadal zwraca run bez zmian.
+- Znane ograniczenie (do opisu PR): ponowiony pełny run dopisuje pulę do szkicu takiego, jaki jest — ćwiczenia dodane ręcznie po porażce zostają i nie są uwzględniane przy deduplikacji.
+
+**Task 2 (predykat):**
+- `lessonPoolRunStalled(stallAfterMs: number): SQL<boolean>` w `generation-runs.ts` (bez importu z `lessons/`); `lessonRunStallAfterMs(source: { generation?: { lessonExecution?: LessonGenerationPolicy }; lessonExecution?: LessonGenerationPolicy }): number` w `lessons/lesson-generation-policy.ts` (termin runu + `LESSON_RUN_STALL_MARGIN_MS = 120_000`).
+- `stalled` tylko w `readLessonDeck` (`latestLessonRunOfPurpose` dostaje `stallAfterMs`, wywołanie w `lesson-api.ts`); `readGeneration` bez zmian — panel lekcji go nie czyta.
+- `lessonGenerationPolicyFromEnv` eksportowane przez `modules/materials/index.ts`, potem root.
+- Dokumentacja: `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS` musi być wspólne dla web i workera.
+
+**Task 3 (worker):**
+- Test (c): także druga próba stoi na bramce (`running`, `attempts = 2`), gdy otwiera się bramka pierwszej; sprawdzane: punkt kontrolny, stan, rewizje bez zmian; dopiero potem druga kończy `succeeded`.
+- Testy (b) i (e) to testy regresji (zielone przed implementacją); w (b) `claimed_at` postarzone o 11 minut (granica predykatu także w workerze).
+
+**Task 4:** bez kroku mutacyjnego (starą próbę zatrzymują wcześniejsze straże); test sprawdza wynik: run `superseded`, rewizje i wersja bez zmian.
+
+**Task 5 (panel):**
+- Istniejący test „zawieszony run…” (`parent-lesson-editor-layout.spec.ts`) dostaje `stalled: true`; `regenUnavailableShown` w `LessonEditor.tsx` liczy `running` tylko z `stalled === true` (inaczej `aria-describedby` wskazuje nieistniejący element).
+- Bez nowego `stalledPoolGenerationHint` — zostaje istniejący `lessons.stalledGenerationHint`.
+- Teksty po uwagach:
+  - `generationBlocksSave`: „Trwa generowanie ćwiczeń. Poprawki wprowadź po jego zakończeniu — teraz nie da się ich zapisać.” (zapis po zakończeniu runu przy niezapisanych zmianach kończy się istniejącym konfliktem wersji; blokada pól formularza to decyzja właściciela, poza zakresem).
+  - `generationQueueSlow`: „Generowanie jeszcze się nie zaczęło. Możesz poczekać albo wrócić później. Zapis lub publikacja lekcji je przerwie.”
+  - `generationErrors.validation`: „Nie udało się przygotować poprawnych ćwiczeń. Ponów próbę.”
+  - `generationErrors.internal`: „Generowanie przerwał błąd aplikacji. Ponowienie może nie pomóc.”
+- Test zegara: `page.clock.install()` przed otwarciem strony, `runFor`, asercja braku komunikatu przy 170 s i obecności po 180 s.
+- Test real: asercja banera razem z `publish-blocked-reason` = `generationBlocksSave` (bramka `holdFakeGeneration` nie obejmuje puli lekcji — zostaje `FAKE_SLOW_MARKER`).
+
+**Poza zakresem, do decyzji właściciela (raport):** alert i ponowienie dla runu `superseded`; blokada pól formularza w trakcie generowania; serwerowa odmowa zapisu przy zdrowym runie (druga karta nadal może go zamknąć).
