@@ -1,4 +1,6 @@
 import {
+  MAX_CALCULATION_DECIMALS,
+  MAX_CALCULATION_PARAMETER,
   MAX_CLOZE_EXTRA,
   MAX_CLOZE_GAPS,
   MAX_COMMON_ERRORS,
@@ -8,9 +10,12 @@ import {
   MAX_KEYWORD_OPTIONS,
   MAX_LESSON_TEXT_LENGTH,
   MAX_MATCH_EXTRA,
+  MAX_MATCH_LEFT_LENGTH,
   MAX_MATCH_PAIRS,
   MAX_OPTIONS,
   MAX_ORDER_ITEMS,
+  MAX_SCALE_DENOMINATOR,
+  MAX_TEMPLATE_FAMILY_ID_LENGTH,
   MIN_ORDER_ITEMS,
   type CalculationSpec,
 } from "@learning/contracts";
@@ -422,6 +427,10 @@ registerRuleCases([
     })),
   },
   { rule: "options.duplicate", violation: check(choice({ options: [{ id: "a", text: "plays" }, { id: "b", text: "Plays" }] })) },
+  { rule: "options.ids_unique", violation: check(choice({ options: [{ id: "a", text: "plays" }, { id: "a", text: "play" }, { id: "b", text: "played" }] })) },
+  { rule: "options.ids_unique", violation: check(listen({ options: [{ id: "a", text: "plays" }, { id: "a", text: "play" }, { id: "b", text: "played" }] })) },
+  // Pozostałe pola list sprawdza `pool-validation.issues.test.ts` (dokładne `field`).
+  { rule: "field.blank", violation: check(choice({ options: [{ id: "a", text: "plays" }, { id: "b", text: " " }] })) },
   { rule: "options.correct_unknown", violation: check(choice({ correctOption: "z" })) },
   { rule: "answer.correct_option_text", violation: check(choice({ answer: "play" })) },
   { rule: "answer.correct_option_text", violation: check(shortAnswer({ answer: "play" })) },
@@ -635,8 +644,44 @@ registerRuleCases([
     violation: () => calculationIssues({ ...scale, tolerance: null }),
     boundary: () => calculationIssues({ ...scale, tolerance: 0 }),
   },
-  { rule: "calculation.family_slug", violation: () => calculationIssues({ ...scale, templateFamilyId: "scale_distance-1" }) },
-  { rule: "calculation.params", violation: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: -1 } }) },
+  {
+    rule: "calculation.family_slug",
+    violation: () => calculationIssues({ ...scale, templateFamilyId: "scale_distance-1" }),
+    boundary: () => calculationIssues(scale),
+  },
+  {
+    rule: "calculation.family_slug",
+    violation: () => calculationIssues({ ...scale, templateFamilyId: "a".repeat(MAX_TEMPLATE_FAMILY_ID_LENGTH + 1) }),
+    boundary: () => calculationIssues({ ...scale, templateFamilyId: "a".repeat(MAX_TEMPLATE_FAMILY_ID_LENGTH) }),
+  },
+  {
+    rule: "calculation.params",
+    violation: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: -1 } }),
+    boundary: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: 0 } }),
+  },
+  {
+    rule: "calculation.params",
+    violation: () => calculationIssues({ ...scale, params: { scaleDenominator: 1, mapDistanceCm: MAX_CALCULATION_PARAMETER + 1 } }),
+    boundary: () => calculationIssues({ ...scale, params: { scaleDenominator: 1, mapDistanceCm: MAX_CALCULATION_PARAMETER } }),
+  },
+  {
+    rule: "calculation.params",
+    violation: () => calculationIssues({ ...scale, params: { scaleDenominator: MAX_SCALE_DENOMINATOR + 1, mapDistanceCm: 1 } }),
+    boundary: () => calculationIssues({ ...scale, params: { scaleDenominator: MAX_SCALE_DENOMINATOR, mapDistanceCm: 1 } }),
+  },
+  {
+    rule: "calculation.params",
+    violation: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: 1 / 10 ** (MAX_CALCULATION_DECIMALS + 1) } }),
+    boundary: () => calculationIssues({ ...scale, params: { scaleDenominator: 25000, mapDistanceCm: 1 / 10 ** MAX_CALCULATION_DECIMALS } }),
+  },
+  {
+    rule: "calculation.same_unit",
+    violation: check({
+      ...open(),
+      exerciseType: "lesson_calculation",
+      calculation: { kind: "unit_conversion", params: { value: 5, fromUnit: "m" }, unit: "m", templateFamilyId: "unit-m" },
+    }, richSubject),
+  },
   { rule: "calculation.unknown_key", violation: () => calculationIssues({ ...scale, params: { ...scale.params, zoom: 2 } }) },
 ]);
 
@@ -654,6 +699,11 @@ export const CORE_CASE_BASELINES: readonly { readonly name: string; readonly iss
   { name: "open (v3)", issues: check(open({ commonErrors: ["błąd"] }), richSubject) },
   { name: "gap z wyjaśnieniem", issues: check(gap({ explanationPl: "Przy she dodajemy -s." }), richSubject) },
   { name: "match", issues: check(match(RIVERS, ["jezioro"])) },
+  {
+    // Odpowiedź liczona z par jest dłuższa niż limit odpowiedzi przedmiotu bez v3 i mimo to przechodzi.
+    name: "match (długa odpowiedź liczona)",
+    issues: check(match(Array.from({ length: MAX_MATCH_PAIRS - 1 }, (_, i) => ({ left: `${i}`.repeat(MAX_MATCH_LEFT_LENGTH - 1), right: `prawy${i}` })))),
+  },
   { name: "group", issues: check(group(ANIMAL_GROUPS, ANIMALS)) },
   { name: "cloze", issues: check(cloze()) },
   { name: "keywords", issues: check(keywords(TERMS, ["k1", "k2"])) },

@@ -26,6 +26,13 @@ describe("exact calculation answers and prompts", () => {
     expect(renderCalculationPrompt(spec)).toBe(prompt);
   });
 
+  it("still renders and grades a published same-unit conversion (rejected only when a draft is saved: calculation.same_unit)", () => {
+    const sameUnit: CalculationSpec = { ...conversion, params: { value: 5, fromUnit: "m" } };
+    expect(renderCalculationPrompt(sameUnit)).toBe("Przelicz 5 m na m.");
+    expect(computeCalculationAnswer(sameUnit).answer).toBe("5 m");
+    expect(evaluateCalculationAnswer("5 m", sameUnit)).toBe("correct");
+  });
+
   it.each([[1, "1:1 "], [500, "1:500 "], [1000, "1:1 000 "], [25000, "1:25 000 "], [1000000000, "1:1 000 000 000 "]])(
     "groups the scale denominator %i into thousands", (scaleDenominator, expected) => {
       expect(renderCalculationPrompt({ ...scale, params: { ...scale.params, scaleDenominator } })).toContain(`w skali ${expected}odcinek`);

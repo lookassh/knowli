@@ -198,7 +198,12 @@ describe("księga reguł — przykłady kolejności", () => {
       "school.quote_required",
       "school.quote_too_short",
     ]);
-    expect(block("lesson_calculation").slice(0, 3)).toEqual(["calculation.family_slug", "calculation.params", "calculation.tolerance"]);
+    expect(block("lesson_calculation").slice(0, 4)).toEqual([
+      "calculation.family_slug",
+      "calculation.params",
+      "calculation.same_unit",
+      "calculation.tolerance",
+    ]);
   });
 });
 

@@ -101,6 +101,13 @@ export const CORE_RULES = {
       "Never send an empty string: a text field that does not apply is null (or left out), and required text fields and " +
       "list entries are never empty.",
   },
+  // Tylko białe znaki (`trim`): symbol albo sama interpunkcja to legalny element (np. „>” w matematyce).
+  "field.blank": {
+    field: "exercise",
+    kind: "reject",
+    promptBrief: true,
+    description: "No option text, order item, pair side, extraRight entry, group label, group item or keyword term is only whitespace.",
+  },
   "field.max_length": {
     field: "exercise",
     kind: "reject",
@@ -369,6 +376,13 @@ export const CORE_RULES = {
     kind: "reject",
     types: CHOICE_TYPES,
     description: "Option texts are distinct after normalization.",
+  },
+  "options.ids_unique": {
+    field: "options",
+    kind: "reject",
+    promptBrief: true,
+    types: CHOICE_TYPES,
+    description: "The ids of options are unique.",
   },
   "options.correct_unknown": {
     field: "correctOption",
@@ -796,6 +810,7 @@ export const CORE_RULES = {
     description:
       `calculation.templateFamilyId is lowercase letters and digits joined by single hyphens, at most ${MAX_TEMPLATE_FAMILY_ID_LENGTH} ` +
       "characters (e.g. scale-distance-km), even though calculation kinds use underscores.",
+    limit: "MAX_TEMPLATE_FAMILY_ID_LENGTH",
   },
   "calculation.params": {
     field: "calculation.params",
@@ -807,6 +822,16 @@ export const CORE_RULES = {
       `numbers of the kind: scaleDenominator (a positive whole number up to ${MAX_SCALE_DENOMINATOR}) and mapDistanceCm, ` +
       "upperHeightM not below lowerHeightM, or value and fromUnit. Numbers have at most " +
       `${MAX_CALCULATION_DECIMALS} decimal places and lie within ±${MAX_CALCULATION_PARAMETER}; distances and values are not negative.`,
+    // Pole przyjmuje jedną nazwę; przypadki graniczne pokrywają też MAX_SCALE_DENOMINATOR i MAX_CALCULATION_DECIMALS.
+    limit: "MAX_CALCULATION_PARAMETER",
+  },
+  // Poza kontraktem: kalkulator dalej renderuje i ocenia już opublikowane ćwiczenie tego kształtu.
+  "calculation.same_unit": {
+    field: "calculation.params.fromUnit",
+    kind: "reject",
+    types: ["lesson_calculation"],
+    priority: "calculation_shape",
+    description: "In unit_conversion, params.fromUnit differs from unit.",
   },
   "calculation.unknown_key": {
     field: "calculation",

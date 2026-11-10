@@ -97,7 +97,9 @@ function baseStimulus(exercise: LessonExerciseDraft, normalizeStimulus: Normaliz
       return JSON.stringify((exercise.noticeSegments ?? []).map((sentence) => sentence.map(normalizeStimulus)));
     case "lesson_match":
       // Bodźcem jest zbiór par (kolejność bez znaczenia); dystraktory nie zmieniają ćwiczenia.
-      return JSON.stringify((exercise.pairs ?? []).map((pair) => `${normalizeStimulus(pair.left)}=${normalizeStimulus(pair.right)}`).sort((a, b) => a.localeCompare(b)));
+      return JSON.stringify((exercise.pairs ?? [])
+        .map((pair) => [normalizeStimulus(pair.left), normalizeStimulus(pair.right)] as const)
+        .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])));
     case "lesson_group": {
       // Bodźcem są grupy z elementami (kolejność bez znaczenia).
       const items = exercise.groupItems ?? [];
