@@ -15,6 +15,7 @@ import {
   graderFromEnv,
   imageProviderFromEnv,
   lessonAgentPublicFromEnv,
+  lessonExecutionFromEnv,
   lessonSpeechFromEnv,
   mediaSettingsFromEnv,
   pricesFromEnv,
@@ -80,6 +81,8 @@ function initialize(): ServerServices {
   // adaptera agenta, a zły klucz agenta albo błędne limity zatrzymują worker, nie web
   const subjects = createProductionSubjectRegistry();
   const lessonAgentPublic = lessonAgentPublicFromEnv(env);
+  // termin runu lekcji wspólny z workerem: z niego web liczy, czy run puli utknął
+  const lessonExecution = lessonExecutionFromEnv(env);
   // kod pierwszej konfiguracji PIN-u (#307); celowo bez wartości domyślnej
   const parentSetupToken = env.UMIEM_SETUP_TOKEN?.trim() || undefined;
   return {
@@ -99,6 +102,7 @@ function initialize(): ServerServices {
       // web nie ma LLM (generuje worker): opisuje konfigurację wspólną z workerem
       ...(generationService ? { generationService } : {}),
       ...(lessonAgentPublic ? { lessonAgentPublic } : {}),
+      ...(lessonExecution ? { lessonExecution } : {}),
       ...(usage ? { usage } : {}),
       ...(parentSetupToken ? { parentSetupToken } : {}),
     }),

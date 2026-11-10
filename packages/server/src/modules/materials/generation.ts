@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
   GenerationCommandSchema,
@@ -18,6 +18,8 @@ import {
   deckRunStalled,
   enqueueGenerationRun,
   isStoryRunInput,
+  lessonPoolRunFilter,
+  lessonPoolRunStalled,
   lessonStoryRunFilter,
   markRun,
   markRunSucceeded,
@@ -41,6 +43,7 @@ import { normalizeTargetText } from "../../domain/target-key";
 import { reconcileDraftAssetsTx } from "./media-reconciliation";
 import { executeMediaAsset } from "./media-generation";
 import { errorCodeOf, MAX_AUTOMATIC_ATTEMPTS, requireGeneration, retryAt } from "./generation-runtime";
+import { lessonRunStallAfterMs } from "./lessons/lesson-generation-policy";
 
 const GeneratedItemSchema = z.object({
   source: z.string().min(1).max(120),
@@ -281,7 +284,8 @@ export async function readGeneration(services: Services, runId: string): Promise
 
 /**
  * Ręczne ponowienie po porażce (lub odblokowanie runu utkwionego w running
- * po awarii workera). Resetuje budżet prób; nie rusza runów zakończonych.
+ * po awarii workera). Resetuje budżet prób; nie rusza runów zakończonych ani
+ * zdrowej próby w toku (`conflict` — ponowienie wyrzuciłoby opłaconą pracę).
  * Zwraca id runu do śledzenia: zwykle ten sam, a dla runu historyjki
  * albo utkniętego runu zestawu w `running` — id nowego runu, który go zastępuje.
  */
@@ -297,7 +301,9 @@ export async function retryGeneration(services: Services, runId: string): Promis
     if (run.kind === "lesson") {
       // Taka sama kolejność blokad jak finalizacja lekcji: wersja, potem run.
       const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, run.deckVersionId!)).for("update"))[0];
-      const current = (await tx.select().from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      const locked = (await tx.select({ run: generationRuns, stalled: lessonPoolRunStalled(lessonRunStallAfterMs(services)) })
+        .from(generationRuns).where(eq(generationRuns.id, runId)).for("update"))[0];
+      const current = locked?.run;
       if (!version || !current || version.state === "published" || current.state === "succeeded" || current.state === "superseded") throw new AppError("conflict");
       if (isStoryRunInput(current.input)) {
         // Run historyjki nie zależy od numeru edycji (spec §6.2): ponawiamy go
@@ -336,23 +342,36 @@ export async function retryGeneration(services: Services, runId: string): Promis
       // Run puli: „Ponów” to świadoma decyzja rodzica — punkt kontrolny agenta
       // zachowuje postęp, ale dostaje świeży budżet (spec etapu 2a §8.4), w każdej
       // gałęzi wstawiającej run do kolejki, pod blokadą runu powyżej.
-      if (current.state === "queued") {
-        if (current.nextAttemptAt && current.nextAttemptAt > services.clock.now()) {
-          await tx.update(generationRuns).set({ attempts: 0, errorCode: null, nextAttemptAt: null })
-            .where(eq(generationRuns.id, runId));
-          await resetLessonAgentBudget(tx, runId);
-        }
-        return { runId };
-      }
-      if (version.editNumber !== current.expectedEditNumber) throw new AppError("conflict");
+      // Run czekający w kolejce bez odroczenia nie wymaga niczego.
+      if (current.state === "queued" && !(current.nextAttemptAt && current.nextAttemptAt > services.clock.now())) return { runId };
+      // Zdrowa próba w toku: ponowienie wyrzuciłoby opłacone paczki. Utkniętą (np. po padzie workera) wolno ponowić.
+      if (current.state === "running" && !locked!.stalled) throw new AppError("conflict");
+      // Tylko najnowszy run puli wersji (ten, który pokazuje panel): starszy nieudany run ze starej karty
+      // nie zamknie nowszego ani nie dopisze drugiej puli.
+      const latest = (await tx.select({ id: generationRuns.id }).from(generationRuns)
+        .where(and(eq(generationRuns.kind, "lesson"), eq(generationRuns.deckVersionId, version.id), lessonPoolRunFilter()))
+        .orderBy(desc(generationRuns.createdAt)).limit(1))[0];
+      if (latest?.id !== runId) throw new AppError("conflict");
+      const context = (version.lessonContext ?? {}) as { objectiveIds?: string[]; dynamicTopic?: unknown };
+      const regenerate = (current.input as { regenerate?: { objectiveId: string } } | null)?.regenerate;
+      const isTopUp = regenerate !== undefined;
+      // Dogenerowanie niesie migawkę zagadnień z chwili zlecenia: po edycji rodzica bierzemy bieżące,
+      // a zagadnienia usuniętego ze szkicu nie dogenerowujemy.
+      if (isTopUp && !context.objectiveIds?.includes(regenerate.objectiveId)) throw new AppError("conflict");
+      const input = isTopUp && context.dynamicTopic !== undefined
+        ? { ...(current.input as Record<string, unknown>), dynamicTopic: context.dynamicTopic }
+        : current.input;
+      // „Ponów” to świadoma decyzja rodzica: run przyjmuje bieżący numer edycji szkicu (jak zestawy, #302) —
+      // zapis rodzica po porażce nie zamyka runu `failed`, więc porównanie numerów zawsze dawałoby konflikt.
+      // Numer jest podbijany w każdej gałęzi (także dla odroczonego `queued`): próba po ponowieniu zaczyna
+      // liczyć od 1, a od spóźnionego workera starej próby odróżnia ją właśnie nowy numer edycji.
       const editNumber = version.editNumber + 1;
       await tx.update(deckVersions).set({ editNumber }).where(eq(deckVersions.id, version.id));
       // Ponowiony pełny run lekcji to nowa pula (spec §6.2): run historyjki
       // w toku byłby walidowany wobec starej puli, więc też go anulujemy.
       // Ponowione dogenerowanie celu historyjki nie anuluje.
-      const isTopUp = (current.input as { regenerate?: unknown } | null)?.regenerate !== undefined;
       await supersedeLessonRuns(tx, version.id, services.clock.now(), runId, { includeStoryRuns: !isTopUp });
-      await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: editNumber }).where(eq(generationRuns.id, runId));
+      await tx.update(generationRuns).set({ state: "queued", attempts: 0, errorCode: null, finishedAt: null, nextAttemptAt: null, expectedEditNumber: editNumber, input }).where(eq(generationRuns.id, runId));
       await resetLessonAgentBudget(tx, runId);
       return { runId };
     }

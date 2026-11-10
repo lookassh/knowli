@@ -5,7 +5,9 @@ import { withUsageScope } from "../../ports/usage";
 import { executeGeneration } from "./generation";
 import { executeMediaAsset } from "./media-generation";
 import { errorCodeOf, requireGeneration } from "./generation-runtime";
+import { requeueStalledLessonRuns } from "./generation-runs";
 import { executeLessonGeneration } from "./lessons/lesson-drafts";
+import { lessonRunStallAfterMs } from "./lessons/lesson-generation-policy";
 import { mediaRunUsageScope, runUsageScope } from "./usage-scope";
 import { runWorkerSlots, selectFairWorkerWork, workerAttemptFromKey, workerAttemptKey, workerIdFromAttemptKey, type WorkKind } from "./worker-schedule";
 
@@ -34,6 +36,8 @@ export async function runDueGenerationWork(
   const maxImages = limits.images ?? 1;
   const maxTotal = limits.total ?? 2;
   if (options.signal?.aborted) return { processed: 0 };
+  // Próby, których worker padł albo nie zapisał stanu (awaria bazy), wracają do kolejki tego samego przelotu.
+  await requeueStalledLessonRuns(services.db, lessonRunStallAfterMs(services));
   const concurrencyLimits: Record<WorkKind, number> = { deck: maxDeck, lesson: maxLesson, tts: maxTts, illustration: maxImages };
   const processed = await runWorkerSlots<{ id: string; assetId?: string; attempts: number }>({
     concurrency: maxTotal,

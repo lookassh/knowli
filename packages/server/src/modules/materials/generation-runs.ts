@@ -81,6 +81,31 @@ export async function findEnqueuedRun(
  */
 export const deckRunStalled = sql<boolean>`(${generationRuns.kind} = 'deck' and ${generationRuns.state} = 'running' and (${generationRuns.claimedAt} is null or ${generationRuns.claimedAt} <= now() - interval '10 minutes'))`;
 
+/**
+ * Run puli lekcji w `running` dłużej niż `stallAfterMs` od przejęcia (`claimed_at`, czas bazy) — próba,
+ * której worker padł albo nie zdołał zapisać stanu. `stallAfterMs` to termin runu z polityki plus margines
+ * (`lessonRunStallAfterMs`): żywa próba kończy się przed terminem, więc predykat jej nie trafia. Wspólny dla
+ * bramki „Ponów”, pola `stalled` w DTO lekcji i przywracania przez worker. Runy historyjki mają własną ścieżkę.
+ */
+export function lessonPoolRunStalled(stallAfterMs: number): SQL<boolean> {
+  return sql<boolean>`(${generationRuns.kind} = 'lesson' and ${lessonPoolRunFilter()} and ${generationRuns.state} = 'running' and (${generationRuns.claimedAt} is null or ${generationRuns.claimedAt} <= now() - make_interval(secs => ${stallAfterMs / 1000})))`;
+}
+
+/**
+ * Worker przywraca utknięte runy puli do kolejki: jeden `UPDATE` z CAS w `WHERE` (stan i wiek próby),
+ * bez blokady wersji. Liczba prób zostaje — kolejne przejęcie ją podbija, więc spóźniony worker starej
+ * próby nie przejdzie straży tożsamości, a run, który wciąż wywraca worker, kończy ścieżką wyczerpanych
+ * prób zamiast krążyć. Punkt kontrolny zostaje: nowa próba wznawia opłacony postęp.
+ */
+export async function requeueStalledLessonRuns(db: Executor, stallAfterMs: number): Promise<number> {
+  const requeued = await db.update(generationRuns)
+    .set({ state: "queued", nextAttemptAt: null })
+    .where(lessonPoolRunStalled(stallAfterMs))
+    .returning({ id: generationRuns.id, attempts: generationRuns.attempts });
+  for (const run of requeued) console.log(`[lesson] run=${run.id} przywrócony po zatrzymaniu: próba=${run.attempts}`);
+  return requeued.length;
+}
+
 export async function markRun(
   db: Executor,
   clock: Clock,
