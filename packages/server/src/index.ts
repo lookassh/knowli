@@ -28,7 +28,6 @@ export {
   INTEGRATION_SCOPES,
   isIntegrationScope,
   issueIntegrationToken,
-  LESSONS_WRITE_SCOPE,
   listIntegrationTokens,
   revokeIntegrationToken,
 } from "./modules/family";

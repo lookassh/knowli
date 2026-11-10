@@ -174,8 +174,8 @@ export async function editVocabularyDeck(services: Services, rawToken: string, i
     }
     const added = changed.filter((item) => item.id === undefined);
     const merged = [...stored.filter((item) => !removed.has(item.id!)).map((item) => replacements.get(item.id!) ?? item), ...added];
-    if (merged.length === 0) throw invalid("a deck keeps at least one item");
     const itemsChanged = changed.length > 0 || removed.size > 0;
+    if (itemsChanged && merged.length === 0) throw invalid("a deck keeps at least one item");
     const dto = await editDraftTx(tx, services, versionId, DraftPatchSchema.parse({
       expectedEditNumber,
       ...(valid.title === undefined ? {} : { title: valid.title }),
@@ -223,7 +223,11 @@ async function draftRevisionId(db: Executor, draftId: string, itemId: string): P
 export async function regenerateRecording(services: Services, rawToken: string, input: unknown): Promise<{ assetId: string }> {
   const { deckId, target } = RecordingRegenerateInputSchema.parse(input);
   await requireIntegrationScope(services.db, rawToken, MATERIALS_WRITE_SCOPE);
-  const draft = await requireDraft(services.db, (await activeDeck(services.db, deckId)).id);
+  const deck = await activeDeck(services.db, deckId);
+  const draft = await requireDraft(services.db, deck.id);
+  const lessonTarget = target.kind !== "item" || target.role === "prompt_audio" || target.role === "explanation_audio";
+  // Role słówek liczą nagranie z pól pozycji słówek (`requiredAssetsFor`), a nagrania lekcji mają własne ścieżki.
+  if (lessonTarget !== (deck.kind === "lesson")) throw invalid(`this recording target does not exist in a ${deck.kind} deck`);
   if (target.kind === "card") return regenerateLessonCardAudio(services, { lessonDraftId: draft.id, objectiveId: target.objectiveId, cardIndex: target.cardIndex });
   if (target.kind === "story") return regenerateLessonStoryAudio(services, { lessonDraftId: draft.id });
   const itemRevisionId = await draftRevisionId(services.db, draft.id, target.itemId);
@@ -247,10 +251,17 @@ export async function publishMaterial(services: Services, rawToken: string, inpu
   await requireIntegrationScope(services.db, rawToken, MATERIALS_PUBLISH_SCOPE);
   const deck = await activeDeck(services.db, deckId);
   const draft = await requireDraft(services.db, deck.id);
-  const { deckVersionId } = deck.kind === "lesson"
-    ? await publishLessonDraft(services, draft.id, expectedEditNumber)
-    : await publishDraft(services, draft.id, expectedEditNumber);
-  return { deckId, deckVersionId };
+  try {
+    const { deckVersionId } = deck.kind === "lesson"
+      ? await publishLessonDraft(services, draft.id, expectedEditNumber)
+      : await publishDraft(services, draft.id, expectedEditNumber);
+    return { deckId, deckVersionId };
+  } catch (error) {
+    // Token publikacji nie czyta treści: z błędów zadań zostają same indeksy, bez komunikatów cytujących zadania.
+    const exercises = error instanceof AppError && error.code === "validation" ? (error.details as { exercises?: { index: number }[] } | undefined)?.exercises : undefined;
+    if (exercises === undefined) throw error;
+    throw new AppError("validation", { details: { exercises: exercises.map(({ index }) => ({ index })) } });
+  }
 }
 
 /** Wycofanie materiału z nowych sesji; historia zostaje. Panel nie ma operacji odwrotnej. */

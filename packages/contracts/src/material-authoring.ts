@@ -2,7 +2,8 @@ import { z } from "zod";
 import { UuidSchema, VocabularyFormatSchema } from "./common";
 import { DeckStateSchema, VocabularyItemInputSchema } from "./decks";
 import { MAX_DECK_ITEMS } from "./limits";
-import { SourceMaterialInputSchema, SourceMaterialSummaryDtoSchema } from "./source-materials";
+import { MAX_SCHOOL_MATERIAL_LENGTH } from "./lessons";
+import { MAX_SOURCE_TITLE_LENGTH, SourceMaterialInputSchema, SourceMaterialSummaryDtoSchema } from "./source-materials";
 
 /**
  * Materiały edukacyjne redagowane przez agenta (narzędzia MCP, `docs/integrations/lesson-authoring.md`):
@@ -95,8 +96,8 @@ export const SourceCreateResultSchema = z.object({ sourceId: UuidSchema, created
 export const SourceUpdateInputSchema = z.object({
   sourceId: UuidSchema,
   expectedRevision: z.number().int().min(1),
-  title: z.string().trim().min(1).optional(),
-  body: z.string().trim().min(1).optional(),
+  title: z.string().trim().min(1).max(MAX_SOURCE_TITLE_LENGTH).optional(),
+  body: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH).optional(),
 }).strict();
 
 /** Ponowne nagranie (albo ilustracja) w szkicu: pozycja zestawu lub zadanie lekcji, karta zagadnienia, historyjka. */

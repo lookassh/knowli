@@ -133,7 +133,7 @@ const DEFINITIONS: Record<ToolKey, ToolDefinition> = {
   },
   deckEdit: {
     scopes: WRITE, write: true, destructive: true,
-    description: "Edit a vocabulary deck without sending all of it: an item with id replaces the stored item (send every field from deck_get, changed as needed), an item without id is a new word added at the end, remove deletes items, the rest stays. For a published deck a new draft is copied in the same transaction. The child's history stays with the item id; changing the translation or accepted answers starts new criteria for the affected skills only. Fails with conflict on a stale expectedEditNumber; nothing is saved on any error. Orders the missing paid recordings and illustrations.",
+    description: "Edit a vocabulary deck without sending all of it: an item with id replaces the stored item (send every field from deck_get, changed as needed), an item without id is a new word added at the end, remove deletes items, the rest stays. visualData must fit visualType (color: {color: \"#rrggbb\"}, number: {count}, sequence: {position, total, sequenceStart}; none and image take none); a picture deck (vocabularyFormat) needs visualType image. For a published deck a new draft is copied in the same transaction. The child's history stays with the item id; changing the translation or accepted answers starts new criteria for the affected skills only. Fails with conflict on a stale expectedEditNumber; nothing is saved on any error. Orders the missing paid recordings and illustrations.",
     inputSchema: DeckDraftEditInputSchema, outputSchema: DeckDraftWriteResultSchema, readOnly: false, idempotent: false,
   },
   sourceList: {
@@ -158,7 +158,7 @@ const DEFINITIONS: Record<ToolKey, ToolDefinition> = {
   },
   recordingRegenerate: {
     scopes: WRITE, write: true,
-    description: "Order a new take of a recording or illustration in a draft: a vocabulary item (target_audio, example_audio, illustration), a lesson exercise (target_audio, prompt_audio, explanation_audio), an objective card or the lesson story. Works only on a draft (conflict when the deck has none). Paid.",
+    description: "Order a new take of a recording or illustration in a draft: a vocabulary item (target_audio, example_audio, illustration), a lesson exercise (prompt_audio, explanation_audio), an objective card or the lesson story. Works only on a draft (conflict when the deck has none). Paid.",
     inputSchema: RecordingRegenerateInputSchema, outputSchema: RecordingRegenerateResultSchema, readOnly: false, idempotent: false,
   },
   illustrationOmit: {
