@@ -3,12 +3,16 @@
  * Fast setup script for git worktrees in Knowli / Umiem!
  *
  * Responsibilities:
- * 1. Ensure .env exists (copies from main repo root if missing).
+ * 1. Ensure .env exists: from ~/.config/umiem/.env (shared by all clones), else the main
+ *    repo's .env, else .env.example. Symlink when the OS allows it, otherwise a copy;
+ *    --refresh-env replaces an existing .env (e.g. after rotating keys).
  * 2. Ensure node_modules exists (runs fast corepack pnpm install --prefer-offline if missing).
  * 3. Safe to call multiple times (idempotent).
+ * Runs automatically for every new worktree via scripts/hooks/post-checkout (`pnpm hooks:install`).
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -60,23 +64,31 @@ function setupWorktree(options = {}) {
 
   console.log(`[setup-worktree] Initializing workspace in: ${rootDir}`);
 
-  // 1. Copy .env if missing
+  // 1. .env: wzorzec poza repo (wspólny dla wszystkich klonów), inaczej z głównego repo, inaczej przykład.
   const localEnvPath = path.join(rootDir, '.env');
-  if (!fs.existsSync(localEnvPath)) {
-    const mainEnvPath = path.join(gitPaths.mainRepoRoot, '.env');
-    const exampleEnvPath = path.join(rootDir, '.env.example');
-
-    if (fs.existsSync(mainEnvPath)) {
-      fs.copyFileSync(mainEnvPath, localEnvPath);
-      console.log(`[setup-worktree] ✓ Copied .env from main repo (${mainEnvPath})`);
-    } else if (fs.existsSync(exampleEnvPath)) {
-      fs.copyFileSync(exampleEnvPath, localEnvPath);
-      console.log(`[setup-worktree] ! Main .env not found. Created .env from .env.example`);
-    } else {
-      console.log('[setup-worktree] ! No .env found in main repo or .env.example.');
-    }
+  const refreshEnv = process.argv.includes('--refresh-env');
+  if (fs.existsSync(localEnvPath) && !refreshEnv) {
+    console.log('[setup-worktree] ✓ Local .env already exists (use --refresh-env to replace it from the source).');
   } else {
-    console.log('[setup-worktree] ✓ Local .env already exists.');
+    const candidates = [
+      path.join(os.homedir(), '.config', 'umiem', '.env'),
+      path.join(gitPaths.mainRepoRoot, '.env'),
+      path.join(rootDir, '.env.example'),
+    ];
+    const source = candidates.find((candidate) => fs.existsSync(candidate) && path.resolve(candidate) !== path.resolve(localEnvPath));
+    if (!source) {
+      console.log(`[setup-worktree] ! No .env source found (${candidates.join(', ')}).`);
+    } else {
+      fs.rmSync(localEnvPath, { force: true });
+      try {
+        // Dowiązanie trzyma jeden plik; Windows pozwala na nie tylko w trybie dewelopera.
+        fs.symlinkSync(source, localEnvPath, 'file');
+        console.log(`[setup-worktree] ✓ Linked .env -> ${source}`);
+      } catch {
+        fs.copyFileSync(source, localEnvPath);
+        console.log(`[setup-worktree] ✓ Copied .env from ${source}`);
+      }
+    }
   }
 
   // 2. Check node_modules

@@ -9,3 +9,6 @@ docs/integrations/learning-overview.schema.json text eol=lf
 # Materiały i wyniki benchmarka (`tests/probes/bench`): sha256 materiału i tabela wyników niezależne od `core.autocrlf`.
 tests/probes/fixtures/** text eol=lf
 tests/probes/results/** text eol=lf
+
+# Hooki gita wykonuje `sh`, który nie znosi CRLF.
+scripts/hooks/** text eol=lf

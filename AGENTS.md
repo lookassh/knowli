@@ -34,7 +34,7 @@ Prywatna, self-hostowana aplikacja rodzinna: rodzic określa materiał, AI przyg
 
 ## Running and verifying
 
-- Nowy worktree: brakujący `.env` skopiuj przez `node scripts/setup-worktree.cjs --skip-install` (bez opcji instaluje zależności, gdy brak `node_modules`).
+- Worktree: raz na klon `pnpm hooks:install` — potem każdy `git worktree add` (Claude, Codex, Muse) sam dostaje `.env` (wzorzec `~/.config/umiem/.env`, inaczej z głównego repo) i zależności; bez hooka albo po zmianie kluczy `pnpm wt:setup` (`--refresh-env`). Sprzątanie: `pnpm wt:clean` (raport), `pnpm wt:clean --remove` (tylko czyste i scalone). Dokumenty powstałe w worktree commituj na jego gałąź.
 - Gdy `node_modules` istnieje, a zadanie nie zmienia `package.json` ani `pnpm-lock.yaml`, pomiń instalację. Instaluj wyłącznie `corepack pnpm install --prefer-offline --frozen-lockfile`; nigdy `npm install` (niszczy dowiązania pnpm i tworzy `package-lock.json`).
 - Baseline na starcie: tylko szybki test zmienianego modułu (`corepack pnpm vitest run <ścieżka>`), bez pełnego monorepo i bez E2E.
 - Lokalny odpowiednik joba CI `check` to `pnpm check` (typecheck, unit, build równolegle). `pnpm typecheck` używa TS 7 z aliasu `typescript-native`; pakiet `typescript` zostaje na 5.x, bo `next build` i testy `*.architecture.test.ts` potrzebują API kompilatora. Skrypty wołają `tsc` po ścieżce — gołe `tsc` w root może wskazać TS 7. TS 7 nie obsługuje `baseUrl`: `paths` w `tsconfig*.json` pisz względnie (`./…`).
