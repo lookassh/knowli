@@ -20,8 +20,8 @@ Przypadki do wykonania podczas implementacji na fikcyjnych danych, nie wyniki te
 | AC-34 | CAP-2 | Zestaw po zamrożeniu nowego promptu | Dodane co najmniej 4 nowe przypadki mówione, nieużywane przy strojeniu; raportowane osobno |
 | AC-11 | CAP-3 | Werdykt `correct` z jednym fragmentem zbędnym, którego nie ma dosłownie w odpowiedzi | Ocena `correct`; fragment pominięty; brak „Nie udało się ocenić” |
 | AC-12 | CAP-3 | Pięć fragmentów zbędnych albo fragment zbędny nachodzący na fragment nie na temat | Ocena wiedzy zachowana; zostają najwyżej cztery pierwsze poprawne fragmenty listy, nachodzące pominięte |
-| AC-13 | CAP-3 | Werdykt łamiący reguły wiedzy (identyfikator spoza listy, `correct` z brakami, niepełna partycja elementów) albo `partial`/`incorrect`, którego jedyną luką jest niedosłowne błędne stwierdzenie | Reguły wiedzy jak dotąd; błędne stwierdzenie liczy się jako luka mimo pominięcia jego tekstu |
-| AC-14 | CAP-3/5 | Poprawna rozwlekła odpowiedź, wszystkie fragmenty pominięte jako wadliwe | „Świetnie!” bez kroku skracania |
+| AC-13 | CAP-3 | Werdykt łamiący reguły wiedzy (identyfikator spoza listy, `correct` z brakami, niepełna partycja elementów) albo `partial`/`incorrect`, którego jedyną luką jest niedosłowne błędne stwierdzenie | Reguły wiedzy jak dotąd; błędne stwierdzenie liczy się jako luka mimo pominięcia jego tekstu; wyjątek: `incorrect`, któremu po pominięciu nie zostaje żadna widoczna luka, pozostaje nieoceniony |
+| AC-14 | CAP-3/5 | Poprawna rozwlekła odpowiedź, wszystkie fragmenty pominięte jako wadliwe | „Świetnie!” bez kroku skracania (przy naruszonej formie jednego zdania dopiero po story 4) |
 | AC-33 | CAP-3 | Ta sama odpowiedź wysłana drugi raz po werdykcie z pominiętym fragmentem | Trafienie w cache, bez drugiego wywołania modelu |
 | AC-15 | CAP-4 | „Nie udało się ocenić”, dziecko wybiera ponowienie | Pole zawiera poprzedni tekst; sposób wprowadzenia (mowa/klawiatura) zachowany; kolejne dyktowanie zastępuje tekst |
 | AC-16 | CAP-4 | Zwykła błędna odpowiedź z prawem do ponowienia w innych ćwiczeniach | Pole czyści się jak dotąd |

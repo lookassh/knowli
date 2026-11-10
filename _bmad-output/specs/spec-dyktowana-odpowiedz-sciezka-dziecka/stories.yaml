@@ -32,6 +32,9 @@
 - id: "3"
   title: Ocena wiedzy mimo wadliwych fragmentów i zachowany tekst po nieudanej ocenie
   description: >-
+    Stan 2026-11-10: zrealizowane. Werdykt `incorrect` bez żadnej widocznej
+    luki po pominięciu fragmentów zostaje nieoceniony; zachowany tekst
+    obejmuje też krok skracania; utrata sieci przy wysyłce nadal gubi szkic.
     Zrealizuj CAP-3 i CAP-4: wadliwy fragment zbędny lub nie na temat jest
     pomijany zamiast unieważniać ocenę, a po „Nie udało się ocenić” tekst
     zostaje w polu. Sprawdź AC-11–16 i AC-33.

@@ -13,16 +13,22 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
  * odmontowania widoku (offline/błąd odmontowują całe zadanie) — gdyby
  * doszła taka tranzycja, ten hook wyczyściłby też szkic, więc trzeba
  * by wtedy przekazać mu jawny sygnał retry.
+ *
+ * `keep` (feedback techniczny „Nie udało się ocenić”) zostawia szkic: dziecko
+ * nie traci odpowiedzi, której nie udało się ocenić. Dok i feedback znikają
+ * w tym samym renderze, więc wartość zatrzaskujemy, póki dok jest widoczny.
  */
-export function useRetryReset(dock: ReactNode, reset: () => void, afterReset?: () => void): void {
+export function useRetryReset(dock: ReactNode, reset: () => void, afterReset?: () => void, keep?: boolean): void {
   const [wasDocked, setWasDocked] = useState(false);
   const [resetCount, setResetCount] = useState(0);
+  const keepRef = useRef(false);
+  if (dock !== undefined) keepRef.current = keep === true;
   if (dock !== undefined && !wasDocked) {
     setWasDocked(true);
   }
   if (dock === undefined && wasDocked) {
     setWasDocked(false);
-    reset();
+    if (!keepRef.current) reset();
     setResetCount((count) => count + 1);
   }
   const afterResetRef = useRef(afterReset);

@@ -432,14 +432,45 @@ describe("werdykt szkolny dwuwymiarowy (Etap 2)", () => {
     expect(v?.precision).toBe("verbose");
   });
 
-  it("odrzuca correct z brakami, nieznanym elementem i fragmentem spoza odpowiedzi", () => {
+  it("odrzuca correct z brakami i nieznany element; fragment spoza odpowiedzi tylko pomija", () => {
     const base = {
       precision: "concise", matchedElementIds: ["e1"], missingElementIds: ["e2"],
       incorrectStatements: [], redundantFragments: [], note: "",
     };
     expect(validateSchoolVerdict({ ...base, knowledge: "correct" }, CTX)).toBeNull();
     expect(validateSchoolVerdict({ ...base, knowledge: "partial", matchedElementIds: ["e9"] }, CTX)).toBeNull();
-    expect(validateSchoolVerdict({ ...base, knowledge: "partial", redundantFragments: ["nie ma tego w odpowiedzi"] }, CTX)).toBeNull();
+    const kept = validateSchoolVerdict({ ...base, knowledge: "partial", redundantFragments: ["nie ma tego w odpowiedzi"] }, CTX);
+    expect(kept?.knowledge).toBe("partial");
+    expect(kept?.redundantFragments).toEqual([]);
+  });
+
+  it("pomija wadliwy fragment zamiast unieważniać ocenę wiedzy (AC-11, AC-12, AC-14)", () => {
+    const ok = { knowledge: "correct", precision: "verbose", matchedElementIds: ["e1", "e2"], missingElementIds: [], incorrectStatements: [], note: "" };
+    const v = validateSchoolVerdict({ ...ok, redundantFragments: ["nie ma tego w odpowiedzi", "opowiada o pogodzie"] }, CTX);
+    expect(v?.knowledge).toBe("correct");
+    expect(v?.redundantFragments).toEqual(["opowiada o pogodzie"]);
+    // siedem fragmentów: zostają cztery pierwsze poprawne, powtórzenie i pusty odpadają
+    const many = validateSchoolVerdict({ ...ok, redundantFragments: ["Roślina", "Roślina", "", "wytwarza", "cukry", "uparcie", "opowiada"] }, CTX);
+    expect(many?.redundantFragments).toEqual(["Roślina", "wytwarza", "cukry", "uparcie"]);
+    // zbędny nachodzący na nie na temat: zostaje wcześniejsza kategoria
+    const overlap = validateSchoolVerdict({ ...ok, redundantFragments: ["uparcie opowiada"], offTopicFragments: ["opowiada o pogodzie"] }, CTX);
+    expect(overlap?.redundantFragments).toEqual(["uparcie opowiada"]);
+    expect(overlap?.offTopicFragments).toEqual([]);
+    // wszystkie fragmenty wadliwe: ocena zostaje, listy puste (nie ma czego skracać)
+    const none = validateSchoolVerdict({ ...ok, redundantFragments: ["zmyślony fragment"], offTopicFragments: ["inny zmyślony"] }, CTX);
+    expect(none).toMatchObject({ knowledge: "correct", precision: "verbose", redundantFragments: [], offTopicFragments: [] });
+  });
+
+  it("reguły wiedzy zostają odrzucające, a niedosłowne błędne stwierdzenie nadal jest luką (AC-13)", () => {
+    const full = { precision: "concise", matchedElementIds: ["e1", "e2"], missingElementIds: [], redundantFragments: [], note: "" };
+    expect(validateSchoolVerdict({ ...full, knowledge: "correct", incorrectStatements: ["tego nie ma"] }, CTX)).toBeNull();
+    const partial = validateSchoolVerdict({ ...full, knowledge: "partial", incorrectStatements: ["tego nie ma"] }, CTX);
+    expect(partial?.incorrectStatements).toEqual([]);
+    expect(gradeFromSchoolVerdict(partial!)).toMatchObject({ verdict: "model_almost", errorCategory: "wrong_fact" });
+    // `incorrect` bez żadnej widocznej luki po odsianiu zostaje nieoceniony; z brakującym elementem — oceniony
+    expect(validateSchoolVerdict({ ...full, knowledge: "incorrect", incorrectStatements: ["tego nie ma"] }, CTX)).toBeNull();
+    const missing = validateSchoolVerdict({ ...full, knowledge: "incorrect", matchedElementIds: ["e1"], missingElementIds: ["e2"], incorrectStatements: ["tego nie ma"] }, CTX);
+    expect(gradeFromSchoolVerdict(missing!)).toMatchObject({ verdict: "model_incorrect", errorCategory: "incomplete" });
   });
 
   it("wymaga pełnego pokrycia elementów: correct bez wymienienia e2 jest odrzucany (K1)", () => {
@@ -537,11 +568,13 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
     expect(validateSchoolVerdict({ ...wrong, confusedConcepts: [{ said: "Równoleżnik", meant: "równoleżnik" }] }, CTX)).toBeNull();
   });
 
-  it("odrzuca ten sam fragment w dwóch kategoriach i fragment nie na temat spoza odpowiedzi", () => {
+  it("ten sam fragment w dwóch kategoriach zostaje w pierwszej, a fragment spoza odpowiedzi odpada", () => {
     const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
-    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["Wczoraj grałem w piłkę."], offTopicFragments: ["Wczoraj grałem w piłkę."] }, CTX)).toBeNull();
-    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Równoleżnik łączy bieguny."] }, CTX)).toBeNull();
-    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Grałem w szachy."] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["Wczoraj grałem w piłkę."], offTopicFragments: ["Wczoraj grałem w piłkę."] }, CTX))
+      .toMatchObject({ redundantFragments: ["Wczoraj grałem w piłkę."], offTopicFragments: [] });
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Równoleżnik łączy bieguny."] }, CTX))
+      .toMatchObject({ incorrectStatements: ["Równoleżnik łączy bieguny."], offTopicFragments: [] });
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Grałem w szachy."] }, CTX)).toMatchObject({ knowledge: "incorrect", offTopicFragments: [] });
   });
 
   it("wiedza częściowa z samym pomyleniem pojęć (komplet elementów) jest przyjmowana", () => {
@@ -566,15 +599,16 @@ describe("werdykt szkolny v3: kategorie fragmentów i pomylone pojęcia (Etap 6)
     }, { ...CTX, childAnswer: `${CTX.childAnswer} południk` })).toBeNull();
   });
 
-  it("odrzuca fragment jednej kategorii zawarty w fragmencie innej (zakresy nachodzą)", () => {
+  it("pomija fragment nachodzący na fragment innej kategorii (błędne stwierdzenie ma pierwszeństwo)", () => {
     const wrong = { ...base, knowledge: "incorrect", incorrectStatements: ["Równoleżnik łączy bieguny."] };
-    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["łączy bieguny"] }, CTX)).toBeNull();
-    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["bieguny. To ważna"] }, CTX)).toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["łączy bieguny"] }, CTX)).toMatchObject({ incorrectStatements: wrong.incorrectStatements, offTopicFragments: [] });
+    expect(validateSchoolVerdict({ ...wrong, redundantFragments: ["bieguny. To ważna"] }, CTX)).toMatchObject({ incorrectStatements: wrong.incorrectStatements, redundantFragments: [] });
     // zakresy jak w segmentatorze: bez wielkości liter („Kot” i „kot” to to samo pierwsze słowo)
     const cat = { requiredElementIds: ["e1"], childAnswer: "Kot kot" };
-    expect(validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Kot"], offTopicFragments: ["kot"] }, cat)).toBeNull();
+    expect(validateSchoolVerdict({ ...base, knowledge: "incorrect", incorrectStatements: ["Kot"], offTopicFragments: ["kot"] }, cat))
+      .toMatchObject({ incorrectStatements: ["Kot"], offTopicFragments: [] });
     // w obrębie jednej kategorii nachodzenie jest dozwolone (segmenty się scalają)
-    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Wczoraj grałem", "grałem w piłkę."] }, CTX)).not.toBeNull();
+    expect(validateSchoolVerdict({ ...wrong, offTopicFragments: ["Wczoraj grałem", "grałem w piłkę."] }, CTX)?.offTopicFragments).toHaveLength(2);
   });
 
   it("segmenty rozróżniają zbędne (pill) i nie na temat (offtopic)", () => {

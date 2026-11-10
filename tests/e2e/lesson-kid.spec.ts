@@ -382,6 +382,9 @@ test("open answer graded by the model (almost) then an unassessed answer (not_as
   await page.getByTestId("kid-lesson-check").click();
   await expect(page.getByTestId("kid-feedback")).toContainText("Nie udało się ocenić");
   await expect(page.getByTestId("kid-lesson-correct")).toHaveCount(0);
+  // Ponowienie po nieudanej ocenie nie zabiera dziecku odpowiedzi (AC-15).
+  await page.getByTestId("kid-next").click();
+  await expect(page.getByTestId("kid-lesson-input")).toHaveValue("something");
 });
 
 test("blocks, gap and feedback hold at 390×844 and 768×1024 without horizontal overflow", async ({ page }) => {

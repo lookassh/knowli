@@ -15,19 +15,20 @@ import type { ExerciseProps } from "../types";
  * pytanie, własna odpowiedź dziecka z zaznaczonymi fragmentami do usunięcia
  * (pigułki z DTO serwera — nic nie jest wyliczane lokalnie) i pole
  * wieloliniowe, które startuje z tą odpowiedzią; dziecko usuwa zaznaczone
- * części i wysyła `text` przez „Sprawdź”. Ponowna próba wraca do oryginału.
+ * części i wysyła `text` przez „Sprawdź”. Ponowna próba wraca do oryginału
+ * (po „Nie udało się ocenić” zostaje wersja dziecka).
  * Pole nie dostaje fokusu przy starcie, aby klawiatura ekranowa nie zasłoniła
  * zaznaczeń, zanim dziecko je przeczyta. Skrócenie można pominąć („Pomiń”).
  * Z `speechInput` dziecko może też powiedzieć krótszą wersję: dyktowanie
  * zastępuje treść pola, a oryginał z zaznaczeniami zostaje widoczny wyżej.
  */
-export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, dictation }: ExerciseProps) {
+export function LessonShortenView({ task, busy, dock, handlers, mockTest, micAvailable, recordingPhase, microphoneReady, inputLevel, recordingNotice, dictation, keepDraftOnRetry }: ExerciseProps) {
   const original = task.prompt.kind === "lesson_shorten" ? task.prompt.originalAnswer : "";
   const [text, setText] = useState(original);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const focusField = () => inputRef.current?.focus({ preventScroll: true });
   const dictationField = useDictationField(dictation, setText, focusField);
-  useRetryReset(dock, () => { setText(original); dictationField.reset(); }, focusField);
+  useRetryReset(dock, () => { setText(original); dictationField.reset(); }, focusField, keepDraftOnRetry);
 
   if (task.prompt.kind !== "lesson_shorten") return null;
   const showMic = task.prompt.speechInput !== undefined && micAvailable && !mockTest;

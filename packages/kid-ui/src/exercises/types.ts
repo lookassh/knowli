@@ -68,5 +68,7 @@ export interface ExerciseProps {
   dictation?: { taskId: string; seq: number; status: string; text?: string; failures: number } | null;
   /** Panel wyniku w stopce ramy; bodziec i odpowiedzi pozostają w treści zadania. */
   dock?: ReactNode;
+  /** Pokazany feedback jest techniczny („Nie udało się ocenić”): ponowienie nie czyści szkicu odpowiedzi. */
+  keepDraftOnRetry?: boolean;
   handlers: ExerciseHandlers;
 }
