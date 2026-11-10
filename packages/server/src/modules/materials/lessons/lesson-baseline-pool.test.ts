@@ -241,8 +241,9 @@ describe("runLessonBaselinePool", () => {
     await run(refusal);
     expect(refusal.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(2);
     const spent = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new GenerationProviderError("transient") : undefined) });
-    await run(spent, new FakeChecker(), {}, { runBudgetUsd: 0.001, concurrency: 1 });
-    expect(spent.calls.filter((call) => call.type === "lesson_gap").length).toBeLessThanOrEqual(1);
+    // Budżet mieści pierwszą paczkę wyboru (0,001) z jej kontrolą (0,0005); paczka luk go przekracza i nie jest ponawiana.
+    await run(spent, new FakeChecker(), {}, { runBudgetUsd: 0.0018, concurrency: 1 });
+    expect(spent.calls.filter((call) => call.type === "lesson_gap")).toHaveLength(1);
   });
 
   it("retries technical errors once and fails the objective after the second error", async () => {
@@ -253,7 +254,7 @@ describe("runLessonBaselinePool", () => {
     }
     const twice = await run(new FakeGenerator({ fail: (input) => (input.objective.id === first && input.type === "lesson_gap" ? new GenerationProviderError("transient") : undefined) }));
     expect(twice.objectives[0]).toMatchObject({ status: "failed", exercises: [] });
-    expect(twice.objectives[0]!.failure?.errorCode).toBeDefined();
+    expect(twice.objectives[0]!.failure).toEqual({ errorCode: "provider", retryable: true });
     expect(twice.objectives[1]!.status).toBe("complete");
     const config = new FakeGenerator({ fail: (input) => (input.type === "lesson_gap" ? new GenerationProviderError("configuration") : undefined) });
     const configured = await run(config);
@@ -269,11 +270,13 @@ describe("runLessonBaselinePool", () => {
 
   it("starts no further paid call after a code error and rejects only when all work has stopped", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.useFakeTimers();
     // Jedno miejsce w semaforze: pozostałe 5 paczek czeka w kolejce, gdy pierwsza rzuca błąd kodu.
     let started = 0;
     const buggy = new FakeGenerator({ fail: () => ((started += 1) === 1 ? new TypeError("bug") : undefined) });
     await expect(run(buggy, undefined, {}, { concurrency: 1 })).rejects.toThrow(TypeError);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Praca zostawiona w tle (mikrozadania, zegary) wykonałaby się tutaj.
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(buggy.calls).toHaveLength(1);
   });
 
@@ -325,7 +328,61 @@ describe("runLessonBaselinePool", () => {
     await expect(runLessonBaselinePool(deps(new FakeGenerator(), checker), runInput(), controller.signal)).rejects.toThrow("cancelled");
   });
 
-  it("drops a whole closed packet when the check returns a result of another length", async () => {
+  /** Kontrola, która zawsze kończy się błędem dostawcy; liczy wywołania. */
+  const failingChecker = (error: () => Error, usd = 0.0005) => {
+    const checker = {
+      calls: 0,
+      checkClosed: async (_input: ClosedCheckInput, cost: RunCostSink): Promise<never> => {
+        checker.calls += 1;
+        cost.record(usd);
+        throw error();
+      },
+    };
+    return checker;
+  };
+
+  it.each([
+    ["output", 4],
+    ["timeout", 4],
+    ["refusal", 2],
+  ] as const)("a non-retryable checker failure (%s) rejects only that packet's closed exercises", async (kind, calls) => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const checker = failingChecker(() => new GenerationProviderError(kind));
+    const result = await run(new FakeGenerator(), checker);
+    // Ponawiane rodzaje: 2 paczki wyboru × (wywołanie + jedno ponowienie).
+    expect(checker.calls).toBe(calls);
+    expect(result.objectives.map((objective) => [objective.status, objective.failure])).toEqual([["incomplete", undefined], ["incomplete", undefined]]);
+    expect(result.rejections.filter((entry) => entry.code === "check_unknown")).toHaveLength(14);
+    for (const objective of result.objectives) {
+      const types = new Set(objective.exercises.map((draft) => draft.exerciseType));
+      expect([...types].sort()).toEqual(["lesson_gap", "lesson_open_answer"]);
+    }
+  });
+
+  it.each([
+    ["transient", "provider"],
+    ["rate_limit", "provider_rate_limit"],
+    ["configuration", "provider_configuration"],
+  ] as const)("a %s checker failure still fails the objective (requeue or a loud configuration error)", async (kind, errorCode) => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await run(new FakeGenerator(), failingChecker(() => new GenerationProviderError(kind, { retryAfterMs: 1 })));
+    for (const objective of result.objectives) {
+      expect(objective).toMatchObject({ status: "failed", exercises: [] });
+      expect(objective.failure?.errorCode).toBe(errorCode);
+    }
+  });
+
+  it("a transient checker failure with the budget spent keeps the objective (no requeue would follow)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // Kontrola sama wyczerpuje budżet: wynik runu to wiersz „budżet”, więc porażka zagadnienia zabrałaby opłacone paczki bez ponowienia.
+    const checker = failingChecker(() => new GenerationProviderError("transient"), 1);
+    const result = await run(new FakeGenerator(), checker, {}, { runBudgetUsd: 0.5 });
+    expect(result.objectives.map((objective) => objective.failure)).toEqual([undefined, undefined]);
+    expect(result.rejections.filter((entry) => entry.code === "check_unknown").length).toBeGreaterThanOrEqual(7);
+    expect(result.objectives.flatMap((objective) => objective.exercises).some((draft) => draft.exerciseType === "lesson_choice")).toBe(false);
+  });
+
+  it("rejects a whole closed packet when the check returns no result for its items", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     const checker: ClosedExerciseChecker = { checkClosed: async (input) => ({ results: input.items.map(() => undefined) }) };
     const result = await run(new FakeGenerator(), checker);
