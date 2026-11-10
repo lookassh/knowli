@@ -50,7 +50,7 @@ const DIMENSIONS = [
  */
 export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string[] {
   if (runs.length !== 3) return ["REGUŁA: wymaga --runs=3"];
-  const ids = [...new Set(runs.flat().filter((o) => o.input === "speech" && !o.disputed).map((o) => o.id))].sort();
+  const ids = [...new Set(runs.flat().filter((o) => o.input === "speech" && !o.disputed).map((o) => o.id))].sort((a, b) => a.localeCompare(b));
   const lines: string[] = [];
   const stableCases = { wiedza: 0, odrzucenie: 0, skracanie: 0 };
   for (const id of ids) {
