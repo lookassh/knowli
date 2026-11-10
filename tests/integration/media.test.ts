@@ -15,7 +15,7 @@ import {
   regenerateRevisionAsset,
   runDueGenerationWork,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { VocabularyItemInput } from "@learning/contracts";
 import { countRows, testDatabase, truncateCoreTables } from "./helpers";
 import { ManualClock } from "./helpers";

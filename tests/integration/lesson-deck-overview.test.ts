@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createChild, endSession, nextTask, readLessonMockTestSummary, startSession, submitAttempt } from "@learning/server";
+import { createChild, endSession, nextTask, readLessonMockTestSummary, startSession, submitAttempt } from "@learning/server/testing";
 import { readLessonDeckOverviews, type LessonDeckOverviewInput } from "../../packages/server/src/modules/learning/lessons/lesson-deck-overview";
 import type { LessonContextShape } from "../../packages/server/src/modules/learning/lessons/lesson-sessions";
 import { lessonWorld } from "../fixtures/lesson-world";

@@ -11,7 +11,7 @@ import {
   startSession,
   submitAttempt,
   upsertAssignment,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 
 const { pool } = testDatabase();

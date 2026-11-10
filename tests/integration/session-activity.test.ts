@@ -20,7 +20,7 @@ import {
   submitAttempt,
   upsertAssignment,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { SessionActivityReport } from "@learning/contracts";
 import { ApiErrorSchema, SESSION_ACTIVITY_REPORT_MAX_BYTES } from "@learning/contracts";
 import { createKidApiClient } from "../../packages/kid-ui/src/api/client";

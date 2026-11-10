@@ -20,7 +20,7 @@ import {
   upsertAssignment,
   updateChild,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { SessionSummaryDtoSchema, TaskDtoSchema, type TaskDto } from "@learning/contracts";
 import {
   buildTestServices,

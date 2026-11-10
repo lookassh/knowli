@@ -8,7 +8,7 @@ import {
   publishDraft,
   readDeck,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { VocabularyItemInput } from "@learning/contracts";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";
 import type { ManualClock } from "./helpers";

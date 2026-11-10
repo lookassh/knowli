@@ -133,7 +133,7 @@ describe("granica składania agenta puli (@learning/server/lesson-agent)", () =>
 
   it("eksport pakietu wskazuje lesson-agent-env.ts", () => {
     const manifest = JSON.parse(readFileSync(join(serverSrc, "..", "package.json"), "utf8")) as { exports: Record<string, string> };
-    expect(manifest.exports).toEqual({ ".": "./src/index.ts", "./lesson-agent": `./src/${COMPOSITION}` });
+    expect(manifest.exports).toEqual({ ".": "./src/index.ts", "./testing": "./src/testing.ts", "./lesson-agent": `./src/${COMPOSITION}` });
   });
 
   it("żaden plik apps/web nie importuje @learning/server/lesson-agent; składanie workera importuje", () => {

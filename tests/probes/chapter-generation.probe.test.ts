@@ -24,7 +24,7 @@ import {
   withUsageScope,
   type UsageEvent,
   type UsageRecorder,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import type { LessonDraftDto } from "@learning/contracts";
 import { currentUsageScope } from "../../packages/server/src/ports/usage";

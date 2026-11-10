@@ -11,7 +11,7 @@ import {
   createSubjectRegistry,
   englishGrammarSubject,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, testDatabase, truncateCoreTables } from "./helpers";

@@ -12,7 +12,7 @@ import {
   retryGeneration,
   updateSourceMaterial,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { GenerationCommand } from "@learning/contracts";
 import { markRunSucceeded } from "../../packages/server/src/modules/materials/generation-runs";
 import { matchWrittenAnswer } from "../../packages/server/src/domain/evaluate";

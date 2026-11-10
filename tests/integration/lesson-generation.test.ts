@@ -28,7 +28,7 @@ import {
   runDueGenerationWork,
   retryGeneration,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { messages, type LessonCommand } from "@learning/contracts";
 import { countRows, rejectionCodesOf, testDatabase, testDatabaseUrl } from "./helpers";
 import { ManualClock } from "./helpers";

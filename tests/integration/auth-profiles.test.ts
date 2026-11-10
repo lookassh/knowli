@@ -14,7 +14,7 @@ import {
   setupParentWithToken,
   createServices,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import {
   buildTestServices,
   countRows,

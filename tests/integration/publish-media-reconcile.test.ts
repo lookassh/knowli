@@ -16,7 +16,7 @@ import {
   reconcileDraftAssets,
   runDueGenerationWork,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { VocabularyItemInput } from "@learning/contracts";
 import { assertAssetPublishable } from "../../packages/server/src/modules/materials/media-reconciliation";
 import { grammarWithoutSentenceAudio, ManualClock, testDatabase, truncateCoreTables } from "./helpers";

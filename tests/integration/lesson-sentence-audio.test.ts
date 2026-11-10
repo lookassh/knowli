@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   completePresentation, createChild, createLesson, createLessonDraftFromPublished, createServices, createSubjectRegistry, englishGrammarSubject,
   endSession, executeLessonGeneration, FakeAnswerGrader, runDueGenerationWork, fakeGraderDeps, nextTask, publishLessonDraft, readAttempt, readLessonDeck, startSession, submitAttempt,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { AttemptDto, AttemptInput, TaskDto } from "@learning/contracts";
 import { lessonWorld } from "../fixtures/lesson-world";
 import { buildTestServices, grammarWithoutSentenceAudio, ManualClock, testDatabase, truncateCoreTables } from "./helpers";

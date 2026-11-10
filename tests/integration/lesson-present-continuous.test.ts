@@ -11,7 +11,7 @@ import {
   readLessonDeck,
   startSession,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { finishLessonTask, ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration, KeyedChecker, packetRecords } from "./fakes";

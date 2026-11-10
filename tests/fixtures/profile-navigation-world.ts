@@ -9,7 +9,7 @@ import {
   upsertAssignment,
   CURRENT_POLICY_ID,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { defaultMediaSettings } from "../../packages/server/src/config";
 import { buildTestServices, testDatabase } from "../integration/helpers";
 

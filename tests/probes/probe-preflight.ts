@@ -1,4 +1,4 @@
-import { lessonAgentPolicyFromEnv } from "@learning/server";
+import { lessonAgentPolicyFromEnv } from "@learning/server/testing";
 import { lessonAgentDepsFromEnv } from "@learning/server/lesson-agent";
 import { OPENROUTER_BASE_URL } from "../../packages/server/src/providers/openai/lesson-pool-agent";
 import { DEFAULT_BASE_URL as LLM_DEFAULT_BASE_URL } from "../../packages/server/src/providers/openai/llm";

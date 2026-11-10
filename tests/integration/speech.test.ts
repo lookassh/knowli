@@ -20,7 +20,7 @@ import {
   upsertAssignment,
   type PronunciationProvider,
   type SttProvider,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { AttemptDtoSchema, type TaskDto } from "@learning/contracts";
 import { letterGroups } from "../../packages/server/src/domain/pronunciation-fragments";
 import { readLearningSnapshot } from "../../packages/server/src/modules/learning/learning-snapshot";

@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createServices, listKidDecks, readDeck, setDeckCover, clearDeckCover, loginParent, setupParent, fakeGenerationDeps, fakeMediaSettings, FakeImageProvider, MAX_DECK_COVER_BYTES } from "@learning/server";
+import { createServices, listKidDecks, readDeck, setDeckCover, clearDeckCover, loginParent, setupParent, fakeGenerationDeps, fakeMediaSettings, FakeImageProvider, MAX_DECK_COVER_BYTES } from "@learning/server/testing";
 import { randomUUID } from "node:crypto";
 import { testDatabase, truncateCoreTables } from "./helpers";
 import { handleParentApi } from "./helpers";

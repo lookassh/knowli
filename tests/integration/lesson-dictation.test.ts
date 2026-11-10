@@ -16,8 +16,8 @@ import {
   nextTask,
   startSession,
   submitAttempt,
-} from "@learning/server";
-import type { SttProvider, TranscriptionResult } from "@learning/server";
+} from "@learning/server/testing";
+import type { SttProvider, TranscriptionResult } from "@learning/server/testing";
 import type { TaskDto } from "@learning/contracts";
 import { buildTestServices, handleKidApi, type ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 

@@ -12,7 +12,7 @@ import {
   retryGeneration,
   runDueGenerationWork,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { countRows, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 import { ManualClock } from "./helpers";
 import { fakeGeneration, staleLeaseToken, type FakeGeneration } from "./fakes";

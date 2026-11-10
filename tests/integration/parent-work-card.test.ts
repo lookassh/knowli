@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { completePresentation, createChild, createDraft, createServices, endSession, fakeSessionActivityDeps, FakeSessionActivityReviewer, loginParent, nextTask, publishDraft, readParentWorkCard, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server";
+import { completePresentation, createChild, createDraft, createServices, endSession, fakeSessionActivityDeps, FakeSessionActivityReviewer, loginParent, nextTask, publishDraft, readParentWorkCard, setupParent, startSession, submitAttempt, upsertAssignment } from "@learning/server/testing";
 import type { SessionActivityReport } from "@learning/contracts";
 import { handleParentApi } from "./helpers";
 import { buildTestServices, finishLessonTask, testDatabase, truncateCoreTables } from "./helpers";

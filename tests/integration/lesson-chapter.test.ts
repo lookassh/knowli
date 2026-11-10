@@ -18,7 +18,7 @@ import {
   startSession,
   submitAttempt,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { LessonExerciseInputSchema, type LessonDraftDto, type TaskDto } from "@learning/contracts";
 import { lessonPoolMinimums } from "../../packages/server/src/domain/lessons/lesson-coverage";
 import { stageOf } from "../../packages/server/src/domain/lessons/stages";

@@ -9,7 +9,7 @@ import {
   readLessonDeck,
   regenerateObjective,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { messages, type LessonDraftDto } from "@learning/contracts";
 import { emptyLessonAgentProgress } from "../../packages/server/src/modules/materials/lessons/lesson-agent-checkpoint";
 import { FakeExerciseChecker } from "../../packages/server/src/providers/fake-lesson-agent";

@@ -16,7 +16,7 @@ import {
   setupParent,
   updateSourceMaterial,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { fakeGeneration } from "./fakes";
 import { buildTestServices, handleParentApi, ManualClock, testDatabase, truncateCoreTables, UUID_PATTERN } from "./helpers";
 

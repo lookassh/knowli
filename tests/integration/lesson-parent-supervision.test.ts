@@ -12,7 +12,7 @@ import {
   startSession,
   submitAttempt,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import {
   LessonDeckDtoSchema,
   ObjectiveProgressDtoSchema,

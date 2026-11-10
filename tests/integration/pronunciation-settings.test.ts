@@ -17,7 +17,7 @@ import {
   updatePronunciationBands,
   upsertAssignment,
   type AppError,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { buildTestServices, handleParentApi, testDatabase, truncateCoreTables } from "./helpers";
 
 const BASE = "http://localhost:3000";

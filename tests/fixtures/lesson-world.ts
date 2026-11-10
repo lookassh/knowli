@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { computeTargetKey } from "@learning/server";
+import { computeTargetKey } from "@learning/server/testing";
 import { LEARNING_V2_POLICY } from "../../packages/server/src/policies/learning-v2";
 import { normalizeEnglishExposureText } from "../../packages/server/src/domain/lessons/subjects/english/exposure";
 import type { testDatabase } from "../integration/helpers";

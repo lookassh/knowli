@@ -16,7 +16,7 @@ import {
   runDueGenerationWork,
   schoolSubject,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { LessonCommand } from "@learning/contracts";
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration, type FakeGeneration } from "./fakes";

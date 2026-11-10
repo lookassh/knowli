@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   completePresentation, createChild, createLessonDraftFromPublished, createServices,
   editLessonDraft, endSession, readLessonMockTestSummary, fakeSessionActivityDeps, FakeSessionActivityReviewer, reviewSessionActivity, loginParent, nextTask, publishLessonDraft, readLessonDeck, setupParent, startSession, submitAttempt,
-} from "@learning/server";
+} from "@learning/server/testing";
 import { LessonExerciseInputSchema, type CalculationSpec, type LessonExerciseInput } from "@learning/contracts";
 import { writeSealedEvent } from "../../packages/server/src/modules/learning/events";
 import { renderCalculationPrompt } from "../../packages/server/src/domain/lessons/calculation";

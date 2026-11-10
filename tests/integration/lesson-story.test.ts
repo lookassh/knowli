@@ -18,7 +18,7 @@ import {
   retryGeneration,
   schoolSubject,
   type Services,
-} from "@learning/server";
+} from "@learning/server/testing";
 import type { LessonCommand, LessonExerciseInput } from "@learning/contracts";
 import { ManualClock, testDatabase } from "./helpers";
 import { everyPacket, fakeGeneration, packetRecords, type FakeGeneration } from "./fakes";
