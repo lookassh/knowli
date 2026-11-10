@@ -32,6 +32,8 @@ export interface RevisionOf {
   attemptId: string;
   originalAnswer: string;
   matchedElementIds: string[];
+  /** Oryginał był niepoprawioną mową: poprawka jest oceniana tym samym wariantem promptu. */
+  spoken?: boolean;
 }
 
 type TaskRow = typeof sessionTasks.$inferSelect;
@@ -123,7 +125,7 @@ function subjectOfTask(services: Services, task: TaskRow): { spokenAnswers?: Sub
 export async function offerShortenFollowUp(
   tx: Tx,
   services: Services,
-  args: { task: TaskRow; session: SessionRow; itemId: string; attemptId: string; childAnswer: string; result: GradeShape; now: Date },
+  args: { task: TaskRow; session: SessionRow; itemId: string; attemptId: string; childAnswer: string; result: GradeShape; now: Date; spoken?: boolean },
 ): Promise<FeedbackDto | null> {
   const { task, session, result } = args;
   const key = task.answerKey as { schoolCriteria?: unknown; exerciseType?: string } | null;
@@ -174,6 +176,7 @@ export async function offerShortenFollowUp(
     attemptId: args.attemptId,
     originalAnswer: args.childAnswer,
     matchedElementIds: matchedElementIdsOf(details),
+    ...(args.spoken ? { spoken: true } : {}),
   };
   const followUpId = randomUUID();
   await tx.insert(sessionTasks).values({

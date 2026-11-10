@@ -75,5 +75,5 @@ export function decisionLines(runs: readonly (readonly CaseOutcome[])[]): string
   const providerErrors = runs.flat().filter((o) => o.status === "provider_error" &&
     (o.input === "speech" ? !o.disputed : twins.has(o.id))).length;
   const warning = providerErrors > 0 ? [`UWAGA: błędy dostawcy w mowie lub bliźniakach: ${providerErrors} — rozstrzygnięcie niepełne`] : [];
-  return [...lines, ...warning,`REGUŁA: story 2 ${needed ? "potrzebne" : "niepotrzebne"}`];
+  return [...lines, ...warning,`REGUŁA: ${needed ? "mowa stabilnie błędna" : "mowa bez stabilnych błędów"}`];
 }

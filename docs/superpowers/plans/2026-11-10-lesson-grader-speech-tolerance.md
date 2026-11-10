@@ -78,13 +78,20 @@ Pliki: `scripts/evaluate-school-grader.mts`, `tests/probes/school-grader-report.
 5. **`fake.ts`:** tylko `FakeAnswerGrader`; metoda przy `FakeSessionActivityReviewer` zostaje nietknięta.
 6. **Raport.** `holdout` wpływa tylko na wiersze raportu (trzeci wiersz „mówione-nowe”); reguła decyzyjna liczy przypadki nowe jak pozostałe mówione — to jedyne przypadki nieużyte przy pisaniu promptu. `tests/school-grader-golden-set.test.ts` dostaje asercję: co najmniej 4 przypadki mówione `holdout`, kategorie „mowa — …”.
 7. **Przypadki nowe (zastępują listę z zadania 3):** poprawna bez interpunkcji i wielkich liter z wypełniaczami; autokorekta z dobrej wersji na złą (oczekiwana wiedza inna niż `correct`); „bezwzględna” w pytaniu o wysokość względną (pomylenie pojęć, wiedza jak w pisanym odpowiedniku); częściowa bez interpunkcji. Po pierwszym przebiegu na prawdziwym modelu i jakiejkolwiek zmianie promptu przestają być „nieużyte”.
-8. **Jak czytać pomiar po zmianie.** CAP-2 spełnione, gdy skrypt wypisze „REGUŁA: story 2 niepotrzebne” (zero stabilnych błędów mowy), a dodatkowo ręcznie: S06 ma fragment nie na temat, przypadki mówione częściowy i błędny oraz cztery nowe mają oczekiwaną wiedzę w 3/3 przebiegach. Bramka pisanych: prompt pisany się nie zmienia, więc porównujemy z pomiarem bazowym — brak nowych porażek pisanych względem `speech-baseline.md` (tam bramka już nie przechodziła przez G05/G06/G27).
+8. **Jak czytać pomiar po zmianie.** CAP-2 spełnione, gdy skrypt wypisze „REGUŁA: mowa bez stabilnych błędów” (wiersz przemianowany w tej gałęzi), a dodatkowo ręcznie: S06 ma fragment nie na temat, przypadki mówione częściowy i błędny oraz cztery nowe mają oczekiwaną wiedzę w 3/3 przebiegach. Bramka pisanych: prompt pisany się nie zmienia, więc porównujemy z pomiarem bazowym — brak nowych porażek pisanych względem `speech-baseline.md` (tam bramka już nie przechodziła przez G05/G06/G27).
 9. **Znane ograniczenia do zapisania w specu i `docs/agents/lessons.md`:** (a) rodzic zobaczy tę samą odpowiedź w dwóch wierszach nadzoru (mówiony i pisany), a decyzja na jednym nie przenosi się na drugi — bez nowego pola DTO; (b) poprawka wpisana z klawiatury po podyktowanym oryginale jest oceniana promptem pisanym, więc porównanie „zgubionej informacji” zestawia werdykty dwóch wariantów promptu.
 10. **Dokumentacja bezwarunkowo:** `docs/agents/providers-privacy.md:7`, `docs/agents/lessons.md:5`, `docs/architecture.md` (ok. l. 488, 785, 942), komentarz `ports/ai.ts:392`; spec: `stories.yaml` (stan i `invoke_dev_with` — polecenie właściciela 2026-11-10), `SPEC.md:58`, `brownfield.md`. W opisie PR: brak wpływu na MCP/skill, bo `GraderInput` i wersje promptu nie występują w `packages/contracts` ani integracjach.
+
+## Poprawki po przeglądzie gałęzi (trzech krytyków)
+
+- Akapit promptu doprecyzowany (typowy błąd to błędne stwierdzenie, nie pomylenie pojęć; liczby, daty i nazwy oceniane tak, jak zapisano; cytaty znak w znak; wahanie to nie poprawka; urwane zdanie tylko „tą samą myślą”). Obowiązuje tekst w `grader.ts`.
+- Krok „Skróć odpowiedź” po podyktowanym oryginale: zadanie następcze zapamiętuje `revisionOf.spoken`, a poprawka jest oceniana wariantem mowy także wtedy, gdy dziecko poprawia klawiaturą (ograniczenie 9b znika).
+- Wiersz reguły w raporcie: „REGUŁA: mowa stabilnie błędna / mowa bez stabilnych błędów”. Przypadki `holdout` wchodzą do reguły (zdania wyżej mówiące inaczej są nieaktualne).
+- H01 i H04 zmienione (inne pytanie, bez „i tyle”).
 
 ## Poza zakresem
 
 - Zmiana promptu dla klawiatury i mowy poprawionej ręcznie.
 - Migracja `lesson_verdicts`, kolumna sposobu wprowadzenia.
 - Wejście przypadków mówionych do bramki zestawu (decyzja po pomiarze).
-- Zadanie następcze „Skróć odpowiedź”: korzysta z tej samej ścieżki, więc dostaje ten sam znacznik; osobnych reguł nie dodajemy.
+- (Nieaktualne — patrz poprawki po przeglądzie gałęzi.)

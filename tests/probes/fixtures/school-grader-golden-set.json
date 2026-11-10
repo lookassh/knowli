@@ -727,11 +727,11 @@
     },
     {
       "id": "H01",
-      "question": "ssak-ptak",
+      "question": "poludnik",
       "category": "mowa — bez interpunkcji",
       "input": "speech",
       "holdout": true,
-      "childAnswer": "no ssaki karmią młode mlekiem i mają sierść yyy a ptaki składają jaja i mają pióra",
+      "childAnswer": "to jest taka wymyślona linia na ziemi ee która idzie od bieguna północnego do południowego",
       "expected": {
         "knowledge": "correct",
         "precision": "concise",
@@ -777,7 +777,7 @@
       "category": "mowa — częściowa bez interpunkcji",
       "input": "speech",
       "holdout": true,
-      "childAnswer": "no bo chciał żeby jego władza była mocniejsza yyy i tyle",
+      "childAnswer": "no bo chciał żeby jego władza była mocniejsza",
       "expected": {
         "knowledge": "partial",
         "precision": "concise",
