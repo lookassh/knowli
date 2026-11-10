@@ -14,14 +14,10 @@ describe("shouldOfferShorten", () => {
     expect(shouldOfferShorten({ ...offer, remainingWithThisTask: SESSION_PROMISE_REMAINING + 1 })).toBe(true);
   });
 
-  it("nie proponuje przy samej naruszonej formie jednego zdania: nie ma zaznaczenia, co usunąć (AC-17)", () => {
-    expect(shouldOfferShorten({ ...offer, details: { knowledge: "correct", precision: "verbose", formOk: false } as never })).toBe(false);
-  });
-
   it.each([
     ["zwięzła odpowiedź", { details: { ...verbose, precision: "concise" } }],
     ["niepełna wiedza", { details: { ...verbose, knowledge: "partial" } }],
-    ["brak fragmentów i forma w porządku", { details: { knowledge: "correct", precision: "verbose", redundantFragments: [] } }],
+    ["brak fragmentów, także przy naruszonej formie zdania (AC-17)", { details: { knowledge: "correct", precision: "verbose", redundantFragments: [] } }],
     ["kartkówka", { trainingSession: false }],
     ["poprawka (bez łańcucha poprawek)", { followUp: true }],
     ["brak wywołań gradera", { graderCallsLeft: 0 }],

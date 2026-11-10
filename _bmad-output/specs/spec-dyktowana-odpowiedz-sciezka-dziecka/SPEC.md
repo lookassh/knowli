@@ -60,7 +60,7 @@ CAP-8 (dopisywanie przy kolejnym dyktowaniu) wycofano po przeglądzie; ID nie b�
 - Przypadki mówione są raportowane osobno i nie wchodzą do bramki zestawu przed story 2.
 - Przebiegi na prawdziwym modelu wymagają zgody właściciela (`pnpm bench` dodatkowo `--cap-usd`); wyników różnych modeli się nie porównuje.
 - CAP-3: błędne stwierdzenia liczą się jako luka w wiedzy przed pominięciem fragmentu; reguły wiedzy w walidacji pozostają odrzucające. Werdykt `incorrect`, któremu po pominięciu nie zostaje żadna widoczna luka, pozostaje nieoceniony. Werdykt po pominięciu fragmentów trafia do cache.
-- Kid DTO nie zawiera klucza, kryteriów, notatki modelu ani etykiety precyzji. Feedback skracania pokazuje wyłącznie tekst dziecka, więc nie tworzy ekspozycji klucza; pozostałe ujawnienia są zamykane przed wysłaniem.
+- Kid DTO nie zawiera klucza, kryteriów, notatki modelu ani etykiety precyzji. Feedback skracania niesie samą podpowiedź (obie wersje dziecka pokazuje widok skracania), więc nie tworzy ekspozycji klucza; pozostałe ujawnienia są zamykane przed wysłaniem.
 - Nieocenione próby, cisza, niepewne rozpoznanie i przerwane nagranie nie są dowodem błędnej wiedzy.
 - Ekrany dziecka powstają ze wspólnych komponentów i katalogu komunikatów; zmiana layoutu ma test geometrii Playwright.
 - Odbiór rodzinny na tablecie nie rusza przed decyzją właściciela z Open Questions.

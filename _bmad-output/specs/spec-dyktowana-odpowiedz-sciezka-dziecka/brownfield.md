@@ -11,9 +11,9 @@ Miejsca potwierdzone przeglądem z 2026-11-10 (ścieżki względem `packages/`).
 | CAP-3 | `server/src/domain/lessons/evaluate.ts:361-375`, `:441-465` | (Stan sprzed story 3.) Limit 4 fragmentów w schemacie Zod; fragment niedosłowny, duplikat lub nachodzenie kategorii zwraca `null`; `partial`/`incorrect` wymagają luki (`:452-455`) |
 | CAP-3 | `server/src/modules/learning/lessons/lesson-attempts.ts:771`, `:1441-1447` | Odrzucenie przez walidację daje `not_assessed`, zadanie zostaje `issued`, brak wpisu w cache |
 | CAP-4 | `kid-ui/src/exercises/useRetryReset.ts`, `kid-ui/src/exercises/lesson/LessonSentenceView.tsx:39` | Każde ponowienie czyści pole; hook nie zna powodu ponowienia |
-| CAP-5 | `server/src/domain/lessons/precision-trainer.ts:43-49` | Oferta także przy samym `formOk === false` |
+| CAP-5 | `server/src/domain/lessons/precision-trainer.ts:43-49` | (Stan sprzed story 4.) Oferta także przy samym `formOk === false` |
 | CAP-5 | `server/src/modules/learning/lessons/lesson-shorten.ts:156-158` | Gdy segmentów nie da się zbudować, cały tekst idzie jako `plain` |
-| CAP-6 | `server/src/modules/learning/lessons/lesson-shorten.ts:74-96`, `contracts/src/messages.ts:822` | Wynik `incorrect` z podpowiedzią „Porównaj z poprzednią odpowiedzią”, bez treści |
+| CAP-6 | `server/src/modules/learning/lessons/lesson-shorten.ts:74-96`, `contracts/src/messages.ts:822` | (Stan sprzed story 4.) Wynik `incorrect` z podpowiedzią „Porównaj z poprzednią odpowiedzią”, bez treści |
 | CAP-7 | `kid-ui/src/exercises/SpeechRecordButton.tsx:91-99`, `contracts/src/messages.ts:655-665`, `:826` | Teksty ćwiczenia słówek; `dictationRecord` nieużyte |
 | CAP-9 | `kid-ui/src/session/useLearningSession.ts:53-61`, `session-controller.ts:2292` | `cancelRecording()` bez komunikatu |
 | CAP-10 | `kid-ui/src/screens/LearnScreen.tsx:351-355`, `contracts/src/messages.ts:668` | Stan oczekiwania `kid-processing` już jest; jedyny tekst to „Sprawdzam nagranie…” |

@@ -242,8 +242,8 @@ test("shorten: question, marked original, prefilled field and actions fit every 
 // dziecka — oryginał i pole z poprawką — zostają osiągalne nad panelem, także przy 600 znakach.
 const LONG_SENTENCE = "Roślina w świetle robi z wody i dwutlenku węgla cukier i tlen, którym oddychamy. ";
 const LONG_ORIGINAL = LONG_SENTENCE.repeat(8).slice(0, 600).trim();
-const LONG_REVISION = LONG_ORIGINAL.replaceAll("i tlen", "i gaz").slice(0, 600);
-const LOST_HINT = "Zgubiła się ważna informacja. Porównaj krótszą odpowiedź z tą powyżej.";
+const LONG_REVISION = LONG_ORIGINAL.replaceAll("i tlen", "i gazy").slice(0, 600);
+const LOST_HINT = "Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej.";
 const longShortenTask: TaskDto = {
   ...base(shortenTaskId, "lesson_open_answer"),
   prompt: {
@@ -269,7 +269,11 @@ test("shorten: after a lost element both versions stay reachable above the resul
   await expect(page.getByTestId("kid-lesson-correct")).toHaveCount(0);
   await expect(page.getByTestId("kid-lesson-input")).toHaveValue(LONG_REVISION);
 
-  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+  // pole z poprawką da się czytać i przewijać, ale nie edytować
+  await expect(page.getByTestId("kid-lesson-input")).toBeEnabled();
+  await expect(page.getByTestId("kid-lesson-input")).not.toBeEditable();
+
+  for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await expectReachable(page, viewport, [{ testId: "kid-next", minHeight: 54 }]);
     await expectNotClipped(page, "kid-lesson-feedback-hint");

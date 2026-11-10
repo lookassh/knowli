@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development albo superpowers:executing-plans. Kroki mają pola wyboru (`- [ ]`).
 
+> **Uwaga:** sekcja „Poprawki po przeglądzie trzech krytyków” na końcu zmienia projekt CAP-6 (bez pola `revisedAnswer`, bez zmiany Kid DTO i widoku porównania). Decyzje 2–6, zadanie 3 i tabela AC poniżej opisują wariant odrzucony.
+
 **Cel:** krok „Skróć odpowiedź” pojawia się tylko z widocznym zaznaczeniem (CAP-5), a gdy poprawka zgubi ważną informację, dziecko widzi obie swoje wersje (CAP-6).
 
 **Spec:** `_bmad-output/specs/spec-dyktowana-odpowiedz-sciezka-dziecka/` — story 4 w `stories.yaml`, wiersze AC-14 i AC-17–22 w `acceptance-scenarios.md`, ograniczenia i założenia CAP-5/CAP-6 w `SPEC.md`. Przed kodem: `docs/agents/lessons.md`, `docs/agents/kid-ui.md`, `docs/agents/testing.md` (nowe asercje E2E).
@@ -91,7 +93,7 @@ Usuwanie fragmentów dotknięciem; dodatkowa próba po utracie elementu (kosztow
 ## Poprawki po przeglądzie trzech krytyków (2026-11-10) — mają pierwszeństwo przed treścią wyżej
 
 1. **CAP-6 w mniejszym wariancie (do odbioru właściciela).** W trakcie feedbacku po utracie elementu widok „Skróć odpowiedź” zostaje zamontowany pod panelem i pokazuje obie wersje dziecka: „Twoja odpowiedź” (oryginał z zaznaczeniami) i pole „Krótsza odpowiedź”. Powielenie obu tekstów w panelu dałoby dwa zagnieżdżone przewijania i ok. 1200 znaków w karcie o wysokości ok. 300 px. Dlatego: bez pola `revisedAnswer`, bez zmiany Kid DTO i bez zmian w `LessonAnswerComparison`; zmienia się tylko tekst podpowiedzi, który wskazuje na wersje widoczne nad panelem. Decyzje 2–6 i zadanie 3 w dawnym kształcie odpadają. To odczytanie AC-20 („Feedback pokazuje…”) jako „na ekranie z feedbackiem widać…”; wiersz AC-20 zostaje doprecyzowany w tym PR.
-2. Tekst `lessonShortenLostElement`: „Zgubiła się ważna informacja. Porównaj krótszą odpowiedź z tą powyżej.” — bez „Krócej”, bo poprawka gubiąca element nie musi być krótsza.
+2. Tekst `lessonShortenLostElement`: „Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej.” — bez „Krócej”, bo poprawka gubiąca element nie musi być krótsza.
 3. Test geometrii (AC-20, AC-22) w `lesson-precision-layout.spec.ts`: zadanie `lesson_shorten` z oryginałem 600 znaków, poprawka 600 znaków, odpowiedź próby z `lesson_hint`; 390×844 i 768×1024: brak przepełnienia poziomego, `kid-next` w oknie i ≥ 54 px, pole z poprawką widoczne nad panelem, a „Twoja odpowiedź” osiągalna przewinięciem materiału (nie zasłonięta trwale).
 4. Podpowiedź po ofercie skracania dobierana po faktycznie zaznaczonych segmentach (`segments.some(state === "offtopic")`), nie po liście fragmentów.
 5. AC-17: seed `{ expectedForm: "one_sentence", secondObjective: true }`, inaczej test jest zielony przed zmianą (faza „Jeszcze 3”).

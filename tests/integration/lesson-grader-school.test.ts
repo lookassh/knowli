@@ -419,7 +419,7 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     const followUp = (await nextTask(services, openTask.sessionId))!;
     const revision = await submitAttempt(services, { taskId: followUp.taskId, clientAttemptId: randomUUID(), modality: "text", text: "Roślina wytwarza cukry." });
     // Sama podpowiedź: obie wersje dziecka zostają widoczne w widoku skracania, bez wzorca i elementów (AC-20, AC-21).
-    expect(revision.feedback).toEqual({ kind: "lesson_hint", hintPl: "Zgubiła się ważna informacja. Porównaj krótszą odpowiedź z tą powyżej." });
+    expect(revision.feedback).toEqual({ kind: "lesson_hint", hintPl: "Zgubiła się ważna informacja. Porównaj obie odpowiedzi wyżej." });
     expect(JSON.stringify(revision.feedback)).not.toContain("światło");
     const rows = await pool.query<{ outcome: string; independent: boolean; details: { lostElementIds?: string[] } }>(
       `select a.outcome, a.independent, a.details from learning_app.assessments a
@@ -445,7 +445,7 @@ describe("trener precyzji: „Skróć odpowiedź” (integracja)", () => {
     const details = await pool.query<{ details: { precision?: string; formOk?: boolean } }>(
       "select n.details from learning_app.assessments n join learning_app.attempts a on a.id = n.attempt_id where a.task_id = $1", [openTask.taskId]);
     expect(details.rows[0]!.details).toMatchObject({ precision: "verbose", formOk: false });
-    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where context ? 'followUpOf'");
+    const rows = await pool.query("select count(*)::int as n from learning_app.session_tasks where session_id = $1 and context ? 'followUpOf'", [openTask.sessionId]);
     expect((rows.rows[0] as { n: number }).n).toBe(0);
   });
 
