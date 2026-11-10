@@ -160,3 +160,12 @@
 - Elementy czysto interpunkcyjne (`…`, `?`, `!`, `—`) i znaki niewidoczne spoza `trim()` (np. U+200B) — wymagają decyzji o normalizacji symboli (osobny pakiet).
 - Przeniesienie `fromUnit !== unit` do kontraktu po sprawdzeniu, że produkcja nie ma takich opublikowanych ćwiczeń.
 - Unikalność `items[].id` rozsypanki (dziś bez skutku w sesji).
+
+## Poprawki po przeglądzie trzech krytyków planu (obowiązują przed treścią zadań)
+
+- **Zadanie 2:** zamiast osobnego testu na przedmiocie gramatyki (nie wspiera par, więc nie dowodzi przyjęcia ćwiczenia) — wpis `match (długa odpowiedź liczona)` w `CORE_CASE_BASELINES` (4 pary, lewe strony po 30 znaków; test `issues.test.ts` wymaga pustej listy zgłoszeń). Dalsze odrzucanie ręcznej odpowiedzi > 120 znaków pilnuje istniejący przypadek `answer.max_length`.
+- **Zadanie 3:** jeden przypadek reguły w `core.rule-cases.ts` (opcja), a wszystkie gałęzie w `it.each` w `pool-validation.issues.test.ts` z asercją dokładnego `field` (`options[1]`, `items[1]`, `pairs[2].right`, `pairs[2].left`, `extraRight[0]`, `groups[1].label`, `groupItems[3]`, `keywordOptions[3]`). Listy v3 (`requiredElements`, `supplementaryElements`, `commonErrors`), `focus` i `acceptedAnswers` — poza zakresem (sekcja niżej).
+- **Zadanie 4:** reguła zostaje w prompcie z `priority: "calculation_shape"` (przebieg bazowy nie ma rund naprawy, więc reguła poza promptem tylko marnowałaby ćwiczenia); zaktualizuj `rules/rule-book.test.ts:201` (cztery id w kolejności alfabetycznej). Test zgodności wstecz jest testem charakteryzującym (zielony przed i po): `renderCalculationPrompt`, `computeCalculationAnswer` i `evaluateCalculationAnswer("5 m")` na spec m→m.
+- **Zadanie 5:** para jako krotka `[left, right]` (jak `lesson_group`), bez zagnieżdżonego `JSON.stringify` — bodziec trafia też do `found` (`exerciseLabel`). Kod jest w `exercise-identity.ts:100`. Zaktualizuj komentarz przy `dedupStimulus`. Test integracyjny nie jest potrzebny (`tests/integration/lesson-generation.test.ts:714` liczy tożsamość od nowa).
+- **Zadanie 1:** dodatkowy przypadek dla `lesson_listen_choice` (osobna ścieżka `validateListenChoice` → `validateOptions`).
+- **Do zgłoszenia, nie do zmiany (`apps/web` poza zakresem):** `LessonEditor.tsx:841-844` przy przełączeniu rodzaju na `unit_conversion` ustawia `fromUnit: "m"` i zostawia `unit`; dla `unit: "m"` powstaje m→m, które zapis teraz odrzuci komunikatem walidacji.
