@@ -80,10 +80,9 @@ function classify(wt, ctx) {
   return { removable: false, label: 'niescalone commity' };
 }
 
-/** Usuwa katalog bez wchodzenia w dowiązania (pnpm na Windows używa junction). */
+/** Usuwa resztki katalogu; `fs.rmSync` usuwa dowiązania (także junction pnpm na Windows), nie wchodząc do ich celu. */
 function removeDir(dir) {
-  if (process.platform === 'win32') spawnSync('cmd', ['/c', 'rmdir', '/s', '/q', `\\\\?\\${path.resolve(dir)}`], { stdio: 'ignore' }); // NOSONAR javascript:S4036
-  else fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
   return !fs.existsSync(dir);
 }
 
