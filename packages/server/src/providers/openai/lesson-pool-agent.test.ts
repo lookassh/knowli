@@ -259,6 +259,23 @@ describe("mapowanie błędów (toGenerationProviderError, spec §4)", () => {
       kind: "output",
     });
   });
+
+  it.each(["content-filter", "length"] as const)("pusta treść przy finishReason %s → output, koszt żądania zapisany raz", async (unified) => {
+    // SDK nie liczy wyniku bez tekstu przy finishReason innym niż stop, a getter `output` rzuca NoOutputGeneratedError.
+    const empty = (): GenerateResult => ({ ...textResult(""), content: [], finishReason: { unified, raw: unified } });
+    const calls = [
+      (options: AiSdkLessonAgentOptions, cost: RunCostSink) => new AiSdkLessonPoolAgent(options).generatePacket(PACKET, cost, new AbortController().signal),
+      (options: AiSdkLessonAgentOptions, cost: RunCostSink) => new AiSdkExerciseChecker(options).checkClosed(CLOSED, cost, new AbortController().signal),
+    ];
+    for (const call of calls) {
+      const usage = createTestRecorder();
+      const cost = recordingCost([]);
+      const model = new MockLanguageModelV4({ doGenerate: [empty()] });
+      await expect(call(agentOptions(model, { usage }), cost)).rejects.toMatchObject({ name: "GenerationProviderError", kind: "output" });
+      expect(cost.values).toEqual([0.002]);
+      expect(usage.events.map((event) => event.outcome)).toEqual(["ok"]);
+    }
+  });
 });
 
 describe("koszty żądań (UsageRecorder i RunCostSink, spec §4)", () => {

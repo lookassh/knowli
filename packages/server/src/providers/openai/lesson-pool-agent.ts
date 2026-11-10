@@ -367,7 +367,7 @@ export class AiSdkLessonPoolAgent implements LessonPacketGenerator {
     cost: RunCostSink,
     signal: AbortSignal,
   ): Promise<{ readonly exercises: readonly unknown[]; readonly examples?: readonly unknown[] }> {
-    const result = await this.caller.tracked(
+    const output = await this.caller.tracked(
       "packet_generate",
       cost,
       signal,
@@ -381,10 +381,10 @@ export class AiSdkLessonPoolAgent implements LessonPacketGenerator {
           prompt: lessonUserMaterial(input.pool),
           abortSignal: signal,
           ...hooks,
-        }),
+          // Getter `output` rzuca przy pustej treści (filtr, limit tokenów): odczyt tutaj, żeby błąd przeszedł mapowanie `tracked`.
+        }).then((result) => result.output),
       input.timeoutMs,
     );
-    const output = (result.output ?? {}) as { exercises?: unknown; examples?: unknown };
     return {
       exercises: Array.isArray(output.exercises) ? output.exercises : [],
       ...(Array.isArray(output.examples) ? { examples: output.examples } : {}),
@@ -421,7 +421,7 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
   /** Kontrola zadań zamkniętych: jedno żądanie na paczkę, wynik per pozycja jako dane (werdykt liczy domena). */
   async checkClosed(input: ClosedCheckInput, cost: RunCostSink, signal: AbortSignal): Promise<{ readonly results: readonly unknown[] }> {
     const item = input.contract === "choice" ? CHOICE_CHECK_RESULT : ORDER_CHECK_RESULT;
-    const result = await this.caller.tracked(
+    const output = await this.caller.tracked(
       "check_closed",
       cost,
       signal,
@@ -435,10 +435,10 @@ export class AiSdkExerciseChecker implements ClosedExerciseChecker {
           prompt: closedCheckPrompt(input),
           abortSignal: signal,
           ...hooks,
-        }),
+        }).then((result) => result.output),
       input.timeoutMs,
     );
-    const results = sameLength(result.output.results, input.items.length);
+    const results = sameLength(output.results, input.items.length);
     return { results: input.items.map((_item, index) => results?.[index]) };
   }
 }
