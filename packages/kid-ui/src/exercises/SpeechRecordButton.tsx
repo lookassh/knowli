@@ -184,7 +184,7 @@ export function SpeechRecordButton({ phase, ready, disabled, level, notice = nul
         {phase === "recording" && <SoundRing testId="kid-recording-ring" />}
       </button>
       {(notice ?? status) !== null && <p className="kid-record-status" role="status" data-testid="kid-record-status">{notice ?? status}</p>}
-      {active && !(dictation && phase === "stopping") && (
+      {active && !(dictation && phase !== "recording") && (
         <div className="kid-recording" data-testid="kid-recording"><KidIcon name="microphone" /> {messages.kid.recording}</div>
       )}
       {levelValue !== null && phase === "recording" && (

@@ -316,6 +316,7 @@ test("open answer: dictation texts name the answer, an interrupted recording say
   await page.getByTestId("kid-lesson-input").fill("Poziomica to linia na mapie.");
   await page.getByTestId("kid-lesson-check").click();
   await expect(page.getByTestId("kid-processing")).toHaveText("Sprawdzam odpowiedź…");
+  expect(calls).toHaveLength(0);
 });
 
 test("shorten: dictation replaces the field while the marked original stays visible", async ({ page }, testInfo) => {

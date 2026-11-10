@@ -3408,7 +3408,43 @@ describe("LearningSessionController — dyktowanie odpowiedzi lekcji (Etap 3 szk
     }
   });
 
-  it("przerwanie bez trwającego dyktowania czyści jak dotąd: start mikrofonu i inne zadania bez komunikatu", async () => {
+  it("przerwanie w fazie startu mikrofonu jest ciche, a w fazie kończenia zostawia komunikat i odrzuca nagranie", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([{ status: "heard", text: "Poziomica." }]);
+      const starting = harness.controller.startRecording();
+      harness.controller.interruptRecording();
+      await starting;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: null });
+
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      const stopping = harness.controller.stopRecording();
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "stopping", recordingNotice: messages.kid.dictationRecognizing });
+      harness.controller.interruptRecording();
+      await stopping;
+      expect(harness.controller.getScreen()).toMatchObject({ recordingPhase: "idle", recordingNotice: messages.kid.dictationInterrupted });
+      expect((harness.controller.getScreen() as { dictation?: unknown }).dictation ?? null).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("wysłanie odpowiedzi gasi komunikat o przerwanym dyktowaniu", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await dictationHarness([]);
+      await harness.controller.startRecording();
+      await vi.advanceTimersByTimeAsync(400);
+      harness.controller.interruptRecording();
+      await harness.controller.answerText("Poziomica to linia na mapie.");
+      expect((harness.controller.getScreen() as { recordingNotice: string | null }).recordingNotice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("przerwanie bez trwającego dyktowania czyści jak dotąd: bezczynny mikrofon i inne zadania bez komunikatu", async () => {
     vi.useFakeTimers();
     try {
       const harness = await dictationHarness([{ status: "no_speech" }]);

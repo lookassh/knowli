@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development albo superpowers:executing-plans. Kroki mają pola wyboru (`- [ ]`).
 
+> **Uwaga:** sekcja „Poprawki po przeglądzie trzech krytyków” na końcu zmienia projekt: bez `dictationPermission`, bez wczesnego wyjścia w `interruptRecording()`, bez komunikatu w fazie `starting`, znacznik „Nagrywam…” ukryty przy kończeniu, a opis trafił do `docs/SPEC.md` zamiast `docs/architecture.md`.
+
 **Cel:** przy dyktowaniu odpowiedzi przycisk mikrofonu mówi o odpowiedzi i o tym, jak skończyć (CAP-7), przerwane nagranie zostawia krótki komunikat (CAP-9), a tekst oczekiwania po „Sprawdź” nie mówi o nagraniu (CAP-10).
 
 **Spec:** `_bmad-output/specs/spec-dyktowana-odpowiedz-sciezka-dziecka/` — story 5 w `stories.yaml`, wiersze AC-23–25, AC-29, AC-30. Przed kodem: `docs/agents/kid-ui.md`, `docs/agents/testing.md`.
