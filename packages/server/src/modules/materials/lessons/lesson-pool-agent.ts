@@ -108,6 +108,8 @@ export interface LessonPoolAgentResult {
   readonly objectives: readonly SettledObjective[];
   readonly rejections: readonly RejectionLogEntry[];
   readonly spentUsd: number;
+  /** Termin przebiegu (`runTimeoutMs`) minął przed końcem pracy: brak ćwiczeń to wtedy przekroczony czas, nie odrzucenia. */
+  readonly timedOut?: true;
 }
 
 /** Klucz stałych źródeł ujawnień spoza zagadnień (`extraExposureSources`) w `fixedSources` stanu. */

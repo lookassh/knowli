@@ -25,6 +25,7 @@ import {
   lessonAgentRunInputFor,
   lessonAgentRunOutcome,
   lessonCatalogTopic,
+  lessonOutcomeAfterDeadline,
   mergeAttemptIntoProgress,
   mergeGenerationGaps,
   outcomeObjectivesOf,
@@ -427,12 +428,9 @@ export async function executeLessonAgentGeneration(
         maxAttempts: MAX_AUTOMATIC_ATTEMPTS,
       });
     if (remainingMs <= 0) {
-      // Bez czasu na przebieg: wynik z samego postępu. Termin zastępuje tylko „nic nie przyjęto” (wiersz 7);
-      // wyczerpany budżet (wiersz 1) i wspólny kod dostawcy z punktu kontrolnego (wiersz 6) zostają.
+      // Bez czasu na przebieg: wynik z samego postępu, z kodem terminu jak po terminie w trakcie przebiegu.
       console.log(`[lesson-agent] run=${runId} no_time_for_generation remainingMs=${remainingMs}`);
-      const outcome = outcomeFor(begin, emptyAttempt);
-      const timedOut = outcome.kind === "failed" && outcome.errorCode === "validation" && begin.budgetSpentUsd < budgetUsd;
-      return { progress: begin, outcome: timedOut ? { kind: "failed", errorCode: "provider_timeout" } : outcome };
+      return { progress: begin, outcome: lessonOutcomeAfterDeadline(outcomeFor(begin, emptyAttempt), begin.budgetSpentUsd, budgetUsd) };
     }
 
     console.log(
@@ -469,7 +467,8 @@ export async function executeLessonAgentGeneration(
       ...(merged.dynamicTopic === undefined && working.dynamicTopic !== undefined ? { dynamicTopic: working.dynamicTopic } : {}),
     };
     latest = progress;
-    return { progress, outcome: outcomeFor(progress, result) };
+    const outcome = outcomeFor(progress, result);
+    return { progress, outcome: result.timedOut ? lessonOutcomeAfterDeadline(outcome, result.spentUsd, budgetUsd) : outcome };
   };
 
   try {

@@ -70,8 +70,7 @@ function asLessonTransportError(error: unknown): GenerationProviderError {
 
 /**
  * Jedno żądanie chat completions ze ścisłym schematem. Zwraca sparsowany JSON;
- * `accept` sprawdza kształt (niezgodny = błąd `output`). Bez `maxTokens` ciało
- * nie ma pola `max_tokens` (generator wysyła je jak dotąd).
+ * `accept` sprawdza kształt (niezgodny = błąd `output`). Ciało nie ma pola `max_tokens`.
  */
 export async function postLessonJson(
   config: LessonJsonRequestConfig,
@@ -81,7 +80,6 @@ export async function postLessonJson(
     schema: Record<string, unknown>;
     system: string | readonly ChatContentPart[];
     user: string | readonly ChatContentPart[];
-    maxTokens?: number;
     signal?: AbortSignal;
     accept: (parsed: unknown) => boolean;
   },
@@ -98,7 +96,6 @@ export async function postLessonJson(
       { role: "system", content: args.system },
       { role: "user", content: args.user },
     ],
-    ...(args.maxTokens === undefined ? {} : { max_tokens: args.maxTokens }),
   }));
   // jedno żądanie HTTP = jeden zapis; catch transportu zapisuje tylko, gdy odpowiedzi nie było
   let recorded = false;
