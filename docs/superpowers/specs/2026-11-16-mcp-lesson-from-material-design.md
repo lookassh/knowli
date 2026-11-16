@@ -46,9 +46,9 @@ Osobne narzędzie zamiast rozszerzania `lesson_catalog`: `outputSchema` MCP musi
 
 Wejście `{ subjectId? }`: bez `subjectId` — lista przedmiotów z materiału; z `subjectId` przedmiotu katalogowego → `validation`. Wyjście `{ subjects: [...] }`, dla każdego:
 
-- `subjectId`, `subjectTitlePl`, `answerLocale`, `promptLocale`, `generationRole`;
-- `subjectTitleRequired` (`materialSubjectTitle === "parent"`), `kindRequired` (`objectivesRules` obecne), `voiceTonesAllowed` (`ttsForPrompts === true`), `cardRecordings` (to samo — karty dostają nagrania);
-- `objectiveRules`: `prompts.objectivesRules` przedmiotu albo stała ogólna z punktu wyżej;
+- `subjectId`, `subjectTitlePl`, `generationRole`;
+- `subjectTitleRequired` (`materialSubjectTitle === "parent"`), `kindRequired` (`objectivesRules` obecne), `voiceTonesAllowed` (`ttsForPrompts === true`; to samo oznacza nagrania kart, opisane w polu i w skillu);
+- `objectiveRules`: tekst zasad zagadnień i kart, który dostaje generator tego przedmiotu (gałąź ogólna albo gałąź z `prompts.objectivesRules` razem z jej zastrzeżeniami o kartach), złożony ze stałych domeny;
 - `exerciseTypes`, `poolMinimums` (żeby agent zaplanował pytania; księgi reguł pytań przychodzą z `lesson_catalog(deckId)` po utworzeniu, z prawdziwymi id zagadnień).
 
 Limity strukturalne agent widzi w `inputSchema` `lesson_material_create` z `tools/list`; nie powtarzamy ich w wyjściu.
@@ -78,7 +78,7 @@ Limity są równe progom obcinania w `buildDynamicTopicData` (`lesson-drafts.ts:
 Zachowanie:
 
 1. Parsowanie; przedmiot z materiału (`materialCreationMode !== undefined`), inaczej `validation`; reguły przedmiotu z wejścia.
-2. Budowa tematu: `buildDynamicTopicData(objectives, subject.id, deckId, topicTitlePl, walidator)` z tym samym walidatorem per zagadnienie co `generateDynamicObjectives` (wydzielony do wspólnej funkcji, żeby nie było kopii) i `allowVoiceTone = subject.ttsForPrompts === true`; jakikolwiek wpis w `errors` → `validation` (generowanie dalej odrzuca pojedynczo); potem `validateDynamicTopicData` całości i `withSubjectObjectiveKinds`.
+2. Budowa tematu: `buildDynamicTopicData(objectives, subject.id, deckId, topicTitlePl, walidator)` z walidatorem per zagadnienie opartym na tym samym `validateDynamicTopicData` (walidator dostaje indeks zagadnienia — drugi, opcjonalny argument, zgodny wstecz; `generateDynamicObjectives` bez zmian) i `allowVoiceTone = subject.ttsForPrompts === true`; jakikolwiek wpis w `errors` → `validation` (generowanie dalej odrzuca pojedynczo); jawny `slug` musi przetrwać budowę bez zmian (id kończy się na `.<slug>`), inaczej `validation`; potem `validateDynamicTopicData` całości i `withSubjectObjectiveKinds`.
 3. Błąd `validation` ma `details: { objectives?: [{ index, errors: string[] }], topic?: string[] }` (komunikaty po polsku jak w rdzeniu); nic nie jest zapisane.
 4. Jedna transakcja: `requireIntegrationScope`; `INSERT decks (id, title, kind: "lesson") ON CONFLICT DO NOTHING`; wersja 1, `editNumber` 1, stan `review`, `title`, `sourceLocale: subject.promptLocale`, `targetLocale: subject.answerLocale`; `lessonContext`:
    `subjectId`, `topicId: "dynamic"`, `topicVersion: 1`, `objectiveIds` (z tematu, w kolejności), `poolSize: 60` (domyślna panelu — dogenerowanie i ponowne generowanie w panelu czytają ją jako cel), `material`, `examples: {}`, `rejectedCount: 0`, `dynamicTopic`, `subjectTitlePl` tylko gdy podany (szkoła). Bez `generation_runs`. `reconcileDraftAssetsTx` zleca nagrania kart (tylko przedmioty z `ttsForPrompts`; rozdział nie ma nagrań kart, `media-reconciliation.ts:243-245`).
