@@ -9,6 +9,7 @@ import {
   createServices,
   editLessonDraft,
   getLearningOverview,
+  listDecks,
   issueIntegrationToken,
   lessonMaterialRules,
   publishLessonDraft,
@@ -960,6 +961,18 @@ describe("lekcja z materiału — przypadek użycia", () => {
       ...SCHOOL, objectives: [schoolObjective("Pająki"), schoolObjective("Pająki")], clientRequestId: deckId,
     });
     expect(result.objectives.map(({ id }) => id)).toEqual([`school.d${deckId}.pajaki`, `school.d${deckId}.pajaki_2`]);
+  });
+
+  it("panel: lekcja z materiału bez zadań na liście zestawów i w odczycie", async () => {
+    const services = await world();
+    const deckId = randomUUID();
+    const created = await createAuthoredMaterialLesson(services, await token(services, "lessons:write"), { ...SCHOOL, clientRequestId: deckId });
+    const summary = (await listDecks(services)).find((deck) => deck.deckId === deckId);
+    expect(summary).toMatchObject({ title: "Przyroda: Pająki", kind: "lesson", state: "review", editableVersionId: created.draftId, publishedVersionId: null });
+    const deck = await readLessonDeck(services, deckId);
+    expect(deck.generation).toBeNull();
+    expect(deck.draft?.exercises).toHaveLength(0);
+    expect(deck.draft?.dynamicTopic?.objectives.map(({ id, titlePl }) => ({ id, titlePl }))).toEqual(created.objectives.map(({ id, titlePl }) => ({ id, titlePl })));
   });
 
   it("lessonMaterialRules: szkoła i rozdział", async () => {
