@@ -42,6 +42,7 @@ export function stripListenChoiceExtras(draft: LessonExerciseDraft): LessonExerc
 }
 
 /** Zdania promptu zagadnień wspólne generatorowi paczek (adapter LLM) i agentowi MCP — jedno źródło tekstu. */
+// Zmiana tych stałych zmienia płatny prompt generatora; `llm.test.ts` przypina go bajt w bajt.
 export const OBJECTIVES_SPLIT_GENERAL =
   "Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. ";
 export const OBJECTIVES_CARDS_GENERAL =

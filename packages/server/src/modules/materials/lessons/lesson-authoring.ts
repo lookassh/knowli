@@ -50,6 +50,8 @@ import {
   buildDynamicTopicData,
   lessonTitle,
   listenChoiceAvailable,
+  MATERIAL_LESSON_POOL_SIZE,
+  materialLessonTitle,
   mergeExamples,
   toExerciseDraft,
   withSubjectObjectiveKinds,
@@ -535,33 +537,29 @@ export async function createAuthoredMaterialLesson(services: Services, rawToken:
   ]));
   rejectIfAny();
 
-  const builtIds = new Map<number, string>();
   const built = buildDynamicTopicData(
     valid.objectives.map((objective) => ({ ...objective, slug: objective.slug ?? objective.titlePl })),
     subject.id,
     deckId,
     valid.topicTitlePl,
     (objective, index) => {
-      builtIds.set(index, objective.id);
       const errors = validateDynamicTopicData(subject, { titlePl: valid.topicTitlePl, objectives: [objective] });
+      // Rdzeń dopisuje sufiks zajętemu slugowi; jawny slug agenta musi przejść bez zmian (kropka: `a_b` ≠ `b`).
+      const slug = valid.objectives[index]!.slug;
+      if (errors.length === 0 && slug !== undefined && !objective.id.endsWith(`.${slug}`)) {
+        errors.push(`slug „${slug}” jest już zajęty przez inne zagadnienie tej lekcji`);
+      }
       report(index, errors);
       return errors;
     },
     voiceTonesAllowed,
   );
-  // Rdzeń dopisuje sufiks zajętemu slugowi; jawny slug agenta musi przejść bez zmian.
-  valid.objectives.forEach((objective, index) => {
-    if (objective.slug === undefined || objectiveErrors.has(index)) return;
-    if (builtIds.get(index) !== `${subject.id}.d${deckId}.${objective.slug}`) {
-      report(index, [`slug „${objective.slug}” jest już zajęty przez inne zagadnienie tej lekcji`]);
-    }
-  });
   if (objectiveErrors.size === 0) topicErrors.push(...built.errors);
   rejectIfAny();
   topicErrors.push(...validateDynamicTopicData(subject, built.data!));
   rejectIfAny();
   const data = withSubjectObjectiveKinds(subject, built.data!);
-  const title = valid.title ?? [...`${valid.subjectTitlePl ?? subject.titlePl}: ${valid.topicTitlePl}`].slice(0, 120).join("");
+  const title = valid.title ?? materialLessonTitle(valid.subjectTitlePl ?? subject.titlePl, valid.topicTitlePl);
 
   return services.db.transaction(async (tx) => {
     await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
@@ -576,7 +574,9 @@ export async function createAuthoredMaterialLesson(services: Services, rawToken:
       if (context.subjectId !== subject.id || context.dynamicTopic === undefined) {
         throw new AppError("conflict", { message: "clientRequestId belongs to another lesson" });
       }
-      return materialWriteResult(services, await readLessonDraftDto(tx, services, versionId), context.dynamicTopic);
+      // Tylko zagadnienia wciąż w lekcji: rodzic mógł usunąć część w panelu.
+      const kept = context.dynamicTopic.objectives.filter((objective) => context.objectiveIds.includes(objective.id));
+      return materialWriteResult(services, await readLessonDraftDto(tx, services, versionId), { ...context.dynamicTopic, objectives: kept });
     }
     const versionId = randomUUID();
     const context: LessonContext = {
@@ -584,8 +584,7 @@ export async function createAuthoredMaterialLesson(services: Services, rawToken:
       topicId: "dynamic",
       topicVersion: 1,
       objectiveIds: data.objectives.map((objective) => objective.id),
-      // Domyślna wielkość puli panelu: dogenerowanie i ponowne generowanie czytają ją jako cel.
-      poolSize: 60,
+      poolSize: MATERIAL_LESSON_POOL_SIZE,
       material: valid.material,
       examples: {},
       rejectedCount: 0,

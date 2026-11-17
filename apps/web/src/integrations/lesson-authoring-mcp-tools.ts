@@ -125,7 +125,7 @@ const DEFINITIONS: Record<ToolKey, ToolDefinition> = {
   },
   materialRules: {
     scopes: LESSONS,
-    description: "Rules for splitting the parent's material (for example a textbook page) into objectives with cards for a new lesson of a subject built from material: the subjects, whether a subject title or an objective kind is required, whether cards take voice tones (and get recordings), the objective rules the panel generator uses, exercise types and pool minimums. Call it before lesson_material_create.",
+    description: "Rules for splitting the parent's material (for example a textbook page) into objectives with cards for a new lesson of a subject built from material: the subjects, whether a subject title or an objective kind is required, whether cards take voice tones (and get recordings), the objective and card rules the panel generator follows, the subject's exercise types and pool minimums. Call it before lesson_material_create.",
     inputSchema: LessonMaterialRulesInputSchema, outputSchema: LessonMaterialRulesResultSchema, readOnly: true, idempotent: true,
   },
   materialCreate: {
