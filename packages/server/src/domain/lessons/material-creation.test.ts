@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { materialCreationMode, requiresParentSubjectTitle, stripListenChoiceExtras } from "./material-creation";
+import { materialCreationMode, materialObjectiveRules, requiresParentSubjectTitle, stripListenChoiceExtras } from "./material-creation";
 import { englishChapterSubject } from "./subjects/english-chapter/module";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { schoolSubject } from "./subjects/school/module";
@@ -71,5 +71,23 @@ describe("stripListenChoiceExtras", () => {
     const { instructionPl: _i, hint: _h, visualSubject: _v, ...clean } = base;
     const draft = { ...clean, exerciseType: "lesson_listen_choice" } as const;
     expect(stripListenChoiceExtras(draft)).toBe(draft);
+  });
+});
+
+describe("materialObjectiveRules", () => {
+  it("szkoła: ogólny podział 2-8 i karty bez dodawania faktów", () => {
+    const rules = materialObjectiveRules(schoolSubject);
+    expect(rules).toContain("2-8");
+    expect(rules).toContain("at most 600 characters");
+    expect(rules).toContain("NEVER add facts");
+    expect(rules).not.toContain("Return strict JSON");
+  });
+
+  it("rozdział: reguły przedmiotu zamiast ogólnej liczby zagadnień", () => {
+    const rules = materialObjectiveRules(englishChapterSubject);
+    expect(rules).toContain(englishChapterSubject.prompts.objectivesRules!);
+    expect(rules).toContain("at most 600 characters");
+    expect(rules).toContain("NEVER add facts, words or definitions");
+    expect(rules).not.toContain("Return strict JSON");
   });
 });

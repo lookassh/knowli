@@ -711,7 +711,7 @@ export function buildDynamicTopicData(
   subjectId: string,
   deckId: string,
   topicTitle: string,
-  validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+  validateObjective: (objective: DynamicTopicData["objectives"][number], index: number) => string[] = () => [],
   allowVoiceTone = true,
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
@@ -736,7 +736,7 @@ export function buildDynamicTopicData(
       })),
       ...(kind === undefined ? {} : { kind }),
     };
-    const objectiveErrors = validateObjective(objective);
+    const objectiveErrors = validateObjective(objective, index);
     if (objectiveErrors.length > 0) {
       errors.push(`zagadnienie ${index + 1}: ${objectiveErrors.join("; ")}`);
       return;
