@@ -8,6 +8,12 @@ import type {
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
+import {
+  OBJECTIVES_CARDS_GENERAL,
+  OBJECTIVES_CARDS_SUBJECT,
+  OBJECTIVES_SPLIT_GENERAL,
+  OBJECTIVES_SPLIT_SUBJECT,
+} from "../../domain/lessons/material-creation";
 import { LESSON_STORY_LIMITS } from "../../domain/lessons/story";
 import { voiceToneProperty } from "./lesson-pool-schema";
 import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
@@ -291,10 +297,9 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
   if (input.objectivesRules !== undefined) {
     return (
       head +
-      "Split the parent material into learnable objectives, in teaching order. " +
+      OBJECTIVES_SPLIT_SUBJECT +
       OBJECTIVE_FIELDS +
-      "kind and cards as the subject rules below say; card body at most 600 characters; NEVER add facts, words or definitions " +
-      "that are not in the material. " +
+      OBJECTIVES_CARDS_SUBJECT +
       voice +
       `Subject rules: ${input.objectivesRules} ` +
       "Return strict JSON only."
@@ -302,10 +307,9 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
   }
   return (
     head +
-    "Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. " +
+    OBJECTIVES_SPLIT_GENERAL +
     OBJECTIVE_FIELDS +
-    "cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; " +
-    "you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). " +
+    OBJECTIVES_CARDS_GENERAL +
     voice +
     "Return strict JSON only."
   );

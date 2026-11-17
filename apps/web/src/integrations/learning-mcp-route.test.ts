@@ -20,6 +20,8 @@ function makeDeps(overrides: Partial<LearningMcpDependencies> = {}): LearningMcp
       create: vi.fn(async () => ({ deckId: requestId, draftId: requestId, editNumber: 1, coverage: [], exposureLeaks: [] })),
       get: vi.fn(async () => ({})),
       replace: vi.fn(async () => ({})),
+      materialRules: vi.fn(async () => ({ subjects: [] })),
+      materialCreate: vi.fn(async () => ({ deckId: requestId, draftId: requestId, editNumber: 1, coverage: [], exposureLeaks: [], objectives: [] })),
     }),
     limiter: new IntegrationReadLimiter(),
     writeLimiter: new IntegrationReadLimiter(10, 3_600_000),
@@ -138,7 +140,7 @@ describe("Streamable HTTP MCP boundary", () => {
     const author = makeDeps({ authenticate: vi.fn(async () => writer) });
     const writeTools = await (await handleLearningMcpRequest(post(rpc("tools/list")), author)).json();
     expect(writeTools.result.tools.map(({ name }: { name: string }) => name).sort())
-      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
+      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_material_create", "lesson_material_rules", "lesson_validate"]);
     const forbiddenRead = await handleLearningMcpRequest(post(rpc("tools/call", 1, { name: "umiem_get_learning_overview", arguments: {} })), author);
     expect(forbiddenRead.status).toBe(403);
     expect(author.readOverview).not.toHaveBeenCalled();
@@ -153,14 +155,14 @@ describe("Streamable HTTP MCP boundary", () => {
     const editor = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["materials:write"] })) });
     expect(await names(editor)).toEqual([
       "deck_draft_create", "deck_draft_edit", "deck_get", "illustration_omit", "lesson_catalog", "lesson_draft_append", "lesson_draft_create",
-      "lesson_draft_get", "lesson_draft_replace", "lesson_validate", "material_list", "recording_regenerate", "source_create", "source_get",
+      "lesson_draft_get", "lesson_draft_replace", "lesson_material_create", "lesson_material_rules", "lesson_validate", "material_list", "recording_regenerate", "source_create", "source_get",
       "source_list", "source_update",
     ]);
     for (const tool of ["material_publish", "material_archive", "umiem_get_learning_overview"]) expect(await status(editor, tool)).toBe(403);
 
     const publisher = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["materials:publish"] })) });
     expect(await names(publisher)).toEqual(["material_archive", "material_list", "material_publish"]);
-    for (const tool of ["deck_draft_edit", "deck_get", "lesson_draft_get", "lesson_draft_append", "source_get", "umiem_get_learning_overview"]) {
+    for (const tool of ["deck_draft_edit", "deck_get", "lesson_draft_get", "lesson_draft_append", "lesson_material_create", "lesson_material_rules", "source_get", "umiem_get_learning_overview"]) {
       expect(await status(publisher, tool)).toBe(403);
     }
 
@@ -170,8 +172,8 @@ describe("Streamable HTTP MCP boundary", () => {
     // Kilka zakresów w jednym tokenie: suma narzędzi, bez powtórzeń.
     const combined = makeDeps({ authenticate: vi.fn(async (): Promise<IntegrationPrincipal> => ({ id: writer.id, scopes: ["learning:read", "materials:write", "materials:publish"] })) });
     const all = await names(combined);
-    expect(all).toHaveLength(19);
-    expect(new Set(all).size).toBe(19);
+    expect(all).toHaveLength(21);
+    expect(new Set(all).size).toBe(21);
     expect(all).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "material_list", "material_publish", "deck_draft_edit"]));
   });
 
@@ -225,5 +227,19 @@ describe("Streamable HTTP MCP boundary", () => {
     expect(limited.headers.get("retry-after")).toBeTruthy();
     expect(create).toHaveBeenCalledTimes(2);
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("lesson_material_create shares the hourly write limit; lesson_material_rules is a read and is not limited", async () => {
+    const author = makeDeps({ authenticate: vi.fn(async () => writer), writeLimiter: new IntegrationReadLimiter(1, 3_600_000) });
+    const create = rpc("tools/call", 1, { name: "lesson_material_create", arguments: {
+      clientRequestId: requestId, subjectId: "school", subjectTitlePl: "Przyroda", topicTitlePl: "Pająki", material: "Fikcyjny materiał.",
+      objectives: [{ titlePl: "Pająki", descriptionEn: "Spiders.", cards: [{ title: "A", body: "Pająk." }, { title: "B", body: "Nogi." }] }],
+    } });
+    const rules = rpc("tools/call", 2, { name: "lesson_material_rules", arguments: {} });
+    const invalid = rpc("tools/call", 3, { name: "lesson_material_create", arguments: { clientRequestId: requestId } });
+    expect(JSON.parse((await (await handleLearningMcpRequest(post(invalid), author)).json()).result.content[0].text)).toMatchObject({ code: "validation" });
+    expect((await (await handleLearningMcpRequest(post(create), author)).json()).result.isError).toBeUndefined();
+    expect((await handleLearningMcpRequest(post(create), author)).status).toBe(429);
+    expect((await handleLearningMcpRequest(post(rules), author)).status).toBe(200);
   });
 });

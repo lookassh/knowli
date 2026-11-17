@@ -9,6 +9,8 @@ import {
   LessonDraftCreateInputSchema,
   LessonDraftGetInputSchema,
   LessonDraftReplaceInputSchema,
+  LessonMaterialCreateInputSchema,
+  LessonMaterialRulesInputSchema,
   LessonValidateInputSchema,
   type AuthoringExposureLeak,
   type CoverageGapDto,
@@ -19,6 +21,8 @@ import {
   type LessonDraftReplaceInput,
   type LessonDraftWriteResult,
   type LessonExerciseInput,
+  type LessonMaterialCreateResult,
+  type LessonMaterialRulesResult,
   type LessonValidateResult,
 } from "@learning/contracts";
 import type { Services } from "../../../config";
@@ -31,16 +35,28 @@ import { cardExposureSources } from "../../../domain/lessons/card-exposure-sourc
 import { findExposureLeaks } from "../../../domain/lessons/exposure-leaks";
 import { lessonCoverageGaps, lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
-import { materialCreationMode } from "../../../domain/lessons/material-creation";
+import { materialCreationMode, materialObjectiveRules, recordsCards, requiresObjectiveKind, requiresParentSubjectTitle } from "../../../domain/lessons/material-creation";
 import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rules/rule-book";
 import { outsideStagePath, STAGE_BY_TYPE } from "../../../domain/lessons/stages";
 import { LESSON_STORY_LIMITS, solvedSentencesOf, validateLessonStory, type LessonStory } from "../../../domain/lessons/story";
-import type { LearningObjective, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
+import { validateDynamicTopicData } from "../../../domain/lessons/topic-resolution";
+import type { DynamicTopicData, LearningObjective, LessonExerciseDraft, LessonTopic, SubjectModule } from "../../../domain/lessons/types";
 import { lessonPoolRunFilter } from "../generation-runs";
 import { reconcileDraftAssetsTx } from "../media-reconciliation";
 import { copyRevisionsSkillsAssets } from "../decks";
 import { createVersionFromPublished, lockVersion } from "../version-ops";
-import { applyLessonExercises, lessonTitle, listenChoiceAvailable, mergeExamples, toExerciseDraft, type LessonContext } from "./lesson-drafts";
+import {
+  applyLessonExercises,
+  buildDynamicTopicData,
+  lessonTitle,
+  listenChoiceAvailable,
+  MATERIAL_LESSON_POOL_SIZE,
+  materialLessonTitle,
+  mergeExamples,
+  toExerciseDraft,
+  withSubjectObjectiveKinds,
+  type LessonContext,
+} from "./lesson-drafts";
 import {
   editLessonDraftTx,
   lessonPoolIssues,
@@ -54,7 +70,8 @@ import {
 /**
  * Lekcje pisane przez agenta (narzędzia MCP, token `lessons:write`, `docs/architecture.md` §19.18):
  * katalog zasad pisania, walidacja na sucho, szkic bez generatora, odczyt, poprawka i dopisanie zadań.
- * Utworzenie od zera tylko dla przedmiotów katalogowych; istniejącą lekcję (także z materiału rodzica,
+ * Utworzenie z zadaniami tylko dla przedmiotów katalogowych; lekcję z materiału rodzica agent tworzy
+ * z zagadnieniami i kartami bez zadań (`createAuthoredMaterialLesson`), a istniejącą lekcję (także
  * z tematem z `lesson_context.dynamicTopic`) narzędzia czytają, walidują i zapisują po `deckId`.
  * Walidacja odpowiada generatorowi: reguły puli (`lessonPoolIssues`), pokrycie i ujawnienia z kartami
  * (`cardExposureSources`), historyjka. Zapisy w jednej transakcji z ponownym sprawdzeniem tokenu,
@@ -253,7 +270,7 @@ async function storedExercises(db: Executor, services: Services, versionId: stri
 }
 
 /** Typy zadań puli dozwolone w zagadnieniu: jak `buildPoolInput`, wybór ze słuchu tylko tam, gdzie przedmiot nagrywa zdania; karta nie jest zadaniem puli. */
-function authorableTypes(subject: SubjectModule, objective: LearningObjective) {
+function authorableTypes(subject: SubjectModule, objective: Pick<LearningObjective, "exerciseTypes">) {
   const listenChoice = listenChoiceAvailable(subject, objective);
   return { listenChoice, types: objective.exerciseTypes.filter((type) => type !== "lesson_card" && (listenChoice || type !== "lesson_listen_choice")) };
 }
@@ -443,6 +460,150 @@ export async function createAuthoredLesson(services: Services, rawToken: string,
     await applyLessonExercises(tx, { id: versionId, deckId }, subject, topic.version, draftsOf(valid.exercises));
     await reconcileDraftAssetsTx(tx, services, { id: versionId, state: "review", deckId });
     return writeResult(services, await readLessonDraftDto(tx, services, versionId));
+  });
+}
+
+/** Przedmiot tworzący lekcje z materiału rodzica; katalogowy → `validation`. */
+function materialSubject(services: Services, subjectId: string): SubjectModule {
+  const subject = requireSubject(services, subjectId);
+  if (materialCreationMode(subject) === undefined) throw invalid(`subject does not build lessons from parent material: ${subjectId}`);
+  return subject;
+}
+
+/** Zasady tworzenia lekcji z materiału: jeden przedmiot albo wszystkie przedmioty z materiału z rejestru. */
+export async function lessonMaterialRules(services: Services, rawToken: string, input: unknown): Promise<LessonMaterialRulesResult> {
+  const { subjectId } = LessonMaterialRulesInputSchema.parse(input);
+  return services.db.transaction(async (tx) => {
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
+    const subjects = subjectId === undefined
+      ? services.subjects.listSubjects().filter((subject) => materialCreationMode(subject) !== undefined)
+      : [materialSubject(services, subjectId)];
+    return {
+      subjects: subjects.map((subject) => ({
+        subjectId: subject.id,
+        subjectTitlePl: subject.titlePl,
+        generationRole: subject.prompts.generationRole,
+        objectiveRules: materialObjectiveRules(subject),
+        subjectTitleRequired: requiresParentSubjectTitle(subject),
+        kindRequired: requiresObjectiveKind(subject),
+        voiceTonesAllowed: recordsCards(subject),
+        exerciseTypes: authorableTypes(subject, subject).types,
+        poolMinimums: { ...lessonPoolMinimums(subject) },
+      })),
+    };
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
+
+/** Wynik zapisu z `id` zagadnień tematu (ten sam dla utworzenia i powtórki). */
+function materialWriteResult(services: Services, dto: LessonDraftDto, topic: DynamicTopicData): LessonMaterialCreateResult {
+  return {
+    ...writeResult(services, dto),
+    objectives: topic.objectives.map(({ id, titlePl, kind }) => ({ id, titlePl, ...(kind === undefined ? {} : { kind }) })),
+  };
+}
+
+/**
+ * Szkic lekcji z materiału rodzica, zagadnienia i karty od agenta (bez generatora i bez zadań):
+ * `deckId = clientRequestId`, wersja `review` bez `generation_runs`, nagrania kart zlecone w tej samej
+ * transakcji. Reguły przedmiotu i rdzeń tematu sprawdzone przed zapisem; jawny `slug` nigdy nie jest
+ * zmieniany po cichu. Błędy → `validation` z `details.objectives[{ index, errors }]` / `details.topic`.
+ */
+export async function createAuthoredMaterialLesson(services: Services, rawToken: string, input: unknown): Promise<LessonMaterialCreateResult> {
+  const valid = LessonMaterialCreateInputSchema.parse(input);
+  const subject = materialSubject(services, valid.subjectId);
+  const deckId = valid.clientRequestId;
+  const kindRequired = requiresObjectiveKind(subject);
+  const voiceTonesAllowed = recordsCards(subject);
+  const topicErrors: string[] = [];
+  const objectiveErrors = new Map<number, string[]>();
+  const report = (index: number, errors: readonly string[]) => {
+    if (errors.length > 0) objectiveErrors.set(index, [...(objectiveErrors.get(index) ?? []), ...errors]);
+  };
+  const rejectIfAny = () => {
+    if (topicErrors.length === 0 && objectiveErrors.size === 0) return;
+    const objectives = [...objectiveErrors].sort(([a], [b]) => a - b).map(([index, errors]) => ({ index, errors }));
+    throw invalid("lesson material breaks subject rules", {
+      ...(objectives.length === 0 ? {} : { objectives }),
+      ...(topicErrors.length === 0 ? {} : { topic: topicErrors }),
+    });
+  };
+
+  if (requiresParentSubjectTitle(subject) && valid.subjectTitlePl === undefined) topicErrors.push("przedmiot wymaga nazwy od rodzica (subjectTitlePl)");
+  if (!requiresParentSubjectTitle(subject) && valid.subjectTitlePl !== undefined) topicErrors.push("przedmiot ma stałą nazwę: pomiń subjectTitlePl");
+  valid.objectives.forEach((objective, index) => report(index, [
+    ...(kindRequired && objective.kind === undefined ? ["brak rodzaju zagadnienia (kind)"] : []),
+    ...(!kindRequired && objective.kind !== undefined ? ["przedmiot nie używa rodzaju zagadnienia: pomiń kind"] : []),
+    ...(!voiceTonesAllowed && objective.cards.some((card) => card.voiceTone !== undefined) ? ["przedmiot nie nagrywa kart: pomiń voiceTone"] : []),
+  ]));
+  rejectIfAny();
+
+  const built = buildDynamicTopicData(
+    valid.objectives.map((objective) => ({ ...objective, slug: objective.slug ?? objective.titlePl })),
+    subject.id,
+    deckId,
+    valid.topicTitlePl,
+    (objective, index) => {
+      const errors = validateDynamicTopicData(subject, { titlePl: valid.topicTitlePl, objectives: [objective] });
+      // Rdzeń dopisuje sufiks zajętemu slugowi; jawny slug agenta musi przejść bez zmian (kropka: `a_b` ≠ `b`).
+      const slug = valid.objectives[index]!.slug;
+      if (errors.length === 0 && slug !== undefined && !objective.id.endsWith(`.${slug}`)) {
+        errors.push(`slug „${slug}” jest już zajęty przez inne zagadnienie tej lekcji`);
+      }
+      report(index, errors);
+      return errors;
+    },
+    voiceTonesAllowed,
+  );
+  if (objectiveErrors.size === 0) topicErrors.push(...built.errors);
+  rejectIfAny();
+  topicErrors.push(...validateDynamicTopicData(subject, built.data!));
+  rejectIfAny();
+  const data = withSubjectObjectiveKinds(subject, built.data!);
+  const title = valid.title ?? materialLessonTitle(valid.subjectTitlePl ?? subject.titlePl, valid.topicTitlePl);
+
+  return services.db.transaction(async (tx) => {
+    await requireIntegrationScope(tx, rawToken, AUTHORING_SCOPES);
+    const inserted = await tx.insert(decks).values({ id: deckId, title, kind: "lesson" }).onConflictDoNothing({ target: decks.id }).returning({ id: decks.id });
+    if (inserted.length === 0) {
+      // Powtórka tego samego `clientRequestId`: ten sam zestaw, o ile to lekcja z materiału tego przedmiotu.
+      const existing = (await tx.select().from(decks).where(eq(decks.id, deckId)))[0];
+      if (!existing || existing.kind !== "lesson") throw new AppError("conflict", { message: "clientRequestId belongs to another deck" });
+      const versionId = await currentVersionId(tx, existing);
+      const version = (await tx.select().from(deckVersions).where(eq(deckVersions.id, versionId)))[0]!;
+      const context = readLessonContext(version.lessonContext);
+      if (context.subjectId !== subject.id || context.dynamicTopic === undefined) {
+        throw new AppError("conflict", { message: "clientRequestId belongs to another lesson" });
+      }
+      // Tylko zagadnienia wciąż w lekcji: rodzic mógł usunąć część w panelu.
+      const kept = context.dynamicTopic.objectives.filter((objective) => context.objectiveIds.includes(objective.id));
+      return materialWriteResult(services, await readLessonDraftDto(tx, services, versionId), { ...context.dynamicTopic, objectives: kept });
+    }
+    const versionId = randomUUID();
+    const context: LessonContext = {
+      subjectId: subject.id,
+      topicId: "dynamic",
+      topicVersion: 1,
+      objectiveIds: data.objectives.map((objective) => objective.id),
+      poolSize: MATERIAL_LESSON_POOL_SIZE,
+      material: valid.material,
+      examples: {},
+      rejectedCount: 0,
+      dynamicTopic: data,
+      ...(valid.subjectTitlePl === undefined ? {} : { subjectTitlePl: valid.subjectTitlePl }),
+    };
+    await tx.insert(deckVersions).values({
+      id: versionId,
+      deckId,
+      versionNumber: 1,
+      editNumber: 1,
+      state: "review",
+      title,
+      sourceLocale: subject.promptLocale,
+      targetLocale: subject.answerLocale,
+      lessonContext: context as unknown as Record<string, unknown>,
+    });
+    await reconcileDraftAssetsTx(tx, services, { id: versionId, state: "review", deckId });
+    return materialWriteResult(services, await readLessonDraftDto(tx, services, versionId), data);
   });
 }
 

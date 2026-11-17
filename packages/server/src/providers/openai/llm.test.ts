@@ -93,7 +93,7 @@ describe("createOpenAiLlmProvider — opcje pośrednika z konfiguracji", () => {
 });
 
 describe("createOpenAiLlmProvider.generateLessonObjectives — reguły zagadnień przedmiotu (etap 5a)", () => {
-  async function sentBody(input: typeof OBJECTIVES_REQUEST & { objectivesRules?: string }) {
+  async function sentBody(input: typeof OBJECTIVES_REQUEST & { objectivesRules?: string; voiceTones?: boolean }) {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ objectives: [] }));
     vi.stubGlobal("fetch", fetchMock);
     await createOpenAiLlmProvider({ apiKey: "k" }).generateLessonObjectives(input);
@@ -110,6 +110,24 @@ describe("createOpenAiLlmProvider.generateLessonObjectives — reguły zagadnie�
     expect(system).not.toContain("2-8");
     expect(system).not.toContain("Polish explanation cards");
     expect(system).toContain("NEVER add facts");
+  });
+
+  it("prompt zagadnień identyczny bajt w bajt (migawka czterech wariantów)", async () => {
+    const withRules = { ...OBJECTIVES_REQUEST, objectivesRules: "CHAPTER-RULES 3 to 6." };
+    const prompt = async (input: typeof withRules | typeof OBJECTIVES_REQUEST, voiceTones: boolean) =>
+      (await sentBody({ ...input, voiceTones })).messages[0].content;
+    expect(await prompt(OBJECTIVES_REQUEST, false)).toBe(
+      "You write cards. Subject: Przyroda. Topic: Las. Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), descriptionEn (one English sentence describing exactly what the child must know, based only on the material), cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). Return strict JSON only.",
+    );
+    expect(await prompt(OBJECTIVES_REQUEST, true)).toBe(
+      "You write cards. Subject: Przyroda. Topic: Las. Split the parent material into 2-8 learnable objectives (one checkable knowledge unit each), in teaching order. For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), descriptionEn (one English sentence describing exactly what the child must know, based only on the material), cards (2-4 Polish explanation cards {title, body} in simple language for a child; body at most 600 characters; you may simplify and add a non-factual analogy, but NEVER add facts, dates or definitions that are not in the material). Each card also has voiceTone: choose only when it clearly fits; usually null. `cheerful` for fun facts or playful examples; `gentle` for sensitive or difficult content; `curious` for questions that invite the child to think. `mysterious` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences. Return strict JSON only.",
+    );
+    expect(await prompt(withRules, false)).toBe(
+      "You write cards. Subject: Przyroda. Topic: Las. Split the parent material into learnable objectives, in teaching order. For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), descriptionEn (one English sentence describing exactly what the child must know, based only on the material), kind and cards as the subject rules below say; card body at most 600 characters; NEVER add facts, words or definitions that are not in the material. Subject rules: CHAPTER-RULES 3 to 6. Return strict JSON only.",
+    );
+    expect(await prompt(withRules, true)).toBe(
+      "You write cards. Subject: Przyroda. Topic: Las. Split the parent material into learnable objectives, in teaching order. For every objective return: slug (ASCII lowercase with underscores, unique), titlePl (short Polish title), descriptionEn (one English sentence describing exactly what the child must know, based only on the material), kind and cards as the subject rules below say; card body at most 600 characters; NEVER add facts, words or definitions that are not in the material. Each card also has voiceTone: choose only when it clearly fits; usually null. `cheerful` for fun facts or playful examples; `gentle` for sensitive or difficult content; `curious` for questions that invite the child to think. `mysterious` only for curiosities/riddles such as »Czy wiesz, że…« with at least two sentences. Subject rules: CHAPTER-RULES 3 to 6. Return strict JSON only.",
+    );
   });
 
   it("keeps the schema and prompt without subject rules", async () => {

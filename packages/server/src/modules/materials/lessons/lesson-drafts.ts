@@ -180,6 +180,14 @@ export function lessonTitle(subject: SubjectModule, topic: LessonTopic, instruct
   return [...title].slice(0, 120).join("");
 }
 
+/** Domyślna wielkość puli lekcji z materiału: dogenerowanie i ponowne generowanie czytają ją jako cel. */
+export const MATERIAL_LESSON_POOL_SIZE = 60;
+
+/** Domyślny tytuł lekcji z materiału: nazwa przedmiotu i temat, obcięty do 120 znaków. */
+export function materialLessonTitle(subjectTitle: string, topicTitle: string): string {
+  return [...`${subjectTitle}: ${topicTitle}`].slice(0, 120).join("");
+}
+
 export async function createLesson(
   services: Services,
   cmd: LessonCommand,
@@ -339,8 +347,8 @@ export async function createMaterialLesson(
     throw new AppError("validation", { message: `subject does not create lessons from material: ${subject.id}` });
   }
   const textSource = materialTextSource(cmd);
-  const poolSize = cmd.poolSize ?? 60;
-  const title = [...`${cmd.subjectTitlePl ?? subject.titlePl}: ${cmd.topicTitlePl}`].slice(0, 120).join("");
+  const poolSize = cmd.poolSize ?? MATERIAL_LESSON_POOL_SIZE;
+  const title = materialLessonTitle(cmd.subjectTitlePl ?? subject.titlePl, cmd.topicTitlePl);
   const dedupeKey = `lesson:${cmd.clientRequestId}`;
 
   return enqueueGenerationRun(services.db, dedupeKey, async (tx) => {
@@ -711,7 +719,7 @@ export function buildDynamicTopicData(
   subjectId: string,
   deckId: string,
   topicTitle: string,
-  validateObjective: (objective: DynamicTopicData["objectives"][number]) => string[] = () => [],
+  validateObjective: (objective: DynamicTopicData["objectives"][number], index: number) => string[] = () => [],
   allowVoiceTone = true,
 ): { data?: DynamicTopicData; errors: string[] } {
   const errors: string[] = [];
@@ -736,7 +744,7 @@ export function buildDynamicTopicData(
       })),
       ...(kind === undefined ? {} : { kind }),
     };
-    const objectiveErrors = validateObjective(objective);
+    const objectiveErrors = validateObjective(objective, index);
     if (objectiveErrors.length > 0) {
       errors.push(`zagadnienie ${index + 1}: ${objectiveErrors.join("; ")}`);
       return;
