@@ -4,11 +4,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   createAuthoredLesson,
+  createAuthoredMaterialLesson,
   createProductionSubjectRegistry,
   createServices,
   editLessonDraft,
   getLearningOverview,
   issueIntegrationToken,
+  lessonMaterialRules,
   publishLessonDraft,
   readDeck,
   readLessonDeck,
@@ -23,6 +25,8 @@ import {
   LessonCatalogDtoSchema,
   LessonDraftAppendResultSchema,
   LessonDraftWriteResultSchema,
+  LessonMaterialCreateResultSchema,
+  LessonMaterialRulesResultSchema,
   LessonValidateResultSchema,
   MaterialListResultSchema,
   SourceMaterialDtoSchema,
@@ -32,8 +36,6 @@ import {
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { seedSchoolDraft } from "./school-lesson-audio-helpers";
-// Eksport z `@learning/server` dochodzi razem z adapterem MCP (barrel eksportuje tylko nazwy używane w produkcji).
-import { createAuthoredMaterialLesson, lessonMaterialRules } from "../../packages/server/src/modules/materials/lessons/lesson-authoring";
 import { createLearningMcpDependencies, handleLearningMcpRequest } from "../../apps/web/src/integrations/learning-mcp-route";
 import { IntegrationReadLimiter } from "../../apps/web/src/integrations/integration-read-limiter";
 
@@ -88,6 +90,21 @@ const LESSON = {
   examples: { [AFFIRMATIVE]: ["Tom is jumping now.", "The dogs are playing now."] },
   exercises: EXERCISES,
 };
+
+/** Zadania szkolne z cytatem z materiału „Pająk ma osiem nóg i nie jest owadem.” (pula: 3 wybory, 2 luki, 2 odpowiedzi otwarte). */
+const SCHOOL_SOURCE_REFS = [{ quote: "Pająk ma osiem nóg i nie jest owadem." }];
+const schoolChoice = (objectiveId: string, n: number): LessonExerciseInput => ({
+  exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz odpowiedź.", stem: `Wybierz liczbę ${n}.`, answer: `liczba ${n}`, acceptedAnswers: [],
+  focus: [`liczba ${n}`], options: [{ id: "a", text: `liczba ${n}` }, { id: "b", text: "żadna" }], correctOption: "a", sourceRefs: SCHOOL_SOURCE_REFS,
+});
+const schoolGap = (objectiveId: string, n: number): LessonExerciseInput => ({
+  exerciseType: "lesson_gap", objectiveId, instructionPl: "Uzupełnij.", stem: `Pająk numer ${n} ma ___ nóg.`, answer: `osiem ${n}`, acceptedAnswers: [], focus: [`osiem ${n}`], sourceRefs: SCHOOL_SOURCE_REFS,
+});
+const schoolOpen = (objectiveId: string, n: number): LessonExerciseInput => ({
+  exerciseType: "lesson_open_answer", objectiveId, instructionPl: "Wyjaśnij.", prompt: `Wyjaśnij zasadę ${n}.`, answer: `Zasada ${n}: pająk ma osiem nóg.`, acceptedAnswers: [`Reguła ${n}`],
+  focus: [`Zasada ${n}`], questionType: "definition", expectedForm: "explanation", requiredElements: [{ id: "e1", text: `zasada ${n}` }],
+  supplementaryElements: ["nie jest owadem"], commonErrors: ["sześć nóg"], sourceRefs: SCHOOL_SOURCE_REFS,
+});
 
 beforeEach(async () => {
   await truncateCoreTables();
@@ -150,7 +167,7 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     const client = await connect(services, await token(services, "lessons:write"));
 
     expect((await client.listTools()).tools.map(({ name }) => name).sort())
-      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate"]);
+      .toEqual(["lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_material_create", "lesson_material_rules", "lesson_validate"]);
 
     const catalog = LessonCatalogDtoSchema.parse((await call(client, "lesson_catalog", { subjectId: "english_grammar", topicId: "present_continuous" })).structuredContent);
     const affirmative = catalog.objectives.find(({ id }) => id === AFFIRMATIVE)!;
@@ -351,7 +368,7 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     const services = await world();
     const all = await connect(services, await token(services, ["learning:read", "materials:write", "materials:publish"]));
     const names = (await all.listTools()).tools.map(({ name }) => name);
-    expect(names).toHaveLength(19);
+    expect(names).toHaveLength(21);
     expect(names).toEqual(expect.arrayContaining(["umiem_get_learning_overview", "lesson_draft_append", "deck_draft_edit", "material_publish", "material_archive"]));
 
     const deckId = randomUUID();
@@ -363,8 +380,8 @@ describe("lekcje pisane przez agenta przez MCP", () => {
     const editorPublisher = await token(services, ["lessons:write", "materials:publish"]);
     const partial = await connect(services, editorPublisher);
     expect((await partial.listTools()).tools.map(({ name }) => name).sort()).toEqual([
-      "lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_validate",
-      "material_archive", "material_list", "material_publish",
+      "lesson_catalog", "lesson_draft_append", "lesson_draft_create", "lesson_draft_get", "lesson_draft_replace", "lesson_material_create",
+      "lesson_material_rules", "lesson_validate", "material_archive", "material_list", "material_publish",
     ]);
     await expect(call(partial, "umiem_get_learning_overview", {})).rejects.toThrow(/403|Forbidden/);
     await expect(call(partial, "deck_get", { deckId })).rejects.toThrow(/403|Forbidden/);
@@ -418,18 +435,6 @@ describe("lekcje pisane przez agenta przez MCP", () => {
   describe("lekcja szkolna z materiału rodzica", () => {
     const [SPIDERS, INSECTS, QUOTE] = ["school.ddeck000.pajaki", "school.ddeck000.owady", "Pająk ma osiem nóg i nie jest owadem."];
     const sourceRefs = [{ quote: QUOTE }];
-    const schoolChoice = (objectiveId: string, n: number): LessonExerciseInput => ({
-      exerciseType: "lesson_choice", objectiveId, instructionPl: "Wybierz odpowiedź.", stem: `Wybierz liczbę ${n}.`, answer: `liczba ${n}`, acceptedAnswers: [],
-      focus: [`liczba ${n}`], options: [{ id: "a", text: `liczba ${n}` }, { id: "b", text: "żadna" }], correctOption: "a", sourceRefs,
-    });
-    const schoolGap = (objectiveId: string, n: number): LessonExerciseInput => ({
-      exerciseType: "lesson_gap", objectiveId, instructionPl: "Uzupełnij.", stem: `Pająk numer ${n} ma ___ nóg.`, answer: `osiem ${n}`, acceptedAnswers: [], focus: [`osiem ${n}`], sourceRefs,
-    });
-    const schoolOpen = (objectiveId: string, n: number): LessonExerciseInput => ({
-      exerciseType: "lesson_open_answer", objectiveId, instructionPl: "Wyjaśnij.", prompt: `Wyjaśnij zasadę ${n}.`, answer: `Zasada ${n}: pająk ma osiem nóg.`, acceptedAnswers: [`Reguła ${n}`],
-      focus: [`Zasada ${n}`], questionType: "definition", expectedForm: "explanation", requiredElements: [{ id: "e1", text: `zasada ${n}` }],
-      supplementaryElements: ["nie jest owadem"], commonErrors: ["sześć nóg"], sourceRefs,
-    });
     /** 79 zadań dwóch zagadnień: pula publikowalna (3 prowadzone, 2 produktywne, 2 samodzielne na zagadnienie) i dopełnienie wyborami. */
     const POOL: LessonExerciseInput[] = [SPIDERS, INSECTS].flatMap((objectiveId, o) => [
       ...[1, 2, 3].map((n) => schoolChoice(objectiveId, o * 100 + n)),
@@ -643,7 +648,7 @@ describe("lekcje pisane przez agenta przez MCP", () => {
       const services = await world();
       const client = await connect(services, await token(services, "materials:write"));
       // Schematy wszystkich narzędzi zakresu przechodzą przez prawdziwe `tools/list`.
-      expect((await client.listTools()).tools.map(({ name }) => name)).toHaveLength(16);
+      expect((await client.listTools()).tools.map(({ name }) => name)).toHaveLength(18);
       const deckId = randomUUID();
       const created = DeckDraftWriteResultSchema.parse((await call(client, "deck_draft_create", { clientRequestId: deckId, title: "Fikcyjne owoce" })).structuredContent);
       expect(created).toMatchObject({ deckId, editNumber: 1, itemIds: [] });
@@ -973,5 +978,128 @@ describe("lekcja z materiału — przypadek użycia", () => {
     }
     expect((await failure(lessonMaterialRules(services, secret, { subjectId: "english_grammar" }))).code).toBe("validation");
     expect((await failure(lessonMaterialRules(services, await token(services, "learning:read"), {}))).code).toBe("forbidden");
+  });
+  describe("przez klienta MCP", () => {
+    const chapterChoice = (objectiveId: string, instructionPl: string, stem: string, correct: string, wrong: string): LessonExerciseInput => ({
+      exerciseType: "lesson_choice", objectiveId, instructionPl, stem, options: [{ id: "a", text: correct }, { id: "b", text: wrong }], correctOption: "a",
+      answer: correct, acceptedAnswers: [], focus: [],
+    });
+    const chapterGap = (objectiveId: string, instructionPl: string, stem: string, answer: string): LessonExerciseInput => ({
+      exerciseType: "lesson_gap", objectiveId, instructionPl, stem, answer, acceptedAnswers: [], focus: [answer],
+    });
+    const chapterOpen = (objectiveId: string, prompt: string, answer: string, focus: string): LessonExerciseInput => ({
+      exerciseType: "lesson_open_answer", objectiveId, instructionPl: "Przetłumacz na angielski.", prompt, answer, acceptedAnswers: [], focus: [focus],
+    });
+
+    /** Zasady → utworzenie → odczyt → katalog → walidacja → dopisanie puli → publikacja rodzica. */
+    async function fullPath(services: Services, client: Client, input: Record<string, unknown>, pool: (objectiveIds: string[]) => LessonExerciseInput[]) {
+      const rules = LessonMaterialRulesResultSchema.parse((await call(client, "lesson_material_rules", { subjectId: input.subjectId })).structuredContent);
+      expect(rules.subjects.map(({ subjectId }) => subjectId)).toEqual([input.subjectId]);
+
+      const deckId = randomUUID();
+      const created = LessonMaterialCreateResultSchema.parse((await call(client, "lesson_material_create", { ...input, clientRequestId: deckId })).structuredContent);
+      expect(created).toMatchObject({ deckId, editNumber: 1, exposureLeaks: [] });
+      expect(created.coverage.length).toBeGreaterThan(0);
+      const objectiveIds = created.objectives.map(({ id }) => id);
+      // Lekcja bez zadań nie przechodzi publikacji rodzica.
+      await expect(publishLessonDraft(services, created.draftId, created.editNumber)).rejects.toMatchObject({ code: "validation" });
+
+      const draft = LessonAuthoringDraftDtoSchema.parse((await call(client, "lesson_draft_get", { deckId })).structuredContent);
+      expect(draft).toMatchObject({ status: "review", editNumber: 1, objectiveIds, material: input.material, exercises: [] });
+      expect(draft.objectives.map(({ id, titlePl }) => ({ id, titlePl }))).toEqual(created.objectives.map(({ id, titlePl }) => ({ id, titlePl })));
+
+      const catalog = LessonCatalogDtoSchema.parse((await call(client, "lesson_catalog", { deckId })).structuredContent);
+      expect(catalog.objectives.map(({ id }) => id)).toEqual(objectiveIds);
+
+      const exercises = pool(objectiveIds);
+      const dryRun = LessonValidateResultSchema.parse((await call(client, "lesson_validate", { deckId, append: true, exercises })).structuredContent);
+      expect(dryRun).toMatchObject({ ok: true, exercises: [], coverage: [] });
+      const appended = LessonDraftAppendResultSchema.parse((await call(client, "lesson_draft_append", { deckId, expectedEditNumber: 1, exercises })).structuredContent);
+      expect(appended).toMatchObject({ editNumber: 2, coverage: [], exposureLeaks: [] });
+      expect(appended.exerciseIds).toHaveLength(exercises.length);
+
+      await expect(publishLessonDraft(services, created.draftId, appended.editNumber)).resolves.toEqual({ deckVersionId: created.draftId });
+      return { created, draft, catalog };
+    }
+
+    it("szkoła przez MCP: zasady → utworzenie → katalog → walidacja → dopisanie → publikacja rodzica", async () => {
+      const services = await world();
+      const client = await connect(services, await token(services, "lessons:write"));
+      expect(client.getServerVersion()).toMatchObject({ name: "umiem-learning", version: "0.6.0" });
+      const { draft, catalog } = await fullPath(services, client, SCHOOL, (ids) => ids.flatMap((objectiveId, o) => [
+        ...[1, 2, 3].map((n) => schoolChoice(objectiveId, o * 100 + n)),
+        ...[1, 2].map((n) => schoolGap(objectiveId, o * 100 + n)),
+        ...[1, 2].map((n) => schoolOpen(objectiveId, o * 100 + n)),
+      ]));
+      expect(draft.subjectTitlePl).toBe("Przyroda");
+      expect(JSON.stringify(catalog.objectives[0]!.rules)).toContain("school.quote_in_material");
+    });
+
+    it("rozdział przez MCP: ta sama ścieżka z kind", async () => {
+      const services = await world();
+      const client = await connect(services, await token(services, "materials:write"));
+      const { created } = await fullPath(services, client, CHAPTER, ([words, frame]) => [
+        chapterChoice(words!, "Mam szalik. Wybierz słowo.", "I have a ___.", "scarf", "coat"),
+        chapterChoice(words!, "To moja sukienka. Wybierz słowo.", "This is my ___.", "dress", "hat"),
+        chapterChoice(words!, "To moja spódnica. Wybierz słowo.", "Look at my ___.", "skirt", "boots"),
+        chapterGap(words!, "To moje rękawiczki. Wpisz brakujące słowo.", "These are my ___.", "gloves"),
+        chapterGap(words!, "To mój płaszcz. Wpisz brakujące słowo.", "Here is my ___.", "coat"),
+        chapterGap(words!, "Lubię moje buty. Wpisz brakujące słowo.", "I like my ___.", "boots"),
+        chapterOpen(words!, "Mam buty.", "I have boots.", "boots"),
+        chapterOpen(words!, "Mam płaszcz.", "I have a coat.", "coat"),
+        chapterChoice(frame!, "Mam na sobie buty. Wybierz słowo.", "I am wearing ___.", "boots", "hat"),
+        chapterChoice(frame!, "Mam na sobie płaszcz. Wybierz słowo.", "I am wearing a ___.", "coat", "dress"),
+        chapterChoice(frame!, "Załóż czapkę. Wybierz słowo.", "Put on your ___.", "hat", "skirt"),
+        chapterGap(frame!, "Mam na sobie sukienkę. Wpisz brakujące słowo.", "I am ___ a dress.", "wearing"),
+        chapterGap(frame!, "Załóż buty. Wpisz brakujące słowo.", "___ on your boots.", "Put"),
+        chapterGap(frame!, "Załóż szalik. Wpisz brakujące słowo.", "Put on your ___.", "scarf"),
+        chapterOpen(frame!, "Mam na sobie spódnicę.", "I am wearing a skirt.", "wearing"),
+        chapterOpen(frame!, "Załóż rękawiczki.", "Put on your gloves.", "Put"),
+      ]);
+      expect(created.objectives.map(({ kind }) => kind)).toEqual(["words", "frame"]);
+    });
+
+    it("outputSchema obu narzędzi w tools/list; learning:read → 403; token odwołany przed wywołaniem → błąd bez zapisu", async () => {
+      const services = await world();
+      const writer = await token(services, "lessons:write");
+      const client = await connect(services, writer);
+      const tools = (await client.listTools()).tools;
+      for (const name of ["lesson_material_rules", "lesson_material_create"]) {
+        const tool = tools.find((candidate) => candidate.name === name);
+        expect(tool?.outputSchema?.type, name).toBe("object");
+        expect(tool?.annotations, name).toMatchObject({ readOnlyHint: name === "lesson_material_rules", idempotentHint: true, destructiveHint: false });
+      }
+      expect(tools.find(({ name }) => name === "lesson_material_create")?.description).toMatch(/new UUID as clientRequestId/);
+
+      const reader = await connect(services, await token(services, "learning:read"));
+      for (const name of ["lesson_material_rules", "lesson_material_create"]) {
+        await expect(call(reader, name, { ...SCHOOL, clientRequestId: randomUUID() })).rejects.toThrow(/403|Forbidden/);
+      }
+
+      await revokeIntegrationToken(services, writer.split("_")[1]!);
+      await expect(call(client, "lesson_material_create", { ...SCHOOL, clientRequestId: randomUUID() })).rejects.toThrow();
+      expect(await counts()).toEqual([0, 0, 0]);
+    });
+
+    it("błędne wejście przed SDK daje validation w formacie narzędzi bez zapisu", async () => {
+      const services = await world();
+      const client = await connect(services, await token(services, "lessons:write"));
+      const [objective] = SCHOOL.objectives;
+      const card = objective!.cards[0]!;
+      const cases: Record<string, Record<string, unknown>> = {
+        "1 karta": { objectives: [{ ...objective, cards: [card] }] },
+        "5 kart": { objectives: [{ ...objective, cards: [card, card, card, card, card] }] },
+        "descriptionEn 401": { objectives: [{ ...objective, descriptionEn: "x".repeat(401) }] },
+        "9 zagadnień": { objectives: Array.from({ length: 9 }, (_, n) => schoolObjective(`Zagadnienie ${n}`)) },
+        "{{examples}}": { objectives: [{ ...objective, cards: [card, { title: "Przykłady", body: "{{examples}}" }] }] },
+      };
+      const before = await counts();
+      for (const [name, patch] of Object.entries(cases)) {
+        const error = toolErrorOf(await call(client, "lesson_material_create", { ...SCHOOL, ...patch, clientRequestId: randomUUID() }));
+        expect(error.code, name).toBe("validation");
+        expect((error.details?.issues as unknown[] | undefined)?.length, name).toBeGreaterThan(0);
+      }
+      expect(await counts()).toEqual(before);
+    });
   });
 });
