@@ -1,11 +1,22 @@
 import { z } from "zod";
 import { UuidSchema } from "./common";
-import { CoverageGapDtoSchema, LessonExerciseInputSchema, LessonExerciseTypeSchema, LessonStorySchema } from "./lessons";
+import {
+  CoverageGapDtoSchema,
+  DynamicObjectiveKindSchema,
+  LessonExerciseInputSchema,
+  LessonExerciseTypeSchema,
+  LessonStorySchema,
+  LessonVoiceToneSchema,
+  MAX_SCHOOL_MATERIAL_LENGTH,
+  MAX_SCHOOL_SUBJECT_TITLE_LENGTH,
+  MAX_SCHOOL_TOPIC_TITLE_LENGTH,
+} from "./lessons";
 
 /**
  * Lekcje pisane przez agenta (narzędzia MCP z zakresem `lessons:write`): wejścia i wyjścia
  * narzędzi `lesson_catalog`, `lesson_validate`, `lesson_draft_create`, `lesson_draft_get`,
- * `lesson_draft_replace` i `lesson_draft_append`. Wyjścia to osobne DTO z listą dozwolonych pól: bez danych dzieci,
+ * `lesson_draft_replace`, `lesson_draft_append` oraz `lesson_material_rules` i `lesson_material_create`
+ * (lekcja z materiału rodzica). Wyjścia to osobne DTO z listą dozwolonych pól: bez danych dzieci,
  * tematów zdań (`interests`), przypisań, kosztów, kodów runów i modelu oceniającego.
  */
 
@@ -13,7 +24,7 @@ import { CoverageGapDtoSchema, LessonExerciseInputSchema, LessonExerciseTypeSche
 export const LESSON_AUTHORING_MAX_EXERCISES = 150;
 /** Limit ciała żądania MCP tokenu `lessons:write`. */
 export const LESSON_AUTHORING_MAX_REQUEST_BYTES = 512 * 1024;
-/** Zapisy (`lesson_draft_create`, `lesson_draft_replace`, `lesson_draft_append`) na token na godzinę. */
+/** Zapisy (`lesson_draft_create`, `lesson_draft_replace`, `lesson_draft_append`, `lesson_material_create`) na token na godzinę. */
 export const LESSON_AUTHORING_WRITES_PER_HOUR = 10;
 export const LESSON_AUTHORING_MAX_TITLE_LENGTH = 120;
 
@@ -248,3 +259,66 @@ export const LessonCatalogDtoSchema = z.object({
   }).strict()),
 }).strict();
 export type LessonCatalogDto = z.infer<typeof LessonCatalogDtoSchema>;
+
+/** Zasady tworzenia lekcji z materiału rodzica; bez `subjectId` wszystkie przedmioty z materiałem. */
+export const LessonMaterialRulesInputSchema = z.object({ subjectId: z.string().min(1).optional() }).strict();
+export type LessonMaterialRulesInput = z.infer<typeof LessonMaterialRulesInputSchema>;
+
+export const MaterialSubjectRulesSchema = z.object({
+  subjectId: z.string(),
+  subjectTitlePl: z.string(),
+  generationRole: z.string(),
+  /** Zasady pisania zagadnień z materiału (te same, które egzekwuje rdzeń). */
+  objectiveRules: z.string(),
+  subjectTitleRequired: z.boolean(),
+  kindRequired: z.boolean(),
+  /** Czy `voiceTone` jest dozwolony, także w nagraniach kart. */
+  voiceTonesAllowed: z.boolean(),
+  exerciseTypes: z.array(LessonExerciseTypeSchema),
+  poolMinimums: z.object({
+    guided: z.number().int().nonnegative(),
+    productive: z.number().int().nonnegative(),
+    independent: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+export type MaterialSubjectRules = z.infer<typeof MaterialSubjectRulesSchema>;
+
+export const LessonMaterialRulesResultSchema = z.object({ subjects: z.array(MaterialSubjectRulesSchema) }).strict();
+export type LessonMaterialRulesResult = z.infer<typeof LessonMaterialRulesResultSchema>;
+
+/** Karta zagadnienia: treść bez `{{examples}}` (przykłady pochodzą z zadań, nie z miejsca w karcie). */
+const MaterialCardInputSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(600).refine((body) => !body.includes("{{examples}}"), "body must not contain {{examples}}"),
+  voiceTone: LessonVoiceToneSchema.optional(),
+}).strict();
+
+const MaterialObjectiveInputSchema = z.object({
+  slug: z.string().max(40).regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/).optional(),
+  titlePl: z.string().trim().min(1).max(120),
+  descriptionEn: z.string().trim().min(1).max(400),
+  kind: DynamicObjectiveKindSchema.optional(),
+  cards: z.array(MaterialCardInputSchema).min(2).max(4),
+}).strict();
+
+/** Utworzenie szkicu lekcji z materiału: serwer składa temat i zagadnienia; `clientRequestId` staje się `deckId`. */
+export const LessonMaterialCreateInputSchema = z.object({
+  clientRequestId: UuidSchema,
+  subjectId: z.string().min(1).max(64),
+  subjectTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_SUBJECT_TITLE_LENGTH).optional(),
+  topicTitlePl: z.string().trim().min(1).max(MAX_SCHOOL_TOPIC_TITLE_LENGTH),
+  material: z.string().trim().min(1).max(MAX_SCHOOL_MATERIAL_LENGTH),
+  title: TitleSchema.optional(),
+  objectives: z.array(MaterialObjectiveInputSchema).min(1).max(8),
+}).strict();
+export type LessonMaterialCreateInput = z.infer<typeof LessonMaterialCreateInputSchema>;
+
+/** Wynik zapisu plus `id` zagadnień do późniejszego `lesson_draft_create`/`append`. */
+export const LessonMaterialCreateResultSchema = LessonDraftWriteResultSchema.extend({
+  objectives: z.array(z.object({
+    id: z.string(),
+    titlePl: z.string(),
+    kind: DynamicObjectiveKindSchema.optional(),
+  }).strict()),
+});
+export type LessonMaterialCreateResult = z.infer<typeof LessonMaterialCreateResultSchema>;
