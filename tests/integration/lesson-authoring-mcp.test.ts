@@ -32,6 +32,8 @@ import {
 import { ManualClock, testDatabase, truncateCoreTables } from "./helpers";
 import { fakeGeneration } from "./fakes";
 import { seedSchoolDraft } from "./school-lesson-audio-helpers";
+// Eksport z `@learning/server` dochodzi razem z adapterem MCP (barrel eksportuje tylko nazwy używane w produkcji).
+import { createAuthoredMaterialLesson, lessonMaterialRules } from "../../packages/server/src/modules/materials/lessons/lesson-authoring";
 import { createLearningMcpDependencies, handleLearningMcpRequest } from "../../apps/web/src/integrations/learning-mcp-route";
 import { IntegrationReadLimiter } from "../../apps/web/src/integrations/integration-read-limiter";
 
@@ -830,5 +832,146 @@ describe("lekcje pisane przez agenta przez MCP", () => {
       expect((await call(publisher, "material_archive", { deckId })).structuredContent).toEqual({ deckId });
       expect(toolErrorOf(await call(publisher, "material_publish", { deckId, expectedEditNumber: 1 })).code).toBe("validation");
     });
+  });
+});
+
+describe("lekcja z materiału — przypadek użycia", () => {
+  const SCHOOL_MATERIAL = "Pająk ma osiem nóg i nie jest owadem. Owad ma sześć nóg.";
+  const schoolObjective = (titlePl: string, extra: Record<string, unknown> = {}) => ({
+    titlePl, descriptionEn: `Fictional objective: ${titlePl}.`,
+    cards: [{ title: "Nogi", body: `${titlePl}: pająk ma osiem nóg.` }, { title: "Owad?", body: `${titlePl}: pająk nie jest owadem.` }], ...extra,
+  });
+  const SCHOOL = {
+    subjectId: "school", subjectTitlePl: "Przyroda", topicTitlePl: "Pająki", material: SCHOOL_MATERIAL,
+    objectives: [schoolObjective("Pająki"), schoolObjective("Owady")],
+  };
+  const CHAPTER_MATERIAL = ["Słowa:", "coat — płaszcz", "boots — buty", "Zwroty:", "I am wearing …", "Put on your …"].join("\n");
+  const CHAPTER = {
+    subjectId: "english_chapter", topicTitlePl: "Unit 1", material: CHAPTER_MATERIAL,
+    objectives: [
+      { slug: "ubrania", titlePl: "Ubrania", descriptionEn: "Clothes words.", kind: "words", cards: [{ title: "Słowa", body: "coat, boots" }, { title: "Temat", body: "Ubrania" }] },
+      { titlePl: "Co mam na sobie", descriptionEn: "Frames: I am wearing.", kind: "frame", cards: [{ title: "Zwroty", body: "I am wearing …\nPut on your …" }, { title: "Temat", body: "Co mam na sobie" }] },
+    ],
+  };
+  const counts = async () => Promise.all(["decks", "deck_versions", "media_assets"].map((table) => countRows(`select count(*)::int as n from learning_app.${table}`)));
+  type Failure = { code: string; details?: { objectives?: { index: number; errors: string[] }[]; topic?: string[] } };
+  const failure = async (promise: Promise<unknown>, name?: string): Promise<Failure> => {
+    const error = await promise.then(() => undefined, (caught: unknown) => caught as Failure);
+    expect(error, name).toBeDefined();
+    return error!;
+  };
+  const versionOf = async (deckId: string) => (await pool.query(
+    "select id, state, title, source_locale, target_locale, lesson_context from learning_app.deck_versions where deck_id = $1", [deckId],
+  )).rows[0];
+
+  it("szkoła: wersja review, kontekst, locale, tytuł i nagrania kart", async () => {
+    const services = await world();
+    const secret = await token(services, "lessons:write");
+    const deckId = randomUUID();
+    const result = await createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: deckId });
+    const ids = [`school.d${deckId}.pajaki`, `school.d${deckId}.owady`];
+    expect(result).toMatchObject({ deckId, editNumber: 1, objectives: [{ id: ids[0], titlePl: "Pająki" }, { id: ids[1], titlePl: "Owady" }] });
+    expect(result.objectives[0]).not.toHaveProperty("kind");
+    const version = await versionOf(deckId);
+    expect(version).toMatchObject({ id: result.draftId, state: "review", title: "Przyroda: Pająki", source_locale: "pl-PL", target_locale: "pl-PL" });
+    expect(version.lesson_context).toEqual({
+      subjectId: "school", topicId: "dynamic", topicVersion: 1, objectiveIds: ids, poolSize: 60, material: SCHOOL_MATERIAL,
+      examples: {}, rejectedCount: 0, subjectTitlePl: "Przyroda",
+      dynamicTopic: {
+        titlePl: "Pająki",
+        objectives: SCHOOL.objectives.map((objective, index) => ({ id: ids[index], titlePl: objective.titlePl, descriptionEn: objective.descriptionEn, cards: objective.cards })),
+      },
+    });
+    // Dwa zagadnienia po dwie karty: jedno nagranie na kartę.
+    expect(await countRows("select count(*)::int as n from learning_app.media_assets")).toBe(4);
+    expect(await countRows("select count(*)::int as n from learning_app.generation_runs where deck_version_id = $1", [result.draftId])).toBe(0);
+  });
+
+  it("rozdział: kind w kontekście, brak nagrań kart, locale pl-PL→en-GB, tytuł z przedmiotu", async () => {
+    const services = await world();
+    const deckId = randomUUID();
+    const result = await createAuthoredMaterialLesson(services, await token(services, "materials:write"), { ...CHAPTER, clientRequestId: deckId });
+    const ids = [`english_chapter.d${deckId}.ubrania`, `english_chapter.d${deckId}.co_mam_na_sobie`];
+    expect(result.objectives).toEqual([{ id: ids[0], titlePl: "Ubrania", kind: "words" }, { id: ids[1], titlePl: "Co mam na sobie", kind: "frame" }]);
+    const version = await versionOf(deckId);
+    const subjectTitle = services.subjects.getSubject("english_chapter")!.titlePl;
+    expect(version).toMatchObject({ state: "review", title: `${subjectTitle}: Unit 1`, source_locale: "pl-PL", target_locale: "en-GB" });
+    expect(version.lesson_context.objectiveIds).toEqual(ids);
+    expect(version.lesson_context).not.toHaveProperty("subjectTitlePl");
+    expect(version.lesson_context.dynamicTopic.objectives.map((objective: { kind: string }) => objective.kind)).toEqual(["words", "frame"]);
+    expect(await countRows("select count(*)::int as n from learning_app.media_assets")).toBe(0);
+  });
+
+  it("powtórka clientRequestId zwraca ten sam zestaw i te same objectives; lekcja katalogowa albo zestaw słówek o tym id → conflict", async () => {
+    const services = await world();
+    const secret = await token(services, "lessons:write");
+    const deckId = randomUUID();
+    const first = await createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: deckId });
+    const again = await createAuthoredMaterialLesson(services, secret, { ...SCHOOL, topicTitlePl: "Inny temat", objectives: [schoolObjective("Inne")], clientRequestId: deckId });
+    expect(again).toEqual(first);
+    // Ten sam id w innym przedmiocie z materiału też jest konfliktem.
+    expect((await failure(createAuthoredMaterialLesson(services, secret, { ...CHAPTER, clientRequestId: deckId }))).code).toBe("conflict");
+
+    const catalogId = randomUUID();
+    await createAuthoredLesson(services, secret, { ...LESSON, clientRequestId: catalogId });
+    expect((await failure(createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: catalogId }))).code).toBe("conflict");
+
+    const vocabularyId = randomUUID();
+    await pool.query("insert into learning_app.decks (id, title, kind) values ($1, 'Słówka', 'vocabulary')", [vocabularyId]);
+    expect((await failure(createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: vocabularyId }))).code).toBe("conflict");
+  });
+
+  it("błędy reguł przedmiotu bez zapisu", async () => {
+    const services = await world();
+    const secret = await token(services, "lessons:write");
+    const [words, frame] = [CHAPTER.objectives[0]!, CHAPTER.objectives[1]!];
+    const cases: { name: string; input: Record<string, unknown>; objectives?: number[]; topic?: boolean }[] = [
+      { name: "przedmiot katalogowy", input: { ...SCHOOL, subjectId: "english_grammar", subjectTitlePl: undefined } },
+      { name: "rozdział bez kind", input: { ...CHAPTER, objectives: [words, { ...frame, kind: undefined }] }, objectives: [1] },
+      { name: "szkoła z kind", input: { ...SCHOOL, objectives: [SCHOOL.objectives[0], { ...SCHOOL.objectives[1], kind: "words" }] }, objectives: [1] },
+      { name: "szkoła bez subjectTitlePl", input: { ...SCHOOL, subjectTitlePl: undefined }, topic: true },
+      { name: "rozdział z subjectTitlePl", input: { ...CHAPTER, subjectTitlePl: "Angielski" }, topic: true },
+      { name: "voiceTone w rozdziale", input: { ...CHAPTER, objectives: [{ ...words, cards: [{ ...words.cards[0]!, voiceTone: "cheerful" }, words.cards[1]!] }, frame] }, objectives: [0] },
+      { name: "jawny slug równy wyprowadzonemu", input: { ...SCHOOL, objectives: [schoolObjective("Pająki"), schoolObjective("Pająki", { slug: "pajaki" })] }, objectives: [1] },
+      { name: "zdublowany jawny slug", input: { ...SCHOOL, objectives: [schoolObjective("A", { slug: "x" }), schoolObjective("B", { slug: "x" })] }, objectives: [1] },
+    ];
+    const before = await counts();
+    for (const { name, input, objectives, topic } of cases) {
+      const error = await failure(createAuthoredMaterialLesson(services, secret, { ...input, clientRequestId: randomUUID() }), name);
+      expect(error.code, name).toBe("validation");
+      if (objectives !== undefined) {
+        expect(error.details?.objectives?.map(({ index }) => index), name).toEqual(objectives);
+        expect(error.details?.objectives?.every(({ errors }) => errors.length > 0), name).toBe(true);
+      }
+      if (topic === true) expect(error.details?.topic?.length, name).toBeGreaterThan(0);
+    }
+    expect(await counts()).toEqual(before);
+  });
+
+  it("dwa zagadnienia o tym samym tytule bez slug dostają różne id", async () => {
+    const services = await world();
+    const deckId = randomUUID();
+    const result = await createAuthoredMaterialLesson(services, await token(services, "lessons:write"), {
+      ...SCHOOL, objectives: [schoolObjective("Pająki"), schoolObjective("Pająki")], clientRequestId: deckId,
+    });
+    expect(result.objectives.map(({ id }) => id)).toEqual([`school.d${deckId}.pajaki`, `school.d${deckId}.pajaki_2`]);
+  });
+
+  it("lessonMaterialRules: szkoła i rozdział", async () => {
+    const services = await world();
+    const secret = await token(services, "lessons:write");
+    const { subjects } = await lessonMaterialRules(services, secret, {});
+    expect(subjects.map(({ subjectId }) => subjectId).sort()).toEqual(["english_chapter", "school"]);
+    const [school] = (await lessonMaterialRules(services, secret, { subjectId: "school" })).subjects;
+    expect(school).toMatchObject({ subjectId: "school", subjectTitleRequired: true, kindRequired: false, voiceTonesAllowed: true, poolMinimums: { guided: 3, productive: 2, independent: 2 } });
+    expect(school!.objectiveRules).toContain("2-8");
+    const [chapter] = (await lessonMaterialRules(services, secret, { subjectId: "english_chapter" })).subjects;
+    expect(chapter).toMatchObject({ subjectTitleRequired: false, kindRequired: true, voiceTonesAllowed: false, poolMinimums: { guided: 3, productive: 3, independent: 2 } });
+    for (const subject of [school!, chapter!]) {
+      expect(subject.exerciseTypes).not.toContain("lesson_card");
+      expect(subject.exerciseTypes.length).toBeGreaterThan(0);
+    }
+    expect((await failure(lessonMaterialRules(services, secret, { subjectId: "english_grammar" }))).code).toBe("validation");
+    expect((await failure(lessonMaterialRules(services, await token(services, "learning:read"), {}))).code).toBe("forbidden");
   });
 });
