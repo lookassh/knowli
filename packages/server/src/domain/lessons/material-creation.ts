@@ -25,6 +25,16 @@ export function requiresParentSubjectTitle(subject: MaterialCreationSubject): bo
   return materialCreationMode(subject) === "parent";
 }
 
+/** Czy zagadnienie z materiału musi mieć `kind` (przedmiot opisuje rodzaje zagadnień w prompcie). */
+export function requiresObjectiveKind(subject: Pick<SubjectModule, "prompts">): boolean {
+  return subject.prompts.objectivesRules !== undefined;
+}
+
+/** Czy karty zagadnień dostają nagrania (a więc `voiceTone`). */
+export function recordsCards(subject: Pick<SubjectModule, "ttsForPrompts">): boolean {
+  return subject.ttsForPrompts === true;
+}
+
 /**
  * Czyści świeże wyjście modelu z pól, których ćwiczenie wyboru ze słuchu nie
  * ma: polecenie dziecka jest stałe z katalogu komunikatów, bodźcem jest

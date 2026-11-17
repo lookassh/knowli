@@ -35,7 +35,7 @@ import { cardExposureSources } from "../../../domain/lessons/card-exposure-sourc
 import { findExposureLeaks } from "../../../domain/lessons/exposure-leaks";
 import { lessonCoverageGaps, lessonPoolMinimums } from "../../../domain/lessons/lesson-coverage";
 import { DEFAULT_LESSON_POLICY } from "../../../domain/lessons/lesson-policy";
-import { materialCreationMode, materialObjectiveRules, requiresParentSubjectTitle } from "../../../domain/lessons/material-creation";
+import { materialCreationMode, materialObjectiveRules, recordsCards, requiresObjectiveKind, requiresParentSubjectTitle } from "../../../domain/lessons/material-creation";
 import { lessonRuleBook, ruleBookContextFor } from "../../../domain/lessons/rules/rule-book";
 import { outsideStagePath, STAGE_BY_TYPE } from "../../../domain/lessons/stages";
 import { LESSON_STORY_LIMITS, solvedSentencesOf, validateLessonStory, type LessonStory } from "../../../domain/lessons/story";
@@ -485,8 +485,8 @@ export async function lessonMaterialRules(services: Services, rawToken: string, 
         generationRole: subject.prompts.generationRole,
         objectiveRules: materialObjectiveRules(subject),
         subjectTitleRequired: requiresParentSubjectTitle(subject),
-        kindRequired: subject.prompts.objectivesRules !== undefined,
-        voiceTonesAllowed: subject.ttsForPrompts === true,
+        kindRequired: requiresObjectiveKind(subject),
+        voiceTonesAllowed: recordsCards(subject),
         exerciseTypes: authorableTypes(subject, subject).types,
         poolMinimums: { ...lessonPoolMinimums(subject) },
       })),
@@ -512,8 +512,8 @@ export async function createAuthoredMaterialLesson(services: Services, rawToken:
   const valid = LessonMaterialCreateInputSchema.parse(input);
   const subject = materialSubject(services, valid.subjectId);
   const deckId = valid.clientRequestId;
-  const kindRequired = subject.prompts.objectivesRules !== undefined;
-  const voiceTonesAllowed = subject.ttsForPrompts === true;
+  const kindRequired = requiresObjectiveKind(subject);
+  const voiceTonesAllowed = recordsCards(subject);
   const topicErrors: string[] = [];
   const objectiveErrors = new Map<number, string[]>();
   const report = (index: number, errors: readonly string[]) => {

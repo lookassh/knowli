@@ -927,6 +927,20 @@ describe("lekcja z materiału — przypadek użycia", () => {
     expect((await failure(createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: vocabularyId }))).code).toBe("conflict");
   });
 
+  it("powtórka po usunięciu zagadnienia z lekcji zwraca tylko pozostałe objectives", async () => {
+    const services = await world();
+    const secret = await token(services, "lessons:write");
+    const deckId = randomUUID();
+    const first = await createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: deckId });
+    const [removed, remaining] = first.objectives.map(({ id }) => id);
+    await pool.query(
+      "update learning_app.deck_versions set lesson_context = jsonb_set(lesson_context, '{objectiveIds}', (lesson_context->'objectiveIds') - $2::text) where id = $1",
+      [first.draftId, removed],
+    );
+    const again = await createAuthoredMaterialLesson(services, secret, { ...SCHOOL, clientRequestId: deckId });
+    expect(again.objectives.map(({ id }) => id)).toEqual([remaining]);
+  });
+
   it("błędy reguł przedmiotu bez zapisu", async () => {
     const services = await world();
     const secret = await token(services, "lessons:write");

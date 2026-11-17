@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { materialCreationMode, materialObjectiveRules, requiresParentSubjectTitle, stripListenChoiceExtras } from "./material-creation";
+import { materialCreationMode, materialObjectiveRules, recordsCards, requiresObjectiveKind, requiresParentSubjectTitle, stripListenChoiceExtras } from "./material-creation";
 import { englishChapterSubject } from "./subjects/english-chapter/module";
 import { englishGrammarSubject } from "./subjects/english-grammar/module";
 import { schoolSubject } from "./subjects/school/module";
@@ -37,6 +37,13 @@ describe("requiresParentSubjectTitle", () => {
     expect(requiresParentSubjectTitle(englishGrammarSubject)).toBe(false);
     expect(requiresParentSubjectTitle({ materialSubjectTitle: "parent" })).toBe(false);
     expect(requiresParentSubjectTitle({ buildDynamicTopic: dynamic, materialSubjectTitle: "parent" })).toBe(true);
+  });
+});
+
+describe("requiresObjectiveKind i recordsCards", () => {
+  it("rozdział wymaga kind i nie nagrywa kart, szkoła odwrotnie", () => {
+    expect([requiresObjectiveKind(englishChapterSubject), recordsCards(englishChapterSubject)]).toEqual([true, false]);
+    expect([requiresObjectiveKind(schoolSubject), recordsCards(schoolSubject)]).toEqual([false, true]);
   });
 });
 
