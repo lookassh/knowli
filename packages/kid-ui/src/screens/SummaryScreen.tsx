@@ -72,7 +72,7 @@ export function SummaryScreen({
                 key={objective.objectiveId}
                 data-testid="kid-summary-objective"
                 leading={<KidIcon name="book" className="kid-summary-row-icon" />}
-                title={format(messages.kid.lessonSummaryObjective, { title: objective.titlePl })}
+                title={objective.titlePl}
               />
             ))}
           </RowList>

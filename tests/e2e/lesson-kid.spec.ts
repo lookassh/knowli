@@ -243,7 +243,8 @@ test("child works a whole lesson: card → notice → choice → blocks → gap 
   // Podsumowanie: ćwiczone reguły, bez procentów ani statusów technicznych.
   await expect(page.getByTestId("kid-summary")).toBeVisible();
   await expect(page.getByTestId("kid-summary-objective")).toHaveCount(2);
-  await expect(page.getByTestId("kid-summary-objectives")).toContainText("Ćwiczyłeś: -s w 3. osobie");
+  await expect(page.getByTestId("kid-summary-objectives")).toContainText("Dziś ćwiczyliśmy");
+  await expect(page.getByTestId("kid-summary-objectives")).toContainText("-s w 3. osobie");
   await expect(page.getByTestId("kid-summary-objectives")).not.toContainText("%");
 });
 
