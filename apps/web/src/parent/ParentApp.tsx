@@ -215,11 +215,11 @@ export default function ParentApp() {
         ) : section === "children" ? (
           <ChildEditor childrenList={childrenList} onChanged={refreshChildren} registerEditorState={leaveGuard.register} />
         ) : section === "progress" ? (
-          <ProgressPanel childrenList={childrenList} decks={decks} />
+          <ProgressPanel childrenList={childrenList} decks={decks} onNavigate={(next) => navigate({ section: next })} />
         ) : section === "costs" ? (
           <CostsPanel onNavigate={navigate} />
         ) : (
-          <WorkCardPanel childrenList={childrenList} />
+          <WorkCardPanel childrenList={childrenList} onNavigate={(next) => navigate({ section: next })} />
         )}
       </ParentShell>
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />
