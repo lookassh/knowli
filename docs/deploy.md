@@ -54,8 +54,87 @@ każdym deploju.
    `learning_app.parent_credentials` w bazie, ustaw `UMIEM_SETUP_TOKEN`
    i uruchom web ponownie.
 
-Aktualizacja aplikacji: `git pull` + ponownie `up -d --build` — migracje
-odpalają się automatycznie przed startem web/worker.
+## Aktualizacja: najpierw backup (#381)
+
+**Twarda reguła: żadnego `up -d --build` ani deployu w Coolify bez świeżej,
+kompletnej kopii.** Migracje odpalają się automatycznie przed startem
+web/worker na jedynej bazie rodziny; nie ma migracji w dół, więc jedyną drogą
+powrotu po złej migracji jest kopia sprzed deployu.
+
+1. `deploy/backup.sh` — sprawdź, że w nowym katalogu `backups/knowli-<data>/`
+   jest `SHA256SUMS` (znacznik kompletnej kopii). Zapisz bieżący commit:
+   `git rev-parse HEAD` (wersja do powrotu).
+2. `git pull`
+3. `docker compose --env-file .env -f deploy/compose.yaml up -d --build`
+4. `docker compose --env-file .env -f deploy/compose.yaml ps` — `migrate`
+   zakończony kodem 0, `web` i `worker` healthy; otwórz panel rodzica.
+
+**Coolify:** wyłącz automatyczny deploy po pushu (Auto Deploy) — deploy jest
+ręcznym krokiem po backupie. Na hoście uruchom backup z kopii repo, wskazując
+projekt compose nadany przez Coolify (`docker compose ls`):
+`KNOWLI_PROJECT=<projekt> KNOWLI_ENV_FILE=<plik z POSTGRES_PASSWORD> deploy/backup.sh`.
+Dopiero potem „Deploy” w Coolify. (Wywołanie skryptów na stacku Coolify nie
+zostało jeszcze sprawdzone — przy pierwszym użyciu porównaj nazwę wolumenu
+mediów z `docker volume ls`; skrypt oczekuje `<projekt>_knowli-media`.)
+**Nie uruchamiaj `deploy/restore.sh -p <projekt Coolify>`**: dla każdego
+projektu innego niż `knowli` skrypt robi `compose down -v`, czyli kasuje
+wolumeny rodziny. Odtworzenie na stacku Coolify nie ma jeszcze sprawdzonej
+procedury — runbook B niżej dotyczy stacka compose `knowli`.
+
+### Runbook: nieudana migracja
+
+Wszystkie oczekujące migracje Drizzle wykonują się w **jednej transakcji**
+(`migrateDatabase`, `packages/server/src/db/client.ts`); dopiero po niej,
+osobno, idempotentne `ensureLearningPolicy`. Obecne migracje nie mają
+poleceń działających poza transakcją (np. `CREATE INDEX CONCURRENTLY`);
+migracja z takim poleceniem wymaga własnego planu powrotu w swoim PR.
+
+**A. `migrate` padł** (`ps` pokazuje `migrate` z kodem ≠ 0, web/worker nie
+wstają):
+
+1. Przyczyna: `docker compose --env-file .env -f deploy/compose.yaml logs migrate`.
+2. Transakcja została wycofana — schemat i dane są w stanie sprzed deployu,
+   restore nie jest potrzebny.
+3. Powrót kodu: `git checkout <zapisany commit>` i ponownie
+   `up -d --build`; migracje starej wersji są już zastosowane, więc `migrate`
+   jest no-op i stara wersja wstaje na niezmienionej bazie.
+4. Poprawka trafia nowym PR-em; po jego scaleniu wróć na `main` i powtórz
+   procedurę aktualizacji od backupu.
+
+(Wyjątek: jeśli w logu błąd dotyczy `ensureLearningPolicy`, migracje schematu
+już przeszły — postępuj jak w B.)
+
+**B. Migracja przeszła, ale wersja jest zła** (błędy aplikacji, utrata
+funkcji, podejrzane dane): sam powrót kodu nie wystarcza — stara wersja
+działałaby na nowszym schemacie. Wracasz do kopii sprzed deployu; dane
+zapisane po deployu (próby dzieci, nowe materiały) przepadają.
+
+1. `git checkout <zapisany commit>` i zbuduj obrazy starej wersji:
+   `docker compose --env-file .env -f deploy/compose.yaml build`
+   (`restore.sh` startuje istniejące obrazy, nie buduje ich).
+2. **Przed czyszczeniem bazy** (`restore.sh` sprawdza sumy dopiero po nim):
+   - zrób kopię bieżącego, złego stanu — `deploy/backup.sh` — żeby dane
+     zapisane po deployu dało się później ręcznie odzyskać; ta kopia jest
+     nowsza, więc w kroku 4 podaj jawnie katalog kopii sprzed deployu,
+   - sprawdź kopię sprzed deployu:
+     `(cd backups/knowli-<data> && sha256sum --check SHA256SUMS)`;
+     opcjonalnie odtwórz ją na osobnej instancji:
+     `deploy/restore.sh backups/knowli-<data>` (projekt `knowli-restore`).
+3. `pg_restore --clean` usuwa tylko obiekty obecne w kopii, a tabele dodane
+   przez złą migrację by zostały — dlatego wyczyść bazę rodziny przed
+   odtworzeniem:
+
+   ```bash
+   c="docker compose --env-file .env -f deploy/compose.yaml"
+   $c stop web worker
+   $c exec -T db dropdb -U postgres --force knowli
+   $c exec -T db createdb -U postgres knowli
+   ```
+
+4. `deploy/restore.sh backups/knowli-<data> -p knowli --yes` — kontrola sum,
+   `pg_restore`, media, start starej wersji (migracje no-op).
+5. Zweryfikuj panel rodzica (`node deploy/smoke.mjs inspect … <PIN>`) i opisz
+   w issue, które dane po deployu przepadły.
 
 ## Generowanie lekcji (przebieg bazowy)
 
