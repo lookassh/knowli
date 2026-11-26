@@ -76,6 +76,7 @@ export function DeckScreen({
   onStart,
   onMockTest,
   onEndActive,
+  onSwitchProfile,
   headerActions,
   onGuidance,
 }: {
@@ -90,6 +91,8 @@ export function DeckScreen({
   onStart: (deckId: string) => void;
   onMockTest?: (deckId: string) => void;
   onEndActive?: (deckId: string) => void;
+  /** Shown only when another profile exists: a mistaken profile tap must not force learning on a sibling's account. */
+  onSwitchProfile?: () => void;
   headerActions?: ReactNode;
   onGuidance?: (key: UiAudioKey) => Promise<void>;
 }) {
@@ -119,7 +122,16 @@ export function DeckScreen({
             {onGuidance && <GuidanceButton audioKey="deck_select" onPlay={onGuidance} testId="kid-deck-guidance" />}
           </div>
         </header>
-        {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
+        {(childName || onSwitchProfile) && (
+          <div className="kid-greeting-row">
+            {childName && <p className="kid-greeting">{format(messages.kid.greeting, { name: childName })}</p>}
+            {onSwitchProfile && (
+              <ActionButton type="button" variant="text" size="sm" fullWidth={false} data-testid="kid-switch-profile" onClick={onSwitchProfile}>
+                {messages.kid.switchProfile}
+              </ActionButton>
+            )}
+          </div>
+        )}
         <h1>{messages.kid.decksTitle}</h1>
       </KidScreen.Header>
       <KidScreen.Content className="kid-deck-content">

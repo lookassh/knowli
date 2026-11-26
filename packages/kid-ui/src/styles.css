@@ -625,8 +625,18 @@
   min-height: calc(100 * var(--kid-dvh));
 }
 
-.kid-deck-screen .kid-greeting {
+.kid-deck-screen .kid-greeting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 8px;
   margin: 8px 0 0;
+}
+
+.kid-deck-screen .kid-greeting {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .kid-deck-screen h1 {
