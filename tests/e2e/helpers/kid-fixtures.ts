@@ -251,11 +251,16 @@ export function makeDeck(index: number, options: Partial<KidDeckDto> = {}): KidD
   };
 }
 
-/** Opens the deck screen of a single profile with the given decks (no task is issued). */
-export async function openDeckScreen(page: Page, decks: KidDeckDto[]) {
+export const secondChildId = "10000000-0000-4000-8000-000000000a05";
+
+/** Opens the deck screen of Szymon with the given decks (no task is issued); `siblings` adds a second profile. */
+export async function openDeckScreen(page: Page, decks: KidDeckDto[], { siblings = false }: { siblings?: boolean } = {}) {
   page.setDefaultTimeout(5_000);
   await installKidUiFixture(page, {
-    profiles: [{ childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" }],
+    profiles: [
+      { childId, displayName: "Szymon", avatarKey: "cat", recordingMode: "hold" },
+      ...(siblings ? [{ childId: secondChildId, displayName: "Ewa", avatarKey: "bear", recordingMode: "hold" as const }] : []),
+    ],
     decks,
     session: { mode: "training", sessionId, childId, deckId: decks[0]?.deckId ?? makeDeck(0).deckId,
       deckVersionId: "10000000-0000-4000-8000-000000000004", policyId: "default", microphoneEnabled: false,
@@ -264,5 +269,5 @@ export async function openDeckScreen(page: Page, decks: KidDeckDto[]) {
     tasks: [],
   });
   await page.goto("/");
-  await page.getByTestId("kid-profile").click();
+  await page.getByTestId("kid-profile").filter({ hasText: "Szymon" }).click();
 }

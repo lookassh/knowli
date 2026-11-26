@@ -1,6 +1,6 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import { makeDeck, openDeckScreen, sessionId } from "./helpers/kid-fixtures";
-import { expectBandSpansRoot, expectInsideRoot, resizeAndSettle } from "./helpers/kid-layout";
+import { expectBandSpansRoot, expectInsideRoot, measure, resizeAndSettle } from "./helpers/kid-layout";
 
 const expect = baseExpect.configure({ timeout: 1_500 });
 test.use({ viewport: { width: 390, height: 844 } });
@@ -313,4 +313,38 @@ test("microphone settings remain inside a short viewport when denial details app
   const panelBox = await panel.boundingBox();
   expect(panelBox!.y).toBeGreaterThanOrEqual(0);
   expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(viewport.height);
+});
+
+test("a single profile has no switch profile action on the deck screen", async ({ page }) => {
+  await openDeckScreen(page, [makeDeck(0)]);
+  await expect(page.getByTestId("kid-deck-card")).toBeVisible();
+  await expect(page.getByTestId("kid-switch-profile")).toHaveCount(0);
+});
+
+test("switch profile on the deck screen fits every viewport and returns to profiles without starting a session", async ({ page }) => {
+  const sessionPosts: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/v1/kid/sessions" && request.method() === "POST") sessionPosts.push(request.url());
+  });
+  await openDeckScreen(page, [makeDeck(0), makeDeck(1)], { siblings: true });
+  const action = page.getByTestId("kid-switch-profile");
+  await expect(action).toHaveText("Zmień profil");
+
+  for (const viewport of [{ width: 360, height: 800 }, { width: 844, height: 390 }, { width: 820, height: 1180 }, { width: 1440, height: 900 }]) {
+    const name = `${viewport.width}x${viewport.height}`;
+    await resizeAndSettle(page, viewport);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // The screen enters from 0.98 scale: measure once it is full size.
+    await expect.poll(async () => (await action.boundingBox())?.height ?? 0, { message: name }).toBeGreaterThanOrEqual(48);
+    const layout = await measure(page, { root: "[data-kid-screen]", action: "[data-testid='kid-switch-profile']" });
+    expect(layout.scrollWidth, `horizontal overflow: ${name}`).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.action.width, `action width: ${name}`).toBeGreaterThanOrEqual(48);
+    expectInsideRoot(layout.action, layout.root, `action: ${name}`);
+    expect(layout.action.top, `action top: ${name}`).toBeGreaterThanOrEqual(0);
+  }
+
+  await action.click();
+  await expect(page.getByRole("heading", { name: "Kto się dziś uczy?" })).toBeVisible();
+  await expect(page.getByTestId("kid-profile")).toHaveCount(2);
+  expect(sessionPosts).toEqual([]);
 });

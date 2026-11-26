@@ -728,6 +728,38 @@ test("dwa profile mają osobne sesje", async ({ page }) => {
   expect(ewaSessions.at(-1)!.state).toBe("active");
 });
 
+test("pomyłkowy wybór profilu: Zmień profil na ekranie zestawów nie rusza aktywnej sesji", async ({ page }) => {
+  test.slow();
+  const parent = await parentSession(page);
+  const ola = await createChild(parent, "Ola pomyłka", "fox");
+  const ewa = await createChild(parent, "Ewa pomyłka", "bear");
+  const { deckId } = await createAssignedDeck(parent, ola.id, "Pory roku dla rodzeństwa", `kid-flow-switch-${randomUUID()}`);
+  const assign = await parent.put(`/api/v1/parent/assignments/${ewa.id}/${deckId}`, { data: { testDate: null } });
+  expect(assign.status()).toBe(204);
+
+  // Ola zaczyna naukę i odchodzi od urządzenia — jej sesja zostaje aktywna.
+  await page.goto(`/kids/${ola.id}/learn`);
+  await page.getByTestId("kid-deck").filter({ hasText: "Pory roku dla rodzeństwa" }).click();
+  await expect(page.locator("[data-task-id]")).toBeVisible();
+
+  // Ewa przez pomyłkę stuka profil Oli, wraca do wyboru profilu i wybiera siebie.
+  await page.goto("/");
+  await page.getByTestId("kid-profile").filter({ hasText: ola.displayName }).click();
+  await expect(page.getByTestId("kid-deck-screen")).toBeVisible();
+  await page.getByTestId("kid-switch-profile").click();
+  await expect(page.getByRole("heading", { name: "Kto się dziś uczy?" })).toBeVisible();
+  await page.getByTestId("kid-profile").filter({ hasText: ewa.displayName }).click();
+  await page.getByTestId("kid-deck").filter({ hasText: "Pory roku dla rodzeństwa" }).click();
+  await expect(page.locator("[data-task-id]")).toBeVisible();
+
+  const sessions = async (childId: string) => query<{ state: string }>(
+    `select state from learning_app.learning_sessions where child_id = $1 order by started_at`,
+    [childId],
+  );
+  expect((await sessions(ola.id)).map((row) => row.state)).toEqual(["active"]);
+  expect((await sessions(ewa.id)).map((row) => row.state)).toEqual(["active"]);
+});
+
 test("recall z należnego sprawdzenia: pisemna pisownia, Nie pamiętam i Pomiń", async ({ page }) => {
   test.slow();
   const parent = await parentSession(page);
