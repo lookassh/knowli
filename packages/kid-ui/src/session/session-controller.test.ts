@@ -4744,4 +4744,12 @@ describe("LearningSessionController — historyjka lekcji (lesson_story)", () =>
     expect(harness.controller.remainingFor(choice(4))).toBeNull();
     expect(harness.controller.remainingFor(null)).toBeNull();
   });
+
+  it("remainingFor counts remaining screens when the server knows them (#392)", async () => {
+    const harness = await startAtTask(baseState(), storyTask());
+    const exposure = { ...taskDto("te", { kind: "lesson_choice", instructionPl: "Wybierz", stem: "He ___.", options: [{ id: "o1", text: "goes" }] }, 2), remainingScreens: 4 };
+    expect(harness.controller.remainingFor(exposure)).toBeNull();
+    expect(harness.controller.remainingFor({ ...exposure, remainingScreens: 3 })).toBe(3);
+    expect(harness.controller.remainingFor({ ...exposure, remainingAssessed: 5, remainingScreens: 1 })).toBe(1);
+  });
 });

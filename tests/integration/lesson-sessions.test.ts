@@ -352,6 +352,31 @@ describe("sesja lekcji — start i wydawanie zadań", () => {
     expect(afterBudget).toBeNull();
   });
 
+  it("po banerze „Jeszcze N” do końca lekcji wychodzi dokładnie N ekranów (#392)", async () => {
+    const { services } = buildTestServices();
+    const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: child.id, richPool: true });
+    const session = await startSession(services, { childId: child.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const screens: TaskDto[] = [];
+    for (let step = 0; step < 80; step++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      if (task.exerciseType === "lesson_card" || task.exerciseType === "lesson_story") {
+        await completePresentation(services, { taskId: task.taskId });
+      } else {
+        await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "dont_remember" });
+      }
+      // historyjka jest zapowiadana osobno („… i historyjka!”) i nie należy do N
+      if (task.exerciseType !== "lesson_story" && task.exerciseType !== "lesson_story_question") screens.push(task);
+    }
+    // ta sama reguła co `remainingFor` w Kid UI
+    const banner = (task: TaskDto) => task.remainingScreens ?? task.remainingAssessed;
+    const first = screens.findIndex((task) => banner(task) >= 1 && banner(task) <= 3);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(screens.every((task) => task.remainingScreens !== undefined)).toBe(true);
+    screens.slice(first).forEach((task, index) => expect(banner(task)).toBe(screens.length - first - index));
+  });
+
   it("usunięcie profilu w trakcie sesji kasuje kaskadą zadania i ekspozycje", async () => {
     const { services } = buildTestServices();
     const child = await createChild(services, { displayName: "Lekcja", avatarKey: "owl" });
