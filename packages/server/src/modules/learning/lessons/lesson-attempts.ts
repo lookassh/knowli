@@ -1381,11 +1381,16 @@ export async function submitLessonAttempt(services: Services, input: AttemptInpu
     if (blocks) started.key = { ...started.key, answer: correctTextFor(started.key), acceptedAnswers: [] };
     const childAnswer = blocks ? blocks.join(" ") : (typed as Extract<AttemptInput, { modality: "text" }>).text;
     const normalizedAnswer = normalizedAnswerKey(childAnswer);
-    // Wersja promptu zależy od ścieżki (szkoła ma osobny klucz cache).
     const earlyInput = services.grader ? buildGraderInput(services, started.task, started.key, childAnswer, blocks, spokenText(started)) : null;
-    const promptVersion = services.grader
-      ? (services.grader.provider.promptVersionForInput?.(earlyInput!) ?? services.grader.provider.promptVersion)
-      : undefined;
+    // Odpowiedź ponad limit ścieżki gradera: bez modelu i cache (werdykt prefiksu nie ocenia całości, #404).
+    if (earlyInput && earlyInput.childAnswer.length < childAnswer.length) {
+      const unavailable = resultFromVerdict(services, started.task, started.key, childAnswer, null, null);
+      const tooLong = { ...unavailable, details: { ...unavailable.details, reason: "answer_too_long" } };
+      const dto = await finalizeLessonAttempt(tx, services, started, typed, tooLong);
+      return { kind: "done" as const, dto };
+    }
+    // Klucz cache: wersja promptu + hash modelu i treści promptu (#384).
+    const promptVersion = services.grader ? services.grader.provider.promptVersionForInput(earlyInput!) : undefined;
 
     // Krok 3: trafienie w cache (ten sam materiał) — finalizacja jak deterministyczna.
     if (promptVersion) {

@@ -2,6 +2,7 @@ import type { AnswerGraderProvider, GraderInput } from "../../ports/ai";
 import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
 import { recordHttpError, recordResponse, recordTransportFailure, recordUnreadable } from "../usage/record-http";
+import { verdictCacheKey } from "../verdict-cache-key";
 
 /**
  * Adapter modelu oceniającego zgodnego z OpenAI (design „Model oceniający”).
@@ -33,9 +34,10 @@ export interface OpenAiCompatibleGraderOptions {
 }
 
 /**
- * Wersja promptu — stała adaptera. Wchodzi do klucza cache `lesson_verdicts`
- * (`prompt_version`): zmiana kształtu/treści promptu unieważnia zapisane
- * werdykty bez migracji. Zmieniaj przy KAŻDEJ zmianie promptu systemowego.
+ * Wersja promptu — stała adaptera, prefiks klucza cache `lesson_verdicts`
+ * (`prompt_version` = `wersja:hash`, `verdictCacheKey`). Model, opcje pośrednika
+ * i treść promptu systemowego unieważniają cache same przez hash; wersję podnoś
+ * przy zmianie znaczenia werdyktu — panel rodzica pokazuje tylko bieżące wersje.
  */
 // v2 (etap 3 #360): „poprawna” = wykonuje polecenie, pole `usesTargetForm`, linia rozsypanki.
 const PROMPT_VERSION = "grader-v2";
@@ -200,7 +202,10 @@ export function createOpenAiCompatibleGrader(options: OpenAiCompatibleGraderOpti
     promptVersion: PROMPT_VERSION,
     promptVersions: [PROMPT_VERSION, SCHOOL_PROMPT_VERSION, SCHOOL_SPEECH_PROMPT_VERSION],
     promptVersionForInput: (input: GraderInput) =>
-      input.school ? (input.school.spoken ? SCHOOL_SPEECH_PROMPT_VERSION : SCHOOL_PROMPT_VERSION) : PROMPT_VERSION,
+      verdictCacheKey(
+        input.school ? (input.school.spoken ? SCHOOL_SPEECH_PROMPT_VERSION : SCHOOL_PROMPT_VERSION) : PROMPT_VERSION,
+        [options.baseUrl, options.model, options.requestExtras ?? null, input.school ? schoolSystemPrompt(input) : systemPrompt(input)],
+      ),
     async grade(input: GraderInput, signal: AbortSignal): Promise<unknown> {
       const base = {
         feature: "answer_grading",

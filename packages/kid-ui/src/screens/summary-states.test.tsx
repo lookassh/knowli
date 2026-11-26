@@ -90,7 +90,7 @@ describe("summary screen states", () => {
     expect(practice.querySelectorAll("li")).toHaveLength(1);
     expect(practice.textContent).toContain("cat");
     expect(practice.textContent).toContain("przypominanie, pisownia");
-    const objectives = screen.getByRole("list", { name: "Ćwiczyłeś reguły" });
+    const objectives = screen.getByRole("list", { name: "Dziś ćwiczyliśmy" });
     expect(objectives.querySelectorAll("li")).toHaveLength(2);
     expect(screen.getAllByTestId("kid-summary-objective")).toHaveLength(2);
     // Cele lekcji nie są wynikiem: neutralna ikona książki, nie znacznik sukcesu.

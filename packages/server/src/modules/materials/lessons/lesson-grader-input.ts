@@ -101,6 +101,7 @@ export function lessonGraderInput(args: {
     },
     acceptedAnswers: [answer, ...acceptedAnswers],
     // 600 znaków: odpowiedzi otwarte szkoły i ułożone klocki (tekst ćwiczenia); pozostałe lekcje 200.
+    // `submitLessonAttempt` wykrywa ucięcie (krótsze `childAnswer`) i nie ocenia wtedy próby (#404).
     childAnswer: answerText.slice(0, school || blocks ? 600 : 200),
     ...(blocks ? { blocks: [...blocks] } : {}),
     ...(school ? { school } : {}),

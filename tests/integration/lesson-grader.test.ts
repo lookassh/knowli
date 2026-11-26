@@ -253,6 +253,33 @@ describe("cache werdyktów i parent_decision", () => {
     expect((await verdictRows()).length).toBe(1);
   });
 
+  it("zmiana modelu gradera unieważnia cache: ta sama odpowiedź idzie do nowego modelu, stary werdykt zostaje historią (#384)", async () => {
+    const raw = { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true };
+    const oldGrader = new FakeAnswerGrader().onDefault({ raw });
+    const newGrader = new FakeAnswerGrader({ model: "fake-grader-2" }).onDefault({ raw: { ...raw, verdict: "correct", errorCategory: null, fragments: [] } });
+    const { services, clock } = graderServices(oldGrader);
+    const { services: switched } = graderServices(newGrader);
+    const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
+    const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
+    await seedPracticing(childB.id);
+    await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [childB.id, lesson.deckId]);
+    const sA = await startSession(services, { childId: childA.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const t1 = await reserveTransform(services, sA.sessionId);
+    await submitAttempt(services, { taskId: t1.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
+
+    const sB = await startSession(switched, { childId: childB.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const t2 = await reserveTransform(switched, sB.sessionId);
+    const second = await submitAttempt(switched, { taskId: t2.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
+    expect(newGrader.callCount).toBe(1);
+    expect(second.feedback?.kind).toBe("great");
+    const rows = await pool.query<{ grader_model: string; prompt_version: string }>(
+      "select grader_model, prompt_version from learning_app.lesson_verdicts order by created_at",
+    );
+    expect(rows.rows.map((r) => r.grader_model)).toEqual(["fake-grader-1", "fake-grader-2"]);
+    expect(rows.rows[0]!.prompt_version).not.toBe(rows.rows[1]!.prompt_version);
+  });
+
   it("parent_decision overridden_correct nadrzędne nad zapisanym incorrect", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);
@@ -482,6 +509,27 @@ describe("etap 3 (#360): rozsypanka przez model oceniający", () => {
 });
 
 describe("rezerwacja, budżet i leniwa finalizacja", () => {
+  it("odpowiedź ponad limit gradera (200) → nieoceniona bez wywołania, cache i zużycia budżetu (#404)", async () => {
+    const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
+    const { services, clock } = graderServices(grader);
+    const { session } = await newLesson(services, clock, true);
+    const task = await reserveTransform(services, session.sessionId);
+    // Poprawka po 200. znaku: ocena samego prefiksu dałaby fałszywą pomyłkę.
+    const text = `she play ${"and ".repeat(50)}sorry, she plays`;
+    expect(text.length).toBeGreaterThan(200);
+    const attempt = await submitAttempt(services, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text });
+    expect(attempt.feedback?.kind).toBe("not_assessed");
+    expect(attempt.taskState).toBe("issued");
+    expect(grader.callCount).toBe(0);
+    expect((await verdictRows()).length).toBe(0);
+    expect(await graderCallsOf(session.sessionId)).toBe(0);
+    const assessed = await pool.query<{ outcome: string; details: Record<string, unknown> }>(
+      "select s.outcome, s.details from learning_app.assessments s join learning_app.attempts a on a.id = s.attempt_id where a.task_id = $1",
+      [task.taskId],
+    );
+    expect(assessed.rows.map((r) => [r.outcome, r.details.reason])).toEqual([["unassessed", "answer_too_long"]]);
+  });
+
   it("limit wywołań wyczerpany → unevaluated bez wywołania", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: [], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader, { maxCallsPerSession: 0 });

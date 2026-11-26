@@ -200,7 +200,12 @@ function SourceList({ onNavigate, registerEditorState }: Omit<SourcesPanelProps,
           </Stack>
         </Alert>
       )}
-      {list.isSuccess && sources.length === 0 && <Text className="pp-decks-muted" data-testid="sources-empty">{messages.sources.empty}</Text>}
+      {list.isSuccess && sources.length === 0 && (
+        <Stack gap="sm" align="flex-start">
+          <Text className="pp-decks-muted" data-testid="sources-empty">{messages.sources.empty}</Text>
+          <Button size="md" variant="light" data-testid="sources-empty-cta" onClick={() => setDialogOpen(true)}>{messages.sources.newSource}</Button>
+        </Stack>
+      )}
 
       {sources.length > 0 && (
         <Stack gap="xs" component="ul" className="pp-decks-list">

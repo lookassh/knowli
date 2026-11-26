@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { readLessonTrainingSessionPlan, readTrainingSessionPlan } from "./training-session-plan";
+import { readLessonTrainingSessionPlan, readTrainingSessionPlan, remainingPlanScreens } from "./training-session-plan";
 
 const plan = (overrides: Record<string, unknown> = {}) => ({
   version: 1,
@@ -97,5 +97,43 @@ describe("prywatny plan treningu lekcji — sufiks historyjki", () => {
     })],
   ])("rejects %s", (_name, value) => {
     expect(() => readLessonTrainingSessionPlan(value)).toThrow("invalid_training_session_plan");
+  });
+});
+
+describe("remainingPlanScreens — baner „Jeszcze N” (#392)", () => {
+  // E = ekspozycja/karta (bez budżetu), A = zadanie oceniane.
+  const slots = (pattern: string) => [...pattern].map((kind, index) => ({ taskId: `t${index}`, assessed: kind === "A" }));
+
+  it("liczy ekrany od bieżącego do wyczerpania budżetu, także nieoceniane", () => {
+    const plan = slots("AAEAEA");
+    // budżet 4: po t0 zostają 3 oceniane, ale przed nimi dwa ekrany ekspozycji
+    expect(remainingPlanScreens(plan, "t1", 3)).toBe(5);
+    expect(remainingPlanScreens(plan, "t2", 2)).toBe(4);
+    expect(remainingPlanScreens(plan, "t5", 1)).toBe(1);
+  });
+
+  it("nie liczy slotów po wyczerpaniu budżetu ani pominiętych", () => {
+    expect(remainingPlanScreens(slots("AEAE"), "t0", 2)).toBe(3);
+    // pominięty slot oceniany zużywa budżet, ale nie jest ekranem
+    expect(remainingPlanScreens(slots("AAA"), "t0", 3, (slot) => slot.taskId === "t1")).toBe(2);
+    // bieżący slot jest ekranem, nawet gdy predykat by go pominął (już wydany)
+    expect(remainingPlanScreens(slots("AA"), "t0", 2, () => true)).toBe(1);
+  });
+
+  it("zadanie spoza planu nie ma liczby ekranów", () => {
+    expect(remainingPlanScreens(slots("AA"), "other", 2)).toBeUndefined();
+  });
+
+  it("od pierwszego banera do końca jest najwyżej N ekranów", () => {
+    const plan = slots("AAEAEAEA");
+    let remaining = 5;
+    const banners: number[] = [];
+    for (const slot of plan) {
+      if (remaining <= 0) break;
+      banners.push(remainingPlanScreens(plan, slot.taskId, remaining)!);
+      if (slot.assessed) remaining -= 1;
+    }
+    const first = banners.findIndex((n) => n <= 3);
+    expect(banners.length - first).toBeLessThanOrEqual(banners[first]!);
   });
 });

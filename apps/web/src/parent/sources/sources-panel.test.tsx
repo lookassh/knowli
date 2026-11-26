@@ -71,6 +71,7 @@ describe("SourcesPanel", () => {
   it("pusta lista: komunikat bez źródeł", () => {
     const markup = renderParentMarkup(<SourcesPanel route={{ section: "sources" }} {...handlers()} />, withList([]));
     expect(markup).toContain(messages.sources.empty);
+    expect(markup).toContain('data-testid="sources-empty-cta"');
     expect(markup).not.toContain('data-testid="source-row-0"');
   });
 

@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
  * albo z importem AI SDK (`ai`, `@openrouter/*` — żądania HTTP wysyła wtedy biblioteka;
  * agent puli lekcji, spec `2026-11-04-lesson-pool-agent-stage2a-design.md` §4)
  * to jeden z adapterów z §2 (albo wspólna koperta żądań lekcji
- * `openai/lesson-json-request.ts`, z której korzystają zagadnienia i historyjka lekcji)
+ * `openai/lesson-json-request.ts`, z której korzystają zestaw słówek oraz zagadnienia
+ * i historyjka lekcji — adapter `openai/llm.ts` nie ma własnego `fetch`)
  * i musi wołać helpery zapisu kosztów co najmniej tyle razy, ile ma miejsc wywołania
  * (plik SDK: co najmniej 3 — odpowiedź, błąd HTTP, porażka transportu). Test pilnuje inwentarza — nowy adapter
  * z `fetch` albo SDK albo adapter bez zapisu wyjdzie tu na jaw. Kompletność ścieżek
@@ -29,7 +30,6 @@ const PAID_ADAPTERS = [
   "openai-compatible/stt.ts",
   "openai/lesson-json-request.ts",
   "openai/lesson-pool-agent.ts",
-  "openai/llm.ts",
   "openai/tts.ts",
 ];
 

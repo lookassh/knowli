@@ -2433,7 +2433,9 @@ export class LearningSessionController {
    */
   remainingFor(task: TaskDto | null): number | null {
     if (this.#screen.kind === "learning" && this.#screen.session.mode === "mock_test") return task?.remainingAssessed ?? null;
-    return task !== null && task.remainingAssessed >= 1 && task.remainingAssessed <= REMAINING_BANNER_FROM ? task.remainingAssessed : null;
+    // Ekrany do końca (#392): ekspozycja i karta nie zużywają budżetu, ale są ekranem.
+    const remaining = task === null ? 0 : task.remainingScreens ?? task.remainingAssessed;
+    return remaining >= 1 && remaining <= REMAINING_BANNER_FROM ? remaining : null;
   }
 
   async reviewMockTest(sessionId: string): Promise<void> {

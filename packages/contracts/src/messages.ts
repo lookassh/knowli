@@ -312,6 +312,8 @@ export const messages = {
     childLabel: "Dziecko",
     deckLabel: "Zestaw",
     empty: "Brak opublikowanych zestawów — najpierw wygeneruj i opublikuj materiał.",
+    noChildren: "Nie masz jeszcze profilu dziecka — dodaj dziecko, aby śledzić jego postępy.",
+    toDecks: "Przejdź do zestawów",
     lessonsOnly: "Masz tylko opublikowane lekcje. Postępy lekcji znajdziesz w nadzorze lekcji — otwórz lekcję z listy zestawów.",
     loading: "Wczytuję…",
     masteryTitle: "Opanowanie",
@@ -837,8 +839,7 @@ export const messages = {
     dictationTypeInstead: "Napisz odpowiedź w polu.",
     dictationCountdown: "Zostało {seconds} s",
     // Podsumowanie lekcji (per cel), bez procentów.
-    lessonSummaryTitle: "Ćwiczyłeś reguły",
-    lessonSummaryObjective: "Ćwiczyłeś: {title}",
+    lessonSummaryTitle: "Dziś ćwiczyliśmy",
     // Lista zestawów: etykieta przedmiotu lekcji.
     lessonSubjectLabel: "Lekcja: {subject}",
     lessonCardInstruction: "Poznaj regułę",

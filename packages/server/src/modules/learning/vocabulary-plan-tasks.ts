@@ -12,6 +12,13 @@ export interface IssuedVocabularyPlanSlot {
   readonly assessedBefore: number;
 }
 
+/** Slot planu pomijany przy wydaniu, bo wymaga mikrofonu albo czytania, których sesja nie ma. */
+export function skipsPlanSlot(session: VocabularyPlanSession, slot: TrainingSessionSlot): boolean {
+  const context = contextOf(session);
+  return context.microphoneDisabledTaskIds.includes(slot.taskId) ||
+    (!session.microphoneEnabled && (slot.exerciseType === "speech" || (slot.exerciseType === "recall" && !context.canRead)));
+}
+
 /** Issues one immutable vocabulary-plan slot, participating in the caller's transaction. */
 export async function issueNextVocabularyPlanTask(
   tx: Tx,
@@ -23,11 +30,9 @@ export async function issueNextVocabularyPlanTask(
 ): Promise<IssuedVocabularyPlanSlot | null> {
   let ordinal = nextOrdinal;
   let assessed = assessedBefore;
-  const context = contextOf(session);
   let slot = plan.slots[ordinal];
 
-  while (slot && (context.microphoneDisabledTaskIds.includes(slot.taskId) ||
-    (!session.microphoneEnabled && (slot.exerciseType === "speech" || (slot.exerciseType === "recall" && !context.canRead))))) {
+  while (slot && skipsPlanSlot(session, slot)) {
     await tx.insert(sessionTasks).values({
       id: slot.taskId, sessionId: session.id, childId: session.childId, deckVersionId: session.deckVersionId,
       itemRevisionId: slot.itemRevisionId, ordinal, exerciseType: slot.exerciseType, direction: slot.direction,

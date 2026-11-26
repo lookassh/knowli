@@ -15,6 +15,7 @@ import ts from "typescript";
  * - Pliki modułów nie importują publicznego barrela pakietu (`src/index.ts`).
  * - Czysta domena (`src/domain`) nie importuje modułów, bazy, konfiguracji
  *   ani portów/providerów; jedyny wyjątek to wspólny `AppError` z `errors.ts`.
+ *   Pakiety npm tylko z `DOMAIN_PACKAGE_ALLOWLIST`.
  *
  * Pliki testowe wewnątrz obszarów są zwolnione z reguły barrela (testują
  * wnętrza), ale skan rzeczywistych plików produkcyjnych musi być czysty.
@@ -91,10 +92,16 @@ function moduleViolations(fileRelPosix: string, source: string): string[] {
   return found;
 }
 
+// Dokładne nazwy (bez podścieżek): domena nie zna ORM, sterowników bazy ani SDK providerów.
+const DOMAIN_PACKAGE_ALLOWLIST: ReadonlySet<string> = new Set(["@learning/contracts", "zod", "node:crypto"]);
+
 function domainViolations(fileRelPosix: string, source: string): string[] {
   const found: string[] = [];
   for (const specifier of specifiersOf(fileRelPosix, source)) {
-    if (!specifier.startsWith(".")) continue;
+    if (!specifier.startsWith(".")) {
+      if (!DOMAIN_PACKAGE_ALLOWLIST.has(specifier)) found.push(`${specifier} → pakiet spoza białej listy domeny`);
+      continue;
+    }
     const resolved = resolveSpecifier(fileRelPosix, specifier);
     if (resolved.startsWith("domain/")) continue;
     if (resolved === "errors" || resolved === "errors.ts") continue;
@@ -154,6 +161,31 @@ describe("granice obszarów modułów", () => {
         return moduleViolations(rel, source).map((violation) => `${rel}: ${violation}`);
       });
     expect(violations).toEqual([]);
+  });
+
+  it.each([
+    ["domain/x.ts", 'import { eq } from "drizzle-orm";', "drizzle-orm"],
+    ["domain/x.ts", 'import pg from "pg";', "pg"],
+    ["domain/x.ts", 'import type { Pool } from "pg";', "pg"],
+    ["domain/x.ts", 'export { z } from "zod/v4";', "zod/v4"],
+    ["domain/x.ts", 'const m = import("openai");', "openai"],
+    ["domain/x.ts", 'const m = require("pg");', "pg"],
+    ["domain/x.ts", 'import { x } from "@learning/contracts/internal";', "@learning/contracts/internal"],
+    ["domain/x.ts", 'import { createHash } from "crypto";', "crypto"],
+    ["domain/x.ts", 'import { db } from "../db/client";', "../db/client"],
+  ])("wykrywa naruszenie domeny: %s :: %s", (file, source, specifier) => {
+    expect(domainViolations(file, source)).toContainEqual(expect.stringContaining(specifier));
+  });
+
+  it.each([
+    ["domain/x.ts", 'import { DeckDto } from "@learning/contracts";'],
+    ["domain/x.ts", 'import type { DeckDto } from "@learning/contracts";'],
+    ["domain/x.ts", 'import { z } from "zod";'],
+    ["domain/x.ts", 'import { createHash } from "node:crypto";'],
+    ["domain/x.ts", 'import { y } from "./y";'],
+    ["domain/x.ts", 'import { AppError } from "../errors";'],
+  ])("dopuszcza legalny import domeny: %s :: %s", (file, source) => {
+    expect(domainViolations(file, source)).toEqual([]);
   });
 
   it("czysta domena nie importuje modułów ani infrastruktury", () => {

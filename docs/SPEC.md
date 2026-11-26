@@ -723,7 +723,7 @@ Nagranie dziecka:
 
 Przechowujemy potrzebny wynik, np. transkrypcję, status i ocenę. Nie zapisujemy pełnych odpowiedzi dostawcy bez potrzeby. Klucze usług pozostają po stronie serwera.
 
-Model oceniający lekcji (2026-10-12): gdy jest skonfigurowany, serwer wysyła do zgodnej z OpenAI usługi oceny wyłącznie treść ćwiczenia, regułę i odpowiedź tekstową dziecka (do 200 znaków), jako dane, nie polecenia. Nie wysyła imienia, wieku ani identyfikatorów dziecka. Token usługi nie trafia do przeglądarki, logów ani DTO; komentarz modelu widzi tylko rodzic. Panel rodzica informuje, do której usługi trafiają odpowiedzi dziecka, gdy model jest włączony. Zapisany werdykt (bez danych dziecka) jest wspólnym materiałem ćwiczenia i przeżywa usunięcie profilu.
+Model oceniający lekcji (2026-10-12): gdy jest skonfigurowany, serwer wysyła do zgodnej z OpenAI usługi oceny wyłącznie treść ćwiczenia, regułę i odpowiedź tekstową dziecka (do 200 znaków), jako dane, nie polecenia. Dłuższa odpowiedź nie trafia do modelu: zostaje nieoceniona i zadanie wraca do ponowienia, bez kary (#404). Nie wysyła imienia, wieku ani identyfikatorów dziecka. Token usługi nie trafia do przeglądarki, logów ani DTO; komentarz modelu widzi tylko rodzic. Panel rodzica informuje, do której usługi trafiają odpowiedzi dziecka, gdy model jest włączony. Zapisany werdykt (bez danych dziecka) jest wspólnym materiałem ćwiczenia i przeżywa usunięcie profilu.
 
 Usunięcie nagrania przez aplikację nie oznacza automatycznie braku retencji po stronie zewnętrznego dostawcy. Wybór i konfiguracja usługi muszą uwzględnić jej zasady przetwarzania głosu dziecka; rodzic powinien wiedzieć, do jakiej usługi trafia audio.
 

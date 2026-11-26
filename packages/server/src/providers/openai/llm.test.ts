@@ -599,6 +599,49 @@ describe("createOpenAiLlmProvider.generateDeck — tryb zestawu", () => {
   });
 });
 
+describe("createOpenAiLlmProvider.generateDeck — ścisły schemat (#403)", () => {
+  const DECK = { prompt: "kolory", sourceLocale: "pl-PL", targetLocale: "en-GB", maxItems: 5 } as LlmGenerateDeckInput;
+  const reply = (content: string) => vi.stubGlobal("fetch", vi.fn(async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 })));
+
+  it("zdejmuje `null` z pól opcjonalnych elementu", async () => {
+    reply(JSON.stringify({ items: [
+      { source: "kot", target: "cat", acceptedAnswers: [], example: null, visualType: "image", visualData: null },
+      { source: "czerwony", target: "red", acceptedAnswers: [], example: "It is red.", visualType: "color", visualData: { color: "#ff0000" } },
+    ] }));
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(DECK)).resolves.toEqual({ items: [
+      { source: "kot", target: "cat", acceptedAnswers: [], visualType: "image" },
+      { source: "czerwony", target: "red", acceptedAnswers: [], example: "It is red.", visualType: "color", visualData: { color: "#ff0000" } },
+    ] });
+  });
+
+  it.each(["not json", "{}", JSON.stringify({ items: "x" }), "[]"])("odrzuca treść %s jako błąd `output`", async (content) => {
+    reply(content);
+    await expect(createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(DECK)).rejects.toMatchObject({ kind: "output" });
+  });
+
+  it.each([
+    { kind: "rate_limit", response: () => new Response("{}", { status: 429 }) },
+    { kind: "refusal", response: () => new Response(JSON.stringify({ choices: [{ message: { refusal: "no", content: null } }] }), { status: 200 }) },
+    { kind: "incomplete", response: () => new Response(JSON.stringify({ choices: [{ finish_reason: "length", message: { content: "{" } }] }), { status: 200 }) },
+  ])("klasyfikuje błąd dostawcy jako `$kind`", async ({ kind, response }) => {
+    vi.stubGlobal("fetch", vi.fn(async () => response()));
+    const error = await createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(DECK).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GenerationProviderError);
+    expect(error).toMatchObject({ kind });
+  });
+
+  it("żądanie zestawu nie ma timeoutu adaptera — tylko sygnał wywołującego", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createOpenAiLlmProvider({ apiKey: "k", lessonRequestTimeoutMs: 25 }).generateDeck(DECK);
+    expect(fetchMock.mock.calls[0]![1]!.signal).toBeUndefined();
+    const controller = new AbortController();
+    await createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(DECK, controller.signal);
+    expect(fetchMock.mock.calls[1]![1]!.signal).toBe(controller.signal);
+  });
+});
+
 /** Prompt systemowy trybu „z opisu” sprzed Etapu 4 — tryb ze źródła nie może go zmienić. */
 const DESCRIPTION_SYSTEM_PROMPT = [
   "You create vocabulary learning sets for a young Polish child (about 8 years old).",
@@ -621,10 +664,12 @@ async function deckMessages(input: LlmGenerateDeckInput): Promise<{ system: stri
   vi.stubGlobal("fetch", fetchMock);
   await createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(input);
   const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as {
-    response_format: unknown;
+    response_format: { type: string; json_schema: { name: string; strict: boolean; schema: { required: string[] } } };
     messages: Array<{ role: string; content: string }>;
   };
-  expect(body.response_format).toEqual({ type: "json_object" });
+  expect(body.response_format.type).toBe("json_schema");
+  expect(body.response_format.json_schema).toMatchObject({ name: "vocabulary_deck", strict: true });
+  expect(body.response_format.json_schema.schema.required).toEqual(["items"]);
   return {
     system: body.messages.find((message) => message.role === "system")!.content,
     user: body.messages.find((message) => message.role === "user")!.content,
@@ -776,7 +821,7 @@ describe("createOpenAiLlmProvider — zapis kosztów (usage)", () => {
   it("records paid response when generateDeck content is not JSON", async () => {
     stubFetch(async () => json({ choices: [{ message: { content: "not json" } }], usage: COST }));
     const rec = createTestRecorder();
-    await expect(make(rec).generateDeck(DECK)).rejects.toBeInstanceOf(SyntaxError);
+    await expect(make(rec).generateDeck(DECK)).rejects.toMatchObject({ kind: "output" });
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toMatchObject({ feature: "deck_generation", operation: "deck", outcome: "ok", providerCostUsd: 0.003 });
   });
@@ -785,8 +830,7 @@ describe("createOpenAiLlmProvider — zapis kosztów (usage)", () => {
     stubFetch(async () => json({ error: "boom" }, 500));
     const rec = createTestRecorder();
     const error = await method.call(make(rec)).catch((e: unknown) => e);
-    if (method.name === "generateDeck") expect((error as Error).message).toBe("provider_http_500");
-    else expect(error).toMatchObject({ kind: "transient", status: 500 });
+    expect(error).toMatchObject({ kind: "transient", status: 500 });
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toEqual({
       feature: method.feature, operation: method.operation, provider: "openrouter", model: "google/gemini-3.8-flash",
@@ -807,20 +851,18 @@ describe("createOpenAiLlmProvider — zapis kosztów (usage)", () => {
     stubFetch(async () => { throw new DOMException("aborted", "AbortError"); });
     const rec = createTestRecorder();
     const error = await method.call(make(rec), AbortSignal.abort()).catch((e: unknown) => e);
-    if (method.name === "generateDeck") expect((error as Error).name).toBe("AbortError");
-    else expect(error).toMatchObject({ kind: "timeout" });
+    expect(error).toMatchObject({ kind: "timeout" });
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toMatchObject({ operation: method.operation, outcome: "failed" });
     expect(rec.events[0]).not.toHaveProperty("httpStatus");
   });
 
-  it.each(METHODS)("$name records one failed event on a network error and generateDeck rethrows the original", async (method) => {
+  it.each(METHODS)("$name records one failed event on a network error", async (method) => {
     const networkError = new TypeError("fetch failed");
     stubFetch(async () => { throw networkError; });
     const rec = createTestRecorder();
     const error = await method.call(make(rec)).catch((e: unknown) => e);
-    if (method.name === "generateDeck") expect(error).toBe(networkError);
-    else expect(error).toMatchObject({ kind: "transient" });
+    expect(error).toMatchObject({ kind: "transient" });
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toMatchObject({ operation: method.operation, outcome: "failed" });
     expect(rec.events[0]).not.toHaveProperty("httpStatus");
@@ -850,7 +892,7 @@ describe("createOpenAiLlmProvider — zapis kosztów (usage)", () => {
     const withRecorder = await make(createThrowingRecorder()).generateLessonObjectives(OBJECTIVES).catch((e: unknown) => e);
     expect(withRecorder).toBeInstanceOf(GenerationProviderError);
     expect(withRecorder).toMatchObject({ kind: (withoutRecorder as GenerationProviderError).kind, status: 500 });
-    await expect(make(createThrowingRecorder()).generateDeck(DECK)).rejects.toThrow("provider_http_500");
+    await expect(make(createThrowingRecorder()).generateDeck(DECK)).rejects.toMatchObject({ kind: "transient", status: 500 });
   });
 
   it("without usage the request is made, nothing is recorded and behaviour is unchanged", async () => {
