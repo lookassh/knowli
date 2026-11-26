@@ -8,6 +8,7 @@ import {
   formatRejectedReason,
   otherRejectedCount,
   rejectedTotal,
+  reviewQueue,
   syncGapAnswers,
   applyCalculationPreview,
   groupCalculationFamilies,
@@ -765,5 +766,25 @@ describe("lessonThemesPatch (usuwanie tematów zdań)", () => {
 
   it("po usunięciu tematów zwraca pustą listę", () => {
     expect(lessonThemesPatch(["dinozaury", "Minecraft"], [])).toEqual([]);
+  });
+});
+
+describe("reviewQueue (kolejka „Następna do przejrzenia”)", () => {
+  const exercises = createLessonSnapshot(draft({
+    exercises: ["a", "b", "c"].map((name, i) => ({ ...draft().exercises[1]!, id: `id-${name}`, revisionId: `rev-${i}` })),
+  }), () => "k").form.exercises;
+  const extra = { ...exercises[0]!, id: undefined, clientKey: "local:new" };
+
+  it("oflagowane pierwsze (w kolejności formularza), potem reszta", () => {
+    expect(reviewQueue(exercises, new Set(["id-b", "id-c"]), new Set())).toEqual(["id-b", "id-c", "id-a"]);
+  });
+
+  it("pomija przejrzane; wszystko przejrzane → pusta", () => {
+    expect(reviewQueue(exercises, new Set(["id-b"]), new Set(["id-b"]))).toEqual(["id-a", "id-c"]);
+    expect(reviewQueue(exercises, new Set(), new Set(["id-a", "id-b", "id-c"]))).toEqual([]);
+  });
+
+  it("nowe ćwiczenie bez id ma klucz klienta", () => {
+    expect(reviewQueue([...exercises, extra], new Set(), new Set(["id-a", "id-b", "id-c"]))).toEqual(["local:new"]);
   });
 });

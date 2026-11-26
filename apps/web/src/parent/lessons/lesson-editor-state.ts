@@ -102,6 +102,19 @@ export interface EditableLessonExercise {
   explanationPl?: string;
 }
 
+/** Klucz karty w stanie edytora (otwarcie, przejrzenie): id przeżywa zapis, nowe ćwiczenie ma klucz klienta. */
+export const cardKeyOf = (ex: EditableLessonExercise): string => ex.id ?? ex.clientKey;
+
+/** Kolejka „Następna do przejrzenia”: nieprzejrzane, najpierw oflagowane, w obu grupach kolejność formularza. */
+export function reviewQueue(
+  exercises: readonly EditableLessonExercise[],
+  flagged: ReadonlySet<string>,
+  reviewed: ReadonlySet<string>,
+): string[] {
+  const keys = exercises.map(cardKeyOf).filter((key) => !reviewed.has(key));
+  return [...keys.filter((key) => flagged.has(key)), ...keys.filter((key) => !flagged.has(key))];
+}
+
 /** Karta zagadnienia tematu dynamicznego w edytorze; brak `voiceTone` = styl domyślny. */
 export interface EditableDynamicCard {
   title: string;

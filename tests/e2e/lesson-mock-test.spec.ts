@@ -233,6 +233,8 @@ async function createAndPublishLesson(page: Page, title: string): Promise<string
   await expect(page.locator('[data-testid^="exercise-audio-state-"]')).toHaveCount(0);
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await page.getByTestId("publish-lesson").click();
+  // nieprzejrzane karty: publikacja po potwierdzeniu (gh-380)
+  await page.getByTestId("publish-unreviewed-confirm").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
   return deck.deckId;
 }
