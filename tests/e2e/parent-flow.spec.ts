@@ -337,6 +337,8 @@ test("pełny obieg rodzica: generuj, popraw, publikuj, przypisz", async ({ page,
   await page.getByTestId("tab-decks").click();
   await openNewMaterial(page, "generate");
   await page.getByTestId("deck-prompt").fill("angielskie dni tygodnia dla początkującego dziecka");
+  // #395: krok generowania mówi, do jakiej usługi trafi opis (fake'i — `fake-llm-1`)
+  await expect(page.getByTestId("deck-generation-service")).toHaveText(messages.decks.generationServiceInfo.replace("{service}", "fake-llm-1"));
   await page.getByTestId("deck-title").fill(DECK_TITLE);
   const generated = page.waitForResponse((response) =>
     response.request().method() === "POST" && response.url().endsWith("/api/v1/parent/decks/generate"),

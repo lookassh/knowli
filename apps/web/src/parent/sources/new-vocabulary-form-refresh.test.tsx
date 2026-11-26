@@ -24,7 +24,8 @@ import type { SourceRefreshOutcome } from "./source-refresh";
 const generate = vi.hoisted(() => vi.fn());
 vi.mock("../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api")>();
-  return { ...actual, parentClient: { decks: { generate } } };
+  // katalog lekcji czyta notka o usłudze generującej (#395)
+  return { ...actual, parentClient: { decks: { generate }, lessonCatalog: { get: async () => ({ lessonGenerationAvailable: true, subjects: [] }) } } };
 });
 
 const SOURCE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";

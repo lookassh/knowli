@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Alert, Box, Button, Group, Modal, NativeSelect, Stack, Text, TextInput, Textarea, ThemeIcon, UnstyledButton } from "@mantine/core";
 import { messages } from "@learning/contracts";
+import DeckGenerationServiceNote from "./DeckGenerationServiceNote";
 import { ParentIcon, type ParentIconName } from "./ParentIcon";
 
 export type NewMaterialStep = "menu" | "generate" | "empty";
@@ -219,6 +220,7 @@ export default function NewMaterialDialog({
               disabled={fieldDisabled}
               onChange={(event) => onPromptChange(event.currentTarget.value)}
             />
+            <DeckGenerationServiceNote />
             {errorAlert}
             <Group justify="flex-end" gap="sm">
               {backButton}

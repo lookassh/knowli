@@ -156,7 +156,8 @@ export const SubjectCatalogDtoSchema = z.object({
   lessonGenerationAvailable: z.boolean(),
   /**
    * Skonfigurowana etykieta usługi `UMIEM_LLM` (host · model, z env procesu web): etap zagadnień
-   * szkoły, historyjka gramatyki i awaryjny adresat tematów zdań. To opis konfiguracji, nie dowód,
+   * szkoły, historyjka gramatyki, awaryjny adresat tematów zdań oraz generator zestawów słówek
+   * (notka w formularzach zestawu, #395). To opis konfiguracji, nie dowód,
    * że generowanie jest dostępne (o tym mówi `lessonGenerationAvailable`); brak = etykiety nie da się ustalić.
    */
   generationService: z.string().min(1).optional(),
