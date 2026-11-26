@@ -837,8 +837,7 @@ export const messages = {
     dictationTypeInstead: "Napisz odpowiedź w polu.",
     dictationCountdown: "Zostało {seconds} s",
     // Podsumowanie lekcji (per cel), bez procentów.
-    lessonSummaryTitle: "Ćwiczyłeś reguły",
-    lessonSummaryObjective: "Ćwiczyłeś: {title}",
+    lessonSummaryTitle: "Dziś ćwiczyliśmy",
     // Lista zestawów: etykieta przedmiotu lekcji.
     lessonSubjectLabel: "Lekcja: {subject}",
     lessonCardInstruction: "Poznaj regułę",

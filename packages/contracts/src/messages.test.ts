@@ -22,3 +22,14 @@ describe("messages.lessons.generationErrors", () => {
     }
   });
 });
+
+describe("messages.kid", () => {
+  // Profil dziecka nie ma płci: 2. osoba czasu przeszłego/trybu przypuszczającego („Ćwiczyłeś”, „zrobiłabyś”)
+  // zakłada formę męską albo żeńską. 1. osoba systemu („Usłyszałem”) to świadoma persona — nie łapiemy jej.
+  it("nie zwraca się do dziecka formą zależną od płci", () => {
+    const gendered = /\p{L}(?:łeś|łaś|łbyś|łabyś)(?!\p{L})/iu;
+    const texts = (value: unknown): string[] =>
+      typeof value === "string" ? [value] : Object.values(value as object).flatMap(texts);
+    expect(texts(messages.kid).filter((text) => gendered.test(text))).toEqual([]);
+  });
+});
