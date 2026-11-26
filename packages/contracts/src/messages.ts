@@ -63,6 +63,7 @@ export const messages = {
     sections: "Sekcje panelu",
     more: "Więcej",
     colorScheme: "Wygląd",
+    settings: "Ustawienia",
     colorSchemeOptions: { auto: "Auto", light: "Jasny", dark: "Ciemny" } as Record<string, string>,
     loading: "Wczytuję dane panelu…",
     loadFailed: "Nie udało się wczytać danych panelu.",

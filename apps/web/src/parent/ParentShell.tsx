@@ -10,7 +10,6 @@ import {
   Menu,
   SegmentedControl,
   Text,
-  Tooltip,
   useMantineColorScheme,
   type MantineColorScheme,
 } from "@mantine/core";
@@ -77,7 +76,8 @@ export interface ParentShellProps {
 /**
  * Rama panelu rodzica (plan 2026-10-29-parent-ui-mantine, faza 1; szkic
  * nawigacji zaakceptowany 2026-10-29): na telefonie dolny pasek sekcji
- * i menu ⋯ (Do nauki, Wygląd, Zmień PIN, Wyloguj), od 600 px zakładki pod nagłówkiem.
+ * i menu ⋯ (Do nauki, Wygląd, Zmień PIN, Wyloguj), od 600 px zakładki pod nagłówkiem
+ * i menu ustawień (Wygląd, Zmień PIN).
  * Sekcje są linkami z adresem — nawigację w panelu przejmuje `onNavigate`.
  */
 export function ParentShell({ section, onNavigate, onToLearning, onLogout, onChangeSecret, children }: ParentShellProps) {
@@ -196,20 +196,20 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, onCha
                 </Button>
                 <Menu position="bottom-end" width={260} shadow="lg" radius="lg">
                   <Menu.Target>
-                    <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.parentShell.colorScheme} data-testid="color-scheme-menu">
+                    <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.parentShell.settings} data-testid="color-scheme-menu">
                       <ParentIcon name={SCHEME_ICON[colorScheme]} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
                     <Menu.Label>{messages.parentShell.colorScheme}</Menu.Label>
                     <Box px="xs" pb="xs"><ColorSchemeControl /></Box>
+                    <Menu.Divider />
+                    {/* w menu, nie w nagłówku: przy 600 px kolejna akcja ściskała markę */}
+                    <Menu.Item leftSection={<ParentIcon name="key" />} data-testid="change-secret" onClick={onChangeSecret} mih={48}>
+                      {messages.auth.changeSecretButton}
+                    </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
-                <Tooltip label={messages.auth.changeSecretButton}>
-                  <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.auth.changeSecretButton} data-testid="change-secret" onClick={onChangeSecret}>
-                    <ParentIcon name="key" />
-                  </ActionIcon>
-                </Tooltip>
                 <Button variant="subtle" color="gray" size="md" leftSection={<ParentIcon name="log-out" />} data-testid="parent-logout" onClick={onLogout}>
                   {messages.auth.logoutButton}
                 </Button>

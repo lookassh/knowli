@@ -39,7 +39,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
     await page.setViewportSize(viewport);
     const secretBodies = await openSignedInPanel(page);
 
-    if (viewport.width < 600) await page.getByTestId("parent-menu").click();
+    await page.getByTestId(viewport.width < 600 ? "parent-menu" : "color-scheme-menu").click();
     const trigger = page.getByTestId("change-secret");
     expect((await trigger.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await trigger.click();
@@ -61,6 +61,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
 }
 
 async function submitChange(page: Page): Promise<void> {
+  await page.getByTestId("color-scheme-menu").click();
   await page.getByTestId("change-secret").click();
   await page.getByTestId("change-secret-current").fill("zly-pin");
   await page.getByTestId("change-secret-new").fill("nowy-pin");
