@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   LessonVerdictDecisionSchema,
@@ -433,17 +433,31 @@ export async function listLessonVerdicts(services: Services, deckId: string): Pr
   const objectiveByRevision = new Map(revisionRows.map((r) => [r.id, toExerciseDraft(r.payload).objectiveId]));
   const revisionIds = revisionRows.map((r) => r.id);
 
-  // Tylko werdykty bieżących wersji promptu: starsze zostają historią, decyzje na nich
-  // nie działają pod nową wersją (etap 3 #360). Bez gradera cache nie jest czytany.
-  const promptVersions = services.grader?.provider.promptVersions ?? [];
-  if (promptVersions.length === 0) return [];
+  // Tylko werdykty bieżących wersji promptu i bieżącego modelu: starsze zostają historią,
+  // decyzje na nich nie działają pod nowym kluczem (etap 3 #360, #384). Klucz to
+  // `wersja:hash` (`verdictCacheKey`). Bez gradera cache nie jest czytany.
+  // Po zmianie promptu ta sama odpowiedź ma wiersze kilku hashy jednej wersji — panel pokazuje
+  // tylko najnowszy. shortcut: dopóki odpowiedź nie wróci do modelu, najnowszym jest wiersz starego
+  // hasha, a decyzja na nim nie działa; dokładny klucz wymagałby złożenia promptu każdego zadania.
+  const grader = services.grader?.provider;
+  const promptVersions = grader?.promptVersions ?? [];
+  if (!grader || promptVersions.length === 0) return [];
   const rows = await services.db
     .select()
     .from(lessonVerdicts)
-    .where(and(inArray(lessonVerdicts.itemRevisionId, revisionIds), inArray(lessonVerdicts.promptVersion, [...promptVersions])))
+    .where(and(
+      inArray(lessonVerdicts.itemRevisionId, revisionIds),
+      eq(lessonVerdicts.graderModel, grader.model),
+      or(...promptVersions.map((version) => like(lessonVerdicts.promptVersion, `${version}:%`))),
+    ))
     .orderBy(desc(lessonVerdicts.createdAt), desc(lessonVerdicts.id));
+  const seen = new Set<string>();
+  const current = rows.filter((row) => {
+    const key = `${row.itemRevisionId}|${row.normalizedAnswer}|${row.promptVersion.split(":")[0]}`;
+    return !seen.has(key) && seen.add(key);
+  });
 
-  return rows.map((row) => ({
+  return current.map((row) => ({
     id: row.id,
     exerciseRevisionId: row.itemRevisionId,
     objectiveId: objectiveByRevision.get(row.itemRevisionId) ?? "",

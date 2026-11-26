@@ -162,7 +162,7 @@ describe("createOpenAiCompatibleGrader", () => {
       question: "Co to jest południk?", modelAnswer: "Linia łącząca bieguny.", requiredElements: [{ id: "e1", text: "łączy bieguny" }],
       supplementaryElements: [], commonErrors: [], expectedForm: "short", sourceQuotes: [],
     };
-    expect(grader.promptVersionForInput?.({ ...input, school })).toBe("school-grader-v3");
+    expect(grader.promptVersionForInput?.({ ...input, school })).toMatch(/^school-grader-v3:/);
     await grader.grade({ ...input, school }, AbortSignal.timeout(1000));
     const system = (JSON.parse(calls[0]!.init.body) as { messages: { role: string; content: string }[] }).messages[0]!.content;
     expect(system).toContain("offTopicFragments");
@@ -186,16 +186,16 @@ describe("createOpenAiCompatibleGrader", () => {
 
   it("odpowiedź pisana: prompt szkolny i dane bez zmian względem school-grader-v3 (AC-07)", async () => {
     const written = await schoolMessages(speechSchool);
-    expect(written.version).toBe("school-grader-v3");
+    expect(written.version).toMatch(/^school-grader-v3:/);
     expect([written.system, written.user]).toMatchSnapshot();
     const explicit = await schoolMessages({ ...speechSchool, spoken: false });
     expect([explicit.system, explicit.user]).toEqual([written.system, written.user]);
-    expect(explicit.version).toBe("school-grader-v3");
+    expect(explicit.version).toBe(written.version);
   });
 
   it("niepoprawiona mowa: osobna wersja, akapit o mowie, bez wymogu jednego zdania, w danych tylko znacznik (AC-06, AC-10)", async () => {
     const spoken = await schoolMessages({ ...speechSchool, spoken: true });
-    expect(spoken.version).toBe("school-grader-v3-speech");
+    expect(spoken.version).toMatch(/^school-grader-v3-speech:/);
     expect(spoken.system).toContain("podyktowana na głos");
     expect(spoken.system).not.toContain("Oczekiwana forma odpowiedzi");
     expect(Object.keys(spoken.data).sort()).toEqual(
@@ -213,6 +213,21 @@ describe("createOpenAiCompatibleGrader", () => {
     const grader = createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model: "m" });
     expect(grader.promptVersion).toBe("grader-v2");
     expect(grader.promptVersions).toEqual(["grader-v2", "school-grader-v3", "school-grader-v3-speech"]);
+  });
+
+  it("klucz cache werdyktu zależy od usługi, modelu, opcji pośrednika i treści promptu, nie od odpowiedzi dziecka (#384)", () => {
+    const keyOf = (model: string, i: GraderInput, requestExtras?: { reasoning: { effort: string } }) =>
+      createOpenAiCompatibleGrader({ baseUrl: "https://g.example/v1", apiKey: "t", model, ...(requestExtras ? { requestExtras } : {}) })
+        .promptVersionForInput!(i);
+    const base = keyOf("m", input);
+    expect(base).toMatch(/^grader-v2:[0-9a-f]{16}$/);
+    expect(keyOf("m", { ...input, childAnswer: "he plaies" })).toBe(base);
+    expect(keyOf("m2", input)).not.toBe(base);
+    expect(createOpenAiCompatibleGrader({ baseUrl: "https://other.example/v1", apiKey: "t", model: "m" }).promptVersionForInput(input)).not.toBe(base);
+    expect(keyOf("m", input, { reasoning: { effort: "high" } })).not.toBe(base);
+    expect(keyOf("m", { ...input, roleProfile: { ...input.roleProfile, almostDefinition: "Inna definicja." } })).not.toBe(base);
+    expect(keyOf("m", { ...input, roleProfile: { ...input.roleProfile, gradingRole: "Inna rola." } })).not.toBe(base);
+    expect(keyOf("m", { ...input, blocks: ["he", "play"] })).not.toBe(base);
   });
 
   it("grader-v2: definicja poprawności i usesTargetForm w prompcie; linia rozsypanki tylko przy blocks (#360)", async () => {

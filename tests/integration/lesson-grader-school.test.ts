@@ -25,7 +25,7 @@ import { SCHOOL_OBJECTIVE_ID, seedSchoolDeck as seedSchoolDeckFixture, type Scho
  * Etap 2: ocena dwuwymiarowa odpowiedzi otwartej szkoły na prawdziwej ścieżce
  * prób (fake grader): wiedza steruje wynikiem, precyzja ląduje w szczegółach
  * oceny i w raporcie rodzica; werdykt zapisuje się do cache `lesson_verdicts`
- * z wersją `fake-school-grader-v3`.
+ * z wersją `fake-school-grader-v3` (prefiks klucza cache `wersja:hash`).
  */
 
 const { pool } = testDatabase();
@@ -144,7 +144,7 @@ describe("ocena szkolna dwuwymiarowa (integracja)", () => {
     expect(grader.requests.find((r) => r.school)?.school?.requiredElements).toHaveLength(2);
 
     const verdicts = await pool.query<{ prompt_version: string; precision: string | null; verdict: string }>(
-      "select prompt_version, precision, verdict from learning_app.lesson_verdicts",
+      "select split_part(prompt_version, ':', 1) as prompt_version, precision, verdict from learning_app.lesson_verdicts",
     );
     expect(verdicts.rows).toHaveLength(1);
     expect(verdicts.rows[0]!.prompt_version).toBe("fake-school-grader-v3");
@@ -850,7 +850,7 @@ describe("niepoprawiona mowa ma własny wariant promptu i własny wpis cache (CA
     expect(grader.requests[0]!.school!.spoken).toBeUndefined();
     expect(grader.requests[1]!.school!.spoken).toBe(true);
     const rows = await pool.query<{ item_revision_id: string; prompt_version: string }>(
-      "select item_revision_id, prompt_version from learning_app.lesson_verdicts order by prompt_version",
+      "select item_revision_id, split_part(prompt_version, ':', 1) as prompt_version from learning_app.lesson_verdicts order by 2",
     );
     expect(rows.rows.map((row) => row.prompt_version)).toEqual(["fake-school-grader-v3", "fake-school-grader-v3-speech"]);
     expect(rows.rows[0]!.item_revision_id).toBe(rows.rows[1]!.item_revision_id);
@@ -869,7 +869,7 @@ describe("niepoprawiona mowa ma własny wariant promptu i własny wpis cache (CA
     expect(grader.callCount).toBe(3);
     expect(grader.requests[2]!.school!.spoken).toBeUndefined();
     const versionsOf = async (text: string) => (await pool.query<{ prompt_version: string }>(
-      "select prompt_version from learning_app.lesson_verdicts where normalized_answer = $1 order by prompt_version", [text],
+      "select split_part(prompt_version, ':', 1) as prompt_version from learning_app.lesson_verdicts where normalized_answer = $1 order by 1", [text],
     )).rows.map((row) => row.prompt_version);
     expect(await versionsOf("roślina robi cukier z wody")).toEqual(["fake-school-grader-v3"]);
 
