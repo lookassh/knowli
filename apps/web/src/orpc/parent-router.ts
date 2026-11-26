@@ -4,6 +4,7 @@ import {
   renderCalculationPrompt,
   MAX_DECK_COVER_BYTES,
   acceptVerdictAsVariant,
+  changeParentSecret,
   archiveDeck,
   clearDeckCover,
   createChild,
@@ -559,6 +560,19 @@ const authLogout = parentAuthOs.auth.logout
     return { status: 204 as const, headers: { "set-cookie": clearingSessionCookie(request) } };
   });
 
+/**
+ * Zmiana PIN-u (POST /secret, #400): sesja sprawdzana jak w logout; przypadek
+ * użycia usuwa wszystkie sesje, więc odpowiedź czyści cookie tego urządzenia.
+ */
+const authChangeSecret = parentAuthOs.auth.changeSecret
+  .use(sameOriginMiddleware)
+  .handler(async ({ context, input }) => {
+    const request = requestFromHeaders(context.headers, context.url);
+    const token = await requireParentSession(request, context.services);
+    await changeParentSecret(context.services, token, input.currentSecret, input.newSecret);
+    return { status: 204 as const, headers: { "set-cookie": clearingSessionCookie(request) } };
+  });
+
 /** Setup pierwszego uruchomienia (POST /setup): kod konfiguracji + utworzenie PIN-u, bez logowania. */
 const authSetup = parentAuthOs.auth.setup
   .use(sameOriginMiddleware)
@@ -572,6 +586,7 @@ export const parentORpcRouter: Router<ORpcContext> = parentRootOs.router({
     state: authState,
     login: authLogin,
     logout: authLogout,
+    changeSecret: authChangeSecret,
     setup: authSetup,
   },
   children: {

@@ -6,7 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { lt, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { parentCredentials, parentSessions } from "../../db/schema";
 import { AppError } from "../../errors";
 import type { Services } from "../../config";
@@ -253,4 +253,47 @@ export async function logoutParent(services: Services, token: string): Promise<v
   await services.db
     .delete(parentSessions)
     .where(sql`${parentSessions.tokenHash} = ${hashToken(token)}`);
+}
+
+/**
+ * Zmiana PIN-u/hasła (#400): wymaga obecnego sekretu i unieważnia wszystkie sesje
+ * w tej samej transakcji co zapis hasha; nowy hash unieważnia też ciastka urządzeń.
+ * Błędne próby liczy kubełek tej sesji — nie blokują logowania na innych urządzeniach.
+ */
+export async function changeParentSecret(
+  services: Services,
+  token: string,
+  currentSecret: string,
+  newSecret: string,
+): Promise<void> {
+  assertSecretShape(newSecret);
+  const rows = await services.db.select().from(parentCredentials).limit(1);
+  const credentials = rows[0];
+  if (!credentials) {
+    throw new AppError("setup_required");
+  }
+  const limiter = limiterFor(services);
+  const bucket = `session:${hashToken(token)}`;
+  const attemptAt = services.clock.now();
+  limiter.reserve(bucket, attemptAt);
+  if (!(await verifySecret(currentSecret, credentials.passwordHash))) {
+    throw new AppError("invalid_credentials");
+  }
+  limiter.succeed(bucket, attemptAt);
+  const passwordHash = await hashSecret(newSecret);
+  await services.db.transaction(async (tx) => {
+    // CAS na starym hashu: równoległa zmiana wygrywa raz, druga dostaje conflict
+    const updated = await tx
+      .update(parentCredentials)
+      .set({ passwordHash, updatedAt: services.clock.now() })
+      .where(and(eq(parentCredentials.id, credentials.id), eq(parentCredentials.passwordHash, credentials.passwordHash)))
+      .returning({ id: parentCredentials.id });
+    if (updated.length === 0) {
+      throw new AppError("conflict");
+    }
+    const deleted = await tx.delete(parentSessions).returning({ tokenHash: parentSessions.tokenHash });
+    if (!deleted.some((s) => s.tokenHash === hashToken(token))) {
+      throw new AppError("unauthorized");
+    }
+  });
 }

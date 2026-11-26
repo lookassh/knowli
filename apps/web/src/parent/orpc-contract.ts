@@ -234,6 +234,9 @@ const AssignmentPutInputSchema = AssignmentPutSchema.extend({
 /** Wejście POST /login: sekret PIN/hasła rodzica. */
 const SecretInputSchema = z.object({ secret: z.string().min(1) }).strict();
 
+/** Wejście POST /secret: obecny i nowy PIN/hasło; długość nowego pilnuje serwer (#400). */
+const ChangeSecretInputSchema = z.object({ currentSecret: z.string().min(1).max(200), newSecret: z.string().min(1).max(200) }).strict();
+
 /** Wejście POST /setup: sekret i kod konfiguracji z `UMIEM_SETUP_TOKEN` (#307). */
 const SetupInputSchema = z.object({ secret: z.string().min(1), setupToken: z.string().min(1).max(200) }).strict();
 
@@ -616,6 +619,15 @@ export const parentApiContract = {
         headers: z.object({ "set-cookie": z.string() }),
       }))
       .meta(openapi({ method: "POST", path: "/logout", outputStructure: "detailed" })),
+
+    changeSecret: oc
+      .input(ChangeSecretInputSchema)
+      // jak logout: wszystkie sesje unieważnione, więc 204 z czyszczącym cookie
+      .output(z.object({
+        status: z.literal(204),
+        headers: z.object({ "set-cookie": z.string() }),
+      }))
+      .meta(openapi({ method: "POST", path: "/secret", outputStructure: "detailed" })),
 
     setup: oc
       .input(SetupInputSchema)

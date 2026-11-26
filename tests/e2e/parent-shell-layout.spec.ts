@@ -56,7 +56,7 @@ test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async
     const menu = page.getByTestId("parent-menu");
     expect((await menu.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await menu.click();
-    for (const id of ["to-costs", "to-learning", "parent-logout"]) {
+    for (const id of ["to-costs", "to-learning", "change-secret", "parent-logout"]) {
       await expect(page.getByTestId(id)).toBeVisible();
       expect((await page.getByTestId(id).boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
@@ -78,7 +78,7 @@ test("od 600 px: zakładki pod nagłówkiem, akcje w nagłówku", async ({ page 
       expect(box!.y, `${id} @${viewport.width}`).toBeLessThan(140);
       expect(box!.x + box!.width, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.width + 0.5);
     }
-    // akcje nagłówka nie nachodzą na siebie ani na markę (Koszty, Do nauki, Wygląd, Wyloguj)
+    // akcje nagłówka nie nachodzą na siebie ani na markę (Koszty, Do nauki, Ustawienia, Wyloguj)
     const actions = [];
     for (const id of ["to-costs", "to-learning", "color-scheme-menu", "parent-logout"]) actions.push((await page.getByTestId(id).boundingBox())!);
     actions.sort((left, right) => left.x - right.x);

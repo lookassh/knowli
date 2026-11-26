@@ -48,8 +48,9 @@ każdym deploju.
 
 3. Otwórz `http://<host>:8080/parent` i zakończ pierwsze uruchomienie: wpisz
    nowy PIN rodzica i jako „Kod konfiguracji” wartość `UMIEM_SETUP_TOKEN`
-   (jednorazowy setup znika po zapisaniu). Potem możesz usunąć zmienną z `.env`
-   — zmiana PIN-u i tak wymaga zalogowania. Zapomniany PIN: usuń wiersz
+   (jednorazowy setup znika po zapisaniu). Potem możesz usunąć zmienną z `.env`.
+   PIN zmienisz w panelu („Zmień PIN”, wymaga obecnego PIN-u); zmiana wylogowuje
+   wszystkie urządzenia. Zapomniany PIN: usuń wiersz
    `learning_app.parent_credentials` w bazie, ustaw `UMIEM_SETUP_TOKEN`
    i uruchom web ponownie.
 

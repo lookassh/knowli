@@ -2,6 +2,7 @@ import { ApiErrorSchema, messages } from "@learning/contracts";
 import {
   AppError,
   MAX_DECK_COVER_BYTES,
+  changeParentSecret,
   acceptVerdictAsVariant,
   archiveDeck,
   clearDeckCover,
@@ -75,6 +76,7 @@ vi.mock("@learning/server", async (importActual) => {
     isParentSetupRequired: vi.fn(),
     loginParent: vi.fn(),
     logoutParent: vi.fn(),
+    changeParentSecret: vi.fn(),
     setupParentWithToken: vi.fn(),
     listChildren: vi.fn(),
     createChild: vi.fn(),
@@ -578,6 +580,43 @@ describe("parent oRPC router — auth bootstrap (login/logout/setup)", () => {
     const body = ApiErrorSchema.parse(await response.json());
     expect(body.code).toBe("unauthorized");
     expect(logoutParent).not.toHaveBeenCalled();
+  });
+
+  it("POST /secret z sesją zmienia PIN i czyści cookie (204)", async () => {
+    vi.mocked(changeParentSecret).mockResolvedValueOnce(undefined);
+
+    const response = await call("/secret", jsonInit({ currentSecret: "stary", newSecret: "nowy-pin" }));
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("set-cookie")).toBe(clearingSessionCookie(new Request("http://localhost")));
+    expect(changeParentSecret).toHaveBeenCalledWith(services, "session-token", "stary", "nowy-pin");
+  });
+
+  it("POST /secret bez cookie → 401 unauthorized bez wywołania changeParentSecret", async () => {
+    const response = await call("/secret", authInit({ currentSecret: "stary", newSecret: "nowy-pin" }));
+
+    expect(response.status).toBe(401);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("unauthorized");
+    expect(changeParentSecret).not.toHaveBeenCalled();
+  });
+
+  it("POST /secret ze złym obecnym PIN-em → 401 invalid_credentials bez czyszczenia cookie", async () => {
+    vi.mocked(changeParentSecret).mockRejectedValueOnce(new AppError("invalid_credentials"));
+
+    const response = await call("/secret", jsonInit({ currentSecret: "zly", newSecret: "nowy-pin" }));
+
+    expect(response.status).toBe(401);
+    expect(ApiErrorSchema.parse(await response.json()).code).toBe("invalid_credentials");
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("POST /secret z pustym, za długim polem lub nadmiarowym kluczem → 400 validation", async () => {
+    for (const body of [{ currentSecret: "", newSecret: "nowy-pin" }, { currentSecret: "a", newSecret: "b", extra: 1 }, { currentSecret: "x".repeat(201), newSecret: "nowy-pin" }]) {
+      const response = await call("/secret", jsonInit(body));
+      expect(response.status).toBe(400);
+    }
+    expect(changeParentSecret).not.toHaveBeenCalled();
   });
 
   it("POST /setup pierwsze uruchomienie → 201 {ok:true} bez cookie i bez sesji", async () => {
@@ -1657,6 +1696,7 @@ describe("parent oRPC router — CSRF (Origin)", () => {
       ["/login", authInit({ secret: "1234" }, evil), vi.mocked(loginParent)],
       ["/logout", { method: "POST", headers: { ...sessionCookie, ...evil } }, vi.mocked(logoutParent)],
       ["/setup", authInit({ secret: "1234", setupToken: "kod-setup" }, evil), vi.mocked(setupParentWithToken)],
+      ["/secret", jsonInit({ currentSecret: "1234", newSecret: "5678" }, evil), vi.mocked(changeParentSecret)],
       ["/children", jsonInit({ displayName: "Ola", avatarKey: "fox", canRead: true }, evil), vi.mocked(createChild)],
       [
         `/children/${childId}`,
