@@ -87,9 +87,11 @@ export {
 } from "./modules/materials";
 export {
   createAuthoredLesson,
+  createAuthoredMaterialLesson,
   getAuthoredLesson,
   appendAuthoredLesson,
   lessonAuthoringCatalog,
+  lessonMaterialRules,
   replaceAuthoredLesson,
   validateAuthoredLesson,
 } from "./modules/materials";
