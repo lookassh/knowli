@@ -12,6 +12,7 @@ import {
   type VocabularyFormat,
 } from "@learning/contracts";
 import { callParent, errorMessage, parentClient } from "../api";
+import DeckGenerationServiceNote from "../DeckGenerationServiceNote";
 import { readGenerationAcceptance } from "../generation-request";
 import { ParentIcon } from "../ParentIcon";
 import { routePath } from "../parent-routes";
@@ -419,6 +420,7 @@ export function NewVocabularyForm({
               disabled={fieldsLocked}
               {...form.getInputProps("instruction")}
             />
+            <DeckGenerationServiceNote />
 
             {submitError && (
               <Alert color={submitNotice ? "yellow" : "red"} variant="light" role="alert" data-testid="new-vocabulary-error"
