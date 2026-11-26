@@ -230,8 +230,15 @@ odpowiedź innego dziecka nie woła modelu ponownie. `parent_decision` (nadpisan
 rodzica) jest nadrzędny nad zapisanym werdyktem bez przeliczania historii.
 Komentarz `note` modelu jest wyłącznie dla rodzica — nigdy nie trafia do Kid DTO.
 Odpowiedź dziecka i warianty referencyjne są przekazywane modelowi jako DANE
-(wiadomość `user`), nigdy jako polecenia; `prompt_version` to stała adaptera, a
-jej zmiana unieważnia zapisane werdykty bez migracji.
+(wiadomość `user`), nigdy jako polecenia. `prompt_version` to klucz `wersja:hash`
+(`verdictCacheKey`, #384): stała wersja adaptera plus hash usługi (`UMIEM_GRADER_BASE_URL`), modelu (`UMIEM_GRADER_MODEL`),
+opcji pośrednika i wyrenderowanego promptu systemowego (z rolą i definicją „almost”
+przedmiotu), bez odpowiedzi dziecka. Zmiana modelu, opcji, profilu przedmiotu albo
+treści promptu unieważnia zapisane werdykty bez migracji i bez ręcznego bumpa; stare
+wiersze zostają historią, a decyzje rodzica na nich przestają działać (także wiersze
+sprzed #384 z kluczem bez hasha). Panel rodzica pokazuje werdykty bieżącego modelu
+i bieżących wersji, dla każdej odpowiedzi tylko najnowszy; do ponownej oceny tej
+odpowiedzi najnowszym może być wiersz starego hasha, którego decyzja nie działa.
 
 Tryb E2E/smoke bez klucza: `UMIEM_FAKE_PROVIDERS=1` wstawia deterministyczny fake
 grader (routing po słowach kluczowych w odpowiedzi: „almost" → almost, „wrong" →

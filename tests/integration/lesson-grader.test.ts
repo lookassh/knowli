@@ -253,6 +253,33 @@ describe("cache werdyktów i parent_decision", () => {
     expect((await verdictRows()).length).toBe(1);
   });
 
+  it("zmiana modelu gradera unieważnia cache: ta sama odpowiedź idzie do nowego modelu, stary werdykt zostaje historią (#384)", async () => {
+    const raw = { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true };
+    const oldGrader = new FakeAnswerGrader().onDefault({ raw });
+    const newGrader = new FakeAnswerGrader({ model: "fake-grader-2" }).onDefault({ raw: { ...raw, verdict: "correct", errorCategory: null, fragments: [] } });
+    const { services, clock } = graderServices(oldGrader);
+    const { services: switched } = graderServices(newGrader);
+    const childA = await createChild(services, { displayName: "A", avatarKey: "owl" });
+    const childB = await createChild(services, { displayName: "B", avatarKey: "owl" });
+    const lesson = await lessonWorld(pool, { childId: childA.id, richPool: true, now: clock.now(), withObjectiveAssessment: true });
+    await seedPracticing(childB.id);
+    await pool.query(`insert into learning_app.assignments (id, child_id, deck_id) values (gen_random_uuid(), $1, $2)`, [childB.id, lesson.deckId]);
+    const sA = await startSession(services, { childId: childA.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const t1 = await reserveTransform(services, sA.sessionId);
+    await submitAttempt(services, { taskId: t1.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
+
+    const sB = await startSession(switched, { childId: childB.id, deckId: lesson.deckId, microphoneEnabled: false });
+    const t2 = await reserveTransform(switched, sB.sessionId);
+    const second = await submitAttempt(switched, { taskId: t2.taskId, clientAttemptId: randomUUID(), modality: "text", text: "she play" });
+    expect(newGrader.callCount).toBe(1);
+    expect(second.feedback?.kind).toBe("great");
+    const rows = await pool.query<{ grader_model: string; prompt_version: string }>(
+      "select grader_model, prompt_version from learning_app.lesson_verdicts order by created_at",
+    );
+    expect(rows.rows.map((r) => r.grader_model)).toEqual(["fake-grader-1", "fake-grader-2"]);
+    expect(rows.rows[0]!.prompt_version).not.toBe(rows.rows[1]!.prompt_version);
+  });
+
   it("parent_decision overridden_correct nadrzędne nad zapisanym incorrect", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const { services, clock } = graderServices(grader);

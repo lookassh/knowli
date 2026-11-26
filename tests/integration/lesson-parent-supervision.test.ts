@@ -183,7 +183,7 @@ describe("Parent supervision API (integracja HTTP)", () => {
     expect(examplesJoined).not.toContain("bbbmarker");
   });
 
-  it("lista werdyktów pokazuje tylko bieżące wersje promptu; bez gradera jest pusta (#360)", async () => {
+  it("lista werdyktów pokazuje tylko bieżące wersje promptu i bieżący model; bez gradera jest pusta (#360, #384)", async () => {
     const grader = new FakeAnswerGrader().onDefault({ raw: { verdict: "incorrect", errorCategory: "missing_ending", fragments: ["play"], note: "x", usesTargetForm: true } });
     const services = graderServices(grader);
     const cookie = await parentCookie(services);
@@ -196,8 +196,23 @@ describe("Parent supervision API (integracja HTTP)", () => {
       `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
        select gen_random_uuid(), item_revision_id, 'stary werdykt', 'fake-grader-v1', grader_model, 'correct' from learning_app.lesson_verdicts`,
     );
+    // Ta sama wersja promptu, inny model (stary klucz bez hasha i werdykt modelu sprzed zmiany env).
+    await pool.query(
+      `insert into learning_app.lesson_verdicts (id, item_revision_id, normalized_answer, prompt_version, grader_model, verdict)
+       select gen_random_uuid(), item_revision_id, 'inny model', prompt_version, 'old-model', 'correct' from learning_app.lesson_verdicts
+       where normalized_answer = 'she play'
+       union all
+       select gen_random_uuid(), item_revision_id, 'klucz bez hasha', 'fake-grader-v2', grader_model, 'correct' from learning_app.lesson_verdicts
+       where normalized_answer = 'she play'
+       union all
+       select gen_random_uuid(), item_revision_id, normalized_answer, 'fake-grader-v2:starszy', grader_model, 'correct' from learning_app.lesson_verdicts
+       where normalized_answer = 'she play'`,
+    );
+    // Starszy hash tej samej wersji i odpowiedzi (zmiana promptu) — panel pokazuje tylko najnowszy wiersz.
+    await pool.query("update learning_app.lesson_verdicts set created_at = timestamptz '2000-01-01' where prompt_version = 'fake-grader-v2:starszy'");
     const list = LessonVerdictDtoSchema.array().parse(await (await call(services, "GET", `lessons/${lesson.deckId}/verdicts`, { cookie })).json());
     expect(list.map((verdict) => verdict.childAnswer)).toEqual(["she play"]);
+    expect(list[0]!.verdict).toBe("incorrect");
     const withoutGrader = graderServices(null);
     const empty = await call(withoutGrader, "GET", `lessons/${lesson.deckId}/verdicts`, { cookie });
     expect(await empty.json()).toEqual([]);

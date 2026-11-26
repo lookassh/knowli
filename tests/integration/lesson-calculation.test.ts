@@ -181,7 +181,7 @@ async function reachCalculation(activeServices: typeof services, childId: string
 
 async function calculationWorld(withGrader = true) {
   const grade = vi.fn(async () => { throw new Error("calculation must never invoke the grader"); });
-  const activeServices = createServices({ db, clock: new ManualClock(), ...(withGrader ? { grader: { provider: { name: "throwing", model: "throwing", promptVersion: "calculation-test-v1", promptVersions: ["calculation-test-v1"], grade }, maxCallsPerSession: 20, timeoutMs: 1000 } } : {}) });
+  const activeServices = createServices({ db, clock: new ManualClock(), ...(withGrader ? { grader: { provider: { name: "throwing", model: "throwing", promptVersion: "calculation-test-v1", promptVersions: ["calculation-test-v1"], promptVersionForInput: () => "calculation-test-v1:0", grade }, maxCallsPerSession: 20, timeoutMs: 1000 } } : {}) });
   const child = await createChild(activeServices, { displayName: "Rachunki", avatarKey: "owl" });
   const { deckId, versionId } = await seedDraft();
   const draft = await editLessonDraft(activeServices, versionId, { expectedEditNumber: 1, exercises: [calculationExercise(), ...publishablePool().filter((ex) => ex.exerciseType !== "lesson_calculation")] });
@@ -209,7 +209,7 @@ describe("calculation grading on PostgreSQL", () => {
     const { activeServices, grade, child, task } = await calculationWorld();
     const revisionId = (await pool.query("select item_revision_id from learning_app.session_tasks where id=$1", [task.taskId])).rows[0]!.item_revision_id;
     await pool.query(`insert into learning_app.lesson_verdicts (id,item_revision_id,normalized_answer,prompt_version,grader_model,verdict)
-      values ($1,$2,$3,'calculation-test-v1','old-model',$4)`, [randomUUID(), revisionId, text, outcome === "correct" ? "incorrect" : "correct"]);
+      values ($1,$2,$3,'calculation-test-v1:0','old-model',$4)`, [randomUUID(), revisionId, text, outcome === "correct" ? "incorrect" : "correct"]);
     const before = await progressOf(child.id);
     const result = await submitAttempt(activeServices, { taskId: task.taskId, clientAttemptId: randomUUID(), modality: "text", text });
     expect(result.feedback?.kind).toBe(feedbackKind);
