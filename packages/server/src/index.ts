@@ -41,6 +41,7 @@ export {
   setupParentWithToken,
   loginParent,
   requireParent,
+  cleanupExpiredParentSessions,
   logoutParent,
   changeParentSecret,
   SESSION_TTL_MS,
