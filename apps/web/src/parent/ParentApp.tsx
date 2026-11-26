@@ -5,6 +5,7 @@ import { Alert, Button, Center, Group, Loader, Modal, Paper, Stack, Text, Title 
 import { hashKey, useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages } from "@learning/contracts";
 import { ApiCallError, callParent, errorMessage, parentClient } from "./api";
+import { ChangeSecretDialog } from "./ChangeSecretDialog";
 import ChildEditor from "./ChildEditor";
 import CostsPanel from "./CostsPanel";
 import DecksPanel from "./DecksPanel";
@@ -48,6 +49,7 @@ export default function ParentApp() {
   const { route, navigate } = useParentNavigation(leaveGuard);
   const section = route.section;
   const [reauthOpen, setReauthOpen] = useState(false);
+  const [changeSecretOpen, setChangeSecretOpen] = useState(false);
 
   // Stan sesji czytamy raz przy starcie panelu. Później o wygaśnięciu mówią
   // wyłącznie odpowiedzi 401 (toLogin) — samoczynne odświeżenie auth.state
@@ -74,6 +76,8 @@ export default function ParentApp() {
   );
 
   const signOutLocally = useCallback(() => {
+    // okno zmiany PIN-u nie wraca samo po ponownym zalogowaniu
+    setChangeSecretOpen(false);
     queryClient.setQueryData(AUTH_KEY, SIGNED_OUT);
     // dane dzieci (listy, postępy, karty pracy, progi) nie zostają w pamięci po wylogowaniu
     queryClient.removeQueries({ predicate: (query) => query.queryHash !== AUTH_HASH });
@@ -174,6 +178,7 @@ export default function ParentApp() {
         onNavigate={(next) => navigate({ section: next })}
         onToLearning={() => leaveGuard.requestLeave(() => { window.location.href = "/"; })}
         onLogout={() => leaveGuard.requestLeave(logout)}
+        onChangeSecret={() => leaveGuard.requestLeave(() => setChangeSecretOpen(true))}
       >
         {listsError !== undefined ? (
           <Alert color="red" variant="light" role="alert" title={messages.parentShell.loadFailed} data-testid="panel-load-error">
@@ -222,6 +227,11 @@ export default function ParentApp() {
           <WorkCardPanel childrenList={childrenList} />
         )}
       </ParentShell>
+      <ChangeSecretDialog
+        opened={changeSecretOpen}
+        onClose={() => setChangeSecretOpen(false)}
+        onSignedOut={signOutLocally}
+      />
       <LeaveEditorDialog open={leaveGuard.pending} onStay={leaveGuard.stay} onLeave={() => void leaveGuard.leave()} />
       <Modal
         opened={reauthOpen}

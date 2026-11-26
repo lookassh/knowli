@@ -41,6 +41,7 @@ export {
   loginParent,
   requireParent,
   logoutParent,
+  changeParentSecret,
   SESSION_TTL_MS,
 } from "./modules/family";
 export { listChildren, createChild, updateChild, deleteChild } from "./modules/family";

@@ -56,7 +56,7 @@ test("telefon: dolny pasek sekcji przy dolnej krawędzi i menu z akcjami", async
     const menu = page.getByTestId("parent-menu");
     expect((await menu.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await menu.click();
-    for (const id of ["to-costs", "to-learning", "parent-logout"]) {
+    for (const id of ["to-costs", "to-learning", "change-secret", "parent-logout"]) {
       await expect(page.getByTestId(id)).toBeVisible();
       expect((await page.getByTestId(id).boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
@@ -71,16 +71,16 @@ test("od 600 px: zakładki pod nagłówkiem, akcje w nagłówku", async ({ page 
     await openSignedInPanel(page);
     await expectNoHorizontalOverflow(page);
     await expect(page.getByTestId("parent-menu")).toHaveCount(0);
-    for (const id of [...TABS, "to-costs", "to-learning", "parent-logout", "color-scheme-menu"]) {
+    for (const id of [...TABS, "to-costs", "to-learning", "parent-logout", "color-scheme-menu", "change-secret"]) {
       const box = await page.getByTestId(id).boundingBox();
       expect(box, `${id} @${viewport.width}`).not.toBeNull();
       expect(box!.height, `${id} @${viewport.width}`).toBeGreaterThanOrEqual(44);
       expect(box!.y, `${id} @${viewport.width}`).toBeLessThan(140);
       expect(box!.x + box!.width, `${id} @${viewport.width}`).toBeLessThanOrEqual(viewport.width + 0.5);
     }
-    // akcje nagłówka nie nachodzą na siebie ani na markę (Koszty, Do nauki, Wygląd, Wyloguj)
+    // akcje nagłówka nie nachodzą na siebie ani na markę (Koszty, Do nauki, Wygląd, Zmień PIN, Wyloguj)
     const actions = [];
-    for (const id of ["to-costs", "to-learning", "color-scheme-menu", "parent-logout"]) actions.push((await page.getByTestId(id).boundingBox())!);
+    for (const id of ["to-costs", "to-learning", "color-scheme-menu", "change-secret", "parent-logout"]) actions.push((await page.getByTestId(id).boundingBox())!);
     actions.sort((left, right) => left.x - right.x);
     for (let index = 1; index < actions.length; index += 1) {
       expect(actions[index]!.x, `akcje nagłówka @${viewport.width}`).toBeGreaterThanOrEqual(actions[index - 1]!.x + actions[index - 1]!.width - 0.5);
