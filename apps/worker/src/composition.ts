@@ -2,6 +2,7 @@ import {
   createDatabase,
   createDrizzleUsageRecorder,
   createGenerationDepsFromEnv,
+  databasePoolSettingsFromEnv,
   createProductionSubjectRegistry,
   createServices,
   isLessonAgentAvailable,
@@ -36,10 +37,11 @@ export function buildWorkerServices(): { services: Services; pool: WorkerPool; u
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
-  // Stawki przed pulą: zła wartość to błąd startu bez otwartych połączeń.
+  // Stawki i ustawienia puli przed pulą: zła wartość to błąd startu bez otwartych połączeń.
   const prices = pricesFromEnv(env);
+  const poolSettings = databasePoolSettingsFromEnv(env, "worker");
   const subjects = createProductionSubjectRegistry();
-  const { db, pool } = createDatabase(databaseUrl);
+  const { db, pool } = createDatabase(databaseUrl, poolSettings);
   try {
     const usage = createDrizzleUsageRecorder({ db, clock: systemClock, prices });
     const base = createGenerationDepsFromEnv(env, usage);

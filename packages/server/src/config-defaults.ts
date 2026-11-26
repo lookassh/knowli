@@ -78,6 +78,17 @@ export const CONFIG_DEFAULTS = {
   UMIEM_LESSON_AGENT_CALL_TIMEOUT_MS: "90000",
   UMIEM_LESSON_AGENT_RUN_BUDGET_USD: "1.00",
 
+  // ── Pula PostgreSQL (#410) ──
+  // POOL_MAX = dotychczasowy domyślny limit `pg`; suma procesów mieści się w domyślnym max_connections 100.
+  // Transakcje nie obejmują wywołań providerów, więc limit zapytania web (z oczekiwaniem na blokadę)
+  // ma zapas; worker uzgadnia media i runy większymi transakcjami. Migracje i skrypty CLI — bez limitu.
+  // Obejmuje też czekanie na wolne połączenie, gdy wszystkie są zajęte (pg-pool).
+  UMIEM_DB_CONNECT_TIMEOUT_MS: "10000",
+  UMIEM_WEB_DB_POOL_MAX: "10",
+  UMIEM_WEB_DB_STATEMENT_TIMEOUT_MS: "30000",
+  UMIEM_WORKER_DB_POOL_MAX: "10",
+  UMIEM_WORKER_DB_STATEMENT_TIMEOUT_MS: "120000",
+
   // ── Worker ──
   WORKER_POLL_MS: "2000",
   // Limit runu generacji lekcji mieści się w progu zdrowia; pilnuje apps/worker/src/loop.test.ts.

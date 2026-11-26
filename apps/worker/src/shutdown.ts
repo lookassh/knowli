@@ -11,12 +11,26 @@ export async function shutdownWorker(deps: {
   loop: { stop(): Promise<void> };
   usage: UsageRecorder;
   pool: { end(): Promise<void> };
+  poolEndTimeoutMs?: number;
 }): Promise<void> {
   // Błąd jednego kroku nie może pominąć kolejnych: pula i tak musi się zamknąć.
   await deps.loop.stop().catch((error: unknown) => logStepFailure("loop.stop", error));
   await deps.usage.flush().catch((error: unknown) => logStepFailure("usage.flush", error));
-  await deps.pool.end();
+  // `pool.end` czeka na klienty w użyciu (np. insert porzucony przez flush przy zawieszonej
+  // bazie, #410); po terminie wychodzimy, a proces kończy `process.exit` w main.ts.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), deps.poolEndTimeoutMs ?? POOL_END_TIMEOUT_MS); });
+  try {
+    if (await Promise.race([deps.pool.end(), deadline]) === "timeout") {
+      console.error("[worker] shutdown step failed", { step: "pool.end", code: "timeout" });
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
+
+/** Mieści się, razem z 5 s flush kosztów, w typowym czasie łaski zatrzymania kontenera. */
+const POOL_END_TIMEOUT_MS = 3000;
 
 /** Sam kod błędu (np. SQLSTATE, `ECONNRESET`, nazwa klasy) — bez komunikatu i treści. */
 function errorCode(error: unknown): string {

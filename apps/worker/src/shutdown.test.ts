@@ -1,4 +1,7 @@
+import { createServer, type Server, type Socket } from "node:net";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDatabase, createDrizzleUsageRecorder } from "@learning/server";
 import { shutdownWorker } from "./shutdown";
 
 describe("shutdownWorker", () => {
@@ -52,5 +55,43 @@ describe("shutdownWorker", () => {
     });
     expect(order).toEqual(["usage.flush", "pool.end"]);
     expect(errors).toHaveBeenCalledWith("[worker] shutdown step failed", { step: "loop.stop", code: "TypeError" });
+  });
+
+  it("finishes in bounded time when the database accepts connections but never answers (#410)", async () => {
+    // Zawieszona baza: TCP przyjmuje połączenie i milczy (bez odpowiedzi na startup).
+    const sockets: Socket[] = [];
+    const server: Server = createServer((socket) => { sockets.push(socket); });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const { db, pool } = createDatabase(`postgres://u:p@127.0.0.1:${port}/x`, { connectionTimeoutMillis: 300 });
+      const logged: string[] = [];
+      const usage = createDrizzleUsageRecorder({
+        db, clock: { now: () => new Date() }, prices: {}, log: (code) => logged.push(code), flushTimeoutMs: 50,
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      usage.record({ feature: "answer_grading", provider: "openrouter", outcome: "ok" });
+
+      const started = Date.now();
+      await shutdownWorker({ loop: { stop: async () => {} }, usage, pool });
+
+      expect(Date.now() - started).toBeLessThan(3000);
+      expect(logged).toContain("usage_flush_timeout");
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 10_000);
+
+  it("stops waiting for pool.end after its deadline and logs only the step and code", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await shutdownWorker({
+      loop: { stop: async () => {} },
+      usage: { record: () => {}, flush: async () => {} },
+      // Klient zajęty zapytaniem do zamrożonej bazy: pula nigdy się nie zamyka.
+      pool: { end: () => new Promise<void>(() => {}) },
+      poolEndTimeoutMs: 20,
+    });
+    expect(errors).toHaveBeenCalledExactlyOnceWith("[worker] shutdown step failed", { step: "pool.end", code: "timeout" });
   });
 });

@@ -2,7 +2,7 @@ import { drizzle, type NodePgDatabase, type NodePgQueryResultHKT } from "drizzle
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 import type { PgTransaction } from "drizzle-orm/pg-core";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 import * as schema from "./schema";
 import { ensureLearningPolicy } from "../policies/registry";
 
@@ -18,8 +18,11 @@ export type Tx = PgTransaction<
 /** Wspólny kształt dla pomocników działających i na bazie, i wewnątrz transakcji. */
 export type Executor = Pick<Database, "select" | "insert" | "update" | "delete" | "execute">;
 
-export function createDatabase(connectionString: string): { db: Database; pool: Pool } {
-  const pool = new Pool({ connectionString });
+/** Strojone parametry puli procesu web/workera (#410); bez nich — domyślne `pg` (migracje, skrypty CLI). */
+export type DatabasePoolSettings = Pick<PoolConfig, "max" | "connectionTimeoutMillis" | "statement_timeout">;
+
+export function createDatabase(connectionString: string, settings?: DatabasePoolSettings): { db: Database; pool: Pool } {
+  const pool = new Pool({ ...settings, connectionString });
   const db = drizzle(pool, { schema }) as Database;
   return { db, pool };
 }

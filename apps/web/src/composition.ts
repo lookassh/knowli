@@ -5,6 +5,7 @@ import {
   createLocalMediaStore,
   createProductionSubjectRegistry,
   createServices,
+  databasePoolSettingsFromEnv,
   fakeGraderDeps,
   FakeAnswerGrader,
   fakeSessionActivityDeps,
@@ -52,9 +53,9 @@ function initialize(): ServerServices {
   // Tryb fake (E2E/smoke bez kluczy) ma pierwszeństwo: nagrania i odpowiedzi
   // nie wychodzą do sieci, nawet gdy w środowisku jest klucz.
   const fake = env.UMIEM_FAKE_PROVIDERS === "1";
-  // Stawki przed pulą: zła wartość to błąd startu bez otwartych połączeń.
+  // Stawki i ustawienia puli przed pulą: zła wartość to błąd startu bez otwartych połączeń.
   const prices = fake ? undefined : pricesFromEnv(env);
-  const { db, pool } = createDatabase(databaseUrl);
+  const { db, pool } = createDatabase(databaseUrl, databasePoolSettingsFromEnv(env, "web"));
   // Jeden recorder kosztów (spec llm-cost-tracking §4.3) na tej samej puli dla
   // wszystkich płatnych adapterów web; fake'i go nie dostają.
   const usage = prices ? createDrizzleUsageRecorder({ db, clock: systemClock, prices }) : undefined;

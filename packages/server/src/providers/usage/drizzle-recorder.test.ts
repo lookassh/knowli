@@ -136,4 +136,15 @@ describe("drizzle usage recorder retry", () => {
 
     expect(completed).toBe(2);
   });
+
+  it("flush gives up after the deadline when the database hangs and logs only the code", async () => {
+    const db = { insert: () => ({ values: () => new Promise<void>(() => {}) }) } as unknown as Database;
+    const log = vi.fn();
+    const recorder = createDrizzleUsageRecorder({ db, clock, prices: {}, log, flushTimeoutMs: 20 });
+
+    recorder.record(event);
+    await recorder.flush();
+
+    expect(log).toHaveBeenCalledExactlyOnceWith("usage_flush_timeout");
+  });
 });

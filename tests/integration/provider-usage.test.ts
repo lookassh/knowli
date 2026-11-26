@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ParentCostsDtoSchema, type ParentCostsDto } from "@learning/contracts";
-import { createDrizzleUsageRecorder, createServices, deleteChild, loginParent, readParentCosts, setupParent, withUsageScope, type UsageEvent, type UsagePrices } from "@learning/server/testing";
-import { ManualClock, buildTestServices, handleParentApi, testDatabase, truncateCoreTables } from "./helpers";
+import { createDatabase, createDrizzleUsageRecorder, createServices, databasePoolSettingsFromEnv, withConfigDefaults, deleteChild, loginParent, readParentCosts, setupParent, withUsageScope, type UsageEvent, type UsagePrices } from "@learning/server/testing";
+import { ManualClock, buildTestServices, handleParentApi, testDatabase, testDatabaseUrl, truncateCoreTables } from "./helpers";
 
 /**
  * Migracja 0036_provider_usage_events: tabela dziennika kosztów usług AI
@@ -756,5 +756,17 @@ describe("parent costs API", () => {
     const body = (await response.json()) as ParentCostsDto;
     expect(ParentCostsDtoSchema.safeParse(body).success).toBe(true);
     expect(body.month).toBe(body.currentMonth);
+  });
+});
+
+describe("pool settings reach PostgreSQL (#410)", () => {
+  it.each([["web", "30s"], ["worker", "2min"]] as const)("%s pool sets statement_timeout %s", async (role, expected) => {
+    const { pool } = createDatabase(testDatabaseUrl(), databasePoolSettingsFromEnv(withConfigDefaults({}), role));
+    try {
+      const result = await pool.query<{ statement_timeout: string }>("show statement_timeout");
+      expect(result.rows[0]?.statement_timeout).toBe(expected);
+    } finally {
+      await pool.end();
+    }
   });
 });

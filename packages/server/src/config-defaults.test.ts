@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  databasePoolSettingsFromEnv,
   DEFAULT_GRADER_MAX_CALLS_PER_SESSION,
   DEFAULT_GRADER_TIMEOUT_MS,
   DEFAULT_SESSION_ACTIVITY_TIMEOUT_MS,
@@ -161,4 +162,28 @@ describe("stawki kosztów usług AI", () => {
     const prices = pricesFromEnv(withConfigDefaults({}));
     expect(Object.keys(prices).sort()).toEqual(["azurePronunciationUsdPerHour", "azureSttUsdPerHour", "imageUsd", "ttsUsdPerMinute"]);
   });
+});
+
+describe("databasePoolSettingsFromEnv (#410)", () => {
+  it("domyślne: osobny limit zapytania dla web i workera, wspólny timeout nawiązania", () => {
+    const env = withConfigDefaults({});
+    expect(databasePoolSettingsFromEnv(env, "web")).toEqual({ max: 10, connectionTimeoutMillis: 10000, statement_timeout: 30000 });
+    expect(databasePoolSettingsFromEnv(env, "worker")).toEqual({ max: 10, connectionTimeoutMillis: 10000, statement_timeout: 120000 });
+  });
+
+  it("nadpisanie dotyczy tylko wskazanego procesu", () => {
+    const env = withConfigDefaults({ UMIEM_WORKER_DB_POOL_MAX: "4", UMIEM_WEB_DB_STATEMENT_TIMEOUT_MS: "15000", UMIEM_DB_CONNECT_TIMEOUT_MS: "2000" });
+    expect(databasePoolSettingsFromEnv(env, "worker")).toEqual({ max: 4, connectionTimeoutMillis: 2000, statement_timeout: 120000 });
+    expect(databasePoolSettingsFromEnv(env, "web")).toEqual({ max: 10, connectionTimeoutMillis: 2000, statement_timeout: 15000 });
+  });
+
+  it.each(["UMIEM_WEB_DB_POOL_MAX", "UMIEM_WORKER_DB_STATEMENT_TIMEOUT_MS", "UMIEM_DB_CONNECT_TIMEOUT_MS"])(
+    "zła wartość %s to błąd startu z nazwą zmiennej",
+    (name) => {
+      for (const raw of ["0", "-1", "1.5", "abc"]) {
+        expect(() => databasePoolSettingsFromEnv(withConfigDefaults({ [name]: raw }), name.includes("WEB") ? "web" : "worker"))
+          .toThrow(`${name} must be a positive integer`);
+      }
+    },
+  );
 });
