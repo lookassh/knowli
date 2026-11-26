@@ -64,6 +64,7 @@ export const INTEGRATION_BUCKETS: readonly (readonly string[])[] = [
     manual-decks-api.test.ts
     media.test.ts
     mock-test-reporting.test.ts
+    parent-secret-change.test.ts
     recording-mode-migration.test.ts
     session-activity-migration.test.ts
     session-activity.test.ts

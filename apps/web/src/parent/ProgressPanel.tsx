@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Badge, Group, Loader, NativeSelect, Paper, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Group, Loader, NativeSelect, Paper, Stack, Text, Title } from "@mantine/core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { messages, type ChildDto, type DeckSummaryDto, type ProgressDto } from "@learning/contracts";
 import { errorMessage } from "./api";
@@ -13,6 +13,7 @@ import { dueEntries, historyRows } from "./progress-lists";
 import { ParentIcon, type ParentIconName } from "./ParentIcon";
 import { orpc } from "./query-client";
 import { formatFamilyDate } from "./family-date";
+import type { ParentSection } from "./parent-routes";
 import "./progress-panel.css";
 
 /**
@@ -194,9 +195,11 @@ function PronunciationCard({ progress }: { progress: ProgressDto }) {
 export default function ProgressPanel({
   childrenList,
   decks,
+  onNavigate,
 }: {
   childrenList: ChildDto[];
   decks: DeckSummaryDto[];
+  onNavigate: (section: ParentSection) => void;
 }) {
   // Postępy dotyczą wyłącznie słówek (#377): progress.get odrzuca lekcje
   // (deck_kind_mismatch), a brak kind znaczy vocabulary.
@@ -228,12 +231,17 @@ export default function ProgressPanel({
   const progress = query.data;
 
   if (childrenList.length === 0 || published.length === 0) {
+    // najpierw brak dziecka, dopiero potem brak materiału (#242)
+    const noChildren = childrenList.length === 0;
     return (
-      <Stack gap="md">
+      <Stack gap="md" align="flex-start">
         <Title order={1} fz={26}>{messages.progress.title}</Title>
         <Text data-testid="progress-empty">
-          {childrenList.length > 0 && hasPublishedLessons ? messages.progress.lessonsOnly : messages.progress.empty}
+          {noChildren ? messages.progress.noChildren : hasPublishedLessons ? messages.progress.lessonsOnly : messages.progress.empty}
         </Text>
+        <Button size="md" data-testid="progress-empty-cta" onClick={() => onNavigate(noChildren ? "children" : "decks")}>
+          {noChildren ? messages.children.add : messages.progress.toDecks}
+        </Button>
       </Stack>
     );
   }

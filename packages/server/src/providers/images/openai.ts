@@ -1,4 +1,5 @@
 import type { ImageGenerateInput, ImageProvider } from "../../ports/ai";
+import { timeoutAsProviderError } from "../../ports/generation-error";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
 import { recordHttpError, recordResponse, recordTransportFailure, recordUnreadable } from "../usage/record-http";
 
@@ -8,6 +9,8 @@ export interface OpenAiImageOptions {
   baseUrl?: string;
   /** Zapis kosztów wywołań (spec cost-tracking §4.2); bez niego adapter działa jak dotąd. */
   usage?: UsageRecorder;
+  /** Limit jednego żądania (#412); domyślnie 180 s, poniżej lease mediów 5 min. */
+  requestTimeoutMs?: number;
   /** Funkcja produktu zapisywana w kosztach: ilustracje elementów (domyślnie) albo okładka talii. */
   feature?: "illustration" | "deck_cover";
 }
@@ -36,6 +39,8 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
     async generate(input: ImageGenerateInput, signal?: AbortSignal) {
       // jedno żądanie HTTP = jeden zapis
       const base = { feature, provider, model: input.model };
+      const timeoutSignal = AbortSignal.timeout(options.requestTimeoutMs ?? 180_000);
+      const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
       let response: Response;
       try {
         response = await fetch(`${baseUrl}/images/generations`, {
@@ -51,11 +56,11 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
             quality: input.quality,
             output_format: input.format,
           }),
-          signal,
+          signal: requestSignal,
         });
       } catch (error) {
         recordTransportFailure(options.usage, base);
-        throw error;
+        throw timeoutAsProviderError(error);
       }
       if (!response.ok) {
         recordHttpError(options.usage, base, response.status);
@@ -68,7 +73,7 @@ export function createOpenAiImageProvider(options: OpenAiImageOptions): ImagePro
         payload = (await response.json()) as typeof payload;
       } catch (error) {
         recordUnreadable(options.usage, base, response.status);
-        throw error;
+        throw timeoutAsProviderError(error);
       }
       // płatna odpowiedź jest zapisana zanim treść zostanie zwalidowana
       const images = Array.isArray(payload?.data) ? payload.data.length : 0;

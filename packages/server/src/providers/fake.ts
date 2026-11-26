@@ -27,6 +27,7 @@ import { FUNCTION_WORDS } from "../domain/lessons/subjects/english/function-word
 import { isMaterialVocabularyTarget, materialPhraseIndex } from "../domain/lessons/subjects/english/material-phrase";
 import { normalizeTokens } from "../domain/lessons/normalize";
 import { CONFIG_DEFAULTS } from "../config-defaults";
+import { verdictCacheKey } from "./verdict-cache-key";
 
 /**
  * Deterministyczni providerzy bez sieci: te same dane wejściowe dają te same
@@ -457,7 +458,7 @@ const FAKE_SCHOOL_SPEECH_PROMPT_VERSION = "fake-school-grader-v3-speech";
  */
 export class FakeAnswerGrader implements AnswerGraderProvider {
   readonly name = "fake-grader";
-  readonly model = "fake-grader-1";
+  readonly model: string;
   readonly promptVersion: string;
   readonly requests: GraderInput[] = [];
   get promptVersions(): readonly string[] {
@@ -469,8 +470,9 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
   #costUsd: number | null;
 
   /** `costUsd` to koszt zgłaszany do `RunCostSink` raz na wywołanie (testy budżetu agenta); `null` = nieznany. */
-  constructor(options: { promptVersion?: string; keywordRouting?: boolean; costUsd?: number | null } = {}) {
+  constructor(options: { promptVersion?: string; model?: string; keywordRouting?: boolean; costUsd?: number | null } = {}) {
     this.promptVersion = options.promptVersion ?? "fake-grader-v2";
+    this.model = options.model ?? "fake-grader-1";
     this.#keywordRouting = options.keywordRouting ?? false;
     this.#costUsd = options.costUsd === undefined ? 0.0005 : options.costUsd;
   }
@@ -487,9 +489,10 @@ export class FakeAnswerGrader implements AnswerGraderProvider {
     return this;
   }
 
+  /** Klucz jak w prawdziwym adapterze (`verdictCacheKey`): zmiana modelu albo profilu przedmiotu unieważnia cache. */
   promptVersionForInput(input: GraderInput): string {
-    if (!input.school) return this.promptVersion;
-    return input.school.spoken ? FAKE_SCHOOL_SPEECH_PROMPT_VERSION : FAKE_SCHOOL_PROMPT_VERSION;
+    const version = !input.school ? this.promptVersion : input.school.spoken ? FAKE_SCHOOL_SPEECH_PROMPT_VERSION : FAKE_SCHOOL_PROMPT_VERSION;
+    return verdictCacheKey(version, [this.model, input.roleProfile]);
   }
 
   get callCount(): number {

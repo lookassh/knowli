@@ -3,7 +3,14 @@ import { createOpenAiTtsProvider } from "./tts";
 import { pcmToWav } from "../audio/wav";
 import { createTestRecorder, createThrowingRecorder } from "../usage/test-recorder";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+const hungFetch = () => vi.fn(async (_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+  init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+}));
 
 function bodyOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
   const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -183,6 +190,28 @@ describe("createOpenAiTtsProvider — zapis kosztów", () => {
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toMatchObject({ outcome: "failed" });
     expect(rec.events[0]!.httpStatus).toBeUndefined();
+  });
+
+  it("zawieszone żądanie kończy się po limicie jako `timeout` z jednym zapisem kosztu", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hungFetch());
+    const rec = createTestRecorder();
+    const result = createOpenAiTtsProvider({ apiKey: "test", usage: rec, requestTimeoutMs: 25 })
+      .synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "mp3" });
+    const assertion = expect(result).rejects.toMatchObject({ kind: "timeout", message: "provider_timeout" });
+    await vi.advanceTimersByTimeAsync(26);
+    await assertion;
+    expect(rec.events).toHaveLength(1);
+    expect(rec.events[0]).toMatchObject({ outcome: "failed" });
+  });
+
+  it("przerwanie sygnałem wywołującego zostaje zwykłym AbortError", async () => {
+    vi.stubGlobal("fetch", hungFetch());
+    const controller = new AbortController();
+    const result = createOpenAiTtsProvider({ apiKey: "test", requestTimeoutMs: 60_000 })
+      .synthesize({ text: "kot", locale: "pl-PL", voice: "Kore", format: "mp3" }, controller.signal);
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("przerwanie podczas czytania ciała 2xx: jeden event failed z kodem 200", async () => {

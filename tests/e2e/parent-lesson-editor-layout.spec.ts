@@ -972,3 +972,90 @@ test("bez luk generowania nie ma alertu ani znaczników", async ({ page }) => {
   await expect(page.getByTestId("lesson-generation-gaps")).toHaveCount(0);
   await expect(page.locator('[data-testid^="objective-gap-"]')).toHaveCount(0);
 });
+
+// gh-380: bramka przejrzenia — przejrzenie tylko po stronie klienta, ostrzeżenie nie blokuje publikacji.
+// Flagi: ćw. 2 nagranie pytania, ćw. 3 nagranie w `assets`, ćw. 4 wyciek, ćw. 5 nagranie wyjaśnienia, ćw. 6 nagranie zdania; ćw. 1 bez flagi.
+const reviewLesson = {
+  ...lesson,
+  draft: {
+    ...lesson.draft,
+    exercises: [
+      choice(1, OBJ_A),
+      { ...gap(2, OBJ_A), promptAudio: { state: "failed" } },
+      choice(3, OBJ_B),
+      gap(4, OBJ_B),
+      { ...choice(5, OBJ_A), explanationAudio: { state: "failed" } },
+      { ...gap(6, OBJ_B), sentenceAudio: { state: "failed" } },
+    ],
+    assets: [{ itemRevisionId: uuid(53), role: "target_audio", state: "failed", assetId: null }],
+    exposureLeaks: [{ exerciseId: uuid(4), kind: "hard", source: { kind: "card_example", objectiveId: OBJ_B } }],
+  },
+} as unknown as typeof lesson;
+const publishPosts = (calls: Calls) => calls.requests.filter((r) => r.method === "POST" && r.path.endsWith(`/lesson-drafts/${draftId}/publish`));
+const reviewedText = (x: number, n: number) => messages.lessons.reviewedCount.replace("{x}", String(x)).replace("{n}", String(n));
+
+test("przejrzenie: licznik, „Następna do przejrzenia” od oflagowanych, potwierdzenie publikacji z liczbą nieprzejrzanych", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const calls = await openLesson(page, { data: reviewLesson });
+  // zwinięta karta wyboru: wszystkie opcje bez „Edytuj”
+  await expect(page.getByTestId("exercise-options-0")).toContainText("✓ plays");
+  await expect(page.getByTestId("exercise-options-0")).toContainText("play");
+  await expect(page.getByTestId("exercise-reviewed-0")).toHaveAccessibleName(messages.lessons.reviewedAriaLabel.replace("{n}", "1"));
+
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(0, 6));
+  // bez odhaczania kolejne kliknięcia idą dalej: oflagowane w kolejności formularza, potem reszta, potem od początku
+  for (const index of [1, 2, 3, 4, 5, 0, 1]) {
+    await page.getByTestId("review-next").click();
+    await expect(page.getByTestId(`exercise-${index}`)).toBeFocused();
+  }
+  // pokazana karta przejrzana: następna to pierwsza z pozostałych
+  await page.getByTestId("exercise-reviewed-1").check();
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(1, 6));
+  await page.getByTestId("review-next").click();
+  await expect(page.getByTestId("exercise-2")).toBeFocused();
+
+  // nieprzejrzane: okno z ich liczbą; Anuluj nie publikuje
+  await page.getByTestId("publish-lesson").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(messages.lessons.publishUnreviewed.many!.replace("{n}", "5"));
+  await page.getByTestId("publish-unreviewed-cancel").click();
+  await expect(dialog).toBeHidden();
+  expect(publishPosts(calls)).toHaveLength(0);
+
+  // wszystko przejrzane: „Następna” wyłączona, publikacja bez potwierdzenia
+  for (const index of [0, 2, 3, 4, 5]) await page.getByTestId(`exercise-reviewed-${index}`).check();
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(6, 6));
+  await expect(page.getByTestId("review-next")).toBeDisabled();
+  await page.getByTestId("publish-lesson").click();
+  await expect.poll(() => publishPosts(calls).length).toBe(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("przejrzenie: potwierdzenie publikuje mimo nieprzejrzanych, nowa wersja szkicu zeruje licznik, edycja karty liczy się jako przejrzenie", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let current = reviewLesson;
+  const calls = await openLesson(page, { data: () => current });
+
+  // „Następna” rozwija zwinięty etap na telefonie; przycisk i pole „Przejrzane” mają cel ≥ 44 px
+  await page.getByTestId("review-next").click();
+  await expect(page.getByTestId("exercise-1")).toBeFocused();
+  for (const target of [page.getByTestId("review-next"), page.getByTestId("exercise-1").getByText(messages.lessons.reviewedLabel, { exact: true })]) {
+    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+  await page.getByTestId("exercise-reviewed-1").check();
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(1, 6));
+
+  // po publikacji serwer zwraca szkic o innym id: przejrzenie zaczyna się od zera
+  current = { ...reviewLesson, draft: { ...reviewLesson.draft, id: uuid(98), editNumber: 1 } } as typeof lesson;
+  await page.getByTestId("publish-lesson").click();
+  await expect(page.getByRole("dialog")).toContainText(messages.lessons.publishUnreviewed.many!.replace("{n}", "5"));
+  await page.getByTestId("publish-unreviewed-confirm").click();
+  await expect.poll(() => publishPosts(calls).length).toBe(1);
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(0, 6));
+  await expect(page.getByTestId("exercise-reviewed-1")).not.toBeChecked();
+
+  await page.getByTestId("exercise-edit-1").click();
+  await page.getByTestId("exercise-answer-1").fill("watched");
+  await expect(page.getByTestId("review-count")).toHaveText(reviewedText(1, 6));
+  await expect(page.getByTestId("exercise-reviewed-1")).toBeChecked();
+});

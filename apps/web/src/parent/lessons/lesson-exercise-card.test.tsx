@@ -26,18 +26,19 @@ function render(
   sentenceAudio: LessonPromptAudioDto | null,
   {
     open = false, editable = true, explanations = false, errors = undefined as string[] | undefined, changed = false, leak = null as LeakNotice | null,
+    exercise = listenExercise(), reviewed = false,
   } = {},
 ): string {
   const draft = {
     id: "00000000-0000-4000-8000-000000000001", deckId: "00000000-0000-4000-8000-000000000002", editNumber: 1, status: "review",
     title: "T", subjectId: "english_grammar", topicId: "present_simple", topicVersion: 1, objectiveIds: [OBJ], examples: {},
-    exercises: [listenExercise()], assets: [], rejectedCount: 0, coverage: [],
+    exercises: [exercise], assets: [], rejectedCount: 0, coverage: [],
   } as unknown as LessonDraftDto;
   const ex = createLessonSnapshot(draft, () => "k").form.exercises[0]!;
   return renderParentMarkup(
     <LessonExerciseCard ex={ex} index={0} editable={editable} busy={false} open={open} changed={changed} leak={leak} onShowSource={vi.fn()} hadAudio={false} errors={errors}
       audio={null} voiceTones={{ styleEnabled: true }} promptAudio={null} explanations={explanations} explanationAudio={null} sentenceAudio={sentenceAudio} lessonDraftId={draft.id} deckId={draft.deckId}
-      itemRevisionId="rev" audioLocked={false} calculation={null} onToggle={vi.fn()} onMutate={vi.fn()} onRemove={vi.fn()} onPlay={vi.fn()} />,
+      itemRevisionId="rev" audioLocked={false} calculation={null} reviewed={reviewed} onReviewed={vi.fn()} onToggle={vi.fn()} onMutate={vi.fn()} onRemove={vi.fn()} onPlay={vi.fn()} />,
   );
 }
 
@@ -203,5 +204,31 @@ describe("LessonExerciseCard: ujawnione rozwiązanie", () => {
   it("bez ujawnienia: brak ostrzeżenia i powiązania aria-describedby", () => {
     const markup = render(null);
     expect(markup).not.toContain("exercise-leak-0");
+  });
+});
+
+describe("LessonExerciseCard: pełny podgląd i przejrzenie", () => {
+  const choice = (): LessonDraftDto["exercises"][number] => ({
+    ...listenExercise(), exerciseType: "lesson_choice", instructionPl: "Wybierz",
+    options: [{ id: "a", text: "plays" }, { id: "b", text: "play" }, { id: "c", text: "playing" }], correctOption: "a",
+    hint: "Pomyśl o -s", acceptedAnswers: ["plays", "is playing", "does play"],
+  });
+
+  it("zwinięta karta wyboru: wszystkie opcje z oznaczoną poprawną, podpowiedź i dodatkowe warianty", () => {
+    const markup = render(null, { exercise: choice() });
+    expect(markup).toContain('data-testid="exercise-options-0"');
+    expect(markup).toMatch(/data-correct="true"[^>]*>✓ plays</);
+    expect(markup).toContain(">play<");
+    expect(markup).toContain(">playing<");
+    expect(markup).toContain(messages.lessons.previewHint.replace("{text}", "Pomyśl o -s"));
+    // wariant równy odpowiedzi nie jest „dodatkowy”
+    expect(markup).toContain(messages.lessons.previewVariants.replace("{list}", "is playing, does play"));
+    expect(markup).not.toContain('data-testid="exercise-instruction-0"');
+  });
+
+  it("checkbox „Przejrzane” tylko w edytowalnym szkicu, z bieżącym stanem", () => {
+    expect(render(null, { exercise: choice() })).toContain('data-testid="exercise-reviewed-0"');
+    expect(render(null, { exercise: choice(), reviewed: true })).toMatch(/data-testid="exercise-reviewed-0"[^>]*checked=""|checked=""[^>]*data-testid="exercise-reviewed-0"/);
+    expect(render(null, { exercise: choice(), editable: false })).not.toContain('data-testid="exercise-reviewed-0"');
   });
 });

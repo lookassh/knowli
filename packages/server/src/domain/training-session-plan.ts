@@ -117,3 +117,27 @@ function hasValidStorySuffix(slots: readonly { taskKind: LessonTaskKind; assesse
     return slot.taskKind === expected && !slot.assessed && slot.exerciseType === exerciseType && slot.prompt.kind === exerciseType;
   });
 }
+
+/**
+ * Ekrany do końca sesji od slotu `taskId` (włącznie) — podstawa banera „Jeszcze N”
+ * (#392). Ta sama reguła co wydawanie: po wyczerpaniu budżetu nic nie wychodzi,
+ * a pominięty slot zużywa budżet, ale nie jest ekranem. Bieżący slot jest już
+ * wydany, więc zawsze się liczy. `undefined` dla zadania spoza planu.
+ */
+export function remainingPlanScreens<Slot extends { taskId: string; assessed: boolean }>(
+  slots: readonly Slot[],
+  taskId: string,
+  remainingAssessed: number,
+  skipped: (slot: Slot) => boolean = () => false,
+): number | undefined {
+  const start = slots.findIndex((slot) => slot.taskId === taskId);
+  if (start === -1) return undefined;
+  let budget = remainingAssessed;
+  let screens = 0;
+  for (let index = start; index < slots.length && (index === start || budget > 0); index++) {
+    const slot = slots[index]!;
+    if (index === start || !skipped(slot)) screens += 1;
+    if (slot.assessed) budget -= 1;
+  }
+  return screens;
+}

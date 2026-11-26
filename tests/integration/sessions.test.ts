@@ -889,6 +889,30 @@ describe("cykl życia sesji (integracja)", () => {
     expect(assessedRows[0]!.count).toBe(20);
   });
 
+  it("po banerze „Jeszcze N” do końca sesji wychodzi najwyżej N ekranów, także z ekspozycjami (#392)", async () => {
+    const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS.slice(0, 3));
+    await updateDeckSettings(services, deckId, { sessionTaskBudget: 3 });
+    const session = await startSession(services, { childId, deckId, microphoneEnabled: false });
+    const screens: TaskDto[] = [];
+    for (let step = 0; step < 30; step++) {
+      const task = await nextTask(services, session.sessionId);
+      if (!task) break;
+      expect(TaskDtoSchema.parse(task)).toEqual(task);
+      // wznowienie wydanego zadania niesie ten sam baner
+      expect(await nextTask(services, session.sessionId)).toEqual(task);
+      screens.push(task);
+      if (task.exerciseType === "exposure") await completePresentation(services, { taskId: task.taskId });
+      else expect(await answerIssuedAssessedTask(session.sessionId)).toBe(1);
+    }
+    // ta sama reguła co `remainingFor` w Kid UI
+    const banner = (task: TaskDto) => task.remainingScreens ?? task.remainingAssessed;
+    const first = screens.findIndex((task) => banner(task) >= 1 && banner(task) <= 3);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(screens.slice(first).some((task) => task.exerciseType === "exposure")).toBe(true);
+    expect(screens.length - first).toBeLessThanOrEqual(banner(screens[first]!));
+    screens.slice(first).forEach((task, index) => expect(banner(task)).toBe(screens.length - first - index));
+  });
+
   it("budżet sesji pochodzi z ustawień zestawu, a zmiana nie wpływa na trwającą sesję", async () => {
     const { deckId } = await publishDeckWithAssignment(services, childId, DAY_ITEMS);
 

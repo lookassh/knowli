@@ -234,6 +234,18 @@ describe("withStoryCounters", () => {
     }
   });
 
+  it("withStoryCounters counts a card before the last exercise as a screen, story slots without it (#392)", () => {
+    const base = planWith(2);
+    // plan: ćwiczenie, karta, ćwiczenie, historyjka
+    const card = { ...base.slots[0]!, taskId: randomUUID(), exerciseType: "lesson_card", taskKind: "card" as const, assessed: false };
+    const regular = [base.slots[0]!, card, base.slots[1]!].map((slot, ordinal) => ({ ...slot, ordinal }));
+    const plan = { ...base, slots: [...regular, ...base.slots.slice(2)] };
+    expect(withStoryCounters({ ...dto("lesson_card", 1), taskId: card.taskId }, plan)).toMatchObject({ remainingScreens: 2, closingStory: true });
+    expect(withStoryCounters({ ...dto("lesson_choice", 1), taskId: regular[2]!.taskId }, plan).remainingScreens).toBe(1);
+    const story = withStoryCounters({ ...dto("lesson_story", 3), taskId: base.slots[2]!.taskId }, plan);
+    expect(story).not.toHaveProperty("remainingScreens");
+  });
+
   it("withStoryCounters leaves a session without story slots unchanged", () => {
     const task = dto("lesson_choice", 2);
     expect(withStoryCounters(task, planWith(2, false))).toEqual(task);

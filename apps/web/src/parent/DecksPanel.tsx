@@ -509,7 +509,12 @@ export default function DecksPanel({
       </Group>
 
       {archiveNotice && <Text role="status">{archiveNotice}</Text>}
-      {visibleDecks.length === 0 && <Text className="pp-decks-muted">{messages.decks.empty}</Text>}
+      {visibleDecks.length === 0 && (
+        <Stack gap="sm" align="flex-start">
+          <Text className="pp-decks-muted">{messages.decks.empty}</Text>
+          <Button size="md" variant="light" data-testid="decks-empty-cta" onClick={openNewMaterial}>{messages.decks.newMaterial}</Button>
+        </Stack>
+      )}
 
       {groups.map((group) => (
         <Stack key={group.id} component="section" gap="xs" data-testid={`deck-group-${group.id}`}>

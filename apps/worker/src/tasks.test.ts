@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@learning/server", () => ({
   runDueGenerationWork: vi.fn(async () => ({ processed: 0 })),
   cleanupExpiredActivityReports: vi.fn(async () => 0),
+  cleanupExpiredParentSessions: vi.fn(async () => 0),
 }));
 
-import { cleanupExpiredActivityReports, runDueGenerationWork, type Services } from "@learning/server";
+import { cleanupExpiredActivityReports, cleanupExpiredParentSessions, runDueGenerationWork, type Services } from "@learning/server";
 
 // Serwis przechodzi wyłącznie do zamockowanych funkcji — pusty obiekt wystarcza.
 const services = {} as Services;
@@ -49,5 +50,38 @@ describe("worker processDueWork activity cleanup", () => {
     await expect(processDueWork(services)).resolves.toEqual({ processed: 0 });
     expect(runDueGenerationWork).toHaveBeenCalledTimes(1);
     expect(cleanupExpiredActivityReports).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** #413: wygasłe sesje rodzica sprząta worker, nie ścieżka żądania requireParent. */
+describe("worker processDueWork parent session cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("runs parent session cleanup at most once an hour", async () => {
+    const processDueWork = await freshProcessDueWork();
+    await processDueWork(services);
+    expect(cleanupExpiredParentSessions).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await processDueWork(services);
+    expect(cleanupExpiredParentSessions).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    await processDueWork(services);
+    expect(cleanupExpiredParentSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("each cleanup failure is isolated from the other and from the pass", async () => {
+    vi.mocked(cleanupExpiredActivityReports).mockRejectedValueOnce(new Error("activity cleanup failed"));
+    vi.mocked(cleanupExpiredParentSessions).mockRejectedValueOnce(new Error("session cleanup failed"));
+    const processDueWork = await freshProcessDueWork();
+    await expect(processDueWork(services)).resolves.toEqual({ processed: 0 });
+    expect(cleanupExpiredParentSessions).toHaveBeenCalledTimes(1);
   });
 });

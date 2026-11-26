@@ -16,7 +16,12 @@ const REQUEST = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+const hungFetch = () => vi.fn(async (_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+  init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+}));
 
 describe("createOpenAiImageProvider", () => {
   it("używa Sunbursta jako modelu awaryjnego adaptera", () => {
@@ -120,6 +125,26 @@ describe("createOpenAiImageProvider — zapis kosztów", () => {
     expect(rec.events).toHaveLength(1);
     expect(rec.events[0]).toMatchObject({ outcome: "failed" });
     expect(rec.events[0]!.httpStatus).toBeUndefined();
+  });
+
+  it("zawieszone żądanie kończy się po limicie jako `timeout` z jednym zapisem kosztu", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hungFetch());
+    const rec = createTestRecorder();
+    const result = createOpenAiImageProvider({ apiKey: "k", usage: rec, requestTimeoutMs: 25 }).generate(REQUEST);
+    const assertion = expect(result).rejects.toMatchObject({ kind: "timeout", message: "provider_timeout" });
+    await vi.advanceTimersByTimeAsync(26);
+    await assertion;
+    expect(rec.events).toHaveLength(1);
+    expect(rec.events[0]).toMatchObject({ outcome: "failed" });
+  });
+
+  it("przerwanie sygnałem wywołującego zostaje zwykłym AbortError", async () => {
+    vi.stubGlobal("fetch", hungFetch());
+    const controller = new AbortController();
+    const result = createOpenAiImageProvider({ apiKey: "k", requestTimeoutMs: 60_000 }).generate(REQUEST, controller.signal);
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("nieczytelne ciało 2xx: jeden event failed z kodem 200", async () => {

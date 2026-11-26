@@ -36,8 +36,11 @@ function sqlState(error: unknown): string | undefined {
   return undefined;
 }
 
+/** Zamknięcie procesu nie czeka na zawieszoną bazę dłużej niż tyle; zaległe koszty przepadają z logiem kodu. */
+const DEFAULT_FLUSH_TIMEOUT_MS = 5000;
+
 function defaultLog(code: string): void {
-  console.error("[usage] usage_record_failed", { code });
+  console.error(`[usage] ${code}`, { code });
 }
 
 /**
@@ -45,15 +48,17 @@ function defaultLog(code: string): void {
  * transakcją biznesową (rollback operacji nie cofa kosztu, który już powstał u
  * dostawcy). `record` nigdy nie rzuca — wyjątek zmieniłby wynik biznesowy
  * adaptera (ponowienie runu, „nieocenione") — i nie czeka na zapis; zaległe
- * inserty kończy `flush`. Do logu trafia wyłącznie kod błędu, bez treści.
+ * inserty kończy `flush`, najwyżej `flushTimeoutMs` (#410). Do logu trafia
+ * wyłącznie kod błędu, bez treści.
  */
 export function createDrizzleUsageRecorder(input: {
   db: Database;
   clock: Clock;
   prices: UsagePrices;
   log?: (code: string) => void;
+  flushTimeoutMs?: number;
 }): UsageRecorder {
-  const { db, clock, prices } = input;
+  const { db, clock, prices, flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS } = input;
   const log = input.log ?? defaultLog;
   const pending = new Set<Promise<void>>();
 
@@ -131,8 +136,19 @@ export function createDrizzleUsageRecorder(input: {
       }
     },
     async flush() {
-      // Pętla: zapisy dodane w trakcie czekania też muszą się skończyć.
-      while (pending.size > 0) await Promise.allSettled([...pending]);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), flushTimeoutMs); });
+      try {
+        // Pętla: zapisy dodane w trakcie czekania też muszą się skończyć.
+        while (pending.size > 0) {
+          if (await Promise.race([Promise.allSettled([...pending]), deadline]) === "timeout") {
+            safeLog("usage_flush_timeout");
+            return;
+          }
+        }
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }

@@ -14,7 +14,7 @@ import { ParentIcon } from "../ParentIcon";
 import AssignmentFields from "./AssignmentFields";
 import ClozeFields from "./ClozeFields";
 import PromptAudioControls, { VoiceToneSelect } from "./PromptAudioControls";
-import { clozeWordsOf, filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
+import { cardKeyOf, clozeWordsOf, filledClozeOf, keywordsAnswerOf, nextRequiredElementId, type EditableLessonExercise } from "./lesson-editor-state";
 
 /** Typy z polem „Zdanie” (stem) w edycji. */
 const STEM_LABEL_TYPES = new Set(["lesson_choice", "lesson_listen_choice", "lesson_gap"]);
@@ -24,16 +24,28 @@ const EXPLANATION_MAX_LENGTH = MAX_LESSON_TEXT_LENGTH;
 const EXPLANATION_ERROR_PREFIX = "explanationPl:";
 const UNITS = ["cm", "m", "km"].map((unit) => ({ value: unit, label: unit }));
 
-/** Treść i odpowiedź karty w podglądzie (bez pól edycji). */
-export function exercisePreview(ex: EditableLessonExercise): { text: string; answer: string } {
+export interface ExercisePreview {
+  text: string;
+  answer: string;
+  /** Opcje wyboru z oznaczeniem poprawnej (null = typ bez opcji). */
+  options: { text: string; correct: boolean }[] | null;
+  hint: string;
+  /** Zaakceptowane warianty poza główną odpowiedzią. */
+  variants: string[];
+}
+
+/** Treść karty w podglądzie (bez pól edycji): wszystko, co rodzic ma sprawdzić przed publikacją (gh-380). */
+export function exercisePreview(ex: EditableLessonExercise): ExercisePreview {
   // Luki z bankiem: tekst z lukami i uzupełniony tekst do sprawdzenia (design szkoły §13.7).
   if (ex.exerciseType === "lesson_cloze") {
-    return { text: ex.clozeText ?? "", answer: filledClozeOf(ex.clozeText ?? "", clozeWordsOf(ex)) };
+    return { text: ex.clozeText ?? "", answer: filledClozeOf(ex.clozeText ?? "", clozeWordsOf(ex)), options: null, hint: "", variants: [] };
   }
   const text = ex.stem || ex.statement || ex.prompt || ex.instructionPl;
   const option = ex.options?.find((candidate) => candidate.id === ex.correctOption)?.text;
   const answer = ex.exerciseType === "lesson_notice" ? ex.correctOption : option ?? ex.answer;
-  return { text, answer };
+  const options = ex.options?.map((candidate) => ({ text: candidate.text, correct: candidate.id === ex.correctOption })) ?? null;
+  const variants = ex.acceptedText.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && line !== answer);
+  return { text, answer, options, hint: ex.hint.trim(), variants };
 }
 
 /**
@@ -122,7 +134,10 @@ interface LessonExerciseCardProps {
   /** Edytor ma niezapisane zmiany — nagranie powstaje z zapisanego tekstu, więc „Nagraj ponownie” czeka na zapis. */
   audioLocked: boolean;
   calculation: CalculationControls | null;
+  /** Rodzic oznaczył kartę jako przejrzaną (stan tylko w przeglądarce). */
+  reviewed: boolean;
   /** Stabilne funkcje edytora (wspólne dla wszystkich kart) — karta podaje swój klucz. */
+  onReviewed: (cardKey: string, reviewed: boolean) => void;
   onToggle: (cardKey: string) => void;
   onMutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => void;
   onRemove: (clientKey: string) => void;
@@ -172,6 +187,8 @@ function LessonExerciseCard({
   itemRevisionId,
   audioLocked,
   calculation,
+  reviewed,
+  onReviewed,
   onToggle,
   onMutate: mutate,
   onRemove,
@@ -192,7 +209,7 @@ function LessonExerciseCard({
   }, [open]);
   const toggle = (target: "open" | "close") => {
     focusAfterToggle.current = target;
-    onToggle(ex.id ?? ex.clientKey);
+    onToggle(cardKeyOf(ex));
   };
   // odpowiedź wyliczana z pól typu (rachunek, słowa kluczowe, pary, grupy, luki) — rodzic jej nie wpisuje
   const derived = ["lesson_calculation", "lesson_keywords", "lesson_match", "lesson_group", "lesson_cloze"].includes(ex.exerciseType);
@@ -318,7 +335,26 @@ function LessonExerciseCard({
         <Group justify="space-between" align="flex-end" gap="xs" wrap="nowrap">
           <div className="pp-lesson-ex-preview">
             <Text size="sm">{preview.text}</Text>
-            {preview.answer && <Text size="sm" fw={600} className="pp-lesson-ex-answer">✓ {preview.answer}</Text>}
+            {preview.options ? (
+              <ul className="pp-lesson-ex-options" data-testid={`exercise-options-${index}`}
+                aria-label={messages.lessons.previewOptionsLabel.replace("{n}", number)}>
+                {preview.options.map((opt, oi) => (
+                  <li key={oi} data-correct={opt.correct ? "true" : undefined} className={opt.correct ? "pp-lesson-ex-answer" : undefined}>
+                    {opt.correct ? `✓ ${opt.text}` : opt.text}
+                  </li>
+                ))}
+              </ul>
+            ) : preview.answer && <Text size="sm" fw={600} className="pp-lesson-ex-answer">✓ {preview.answer}</Text>}
+            {preview.hint && (
+              <Text size="sm" className="pp-editor-muted" data-testid={`exercise-hint-preview-${index}`}>
+                {messages.lessons.previewHint.replace("{text}", () => preview.hint)}
+              </Text>
+            )}
+            {preview.variants.length > 0 && (
+              <Text size="sm" className="pp-editor-muted" data-testid={`exercise-variants-preview-${index}`}>
+                {messages.lessons.previewVariants.replace("{list}", () => preview.variants.join(", "))}
+              </Text>
+            )}
             {explanationText && (
               <Text size="sm" className="pp-editor-muted" data-testid={`exercise-explanation-preview-${index}`}>
                 {messages.lessons.explanationPreview.replace("{text}", () => explanationText)}
@@ -651,6 +687,11 @@ function LessonExerciseCard({
             )}
           </Group>
         </Stack>
+      )}
+      {editable && (
+        <Checkbox size="md" mt="xs" className="pp-lesson-reviewed" label={messages.lessons.reviewedLabel} data-testid={`exercise-reviewed-${index}`}
+          aria-label={messages.lessons.reviewedAriaLabel.replace("{n}", number)}
+          checked={reviewed} onChange={(e) => onReviewed(cardKeyOf(ex), e.currentTarget.checked)} />
       )}
     </Paper>
   );

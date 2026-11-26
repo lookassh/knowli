@@ -167,6 +167,7 @@ function KidAppContent({
               onStart={(deckId) => void controller.startLearning(deckId)}
               onMockTest={(deckId) => void controller.startMockTest(deckId)}
               onEndActive={(deckId) => void controller.endActiveSession(deckId)}
+              onSwitchProfile={screen.profiles.length > 1 ? () => void controller.switchProfile() : undefined}
               headerActions={actions}
               onGuidance={(key: UiAudioKey) => controller.playGuidance(key)}
             />

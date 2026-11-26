@@ -498,6 +498,8 @@ export const TaskDtoSchema = z.object({
   /** Zadania oceniane łącznie z bieżącym — podstawa komunikatu „Jeszcze N”. */
   // 0 = zadanie poza budżetem, np. historyjka.
   remainingAssessed: z.number().int().nonnegative(),
+  /** Ekrany do końca sesji łącznie z bieżącym, także nieoceniane (#392); brak = zadanie spoza stałego planu. */
+  remainingScreens: z.number().int().nonnegative().optional(),
   // Sesja kończy się historyjką — baner „Jeszcze N i historyjka!”.
   closingStory: z.literal(true).optional(),
   pendingAttemptId: UuidSchema.optional(),

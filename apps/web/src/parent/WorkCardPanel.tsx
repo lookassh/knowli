@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Accordion, Alert, Group, Loader, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Accordion, Alert, Button, Group, Loader, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messages, type ChildDto, type ParentWorkCardDto } from "@learning/contracts";
 import { errorMessage } from "./api";
 import { ChildPicker } from "./ChildPicker";
 import { ParentIcon } from "./ParentIcon";
 import { orpc } from "./query-client";
+import type { ParentSection } from "./parent-routes";
 import { outcomeCounts, responseMark, stepMark, stepOutcome, type OutcomeTone } from "./work-card-outcome";
 import "./progress-panel.css";
 
@@ -191,7 +192,10 @@ function SessionCard({ session }: { session: Session }) {
  * rodziny — dzień podaje API i pokazujemy go w polu daty. Wygasłą sesję
  * (401) obsługuje globalny handler zapytań.
  */
-export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto[] }) {
+export default function WorkCardPanel({ childrenList, onNavigate }: {
+  childrenList: ChildDto[];
+  onNavigate: (section: ParentSection) => void;
+}) {
   const [childId, setChildId] = useState(childrenList[0]?.id ?? "");
   const [date, setDate] = useState("");
 
@@ -228,9 +232,10 @@ export default function WorkCardPanel({ childrenList }: { childrenList: ChildDto
 
   if (childrenList.length === 0) {
     return (
-      <Stack gap="md">
+      <Stack gap="md" align="flex-start">
         <Title order={1} fz={26}>{messages.workCard.title}</Title>
         <Text>{messages.workCard.emptyChildren}</Text>
+        <Button size="md" data-testid="work-card-empty-cta" onClick={() => onNavigate("children")}>{messages.children.add}</Button>
       </Stack>
     );
   }

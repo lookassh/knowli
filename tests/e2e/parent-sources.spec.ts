@@ -153,6 +153,8 @@ test("rodzic tworzy źródło, lekcję rozdziału, publikuje ją, edytuje i usuw
     r.request().method() === "POST" && /\/api\/v1\/parent\/lesson-drafts\/.+\/publish$/.test(new URL(r.url()).pathname),
   );
   await page.getByTestId("publish-lesson").click();
+  // nieprzejrzane karty: publikacja po potwierdzeniu (gh-380)
+  await page.getByTestId("publish-unreviewed-confirm").click();
   expect((await published).ok()).toBe(true);
   await expect(page.getByTestId("publish-status")).toBeVisible();
   const afterPublish = LessonDeckDtoSchema.parse(await (await page.request.get(`/api/v1/parent/lessons/${deckId}`)).json());

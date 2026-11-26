@@ -3,7 +3,7 @@
  * Inne obszary importują wyłącznie stąd; wewnątrz obszaru obowiązują
  * bezpośrednie importy plików. Kolejność i zakres pilnuje test granic modułów.
  */
-export { SESSION_TTL_MS, isParentSetupRequired, loginParent, logoutParent, requireParent, setupParent, setupParentWithToken } from "./auth";
+export { SESSION_TTL_MS, changeParentSecret, cleanupExpiredParentSessions, isParentSetupRequired, loginParent, logoutParent, requireParent, setupParent, setupParentWithToken } from "./auth";
 export {
   authenticateIntegrationToken,
   INTEGRATION_SCOPES,

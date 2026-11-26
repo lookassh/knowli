@@ -107,7 +107,7 @@ function withExplanation(branch: Record<string, unknown>): Record<string, unknow
 export const poolExerciseTypes = (types: readonly string[]): string[] =>
   types.filter((type) => !NON_POOL_EXERCISE_TYPES.has(type));
 
-const strictObject = (properties: Record<string, unknown>) => ({
+export const strictObject = (properties: Record<string, unknown>): Record<string, unknown> => ({
   type: "object", additionalProperties: false, required: Object.keys(properties), properties,
 });
 const quoteItems = strictObject({ quote: { type: "string", minLength: MIN_SOURCE_QUOTE_LENGTH, maxLength: MAX_SOURCE_QUOTE_LENGTH } });

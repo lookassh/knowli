@@ -6,7 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { lt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { parentCredentials, parentSessions } from "../../db/schema";
 import { AppError } from "../../errors";
 import type { Services } from "../../config";
@@ -197,7 +197,7 @@ export async function loginParent(
   const now = services.clock.now();
   const credentials = await services.db.transaction(async (tx) => {
     // leniwe porządkowanie wygasłych sesji (architecture.md §13)
-    await tx.delete(parentSessions).where(lt(parentSessions.expiresAt, now));
+    await tx.delete(parentSessions).where(lte(parentSessions.expiresAt, now));
     const rows = await tx.select().from(parentCredentials).limit(1);
     return rows[0];
   });
@@ -229,23 +229,42 @@ export async function loginParent(
   };
 }
 
-/** Weryfikuje sesję rodzica; surowy token nigdy nie trafia do bazy. */
+/**
+ * Weryfikuje sesję rodzica samym odczytem (#413); surowy token nigdy nie trafia
+ * do bazy. Wygasłe wiersze sprząta worker (`cleanupExpiredParentSessions`).
+ */
 export async function requireParent(services: Services, token: string): Promise<void> {
   if (!token) {
     throw new AppError("unauthorized");
   }
+  const rows = await services.db
+    .select({ tokenHash: parentSessions.tokenHash })
+    .from(parentSessions)
+    .where(and(eq(parentSessions.tokenHash, hashToken(token)), gt(parentSessions.expiresAt, services.clock.now())))
+    .limit(1);
+  if (rows.length === 0) {
+    throw new AppError("unauthorized");
+  }
+}
+
+const SESSION_CLEANUP_BATCH = 500;
+
+/** Worker: usuwa wygasłe parent_sessions w ograniczonych partiach. Zwraca liczbę usuniętych. */
+export async function cleanupExpiredParentSessions(services: Services, batchSize = SESSION_CLEANUP_BATCH): Promise<number> {
   const now = services.clock.now();
-  const session = await services.db.transaction(async (tx) => {
-    await tx.delete(parentSessions).where(lt(parentSessions.expiresAt, now));
-    const rows = await tx
+  let deleted = 0;
+  for (;;) {
+    const batch = services.db
       .select({ tokenHash: parentSessions.tokenHash })
       .from(parentSessions)
-      .where(sql`${parentSessions.tokenHash} = ${hashToken(token)}`)
-      .limit(1);
-    return rows[0];
-  });
-  if (!session) {
-    throw new AppError("unauthorized");
+      .where(lte(parentSessions.expiresAt, now))
+      .limit(batchSize);
+    const rows = await services.db
+      .delete(parentSessions)
+      .where(and(inArray(parentSessions.tokenHash, batch), lte(parentSessions.expiresAt, now)))
+      .returning({ tokenHash: parentSessions.tokenHash });
+    deleted += rows.length;
+    if (rows.length < batchSize) return deleted;
   }
 }
 
@@ -253,4 +272,47 @@ export async function logoutParent(services: Services, token: string): Promise<v
   await services.db
     .delete(parentSessions)
     .where(sql`${parentSessions.tokenHash} = ${hashToken(token)}`);
+}
+
+/**
+ * Zmiana PIN-u/hasła (#400): wymaga obecnego sekretu i unieważnia wszystkie sesje
+ * w tej samej transakcji co zapis hasha; nowy hash unieważnia też ciastka urządzeń.
+ * Błędne próby liczy kubełek tej sesji — nie blokują logowania na innych urządzeniach.
+ */
+export async function changeParentSecret(
+  services: Services,
+  token: string,
+  currentSecret: string,
+  newSecret: string,
+): Promise<void> {
+  assertSecretShape(newSecret);
+  const rows = await services.db.select().from(parentCredentials).limit(1);
+  const credentials = rows[0];
+  if (!credentials) {
+    throw new AppError("setup_required");
+  }
+  const limiter = limiterFor(services);
+  const bucket = `session:${hashToken(token)}`;
+  const attemptAt = services.clock.now();
+  limiter.reserve(bucket, attemptAt);
+  if (!(await verifySecret(currentSecret, credentials.passwordHash))) {
+    throw new AppError("invalid_credentials");
+  }
+  limiter.succeed(bucket, attemptAt);
+  const passwordHash = await hashSecret(newSecret);
+  await services.db.transaction(async (tx) => {
+    // CAS na starym hashu: równoległa zmiana wygrywa raz, druga dostaje conflict
+    const updated = await tx
+      .update(parentCredentials)
+      .set({ passwordHash, updatedAt: services.clock.now() })
+      .where(and(eq(parentCredentials.id, credentials.id), eq(parentCredentials.passwordHash, credentials.passwordHash)))
+      .returning({ id: parentCredentials.id });
+    if (updated.length === 0) {
+      throw new AppError("conflict");
+    }
+    const deleted = await tx.delete(parentSessions).returning({ tokenHash: parentSessions.tokenHash });
+    if (!deleted.some((s) => s.tokenHash === hashToken(token))) {
+      throw new AppError("unauthorized");
+    }
+  });
 }

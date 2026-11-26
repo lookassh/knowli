@@ -57,6 +57,7 @@ import { deriveSupportStates, type SupportAttempt, type SupportTask } from "../.
 import {
   readLessonTrainingSessionPlan,
   readTrainingSessionPlan,
+  remainingPlanScreens,
   type LessonTrainingSessionPlanSnapshot,
   type TrainingSessionPlanSnapshot,
   type TrainingSessionSlot,
@@ -79,7 +80,7 @@ import {
   closeLessonMockTest,
   isLessonMockPlan,
 } from "./lessons/lesson-mock-tests";
-import { issueNextVocabularyPlanTask } from "./vocabulary-plan-tasks";
+import { issueNextVocabularyPlanTask, skipsPlanSlot } from "./vocabulary-plan-tasks";
 import { issueVocabularyTask, type VocabularyTaskSnapshot } from "./vocabulary-task-issuance";
 
 import { completeDisabledVoiceTask } from "./voice-task-lifecycle";
@@ -1130,7 +1131,10 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
       const pending = contextOf(session).microphoneDisabledTaskIds.includes(issued.id)
         ? (await tx.select({ id: attempts.id }).from(attempts).where(and(eq(attempts.taskId, issued.id), eq(attempts.state, "processing"))))[0]
         : undefined;
-      return issuedTaskDto(session, issued, assessedBefore, true, pending?.id);
+      // Ponowny odczyt nie rzuca na zepsutym planie: baner wtedy z `remainingAssessed`.
+      let plan: TrainingSessionPlanSnapshot | null = null;
+      try { plan = readTrainingSessionPlan(session.trainingPlan); } catch { plan = null; }
+      return withPlanScreens(issuedTaskDto(session, issued, assessedBefore, true, pending?.id), session, plan);
     }
 
     const activity = await sessionActivityAndCounts(tx, id, session.startedAt);
@@ -1147,8 +1151,11 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
     if (remaining <= 0) {
       return null;
     }
-    // limit czasu tylko między zadaniami; obiecane ostatnie zadania są dokończone
-    if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget) && remaining > PROMISE_REMAINING) {
+    // limit czasu tylko między zadaniami; obiecane ostatnie zadania są dokończone.
+    // Plan liczy obietnicę w ekranach (#392): pominięte sloty mowy zużywają budżet bez ekranu.
+    // Bez testu integracyjnego: plan ze slotami mowy wymaga historii dziecka; regułę pokrywa `remainingPlanScreens`.
+    if (now.getTime() - session.startedAt.getTime() > sessionTimeLimitMs(session.taskBudget) && remaining > PROMISE_REMAINING &&
+        (planScreensFrom(session, counts.total, remaining) ?? remaining) > PROMISE_REMAINING) {
       return null;
     }
 
@@ -1163,13 +1170,13 @@ export async function nextTask(services: Services, sessionId: string): Promise<T
         tx, session, storedPlan, now, counts.total, counts.assessed,
       );
       if (!issued) return null;
-      return issuedTaskDto(session, {
+      return withPlanScreens(issuedTaskDto(session, {
         id: issued.slot.taskId,
         ordinal: issued.slot.ordinal,
         exerciseType: issued.slot.exerciseType,
         direction: issued.slot.direction,
         publicPrompt: issued.slot.prompt,
-      }, issued.assessedBefore);
+      }, issued.assessedBefore), session, storedPlan);
     }
 
     const planned = await planNextTask(tx, session, now, remaining, counts.total);
@@ -1233,6 +1240,20 @@ function issuedTaskDto(
     remainingAssessed: session.taskBudget - assessedBefore,
     ...(pendingAttemptId ? { pendingAttemptId } : {}),
   };
+}
+
+/** Ekrany planu słówek od slotu `ordinal`; `undefined` bez planu, przy zepsutym planie i poza planem. */
+function planScreensFrom(session: typeof learningSessions.$inferSelect, ordinal: number, remaining: number): number | undefined {
+  let plan: TrainingSessionPlanSnapshot | null = null;
+  try { plan = readTrainingSessionPlan(session.trainingPlan); } catch { return undefined; }
+  const taskId = plan?.slots[ordinal]?.taskId;
+  return plan && taskId ? remainingPlanScreens(plan.slots, taskId, remaining, (slot) => skipsPlanSlot(session, slot)) : undefined;
+}
+
+/** Dokłada `remainingScreens` z planu słówek (#392); zadanie spoza planu zostaje bez pola. */
+function withPlanScreens(dto: TaskDto, session: typeof learningSessions.$inferSelect, plan: TrainingSessionPlanSnapshot | null): TaskDto {
+  const remainingScreens = plan ? remainingPlanScreens(plan.slots, dto.taskId, dto.remainingAssessed, (slot) => skipsPlanSlot(session, slot)) : undefined;
+  return remainingScreens === undefined ? dto : { ...dto, remainingScreens };
 }
 
 /** Parent disables recording for a non-reader session; issued voice work is skipped safely. */

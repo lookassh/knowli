@@ -266,3 +266,59 @@ test("same opublikowane lekcje: wskazówka do nadzoru lekcji zamiast błędu (#3
   await expect(page.getByTestId("api-error")).toHaveCount(0);
   await expect(page.getByTestId("progress-deck")).toHaveCount(0);
 });
+
+/** Panel z zaślepionym API: podane listy dzieci i zestawów, puste źródła i przedmioty. */
+async function mockParent(page: import("@playwright/test").Page, children: unknown[], decks: unknown[]) {
+  await page.route("**/api/v1/parent/**", async (route) => {
+    const url = new URL(route.request().url());
+    let body: unknown;
+    if (url.pathname.endsWith("/login")) body = { authenticated: true, setupRequired: false };
+    else if (url.pathname.endsWith("/children")) body = children;
+    else if (url.pathname.endsWith("/decks")) body = decks;
+    else if (url.pathname.endsWith("/sources") || url.pathname.endsWith("/subjects")) body = [];
+    else throw new Error(`Nieoczekiwane API: ${url.pathname}`);
+    await route.fulfill({ json: body });
+  });
+}
+
+const publishedDeck = { deckId, title: "Dni tygodnia", state: "published", editableVersionId: null, publishedVersionId: deckId };
+
+test("Postępy bez profili dzieci: komunikat o dziecku i przejście do Dzieci (#242)", async ({ page }) => {
+  await mockParent(page, [], [publishedDeck]);
+  await page.goto("/parent/progress");
+  const empty = page.getByTestId("progress-empty");
+  await expect(empty).toContainText("Nie masz jeszcze profilu dziecka");
+  await expect(empty).not.toContainText("opublikowanych zestawów");
+  await page.getByTestId("progress-empty-cta").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+  await expect(page.getByTestId("tab-children")).toHaveAttribute("aria-current", "true");
+});
+
+test("Postępy bez opublikowanych zestawów: komunikat o zestawach i przejście do Zestawów (#242)", async ({ page }) => {
+  await mockParent(page, [{ id: childId, displayName: "Ala", avatarKey: "star" }], []);
+  await page.goto("/parent/progress");
+  await expect(page.getByTestId("progress-empty")).toContainText("Brak opublikowanych zestawów");
+  await page.getByTestId("progress-empty-cta").click();
+  await expect(page).toHaveURL(/\/parent\/decks$/);
+  await expect(page.getByTestId("tab-decks")).toHaveAttribute("aria-current", "true");
+});
+
+test("Karta pracy bez profili dzieci: przejście do Dzieci (#242)", async ({ page }) => {
+  await mockParent(page, [], []);
+  await page.goto("/parent/work-card");
+  await page.getByTestId("work-card-empty-cta").click();
+  await expect(page).toHaveURL(/\/parent\/children$/);
+});
+
+test("puste Zestawy i Źródła: przycisk otwiera dialog tworzenia (#242)", async ({ page }) => {
+  await mockParent(page, [], []);
+  await page.goto("/parent/decks");
+  await page.getByTestId("decks-empty-cta").click();
+  await expect(page.getByTestId("new-material-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("new-material-dialog")).toBeHidden();
+  await page.getByTestId("tab-sources").click();
+  await expect(page.getByTestId("sources-empty")).toBeVisible();
+  await page.getByTestId("sources-empty-cta").click();
+  await expect(page.getByTestId("new-source-dialog")).toBeVisible();
+});

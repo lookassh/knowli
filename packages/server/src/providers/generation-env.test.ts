@@ -70,9 +70,37 @@ function lastCall(fetchMock: ReturnType<typeof vi.fn>): [string, RequestInit] {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("createGenerationDepsFromEnv — konfiguracja LLM przez UMIEM_LLM_*", () => {
+  const IMAGE = { prompt: "apple", model: "gpt-image-1-mini", size: "1024x1024", quality: "low", format: "webp" };
+  const TTS = { text: "kot", locale: "pl-PL", voice: "Kore", format: "mp3" } as const;
+  it.each([
+    { name: "UMIEM_DECK_GENERATION_REQUEST_TIMEOUT_MS", call: (env: Record<string, string>) => createGenerationDepsFromEnv(env)!.llm.generateDeck(DECK_INPUT) },
+    { name: "UMIEM_TTS_REQUEST_TIMEOUT_MS", call: (env: Record<string, string>) => createGenerationDepsFromEnv(env)!.tts.synthesize(TTS) },
+    { name: "UMIEM_IMAGE_REQUEST_TIMEOUT_MS", call: (env: Record<string, string>) => createGenerationDepsFromEnv(env)!.image.generate(IMAGE) },
+    { name: "UMIEM_IMAGE_REQUEST_TIMEOUT_MS", call: (env: Record<string, string>) => imageProviderFromEnv(env)!.generate(IMAGE) },
+  ])("$name z env trafia do adaptera: zawieszone żądanie kończy się `timeout`", async ({ name, call }) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+    })));
+    const assertion = expect(call({ OPENAI_API_KEY: "sk-main", [name]: "25" })).rejects.toMatchObject({ kind: "timeout" });
+    await vi.advanceTimersByTimeAsync(26);
+    await assertion;
+  });
+
+  it.each(["UMIEM_DECK_GENERATION_REQUEST_TIMEOUT_MS", "UMIEM_TTS_REQUEST_TIMEOUT_MS", "UMIEM_IMAGE_REQUEST_TIMEOUT_MS"])(
+    "%s poza zakresem (0, 300000) zatrzymuje start z nazwą zmiennej",
+    (name) => {
+      for (const value of ["0", "300000", "1.5", "x"]) {
+        expect(() => createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", [name]: value })).toThrow(name);
+      }
+      expect(createGenerationDepsFromEnv({ OPENAI_API_KEY: "sk-main", [name]: "299999" })).toBeDefined();
+    },
+  );
+
   it("bez UMIEM_LLM_* używa domyślnego modelu i api.openai.com z kluczem OPENAI_API_KEY", async () => {
     const fetchMock = vi.fn(async () => okDeckResponse());
     vi.stubGlobal("fetch", fetchMock);

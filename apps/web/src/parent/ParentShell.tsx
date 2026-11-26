@@ -69,16 +69,18 @@ export interface ParentShellProps {
   onNavigate: (section: ParentSection) => void;
   onToLearning: () => void;
   onLogout: () => void;
+  onChangeSecret: () => void;
   children: ReactNode;
 }
 
 /**
  * Rama panelu rodzica (plan 2026-10-29-parent-ui-mantine, faza 1; szkic
  * nawigacji zaakceptowany 2026-10-29): na telefonie dolny pasek sekcji
- * i menu ⋯ (Do nauki, Wygląd, Wyloguj), od 600 px zakładki pod nagłówkiem.
+ * i menu ⋯ (Do nauki, Wygląd, Zmień PIN, Wyloguj), od 600 px zakładki pod nagłówkiem
+ * i menu ustawień (Wygląd, Zmień PIN).
  * Sekcje są linkami z adresem — nawigację w panelu przejmuje `onNavigate`.
  */
-export function ParentShell({ section, onNavigate, onToLearning, onLogout, children }: ParentShellProps) {
+export function ParentShell({ section, onNavigate, onToLearning, onLogout, onChangeSecret, children }: ParentShellProps) {
   const compact = useMediaQuery(COMPACT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
   const short = useMediaQuery(SHORT_QUERY, false, { getInitialValueInEffect: false }) ?? false;
   // przy otwartej klawiaturze telefonu dolny pasek i przypięty pasek akcji edytora chowają się (data-keyboard-open)
@@ -166,6 +168,9 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, child
                   <Menu.Label>{messages.parentShell.colorScheme}</Menu.Label>
                   <Box px="xs" pb="xs"><ColorSchemeControl /></Box>
                   <Menu.Divider />
+                  <Menu.Item leftSection={<ParentIcon name="key" />} data-testid="change-secret" onClick={onChangeSecret} mih={48}>
+                    {messages.auth.changeSecretButton}
+                  </Menu.Item>
                   <Menu.Item leftSection={<ParentIcon name="log-out" />} data-testid="parent-logout" onClick={onLogout} mih={48} style={{ color: "var(--pp-status-danger-fg)" }}>
                     {messages.auth.logoutButton}
                   </Menu.Item>
@@ -191,13 +196,18 @@ export function ParentShell({ section, onNavigate, onToLearning, onLogout, child
                 </Button>
                 <Menu position="bottom-end" width={260} shadow="lg" radius="lg">
                   <Menu.Target>
-                    <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.parentShell.colorScheme} data-testid="color-scheme-menu">
+                    <ActionIcon variant="subtle" color="gray" size={44} radius="md" aria-label={messages.parentShell.settings} data-testid="color-scheme-menu">
                       <ParentIcon name={SCHEME_ICON[colorScheme]} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
                     <Menu.Label>{messages.parentShell.colorScheme}</Menu.Label>
                     <Box px="xs" pb="xs"><ColorSchemeControl /></Box>
+                    <Menu.Divider />
+                    {/* w menu, nie w nagłówku: przy 600 px kolejna akcja ściskała markę */}
+                    <Menu.Item leftSection={<ParentIcon name="key" />} data-testid="change-secret" onClick={onChangeSecret} mih={48}>
+                      {messages.auth.changeSecretButton}
+                    </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
                 <Button variant="subtle" color="gray" size="md" leftSection={<ParentIcon name="log-out" />} data-testid="parent-logout" onClick={onLogout}>

@@ -7,6 +7,7 @@
 export {
   type Services,
   createServices,
+  databasePoolSettingsFromEnv,
   graderFromEnv,
   isLessonAgentAvailable,
   lessonAgentPublicFromEnv,
@@ -40,7 +41,9 @@ export {
   setupParentWithToken,
   loginParent,
   requireParent,
+  cleanupExpiredParentSessions,
   logoutParent,
+  changeParentSecret,
   SESSION_TTL_MS,
 } from "./modules/family";
 export { listChildren, createChild, updateChild, deleteChild } from "./modules/family";

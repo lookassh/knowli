@@ -94,7 +94,11 @@ Runy lekcji klasyfikują błędy konfiguracji (w tym HTTP 400 i 429 quota) jako 
 
 Timeouty lekcji dotyczą jednego requestu (domyślnie 90 s) oraz całego runu ze wszystkimi celami (10 min). `UMIEM_LESSON_GENERATION_REQUEST_TIMEOUT_MS` nie może przekraczać `UMIEM_LESSON_GENERATION_RUN_TIMEOUT_MS`; dodatni `UMIEM_LESSON_GENERATION_CANCEL_POLL_MS` (domyślnie 1 s) steruje sprawdzeniem, czy rodzic lub retry nie unieważnił runu. Timeout kończy run bez automatycznego retry. Zamknięcie workera oddaje aktualny run do kolejki, zachowując wykorzystaną próbę.
 
+Żądania zestawu słówek, TTS i ilustracji (#412) mają limit jednego żądania HTTP: `UMIEM_DECK_GENERATION_REQUEST_TIMEOUT_MS` (domyślnie 120 s), `UMIEM_TTS_REQUEST_TIMEOUT_MS` (60 s) i `UMIEM_IMAGE_REQUEST_TIMEOUT_MS` (180 s, także okładka zestawu w web). Wartość musi być dodatnią liczbą całkowitą poniżej 300000 (lease mediów 5 min), inaczej start kończy się błędem z nazwą zmiennej. Limit łączy się z sygnałem wywołującego: upływ to błąd providera `timeout` (komunikat `provider_timeout`, jeden zapis kosztu `failed`), który worker ponawia jak inne awarie sieci w ramach budżetu prób; zamknięcie workera przerywa żądanie TTS i obrazu zwykłym AbortError, a przy zestawie (wspólna koperta żądań mapuje każde przerwanie na `timeout`) worker rozpoznaje zamknięcie po własnym sygnale (`signal.aborted`); w obu przypadkach praca wraca do kolejki.
+
 Worker wykonuje jeden przelot naraz. `WORKER_POLL_MS` (domyślnie 2000 ms) jest przerwą po zakończeniu przelotu, nie interwałem równoległych uruchomień. `WORKER_HEALTH_STALE_MS` (domyślnie 900000 ms) ustala wiek, po którym `/health` zwraca 503.
+
+Pula PostgreSQL (#410): web i worker biorą `UMIEM_{WEB,WORKER}_DB_POOL_MAX` (domyślnie 10 połączeń na proces, jak dotąd w `pg`; suma wszystkich procesów musi zostać poniżej `max_connections` bazy, domyślnie 100), wspólny `UMIEM_DB_CONNECT_TIMEOUT_MS` (10000 ms na nawiązanie połączenia albo — gdy wszystkie połączenia puli są zajęte — na zwolnienie miejsca; potem błąd żądania zamiast czekania, a zapis kosztu przepada z logiem `usage_record_failed`) i `UMIEM_{WEB,WORKER}_DB_STATEMENT_TIMEOUT_MS` (`statement_timeout` sesji: 30 s web, 120 s worker; liczy się też oczekiwanie na blokadę, a transakcje nie obejmują wywołań providerów — transakcja workera dłuższa niż 30 s może przerwać czekające na tę samą blokadę żądanie web kodem 57014). Lokalne `set_config('statement_timeout', …)` w transakcji (raport kosztów, `learning-overview`) wygrywa z ustawieniem sesji. Migracje (`migrateDatabase`) i skrypty CLI workera (`rebuild-progress`, `integration-tokens`, `regenerate-ui-audio`, `report-orphan-media`) tworzą pulę bez tych ustawień, więc długie operacje nie mają limitu. Zła wartość (niedodatnia lub niecałkowita) zatrzymuje start z nazwą zmiennej. Przy zamykaniu workera (SIGTERM/SIGINT) zaległe zapisy kosztów czekają najwyżej 5 s — po terminie przepadają z logiem `[usage] usage_flush_timeout` (sam kod) — a zamknięcie puli najwyżej 3 s (`step: "pool.end", code: "timeout"`), po czym proces kończy się. Web nie ma obsługi sygnału zamknięcia, więc zaległe koszty żądań w toku mogą przepaść przy zatrzymaniu kontenera.
 
 ## Generator puli lekcji (worker, przebieg bazowy; od etapu 5c bez pętli agenta)
 
@@ -230,8 +234,15 @@ odpowiedź innego dziecka nie woła modelu ponownie. `parent_decision` (nadpisan
 rodzica) jest nadrzędny nad zapisanym werdyktem bez przeliczania historii.
 Komentarz `note` modelu jest wyłącznie dla rodzica — nigdy nie trafia do Kid DTO.
 Odpowiedź dziecka i warianty referencyjne są przekazywane modelowi jako DANE
-(wiadomość `user`), nigdy jako polecenia; `prompt_version` to stała adaptera, a
-jej zmiana unieważnia zapisane werdykty bez migracji.
+(wiadomość `user`), nigdy jako polecenia. `prompt_version` to klucz `wersja:hash`
+(`verdictCacheKey`, #384): stała wersja adaptera plus hash usługi (`UMIEM_GRADER_BASE_URL`), modelu (`UMIEM_GRADER_MODEL`),
+opcji pośrednika i wyrenderowanego promptu systemowego (z rolą i definicją „almost”
+przedmiotu), bez odpowiedzi dziecka. Zmiana modelu, opcji, profilu przedmiotu albo
+treści promptu unieważnia zapisane werdykty bez migracji i bez ręcznego bumpa; stare
+wiersze zostają historią, a decyzje rodzica na nich przestają działać (także wiersze
+sprzed #384 z kluczem bez hasha). Panel rodzica pokazuje werdykty bieżącego modelu
+i bieżących wersji, dla każdej odpowiedzi tylko najnowszy; do ponownej oceny tej
+odpowiedzi najnowszym może być wiersz starego hasha, którego decyzja nie działa.
 
 Tryb E2E/smoke bez klucza: `UMIEM_FAKE_PROVIDERS=1` wstawia deterministyczny fake
 grader (routing po słowach kluczowych w odpowiedzi: „almost" → almost, „wrong" →

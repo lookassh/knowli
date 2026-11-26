@@ -413,17 +413,20 @@ export interface GraderInput {
 /**
  * Model oceniający zgodny z OpenAI (design „Model oceniający”). Zwraca SUROWY
  * obiekt JSON — walidację robi domena (`validateVerdict`), żeby adapter nie
- * interpretował treści. `promptVersion` jest stałą adaptera i wchodzi do klucza
- * cache werdyktów (zmiana promptu unieważnia zapisane werdykty).
+ * interpretował treści. `promptVersion` jest stałą adaptera; klucz cache werdyktów
+ * daje `promptVersionForInput` (#384).
  */
 export interface AnswerGraderProvider {
   readonly name: string;
   readonly model: string;
   readonly promptVersion: string;
-  /** Wszystkie bieżące wersje promptu (lekcje i szkoła) — panel werdyktów pokazuje tylko je. */
+  /** Wszystkie bieżące wersje promptu (lekcje i szkoła) — panel werdyktów pokazuje tylko ich klucze. */
   readonly promptVersions: readonly string[];
-  /** Wersja promptu dla konkretnego wejścia (szkoła/grupa); brak = `promptVersion`. */
-  promptVersionForInput?(input: GraderInput): string;
+  /**
+   * Klucz cache `lesson_verdicts.prompt_version` dla wejścia: `wersja:hash` (`verdictCacheKey`)
+   * z modelu i wszystkiego, co składa prompt poza odpowiedzią dziecka (#384).
+   */
+  promptVersionForInput(input: GraderInput): string;
   grade(input: GraderInput, signal: AbortSignal): Promise<unknown>;
 }
 

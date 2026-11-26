@@ -8,24 +8,20 @@ import type {
   LlmGeneratedItem,
   LlmProvider,
 } from "../../ports/ai";
+import { VisualTypeSchema } from "@learning/contracts";
 import { LESSON_STORY_LIMITS } from "../../domain/lessons/story";
-import { voiceToneProperty } from "./lesson-pool-schema";
-import { withChatRequestExtras, type ChatRequestExtras } from "../chat-request-options";
+import { strictObject, voiceToneProperty } from "./lesson-pool-schema";
+import type { ChatRequestExtras } from "../chat-request-options";
 import { postLessonJson, type LessonJsonRequestConfig } from "./lesson-json-request";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
-import {
-  recordHttpError,
-  recordResponse,
-  recordTransportFailure,
-  recordUnreadable,
-  type UsageEventBase,
-} from "../usage/record-http";
 
 export interface OpenAiLlmOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
   lessonRequestTimeoutMs?: number;
+  /** Limit jednego żądania zestawu słówek (#412); domyślnie 120 s, poniżej lease mediów 5 min. */
+  deckRequestTimeoutMs?: number;
   /** Opcjonalne pola pośrednika (rozumowanie, routing dostawcy) — `UMIEM_LLM_*`. */
   requestExtras?: ChatRequestExtras;
   /** Zapis kosztów wywołań (spec cost-tracking §4.2); bez niego adapter działa jak dotąd. */
@@ -310,6 +306,32 @@ function lessonObjectivesSystemPrompt(input: LessonObjectivesInput): string {
     "Return strict JSON only."
   );
 }
+/**
+ * Schema zestawu słówek (strict): pola opcjonalne elementu jako `null`; kształty `visualData`
+ * z kontraktu (`decks.ts`) bez limitów — waliduje domena (`GeneratedItemSchema`).
+ */
+const DECK_JSON_SCHEMA: Record<string, unknown> = strictObject({
+  items: {
+    type: "array",
+    items: strictObject({
+      source: { type: "string" },
+      target: { type: "string" },
+      acceptedAnswers: { type: "array", items: { type: "string" } },
+      example: { type: ["string", "null"] },
+      visualType: { type: "string", enum: [...VisualTypeSchema.options] },
+      visualData: {
+        anyOf: [
+          strictObject({ color: { type: "string" } }),
+          strictObject({ count: { type: "integer" } }),
+          strictObject({ position: { type: "integer" }, total: { type: "integer" }, sequenceStart: { type: "string" } }),
+          // nullable jak `nullableEnum` w `lesson-pool-schema.ts` (`anyOf` z `null`)
+          { type: "null" },
+        ],
+      },
+    }),
+  },
+});
+
 function isPlainObject(value: unknown): boolean {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -375,8 +397,8 @@ function lessonStorySystemPrompt(input: LessonStoryInput): string {
 }
 
 /**
- * Adapter LLM: zestawy słówek w trybie `json_object`, zagadnienia i historyjka
- * lekcji w trybie `json_schema` strict (structured outputs) — walidacja
+ * Adapter LLM: zestawy słówek, zagadnienia i historyjka lekcji w trybie
+ * `json_schema` strict (structured outputs, wspólna koperta) — walidacja
  * semantyczna wyniku AI pozostaje w domenie. Pulę ćwiczeń generuje przebieg bazowy paczkami
  * (`lesson-pool-agent.ts`) z wiadomością `lessonUserMaterial`.
  * Wybór modelu czeka na próbę techniczną z zadania 0 — bez kluczy adapter
@@ -387,68 +409,38 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const lessonRequestTimeoutMs = options.lessonRequestTimeoutMs ?? 90_000;
   const provider = providerFromBaseUrl(baseUrl);
-  const usageBase = (feature: UsageEventBase["feature"], operation: string): UsageEventBase => ({ feature, operation, provider, model });
-  /** Wspólna koperta żądania lekcyjnego (`lesson-json-request.ts`) — etapy zagadnień i historyjki. */
-  const lessonJson: LessonJsonRequestConfig = {
+  /** Wspólna koperta żądań (`lesson-json-request.ts`): limit zestawu złączony z sygnałem wywołującego (#412). */
+  const deckJson: LessonJsonRequestConfig = {
+    timeoutMs: options.deckRequestTimeoutMs ?? 120_000,
     baseUrl,
     apiKey: options.apiKey,
     model,
     provider,
-    timeoutMs: lessonRequestTimeoutMs,
     ...(options.requestExtras === undefined ? {} : { requestExtras: options.requestExtras }),
     ...(options.usage === undefined ? {} : { usage: options.usage }),
-    usageFeature: "lesson_generation",
+    usageFeature: "deck_generation",
   };
+  /** Etapy zagadnień i historyjki lekcji — z limitem jednego żądania. */
+  const lessonJson: LessonJsonRequestConfig = { ...deckJson, timeoutMs: lessonRequestTimeoutMs, usageFeature: "lesson_generation" };
   return {
     name: "openai",
     model,
     async generateDeck(input: LlmGenerateDeckInput, signal?: AbortSignal) {
-      const base = usageBase("deck_generation", "deck");
-      // ciało przed `try`: błąd jego budowy nie jest wywołaniem dostawcy (bez zapisu `failed`)
-      const body = JSON.stringify(withChatRequestExtras(options.requestExtras, {
-        model,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt(input) },
-          { role: "user", content: "prompt" in input ? input.prompt : deckUserMaterial(input) },
-        ],
-      }));
-      let response: Response;
-      try {
-        response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${options.apiKey}`,
-            "content-type": "application/json",
-          },
-          body,
-          signal,
-        });
-      } catch (error) {
-        recordTransportFailure(options.usage, base);
-        throw error;
-      }
-      if (!response.ok) {
-        recordHttpError(options.usage, base, response.status);
-        throw new Error(`provider_http_${response.status}`);
-      }
-      let payload: {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      try {
-        payload = (await response.json()) as typeof payload;
-      } catch (error) {
-        recordUnreadable(options.usage, base, response.status);
-        throw error;
-      }
-      // płatna odpowiedź jest zapisana zanim treść zostanie zwalidowana
-      recordResponse(options.usage, base, response.status, payload);
-      const content = payload.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("openai llm returned no content");
-      }
-      const parsed = JSON.parse(content) as { items?: LlmGeneratedItem[] };
-      return { items: parsed.items ?? [] };
+      const parsed = await postLessonJson(deckJson, {
+        operation: "deck",
+        schemaName: "vocabulary_deck",
+        schema: DECK_JSON_SCHEMA,
+        system: systemPrompt(input),
+        user: "prompt" in input ? input.prompt : deckUserMaterial(input),
+        ...(signal === undefined ? {} : { signal }),
+        accept: (value) => isPlainObject(value) && Array.isArray((value as { items?: unknown }).items),
+      });
+      // strict wymaga każdego pola: `null` znaczy „pominięte” — przypadek użycia dostaje kształt bez `null`
+      const items = (parsed as { items: unknown[] }).items.map((item) =>
+        isPlainObject(item)
+          ? Object.fromEntries(Object.entries(item as Record<string, unknown>).filter(([, value]) => value !== null))
+          : item);
+      return { items: items as LlmGeneratedItem[] };
     },
     async generateLessonObjectives(input: LessonObjectivesInput, signal?: AbortSignal) {
       const schema = lessonObjectivesJsonSchema(input.voiceTones === true, input.objectivesRules !== undefined);
