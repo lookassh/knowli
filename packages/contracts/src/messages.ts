@@ -121,7 +121,7 @@ export const messages = {
     backToList: "Wróć do listy zestawów",
     newGenerate: "Generuj z opisem",
     newGenerateDescription: "Opisz, czego ma się nauczyć dziecko — AI przygotuje zestaw do Twojego sprawdzenia",
-    generationServiceInfo: "Opis i materiał zestawu trafiają do usługi generującej słówka: {service}. Gotowe słowa trafiają potem do usług nagrań i obrazków. Nie wysyłamy imienia, wieku ani odpowiedzi dziecka.",
+    generationServiceInfo: "Opis i materiał zestawu trafiają do usługi generującej słówka: {service}. Gotowe słowa i przykłady trafiają potem do usługi nagrań, a słowa z obrazkiem — także do usługi obrazków. Nie wysyłamy imienia, wieku ani odpowiedzi dziecka.",
     newEmpty: "Pusty zestaw",
     newEmptyDescription: "Sam dodasz słówka i przykłady",
     newEmptyStepDescription: "Podaj nazwę — słówka dodasz w edytorze.",
