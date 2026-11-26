@@ -1,4 +1,5 @@
 import type { TtsProvider, TtsSynthesizeInput } from "../../ports/ai";
+import { timeoutAsProviderError } from "../../ports/generation-error";
 import { providerFromBaseUrl, type UsageRecorder } from "../../ports/usage";
 import { mp3DurationMs } from "../audio/mp3-duration";
 import { normalizeWav, pcmToWav, wavDurationMs } from "../audio/wav";
@@ -10,6 +11,8 @@ export interface OpenAiTtsOptions {
   baseUrl?: string;
   /** Zapis kosztów wywołań (spec cost-tracking §4.2); bez niego adapter działa jak dotąd. */
   usage?: UsageRecorder;
+  /** Limit jednego żądania (#412); domyślnie 60 s, poniżej lease mediów 5 min. */
+  requestTimeoutMs?: number;
 }
 
 const DEFAULT_MODEL = "gpt-4o-mini-tts";
@@ -68,6 +71,8 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
       const requestModel = input.model || model;
       // jedno żądanie HTTP = jeden zapis; płatność dotyczy znaków tekstu
       const base = { feature: "tts" as const, provider, model: requestModel, characters: input.text.length };
+      const timeoutSignal = AbortSignal.timeout(options.requestTimeoutMs ?? 60_000);
+      const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
       let response: Response;
       try {
         response = await fetch(`${baseUrl}/audio/speech`, {
@@ -83,11 +88,11 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
             response_format: input.format === "wav" ? "pcm" : input.format,
             ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           }),
-          signal,
+          signal: requestSignal,
         });
       } catch (error) {
         recordTransportFailure(options.usage, base);
-        throw error;
+        throw timeoutAsProviderError(error);
       }
       if (!response.ok) {
         recordHttpError(options.usage, base, response.status);
@@ -98,7 +103,7 @@ export function createOpenAiTtsProvider(options: OpenAiTtsOptions): TtsProvider 
         bytes = new Uint8Array(await response.arrayBuffer());
       } catch (error) {
         recordUnreadable(options.usage, base, response.status);
-        throw error;
+        throw timeoutAsProviderError(error);
       }
       const contentType = response.headers.get("content-type") ?? "";
       // opłacone audio jest zapisane zanim format zostanie zwalidowany
