@@ -1,4 +1,4 @@
-import { cleanupExpiredActivityReports, runDueGenerationWork, type Services } from "@learning/server";
+import { cleanupExpiredActivityReports, cleanupExpiredParentSessions, runDueGenerationWork, type Services } from "@learning/server";
 
 /**
  * Powiązanie zleconej pracy z przypadkami użycia serwera. Kolejka jest trwała
@@ -6,9 +6,9 @@ import { cleanupExpiredActivityReports, runDueGenerationWork, type Services } fr
  * przelot jest bezpieczny do przerwania i powtórzenia po restarcie.
  */
 
-/** Retencja szczegółów raportu aktywności czyścimy co najwyżej raz na godzinę. */
-const ACTIVITY_CLEANUP_INTERVAL_MS = 60 * 60_000;
-let lastActivityCleanupAt = 0;
+/** Retencję raportów aktywności i wygasłe sesje rodzica czyścimy co najwyżej raz na godzinę. */
+const CLEANUP_INTERVAL_MS = 60 * 60_000;
+let lastCleanupAt = 0;
 
 export async function processDueWork(services: Services, signal?: AbortSignal, onProgress?: () => void): Promise<{ processed: number }> {
   const result = await runDueGenerationWork(services, {}, { signal, onProgress });
@@ -16,8 +16,8 @@ export async function processDueWork(services: Services, signal?: AbortSignal, o
     console.log(`[worker] przetworzono zadań w przelocie: ${result.processed}`);
   }
   const now = Date.now();
-  if (now - lastActivityCleanupAt >= ACTIVITY_CLEANUP_INTERVAL_MS) {
-    lastActivityCleanupAt = now;
+  if (now - lastCleanupAt >= CLEANUP_INTERVAL_MS) {
+    lastCleanupAt = now;
     try {
       // Czyszczenie wygasłego JSONB raportu w ograniczonych partiach; sesja,
       // punkty i krótki wynik oceny zostają. Bez oceniania i bez modelu.
@@ -28,6 +28,14 @@ export async function processDueWork(services: Services, signal?: AbortSignal, o
     } catch (error) {
       // Czyszczenie jest odnawialne w kolejnym przelocie; nie blokuje generacji.
       console.error("[worker] nie udało się oczyścić raportów aktywności", error);
+    }
+    try {
+      const removed = await cleanupExpiredParentSessions(services);
+      if (removed > 0) {
+        console.log(`[worker] usunięto wygasłych sesji rodzica: ${removed}`);
+      }
+    } catch (error) {
+      console.error("[worker] nie udało się usunąć wygasłych sesji rodzica", error);
     }
   }
   return result;

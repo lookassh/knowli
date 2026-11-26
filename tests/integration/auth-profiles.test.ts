@@ -10,6 +10,7 @@ import {
   logoutParent,
   listKidProfiles,
   requireParent,
+  cleanupExpiredParentSessions,
   setupParent,
   setupParentWithToken,
   createServices,
@@ -190,14 +191,41 @@ describe("auth i profile dzieci (integracja)", () => {
     expect(await isParentSetupRequired(services)).toBe(false);
   });
 
-  it("wygasła sesja jest odrzucana i leniwie usuwana", async () => {
+  it("wygasła sesja jest odrzucana samym odczytem, bez zapisu (#413)", async () => {
     const { services, clock } = buildTestServices();
     await setupParent(services, "pin1");
     const { token } = await loginParent(services, "pin1");
 
     clock.advanceHours(13); // sesja ważna 12 h
     await expectAppError(requireParent(services, token), "unauthorized");
-    expect(await countRows("parent_sessions")).toBe(0);
+    // requireParent niczego nie usuwa — porządkuje worker
+    expect(await countRows("parent_sessions")).toBe(1);
+  });
+
+  it("sesja jest odrzucana dokładnie w chwili wygaśnięcia", async () => {
+    const { services, clock } = buildTestServices();
+    await setupParent(services, "pin1");
+    const { token, expiresAt } = await loginParent(services, "pin1");
+
+    clock.advanceMs(new Date(expiresAt).getTime() - clock.now().getTime() - 1);
+    await expect(requireParent(services, token)).resolves.toBeUndefined();
+    clock.advanceMs(1);
+    await expectAppError(requireParent(services, token), "unauthorized");
+  });
+
+  it("czyszczenie workera usuwa wygasłe sesje partiami bez żądania rodzica (#413)", async () => {
+    const { services, clock } = buildTestServices();
+    await setupParent(services, "pin1");
+    await loginParent(services, "pin1");
+    await loginParent(services, "pin1");
+    clock.advanceHours(6);
+    const valid = await loginParent(services, "pin1");
+    clock.advanceHours(7); // dwie pierwsze wygasły, trzecia ważna jeszcze 5 h
+
+    await expect(cleanupExpiredParentSessions(services, 1)).resolves.toBe(2);
+    expect(await countRows("parent_sessions")).toBe(1);
+    await expect(requireParent(services, valid.token)).resolves.toBeUndefined();
+    await expect(cleanupExpiredParentSessions(services)).resolves.toBe(0);
   });
 
   it("limit logowania blokuje po serii błędów i odtyka po oknie", async () => {

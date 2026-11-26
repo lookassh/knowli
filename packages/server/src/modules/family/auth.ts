@@ -6,7 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { parentCredentials, parentSessions } from "../../db/schema";
 import { AppError } from "../../errors";
 import type { Services } from "../../config";
@@ -197,7 +197,7 @@ export async function loginParent(
   const now = services.clock.now();
   const credentials = await services.db.transaction(async (tx) => {
     // leniwe porządkowanie wygasłych sesji (architecture.md §13)
-    await tx.delete(parentSessions).where(lt(parentSessions.expiresAt, now));
+    await tx.delete(parentSessions).where(lte(parentSessions.expiresAt, now));
     const rows = await tx.select().from(parentCredentials).limit(1);
     return rows[0];
   });
@@ -229,23 +229,42 @@ export async function loginParent(
   };
 }
 
-/** Weryfikuje sesję rodzica; surowy token nigdy nie trafia do bazy. */
+/**
+ * Weryfikuje sesję rodzica samym odczytem (#413); surowy token nigdy nie trafia
+ * do bazy. Wygasłe wiersze sprząta worker (`cleanupExpiredParentSessions`).
+ */
 export async function requireParent(services: Services, token: string): Promise<void> {
   if (!token) {
     throw new AppError("unauthorized");
   }
+  const rows = await services.db
+    .select({ tokenHash: parentSessions.tokenHash })
+    .from(parentSessions)
+    .where(and(eq(parentSessions.tokenHash, hashToken(token)), gt(parentSessions.expiresAt, services.clock.now())))
+    .limit(1);
+  if (rows.length === 0) {
+    throw new AppError("unauthorized");
+  }
+}
+
+const SESSION_CLEANUP_BATCH = 500;
+
+/** Worker: usuwa wygasłe parent_sessions w ograniczonych partiach. Zwraca liczbę usuniętych. */
+export async function cleanupExpiredParentSessions(services: Services, batchSize = SESSION_CLEANUP_BATCH): Promise<number> {
   const now = services.clock.now();
-  const session = await services.db.transaction(async (tx) => {
-    await tx.delete(parentSessions).where(lt(parentSessions.expiresAt, now));
-    const rows = await tx
+  let deleted = 0;
+  for (;;) {
+    const batch = services.db
       .select({ tokenHash: parentSessions.tokenHash })
       .from(parentSessions)
-      .where(sql`${parentSessions.tokenHash} = ${hashToken(token)}`)
-      .limit(1);
-    return rows[0];
-  });
-  if (!session) {
-    throw new AppError("unauthorized");
+      .where(lte(parentSessions.expiresAt, now))
+      .limit(batchSize);
+    const rows = await services.db
+      .delete(parentSessions)
+      .where(and(inArray(parentSessions.tokenHash, batch), lte(parentSessions.expiresAt, now)))
+      .returning({ tokenHash: parentSessions.tokenHash });
+    deleted += rows.length;
+    if (rows.length < batchSize) return deleted;
   }
 }
 
