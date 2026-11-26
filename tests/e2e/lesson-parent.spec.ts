@@ -253,6 +253,8 @@ test("creates a lesson, reviews it grouped by objective and stage, fixes a valid
 
   // Publikacja (odblokowana po domknięciu pokrycia).
   await page.getByTestId("publish-lesson").click();
+  // nieprzejrzane karty: publikacja po potwierdzeniu (gh-380)
+  await page.getByTestId("publish-unreviewed-confirm").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
 
   // Przypisanie z celem kartkówki „Gramatyka".
@@ -413,6 +415,8 @@ test("parent edits generated story and publishes", async ({ page }) => {
 
   await expect(page.getByTestId("publish-lesson")).toBeEnabled({ timeout: 120_000 });
   await page.getByTestId("publish-lesson").click();
+  // nieprzejrzane karty: publikacja po potwierdzeniu (gh-380)
+  await page.getByTestId("publish-unreviewed-confirm").click();
   await expect(page.getByTestId("publish-status")).toBeVisible({ timeout: 120_000 });
   // wersja opublikowana: historyjka tylko do odczytu
   await expect(page.getByTestId("lesson-story-published-hint")).toBeVisible();

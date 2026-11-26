@@ -37,6 +37,7 @@ import "./lesson-panels.css";
 import {
   createLessonSnapshot,
   applyCalculationPreview,
+  cardKeyOf,
   cleanupLines,
   formatRejectedReason,
   otherRejectedCount,
@@ -48,6 +49,7 @@ import {
   missingListenAudioCount,
   lessonThemesPatch,
   nextRequiredElementId,
+  reviewQueue,
   toLessonDraftPatch,
   topRejectedReasons,
   type EditableDynamicCard,
@@ -161,9 +163,14 @@ export default function LessonEditor({
   const compact = useMediaQuery("(max-width: 37.49em)", false, { getInitialValueInEffect: false });
   const [tab, setTab] = useState("exercises");
   const [openCards, setOpenCards] = useState<ReadonlySet<string>>(new Set());
+  // Karty oznaczone „Przejrzane” (gh-380): tylko w przeglądarce, klucz `cardKeyOf`; nowa wersja szkicu zaczyna od zera.
+  const [reviewed, setReviewed] = useState<ReadonlySet<string>>(new Set());
+  // Ostatnia karta pokazana przez „Następna do przejrzenia”: kolejne kliknięcie idzie dalej, nie na tę samą.
+  const lastReviewShown = useRef<string | null>(null);
   // Funkcje kart ćwiczeń są stabilne (karta jest `memo`) i wołają wersje z ostatniego renderu.
   const cardActionsRef = useRef<{
     toggle: (cardKey: string) => void;
+    review: (cardKey: string, reviewed: boolean) => void;
     mutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => void;
     remove: (clientKey: string) => void;
     play: (assetId: string) => void;
@@ -171,6 +178,7 @@ export default function LessonEditor({
   } | null>(null);
   const cardActions = useMemo(() => ({
     onToggle: (cardKey: string) => cardActionsRef.current?.toggle(cardKey),
+    onReviewed: (cardKey: string, value: boolean) => cardActionsRef.current?.review(cardKey, value),
     onMutate: (clientKey: string, patch: Partial<EditableLessonExercise>) => cardActionsRef.current?.mutate(clientKey, patch),
     onRemove: (clientKey: string) => cardActionsRef.current?.remove(clientKey),
     onPlay: (assetId: string) => cardActionsRef.current?.play(assetId),
@@ -389,8 +397,24 @@ export default function LessonEditor({
     setSessionBudgetEdit(null);
   }, [deckId]);
 
+  const draftVersionId = deck?.draft?.id;
+  useEffect(() => {
+    setReviewed(new Set());
+    lastReviewShown.current = null;
+  }, [draftVersionId]);
+
+  const markReviewed = (cardKey: string, value: boolean) => setReviewed((current) => {
+    if (current.has(cardKey) === value) return current;
+    const next = new Set(current);
+    if (value) next.add(cardKey); else next.delete(cardKey);
+    return next;
+  });
+
   const mutateExercise = (clientKey: string, patch: Partial<EditableLessonExercise>) => {
     markDirty();
+    // edycja karty liczy się jako jej przejrzenie
+    const edited = form?.exercises.find((ex) => ex.clientKey === clientKey);
+    if (edited) markReviewed(cardKeyOf(edited), true);
     setForm((current) =>
       current
         ? { ...current, exercises: current.exercises.map((ex) => (ex.clientKey === clientKey ? { ...ex, ...patch } : ex)) }
@@ -869,18 +893,19 @@ export default function LessonEditor({
     };
   };
 
-  // Pokaż źródło ujawnienia: rozwija jego zagadnienie i etap (wybór rodzica, można zwinąć) i przewija do karty.
+  // Pokaż kartę (źródło ujawnienia, „Następna do przejrzenia”): rozwija jej zagadnienie i etap (wybór rodzica, można zwinąć) i przewija do niej.
   const showSource = (sourceKey: string) => {
-    const group = groups.find((g) => g.stages.some((s) => s.exercises.some((candidate) => candidate.id === sourceKey)));
-    const stage = group?.stages.find((s) => s.exercises.some((candidate) => candidate.id === sourceKey));
-    const source = stage?.exercises.find((candidate) => candidate.id === sourceKey);
+    const matches = (candidate: EditableLessonExercise) => cardKeyOf(candidate) === sourceKey;
+    const group = groups.find((g) => g.stages.some((s) => s.exercises.some(matches)));
+    const stage = group?.stages.find((s) => s.exercises.some(matches));
+    const source = stage?.exercises.find(matches);
     if (!group || !stage || !source) return;
     setOpenObjectives([...new Set([...objectivesOpen, group.objectiveId])]);
     setOpenStages([...new Set([...stagesOpen, stageKey(group.objectiveId, stage.stage)])]);
     setRevealIndex(indexByClientKey.get(source.clientKey) ?? null);
   };
 
-  cardActionsRef.current = { toggle: toggleCard, mutate: mutateExercise, remove: removeExercise, play: playAsset, showSource };
+  cardActionsRef.current = { toggle: toggleCard, review: markReviewed, mutate: mutateExercise, remove: removeExercise, play: playAsset, showSource };
 
   const leakByExercise = new Map((active?.exposureLeaks ?? []).map((leak) => [leak.exerciseId, leak]));
   /** Ostrzeżenie o ujawnionym rozwiązaniu ćwiczenia; źródło spoza formularza (usunięte) → prośba o zapis. */
@@ -894,6 +919,43 @@ export default function LessonEditor({
         return source ? indexByClientKey.get(source.clientKey) : undefined;
       },
     });
+  };
+
+  // Oflagowane do przeglądu: ujawnione rozwiązanie albo nieudane nagranie zapisanej wersji.
+  const flaggedForReview = (ex: EditableLessonExercise): boolean => {
+    if (ex.id === undefined) return false;
+    if (leakByExercise.has(ex.id)) return true;
+    const saved = active?.exercises.find((e) => e.id === ex.id);
+    if (!saved) return false;
+    return [saved.promptAudio, saved.explanationAudio, saved.sentenceAudio].some((audio) => audio?.state === "failed")
+      || (active?.assets ?? []).some((asset) => asset.itemRevisionId === saved.revisionId && asset.state === "failed");
+  };
+  const reviewKeys = editable ? reviewQueue(form?.exercises ?? [], new Set((form?.exercises ?? []).filter(flaggedForReview).map(cardKeyOf)), reviewed) : [];
+  const unreviewedCount = reviewKeys.length;
+  const showNextForReview = () => {
+    // następna po ostatnio pokazanej (z zawinięciem); ostatnia przejrzana albo brak → początek kolejki
+    const last = lastReviewShown.current === null ? -1 : reviewKeys.indexOf(lastReviewShown.current);
+    const key = reviewKeys[(last + 1) % reviewKeys.length]!;
+    lastReviewShown.current = key;
+    showSource(key);
+  };
+
+  // Publikacja z nieprzejrzanymi kartami: ostrzeżenie z ich liczbą, rodzic może potwierdzić.
+  const requestPublish = () => {
+    if (unreviewedCount === 0) {
+      void publish();
+      return;
+    }
+    confirmIds.current.push(modals.openConfirmModal({
+      title: messages.lessons.publishUnreviewedTitle,
+      centered: true,
+      radius: "lg",
+      children: <Text size="sm">{messages.lessons.publishUnreviewed[polishPlural(unreviewedCount)]!.replace("{n}", String(unreviewedCount))}</Text>,
+      labels: { confirm: messages.lessons.publishUnreviewedConfirm, cancel: messages.lessons.publishUnreviewedCancel },
+      confirmProps: { size: "md", "data-testid": "publish-unreviewed-confirm" } as Record<string, unknown>,
+      cancelProps: { size: "md", variant: "default", "data-autofocus": true, "data-testid": "publish-unreviewed-cancel" } as Record<string, unknown>,
+      onConfirm: runOnce(() => { void publish(); }),
+    }));
   };
 
   const exerciseCard = (ex: EditableLessonExercise) => {
@@ -919,7 +981,7 @@ export default function LessonEditor({
         index={index}
         editable={editable}
         busy={formLocked}
-        open={openCards.has(ex.id ?? ex.clientKey) || changed || errors !== undefined}
+        open={openCards.has(cardKeyOf(ex)) || changed || errors !== undefined}
         changed={changed}
         leak={leakNotice(ex)}
         hadAudio={savedAudio !== null}
@@ -935,6 +997,7 @@ export default function LessonEditor({
         explanationAudio={explanationAudio}
         audioLocked={(promptAudio !== null || explanationAudio !== null) && isDirty}
         calculation={calculationControls(ex)}
+        reviewed={reviewed.has(cardKeyOf(ex))}
         {...cardActions}
       />
     );
@@ -1279,6 +1342,16 @@ export default function LessonEditor({
           <Text size="sm" className="pp-editor-muted">{messages.decks.itemCount.lesson![polishPlural(exerciseCount)]!.replace("{n}", String(exerciseCount))}</Text>
         </Group>
       )}
+      {form && editable && exerciseCount > 0 && (
+        <Group justify="space-between" align="center" gap="xs" data-testid="review-bar">
+          <Text size="sm" role="status" data-testid="review-count">
+            {messages.lessons.reviewedCount.replace("{x}", String(exerciseCount - unreviewedCount)).replace("{n}", String(exerciseCount))}
+          </Text>
+          <Button size="md" variant="light" data-testid="review-next" disabled={unreviewedCount === 0} onClick={showNextForReview}>
+            {messages.lessons.reviewNext}
+          </Button>
+        </Group>
+      )}
       {objectiveGroups}
       {storySection}
       {coverage}
@@ -1520,7 +1593,7 @@ export default function LessonEditor({
           saveDisabled={busy || conflict || calculationBlocked || generationBlocksSave}
           publishDisabled={busy || isDirty || conflict || generationBlocksSave || (draft?.exercises.length ?? 0) === 0 || (draft?.coverage.length ?? 0) > 0}
           onSave={() => void save()}
-          onPublish={() => void publish()}
+          onPublish={requestPublish}
           onNewVersion={() => void startNewVersion()}
         />
       )}
