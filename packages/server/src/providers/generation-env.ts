@@ -25,6 +25,21 @@ function secureBaseUrl(env: Record<string, string | undefined>, name: "UMIEM_LLM
   return baseUrl;
 }
 
+/**
+ * Limit jednego żądania zestawu, TTS albo obrazu (#412); brak = domyślny adaptera.
+ * Musi być poniżej lease mediów (5 min), by zawieszony provider nie trzymał slotu dłużej.
+ */
+function requestTimeoutMsFromEnv(
+  env: Record<string, string | undefined>,
+  name: "UMIEM_DECK_GENERATION_REQUEST_TIMEOUT_MS" | "UMIEM_TTS_REQUEST_TIMEOUT_MS" | "UMIEM_IMAGE_REQUEST_TIMEOUT_MS",
+): number | undefined {
+  const raw = nonEmpty(env[name]);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0 || value >= 300_000) throw new Error(`${name} must be a positive integer below 300000`);
+  return value;
+}
+
 const OPENAI_HOST = "api.openai.com";
 
 /**
@@ -116,8 +131,14 @@ export function imageProviderFromEnv(
 ) {
   if (env.UMIEM_FAKE_PROVIDERS === "1") return fakeGenerationDeps(createLocalMediaStore(env.MEDIA_ROOT ?? "./data/media")).image;
   const apiKey = openAiKeyFromEnv(env);
+  const requestTimeoutMs = requestTimeoutMsFromEnv(env, "UMIEM_IMAGE_REQUEST_TIMEOUT_MS");
   return apiKey
-    ? createOpenAiImageProvider({ apiKey, ...(usage ? { usage } : {}), ...(feature ? { feature } : {}) })
+    ? createOpenAiImageProvider({
+      apiKey,
+      ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
+      ...(usage ? { usage } : {}),
+      ...(feature ? { feature } : {}),
+    })
     : undefined;
 }
 
@@ -172,18 +193,32 @@ export function createGenerationDepsFromEnv(
   if (!apiKey) {
     return undefined;
   }
+  const deckTimeoutMs = requestTimeoutMsFromEnv(env, "UMIEM_DECK_GENERATION_REQUEST_TIMEOUT_MS");
+  const ttsTimeoutMs = requestTimeoutMsFromEnv(env, "UMIEM_TTS_REQUEST_TIMEOUT_MS");
+  const imageTimeoutMs = requestTimeoutMsFromEnv(env, "UMIEM_IMAGE_REQUEST_TIMEOUT_MS");
   return {
     llm: createOpenAiLlmProvider({
       ...openAiCompatibleEndpointFromEnv(env, "UMIEM_LLM", apiKey),
       model: nonEmpty(env.UMIEM_LLM_MODEL),
       lessonRequestTimeoutMs: lessonExecution.requestTimeoutMs,
+      ...(deckTimeoutMs === undefined ? {} : { deckRequestTimeoutMs: deckTimeoutMs }),
       requestExtras: chatRequestExtrasFromEnv(env, "UMIEM_LLM"),
       ...(usage ? { usage } : {}),
     }),
     // TTS (np. OpenRouter /audio/speech): model z UMIEM_TTS_MODEL, tym samym,
     // który wchodzi do fingerprintu nagrań (mediaSettingsFromEnv).
-    tts: createOpenAiTtsProvider({ ...openAiCompatibleEndpointFromEnv(env, "UMIEM_TTS", apiKey), model: nonEmpty(env.UMIEM_TTS_MODEL), ...(usage ? { usage } : {}) }),
-    image: createOpenAiImageProvider({ apiKey, feature: "illustration", ...(usage ? { usage } : {}) }),
+    tts: createOpenAiTtsProvider({
+      ...openAiCompatibleEndpointFromEnv(env, "UMIEM_TTS", apiKey),
+      model: nonEmpty(env.UMIEM_TTS_MODEL),
+      ...(ttsTimeoutMs === undefined ? {} : { requestTimeoutMs: ttsTimeoutMs }),
+      ...(usage ? { usage } : {}),
+    }),
+    image: createOpenAiImageProvider({
+      apiKey,
+      feature: "illustration",
+      ...(imageTimeoutMs === undefined ? {} : { requestTimeoutMs: imageTimeoutMs }),
+      ...(usage ? { usage } : {}),
+    }),
     mediaStore,
     lessonExecution,
   };

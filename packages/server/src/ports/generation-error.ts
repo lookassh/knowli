@@ -23,3 +23,8 @@ export class GenerationProviderError extends Error {
     this.retryAfterMs = options.retryAfterMs;
   }
 }
+
+/** Upływ `AbortSignal.timeout` adaptera → `timeout`; przerwanie sygnałem wywołującego (AbortError) zostaje bez zmian. */
+export function timeoutAsProviderError(error: unknown): unknown {
+  return error instanceof Error && error.name === "TimeoutError" ? new GenerationProviderError("timeout") : error;
+}

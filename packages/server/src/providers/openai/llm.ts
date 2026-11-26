@@ -20,6 +20,8 @@ export interface OpenAiLlmOptions {
   model?: string;
   baseUrl?: string;
   lessonRequestTimeoutMs?: number;
+  /** Limit jednego żądania zestawu słówek (#412); domyślnie 120 s, poniżej lease mediów 5 min. */
+  deckRequestTimeoutMs?: number;
   /** Opcjonalne pola pośrednika (rozumowanie, routing dostawcy) — `UMIEM_LLM_*`. */
   requestExtras?: ChatRequestExtras;
   /** Zapis kosztów wywołań (spec cost-tracking §4.2); bez niego adapter działa jak dotąd. */
@@ -407,8 +409,9 @@ export function createOpenAiLlmProvider(options: OpenAiLlmOptions): LlmProvider 
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const lessonRequestTimeoutMs = options.lessonRequestTimeoutMs ?? 90_000;
   const provider = providerFromBaseUrl(baseUrl);
-  /** Wspólna koperta żądań (`lesson-json-request.ts`): zestaw bez timeoutu adaptera (#412) — tylko sygnał wywołującego. */
+  /** Wspólna koperta żądań (`lesson-json-request.ts`): limit zestawu złączony z sygnałem wywołującego (#412). */
   const deckJson: LessonJsonRequestConfig = {
+    timeoutMs: options.deckRequestTimeoutMs ?? 120_000,
     baseUrl,
     apiKey: options.apiKey,
     model,

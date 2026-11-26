@@ -613,14 +613,29 @@ describe("createOpenAiLlmProvider.generateDeck — ścisły schemat (#403)", () 
     expect(error).toMatchObject({ kind });
   });
 
-  it("żądanie zestawu nie ma timeoutu adaptera — tylko sygnał wywołującego", async () => {
+  it("zawieszone żądanie zestawu kończy się po limicie adaptera jako `timeout` z jednym zapisem kosztu", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+    })));
+    const rec = createTestRecorder();
+    const result = createOpenAiLlmProvider({ apiKey: "k", deckRequestTimeoutMs: 25, usage: rec }).generateDeck(DECK);
+    const assertion = expect(result).rejects.toMatchObject({ kind: "timeout", message: "provider_timeout" });
+    await vi.advanceTimersByTimeAsync(26);
+    await assertion;
+    expect(rec.events).toHaveLength(1);
+    expect(rec.events[0]).toMatchObject({ outcome: "failed" });
+  });
+
+  it("żądanie zestawu łączy limit adaptera z sygnałem wywołującego", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okResponse({ items: [] }));
     vi.stubGlobal("fetch", fetchMock);
-    await createOpenAiLlmProvider({ apiKey: "k", lessonRequestTimeoutMs: 25 }).generateDeck(DECK);
-    expect(fetchMock.mock.calls[0]![1]!.signal).toBeUndefined();
     const controller = new AbortController();
     await createOpenAiLlmProvider({ apiKey: "k" }).generateDeck(DECK, controller.signal);
-    expect(fetchMock.mock.calls[1]![1]!.signal).toBe(controller.signal);
+    const signal = fetchMock.mock.calls[0]![1]!.signal!;
+    expect(signal).not.toBe(controller.signal);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
   });
 });
 

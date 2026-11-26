@@ -13,7 +13,7 @@ import { retryAfterMs } from "./retry-after";
 
 /**
  * Wspólna koperta żądań strict `json_schema` generatora lekcji i zestawu
- * słówek: opcjonalny timeout (zestaw go nie ma, #412), fetch, mapowanie błędów
+ * słówek: opcjonalny timeout (#412), fetch, mapowanie błędów
  * HTTP/odmowy/długości, parsowanie treści i zapis kosztów (jedno żądanie HTTP = jeden zapis).
  */
 
