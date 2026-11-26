@@ -7,6 +7,7 @@
 export {
   type Services,
   createServices,
+  databasePoolSettingsFromEnv,
   graderFromEnv,
   isLessonAgentAvailable,
   lessonAgentPublicFromEnv,

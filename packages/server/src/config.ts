@@ -1,4 +1,4 @@
-import type { Database } from "./db/client";
+import type { Database, DatabasePoolSettings } from "./db/client";
 import type {
   AnswerGraderProvider,
   ClosedExerciseChecker,
@@ -388,6 +388,22 @@ function positiveIntEnv(name: string, raw: string | undefined, fallback: number)
     throw new Error(`${name} must be a positive integer`);
   }
   return value;
+}
+
+/**
+ * Pula bazy procesu web albo workera (#410). `statement_timeout` tylko tu:
+ * migracje (`migrateDatabase`) i skrypty CLI (np. rebuild postępu) tworzą pulę
+ * bez tych ustawień, więc długie legalne operacje nie mają limitu.
+ */
+export function databasePoolSettingsFromEnv(env: Record<string, string | undefined>, role: "web" | "worker"): DatabasePoolSettings {
+  const int = (name: keyof typeof CONFIG_DEFAULTS & `UMIEM_${string}DB_${string}`) =>
+    positiveIntEnv(name, env[name], Number(CONFIG_DEFAULTS[name]));
+  const prefix = role === "web" ? "UMIEM_WEB" : "UMIEM_WORKER";
+  return {
+    max: int(`${prefix}_DB_POOL_MAX`),
+    connectionTimeoutMillis: int("UMIEM_DB_CONNECT_TIMEOUT_MS"),
+    statement_timeout: int(`${prefix}_DB_STATEMENT_TIMEOUT_MS`),
+  };
 }
 
 /**
