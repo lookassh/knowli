@@ -12,9 +12,9 @@ import {
 import { retryAfterMs } from "./retry-after";
 
 /**
- * Wspólna koperta żądań lekcyjnych (strict `json_schema`) generatora
- * lekcji: timeout, fetch, mapowanie błędów HTTP/odmowy/długości, parsowanie
- * treści i zapis kosztów (jedno żądanie HTTP = jeden zapis).
+ * Wspólna koperta żądań strict `json_schema` generatora lekcji i zestawu
+ * słówek: opcjonalny timeout (zestaw go nie ma, #412), fetch, mapowanie błędów
+ * HTTP/odmowy/długości, parsowanie treści i zapis kosztów (jedno żądanie HTTP = jeden zapis).
  */
 
 /** Część treści wiadomości chat; `cache_control` oznacza koniec prefiksu cache (Anthropic przez OpenRouter). */
@@ -29,7 +29,8 @@ export interface LessonJsonRequestConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly provider: string;
-  readonly timeoutMs: number;
+  /** Limit jednego żądania; bez niego tylko sygnał wywołującego (zestaw słówek, #412). */
+  readonly timeoutMs?: number;
   readonly requestExtras?: ChatRequestExtras;
   readonly usage?: UsageRecorder;
   readonly usageFeature: UsageFeature;
@@ -100,8 +101,8 @@ export async function postLessonJson(
   // jedno żądanie HTTP = jeden zapis; catch transportu zapisuje tylko, gdy odpowiedzi nie było
   let recorded = false;
   try {
-    const timeoutSignal = AbortSignal.timeout(config.timeoutMs);
-    const requestSignal = args.signal ? AbortSignal.any([args.signal, timeoutSignal]) : timeoutSignal;
+    const timeoutSignal = config.timeoutMs === undefined ? undefined : AbortSignal.timeout(config.timeoutMs);
+    const requestSignal = args.signal && timeoutSignal ? AbortSignal.any([args.signal, timeoutSignal]) : args.signal ?? timeoutSignal;
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -109,7 +110,7 @@ export async function postLessonJson(
         "content-type": "application/json",
       },
       body,
-      signal: requestSignal,
+      ...(requestSignal === undefined ? {} : { signal: requestSignal }),
     });
     if (!response.ok) {
       recorded = true;
