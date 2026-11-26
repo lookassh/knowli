@@ -8,6 +8,8 @@
 #   KNOWLI_ENV_FILE plik env z POSTGRES_PASSWORD (domyślnie .env)
 #   KNOWLI_DB       nazwa bazy (domyślnie knowli)
 set -euo pipefail
+# kopie zawierają dane dzieci: katalog i pliki tylko dla właściciela
+umask 077
 
 cd "$(dirname "$0")/.."
 project="${KNOWLI_PROJECT:-knowli}"
@@ -43,7 +45,6 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   tar czf /backup/media.tgz -C /media .
 
 pg_version="$(compose exec -T db psql -U postgres -tAc "show server_version" | tr -d "[:space:]")"
-(cd "$dest" && sha256sum db.dump media.tgz > SHA256SUMS)
 cat > "$dest/manifest.json" <<EOF
 {
   "created": "$(date -Iseconds)",
@@ -54,4 +55,6 @@ cat > "$dest/manifest.json" <<EOF
   "mediaArchiveBytes": $(wc -c < "$dest/media.tgz" | tr -d "[:space:]")
 }
 EOF
+# SHA256SUMS jako ostatni krok i atomowo (mv): jego obecność = kopia kompletna (backup-rotate.sh)
+(cd "$dest" && sha256sum db.dump media.tgz > SHA256SUMS.tmp && mv SHA256SUMS.tmp SHA256SUMS)
 echo "[backup] gotowe: $dest (db.dump + media.tgz + SHA256SUMS + manifest.json)"

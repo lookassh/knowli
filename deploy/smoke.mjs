@@ -315,11 +315,13 @@ async function inspectMode(pin) {
     if (!summary.publishedVersionId) continue;
     const deck = await (await call("GET", `/api/v1/parent/decks/${summary.deckId}`, { cookie })).json();
     const media = [];
-    for (const asset of deck.published.assets.filter((a) => a.role === "target_audio" && a.assetId).slice(0, 3)) {
+    // kolejność zapytania SQL nie jest umową (po pg_restore inna) — sortujemy przed wyborem trzech
+    const audio = deck.published.assets
+      .filter((a) => a.role === "target_audio" && a.assetId)
+      .sort((a, b) => a.assetId.localeCompare(b.assetId));
+    for (const asset of audio.slice(0, 3)) {
       media.push(await hashMedia(asset.assetId));
     }
-    // kolejność zapytania SQL nie jest umową — sortujemy dla powtarzalnych diffów
-    media.sort((a, b) => a.assetId.localeCompare(b.assetId));
     result.decks.push({
       deckId: summary.deckId,
       title: summary.title,
