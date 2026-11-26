@@ -6,7 +6,7 @@ import { lessonStoryAssets, mediaAssets } from "../../../db/schema";
 import { lessonTextTargetKey } from "../../../domain/lessons/exposure-key";
 import { squashStoryText, type LessonStory } from "../../../domain/lessons/story";
 import type { SubjectModule } from "../../../domain/lessons/types";
-import type { LessonTrainingSessionPlanSnapshot, LessonTrainingSessionSlot } from "../../../domain/training-session-plan";
+import { remainingPlanScreens, type LessonTrainingSessionPlanSnapshot, type LessonTrainingSessionSlot } from "../../../domain/training-session-plan";
 import { lessonLocale, seededShuffle } from "./lesson-materialize";
 
 /**
@@ -146,11 +146,18 @@ export function unissuedPlanSlots(
 }
 
 /**
- * Liczniki zadania w sesji z historyjką: zadania historyjki są poza budżetem
+ * Liczniki banera zadania lekcji. Regularny slot planu (z historyjką lub bez)
+ * dostaje `remainingScreens` (#392), liczone bez slotów historyjki, bo baner
+ * zapowiada ją osobno. W sesji z historyjką zadania historyjki są poza budżetem
  * (`remainingAssessed: 0`), a każde inne zadanie (także karta i zadanie
  * następcze) niesie `closingStory`, żeby baner zapowiadał historyjkę.
  */
 export function withStoryCounters(dto: TaskDto, plan: LessonTrainingSessionPlanSnapshot | null): TaskDto {
   if (isLessonStoryTaskType(dto.exerciseType)) return { ...dto, remainingAssessed: 0 };
-  return planHasClosingStory(plan) ? { ...dto, closingStory: true } : dto;
+  const remainingScreens = plan ? remainingPlanScreens(plan.slots.filter((slot) => !isStorySlot(slot)), dto.taskId, dto.remainingAssessed) : undefined;
+  return {
+    ...dto,
+    ...(remainingScreens === undefined ? {} : { remainingScreens }),
+    ...(planHasClosingStory(plan) ? { closingStory: true as const } : {}),
+  };
 }
